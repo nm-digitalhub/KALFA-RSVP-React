@@ -45,7 +45,7 @@ const folders = nodeFolders();
 describe('node definitions', () => {
   it('the scan found the node folders — not an empty directory', () => {
     // At least the nodes moved so far. Raise as nodes move; never lower.
-    expect(folders.length).toBeGreaterThanOrEqual(22);
+    expect(folders.length).toBeGreaterThanOrEqual(23);
   });
 
   describe.each(folders)('%s/definition.ts', (folder) => {

@@ -25,6 +25,7 @@ import type { InboundMessagePayload } from '@/lib/whatsapp/inbound';
 import { listArmedWorkflows, createRunIfNew } from './store';
 import { editorDiagramSchema } from './adapter/editor-schema';
 import { OWNER_WHATSAPP_MESSAGE_KINDS } from './catalogue/types';
+import * as whatsappInboundDefinition from './nodes/trigger-whatsapp-inbound/definition';
 import { type TriggerContext, matchesKind, planRuns } from './trigger';
 
 /**
@@ -142,7 +143,7 @@ export async function createRunsForInboundMessage(
 function acceptsKind(workflow: { definition: unknown }, kind: string): boolean {
   const parsed = editorDiagramSchema.safeParse(workflow.definition);
   if (!parsed.success) return false;
-  const trigger = parsed.data.nodes.find((n) => n.data.type === 'trigger.whatsapp_inbound');
+  const trigger = parsed.data.nodes.find((n) => n.data.type === whatsappInboundDefinition.type);
   return trigger ? matchesKind(trigger.data.properties?.messageKinds, kind) : false;
 }
 

@@ -33,11 +33,12 @@ import * as waitDefinition from '../nodes/logic-wait/definition';
 import * as scheduleDefinition from '../nodes/trigger-schedule/definition';
 import * as sumitCardTriggerDefinition from '../nodes/trigger-sumit-card/definition';
 import * as webhookTriggerDefinition from '../nodes/trigger-webhook/definition';
+import * as whatsappInboundDefinition from '../nodes/trigger-whatsapp-inbound/definition';
 
 import { NODE_TYPES, type CatalogueEntry, type KalfaNodeType } from './types';
 
 export const CATALOGUE: readonly CatalogueEntry[] = [
-  { type: 'trigger.whatsapp_inbound', isTrigger: true },
+  { type: whatsappInboundDefinition.type, isTrigger: whatsappInboundDefinition.isTrigger },
   { type: webhookTriggerDefinition.type, isTrigger: webhookTriggerDefinition.isTrigger },
   { type: scheduleDefinition.type, isTrigger: scheduleDefinition.isTrigger },
   { type: sumitCardTriggerDefinition.type, isTrigger: sumitCardTriggerDefinition.isTrigger },

@@ -1,5 +1,5 @@
-// The dispatch table the ActivityRunnerPort uses, and the handlers of the node
-// types that have not yet moved to `nodes/<name>/runtime.ts`.
+// The dispatch table the ActivityRunnerPort uses. Every handler lives in its
+// node folder's `nodes/<name>/runtime.ts`.
 //
 // A handler is a pure function of (config, trigger payload, deps). It performs
 // its own side effect through the narrow GuestActionsPort and returns a
@@ -59,6 +59,8 @@ import * as sumitCardTriggerDefinition from '../nodes/trigger-sumit-card/definit
 import { sumitCardTrigger } from '../nodes/trigger-sumit-card/runtime';
 import * as webhookTriggerDefinition from '../nodes/trigger-webhook/definition';
 import { webhookTrigger } from '../nodes/trigger-webhook/runtime';
+import * as whatsappInboundDefinition from '../nodes/trigger-whatsapp-inbound/definition';
+import { whatsappInbound } from '../nodes/trigger-whatsapp-inbound/runtime';
 
 export type { StepContext, StepHandler, WorkflowTriggerPayload };
 
@@ -84,21 +86,8 @@ export type { StepContext, StepHandler, WorkflowTriggerPayload };
 // trigger.whatsapp_inbound
 // ---------------------------------------------------------------------------
 
-// The entry node. It performs no side effect: by the time a run exists the
-// message has already arrived and been persisted. Its job is to publish the
-// payload as this node's output, so the rest of the graph reads it the same way
-// it reads any other node's result.
-//
-// The `keyword` filter is applied at ENQUEUE time, not here — a run that should
-// not have started must not exist at all, rather than start and immediately stop
-// (which would leave a run row implying something happened). See
-// matchesTrigger in ../trigger.ts.
-const whatsappInbound: StepHandler = async (_config, ctx) => ({
-  output: {
-    message_text: ctx.trigger.message_text,
-    button_payload: ctx.trigger.button_payload,
-  },
-});
+// The handler lives in `nodes/trigger-whatsapp-inbound/runtime.ts`, and the
+// enqueue-time filters it relies on in that folder's `match.ts`.
 
 // ---------------------------------------------------------------------------
 // logic.switch
@@ -131,7 +120,7 @@ export { WORKFLOW_WAIT_CODE, WorkflowWaitSignal, readWaitSignal, type WaitVerifi
 // `nodes/action-start-for-each-guest/`.
 
 export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
-  'trigger.whatsapp_inbound': whatsappInbound,
+  [whatsappInboundDefinition.type]: whatsappInbound,
   [webhookTriggerDefinition.type]: webhookTrigger,
   [scheduleDefinition.type]: scheduleTrigger,
   [sumitCardTriggerDefinition.type]: sumitCardTrigger,

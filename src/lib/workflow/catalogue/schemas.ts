@@ -1,7 +1,9 @@
 'use client';
 
-// The editor's half of the catalogue: what each node type looks like in the
-// palette and in the properties panel.
+// The editor's half of the catalogue: the palette. What each node type looks
+// like in the palette and in the properties panel is declared in its node
+// folder's editor files (`nodes/<name>/`); this module assembles them into
+// `PALETTE_ITEMS` and fills the live lists in (`buildPaletteItems`).
 //
 // CLIENT ONLY. `sharedProperties` and `getScope` are runtime values, so this
 // module loads @workflowbuilder/sdk — and with it the module-level
@@ -27,19 +29,9 @@
 //
 // Every entry ends in `satisfies NodeSchema` / typed as `PaletteItem`, so a
 // mistake here is a compile error rather than an empty properties panel.
-import { NodeType, getScope } from '@workflowbuilder/sdk';
-import type { NodeSchema, PaletteItem, UISchema } from '@workflowbuilder/sdk';
+import type { PaletteItem, UISchema } from '@workflowbuilder/sdk';
 
-import { CHECKBOX_LIST_FORMAT, NODE_RUN_FORMAT } from './ui-formats';
-
-import {
-  identityControls,
-  identityProperties,
-  nodeStatusOptions,
-  statusControl,
-  statusProperty,
-  triggerSwitchElement,
-} from './editor-shared';
+import { NODE_RUN_FORMAT } from './ui-formats';
 
 import { aiAgentPaletteItem } from '../nodes/action-ai-agent/action-ai-agent';
 import { callbackRequestPaletteItem } from '../nodes/action-create-callback-request/action-create-callback-request';
@@ -75,144 +67,22 @@ import { schedulePaletteItem } from '../nodes/trigger-schedule/trigger-schedule'
 import * as sumitCardTriggerDefinition from '../nodes/trigger-sumit-card/definition';
 import { sumitCardTriggerPaletteItem } from '../nodes/trigger-sumit-card/trigger-sumit-card';
 import { webhookTriggerPaletteItem } from '../nodes/trigger-webhook/trigger-webhook';
-
+import * as whatsappInboundDefinition from '../nodes/trigger-whatsapp-inbound/definition';
 import {
-  NODE_REQUIRED_FIELDS,
-  WHATSAPP_MESSAGE_KINDS,
-  type KalfaNodeType,
-} from './types';
+  whatsappInboundSchemaFor,
+  type WhatsAppNumberOption,
+} from '../nodes/trigger-whatsapp-inbound/schema';
+import { whatsappInboundPaletteItem } from '../nodes/trigger-whatsapp-inbound/trigger-whatsapp-inbound';
 
 // ---------------------------------------------------------------------------
 // trigger.whatsapp_inbound
 // ---------------------------------------------------------------------------
 
-/**
- * One of OUR WhatsApp numbers, as the trigger's dropdown offers it.
- *
- * The VALUE is Meta's `phone_number_id`, because that is what arrives on the
- * webhook and what `matchesNumber` compares. The label is for the human.
- */
-export type WhatsAppNumberOption = {
-  /** Meta's phone_number_id — the stored value. */
-  providerRef: string;
-  /** e.g. "+972 3-721-9347 — מספר אישורי הגעה". */
-  label: string;
-};
-
-// The only entry whose options are not knowable at module scope: the account's
-// WhatsApp numbers are rows, and they change without a deploy. `buildPaletteItems`
-// below takes them; `PALETTE_ITEMS` is the empty-list case.
-const triggerSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['trigger.whatsapp_inbound'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    keyword: { type: 'string', placeholder: 'השאירו ריק כדי להפעיל על כל הודעה' },
-    phoneNumberId: { type: 'string' },
-    // WHICH KINDS of message start this workflow. An OPEN array of Meta's own
-    // `type` strings — not an enum — so a kind Meta adds later needs a catalogue
-    // entry rather than a migration. Absent means the four a guest actually
-    // speaks with, which is what every diagram saved before this field did.
-    // ⚠️ OBJECTS, NOT BARE STRINGS, and the shape is forced on us.
-    //
-    // The SDK's `ArrayFieldSchema` is `{ type:'array', items:{ type:'object',
-    // properties } }` — it cannot describe an array of strings at all. The first
-    // version declared this shape and had the control write plain strings, so
-    // every saved trigger carried a validation error on the node
-    // ("Instance type \"string\" is invalid. Expected \"object\"") and showed a
-    // "!" the owner could not act on.
-    //
-    // So the control stores `[{ value: 'document' }, …]`. `matchesKind` accepts
-    // BOTH shapes, which is what keeps a workflow saved under the string version
-    // matching without a migration.
-    messageKinds: {
-      type: 'array',
-      items: { type: 'object', properties: { value: { type: 'string' } } },
-    },
-  },
-} satisfies NodeSchema;
-
-const triggerScope = getScope<typeof triggerSchema>;
-
-function triggerSchemaFor(numbers: readonly WhatsAppNumberOption[]): NodeSchema {
-  return {
-    ...triggerSchema,
-    properties: {
-      ...triggerSchema.properties,
-      phoneNumberId: {
-        type: 'string',
-        // '' first, and it is the default: empty means ANY number, which keeps
-        // every diagram saved before this field firing exactly as it did.
-        options: [
-          { value: '', label: 'כל המספרים' },
-          ...numbers.map((n) => ({ value: n.providerRef, label: n.label })),
-        ],
-      },
-    },
-  } as NodeSchema;
-}
-
-// "מה מפעיל את התהליך" — `triggerSwitchElement`, the switcher every trigger's
-// uischema starts with, lives in `editor-shared.ts` so a trigger's node folder
-// can spread it too.
-const triggerUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    triggerSwitchElement,
-    ...identityControls(triggerScope('properties.label'), triggerScope('properties.description')),
-    {
-      type: 'Select',
-      scope: triggerScope('properties.phoneNumberId'),
-      label: 'המספר שאליו נשלחה ההודעה',
-    },
-    {
-      // The warning the owner asked for. "כל המספרים" is the compatible default,
-      // not the safe one: with two live lines an RSVP automation also fires on
-      // messages sent to the import line.
-      type: 'Label',
-      text: 'כל המספרים: התהליך ירוץ גם על הודעות שנשלחו לקו הייבוא. בחרו מספר כדי לצמצם.',
-    },
-    {
-      type: 'Text',
-      scope: triggerScope('properties.keyword'),
-      label: 'הפעל רק אם ההודעה מכילה',
-    },
-    {
-      // ⚠️ AN ACCORDION IS COLLAPSIB-LE, NOT COLLAPSED — measured in the 2.3.0
-      // bundle, and this comment used to claim the opposite. The renderer
-      // (`GH`) passes the layout NOTHING but `label` and `children`; the
-      // container (`Ag`) declares `defaultOpen = true` and is the only thing
-      // that decides. `AccordionLayoutElement` has no `defaultOpen` field, so
-      // the uischema cannot ask for closed — writing one here would be a silent
-      // no-op, which `accordion-classification.test.ts` refuses.
-      //
-      // The container is still right: nine checkboxes are an ADVANCED filter
-      // that the default already answers for almost every workflow, and the
-      // owner can fold them away after reading them once. What it does not do
-      // is spare them the first read.
-      type: 'Accordion',
-      label: 'סוגי הודעות שמפעילים את התהליך',
-      elements: [
-        {
-          // A CUSTOM RENDERER — the SDK ships no multi-select. Declared as the
-          // nearest allowed element type and outranked by ours, matched on
-          // `options.format`. See checkbox-list-control.tsx.
-          type: 'Text',
-          scope: triggerScope('properties.messageKinds'),
-          label: 'סוגי הודעות',
-          options: {
-            format: CHECKBOX_LIST_FORMAT,
-            choices: WHATSAPP_MESSAGE_KINDS.map((k) => ({ ...k })),
-            defaultNote:
-              'ברירת מחדל: רק הודעות שאורח שולח — טקסט, כפתור, תפריט ותגובה. סמנו קובץ או אנשי קשר כדי לבנות תהליך שקולט רשימת אורחים.',
-          },
-        },
-      ],
-    },
-    statusControl(triggerScope('properties.status')),
-  ],
-};
+// Its schema, the number-aware factory `whatsappInboundSchemaFor`, uischema and
+// palette entry live in `nodes/trigger-whatsapp-inbound/`, and its config and
+// message kinds in that folder's `definition.ts`. The number option type is
+// re-exported for the editor, which passes the live numbers in.
+export type { WhatsAppNumberOption };
 
 // ---------------------------------------------------------------------------
 // trigger.webhook
@@ -391,8 +261,8 @@ export function buildPaletteItems(
     if (item.type === sumitCardTriggerDefinition.type && sumitCardOutput) {
       return withNodeRunControl({ ...item, outputSchema: { type: 'default', properties: sumitCardOutput } });
     }
-    if (item.type === 'trigger.whatsapp_inbound') {
-      return withNodeRunControl({ ...item, schema: triggerSchemaFor(numbers) });
+    if (item.type === whatsappInboundDefinition.type) {
+      return withNodeRunControl({ ...item, schema: whatsappInboundSchemaFor(numbers) });
     }
     if (item.type === startVoiceCallDefinition.type) {
       return withNodeRunControl({
@@ -425,47 +295,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
   aiAgentPaletteItem,
   // Moved to its own folder — see nodes/action-start-voice-call/.
   voiceCallPaletteItem,
-  {
-    type: 'trigger.whatsapp_inbound' satisfies KalfaNodeType,
-    label: 'הודעת וואטסאפ נכנסת',
-    description: 'מתחיל את התהליך כשאורח שולח הודעה',
-    icon: 'WhatsappLogo',
-    // Renders with the SDK's start-node body, which draws ONE handle —
-    // `type: 'source'` — where the default body draws a source AND a target.
-    // The target dot on a trigger is an affordance for a connection rule 6
-    // forbids and `isValidConnection` always rejects: the owner can aim at it,
-    // and nothing lands. This removes the dot instead of refusing the drop, so
-    // the rule is visible rather than merely enforced.
-    //
-    // Not `isStartNode: true` — that field does not exist in 2.3.0 (it is
-    // queued in an unreleased changeset), and even once it does it is a data
-    // marker the editor writes into `data`, which rule 3 forbids us to read.
-    // `templateType` is only ever about the visual template, which upstream
-    // states explicitly, so the two concerns stay separate.
-    templateType: NodeType.StartNode,
-    schema: triggerSchema,
-    uischema: triggerUiSchema,
-    // The trigger's output is the inbound message itself. With this declared,
-    // `{{nodes.<trigger-id>.message_text}}` appears in the picker — note that
-    // `{{trigger.message_text}}` reaches the SAME value by the other namespace,
-    // which upstream's guide warns are not interchangeable in general.
-    outputSchema: {
-      type: 'default',
-      properties: {
-        message_text: { type: 'string', label: 'תוכן ההודעה', description: 'מה שהאורח כתב' },
-        button_payload: { type: 'string', label: 'כפתור שנלחץ' },
-      },
-    },
-    defaultPropertiesData: {
-      status: nodeStatusOptions.active.value,
-      label: 'הודעת וואטסאפ נכנסת',
-      description: 'מתחיל את התהליך כשאורח שולח הודעה',
-      keyword: '',
-      // Empty = any number. The owner's ruling 2026-09-13: a diagram saved
-      // before this field must not silently narrow to one line.
-      phoneNumberId: '',
-    },
-  } satisfies PaletteItem<typeof triggerSchema>,
+  // Moved to its own folder — see nodes/trigger-whatsapp-inbound/.
+  whatsappInboundPaletteItem,
   // Moved to its own folder — see nodes/trigger-webhook/.
   webhookTriggerPaletteItem,
   // Moved to its own folder — see nodes/trigger-schedule/.

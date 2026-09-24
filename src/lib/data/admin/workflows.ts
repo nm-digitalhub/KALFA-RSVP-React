@@ -37,6 +37,7 @@ import { findVoiceDialBlockers } from '@/lib/data/admin/voice-node-arm-check';
 import { runsFingerprint, RUNS_WINDOW } from '@/lib/workflow/runs-fingerprint';
 import { sumitCardOutputFromSample } from '@/lib/workflow/catalogue/sumit-sample-output';
 import type { SumitCardOutput } from '@/lib/workflow/nodes/trigger-sumit-card/definition';
+import * as whatsappInboundDefinition from '@/lib/workflow/nodes/trigger-whatsapp-inbound/definition';
 import {
   dryRunWorkflow,
   type DryRunResult,
@@ -331,7 +332,7 @@ async function claimImportRole(definition: unknown): Promise<string | null> {
     if (!parsed.success) return null;
 
     const trigger = parsed.data.nodes.find(
-      (n) => n.data.type === 'trigger.whatsapp_inbound',
+      (n) => n.data.type === whatsappInboundDefinition.type,
     );
     if (!trigger) return null;
 

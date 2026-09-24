@@ -10,9 +10,8 @@
 // load @workflowbuilder/sdk, whose import runs module-level side effects
 // (immer.setAutoFreeze(false), i18next.init) and which is browser-only.
 //
-// Everything the EDITOR needs — property schemas, labels, icons — lives in
-// ./schemas.ts instead, or, for a node that has moved to its own folder, in that
-// folder's editor files.
+// Everything the EDITOR needs — property schemas, labels, icons — lives in each
+// node folder's editor files instead, assembled into the palette by ./schemas.ts.
 import type { RsvpStatus } from '@/lib/constants';
 
 import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
@@ -37,6 +36,7 @@ import * as waitDefinition from '../nodes/logic-wait/definition';
 import * as scheduleDefinition from '../nodes/trigger-schedule/definition';
 import * as sumitCardTriggerDefinition from '../nodes/trigger-sumit-card/definition';
 import * as webhookTriggerDefinition from '../nodes/trigger-webhook/definition';
+import * as whatsappInboundDefinition from '../nodes/trigger-whatsapp-inbound/definition';
 
 // ---------------------------------------------------------------------------
 // Node types
@@ -46,7 +46,7 @@ import * as webhookTriggerDefinition from '../nodes/trigger-webhook/definition';
 // `data.type`, so these strings are a persistence contract: renaming one
 // orphans every saved workflow that used it.
 export const NODE_TYPES = [
-  'trigger.whatsapp_inbound',
+  whatsappInboundDefinition.type,
   webhookTriggerDefinition.type,
   scheduleDefinition.type,
   sumitCardTriggerDefinition.type,
@@ -77,103 +77,18 @@ export type KalfaNodeType = (typeof NODE_TYPES)[number];
 // Per-type configuration, narrowed by `type`
 // ---------------------------------------------------------------------------
 
-export type WhatsappInboundConfig = {
-  // Optional pre-filter: run only when the message contains this text. Empty or
-  // absent means every inbound message on the account starts a run.
-  keyword?: string;
-  /**
-   * Which of OUR WhatsApp numbers the message must have arrived on.
-   *
-   * META'S phone_number_id, not an E.164 and not our provider_numbers UUID. It
-   * is the value the webhook actually carries, so matching needs no lookup and
-   * `planRuns` stays pure; an E.164 would break the day a number is registered
-   * again, and our UUID would put a database read inside the one module that
-   * must not have one.
-   *
-   * EMPTY OR ABSENT MEANS ANY NUMBER — the same rule as `keyword`, so every
-   * diagram saved before this keeps firing exactly as it did.
-   *
-   * WHY IT EXISTS. The account has had two live numbers since 2026-09-10: the
-   * RSVP sender and the import line. `startWorkflowRuns` runs beside
-   * `processWebhookEvent` rather than behind it (worker/main.ts), so the inbound
-   * ROUTER's decision — which sends import-line traffic to stageWhatsAppImport
-   * and returns — never reached workflows. Every armed workflow has therefore
-   * been firing on messages to BOTH numbers with no way to tell them apart.
-   * This is the field that tells them apart.
-   */
-  phoneNumberId?: string;
-  /**
-   * WHICH KINDS OF MESSAGE may start this workflow.
-   *
-   * ⚠️ ABSENT OR EMPTY MEANS `DEFAULT_WHATSAPP_MESSAGE_KINDS`, and that default
-   * is what keeps every diagram saved before this field behaving EXACTLY as it
-   * did: only a guest actually speaking to us — text, a button tap, an
-   * interactive reply, a reaction.
-   *
-   * WHY IT EXISTS. Guest import from WhatsApp — an owner sending a CSV or a
-   * batch of contact cards — was a mechanism entirely outside workflows, and
-   * unreachable from one: those messages are not "billable" (they are not a
-   * guest being reached), and `createRunsForInboundMessage` used the BILLING
-   * classifier as its automation gate, so a file or a contact card never created
-   * a run at all. A billing concept was deciding what an owner may automate.
-   *
-   * The two are separated now. Billing still counts exactly what it counted;
-   * which messages start a flow is a property of the TRIGGER, chosen per
-   * workflow, and the owner opts in.
-   *
-   * A FREE LIST OF STRINGS, not a closed enum: Meta adds message types on its
-   * own schedule, and a new one must be usable by editing a catalogue list
-   * rather than by a migration of every stored diagram.
-   */
-  messageKinds?: string[];
-};
-
-/**
- * The message kinds the trigger offers, and what each one is.
- *
- * `label` is Hebrew because it is read in the properties panel. The `value` is
- * Meta's own `type` string from the webhook payload, so matching needs no
- * translation table.
- *
- * This list is the EDITOR's menu, never the enforcement: `matchesKind` compares
- * against whatever the diagram stored, so a kind added here works immediately
- * and a kind stored by a future version still matches after a downgrade.
- */
-export const WHATSAPP_MESSAGE_KINDS = [
-  { value: 'text', label: 'הודעת טקסט' },
-  { value: 'button', label: 'לחיצה על כפתור' },
-  { value: 'interactive', label: 'בחירה מתפריט' },
-  { value: 'reaction', label: 'תגובה (אימוג׳י)' },
-  { value: 'document', label: 'קובץ (למשל רשימת אורחים)' },
-  { value: 'contacts', label: 'כרטיסי אנשי קשר' },
-  { value: 'image', label: 'תמונה' },
-  { value: 'audio', label: 'הקלטה קולית' },
-  { value: 'video', label: 'סרטון' },
-] as const;
-
-/**
- * What a trigger with no `messageKinds` means.
- *
- * EXACTLY today's `BILLABLE_MESSAGE_TYPES`, and that is the point: it is the
- * behaviour every saved diagram already has, preserved by construction rather
- * than by a migration. `inbound.test.ts` pins the two lists against each other.
- */
-export const DEFAULT_WHATSAPP_MESSAGE_KINDS: readonly string[] = [
-  'text',
-  'button',
-  'interactive',
-  'reaction',
-];
-
-/**
- * The kinds that are an OWNER sending us something, not a guest speaking.
- *
- * A run started by one of these carries an event but NO contact: the sender is
- * the person who owns the event, so there is no guest the run is "about", and
- * every guest-touching node refuses inside it (`requireGuestContext`). That is
- * the same shape `trigger.webhook` produces, and for the same reason.
- */
-export const OWNER_WHATSAPP_MESSAGE_KINDS: readonly string[] = ['document', 'contacts'];
+// `trigger.whatsapp_inbound` — its config and the message-kind lists (the
+// editor's menu, the default, the owner kinds and the text-bearing ones) are
+// declared with the rest of its contract in
+// `nodes/trigger-whatsapp-inbound/definition.ts`. Re-exported here for existing
+// readers (`inbound.ts`, `arm-check.ts` and the admin data layer among them).
+export {
+  DEFAULT_WHATSAPP_MESSAGE_KINDS,
+  OWNER_WHATSAPP_MESSAGE_KINDS,
+  TEXT_BEARING_WHATSAPP_MESSAGE_KINDS,
+  WHATSAPP_MESSAGE_KINDS,
+} from '../nodes/trigger-whatsapp-inbound/definition';
+export type WhatsappInboundConfig = whatsappInboundDefinition.WhatsappInboundConfig;
 
 // `action.start_for_each_guest` — its config, the RSVP statuses it filters on,
 // the hard cap and the fan-out depth cap are declared with the rest of its
@@ -582,7 +497,7 @@ export type SumitCreateCustomerConfig = sumitCreateCustomerDefinition.SumitCreat
 // The discriminated union the step handlers narrow on. `BaseNode.config` in the
 // vendored runner is `unknown`; this is the vocabulary we give it.
 export type KalfaNodeConfig =
-  | { type: 'trigger.whatsapp_inbound'; config: WhatsappInboundConfig }
+  | { type: typeof whatsappInboundDefinition.type; config: WhatsappInboundConfig }
   | { type: typeof webhookTriggerDefinition.type; config: WebhookTriggerConfig }
   | { type: typeof aiAgentDefinition.type; config: AiAgentConfig }
   | { type: typeof scheduleDefinition.type; config: ScheduleTriggerConfig }
@@ -756,7 +671,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   [importGuestListDefinition.type]: importGuestListDefinition.deploymentBindings,
   [waitDefinition.type]: waitDefinition.deploymentBindings,
   [scheduleDefinition.type]: scheduleDefinition.deploymentBindings,
-  'trigger.whatsapp_inbound': { phoneNumberId: 'identifier' },
+  [whatsappInboundDefinition.type]: whatsappInboundDefinition.deploymentBindings,
   // A HASH, not the token, and the public id — no longer a secret that must not
   // travel, but both authenticate to THIS installation and resolve to nothing
   // anywhere else. Declared with the rest of the node's contract.
@@ -779,7 +694,9 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
 };
 
 export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
-  'trigger.whatsapp_inbound': ['label', 'description'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [whatsappInboundDefinition.type]: whatsappInboundDefinition.requiredFields,
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [webhookTriggerDefinition.type]: webhookTriggerDefinition.requiredFields,
@@ -920,7 +837,7 @@ export function triggerSuppliesGuestContext(
   triggerType: string,
   properties: Record<string, unknown>,
 ): boolean {
-  if (triggerType !== 'trigger.whatsapp_inbound') return false;
+  if (triggerType !== whatsappInboundDefinition.type) return false;
 
   const kinds = properties.messageKinds;
   if (!Array.isArray(kinds) || kinds.length === 0) return true;
@@ -930,25 +847,12 @@ export function triggerSuppliesGuestContext(
       typeof entry === 'string'
         ? entry
         : (entry as { value?: unknown } | null)?.value;
-    return typeof value === 'string' && !OWNER_WHATSAPP_MESSAGE_KINDS.includes(value);
+    return (
+      typeof value === 'string' &&
+      !whatsappInboundDefinition.OWNER_WHATSAPP_MESSAGE_KINDS.includes(value)
+    );
   });
 }
-
-/**
- * The message kinds whose payload carries text a `keyword` can match.
- *
- * ⚠️ EXACTLY ONE, AND THAT IS A FACT ABOUT `inbound.ts`, NOT A POLICY. The text
- * a keyword is tested against is `readTextBody(payload)`, which reads
- * `payload.text?.body` and nothing else — so for every other kind the string is
- * `''` and `matchesKeyword` returns false for any non-empty keyword. A button
- * tap carries its label under `button.text` and its payload under
- * `button.payload`; neither reaches the keyword filter (the payload is routed on
- * separately, by `logic.switch` against `{{trigger.button_payload}}`).
- *
- * `keyword-reach.test.ts` proves this against `planRuns` itself rather than
- * against this list, so the list cannot drift away from the engine silently.
- */
-export const TEXT_BEARING_WHATSAPP_MESSAGE_KINDS: readonly string[] = ['text'];
 
 /**
  * Has this trigger been narrowed until nothing can ever match it?
@@ -976,7 +880,7 @@ export function triggerKeywordCanNeverMatch(
   triggerType: string,
   properties: Record<string, unknown>,
 ): boolean {
-  if (triggerType !== 'trigger.whatsapp_inbound') return false;
+  if (triggerType !== whatsappInboundDefinition.type) return false;
 
   const keyword = properties.keyword;
   if (typeof keyword !== 'string' || keyword.trim() === '') return false;
@@ -987,7 +891,10 @@ export function triggerKeywordCanNeverMatch(
   return !kinds.some((entry) => {
     const value =
       typeof entry === 'string' ? entry : (entry as { value?: unknown } | null)?.value;
-    return typeof value === 'string' && TEXT_BEARING_WHATSAPP_MESSAGE_KINDS.includes(value);
+    return (
+      typeof value === 'string' &&
+      whatsappInboundDefinition.TEXT_BEARING_WHATSAPP_MESSAGE_KINDS.includes(value)
+    );
   });
 }
 

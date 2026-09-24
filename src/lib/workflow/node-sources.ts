@@ -68,8 +68,8 @@ export function serverStepSources(): SourceFile[] {
 }
 
 /**
- * Each node folder's palette file (`nodes/<name>/<name>.ts`), the editor-side
- * counterpart of the entries still inline in `catalogue/schemas.ts`.
+ * Each node folder's palette file (`nodes/<name>/<name>.ts`) — where every
+ * palette entry is declared; `catalogue/schemas.ts` only assembles them.
  */
 export function nodePaletteSources(): SourceFile[] {
   return nodeFolders()
