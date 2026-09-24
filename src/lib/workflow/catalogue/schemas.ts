@@ -52,6 +52,7 @@ import {
 
 import { aiAgentPaletteItem } from '../nodes/action-ai-agent/action-ai-agent';
 import { callbackRequestPaletteItem } from '../nodes/action-create-callback-request/action-create-callback-request';
+import { importGuestListPaletteItem } from '../nodes/action-import-guest-list/action-import-guest-list';
 import { microsoftSendEmailPaletteItem } from '../nodes/action-microsoft-send-email/action-microsoft-send-email';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import {
@@ -443,48 +444,6 @@ export type { MicrosoftConnectionOption };
 // ---------------------------------------------------------------------------
 // The palette
 // ---------------------------------------------------------------------------
-
-
-// ---------------------------------------------------------------------------
-// action.import_guest_list
-// ---------------------------------------------------------------------------
-
-// NO BUSINESS FIELDS, and that is the design — see ImportGuestListConfig. The
-// only properties are the ones every node carries: a name, a description, the
-// on/off switch, the failure policy and the two branch handles.
-const importGuestListSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['action.import_guest_list'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
-    ...actionBranchesProperty,
-  },
-} satisfies NodeSchema;
-
-const importGuestListScope = getScope<typeof importGuestListSchema>;
-
-const importGuestListUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(importGuestListScope('properties.label'), importGuestListScope('properties.description')),
-    {
-      type: 'Label',
-      text: 'קולט את הקובץ או את אנשי הקשר שהגיעו בוואטסאפ ומעלה אותם לסקירה. האורחים נוצרים רק אחרי אישור במסך הייבוא — הצעד הזה לא מוסיף אורחים בעצמו.',
-    },
-    {
-      type: 'Label',
-      text: 'דורש טריגר וואטסאפ שמסומן בו "קובץ" או "כרטיסי אנשי קשר".',
-    },
-    {
-      type: 'Select',
-      scope: importGuestListScope('properties.errorPolicy'),
-      label: 'אם הקליטה נכשלת',
-    },
-    statusControl(importGuestListScope('properties.status')),
-  ],
-};
 
 
 // ---------------------------------------------------------------------------
@@ -1499,56 +1458,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
   callbackRequestPaletteItem,
   // Moved to its own folder — see nodes/action-webhook/.
   webhookPaletteItem,
-  {
-    type: 'action.import_guest_list' satisfies KalfaNodeType,
-    // Decision node so the failure branch has a handle to leave from — a file
-    // that will not parse is the case an owner most wants to route somewhere.
-    templateType: NodeType.DecisionNode,
-    label: 'קליטת רשימת אורחים',
-    description: 'מעלה לסקירה קובץ או אנשי קשר שהגיעו בוואטסאפ',
-    icon: 'UsersThree',
-    schema: importGuestListSchema,
-    uischema: importGuestListUiSchema,
-    outputSchema: {
-      type: 'default',
-      properties: {
-        // Declared so the variable picker OFFERS it: a later step can post the
-        // list onward, or a condition can branch on it. `array` is a real
-        // VariableType in the SDK, not a widening.
-        rows: { type: 'array', label: 'הרשימה עצמה', description: 'שם, טלפון, כמות וקבוצה לכל שורה' },
-        rowCount: { type: 'number', label: 'כמה שורות נקלטו' },
-        errorCount: { type: 'number', label: 'כמה שורות עם שגיאה' },
-        fileName: { type: 'string', label: 'שם הקובץ', description: 'ריק כשנשלחו אנשי קשר' },
-        reviewUrl: { type: 'string', label: 'קישור לסקירה ואישור' },
-        created: { type: 'boolean', label: 'נקלט עכשיו', description: 'שקר אם הרשימה כבר נקלטה קודם' },
-        // ⚠️ THE FAILURE BRANCH, PRODUCED SINCE DAY ONE AND NEVER DECLARED. The
-        // handler returns TWO shapes: `{ staged: true, rows, … }` on success and
-        // `{ staged: false, reason, message }` down the error port. Only the
-        // first was published, so the picker never offered the other — and the
-        // guest-import starter had to hard-code `{{…reason?}}` and
-        // `{{…message?}}` from knowledge of the source file.
-        //
-        // Declared on the SAME schema rather than through the SDK's `variant`
-        // output form. That form exists — `OutputVariant`, keyed on a
-        // `dataPropertyName`/`dataPropertyValue` pair that `staged` would fit
-        // exactly — and the bundle does consume it. But NO node in this
-        // catalogue uses it, and whether the picker RENDERS it is a claim about
-        // a UI that only a browser can settle. A field absent on the other
-        // branch resolves to empty with `?`, which is what the templates
-        // already do.
-        staged: { type: 'boolean', label: 'נקלט בהצלחה', description: 'שקר במסלול "נכשל"' },
-        reason: { type: 'string', label: 'סיבת הכישלון', description: 'קיים רק במסלול "נכשל"' },
-        message: { type: 'string', label: 'פירוט הכישלון', description: 'קיים רק במסלול "נכשל"' },
-      },
-    },
-    defaultPropertiesData: {
-      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
-      status: nodeStatusOptions.active.value,
-      label: 'קליטת רשימת אורחים',
-      description: 'מעלה לסקירה קובץ או אנשי קשר שהגיעו בוואטסאפ',
-      errorPolicy: errorPolicyOptions.fail.value,
-    },
-  } satisfies PaletteItem<typeof importGuestListSchema>,
+  // Moved to its own folder — see nodes/action-import-guest-list/.
+  importGuestListPaletteItem,
   {
     type: 'logic.wait' satisfies KalfaNodeType,
     label: 'המתנה',

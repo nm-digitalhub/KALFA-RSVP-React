@@ -1,5 +1,6 @@
 import type { KalfaNodeType } from '../catalogue/types';
 import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
+import * as importGuestListDefinition from '../nodes/action-import-guest-list/definition';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as sendTemplateDefinition from '../nodes/action-send-template/definition';
 import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definition';
@@ -79,7 +80,7 @@ export const NODE_ACTIVITY_PROFILES: Readonly<Partial<Record<KalfaNodeType, Node
     [callbackRequestDefinition.type]: callbackRequestDefinition.activityProfile,
     'action.start_voice_call': { timeoutMs: 60_000 },
     [startRsvpAiCallbackDefinition.type]: startRsvpAiCallbackDefinition.activityProfile,
-    'action.import_guest_list': { timeoutMs: 300_000 },
+    [importGuestListDefinition.type]: importGuestListDefinition.activityProfile,
     'action.start_for_each_guest': { timeoutMs: 300_000 },
   });
 

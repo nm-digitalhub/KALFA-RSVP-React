@@ -17,6 +17,7 @@ import type { RsvpStatus } from '@/lib/constants';
 
 import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
 import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
+import * as importGuestListDefinition from '../nodes/action-import-guest-list/definition';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as sendTemplateDefinition from '../nodes/action-send-template/definition';
@@ -53,7 +54,7 @@ export const NODE_TYPES = [
   webhookDefinition.type,
   setGuestFieldDefinition.type,
   callbackRequestDefinition.type,
-  'action.import_guest_list',
+  importGuestListDefinition.type,
   'logic.wait',
   sendTemplateDefinition.type,
   'action.start_for_each_guest',
@@ -226,21 +227,10 @@ export type WaitConfig = {
   unit: WaitUnitValue;
 };
 
-/**
- * `action.import_guest_list` — take the list that started this run and stage it.
- *
- * NO CONFIGURATION, deliberately. Every judgement a list needs is either already
- * made (which event: the trigger resolved the owner's, and refuses when there is
- * more than one active) or is the WORKFLOW's to make with the nodes around it
- * (notify? branch on how many rows? call the office?). A `mode` field here would
- * be a business rule buried in a node instead of drawn on the canvas.
- *
- * IT STAGES; IT DOES NOT CREATE GUESTS. The rows land as PENDING and a human
- * confirms them in the app — the same gate the hard-coded import has always had,
- * and the reason a leaked or mistaken list cannot put strangers into an event.
- * Direct creation is a separate decision, not an option hidden in a checkbox.
- */
-export type ImportGuestListConfig = Record<string, never>;
+// `action.import_guest_list` — declared with the rest of its contract in
+// `nodes/action-import-guest-list/definition.ts`, re-exported here for
+// existing readers.
+export type ImportGuestListConfig = importGuestListDefinition.ImportGuestListConfig;
 
 /**
  * An external system calls in, and a run starts.
@@ -764,7 +754,7 @@ export type KalfaNodeConfig =
   | { type: typeof webhookDefinition.type; config: WebhookConfig }
   | { type: typeof setGuestFieldDefinition.type; config: SetGuestFieldConfig }
   | { type: typeof callbackRequestDefinition.type; config: CreateCallbackRequestConfig }
-  | { type: 'action.import_guest_list'; config: ImportGuestListConfig }
+  | { type: typeof importGuestListDefinition.type; config: ImportGuestListConfig }
   | { type: 'logic.wait'; config: WaitConfig }
   | { type: typeof sendTemplateDefinition.type; config: SendTemplateConfig }
   | { type: 'action.start_for_each_guest'; config: ForEachGuestConfig }
@@ -919,6 +909,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   [updateGuestStatusDefinition.type]: updateGuestStatusDefinition.deploymentBindings,
   [sendWhatsappDefinition.type]: sendWhatsappDefinition.deploymentBindings,
   [startRsvpAiCallbackDefinition.type]: startRsvpAiCallbackDefinition.deploymentBindings,
+  [importGuestListDefinition.type]: importGuestListDefinition.deploymentBindings,
   'trigger.whatsapp_inbound': { phoneNumberId: 'identifier' },
   // A HASH, not the token — so this is no longer a secret that must not travel,
   // but it still authenticates to THIS installation and resolves to nothing
@@ -996,7 +987,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [callbackRequestDefinition.type]: callbackRequestDefinition.requiredFields,
-  'action.import_guest_list': ['label', 'description'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [importGuestListDefinition.type]: importGuestListDefinition.requiredFields,
   'action.start_for_each_guest': ['label', 'description', 'targetWorkflowId', 'maxGuests'],
   'action.start_voice_call': ['label', 'description', 'purposeKey'],
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts

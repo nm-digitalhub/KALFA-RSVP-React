@@ -13,6 +13,7 @@
 // the definition. No adapter changes.
 import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
 import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
+import * as importGuestListDefinition from '../nodes/action-import-guest-list/definition';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as sendTemplateDefinition from '../nodes/action-send-template/definition';
@@ -44,7 +45,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: webhookDefinition.type, isTrigger: webhookDefinition.isTrigger },
   { type: setGuestFieldDefinition.type, isTrigger: setGuestFieldDefinition.isTrigger },
   { type: callbackRequestDefinition.type, isTrigger: callbackRequestDefinition.isTrigger },
-  { type: 'action.import_guest_list', isTrigger: false },
+  { type: importGuestListDefinition.type, isTrigger: importGuestListDefinition.isTrigger },
   { type: 'logic.wait', isTrigger: false },
   { type: sendTemplateDefinition.type, isTrigger: sendTemplateDefinition.isTrigger },
   { type: 'action.start_for_each_guest', isTrigger: false },
