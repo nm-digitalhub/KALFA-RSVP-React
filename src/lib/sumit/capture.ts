@@ -18,13 +18,16 @@ export interface SumitCaptureParams {
   // Receipt "לכבוד" line — without it SUMIT prints "כרטיס ללא שם"
   // (observed on the live doc-check receipt 40106).
   customerName?: string;
-  // The hold's SUMIT customer number (campaigns.sumit_customer_id), when
-  // known. Belt-and-braces: the saved token already resolves to the right
-  // customer via its own PaymentMethod link, but sending Customer.ID too
-  // removes any dependency on that being reliable in every case (verified gap
-  // 2026-08-30: a fresh charge with the SAME token but no Customer.ID DID
-  // create a new customer in one live test — see
-  // plans/sumit-customer-id-reconciliation.md §5a).
+  // The hold's SUMIT customer number (campaigns.sumit_customer_id today; the
+  // payment method's provider_customer_id once payments move to their own
+  // tables), when known. Belt-and-braces ONLY: a charge on the saved token
+  // lands on the customer the token was saved under at hold time — SUMIT's
+  // documentation says so and it was verified live 2026-06-29 (₪4 hold + ₪1
+  // capture, receipt on the hold's customer; settled 2026-08-27, see
+  // plans/sumit-customer-id-reconciliation.md "Problem 2"). Duplicate
+  // customers arise only CROSS-campaign (a repeat customer's next HOLD without
+  // Customer.ID), which is authorize.ts's concern, not this capture's. Sending
+  // Customer.ID here costs nothing and pins the receipt explicitly.
   customerId?: number | null;
   /**
    * OPTIONAL receipt breakdown — one Items row per component ("דמי הפעלה",
@@ -111,8 +114,6 @@ export interface SumitCaptureResult {
 //     authorize response and stored at the hold).
 //   - NO explicit VATRate — the company-default VAT balances the document
 //     (sending VATRate produced "products vs payments mismatch").
-//   - NO CreditCardAuthNumber — capturing the original (often expired) J5 auth is
-//     declined (004); a FRESH charge on the saved token succeeds.
 //   - AutoCapture:true + PreventDocumentCreation:false → a real receipt, emailed.
 // IMPORTANT: a top-level Status of 0 only means the request was well-formed; the
 // PAYMENT can still be DECLINED (Data.Payment.ValidPayment === false, e.g. 004).
