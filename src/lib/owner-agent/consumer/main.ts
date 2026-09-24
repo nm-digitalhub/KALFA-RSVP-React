@@ -6,6 +6,7 @@
 //
 //   QUEUES.ownerAgentReply        one job at a time → reply.ts (the answer)
 //   QUEUES.ownerAgentIntakeSweep  every 5 minutes   → sweep.ts (stranded / expired rows)
+//   QUEUES.ownerAgentRetention    daily, 04:15 IL   → retention.ts (7-day text, 14-day sessions)
 //
 // Started as `node --env-file=.env.local dist/owner-agent.cjs` from the
 // repository root (ecosystem.config.cjs): Node loads the env file before any
@@ -15,7 +16,7 @@ import { PgBoss, type Job } from 'pg-boss';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { getWhatsAppConfig } from '@/lib/data/outreach-config';
-import { runOwnerAgent } from '@/lib/owner-agent/runner';
+import { ownerAgentPaths, runOwnerAgent } from '@/lib/owner-agent/runner';
 import { deterministicJobId } from '@/lib/queue/deterministic-id';
 import { QUEUES, type OwnerAgentReplyJob } from '@/lib/queue/queues';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -23,9 +24,12 @@ import { sendWhatsAppText } from '@/lib/whatsapp/client';
 
 import { OWNER_AGENT_REPLY_QUEUE_POLICY, OWNER_AGENT_STOP_TIMEOUT_MS } from './budgets';
 import { handleOwnerAgentReply, type ReplyDeps } from './reply';
+import { runOwnerAgentRetention } from './retention';
 import { createSessionMemory, sessionsFilePath } from './sessions';
 import { createReplyStore } from './store';
 import { runStrandedIntakeSweep } from './sweep';
+
+const SCHEDULE_TZ = 'Asia/Jerusalem';
 
 // Code-shaped messages only. Anything else — a library error that might quote
 // a row or a URL — is reported as `unexpected`.
@@ -152,9 +156,20 @@ async function main(): Promise<void> {
     }),
   );
 
-  await boss.schedule(QUEUES.ownerAgentIntakeSweep, '*/5 * * * *');
+  await boss.work(
+    QUEUES.ownerAgentRetention,
+    { pollingIntervalSeconds: 30 },
+    guarded(QUEUES.ownerAgentRetention, async () => {
+      await runOwnerAgentRetention({ store, sessions, paths: ownerAgentPaths(repoDir), now: Date.now, log });
+    }),
+  );
 
-  log('[owner-agent] started — reply queue and sweep up');
+  await boss.schedule(QUEUES.ownerAgentIntakeSweep, '*/5 * * * *');
+  // Daily at 04:15 Israel time: off-peak, on a minute none of the worker's
+  // nightly crons (03:20–04:50) uses.
+  await boss.schedule(QUEUES.ownerAgentRetention, '15 4 * * *', null, { tz: SCHEDULE_TZ });
+
+  log('[owner-agent] started — reply queue, sweep and retention up');
 }
 
 main().catch(async (e) => {

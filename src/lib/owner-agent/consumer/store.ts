@@ -113,6 +113,12 @@ export interface ReplyStore {
   listStranded(olderThanIso: string, newerThanIso: string, limit: number): Promise<Array<{ id: string; wamid: string }>>;
   /** Unanswered rows received at or before `cutoffIso` — past the 24h window. */
   listExpirable(cutoffIso: string, limit: number): Promise<Array<{ id: string; wamid: string; staffUserId: string }>>;
+  /**
+   * Retention (decision 9.8): delete intake rows received before `cutoffIso`,
+   * whatever their status; returns how many. Their audit rows stay — the FK is
+   * ON DELETE SET NULL, and an audit row holds no text.
+   */
+  deleteIntakeReceivedBefore(cutoffIso: string): Promise<number>;
 }
 
 export function createReplyStore(client: AdminClient): ReplyStore {
@@ -257,6 +263,15 @@ export function createReplyStore(client: AdminClient): ReplyStore {
         .limit(limit);
       if (error) fail('list_expirable', error);
       return (data ?? []).map((r) => ({ id: r.id, wamid: r.wamid, staffUserId: r.staff_user_id }));
+    },
+
+    async deleteIntakeReceivedBefore(cutoffIso) {
+      const { count, error } = await client
+        .from('owner_agent_intake')
+        .delete({ count: 'exact' })
+        .lt('received_at', cutoffIso);
+      if (error) fail('retention_delete', error);
+      return count ?? 0;
     },
   };
 }
