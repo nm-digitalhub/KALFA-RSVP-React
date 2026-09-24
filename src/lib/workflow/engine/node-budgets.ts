@@ -2,6 +2,7 @@ import type { KalfaNodeType } from '../catalogue/types';
 import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
+import * as updateGuestStatusDefinition from '../nodes/action-update-guest-status/definition';
 import * as webhookDefinition from '../nodes/action-webhook/definition';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
@@ -70,7 +71,7 @@ export const NODE_ACTIVITY_PROFILES: Readonly<Partial<Record<KalfaNodeType, Node
     'action.send_whatsapp': { timeoutMs: 30_000 },
     'action.send_template': { timeoutMs: 30_000 },
     [notifyTeamDefinition.type]: notifyTeamDefinition.activityProfile,
-    'action.update_guest_status': { timeoutMs: 20_000 },
+    [updateGuestStatusDefinition.type]: updateGuestStatusDefinition.activityProfile,
     [setGuestFieldDefinition.type]: setGuestFieldDefinition.activityProfile,
     [callbackRequestDefinition.type]: callbackRequestDefinition.activityProfile,
     'action.start_voice_call': { timeoutMs: 60_000 },

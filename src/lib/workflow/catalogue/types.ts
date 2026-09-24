@@ -22,6 +22,7 @@ import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
+import * as updateGuestStatusDefinition from '../nodes/action-update-guest-status/definition';
 import * as webhookDefinition from '../nodes/action-webhook/definition';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
@@ -41,7 +42,7 @@ export const NODE_TYPES = [
   'trigger.sumit_card',
   conditionDefinition.type,
   switchDefinition.type,
-  'action.update_guest_status',
+  updateGuestStatusDefinition.type,
   'action.send_whatsapp',
   microsoftSendEmailDefinition.type,
   'action.start_rsvp_ai_callback',
@@ -575,11 +576,22 @@ export const ACTION_BRANCH_HANDLES = {
   error: 'source:inner:error',
 } as const;
 
-export type UpdateGuestStatusConfig = {
-  // `rsvpStatus`, not `status`: the SDK reserves `status` for the node's own
-  // Active / Draft / Disabled lifecycle. See the schema for the full note.
-  rsvpStatus: RsvpStatus;
-};
+// `action.update_guest_status` — declared with the rest of its contract in
+// `nodes/action-update-guest-status/definition.ts`, re-exported here for
+// existing readers.
+export type UpdateGuestStatusConfig = updateGuestStatusDefinition.UpdateGuestStatusConfig;
+
+/**
+ * ⚠️ A COMPILE ERROR IF THE DEFINITION'S RSVP STATUSES DRIFT FROM `RsvpStatus`.
+ * The definition imports nothing, so it spells the union out; assigning across
+ * it in both directions fails the moment the two lists disagree.
+ */
+type _DefinitionRsvpStatus = UpdateGuestStatusConfig['rsvpStatus'];
+const _rsvpStatusMatchesTheDefinition: [_DefinitionRsvpStatus, RsvpStatus] = [
+  null as unknown as RsvpStatus,
+  null as unknown as _DefinitionRsvpStatus,
+];
+void _rsvpStatusMatchesTheDefinition;
 
 // The reply the workflow sends back to the guest who wrote in.
 //
@@ -757,7 +769,7 @@ export type KalfaNodeConfig =
   | { type: 'trigger.sumit_card'; config: SumitCardTriggerConfig }
   | { type: typeof conditionDefinition.type; config: ConditionConfig }
   | { type: typeof switchDefinition.type; config: SwitchConfig }
-  | { type: 'action.update_guest_status'; config: UpdateGuestStatusConfig }
+  | { type: typeof updateGuestStatusDefinition.type; config: UpdateGuestStatusConfig }
   | { type: 'action.send_whatsapp'; config: SendWhatsappConfig }
   | { type: typeof microsoftSendEmailDefinition.type; config: MicrosoftSendEmailConfig }
   | { type: 'action.start_rsvp_ai_callback'; config: StartRsvpAiCallbackConfig }
@@ -918,6 +930,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   [switchDefinition.type]: switchDefinition.deploymentBindings,
   [notifyTeamDefinition.type]: notifyTeamDefinition.deploymentBindings,
   [setGuestFieldDefinition.type]: setGuestFieldDefinition.deploymentBindings,
+  [updateGuestStatusDefinition.type]: updateGuestStatusDefinition.deploymentBindings,
   'trigger.whatsapp_inbound': { phoneNumberId: 'identifier' },
   // A HASH, not the token — so this is no longer a secret that must not travel,
   // but it still authenticates to THIS installation and resolves to nothing
@@ -968,7 +981,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [setValueDefinition.type]: setValueDefinition.requiredFields,
-  'action.update_guest_status': ['label', 'description', 'rsvpStatus'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [updateGuestStatusDefinition.type]: updateGuestStatusDefinition.requiredFields,
   'action.send_whatsapp': ['label', 'description', 'body'],
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
@@ -1036,7 +1051,7 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
 export const ARM_NOTICE_PATH = '/armNotice';
 
 export const GUEST_SCOPED_NODE_TYPES: readonly KalfaNodeType[] = [
-  'action.update_guest_status',
+  updateGuestStatusDefinition.type,
   'action.send_whatsapp',
   'action.send_template',
   setGuestFieldDefinition.type,

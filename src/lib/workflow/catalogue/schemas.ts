@@ -30,8 +30,6 @@
 import { NodeType, getScope } from '@workflowbuilder/sdk';
 import type { NodeSchema, PaletteItem, UISchema } from '@workflowbuilder/sdk';
 
-import { RSVP_STATUSES } from '@/lib/constants';
-
 import {
   CHECKBOX_LIST_FORMAT,
   NODE_RUN_FORMAT,
@@ -47,6 +45,7 @@ import {
   identityProperties,
   nodeStatusOptions,
   requiredText,
+  rsvpStatusOptions,
   statusControl,
   statusProperty,
 } from './editor-shared';
@@ -63,6 +62,7 @@ import { notifyTeamPaletteItem } from '../nodes/action-notify-team/action-notify
 import { setGuestFieldPaletteItem } from '../nodes/action-set-guest-field/action-set-guest-field';
 import { sumitCreateCustomerPaletteItem } from '../nodes/action-sumit-create-customer/action-sumit-create-customer';
 import { sumitCreateDocumentPaletteItem } from '../nodes/action-sumit-create-document/action-sumit-create-document';
+import { updateGuestStatusPaletteItem } from '../nodes/action-update-guest-status/action-update-guest-status';
 import { webhookPaletteItem } from '../nodes/action-webhook/action-webhook';
 import { conditionPaletteItem } from '../nodes/logic-condition/logic-condition';
 import { setValuePaletteItem } from '../nodes/logic-set-value/logic-set-value';
@@ -76,16 +76,6 @@ import {
   type KalfaNodeType,
   webhookMethodOptions,
 } from './types';
-
-// ---------------------------------------------------------------------------
-// Option sets — the same `{ label, value }` shape the SDK's own statusOptions use
-// ---------------------------------------------------------------------------
-
-const rsvpStatusOptions = {
-  attending: { label: 'מגיע/ה', value: RSVP_STATUSES[0] },
-  declined: { label: 'לא מגיע/ה', value: RSVP_STATUSES[1] },
-  maybe: { label: 'אולי', value: RSVP_STATUSES[2] },
-} as const;
 
 // ---------------------------------------------------------------------------
 // trigger.whatsapp_inbound
@@ -435,66 +425,6 @@ const sumitCardTriggerUiSchema: UISchema = {
       text: 'הרצה שמתחילה כאן אינה קשורה לאורח, ולכן צעדים שפועלים על אורח (עדכון סטטוס, שליחת וואטסאפ, בקשת חזרה) ייכשלו בתוכה.',
     },
     statusControl(sumitCardTriggerScope('properties.status')),
-  ],
-};
-
-// ---------------------------------------------------------------------------
-// action.update_guest_status
-// ---------------------------------------------------------------------------
-
-const updateGuestStatusSchema = {
-  type: 'object',
-  // `rsvpStatus`, not `status`. The SDK reserves `status` for the node's own
-  // Active/Draft/Disabled lifecycle — it is in `statusOptions` and drives the
-  // status badge — and this node happened to have picked the same word for the
-  // guest's RSVP. Two different meanings under one key in one object is a bug
-  // waiting for whoever reads it next, so ours moved. `readRsvpStatus` in the
-  // handler still accepts the old key, because diagrams saved before this carry
-  // it.
-  required: NODE_REQUIRED_FIELDS['action.update_guest_status'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    ...actionBranchesProperty,
-    rsvpStatus: { ...requiredText, options: Object.values(rsvpStatusOptions) },
-    // Surfaced on THIS node only. Upstream's guidance is to spread the fragment
-    // "on node types that should surface the choice; omit it elsewhere — the
-    // runner defaults to 'fail' when the field is absent."
-    //
-    // The trigger is excluded because a trigger that throws has produced no run
-    // to continue. The condition is excluded for a sharper reason: under
-    // 'continue' the runner schedules EVERY outgoing edge, so a condition that
-    // failed would fire both branches at once and the guest would be marked
-    // attending and declined in the same run.
-    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
-  },
-} satisfies NodeSchema;
-
-const updateGuestStatusScope = getScope<typeof updateGuestStatusSchema>;
-
-const updateGuestStatusUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(updateGuestStatusScope('properties.label'), updateGuestStatusScope('properties.description')),
-    {
-      type: 'Select',
-      scope: updateGuestStatusScope('properties.rsvpStatus'),
-      label: 'הסטטוס החדש',
-    },
-    {
-      type: 'Select',
-      scope: updateGuestStatusScope('properties.errorPolicy'),
-      label: 'אם הצעד נכשל',
-    },
-    // The label above says what is chosen; this says what it costs. 'continue'
-    // does not retry and does not recover — the guest's status stays unwritten
-    // and only the run's own verdict changes. Without this line the option
-    // reads like a safety net.
-    {
-      type: 'Label',
-      text: 'בחירה ב"המשך" לא כותבת את הסטטוס — היא רק מונעת מהכשל לסמן את ההרצה ככושלת. הכשל עצמו עדיין נרשם ביומן.',
-    },
-    statusControl(updateGuestStatusScope('properties.status')),
   ],
 };
 
@@ -1684,33 +1614,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
   conditionPaletteItem,
   // Moved to its own folder — see nodes/logic-switch/.
   switchPaletteItem,
-  {
-    type: 'action.update_guest_status' satisfies KalfaNodeType,
-    // Rendered as a decision node so the failure branch has a handle to leave
-    // from. Without it `errorPolicy: 'errorRoute'` names a port no edge carries,
-    // which is a guaranteed dead end — the reason the option was withheld.
-    templateType: NodeType.DecisionNode,
-    label: 'עדכון סטטוס אורח',
-    description: 'קובע את אישור ההגעה של האורח ששלח את ההודעה',
-    icon: 'UserCheck',
-    schema: updateGuestStatusSchema,
-    uischema: updateGuestStatusUiSchema,
-    outputSchema: {
-      type: 'default',
-      properties: {
-        guestId: { type: 'string', label: 'מזהה האורח', description: 'האורח שעודכן' },
-        status: { type: 'string', label: 'הסטטוס שנקבע' },
-      },
-    },
-    defaultPropertiesData: {
-      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
-      status: nodeStatusOptions.active.value,
-      label: 'עדכון סטטוס אורח',
-      description: 'קובע את אישור ההגעה של האורח ששלח את ההודעה',
-      rsvpStatus: rsvpStatusOptions.attending.value,
-      errorPolicy: errorPolicyOptions.fail.value,
-    },
-  } satisfies PaletteItem<typeof updateGuestStatusSchema>,
+  // Moved to its own folder — see nodes/action-update-guest-status/.
+  updateGuestStatusPaletteItem,
   {
     type: 'action.send_whatsapp' satisfies KalfaNodeType,
     // Rendered as a decision node so the failure branch has a handle to leave

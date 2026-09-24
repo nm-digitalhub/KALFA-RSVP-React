@@ -2,6 +2,7 @@ import type { PaletteItem } from "@workflowbuilder/sdk";
 
 import { RSVP_STATUSES } from "@/lib/constants";
 import * as microsoftSendEmailDefinition from "@/lib/workflow/nodes/action-microsoft-send-email/definition";
+import * as updateGuestStatusDefinition from "@/lib/workflow/nodes/action-update-guest-status/definition";
 
 // A stored value in a shape the schema no longer accepts, repaired on the way in.
 //
@@ -174,7 +175,7 @@ export function normalizeLegacyProperties<T extends { data?: { type?: unknown; p
     if (!properties) return node;
 
     const legacyRsvpStatus =
-      type === "action.update_guest_status" &&
+      type === updateGuestStatusDefinition.type &&
       !("rsvpStatus" in properties) &&
       typeof properties.status === "string" &&
       (RSVP_STATUSES as readonly string[]).includes(properties.status)

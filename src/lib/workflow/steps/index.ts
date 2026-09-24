@@ -6,14 +6,12 @@
 // NodeExecutionResult. It never claims its own ledger row — that happens one
 // layer up, in activity-runner.ts, so the claim/side-effect ordering is written
 // once rather than in every handler.
-import { RSVP_STATUSES, type RsvpStatus } from '@/lib/constants';
 import { SUMIT_HOLDS_FOLDER_ID, sumitHoldCurrencyLabel, sumitHoldStatusLabel } from '@/lib/sumit/hold-status';
 
 import { toBusinessOutcome } from '../voice-outcome';
 
 import {
   ACTION_BRANCH_HANDLES,
-  LEGACY_PROPERTY_ALIASES,
   MAX_FANOUT_DEPTH,
   type KalfaNodeType,
 } from '../catalogue/types';
@@ -45,6 +43,8 @@ import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-cus
 import { sumitCreateCustomer } from '../nodes/action-sumit-create-customer/runtime';
 import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
 import { sumitCreateDocument } from '../nodes/action-sumit-create-document/runtime';
+import * as updateGuestStatusDefinition from '../nodes/action-update-guest-status/definition';
+import { updateGuestStatus } from '../nodes/action-update-guest-status/runtime';
 import * as webhookDefinition from '../nodes/action-webhook/definition';
 import { webhook } from '../nodes/action-webhook/runtime';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
@@ -181,73 +181,6 @@ const whatsappInbound: StepHandler = async (_config, ctx) => ({
 // The handler and its branch evaluators live in `nodes/logic-switch/runtime.ts`.
 // The evaluators are re-exported for every existing caller of this module.
 export { evaluateSwitchBranch, evaluateSwitchCondition } from '../nodes/logic-switch/runtime';
-
-// ---------------------------------------------------------------------------
-// action.update_guest_status
-// ---------------------------------------------------------------------------
-
-// The first real side effect, and deliberately one that sends nothing outward:
-// it changes a row we own. `send_whatsapp` is the next node, once this chain is
-// proven end to end.
-const updateGuestStatus: StepHandler = async (config, ctx) => {
-  // `rsvpStatus` first, `status` second. The key was renamed when the SDK's own
-  // node-lifecycle `status` — Active / Draft / Disabled — moved into the same
-  // properties object; every diagram saved before that carries the old name and
-  // has to keep working untouched.
-  const status: RsvpStatus = readEnum(
-    'rsvpStatus' in config
-      ? config
-      : { ...config, rsvpStatus: config[LEGACY_PROPERTY_ALIASES.rsvpStatus!] },
-    'rsvpStatus',
-    RSVP_STATUSES,
-    'action.update_guest_status',
-  );
-
-  const { eventId, contactId } = requireGuestContext(ctx, 'action.update_guest_status');
-  const guests = await ctx.deps.guests.getGuestsForContact(eventId, contactId);
-
-  // ריבוי-אורחים: a phone may back several guests, and "who did this message
-  // mean?" has no answer. The inbound webhook refuses to guess (C9 in
-  // webhook-processing.ts) and so does this: the same rule, because it is a rule
-  // about shared phones, not about which code path arrived at it. Reported as a
-  // completed step with `skipped: true` rather than a failure — nothing went
-  // wrong, there was simply nothing unambiguous to do.
-  if (guests.length !== 1) {
-    return {
-      output: {
-        skipped: true,
-        reason: guests.length === 0 ? 'no_guest_for_contact' : 'ambiguous_contact',
-        guestCount: guests.length,
-      },
-    };
-  }
-
-  const guest = guests[0]!;
-
-  // Through submit_rsvp, the same atomic gate the public form uses — it enforces
-  // token validity, event status and revocation. `attending` requires at least
-  // one attendee (the RPC rejects zero), so it defaults to a single adult and
-  // the guest refines the count via their link; declined/maybe carry none.
-  const outcome = await ctx.deps.guests.submitRsvp(guest.rsvp_token, {
-    status,
-    adults: status === 'attending' ? 1 : 0,
-    kids: 0,
-  });
-
-  if (!outcome.ok) {
-    // A refused RSVP is a real failure of this step — the owner drew a graph
-    // that promised to set a status and it did not get set. Permanent: a
-    // revoked token or a closed event will refuse every retry identically.
-    throw new PermanentNodeExecutionError(
-      'rsvp_rejected',
-      `עדכון סטטוס האורח נדחה (${outcome.reason ?? 'לא ידוע'}).`,
-    );
-  }
-
-  await ctx.deps.guests.recordRsvpFromWhatsapp(eventId, guest.id, status);
-
-  return { output: { guestId: guest.id, status } };
-};
 
 // ---------------------------------------------------------------------------
 // Dispatch
@@ -874,7 +807,7 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'trigger.sumit_card': sumitCardTrigger,
   [conditionDefinition.type]: condition,
   [switchDefinition.type]: switchNode,
-  'action.update_guest_status': updateGuestStatus,
+  [updateGuestStatusDefinition.type]: updateGuestStatus,
   'action.send_whatsapp': sendWhatsapp,
   [microsoftSendEmailDefinition.type]: microsoftSendEmail,
   'action.start_rsvp_ai_callback': startRsvpAiCallback,

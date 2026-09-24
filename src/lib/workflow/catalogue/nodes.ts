@@ -18,6 +18,7 @@ import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
+import * as updateGuestStatusDefinition from '../nodes/action-update-guest-status/definition';
 import * as webhookDefinition from '../nodes/action-webhook/definition';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
@@ -32,7 +33,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'trigger.sumit_card', isTrigger: true },
   { type: conditionDefinition.type, isTrigger: conditionDefinition.isTrigger },
   { type: switchDefinition.type, isTrigger: switchDefinition.isTrigger },
-  { type: 'action.update_guest_status', isTrigger: false },
+  { type: updateGuestStatusDefinition.type, isTrigger: updateGuestStatusDefinition.isTrigger },
   { type: 'action.send_whatsapp', isTrigger: false },
   { type: microsoftSendEmailDefinition.type, isTrigger: microsoftSendEmailDefinition.isTrigger },
   { type: 'action.start_rsvp_ai_callback', isTrigger: false },

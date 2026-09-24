@@ -3,8 +3,8 @@
 // The editor helpers every node's schema and uischema are built from: the
 // identity fields (name, description, arm notice), the per-step status switch,
 // the "required and not blank" string field, the `allOf` built from a node's
-// conditional contracts, and — for action nodes — the two branch handles and
-// the error-policy options.
+// conditional contracts, for action nodes the two branch handles and the
+// error-policy options, and the guest RSVP-status options.
 //
 // ⚠️ ITS OWN MODULE SO A NODE FOLDER CAN IMPORT IT. `schemas.ts` is the palette
 // aggregator — it imports every moved node's palette file — so a node that
@@ -17,6 +17,8 @@
 import { errorPolicyProperty, sharedProperties, statusOptions } from '@workflowbuilder/sdk';
 import type { UISchema } from '@workflowbuilder/sdk';
 
+import { RSVP_STATUSES } from '@/lib/constants';
+
 import {
   ACTION_BRANCH_HANDLES,
   ARM_NOTICE_PATH,
@@ -25,6 +27,16 @@ import {
   NODE_STATUSES,
   type KalfaNodeType,
 } from './types';
+
+// ---------------------------------------------------------------------------
+// Option sets — the same `{ label, value }` shape the SDK's own statusOptions use
+// ---------------------------------------------------------------------------
+
+export const rsvpStatusOptions = {
+  attending: { label: 'מגיע/ה', value: RSVP_STATUSES[0] },
+  declined: { label: 'לא מגיע/ה', value: RSVP_STATUSES[1] },
+  maybe: { label: 'אולי', value: RSVP_STATUSES[2] },
+} as const;
 
 // The two handles an action node draws, as DATA — the same mechanism already
 // proven on `logic.condition`, whose branches were verified rendering on a live
