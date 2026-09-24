@@ -10,6 +10,40 @@ import { phoneNumberIdSchema } from '@/lib/validation/whatsapp-numbers';
 // error the form has no field to attach to.
 
 /**
+ * Every message the owner-agent DAL throws on purpose. Written for the owner, and the
+ * ONLY messages an action lets through to the screen: anything else — a ZodError
+ * (whose message is JSON and may well contain these Hebrew strings), a driver error —
+ * is replaced by the action's generic sentence. Kept here rather than in the DAL so
+ * the actions can read it without importing a server module into their tests' mocks.
+ */
+export const OWNER_AGENT_ERRORS = {
+  settingsReadFailed: 'טעינת הגדרות הסוכן נכשלה',
+  numbersReadFailed: 'טעינת מספרי WhatsApp נכשלה',
+  staffReadFailed: 'טעינת רשימת הצוות נכשלה',
+  allowlistReadFailed: 'טעינת רשימת ההיתר נכשלה',
+  auditReadFailed: 'טעינת יומן הסוכן נכשלה',
+  switchFailed: 'עדכון מתג הסוכן נכשל',
+  numberSaveFailed: 'שמירת המספר נכשלה',
+  numberNotOnWaba: 'המספר שנבחר אינו מספר WhatsApp מחובר',
+  dailyCapSaveFailed: 'שמירת התקרה היומית נכשלה',
+  addFailed: 'הוספת המספר נכשלה',
+  notStaff: 'רק איש צוות פלטפורמה יכול להופיע ברשימת ההיתר',
+  duplicate: 'המספר הזה כבר ברשימת ההיתר',
+  invalidE164: 'מספר לא תקין — נדרש פורמט E.164',
+  entryUpdateFailed: 'עדכון הרשומה נכשל',
+  entryNotFound: 'הרשומה לא נמצאה',
+  relabelFailed: 'עדכון התווית נכשל',
+  removeFailed: 'הסרת המספר נכשלה',
+} as const;
+
+const KNOWN_ERRORS: ReadonlySet<string> = new Set(Object.values(OWNER_AGENT_ERRORS));
+
+/** True only for a message the DAL wrote for the owner — an exact match, not "has Hebrew". */
+export function isOwnerAgentUserError(message: string): boolean {
+  return KNOWN_ERRORS.has(message);
+}
+
+/**
  * app_settings_owner_agent_daily_cap_check: 0..10000.
  *
  * ⚠️ NOT z.coerce.number(). Coercion turns an empty field into 0, and 0 is a real

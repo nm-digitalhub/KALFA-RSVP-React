@@ -19,6 +19,7 @@ import {
   agentNumberSchema,
   allowlistEntryIdSchema,
   dailyCapSchema,
+  isOwnerAgentUserError,
   relabelAllowlistEntrySchema,
 } from '@/lib/validation/owner-agent';
 import { issuesToFieldErrors, type FormState } from '@/lib/validation/result';
@@ -44,12 +45,13 @@ function revalidate(): void {
 }
 
 /**
- * The DAL's messages are user-facing Hebrew by construction; anything else (a
- * ZodError, a driver error) is ours and must not reach the screen.
+ * Only a message the DAL wrote for the owner (OWNER_AGENT_ERRORS) reaches the screen.
+ * An exact match, not "contains Hebrew": a ZodError's message is the JSON of its
+ * issues, which carries these very Hebrew strings alongside paths and codes.
  */
 function safeMessage(err: unknown, fallback: string): string {
   const message = err instanceof Error ? err.message : '';
-  return /[֐-׿]/.test(message) ? message : fallback;
+  return isOwnerAgentUserError(message) ? message : fallback;
 }
 
 export async function setOwnerAgentEnabledAction(

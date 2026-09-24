@@ -138,16 +138,9 @@ describe('/admin/integrations/owner-agent', () => {
     expect((audit?.staffNames as Map<string, string>).get(STAFF_ID)).toBe('בעל המערכת');
   });
 
-  it('passes no raw phone number to any component', async () => {
-    const tree = await OwnerAgentPage();
-    // The data props handed to components (the client ones cross to the browser);
-    // element plumbing (`children`, component types) is not data and is skipped.
-    const json = JSON.stringify(collect(tree), (key, value) =>
-      key === '__type' || key === 'children' || key === 'type' ? undefined : value,
-    );
-    expect(json).toContain('050***4567'); // the walk really saw the allow-list
-    expect(json).not.toMatch(/\+\d{7,}/);
-  });
+  // "No raw phone reaches a component" is NOT asserted here: this file mocks the DAL,
+  // so it would only be checking its own fixtures. page-privacy.test.ts runs the real
+  // DAL under this page, fed raw E.164 rows, and asserts it there.
 
   it('says, until stages 4 and 6 ship, that nothing here takes effect yet', async () => {
     const tree = await OwnerAgentPage();

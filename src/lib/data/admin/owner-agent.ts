@@ -6,6 +6,7 @@ import { maskPhoneForDisplay } from '@/lib/phone';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import {
+  OWNER_AGENT_ERRORS as E,
   addAllowlistEntrySchema,
   allowlistEntryIdSchema,
   dailyCapSchema,
@@ -26,12 +27,13 @@ import type { NumberRole } from '@/lib/validation/provider-numbers';
 //
 // CLIENTS. The cookie client wherever RLS already lets the owner through, so the
 // policy stays a second layer rather than decoration: app_settings (staff policy),
-// provider_numbers (staff policy), and the allow-list and audit READS (owner-select
-// policies from the migration). The SERVICE-ROLE client only where RLS cannot serve:
+// provider_numbers (staff policy), platform_staff and platform_roles (owner-select
+// policies), and the allow-list and audit READS (owner-select policies from the
+// migration). The SERVICE-ROLE client only where RLS cannot serve:
 //   * owner_agent_allowlist WRITES — the table deliberately has no write policy, so
 //     service role is the only writer (migration §5);
-//   * the staff directory — profiles is readable by its own user only, and the
-//     verified-phone match needs every staff member's phone_verified_e164.
+//   * profiles — readable by its own user only, and the verified-phone match needs
+//     every staff member's phone_verified_e164.
 //
 // PRIVACY. No raw phone number leaves this module. Numbers are masked here, and the
 // verified-phone match is returned as a boolean — the comparison happens server-side.
@@ -108,7 +110,7 @@ export async function getOwnerAgentSettings(): Promise<OwnerAgentSettings> {
     .eq('id', SETTINGS_ID)
     .maybeSingle();
 
-  if (error || !data) throw new Error('טעינת הגדרות הסוכן נכשלה');
+  if (error || !data) throw new Error(E.settingsReadFailed);
   return {
     enabled: data.owner_agent_enabled,
     phoneNumberId: data.owner_agent_phone_number_id,
@@ -134,7 +136,7 @@ export async function listOwnerAgentNumbers(): Promise<OwnerAgentNumber[]> {
     .order('is_active', { ascending: false })
     .order('display_label', { ascending: true, nullsFirst: false });
 
-  if (error) throw new Error('טעינת מספרי WhatsApp נכשלה');
+  if (error) throw new Error(E.numbersReadFailed);
 
   const numbers: OwnerAgentNumber[] = [];
   for (const row of data ?? []) {
@@ -166,20 +168,21 @@ interface StaffDirectoryEntry {
  * so PostgREST cannot embed one in the other.
  */
 async function loadStaffDirectory(): Promise<Map<string, StaffDirectoryEntry>> {
-  const admin = createAdminClient();
-  const { data: staff, error } = await admin
+  const supabase = await createClient();
+  const { data: staff, error } = await supabase
     .from('platform_staff')
     .select('user_id, platform_roles(label, is_owner_role)');
-  if (error) throw new Error('טעינת רשימת הצוות נכשלה');
+  if (error) throw new Error(E.staffReadFailed);
 
   const ids = (staff ?? []).map((s) => s.user_id);
   const profiles = new Map<string, { full_name: string | null; phone_verified_e164: string | null }>();
   if (ids.length > 0) {
+    const admin = createAdminClient();
     const { data: rows, error: profilesError } = await admin
       .from('profiles')
       .select('id, full_name, phone_verified_e164')
       .in('id', ids);
-    if (profilesError) throw new Error('טעינת רשימת הצוות נכשלה');
+    if (profilesError) throw new Error(E.staffReadFailed);
     for (const p of rows ?? []) profiles.set(p.id, p);
   }
 
@@ -235,7 +238,7 @@ export async function listOwnerAgentAllowlist(): Promise<OwnerAgentAllowlistEntr
       .order('created_at', { ascending: true }),
     loadStaffDirectory(),
   ]);
-  if (error) throw new Error('טעינת רשימת ההיתר נכשלה');
+  if (error) throw new Error(E.allowlistReadFailed);
 
   return (data ?? []).map((row) => {
     const staff = directory.get(row.staff_user_id);
@@ -263,7 +266,7 @@ export async function listOwnerAgentAudit(): Promise<OwnerAgentAuditRow[]> {
     .select(OWNER_AGENT_AUDIT_COLUMNS)
     .order('occurred_at', { ascending: false })
     .limit(OWNER_AGENT_AUDIT_LIMIT);
-  if (error) throw new Error('טעינת יומן הסוכן נכשלה');
+  if (error) throw new Error(E.auditReadFailed);
 
   return (data ?? []).map((row) => ({
     id: row.id,
@@ -288,7 +291,7 @@ export async function setOwnerAgentEnabled(enabled: boolean): Promise<void> {
     .from('app_settings')
     .update({ owner_agent_enabled: enabled })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון מתג הסוכן נכשל');
+  if (error) throw new Error(E.switchFailed);
 
   await logActivity({ action: 'admin.owner_agent.enabled_set', meta: { enabled } });
 }
@@ -313,15 +316,15 @@ export async function setOwnerAgentPhoneNumber(phoneNumberId: string | null): Pr
       .eq('provider', 'meta_whatsapp')
       .eq('provider_ref', value)
       .maybeSingle();
-    if (lookupError) throw new Error('שמירת המספר נכשלה');
-    if (!number) throw new Error('המספר שנבחר אינו מספר WhatsApp מחובר');
+    if (lookupError) throw new Error(E.numberSaveFailed);
+    if (!number) throw new Error(E.numberNotOnWaba);
   }
 
   const { error } = await supabase
     .from('app_settings')
     .update({ owner_agent_phone_number_id: value })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('שמירת המספר נכשלה');
+  if (error) throw new Error(E.numberSaveFailed);
 
   // Meta's object id, not a phone number — the same thing the number-lifecycle
   // actions record.
@@ -340,7 +343,7 @@ export async function setOwnerAgentDailyCap(dailyCap: number): Promise<void> {
     .from('app_settings')
     .update({ owner_agent_daily_cap: cap })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('שמירת התקרה היומית נכשלה');
+  if (error) throw new Error(E.dailyCapSaveFailed);
 
   await logActivity({ action: 'admin.owner_agent.daily_cap_set', meta: { dailyCap: cap } });
 }
@@ -351,18 +354,20 @@ export async function addOwnerAgentAllowlistEntry(input: AddAllowlistEntryInput)
   const actor = await requirePlatformOwner();
   const parsed = addAllowlistEntrySchema.parse(input);
 
-  const admin = createAdminClient();
-
   // The FK to platform_staff(user_id) refuses a non-staff id too; asking first turns
-  // that into a sentence the owner can act on instead of a constraint error.
-  const { data: staff, error: staffError } = await admin
+  // that into a sentence the owner can act on instead of a constraint error. Read
+  // through the owner's session (owner-select policy); only the insert needs service
+  // role.
+  const supabase = await createClient();
+  const { data: staff, error: staffError } = await supabase
     .from('platform_staff')
     .select('user_id')
     .eq('user_id', parsed.staffUserId)
     .maybeSingle();
-  if (staffError) throw new Error('הוספת המספר נכשלה');
-  if (!staff) throw new Error('רק איש צוות פלטפורמה יכול להופיע ברשימת ההיתר');
+  if (staffError) throw new Error(E.addFailed);
+  if (!staff) throw new Error(E.notStaff);
 
+  const admin = createAdminClient();
   const { data, error } = await admin
     .from('owner_agent_allowlist')
     .insert({
@@ -376,10 +381,10 @@ export async function addOwnerAgentAllowlistEntry(input: AddAllowlistEntryInput)
     .single();
 
   if (error || !data) {
-    if (error?.code === '23505') throw new Error('המספר הזה כבר ברשימת ההיתר');
-    if (error?.code === '23514') throw new Error('מספר לא תקין — נדרש פורמט E.164');
-    if (error?.code === '23503') throw new Error('רק איש צוות פלטפורמה יכול להופיע ברשימת ההיתר');
-    throw new Error('הוספת המספר נכשלה');
+    if (error?.code === '23505') throw new Error(E.duplicate);
+    if (error?.code === '23514') throw new Error(E.invalidE164);
+    if (error?.code === '23503') throw new Error(E.notStaff);
+    throw new Error(E.addFailed);
   }
 
   await logActivity({
@@ -399,8 +404,8 @@ export async function setOwnerAgentAllowlistEnabled(id: string, enabled: boolean
     .update({ enabled: parsed.enabled })
     .eq('id', parsed.id)
     .select('id');
-  if (error) throw new Error('עדכון הרשומה נכשל');
-  if (!data || data.length === 0) throw new Error('הרשומה לא נמצאה');
+  if (error) throw new Error(E.entryUpdateFailed);
+  if (!data || data.length === 0) throw new Error(E.entryNotFound);
 
   await logActivity({
     action: 'admin.owner_agent.allowlist_enabled_set',
@@ -418,8 +423,8 @@ export async function relabelOwnerAgentAllowlistEntry(id: string, label: string)
     .update({ label: parsed.label })
     .eq('id', parsed.id)
     .select('id');
-  if (error) throw new Error('עדכון התווית נכשל');
-  if (!data || data.length === 0) throw new Error('הרשומה לא נמצאה');
+  if (error) throw new Error(E.relabelFailed);
+  if (!data || data.length === 0) throw new Error(E.entryNotFound);
 
   // The label is free text an owner typed ("הנייד של …") — the row id is enough.
   await logActivity({
@@ -438,8 +443,8 @@ export async function removeOwnerAgentAllowlistEntry(id: string): Promise<void> 
     .delete()
     .eq('id', entryId)
     .select('id, staff_user_id');
-  if (error) throw new Error('הסרת המספר נכשלה');
-  if (!data || data.length === 0) throw new Error('הרשומה לא נמצאה');
+  if (error) throw new Error(E.removeFailed);
+  if (!data || data.length === 0) throw new Error(E.entryNotFound);
 
   await logActivity({
     action: 'admin.owner_agent.allowlist_removed',

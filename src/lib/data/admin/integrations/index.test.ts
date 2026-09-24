@@ -219,10 +219,15 @@ describe('the owner-agent card', () => {
     });
   });
 
-  it('is locked even for a viewer holding every catalogue key', async () => {
-    viewer(['manage_settings', 'manage_voice', 'integrations.manage', 'view_webhooks']);
+  it('is locked for a non-owner even if has_platform_permission says yes to EVERYTHING', async () => {
+    // Including 'OWNER'. The only thing keeping the card closed is that the sentinel
+    // is never asked about — if the filter in getIntegrationsIndex were removed, this
+    // viewer's `true` for 'OWNER' would open it, and this test would fail.
+    vi.mocked(isPlatformOwner).mockResolvedValue(false);
+    vi.mocked(hasPlatformPermission).mockResolvedValue(true);
     const { cards } = await byKey();
-    expect(cards['owner-agent'].canOpen).toBe(false);
+    expect(cards['owner-agent']).toMatchObject({ canOpen: false, href: null });
+    expect(cards['meta-whatsapp'].canOpen).toBe(true); // the viewer really holds the rest
   });
 
   it('opens for the platform owner', async () => {

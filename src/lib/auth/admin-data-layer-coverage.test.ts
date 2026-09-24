@@ -631,21 +631,169 @@ describe('no admin endpoint authorizes on the coarse staff floor', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// A stricter splitter, used ONLY for the owner-agent module below.
+//
+// splitIntoFunctionBlocks (top of this file) matches `export async function` and
+// nothing else, and reads comments as code — so a gate named in a comment counts, and
+// an `export const f = async () => …` or a plain `export function` is never looked
+// at. Widening that shared splitter would change what the EXEMPT and AUDIT checks see
+// in every other module, which is its own review; this one is scoped to the module
+// whose every export is owner-only by decision.
+// ---------------------------------------------------------------------------
+
+/**
+ * Drop // and /* *\/ comments; leave '…', "…" and `…` contents alone, so a URL in a
+ * string is not mistaken for a comment. Regex literals are not tokenized — acceptable
+ * for the modules this is pointed at, which is asserted by the self-test below.
+ */
+function stripComments(source: string): string {
+  let out = '';
+  let quote: string | null = null;
+  let i = 0;
+  while (i < source.length) {
+    const c = source[i];
+    const next = source[i + 1];
+    if (quote) {
+      out += c;
+      if (c === '\\') {
+        out += next ?? '';
+        i += 2;
+        continue;
+      }
+      if (c === quote) quote = null;
+      i += 1;
+      continue;
+    }
+    if (c === '/' && next === '/') {
+      while (i < source.length && source[i] !== '\n') i += 1;
+      continue;
+    }
+    if (c === '/' && next === '*') {
+      const close = source.indexOf('*/', i + 2);
+      i = close === -1 ? source.length : close + 2;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') quote = c;
+    out += c;
+    i += 1;
+  }
+  return out;
+}
+
+// Every top-level declaration starts a block, exported or not — so a non-exported
+// helper that happens to call the gate cannot lend it to the export above it.
+const TOP_LEVEL_DECLARATION =
+  /^(export\s+)?(?:default\s+)?(async\s+function\*?|function\*?|const|let|var|class|interface|type|enum)\s+([\w$]+)/gm;
+
+// What makes an exported binding a FUNCTION: an initializer that is a function
+// expression, an arrow, or a wrapper call such as cache(async () => …).
+const FUNCTION_INITIALIZER =
+  /^\s*(?:async\b|function\b|\(|[A-Za-z_$][\w$]*\s*=>|[A-Za-z_$][\w$]*\s*\()/;
+
+function splitExportedFunctions(source: string): { name: string; body: string }[] {
+  const code = stripComments(source);
+  const starts = [...code.matchAll(TOP_LEVEL_DECLARATION)].map((m) => ({
+    exported: m[1] !== undefined,
+    kind: m[2],
+    name: m[3],
+    index: m.index ?? 0,
+  }));
+  const out: { name: string; body: string }[] = [];
+  starts.forEach((d, i) => {
+    if (!d.exported) return;
+    const body = code.slice(d.index, starts[i + 1]?.index ?? code.length);
+    if (d.kind.includes('function')) {
+      out.push({ name: d.name, body });
+      return;
+    }
+    if (d.kind === 'const' || d.kind === 'let' || d.kind === 'var') {
+      // The assignment is the first `=` that is not the `=>` of a type annotation.
+      const assign = body.search(/=(?!>)/);
+      if (assign !== -1 && FUNCTION_INITIALIZER.test(body.slice(assign + 1))) {
+        out.push({ name: d.name, body });
+      }
+    }
+  });
+  return out;
+}
+
+const GATED = (body: string) => body.includes('await requirePlatformOwner()');
+
+describe('splitExportedFunctions (the owner-agent splitter) is not fooled', () => {
+  const SYNTHETIC = [
+    "// await requirePlatformOwner() — named only in a comment above",
+    'export async function commentOnly() {',
+    '  /* await requirePlatformOwner() */',
+    '  return 1;',
+    '}',
+    'export function plainExport() {',
+    '  return 2;',
+    '}',
+    'export const arrowExport = async () => {',
+    '  await requirePlatformOwner();',
+    '};',
+    'export const cachedExport = cache(async () => 3);',
+    'export const typedArrow: () => Promise<void> = async () => {};',
+    "export const COLUMNS = 'id, name';",
+    'export const LIMIT = 50;',
+    'export async function urlInString() {',
+    "  const u = 'https://example.test/x';",
+    '  await requirePlatformOwner();',
+    '  return u;',
+    '}',
+    'export async function borrowsFromHelper() {',
+    '  return 4;',
+    '}',
+    'async function helper() {',
+    '  await requirePlatformOwner();',
+    '}',
+  ].join('\n');
+  const blocks = splitExportedFunctions(SYNTHETIC);
+  const gated = Object.fromEntries(blocks.map((b) => [b.name, GATED(b.body)]));
+
+  it('finds every exported function form, and no constant', () => {
+    expect(blocks.map((b) => b.name)).toEqual([
+      'commentOnly',
+      'plainExport',
+      'arrowExport',
+      'cachedExport',
+      'typedArrow',
+      'urlInString',
+      'borrowsFromHelper',
+    ]);
+  });
+
+  it('does not count a gate that appears only in a comment', () => {
+    expect(gated.commentOnly).toBe(false);
+  });
+
+  it('does not let a following non-exported helper lend its gate', () => {
+    expect(gated.borrowsFromHelper).toBe(false);
+  });
+
+  it('keeps a string containing // intact', () => {
+    expect(gated.urlInString).toBe(true);
+    expect(gated.arrowExport).toBe(true);
+  });
+});
+
 describe('the owner-agent data layer gates every export on requirePlatformOwner', () => {
   // EXPECTED_PERMISSION's `[]` checks the FILE: no permission key, and the owner gate
   // named somewhere. A new export that forgot the gate would still pass that. This
-  // checks each function, because every one of them either reads the allow-list and
+  // checks each exported function — async or not, declared or assigned — with
+  // comments stripped, because every one of them either reads the allow-list and
   // audit or changes who may reach business data over WhatsApp.
   const relPath = 'src/lib/data/admin/owner-agent.ts';
-  const blocks = splitIntoFunctionBlocks(readFileSync(join(ROOT, relPath), 'utf8'));
+  const blocks = splitExportedFunctions(readFileSync(join(ROOT, relPath), 'utf8'));
 
   it('exports functions to check (a silent empty scan is the failure mode)', () => {
-    expect(blocks.length).toBeGreaterThanOrEqual(10);
+    expect(blocks.length).toBeGreaterThanOrEqual(12);
   });
 
   for (const { name, body } of blocks) {
     it(`${name} calls requirePlatformOwner()`, () => {
-      expect(body).toContain('await requirePlatformOwner()');
+      expect(GATED(body)).toBe(true);
     });
   }
 });

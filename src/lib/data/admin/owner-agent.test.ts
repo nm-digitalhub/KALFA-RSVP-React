@@ -69,7 +69,10 @@ function wireAdmin(tables: Record<string, Result>) {
   return wired;
 }
 
-const STAFF_DIRECTORY = {
+// platform_staff (with its platform_roles embed) is read through the owner's session;
+// only profiles needs service role. Kept as two maps so each test wires them to the
+// client that must serve them — a read on the wrong client then finds no table.
+const STAFF_ROWS = {
   platform_staff: {
     data: [
       { user_id: OWNER_ID, platform_roles: { label: 'בעלים', is_owner_role: true } },
@@ -77,6 +80,9 @@ const STAFF_DIRECTORY = {
     ],
     error: null,
   },
+};
+
+const PROFILE_ROWS = {
   profiles: {
     data: [
       { id: OWNER_ID, full_name: 'בעל המערכת', phone_verified_e164: OWNER_PHONE },
@@ -229,8 +235,9 @@ describe('reads', () => {
         ],
         error: null,
       },
+      ...STAFF_ROWS,
     });
-    wireAdmin(STAFF_DIRECTORY);
+    wireAdmin(PROFILE_ROWS);
 
     const entries = await listOwnerAgentAllowlist();
 
@@ -247,17 +254,19 @@ describe('reads', () => {
     expect(json).not.toContain('+972539998877');
   });
 
-  it('reads the allow-list with the cookie client and the staff directory with service role', async () => {
-    const cookie = wireCookie({ owner_agent_allowlist: { data: [], error: null } });
-    const admin = wireAdmin(STAFF_DIRECTORY);
+  it('reads the allow-list and platform_staff through the session; only profiles via service role', async () => {
+    const cookie = wireCookie({ owner_agent_allowlist: { data: [], error: null }, ...STAFF_ROWS });
+    const admin = wireAdmin(PROFILE_ROWS);
     await listOwnerAgentAllowlist();
     expect(cookie.from).toHaveBeenCalledWith('owner_agent_allowlist');
-    expect(admin.from).not.toHaveBeenCalledWith('owner_agent_allowlist');
-    expect(admin.from).toHaveBeenCalledWith('profiles');
+    expect(cookie.from).toHaveBeenCalledWith('platform_staff');
+    // Least privilege: service role touches profiles and nothing else.
+    expect(admin.from.mock.calls.map((c) => c[0])).toEqual(['profiles']);
   });
 
   it('lists every staff member for the picker, with a verified-phone BOOLEAN only', async () => {
-    wireAdmin(STAFF_DIRECTORY);
+    wireCookie(STAFF_ROWS);
+    wireAdmin(PROFILE_ROWS);
     const staff = await listOwnerAgentStaff();
     expect(staff).toEqual([
       { userId: OWNER_ID, name: 'בעל המערכת', roleLabel: 'בעלים', isOwnerRole: true, hasVerifiedPhone: true },
@@ -384,8 +393,8 @@ describe('app_settings writes', () => {
 
 describe('allow-list writes (service role)', () => {
   it('adds a row for a staff member, normalised to E.164, created_by = the acting owner', async () => {
-    const { builders } = wireAdmin({
-      platform_staff: { data: { user_id: STAFF_ID }, error: null },
+    const cookie = wireCookie({ platform_staff: { data: { user_id: STAFF_ID }, error: null } });
+    const { builders, from } = wireAdmin({
       owner_agent_allowlist: { data: { id: ENTRY_ID }, error: null },
     });
 
@@ -399,13 +408,14 @@ describe('allow-list writes (service role)', () => {
       label: 'נייד',
       created_by: OWNER_ID,
     });
+    // The staff check runs on the owner's session; service role only inserts.
+    expect(cookie.from).toHaveBeenCalledWith('platform_staff');
+    expect(from.mock.calls.map((c) => c[0])).toEqual(['owner_agent_allowlist']);
   });
 
   it('records the addition with ids only — no phone, no label', async () => {
-    wireAdmin({
-      platform_staff: { data: { user_id: STAFF_ID }, error: null },
-      owner_agent_allowlist: { data: { id: ENTRY_ID }, error: null },
-    });
+    wireCookie({ platform_staff: { data: { user_id: STAFF_ID }, error: null } });
+    wireAdmin({ owner_agent_allowlist: { data: { id: ENTRY_ID }, error: null } });
     await addOwnerAgentAllowlistEntry({ e164: STAFF_PHONE, staffUserId: STAFF_ID, label: 'נייד' });
     expect(logActivity).toHaveBeenCalledWith({
       action: 'admin.owner_agent.allowlist_added',
@@ -417,8 +427,8 @@ describe('allow-list writes (service role)', () => {
   });
 
   it('refuses a user who is not platform staff, and inserts nothing', async () => {
+    wireCookie({ platform_staff: { data: null, error: null } });
     const { builders } = wireAdmin({
-      platform_staff: { data: null, error: null },
       owner_agent_allowlist: { data: { id: ENTRY_ID }, error: null },
     });
     await expect(
@@ -429,10 +439,12 @@ describe('allow-list writes (service role)', () => {
 
   it('refuses bare foreign digits that would parse as a DIFFERENT Israeli number', async () => {
     // '15417543010' (US) reads as +97215417543010 under the IL default.
+    const cookie = wireCookie({});
     const { from } = wireAdmin({});
     await expect(
       addOwnerAgentAllowlistEntry({ e164: '15417543010', staffUserId: STAFF_ID, label: '' }),
     ).rejects.toThrow();
+    expect(cookie.from).not.toHaveBeenCalled();
     expect(from).not.toHaveBeenCalled();
   });
 
@@ -442,8 +454,8 @@ describe('allow-list writes (service role)', () => {
     ['23503', 'רק איש צוות פלטפורמה יכול להופיע ברשימת ההיתר'],
     ['XX000', 'הוספת המספר נכשלה'],
   ])('maps insert error %s to a Hebrew message', async (code, message) => {
+    wireCookie({ platform_staff: { data: { user_id: STAFF_ID }, error: null } });
     wireAdmin({
-      platform_staff: { data: { user_id: STAFF_ID }, error: null },
       owner_agent_allowlist: { data: null, error: { message: 'raw driver text', code } },
     });
     await expect(

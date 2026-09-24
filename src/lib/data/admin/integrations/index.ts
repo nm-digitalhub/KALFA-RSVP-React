@@ -175,9 +175,11 @@ export async function getIntegrationsIndex(): Promise<IntegrationsIndex> {
   const byKey = new Map([...rows, ...(ownerAgent ? [ownerAgent] : [])].map((r) => [r.key, r]));
 
   // Resolve each distinct permission once; cache() in the DAL collapses the repeats
-  // into one RPC per key for the whole render pass. The OWNER sentinel is not a key —
-  // asking has_platform_permission('OWNER') would answer false for everyone, owners
-  // included, and spend an RPC to do it.
+  // into one RPC per key for the whole render pass. The OWNER sentinel is not a key,
+  // and this filter is the ONLY thing keeping an owner-only card closed to non-owners:
+  // `held` never contains OWNER, so held.get(OWNER) is undefined and only `owner`
+  // below can open the card. index.test.ts asserts it with a viewer for whom
+  // has_platform_permission answers true to anything, 'OWNER' included.
   const distinct = [...new Set(CARDS.map((c) => c.permission))].filter((p) => p !== OWNER);
   const held = new Map(
     await Promise.all(
@@ -198,7 +200,7 @@ export async function getIntegrationsIndex(): Promise<IntegrationsIndex> {
   for (const spec of CARDS) {
     const status = byKey.get(spec.statusKey);
     if (!status) continue; // a provider dropped from the shared source — never invent one
-    const canOpen = owner || (spec.permission !== OWNER && held.get(spec.permission) === true);
+    const canOpen = owner || held.get(spec.permission) === true;
     cards.push({
       key: spec.key,
       label: status.label,

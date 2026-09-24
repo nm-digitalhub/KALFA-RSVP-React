@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
 vi.mock('server-only', () => ({}));
 
@@ -206,6 +207,27 @@ describe('errors stay safe', () => {
       error: 'המספר שנבחר אינו מספר WhatsApp מחובר',
     });
     expect(revalidateMock).not.toHaveBeenCalled();
+  });
+
+  it('does not let a ZodError through just because its JSON contains Hebrew', async () => {
+    // The DAL re-validates its input; a ZodError's message is the JSON of its issues,
+    // Hebrew messages included. The previous "contains Hebrew" test passed it verbatim.
+    const zodError = z.string().min(5, 'מספר טלפון לא תקין').safeParse('a').error;
+    expect(zodError?.message).toMatch(/[\u0590-\u05FF]/);
+    addMock.mockRejectedValue(zodError);
+    expect(
+      await addAllowlistEntryAction(
+        null,
+        form({ e164: '0501234567', staffUserId: STAFF_ID, label: '' }),
+      ),
+    ).toEqual({ error: 'הוספת המספר נכשלה' });
+  });
+
+  it('does not let an unknown Hebrew sentence through either', async () => {
+    toggleMock.mockRejectedValue(new Error('שגיאה פנימית: relation owner_agent_allowlist'));
+    expect(
+      await setAllowlistEntryEnabledAction(null, form({ id: ENTRY_ID, enabled: 'true' })),
+    ).toEqual({ error: 'עדכון הרשומה נכשל' });
   });
 
   it('replaces anything else with a generic Hebrew message', async () => {
