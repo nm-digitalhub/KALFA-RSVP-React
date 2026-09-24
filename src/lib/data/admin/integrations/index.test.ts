@@ -30,11 +30,27 @@ const STATUS = [
   { key: 'ga4', label: 'Google Analytics 4', configured: true, enabled: true, lastCheckedAt: null, healthCheckAvailable: false },
 ];
 
+type OwnerAgentRow = { owner_agent_enabled: boolean; owner_agent_phone_number_id: string | null };
+
+/** What `app_settings` answers for the owner-agent card; `error` = the read failed. */
+let ownerAgentRead: { data: OwnerAgentRow | null; error: unknown } = {
+  data: { owner_agent_enabled: false, owner_agent_phone_number_id: '1234567890123456' },
+  error: null,
+};
+
+// Routed per table: the permission labels are read with `.in()`, the owner-agent
+// status row with `.eq().maybeSingle()`. One shared chain would answer both with the
+// same rows.
 function mockPermissionLabels(rows: Array<{ key: string; label: string }> | null) {
   const inFn = vi.fn().mockResolvedValue({ data: rows, error: null });
-  const select = vi.fn().mockReturnValue({ in: inFn });
-  const from = vi.fn().mockReturnValue({ select });
+  const maybeSingle = vi.fn(async () => ownerAgentRead);
+  const from = vi.fn((table: string) =>
+    table === 'app_settings'
+      ? { select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle })) })) }
+      : { select: vi.fn(() => ({ in: inFn })) },
+  );
   vi.mocked(createClient).mockResolvedValue({ from } as never);
+  return { inFn };
 }
 
 /** `keys` = the permissions this viewer holds. */
@@ -45,6 +61,10 @@ function viewer(keys: string[], { owner = false } = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  ownerAgentRead = {
+    data: { owner_agent_enabled: false, owner_agent_phone_number_id: '1234567890123456' },
+    error: null,
+  };
   vi.mocked(requirePlatformStaff).mockResolvedValue({ id: 'u1' } as never);
   vi.mocked(getIntegrationsStatus).mockResolvedValue(STATUS as never);
   vi.mocked(getJobHealth).mockResolvedValue({ ok: true, data: [] } as never);
@@ -72,7 +92,8 @@ describe('getIntegrationsIndex', () => {
 
   it('shows every provider to a viewer with NO permissions, all locked', async () => {
     const { cards } = await byKey();
-    expect(Object.keys(cards)).toHaveLength(7);
+    // Seven from the shared status source, plus the owner-agent card from its own read.
+    expect(Object.keys(cards)).toHaveLength(8);
     for (const card of Object.values(cards)) {
       expect(card.canOpen).toBe(false);
       expect(card.href).toBeNull(); // "no permission", never a link that redirects
@@ -135,7 +156,7 @@ describe('getIntegrationsIndex', () => {
     viewer([], { owner: true });
     const { idx } = await byKey();
     expect(idx.showsLastChecked).toBe(false);
-    expect(idx.cards).toHaveLength(7);
+    expect(idx.cards).toHaveLength(8);
   });
 
   it('leaves GA4 out — nobody connects it from the panel', async () => {
@@ -149,7 +170,7 @@ describe('getIntegrationsIndex', () => {
     );
     const { cards } = await byKey();
     expect(cards.slack).toBeUndefined();
-    expect(Object.keys(cards)).toHaveLength(6);
+    expect(Object.keys(cards)).toHaveLength(7);
   });
 
   it('carries configured and enabled through separately', async () => {
@@ -180,5 +201,60 @@ describe('getIntegrationsIndex', () => {
     mockPermissionLabels(null);
     const { cards } = await byKey();
     expect(cards.voximplant.permissionLabel).toBe('manage_voice');
+  });
+});
+
+describe('the owner-agent card', () => {
+  // Owner-only by decision 9.4 (2026-09-24): editing its allow-list grants access to
+  // business data over WhatsApp, so no permission key opens it — not even the one
+  // that opens every other settings card.
+  it('is locked for a manage_settings holder, and says an owner is needed', async () => {
+    viewer(['manage_settings']);
+    const { cards } = await byKey();
+    expect(cards['owner-agent']).toMatchObject({
+      canOpen: false,
+      href: null,
+      permission: 'OWNER',
+      permissionLabel: 'הרשאת בעלים',
+    });
+  });
+
+  it('is locked even for a viewer holding every catalogue key', async () => {
+    viewer(['manage_settings', 'manage_voice', 'integrations.manage', 'view_webhooks']);
+    const { cards } = await byKey();
+    expect(cards['owner-agent'].canOpen).toBe(false);
+  });
+
+  it('opens for the platform owner', async () => {
+    viewer([], { owner: true });
+    const { cards } = await byKey();
+    expect(cards['owner-agent']).toMatchObject({
+      canOpen: true,
+      href: '/admin/integrations/owner-agent',
+    });
+  });
+
+  it('never asks has_platform_permission or the label table about the OWNER sentinel', async () => {
+    const { inFn } = mockPermissionLabels([]);
+    await getIntegrationsIndex();
+    expect(vi.mocked(hasPlatformPermission).mock.calls.map((c) => c[0])).not.toContain('OWNER');
+    expect(inFn.mock.calls[0][1]).not.toContain('OWNER');
+  });
+
+  it('reads configured from the selected number and enabled from its own switch', async () => {
+    ownerAgentRead = {
+      data: { owner_agent_enabled: true, owner_agent_phone_number_id: null },
+      error: null,
+    };
+    const { cards } = await byKey();
+    // Switched on with no number diverts nothing — that is "not configured".
+    expect(cards['owner-agent']).toMatchObject({ configured: false, enabled: true });
+  });
+
+  it('is omitted, not invented, when its status cannot be read', async () => {
+    ownerAgentRead = { data: null, error: { message: 'boom' } };
+    const { cards } = await byKey();
+    expect(cards['owner-agent']).toBeUndefined();
+    expect(Object.keys(cards)).toHaveLength(7);
   });
 });

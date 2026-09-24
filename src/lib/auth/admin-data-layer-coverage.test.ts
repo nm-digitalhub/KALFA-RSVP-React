@@ -133,6 +133,11 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // Owner-only surfaces: they gate on requirePlatformOwner and name no key.
   'src/lib/data/admin/platform-roles.ts': [],
   'src/lib/data/admin/relocation.ts': [],
+  // The owner WhatsApp agent's switch, number, cap and allow-list (plan §3.3). Owner
+  // decision 9.4, 2026-09-24: a row on that allow-list IS a grant of business-data
+  // access over WhatsApp, so the settings key is deliberately NOT enough. Every export
+  // is asserted by name below — the pin alone only proves the file mentions the gate.
+  'src/lib/data/admin/owner-agent.ts': [],
   // Two keys each, and the pair is the point — listing call history needs the
   // voice permission, and hearing a recording needs its own on top.
   'src/lib/data/admin/console-history.ts': ['manage_voice', 'view_recordings'],
@@ -239,7 +244,7 @@ const COARSE_GATE_ALLOWED: Record<string, string> = {
   'src/lib/data/admin/nav-counts.ts':
     'Badge counts for the nav. Read-only (verified 2026-09-10), and already calls hasPlatformPermission internally so a viewer is never counted what they may not see. Uses createAdminClient, so it bypasses RLS — acceptable for counts.',
   'src/lib/data/admin/integrations/index.ts':
-    'The /admin/integrations index. Read-only: it composes getIntegrationsStatus (itself credential-free since the flags RPC) with per-card hasPlatformPermission checks and returns booleans plus hrefs. Its floor is requirePlatformStaff because the page is navigation + status; the CARDS carry the permission each destination enforces, and the write surfaces it links to keep their own gates. Naming one key for the whole module would be the mistake the header of that file documents.',
+    'The /admin/integrations index. Read-only: it composes getIntegrationsStatus (itself credential-free since the flags RPC) with per-card hasPlatformPermission checks and returns booleans plus hrefs. Its floor is requirePlatformStaff because the page is navigation + status; the CARDS carry the permission each destination enforces, and the write surfaces it links to keep their own gates. Naming one key for the whole module would be the mistake the header of that file documents. Its one direct table read is two app_settings columns (owner_agent_enabled, owner_agent_phone_number_id) for the owner-agent card, through the cookie client and the staff policy — a switch and a Meta object id, no phone, no allow-list, no customer data.',
   'src/lib/data/admin/voice-node-arm-check.ts':
     'Arm-time validation of a workflow definition the CALLER ALREADY HOLDS. Read-only (no insert/update/rpc/enqueue), and its single caller is setWorkflowActive, which gates on manage_settings (verified at workflows.ts:236) before reading the row this is handed. Gating again here would answer a question about a definition the caller just proved they may read — and the only table it touches, voice_purposes, is the same list the editor already renders to them.',
   'src/lib/data/admin/nav-visibility.ts':
@@ -624,6 +629,25 @@ describe('no admin endpoint authorizes on the coarse staff floor', () => {
       }
     }
   });
+});
+
+describe('the owner-agent data layer gates every export on requirePlatformOwner', () => {
+  // EXPECTED_PERMISSION's `[]` checks the FILE: no permission key, and the owner gate
+  // named somewhere. A new export that forgot the gate would still pass that. This
+  // checks each function, because every one of them either reads the allow-list and
+  // audit or changes who may reach business data over WhatsApp.
+  const relPath = 'src/lib/data/admin/owner-agent.ts';
+  const blocks = splitIntoFunctionBlocks(readFileSync(join(ROOT, relPath), 'utf8'));
+
+  it('exports functions to check (a silent empty scan is the failure mode)', () => {
+    expect(blocks.length).toBeGreaterThanOrEqual(10);
+  });
+
+  for (const { name, body } of blocks) {
+    it(`${name} calls requirePlatformOwner()`, () => {
+      expect(body).toContain('await requirePlatformOwner()');
+    });
+  }
 });
 
 describe('the Meta number lifecycle keeps its irreversible half owner-only', () => {

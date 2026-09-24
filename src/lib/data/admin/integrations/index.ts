@@ -37,7 +37,14 @@ export type IntegrationKey =
   | 'sumit'
   | 'slack'
   | 'microsoft'
-  | 'elevenlabs';
+  | 'elevenlabs'
+  | 'owner-agent';
+
+// Owner-only destinations. Not a key in platform_permission_definitions: the owner
+// holds every permission by definition, and a page gated on requirePlatformOwner
+// admits no one else, whatever they hold.
+const OWNER = 'OWNER';
+const OWNER_LABEL = 'הרשאת בעלים';
 
 interface CardSpec {
   /** The key `getIntegrationsStatus()` uses, which is not always the route slug. */
@@ -45,7 +52,9 @@ interface CardSpec {
   key: IntegrationKey;
   /**
    * The permission its DESTINATION enforces — derived from the code that gates that
-   * content today, not from the plan. Keep in step when a page moves.
+   * content today, not from the plan. Keep in step when a page moves. `OWNER` is the
+   * sentinel for a page gated on requirePlatformOwner, the same one the sidebar uses
+   * (admin-shell.tsx): it is not a catalogue key, so it is never asked for.
    */
   permission: string;
   /**
@@ -65,6 +74,7 @@ const CARDS: CardSpec[] = [
   { statusKey: 'sumit', key: 'sumit', permission: 'manage_settings', href: '/admin/integrations/sumit' },
   { statusKey: 'slack', key: 'slack', permission: 'manage_settings', href: '/admin/integrations/slack' },
   { statusKey: 'microsoft', key: 'microsoft', permission: 'manage_settings', href: '/admin/integrations/microsoft' },
+  { statusKey: 'owner-agent', key: 'owner-agent', permission: OWNER, href: '/admin/integrations/owner-agent' },
 ];
 
 // GA4 is deliberately absent. getIntegrationsStatus() reports it because Debug Mode
@@ -105,6 +115,46 @@ export interface IntegrationsIndex {
   showsLastChecked: boolean;
 }
 
+/**
+ * The owner-agent card's status row. It cannot come from getIntegrationsStatus():
+ * that is built on the integrations_configured_flags() RPC, which predates the agent
+ * and has no owner_agent_* flag (extending it is a migration). So the two columns are
+ * read here, with the COOKIE client — app_settings' staff policy admits every staff
+ * member, which is exactly this page's floor — and nothing else: no allow-list, no
+ * phone, no audit.
+ *
+ * NOT through the owner-agent module. Its readers call requirePlatformOwner, which
+ * REDIRECTS: a non-owner opening this index would be ejected from the admin area by
+ * the card that is supposed to tell them they may not open it.
+ *
+ * null on any failure, and the card is then omitted — the same rule as a provider
+ * the shared status source stopped returning: never invent a status.
+ */
+async function getOwnerAgentStatus(): Promise<IntegrationStatus | null> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from('app_settings')
+      .select('owner_agent_enabled, owner_agent_phone_number_id')
+      .eq('id', true)
+      .maybeSingle();
+    if (error || !data) return null;
+    return {
+      key: 'owner-agent',
+      label: 'סוכן WhatsApp לבעלים',
+      // "Configured" = a number is selected. Without one the webhook diverts nothing,
+      // whatever the switch says.
+      configured: data.owner_agent_phone_number_id !== null,
+      enabled: data.owner_agent_enabled,
+      lastCheckedAt: null,
+      healthCheckAvailable: false,
+      note: 'שאלות עסקיות בוואטסאפ מטלפונים ברשימת ההיתר. בעלים בלבד.',
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function getIntegrationsIndex(): Promise<IntegrationsIndex> {
   await requirePlatformStaff();
 
@@ -117,15 +167,18 @@ export async function getIntegrationsIndex(): Promise<IntegrationsIndex> {
   // "last checked" column rather than a column full of dashes that look like faults.
   const owner = await isPlatformOwner();
   const jobHealth = owner ? await getJobHealth() : null;
-  const rows: IntegrationStatus[] = await getIntegrationsStatus(
-    jobHealth?.ok ? jobHealth.data : [],
-  );
+  const [rows, ownerAgent]: [IntegrationStatus[], IntegrationStatus | null] = await Promise.all([
+    getIntegrationsStatus(jobHealth?.ok ? jobHealth.data : []),
+    getOwnerAgentStatus(),
+  ]);
 
-  const byKey = new Map(rows.map((r) => [r.key, r]));
+  const byKey = new Map([...rows, ...(ownerAgent ? [ownerAgent] : [])].map((r) => [r.key, r]));
 
   // Resolve each distinct permission once; cache() in the DAL collapses the repeats
-  // into one RPC per key for the whole render pass.
-  const distinct = [...new Set(CARDS.map((c) => c.permission))];
+  // into one RPC per key for the whole render pass. The OWNER sentinel is not a key —
+  // asking has_platform_permission('OWNER') would answer false for everyone, owners
+  // included, and spend an RPC to do it.
+  const distinct = [...new Set(CARDS.map((c) => c.permission))].filter((p) => p !== OWNER);
   const held = new Map(
     await Promise.all(
       distinct.map(async (key) => [key, await hasPlatformPermission(key)] as const),
@@ -145,7 +198,7 @@ export async function getIntegrationsIndex(): Promise<IntegrationsIndex> {
   for (const spec of CARDS) {
     const status = byKey.get(spec.statusKey);
     if (!status) continue; // a provider dropped from the shared source — never invent one
-    const canOpen = owner || held.get(spec.permission) === true;
+    const canOpen = owner || (spec.permission !== OWNER && held.get(spec.permission) === true);
     cards.push({
       key: spec.key,
       label: status.label,
@@ -155,7 +208,8 @@ export async function getIntegrationsIndex(): Promise<IntegrationsIndex> {
       healthCheckAvailable: status.healthCheckAvailable,
       note: status.note,
       permission: spec.permission,
-      permissionLabel: labels.get(spec.permission) ?? spec.permission,
+      permissionLabel:
+        spec.permission === OWNER ? OWNER_LABEL : (labels.get(spec.permission) ?? spec.permission),
       href: canOpen ? spec.href : null,
       canOpen,
     });
