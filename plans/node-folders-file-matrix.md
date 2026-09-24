@@ -4,7 +4,7 @@
 
 המסמך הזה משלים ומתקן את `plans/node-folders-dependency-map.md`. הוא מסמך מיפוי בלבד; אין בו שינוי קוד.
 
-> **סטטוס מימוש (24.9.2026, 01:50):** תשתית הושלמה; צומת 1 מתוך 23 (`logic.set_value`) הועבר ונפרס לבטא. פירוט בסעיף 8 בסוף המסמך.
+> **סטטוס מימוש (24.9.2026, 08:41):** ההעברה הושלמה. כל 23 הצמתים נמצאים ב-`nodes/<folder>/`, והכול נשמר בגרסה (`f99836d`..`fd03b07`). היישום סטה מסעיפים 1–7 בכמה מקומות, וכל סטייה מנומקת. פירוט בסעיף 8 בסוף המסמך. הבנייה החיה האחרונה היא מ-02:53, לפני שהועבר הצומת השני, ולכן 22 ההעברות האחרונות **לא נפרסו**.
 
 ## 1. תיקון מבני
 
@@ -160,7 +160,107 @@ catalogue/templates/
 
 ## 8. סטטוס מימוש
 
-עודכן: 24.9.2026, 01:50. הקוד **טרם נשמר בגרסה** (uncommitted); הוא כבר **פרוס לבטא** (בנייה 01:42:20, האתר הופעל 01:42:58, המנוע 01:44:28 — כולם מהמצב הסופי).
+עודכן: 24.9.2026, 08:41. **ההעברה הושלמה: 23 מתוך 23 צמתים** נמצאים ב-`src/lib/workflow/nodes/<folder>/`. הכול **נשמר בגרסה** בענף `feat/admin-integrations-consolidation`, בטווח `f99836d`..`fd03b07`. בטווח הזה יש גם קומיט אחד שאינו חלק מההעברה, `6404eee` (`chore(deps): add @mastra/core`).
+
+**פריסה:** הבנייה החיה ב-`.next/` וקובץ `dist/worker.cjs` הם מ-02:53. זה אחרי `a379a17` ולפני `20e6382`, כלומר תשתית וצומת 1 בלבד. 22 ההעברות הבאות, פיצול התבניות והתיקונים **לא נפרסו**. זה נמדד לפי זמני הקבצים; מה שרץ בפועל ב-pm2 לא נבדק.
+
+### ההעברה לפי שלבים
+
+השלבים הם השלבים של `plans/node-folders-dependency-map.md` §8. כל צומת הועבר בקומיט משלו, ואחרי כל שלב הגיע קומיט של תיקוני סקירה.
+
+| שלב | צמתים | קומיטים של ההעברה | תיקוני סקירה |
+|---|---|---|---|
+| א — תשתית | — | `f99836d` (כלל ה-SDK, `steps/shared.ts`, `engine/wait-signal.ts`, סריקות glob). `3c814eb` השלים את החצי של `steps/index.ts` ואת `StartVoiceCallConfig`. `9d83f05` הוסיף את כלל `step-layer-reaches-only-pure-modules` | `a379a17` (חיזוק התבנית) |
+| ב — לוגיקה והתראה | `logic.set_value`, `logic.condition`, `logic.switch`, `action.notify_team` | `3c814eb`, `20e6382`, `40e6ba3`, `a4687e7` | `9976f60` |
+| ג — פעולות עם פורט | `action.webhook`, `action.sumit_create_customer`, `action.sumit_create_document`, `action.microsoft_send_email`, `action.ai_agent` | `3e71aa2` (ו-`7b6dc77`, הערה בלבד), `428ea8d`, `9bb9dc9`, `0ecb910`, `278363b` | `970719f` |
+| ד — פעולות על אורח | `action.set_guest_field`, `action.create_callback_request`, `action.update_guest_status`, `action.send_whatsapp`, `action.send_template`, `action.start_rsvp_ai_callback`, `action.import_guest_list` | `179bcfc`, `094d0c5`, `89c4b18`, `57c72a2`, `2e73aac`, `17588dc`, `11cb969` | `ec97f67` |
+| ה — השהיה ופיזור | `logic.wait`, `action.start_voice_call`, `action.start_for_each_guest` | `764e621`, `cf1d1f4` (ו-`8b8c245`, הערות בלבד), `5eac12e` | `1f11982` |
+| ו — טריגרים | `trigger.schedule`, `trigger.webhook`, `trigger.sumit_card`, `trigger.whatsapp_inbound` | `adae165`, `612723a`, `143eae4`, `873712e` | `8e0d3a4` |
+
+סך הכול 4 + 5 + 7 + 3 + 4 = 23 צמתים. אחרי כל קומיט העברה עברו `worker:deps`, `tsc`, `lint` ו-`npm test` המלא. תמונת המצב של הרישומים הושוותה ל-`baseline-before.json`, שצולם לפני ההעברה.
+
+**אחרי ההעברה:**
+- **פיצול התבניות** (`499e191`), לפי §6: `catalogue/templates.ts` נמחק. במקומו יש `catalogue/templates/` עם 13 קובצי תבנית, `index.ts` ו-`shared.ts`. `DIAGRAM_TEMPLATES` זהה בתו.
+- **ניקוי הערות** (`86c6d19`): תיקון הערות שההעברה הפכה ללא נכונות. הוחלפה גם סריקת ה-palette שלא יכלה עוד למצוא דבר. אחרי הסרת ההערות, הקוד זהה חוץ מ-`schemas.ts`, שבו הוסר re-export של ערכים שאיש מחוץ לבדיקות לא קרא.
+- **תיקוני הביקורת הסופית** (`fd03b07`): פירוט בהמשך.
+
+### ביקורת סופית ושערים
+
+ארבע ביקורות רצו על `86c6d19` בקריאה בלבד. אחריהן בא קומיט התיקונים `fd03b07`.
+
+**1. מונוליטים ומחרוזות סוג (עבר):**
+- סריקת AST של 1,134 קובצי קוד (לא בדיקות) ב-`src/` וב-`worker/` לא מצאה אף מחרוזת של 23 הסוגים מחוץ ל-`nodes/*/definition.ts` ול-`catalogue/templates/*.ts`, לא בהתאמה מלאה ולא בחלקית.
+- שם כל תיקייה שווה ל-`type.replace(/[._]/g, '-')`.
+- `nodes.ts`, `steps/index.ts`, `node-budgets.ts`, `schemas.ts` ו-`types.ts` הם רישומים שקוראים מההגדרות. ב-`NODE_ACTIVITY_PROFILES` יש 15 רשומות, ו-8 הסוגים החסרים מצהירים `'default'`.
+- בכל 23 התיקיות יש ששת קובצי הבסיס ואין `index.ts`. אף `definition.ts` לא מייבא דבר.
+- גבולות הייבוא נקיים: אף קובץ לא מייבא מתיקייה של צומת אחר.
+- **חריג:** `arm-check.ts` עדיין מחזיק כללים של צומת בודד. ראו "ידוע ולא טופל".
+
+**2. שלמות מול התוכנית (עבר):**
+- חסר דבר שהתוכנית מחייבת: לא נמצא.
+- 23 גופי המטפלים, ארבע פונקציות ההתאמה של וואטסאפ ו-webhook ו-`matchesSchedule` זהים ל-`72ab238` אחרי נרמול. ההבדלים היחידים הם שינויי טיפוס מתועדים.
+- מחרוזות הסוג וסדרן, ידיות הענפים, `requiredFields`, התקציבים, קבוצת האורח, טווחי המספרים ושני הכללים המותנים זהים ל-`72ab238`.
+
+**3. סקירת `499e191` ו-`86c6d19` (נכשלה, ותוקן):**
+- אין שינוי התנהגות. 49 ההצהרות העליונות של `templates.ts` הישן זהות להצהרות בקבצים החדשים, ו-13 רשומות `DIAGRAM_TEMPLATES` זהות ובאותו סדר.
+- **חוסם אחד:** סריקת `palette-defaults` שנכתבה מחדש ב-`86c6d19` לא תפסה עוד רשומה שהוחלפה ב-literal, וההערה שלה טענה יותר ממה שנבדק. תוקן ב-`fd03b07`.
+
+**4. שערים (עבר, על `86c6d19`):**
+- `npx tsc --noEmit`: יציאה 0. `npm run lint`: יציאה 0, אפס בעיות.
+- `npm test`: 477 קבצים עברו ו-3 דולגו; 7,165 בדיקות עברו ו-23 דולגו.
+- `npm run worker:deps`: נקי (691 מודולים).
+- **בנייה** ל-`.next-verify` (`.next/` לא נגע): בכל 327 המצביעים הריקים (client reference) יש 195 מקורות שונים. כולם תחת `src/app`, `src/components` או שלוש חבילות ב-`node_modules`. **אפס תחת `src/lib`.**
+- **חבילת המנוע** נבנתה לתיקיית העבודה (`dist/` לא נגע): 7,445,797 בתים. אין בה אף פגיעה של `@workflowbuilder/sdk` או של `catalogue/templates`.
+- **תמונת מצב של הרישומים** מול `baseline-before.json`: 11 מתוך 11 ההבדלים המותרים, אפס הבדלים לא צפויים. ההבדלים המותרים הם `.bindings.<type>`, שהיה חסר והפך ל-`{}`, ב-`logic.set_value`, `logic.condition`, `logic.switch`, `action.notify_team`, `action.set_guest_field`, `action.update_guest_status`, `action.send_whatsapp`, `action.start_rsvp_ai_callback`, `action.import_guest_list`, `logic.wait` ו-`trigger.schedule`. לייצוא אין בזה הבדל: `portability.ts` מחזיר את הצומת כמות שהוא בשני המקרים.
+- **תמונת מצב של התבניות:** זהה בתו ל-`templates-before.json` (50,982 בתים). הבסיס הזה צולם ב-07:38, אחרי העברות הצמתים, ולכן הוא מוכיח רק שהפיצול לא איבד דבר. על העברות הצמתים שומרות בעקיפין תמונת הרישומים, `templates.test.ts` ו-`references.test.ts`.
+- **תקלות מכוונות a–h** (כל אחת שוחזרה מ-`.bak` ואומתה ב-`cmp`, וקבצים שנוצרו נמחקו):
+  - נתפסו: a (ייבוא SDK ב-`runtime.ts`), b (ייבוא type-only של SDK ב-`definition.ts`), c (`createAdminClient` ב-`runtime.ts`), e (`runtime.ts` הוזז), g (ייבוא ממערכת הסליקה ב-`runtime.ts` ובקובץ עזר שאיש לא מייבא).
+  - f (`isTrigger` הפוך): נתפס רק בחבילה המלאה. הבדיקה של `node-definitions.test.ts` הייתה ריקה מתוכן, כי השוותה את הקטלוג לאותה הגדרה שממנה הוא נבנה.
+  - **לא נתפסו:** d (`index.ts` זר בתיקיית צומת) ו-h (החלפת סדר ב-`DIAGRAM_TEMPLATES`).
+
+**5. תיקוני הביקורת הסופית (`fd03b07`):**
+- `triggerKeywordCanNeverMatch` עבר מ-`catalogue/types.ts` ל-`nodes/trigger-whatsapp-inbound/match.ts`. `arm-check.ts` מייבא אותו משם, כמו את `webhookAllowsMethod`.
+- `WEBHOOK_AUTH_MODES` עבר ל-`nodes/trigger-webhook/definition.ts`, כפי ששורה 2 במטריצה קבעה. `WebhookAuthMode` נגזר עכשיו מההגדרה, ולכן בדיקת הקומפילציה הדו-כיוונית נעשתה טאוטולוגית והוסרה. ב-`types.ts` נשארו שתי בדיקות סחיפה.
+- JSDoc של `NODE_DEPLOYMENT_BINDINGS` קוצר להפניה, כי כל הגדרה מתעדת את ה-bindings שלה (הערה בלבד).
+- `voice-call-with-outcome.ts` מתאר את הענף במקום לצטט את `voice-purpose-dispatch.ts:172`, שהייתה שורה שגויה (הערה בלבד).
+- `palette-defaults.test.ts`: כל רשומה ב-`PALETTE_ITEMS` חייבת להיות, לפי זהות, הפריט שקובץ ה-palette של התיקייה שלה מייצא. תקלה מכוונת (`{ ...setValuePaletteItem }`) נכשלת.
+- `node-definitions.test.ts`: `isTrigger` מושווה ל-`folder.startsWith('trigger-')`, ותיקייה אסורה להכיל `index.ts` או `index.tsx`. תקלות f ו-d נכשלות עכשיו.
+- **שערים על `fd03b07`:**
+  - `worker:deps` נקי (691 מודולים). `tsc` ו-`lint`: יציאה 0.
+  - vitest ממוקד: 114 קבצים, 2,084 בדיקות. `npm test`: 477 קבצים; 7,189 בדיקות עברו ו-23 דולגו.
+  - `npm run build` ל-`.next-verify`: יציאה 0 (BUILD_ID 08:36:32). אפס מצביעים ריקים תחת `src/lib/`. בקורת החיובית נמצאו 156 מצביעים תחת `src/components/`.
+  - תמונת הרישומים: רק 11 ההבדלים המותרים, וזהה בתו לתמונה של `86c6d19`. `DIAGRAM_TEMPLATES` זהה בתו.
+
+### סטיות מהתוכנית
+
+כל סטייה מסעיפים 1–7, והסיבה לה מתוך הודעת הקומיט.
+
+**קבצים מסעיף 4 שלא נוצרו:**
+- **`trigger-schedule/match.ts` לא נוצר** (`adae165`). `matchesSchedule` צריך את `israelSlot` ואת `israelWeekday`, ש-`planScheduledRuns` משתמש בהם גם הוא. העברת הפונקציה לבדה הייתה יוצרת מעגל ייבוא. בנוסף, הם תלויים ב-`ISRAEL_TIME_ZONE` מ-`@/lib/date`, שאינו ברשימה הלבנה של `step-layer-reaches-only-pure-modules`. הקוד נשאר ב-`schedule.ts`.
+- **`trigger-webhook/match.ts` מחזיק רק את בדיקת ה-method** (`612723a`), כלומר את `webhookAllowsMethod`, שהגיע מ-`types.ts`. התאמת ה-endpoint וה-hash נשארת ב-`findWorkflowForEndpoint` שב-`webhook-trigger.ts`. זה תיאום שמשותף ל-`trigger.sumit_card`, ו-`webhook-token.ts` אינו ברשימה הלבנה.
+- **`trigger-sumit-card/output-fields.ts` לא נוצר** (`143eae4`). `catalogue/sumit-card-output.ts` **נמחק**, ותוכנו (`SUMIT_CARD_BASE_OUTPUT`, `SUMIT_HOLD_FIELDS_OUTPUT` והטיפוסים) הוטמע ישירות ב-`nodes/trigger-sumit-card/definition.ts`. הסיבה: `definition.ts` לא מייבא דבר, וקובץ נפרד היה מחייב ייבוא או העתק.
+- **`trigger-sumit-card/sample-output.ts` לא נוצר** (`143eae4`). `sumit-sample-output.ts` מייבא את חבילת `flat`, שאינה ברשימה הלבנה. עותק ניסיוני בתיקייה הכשיל את `worker:deps`, ולכן הקובץ נשאר ב-`catalogue/`. הוא קורא את שדות הפלט מההגדרה.
+- **`action-start-voice-call/outcome.ts` לא נוצר** (`cf1d1f4`). ל-`voice-outcome.ts` יש צרכן נוסף (`voice-outcome.test.ts`), והוא מופיע בשמו ברשימה הלבנה.
+- **`trigger-whatsapp-inbound/match.ts` מכיל יותר ממה שתוכנן:** `matchesKeyword`, `matchesKind` ו-`matchesNumber` מ-`trigger.ts` (`873712e`), ו-`triggerKeywordCanNeverMatch` מ-`types.ts` (`fd03b07`). `trigger.ts` מייצא אותם מחדש, ו-`planRuns`, `findTriggerNode` ו-`buildTriggerPayload` נשארו בו.
+
+**שורות בטבלה בסעיף 3:**
+- שורה 1: `triggerSchemaFor` לא נשאר בשמו. הוא עבר ל-`nodes/trigger-whatsapp-inbound/schema.ts` בשם `whatsappInboundSchemaFor` (`873712e`).
+- `NODE_DEPLOYMENT_BINDINGS`: 11 צמתים שלא היו להם רשומות מצהירים עכשיו `{}` במפורש (`a379a17` והלאה). זה ההבדל היחיד בתמונת המצב של הרישומים.
+
+**מה שנשאר משותף (סעיף 5) בפועל:**
+- **`editor-shared.ts`** מחזיק את העזרים שבסעיף 5, ובנוסף `conditionalRules` (`3e71aa2`) ו-`rsvpStatusOptions` (`89c4b18`). `withNodeRunControl` **נשאר ב-`schemas.ts`** ולא עבר למודול המשותף. רק `buildPaletteItems` משתמש בו.
+- **`catalogue/types.ts`** עדיין מחזיק פרטים של צומת בודד שיש להם קוראים אחרים:
+  - `FORBIDDEN_HTTP_HEADERS` ו-`MAX_CAPTURED_RESPONSE_BYTES` של `action.webhook`. רק הפורט קורא אותם (`3e71aa2`).
+  - `LEGACY_PROPERTY_ALIASES`, כי `arm-check.ts` קורא אותו (`89c4b18`).
+  - `readWebhookAuthMode`, `authModeFor` ו-`INBOUND_HTTP_TRIGGER_TYPES`, כי שני טריגרי ה-HTTP משתמשים בהם (`612723a`, `fd03b07`).
+  - re-exports של טיפוסים וקבועים מההגדרות, בשביל קוראים קיימים (`engine/ports.ts`, `guest-actions.ts`, `outbound-webhook.ts`, התבניות והבדיקות).
+- **`arm-check.ts`** עדיין מחזיק כללי חימוש של צומת בודד. הם משווים עכשיו לסוג שמגיע מההגדרה ולא ל-literal: נושא המכירות של בקשת חזרה (`094d0c5`), כללי ה-address וה-GET של ה-webhook (`612723a`), משפטי `blankMessage` (`cf1d1f4`) ופיזור עצמי ויעד ריק של `for_each` (`5eac12e`).
+- **`buildPaletteItems`** ב-`schemas.ts` שומר ארבע החלפות בזמן טעינה, לוואטסאפ, SUMIT, Microsoft והשיחה הקולית, כפי שסעיף 5 מתיר. כל אחת מזהה את הצומת לפי הסוג שבהגדרה שלו.
+
+**כללים ופרטים אחרים:**
+- **`readEnum`** נשאר בלי גרסה מוקלדת. רק `readString` קיבל overload מוקלד (`a379a17`), וכל ה-runtimes שקוראים מפתח literal משתמשים בו.
+- **`catalogue/templates/shared.ts`** הוא בלי `'use client'`, בכוונה (`499e191`). הוא לא מייבא דבר ומחזיק שתי מחרוזות, וההוראה הייתה הופכת אותן למצביעים ריקים אצל מייבא בשרת. שאר הקבצים בתיקייה הם `'use client'`.
+- **כלל 7 בסעיף 2** מיושם רחב יותר ממה שנכתב: הסריקות קוראות כל קובץ קוד בתיקיית צומת, רקורסיבית, ולא רק `runtime.ts` ו-`definition.ts` (`a379a17`).
 
 ### תנאי המעבר מסעיף 7
 
@@ -170,10 +270,12 @@ catalogue/templates/
 | 2 | הוצאת עזרי runtime משותפים | ✅ בוצע | `steps/shared.ts`: `WorkflowTriggerPayload`, `StepContext`, `StepHandler`, `readString`, `readEnum`, `requireGuestContext`. `engine/wait-signal.ts`: `WORKFLOW_WAIT_CODE`, `WorkflowWaitSignal`, `WaitVerifier`, `readWaitSignal`. `steps/index.ts` מייצא אותם מחדש לקוראים הקיימים. |
 | 3 | בדיקות source-scan על glob | ✅ בוצע | `src/lib/workflow/node-sources.ts` + `guest-context`, `ai-agent`, `sumit-accounting`, `palette-defaults`. כל סריקה נכשלת אם יש תיקיית צומת בלי `runtime.ts`. |
 | 4 | `StartVoiceCallConfig`, `KalfaNodeConfig` 23/23 | ✅ בוצע | `catalogue/types.ts`, עם בדיקת קומפילציה `_KALFA_NODE_CONFIG_COVERS_ALL_TYPES`. |
-| 5 | בדיקה שכל definition מספק type, requiredFields, output fields ו-activity profile | ✅ בוצע | `src/lib/workflow/node-definitions.test.ts`: עובר על כל תיקייה תחת `nodes/`, ובודק שהקובץ לא מייבא כלום, שהסוג מוכר ותואם לשם התיקייה, ש-isTrigger תואם לקטלוג, ש-`NODE_REQUIRED_FIELDS`, `NODE_ACTIVITY_PROFILES` ו-outputSchema של הלוח הם **אותו אובייקט** כמו בהגדרה, ושיש מטפל רשום. תקציב חייב להיות מפורש: אובייקט, או `'default'`. הוכח ב-3 תקלות מכוונות. |
+| 5 | בדיקה שכל definition מספק type, requiredFields, output fields ו-activity profile | ✅ בוצע | `src/lib/workflow/node-definitions.test.ts`: עובר על כל תיקייה תחת `nodes/`, ובודק שהקובץ לא מייבא כלום, שהסוג מוכר ותואם לשם התיקייה, ש-isTrigger תואם לקטלוג (**הבדיקה הזאת הייתה ריקה מתוכן**, כי הקטלוג נבנה מאותה הגדרה. מאז `fd03b07` הערך מושווה גם ל-`folder.startsWith('trigger-')`), ש-`NODE_REQUIRED_FIELDS`, `NODE_ACTIVITY_PROFILES` ו-outputSchema של הלוח הם **אותו אובייקט** כמו בהגדרה, ושיש מטפל רשום. תקציב חייב להיות מפורש: אובייקט, או `'default'`. הוכח ב-3 תקלות מכוונות. |
 | 6 | העברה ראשונה בלי שינוי התנהגות | ✅ בוצע | ראו למטה. |
 
 ### צומת 1: `logic.set_value` ✅
+
+> היסטוריה: הסעיף הזה, "מה נמצא ותוקן בדרך", "חיזוק אחרי סקירה" ו"אירוע במהלך העבודה" מתעדים את צומת 1 כפי שנכתבו ב-01:50 וב-02:35, ולא עודכנו למצב הסופי. המצב הנוכחי של הפריטים הפתוחים מופיע ב"ידוע ולא טופל".
 
 - **קבצים:** `src/lib/workflow/nodes/logic-set-value/`:
   - `definition.ts` (58 שורות, לא מייבא כלום)
@@ -206,11 +308,31 @@ catalogue/templates/
 
 ### ידוע ולא טופל (מחוץ לתחום ההעברה)
 
-- הערות שהיו שגויות עוד לפני השינוי והועתקו כמות שהן:
-  - `editor-shared.ts`: הפניה ל-`armNoticeControl` שלא קיים, ו-"18 entries".
-  - `schemas.ts:8-9`.
-- תווית הצומת והתיאור שלו כתובים פעמיים, ב-PaletteItem ובברירות המחדל, בדיוק כמו קודם.
-- שם השדה `value` בפלט כתוב גם ב-`definition.outputFields` וגם ב-`runtime.ts`. `references.test.ts` מגן על התבניות.
+**נסגר מאז צומת 1:**
+- ההפניה ל-`armNoticeControl` וה-"18 entries" ב-`editor-shared.ts` תוקנו ב-`86c6d19`. הכותרת של `schemas.ts` נכתבה מחדש ב-`8e0d3a4`.
+- "22 הצמתים האחרים קוראים בלי סוג": כבר לא נכון. אין אף קריאה לא מוקלדת של `readString` ב-`nodes/*/runtime.ts`. 14 runtimes קוראים דרך `readString<Config>`. `readEnum` נשאר לא מוקלד.
+- תקלות מכוונות d ו-f נתפסות מאז `fd03b07`.
+
+**פערים בשמירה, שהתוכנית לא הבטיחה:**
+- **סדר `DIAGRAM_TEMPLATES`** (תקלה h): אין בדיקה שמורה בגרסה שמקבעת אותו. רק ה-probe הזמני תופס החלפת סדר. הצעה: snapshot של `DIAGRAM_TEMPLATES.map(t => t.name)`.
+- **כלל ה-SDK** (`server-code-must-not-reach-the-editor-sdk`) לא מכסה את `webhook-trigger.ts`, `manual-run.ts`, `trigger.ts`, `schedule.ts`, `inbound.ts`, `enqueue.ts`, `portability.ts`, `outbound-webhook.ts` ואת `src/app`. §7.1 מנה בדיוק את הנתיבים שכן מכוסים. נמדד: depcruise על כל אחד משמונת המודולים לא מגיע ל-SDK או לקובצי עורך (0 התאמות לכל אחד; בקורת החיובית, קובץ ה-palette של `trigger-webhook`, יצאו 13). כלומר זה פער ולא תקלה חיה. הצעה: להרחיב את ה-`from` של הכלל, או להוסיף את `src/lib/queue` ואת `src/lib/ops` לשורשים של `worker:deps`.
+- `check-worker-bundle.mjs` לא מחפש את ה-SDK בחבילת המנוע. הבדיקה נעשתה ידנית בביקורת הסופית.
+- `NODE_CONDITIONAL_REQUIRED_FIELDS` לא מקובע לפי זהות ב-`node-definitions.test.ts`, בשונה מ-`NODE_NUMBER_RANGES`.
+
+**מבנה, הצעה לשלב הבא:**
+- כללי חימוש של צומת בודד עדיין יושבים ב-`arm-check.ts` (ראו "סטיות מהתוכנית"). הכיוון: predicates או נתונים פר צומת, בתיקייה של הצומת. זה לא נעשה, כי ההעברה הייתה אמורה להיות בלי שינוי התנהגות.
+
+**כפילויות שהיו גם קודם:**
+- התווית והתיאור של כל צומת כתובים פעמיים, ב-PaletteItem ובברירות המחדל.
+- שמות שדות הפלט כתובים גם ב-`definition.outputFields` וגם ב-`runtime.ts` שכותב אותם. `references.test.ts` מגן על התבניות.
+
+**הערות שגויות שנמצאו ולא תוקנו:**
+- `catalogue/types.ts` (סביב שורה 88): ההערה על ה-re-exports של סוגי הודעות הוואטסאפ מונה את `arm-check.ts` בין הקוראים. `arm-check.ts` לא מייבא אף אחד מהם, וההערה הייתה שגויה עוד לפני ההעברה.
+- `catalogue/templates/voice-call-with-outcome.ts:106` מצטט את `resolve-template.ts:127`. בפועל ה-`throw` של `Unresolved template reference` נמצא בשורה 131.
+
+**לא אומת:**
+- אין בדיקה בדפדפן או בזמן ריצה של העורך על העץ הסופי, כי הוא לא נפרס.
+- התקלות שב-`plans/node-folders-dependency-map.md` §7, חוץ מ-§7.3, לא טופלו במסגרת ההעברה, שלא שינתה התנהגות.
 
 ### אירוע במהלך העבודה
 
@@ -218,7 +340,11 @@ catalogue/templates/
 
 ### הצעדים הבאים
 
-1. לשמור בגרסה את התשתית ואת צומת 1.
-2. להעביר את הצומת הבא לפי הסדר במפה: `logic.condition` ו-`logic.switch`. לצמתים עם ענפים יש להעביר ל-`editor-shared.ts` גם את `actionBranches`, `actionBranchesProperty` ו-`errorPolicyOptions`.
-3. **נותרו 22 צמתים.**
+**אין צמתים להעביר. ההעברה הושלמה.** מה שנשאר פתוח, וכל פריט דורש אישור של הבעלים:
+
+1. **פריסה לבטא** של `f99836d`..`fd03b07`, ואחריה בדיקה בדפדפן של העורך: הלוח, הטפסים, רשימות הבחירה החיות (וואטסאפ, SUMIT, Microsoft, השיחה הקולית) והתבניות.
+2. **מיזוג** הענף.
+3. **שמירה**, לפי בחירה: snapshot לסדר `DIAGRAM_TEMPLATES`, הרחבת כלל ה-SDK לנתיבים שלא מכוסים, ובדיקת SDK ב-`check-worker-bundle.mjs`.
+4. **מבנה:** העברת כללי החימוש של צומת בודד מ-`arm-check.ts` לתיקיות הצמתים.
+5. **תיקון שתי ההערות השגויות** שנמנו למעלה.
 
