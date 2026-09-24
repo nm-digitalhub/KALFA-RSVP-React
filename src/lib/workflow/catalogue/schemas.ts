@@ -50,12 +50,12 @@ import {
   statusProperty,
 } from './editor-shared';
 
+import { conditionPaletteItem } from '../nodes/logic-condition/logic-condition';
 import { setValuePaletteItem } from '../nodes/logic-set-value/logic-set-value';
 
 import {
   ACTION_BRANCH_HANDLES,
   CALLBACK_TOPICS,
-  CONDITION_BRANCH_HANDLES,
   ERROR_POLICIES,
   HTTP_METHODS,
   HTTP_METHODS_WITH_BODY,
@@ -65,11 +65,8 @@ import {
   type SumitDocumentTypeOption,
   SWITCH_DEFAULT_BRANCH_ID,
   SWITCH_DEFAULT_HANDLE,
-  UNARY_CONDITION_OPERATORS,
   WAIT_UNIT_VALUES,
   WHATSAPP_MESSAGE_KINDS,
-  type ConditionField,
-  type ConditionOperator,
   type GuestField,
   type KalfaNodeType,
   type MicrosoftMailContentType,
@@ -83,11 +80,6 @@ import {
 // Option sets — the same `{ label, value }` shape the SDK's own statusOptions use
 // ---------------------------------------------------------------------------
 
-// Indexed by NAME, not by position in the tuple. The previous form read
-// `CONDITION_FIELDS[0]`, `[1]`, `[2]` … which is correct exactly as long as
-// nobody inserts an entry — and this list just grew from two to seven. Naming
-// the member makes a reorder a type error instead of a silently relabelled
-// dropdown.
 // The two handles an action node draws, as DATA — the same mechanism already
 // proven on `logic.condition`, whose branches were verified rendering on a live
 // canvas. `templateType: NodeType.DecisionNode` on the palette entry turns each
@@ -142,30 +134,6 @@ function conditionalRules(nodeType: KalfaNodeType) {
     })),
   );
 }
-
-const conditionFieldOptions = {
-  message_text: { label: 'תוכן ההודעה', value: 'message_text' },
-  button_payload: { label: 'כפתור שנלחץ', value: 'button_payload' },
-  guest_name: { label: 'שם האורח', value: 'guest_name' },
-  event_name: { label: 'שם האירוע', value: 'event_name' },
-  event_date: { label: 'תאריך האירוע', value: 'event_date' },
-  contactId: { label: 'מזהה איש קשר', value: 'contactId' },
-  eventId: { label: 'מזהה אירוע', value: 'eventId' },
-} as const satisfies Record<ConditionField, { label: string; value: ConditionField }>;
-
-const conditionOperatorOptions = {
-  contains: { label: 'מכיל', value: 'contains' },
-  not_contains: { label: 'לא מכיל', value: 'not_contains' },
-  equals: { label: 'שווה ל־', value: 'equals' },
-  not_equals: { label: 'שונה מ־', value: 'not_equals' },
-  starts_with: { label: 'מתחיל ב־', value: 'starts_with' },
-  ends_with: { label: 'מסתיים ב־', value: 'ends_with' },
-  is_empty: { label: 'ריק', value: 'is_empty' },
-  is_not_empty: { label: 'אינו ריק', value: 'is_not_empty' },
-} as const satisfies Record<
-  ConditionOperator,
-  { label: string; value: ConditionOperator }
->;
 
 // Hebrew labels, authored here rather than taken from the SDK's exported
 // `errorPolicyProperty`. That fragment ships English strings ("Fail workflow")
@@ -571,87 +539,6 @@ const sumitCardTriggerUiSchema: UISchema = {
       text: 'הרצה שמתחילה כאן אינה קשורה לאורח, ולכן צעדים שפועלים על אורח (עדכון סטטוס, שליחת וואטסאפ, בקשת חזרה) ייכשלו בתוכה.',
     },
     statusControl(sumitCardTriggerScope('properties.status')),
-  ],
-};
-
-// ---------------------------------------------------------------------------
-// logic.condition
-// ---------------------------------------------------------------------------
-
-const conditionSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['logic.condition'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    left: { type: 'string' },
-    field: { ...requiredText, options: Object.values(conditionFieldOptions) },
-    operator: { ...requiredText, options: Object.values(conditionOperatorOptions) },
-    value: { type: 'string' },
-    // The node's two outgoing ports, declared as DATA because that is what the
-    // SDK's decision renderer reads. `templateType: 'decision-node'` on the
-    // palette item below draws one labelled handle per entry of this array —
-    // which is the only way this editor can produce an edge whose `sourceHandle`
-    // is anything but the bare 'source'. Without it both branches leave the node
-    // on the same handle and the runner cannot tell them apart.
-    //
-    // Not exposed in the uischema: there is no `DecisionBranches` control below,
-    // so the owner sees the two handles on the canvas but cannot add, rename or
-    // delete them from the properties panel. That is deliberate — this node's
-    // meaning is binary, and `logic.condition`'s handler routes to exactly these
-    // two ids.
-    decisionBranches: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          sourceHandle: { type: 'string' },
-          label: { type: 'string' },
-        },
-      },
-    },
-  },
-} satisfies NodeSchema;
-
-const conditionScope = getScope<typeof conditionSchema>;
-
-const conditionUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(conditionScope('properties.label'), conditionScope('properties.description')),
-    { type: 'Select', scope: conditionScope('properties.field'), label: 'בדוק את' },
-    {
-      // The escape hatch from the dropdown, and the reason the dropdown is no
-      // longer a ceiling. `nodes/conditional.md` describes both sides of a
-      // comparison as free values that may reference earlier nodes; this is that
-      // side. Left blank, the dropdown above is used — which is how every
-      // diagram saved before this keeps behaving.
-      type: 'VariableText',
-      scope: conditionScope('properties.left'),
-      label: 'או השוו ערך משלכם (גובר על הבחירה למעלה)',
-      placeholder: "למשל {{nodes.<id>.value}} או {{trigger.guest_name}}",
-    },
-    { type: 'Select', scope: conditionScope('properties.operator'), label: 'התנאי' },
-    {
-      // Also a VariableText: the right-hand side is as free as the left, so a
-      // condition can compare one node's output against another's.
-      type: 'VariableText',
-      scope: conditionScope('properties.value'),
-      label: 'ערך',
-      // The unary operators take no operand. Hiding the box is the difference
-      // between a form that explains itself and one that invites a value it will
-      // ignore. Spelled as an enum rather than a const because there are now two
-      // such operators and a `const` rule would only ever hide for one of them.
-      rule: {
-        effect: 'HIDE',
-        condition: {
-          scope: conditionScope('properties.operator'),
-          schema: { enum: [...UNARY_CONDITION_OPERATORS] },
-        },
-      },
-    },
-    statusControl(conditionScope('properties.status')),
   ],
 };
 
@@ -2903,94 +2790,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       tokenHash: '',
     },
   } satisfies PaletteItem<typeof sumitCardTriggerSchema>,
-  {
-    type: 'logic.condition' satisfies KalfaNodeType,
-    label: 'תנאי',
-    description: 'מפצל את התהליך לשני מסלולים',
-    icon: 'GitBranch',
-    // Renders with the SDK's built-in decision body instead of the default
-    // one-in/one-out node. `jb(paletteType, templateType, customTemplates)`
-    // in the SDK resolves this to the React Flow node type at drop time, so the
-    // node gets the branch handles, the OptionalNodeContent slot our execution
-    // badges mount into, and the NodeAsPortWrapper drag behaviour — none of
-    // which a hand-written `nodeTemplates` entry would have kept.
-    // `NodeType` is an enum (a VALUE), not a string union — the literal
-    // 'decision-node' does not type-check even though it is the same string.
-    //
-    // This is the vendor's own canonical shape for a branching node, not an
-    // invention: apps/demo/src/app/data/nodes/decision/ declares exactly
-    // `templateType: NodeType.DecisionNode` plus a `decisionBranches` array of
-    // `{ id, sourceHandle, label, conditions }`. Two deliberate differences:
-    //
-    //   * We omit `conditions` from the item shape and the branch-condition
-    //     control from the uischema, and the branches are fixed.
-    //
-    //     ⚠️ THE REASON THIS BULLET USED TO GIVE IS NO LONGER TRUE, and leaving
-    //     it stated would keep talking a future reader out of a real feature.
-    //     It said the vendor's branch conditions are `{x, y, comparisonOperator}`
-    //     resolved through `resolveTemplate` "which we did not vendor", so
-    //     `{{trigger.x}}` would render as literal text. `resolve-template.ts` IS
-    //     vendored and wired into `activity-runner.ts` — the very next bullet
-    //     says so about `outputSchema` — and `logic.switch` already ships the
-    //     vendor's `DecisionBranches` control (see `switchUiSchema`). So the
-    //     mechanism works and is in use.
-    //
-    //     ⚠️ AND IT NAMED THE WRONG CONTROL. `DecisionBranches` belongs to the
-    //     vendor's DECISION node (docs/workflowbuilder/nodes/decision.md); their
-    //     CONDITIONAL node uses `DynamicConditions` over a `conditionsArray`
-    //     (nodes/conditional.md). This entry is the conditional shape.
-    //
-    //     WHAT ACTUALLY STOPS IT, measured: `ConditionConfig` stores one
-    //     comparison as `field`/`operator`/`value`, so "A AND B" cannot be
-    //     expressed and every saved diagram carries the flat triple. The blocker
-    //     is a migration of stored data, not a missing control — and the
-    //     array evaluator with AND/OR already exists, serving `logic.switch`.
-    //   * `outputSchema` USED to be withheld here, on the reasoning that "the
-    //     picker would suggest references nothing can resolve". That held only
-    //     while `resolve-template.ts` was unvendored; it is vendored and wired
-    //     into `activity-runner.ts`, and the node has declared its output ever
-    //     since. This bullet remained as a description of a state that no longer
-    //     existed — see the declaration below.
-    //
-    // The starter (examples/workflow-builder-starter) has a node also called
-    // "condition", and it is NOT this pattern — it is a single-output node with
-    // a free-text `condition` string and no runner behind it. Modelling a
-    // branching node on it is what produced the dead-branch defect this entry
-    // now fixes.
-    templateType: NodeType.DecisionNode,
-    schema: conditionSchema,
-    uischema: conditionUiSchema,
-    // Declared so the variable picker can OFFER this node's output instead of
-    // making an owner type a node id by hand. Declaring it also makes the shape
-    // a deliberate contract: renaming `result` now breaks saved workflows, so
-    // the name is chosen once and kept.
-    outputSchema: {
-      type: 'default',
-      properties: {
-        result: {
-          type: 'boolean',
-          label: 'תוצאת התנאי',
-          description: 'האם התנאי התקיים',
-        },
-      },
-    },
-    defaultPropertiesData: {
-      status: nodeStatusOptions.active.value,
-      label: 'תנאי',
-      description: 'מפצל את התהליך לשני מסלולים',
-      field: conditionFieldOptions.message_text.value,
-      operator: conditionOperatorOptions.contains.value,
-      value: '',
-      // Seeded, and never generated. The SDK's own "add branch" mints
-      // `crypto.randomUUID()` for both fields; ours are fixed so the worker can
-      // name the port it wants without reading the diagram. `id` is only React's
-      // list key. The labels are what the owner reads beside each handle.
-      decisionBranches: [
-        { id: 'true', sourceHandle: CONDITION_BRANCH_HANDLES.true, label: 'מתקיים' },
-        { id: 'false', sourceHandle: CONDITION_BRANCH_HANDLES.false, label: 'לא מתקיים' },
-      ],
-    },
-  } satisfies PaletteItem<typeof conditionSchema>,
+  // Moved to its own folder — see nodes/logic-condition/.
+  conditionPaletteItem,
   {
     type: 'logic.switch' satisfies KalfaNodeType,
     label: 'ניתוב לפי תנאים',

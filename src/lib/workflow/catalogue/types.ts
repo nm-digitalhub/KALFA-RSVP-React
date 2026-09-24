@@ -15,6 +15,7 @@
 // folder's editor files.
 import type { RsvpStatus } from '@/lib/constants';
 
+import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
 
 // ---------------------------------------------------------------------------
@@ -29,7 +30,7 @@ export const NODE_TYPES = [
   'trigger.webhook',
   'trigger.schedule',
   'trigger.sumit_card',
-  'logic.condition',
+  conditionDefinition.type,
   'logic.switch',
   'action.update_guest_status',
   'action.send_whatsapp',
@@ -55,54 +56,6 @@ export type KalfaNodeType = (typeof NODE_TYPES)[number];
 // ---------------------------------------------------------------------------
 // Per-type configuration, narrowed by `type`
 // ---------------------------------------------------------------------------
-
-// Trigger fields offered in the condition's dropdown.
-//
-// This list used to hold two entries and to be the ONLY thing a condition could
-// look at, on the reasoning that "an unbounded accessor would invite reaching
-// into something that is not there and failing at run time instead of at save
-// time". Two things make that reasoning obsolete:
-//
-//   1. the trigger payload grew from two fields to seven, so the closed set was
-//      hiding five values a workflow was already carrying; and
-//   2. `resolveConfigTemplates` now runs over every field of every config before
-//      the handler sees it, and an unresolvable reference raises
-//      `PermanentNodeExecutionError` naming the offending token. The failure the
-//      closed set was protecting against is now loud, immediate and specific —
-//      which was the only thing wrong with it.
-//
-// So the dropdown stays as the convenient path and is complete, while `left`
-// below opens the door the docs describe: `nodes/conditional.md` specifies X and
-// Y as free values that "support referencing data from earlier nodes and the
-// trigger payload". A condition can now compare `{{nodes.<id>.value}}` to
-// anything, which is what makes multi-step logic expressible at all.
-export const CONDITION_FIELDS = [
-  'message_text',
-  'button_payload',
-  'guest_name',
-  'event_name',
-  'event_date',
-  'contactId',
-  'eventId',
-] as const;
-export type ConditionField = (typeof CONDITION_FIELDS)[number];
-
-export const CONDITION_OPERATORS = [
-  'contains',
-  'not_contains',
-  'equals',
-  'not_equals',
-  'starts_with',
-  'ends_with',
-  'is_empty',
-  'is_not_empty',
-] as const;
-export type ConditionOperator = (typeof CONDITION_OPERATORS)[number];
-
-// Operators that take no right-hand value. Named once, because THREE places have
-// to agree — the form's HIDE rule, the handler's evaluation, and any reader
-// asking why 'ערך' vanished.
-export const UNARY_CONDITION_OPERATORS = ['is_empty', 'is_not_empty'] as const;
 
 export type WhatsappInboundConfig = {
   // Optional pre-filter: run only when the message contains this text. Empty or
@@ -502,50 +455,12 @@ export function authModeFor(nodeType: string, properties: Record<string, unknown
   return readWebhookAuthMode(properties.auth);
 }
 
-// The two outgoing ports of a condition node, as HANDLE IDS.
-//
-// These strings are a persistence contract twice over, and getting them wrong
-// is silent. The runner's `isEdgeLive` fires an outgoing edge only when
-// `edge.sourceHandle === nextPort`, compared with `===` and nothing else. So the
-// value the handler returns must be, character for character, the id the EDITOR
-// wrote on the handle the owner dragged from.
-//
-// The editor mints handle ids with the SDK's `getHandleId({ handleType, innerId })`,
-// documented as returning `<handleType>:inner:<innerId>` for a sub-handle. The
-// SDK's own decision branches pass a `crypto.randomUUID()` as `innerId`, but the
-// parser accepts any suffix (`/^(source|target):inner:/`), so a FIXED innerId is
-// legal and gives us the one thing a UUID cannot: a value the worker can know
-// without reading the diagram.
-//
-// They are spelled out as literals rather than computed, because this module is
-// read by the pg-boss worker and must not import @workflowbuilder/sdk.
-// `schemas.test.ts` asserts each literal equals `getHandleId(...)` on the SDK
-// side, so if the SDK ever changes the format the test fails rather than the
-// workflow.
-export const CONDITION_BRANCH_HANDLES = {
-  true: 'source:inner:true',
-  false: 'source:inner:false',
-} as const;
-
-export type ConditionBranchHandle =
-  (typeof CONDITION_BRANCH_HANDLES)[keyof typeof CONDITION_BRANCH_HANDLES];
-
-export type ConditionConfig = {
-  /**
-   * The left-hand side, as a free expression.
-   *
-   * Empty or absent means "use `field`", which is what every diagram saved
-   * before this existed contains — so old workflows keep evaluating exactly as
-   * they did, and the fallback is a compatibility path rather than a second way
-   * to write a new condition.
-   */
-  left?: string;
-  field: ConditionField;
-  operator: ConditionOperator;
-  // Unused by the unary operators. Kept optional rather than a union so the
-  // property form can show one shape and hide the field with a JSONForms rule.
-  value?: string;
-};
+// `logic.condition` — its config, trigger fields, operators and the two branch
+// handles are declared with the rest of its contract in
+// `nodes/logic-condition/definition.ts`. The handles and the config type are
+// re-exported here for existing readers.
+export { CONDITION_BRANCH_HANDLES, type ConditionBranchHandle } from '../nodes/logic-condition/definition';
+export type ConditionConfig = conditionDefinition.ConditionConfig;
 
 // ---------------------------------------------------------------------------
 // logic.switch
@@ -1184,7 +1099,7 @@ export type KalfaNodeConfig =
   | { type: 'action.ai_agent'; config: AiAgentConfig }
   | { type: 'trigger.schedule'; config: ScheduleTriggerConfig }
   | { type: 'trigger.sumit_card'; config: SumitCardTriggerConfig }
-  | { type: 'logic.condition'; config: ConditionConfig }
+  | { type: typeof conditionDefinition.type; config: ConditionConfig }
   | { type: 'logic.switch'; config: SwitchConfig }
   | { type: 'action.update_guest_status'; config: UpdateGuestStatusConfig }
   | { type: 'action.send_whatsapp'; config: SendWhatsappConfig }
@@ -1343,6 +1258,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
 > = {
   // A moved node declares its own — even `{}` — in its definition.
   [setValueDefinition.type]: setValueDefinition.deploymentBindings,
+  [conditionDefinition.type]: conditionDefinition.deploymentBindings,
   'trigger.whatsapp_inbound': { phoneNumberId: 'identifier' },
   // A HASH, not the token — so this is no longer a secret that must not travel,
   // but it still authenticates to THIS installation and resolves to nothing
@@ -1392,7 +1308,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   'action.ai_agent': ['label', 'description', 'systemPrompt', 'model'],
   'trigger.schedule': ['label', 'description', 'time'],
   'trigger.sumit_card': ['label', 'description', 'tokenHash'],
-  'logic.condition': ['label', 'description', 'field', 'operator'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [conditionDefinition.type]: conditionDefinition.requiredFields,
   'logic.switch': ['label', 'description'],
   'logic.wait': ['label', 'description', 'amount', 'unit'],
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts

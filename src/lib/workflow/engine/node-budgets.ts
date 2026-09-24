@@ -1,4 +1,5 @@
 import type { KalfaNodeType } from '../catalogue/types';
+import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
 
 // How long ONE execution of a node may take — the missing half of the wait work,
@@ -56,7 +57,7 @@ export const DEFAULT_NODE_ACTIVITY_PROFILE: NodeActivityProfile = { timeoutMs: 1
  */
 export const NODE_ACTIVITY_PROFILES: Readonly<Partial<Record<KalfaNodeType, NodeActivityProfile>>> =
   Object.freeze({
-    'logic.condition': { timeoutMs: 5_000 },
+    [conditionDefinition.type]: conditionDefinition.activityProfile,
     'logic.switch': { timeoutMs: 5_000 },
     [setValueDefinition.type]: setValueDefinition.activityProfile,
     'logic.wait': { timeoutMs: 5_000 },

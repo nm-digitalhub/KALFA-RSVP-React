@@ -11,6 +11,7 @@
 // plans/node-folders-file-matrix.md), then one entry here, in `NODE_TYPES`,
 // `NODE_REQUIRED_FIELDS`, `PALETTE_ITEMS` and `STEP_HANDLERS`, each read from
 // the definition. No adapter changes.
+import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
 
 import { NODE_TYPES, type CatalogueEntry, type KalfaNodeType } from './types';
@@ -20,7 +21,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'trigger.webhook', isTrigger: true },
   { type: 'trigger.schedule', isTrigger: true },
   { type: 'trigger.sumit_card', isTrigger: true },
-  { type: 'logic.condition', isTrigger: false },
+  { type: conditionDefinition.type, isTrigger: conditionDefinition.isTrigger },
   { type: 'logic.switch', isTrigger: false },
   { type: 'action.update_guest_status', isTrigger: false },
   { type: 'action.send_whatsapp', isTrigger: false },
