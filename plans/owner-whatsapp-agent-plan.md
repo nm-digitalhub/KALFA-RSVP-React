@@ -2,7 +2,7 @@
 
 תאריך: 2026-09-24 · מצב: טיוטה לאישור הבעלים. עודכן באותו יום לפי החלטת הבעלים: **המספר נבחר בממשק הניהול**, מכל מספרי ה-WABA, כולל מספר שמשרת אורחים. אין override של Meta, אין קריאת Graph ואין route קליטה נפרד.
 
-**מה קיים בריפו (24.9, 07:55):** המיגרציה `supabase/migrations/20260924034054_owner_agent_whatsapp.sql` **הוחלה על ה-DB החי** (שלב 1 ✅), ו-`types.generated.ts` נוצר מחדש ב-worktree המבודד `agent-a4b04504ddd685a17`. שלב 2 (ממשק ניהול) בעבודה. אין עדיין הסטה ב-route, אין תהליך סוכן, אין התקנת חבילות ולא נשלחה הודעה.
+**מה קיים בריפו (24.9, 07:55):** המיגרציה `supabase/migrations/20260924034054_owner_agent_whatsapp.sql` **הוחלה על ה-DB החי** (שלב 1 ✅), ו-`types.generated.ts` נוצר מחדש ב-worktree המבודד `agent-a4b04504ddd685a17`. שלב 2 (ממשק ניהול) ✅ בקוד (commit `d14b8c8` ב-worktree), ממתין למיזוג ולבדיקת דפדפן. אין עדיין הסטה ב-route, אין תהליך סוכן, אין התקנת חבילות ולא נשלחה הודעה.
 
 מקרא:
 - **[נמדד]**: נבדק ישירות בקובץ, במסמך מקומי, ב-DB החי (קריאה בלבד) או במסמך רשמי שנשלף היום.
@@ -593,6 +593,12 @@ if (!enabled || !config?.appSecret) {
 - `admin-data-layer-coverage.test.ts` ירוק, עם ההצמדה החדשה;
 - בדיקת יחידה ל-DAL;
 - בדיקת דפדפן (RTL, מקלדת, מצבי ריק ושגיאה).
+
+**סטטוס: ✅ בקוד, 24.9.2026** (commit `d14b8c8` ב-worktree `agent-a4b04504ddd685a17`). **בדיקת הדפדפן ממתינה** למיזוג ול-deploy.
+- **קבצים חדשים:** `src/lib/data/admin/owner-agent.ts` (DAL, כל export עם `requirePlatformOwner`), `src/lib/validation/owner-agent.ts`, `src/app/(admin)/admin/integrations/owner-agent/` (`page.tsx`, `actions.ts`, `number-picker.tsx`, `allowlist-panel.tsx`, `owner-agent-settings-forms.tsx`, `audit-table.tsx`), ובדיקות לכל אחד.
+- **קבצים ששונו:** `src/lib/data/admin/integrations/index.ts` (כרטיס עם הסמן `OWNER`; המצב נקרא משתי עמודות `app_settings`, כי ב-RPC `integrations_configured_flags` אין דגל לסוכן), `admin-data-layer-coverage.test.ts` (הצמדה `[]` ובדיקה לכל export), `docs/project/09-admin-panel.md`.
+- **שערים:** `tsc` 0 שגיאות; `lint` 0; `worker:deps` בלי הפרות; בדיקות ממוקדות 387/387; `npm test` מלא 7228 עברו, 5 נכשלו בשלושה קבצים שקוראים את `node_modules` ואת `voxfiles/.../scenarios/dist`, שאינם קיימים ב-worktree (לא קשור לשינוי). `next build` לא הורץ, לפי ההנחיה.
+- **נוסף מעבר לתוכנית:** קלט הטלפון לרשימה מתקבל רק כ-`+…` או כמספר ישראלי שמתחיל ב-0, כי ספרות זרות בלי `+` מתנרמלות למספר ישראלי אחר (אותו ממצא כמו 5ד). תקרה ריקה נדחית ולא הופכת ל-0.
 
 **שלב 3 (בוטל): הגנה על נפילה חזרה.** לא נדרש יותר. שורות מוסטות לא נכנסות ל-`webhook_inbox`, ולכן אין צורך:
 - ב-class `'owner_agent'` ב-router;
