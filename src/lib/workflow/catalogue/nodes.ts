@@ -27,6 +27,7 @@ import * as webhookDefinition from '../nodes/action-webhook/definition';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
 import * as switchDefinition from '../nodes/logic-switch/definition';
+import * as waitDefinition from '../nodes/logic-wait/definition';
 
 import { NODE_TYPES, type CatalogueEntry, type KalfaNodeType } from './types';
 
@@ -46,7 +47,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: setGuestFieldDefinition.type, isTrigger: setGuestFieldDefinition.isTrigger },
   { type: callbackRequestDefinition.type, isTrigger: callbackRequestDefinition.isTrigger },
   { type: importGuestListDefinition.type, isTrigger: importGuestListDefinition.isTrigger },
-  { type: 'logic.wait', isTrigger: false },
+  { type: waitDefinition.type, isTrigger: waitDefinition.isTrigger },
   { type: sendTemplateDefinition.type, isTrigger: sendTemplateDefinition.isTrigger },
   { type: 'action.start_for_each_guest', isTrigger: false },
   { type: 'action.start_voice_call', isTrigger: false },

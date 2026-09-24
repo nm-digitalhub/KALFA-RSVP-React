@@ -71,11 +71,11 @@ import { webhookPaletteItem } from '../nodes/action-webhook/action-webhook';
 import { conditionPaletteItem } from '../nodes/logic-condition/logic-condition';
 import { setValuePaletteItem } from '../nodes/logic-set-value/logic-set-value';
 import { switchPaletteItem } from '../nodes/logic-switch/logic-switch';
+import { waitPaletteItem } from '../nodes/logic-wait/logic-wait';
 
 import {
   NODE_NUMBER_RANGES,
   NODE_REQUIRED_FIELDS,
-  WAIT_UNIT_VALUES,
   WHATSAPP_MESSAGE_KINDS,
   type KalfaNodeType,
   webhookMethodOptions,
@@ -444,58 +444,6 @@ export type { MicrosoftConnectionOption };
 // ---------------------------------------------------------------------------
 // The palette
 // ---------------------------------------------------------------------------
-
-
-// ---------------------------------------------------------------------------
-// logic.wait
-// ---------------------------------------------------------------------------
-
-const waitUnitOptions = {
-  minutes: { label: 'דקות', value: WAIT_UNIT_VALUES[0] },
-  hours: { label: 'שעות', value: WAIT_UNIT_VALUES[1] },
-  days: { label: 'ימים', value: WAIT_UNIT_VALUES[2] },
-} as const;
-
-const waitSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['logic.wait'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    // `minimum: 1` is the form's half of the guard; the handler refuses a
-    // non-positive value again, because the schema constrains what can be TYPED
-    // and not what is in the jsonb row.
-    amount: { type: 'number', ...NODE_NUMBER_RANGES['logic.wait']!.amount },
-    unit: { ...requiredText, options: Object.values(waitUnitOptions) },
-  },
-} satisfies NodeSchema;
-
-const waitScope = getScope<typeof waitSchema>;
-
-const waitUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(waitScope('properties.label'), waitScope('properties.description')),
-    {
-      type: 'HorizontalLayout',
-      elements: [
-        { type: 'Text', scope: waitScope('properties.amount'), label: 'כמה', inputType: 'number' },
-        { type: 'Select', scope: waitScope('properties.unit'), label: 'יחידה' },
-      ],
-    },
-    {
-      // The two things an owner cannot see from the canvas and will otherwise
-      // learn from a surprise.
-      type: 'Label',
-      text: 'ההרצה נעצרת כאן וחוזרת מעצמה. עד אז היא מופיעה כ"ממתינה" ולא כהושלמה.',
-    },
-    {
-      type: 'Label',
-      text: 'שימו לב: אם תערכו את התהליך בזמן ההמתנה, ההרצה תמשיך לפי הגרסה החדשה.',
-    },
-    statusControl(waitScope('properties.status')),
-  ],
-};
 
 
 // ---------------------------------------------------------------------------
@@ -1460,27 +1408,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
   webhookPaletteItem,
   // Moved to its own folder — see nodes/action-import-guest-list/.
   importGuestListPaletteItem,
-  {
-    type: 'logic.wait' satisfies KalfaNodeType,
-    label: 'המתנה',
-    description: 'עוצר את התהליך וממשיך אותו מאוחר יותר',
-    icon: 'Hourglass',
-    schema: waitSchema,
-    uischema: waitUiSchema,
-    outputSchema: {
-      type: 'default',
-      properties: {
-        waited: { type: 'boolean', label: 'ההמתנה הסתיימה' },
-      },
-    },
-    defaultPropertiesData: {
-      status: nodeStatusOptions.active.value,
-      label: 'המתנה',
-      description: 'עוצר את התהליך וממשיך אותו מאוחר יותר',
-      amount: 1,
-      unit: waitUnitOptions.days.value,
-    },
-  } satisfies PaletteItem<typeof waitSchema>,
+  // Moved to its own folder — see nodes/logic-wait/.
+  waitPaletteItem,
   // Moved to its own folder — see nodes/action-send-template/.
   sendTemplatePaletteItem,
   {

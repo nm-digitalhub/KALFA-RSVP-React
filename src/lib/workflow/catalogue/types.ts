@@ -31,6 +31,7 @@ import * as webhookDefinition from '../nodes/action-webhook/definition';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
 import * as switchDefinition from '../nodes/logic-switch/definition';
+import * as waitDefinition from '../nodes/logic-wait/definition';
 
 // ---------------------------------------------------------------------------
 // Node types
@@ -55,7 +56,7 @@ export const NODE_TYPES = [
   setGuestFieldDefinition.type,
   callbackRequestDefinition.type,
   importGuestListDefinition.type,
-  'logic.wait',
+  waitDefinition.type,
   sendTemplateDefinition.type,
   'action.start_for_each_guest',
   'action.start_voice_call',
@@ -170,21 +171,6 @@ export const DEFAULT_WHATSAPP_MESSAGE_KINDS: readonly string[] = [
 export const OWNER_WHATSAPP_MESSAGE_KINDS: readonly string[] = ['document', 'contacts'];
 
 /**
- * `logic.wait` — the run stops here and comes back later.
- *
- * A DURATION, not a wall-clock time, and that is the smaller of the two useful
- * shapes: "three days after this point in the flow" composes with any trigger,
- * while "next Tuesday at 9" only makes sense against a calendar and belongs to
- * the schedule trigger instead.
- *
- * MINUTES IS THE FLOOR. Anything shorter is not a wait an owner can reason
- * about — the queue's own delivery jitter is measured in seconds — and offering
- * seconds would invite a flow that parks and wakes hundreds of times a day.
- */
-export const WAIT_UNIT_VALUES = ['minutes', 'hours', 'days'] as const;
-export type WaitUnitValue = (typeof WAIT_UNIT_VALUES)[number];
-
-/**
  * `action.start_for_each_guest` — fan a run out, one per matching guest.
  *
  * ⚠️ CHILD RUNS, NOT A LOOP, and that is the design decision worth defending.
@@ -222,10 +208,10 @@ export type ForEachGuestConfig = {
  */
 export const FAN_OUT_HARD_CAP = 500;
 
-export type WaitConfig = {
-  amount: number;
-  unit: WaitUnitValue;
-};
+// `logic.wait` — its config and the units it offers are declared with the rest
+// of its contract in `nodes/logic-wait/definition.ts`. The config type is
+// re-exported here for existing readers.
+export type WaitConfig = waitDefinition.WaitConfig;
 
 // `action.import_guest_list` — declared with the rest of its contract in
 // `nodes/action-import-guest-list/definition.ts`, re-exported here for
@@ -755,7 +741,7 @@ export type KalfaNodeConfig =
   | { type: typeof setGuestFieldDefinition.type; config: SetGuestFieldConfig }
   | { type: typeof callbackRequestDefinition.type; config: CreateCallbackRequestConfig }
   | { type: typeof importGuestListDefinition.type; config: ImportGuestListConfig }
-  | { type: 'logic.wait'; config: WaitConfig }
+  | { type: typeof waitDefinition.type; config: WaitConfig }
   | { type: typeof sendTemplateDefinition.type; config: SendTemplateConfig }
   | { type: 'action.start_for_each_guest'; config: ForEachGuestConfig }
   | { type: typeof setValueDefinition.type; config: SetValueConfig }
@@ -910,6 +896,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   [sendWhatsappDefinition.type]: sendWhatsappDefinition.deploymentBindings,
   [startRsvpAiCallbackDefinition.type]: startRsvpAiCallbackDefinition.deploymentBindings,
   [importGuestListDefinition.type]: importGuestListDefinition.deploymentBindings,
+  [waitDefinition.type]: waitDefinition.deploymentBindings,
   'trigger.whatsapp_inbound': { phoneNumberId: 'identifier' },
   // A HASH, not the token — so this is no longer a secret that must not travel,
   // but it still authenticates to THIS installation and resolves to nothing
@@ -956,7 +943,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [switchDefinition.type]: switchDefinition.requiredFields,
-  'logic.wait': ['label', 'description', 'amount', 'unit'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [waitDefinition.type]: waitDefinition.requiredFields,
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [setValueDefinition.type]: setValueDefinition.requiredFields,
@@ -1265,7 +1254,8 @@ export function activeConditionalRequirements(
 export const NODE_NUMBER_RANGES: Partial<
   Record<KalfaNodeType, Record<string, { minimum?: number; maximum?: number }>>
 > = {
-  'logic.wait': { amount: { minimum: 1 } },
+  // Declared with the rest of the node's contract — the SAME object, read here.
+  [waitDefinition.type]: waitDefinition.numberRanges,
   'action.start_for_each_guest': { maxGuests: { minimum: 1, maximum: FAN_OUT_HARD_CAP } },
 };
 

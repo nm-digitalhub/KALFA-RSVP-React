@@ -11,6 +11,7 @@ import * as webhookDefinition from '../nodes/action-webhook/definition';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
 import * as switchDefinition from '../nodes/logic-switch/definition';
+import * as waitDefinition from '../nodes/logic-wait/definition';
 
 // How long ONE execution of a node may take — the missing half of the wait work,
 // adopted from the engine this project vendored its graph runner from.
@@ -70,7 +71,7 @@ export const NODE_ACTIVITY_PROFILES: Readonly<Partial<Record<KalfaNodeType, Node
     [conditionDefinition.type]: conditionDefinition.activityProfile,
     [switchDefinition.type]: switchDefinition.activityProfile,
     [setValueDefinition.type]: setValueDefinition.activityProfile,
-    'logic.wait': { timeoutMs: 5_000 },
+    [waitDefinition.type]: waitDefinition.activityProfile,
     [webhookDefinition.type]: webhookDefinition.activityProfile,
     [sendWhatsappDefinition.type]: sendWhatsappDefinition.activityProfile,
     [sendTemplateDefinition.type]: sendTemplateDefinition.activityProfile,
