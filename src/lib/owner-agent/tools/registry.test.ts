@@ -41,8 +41,20 @@ describe('OWNER_AGENT_TOOLS', () => {
   });
 
   it('tool ids are literal types (a typo in a consumer is a tsc error)', () => {
-    expectTypeOf<OwnerAgentToolId>().toEqualTypeOf<keyof typeof PLAN_TABLE>();
-    expectTypeOf<'inquiries_summary'>().toMatchTypeOf<OwnerAgentToolId>();
+    // Spelled out, not derived from PLAN_TABLE (whose key type IS
+    // OwnerAgentToolId, so comparing against it would prove nothing). If the
+    // id type widened to `string`, this is a tsc error.
+    expectTypeOf<OwnerAgentToolId>().toEqualTypeOf<
+      | 'inquiries_summary'
+      | 'campaigns_status_summary'
+      | 'billing_summary'
+      | 'voice_calls_summary'
+      | 'events_pipeline'
+      | 'rsvp_totals'
+      | 'whatsapp_delivery_summary'
+      | 'web_traffic_summary'
+      | 'system_health'
+    >();
   });
 });
 
