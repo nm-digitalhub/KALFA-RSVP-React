@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getRsvpTotals } from '@/lib/owner-agent/cores/rsvp';
 import {
+  READ_ONLY_TOOL_MCP,
   count,
   parseToolOutput,
   rangeInputSchema,
@@ -37,6 +38,7 @@ export const rsvpTotalsTool = createTool({
   description:
     'אישורי הגעה באירועים פעילים. activeEvents, guestRows ו-attending/declined/maybe/pending הם המצב הנוכחי וסופרים שורות אורחים (שורה יכולה לייצג משפחה). invitedPeople ו-attendingPeople הם מספר האנשים, גם הם מצב נוכחי. responsesInRange = תשובות RSVP שנקלטו בטווח.',
   strict: true,
+  mcp: READ_ONLY_TOOL_MCP,
   inputSchema: rangeInputSchema,
   outputSchema: rsvpTotalsOutput,
   execute: async ({ range }) =>

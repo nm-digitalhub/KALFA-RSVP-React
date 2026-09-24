@@ -1,3 +1,4 @@
+import type { MCPToolProperties } from '@mastra/core/tools';
 import { z } from 'zod';
 
 import { OWNER_AGENT_RANGES } from '@/lib/owner-agent/range';
@@ -60,6 +61,22 @@ export function countsByKey<const K extends string>(keys: readonly K[]) {
 //     output>" to the model, i.e. echo the values. Our parse runs first, so a
 //     value never travels inside an error message.
 // Output schemas are therefore never .strict(): strip is the safe mode here.
+// MCP tool annotations (spec 2025-03-26 "Tool annotations"), the same on all
+// nine tools: each only reads (head counts and aggregate RPCs), changes
+// nothing, and returns the same thing for the same arguments at one instant.
+// openWorldHint is false as decided for all nine (web_traffic_summary does
+// call GA4, but a fixed report of our own property, not an open domain).
+// mcp/server.ts hands them to tools/list; they are hints to the client, not a
+// wall — the walls are the runner's and the server's.
+export const READ_ONLY_TOOL_MCP = {
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+} as const satisfies MCPToolProperties;
+
 export function parseToolOutput<S extends z.ZodType>(
   schema: S,
   value: unknown,

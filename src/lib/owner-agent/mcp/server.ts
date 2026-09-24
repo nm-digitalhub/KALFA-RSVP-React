@@ -74,7 +74,16 @@ function toMcpTool(tool: OwnerAgentTool): Tool {
   // programming error, caught at startup rather than handed to the model.
   const inputSchema = ToolSchema.shape.inputSchema.safeParse(json);
   if (!inputSchema.success) throw new Error('owner_agent_tool_input_schema_invalid');
-  return { name: tool.id, description: tool.description, inputSchema: inputSchema.data };
+  // The MCP annotations the tool declares (tools/shared.ts READ_ONLY_TOOL_MCP),
+  // checked against the SDK's own shape like the input schema above.
+  const annotations = ToolSchema.shape.annotations.safeParse(tool.mcp?.annotations);
+  if (!annotations.success) throw new Error('owner_agent_tool_annotations_invalid');
+  return {
+    name: tool.id,
+    description: tool.description,
+    inputSchema: inputSchema.data,
+    ...(annotations.data ? { annotations: annotations.data } : {}),
+  };
 }
 
 function codeOnly(code: OwnerAgentMcpErrorCode): CallToolResult {
@@ -105,6 +114,16 @@ export function createOwnerAgentMcpServer(granted: ReadonlySet<string>): Server 
     // The tool's own schema, before its execute ever runs: a rejected
     // argument never reaches a core or creates a client. (Mastra validates
     // again inside execute; that second check is kept, not relied on.)
+    //
+    // ⚠️ NOT Mastra's validateToolInput / validateToolOutput (checked in the
+    // installed @mastra/core, dist/tool-*.js, 2026-09-24). They do NOT keep
+    // this behaviour: validateToolInput retries a failed input after
+    // normalizing nullish values, parsing stringified JSON and aliasing
+    // query/message/input to `prompt` — so it can accept arguments this strict
+    // schema rejects — and its error message carries "Provided arguments:
+    // <the input>", a value. The raw standard-schema check below accepts
+    // exactly what the schema accepts and yields a bare code. Output is
+    // already validated in each tool (tools/shared.ts parseToolOutput).
     const checked = await tool.inputSchema['~standard'].validate(request.params.arguments ?? {});
     if (checked.issues) return codeOnly('invalid_input');
 

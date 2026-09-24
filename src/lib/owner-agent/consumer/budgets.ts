@@ -17,15 +17,28 @@ import { KILL_AFTER_MS } from '@/lib/owner-agent/runner';
 // under a live handler is re-delivered, and the retry pays for the answer
 // again. It never sends twice — the intake status CAS (reply.ts) sees to that.
 
-/** How long one `claude -p` answer may run (the runner's timeoutMs). */
-export const OWNER_AGENT_RUN_TIMEOUT_MS = 120_000;
+/**
+ * How long one `claude -p` answer may run (the runner's timeoutMs). 180s since
+ * free read (free-read plan §3.5): a free-SQL answer takes more turns, each
+ * Supabase call 1–3s (measured 2026-09-24), within OWNER_AGENT_MAX_TURNS.
+ */
+export const OWNER_AGENT_RUN_TIMEOUT_MS = 180_000;
+
+/** The model every answer runs on (an alias, as the CLI spells it). */
+export const OWNER_AGENT_MODEL = 'sonnet';
+
+/**
+ * The CLI's --max-turns per answer. 12 since free read: primer → (at most) a
+ * pg_catalog look-up → a query → a fixed query, and room for a follow-up.
+ */
+export const OWNER_AGENT_MAX_TURNS = 12;
 
 /** The runner's SIGKILL grace after the timeout's SIGTERM. */
 export const OWNER_AGENT_RUN_KILL_AFTER_MS = KILL_AFTER_MS;
 
 /**
  * Everything around the run: the intake read, the gate (eight small queries),
- * the permission RPCs, up to three WhatsApp sends and the audit. Generous on
+ * the permission RPCs, up to five WhatsApp sends (MAX_REPLY_PARTS) and the audit. Generous on
  * purpose — the pooler's measured ~134ms round trip times twenty is ~3s.
  */
 export const OWNER_AGENT_REPLY_OVERHEAD_MS = 50_000;
@@ -46,7 +59,7 @@ export const OWNER_AGENT_REPLY_MAX_MS =
   OWNER_AGENT_REPLY_OVERHEAD_MS;
 
 /** QUEUES.ownerAgentReply expireInSeconds (set by consumer/main.ts at start). */
-export const OWNER_AGENT_REPLY_EXPIRE_SECONDS = 240;
+export const OWNER_AGENT_REPLY_EXPIRE_SECONDS = 300;
 
 // The reply queue's policy, set by consumer/main.ts on every start so every job
 // the route sends ({ id } only, intake.ts) inherits it. Two retries with
@@ -60,10 +73,10 @@ export const OWNER_AGENT_REPLY_QUEUE_POLICY = {
 } as const;
 
 /** boss.stop({ graceful: true, timeout }) on SIGINT/SIGTERM. */
-export const OWNER_AGENT_STOP_TIMEOUT_MS = 250_000;
+export const OWNER_AGENT_STOP_TIMEOUT_MS = 310_000;
 
 /** ecosystem.owner-agent.config.cjs kill_timeout — pinned by budgets.test.ts. */
-export const OWNER_AGENT_PM2_KILL_TIMEOUT_MS = 270_000;
+export const OWNER_AGENT_PM2_KILL_TIMEOUT_MS = 330_000;
 
 /**
  * This process's pg-boss pool. The database role has ~15 session-mode slots

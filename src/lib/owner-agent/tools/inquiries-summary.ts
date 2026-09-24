@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getInquiriesSummary } from '@/lib/owner-agent/cores/inquiries';
 import {
+  READ_ONLY_TOOL_MCP,
   count,
   parseToolOutput,
   rangeInputSchema,
@@ -29,6 +30,7 @@ export const inquiriesSummaryTool = createTool({
   description:
     'פניות לקוחות, ספירות בלבד. openContacts ו-newCallbacks הם המצב הנוכחי ולא תלויים בטווח; contactsReceived ו-callbacksReceived התקבלו בתוך הטווח. בלי שמות, אימיילים או תוכן.',
   strict: true,
+  mcp: READ_ONLY_TOOL_MCP,
   inputSchema: rangeInputSchema,
   outputSchema: inquiriesSummaryOutput,
   // The service-role client is created here, server-side — never taken from

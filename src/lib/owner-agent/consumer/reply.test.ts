@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -22,8 +22,13 @@ import {
   type ReplyDeps,
   type WhatsAppSender,
 } from './reply';
-import { OWNER_AGENT_FAILURE_REPLY, OWNER_AGENT_SYSTEM_PROMPT, WHATSAPP_TEXT_LIMIT } from './reply-text';
-import { createSessionMemory } from './sessions';
+import {
+  OWNER_AGENT_FAILURE_REPLY,
+  OWNER_AGENT_SQL_UNAVAILABLE_NOTE,
+  OWNER_AGENT_SYSTEM_PROMPT,
+  WHATSAPP_TEXT_LIMIT,
+} from './reply-text';
+import { createSessionMemory, ownerAgentConfigFingerprint } from './sessions';
 import { OwnerAgentStoreError, createReplyStore } from './store';
 
 // The reply consumer, end to end, with NO real CLI, database or WhatsApp: the
@@ -113,6 +118,7 @@ const ok = (over: Partial<OwnerAgentRunResult> = {}): OwnerAgentRunResult => ({
   sessionId: SESSION,
   toolNames: ['events_pipeline'],
   turns: 3,
+  sqlUnavailable: false,
   ...over,
 });
 
@@ -192,7 +198,7 @@ describe('a question that passes every gate', () => {
       systemPrompt: OWNER_AGENT_SYSTEM_PROMPT,
       permissions: [...OWNER_AGENT_PERMISSIONS],
       model: 'sonnet',
-      maxTurns: 6,
+      maxTurns: 12,
       timeoutMs: OWNER_AGENT_RUN_TIMEOUT_MS,
     });
     // Israel's date and time is in the PROMPT (the system prompt is frozen on resume).
@@ -534,6 +540,29 @@ describe('send outcomes are codes', () => {
   });
 });
 
+describe('graceful degradation: the Supabase server did not connect', () => {
+  it('the answer still goes out, the note is appended IN CODE, and the audit says sql_unavailable', async () => {
+    const w = world();
+    w.run.mockResolvedValue(ok({ sqlUnavailable: true, toolNames: ['rsvp_totals'] }));
+    expect(await handleOwnerAgentReply(job, w.deps)).toBe('answered');
+    const body = w.sendText.mock.calls.map((c) => c[1].body).join('\n');
+    expect(body).toContain(ANSWER);
+    expect(body.endsWith(OWNER_AGENT_SQL_UNAVAILABLE_NOTE)).toBe(true);
+    expect(audits(w)).toEqual([
+      expect.objectContaining({ stage: 'send', outcome: 'answered', reason_code: 'sql_unavailable' }),
+    ]);
+    assertAuditFitsChecks(audits(w)[0]);
+  });
+
+  it('a normal answer carries no note and no reason code', async () => {
+    const w = world();
+    expect(await handleOwnerAgentReply(job, w.deps)).toBe('answered');
+    const body = w.sendText.mock.calls.map((c) => c[1].body).join('\n');
+    expect(body).not.toContain(OWNER_AGENT_SQL_UNAVAILABLE_NOTE);
+    expect(audits(w)[0]).toMatchObject({ outcome: 'answered', reason_code: null });
+  });
+});
+
 describe('conversation history (--resume)', () => {
   async function ask(w: World) {
     w.db.tables.owner_agent_intake[0].status = 'queued';
@@ -577,6 +606,37 @@ describe('conversation history (--resume)', () => {
     expect(w.run.mock.calls[1][0].resumeSessionId).toBeUndefined();
   });
 
+  it('does not resume a session started under another system prompt or tool set (free-read §3.7)', async () => {
+    const w = world();
+    await ask(w);
+    // A deploy changed the prompt: the stored fingerprint no longer matches.
+    w.deps.sessions = createSessionMemory(path.join(stateDir, 'sessions.json'), () => 'another-prompt-version');
+    w.clock.now = NOW + 60_000;
+    await ask(w);
+    expect(w.run.mock.calls[1][0].resumeSessionId).toBeUndefined();
+  });
+
+  it('an entry written before the config fingerprint existed is never resumed', async () => {
+    const w = world();
+    writeFileSync(
+      path.join(stateDir, 'sessions.json'),
+      JSON.stringify({
+        version: 1,
+        sessions: { [STAFF]: { sessionId: SESSION, lastAt: NOW, permissions: [...OWNER_AGENT_PERMISSIONS].sort().join(',') } },
+      }),
+    );
+    w.clock.now = NOW + 60_000;
+    await ask(w);
+    expect(w.run.mock.calls[0][0].resumeSessionId).toBeUndefined();
+  });
+
+  it('the fingerprint follows the prompt and the allowed tools', () => {
+    const all = [...OWNER_AGENT_PERMISSIONS];
+    expect(ownerAgentConfigFingerprint(all)).toMatch(/^[0-9a-f]{64}$/);
+    expect(ownerAgentConfigFingerprint(all)).toBe(ownerAgentConfigFingerprint([...all].reverse()));
+    expect(ownerAgentConfigFingerprint(['view_events'])).not.toBe(ownerAgentConfigFingerprint(['view_billing']));
+  });
+
   it('a resumed run that fails fast is retried once as a fresh session', async () => {
     const w = world();
     await ask(w);
@@ -609,8 +669,16 @@ describe('conversation history (--resume)', () => {
     const raw = readFileSync(file, 'utf8');
     expect(JSON.parse(raw)).toEqual({
       version: 1,
-      sessions: { [STAFF]: { sessionId: SESSION, lastAt: NOW, permissions: [...OWNER_AGENT_PERMISSIONS].sort().join(',') } },
+      sessions: {
+        [STAFF]: {
+          sessionId: SESSION,
+          lastAt: NOW,
+          permissions: [...OWNER_AGENT_PERMISSIONS].sort().join(','),
+          config: ownerAgentConfigFingerprint(OWNER_AGENT_PERMISSIONS),
+        },
+      },
     });
+    expect(raw).toMatch(/"config":"[0-9a-f]{64}"/);
     for (const leak of ['QUESTION', 'אירועים', PHONE]) expect(raw).not.toContain(leak);
   });
 });

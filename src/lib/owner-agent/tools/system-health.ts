@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getSystemHealthSummary } from '@/lib/owner-agent/cores/system-health';
 import {
+  READ_ONLY_TOOL_MCP,
   count,
   parseToolOutput,
   rangeInputSchema,
@@ -37,6 +38,7 @@ export const systemHealthTool = createTool({
   description:
     'בריאות קליטת ה-webhooks (קריאה בלבד, בלי בדיקה חיה מול Meta). unprocessed, withLastError, erroringNow, deadLettered, הדקות מאז הקליטה והעיבוד האחרונים ו-oldestPendingMinutes הם המצב הנוכחי (null = אין נתון או אין מה שממתין). receivedInRange = נקלטו בטווח.',
   strict: true,
+  mcp: READ_ONLY_TOOL_MCP,
   inputSchema: rangeInputSchema,
   outputSchema: systemHealthOutput,
   execute: async ({ range }) =>

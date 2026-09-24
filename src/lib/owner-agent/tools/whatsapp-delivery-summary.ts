@@ -9,6 +9,7 @@ import {
   getWhatsAppDeliverySummary,
 } from '@/lib/owner-agent/cores/whatsapp-delivery';
 import {
+  READ_ONLY_TOOL_MCP,
   count,
   countsByKey,
   parseToolOutput,
@@ -43,6 +44,7 @@ export const whatsappDeliverySummaryTool = createTool({
   description:
     'מסירת הודעות וואטסאפ. outbound = הודעות שנשלחו בטווח, לפי סטטוס המסירה האחרון שדווח (unacknowledged = עוד לא הגיע סטטוס). inbound = הודעות שהתקבלו בטווח. failedByCode = כשלונות לפי קוד השגיאה של Meta (other = כל קוד אחר או בלי קוד).',
   strict: true,
+  mcp: READ_ONLY_TOOL_MCP,
   inputSchema: rangeInputSchema,
   outputSchema: whatsappDeliverySummaryOutput,
   execute: async ({ range }) =>

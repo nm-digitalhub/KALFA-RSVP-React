@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { getWebTrafficSummary } from '@/lib/owner-agent/cores/web-traffic';
 import type { SectionState } from '@/lib/analytics/ga4-types';
 import {
+  READ_ONLY_TOOL_MCP,
   parseToolOutput,
   rangeInputSchema,
   type OwnerAgentPermission,
@@ -47,6 +48,7 @@ export const webTrafficSummaryTool = createTool({
   description:
     'תנועה באתר מ-Google Analytics, כמו בדף האנליטיקה בניהול. הטווח הוא ימים קלנדריים של GA4 (7d = שבעה ימים עד היום), לא חלון מתגלגל. previousActiveUsers ו-previousSessions = התקופה הקודמת באותו אורך. engagementRate הוא שבר בין 0 ל-1. כש-state אינו ok או stale, כל המספרים null.',
   strict: true,
+  mcp: READ_ONLY_TOOL_MCP,
   inputSchema: rangeInputSchema,
   outputSchema: webTrafficSummaryOutput,
   execute: async ({ range }) =>

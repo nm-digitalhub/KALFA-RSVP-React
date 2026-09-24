@@ -76,7 +76,9 @@ export interface AuditInput {
 }
 
 // The audit CHECK allows tool names shaped ^[a-z][a-z0-9_]{0,63}$ and at most
-// 32 of them. Our own ids fit; the runner passes a foreign name through as-is
+// 32 of them. Our own ids fit, and so do the Supabase server's (execute_sql,
+// list_tables — the runner strips both servers' prefixes, mcp/names.ts
+// toolIdFromMcpName); the runner passes a foreign name through as-is
 // (runner.ts toolIdFromMcpName), and `Bash` would violate the CHECK and cost the
 // whole audit row — so a name that does not fit is recorded as `other_tool`.
 const TOOL_NAME = /^[a-z][a-z0-9_]{0,63}$/;

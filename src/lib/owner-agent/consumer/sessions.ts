@@ -1,7 +1,12 @@
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { z } from 'zod';
+
+import { allowedToolsFor } from '@/lib/owner-agent/runner';
+
+import { OWNER_AGENT_SYSTEM_PROMPT } from './reply-text';
 
 // The owner agent's conversation history (plan §3.6, decided in 6b): the CLI's
 // own sessions, continued with `--resume` when the same staff member's last
@@ -9,7 +14,7 @@ import { z } from 'zod';
 // that was:
 //
 //   <repo>/.fleet-logs/owner-agent/sessions.json   (0600, .fleet-logs/ is gitignored)
-//   { "version": 1, "sessions": { "<staffUserId>": { sessionId, lastAt, permissions } } }
+//   { "version": 1, "sessions": { "<staffUserId>": { sessionId, lastAt, permissions, config } } }
 //
 // Ids, a timestamp and permission KEYS only — never a question, an answer or a
 // phone. The transcript itself is the CLI's session file (retention.ts).
@@ -19,6 +24,15 @@ import { z } from 'zod';
 // revoked within the window, resuming would put numbers the staff member may
 // no longer see back in front of the model — so the fingerprint of the
 // resolved set is stored with the session and must match.
+//
+// ⚠️ …AND ONLY UNDER THE SAME SYSTEM PROMPT AND TOOL SET (free-read plan §3.7).
+// The CLI replays the system prompt a session was STARTED with
+// (`--system-prompt-snapshot`, on by default in 2.1.281), so a session begun
+// under an older prompt would keep its rules after a deploy — the "counts
+// only, no names" sessions of stage 5 would go on refusing names for up to an
+// hour. `config` is a hash of the system prompt and of the --allowedTools list
+// for the permission set; a session stored under another (or none — every
+// entry written before this field existed) is never resumed.
 //
 // Every read-modify-write runs on one in-process chain: the reply handler and
 // the daily retention can run in the same process at the same time, and two
@@ -32,6 +46,9 @@ const entrySchema = z.object({
   sessionId: z.string().regex(SESSION_ID),
   lastAt: z.number().int().nonnegative(),
   permissions: z.string(),
+  // Optional so a file written before the field existed still parses (and
+  // its entries simply never resume).
+  config: z.string().optional(),
 });
 const fileSchema = z.object({
   version: z.literal(1),
@@ -48,6 +65,19 @@ export function permissionFingerprint(permissions: readonly string[]): string {
   return [...new Set(permissions)].sort().join(',');
 }
 
+/**
+ * The version of what a session was started with: the system prompt and the
+ * tools the runner allows for this permission set. Hex SHA-256, so the state
+ * file holds no prompt text.
+ */
+export function ownerAgentConfigFingerprint(permissions: readonly string[]): string {
+  return createHash('sha256')
+    .update(OWNER_AGENT_SYSTEM_PROMPT)
+    .update('\0')
+    .update(allowedToolsFor([...new Set(permissions)].sort()).join(','))
+    .digest('hex');
+}
+
 export interface SessionMemory {
   /** The session to resume, or undefined for a fresh one. */
   resumable(staffUserId: string, nowMs: number, permissions: readonly string[]): Promise<string | undefined>;
@@ -59,7 +89,10 @@ export interface SessionMemory {
   prune(isGone: (sessionId: string) => Promise<boolean>): Promise<number>;
 }
 
-export function createSessionMemory(file: string): SessionMemory {
+export function createSessionMemory(
+  file: string,
+  configOf: (permissions: readonly string[]) => string = ownerAgentConfigFingerprint,
+): SessionMemory {
   let chain: Promise<unknown> = Promise.resolve();
   const serial = <T>(fn: () => Promise<T>): Promise<T> => {
     const next = chain.then(fn, fn);
@@ -100,6 +133,7 @@ export function createSessionMemory(file: string): SessionMemory {
         if (!entry) return undefined;
         if (nowMs - entry.lastAt > RESUME_WINDOW_MS || nowMs < entry.lastAt) return undefined;
         if (entry.permissions !== permissionFingerprint(permissions)) return undefined;
+        if (entry.config !== configOf(permissions)) return undefined;
         return entry.sessionId;
       }),
 
@@ -111,6 +145,7 @@ export function createSessionMemory(file: string): SessionMemory {
           sessionId,
           lastAt: nowMs,
           permissions: permissionFingerprint(permissions),
+          config: configOf(permissions),
         };
         await save(data);
       }),

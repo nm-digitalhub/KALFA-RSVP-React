@@ -9,6 +9,8 @@ vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 import { createFakeTableClient, type TableRow } from '@/test/fake-table-client';
 import type { createAdminClient } from '@/lib/supabase/admin';
 
+import { SUPABASE_TOOL_IDS, toolIdFromMcpName } from '../mcp/names';
+
 import { OwnerAgentStoreError, createReplyStore, sanitizeToolNames } from './store';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -137,5 +139,13 @@ describe('writeAudit', () => {
     ]);
     const many = Array.from({ length: 40 }, (_, i) => `tool_${i}`);
     expect(sanitizeToolNames(many)).toHaveLength(32);
+  });
+
+  it('the Supabase tools are audited by name (free-read §3.6), as the runner reports them', () => {
+    const fromTrace = ['mcp__supabase__list_tables', 'mcp__supabase__execute_sql', 'mcp__owner_agent__rsvp_totals'].map(
+      toolIdFromMcpName,
+    );
+    expect(sanitizeToolNames(fromTrace)).toEqual(['list_tables', 'execute_sql', 'rsvp_totals']);
+    for (const id of SUPABASE_TOOL_IDS) expect(sanitizeToolNames([id])).toEqual([id]);
   });
 });

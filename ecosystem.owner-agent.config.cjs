@@ -24,9 +24,11 @@
 // from .claude/fleet/.token.env) and never hands it this one.
 //
 // kill_timeout is the last link of a budget chain pinned by
-// src/lib/owner-agent/consumer/budgets.test.ts: one answer (≤195s) < job
-// expiry (240s) < the graceful stop (250s) < this (270s), so a restart lets an
-// answer in flight finish instead of paying for it twice.
+// src/lib/owner-agent/consumer/budgets.test.ts: one answer (≤255s) < job
+// expiry (300s) < the graceful stop (310s) < this (330s), so a restart lets an
+// answer in flight finish instead of paying for it twice. ⚠️ `pm2 restart`
+// keeps the kill_timeout it stored at the first start; a changed value needs
+// `pm2 delete kalfa-owner-agent` + a fresh `pm2 start` of this file.
 //
 // MASTRA_TELEMETRY_DISABLED: @mastra/core reports usage to PostHog unless it
 // is set (plan §3.6). A plain `pm2 restart` keeps the env captured at the last
@@ -49,7 +51,7 @@ module.exports = {
       node_args: '--env-file=.env.local',
       autorestart: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS Z',
-      kill_timeout: 270000,
+      kill_timeout: 330000,
       env: {
         NODE_ENV: 'production',
         TZ: 'Asia/Jerusalem',

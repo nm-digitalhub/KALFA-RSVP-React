@@ -7,8 +7,11 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 
+import { MAX_REPLY_PARTS } from './reply-text';
 import {
   OWNER_AGENT_DB_POOL_MAX,
+  OWNER_AGENT_MAX_TURNS,
+  OWNER_AGENT_MODEL,
   OWNER_AGENT_PM2_KILL_TIMEOUT_MS,
   OWNER_AGENT_REPLY_EXPIRE_SECONDS,
   OWNER_AGENT_REPLY_MAX_MS,
@@ -28,6 +31,19 @@ const ROOT = path.join(import.meta.dirname, '../../../..');
 const load = (file: string) => require(path.join(ROOT, file)) as Ecosystem;
 const dedicated = load('ecosystem.owner-agent.config.cjs');
 const app = dedicated.apps.find((a) => a.name === 'kalfa-owner-agent');
+
+describe('the free-read budgets (free-read plan §3.5), pinned', () => {
+  it('180s run, 12 turns, 5 reply parts; 15 + 180 + 10 + 50 = 255 < 300 < 310 < 330', () => {
+    expect(OWNER_AGENT_RUN_TIMEOUT_MS).toBe(180_000);
+    expect(OWNER_AGENT_MAX_TURNS).toBe(12);
+    expect(OWNER_AGENT_MODEL).toBe('sonnet');
+    expect(MAX_REPLY_PARTS).toBe(5);
+    expect(OWNER_AGENT_REPLY_MAX_MS).toBe(255_000);
+    expect(OWNER_AGENT_REPLY_EXPIRE_SECONDS).toBe(300);
+    expect(OWNER_AGENT_STOP_TIMEOUT_MS).toBe(310_000);
+    expect(OWNER_AGENT_PM2_KILL_TIMEOUT_MS).toBe(330_000);
+  });
+});
 
 describe('the owner-agent budget chain', () => {
   it('one answer fits inside the job expiry', () => {

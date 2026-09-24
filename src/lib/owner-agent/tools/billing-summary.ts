@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getBillingSummary } from '@/lib/owner-agent/cores/billing';
 import {
+  READ_ONLY_TOOL_MCP,
   count,
   money,
   parseToolOutput,
@@ -42,6 +43,7 @@ export const billingSummaryTool = createTool({
   description:
     'חיוב: ספירות וסכומים בשקלים. בטווח: chargedInRange ו-chargedAmountIls (חיובים סופיים שנגבו), nothingToChargeInRange, creditAppliedAmountIls (זיכוי שנוצל בחיובים), creditsGrantedInRange ו-creditGrantedAmountIls (זיכויים שניתנו ולא בוטלו), creditsVoidedInRange. מצב נוכחי: chargesPending, chargesFailed, chargesInReview, holdsAwaitingCharge (מסגרות שאושרו וממתינות לחיוב), creditsActive ו-creditUnvoidedAmountIls (כל הזיכויים שלא בוטלו).',
   strict: true,
+  mcp: READ_ONLY_TOOL_MCP,
   inputSchema: rangeInputSchema,
   outputSchema: billingSummaryOutput,
   execute: async ({ range }) =>

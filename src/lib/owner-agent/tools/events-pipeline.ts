@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { Constants } from '@/lib/supabase/types';
 import { getEventsPipelineSummary } from '@/lib/owner-agent/cores/events';
 import {
+  READ_ONLY_TOOL_MCP,
   count,
   countsByKey,
   parseToolOutput,
@@ -36,6 +37,7 @@ export const eventsPipelineTool = createTool({
   description:
     'אירועים, ספירות בלבד, בלי שמות. byStatus, activeByType, activePastDay (פעילים שהיום שלהם עבר ועדיין לא נסגרו) ו-activeWithoutDate הם המצב הנוכחי. activeUpcomingInWindow = אירועים פעילים בימים הקרובים (today = היום בלבד, 7d = 7 ימים כולל היום, 30d = 30). createdInRange = נוצרו בטווח, אחורה.',
   strict: true,
+  mcp: READ_ONLY_TOOL_MCP,
   inputSchema: rangeInputSchema,
   outputSchema: eventsPipelineOutput,
   execute: async ({ range }) =>

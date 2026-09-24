@@ -48,7 +48,7 @@ describe('splitForWhatsApp', () => {
   });
 
   it(`at most ${MAX_REPLY_PARTS} messages; a runaway answer is cut and marked`, () => {
-    const parts = splitForWhatsApp('א'.repeat(WHATSAPP_TEXT_LIMIT * 5));
+    const parts = splitForWhatsApp('א'.repeat(WHATSAPP_TEXT_LIMIT * (MAX_REPLY_PARTS + 1)));
     expect(parts).toHaveLength(MAX_REPLY_PARTS);
     expect(parts[MAX_REPLY_PARTS - 1].endsWith('…')).toBe(true);
     for (const p of parts) expect(p.length).toBeLessThanOrEqual(WHATSAPP_TEXT_LIMIT);
@@ -64,7 +64,9 @@ describe('the words', () => {
   });
 
   it('the system prompt changes with nothing (it is frozen on resume)', () => {
-    expect(OWNER_AGENT_SYSTEM_PROMPT).not.toMatch(/\d/);
+    // Fixed numbers (LIMIT 50, the first 30) are rules; a date or a time of
+    // day would be a changing value.
+    expect(OWNER_AGENT_SYSTEM_PROMPT).not.toMatch(/\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d\d-\d\d|\d{1,2}:\d\d/);
     expect(OWNER_AGENT_SYSTEM_PROMPT).toMatch(/אל תמציא/);
   });
 

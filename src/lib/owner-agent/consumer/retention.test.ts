@@ -62,7 +62,7 @@ describe('the CLI project directory (measured in 2.1.281)', () => {
 
   it('coupling: the runner points the CLI at exactly that HOME and moves nothing', () => {
     const paths = ownerAgentPaths('/var/www/vhosts/kalfa.me/beta');
-    const env = buildCliEnv(paths.hostDir, 'tok');
+    const env = buildCliEnv(paths.hostDir, 'tok', 'sbp_tok');
     expect(env.HOME).toBe(paths.hostDir);
     // Either of these would move the session directory away from the one
     // measured above (CLAUDE_CONFIG_DIR replaces ~/.claude; with it,

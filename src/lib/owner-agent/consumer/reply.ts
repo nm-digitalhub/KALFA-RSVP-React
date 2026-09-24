@@ -12,9 +12,15 @@ import {
 import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-agent/tools/shared';
 import type { DeliveryOutcome } from '@/lib/whatsapp/client';
 
-import { OWNER_AGENT_RESUME_FAIL_FAST_MS, OWNER_AGENT_RUN_TIMEOUT_MS } from './budgets';
+import {
+  OWNER_AGENT_MAX_TURNS,
+  OWNER_AGENT_MODEL,
+  OWNER_AGENT_RESUME_FAIL_FAST_MS,
+  OWNER_AGENT_RUN_TIMEOUT_MS,
+} from './budgets';
 import {
   OWNER_AGENT_FAILURE_REPLY,
+  answerBody,
   OWNER_AGENT_SYSTEM_PROMPT,
   buildOwnerPrompt,
   splitForWhatsApp,
@@ -53,9 +59,6 @@ import type { AuditInput, IntakeRow, ReplyStore } from './store';
 //
 // PRIVACY. No question, answer, phone or error text is logged, alerted or
 // audited — ids and codes only.
-
-export const OWNER_AGENT_MODEL = 'sonnet';
-export const OWNER_AGENT_MAX_TURNS = 6;
 
 // Meta's customer-service window: a free-form reply is refused 24h after the
 // staff member's message (131047, plan §2.4).
@@ -286,7 +289,7 @@ async function deliver(
 ): Promise<ReplyOutcome> {
   const { store } = deps;
 
-  // §3.1 #3, against the state NOW (the run took up to two minutes): the
+  // §3.1 #3, against the state NOW (the run took up to three minutes): the
   // switch still on, the number still the chosen one and still the one the
   // question arrived on, the recipient still an enabled row of this staff
   // member. A database error here still throws — nothing has been sent yet.
@@ -305,7 +308,7 @@ async function deliver(
   if (run.ok) {
     await quietly(() => deps.sessions.remember(intake.staffUserId, run.result.sessionId, deps.now(), permissions));
   }
-  const body = run.ok ? run.result.text : OWNER_AGENT_FAILURE_REPLY;
+  const body = run.ok ? answerBody(run.result.text, run.result.sqlUnavailable) : OWNER_AGENT_FAILURE_REPLY;
   const from: WhatsAppSender = { ...sender, phoneNumberId: intake.phoneNumberId };
   let failure: string | null = null;
   let sent = 0;
@@ -336,7 +339,10 @@ async function deliver(
     return 'send_failed';
   }
   if (run.ok) {
-    await audit(deps, intake, { stage: 'send', outcome: 'answered', reasonCode: null, latencyMs, ...answerFields });
+    // An answer from the count tools alone (the Supabase server did not
+    // connect) is still an answer; the code says it was a degraded one.
+    const reasonCode = run.result.sqlUnavailable ? 'sql_unavailable' : null;
+    await audit(deps, intake, { stage: 'send', outcome: 'answered', reasonCode, latencyMs, ...answerFields });
     return 'answered';
   }
   await audit(deps, intake, { stage: 'send', outcome: 'fallback_sent', reasonCode: run.code, latencyMs });

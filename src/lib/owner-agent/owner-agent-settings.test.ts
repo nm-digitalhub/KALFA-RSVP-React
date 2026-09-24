@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 
-import { mcpToolName } from './mcp/names';
+import { SUPABASE_TOOL_IDS, mcpToolName, supabaseMcpToolName } from './mcp/names';
 import { OWNER_AGENT_TOOLS } from './tools/registry';
 
 // The owner agent's Claude Code settings file, parsed and pinned. The CLI in
@@ -85,15 +85,18 @@ describe('owner-agent.settings.json', () => {
     expect(tier0.permissions.defaultMode).toBe('dontAsk');
   });
 
-  it('allows exactly the nine owner-agent tools, by explicit id', () => {
-    const expected = OWNER_AGENT_TOOLS.map((t) => mcpToolName(t.tool.id)).sort();
+  it('allows exactly the nine owner-agent tools plus the two Supabase read tools, by explicit id', () => {
+    const expected = [
+      ...OWNER_AGENT_TOOLS.map((t) => mcpToolName(t.tool.id)),
+      ...SUPABASE_TOOL_IDS.map(supabaseMcpToolName),
+    ].sort();
     expect([...settings.permissions.allow].sort()).toEqual(expected);
-    expect(settings.permissions.allow).toHaveLength(9);
+    expect(settings.permissions.allow).toHaveLength(11);
   });
 
-  it('allows no wildcard and nothing outside the owner_agent server', () => {
+  it('allows no wildcard, and of the Supabase server only execute_sql and list_tables', () => {
     for (const rule of settings.permissions.allow) {
-      expect(rule).toMatch(/^mcp__owner_agent__[a-z][a-z0-9_]*$/);
+      expect(rule).toMatch(/^mcp__(owner_agent__[a-z][a-z0-9_]*|supabase__(execute_sql|list_tables))$/);
     }
   });
 

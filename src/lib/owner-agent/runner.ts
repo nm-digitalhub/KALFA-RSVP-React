@@ -9,16 +9,19 @@ import { z } from 'zod';
 import {
   OWNER_AGENT_MCP_SERVER,
   OWNER_AGENT_PERMISSIONS_ENV,
+  SUPABASE_MCP_SERVER,
+  SUPABASE_TOOL_IDS,
   mcpToolName,
+  supabaseMcpToolName,
   toolIdFromMcpName,
 } from '@/lib/owner-agent/mcp/names';
-import { redactPhoneNumbers } from '@/lib/owner-agent/redact';
 import { toolsForPermissions } from '@/lib/owner-agent/tools/registry';
 import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-agent/tools/shared';
 
 // One owner-agent answer: a headless `claude -p` run whose only tools are the
-// owner-agent MCP server's (plan §4, owner decision 2026-09-24: "work exactly
-// the same way as the fleet").
+// owner-agent MCP server's and two of the official Supabase MCP server's (plan
+// §4, owner decision 2026-09-24: "work exactly the same way as the fleet";
+// plans/owner-agent-free-read-plan.md §3: free read-only SQL).
 //
 // ⚠️ THE FLEET'S METHOD, ON PURPOSE. `.claude/fleet/bin/run-role.sh` and the
 // workflow engine's `ai` port (src/lib/workflow/enqueue.ts) already drive the
@@ -35,10 +38,12 @@ import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-
 //     locks/global.lock. A WhatsApp answer must never wait behind a
 //     20-minute fleet role, and this run starts no `next build` (the thing
 //     the lock exists to serialize).
-//  2. TOOLS COME ONLY FROM OUR MCP SERVER. `--tools ""` removes every built-in
-//     (help: 'Use "" to disable all tools'), `--strict-mcp-config` ignores
-//     every MCP server except the one in --mcp-config, and the server
-//     registers only the tools the caller's permission set unlocks.
+//  2. TOOLS COME ONLY FROM OUR TWO MCP SERVERS. `--tools ""` removes every
+//     built-in (help: 'Use "" to disable all tools'), `--strict-mcp-config`
+//     ignores every MCP server except the two in --mcp-config, our server
+//     registers only the tools the caller's permission set unlocks, and of
+//     the Supabase server's tools only execute_sql and list_tables are
+//     allowed (--allowedTools and the settings file; dontAsk denies the rest).
 //  3. THE PROMPT GOES ON STDIN, NOT IN ARGV. The CLI accepts either ("Input
 //     must be provided either through stdin or as a prompt argument when
 //     using --print", 2.1.281 binary). A positional prompt that begins with
@@ -52,8 +57,21 @@ import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-
 //     the whole worker environment. The consumer of this runner will hold
 //     the Supabase service-role key, and the CLI has no use for it — so the
 //     CLI gets HOME, PATH, NODE_ENV and TZ (as a fleet run has them), the
-//     token and CLAUDE_CODE_DISABLE_CLAUDE_MDS, and nothing else. The MCP
-//     server loads its own credentials with `node --env-file` (./mcp/main.ts).
+//     token, CLAUDE_CODE_DISABLE_CLAUDE_MDS and the Supabase server's access
+//     token, and nothing else. Our MCP server loads its own credentials with
+//     `node --env-file` (./mcp/main.ts).
+//
+//     ⚠️ THE SUPABASE ACCESS TOKEN TRAVELS IN THE CLI's ENVIRONMENT, NEVER IN
+//     ARGV (free-read plan §4.3). --mcp-config is an argv string, readable by
+//     anyone through `ps`; /proc/<pid>/environ only by this user. MEASURED
+//     against the installed 2.1.281 (2026-09-24, a probe with the real
+//     server): the CLI hands its own environment to a stdio MCP server
+//     (SUPABASE_ACCESS_TOKEN set only on the CLI → supabase `connected`;
+//     absent → `failed`), and a server's `env` in the config OVERRIDES what it
+//     inherits (the token on the CLI plus SUPABASE_ACCESS_TOKEN: '' in the
+//     config → `failed`). So each server's config blanks the credentials it
+//     has no use for: ours gets no Supabase access token and no OAuth token,
+//     the Supabase server no OAuth token. No temp config file is needed.
 //  5. A MISSING TOKEN IS AN ERROR. run-role.sh proceeds without the file, and
 //     under the pinned HOME the CLI would fall back to the owner's
 //     interactive login. A service must not silently depend on that login.
@@ -87,11 +105,16 @@ import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-
 //     `timeout --kill-after=60`). The runner reports the timeout only once
 //     the process is gone; an owner waiting on WhatsApp should not wait a
 //     further minute for a CLI that ignored SIGTERM.
+// 11. NO OUTPUT FILTER. The phone mask this runner used to apply is gone
+//     (owner decision 2026-09-24 on 9.7: "the agent hides nothing"): a staff
+//     member who asks for a phone number gets it. What reaches WhatsApp is
+//     decided by the allow list and the send gate, not by a regex.
 
 export type OwnerAgentRunErrorCode =
   | 'invalid_input'
   | 'runner_misconfigured'
   | 'token_unavailable'
+  | 'supabase_token_unavailable'
   | 'cli_not_found'
   | 'timeout'
   | 'output_too_large'
@@ -135,7 +158,7 @@ export interface OwnerAgentRunInput {
 }
 
 export interface OwnerAgentRunResult {
-  /** The model's answer, phone-shaped digit runs already masked. */
+  /** The model's answer, as the model wrote it (no output filter — deviation 11). */
   text: string;
   /** `total_cost_usd` from the CLI; null when it reported none. */
   costUsd: number | null;
@@ -147,6 +170,13 @@ export interface OwnerAgentRunResult {
   toolNames: string[];
   /** `num_turns` from the CLI. */
   turns: number;
+  /**
+   * True when the Supabase MCP server did not reach `connected`: the model
+   * answered from the count tools alone. The run is not failed for it (the
+   * owner's standing rule: graceful degradation) — the consumer says so in
+   * the reply and the audit records it.
+   */
+  sqlUnavailable: boolean;
 }
 
 // --- exec: the one seam to the operating system --------------------------------
@@ -262,6 +292,10 @@ export interface OwnerAgentPaths {
   mcpEntry: string;
   envFile: string;
   cwd: string;
+  /** The official Supabase MCP server's entry, from the pinned package. */
+  supabaseMcpEntry: string;
+  /** Written by `supabase link`: the project the Supabase server reads. */
+  projectRefFile: string;
 }
 
 export function ownerAgentPaths(repoDir: string): OwnerAgentPaths {
@@ -272,17 +306,35 @@ export function ownerAgentPaths(repoDir: string): OwnerAgentPaths {
     mcpEntry: path.join(repoDir, 'dist/owner-agent-mcp.cjs'),
     envFile: path.join(repoDir, '.env.local'),
     cwd: path.join(repoDir, '.fleet-logs/owner-agent/cwd'),
+    supabaseMcpEntry: path.join(repoDir, 'node_modules/@supabase/mcp-server-supabase/dist/cli.js'),
+    projectRefFile: path.join(repoDir, 'supabase/.temp/project-ref'),
   };
 }
 
-// The value of CLAUDE_CODE_OAUTH_TOKEN as `. .token.env` would leave it: the
-// last assignment wins, `export ` and one pair of matching quotes are allowed,
-// blank lines and comments are skipped. Anything that is not a plain token
-// shape counts as no token.
+// The Supabase server's access token: a DEDICATED personal access token (free-
+// read plan §6.2, revocable on its own), kept in .env.local under a name no
+// other code reads — so the owner's own `supabase` CLI login and this agent
+// never share a credential by accident.
+export const SUPABASE_TOKEN_ENV_KEY = 'OWNER_AGENT_SUPABASE_TOKEN';
+
+// A Supabase project ref is 20 lowercase letters. It lands in argv, so
+// anything else is refused rather than passed.
+const PROJECT_REF = /^[a-z]{20}$/;
+
+/** CLAUDE_CODE_OAUTH_TOKEN as `. .token.env` would leave it (parseEnvAssignment). */
 export function parseTokenEnv(contents: string): string | null {
+  return parseEnvAssignment(contents, 'CLAUDE_CODE_OAUTH_TOKEN');
+}
+
+// The value of `key` as sourcing the file would leave it: the last assignment
+// wins, `export ` and one pair of matching quotes are allowed, blank lines and
+// comments are skipped. Anything that is not a plain token shape counts as no
+// value — nothing is expanded or executed. `key` is a constant of this module.
+export function parseEnvAssignment(contents: string, key: string): string | null {
+  const assignment = new RegExp(`^\\s*(?:export\\s+)?${key}=(.*)$`);
   let token: string | null = null;
   for (const line of contents.split(/\r?\n/)) {
-    const match = /^\s*(?:export\s+)?CLAUDE_CODE_OAUTH_TOKEN=(.*)$/.exec(line);
+    const match = assignment.exec(line);
     if (!match) continue;
     let value = match[1].trim();
     const quote = value[0];
@@ -308,11 +360,46 @@ async function loadOauthToken(tokenFile: string): Promise<string> {
   return token;
 }
 
+// Read at run time too, like the OAuth token: a rotated PAT in .env.local is
+// picked up without a restart, and the smoke script (node without --env-file)
+// reads the same file the consumer does.
+async function loadSupabaseAccess(paths: OwnerAgentPaths): Promise<{ token: string; projectRef: string }> {
+  let env: string;
+  try {
+    env = await readFile(paths.envFile, 'utf8');
+  } catch {
+    throw new OwnerAgentRunError('supabase_token_unavailable');
+  }
+  const token = parseEnvAssignment(env, SUPABASE_TOKEN_ENV_KEY);
+  if (!token) throw new OwnerAgentRunError('supabase_token_unavailable');
+  let projectRef: string;
+  try {
+    projectRef = (await readFile(paths.projectRefFile, 'utf8')).trim();
+  } catch {
+    throw new OwnerAgentRunError('runner_misconfigured');
+  }
+  if (!PROJECT_REF.test(projectRef)) throw new OwnerAgentRunError('runner_misconfigured');
+  return { token, projectRef };
+}
+
+/**
+ * The tools a run may call, as --allowedTools names them: the owner-agent
+ * tools the permission set unlocks (the same filter the server applies), then
+ * the two Supabase tools, which every staff member on the allow list gets
+ * whatever their permissions (free-read plan §3.8, owner decision 2). Exported
+ * so the session memory keys a resumed session on exactly this list.
+ */
+export function allowedToolsFor(permissions: readonly string[]): string[] {
+  const ours = Object.keys(toolsForPermissions(new Set(permissions))).sort().map(mcpToolName);
+  return [...ours, ...SUPABASE_TOOL_IDS.map(supabaseMcpToolName)];
+}
+
 // HOME and PATH exactly as run-role.sh pins them; NODE_ENV and TZ as the
 // kalfa-fleet pm2 entry declares them (ecosystem.config.cjs), so the CLI sees
-// what it sees in a fleet run; then the token and the CLAUDE.md switch.
-// Deviation 4: nothing else, and nothing inherited from process.env.
-export function buildCliEnv(hostDir: string, token: string): NodeJS.ProcessEnv {
+// what it sees in a fleet run; then the token, the CLAUDE.md switch and the
+// Supabase server's access token (deviation 4: env, never argv). Nothing else,
+// and nothing inherited from process.env.
+export function buildCliEnv(hostDir: string, token: string, supabaseToken: string): NodeJS.ProcessEnv {
   return {
     HOME: hostDir,
     PATH: `${hostDir}/.supabase/bin:${hostDir}/.local/bin:/usr/local/bin:/usr/bin:/bin`,
@@ -320,17 +407,22 @@ export function buildCliEnv(hostDir: string, token: string): NodeJS.ProcessEnv {
     TZ: 'Asia/Jerusalem',
     CLAUDE_CODE_OAUTH_TOKEN: token,
     CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
+    SUPABASE_ACCESS_TOKEN: supabaseToken,
   };
 }
 
-// The one MCP server this session may use, as the inline JSON --mcp-config
+// The two MCP servers this session may use, as the inline JSON --mcp-config
 // accepts ("Load MCP servers from JSON files or strings"). Every field is in
 // the 2.1.281 stdio server schema (type, command, args, env, alwaysLoad).
+// ⚠️ NO SECRET IN HERE: this string is argv. A server's `env` below only ever
+// BLANKS an inherited credential (deviation 4, measured).
 export function buildMcpConfig(options: {
   nodePath: string;
   envFile: string;
   mcpEntry: string;
   permissions: readonly string[];
+  supabaseMcpEntry: string;
+  projectRef: string;
 }): string {
   return JSON.stringify({
     mcpServers: {
@@ -344,10 +436,28 @@ export function buildMcpConfig(options: {
           [OWNER_AGENT_PERMISSIONS_ENV]: options.permissions.join(','),
           // Plan §3.6: @mastra/core reports usage to PostHog unless this is set.
           MASTRA_TELEMETRY_DISABLED: 'true',
+          // Inherited from the CLI; used by neither of our server's parts.
+          CLAUDE_CODE_OAUTH_TOKEN: '',
+          SUPABASE_ACCESS_TOKEN: '',
         },
         // "All tools from this server are always included in the prompt and
         // never deferred behind tool search" (2.1.281 schema). With every
         // built-in off there is no ToolSearch to un-defer them with.
+        alwaysLoad: true,
+      },
+      // Free-read plan §3.2. `--read-only` makes the server send read_only
+      // with every query, and the Management API runs it as
+      // supabase_read_only_user in a read-only transaction (measured
+      // 2026-09-24: current_user supabase_read_only_user, transaction_read_only
+      // on, UPDATE rejected with 25006, apply_migration rejected; the role has
+      // no pg_signal_backend). `--features database` limits it to list_tables,
+      // list_extensions, list_migrations and execute_sql. It reads
+      // SUPABASE_ACCESS_TOKEN from the environment it inherits from the CLI.
+      [SUPABASE_MCP_SERVER]: {
+        type: 'stdio',
+        command: options.nodePath,
+        args: [options.supabaseMcpEntry, '--read-only', '--project-ref', options.projectRef, '--features', 'database'],
+        env: { CLAUDE_CODE_OAUTH_TOKEN: '' },
         alwaysLoad: true,
       },
     },
@@ -378,7 +488,8 @@ export function buildOwnerAgentArgs(options: {
     '',
   ];
   // Omitted, not passed empty, when nothing is permitted: an empty value of a
-  // variadic option is not something the CLI documents.
+  // variadic option is not something the CLI documents. (Since the Supabase
+  // tools, every run is allowed at least those two.)
   if (options.allowedTools.length > 0) {
     args.push('--allowedTools', options.allowedTools.join(','));
   }
@@ -424,7 +535,15 @@ const resultLine = z.object({
 });
 
 export type ParsedTrace =
-  | { ok: true; text: string; costUsd: number | null; sessionId: string; toolNames: string[]; turns: number }
+  | {
+      ok: true;
+      text: string;
+      costUsd: number | null;
+      sessionId: string;
+      toolNames: string[];
+      turns: number;
+      sqlUnavailable: boolean;
+    }
   | { ok: false; code: OwnerAgentRunErrorCode };
 
 export function parseStreamJson(stdout: string): ParsedTrace {
@@ -463,8 +582,13 @@ export function parseStreamJson(stdout: string): ParsedTrace {
   // An answer given without our server is an answer given without data. The
   // status set is the CLI's own: connected | failed | needs-auth | pending |
   // disabled.
-  const server = init.mcp_servers.find((s) => s.name === OWNER_AGENT_MCP_SERVER);
-  if (server?.status !== 'connected') return { ok: false, code: 'mcp_unavailable' };
+  const statusOf = (name: string) => init?.mcp_servers.find((s) => s.name === name)?.status;
+  if (statusOf(OWNER_AGENT_MCP_SERVER) !== 'connected') return { ok: false, code: 'mcp_unavailable' };
+  // The Supabase server DEGRADES, it does not fail the run (the owner's
+  // standing rule: graceful degradation). Without it the model still has the
+  // count tools; the flag lets the consumer say — in code, not by trusting the
+  // model — that full data access was unavailable, and the audit record it.
+  const sqlUnavailable = statusOf(SUPABASE_MCP_SERVER) !== 'connected';
   if (result.subtype === 'error_max_turns') return { ok: false, code: 'max_turns' };
   // `is_error` is checked even on subtype 'success': an authentication or API
   // failure arrives that way, with the failure text in `result` — text that
@@ -479,6 +603,7 @@ export function parseStreamJson(stdout: string): ParsedTrace {
     sessionId: result.session_id,
     toolNames,
     turns: result.num_turns,
+    sqlUnavailable,
   };
 }
 
@@ -508,17 +633,16 @@ export async function runOwnerAgent(
   // settings file it cannot load in print mode (its --help says so for one
   // that fails validation), so a missing file is refused here.
   try {
-    await Promise.all([access(paths.settingsFile), access(paths.mcpEntry)]);
+    await Promise.all([access(paths.settingsFile), access(paths.mcpEntry), access(paths.supabaseMcpEntry)]);
     await mkdir(paths.cwd, { recursive: true });
   } catch {
     throw new OwnerAgentRunError('runner_misconfigured');
   }
   const token = await loadOauthToken(paths.tokenFile);
+  const supabase = await loadSupabaseAccess(paths);
 
   const permissions = [...new Set(run.permissions)].sort();
-  // The same filter the server applies, so the permission layer names exactly
-  // the tools the server will register this run.
-  const allowedTools = Object.keys(toolsForPermissions(new Set(permissions))).sort().map(mcpToolName);
+  const allowedTools = allowedToolsFor(permissions);
 
   const outcome = await (deps.exec ?? nodeExec)({
     file: 'claude',
@@ -529,6 +653,8 @@ export async function runOwnerAgent(
         envFile: paths.envFile,
         mcpEntry: paths.mcpEntry,
         permissions,
+        supabaseMcpEntry: paths.supabaseMcpEntry,
+        projectRef: supabase.projectRef,
       }),
       allowedTools,
       systemPrompt: run.systemPrompt,
@@ -537,7 +663,7 @@ export async function runOwnerAgent(
       resumeSessionId: run.resumeSessionId,
     }),
     cwd: paths.cwd,
-    env: buildCliEnv(paths.hostDir, token),
+    env: buildCliEnv(paths.hostDir, token, supabase.token),
     input: run.prompt,
     timeoutMs: run.timeoutMs,
     killAfterMs: deps.killAfterMs ?? KILL_AFTER_MS,
@@ -568,11 +694,11 @@ export async function runOwnerAgent(
   const trace = parseStreamJson(outcome.stdout);
   if (!trace.ok) throw new OwnerAgentRunError(trace.code);
   return {
-    // The output filter (plan §3.5): nothing phone-shaped leaves the runner.
-    text: redactPhoneNumbers(trace.text),
+    text: trace.text,
     costUsd: trace.costUsd,
     sessionId: trace.sessionId,
     toolNames: trace.toolNames,
     turns: trace.turns,
+    sqlUnavailable: trace.sqlUnavailable,
   };
 }

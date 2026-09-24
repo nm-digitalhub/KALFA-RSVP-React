@@ -141,6 +141,19 @@ describe('tools/list offers only what the permission set unlocks', () => {
       properties: { range: { type: 'string', enum: ['today', '7d', '30d'] } },
     });
   });
+
+  it('every listed tool carries the read-only MCP annotations', async () => {
+    const tools = (await (await connect(OWNER_AGENT_PERMISSIONS)).listTools()).tools;
+    expect(tools).toHaveLength(9);
+    for (const tool of tools) {
+      expect(tool.annotations, tool.name).toEqual({
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      });
+    }
+  });
 });
 
 describe('tools/call', () => {

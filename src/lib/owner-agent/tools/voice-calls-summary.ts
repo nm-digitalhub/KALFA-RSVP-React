@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getVoiceCallsSummary } from '@/lib/owner-agent/cores/voice-calls';
 import {
+  READ_ONLY_TOOL_MCP,
   count,
   fraction,
   parseToolOutput,
@@ -30,6 +31,7 @@ export const voiceCallsSummaryTool = createTool({
   description:
     'שיחות AI לאורחים. activeNow = שיחות פעילות עכשיו (לא תלוי בטווח); attempts, completed ו-answerRate הם בטווח. answerRate הוא שבר בין 0 ל-1, או null כשאין בטווח שיחה שהסתיימה.',
   strict: true,
+  mcp: READ_ONLY_TOOL_MCP,
   inputSchema: rangeInputSchema,
   outputSchema: voiceCallsSummaryOutput,
   execute: async ({ range }) =>

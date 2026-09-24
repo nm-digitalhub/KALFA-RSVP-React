@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getCampaignsStatusSummary } from '@/lib/owner-agent/cores/campaigns';
 import {
+  READ_ONLY_TOOL_MCP,
   count,
   parseToolOutput,
   rangeInputSchema,
@@ -34,6 +35,7 @@ export const campaignsStatusSummaryTool = createTool({
   description:
     'קמפיינים, ספירות לפי מצב. active, paused, closed, winddown, stuckHolds ו-needsAttention הם המצב הנוכחי (needsAttention = מספר השורות ברשימת הקמפיינים בניהול); createdInRange = נוצרו בטווח. בלי שמות אירועים.',
   strict: true,
+  mcp: READ_ONLY_TOOL_MCP,
   inputSchema: rangeInputSchema,
   outputSchema: campaignsStatusSummaryOutput,
   execute: async ({ range }) =>
