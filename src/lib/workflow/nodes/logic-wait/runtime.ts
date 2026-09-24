@@ -20,12 +20,18 @@ import * as waitDefinition from './definition';
  */
 export const MAX_WAIT_MS = 365 * 24 * 60 * 60 * 1000;
 
-/** The units a wait is expressed in, smallest first. */
+/**
+ * The units a wait is expressed in, smallest first.
+ *
+ * `satisfies` ties the keys to the definition's `WAIT_UNIT_VALUES`, which the
+ * form offers: a unit added there and not here fails to compile, instead of
+ * being offered by the form and refused by the handler as `invalid_config`.
+ */
 export const WAIT_UNITS = {
   minutes: 60_000,
   hours: 3_600_000,
   days: 86_400_000,
-} as const;
+} as const satisfies Record<waitDefinition.WaitUnitValue, number>;
 
 export type WaitUnit = keyof typeof WAIT_UNITS;
 

@@ -15,6 +15,7 @@ import { PALETTE_ITEMS } from './catalogue/schemas';
 import {
   GUEST_SCOPED_NODE_TYPES,
   NODE_DEPLOYMENT_BINDINGS,
+  NODE_NUMBER_RANGES,
   NODE_REQUIRED_FIELDS,
   NODE_TYPES,
   type KalfaNodeType,
@@ -31,6 +32,7 @@ type Definition = {
   requiredFields?: unknown;
   activityProfile?: unknown;
   outputFields?: unknown;
+  numberRanges?: unknown;
 };
 
 const NODES_DIR = join(process.cwd(), 'src/lib/workflow/nodes');
@@ -74,6 +76,18 @@ describe('node definitions', () => {
       expect(def.requiredFields).toEqual(expect.arrayContaining(['label', 'description']));
       // Identity, not equality: a pasted copy would drift. Same rule arm-check.test.ts pins.
       expect(NODE_REQUIRED_FIELDS[def.type as KalfaNodeType]).toBe(def.requiredFields);
+    });
+
+    it('NODE_NUMBER_RANGES is the SAME object as numberRanges, or absent with it', async () => {
+      const def = (await import(path)) as Definition;
+      // Optional: only a node with a numeric bound declares it. The editor schema
+      // spreads the definition while arm-check.ts reads the registry, so a pasted
+      // copy here would let the form and the arming gate disagree silently.
+      if ('numberRanges' in def) {
+        expect(NODE_NUMBER_RANGES[def.type as KalfaNodeType]).toBe(def.numberRanges);
+      } else {
+        expect(NODE_NUMBER_RANGES[def.type as KalfaNodeType]).toBeUndefined();
+      }
     });
 
     it('declares an activity profile explicitly, and the budget table reads it', async () => {
