@@ -27,7 +27,8 @@ export const isTrigger = false;
  * no behavioural gain.
  *
  * ⚠️ THE HEADERS FIELD REVERSES AN EARLIER DECISION, and the reason it can is
- * `secrets` below.
+ * the `secrets` namespace — `SECRET_REFERENCE_REGEX` and
+ * `SECRET_BEARING_NODE_TYPES` in `catalogue/types.ts`.
  *
  * The old note here argued: "a headers map is how an API key gets typed into a
  * diagram — and the diagram is a jsonb column the editor loads into a browser".

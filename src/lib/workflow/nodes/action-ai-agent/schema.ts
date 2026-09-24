@@ -6,12 +6,18 @@ import type { NodeSchema } from '@workflowbuilder/sdk';
 
 import { identityProperties, requiredText, statusProperty } from '../../catalogue/editor-shared';
 
-import { requiredFields } from './definition';
+import { AI_AGENT_MODELS, requiredFields, type AiAgentModel } from './definition';
 
-const aiAgentModelOptions = [
-  { value: 'haiku', label: 'מהיר (haiku)' },
-  { value: 'sonnet', label: 'חזק (sonnet)' },
-];
+// Keyed by `AiAgentModel` and mapped over `AI_AGENT_MODELS`, so a model added to
+// or removed from the definition without a matching label here is a type error
+// rather than a Select that silently disagrees with the handler's `readEnum`
+// guard. The options keep the definition's order.
+const aiAgentModelLabels = {
+  haiku: 'מהיר (haiku)',
+  sonnet: 'חזק (sonnet)',
+} satisfies Record<AiAgentModel, string>;
+
+const aiAgentModelOptions = AI_AGENT_MODELS.map((value) => ({ value, label: aiAgentModelLabels[value] }));
 
 export const aiAgentSchema = {
   type: 'object',

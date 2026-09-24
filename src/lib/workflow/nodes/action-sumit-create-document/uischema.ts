@@ -11,9 +11,10 @@ import type { SumitCreateDocumentSchema } from './schema';
 
 const sumitCreateDocumentScope = getScope<SumitCreateDocumentSchema>;
 
-// The four ARM-BLOCKING fields stay FLAT — the house rule this file records
-// elsewhere: a field `arm-check.ts` refuses to arm on must be visible without
-// opening an accordion, or the owner meets it as a blocker instead of a form.
+// The four ARM-BLOCKING fields stay FLAT — the house rule recorded in
+// `nodes/action-microsoft-send-email/uischema.ts`: a field `arm-check.ts`
+// refuses to arm on must be visible without opening an accordion, or the owner
+// meets it as a blocker instead of a form.
 export const sumitCreateDocumentUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [

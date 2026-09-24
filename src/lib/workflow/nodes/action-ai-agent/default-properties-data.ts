@@ -11,7 +11,7 @@ import type { NodeDataProperties } from '@workflowbuilder/sdk';
 
 import { errorPolicyOptions, nodeStatusOptions } from '../../catalogue/editor-shared';
 
-import { AI_AGENT_MAX_TURNS } from './definition';
+import { AI_AGENT_MAX_TURNS, type AiAgentModel } from './definition';
 import type { AiAgentSchema } from './schema';
 
 export const aiAgentDefaultPropertiesData: NodeDataProperties<AiAgentSchema> = {
@@ -19,7 +19,9 @@ export const aiAgentDefaultPropertiesData: NodeDataProperties<AiAgentSchema> = {
   label: 'סוכן AI',
   description: 'שואל מודל שפה ומעביר את התשובה לצעדים הבאים',
   systemPrompt: '',
-  model: 'haiku',
+  // Checked against `AI_AGENT_MODELS`, so dropping the default model from the
+  // definition is a type error here too.
+  model: 'haiku' satisfies AiAgentModel,
   maxTurns: AI_AGENT_MAX_TURNS.default,
   tools: [],
   errorPolicy: errorPolicyOptions.fail.value,
