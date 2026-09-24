@@ -36,7 +36,7 @@ import { findArmBlockers } from '@/lib/workflow/catalogue/arm-check';
 import { findVoiceDialBlockers } from '@/lib/data/admin/voice-node-arm-check';
 import { runsFingerprint, RUNS_WINDOW } from '@/lib/workflow/runs-fingerprint';
 import { sumitCardOutputFromSample } from '@/lib/workflow/catalogue/sumit-sample-output';
-import type { SumitCardOutput } from '@/lib/workflow/catalogue/sumit-card-output';
+import type { SumitCardOutput } from '@/lib/workflow/nodes/trigger-sumit-card/definition';
 import {
   dryRunWorkflow,
   type DryRunResult,

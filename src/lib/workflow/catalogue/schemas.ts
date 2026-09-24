@@ -30,13 +30,12 @@
 import { NodeType, getScope } from '@workflowbuilder/sdk';
 import type { NodeSchema, PaletteItem, UISchema } from '@workflowbuilder/sdk';
 
-import { CHECKBOX_LIST_FORMAT, NODE_RUN_FORMAT, WEBHOOK_TOKEN_FORMAT } from './ui-formats';
+import { CHECKBOX_LIST_FORMAT, NODE_RUN_FORMAT } from './ui-formats';
 
 import {
   identityControls,
   identityProperties,
   nodeStatusOptions,
-  requiredText,
   statusControl,
   statusProperty,
   triggerSwitchElement,
@@ -73,6 +72,8 @@ import { setValuePaletteItem } from '../nodes/logic-set-value/logic-set-value';
 import { switchPaletteItem } from '../nodes/logic-switch/logic-switch';
 import { waitPaletteItem } from '../nodes/logic-wait/logic-wait';
 import { schedulePaletteItem } from '../nodes/trigger-schedule/trigger-schedule';
+import * as sumitCardTriggerDefinition from '../nodes/trigger-sumit-card/definition';
+import { sumitCardTriggerPaletteItem } from '../nodes/trigger-sumit-card/trigger-sumit-card';
 import { webhookTriggerPaletteItem } from '../nodes/trigger-webhook/trigger-webhook';
 
 import {
@@ -224,87 +225,16 @@ const triggerUiSchema: UISchema = {
 // trigger.sumit_card
 // ---------------------------------------------------------------------------
 
-// ⚠️ ONE CREDENTIAL FIELD AND NOTHING ELSE TO CONFIGURE. Folder, view and change
-// type are chosen in SUMIT's own "יצירת טריגר" screen, which is where the
-// filtering happens — see `SumitCardTriggerConfig`. The panel explains what to
-// pick THERE rather than offering copies here that would filter nothing.
-const sumitCardTriggerSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['trigger.sumit_card'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    tokenHash: requiredText,
-  },
-} satisfies NodeSchema;
-
-const sumitCardTriggerScope = getScope<typeof sumitCardTriggerSchema>;
-
-// The output fields live in an SDK-free file so server code can read them —
-// see `sumit-card-output.ts` for the measured failure that put them there.
-import {
+// Its schema, uischema and palette entry live in `nodes/trigger-sumit-card/`,
+// and its config and output fields in that folder's `definition.ts` — an
+// SDK-free file, so server code can read the output fields too. They are
+// re-exported here for the editor, which reads them from this module.
+export {
   SUMIT_CARD_BASE_OUTPUT,
   SUMIT_HOLD_FIELDS_OUTPUT,
   type SumitCardOutput,
   type SumitCardOutputField,
-} from './sumit-card-output';
-
-export { SUMIT_CARD_BASE_OUTPUT, SUMIT_HOLD_FIELDS_OUTPUT, type SumitCardOutput, type SumitCardOutputField };
-
-const sumitCardTriggerUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    triggerSwitchElement,
-    ...identityControls(
-      sumitCardTriggerScope('properties.label'),
-      sumitCardTriggerScope('properties.description'),
-    ),
-    {
-      // The same control as the webhook trigger's. It asks `authModeFor`, which
-      // answers `address` for this type whatever the row says — so it mints one
-      // address, shows it once, and stores only the hash.
-      type: 'Text',
-      scope: sumitCardTriggerScope('properties.tokenHash'),
-      label: 'הכתובת להדבקה ב-SUMIT',
-      options: { format: WEBHOOK_TOKEN_FORMAT },
-    },
-
-    {
-      // SUMIT's own help article, step for step (10442304), because every
-      // choice that decides what fires is made there and not here.
-      type: 'RichText',
-      text:
-        '**איך מחברים:** ב-SUMIT, מודול טריגרים ← **יצירת טריגר**.\n\n' +
-        '1. **תיקייה ותצוגה** — התיקייה שעליה התהליך יעבוד, ותצוגה שבה הפילטרים בוחרים רק את הכרטיסים הרלוונטיים.\n' +
-        '2. **השינוי שיוזם את הטריגר** — יצירה, עדכון, העברה לארכיון או מחיקה.\n' +
-        '3. **שלבים לביצוע** — יצירת קריאת HTTP. הדביקו את הכתובת מלמעלה ובחרו סוג קריאה **JSON**.',
-    },
-    {
-      type: 'Label',
-      text: 'דורש ב-SUMIT מסלול "צמיחה" ומעלה, ומודולי טריגרים, API וניהול תצוגות מותקנים.',
-    },
-    {
-      // Data minimisation, said where the choice is made: the VIEW's columns are
-      // what SUMIT sends, and the whole body is stored with the run.
-      type: 'Label',
-      text: 'העמודות בתצוגה קובעות אילו שדות נשלחים, והכול נשמר עם ההרצה — השאירו בתצוגה רק את מה שהתהליך צריך. שדות מקושרים מתיקייה אחרת (למשל מייל מכרטיס הלקוח) לא נשלחים.',
-    },
-    {
-      type: 'Label',
-      text: 'הקריאה מ-SUMIT אינה חתומה: מי שמחזיק בכתובת יכול לשלוח כל תוכן. השתמשו בה להתראה ולבדיקה — לעולם לא כבסיס לפעולה כספית.',
-    },
-    {
-      // The two ways this node goes quiet that nothing on the canvas shows.
-      type: 'Label',
-      text: 'אחרי ההדבקה, ודאו במסך "פעולות אוטומציה" ב-SUMIT שהקריאה הראשונה התקבלה. כשהתהליך כבוי הכתובת מחזירה שגיאה, ואחרי חמש שגיאות SUMIT משהה את הטריגר אצלה.',
-    },
-    {
-      type: 'Label',
-      text: 'הרצה שמתחילה כאן אינה קשורה לאורח, ולכן צעדים שפועלים על אורח (עדכון סטטוס, שליחת וואטסאפ, בקשת חזרה) ייכשלו בתוכה.',
-    },
-    statusControl(sumitCardTriggerScope('properties.status')),
-  ],
-};
+} from '../nodes/trigger-sumit-card/definition';
 
 // ---------------------------------------------------------------------------
 // action.microsoft_send_email
@@ -455,10 +385,10 @@ export function buildPaletteItems(
    * them — see `sumitCardOutputFromSample`. `null` keeps the fixed list, which
    * is the state of any workflow SUMIT has not called yet.
    */
-  sumitCardOutput: SumitCardOutput | null = null,
+  sumitCardOutput: sumitCardTriggerDefinition.SumitCardOutput | null = null,
 ): PaletteItem[] {
   return PALETTE_ITEMS.map((item) => {
-    if (item.type === 'trigger.sumit_card' && sumitCardOutput) {
+    if (item.type === sumitCardTriggerDefinition.type && sumitCardOutput) {
       return withNodeRunControl({ ...item, outputSchema: { type: 'default', properties: sumitCardOutput } });
     }
     if (item.type === 'trigger.whatsapp_inbound') {
@@ -540,46 +470,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
   webhookTriggerPaletteItem,
   // Moved to its own folder — see nodes/trigger-schedule/.
   schedulePaletteItem,
-  {
-    type: 'trigger.sumit_card' satisfies KalfaNodeType,
-    label: 'שינוי בכרטיס SUMIT',
-    description: 'SUMIT מודיעה שכרטיס נוצר, עודכן, הועבר לארכיון או נמחק',
-    icon: 'IdentificationCard',
-    templateType: NodeType.StartNode,
-    schema: sumitCardTriggerSchema,
-    uischema: sumitCardTriggerUiSchema,
-    // Exactly what the handler returns — `sumitCardTrigger` in steps/index.ts.
-    //
-    // The "תפיסות מסגרת" fields were MEASURED, not guessed: `/crm/schema/getfolder/`
-    // on folder 1076735289 (2026-09-23) returned exactly these nine `APIName`s,
-    // and the live webhooks carried the same keys with these shapes (every value
-    // a list; references as `{ ID, Name, … }`). Keys are paths: the picker inserts
-    // `{{nodes.<id>.<key>}}` verbatim and `resolveTemplate` walks dots through
-    // arrays, so `.0` is the first value. (The vendor's docs call array indexing
-    // unsupported; the vendored resolver does it anyway, unmodified, and
-    // `sumit-card-trigger.test.ts` pins that it still does.)
-    //
-    // ⚠️ FLAT, ALTHOUGH THE FIELDS BELONG TO ONE FOLDER — chosen over the SDK's
-    // `variant` form after measuring both. `variant` (fields chosen by a node
-    // setting) is typed in `index.d.ts` but absent from the docs, and the editor
-    // resolves a reference's TYPE only from `outputSchema.properties` (`eL`) —
-    // so under `variant` every field reads as text and the condition editor
-    // never offers "greater than" on the amount. None of the four decorable SDK
-    // functions touches type lookup, so no plugin can fix it. The price of flat
-    // is that another folder's SUMIT node is offered these too; each label says
-    // "(תפיסות מסגרת)".
-    outputSchema: {
-      type: 'default',
-      properties: { ...SUMIT_CARD_BASE_OUTPUT, ...SUMIT_HOLD_FIELDS_OUTPUT },
-    },
-    defaultPropertiesData: {
-      status: nodeStatusOptions.active.value,
-      label: 'שינוי בכרטיס SUMIT',
-      description: 'SUMIT מודיעה שכרטיס נוצר, עודכן, הועבר לארכיון או נמחק',
-      // EMPTY: minted in the editor, shown once, stored only as a hash.
-      tokenHash: '',
-    },
-  } satisfies PaletteItem<typeof sumitCardTriggerSchema>,
+  // Moved to its own folder — see nodes/trigger-sumit-card/.
+  sumitCardTriggerPaletteItem,
   // Moved to its own folder — see nodes/logic-condition/.
   conditionPaletteItem,
   // Moved to its own folder — see nodes/logic-switch/.

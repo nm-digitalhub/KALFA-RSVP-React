@@ -6,6 +6,7 @@ import { Badge, firstParam, formatDateTime } from "../../_components";
 
 import { hasPlatformPermission } from "@/lib/auth/dal";
 import { editorDiagramSchema } from "@/lib/workflow/adapter/editor-schema";
+import * as sumitCardTriggerDefinition from "@/lib/workflow/nodes/trigger-sumit-card/definition";
 import {
   getSumitCardSampleOutput,
   getWorkflow,
@@ -108,7 +109,7 @@ export default async function AdminWorkflowPage({
   // Only a workflow with a SUMIT trigger pays for the read — and it is keys and
   // types, never values (see getSumitCardSampleOutput).
   const hasSumitTrigger = nodes.some(
-    (n) => (n.data as { type?: string } | undefined)?.type === "trigger.sumit_card",
+    (n) => (n.data as { type?: string } | undefined)?.type === sumitCardTriggerDefinition.type,
   );
   const sumitCardOutput = hasSumitTrigger ? await getSumitCardSampleOutput(id) : null;
 

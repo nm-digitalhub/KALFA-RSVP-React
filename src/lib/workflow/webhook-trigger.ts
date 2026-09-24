@@ -5,6 +5,7 @@ import { editorDiagramSchema } from './adapter/editor-schema';
 import { hashWebhookToken, webhookHashesMatch } from './webhook-token';
 import { isTriggerType } from './catalogue/nodes';
 import { authModeFor, INBOUND_HTTP_TRIGGER_TYPES } from './catalogue/types';
+import * as sumitCardTriggerDefinition from './nodes/trigger-sumit-card/definition';
 import { webhookAllowsMethod } from './nodes/trigger-webhook/match';
 import { createRunIfNew, listArmedWorkflows } from './store';
 
@@ -146,7 +147,7 @@ async function findWorkflowForEndpoint(endpointId: string, secret: string, metho
     // declare — is not consulted. `undefined` is `webhookAllowsMethod`'s own
     // "POST only".
     const allowedMethods =
-      trigger.data.type === 'trigger.sumit_card' ? undefined : properties.methods;
+      trigger.data.type === sumitCardTriggerDefinition.type ? undefined : properties.methods;
     if (!webhookAllowsMethod(allowedMethods, method)) continue;
 
     return { workflow, triggerType: trigger.data.type };
@@ -266,7 +267,7 @@ export async function startRunFromWebhook(input: {
   // close.
 
   const { workflow, triggerType } = found;
-  const isSumit = triggerType === 'trigger.sumit_card';
+  const isSumit = triggerType === sumitCardTriggerDefinition.type;
 
   // An array or a bare scalar is valid JSON and not a usable `trigger.webhook`
   // body: `{{trigger.body.x}}` has nothing to name. Refused rather than coerced

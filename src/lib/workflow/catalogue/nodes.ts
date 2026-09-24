@@ -31,6 +31,7 @@ import * as setValueDefinition from '../nodes/logic-set-value/definition';
 import * as switchDefinition from '../nodes/logic-switch/definition';
 import * as waitDefinition from '../nodes/logic-wait/definition';
 import * as scheduleDefinition from '../nodes/trigger-schedule/definition';
+import * as sumitCardTriggerDefinition from '../nodes/trigger-sumit-card/definition';
 import * as webhookTriggerDefinition from '../nodes/trigger-webhook/definition';
 
 import { NODE_TYPES, type CatalogueEntry, type KalfaNodeType } from './types';
@@ -39,7 +40,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'trigger.whatsapp_inbound', isTrigger: true },
   { type: webhookTriggerDefinition.type, isTrigger: webhookTriggerDefinition.isTrigger },
   { type: scheduleDefinition.type, isTrigger: scheduleDefinition.isTrigger },
-  { type: 'trigger.sumit_card', isTrigger: true },
+  { type: sumitCardTriggerDefinition.type, isTrigger: sumitCardTriggerDefinition.isTrigger },
   { type: conditionDefinition.type, isTrigger: conditionDefinition.isTrigger },
   { type: switchDefinition.type, isTrigger: switchDefinition.isTrigger },
   { type: updateGuestStatusDefinition.type, isTrigger: updateGuestStatusDefinition.isTrigger },

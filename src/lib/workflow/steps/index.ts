@@ -6,8 +6,6 @@
 // NodeExecutionResult. It never claims its own ledger row — that happens one
 // layer up, in activity-runner.ts, so the claim/side-effect ordering is written
 // once rather than in every handler.
-import { SUMIT_HOLDS_FOLDER_ID, sumitHoldCurrencyLabel, sumitHoldStatusLabel } from '@/lib/sumit/hold-status';
-
 import { type KalfaNodeType } from '../catalogue/types';
 
 // The shared step contract lives in ./shared so node runtimes can import it
@@ -57,6 +55,8 @@ import * as waitDefinition from '../nodes/logic-wait/definition';
 import { waitNode } from '../nodes/logic-wait/runtime';
 import * as scheduleDefinition from '../nodes/trigger-schedule/definition';
 import { scheduleTrigger } from '../nodes/trigger-schedule/runtime';
+import * as sumitCardTriggerDefinition from '../nodes/trigger-sumit-card/definition';
+import { sumitCardTrigger } from '../nodes/trigger-sumit-card/runtime';
 import * as webhookTriggerDefinition from '../nodes/trigger-webhook/definition';
 import { webhookTrigger } from '../nodes/trigger-webhook/runtime';
 
@@ -72,56 +72,7 @@ export type { StepContext, StepHandler, WorkflowTriggerPayload };
 // trigger.sumit_card
 // ---------------------------------------------------------------------------
 
-// SUMIT's trigger module told us a card changed. Like every trigger it performs
-// no side effect — it publishes what arrived, under names a later step can pick.
-//
-// The shape is SUMIT's own, as its "פעולות אוטומציה" log shows it:
-//
-//   { "Folder": 440486517, "EntityID": 632049688, "Type": "CreateOrUpdate",
-//     "Properties": { "Billing_Amount": [11.8], "Billing_PaymentSource":
-//       [{ "Version": 1, "Status": 0, "SchemaID": …, "ID": …, "Name": "…" }], … } }
-//
-// Every property is an ARRAY. REFERENCE properties hold objects with a `Name`;
-// ENUM properties hold the bare code — measured on this account's live
-// releases, `Billing_Status: [3]`, `Billing_Currency: [1]`. Which properties
-// arrive is decided by the columns of the VIEW the owner chose in SUMIT. `resolveTemplate` walks a dotted path through arrays as
-// well as objects, so `{{nodes.<id>.properties.Billing_Amount.0}}` reaches the
-// first element with no flattening of ours.
-//
-// ⚠️ `null`, NEVER `undefined`, FOR ANYTHING MISSING. A plain `{{…}}` reference
-// THROWS on `undefined` and resolves `null` to the text "null" — so a body with a
-// field absent cannot fail every step that quotes it. The payload is UNSIGNED,
-// which is also why nothing here trusts its types: whatever is not the expected
-// shape becomes null rather than a crash.
-const sumitCardTrigger: StepHandler = async (_config, ctx) => {
-  const body = ctx.trigger.body ?? {};
-  const scalar = (value: unknown): string | number | null =>
-    typeof value === 'string' || typeof value === 'number' ? value : null;
-  const rawProperties = body.Properties;
-  // NAMES for the enum codes SUMIT sends bare — only for the frame-holds folder,
-  // whose codes we have evidence for; the same `Billing_*` code may mean
-  // something else in another folder. `null` otherwise (see the rule above).
-  const holdProperties =
-    Number(body.Folder) === SUMIT_HOLDS_FOLDER_ID && rawProperties && typeof rawProperties === 'object'
-      ? (rawProperties as { Billing_Status?: unknown[]; Billing_Currency?: unknown[] })
-      : null;
-
-  return {
-    output: {
-      folder: scalar(body.Folder),
-      entityId: scalar(body.EntityID),
-      changeType: typeof body.Type === 'string' ? body.Type : null,
-      properties:
-        rawProperties && typeof rawProperties === 'object' && !Array.isArray(rawProperties)
-          ? rawProperties
-          : {},
-      // The whole of it as well, for a field this node does not name.
-      body,
-      holdStatus: holdProperties ? sumitHoldStatusLabel(holdProperties.Billing_Status?.[0]) : null,
-      holdCurrency: holdProperties ? sumitHoldCurrencyLabel(holdProperties.Billing_Currency?.[0]) : null,
-    },
-  };
-};
+// The handler lives in `nodes/trigger-sumit-card/runtime.ts`.
 
 // ---------------------------------------------------------------------------
 // trigger.schedule
@@ -183,7 +134,7 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'trigger.whatsapp_inbound': whatsappInbound,
   [webhookTriggerDefinition.type]: webhookTrigger,
   [scheduleDefinition.type]: scheduleTrigger,
-  'trigger.sumit_card': sumitCardTrigger,
+  [sumitCardTriggerDefinition.type]: sumitCardTrigger,
   [conditionDefinition.type]: condition,
   [switchDefinition.type]: switchNode,
   [updateGuestStatusDefinition.type]: updateGuestStatus,

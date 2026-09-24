@@ -35,6 +35,7 @@ import * as setValueDefinition from '../nodes/logic-set-value/definition';
 import * as switchDefinition from '../nodes/logic-switch/definition';
 import * as waitDefinition from '../nodes/logic-wait/definition';
 import * as scheduleDefinition from '../nodes/trigger-schedule/definition';
+import * as sumitCardTriggerDefinition from '../nodes/trigger-sumit-card/definition';
 import * as webhookTriggerDefinition from '../nodes/trigger-webhook/definition';
 
 // ---------------------------------------------------------------------------
@@ -48,7 +49,7 @@ export const NODE_TYPES = [
   'trigger.whatsapp_inbound',
   webhookTriggerDefinition.type,
   scheduleDefinition.type,
-  'trigger.sumit_card',
+  sumitCardTriggerDefinition.type,
   conditionDefinition.type,
   switchDefinition.type,
   updateGuestStatusDefinition.type,
@@ -269,26 +270,10 @@ const _webhookAuthModeMatchesTheDefinition: [_DefinitionWebhookAuthMode, Webhook
 ];
 void _webhookAuthModeMatchesTheDefinition;
 
-/**
- * `trigger.sumit_card` — SUMIT tells us a card changed.
- *
- * A `trigger.webhook` whose caller is known, so its shape can be too. SUMIT's
- * trigger module POSTs `{ Folder, EntityID, Type, Properties }` to a URL it is
- * given and to nothing else (help article 10442304; the payload is visible in
- * its own "פעולות אוטומציה" log). It cannot send a header, so this node is
- * ALWAYS in `address` mode — the node TYPE decides that, never a stored field.
- *
- * ⚠️ NO FOLDER, VIEW OR CHANGE-TYPE FIELD, and that is deliberate. All three are
- * chosen in SUMIT's own "יצירת טריגר" screen, which is where the filtering
- * happens: SUMIT sends only what its trigger selects. The same values stored
- * here would filter nothing — and on an unsigned payload they would add no
- * security either, since a caller holding the address can put any `Folder` in
- * the body. The panel tells the owner what to choose over there instead.
- */
-export type SumitCardTriggerConfig = {
-  /** sha256 of the path segment. The address is shown once and never stored. */
-  tokenHash: string;
-};
+// `trigger.sumit_card` — declared with the rest of its contract (and with its
+// output fields) in `nodes/trigger-sumit-card/definition.ts`, re-exported here
+// for existing readers.
+export type SumitCardTriggerConfig = sumitCardTriggerDefinition.SumitCardTriggerConfig;
 
 /**
  * The triggers an inbound HTTP call can start — both resolved by
@@ -300,7 +285,7 @@ export type SumitCardTriggerConfig = {
  */
 export const INBOUND_HTTP_TRIGGER_TYPES: readonly KalfaNodeType[] = [
   webhookTriggerDefinition.type,
-  'trigger.sumit_card',
+  sumitCardTriggerDefinition.type,
 ];
 
 /**
@@ -316,7 +301,7 @@ export const INBOUND_HTTP_TRIGGER_TYPES: readonly KalfaNodeType[] = [
  * so the question cannot be answered differently in two of them.
  */
 export function authModeFor(nodeType: string, properties: Record<string, unknown>): WebhookAuthMode {
-  if (nodeType === 'trigger.sumit_card') return 'address';
+  if (nodeType === sumitCardTriggerDefinition.type) return 'address';
   return readWebhookAuthMode(properties.auth);
 }
 
@@ -601,7 +586,7 @@ export type KalfaNodeConfig =
   | { type: typeof webhookTriggerDefinition.type; config: WebhookTriggerConfig }
   | { type: typeof aiAgentDefinition.type; config: AiAgentConfig }
   | { type: typeof scheduleDefinition.type; config: ScheduleTriggerConfig }
-  | { type: 'trigger.sumit_card'; config: SumitCardTriggerConfig }
+  | { type: typeof sumitCardTriggerDefinition.type; config: SumitCardTriggerConfig }
   | { type: typeof conditionDefinition.type; config: ConditionConfig }
   | { type: typeof switchDefinition.type; config: SwitchConfig }
   | { type: typeof updateGuestStatusDefinition.type; config: UpdateGuestStatusConfig }
@@ -777,7 +762,8 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   // anywhere else. Declared with the rest of the node's contract.
   [webhookTriggerDefinition.type]: webhookTriggerDefinition.deploymentBindings,
   // The same reasoning: a hash that authenticates to THIS installation only.
-  'trigger.sumit_card': { tokenHash: 'identifier' },
+  // Declared with the rest of the node's contract.
+  [sumitCardTriggerDefinition.type]: sumitCardTriggerDefinition.deploymentBindings,
   [microsoftSendEmailDefinition.type]: microsoftSendEmailDefinition.deploymentBindings,
   [sendTemplateDefinition.type]: sendTemplateDefinition.deploymentBindings,
   [callbackRequestDefinition.type]: callbackRequestDefinition.deploymentBindings,
@@ -803,7 +789,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [scheduleDefinition.type]: scheduleDefinition.requiredFields,
-  'trigger.sumit_card': ['label', 'description', 'tokenHash'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [sumitCardTriggerDefinition.type]: sumitCardTriggerDefinition.requiredFields,
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [conditionDefinition.type]: conditionDefinition.requiredFields,
