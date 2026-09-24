@@ -3,12 +3,12 @@
 // begin a flow.
 //
 // This module is PURE DATA and imports nothing from the SDK — not even a type.
-// Its only imports are a type from `@/lib/constants` and the SDK-free
-// `nodes/<name>/definition.ts` of each node that has moved to its own folder,
-// which import nothing themselves. It is read by the editor (browser) AND by
-// the adapter and step handlers (pg-boss worker), and the worker must never
-// load @workflowbuilder/sdk, whose import runs module-level side effects
-// (immer.setAutoFreeze(false), i18next.init) and which is browser-only.
+// Its only imports are a type from `@/lib/constants` and every node's SDK-free
+// `nodes/<name>/definition.ts`, which import nothing themselves. It is read by
+// the editor (browser) AND by the adapter and step handlers (pg-boss worker),
+// and the worker must never load @workflowbuilder/sdk, whose import runs
+// module-level side effects (immer.setAutoFreeze(false), i18next.init) and
+// which is browser-only.
 //
 // Everything the EDITOR needs — property schemas, labels, icons — lives in each
 // node folder's editor files instead, assembled into the palette by ./schemas.ts.
@@ -537,8 +537,10 @@ void _KALFA_NODE_CONFIG_COVERS_ALL_TYPES;
 
 // What the ADAPTER and the STEP HANDLERS need to know about a node type, and
 // nothing more. Property schemas, labels and icons are the editor's concern and
-// live in ./schemas.ts, which imports @workflowbuilder/sdk at run time and is
-// therefore client-only.
+// live in each node folder's editor files (`nodes/<name>/schema.ts`,
+// `uischema.ts` and the palette item), which import @workflowbuilder/sdk at run
+// time and are therefore client-only; ./schemas.ts assembles them into the
+// palette.
 //
 // The split is not tidiness. `sharedProperties` and `getScope` — the two SDK
 // exports a correct schema is built from — are runtime VALUES, not types. Had
@@ -601,9 +603,11 @@ export const LEGACY_PROPERTY_ALIASES: Readonly<Record<string, string>> = {
  * moved to the module BOTH graphs can hold. `types.ts` imports nothing from the
  * SDK — the same rule `nodes.ts` states for the worker.
  *
- * `schemas.ts` reads these instead of declaring its own copy, so the editor form
- * and the arming gate cannot drift apart: a field required in one is required in
- * the other, by construction rather than by discipline.
+ * Each node's editor schema (`nodes/<name>/schema.ts`) reads its definition's
+ * `requiredFields` — the same array listed here — instead of declaring its own
+ * copy, so the editor form and the arming gate cannot drift apart: a field
+ * required in one is required in the other, by construction rather than by
+ * discipline.
  */
 /**
  * How a stored property's value relates to the installation it was saved in.

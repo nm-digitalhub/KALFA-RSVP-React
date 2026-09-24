@@ -15,6 +15,28 @@
 // CLIENT ONLY, for the reason `schemas.ts` gives: `sharedProperties` and
 // `statusOptions` are runtime values from @workflowbuilder/sdk. Server code
 // reads `types.ts` / `nodes.ts` and the node `definition.ts` files instead.
+//
+// The node folders' editor files are written against the SDK's own vocabulary,
+// verified against `dist/index.d.ts` and against how the reference app's own
+// nodes are built
+// (apps/demo/src/app/data/nodes/delay/{schema,uischema,select-options}.ts):
+//
+//   * `...sharedProperties` supplies `label` and `description`, which
+//     `NodePropertiesSchema` REQUIRES on every node. Hand-rolling them and
+//     omitting `description` is a contract violation that only a `satisfies`
+//     catches.
+//   * A select is `options: [{ label, value, icon? }]` on the FIELD, plus
+//     `{ type: 'Select', scope }` in the uischema. There is no `oneOf`, no
+//     `enum`, and no `title` in `FieldSchema` — those are generic JSONForms
+//     conventions this SDK does not use.
+//   * Visible text lives in the UISCHEMA (`label`, `placeholder`, and
+//     `{ type: 'Label', text }`), never in the JSON schema.
+//   * Scopes come from `getScope<Schema>('properties.x')` — a typed path, not a
+//     hand-written `#/properties/x` string.
+//
+// Every node's `schema.ts` ends in `satisfies NodeSchema` and its palette entry
+// in `satisfies PaletteItem<…>`, so a mistake there is a compile error rather
+// than an empty properties panel.
 import { errorPolicyProperty, sharedProperties, statusOptions } from '@workflowbuilder/sdk';
 import type { UISchema } from '@workflowbuilder/sdk';
 

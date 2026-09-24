@@ -5,30 +5,14 @@
 // folder's editor files (`nodes/<name>/`); this module assembles them into
 // `PALETTE_ITEMS` and fills the live lists in (`buildPaletteItems`).
 //
-// CLIENT ONLY. `sharedProperties` and `getScope` are runtime values, so this
-// module loads @workflowbuilder/sdk — and with it the module-level
-// `immer.setAutoFreeze(false)` and `i18next.init`. The worker reads ./nodes.ts,
-// which imports nothing.
+// CLIENT ONLY. Its own SDK import is type-only, but the node palette files it
+// imports are built from @workflowbuilder/sdk runtime values (`sharedProperties`,
+// `getScope`), so loading this module loads the SDK — and with it the
+// module-level `immer.setAutoFreeze(false)` and `i18next.init`. The worker reads
+// ./nodes.ts, which imports nothing from the SDK.
 //
-// Written against the SDK's own vocabulary, verified against
-// `dist/index.d.ts` and against how the reference app's own nodes are built
-// (apps/demo/src/app/data/nodes/delay/{schema,uischema,select-options}.ts):
-//
-//   * `...sharedProperties` supplies `label` and `description`, which
-//     `NodePropertiesSchema` REQUIRES on every node. Hand-rolling them and
-//     omitting `description` is a contract violation that only a `satisfies`
-//     catches.
-//   * A select is `options: [{ label, value, icon? }]` on the FIELD, plus
-//     `{ type: 'Select', scope }` in the uischema. There is no `oneOf`, no
-//     `enum`, and no `title` in `FieldSchema` — those are generic JSONForms
-//     conventions this SDK does not use.
-//   * Visible text lives in the UISCHEMA (`label`, `placeholder`, and
-//     `{ type: 'Label', text }`), never in the JSON schema.
-//   * Scopes come from `getScope<Schema>('properties.x')` — a typed path, not a
-//     hand-written `#/properties/x` string.
-//
-// Every entry ends in `satisfies NodeSchema` / typed as `PaletteItem`, so a
-// mistake here is a compile error rather than an empty properties panel.
+// The SDK vocabulary those editor files are written in is noted in
+// ./editor-shared.ts.
 import type { PaletteItem, UISchema } from '@workflowbuilder/sdk';
 
 import { NODE_RUN_FORMAT } from './ui-formats';
@@ -178,7 +162,7 @@ export type { VoiceDialOption, VoicePurposeOption };
  * union is CLOSED — `UISchemaControlElement | UISchemaLayoutElement |
  * LabelElement | RichTextElement` — so "render my component here" has to be an
  * existing element carrying `options.format`, which is the same contract the
- * other four custom renderers in this file use. `text` is required by the type
+ * other custom renderers in ./ui-formats.ts use. `text` is required by the type
  * and never drawn: the renderer replaces the element outright.
  */
 const NODE_RUN_ELEMENT: UISchema = {

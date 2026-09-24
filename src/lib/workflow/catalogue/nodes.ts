@@ -1,10 +1,10 @@
 // The node-type catalogue: which types exist, and which may begin a flow.
 //
 // METADATA ONLY, and SDK-free — this module is read by the pg-boss worker,
-// which must never load @workflowbuilder/sdk. It imports `./types` and the
-// SDK-free `nodes/<name>/definition.ts` of each node that has moved to its own
-// folder. The editor's half (property schemas, labels, icons) lives in
-// ./schemas.ts or, for a moved node, in its folder's editor files.
+// which must never load @workflowbuilder/sdk. It imports `./types` and every
+// node's SDK-free `nodes/<name>/definition.ts`. The editor's half (property
+// schemas, labels, icons) lives in each node folder's editor files, assembled
+// into the palette by ./schemas.ts.
 //
 // Adding a step type in the one-folder-per-node layout: a `nodes/<name>/`
 // folder (definition, schema, uischema, defaults, palette item, runtime — see
