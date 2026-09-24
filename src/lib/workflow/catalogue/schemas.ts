@@ -59,6 +59,7 @@ import {
   type MicrosoftConnectionOption,
 } from '../nodes/action-microsoft-send-email/schema';
 import { notifyTeamPaletteItem } from '../nodes/action-notify-team/action-notify-team';
+import { sendWhatsappPaletteItem } from '../nodes/action-send-whatsapp/action-send-whatsapp';
 import { setGuestFieldPaletteItem } from '../nodes/action-set-guest-field/action-set-guest-field';
 import { sumitCreateCustomerPaletteItem } from '../nodes/action-sumit-create-customer/action-sumit-create-customer';
 import { sumitCreateDocumentPaletteItem } from '../nodes/action-sumit-create-document/action-sumit-create-document';
@@ -425,55 +426,6 @@ const sumitCardTriggerUiSchema: UISchema = {
       text: 'הרצה שמתחילה כאן אינה קשורה לאורח, ולכן צעדים שפועלים על אורח (עדכון סטטוס, שליחת וואטסאפ, בקשת חזרה) ייכשלו בתוכה.',
     },
     statusControl(sumitCardTriggerScope('properties.status')),
-  ],
-};
-
-// ---------------------------------------------------------------------------
-// action.send_whatsapp
-// ---------------------------------------------------------------------------
-
-const sendWhatsappSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['action.send_whatsapp'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    ...actionBranchesProperty,
-    body: { ...requiredText },
-    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
-  },
-} satisfies NodeSchema;
-
-const sendWhatsappScope = getScope<typeof sendWhatsappSchema>;
-
-const sendWhatsappUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(sendWhatsappScope('properties.label'), sendWhatsappScope('properties.description')),
-    {
-      // `VariableTextArea`, and this is the control the SDK ships for exactly
-      // this shape. Typing `{{` opens the variable picker; the picker writes
-      // `{{nodes.<id>.<field>}}`; `activity-runner.ts` resolves it against the
-      // live execution context before this handler ever sees the string.
-      //
-      // It was `TextArea` until the resolver was vendored, because the picker
-      // would have written a reference the adapter then refused to run.
-      type: 'VariableTextArea',
-      scope: sendWhatsappScope('properties.body'),
-      label: 'ההודעה שתישלח',
-      placeholder: 'הקלידו {{ כדי לשלב ערך מצעד קודם',
-      minRows: 3,
-    },
-    {
-      type: 'Label',
-      text: 'ההודעה נשלחת לאורח ששלח את ההודעה הנכנסת, ורק לו. אין אפשרות לבחור נמען אחר.',
-    },
-    {
-      type: 'Select',
-      scope: sendWhatsappScope('properties.errorPolicy'),
-      label: 'אם השליחה נכשלת',
-    },
-    statusControl(sendWhatsappScope('properties.status')),
   ],
 };
 
@@ -1616,32 +1568,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
   switchPaletteItem,
   // Moved to its own folder — see nodes/action-update-guest-status/.
   updateGuestStatusPaletteItem,
-  {
-    type: 'action.send_whatsapp' satisfies KalfaNodeType,
-    // Rendered as a decision node so the failure branch has a handle to leave
-    // from. Without it `errorPolicy: 'errorRoute'` names a port no edge carries,
-    // which is a guaranteed dead end — the reason the option was withheld.
-    templateType: NodeType.DecisionNode,
-    label: 'שליחת הודעת וואטסאפ',
-    description: 'משיב לאורח ששלח את ההודעה',
-    icon: 'WhatsappLogo',
-    schema: sendWhatsappSchema,
-    uischema: sendWhatsappUiSchema,
-    outputSchema: {
-      type: 'default',
-      properties: {
-        sent: { type: 'boolean', label: 'נשלח', description: 'האם ההודעה התקבלה אצל Meta' },
-      },
-    },
-    defaultPropertiesData: {
-      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
-      status: nodeStatusOptions.active.value,
-      label: 'שליחת הודעת וואטסאפ',
-      description: 'משיב לאורח ששלח את ההודעה',
-      body: '',
-      errorPolicy: errorPolicyOptions.fail.value,
-    },
-  } satisfies PaletteItem<typeof sendWhatsappSchema>,
+  // Moved to its own folder — see nodes/action-send-whatsapp/.
+  sendWhatsappPaletteItem,
   // Moved to its own folder — see nodes/action-microsoft-send-email/.
   microsoftSendEmailPaletteItem,
   {

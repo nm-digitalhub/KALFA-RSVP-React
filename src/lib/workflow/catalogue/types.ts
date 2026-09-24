@@ -19,6 +19,7 @@ import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
 import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
+import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
@@ -43,7 +44,7 @@ export const NODE_TYPES = [
   conditionDefinition.type,
   switchDefinition.type,
   updateGuestStatusDefinition.type,
-  'action.send_whatsapp',
+  sendWhatsappDefinition.type,
   microsoftSendEmailDefinition.type,
   'action.start_rsvp_ai_callback',
   notifyTeamDefinition.type,
@@ -593,14 +594,10 @@ const _rsvpStatusMatchesTheDefinition: [_DefinitionRsvpStatus, RsvpStatus] = [
 ];
 void _rsvpStatusMatchesTheDefinition;
 
-// The reply the workflow sends back to the guest who wrote in.
-//
-// One field, and no recipient among them: the recipient is ALWAYS the contact
-// that started this run. A workflow cannot be pointed at an arbitrary phone
-// number, which is what keeps an automation from becoming a broadcast tool.
-export type SendWhatsappConfig = {
-  body: string;
-};
+// `action.send_whatsapp` — declared with the rest of its contract in
+// `nodes/action-send-whatsapp/definition.ts`, re-exported here for existing
+// readers.
+export type SendWhatsappConfig = sendWhatsappDefinition.SendWhatsappConfig;
 
 // `action.microsoft_send_email` — its config, and the content-type and importance
 // values only it reads, are declared with the rest of its contract in
@@ -770,7 +767,7 @@ export type KalfaNodeConfig =
   | { type: typeof conditionDefinition.type; config: ConditionConfig }
   | { type: typeof switchDefinition.type; config: SwitchConfig }
   | { type: typeof updateGuestStatusDefinition.type; config: UpdateGuestStatusConfig }
-  | { type: 'action.send_whatsapp'; config: SendWhatsappConfig }
+  | { type: typeof sendWhatsappDefinition.type; config: SendWhatsappConfig }
   | { type: typeof microsoftSendEmailDefinition.type; config: MicrosoftSendEmailConfig }
   | { type: 'action.start_rsvp_ai_callback'; config: StartRsvpAiCallbackConfig }
   | { type: 'action.start_voice_call'; config: StartVoiceCallConfig }
@@ -931,6 +928,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   [notifyTeamDefinition.type]: notifyTeamDefinition.deploymentBindings,
   [setGuestFieldDefinition.type]: setGuestFieldDefinition.deploymentBindings,
   [updateGuestStatusDefinition.type]: updateGuestStatusDefinition.deploymentBindings,
+  [sendWhatsappDefinition.type]: sendWhatsappDefinition.deploymentBindings,
   'trigger.whatsapp_inbound': { phoneNumberId: 'identifier' },
   // A HASH, not the token — so this is no longer a secret that must not travel,
   // but it still authenticates to THIS installation and resolves to nothing
@@ -984,7 +982,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [updateGuestStatusDefinition.type]: updateGuestStatusDefinition.requiredFields,
-  'action.send_whatsapp': ['label', 'description', 'body'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [sendWhatsappDefinition.type]: sendWhatsappDefinition.requiredFields,
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [microsoftSendEmailDefinition.type]: microsoftSendEmailDefinition.requiredFields,
@@ -1052,7 +1052,7 @@ export const ARM_NOTICE_PATH = '/armNotice';
 
 export const GUEST_SCOPED_NODE_TYPES: readonly KalfaNodeType[] = [
   updateGuestStatusDefinition.type,
-  'action.send_whatsapp',
+  sendWhatsappDefinition.type,
   'action.send_template',
   setGuestFieldDefinition.type,
   callbackRequestDefinition.type,
