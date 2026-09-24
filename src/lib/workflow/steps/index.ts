@@ -13,7 +13,6 @@ import { toBusinessOutcome } from '../voice-outcome';
 
 import {
   ACTION_BRANCH_HANDLES,
-  GUEST_FIELDS,
   CALLBACK_TOPICS,
   LEGACY_PROPERTY_ALIASES,
   MAX_FANOUT_DEPTH,
@@ -40,6 +39,8 @@ import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-em
 import { microsoftSendEmail } from '../nodes/action-microsoft-send-email/runtime';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import { notifyTeam } from '../nodes/action-notify-team/runtime';
+import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
+import { setGuestField } from '../nodes/action-set-guest-field/runtime';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import { sumitCreateCustomer } from '../nodes/action-sumit-create-customer/runtime';
 import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
@@ -552,52 +553,6 @@ const sendWhatsapp: StepHandler = async (config, ctx) => {
 };
 
 // ---------------------------------------------------------------------------
-// action.set_guest_field
-// ---------------------------------------------------------------------------
-
-// Write ONE field on the guest behind this run's contact.
-//
-// The narrowest possible write, and that is the design: `GUEST_FIELDS` names the
-// three columns a workflow may touch, and status and the headcount are not among
-// them — they belong to `submit_rsvp`, which keeps their numbers consistent with
-// each other.
-//
-// ריבוי-אורחים: a phone may back several guests, and "whose meal preference?" has
-// no answer. Reported as a COMPLETED step with `skipped: true`, not a failure —
-// the same shape `action.update_guest_status` uses, because nothing went wrong
-// and there was simply nothing unambiguous to do.
-const setGuestField: StepHandler = async (config, ctx) => {
-  const field = readEnum(config, 'field', GUEST_FIELDS, 'action.set_guest_field');
-  // Already resolved: `resolveConfigTemplates` walked the config first, so this
-  // can legitimately be the guest's own words via `{{trigger.message_text}}`.
-  const value = readString(config, 'value');
-
-  const write = ctx.deps.guests.setGuestField;
-  if (!write) {
-    // A port that predates the node. Fail CLOSED and loudly rather than
-    // reporting a write that never happened as success.
-    throw new PermanentNodeExecutionError(
-      'unsupported',
-      'עדכון שדה אורח אינו זמין בהרצה הזו.',
-    );
-  }
-
-  const guest = requireGuestContext(ctx, 'action.set_guest_field');
-  const result = await write({
-    eventId: guest.eventId,
-    contactId: guest.contactId,
-    field,
-    value,
-  });
-
-  return result.ok
-    ? { output: { updated: true, field, guestId: result.guestId ?? null } }
-    : {
-        output: { updated: false, skipped: true, field, reason: result.reason ?? null },
-      };
-};
-
-// ---------------------------------------------------------------------------
 // action.create_callback_request
 // ---------------------------------------------------------------------------
 
@@ -996,7 +951,7 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'action.start_voice_call': startVoiceCall,
   [notifyTeamDefinition.type]: notifyTeam,
   [webhookDefinition.type]: webhook,
-  'action.set_guest_field': setGuestField,
+  [setGuestFieldDefinition.type]: setGuestField,
   'action.create_callback_request': createCallbackRequest,
   'action.import_guest_list': importGuestList,
   'logic.wait': waitNode,

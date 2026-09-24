@@ -10,6 +10,9 @@
 // Before this, `לפי שעון → שליחת וואטסאפ` armed cleanly and failed on its first
 // fire. The only warning was a sentence of prose in the trigger's own panel.
 
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { findArmBlockers } from './arm-check';
@@ -19,6 +22,24 @@ import {
   OWNER_WHATSAPP_MESSAGE_KINDS,
   triggerSuppliesGuestContext,
 } from './types';
+
+/**
+ * `<ident>.type` in `path` → the node type string, read from the definition file
+ * that `<ident>` is a namespace import of. `unresolved:…` when any step fails.
+ */
+function resolveDefinitionType(path: string, source: string, ident: string): string {
+  const unresolved = `unresolved:${ident}@${path}`;
+  const spec = source.match(
+    new RegExp(`import \\* as ${ident} from '([^']*/definition)';`),
+  )?.[1];
+  if (!spec || !spec.startsWith('.')) return unresolved;
+  const definition = join(process.cwd(), dirname(path), `${spec}.ts`);
+  if (!existsSync(definition)) return unresolved;
+  return (
+    readFileSync(definition, 'utf8').match(/^export const type = '([\w.]+)' as const;$/m)?.[1] ??
+    unresolved
+  );
+}
 
 /** A minimal two-node diagram: one trigger, one action, one edge. */
 function diagram(
@@ -67,8 +88,16 @@ describe('the guest-scoped list matches the handlers that enforce it', () => {
     // move together with the list and pass while guarding nothing.
     const files = serverStepSources();
     expect(assertCoversEveryNodeFolder(files)).toEqual([]);
-    const guarded = files.flatMap(({ source }) =>
-      [...source.matchAll(/requireGuestContext\(\s*ctx,\s*'([\w.]+)'/g)].map((m) => m[1]!),
+    // Two spellings of the node type: a literal (`'action.send_whatsapp'`), or a
+    // moved node's `<ident>.type` read from `import * as <ident> from '…/definition'`
+    // — a moved runtime must not repeat the literal. The second is resolved to the
+    // definition's own `export const type = '…'`; anything that does not resolve
+    // becomes an `unresolved:` entry, so the equality below fails loudly instead
+    // of the call site silently dropping out of the set.
+    const guarded = files.flatMap(({ path, source }) =>
+      [...source.matchAll(/requireGuestContext\(\s*ctx,\s*(?:'([\w.]+)'|(\w+)\.type\b)/g)].map(
+        (m) => m[1] ?? resolveDefinitionType(path, source, m[2]!),
+      ),
     );
 
     expect([...new Set(guarded)].sort()).toEqual([...GUEST_SCOPED_NODE_TYPES].sort());

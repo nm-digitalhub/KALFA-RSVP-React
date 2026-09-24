@@ -18,6 +18,7 @@ import type { RsvpStatus } from '@/lib/constants';
 import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
+import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
 import * as webhookDefinition from '../nodes/action-webhook/definition';
@@ -45,7 +46,7 @@ export const NODE_TYPES = [
   'action.start_rsvp_ai_callback',
   notifyTeamDefinition.type,
   webhookDefinition.type,
-  'action.set_guest_field',
+  setGuestFieldDefinition.type,
   'action.create_callback_request',
   'action.import_guest_list',
   'logic.wait',
@@ -712,47 +713,12 @@ export const SECRET_BEARING_NODE_TYPES: readonly string[] = [webhookDefinition.t
 // The config type is re-exported here for existing readers.
 export type AiAgentConfig = aiAgentDefinition.AiAgentConfig;
 
-// ---------------------------------------------------------------------------
-// action.set_guest_field
-// ---------------------------------------------------------------------------
-
-/**
- * The guest fields a workflow may write, and the three that are deliberately absent.
- *
- * NOT `status` — `action.update_guest_status` owns it, and it goes through the
- * atomic `submit_rsvp` gate rather than a column write, so no RSVP rule is ever
- * reimplemented in a step.
- *
- * NOT the headcount columns (`expected_count`, `confirmed_adults`,
- * `confirmed_kids`, `confirmed_headcount`). They are derived together by the same
- * RPC; writing one of them directly produces a row whose numbers disagree with
- * each other, and nothing downstream would notice.
- *
- * NOT `phone` or `full_name` — identity. A workflow that could rewrite the phone
- * could silently redirect every future send for that guest.
- *
- * ⚠️ `note` AND `rsvp_note` ARE DIFFERENT FIELDS AND THE DIFFERENCE IS A PRIVACY
- * ONE. `guests.note` is the OWNER's internal annotation and is never shown to the
- * guest; `rsvp_note` is what the guest themself wrote, and the public RSVP page
- * renders it. Writing a guest's words into `note` hides them from the guest's own
- * view; writing an internal remark into `rsvp_note` shows the owner's private note
- * to the guest. Both labels below say which is which.
- */
-export const GUEST_FIELDS = ['meal_pref', 'rsvp_note', 'note'] as const;
-export type GuestField = (typeof GUEST_FIELDS)[number];
-
-/**
- * Set one guest field on the contact that started this run.
- *
- * IDEMPOTENT BY CONSTRUCTION, which is what makes it a legal action node at all:
- * `StepClaim`'s lease can replay a step whose side effect completed, and writing
- * the same value to the same column twice is the same row. See ports.ts.
- */
-export type SetGuestFieldConfig = {
-  field: GuestField;
-  /** Free text, template-resolved — so it can carry `{{trigger.message.text}}`. */
-  value: string;
-};
+// `action.set_guest_field` — its config and the guest fields it may write are
+// declared with the rest of its contract in `nodes/action-set-guest-field/definition.ts`.
+// Re-exported here for existing readers (the `GuestActionsPort` in
+// engine/ports.ts among them).
+export { GUEST_FIELDS, type GuestField } from '../nodes/action-set-guest-field/definition';
+export type SetGuestFieldConfig = setGuestFieldDefinition.SetGuestFieldConfig;
 
 // ---------------------------------------------------------------------------
 // action.create_callback_request
@@ -810,7 +776,7 @@ export type KalfaNodeConfig =
   | { type: 'action.start_voice_call'; config: StartVoiceCallConfig }
   | { type: typeof notifyTeamDefinition.type; config: NotifyTeamConfig }
   | { type: typeof webhookDefinition.type; config: WebhookConfig }
-  | { type: 'action.set_guest_field'; config: SetGuestFieldConfig }
+  | { type: typeof setGuestFieldDefinition.type; config: SetGuestFieldConfig }
   | { type: 'action.create_callback_request'; config: CreateCallbackRequestConfig }
   | { type: 'action.import_guest_list'; config: ImportGuestListConfig }
   | { type: 'logic.wait'; config: WaitConfig }
@@ -963,6 +929,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   [conditionDefinition.type]: conditionDefinition.deploymentBindings,
   [switchDefinition.type]: switchDefinition.deploymentBindings,
   [notifyTeamDefinition.type]: notifyTeamDefinition.deploymentBindings,
+  [setGuestFieldDefinition.type]: setGuestFieldDefinition.deploymentBindings,
   'trigger.whatsapp_inbound': { phoneNumberId: 'identifier' },
   // A HASH, not the token — so this is no longer a secret that must not travel,
   // but it still authenticates to THIS installation and resolves to nothing
@@ -1026,7 +993,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [webhookDefinition.type]: webhookDefinition.requiredFields,
-  'action.set_guest_field': ['label', 'description', 'field'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [setGuestFieldDefinition.type]: setGuestFieldDefinition.requiredFields,
   'action.create_callback_request': ['label', 'description', 'topic'],
   'action.import_guest_list': ['label', 'description'],
   'action.start_for_each_guest': ['label', 'description', 'targetWorkflowId', 'maxGuests'],
@@ -1055,8 +1024,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
  * graph to be a particular kind of trigger" is expressible in neither.
  *
  * `guest-context.test.ts` pins this list against the `requireGuestContext` call
- * sites in `steps/index.ts`, so a node that gains the guard and is not added
- * here fails a test rather than shipping an automation that cannot run.
+ * sites in `steps/` and in every node folder's runtime, so a node that gains the
+ * guard and is not added here fails a test rather than shipping an automation
+ * that cannot run.
  */
 /**
  * The `instancePath` an arm refusal carries when it belongs to the NODE rather
@@ -1079,7 +1049,7 @@ export const GUEST_SCOPED_NODE_TYPES: readonly KalfaNodeType[] = [
   'action.update_guest_status',
   'action.send_whatsapp',
   'action.send_template',
-  'action.set_guest_field',
+  setGuestFieldDefinition.type,
   'action.create_callback_request',
   'action.start_voice_call',
   'action.start_rsvp_ai_callback',

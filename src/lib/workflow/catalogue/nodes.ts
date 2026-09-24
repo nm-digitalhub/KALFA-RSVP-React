@@ -14,6 +14,7 @@
 import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
+import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
 import * as webhookDefinition from '../nodes/action-webhook/definition';
@@ -36,7 +37,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'action.start_rsvp_ai_callback', isTrigger: false },
   { type: notifyTeamDefinition.type, isTrigger: notifyTeamDefinition.isTrigger },
   { type: webhookDefinition.type, isTrigger: webhookDefinition.isTrigger },
-  { type: 'action.set_guest_field', isTrigger: false },
+  { type: setGuestFieldDefinition.type, isTrigger: setGuestFieldDefinition.isTrigger },
   { type: 'action.create_callback_request', isTrigger: false },
   { type: 'action.import_guest_list', isTrigger: false },
   { type: 'logic.wait', isTrigger: false },

@@ -59,6 +59,7 @@ import {
   type MicrosoftConnectionOption,
 } from '../nodes/action-microsoft-send-email/schema';
 import { notifyTeamPaletteItem } from '../nodes/action-notify-team/action-notify-team';
+import { setGuestFieldPaletteItem } from '../nodes/action-set-guest-field/action-set-guest-field';
 import { sumitCreateCustomerPaletteItem } from '../nodes/action-sumit-create-customer/action-sumit-create-customer';
 import { sumitCreateDocumentPaletteItem } from '../nodes/action-sumit-create-document/action-sumit-create-document';
 import { webhookPaletteItem } from '../nodes/action-webhook/action-webhook';
@@ -72,7 +73,6 @@ import {
   NODE_REQUIRED_FIELDS,
   WAIT_UNIT_VALUES,
   WHATSAPP_MESSAGE_KINDS,
-  type GuestField,
   type KalfaNodeType,
   webhookMethodOptions,
 } from './types';
@@ -437,60 +437,6 @@ const sumitCardTriggerUiSchema: UISchema = {
       text: 'הרצה שמתחילה כאן אינה קשורה לאורח, ולכן צעדים שפועלים על אורח (עדכון סטטוס, שליחת וואטסאפ, בקשת חזרה) ייכשלו בתוכה.',
     },
     statusControl(sumitCardTriggerScope('properties.status')),
-  ],
-};
-
-// ---------------------------------------------------------------------------
-// action.set_guest_field
-// ---------------------------------------------------------------------------
-
-const guestFieldOptions = {
-  meal_pref: { value: 'meal_pref' satisfies GuestField, label: 'העדפת מנה' },
-  // The two note fields are NOT interchangeable and the labels have to say so:
-  // `rsvp_note` is the guest's own note and the public RSVP page renders it;
-  // `note` is the owner's private annotation and the guest never sees it.
-  rsvp_note: { value: 'rsvp_note' satisfies GuestField, label: 'הערת האורח (האורח רואה)' },
-  note: { value: 'note' satisfies GuestField, label: 'הערה פנימית (האורח לא רואה)' },
-} as const;
-
-const setGuestFieldSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['action.set_guest_field'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
-    field: { ...requiredText, options: Object.values(guestFieldOptions) },
-    value: { type: 'string' },
-    decisionBranches: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: { id: { type: 'string' }, sourceHandle: { type: 'string' }, label: { type: 'string' } },
-      },
-    },
-  },
-} satisfies NodeSchema;
-
-const setGuestFieldScope = getScope<typeof setGuestFieldSchema>;
-
-const setGuestFieldUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(setGuestFieldScope('properties.label'), setGuestFieldScope('properties.description')),
-    { type: 'Select', scope: setGuestFieldScope('properties.field'), label: 'השדה לעדכון' },
-    {
-      type: 'VariableText',
-      scope: setGuestFieldScope('properties.value'),
-      label: 'הערך',
-      placeholder: 'למשל {{trigger.message_text}}',
-    },
-    {
-      type: 'Label',
-      text: 'ריק מוחק את הערך הקיים. לא ניתן לשנות מכאן סטטוס או מספר מוזמנים — לאלה יש צעד משלהם.',
-    },
-    { type: 'Select', scope: setGuestFieldScope('properties.errorPolicy'), label: 'אם הצעד נכשל' },
-    statusControl(setGuestFieldScope('properties.status')),
   ],
 };
 
@@ -1869,32 +1815,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
   } satisfies PaletteItem<typeof startRsvpAiCallbackSchema>,
   // Moved to its own folder — see nodes/action-notify-team/.
   notifyTeamPaletteItem,
-  {
-    type: 'action.set_guest_field' satisfies KalfaNodeType,
-    templateType: NodeType.DecisionNode,
-    label: 'עדכון שדה אורח',
-    description: 'כותב ערך לשדה אחד של האורח ששלח את ההודעה',
-    icon: 'NotePencil',
-    schema: setGuestFieldSchema,
-    uischema: setGuestFieldUiSchema,
-    outputSchema: {
-      type: 'default',
-      properties: {
-        updated: { type: 'boolean', label: 'עודכן', description: 'ריק כאשר למספר יותר מאורח אחד' },
-        field: { type: 'string', label: 'השדה שעודכן' },
-        guestId: { type: 'string', label: 'מזהה האורח' },
-      },
-    },
-    defaultPropertiesData: {
-      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
-      status: nodeStatusOptions.active.value,
-      label: 'עדכון שדה אורח',
-      description: 'כותב ערך לשדה אחד של האורח ששלח את ההודעה',
-      field: guestFieldOptions.meal_pref.value,
-      value: '',
-      errorPolicy: errorPolicyOptions.fail.value,
-    },
-  } satisfies PaletteItem<typeof setGuestFieldSchema>,
+  // Moved to its own folder — see nodes/action-set-guest-field/.
+  setGuestFieldPaletteItem,
   {
     type: 'action.create_callback_request' satisfies KalfaNodeType,
     templateType: NodeType.DecisionNode,

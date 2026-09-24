@@ -1,5 +1,6 @@
 import type { KalfaNodeType } from '../catalogue/types';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
+import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
 import * as webhookDefinition from '../nodes/action-webhook/definition';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
@@ -69,7 +70,7 @@ export const NODE_ACTIVITY_PROFILES: Readonly<Partial<Record<KalfaNodeType, Node
     'action.send_template': { timeoutMs: 30_000 },
     [notifyTeamDefinition.type]: notifyTeamDefinition.activityProfile,
     'action.update_guest_status': { timeoutMs: 20_000 },
-    'action.set_guest_field': { timeoutMs: 20_000 },
+    [setGuestFieldDefinition.type]: setGuestFieldDefinition.activityProfile,
     'action.create_callback_request': { timeoutMs: 30_000 },
     'action.start_voice_call': { timeoutMs: 60_000 },
     'action.start_rsvp_ai_callback': { timeoutMs: 60_000 },

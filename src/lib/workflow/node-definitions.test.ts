@@ -12,13 +12,20 @@ import { describe, expect, it } from 'vitest';
 
 import { findCatalogueEntry } from './catalogue/nodes';
 import { PALETTE_ITEMS } from './catalogue/schemas';
-import { NODE_DEPLOYMENT_BINDINGS, NODE_REQUIRED_FIELDS, NODE_TYPES, type KalfaNodeType } from './catalogue/types';
+import {
+  GUEST_SCOPED_NODE_TYPES,
+  NODE_DEPLOYMENT_BINDINGS,
+  NODE_REQUIRED_FIELDS,
+  NODE_TYPES,
+  type KalfaNodeType,
+} from './catalogue/types';
 import { MAX_NODE_TIMEOUT_MS, NODE_ACTIVITY_PROFILES } from './engine/node-budgets';
 import { nodeFolders } from './node-sources';
 import { STEP_HANDLERS } from './steps';
 
 type Definition = {
   deploymentBindings?: unknown;
+  guestScoped?: unknown;
   type?: unknown;
   isTrigger?: unknown;
   requiredFields?: unknown;
@@ -36,7 +43,7 @@ const folders = nodeFolders();
 describe('node definitions', () => {
   it('the scan found the node folders — not an empty directory', () => {
     // At least the nodes moved so far. Raise as nodes move; never lower.
-    expect(folders.length).toBeGreaterThanOrEqual(9);
+    expect(folders.length).toBeGreaterThanOrEqual(10);
   });
 
   describe.each(folders)('%s/definition.ts', (folder) => {
@@ -115,6 +122,14 @@ describe('node definitions', () => {
         expect(['identifier', 'secret', 'catalogue']).toContain(kind);
       }
       expect(NODE_DEPLOYMENT_BINDINGS[def.type as KalfaNodeType]).toBe(def.deploymentBindings);
+    });
+
+    it('declares guestScoped: true exactly when GUEST_SCOPED_NODE_TYPES lists it', async () => {
+      const def = (await import(path)) as Definition;
+      // Present only on a guest-scoped node, and then only as `true`: the flag and
+      // the arming list must say the same thing, so neither can be edited alone.
+      if ('guestScoped' in def) expect(def.guestScoped).toBe(true);
+      expect(def.guestScoped === true).toBe(GUEST_SCOPED_NODE_TYPES.includes(def.type as KalfaNodeType));
     });
 
     it('has a registered handler', async () => {
