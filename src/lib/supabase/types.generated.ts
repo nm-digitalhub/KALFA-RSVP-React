@@ -6846,6 +6846,22 @@ export type Database = {
         Args: { g: Database["public"]["Tables"]["guests"]["Row"] }
         Returns: boolean
       }
+      owner_agent_billing_sums: {
+        Args: { _since: string }
+        Returns: {
+          charged_amount: number
+          credit_applied_amount: number
+          credit_granted_amount: number
+          unvoided_credit_amount: number
+        }[]
+      }
+      owner_agent_rsvp_people_totals: {
+        Args: never
+        Returns: {
+          attending_people: number
+          invited_people: number
+        }[]
+      }
       owns_event: { Args: { _event_id: string }; Returns: boolean }
       purge_stale_phone_change: { Args: { p_grace?: string }; Returns: number }
       reconcile_authorized_set: {
