@@ -79,14 +79,20 @@ describe('transition — the status CAS', () => {
 });
 
 describe('the other reads', () => {
-  it('countIntakeSince: this staff member, since the instant, without the row itself', async () => {
-    const { store } = setup([
+  it('countIntakeBefore: this staff member, from the day start up to (not including) the question', async () => {
+    const { db, store } = setup([
       intake('self', 'processing', '2026-09-24T08:00:00Z'),
-      intake('today', 'answered', '2026-09-24T07:00:00Z'),
+      intake('earlier-today', 'answered', '2026-09-24T07:00:00Z'),
+      intake('later-today', 'queued', '2026-09-24T09:00:00Z'),
       intake('yesterday', 'answered', '2026-09-23T07:00:00Z'),
       intake('someone-else', 'answered', '2026-09-24T07:00:00Z', '22222222-2222-4222-8222-222222222222'),
     ]);
-    expect(await store.countIntakeSince(STAFF, '2026-09-23T21:00:00.000Z', 'self')).toBe(1);
+    expect(await store.countIntakeBefore(STAFF, '2026-09-23T21:00:00.000Z', '2026-09-24T08:00:00.000Z')).toBe(1);
+    expect(db.ops.at(-1)?.filters).toEqual([
+      ['eq', 'staff_user_id', STAFF],
+      ['gte', 'received_at', '2026-09-23T21:00:00.000Z'],
+      ['lt', 'received_at', '2026-09-24T08:00:00.000Z'],
+    ]);
   });
 
   it('loadIntake maps the row and returns null when it is gone', async () => {

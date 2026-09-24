@@ -295,6 +295,38 @@ describe('every gate failure is silence: no model run, no message, one audit row
       extraIntake: [{ ...today('d'), received_at: iso(NOW - 20 * 3_600_000) }],
     });
     expect(await handleOwnerAgentReply(job, yesterday.deps)).toBe('answered');
+    // Questions that arrived AFTER this one do not count against it (review 24.9).
+    const later = world({
+      settings: { owner_agent_daily_cap: 1 },
+      extraIntake: [
+        { ...today('e'), status: 'queued', received_at: iso(NOW - 30_000) },
+        { ...today('f'), status: 'queued', received_at: iso(NOW - 10_000) },
+      ],
+    });
+    expect(await handleOwnerAgentReply(job, later.deps)).toBe('answered');
+  });
+
+  it('the cap is counted on the Israel day the question ARRIVED, even when answered after midnight', async () => {
+    // 23:59:30 Israel on the 24th (IDT, UTC+3); handled at 00:00:30 on the 25th.
+    const arrived = Date.parse('2026-09-24T20:59:30Z');
+    const w = world({
+      settings: { owner_agent_daily_cap: 1 },
+      intake: { received_at: iso(arrived) },
+      extraIntake: [
+        {
+          id: 'earlier-that-day',
+          wamid: 'w-x',
+          phone_number_id: NUMBER,
+          staff_user_id: STAFF,
+          message_text: 'x',
+          status: 'answered',
+          received_at: iso(arrived - 3_600_000),
+        },
+      ],
+    });
+    w.clock.now = arrived + 60_000;
+    expect(await handleOwnerAgentReply(job, w.deps)).toBe('gated');
+    expect(audits(w)[0]).toMatchObject({ reason_code: 'daily_cap' });
   });
 });
 
@@ -523,6 +555,19 @@ describe('conversation history (--resume)', () => {
     expect(w.run.mock.calls[2][0].resumeSessionId).toBeUndefined();
   });
 
+  it('a send-gated answer is not remembered: the next question starts fresh', async () => {
+    const w = world();
+    w.run.mockImplementationOnce(async () => {
+      w.db.tables.owner_agent_allowlist[0].enabled = false; // blocked at send time
+      return ok();
+    });
+    expect(await ask(w)).toBe('send_gated');
+    w.db.tables.owner_agent_allowlist[0].enabled = true;
+    w.clock.now = NOW + 60_000;
+    expect(await ask(w)).toBe('answered');
+    expect(w.run.mock.calls[1][0].resumeSessionId).toBeUndefined();
+  });
+
   it('does not resume under a different permission set', async () => {
     const w = world();
     await ask(w);
@@ -587,6 +632,18 @@ describe('everything else', () => {
     expect(err).toBeInstanceOf(OwnerAgentReplyError);
     expect(w.run).not.toHaveBeenCalled();
     expect(intakeRow(w)).toMatchObject({ status: 'processing' });
+  });
+
+  it.each([
+    ['no intakeId', { nope: 1 }],
+    ['a non-uuid id', { intakeId: 'x; drop table owner_agent_intake' }],
+    ['a uuid-length string that is not hex', { intakeId: 'zzzzzzzz-zzzz-4zzz-8zzz-zzzzzzzzzzzz' }],
+    ['a number', { intakeId: 42 }],
+  ])('a payload with %s is invalid_job: nothing read, nothing of it logged', async (_label, data) => {
+    const w = world();
+    expect(await handleOwnerAgentReply({ data }, w.deps)).toBe('invalid_job');
+    expect(w.db.ops).toEqual([]);
+    expect(w.logs).toEqual(['[owner-agent] reply invalid_job']);
   });
 
   it('a bad payload or a missing row ends quietly', async () => {

@@ -16,6 +16,10 @@
 //     pm2 start ecosystem.config.cjs
 //   pm2 save
 //
+// That start never includes kalfa-owner-agent: it is defined in
+// ecosystem.owner-agent.config.cjs on purpose (see the note where it used to
+// be, below). Its clean restart is the same recipe with that file.
+//
 // TZ is declared here rather than inherited from the host (host set to
 // Asia/Jerusalem on 2026-07-28). KALFA is an Israel-only product: every date the
 // owner and every guest sees is Israel wall-clock, so the runtime must not
@@ -179,51 +183,12 @@ module.exports = {
         PATH: '/usr/local/bin:/usr/bin:/bin',
       },
     },
-    // The owner WhatsApp agent's reply consumer (plans/owner-whatsapp-agent-plan.md
-    // §6, stage 6b): works QUEUES.ownerAgentReply one job at a time, answering
-    // through `claude -p` (src/lib/owner-agent/runner.ts), plus its intake
-    // sweep and daily retention. Its own process, not kalfa-worker: a model run
-    // of up to two minutes must not sit in the process that drives billing.
-    // It does not use the fleet's global flock either.
-    //
-    // Modelled on kalfa-ops-agent (node --env-file) and kalfa-worker
-    // (kill_timeout). .env.local is loaded by Node before any module runs;
-    // the runner builds the `claude` child's environment itself (HOME, PATH,
-    // the token from .claude/fleet/.token.env) and never hands it this one.
-    //
-    // kill_timeout is the last link of a budget chain pinned by
-    // src/lib/owner-agent/consumer/budgets.test.ts: one answer (≤195s) <
-    // job expiry (240s) < the graceful stop (250s) < this (270s), so a restart
-    // lets an answer in flight finish instead of paying for it twice.
-    //
-    // MASTRA_TELEMETRY_DISABLED: @mastra/core reports usage to PostHog unless
-    // it is set (plan §3.6). A plain `pm2 restart` keeps the env captured at
-    // the last clean start — like every entry here, adding or changing a
-    // variable needs the one-time clean start at the top of this file.
-    //
-    // FIRST START — deliberately not done by `npm run deploy` (the switch and
-    // the chosen number decide whether it answers anyone; see the deploy order
-    // in the plan, §8 stage 6):
-    //   env -i HOME="$HOME" USER="$USER" PATH=/usr/local/bin:/usr/bin:/bin \
-    //     pm2 start ecosystem.config.cjs --only kalfa-owner-agent
-    //   pm2 save
-    // After that, scripts/owner-agent-build-restart.mjs restarts it on deploy
-    // when its bundle changed or it is not online.
-    {
-      name: 'kalfa-owner-agent',
-      cwd: '/var/www/vhosts/kalfa.me/beta',
-      script: 'dist/owner-agent.cjs',
-      node_args: '--env-file=.env.local',
-      autorestart: true,
-      log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS Z',
-      kill_timeout: 270000,
-      env: {
-        NODE_ENV: 'production',
-        TZ: 'Asia/Jerusalem',
-        MASTRA_TELEMETRY_DISABLED: 'true',
-        PATH: '/usr/local/bin:/usr/bin:/bin',
-      },
-    },
+    // kalfa-owner-agent (the owner WhatsApp agent's reply consumer) is
+    // deliberately NOT in this file. It lives in ecosystem.owner-agent.config.cjs,
+    // so that no generic start of THIS file — the clean-restart recipe above,
+    // the relocation wizard's step I7 — can ever start it. Its first start is a
+    // go-live decision (the chosen number and the switch decide whom it
+    // answers), taken by hand with that file.
     // Admin-only file browser (SSH-tunnel access, see beta's filebrowser
     // notes) — previously started ad-hoc and undeclared here, so it had no
     // TZ/log_date_format and no guarantee of coming back correctly after a

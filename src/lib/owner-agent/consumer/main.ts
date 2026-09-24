@@ -9,7 +9,7 @@
 //   QUEUES.ownerAgentRetention    daily, 04:15 IL   → retention.ts (7-day text, 14-day sessions)
 //
 // Started as `node --env-file=.env.local dist/owner-agent.cjs` from the
-// repository root (ecosystem.config.cjs): Node loads the env file before any
+// repository root (ecosystem.owner-agent.config.cjs): Node loads the env file before any
 // module runs, and the runner resolves every path from process.cwd().
 
 import { PgBoss, type Job } from 'pg-boss';
@@ -22,7 +22,7 @@ import { QUEUES, type OwnerAgentReplyJob } from '@/lib/queue/queues';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendWhatsAppText } from '@/lib/whatsapp/client';
 
-import { OWNER_AGENT_REPLY_QUEUE_POLICY, OWNER_AGENT_STOP_TIMEOUT_MS } from './budgets';
+import { OWNER_AGENT_DB_POOL_MAX, OWNER_AGENT_REPLY_QUEUE_POLICY, OWNER_AGENT_STOP_TIMEOUT_MS } from './budgets';
 import { handleOwnerAgentReply, type ReplyDeps } from './reply';
 import { runOwnerAgentRetention } from './retention';
 import { createSessionMemory, sessionsFilePath } from './sessions';
@@ -76,9 +76,11 @@ async function main(): Promise<void> {
     ssl: { rejectUnauthorized: false },
     schema: 'pgboss',
     application_name: 'kalfa-owner-agent',
-    // The role has 15 session-mode slots and the worker holds up to 8. Three
-    // queues, one job at a time: three connections are plenty.
-    max: 3,
+    // Two, not more: see OWNER_AGENT_DB_POOL_MAX (the role's session-mode
+    // slots are shared with the worker). Enough here — one job at a time, the
+    // answer's own reads go through Supabase REST rather than this pool, and
+    // pg-pool queues a third caller instead of failing it.
+    max: OWNER_AGENT_DB_POOL_MAX,
     connectionTimeoutMillis: 20_000,
     // The worker owns the pgboss schema (migrations) and its maintenance
     // (expiry, retention, stats). This process only works its own queues and
@@ -160,7 +162,14 @@ async function main(): Promise<void> {
     QUEUES.ownerAgentRetention,
     { pollingIntervalSeconds: 30 },
     guarded(QUEUES.ownerAgentRetention, async () => {
-      await runOwnerAgentRetention({ store, sessions, paths: ownerAgentPaths(repoDir), now: Date.now, log });
+      await runOwnerAgentRetention({
+        store,
+        sessions,
+        paths: ownerAgentPaths(repoDir),
+        now: Date.now,
+        log,
+        alert: sendSlackAlert,
+      });
     }),
   );
 

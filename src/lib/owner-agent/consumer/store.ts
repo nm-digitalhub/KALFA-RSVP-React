@@ -104,8 +104,12 @@ export interface ReplyStore {
   isStaff(staffUserId: string): Promise<boolean>;
   verifiedPhone(staffUserId: string): Promise<string | null>;
   isAllowlisted(staffUserId: string, e164: string): Promise<boolean>;
-  /** Intake rows of this staff member received at or after `sinceIso`, other than `excludeId`. */
-  countIntakeSince(staffUserId: string, sinceIso: string, excludeId: string): Promise<number>;
+  /**
+   * Intake rows of this staff member received in [sinceIso, beforeIso): the
+   * ones BEFORE a given question on its day — what the route counted before
+   * it inserted that question. Rows that arrived after it do not count.
+   */
+  countIntakeBefore(staffUserId: string, sinceIso: string, beforeIso: string): Promise<number>;
   hasPermission(staffUserId: string, key: string): Promise<boolean>;
   /** Never throws: an audit row that cannot be written must not change what already happened. */
   writeAudit(row: AuditInput): Promise<boolean>;
@@ -199,13 +203,13 @@ export function createReplyStore(client: AdminClient): ReplyStore {
       return Array.isArray(data) && data.length > 0;
     },
 
-    async countIntakeSince(staffUserId, sinceIso, excludeId) {
+    async countIntakeBefore(staffUserId, sinceIso, beforeIso) {
       const { count, error } = await client
         .from('owner_agent_intake')
         .select('id', { count: 'exact', head: true })
         .eq('staff_user_id', staffUserId)
         .gte('received_at', sinceIso)
-        .neq('id', excludeId);
+        .lt('received_at', beforeIso);
       if (error) fail('daily_count', error);
       // A missing count must not read as "0 used today".
       if (count === null || count === undefined) fail('daily_count', { code: 'no_count' });

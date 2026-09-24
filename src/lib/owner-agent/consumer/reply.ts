@@ -66,7 +66,11 @@ export const ANSWER_WINDOW_MS = 24 * 60 * 60 * 1000;
 // fresh session, and only while the failure was fast (budgets.ts).
 const RESUME_RETRY_CODES: ReadonlySet<string> = new Set(['cli_failed', 'unparsable_output']);
 
-const jobSchema = z.object({ intakeId: z.string().min(1).max(64) });
+// The payload is checked before it is used or logged: a uuid (any version —
+// gen_random_uuid() today, and z.uuid() would also check the version nibble),
+// nothing else.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const jobSchema = z.object({ intakeId: z.string().regex(UUID) });
 
 export interface WhatsAppSender {
   phoneNumberId: string;
@@ -160,7 +164,7 @@ async function handleIntake(intake: IntakeRow, deps: ReplyDeps): Promise<ReplyOu
   // left it there, and redoing the run is safe — nothing was sent.
   if (!(await store.transition(intake.id, ['queued', 'processing'], 'processing'))) return 'lost_race';
 
-  const gate = await agentGate(intake, deps, nowMs);
+  const gate = await agentGate(intake, deps);
   if (!gate.ok) {
     if (await store.transition(intake.id, ['processing'], 'skipped')) {
       await audit(deps, intake, { stage: 'agent', outcome: 'gated', reasonCode: gate.reason });
@@ -182,7 +186,7 @@ async function handleIntake(intake: IntakeRow, deps: ReplyDeps): Promise<ReplyOu
       latencyMs: deps.now() - started,
     });
   }
-  return deliver(intake, gate.recipient, sender, run, deps, started);
+  return deliver(intake, gate.recipient, gate.permissions, sender, run, deps, started);
 }
 
 // §3.1 #2: the route's gate, re-run against the state NOW. The job may have
@@ -194,7 +198,7 @@ async function handleIntake(intake: IntakeRow, deps: ReplyDeps): Promise<ReplyOu
 // question and the answer gets the answer on the new phone, provided that phone
 // is also an enabled row of theirs. The route's per-process rate limit is not
 // repeated: it counts arrivals, and the daily cap is the durable bound.
-async function agentGate(intake: IntakeRow, deps: ReplyDeps, nowMs: number): Promise<GateResult> {
+async function agentGate(intake: IntakeRow, deps: ReplyDeps): Promise<GateResult> {
   const { store } = deps;
   const settings = await store.readSettings();
   if (!settings) return { ok: false, reason: 'not_configured' };
@@ -204,9 +208,15 @@ async function agentGate(intake: IntakeRow, deps: ReplyDeps, nowMs: number): Pro
   const recipient = await store.verifiedPhone(intake.staffUserId);
   if (!recipient) return { ok: false, reason: 'phone_unverified' };
   if (!(await store.isAllowlisted(intake.staffUserId, recipient))) return { ok: false, reason: 'not_allowlisted' };
-  // Today's rows BEFORE this one, as at the route (which counted before it
-  // inserted). A cap lowered since then applies now.
-  const used = await store.countIntakeSince(intake.staffUserId, israelMidnightIso(nowMs), intake.id);
+  // The rows BEFORE this one on the Israel day it arrived — exactly what the
+  // route counted before inserting it; questions that came after it do not
+  // count against it. A cap lowered since then applies now.
+  const receivedMs = Date.parse(intake.receivedAt);
+  const used = await store.countIntakeBefore(
+    intake.staffUserId,
+    israelMidnightIso(receivedMs),
+    new Date(receivedMs).toISOString(),
+  );
   if (used >= settings.dailyCap) return { ok: false, reason: 'daily_cap' };
 
   // One RPC per permission key, server-side, from the staff member's role —
@@ -254,7 +264,8 @@ async function runAnswer(
     }
   }
   if (result.text.trim().length === 0) return { ok: false, code: 'empty_answer' };
-  await quietly(() => deps.sessions.remember(staff, result.sessionId, deps.now(), permissions));
+  // Not remembered here: deliver() remembers the session only once the send
+  // gate has passed, so a question that ends in silence is not continued.
   return { ok: true, result };
 }
 
@@ -267,6 +278,7 @@ function runErrorCode(error: unknown): string {
 async function deliver(
   intake: IntakeRow,
   recipient: string,
+  permissions: OwnerAgentPermission[],
   sender: WhatsAppSender,
   run: RunResult,
   deps: ReplyDeps,
@@ -288,6 +300,11 @@ async function deliver(
   if (!(await store.transition(intake.id, ['processing'], 'sending'))) return 'lost_race';
 
   // ── Past the send claim: nothing below may throw. ──────────────────────────
+  // The gate passed and the answer is going out: only now is its session worth
+  // continuing. A gated answer the staff member never saw is not remembered.
+  if (run.ok) {
+    await quietly(() => deps.sessions.remember(intake.staffUserId, run.result.sessionId, deps.now(), permissions));
+  }
   const body = run.ok ? run.result.text : OWNER_AGENT_FAILURE_REPLY;
   const from: WhatsAppSender = { ...sender, phoneNumberId: intake.phoneNumberId };
   let failure: string | null = null;

@@ -743,7 +743,7 @@ if (!enabled || !config?.appSecret) {
 - **לשלב 6b:** ראו "סטטוס 6b" מיד למטה.
 
 **סטטוס 6b: ✅ בקוד, 24.9.2026** (commits `6728cd1` חיבור החיוב וה-RSVP, `cdedb2f` הצרכן, `8bd6b31` retention, `ae1ff62` בדיקות; ענף `owner-agent-stage6`). **לא נפרס ולא הופעל.** ה-CLI, ה-DB ו-WhatsApp לא הופעלו בבדיקות.
-- **תהליך pm2 חדש, `kalfa-owner-agent`:** `src/lib/owner-agent/consumer/main.ts` נבנה ל-`dist/owner-agent.cjs`. זה לא ה-worker, ואין flock של ה-fleet. חיבור pg-boss כמו של ה-worker, עם `migrate:false`, `supervise:false` ו-`max: 3`.
+- **תהליך pm2 חדש, `kalfa-owner-agent`:** `src/lib/owner-agent/consumer/main.ts` נבנה ל-`dist/owner-agent.cjs`. זה לא ה-worker, ואין flock של ה-fleet. חיבור pg-boss כמו של ה-worker, עם `migrate:false`, `supervise:false` ו-`max: 2` (תיקון ביקורת, ראו למטה).
 - **תור התשובות (`owner-agent-reply`):** job אחד בכל פעם (`reply.ts`):
   1. טעינת שורת הקליטה ותפיסה שלה (`queued`/`processing` ← `processing`).
   2. **השער שוב, מול המצב העכשווי:** מתג, המספר הנבחר, איש צוות, טלפון מאומת, רשומה פעילה ברשימה, תקרה יומית. כל כישלון: audit ו**שקט מוחלט** (9.6), בלי מודל ובלי הודעה.
@@ -758,14 +758,14 @@ if (!enabled || !config?.appSecret) {
 - **sweep כל 5 דקות (`owner-agent-intake-sweep`):**
   - שורות `queued` בגיל 2 דקות עד 23 שעות נכנסות שוב לתור עם אותו `deterministicJobId(wamid)` של ה-route, ולכן אין כפילות.
   - שורות `queued`/`processing` בנות 24 שעות ומעלה מסומנות `expired`, עם audit `sweep`/`expired`/`window_closed`.
-- **תקציב זמנים, נבדק בבדיקה מול `ecosystem.config.cjs`:** תשובה אחת (195 שניות) < תפוגת job (240) < עצירה מסודרת (250) < `kill_timeout` של pm2 (270).
+- **תקציב זמנים, נבדק בבדיקה מול `ecosystem.owner-agent.config.cjs`:** תשובה אחת (195 שניות) < תפוגת job (240) < עצירה מסודרת (250) < `kill_timeout` של pm2 (270).
 - **audit:** קודים בלבד, ובדיקה מול ביטויי ה-CHECK שנקראים מקובץ המיגרציה עצמו. שם כלי זר נרשם `other_tool`.
 - **bundles ו-deploy:**
   - `owner-agent:build` ו-`scripts/check-owner-agent-bundle.mjs`: ‏3.6MB, ‏`@google-analytics/data` חיצוני.
   - `scripts/owner-agent-build-restart.mjs` בונה את שני ה-bundles לקובץ זמני, בודק ומחליף ב-rename.
   - הוא מפעיל מחדש את `kalfa-owner-agent` רק אם הוא רשום ב-pm2, והבנדל השתנה או שהוא לא online. **הוא לא מפעיל אותו בפעם הראשונה.**
   - נוסף ל-`deploy` אחרי ה-worker. נבדק מול scratchpad עם `--no-pm2 --out-dir`: שינוי, אי-שינוי, וכשל בנייה שמכשיל את השלב.
-- **pm2:** רשומה ב-`ecosystem.config.cjs`, עם `node --env-file=.env.local`, ‏`kill_timeout: 270000` ו-`MASTRA_TELEMETRY_DISABLED=true`. `pm2 startOrRestart` ו-`pm2 start ecosystem.config.cjs --only` אומתו מול pm2 6.0.5 המותקן.
+- **pm2:** בקובץ נפרד, `ecosystem.owner-agent.config.cjs` (תיקון ביקורת, ראו למטה), עם `node --env-file=.env.local`, ‏`kill_timeout: 270000` ו-`MASTRA_TELEMETRY_DISABLED=true`. `pm2 startOrRestart` ו-`pm2 start … --only` אומתו מול pm2 6.0.5 המותקן.
 - **dependency-cruiser:** נקודת הכניסה נמצאת תחת `src/lib/owner-agent/`, ולכן היא כבר מכוסה בשורש של `worker:deps` ובכללי request-free. ההערה הישנה ("נקודת הכניסה עוד לא קיימת") תוקנה.
 - **מגבלה ידועה:** job שמיצה את הניסיונות משאיר את השורה `processing`, וה-sweep סוגר אותה אחרי 24 שעות, בשקט. איש צוות שאימת טלפון אחר בין השאלה לתשובה יקבל את התשובה בטלפון החדש, אם גם הוא ברשימה שלו.
 - **שערים (6b + 8 + חיבור החיוב וה-RSVP):** `tsc` 0; `lint` 0; `worker:deps` בלי הפרות; בדיקות ממוקדות `src/lib/owner-agent` ‏545/545; `npm test` מלא: 8331 עברו, 23 דולגו, 5 נכשלו, כולם חמשת הכשלים הידועים של ה-worktree בשלושה קבצים. `next build` לא הורץ, לפי ההנחיה.
@@ -796,10 +796,34 @@ if (!enabled || !config?.appSecret) {
 3. **`npm run deploy`** מהעץ הראשי. הוא בונה את ה-web, בונה מחדש ומפעיל את ה-worker (שיוצר את התורים), ובונה את שני ה-bundles של הסוכן. הוא לא מפעיל את `kalfa-owner-agent` בפעם הראשונה, אלא מדפיס את הפקודה.
 4. **בדיקה בשאילתת קריאה** שהתור `owner-agent-reply` קיים ב-`pgboss.queue`.
 5. **הפעלה ראשונה, כשהמתג `owner_agent_enabled` כבוי**, מ-shell נקי:
-   `env -i HOME="$HOME" USER="$USER" PATH=/usr/local/bin:/usr/bin:/bin pm2 start ecosystem.config.cjs --only kalfa-owner-agent`
+   `env -i HOME="$HOME" USER="$USER" PATH=/usr/local/bin:/usr/bin:/bin pm2 start ecosystem.owner-agent.config.cjs`
    ואחריה `pm2 save`. בודקים ב-`pm2 logs kalfa-owner-agent` שהשורה `started` מופיעה ושאין בלוגים תוכן או טלפונים.
 6. **smoke** (הבעלים, ידנית): `OWNER_AGENT_SMOKE_CONFIRM=yes OWNER_AGENT_SMOKE_PERMISSIONS=view_events npm run owner-agent:smoke -- "כמה אירועים פעילים יש?"`. אחר כך בודקים שנוצרה תיקיית הסשן בנתיב הנמדד (3.6).
 7. **שלב 7:** בוחרים מספר מחדש, והבעלים מדליק את המתג. מסירים את ההודעה "עדיין אין תשובות" מדף הניהול.
+
+**ביקורת בלתי תלויה, 24.9 (f887850..315dc78): בטוח למיזוג בתנאים. התיקונים:**
+- **A. אף הפעלה כללית לא מפעילה את הסוכן.** שני מקומות מריצים `pm2 start ecosystem.config.cjs` בלי `--only`: מתכון ה-restart הנקי בראש הקובץ, וצעד I7 של אשף ההעברה (`install-steps.ts`). **נבחר:** `kalfa-owner-agent` עבר לקובץ משלו, `ecosystem.owner-agent.config.cjs`, ולא רשימת `--only` בשני המקומות.
+  - הסיבה: רשימת `--only` צריך לזכור בכל פקודה כללית עתידית. קובץ נפרד מוציא את הסוכן מכל הפעלה כללית, גם מזו שעוד לא נכתבה.
+  - הבדיקה (`budgets.test.ts`) מוודאת:
+    - ש-`ecosystem.config.cjs` לא מגדיר אותו;
+    - שהקובץ הנפרד מגדיר רק אותו;
+    - שאף קובץ `ecosystem*` אחר בשורש לא מגדיר אותו.
+  - I7 מציין בתוכנית שלו שהסוכן לא מופעל שם.
+- **B. חיבורים:** `max: 2` (קבוע `OWNER_AGENT_DB_POOL_MAX`). החשבון: worker ‏8 + meta ‏2 + web-sender ‏2 + הסוכן 2 = 14, מתוך כ-15 slots של session mode. הבדיקה קוראת את שלושת הגדלים האחרים מהקבצים שלהם.
+- **C. נתיב סשנים שהשתנה לא עובר בשקט:** אם סשן שקובץ המצב זוכר לא נמצא בתיקייה הנמדדת, ולא נמחק בריצה הזו, נשלחת התראת Slack אחת עם קוד `session_path_missing` וספירות בלבד. במקרה כזה קובץ המצב לא נוגע. בלי זה, CLI שמעביר את הסשנים למקום אחר היה נראה כמו "אין מה למחוק", וקובץ המצב היה מתרוקן.
+- **nits שתוקנו:**
+  - הסשן נזכר (`remember`) רק אחרי ששער השליחה עבר;
+  - ה-`intakeId` של ה-job נבדק כ-uuid לפני שימוש ולפני כתיבה ללוג;
+  - התקרה היומית סופרת רק שורות שהגיעו **לפני** השאלה, ביום הישראלי שבו היא הגיעה, בדיוק כמו ב-route.
+- **nits שנשארו כסיכונים מתועדים (בלי שינוי קוד):**
+  - job שמיצה את הניסיונות נסגר ב-sweep רק אחרי 24 שעות;
+  - שורה שנתקעה ב-`sending` נשארת עד ה-retention של 7 ימים;
+  - טלפון מאומת שהוחלף בין השאלה לתשובה;
+  - ה-SDK של GA4 נטען בעליית הצרכן;
+  - כשל בנייה של הסוכן עוצר את שאר ה-`deploy`;
+  - לוגי MCP ב-`~/.cache/claude-cli-nodejs` מחוץ ל-retention, וקודים בלבד;
+  - התורים של הצרכן לא בקטלוג ה-staleness;
+  - `audit-table.tsx` מציג את הקודים החדשים גולמיים.
 
 הסעיפים שלמטה (`@mastra/memory`, `PostgresStore`, `Agent` עם `anthropic/…`, `llm-mock`) הם התכנון הקודם, והוחלפו בהחלטה שבסעיף 4.
 

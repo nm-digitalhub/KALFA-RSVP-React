@@ -53,6 +53,8 @@ export interface SessionMemory {
   resumable(staffUserId: string, nowMs: number, permissions: readonly string[]): Promise<string | undefined>;
   remember(staffUserId: string, sessionId: string, nowMs: number, permissions: readonly string[]): Promise<void>;
   forget(staffUserId: string): Promise<void>;
+  /** Every remembered session id (retention checks each is still where it should be). */
+  remembered(): Promise<string[]>;
   /** Drop every entry whose session `isGone` reports; returns how many. */
   prune(isGone: (sessionId: string) => Promise<boolean>): Promise<number>;
 }
@@ -120,6 +122,8 @@ export function createSessionMemory(file: string): SessionMemory {
         delete data.sessions[staffUserId];
         await save(data);
       }),
+
+    remembered: () => serial(async () => Object.values((await load()).sessions).map((e) => e.sessionId)),
 
     prune: (isGone) =>
       serial(async () => {

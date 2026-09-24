@@ -1,8 +1,9 @@
 import 'server-only';
 
-import { lstat, readdir, rm, unlink } from 'node:fs/promises';
+import { lstat, readdir, rm, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
+import type { SlackAlertInput } from '@/lib/alerts/slack';
 import type { OwnerAgentPaths } from '@/lib/owner-agent/runner';
 
 import type { SessionMemory } from './sessions';
@@ -38,6 +39,15 @@ import type { ReplyStore } from './store';
 //     or `<uuid>` (a directory) are considered; symlinks are skipped, and
 //     anything else — `memory/`, a stray file — is left alone;
 //   - a session goes as a unit, when its NEWEST part is older than 14 days.
+//
+// ⚠️ A CHANGED PATH MUST NOT FAIL SILENTLY (review 2026-09-24). If a CLI
+// upgrade moved the sessions, this directory would simply be empty: nothing to
+// delete, and every remembered session "gone". So before the state file is
+// touched, each session it remembers is checked: one that is neither in the
+// directory nor deleted by this very run means the measured path no longer
+// holds. Then ONE ids-only alert (session_path_missing) goes out and the state
+// is left exactly as it is — the transcripts are somewhere this job cannot see,
+// and 14-day retention of them is not happening until the path is re-measured.
 
 export const INTAKE_TEXT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 export const SESSION_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
@@ -64,10 +74,11 @@ export function claudeProjectDir(paths: OwnerAgentPaths): string {
 
 export interface RetentionDeps {
   store: Pick<ReplyStore, 'deleteIntakeReceivedBefore'>;
-  sessions: Pick<SessionMemory, 'prune'>;
+  sessions: Pick<SessionMemory, 'prune' | 'remembered'>;
   paths: OwnerAgentPaths;
   now: () => number;
   log: (line: string) => void;
+  alert: (input: SlackAlertInput) => Promise<unknown>;
 }
 
 export interface RetentionResult {
@@ -83,16 +94,34 @@ export async function runOwnerAgentRetention(deps: RetentionDeps): Promise<Reten
   );
 
   const dir = claudeProjectDir(deps.paths);
-  const sessionsDeleted = await deleteOldSessions(dir, nowMs - SESSION_RETENTION_MS, deps.log);
-  // A remembered session whose transcript is gone can no longer be resumed.
-  const stateEntriesRemoved = await deps.sessions.prune(async (sessionId) => {
-    try {
-      await lstat(path.join(dir, `${sessionId}.jsonl`));
-      return false;
-    } catch {
-      return true;
-    }
-  });
+  const deleted = await deleteOldSessions(dir, nowMs - SESSION_RETENTION_MS, deps.log);
+  const sessionsDeleted = deleted.size;
+
+  // Every remembered session must be accounted for: still in the directory, or
+  // deleted just now. Anything else means the measured path no longer holds.
+  let missing = 0;
+  const remembered = await deps.sessions.remembered();
+  for (const sessionId of remembered) {
+    if (deleted.has(sessionId)) continue;
+    if (!(await exists(path.join(dir, `${sessionId}.jsonl`)))) missing += 1;
+  }
+
+  let stateEntriesRemoved = 0;
+  if (missing > 0) {
+    deps.log(`[owner-agent] retention session_path_missing missing=${missing} remembered=${remembered.length}`);
+    await deps.alert({
+      level: 'error',
+      category: 'errors',
+      source: 'owner-agent',
+      title: 'סוכן הבעלים — קבצי הסשן לא נמצאו בנתיב שנמדד',
+      detail:
+        'סשנים שהסוכן זוכר חסרים בתיקיית הפרויקט של ה-CLI, ולא נמחקו על ידי ה-retention. כנראה שהנתיב השתנה (למשל אחרי עדכון CLI). מחיקת השיחות אחרי 14 יום לא מתבצעת עד שהנתיב יימדד מחדש; קובץ המצב נשאר כמו שהוא.',
+      fields: { code: 'session_path_missing', missing, remembered: remembered.length },
+    });
+  } else {
+    // Only what this run deleted leaves the state file.
+    stateEntriesRemoved = await deps.sessions.prune(async (sessionId) => deleted.has(sessionId));
+  }
 
   deps.log(
     `[owner-agent] retention intake=${intakeDeleted} sessions=${sessionsDeleted} state=${stateEntriesRemoved}`,
@@ -100,16 +129,27 @@ export async function runOwnerAgentRetention(deps: RetentionDeps): Promise<Reten
   return { intakeDeleted, sessionsDeleted, stateEntriesRemoved };
 }
 
-async function deleteOldSessions(dir: string, cutoffMs: number, log: (line: string) => void): Promise<number> {
+async function exists(p: string): Promise<boolean> {
+  try {
+    await stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// The ids of the sessions deleted.
+async function deleteOldSessions(dir: string, cutoffMs: number, log: (line: string) => void): Promise<Set<string>> {
+  const deleted = new Set<string>();
   let root;
   try {
     root = await lstat(dir);
   } catch {
-    return 0; // no session yet
+    return deleted; // no session yet — or, if sessions are remembered, a moved path (see the header)
   }
   if (root.isSymbolicLink() || !root.isDirectory()) {
     log('[owner-agent] retention project_dir_refused');
-    return 0;
+    return deleted;
   }
 
   // Newest mtime per session id, over its .jsonl and its directory.
@@ -130,14 +170,13 @@ async function deleteOldSessions(dir: string, cutoffMs: number, log: (line: stri
     sessions.set(id, s);
   }
 
-  let deleted = 0;
   for (const [id, s] of sessions) {
     if (s.newest >= cutoffMs) continue;
     if (s.file) await unlink(path.join(dir, `${id}.jsonl`));
     // rm does not follow symlinks inside the tree; the directory itself was
     // lstat'ed above as a real directory.
     if (s.folder) await rm(path.join(dir, id), { recursive: true });
-    deleted += 1;
+    deleted.add(id);
   }
   return deleted;
 }

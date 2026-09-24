@@ -410,6 +410,7 @@ export function buildInstallStepDefinitions(): StepDefinition[] {
         "env -i HOME=$HOME USER=$USER PATH=/usr/local/bin:/usr/bin:/bin pm2 start ecosystem.config.cjs (scrubbed shell — the repo's documented recipe)",
         "pm2 save",
         "pm2 startup systemd -u <user> --hp <home> — then run the ONE sudo command it prints (that is the documented automation path)",
+        "NOT started here: kalfa-owner-agent (the owner WhatsApp agent) lives in ecosystem.owner-agent.config.cjs — its first start is a go-live decision the owner takes by hand (plans/owner-whatsapp-agent-plan.md §8 stage 6)",
       ],
       apply: async (ctx) => {
         assertExecuteLatch("I7 pm2 start + boot persistence");

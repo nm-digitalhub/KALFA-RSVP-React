@@ -139,14 +139,18 @@ function intakeRow(id: string, ageMs: number, status = 'answered'): TableRow {
 async function run(paths: ReturnType<typeof ownerAgentPaths>, rows: TableRow[], sessionsFile: string) {
   const db = createFakeTableClient({ owner_agent_intake: rows, owner_agent_audit: [{ id: 'audit-1', intake_id: 'old' }] });
   const logs: string[] = [];
+  const alerts: Array<{ fields?: Record<string, string | number> }> = [];
   const result = await runOwnerAgentRetention({
     store: createReplyStore(db.client as unknown as AdminClient),
     sessions: createSessionMemory(sessionsFile),
     paths,
     now: () => NOW,
     log: (l) => logs.push(l),
+    alert: async (a) => {
+      alerts.push(a);
+    },
   });
-  return { db, logs, result };
+  return { db, logs, alerts, result };
 }
 
 describe('runOwnerAgentRetention', () => {
@@ -220,11 +224,54 @@ describe('runOwnerAgentRetention', () => {
     await memory.remember(STAFF_1, A, NOW - 20 * DAY, ['view_events']);
     await memory.remember(STAFF_2, B, NOW - DAY, ['view_events']);
 
-    const { result, logs } = await run(paths, [], file);
+    const { result, logs, alerts } = await run(paths, [], file);
     expect(result.stateEntriesRemoved).toBe(1);
     const state = JSON.parse(readFileSync(file, 'utf8')) as { sessions: Record<string, unknown> };
     expect(Object.keys(state.sessions)).toEqual([STAFF_2]);
     expect(logs).toEqual(['[owner-agent] retention intake=0 sessions=2 state=1']);
+    expect(alerts).toEqual([]);
+  });
+
+  // Review 2026-09-24 (C): a CLI that moved its sessions must not look like
+  // "nothing to delete, every session gone".
+  describe('the measured path stops holding', () => {
+    const STAFF_3 = '33333333-3333-4333-8333-333333333333';
+    const MOVED = '99999999-9999-4999-8999-999999999999';
+
+    it('a remembered session missing from the directory: one ids-only alert, and the state is left alone', async () => {
+      const { paths } = fixture();
+      const file = path.join(host, 'sessions.json');
+      const memory = createSessionMemory(file);
+      await memory.remember(STAFF_1, A, NOW - 20 * DAY, ['view_events']); // deleted by this run — explained
+      await memory.remember(STAFF_2, B, NOW - DAY, ['view_events']); // present
+      await memory.remember(STAFF_3, MOVED, NOW - 60_000, ['view_events']); // written where we do not look
+      const before = readFileSync(file, 'utf8');
+
+      const { result, logs, alerts } = await run(paths, [], file);
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0].fields).toEqual({ code: 'session_path_missing', missing: 1, remembered: 3 });
+      expect(result.stateEntriesRemoved).toBe(0);
+      expect(readFileSync(file, 'utf8')).toBe(before);
+      expect(logs).toContain('[owner-agent] retention session_path_missing missing=1 remembered=3');
+      // Ids and counts only: no staff id, no session id, no path in the alert.
+      expect(JSON.stringify(alerts)).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}|\.claude/);
+    });
+
+    it('the whole directory gone while sessions are remembered is the same alarm', async () => {
+      const paths = ownerAgentPaths(path.join(host, 'beta'));
+      const file = path.join(host, 'sessions.json');
+      await createSessionMemory(file).remember(STAFF_1, B, NOW - 60_000, ['view_events']);
+      const { result, alerts } = await run(paths, [], file);
+      expect(alerts).toHaveLength(1);
+      expect(result.stateEntriesRemoved).toBe(0);
+      expect(JSON.parse(readFileSync(file, 'utf8')).sessions).toHaveProperty(STAFF_1);
+    });
+
+    it('no directory and nothing remembered is just "no sessions yet"', async () => {
+      const paths = ownerAgentPaths(path.join(host, 'beta'));
+      const { alerts } = await run(paths, [], path.join(host, 'sessions.json'));
+      expect(alerts).toEqual([]);
+    });
   });
 
   it('the constants are the owner\'s decision 9.8: 7 and 14 days', () => {

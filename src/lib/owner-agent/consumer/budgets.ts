@@ -2,8 +2,9 @@ import { KILL_AFTER_MS } from '@/lib/owner-agent/runner';
 
 // The reply consumer's time budgets, as one chain. Each value must be larger
 // than the one before it, and budgets.test.ts asserts that — including the pm2
-// kill_timeout in ecosystem.config.cjs — rather than leaving four files to
-// agree by hand (the workflow engine's workflow-budgets.test.ts is the model).
+// kill_timeout in ecosystem.owner-agent.config.cjs (its own file, not an entry
+// in ecosystem.config.cjs) — rather than leaving four files to agree by hand
+// (the workflow engine's workflow-budgets.test.ts is the model).
 //
 //   one answer   = the model run + its SIGKILL grace + gates, audit and sends
 //   < expireInSeconds  — pg-boss takes a job away from a handler only after
@@ -61,5 +62,16 @@ export const OWNER_AGENT_REPLY_QUEUE_POLICY = {
 /** boss.stop({ graceful: true, timeout }) on SIGINT/SIGTERM. */
 export const OWNER_AGENT_STOP_TIMEOUT_MS = 250_000;
 
-/** ecosystem.config.cjs kalfa-owner-agent kill_timeout — pinned by budgets.test.ts. */
+/** ecosystem.owner-agent.config.cjs kill_timeout — pinned by budgets.test.ts. */
 export const OWNER_AGENT_PM2_KILL_TIMEOUT_MS = 270_000;
+
+/**
+ * This process's pg-boss pool. The database role has ~15 session-mode slots
+ * (worker/main.ts), and the other holders are the worker's pool (8), its
+ * job-meta pool (2) and the web tier's send-only sender (2) — 12. Two here
+ * leaves one slot free even with everything at its maximum; three would fill
+ * the last one, and the process refused a connection could be the worker
+ * that drives guests (review 2026-09-24). budgets.test.ts reads the other
+ * three pool sizes from their files.
+ */
+export const OWNER_AGENT_DB_POOL_MAX = 2;

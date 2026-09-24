@@ -20,7 +20,8 @@
 // RESTART POLICY (stated, not inherited by accident):
 //   - app not registered in pm2 → NOT started. The first start is a go-live
 //     decision (the chosen number and the switch decide whom it answers), so
-//     this prints the one-time command from ecosystem.config.cjs and exits 0 —
+//     this prints the one-time command from ecosystem.owner-agent.config.cjs
+//     and exits 0 —
 //     a deploy never fails because the agent was not started yet;
 //   - registered and online, consumer bundle unchanged → no restart (a changed
 //     MCP bundle needs none: the next question spawns the new file);
@@ -51,9 +52,9 @@ const BUNDLES = [
 
 const FIRST_START = [
   `owner-agent-build-restart: ${APP} is not registered in pm2 — NOT started (first start is a go-live step).`,
-  '  One-time start, from a scrubbed shell (ecosystem.config.cjs header), with the agent switch OFF:',
+  '  One-time start, from a scrubbed shell (ecosystem.owner-agent.config.cjs header), with the agent switch OFF:',
   '    env -i HOME="$HOME" USER="$USER" PATH=/usr/local/bin:/usr/bin:/bin \\',
-  `      pm2 start ecosystem.config.cjs --only ${APP}`,
+  '      pm2 start ecosystem.owner-agent.config.cjs',
   '    pm2 save',
 ].join('\n');
 
