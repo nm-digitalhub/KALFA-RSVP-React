@@ -38,14 +38,10 @@ import {
 } from './ui-formats';
 
 import {
-  actionBranches,
-  actionBranchesProperty,
-  errorPolicyOptions,
   identityControls,
   identityProperties,
   nodeStatusOptions,
   requiredText,
-  rsvpStatusOptions,
   statusControl,
   statusProperty,
 } from './editor-shared';
@@ -63,6 +59,7 @@ import { notifyTeamPaletteItem } from '../nodes/action-notify-team/action-notify
 import { sendTemplatePaletteItem } from '../nodes/action-send-template/action-send-template';
 import { sendWhatsappPaletteItem } from '../nodes/action-send-whatsapp/action-send-whatsapp';
 import { setGuestFieldPaletteItem } from '../nodes/action-set-guest-field/action-set-guest-field';
+import { forEachGuestPaletteItem } from '../nodes/action-start-for-each-guest/action-start-for-each-guest';
 import { startRsvpAiCallbackPaletteItem } from '../nodes/action-start-rsvp-ai-callback/action-start-rsvp-ai-callback';
 import { voiceCallPaletteItem } from '../nodes/action-start-voice-call/action-start-voice-call';
 import * as startVoiceCallDefinition from '../nodes/action-start-voice-call/definition';
@@ -81,7 +78,6 @@ import { switchPaletteItem } from '../nodes/logic-switch/logic-switch';
 import { waitPaletteItem } from '../nodes/logic-wait/logic-wait';
 
 import {
-  NODE_NUMBER_RANGES,
   NODE_REQUIRED_FIELDS,
   WHATSAPP_MESSAGE_KINDS,
   type KalfaNodeType,
@@ -541,109 +537,9 @@ export { TEMPLATE_KEYS } from '../nodes/action-send-template/definition';
 // action.start_for_each_guest
 // ---------------------------------------------------------------------------
 
-const forEachGuestSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['action.start_for_each_guest'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
-    targetWorkflowId: requiredText,
-    statuses: {
-      type: 'array',
-      items: { type: 'object', properties: { value: { type: 'string' } } },
-    },
-    requirePhone: { type: 'boolean' },
-    // `minimum: 1` is the form's half. The handler refuses a missing or
-    // non-positive cap again, and the implementation clamps to FAN_OUT_HARD_CAP
-    // on top — three ceilings, because this is the node that can reach hundreds
-    // of people from one press.
-    maxGuests: {
-      type: 'number',
-      ...NODE_NUMBER_RANGES['action.start_for_each_guest']!.maxGuests,
-    },
-    ...actionBranchesProperty,
-  },
-} satisfies NodeSchema;
-
-const forEachGuestScope = getScope<typeof forEachGuestSchema>;
-
-const forEachGuestUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(forEachGuestScope('properties.label'), forEachGuestScope('properties.description')),
-    {
-      // ⚠️ THE WARNING BELONGS WHERE THE DAMAGE IS CONFIGURED. This node starts
-      // one run per matching guest — a single press reaches hundreds of real
-      // people — and until now the only thing saying so was the node's
-      // `description`, which is a subtitle on a card and is read once.
-      //
-      // `RichText` renders Markdown, so the number an owner is about to choose
-      // can be emphasised in the sentence that explains it. It binds to no
-      // property and changes no data.
-      type: 'RichText',
-      text:
-        '**כל אורח שתואם יקבל הרצה משלו.** לחיצה אחת יכולה להגיע למאות אנשים אמיתיים. ' +
-        'המספר שתגדירו כאן הוא התקרה שלכם — ומעליה יש תקרה נוספת בקוד שאי אפשר לעקוף מהמסך הזה.',
-    },
-    {
-      type: 'Text',
-      scope: forEachGuestScope('properties.targetWorkflowId'),
-      label: 'מזהה התהליך שירוץ לכל אורח',
-      placeholder: 'הדביקו את המזהה מכתובת העורך',
-    },
-    {
-      // Label beside the field rather than above it, with the `*` on the LABEL —
-      // the shape the SDK's own Delay node uses for its required numeric field,
-      // paired with `errorIndicatorEnabled: false` so one problem draws one
-      // marker. The wait node's amount/unit row already reads this way; this
-      // field did not, and it is the one with the largest blast radius.
-      type: 'HorizontalLayout',
-      layoutColumns: '1fr 1fr',
-      elements: [
-        { type: 'Label', text: 'עד כמה אורחים', required: true },
-        {
-          type: 'Text',
-          scope: forEachGuestScope('properties.maxGuests'),
-          inputType: 'number',
-          errorIndicatorEnabled: false,
-        },
-      ],
-    },
-    {
-      // The warning this node exists to carry. One press, hundreds of people.
-      type: 'Label',
-      text: 'שימו לב: הצעד הזה מתחיל הרצה נפרדת לכל אורח שמתאים. הריצו הרצת ניסיון לפני הפעלה — היא תראה לכמה אורחים זה יגיע.',
-    },
-    {
-      type: 'Accordion',
-      label: 'אילו אורחים',
-      elements: [
-        {
-          type: 'Text',
-          scope: forEachGuestScope('properties.statuses'),
-          label: 'סטטוסים',
-          options: {
-            format: CHECKBOX_LIST_FORMAT,
-            choices: Object.values(rsvpStatusOptions).map((o) => ({ value: o.value, label: o.label })),
-            defaultNote: 'ברירת מחדל: כל הסטטוסים.',
-          },
-        },
-        {
-          type: 'Switch',
-          scope: forEachGuestScope('properties.requirePhone'),
-          label: 'רק אורחים עם טלפון',
-        },
-      ],
-    },
-    {
-      type: 'Select',
-      scope: forEachGuestScope('properties.errorPolicy'),
-      label: 'אם הפיצול נכשל',
-    },
-    statusControl(forEachGuestScope('properties.status')),
-  ],
-};
+// Its schema, uischema and palette entry live in
+// `nodes/action-start-for-each-guest/`, and its config, caps and ranges in that
+// folder's `definition.ts`.
 
 /**
  * Built at MODULE SCOPE.
@@ -990,43 +886,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
   waitPaletteItem,
   // Moved to its own folder — see nodes/action-send-template/.
   sendTemplatePaletteItem,
-  {
-    type: 'action.start_for_each_guest' satisfies KalfaNodeType,
-    // Decision node so a failure has a handle to leave from — a fan-out that
-    // could not read the guest list is exactly the case worth routing.
-    templateType: NodeType.DecisionNode,
-    label: 'הרצה לכל אורח',
-    description: 'מתחיל תהליך נפרד לכל אורח שמתאים',
-    icon: 'UsersThree',
-    schema: forEachGuestSchema,
-    uischema: forEachGuestUiSchema,
-    outputSchema: {
-      type: 'default',
-      properties: {
-        started: { type: 'number', label: 'כמה הרצות התחילו' },
-        matched: { type: 'number', label: 'כמה אורחים התאימו' },
-        capped: { type: 'boolean', label: 'נעצר בתקרה', description: 'היו יותר אורחים מהתקרה' },
-        // The same gap as `action.import_guest_list`: the error branch returns
-        // `{ started: 0, reason }`, `reason` was never published, and the
-        // weekly-sweep starter referenced it as `{{…reason?}}` from the source
-        // rather than from the picker.
-        reason: { type: 'string', label: 'סיבת הכישלון', description: 'קיים רק במסלול "נכשל"' },
-      },
-    },
-    defaultPropertiesData: {
-      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
-      status: nodeStatusOptions.active.value,
-      label: 'הרצה לכל אורח',
-      description: 'מתחיל תהליך נפרד לכל אורח שמתאים',
-      targetWorkflowId: '',
-      statuses: [],
-      requirePhone: true,
-      // A deliberately SMALL default. A number an owner has to raise on purpose
-      // is a number they have thought about.
-      maxGuests: 25,
-      errorPolicy: errorPolicyOptions.fail.value,
-    },
-  } satisfies PaletteItem<typeof forEachGuestSchema>,
+  // Moved to its own folder — see nodes/action-start-for-each-guest/.
+  forEachGuestPaletteItem,
   // Moved to its own folder — see nodes/logic-set-value/.
   setValuePaletteItem,
 ];

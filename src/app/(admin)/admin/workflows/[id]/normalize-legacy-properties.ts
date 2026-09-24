@@ -62,9 +62,10 @@ function numberFields(item: PaletteItem): string[] {
  *
  * ⚠️ THE SECOND CASE OF "THE SCHEMA IS STRICTER THAN THE ENGINE", and the same
  * repair as the array one above. `maxGuests: '25'` runs correctly — the handler
- * reads it as `Number(rawMax)` (`steps/index.ts`) and `findArmBlockers` coerces
- * the same way — while the schema declares `type: 'number'` and marks the node
- * invalid. A node that works, wearing an error badge.
+ * reads it as `Number(rawMax)` (`nodes/action-start-for-each-guest/runtime.ts`)
+ * and `findArmBlockers` coerces the same way — while the schema declares
+ * `type: 'number'` and marks the node invalid. A node that works, wearing an
+ * error badge.
  *
  * ⚠️ AND IT IS DELIBERATELY NARROW. Only a string that is ENTIRELY a finite
  * number converts. `''` stays `''` (it is an empty field, and the required

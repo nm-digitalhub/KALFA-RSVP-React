@@ -19,6 +19,7 @@ import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as sendTemplateDefinition from '../nodes/action-send-template/definition';
 import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
+import * as startForEachGuestDefinition from '../nodes/action-start-for-each-guest/definition';
 import * as startRsvpAiCallbackDefinition from '../nodes/action-start-rsvp-ai-callback/definition';
 import * as startVoiceCallDefinition from '../nodes/action-start-voice-call/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
@@ -50,7 +51,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: importGuestListDefinition.type, isTrigger: importGuestListDefinition.isTrigger },
   { type: waitDefinition.type, isTrigger: waitDefinition.isTrigger },
   { type: sendTemplateDefinition.type, isTrigger: sendTemplateDefinition.isTrigger },
-  { type: 'action.start_for_each_guest', isTrigger: false },
+  { type: startForEachGuestDefinition.type, isTrigger: startForEachGuestDefinition.isTrigger },
   { type: startVoiceCallDefinition.type, isTrigger: startVoiceCallDefinition.isTrigger },
   { type: setValueDefinition.type, isTrigger: setValueDefinition.isTrigger },
   { type: sumitCreateDocumentDefinition.type, isTrigger: sumitCreateDocumentDefinition.isTrigger },

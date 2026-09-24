@@ -1,5 +1,6 @@
 import { editorDiagramSchema } from '../adapter/editor-schema';
 import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
+import * as startForEachGuestDefinition from '../nodes/action-start-for-each-guest/definition';
 import * as startVoiceCallDefinition from '../nodes/action-start-voice-call/definition';
 import { isKnownNodeType, isTriggerType } from './nodes';
 import {
@@ -327,7 +328,7 @@ function collectArmBlockers(
     // is before anything runs — the alternative is discovering it from a run log
     // after a chain has already started.
     if (
-      nodeType === 'action.start_for_each_guest' &&
+      nodeType === startForEachGuestDefinition.type &&
       workflowId !== undefined &&
       typeof properties.targetWorkflowId === 'string' &&
       properties.targetWorkflowId.trim() === workflowId
@@ -496,19 +497,22 @@ function collectArmBlockers(
       // That was a grep talking: both fields SPREAD the bound rather than
       // writing the literal —
       //
-      //     maxGuests: { type: 'number', ...NODE_NUMBER_RANGES[…].maxGuests }
+      //     maxGuests: { type: 'number', ...numberRanges.maxGuests }
       //
+      // (`nodes/action-start-for-each-guest/schema.ts`, reading the same object
+      // `NODE_NUMBER_RANGES` holds)
       // so searching for the keyword found nothing while the built schema
       // carried `{ minimum: 1, maximum: 500 }`. Measured against the exported
       // object: 0 and 501 are both refused.
       //
       // ⚠️ THE REAL DIVERGENCE RUNS THE OTHER WAY, and it is why the numeric
       // read below coerces. `type: 'number'` refuses the STRING '25'; the
-      // handler accepts it (`steps/index.ts`: `Number(rawMax)`) and so does
-      // this gate. A node storing a numeric string therefore runs correctly and
-      // the panel marks it invalid — the schema being stricter than the engine,
-      // which is the one mistake this module exists to avoid. It is repaired on
-      // load by `normalize-legacy-properties.ts`, the same way the pre-object
+      // handler accepts it (`nodes/action-start-for-each-guest/runtime.ts`:
+      // `Number(rawMax)`) and so does this gate. A node storing a numeric string
+      // therefore runs correctly and the panel marks it invalid — the schema
+      // being stricter than the engine, which is the one mistake this module
+      // exists to avoid. It is repaired on load by
+      // `normalize-legacy-properties.ts`, the same way the pre-object
       // `messageKinds` shape is.
       if (range) {
         const n = typeof value === 'number' ? value : Number(value);
@@ -542,7 +546,7 @@ function blankMessage(
   key: string,
   properties: Record<string, unknown>,
 ): string {
-  if (nodeType === 'action.start_for_each_guest' && key === 'targetWorkflowId') {
+  if (nodeType === startForEachGuestDefinition.type && key === 'targetWorkflowId') {
     return 'לא נבחר תהליך להרצה. צרו את תהליך-הבן (למשל מהתבנית "תזכורת לאורח אחד") והדביקו את המזהה שלו כאן.';
   }
   // Same reasoning as the fan-out: "purposeKey is empty" is a field name, not an

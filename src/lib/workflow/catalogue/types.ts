@@ -23,6 +23,7 @@ import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as sendTemplateDefinition from '../nodes/action-send-template/definition';
 import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
+import * as startForEachGuestDefinition from '../nodes/action-start-for-each-guest/definition';
 import * as startRsvpAiCallbackDefinition from '../nodes/action-start-rsvp-ai-callback/definition';
 import * as startVoiceCallDefinition from '../nodes/action-start-voice-call/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
@@ -59,7 +60,7 @@ export const NODE_TYPES = [
   importGuestListDefinition.type,
   waitDefinition.type,
   sendTemplateDefinition.type,
-  'action.start_for_each_guest',
+  startForEachGuestDefinition.type,
   startVoiceCallDefinition.type,
   setValueDefinition.type,
   sumitCreateDocumentDefinition.type,
@@ -171,43 +172,16 @@ export const DEFAULT_WHATSAPP_MESSAGE_KINDS: readonly string[] = [
  */
 export const OWNER_WHATSAPP_MESSAGE_KINDS: readonly string[] = ['document', 'contacts'];
 
-/**
- * `action.start_for_each_guest` — fan a run out, one per matching guest.
- *
- * ⚠️ CHILD RUNS, NOT A LOOP, and that is the design decision worth defending.
- * A loop inside one run would need a nested executor the vendored `runGraph`
- * does not have. A run per guest reuses the engine exactly as it stands: each
- * child gets its own step ledger, its own retries and its own log, so one guest
- * whose message fails does not stop the other 299 — and each child is already
- * a run that guest-touching nodes work inside, because it carries a contact.
- *
- * ⚠️ AND IT IS THE MOST DANGEROUS NODE IN THE PALETTE. One press can start
- * hundreds of runs that each message a real person. `maxGuests` is therefore
- * REQUIRED with no generous default, and the dry run prints the number before
- * anything is armed.
- */
-export const GUEST_FILTER_STATUSES = ['pending', 'attending', 'declined', 'maybe'] as const;
-export type GuestFilterStatus = (typeof GUEST_FILTER_STATUSES)[number];
-
-export type ForEachGuestConfig = {
-  /** The workflow to start for each guest. Must be a different workflow. */
-  targetWorkflowId: string;
-  /** RSVP statuses to include. Empty or absent: every status. */
-  statuses?: GuestFilterStatus[];
-  /** Only guests who have a phone. Default true — a run about a guest we cannot reach is noise. */
-  requirePhone?: boolean;
-  /** Hard ceiling. Required; the node refuses without it. */
-  maxGuests: number;
-};
-
-/**
- * The most guests one fan-out may ever start runs for, whatever the config says.
- *
- * A SECOND ceiling above the owner's own, because `maxGuests` is a field in a
- * jsonb row: the form constrains what can be typed and not what is there. This
- * one is in code and cannot be edited from a browser.
- */
-export const FAN_OUT_HARD_CAP = 500;
+// `action.start_for_each_guest` — its config, the RSVP statuses it filters on,
+// the hard cap and the fan-out depth cap are declared with the rest of its
+// contract in `nodes/action-start-for-each-guest/definition.ts`. Re-exported here
+// for existing readers (the port implementation in guest-actions.ts among them).
+export {
+  FAN_OUT_HARD_CAP,
+  GUEST_FILTER_STATUSES,
+  type GuestFilterStatus,
+} from '../nodes/action-start-for-each-guest/definition';
+export type ForEachGuestConfig = startForEachGuestDefinition.ForEachGuestConfig;
 
 // `logic.wait` — its config and the units it offers are declared with the rest
 // of its contract in `nodes/logic-wait/definition.ts`. The config type is
@@ -721,7 +695,7 @@ export type KalfaNodeConfig =
   | { type: typeof importGuestListDefinition.type; config: ImportGuestListConfig }
   | { type: typeof waitDefinition.type; config: WaitConfig }
   | { type: typeof sendTemplateDefinition.type; config: SendTemplateConfig }
-  | { type: 'action.start_for_each_guest'; config: ForEachGuestConfig }
+  | { type: typeof startForEachGuestDefinition.type; config: ForEachGuestConfig }
   | { type: typeof setValueDefinition.type; config: SetValueConfig }
   | { type: typeof sumitCreateDocumentDefinition.type; config: SumitCreateDocumentConfig }
   | { type: typeof sumitCreateCustomerDefinition.type; config: SumitCreateCustomerConfig };
@@ -885,7 +859,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   [microsoftSendEmailDefinition.type]: microsoftSendEmailDefinition.deploymentBindings,
   [sendTemplateDefinition.type]: sendTemplateDefinition.deploymentBindings,
   [callbackRequestDefinition.type]: callbackRequestDefinition.deploymentBindings,
-  'action.start_for_each_guest': { targetWorkflowId: 'identifier' },
+  [startForEachGuestDefinition.type]: startForEachGuestDefinition.deploymentBindings,
   [webhookDefinition.type]: webhookDefinition.deploymentBindings,
   [aiAgentDefinition.type]: aiAgentDefinition.deploymentBindings,
   // Both SUMIT ids point INTO this installation: they are our own reference for
@@ -951,7 +925,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [importGuestListDefinition.type]: importGuestListDefinition.requiredFields,
-  'action.start_for_each_guest': ['label', 'description', 'targetWorkflowId', 'maxGuests'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [startForEachGuestDefinition.type]: startForEachGuestDefinition.requiredFields,
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [startVoiceCallDefinition.type]: startVoiceCallDefinition.requiredFields,
@@ -1230,27 +1206,5 @@ export const NODE_NUMBER_RANGES: Partial<
 > = {
   // Declared with the rest of the node's contract — the SAME object, read here.
   [waitDefinition.type]: waitDefinition.numberRanges,
-  'action.start_for_each_guest': { maxGuests: { minimum: 1, maximum: FAN_OUT_HARD_CAP } },
+  [startForEachGuestDefinition.type]: startForEachGuestDefinition.numberRanges,
 };
-
-/**
- * How many fan-outs deep a chain may go before the next generation is refused.
- *
- * ⚠️ WHY A DEPTH CAP AND NOT ONLY A SELF-CHECK. Refusing a workflow that fans
- * out to ITSELF stops the obvious shape and nothing else: W1 → W2 → W1 is the
- * same exponential with one more hop, and no single node in it points at its own
- * workflow. Depth is the property that actually bounds the tree; "self" is just
- * its shortest cycle.
- *
- * The arithmetic is the reason this matters. `FAN_OUT_HARD_CAP` bounds the
- * WIDTH of one generation, never the number of generations — and the child
- * dedupe key is `fanout:${parentRunId}:${nodeId}:${contactId}`, whose parent run
- * id is NEW in every generation, so it does not stop the next one either. With a
- * cap of 10 per level an unbounded chain is 10 → 100 → 1,000 → 10,000 runs, and
- * every leaf may message a real guest.
- *
- * A run nobody fanned out to is depth 0, so 3 permits three generations of
- * children and refuses the fourth. Chosen with the owner on 2026-09-14; no real
- * flow needs more, and a chain that does is better stopped and read than run.
- */
-export const MAX_FANOUT_DEPTH = 3;

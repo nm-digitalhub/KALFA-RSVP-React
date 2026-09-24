@@ -5,6 +5,7 @@ import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as sendTemplateDefinition from '../nodes/action-send-template/definition';
 import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
+import * as startForEachGuestDefinition from '../nodes/action-start-for-each-guest/definition';
 import * as startRsvpAiCallbackDefinition from '../nodes/action-start-rsvp-ai-callback/definition';
 import * as startVoiceCallDefinition from '../nodes/action-start-voice-call/definition';
 import * as updateGuestStatusDefinition from '../nodes/action-update-guest-status/definition';
@@ -83,7 +84,7 @@ export const NODE_ACTIVITY_PROFILES: Readonly<Partial<Record<KalfaNodeType, Node
     [startVoiceCallDefinition.type]: startVoiceCallDefinition.activityProfile,
     [startRsvpAiCallbackDefinition.type]: startRsvpAiCallbackDefinition.activityProfile,
     [importGuestListDefinition.type]: importGuestListDefinition.activityProfile,
-    'action.start_for_each_guest': { timeoutMs: 300_000 },
+    [startForEachGuestDefinition.type]: startForEachGuestDefinition.activityProfile,
   });
 
 /**
