@@ -2,6 +2,8 @@ import { editorDiagramSchema } from '../adapter/editor-schema';
 import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
 import * as startForEachGuestDefinition from '../nodes/action-start-for-each-guest/definition';
 import * as startVoiceCallDefinition from '../nodes/action-start-voice-call/definition';
+import * as webhookTriggerDefinition from '../nodes/trigger-webhook/definition';
+import { webhookAllowsMethod } from '../nodes/trigger-webhook/match';
 import { isKnownNodeType, isTriggerType } from './nodes';
 import {
   activeConditionalRequirements,
@@ -16,7 +18,6 @@ import {
   INBOUND_HTTP_TRIGGER_TYPES,
   readWebhookAuthMode,
   SALES_CALLBACK_TOPIC,
-  webhookAllowsMethod,
   triggerKeywordCanNeverMatch,
   triggerSuppliesGuestContext,
   type KalfaNodeType,
@@ -360,7 +361,7 @@ function collectArmBlockers(
     // endpoint that looks armed and configured is discovered from an
     // integration that silently never fires.
     if (
-      nodeType === 'trigger.webhook' &&
+      nodeType === webhookTriggerDefinition.type &&
       readWebhookAuthMode(properties.auth) === 'address' &&
       !isBlank(properties.endpointId)
     ) {
@@ -385,7 +386,7 @@ function collectArmBlockers(
     // the owner could hear about it. `instancePath` names `methods` because that
     // is the half to change — `auth` is the half they chose on purpose.
     if (
-      nodeType === 'trigger.webhook' &&
+      nodeType === webhookTriggerDefinition.type &&
       readWebhookAuthMode(properties.auth) === 'address' &&
       webhookAllowsMethod(properties.methods, 'GET')
     ) {
@@ -427,7 +428,7 @@ function collectArmBlockers(
       // two sentences for one press. MEASURED: `arm-check.test.ts`'s starter-
       // template assertion caught exactly that.
       if (
-        node.data.type === 'trigger.webhook' &&
+        node.data.type === webhookTriggerDefinition.type &&
         rule.require === 'endpointId' &&
         isBlank(properties.tokenHash)
       ) {
@@ -451,7 +452,7 @@ function collectArmBlockers(
       // hand-edited diagram, never the editor — `endpointId` falls through and
       // reports itself, because then there is genuinely something else wrong.
       if (
-        node.data.type === 'trigger.webhook' &&
+        node.data.type === webhookTriggerDefinition.type &&
         key === 'endpointId' &&
         isBlank(properties.tokenHash)
       ) {

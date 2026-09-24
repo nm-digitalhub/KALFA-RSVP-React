@@ -57,6 +57,8 @@ import * as waitDefinition from '../nodes/logic-wait/definition';
 import { waitNode } from '../nodes/logic-wait/runtime';
 import * as scheduleDefinition from '../nodes/trigger-schedule/definition';
 import { scheduleTrigger } from '../nodes/trigger-schedule/runtime';
+import * as webhookTriggerDefinition from '../nodes/trigger-webhook/definition';
+import { webhookTrigger } from '../nodes/trigger-webhook/runtime';
 
 export type { StepContext, StepHandler, WorkflowTriggerPayload };
 
@@ -64,29 +66,7 @@ export type { StepContext, StepHandler, WorkflowTriggerPayload };
 // trigger.webhook
 // ---------------------------------------------------------------------------
 
-// An external system calls in and a run starts.
-//
-// The DYNAMIC trigger: it declares no field list. Whatever JSON the caller sent
-// is published as this node's output and is readable anywhere as
-// `{{trigger.body.<path>}}`. A new caller with a different shape needs no code
-// change, no migration and no new node type — which is the difference between
-// this and every other trigger a workflow tool hard-codes.
-//
-// It performs no side effect. By the time a run exists the request has already
-// been received, authenticated by its token and persisted as the trigger payload.
-const webhookTrigger: StepHandler = async (_config, ctx) => ({
-  output: {
-    body: ctx.trigger.body ?? {},
-    // ⚠️ PUBLISHED SEPARATELY, AND IT HAS TO BE RETURNED HERE TOO. The query
-    // string was added to the trigger payload and to this node's outputSchema on
-    // 2026-09-22 — but not to this return, so `{{nodes.<trigger>.query.x}}`
-    // resolved to nothing while the picker happily offered it. A declaration is
-    // a promise the HANDLER keeps; declaring without returning is the same class
-    // of defect as returning without declaring, and the same gate now catches
-    // both.
-    query: ctx.trigger.query ?? {},
-  },
-});
+// The handler lives in `nodes/trigger-webhook/runtime.ts`.
 
 // ---------------------------------------------------------------------------
 // trigger.sumit_card
@@ -201,7 +181,7 @@ export { WORKFLOW_WAIT_CODE, WorkflowWaitSignal, readWaitSignal, type WaitVerifi
 
 export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'trigger.whatsapp_inbound': whatsappInbound,
-  'trigger.webhook': webhookTrigger,
+  [webhookTriggerDefinition.type]: webhookTrigger,
   [scheduleDefinition.type]: scheduleTrigger,
   'trigger.sumit_card': sumitCardTrigger,
   [conditionDefinition.type]: condition,

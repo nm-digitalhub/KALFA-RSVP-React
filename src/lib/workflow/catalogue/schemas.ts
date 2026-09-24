@@ -73,12 +73,12 @@ import { setValuePaletteItem } from '../nodes/logic-set-value/logic-set-value';
 import { switchPaletteItem } from '../nodes/logic-switch/logic-switch';
 import { waitPaletteItem } from '../nodes/logic-wait/logic-wait';
 import { schedulePaletteItem } from '../nodes/trigger-schedule/trigger-schedule';
+import { webhookTriggerPaletteItem } from '../nodes/trigger-webhook/trigger-webhook';
 
 import {
   NODE_REQUIRED_FIELDS,
   WHATSAPP_MESSAGE_KINDS,
   type KalfaNodeType,
-  webhookMethodOptions,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -217,117 +217,8 @@ const triggerUiSchema: UISchema = {
 // trigger.webhook
 // ---------------------------------------------------------------------------
 
-const webhookTriggerSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['trigger.webhook'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    // WHERE the caller proves itself. See `WEBHOOK_AUTH_MODES`: `header` is the
-    // default and what every diagram saved before this field means, `address`
-    // exists for a caller that can be handed a URL and nothing else.
-    auth: {
-      type: 'string',
-      options: [
-        { value: 'header', label: 'סוד בכותרת (מומלץ)' },
-        { value: 'address', label: 'הכתובת עצמה היא הסוד' },
-      ],
-    },
-    // ⚠️ THE PUBLIC HALF OF THE ADDRESS, AND SAFE TO EXPORT — IN `header` MODE.
-    // `/api/workflows/hook/<endpointId>` identifies WHICH webhook and proves
-    // nothing, so the panel shows it always and a diagram may carry it anywhere.
-    //
-    // ⚠️ NOT `requiredText`, AND NOT BECAUSE IT IS OPTIONAL. It is required in
-    // `header` mode and forbidden in `address` mode, which is a CONDITIONAL
-    // contract — declared once in `NODE_CONDITIONAL_REQUIRED_FIELDS` and applied
-    // to this schema by the same `allOf` machinery `action.webhook` uses. A
-    // `required` here would fire in both modes and make `address` unarmable.
-    endpointId: { type: 'string' },
-    // WHICH HTTP METHODS open this address. Objects, not bare strings, for the
-    // reason `messageKinds` records at length: the SDK's `ArrayFieldSchema`
-    // cannot describe an array of strings at all.
-    methods: { type: 'array', items: { type: 'object', properties: { value: { type: 'string' } } } },
-    // ⚠️ THE HASH, NOT THE SECRET. The diagram used to hold the credential
-    // itself — and the editor's own Export menu puts a diagram in a copyable
-    // box. See `webhook-token.ts`: the value is shown once at generation and
-    // only its sha256 is ever stored.
-    //
-    // Named `tokenHash` rather than `secretHash` deliberately: it is accurate
-    // either way, and renaming it would migrate a stored field without adding a
-    // bit of clarity. What CHANGED is where the secret travels — a header, not
-    // the path.
-    tokenHash: requiredText,
-  },
-} satisfies NodeSchema;
-
-const webhookTriggerScope = getScope<typeof webhookTriggerSchema>;
-
-const webhookTriggerUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    triggerSwitchElement,
-    ...identityControls(webhookTriggerScope('properties.label'), webhookTriggerScope('properties.description')),
-    {
-      // ⚠️ ABOVE THE ADDRESS CONTROL, because it decides what that control is
-      // for. Changing it CLEARS whatever was generated — see the control — so an
-      // owner who flips it after generating has to press the button again, and
-      // arming refuses until they do.
-      type: 'Select',
-      scope: webhookTriggerScope('properties.auth'),
-      label: 'איך הקורא מזדהה',
-    },
-    {
-      // ONE renderer for every shape this takes — the public address and the
-      // secret in `header` mode, the single once-shown address in `address`
-      // mode. They are created together and must never drift apart, so one
-      // control creates, displays and rotates them. It binds to `tokenHash`
-      // because that is the field JsonForms writes through and the one field
-      // BOTH modes have; it reaches `auth` and `endpointId` on the same node.
-      type: 'Text',
-      scope: webhookTriggerScope('properties.tokenHash'),
-      label: 'כתובת וסוד',
-      options: { format: WEBHOOK_TOKEN_FORMAT },
-    },
-    {
-      type: 'Label',
-      text: 'אימות בכותרת: הכתובת גלויה וניתנת להעתקה בכל עת, והסוד נשלח ב-x-kalfa-webhook-secret ומוצג פעם אחת בלבד. יצירת סוד חדש אינה משנה את הכתובת.',
-    },
-    {
-      // ⚠️ THE COST OF THE OTHER MODE, SPELLED OUT WHERE IT IS CHOSEN. An owner
-      // who picks it is giving up exactly the thing the 2026-09-22 split was
-      // built to give them back — a recoverable address — and finding that out
-      // later, from a lost integration, is the failure this sentence prevents.
-      type: 'Label',
-      text: 'אימות לפי כתובת: הכתובת עצמה היא הסוד, מוצגת פעם אחת בלבד ואינה ניתנת לשחזור — נשמר רק גיבוב שלה. בחרו באפשרות הזו רק כשהמערכת הקוראת אינה יודעת לשלוח כותרת (למשל SUMIT). קריאת GET לא תעבוד במצב הזה.',
-    },
-    {
-      type: 'Accordion',
-      label: 'באילו שיטות אפשר לקרוא',
-      elements: [
-        {
-          type: 'Text',
-          scope: webhookTriggerScope('properties.methods'),
-          label: 'שיטות HTTP',
-          options: {
-            format: CHECKBOX_LIST_FORMAT,
-            choices: webhookMethodOptions.map((o) => ({ ...o })),
-            defaultNote: 'ברירת מחדל: POST בלבד.',
-          },
-        },
-        {
-          type: 'Label',
-          text: 'GET ו-DELETE אינם נושאים גוף. בקריאה כזו {{trigger.body}} יהיה ריק, והערכים יגיעו ב-{{trigger.query.<שם>}} מתוך הכתובת.',
-        },
-      ],
-    },
-    {
-      // The limitation an owner would otherwise discover from a failed run.
-      type: 'Label',
-      text: 'הרצה שמתחילה כאן אינה קשורה לאורח, ולכן צעדים שפועלים על אורח (עדכון סטטוס, שליחת וואטסאפ, בקשת חזרה) ייכשלו בתוכה.',
-    },
-    statusControl(webhookTriggerScope('properties.status')),
-  ],
-};
+// Its schema, method options, uischema and palette entry live in
+// `nodes/trigger-webhook/`, and its config in that folder's `definition.ts`.
 
 // ---------------------------------------------------------------------------
 // trigger.sumit_card
@@ -645,71 +536,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       phoneNumberId: '',
     },
   } satisfies PaletteItem<typeof triggerSchema>,
-  {
-    type: 'trigger.webhook' satisfies KalfaNodeType,
-    label: 'קריאת Webhook נכנסת',
-    description: 'מערכת חיצונית קוראת לכתובת והתהליך מתחיל',
-    icon: 'Plugs',
-    templateType: NodeType.StartNode,
-    schema: webhookTriggerSchema,
-    uischema: webhookTriggerUiSchema,
-    // The whole JSON the caller sent, under one key. Declared as an object with
-    // no properties BECAUSE the shape is the caller's: a fixed field list here
-    // would be the hard-coding this node exists to avoid. The picker offers
-    // `{{trigger.body}}` and an owner types the path they know they send.
-    outputSchema: {
-      type: 'default',
-      properties: {
-        body: {
-          type: 'object',
-          label: 'גוף הבקשה',
-          description: 'כל מה שנשלח — ניתן לפנות אליו כ-{{trigger.body.שם_השדה}}',
-        },
-        // Published SEPARATELY rather than folded into `body`. A GET carries no
-        // body, and merging its query string into one would make
-        // `{{trigger.body.x}}` mean two different things depending on the verb —
-        // the confusion n8n avoids by exposing `{ body, headers, params, query }`
-        // as distinct members.
-        query: {
-          type: 'object',
-          label: 'פרמטרים בכתובת',
-          description: 'ה-query string — ניתן לפנות אליו כ-{{trigger.query.שם_השדה}}',
-        },
-      },
-    },
-    defaultPropertiesData: {
-      status: nodeStatusOptions.active.value,
-      label: 'קריאת Webhook נכנסת',
-      description: 'מערכת חיצונית קוראת לכתובת והתהליך מתחיל',
-      // ⚠️ `header` EXPLICITLY, NOT LEFT ABSENT. `readWebhookAuthMode` reads an
-      // absent value as `header` anyway, so this changes no behaviour — it is
-      // here because `palette-defaults.test.ts` requires a conditional rule's
-      // decider to be a member of its own `whenIn`, and a node born with the
-      // field set is a node whose mode is visible in the panel from the first
-      // render rather than implied.
-      auth: 'header',
-      // Both halves start blank and are minted together by the control. A
-      // diagram with one and not the other is the state `arm-check` refuses.
-      // In `address` mode this one stays blank forever — the path is never
-      // stored, only its hash.
-      endpointId: '',
-      // Empty means POST only. See `webhookAllowsMethod` — an absent value must
-      // never widen a live public endpoint.
-      methods: [],
-      // ⚠️ `tokenHash`, NOT `token` — this key must match `webhookTriggerSchema`
-      // and the uischema's `properties.tokenHash` scope, or a node dragged from
-      // the palette is born carrying a field the schema does not declare AND
-      // missing its only required one. That was live until 2026-09-22 and no
-      // gate saw it: the key is a plain string in three files that never get
-      // compared. `palette-defaults.test.ts` now compares them.
-      //
-      // EMPTY, never a value minted here. This module runs in the BROWSER, and a
-      // token from `Math.random`/`crypto` on a page is a token whose entropy
-      // nobody audited. `webhook-token-control.tsx` generates it and stores only
-      // its sha256.
-      tokenHash: '',
-    },
-  } satisfies PaletteItem<typeof webhookTriggerSchema>,
+  // Moved to its own folder — see nodes/trigger-webhook/.
+  webhookTriggerPaletteItem,
   // Moved to its own folder — see nodes/trigger-schedule/.
   schedulePaletteItem,
   {

@@ -35,6 +35,7 @@ import * as setValueDefinition from '../nodes/logic-set-value/definition';
 import * as switchDefinition from '../nodes/logic-switch/definition';
 import * as waitDefinition from '../nodes/logic-wait/definition';
 import * as scheduleDefinition from '../nodes/trigger-schedule/definition';
+import * as webhookTriggerDefinition from '../nodes/trigger-webhook/definition';
 
 // ---------------------------------------------------------------------------
 // Node types
@@ -45,7 +46,7 @@ import * as scheduleDefinition from '../nodes/trigger-schedule/definition';
 // orphans every saved workflow that used it.
 export const NODE_TYPES = [
   'trigger.whatsapp_inbound',
-  'trigger.webhook',
+  webhookTriggerDefinition.type,
   scheduleDefinition.type,
   'trigger.sumit_card',
   conditionDefinition.type,
@@ -194,78 +195,20 @@ export type WaitConfig = waitDefinition.WaitConfig;
 // existing readers.
 export type ImportGuestListConfig = importGuestListDefinition.ImportGuestListConfig;
 
-/**
- * An external system calls in, and a run starts.
- *
- * THE DYNAMIC TRIGGER. It declares no field list: whatever JSON the caller POSTs
- * is published as `{{trigger.body.<path>}}`. A new caller with a different shape
- * needs no code change, no migration and no new node type — which is exactly the
- * difference between this and a trigger whose fields someone has to hard-code.
- *
- * ⚠️ THE TOKEN IS THE ONLY THING STANDING IN FRONT OF A PUBLIC ENDPOINT.
- * It lives in the diagram rather than in a column, the same way n8n shows a
- * webhook URL in its editor — it is an ADDRESS for this workflow, not a
- * credential to somebody else's system, and whoever can open the workflow is
- * exactly who needs to copy it. It is generated server-side (never in the
- * browser) and a workflow with an empty token cannot be armed.
- *
- * The endpoint it unlocks starts a run and nothing else: it cannot read a guest,
- * cannot name an event, and every guest-touching node refuses in a run that came
- * from here (`requireGuestContext`). The blast radius of a leaked token is
- * "someone can make this workflow run", not "someone can reach our data".
- */
 // `trigger.schedule` — declared with the rest of its contract in
 // `nodes/trigger-schedule/definition.ts`, re-exported here for existing readers.
 export type ScheduleTriggerConfig = scheduleDefinition.ScheduleTriggerConfig;
 
-/**
- * The HTTP methods an inbound webhook may be called with.
- *
- * ⚠️ NOT AN ARBITRARY LIST. n8n's Webhook node offers exactly DELETE / GET /
- * HEAD / PATCH / POST / PUT (its README §HTTP Method, read in full 2026-09-22),
- * and a caller that can only send one of those is the whole reason this field
- * exists — before it, every non-POST call was refused with a 405 and the
- * integration simply could not be built.
- *
- * HEAD is omitted: it is defined to return no body, so a run started by one
- * could never answer anything, and Next would dispatch it to GET regardless.
- */
-export const WEBHOOK_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
-export type WebhookMethod = (typeof WEBHOOK_METHODS)[number];
-
-/** Which methods carry a request body at all. */
-export const WEBHOOK_METHODS_WITH_BODY: readonly WebhookMethod[] = ['POST', 'PUT', 'PATCH'];
-
-export const webhookMethodOptions = WEBHOOK_METHODS.map((value) => ({ value, label: value }));
-
-/**
- * Whether a configured method list admits this call.
- *
- * ⚠️ AN EMPTY LIST MEANS POST, NOT "EVERYTHING". Every webhook saved before this
- * field existed was POST-only by construction, so an absent value has to keep
- * meaning exactly that — reading it as "any method" would silently widen a live
- * public endpoint on deploy. Same rule, and the same reason, as `messageKinds`.
- *
- * Accepts BOTH shapes for the same reason `matchesKind` does: the SDK's
- * `ArrayFieldSchema` cannot describe an array of strings, so the control stores
- * `[{ value: 'POST' }]` while a hand-written or older diagram may hold
- * `['POST']`.
- */
-export function webhookAllowsMethod(configured: unknown, method: string): boolean {
-  const list = Array.isArray(configured)
-    ? configured
-        .map((entry) =>
-          typeof entry === 'string'
-            ? entry
-            : entry && typeof entry === 'object' && typeof (entry as { value?: unknown }).value === 'string'
-              ? (entry as { value: string }).value
-              : '',
-        )
-        .filter((value) => value !== '')
-    : [];
-  const allowed = list.length === 0 ? ['POST'] : list;
-  return allowed.includes(method);
-}
+// `trigger.webhook` — the HTTP methods it may be called with and the verbs that
+// carry a body are declared with the rest of its contract in
+// `nodes/trigger-webhook/definition.ts`, re-exported here for existing readers
+// (the public hook route among them). `webhookAllowsMethod` moved to that
+// folder's `match.ts` and is read from there.
+export {
+  WEBHOOK_METHODS,
+  WEBHOOK_METHODS_WITH_BODY,
+  type WebhookMethod,
+} from '../nodes/trigger-webhook/definition';
 
 /**
  * WHERE an inbound call proves itself.
@@ -309,28 +252,22 @@ export function readWebhookAuthMode(value: unknown): WebhookAuthMode {
   return value === 'address' ? 'address' : 'header';
 }
 
-export type WebhookTriggerConfig = {
-  /**
-   * The PUBLIC half of the address, in `header` mode. Safe to show, copy and
-   * export — it proves nothing on its own.
-   *
-   * ⚠️ ABSENT IN `address` MODE, on purpose. There the path segment is the
-   * credential, so storing it would put the credential back in the diagram —
-   * and from there into every run's `definitionSnapshot`. Only `tokenHash`
-   * is kept, and the path is hashed on the way in.
-   */
-  endpointId?: string;
-  /**
-   * sha256 of whichever half is the credential: the header secret in `header`
-   * mode, the path segment in `address` mode. The value itself is never stored.
-   * See `webhook-token.ts`.
-   */
-  tokenHash: string;
-  /** Empty means POST only — see `webhookAllowsMethod`. */
-  methods?: readonly { value: string }[] | readonly string[];
-  /** Absent means `header` — see `readWebhookAuthMode`. */
-  auth?: WebhookAuthMode;
-};
+// `trigger.webhook` — its config (with its own `auth` union, pinned to
+// `WebhookAuthMode` below) is declared with the rest of its contract in
+// `nodes/trigger-webhook/definition.ts`, re-exported here for existing readers.
+export type WebhookTriggerConfig = webhookTriggerDefinition.WebhookTriggerConfig;
+
+/**
+ * ⚠️ A COMPILE ERROR IF THE DEFINITION'S AUTH MODES DRIFT FROM `WebhookAuthMode`.
+ * The definition imports nothing, so it spells the union out; assigning across
+ * it in both directions fails the moment the two lists disagree.
+ */
+type _DefinitionWebhookAuthMode = NonNullable<WebhookTriggerConfig['auth']>;
+const _webhookAuthModeMatchesTheDefinition: [_DefinitionWebhookAuthMode, WebhookAuthMode] = [
+  null as unknown as WebhookAuthMode,
+  null as unknown as _DefinitionWebhookAuthMode,
+];
+void _webhookAuthModeMatchesTheDefinition;
 
 /**
  * `trigger.sumit_card` — SUMIT tells us a card changed.
@@ -362,7 +299,7 @@ export type SumitCardTriggerConfig = {
  * there is exactly one.
  */
 export const INBOUND_HTTP_TRIGGER_TYPES: readonly KalfaNodeType[] = [
-  'trigger.webhook',
+  webhookTriggerDefinition.type,
   'trigger.sumit_card',
 ];
 
@@ -661,7 +598,7 @@ export type SumitCreateCustomerConfig = sumitCreateCustomerDefinition.SumitCreat
 // vendored runner is `unknown`; this is the vocabulary we give it.
 export type KalfaNodeConfig =
   | { type: 'trigger.whatsapp_inbound'; config: WhatsappInboundConfig }
-  | { type: 'trigger.webhook'; config: WebhookTriggerConfig }
+  | { type: typeof webhookTriggerDefinition.type; config: WebhookTriggerConfig }
   | { type: typeof aiAgentDefinition.type; config: AiAgentConfig }
   | { type: typeof scheduleDefinition.type; config: ScheduleTriggerConfig }
   | { type: 'trigger.sumit_card'; config: SumitCardTriggerConfig }
@@ -835,10 +772,10 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   [waitDefinition.type]: waitDefinition.deploymentBindings,
   [scheduleDefinition.type]: scheduleDefinition.deploymentBindings,
   'trigger.whatsapp_inbound': { phoneNumberId: 'identifier' },
-  // A HASH, not the token — so this is no longer a secret that must not travel,
-  // but it still authenticates to THIS installation and resolves to nothing
-  // anywhere else. See webhook-token.ts for why the value moved out.
-  'trigger.webhook': { endpointId: 'identifier', tokenHash: 'identifier' },
+  // A HASH, not the token, and the public id — no longer a secret that must not
+  // travel, but both authenticate to THIS installation and resolve to nothing
+  // anywhere else. Declared with the rest of the node's contract.
+  [webhookTriggerDefinition.type]: webhookTriggerDefinition.deploymentBindings,
   // The same reasoning: a hash that authenticates to THIS installation only.
   'trigger.sumit_card': { tokenHash: 'identifier' },
   [microsoftSendEmailDefinition.type]: microsoftSendEmailDefinition.deploymentBindings,
@@ -857,12 +794,9 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
 
 export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   'trigger.whatsapp_inbound': ['label', 'description'],
-  // ⚠️ `endpointId` IS NOT HERE — it moved to the conditional table. It exists
-  // only in `header` mode; in `address` mode the path segment is the credential
-  // and is never stored, so requiring it would make that mode unarmable.
-  // `tokenHash` stays: BOTH modes have one, it is just a hash of a different
-  // half.
-  'trigger.webhook': ['label', 'description', 'tokenHash'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [webhookTriggerDefinition.type]: webhookTriggerDefinition.requiredFields,
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [aiAgentDefinition.type]: aiAgentDefinition.requiredFields,
@@ -1142,20 +1076,7 @@ export const NODE_CONDITIONAL_REQUIRED_FIELDS: Partial<
 > = {
   // Declared with the rest of the node's contract — the SAME array, read here.
   [webhookDefinition.type]: webhookDefinition.conditionalRequirements,
-  // The address half is required in `header` mode and MUST NOT exist in
-  // `address` mode — see `WebhookTriggerConfig.endpointId`. `fallback: 'header'`
-  // is what keeps every diagram saved before the field behaving exactly as it
-  // did, and it is inside `whenIn` as the type's own warning requires.
-  'trigger.webhook': [
-    {
-      decidedBy: 'auth',
-      whenIn: ['header'],
-      fallback: 'header',
-      require: 'endpointId',
-      message:
-        'לא נוצרה כתובת. לחצו על יצירת סוד — הכתובת תיווצר יחד איתו ותישאר גלויה.',
-    },
-  ],
+  [webhookTriggerDefinition.type]: webhookTriggerDefinition.conditionalRequirements,
 };
 
 /**

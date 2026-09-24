@@ -4,7 +4,8 @@ import 'server-only';
 import { editorDiagramSchema } from './adapter/editor-schema';
 import { hashWebhookToken, webhookHashesMatch } from './webhook-token';
 import { isTriggerType } from './catalogue/nodes';
-import { authModeFor, INBOUND_HTTP_TRIGGER_TYPES, webhookAllowsMethod } from './catalogue/types';
+import { authModeFor, INBOUND_HTTP_TRIGGER_TYPES } from './catalogue/types';
+import { webhookAllowsMethod } from './nodes/trigger-webhook/match';
 import { createRunIfNew, listArmedWorkflows } from './store';
 
 import type { WorkflowTriggerPayload } from './steps';
