@@ -104,7 +104,7 @@ export default async function OwnerAgentPage() {
             מספר
           </h2>
           <p className="text-sm text-muted-foreground">
-            כל מספרי ה-WhatsApp שלנו, כולל מספרים שמשרתים אורחים. רק הודעות מטלפון שברשימת
+            כל מספרי ה-WhatsApp הפעילים שלנו, כולל מספרים שמשרתים אורחים. רק הודעות מטלפון שברשימת
             ההיתר, למספר שנבחר כאן, יגיעו לסוכן. התשובה יוצאת מאותו מספר.
           </p>
         </div>

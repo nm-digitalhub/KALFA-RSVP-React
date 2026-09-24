@@ -9,10 +9,11 @@ import { ROLE_LABELS, type NumberRole } from '@/lib/validation/provider-numbers'
 
 import { setOwnerAgentNumberAction } from './actions';
 
-// Which of OUR Meta numbers the agent answers on (plan §3.3). EVERY number on the
-// WABA is offered, guest-serving ones included — owner decision 2026-09-24 — and each
-// says what it already does, so choosing the RSVP sender is an informed choice rather
-// than a surprise.
+// Which of OUR Meta numbers the agent answers on (plan §3.3). Every ACTIVE number on
+// the WABA is offered, guest-serving ones included — owner decisions 2026-09-24 — and
+// each says what it already does, so choosing the RSVP sender is an informed choice
+// rather than a surprise. An inactive number appears only when it is the saved choice
+// (the DAL filters), marked, so the owner sees the agent is bound to a dead number.
 //
 // Radios, not a <select>: an <option> cannot hold the role and "inactive" tags, and a
 // native radio group is keyboard-operable (arrow keys) with no portal to get wrong in
@@ -44,7 +45,7 @@ function ChoiceNote({ chosen }: { chosen: OwnerAgentNumber | null }) {
     );
   }
   if (!chosen.isActive) {
-    lines.push('המספר מסומן כלא פעיל: ייתכן שהודעות אליו לא יגיעו בכלל.');
+    lines.push('המספר השמור כבר לא פעיל, והודעות אליו לא יגיעו לסוכן. יש לבחור מספר פעיל או "ללא".');
   }
   if (lines.length === 0) return null;
   return (

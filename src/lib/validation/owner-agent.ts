@@ -25,6 +25,7 @@ export const OWNER_AGENT_ERRORS = {
   switchFailed: 'עדכון מתג הסוכן נכשל',
   numberSaveFailed: 'שמירת המספר נכשלה',
   numberNotOnWaba: 'המספר שנבחר אינו מספר WhatsApp מחובר',
+  numberInactive: 'המספר שנבחר לא פעיל. יש לבחור מספר פעיל או "ללא"',
   dailyCapSaveFailed: 'שמירת התקרה היומית נכשלה',
   addFailed: 'הוספת המספר נכשלה',
   notStaff: 'רק איש צוות פלטפורמה יכול להופיע ברשימת ההיתר',

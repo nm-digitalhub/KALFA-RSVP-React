@@ -158,27 +158,35 @@ describe('reads', () => {
     await expect(getOwnerAgentSettings()).rejects.toThrow('טעינת הגדרות הסוכן נכשלה');
   });
 
-  it('lists EVERY Meta number — guest-serving and inactive included — masked, with roles', async () => {
-    const { builders } = wireCookie({
-      provider_numbers: {
-        data: [
-          {
-            provider_ref: WABA_REF,
-            e164: '+97233301505',
-            display_label: 'אישורי הגעה',
-            is_active: true,
-            provider_number_roles: [{ role: 'whatsapp_rsvp_sender' }],
-          },
-          {
-            provider_ref: '6543210987654321',
-            e164: '+97233301506',
-            display_label: null,
-            is_active: false,
-            provider_number_roles: [],
-          },
-        ],
-        error: null,
+  const INACTIVE_REF = '6543210987654321';
+  const NUMBER_ROWS = {
+    data: [
+      {
+        provider_ref: WABA_REF,
+        e164: '+97233301505',
+        display_label: 'אישורי הגעה',
+        is_active: true,
+        provider_number_roles: [{ role: 'whatsapp_rsvp_sender' }],
       },
+      {
+        provider_ref: INACTIVE_REF,
+        e164: '+97233301506',
+        display_label: null,
+        is_active: false,
+        provider_number_roles: [],
+      },
+    ],
+    error: null,
+  };
+  const selectedSettings = (ref: string | null) => ({
+    data: { owner_agent_phone_number_id: ref },
+    error: null,
+  });
+
+  it('lists the ACTIVE Meta numbers — guest-serving included — masked, with roles', async () => {
+    const { builders } = wireCookie({
+      provider_numbers: NUMBER_ROWS,
+      app_settings: selectedSettings(WABA_REF),
     });
 
     const numbers = await listOwnerAgentNumbers();
@@ -192,15 +200,31 @@ describe('reads', () => {
         isActive: true,
         roles: ['whatsapp_rsvp_sender'],
       },
-      {
-        providerRef: '6543210987654321',
-        label: null,
-        maskedNumber: '033***1506',
-        isActive: false,
-        roles: [],
-      },
     ]);
     expect(JSON.stringify(numbers)).not.toContain('+972');
+  });
+
+  it('hides an inactive number, also when nothing is selected', async () => {
+    wireCookie({ provider_numbers: NUMBER_ROWS, app_settings: selectedSettings(null) });
+    const numbers = await listOwnerAgentNumbers();
+    expect(numbers.map((n) => n.providerRef)).toEqual([WABA_REF]);
+  });
+
+  it('keeps an inactive number listed, and marked, when it is the saved choice', async () => {
+    wireCookie({ provider_numbers: NUMBER_ROWS, app_settings: selectedSettings(INACTIVE_REF) });
+    const numbers = await listOwnerAgentNumbers();
+    expect(numbers.map((n) => [n.providerRef, n.isActive])).toEqual([
+      [WABA_REF, true],
+      [INACTIVE_REF, false],
+    ]);
+  });
+
+  it('fails the numbers read when the saved choice cannot be read, rather than guessing', async () => {
+    wireCookie({
+      provider_numbers: NUMBER_ROWS,
+      app_settings: { data: null, error: { message: 'boom' } },
+    });
+    await expect(listOwnerAgentNumbers()).rejects.toThrow('טעינת מספרי WhatsApp נכשלה');
   });
 
   it('flags the allow-list row whose number equals the staff member\'s VERIFIED phone', async () => {
@@ -348,9 +372,22 @@ describe('app_settings writes', () => {
     expect(logActivity).not.toHaveBeenCalled();
   });
 
+  it('refuses an INACTIVE number on the WABA, and writes nothing', async () => {
+    const { builders } = wireCookie({
+      provider_numbers: { data: { provider_ref: WABA_REF, is_active: false }, error: null },
+      app_settings: { data: null, error: null },
+    });
+    await expect(setOwnerAgentPhoneNumber(WABA_REF)).rejects.toThrow(
+      'המספר שנבחר לא פעיל. יש לבחור מספר פעיל או "ללא"',
+    );
+    expect(builders.provider_numbers.select).toHaveBeenCalledWith('provider_ref, is_active');
+    expect(builders.app_settings.update).not.toHaveBeenCalled();
+    expect(logActivity).not.toHaveBeenCalled();
+  });
+
   it('stores a number that IS on the WABA, including a guest-serving one', async () => {
     const { builders } = wireCookie({
-      provider_numbers: { data: { provider_ref: WABA_REF }, error: null },
+      provider_numbers: { data: { provider_ref: WABA_REF, is_active: true }, error: null },
       app_settings: { data: null, error: null },
     });
     await setOwnerAgentPhoneNumber(WABA_REF);

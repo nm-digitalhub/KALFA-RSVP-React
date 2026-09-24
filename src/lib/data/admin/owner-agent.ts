@@ -119,28 +119,41 @@ export async function getOwnerAgentSettings(): Promise<OwnerAgentSettings> {
 }
 
 /**
- * EVERY Meta number on the WABA, guest-serving ones included (owner decision
+ * The ACTIVE Meta numbers on the WABA, guest-serving ones included (owner decision
  * 2026-09-24): the agent may share a number with guests, and the roles are returned
- * so the picker can say so. Inactive numbers are returned and marked, not hidden — a
- * number that is already selected must stay visible after Meta stops listing it.
+ * so the picker can say so.
+ *
+ * An inactive number cannot receive messages, so it is not offered (owner, 2026-09-24),
+ * with one exception: the number ALREADY selected stays listed, and marked, after it
+ * goes inactive. Hiding it would leave a screen that looks like "nothing chosen" while
+ * the agent is still bound to a dead number.
  */
 export async function listOwnerAgentNumbers(): Promise<OwnerAgentNumber[]> {
   await requirePlatformOwner();
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from('provider_numbers')
-    .select('provider_ref, e164, display_label, is_active, provider_number_roles(role)')
-    .eq('provider', 'meta_whatsapp')
-    .not('provider_ref', 'is', null)
-    .order('is_active', { ascending: false })
-    .order('display_label', { ascending: true, nullsFirst: false });
+  const [{ data, error }, { data: settings, error: settingsError }] = await Promise.all([
+    supabase
+      .from('provider_numbers')
+      .select('provider_ref, e164, display_label, is_active, provider_number_roles(role)')
+      .eq('provider', 'meta_whatsapp')
+      .not('provider_ref', 'is', null)
+      .order('is_active', { ascending: false })
+      .order('display_label', { ascending: true, nullsFirst: false }),
+    supabase
+      .from('app_settings')
+      .select('owner_agent_phone_number_id')
+      .eq('id', SETTINGS_ID)
+      .maybeSingle(),
+  ]);
 
-  if (error) throw new Error(E.numbersReadFailed);
+  if (error || settingsError) throw new Error(E.numbersReadFailed);
+  const selected = settings?.owner_agent_phone_number_id ?? null;
 
   const numbers: OwnerAgentNumber[] = [];
   for (const row of data ?? []) {
     if (!row.provider_ref) continue;
+    if (!row.is_active && row.provider_ref !== selected) continue;
     const roleRows = (row.provider_number_roles ?? []) as Array<{ role: NumberRole }>;
     numbers.push({
       providerRef: row.provider_ref,
@@ -299,10 +312,11 @@ export async function setOwnerAgentEnabled(enabled: boolean): Promise<void> {
 /**
  * Select the number the agent answers on, or clear it (null = no diversion at all).
  *
- * The value must be one of OUR Meta numbers. Checked against provider_numbers before
- * the write: the column's CHECK only knows "all digits", so a mistyped or foreign id
- * would be stored happily and then never match a delivery — a silent agent with a
- * saved setting that looks right.
+ * The value must be one of OUR Meta numbers, and an ACTIVE one. Checked against
+ * provider_numbers before the write: the column's CHECK only knows "all digits", so a
+ * mistyped or foreign id would be stored happily and then never match a delivery — a
+ * silent agent with a saved setting that looks right. An inactive number fails the
+ * same way, so it is refused here too, not only left out of the picker.
  */
 export async function setOwnerAgentPhoneNumber(phoneNumberId: string | null): Promise<void> {
   await requirePlatformOwner();
@@ -312,12 +326,13 @@ export async function setOwnerAgentPhoneNumber(phoneNumberId: string | null): Pr
   if (value !== null) {
     const { data: number, error: lookupError } = await supabase
       .from('provider_numbers')
-      .select('provider_ref')
+      .select('provider_ref, is_active')
       .eq('provider', 'meta_whatsapp')
       .eq('provider_ref', value)
       .maybeSingle();
     if (lookupError) throw new Error(E.numberSaveFailed);
     if (!number) throw new Error(E.numberNotOnWaba);
+    if (!number.is_active) throw new Error(E.numberInactive);
   }
 
   const { error } = await supabase
