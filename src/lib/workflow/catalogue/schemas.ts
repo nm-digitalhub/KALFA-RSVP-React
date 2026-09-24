@@ -54,6 +54,7 @@ import {
 
 import { notifyTeamPaletteItem } from '../nodes/action-notify-team/action-notify-team';
 import { sumitCreateCustomerPaletteItem } from '../nodes/action-sumit-create-customer/action-sumit-create-customer';
+import { sumitCreateDocumentPaletteItem } from '../nodes/action-sumit-create-document/action-sumit-create-document';
 import { webhookPaletteItem } from '../nodes/action-webhook/action-webhook';
 import { conditionPaletteItem } from '../nodes/logic-condition/logic-condition';
 import { setValuePaletteItem } from '../nodes/logic-set-value/logic-set-value';
@@ -63,7 +64,6 @@ import {
   CALLBACK_TOPICS,
   NODE_NUMBER_RANGES,
   NODE_REQUIRED_FIELDS,
-  type SumitDocumentTypeOption,
   WAIT_UNIT_VALUES,
   WHATSAPP_MESSAGE_KINDS,
   type GuestField,
@@ -1804,205 +1804,9 @@ export function buildPaletteItems(
  * Kept as the base the factory rewrites one entry of, so every other node type
  * is declared exactly once. It is also what the tests and the i18n audit read.
  */
-// ---------------------------------------------------------------------------
-// action.sumit_create_document
-// ---------------------------------------------------------------------------
-//
-// An ACCOUNTING node: it creates a record, it does not move money. Every option
-// below is a value swagger.json accepts — no label here invents a capability the
-// API does not have. Its sibling `action.sumit_create_customer` lives in
-// nodes/action-sumit-create-customer/.
-
-const sumitDocumentTypeOptions = {
-  Receipt: { label: 'קבלה', value: 'Receipt' },
-  ProformaInvoice: { label: 'חשבונית עסקה (פרופורמה)', value: 'ProformaInvoice' },
-  PriceQuotation: { label: 'הצעת מחיר', value: 'PriceQuotation' },
-  PaymentRequest: { label: 'דרישת תשלום', value: 'PaymentRequest' },
-  Order: { label: 'הזמנה', value: 'Order' },
-  DeliveryNote: { label: 'תעודת משלוח', value: 'DeliveryNote' },
-  CreditReceipt: { label: 'קבלת זיכוי', value: 'CreditReceipt' },
-} as const satisfies Record<SumitDocumentTypeOption, { label: string; value: string }>;
-
-const sumitCreateDocumentSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['action.sumit_create_document'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    ...actionBranchesProperty,
-    documentType: {
-      ...requiredText,
-      options: Object.values(sumitDocumentTypeOptions),
-    },
-    customerName: { ...requiredText },
-    customerEmail: { type: 'string' },
-    customerPhone: { type: 'string' },
-    customerExternalId: { type: 'string' },
-    customerNoVat: { type: 'boolean' },
-    itemName: { type: 'string' },
-    itemQuantity: { type: 'number' },
-    itemUnitPrice: { type: 'number' },
-    documentDescription: { type: 'string' },
-    isDraft: { type: 'boolean' },
-    sendByEmail: { type: 'boolean' },
-    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
-  },
-} satisfies NodeSchema;
-
-const sumitCreateDocumentScope = getScope<typeof sumitCreateDocumentSchema>;
-
-// The four ARM-BLOCKING fields stay FLAT — the house rule this file records
-// elsewhere: a field `arm-check.ts` refuses to arm on must be visible without
-// opening an accordion, or the owner meets it as a blocker instead of a form.
-const sumitCreateDocumentUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(
-      sumitCreateDocumentScope('properties.label'),
-      sumitCreateDocumentScope('properties.description'),
-    ),
-    {
-      type: 'Select',
-      scope: sumitCreateDocumentScope('properties.documentType'),
-      label: 'סוג המסמך',
-    },
-    {
-      type: 'VariableText',
-      scope: sumitCreateDocumentScope('properties.customerName'),
-      label: 'שם הלקוח',
-      placeholder: 'הקלידו {{ כדי לשלב ערך מצעד קודם',
-    },
-    {
-      type: 'Accordion',
-      label: 'פרטי הלקוח',
-      elements: [
-        {
-          type: 'VariableText',
-          scope: sumitCreateDocumentScope('properties.customerEmail'),
-          label: 'אימייל',
-        },
-        {
-          type: 'VariableText',
-          scope: sumitCreateDocumentScope('properties.customerPhone'),
-          label: 'טלפון',
-        },
-        {
-          type: 'VariableText',
-          scope: sumitCreateDocumentScope('properties.customerExternalId'),
-          label: 'מזהה חיצוני',
-          placeholder: 'המזהה שלנו ללקוח — לצורך התאמה מול SUMIT',
-        },
-        {
-          type: 'Switch',
-          scope: sumitCreateDocumentScope('properties.customerNoVat'),
-          label: 'הלקוח פטור ממע״מ',
-        },
-      ],
-    },
-    {
-      type: 'Accordion',
-      label: 'שורת פריט (אופציונלי)',
-      elements: [
-        {
-          type: 'VariableText',
-          scope: sumitCreateDocumentScope('properties.itemName'),
-          label: 'שם הפריט',
-        },
-        {
-          type: 'Text',
-          scope: sumitCreateDocumentScope('properties.itemQuantity'),
-          label: 'כמות',
-        },
-        {
-          type: 'Text',
-          scope: sumitCreateDocumentScope('properties.itemUnitPrice'),
-          label: 'מחיר ליחידה (₪)',
-        },
-      ],
-    },
-    {
-      type: 'Accordion',
-      label: 'אפשרויות המסמך',
-      elements: [
-        {
-          type: 'VariableTextArea',
-          scope: sumitCreateDocumentScope('properties.documentDescription'),
-          label: 'תיאור שמודפס על המסמך',
-          minRows: 2,
-        },
-        {
-          type: 'Switch',
-          scope: sumitCreateDocumentScope('properties.isDraft'),
-          label: 'שמירה כטיוטה',
-        },
-        {
-          type: 'Switch',
-          scope: sumitCreateDocumentScope('properties.sendByEmail'),
-          label: 'שליחת המסמך במייל ללקוח',
-        },
-      ],
-    },
-    // status and errorPolicy stay FLAT: accordion-classification.test.ts
-    // refuses to let a node-level switch be folded away, and `status` is
-    // what decides whether the step runs at all.
-    statusControl(sumitCreateDocumentScope('properties.status')),
-    {
-      type: 'Select',
-      scope: sumitCreateDocumentScope('properties.errorPolicy'),
-      label: 'התנהגות בשגיאה',
-    },
-  ],
-};
-
 export const PALETTE_ITEMS: PaletteItem[] = [
-  {
-    type: 'action.sumit_create_document' satisfies KalfaNodeType,
-    label: 'הפקת מסמך ב-SUMIT',
-    description: 'מפיק קבלה, הצעת מחיר או מסמך אחר. לא מבצע חיוב.',
-    icon: 'FileText',
-    templateType: NodeType.DecisionNode,
-    schema: sumitCreateDocumentSchema,
-    uischema: sumitCreateDocumentUiSchema,
-    // Every field seeded, none omitted. The SDK's bundled validator
-    // (@cfworker/json-schema) treats an ABSENT required key as invalid but an
-    // EMPTY one as valid — so seeding is what makes the panel's error markers
-    // appear on the field instead of the owner discovering the blank at arming.
-    defaultPropertiesData: {
-      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
-      status: nodeStatusOptions.active.value,
-      label: 'הפקת מסמך ב-SUMIT',
-      description: 'מפיק קבלה, הצעת מחיר או מסמך אחר. לא מבצע חיוב.',
-      // קבלה — the document this business (עוסק פטור) actually issues.
-      documentType: sumitDocumentTypeOptions.Receipt.value,
-      customerName: '',
-      customerEmail: '',
-      customerPhone: '',
-      customerExternalId: '',
-      customerNoVat: false,
-      itemName: '',
-      itemQuantity: 1,
-      itemUnitPrice: 0,
-      documentDescription: '',
-      // DRAFT by default. A final document is a bookkeeping record that cannot
-      // simply be deleted, so the first run of a new automation produces
-      // something reviewable rather than something filed.
-      isDraft: true,
-      sendByEmail: false,
-      errorPolicy: errorPolicyOptions.continue.value,
-    },
-    outputSchema: {
-      type: 'default',
-      properties: {
-        // The four fields SUMIT's own response carries
-        // (`Accounting_Documents_Create_Response`). A later node can reference
-        // any of them as {{nodes.<id>.<field>}} with no extra wiring.
-        documentId: { type: 'number', label: 'מזהה המסמך' },
-        documentNumber: { type: 'number', label: 'מספר המסמך' },
-        customerId: { type: 'number', label: 'מזהה הלקוח' },
-        documentDownloadUrl: { type: 'string', label: 'קישור להורדת המסמך' },
-      },
-    },
-  } satisfies PaletteItem<typeof sumitCreateDocumentSchema>,
+  // Moved to its own folder — see nodes/action-sumit-create-document/.
+  sumitCreateDocumentPaletteItem,
   // Moved to its own folder — see nodes/action-sumit-create-customer/.
   sumitCreateCustomerPaletteItem,
   {

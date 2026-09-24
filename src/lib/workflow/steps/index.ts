@@ -22,7 +22,6 @@ import {
   type KalfaNodeType,
   type MicrosoftMailContentType,
   type MicrosoftMailImportance,
-  SUMIT_DOCUMENT_TYPES,
   AI_AGENT_MAX_TURNS,
   AI_AGENT_MODELS,
 } from '../catalogue/types';
@@ -47,6 +46,8 @@ import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import { notifyTeam } from '../nodes/action-notify-team/runtime';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import { sumitCreateCustomer } from '../nodes/action-sumit-create-customer/runtime';
+import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
+import { sumitCreateDocument } from '../nodes/action-sumit-create-document/runtime';
 import * as webhookDefinition from '../nodes/action-webhook/definition';
 import { webhook } from '../nodes/action-webhook/runtime';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
@@ -1053,81 +1054,6 @@ const microsoftSendEmail: StepHandler = async (config, ctx) => {
   return { output: { accepted: true } };
 };
 
-/**
- * `action.sumit_create_document` — issue an accounting document.
- *
- * ⚠️ NO MONEY MOVES HERE, and the PORT is what guarantees it: `ctx.deps.accounting`
- * exposes document and customer creation only. Authorize, capture and credit are
- * not on it, so this handler could not charge a card even if it tried.
- *
- * ⚠️ AND NOTHING REACHES THE PROVIDER FROM A DRY RUN. The port is swapped for a
- * recording stub (engine/dry-run.ts), so the editor's "הרצת בדיקה" reports what
- * it WOULD issue and the books stay untouched — the owner's explicit decision,
- * 2026-09-22.
- *
- * The item is OPTIONAL: `Accounting_Typed_DocumentItem` is itself optional in the
- * spec and a receipt legitimately carries none. A HALF-filled item is refused
- * rather than sent — SUMIT answers a nameless item with "Missing Item details",
- * and a priced line with no name is never what was meant.
- */
-const sumitCreateDocument: StepHandler = async (config, ctx) => {
-  const documentType = readEnum(
-    config,
-    'documentType',
-    SUMIT_DOCUMENT_TYPES,
-    'action.sumit_create_document',
-  );
-  const customerName = readString(config, 'customerName').trim();
-  if (!customerName) {
-    throw new PermanentNodeExecutionError(
-      'invalid_config',
-      'הצעד "הפקת מסמך ב-SUMIT" חסר שם לקוח.',
-    );
-  }
-
-  const itemName = readString(config, 'itemName').trim();
-  const itemUnitPrice = Number(config.itemUnitPrice);
-  const rawQuantity = Number(config.itemQuantity);
-  const itemQuantity = Number.isFinite(rawQuantity) && rawQuantity > 0 ? rawQuantity : 1;
-  const hasPrice = Number.isFinite(itemUnitPrice) && itemUnitPrice !== 0;
-
-  if (Boolean(itemName) !== hasPrice) {
-    throw new PermanentNodeExecutionError(
-      'invalid_config',
-      'שורת הפריט במסמך חלקית — מלאו גם שם פריט וגם מחיר, או השאירו את שניהם ריקים.',
-    );
-  }
-
-  const optional = (key: string): string | undefined => {
-    const value = readString(config, key).trim();
-    return value ? value : undefined;
-  };
-
-  const result = await ctx.deps.accounting.createDocument({
-    type: documentType,
-    customerName,
-    // Omitted when blank rather than sent as '', so SUMIT never has to tell a
-    // deliberately-empty field from one that resolved to nothing.
-    customerEmail: optional('customerEmail'),
-    customerPhone: optional('customerPhone'),
-    customerExternalId: optional('customerExternalId'),
-    ...(typeof config.customerNoVat === 'boolean'
-      ? { customerNoVat: config.customerNoVat }
-      : {}),
-    ...(itemName && hasPrice
-      ? { items: [{ name: itemName, quantity: itemQuantity, unitPrice: itemUnitPrice }] }
-      : {}),
-    description: optional('documentDescription'),
-    ...(typeof config.isDraft === 'boolean' ? { isDraft: config.isDraft } : {}),
-    ...(typeof config.sendByEmail === 'boolean' ? { sendByEmail: config.sendByEmail } : {}),
-  });
-
-  // Returned WHOLE, so a later node can reference any field as
-  // {{nodes.<id>.documentId}} — the resolver already serves node types nobody
-  // had written when it was built (activity-runner's resolveConfigTemplates).
-  return { output: result };
-};
-
 // ---------------------------------------------------------------------------
 // action.ai_agent — one headless Claude run, as a workflow step
 // ---------------------------------------------------------------------------
@@ -1218,7 +1144,7 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'action.send_template': sendTemplate,
   'action.start_for_each_guest': startForEachGuest,
   [setValueDefinition.type]: setValue,
-  'action.sumit_create_document': sumitCreateDocument,
+  [sumitCreateDocumentDefinition.type]: sumitCreateDocument,
   [sumitCreateCustomerDefinition.type]: sumitCreateCustomer,
   'action.ai_agent': aiAgent,
 };

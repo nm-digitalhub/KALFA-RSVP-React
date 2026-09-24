@@ -17,6 +17,7 @@ import type { RsvpStatus } from '@/lib/constants';
 
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
+import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
 import * as webhookDefinition from '../nodes/action-webhook/definition';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
@@ -50,7 +51,7 @@ export const NODE_TYPES = [
   'action.start_for_each_guest',
   'action.start_voice_call',
   setValueDefinition.type,
-  'action.sumit_create_document',
+  sumitCreateDocumentDefinition.type,
   sumitCreateCustomerDefinition.type,
   'action.ai_agent',
 ] as const;
@@ -865,75 +866,16 @@ export type CreateCallbackRequestConfig = {
 // `nodes/logic-set-value/definition.ts`, re-exported here for existing readers.
 export type SetValueConfig = setValueDefinition.SetValueConfig;
 
-/**
- * `action.sumit_create_document` — issue an accounting document.
- *
- * Every field mirrors a name in swagger.json's `Accounting_Documents_Create_Request`
- * chain; nothing here was invented. The node NEVER carries credentials: the port
- * reads them from `app_settings`, the same reader the close-charge uses.
- *
- * ⚠️ NO MONEY MOVES. This records a document; it does not charge a card. The
- * `Payments[]` array the API also accepts is deliberately NOT exposed — on a
- * receipt it asserts that money was received, and a workflow that can assert
- * that without a charge having happened is a bookkeeping hazard, not a feature.
- */
-export type SumitCreateDocumentConfig = {
-  /** `Accounting_Typed_DocumentType`. See DOCUMENT_TYPES for why the list is narrowed. */
-  documentType: SumitDocumentTypeOption;
-  customerName: string;
-  customerEmail?: string;
-  customerPhone?: string;
-  /** `Customer.ExternalIdentifier` — the anchor that ties the document back to us. */
-  customerExternalId?: string;
-  /** `Customer.NoVAT` — spec: "Set to true for VAT exempt customers". */
-  customerNoVat?: boolean;
-  itemName?: string;
-  itemQuantity?: number;
-  itemUnitPrice?: number;
-  /**
-   * `Details.Description` — printed on the document.
-   *
-   * NOT named `description`: every node already carries its own `description`
-   * (the caption the owner reads on the canvas), and one object cannot hold
-   * both. The document's text is the one that gets the qualified name, because
-   * the node-level field is shared by all 21 node types.
-   */
-  documentDescription?: string;
-  /** `Details.IsDraft` — spec: "Leave empty for final document". */
-  isDraft?: boolean;
-  /** `Details.SendByEmail`. */
-  sendByEmail?: boolean;
-};
+// `action.sumit_create_document` — declared with the rest of its contract (and
+// with `SUMIT_DOCUMENT_TYPES`, which only it reads) in
+// `nodes/action-sumit-create-document/definition.ts`, re-exported here for
+// existing readers.
+export type SumitCreateDocumentConfig = sumitCreateDocumentDefinition.SumitCreateDocumentConfig;
 
 // `action.sumit_create_customer` — declared with the rest of its contract in
 // `nodes/action-sumit-create-customer/definition.ts`, re-exported here for
 // existing readers.
 export type SumitCreateCustomerConfig = sumitCreateCustomerDefinition.SumitCreateCustomerConfig;
-
-/**
- * The document types this node may issue.
- *
- * NARROWER than the API's 23-value enum, and narrower on purpose twice over:
- *
- *   • Expense and supplier documents describe something WE bought. An outgoing
- *     automation has no business writing one.
- *   • `Invoice` / `InvoiceAndReceipt` are חשבונית מס, which an עוסק פטור may
- *     not issue (the business's status — see the tax notes on close-charge).
- *     They are absent so the editor cannot offer them, rather than present with
- *     a warning nobody reads.
- *
- * `Receipt` (קבלה) is the document this business actually issues.
- */
-export const SUMIT_DOCUMENT_TYPES = [
-  'Receipt',
-  'ProformaInvoice',
-  'PriceQuotation',
-  'PaymentRequest',
-  'Order',
-  'DeliveryNote',
-  'CreditReceipt',
-] as const;
-export type SumitDocumentTypeOption = (typeof SUMIT_DOCUMENT_TYPES)[number];
 
 // The discriminated union the step handlers narrow on. `BaseNode.config` in the
 // vendored runner is `unknown`; this is the vocabulary we give it.
@@ -959,7 +901,7 @@ export type KalfaNodeConfig =
   | { type: 'action.send_template'; config: SendTemplateConfig }
   | { type: 'action.start_for_each_guest'; config: ForEachGuestConfig }
   | { type: typeof setValueDefinition.type; config: SetValueConfig }
-  | { type: 'action.sumit_create_document'; config: SumitCreateDocumentConfig }
+  | { type: typeof sumitCreateDocumentDefinition.type; config: SumitCreateDocumentConfig }
   | { type: typeof sumitCreateCustomerDefinition.type; config: SumitCreateCustomerConfig };
 
 /**
@@ -1132,7 +1074,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   // Both SUMIT ids point INTO this installation: they are our own reference for
   // a customer, so a diagram carrying one would reach for a record that does not
   // exist anywhere else.
-  'action.sumit_create_document': { customerExternalId: 'identifier' },
+  [sumitCreateDocumentDefinition.type]: sumitCreateDocumentDefinition.deploymentBindings,
   [sumitCreateCustomerDefinition.type]: sumitCreateCustomerDefinition.deploymentBindings,
   'action.start_voice_call': {
     purposeKey: 'catalogue',
@@ -1180,9 +1122,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   'action.import_guest_list': ['label', 'description'],
   'action.start_for_each_guest': ['label', 'description', 'targetWorkflowId', 'maxGuests'],
   'action.start_voice_call': ['label', 'description', 'purposeKey'],
-  // documentType + a customer name are the minimum SUMIT itself requires
-  // (`Details.Type`, and `Customer.Name` "Required for creating a new customer").
-  'action.sumit_create_document': ['label', 'description', 'documentType', 'customerName'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [sumitCreateDocumentDefinition.type]: sumitCreateDocumentDefinition.requiredFields,
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [sumitCreateCustomerDefinition.type]: sumitCreateCustomerDefinition.requiredFields,
