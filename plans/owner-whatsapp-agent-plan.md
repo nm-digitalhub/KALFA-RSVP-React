@@ -653,6 +653,17 @@ if (!enabled || !config?.appSecret) {
 - הודעה אחת מטלפון מורשה: שורת audit עם `gated`/`kill_switch_off`, ואין שורה ב-`webhook_inbox` עם ה-wamid שלה.
 - הודעה אחת מטלפון שאינו ברשימה, לאותו מספר: אין שורת audit. כשהמתג דלוק, נוצרת שורה ב-`webhook_inbox` בדיוק כמו היום. כשהוא כבוי, לא נוצר כלום.
 
+**סטטוס: ✅ בקוד, 24.9.2026** (commit `91b1d46`, ענף `owner-agent-stage4`). **לא נפרס. חוסם פריסה: ראו "מצב חי" למטה.**
+- **קבצים:** `src/lib/owner-agent/intake.ts` (חדש), `src/app/api/webhooks/whatsapp/route.ts`, `src/lib/queue/queues.ts` (הצהרת תור בלבד), `src/app/(admin)/admin/integrations/owner-agent/page.tsx`, בדיקות, ו-`docs/routes-webhooks.md` + `docs/admin-webhooks-runbook.md` + `docs/project/09-admin-panel.md`. אין נגיעה ב-`worker/` או ב-`src/lib/workflow`.
+- **כלל ההסטה, מחמיר מ-2.2:** `'+' + from` חייב להיות כבר ה-E.164 התקין (`normalizePhone` מחזיר אותו בלי שינוי) ושווה בדיוק לרשומה. נמדד ש-`normalizePhone('+9720508412345')` מחזיר `+972508412345` (הסרת 0), ולכן גם זה נחסם. החמרה רק מקטינה הסטה.
+- **קריאת הניתוב:** `getOwnerAgentRouting()` קוראת 3 עמודות, ואת רשימת ההיתר (רק `enabled`) רק כשיש מספר. אין רשומה פעילה → null, ולכן במצב כבוי הגוף לא נקרא. שגיאה → null (המסלול של היום) + התראת Slack אחת עם מזהים בלבד (`source: owner-agent`). **חריגה מכוונת אחת מ"זהה בייט לבייט":** ההתראה הזו נשלחת גם כשהפיצ'ר לא מוגדר אם קריאת `app_settings` נכשלת.
+- **תור:** `QUEUES.ownerAgentReply` (`owner-agent-reply`), payload `{ intakeId }` בלבד, id `deterministicJobId(wamid)`. לולאת `createQueue` הקיימת ב-worker יוצרת אותו באתחול, בלי שינוי ב-worker. **אין צרכן.**
+- **שורת audit אחת לכל הודעה מוסטת:** `gated/<קוד>`, `duplicate`, `intake_queued`, או `failed/db_error` / `failed/enqueue_failed`. `non_text` מסתיים ב-audit בלבד; ה-job של "תשובה קבועה" (3.1) נדחה לשלב 6, כי צריך לו צרכן.
+- **מטריצת golden:** 19 fixtures × 24 תצורות (outreach × מספר × מתג × שגיאת DB: אין / `app_settings` / רשימה), כל אחת מול אותו fixture כשהפיצ'ר לא מוגדר. כולל גופים חתומים `null`, `[]`, `"x"` ו-`changes: 5`, שבהם הסדר של היום (מעטפה ואז חריגה) נשמר. התראות מחולקות לפי `source`: של ה-webhook זהות בדיוק, של הסוכן 1 רק בתא של קריאה שנכשלה. הזרקת 5 תקלות (נרמול IL, בלי סינון `enabled`, השמטת מעטפה במעורבת, תכנון שזורק על `null`, התראה על חתימה במצב כבוי) הכשילה כל אחת את המטריצה; הקבצים שוחזרו מ-`.bak` ונבדקו ב-`cmp`.
+- **שערים:** `tsc` 0; `lint` 0; `worker:deps` בלי הפרות; ממוקדות 1027/1027; `npm test` מלא: 8065 עברו, 5 נכשלו (חמשת הידועים ב-worktree). `next build` לא הורץ, לפי ההנחיה.
+- **מצב חי (שאילתת קריאה, 24.9, בלי ערכים):** `owner_agent_phone_number_id` **אינו null** (זה מספר הייבוא, `whatsapp_import_sender`, לא מספר ה-RSVP); `owner_agent_enabled` **דלוק**; שורה פעילה אחת ברשימה, איש צוות, תואמת לטלפון המאומת; 0 שורות intake ו-audit. **המשמעות: מרגע הפריסה, כל הודעה מהטלפון הזה למספר הייבוא מוסטת.** טקסט עובר את השער, נשמר עם השאלה ונכנס לתור בלי צרכן. כרטיס איש קשר או מדיה נחסמים כ-`non_text`, **ולא מגיעים לייבוא האורחים** (החלטה 9.15). **לפני פריסה:** הבעלים מנקה את המספר (או מכבה את הרשומה) ב-`/admin/integrations/owner-agent`, בהתאם לצעד 3.
+- **מגבלות ידועות:** עד שה-worker מופעל מחדש התור לא קיים, ו-`send` נכשל (`failed/enqueue_failed` + התראה; שורת ה-intake נשארת `queued` בלי job). jobs שנכנסים לפני שלב 6 ממתינים בתור; תשובה אליהם אחרי 24 שעות תיכשל ב-131047 (2.4). מגבלת הקצב לפי תהליך.
+
 **שלב 5: ליבות וכלים לקריאה בלבד, בלי מודל.**
 - חילוץ ליבות שלא תלויות בבקשה. העטיפות הקיימות קוראות להן.
 - 9 כלים עם `createTool`: `inputSchema` שהוא enum בלבד, ו-`outputSchema` של מספרים בלבד.
