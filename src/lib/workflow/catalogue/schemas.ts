@@ -59,6 +59,7 @@ import {
   type MicrosoftConnectionOption,
 } from '../nodes/action-microsoft-send-email/schema';
 import { notifyTeamPaletteItem } from '../nodes/action-notify-team/action-notify-team';
+import { sendTemplatePaletteItem } from '../nodes/action-send-template/action-send-template';
 import { sendWhatsappPaletteItem } from '../nodes/action-send-whatsapp/action-send-whatsapp';
 import { setGuestFieldPaletteItem } from '../nodes/action-set-guest-field/action-set-guest-field';
 import { sumitCreateCustomerPaletteItem } from '../nodes/action-sumit-create-customer/action-sumit-create-customer';
@@ -648,67 +649,18 @@ const scheduleUiSchema: UISchema = {
 
 
 // ---------------------------------------------------------------------------
-// action.send_template  ·  action.start_for_each_guest
+// action.send_template
 // ---------------------------------------------------------------------------
 
-// The message keys, NOT the Meta template names. A key resolves per event type
-// and per language through `message_templates`, so one key sends the approved
-// brit layout at a brit and the approved wedding one at a wedding.
-//
-// ⚠️ THE LABELS SAY WHICH ARE MARKETING. That is not decoration: a MARKETING
-// template is subject to the consent gate (currently off, by the owner's
-// decision) and routes through MM Lite, and an owner choosing one should know
-// they are in a different regime from a reminder.
-const templateKeyOptions = [
-  { value: 'invite', label: 'הזמנה' },
-  { value: 'reminder_1', label: 'תזכורת ראשונה' },
-  { value: 'reminder_2', label: 'תזכורת שנייה' },
-  { value: 'final', label: 'הודעה אחרונה לפני האירוע' },
-  { value: 'event_day_pay', label: 'תשלום ביום האירוע' },
-  { value: 'thankyou', label: 'תודה אחרי האירוע (שיווקי)' },
-  { value: 'gift', label: 'מתנה (שיווקי)' },
-] as const;
+// Its schema, uischema and palette entry live in `nodes/action-send-template/`,
+// and the message keys it offers in that folder's `definition.ts`. The bare keys
+// are re-exported for the export check (`export-diagram.tsx`), which reads them
+// from here.
+export { TEMPLATE_KEYS } from '../nodes/action-send-template/definition';
 
-/**
- * The same seven, as bare keys.
- *
- * DERIVED, never re-typed: the portability layer asks "does this key exist
- * wherever the workflow lands", and a second hand-written copy could answer yes
- * for a key the form no longer offers.
- */
-export const TEMPLATE_KEYS: readonly string[] = templateKeyOptions.map((o) => o.value);
-
-const sendTemplateSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['action.send_template'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    messageKey: { ...requiredText, options: templateKeyOptions.map((o) => ({ ...o })) },
-  },
-} satisfies NodeSchema;
-
-const sendTemplateScope = getScope<typeof sendTemplateSchema>;
-
-const sendTemplateUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(sendTemplateScope('properties.label'), sendTemplateScope('properties.description')),
-    { type: 'Select', scope: sendTemplateScope('properties.messageKey'), label: 'איזו תבנית' },
-    {
-      // The distinction that decides which of the two send nodes to use, said
-      // plainly — it is not visible from the canvas and gets discovered the hard
-      // way otherwise.
-      type: 'Label',
-      text: 'תבנית אפשר לשלוח בכל זמן. "שליחת וואטסאפ" (טקסט חופשי) מותרת רק עד 24 שעות אחרי שהאורח כתב — לכן תהליך שמתחיל לפי שעון חייב תבנית.',
-    },
-    {
-      type: 'Label',
-      text: 'הטקסט עצמו מגיע מהתבנית המאושרת ולא נערך כאן. אורח שביקש הסרה לא יקבל.',
-    },
-    statusControl(sendTemplateScope('properties.status')),
-  ],
-};
+// ---------------------------------------------------------------------------
+// action.start_for_each_guest
+// ---------------------------------------------------------------------------
 
 const forEachGuestSchema = {
   type: 'object',
@@ -1677,27 +1629,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       unit: waitUnitOptions.days.value,
     },
   } satisfies PaletteItem<typeof waitSchema>,
-  {
-    type: 'action.send_template' satisfies KalfaNodeType,
-    label: 'שליחת תבנית',
-    description: 'שולח לאורח תבנית מאושרת — אפשרי בכל זמן',
-    icon: 'ChatCircleText',
-    schema: sendTemplateSchema,
-    uischema: sendTemplateUiSchema,
-    outputSchema: {
-      type: 'default',
-      properties: {
-        sent: { type: 'boolean', label: 'נשלח' },
-        reason: { type: 'string', label: 'למה לא נשלח' },
-      },
-    },
-    defaultPropertiesData: {
-      status: nodeStatusOptions.active.value,
-      label: 'שליחת תבנית',
-      description: 'שולח לאורח תבנית מאושרת — אפשרי בכל זמן',
-      messageKey: 'reminder_1',
-    },
-  } satisfies PaletteItem<typeof sendTemplateSchema>,
+  // Moved to its own folder — see nodes/action-send-template/.
+  sendTemplatePaletteItem,
   {
     type: 'action.start_for_each_guest' satisfies KalfaNodeType,
     // Decision node so a failure has a handle to leave from — a fan-out that

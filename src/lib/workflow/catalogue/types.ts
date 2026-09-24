@@ -19,6 +19,7 @@ import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
 import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
+import * as sendTemplateDefinition from '../nodes/action-send-template/definition';
 import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
@@ -53,7 +54,7 @@ export const NODE_TYPES = [
   callbackRequestDefinition.type,
   'action.import_guest_list',
   'logic.wait',
-  'action.send_template',
+  sendTemplateDefinition.type,
   'action.start_for_each_guest',
   'action.start_voice_call',
   setValueDefinition.type,
@@ -196,26 +197,6 @@ export type WaitUnitValue = (typeof WAIT_UNIT_VALUES)[number];
  * REQUIRED with no generous default, and the dry run prints the number before
  * anything is armed.
  */
-/**
- * `action.send_template` — an APPROVED WhatsApp template to the run's guest.
- *
- * THE COMPANION TO `action.send_whatsapp`, not a replacement, and the difference
- * is what WhatsApp permits:
- *
- *   `send_whatsapp` sends FREE TEXT, allowed only inside the 24-hour window a
- *     guest's own message opens. Right for answering someone who just wrote.
- *
- *   this sends a TEMPLATE, allowed at any time — so it is the only thing a
- *     workflow started by a clock can actually deliver.
- *
- * `messageKey` names a row in `message_templates`, never a Meta template name:
- * the row carries the approved name per language and per event type, so a brit
- * and a wedding resolve to different approved layouts from the same key.
- */
-export type SendTemplateConfig = {
-  messageKey: string;
-};
-
 export const GUEST_FILTER_STATUSES = ['pending', 'attending', 'declined', 'maybe'] as const;
 export type GuestFilterStatus = (typeof GUEST_FILTER_STATUSES)[number];
 
@@ -599,6 +580,12 @@ void _rsvpStatusMatchesTheDefinition;
 // readers.
 export type SendWhatsappConfig = sendWhatsappDefinition.SendWhatsappConfig;
 
+// `action.send_template` — its config and the message keys it offers are
+// declared with the rest of its contract in
+// `nodes/action-send-template/definition.ts`. The config type is re-exported
+// here for existing readers.
+export type SendTemplateConfig = sendTemplateDefinition.SendTemplateConfig;
+
 // `action.microsoft_send_email` — its config, and the content-type and importance
 // values only it reads, are declared with the rest of its contract in
 // `nodes/action-microsoft-send-email/definition.ts`, re-exported here for
@@ -777,7 +764,7 @@ export type KalfaNodeConfig =
   | { type: typeof callbackRequestDefinition.type; config: CreateCallbackRequestConfig }
   | { type: 'action.import_guest_list'; config: ImportGuestListConfig }
   | { type: 'logic.wait'; config: WaitConfig }
-  | { type: 'action.send_template'; config: SendTemplateConfig }
+  | { type: typeof sendTemplateDefinition.type; config: SendTemplateConfig }
   | { type: 'action.start_for_each_guest'; config: ForEachGuestConfig }
   | { type: typeof setValueDefinition.type; config: SetValueConfig }
   | { type: typeof sumitCreateDocumentDefinition.type; config: SumitCreateDocumentConfig }
@@ -937,7 +924,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   // The same reasoning: a hash that authenticates to THIS installation only.
   'trigger.sumit_card': { tokenHash: 'identifier' },
   [microsoftSendEmailDefinition.type]: microsoftSendEmailDefinition.deploymentBindings,
-  'action.send_template': { messageKey: 'catalogue' },
+  [sendTemplateDefinition.type]: sendTemplateDefinition.deploymentBindings,
   [callbackRequestDefinition.type]: callbackRequestDefinition.deploymentBindings,
   'action.start_for_each_guest': { targetWorkflowId: 'identifier' },
   [webhookDefinition.type]: webhookDefinition.deploymentBindings,
@@ -988,7 +975,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [microsoftSendEmailDefinition.type]: microsoftSendEmailDefinition.requiredFields,
-  'action.send_template': ['label', 'description', 'messageKey'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [sendTemplateDefinition.type]: sendTemplateDefinition.requiredFields,
   'action.start_rsvp_ai_callback': ['label', 'description'],
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
@@ -1053,7 +1042,7 @@ export const ARM_NOTICE_PATH = '/armNotice';
 export const GUEST_SCOPED_NODE_TYPES: readonly KalfaNodeType[] = [
   updateGuestStatusDefinition.type,
   sendWhatsappDefinition.type,
-  'action.send_template',
+  sendTemplateDefinition.type,
   setGuestFieldDefinition.type,
   callbackRequestDefinition.type,
   'action.start_voice_call',

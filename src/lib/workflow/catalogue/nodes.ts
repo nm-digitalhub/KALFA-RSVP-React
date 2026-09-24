@@ -15,6 +15,7 @@ import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
 import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
+import * as sendTemplateDefinition from '../nodes/action-send-template/definition';
 import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
@@ -44,7 +45,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: callbackRequestDefinition.type, isTrigger: callbackRequestDefinition.isTrigger },
   { type: 'action.import_guest_list', isTrigger: false },
   { type: 'logic.wait', isTrigger: false },
-  { type: 'action.send_template', isTrigger: false },
+  { type: sendTemplateDefinition.type, isTrigger: sendTemplateDefinition.isTrigger },
   { type: 'action.start_for_each_guest', isTrigger: false },
   { type: 'action.start_voice_call', isTrigger: false },
   { type: setValueDefinition.type, isTrigger: setValueDefinition.isTrigger },

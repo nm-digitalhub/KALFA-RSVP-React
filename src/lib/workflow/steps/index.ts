@@ -37,6 +37,8 @@ import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-em
 import { microsoftSendEmail } from '../nodes/action-microsoft-send-email/runtime';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import { notifyTeam } from '../nodes/action-notify-team/runtime';
+import * as sendTemplateDefinition from '../nodes/action-send-template/definition';
+import { sendTemplate } from '../nodes/action-send-template/runtime';
 import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definition';
 import { sendWhatsapp } from '../nodes/action-send-whatsapp/runtime';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
@@ -709,50 +711,6 @@ const startForEachGuest: StepHandler = async (config, ctx) => {
 };
 
 
-// ---------------------------------------------------------------------------
-// action.send_template
-// ---------------------------------------------------------------------------
-
-// An APPROVED WhatsApp template to this run's guest.
-//
-// ⚠️ THE COMPANION TO `action.send_whatsapp`, and the reason both exist. Free
-// text may be sent only inside the 24-hour window a guest's own message opens —
-// perfect for answering someone who just wrote, and useless for reaching someone
-// who did not. A template may be sent at any time, so this is the ONLY send a
-// workflow started by a clock can actually deliver.
-//
-// Every Meta and consent rule is the campaign path's, reused rather than copied:
-// see template-send.ts.
-//
-// A REFUSAL IS A COMPLETED STEP, not the error branch, whenever the system
-// behaved correctly — an opted-out guest, a template not approved for this event
-// type, a household with no phone. Routing those to the failure path would send
-// a workflow down an error route because the rules worked.
-const sendTemplate: StepHandler = async (config, ctx) => {
-  const port = ctx.deps.guests.sendWhatsAppTemplate;
-  if (!port) {
-    throw new PermanentNodeExecutionError(
-      'capability_unavailable',
-      'הפעולה "שליחת תבנית" אינה זמינה בסביבה הזו.',
-    );
-  }
-
-  const messageKey = readString(config, 'messageKey').trim();
-  if (messageKey === '') {
-    throw new PermanentNodeExecutionError(
-      'invalid_config',
-      'הצעד "שליחת תבנית" לא הוגדר עם תבנית לשליחה.',
-    );
-  }
-
-  const { eventId, contactId } = requireGuestContext(ctx, 'action.send_template');
-  const result = await port({ eventId, contactId, messageKey });
-
-  return result.ok
-    ? { output: { sent: true, messageKey } }
-    : { output: { sent: false, skipped: true, reason: result.reason ?? 'send_failed' } };
-};
-
 export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'trigger.whatsapp_inbound': whatsappInbound,
   'trigger.webhook': webhookTrigger,
@@ -771,7 +729,7 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   [callbackRequestDefinition.type]: createCallbackRequest,
   'action.import_guest_list': importGuestList,
   'logic.wait': waitNode,
-  'action.send_template': sendTemplate,
+  [sendTemplateDefinition.type]: sendTemplate,
   'action.start_for_each_guest': startForEachGuest,
   [setValueDefinition.type]: setValue,
   [sumitCreateDocumentDefinition.type]: sumitCreateDocument,
