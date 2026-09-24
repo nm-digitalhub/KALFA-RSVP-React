@@ -15,6 +15,7 @@
 // folder's editor files.
 import type { RsvpStatus } from '@/lib/constants';
 
+import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
@@ -39,7 +40,7 @@ export const NODE_TYPES = [
   switchDefinition.type,
   'action.update_guest_status',
   'action.send_whatsapp',
-  'action.microsoft_send_email',
+  microsoftSendEmailDefinition.type,
   'action.start_rsvp_ai_callback',
   notifyTeamDefinition.type,
   webhookDefinition.type,
@@ -586,61 +587,11 @@ export type SendWhatsappConfig = {
   body: string;
 };
 
-/**
- * How Graph is told to read the body. Graph's own default is `Text`, which is
- * exactly what every diagram saved before this field existed meant — so an
- * absent value and an explicit `Text` produce the same mail.
- */
-export const MICROSOFT_MAIL_CONTENT_TYPES = ['Text', 'HTML'] as const;
-export type MicrosoftMailContentType = (typeof MICROSOFT_MAIL_CONTENT_TYPES)[number];
-
-/** Graph's own `message.importance`. `normal` is its default, for the same reason. */
-export const MICROSOFT_MAIL_IMPORTANCES = ['low', 'normal', 'high'] as const;
-export type MicrosoftMailImportance = (typeof MICROSOFT_MAIL_IMPORTANCES)[number];
-
-/**
- * Sends an email through a KALFA-managed Microsoft 365 connection.
- *
- * The workflow stores the connection identifier and message data only.
- * OAuth access/refresh tokens and client secrets never belong to diagram JSON.
- *
- * ⚠️ ONLY `connectionId`, `to`, `subject` AND `body` ARE REQUIRED, and the split
- * is deliberate: `NODE_REQUIRED_FIELDS` is the ARMING contract — what a step
- * cannot run without — while everything else here is an option the editor offers
- * and the transport defaults. A diagram saved before these fields existed
- * carries none of them and keeps sending exactly the mail it always did,
- * because every default below is Graph's own.
- *
- * ⚠️ `to` IS ONE ADDRESS; `cc`, `bcc` AND `replyTo` ARE LISTS. That asymmetry is
- * a decision, not an oversight (2026-09-17). Widening the primary recipient from
- * one address to many changes what an existing node means at run time, and it
- * deserves its own change with its own test rather than arriving as a side
- * effect of adding carbon copies. The three new fields are stored as one string
- * each and split on `,` or `;` by the transport — neither character can appear
- * in a legal address, so nothing that parsed as one address stops doing so.
- *
- * Addresses are not validated HERE, and that follows the rule every other field
- * follows: `resolveConfigTemplates` rewrites `{{trigger.…}}` before the handler
- * ever sees the config, so at save time a field may legitimately look like
- * nothing at all. The shape check belongs at the transport, where the value is
- * final.
- */
-export type MicrosoftSendEmailConfig = {
-  connectionId: string;
-  /** One address. See the note above for why this one is not a list. */
-  to: string;
-  /** Zero or more addresses, separated by `,` or `;`. */
-  cc?: string;
-  /** Zero or more addresses, separated by `,` or `;`. */
-  bcc?: string;
-  /** Zero or more addresses, separated by `,` or `;`. */
-  replyTo?: string;
-  subject: string;
-  body: string;
-  contentType?: MicrosoftMailContentType;
-  importance?: MicrosoftMailImportance;
-  saveToSentItems?: boolean;
-};
+// `action.microsoft_send_email` — its config, and the content-type and importance
+// values only it reads, are declared with the rest of its contract in
+// `nodes/action-microsoft-send-email/definition.ts`, re-exported here for
+// existing readers.
+export type MicrosoftSendEmailConfig = microsoftSendEmailDefinition.MicrosoftSendEmailConfig;
 
 // Starts the existing RSVP voice agent through KALFA's production dispatcher.
 // Agent/provider/model/knowledge configuration deliberately lives outside the diagram.
@@ -889,7 +840,7 @@ export type KalfaNodeConfig =
   | { type: typeof switchDefinition.type; config: SwitchConfig }
   | { type: 'action.update_guest_status'; config: UpdateGuestStatusConfig }
   | { type: 'action.send_whatsapp'; config: SendWhatsappConfig }
-  | { type: 'action.microsoft_send_email'; config: MicrosoftSendEmailConfig }
+  | { type: typeof microsoftSendEmailDefinition.type; config: MicrosoftSendEmailConfig }
   | { type: 'action.start_rsvp_ai_callback'; config: StartRsvpAiCallbackConfig }
   | { type: 'action.start_voice_call'; config: StartVoiceCallConfig }
   | { type: typeof notifyTeamDefinition.type; config: NotifyTeamConfig }
@@ -1054,7 +1005,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   'trigger.webhook': { endpointId: 'identifier', tokenHash: 'identifier' },
   // The same reasoning: a hash that authenticates to THIS installation only.
   'trigger.sumit_card': { tokenHash: 'identifier' },
-  'action.microsoft_send_email': { connectionId: 'identifier' },
+  [microsoftSendEmailDefinition.type]: microsoftSendEmailDefinition.deploymentBindings,
   'action.send_template': { messageKey: 'catalogue' },
   'action.create_callback_request': { topic: 'catalogue' },
   'action.start_for_each_guest': { targetWorkflowId: 'identifier' },
@@ -1108,7 +1059,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   [setValueDefinition.type]: setValueDefinition.requiredFields,
   'action.update_guest_status': ['label', 'description', 'rsvpStatus'],
   'action.send_whatsapp': ['label', 'description', 'body'],
-  'action.microsoft_send_email': ['label', 'description', 'connectionId', 'to', 'subject', 'body'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [microsoftSendEmailDefinition.type]: microsoftSendEmailDefinition.requiredFields,
   'action.send_template': ['label', 'description', 'messageKey'],
   'action.start_rsvp_ai_callback': ['label', 'description'],
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts

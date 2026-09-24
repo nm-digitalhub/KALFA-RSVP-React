@@ -1,6 +1,7 @@
 import type { PaletteItem } from "@workflowbuilder/sdk";
 
 import { RSVP_STATUSES } from "@/lib/constants";
+import * as microsoftSendEmailDefinition from "@/lib/workflow/nodes/action-microsoft-send-email/definition";
 
 // A stored value in a shape the schema no longer accepts, repaired on the way in.
 //
@@ -116,7 +117,8 @@ function normalizeEntries(value: unknown): unknown {
  * So a node saved before these fields existed keeps its old shape forever, and
  * the editor and the runtime then disagree about it. Measured in the bundle:
  * the Switch renderer is `checked: data ?? false` and the Select renderer is
- * `value: data ?? null`, while `steps/index.ts` reads
+ * `value: data ?? null`, while the handler
+ * (`nodes/action-microsoft-send-email/runtime.ts`) reads
  * `typeof config.saveToSentItems === 'boolean' ? … : true`. The panel therefore
  * shows "off" for a message the runtime does save — the UI stating the opposite
  * of what happens.
@@ -180,7 +182,7 @@ export function normalizeLegacyProperties<T extends { data?: { type?: unknown; p
         : undefined;
 
     const microsoftMail =
-      type === "action.microsoft_send_email"
+      type === microsoftSendEmailDefinition.type
         ? microsoftMailBackfill(properties)
         : undefined;
 

@@ -11,6 +11,7 @@
 // plans/node-folders-file-matrix.md), then one entry here, in `NODE_TYPES`,
 // `NODE_REQUIRED_FIELDS`, `PALETTE_ITEMS` and `STEP_HANDLERS`, each read from
 // the definition. No adapter changes.
+import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
@@ -30,7 +31,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: switchDefinition.type, isTrigger: switchDefinition.isTrigger },
   { type: 'action.update_guest_status', isTrigger: false },
   { type: 'action.send_whatsapp', isTrigger: false },
-  { type: 'action.microsoft_send_email', isTrigger: false },
+  { type: microsoftSendEmailDefinition.type, isTrigger: microsoftSendEmailDefinition.isTrigger },
   { type: 'action.start_rsvp_ai_callback', isTrigger: false },
   { type: notifyTeamDefinition.type, isTrigger: notifyTeamDefinition.isTrigger },
   { type: webhookDefinition.type, isTrigger: webhookDefinition.isTrigger },

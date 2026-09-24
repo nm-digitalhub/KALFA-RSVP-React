@@ -8,7 +8,6 @@
 // once rather than in every handler.
 import { RSVP_STATUSES, type RsvpStatus } from '@/lib/constants';
 import { SUMIT_HOLDS_FOLDER_ID, sumitHoldCurrencyLabel, sumitHoldStatusLabel } from '@/lib/sumit/hold-status';
-import { readIntegrationRuntimeError } from '@/lib/integrations/errors';
 
 import { toBusinessOutcome } from '../voice-outcome';
 
@@ -20,16 +19,11 @@ import {
   MAX_FANOUT_DEPTH,
   SALES_CALLBACK_TOPIC,
   type KalfaNodeType,
-  type MicrosoftMailContentType,
-  type MicrosoftMailImportance,
   AI_AGENT_MAX_TURNS,
   AI_AGENT_MODELS,
 } from '../catalogue/types';
 
-import {
-  PermanentNodeExecutionError,
-  TransientNodeExecutionError,
-} from '../vendor/workflowbuilder/execution-core/errors';
+import { PermanentNodeExecutionError } from '../vendor/workflowbuilder/execution-core/errors';
 
 // The shared step contract lives in ./shared so node runtimes can import it
 // without importing this registry. Re-exported for every existing caller.
@@ -42,6 +36,8 @@ import {
   type WorkflowTriggerPayload,
 } from './shared';
 import { WorkflowWaitSignal } from '../engine/wait-signal';
+import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
+import { microsoftSendEmail } from '../nodes/action-microsoft-send-email/runtime';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import { notifyTeam } from '../nodes/action-notify-team/runtime';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
@@ -986,74 +982,6 @@ const sendTemplate: StepHandler = async (config, ctx) => {
     : { output: { sent: false, skipped: true, reason: result.reason ?? 'send_failed' } };
 };
 
-const microsoftSendEmail: StepHandler = async (config, ctx) => {
-  const connectionId = readString(config, 'connectionId').trim();
-  const to = readString(config, 'to').trim();
-  const cc = readString(config, 'cc').trim();
-  const bcc = readString(config, 'bcc').trim();
-  const replyTo = readString(config, 'replyTo').trim();
-  const subject = readString(config, 'subject').trim();
-  const body = readString(config, 'body');
-
-  // Narrowed here rather than passed through, so a jsonb row holding a number,
-  // a null or a value from a newer version cannot reach the transport. Each
-  // fallback is Graph's own default, which is what an absent field has always
-  // meant.
-  const contentType: MicrosoftMailContentType =
-    readString(config, 'contentType').trim() === 'HTML' ? 'HTML' : 'Text';
-
-  const rawImportance = readString(config, 'importance').trim();
-  const importance: MicrosoftMailImportance =
-    rawImportance === 'high' || rawImportance === 'low' ? rawImportance : 'normal';
-
-  const saveToSentItems =
-    typeof config.saveToSentItems === 'boolean' ? config.saveToSentItems : true;
-
-  // The same four fields as before. `cc`, `bcc` and `replyTo` are deliberately
-  // NOT required: a mail with no carbon copy is an ordinary mail.
-  if (!connectionId || !to || !subject || !body.trim()) {
-    throw new PermanentNodeExecutionError(
-      'invalid_config',
-      'הצעד "שליחת דוא״ל ב-Microsoft 365" חסר חיבור, נמען, נושא או תוכן.',
-    );
-  }
-
-  try {
-    await ctx.deps.integrations.execute({
-      provider: 'microsoft',
-      connectionId,
-      capability: 'mail.send',
-      // The optional ADDRESS fields are omitted when empty rather than sent as
-      // '', so the transport never has to tell "no carbon copy" apart from
-      // "a carbon copy that resolved to nothing".
-      input: {
-        to,
-        ...(cc ? { cc } : {}),
-        ...(bcc ? { bcc } : {}),
-        ...(replyTo ? { replyTo } : {}),
-        subject,
-        body,
-        contentType,
-        importance,
-        saveToSentItems,
-      },
-    });
-  } catch (error) {
-    const integrationError = readIntegrationRuntimeError(error);
-    if (!integrationError) throw error;
-
-    const ErrorType =
-      integrationError.classification === 'transient'
-        ? TransientNodeExecutionError
-        : PermanentNodeExecutionError;
-    throw new ErrorType(integrationError.code, integrationError.message, { cause: error });
-  }
-
-  // Microsoft Graph sendMail returns 202 with no response body. `accepted` means
-  // Graph accepted the request; it is deliberately not a delivery receipt.
-  return { output: { accepted: true } };
-};
-
 // ---------------------------------------------------------------------------
 // action.ai_agent — one headless Claude run, as a workflow step
 // ---------------------------------------------------------------------------
@@ -1132,7 +1060,7 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   [switchDefinition.type]: switchNode,
   'action.update_guest_status': updateGuestStatus,
   'action.send_whatsapp': sendWhatsapp,
-  'action.microsoft_send_email': microsoftSendEmail,
+  [microsoftSendEmailDefinition.type]: microsoftSendEmail,
   'action.start_rsvp_ai_callback': startRsvpAiCallback,
   'action.start_voice_call': startVoiceCall,
   [notifyTeamDefinition.type]: notifyTeam,
