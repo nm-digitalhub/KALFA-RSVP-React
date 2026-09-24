@@ -651,6 +651,25 @@ if (!enabled || !config?.appSecret) {
 - השוואה ידנית מול דפי `/admin`;
 - בדיקה שאין אף שדה טקסט בתוצאה.
 
+**סטטוס: ✅ בקוד, 24.9.2026** (commits `61a7f78` ליבות 5a, `b5435dc` ליבות 5b, `58b0cef` כלים 5c, בענף `feat/admin-integrations-consolidation`). שום דבר עדיין לא מחובר למשהו שרץ: אין מודל, אין `Agent`, אין צרכן pg-boss, ואין שינוי ב-`route.ts`, ב-worker או ב-`src/lib/workflow`.
+- **מבנה:**
+  - `src/lib/owner-agent/range.ts`: ה-enum (`today`, `7d`, `30d`). `today` מתחיל בחצות בשעון ישראל (`todayIL` + `ilWallTimeToIso`), ו-`7d`/`30d` הם חלונות מתגלגלים של 7×24 ו-30×24 שעות, כמו אריחי `/admin/voice`.
+  - `src/lib/owner-agent/cores/<name>.ts`: ליבה לכל כלי, `(client, range, nowMs)`. היא מקבלת admin client ומחזירה מספרים בלבד, בספירות `head: true` ב-DB. שגיאה נזרקת, כדי שלא יגיע לבעלים 0 בטוח-בעצמו. `web-traffic` מקבלת רק `range`, כי המקור הוא GA4 (דרך `src/lib/analytics/ga4-dashboard.ts`, אותו cache ואותו mapper כמו הדף).
+  - `src/lib/owner-agent/tools/<id>.ts`: כלי `createTool` לכל שורה בטבלה, ו-`tools/registry.ts`.
+  - הכיוון חד-צדדי: העטיפות ב-`src/lib/data/admin/*` מייבאות את הליבות, אף פעם לא להפך. הן שומרות על השער שלהן ומציגות אותו מספר (בדיקות parity: `nav-counts`/`dashboard`, `listCampaignsForAdmin`, `getVoiceDashboardSummary` ל-7 ימים, `getAnalyticsDashboard`, `getWebhookHealth`).
+- **9 הכלים וההרשאות** (id בדיוק כמו בטבלה): `inquiries_summary` ו-`web_traffic_summary` ← `view_customer_data`; `campaigns_status_summary` ← `manage_billing`; `billing_summary` ← `view_billing`; `voice_calls_summary` ← `manage_voice`; `events_pipeline` ו-`rsvp_totals` ← `view_events`; `whatsapp_delivery_summary` ו-`system_health` ← `view_webhooks`. כל קובץ כלי מייצא את הכלי ואת מפתח ההרשאה. `toolsForPermissions(granted)` היא פונקציה טהורה שמחזירה רק את הכלים המותרים, לפי id, לשימוש של שלב 6 ב-`tools: ({ requestContext }) => …`.
+- **קלט ופלט:**
+  - הקלט הוא `strictObject({ range })` אחד משותף. כל מפתח נוסף, טקסט חופשי או טווח חסר נדחים, והליבה לא נקראת.
+  - הפלט הוא מספרים בלבד. שדה המחרוזת היחיד הוא `web_traffic_summary.state`, enum סגור של מצבי GA4.
+  - `execute` מאמת את תוצאת הליבה לפני שהיא יוצאת: מפתח לא מוכר נמחק, ושדה מסוג שגוי זורק קוד בלבד, בלי הערך.
+  - ה-admin client נוצר בתוך `execute`, ואף פעם לא מהקלט.
+- **dependency-cruiser:** הכלל `owner-agent-request-free` (חדש ב-5a, כולל `dal.ts`) והכלל `worker-no-request-scoped-next`, שהורחב ל-`src/lib/owner-agent/`, חלים על הליבות ועל הכלים. `worker:deps` כולל את התיקייה כשורש. הזרקת תקלה (`import 'next/headers'` בליבה ובכלי) הכשילה את שניהם, והקבצים שוחזרו מ-`.bak` ונבדקו ב-`cmp`. **נקודת הכניסה של הסוכן עוד לא קיימת. שלב 6 מוסיף אותה כשורש ב-`worker:deps`.**
+- **שערים:** `tsc` 0 שגיאות; `lint` 0; `worker:deps` בלי הפרות; בדיקות ממוקדות `src/lib/owner-agent` 244/244; `npm test` מלא 7571 עברו, 23 דולגו, 0 נכשלו. `next build` לא הורץ: אף קוד של האפליקציה לא מייבא את הכלים.
+- **ממתין:**
+  - **מיגרציה שנוצרה ולא הוחלה:** `supabase/migrations/20260924061630_owner_agent_read_aggregates.sql` (`owner_agent_billing_sums(_since)` ו-`owner_agent_rsvp_people_totals()`). היא נחוצה כי ה-aggregates של PostgREST כבויים בפרויקט. עד שתוחל ו-`types.generated.ts` ייווצר מחדש, `billing_summary` מחזיר ספירות בלי סכומי כסף, ו-`rsvp_totals` סופר שורות אורחים, לא אנשים. התיאורים של שני הכלים אומרים זאת למודל. ההחלה רק באישור.
+  - **החלטות שהונחו לפי ברירת המחדל המומלצת:** 9.7 (אין שמות אירועים, ספירות בלבד) ו-9.10 (מסירת וואטסאפ ובריאות webhooks תחת `view_webhooks`). אם הבעלים יענה אחרת, משנים את מפתח ההרשאה בקובץ הכלי ואת הטבלה ב-`registry.test.ts`.
+  - **השוואה ידנית מול דפי `/admin`** עוד לא נעשתה. היא דורשת את ה-DB החי והדפדפן.
+
 **שלב 6: תהליך הסוכן.**
 - התקנה מוצמדת של `@mastra/memory` ו-`@mastra/pg`, באישור.
 - `PostgresStore` עם `schemaName`, ו-`init` אחד באישור. אחר כך `disableInit: true`.
