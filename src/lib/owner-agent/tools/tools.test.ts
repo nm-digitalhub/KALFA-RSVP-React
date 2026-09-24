@@ -62,7 +62,7 @@ import {
   webTrafficSummaryTool,
 } from './web-traffic-summary';
 import { systemHealthOutput, systemHealthTool } from './system-health';
-import { OWNER_AGENT_TOOLS, OWNER_AGENT_TOOLS_PENDING_MIGRATION } from './registry';
+import { OWNER_AGENT_TOOLS } from './registry';
 import { rangeInputSchema } from './shared';
 
 // ---------------------------------------------------------------------------
@@ -108,6 +108,10 @@ const billing: BillingSummary = {
   creditsActive: 5,
   creditsGrantedInRange: 1,
   creditsVoidedInRange: 0,
+  chargedAmountIls: 1250.5,
+  creditAppliedAmountIls: 50,
+  creditGrantedAmountIls: 100,
+  creditUnvoidedAmountIls: 170,
 };
 const voice: VoiceCallsSummary = { activeNow: 1, attempts: 40, completed: 22, answerRate: 0.61 };
 const voiceNoRate: VoiceCallsSummary = { activeNow: 0, attempts: 0, completed: 0, answerRate: null };
@@ -137,6 +141,8 @@ const rsvp: RsvpTotals = {
   maybe: 50,
   pending: 350,
   responsesInRange: 60,
+  invitedPeople: 1400,
+  attendingPeople: 700,
 };
 const whatsapp: WhatsAppDeliverySummary = {
   outbound: { total: 100, unacknowledged: 2, sent: 10, delivered: 40, read: 40, failed: 8, otherStatus: 0 },
@@ -192,10 +198,9 @@ const health: SystemHealthSummary = {
 
 const FAKE_CLIENT = { marker: 'fake-admin-client' };
 
-// Every tool built, offered or not: the two pending-migration tools are
-// withheld from toolsForPermissions() but must meet the same contract (range
-// only in, numbers only out), so they are tested here all the same.
-const ALL_TOOLS = [...OWNER_AGENT_TOOLS, ...OWNER_AGENT_TOOLS_PENDING_MIGRATION];
+// Every tool the registry offers. All nine meet the same contract: range only
+// in, numbers only out.
+const ALL_TOOLS = OWNER_AGENT_TOOLS;
 
 type AnyTool = (typeof ALL_TOOLS)[number]['tool'];
 type Execute = (input: unknown, ctx?: unknown) => Promise<unknown>;
@@ -240,7 +245,7 @@ beforeEach(() => {
   );
 });
 
-it('the cases cover every tool (offered or pending migration) exactly once', () => {
+it('the cases cover every tool exactly once', () => {
   expect(ALL_TOOLS).toHaveLength(9);
   expect(CASES.map((c) => c.tool.id).sort()).toEqual(ALL_TOOLS.map((t) => t.tool.id).sort());
 });

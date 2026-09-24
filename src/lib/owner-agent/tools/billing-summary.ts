@@ -7,20 +7,17 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getBillingSummary } from '@/lib/owner-agent/cores/billing';
 import {
   count,
+  money,
   parseToolOutput,
   rangeInputSchema,
   type OwnerAgentPermission,
 } from '@/lib/owner-agent/tools/shared';
 
-// Tool 3 (plan §5). COUNTS ONLY for now. The money sums (charged amount,
-// credit applied/granted) need public.owner_agent_billing_sums, in
-// supabase/migrations/20260924061630_owner_agent_read_aggregates.sql, which is
-// created but NOT applied (PostgREST aggregates are off on this project). When
-// it is applied and types regenerated, the core gains the sum fields and this
-// output schema gains them too. The description tells the model there are no
-// amounts, so it does not invent one. Until then the tool is WITHHELD: it sits
-// in registry.ts OWNER_AGENT_TOOLS_PENDING_MIGRATION, which
-// toolsForPermissions() never offers.
+// Tool 3 (plan §5): counts AND money sums. The sums come from
+// public.owner_agent_billing_sums (supabase/migrations/
+// 20260924061630_owner_agent_read_aggregates.sql, applied) through the core,
+// in shekels; `money` below admits a non-integer, never a negative or NaN.
+// Offered under view_billing (registry.ts OWNER_AGENT_TOOLS).
 export const BILLING_SUMMARY_ID = 'billing_summary';
 export const BILLING_SUMMARY_PERMISSION = 'view_billing' satisfies OwnerAgentPermission;
 
@@ -34,12 +31,16 @@ export const billingSummaryOutput = z.object({
   creditsActive: count,
   creditsGrantedInRange: count,
   creditsVoidedInRange: count,
+  chargedAmountIls: money,
+  creditAppliedAmountIls: money,
+  creditGrantedAmountIls: money,
+  creditUnvoidedAmountIls: money,
 });
 
 export const billingSummaryTool = createTool({
   id: BILLING_SUMMARY_ID,
   description:
-    'חיוב, ספירות בלבד. אין כאן סכומי כסף (עדיין לא זמינים), אל תמציא סכום. chargedInRange, nothingToChargeInRange, creditsGrantedInRange ו-creditsVoidedInRange הם בטווח; השאר מצב נוכחי (חיובים ממתינים, שנכשלו, בבדיקה, מסגרות שאושרו וממתינות לחיוב, זיכויים פעילים).',
+    'חיוב: ספירות וסכומים בשקלים. בטווח: chargedInRange ו-chargedAmountIls (חיובים סופיים שנגבו), nothingToChargeInRange, creditAppliedAmountIls (זיכוי שנוצל בחיובים), creditsGrantedInRange ו-creditGrantedAmountIls (זיכויים שניתנו ולא בוטלו), creditsVoidedInRange. מצב נוכחי: chargesPending, chargesFailed, chargesInReview, holdsAwaitingCharge (מסגרות שאושרו וממתינות לחיוב), creditsActive ו-creditUnvoidedAmountIls (כל הזיכויים שלא בוטלו).',
   strict: true,
   inputSchema: rangeInputSchema,
   outputSchema: billingSummaryOutput,

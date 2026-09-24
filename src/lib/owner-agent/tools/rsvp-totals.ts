@@ -12,14 +12,11 @@ import {
   type OwnerAgentPermission,
 } from '@/lib/owner-agent/tools/shared';
 
-// Tool 6 (plan §5). Guest ROWS, not people. The people sums (a row may stand
-// for a family) need public.owner_agent_rsvp_people_totals, in
-// supabase/migrations/20260924061630_owner_agent_read_aggregates.sql, created
-// but NOT applied. When it is, the core and this schema gain two number
-// fields. Until then the description says rows, so the model does not present
-// them as a head count, and the tool is WITHHELD: it sits in registry.ts
-// OWNER_AGENT_TOOLS_PENDING_MIGRATION, which toolsForPermissions() never
-// offers. No event names (decision 9.7, assumed default).
+// Tool 6 (plan §5): guest ROWS by RSVP status, and PEOPLE (a row may stand
+// for a family) from public.owner_agent_rsvp_people_totals (supabase/migrations/
+// 20260924061630_owner_agent_read_aggregates.sql, applied) through the core.
+// No event names (decision 9.7: counts only). Offered under view_events
+// (registry.ts OWNER_AGENT_TOOLS).
 export const RSVP_TOTALS_ID = 'rsvp_totals';
 export const RSVP_TOTALS_PERMISSION = 'view_events' satisfies OwnerAgentPermission;
 
@@ -31,12 +28,14 @@ export const rsvpTotalsOutput = z.object({
   maybe: count,
   pending: count,
   responsesInRange: count,
+  invitedPeople: count,
+  attendingPeople: count,
 });
 
 export const rsvpTotalsTool = createTool({
   id: RSVP_TOTALS_ID,
   description:
-    'אישורי הגעה באירועים פעילים. activeEvents, guestRows ו-attending/declined/maybe/pending הם המצב הנוכחי וסופרים שורות אורחים, לא אנשים (מספר האנשים עוד לא זמין). responsesInRange = תשובות RSVP שנקלטו בטווח.',
+    'אישורי הגעה באירועים פעילים. activeEvents, guestRows ו-attending/declined/maybe/pending הם המצב הנוכחי וסופרים שורות אורחים (שורה יכולה לייצג משפחה). invitedPeople ו-attendingPeople הם מספר האנשים, גם הם מצב נוכחי. responsesInRange = תשובות RSVP שנקלטו בטווח.',
   strict: true,
   inputSchema: rangeInputSchema,
   outputSchema: rsvpTotalsOutput,

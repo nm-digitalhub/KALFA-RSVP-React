@@ -18,19 +18,17 @@ import { rangeStartIso, type OwnerAgentRange } from '@/lib/owner-agent/range';
 // and in particular no card_token_ref, card_citizen_id, card_exp_*,
 // auth_external_ref, document URL or credit `reason` text is ever selected.
 //
-// PENDING MIGRATION — the money SUMS. Charged amount, credit applied and credit
+// The money SUMS come from ONE rpc. Charged amount, credit applied and credit
 // granted are sums, and PostgREST aggregates are disabled on this project
 // (measured 2026-09-24: authenticator carries no pgrst.db_aggregates_enabled),
 // so they cannot be computed through the Data API without loading rows. They
-// live in public.owner_agent_billing_sums(_since), in
-// supabase/migrations/20260924061630_owner_agent_read_aggregates.sql, which is
-// NOT applied. Once it is applied and types.generated.ts is regenerated, this
-// core adds one `.rpc('owner_agent_billing_sums', { _since })` call and four
-// number fields. Until then it returns the counts below and nothing that
-// pretends to be a sum, and its tool is withheld from the agent
-// (tools/registry.ts OWNER_AGENT_TOOLS_PENDING_MIGRATION).
+// come from public.owner_agent_billing_sums(_since), in
+// supabase/migrations/20260924061630_owner_agent_read_aggregates.sql — applied,
+// with its types in types.generated.ts. Amounts are shekels, the unit of
+// campaigns.final_charge_amount (tax-ceiling.ts compares the same sum against
+// OSEK_PATUR_YEARLY_CEILING_ILS), and are not integers.
 //
-// Errors THROW: a failed count must not reach the owner as a confident 0.
+// Errors THROW: a failed count or sum must not reach the owner as a confident 0.
 //
 // Stuck holds (approved with a pending/failed/review hold) are tool 2's
 // number (cores/campaigns.ts stuckHolds, manage_billing) and are not repeated
@@ -51,6 +49,28 @@ function countOf(result: { count: number | null; error: unknown }, code: string)
   return result.count ?? 0;
 }
 
+// A table-returning rpc answers with an array; the sums function always yields
+// exactly one row (four coalesced sums). Anything else — no row, two rows, a
+// value that is not a finite non-negative number — is thrown as a bare code
+// rather than reported as a sum.
+function amount(value: unknown, code: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new Error(code);
+  return value;
+}
+
+async function billingSums(client: AdminClient, sinceIso: string) {
+  const { data, error } = await client.rpc('owner_agent_billing_sums', { _since: sinceIso });
+  if (error) throw new Error('billing_sums_failed');
+  if (!Array.isArray(data) || data.length !== 1) throw new Error('billing_sums_unexpected');
+  const [row] = data;
+  return {
+    chargedAmountIls: amount(row.charged_amount, 'billing_sums_unexpected'),
+    creditAppliedAmountIls: amount(row.credit_applied_amount, 'billing_sums_unexpected'),
+    creditUnvoidedAmountIls: amount(row.unvoided_credit_amount, 'billing_sums_unexpected'),
+    creditGrantedAmountIls: amount(row.credit_granted_amount, 'billing_sums_unexpected'),
+  };
+}
+
 export interface BillingSummary {
   // Close-charge outcomes dated by charged_at within the range. 'charged' is
   // the turnover definition of tax-ceiling.ts; 'nothing_to_charge' is a closed
@@ -68,6 +88,14 @@ export interface BillingSummary {
   creditsActive: number; // not voided
   creditsGrantedInRange: number; // granted in range and not voided
   creditsVoidedInRange: number;
+  // Sums in shekels (owner_agent_billing_sums). In range: final charges
+  // captured (charge_status 'charged', by charged_at — tax-ceiling.ts's
+  // turnover), credit consumed by close-charges, credit granted and not voided.
+  // Current: all credit granted and not voided.
+  chargedAmountIls: number;
+  creditAppliedAmountIls: number;
+  creditGrantedAmountIls: number;
+  creditUnvoidedAmountIls: number;
 }
 
 export async function getBillingSummary(
@@ -86,6 +114,7 @@ export async function getBillingSummary(
     creditsActive,
     creditsGrantedInRange,
     creditsVoidedInRange,
+    sums,
   ] = await Promise.all([
     campaigns(client).eq('charge_status', 'charged').gte('charged_at', sinceIso),
     campaigns(client).eq('charge_status', 'nothing_to_charge').gte('charged_at', sinceIso),
@@ -99,6 +128,7 @@ export async function getBillingSummary(
     credits(client).is('voided_at', null),
     credits(client).is('voided_at', null).gte('created_at', sinceIso),
     credits(client).gte('voided_at', sinceIso),
+    billingSums(client, sinceIso),
   ]);
   return {
     chargedInRange: countOf(chargedInRange, 'count_charged_failed'),
@@ -110,5 +140,9 @@ export async function getBillingSummary(
     creditsActive: countOf(creditsActive, 'count_credits_active_failed'),
     creditsGrantedInRange: countOf(creditsGrantedInRange, 'count_credits_granted_failed'),
     creditsVoidedInRange: countOf(creditsVoidedInRange, 'count_credits_voided_failed'),
+    chargedAmountIls: sums.chargedAmountIls,
+    creditAppliedAmountIls: sums.creditAppliedAmountIls,
+    creditGrantedAmountIls: sums.creditGrantedAmountIls,
+    creditUnvoidedAmountIls: sums.creditUnvoidedAmountIls,
   };
 }

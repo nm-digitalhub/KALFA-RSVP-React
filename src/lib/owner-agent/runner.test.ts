@@ -185,7 +185,7 @@ function expectedArgs(opts: { allowed: string[]; permissions: string; resume?: s
 
 describe('the exact argv, per permission set', () => {
   it.each([
-    [['view_events'], ['mcp__owner_agent__events_pipeline'], 'view_events'],
+    [['view_events'], ['mcp__owner_agent__events_pipeline', 'mcp__owner_agent__rsvp_totals'], 'view_events'],
     [
       ['view_webhooks', 'view_customer_data'],
       [
@@ -199,9 +199,11 @@ describe('the exact argv, per permission set', () => {
     [
       ['view_customer_data', 'manage_billing', 'view_billing', 'manage_voice', 'view_events', 'view_webhooks'],
       [
+        'mcp__owner_agent__billing_summary',
         'mcp__owner_agent__campaigns_status_summary',
         'mcp__owner_agent__events_pipeline',
         'mcp__owner_agent__inquiries_summary',
+        'mcp__owner_agent__rsvp_totals',
         'mcp__owner_agent__system_health',
         'mcp__owner_agent__voice_calls_summary',
         'mcp__owner_agent__web_traffic_summary',
@@ -209,12 +211,11 @@ describe('the exact argv, per permission set', () => {
       ],
       'manage_billing,manage_voice,view_billing,view_customer_data,view_events,view_webhooks',
     ],
-    // view_billing unlocks only billing_summary, which is pending migration:
-    // the server gets the key, the permission layer names no tool.
-    [['view_billing'], [], 'view_billing'],
+    [['view_billing'], ['mcp__owner_agent__billing_summary'], 'view_billing'],
+    [['manage_billing'], ['mcp__owner_agent__campaigns_status_summary'], 'manage_billing'],
     [[], [], ''],
     // Duplicates collapse; order is canonical.
-    [['view_events', 'view_events'], ['mcp__owner_agent__events_pipeline'], 'view_events'],
+    [['view_events', 'view_events'], ['mcp__owner_agent__events_pipeline', 'mcp__owner_agent__rsvp_totals'], 'view_events'],
   ] as const)('%j → --allowedTools %j', async (permissions, allowed, env) => {
     const { call } = await runWith(baseInput({ permissions }));
     expect(call.file).toBe('claude');
@@ -224,7 +225,11 @@ describe('the exact argv, per permission set', () => {
   it('appends --resume <id> last when given', async () => {
     const { call } = await runWith(baseInput({ resumeSessionId: SESSION }));
     expect(call.args).toEqual(
-      expectedArgs({ allowed: ['mcp__owner_agent__events_pipeline'], permissions: 'view_events', resume: SESSION }),
+      expectedArgs({
+        allowed: ['mcp__owner_agent__events_pipeline', 'mcp__owner_agent__rsvp_totals'],
+        permissions: 'view_events',
+        resume: SESSION,
+      }),
     );
   });
 

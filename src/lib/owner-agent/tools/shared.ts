@@ -38,6 +38,9 @@ export const rangeInputSchema = z.strictObject({
 // name, URL, token or payload.
 export const count = z.number().int().nonnegative();
 export const fraction = z.number().min(0).max(1);
+// A sum of money in shekels: not an integer (agorot), never negative. zod 4's
+// z.number() already rejects NaN and ±Infinity.
+export const money = z.number().nonnegative();
 
 // A fixed-key object of counts, built from the SAME readonly list the core
 // builds its record from (an enum's Constants, a code catalogue), so the output

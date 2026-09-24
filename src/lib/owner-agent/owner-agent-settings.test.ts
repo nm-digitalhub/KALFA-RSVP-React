@@ -7,7 +7,7 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 
 import { mcpToolName } from './mcp/names';
-import { OWNER_AGENT_TOOLS, OWNER_AGENT_TOOLS_PENDING_MIGRATION } from './tools/registry';
+import { OWNER_AGENT_TOOLS } from './tools/registry';
 
 // The owner agent's Claude Code settings file, parsed and pinned. The CLI in
 // print mode silently IGNORES a settings file that fails validation (its own
@@ -85,16 +85,13 @@ describe('owner-agent.settings.json', () => {
     expect(tier0.permissions.defaultMode).toBe('dontAsk');
   });
 
-  it('allows exactly the seven offered owner-agent tools, by explicit id', () => {
+  it('allows exactly the nine owner-agent tools, by explicit id', () => {
     const expected = OWNER_AGENT_TOOLS.map((t) => mcpToolName(t.tool.id)).sort();
     expect([...settings.permissions.allow].sort()).toEqual(expected);
-    expect(settings.permissions.allow).toHaveLength(7);
+    expect(settings.permissions.allow).toHaveLength(9);
   });
 
-  it('allows no pending-migration tool, no wildcard and nothing outside the owner_agent server', () => {
-    for (const { tool } of OWNER_AGENT_TOOLS_PENDING_MIGRATION) {
-      expect(settings.permissions.allow).not.toContain(mcpToolName(tool.id));
-    }
+  it('allows no wildcard and nothing outside the owner_agent server', () => {
     for (const rule of settings.permissions.allow) {
       expect(rule).toMatch(/^mcp__owner_agent__[a-z][a-z0-9_]*$/);
     }

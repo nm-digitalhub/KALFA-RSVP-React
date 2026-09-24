@@ -16,7 +16,14 @@ const NOW = Date.parse('2026-09-24T22:30:00Z');
 const active = { status: 'active' };
 const closed = { status: 'closed' };
 const pii = { full_name: 'דנה כהן', phone: '+972501234567', note: 'אלרגיה לבוטנים', rsvp_token: 'tok-1' };
-function db() {
+// What owner_agent_rsvp_people_totals returns: ONE row of two bigints. The
+// numbers are the guest_totals definitions over g1–g6 (active events only):
+// invited = 4+2+1+1+3+1, attending = 4+2 (the fixture's attending rows).
+const PEOPLE_ROW = { invited_people: 12, attending_people: 6 };
+type PeopleHandler = (args: Record<string, unknown> | undefined) => { data: unknown; error: { message: string } | null };
+const peopleOk: PeopleHandler = () => ({ data: [PEOPLE_ROW], error: null });
+
+function db(people: PeopleHandler = peopleOk) {
   return createFakeCountClient({
     events: [
       { id: 'e1', status: 'active' },
@@ -44,7 +51,7 @@ function db() {
       { id: 'r4', note: 'x', created_at: '2026-09-24T22:00:00Z', events: closed },
       { id: 'r5', note: 'x', created_at: '2026-09-01T10:00:00Z', events: active },
     ],
-  });
+  }, { rpc: { owner_agent_rsvp_people_totals: people } });
 }
 
 describe('getRsvpTotals (core)', () => {
@@ -59,6 +66,8 @@ describe('getRsvpTotals (core)', () => {
       maybe: 1,
       pending: 2,
       responsesInRange: 1, // r1; r2 is before Israel midnight, r4 is a closed event
+      invitedPeople: 12,
+      attendingPeople: 6,
     });
     expect(s.attending + s.declined + s.maybe + s.pending).toBe(s.guestRows);
   });
@@ -99,11 +108,24 @@ describe('getRsvpTotals (core)', () => {
     for (const leak of ['דנה', '+972', 'אלרגיה', 'tok-']) expect(json).not.toContain(leak);
   });
 
-  it('carries no people sum until the aggregates migration is applied', async () => {
-    const { client } = db();
-    const s = await getRsvpTotals(client as unknown as AdminClient, '30d', NOW);
-    expect(Object.keys(s)).not.toContain('invitedPeople');
-    expect(Object.keys(s)).not.toContain('attendingPeople');
+  it('reads the people sums from ONE argument-less rpc call', async () => {
+    const { client, rpcCalls } = db();
+    await getRsvpTotals(client as unknown as AdminClient, 'today', NOW);
+    expect(rpcCalls).toEqual([{ fn: 'owner_agent_rsvp_people_totals', args: undefined }]);
+  });
+
+  it.each([
+    ['an rpc error', () => ({ data: null, error: { message: 'boom' } })],
+    ['no row', () => ({ data: [], error: null })],
+    ['two rows', () => ({ data: [PEOPLE_ROW, PEOPLE_ROW], error: null })],
+    ['a fractional count', () => ({ data: [{ ...PEOPLE_ROW, invited_people: 1.5 }], error: null })],
+    ['a negative count', () => ({ data: [{ ...PEOPLE_ROW, attending_people: -2 }], error: null })],
+    ['a missing count', () => ({ data: [{ invited_people: 3 }], error: null })],
+  ] as [string, PeopleHandler][])('throws a bare code on %s (no guessed head count)', async (_label, handler) => {
+    const { client } = db(handler);
+    const err = await getRsvpTotals(client as unknown as AdminClient, '7d', NOW).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/^rsvp_people_totals_(failed|unexpected)$/);
   });
 
   it('throws on a query error', async () => {

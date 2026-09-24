@@ -22,7 +22,18 @@ const secret = {
   final_charge_amount: 450,
   credit_applied: 50,
 };
-function db() {
+// What owner_agent_billing_sums returns: ONE row (PostgREST hands a
+// table-returning function back as an array). Non-integer shekels on purpose.
+const SUMS_ROW = {
+  charged_amount: 1350.5,
+  credit_applied_amount: 100,
+  unvoided_credit_amount: 170,
+  credit_granted_amount: 100,
+};
+type SumsHandler = (args: Record<string, unknown> | undefined) => { data: unknown; error: { message: string } | null };
+const sumsOk: SumsHandler = () => ({ data: [SUMS_ROW], error: null });
+
+function db(sums: SumsHandler = sumsOk) {
   return createFakeCountClient({
     campaigns: [
       // charged after Israel midnight
@@ -48,7 +59,7 @@ function db() {
       { id: 'b3', amount: 60, reason: 'x', created_at: '2026-09-19T10:00:00Z', voided_at: '2026-09-24T21:20:00Z' },
       { id: 'b4', amount: 30, reason: 'x', created_at: '2026-07-01T10:00:00Z', voided_at: null },
     ],
-  });
+  }, { rpc: { owner_agent_billing_sums: sums } });
 }
 
 describe('getBillingSummary (core)', () => {
@@ -65,6 +76,10 @@ describe('getBillingSummary (core)', () => {
       creditsActive: 3, // b1, b2, b4
       creditsGrantedInRange: 1, // b1
       creditsVoidedInRange: 1, // b3
+      chargedAmountIls: 1350.5,
+      creditAppliedAmountIls: 100,
+      creditGrantedAmountIls: 100,
+      creditUnvoidedAmountIls: 170,
     });
   });
 
@@ -109,10 +124,26 @@ describe('getBillingSummary (core)', () => {
     }
   });
 
-  it('carries no sum field until the aggregates migration is applied', async () => {
-    const { client } = db();
-    const s = await getBillingSummary(client as unknown as AdminClient, '30d', NOW);
-    for (const key of Object.keys(s)) expect(key).not.toMatch(/amount|sum/i);
+  it('reads the sums from ONE rpc call, with the range start as _since', async () => {
+    const { client, rpcCalls } = db();
+    await getBillingSummary(client as unknown as AdminClient, '7d', NOW);
+    expect(rpcCalls).toEqual([{ fn: 'owner_agent_billing_sums', args: { _since: '2026-09-17T22:30:00.000Z' } }]);
+  });
+
+  it.each([
+    ['an rpc error', () => ({ data: null, error: { message: 'boom' } })],
+    ['no row', () => ({ data: [], error: null })],
+    ['two rows', () => ({ data: [SUMS_ROW, SUMS_ROW], error: null })],
+    ['a non-array answer', () => ({ data: SUMS_ROW, error: null })],
+    ['a negative sum', () => ({ data: [{ ...SUMS_ROW, charged_amount: -1 }], error: null })],
+    ['a string sum', () => ({ data: [{ ...SUMS_ROW, credit_applied_amount: '100' }], error: null })],
+    ['a missing sum', () => ({ data: [{ ...SUMS_ROW, credit_granted_amount: null }], error: null })],
+    ['NaN', () => ({ data: [{ ...SUMS_ROW, unvoided_credit_amount: Number.NaN }], error: null })],
+  ] as [string, SumsHandler][])('throws a bare code on %s (no guessed sum)', async (_label, handler) => {
+    const { client } = db(handler);
+    const err = await getBillingSummary(client as unknown as AdminClient, '30d', NOW).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/^billing_sums_(failed|unexpected)$/);
   });
 
   it('throws on a query error (no confident 0)', async () => {

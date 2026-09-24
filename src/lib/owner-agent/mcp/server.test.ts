@@ -10,7 +10,7 @@ vi.mock('@/lib/owner-agent/cores/inquiries', () => ({ getInquiriesSummary: vi.fn
 vi.mock('@/lib/owner-agent/cores/billing', () => ({ getBillingSummary: vi.fn() }));
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getBillingSummary } from '@/lib/owner-agent/cores/billing';
+import { getBillingSummary, type BillingSummary } from '@/lib/owner-agent/cores/billing';
 import { getEventsPipelineSummary, type EventsPipelineSummary } from '@/lib/owner-agent/cores/events';
 import { getInquiriesSummary } from '@/lib/owner-agent/cores/inquiries';
 import { getSystemHealthSummary, type SystemHealthSummary } from '@/lib/owner-agent/cores/system-health';
@@ -37,6 +37,21 @@ const events: EventsPipelineSummary = {
   activeWithoutDate: 1,
   activeUpcomingInWindow: 4,
   createdInRange: 3,
+};
+const billing: BillingSummary = {
+  chargedInRange: 2,
+  nothingToChargeInRange: 1,
+  chargesPending: 0,
+  chargesFailed: 1,
+  chargesInReview: 0,
+  holdsAwaitingCharge: 3,
+  creditsActive: 5,
+  creditsGrantedInRange: 1,
+  creditsVoidedInRange: 0,
+  chargedAmountIls: 1250.5,
+  creditAppliedAmountIls: 50,
+  creditGrantedAmountIls: 100,
+  creditUnvoidedAmountIls: 170,
 };
 const health: SystemHealthSummary = {
   unprocessed: 2,
@@ -88,24 +103,25 @@ afterEach(async () => {
 
 describe('tools/list offers only what the permission set unlocks', () => {
   it.each([
-    [['view_events'], ['events_pipeline']],
+    [['view_events'], ['events_pipeline', 'rsvp_totals']],
     [['view_webhooks'], ['system_health', 'whatsapp_delivery_summary']],
     [['view_customer_data', 'manage_voice'], ['inquiries_summary', 'voice_calls_summary', 'web_traffic_summary']],
-    // The two pending-migration tools are never offered.
-    [['view_billing'], []],
-    [['view_billing', 'view_events'], ['events_pipeline']],
+    [['view_billing'], ['billing_summary']],
+    [['view_billing', 'view_events'], ['billing_summary', 'events_pipeline', 'rsvp_totals']],
     [[], []],
     [['manage_staff', 'VIEW_EVENTS', ' view_events'], []],
   ])('%j → %j', async (granted, expected) => {
     expect(await listed(await connect(granted))).toEqual(expected);
   });
 
-  it('all six keys → the seven offered tools, never billing_summary or rsvp_totals', async () => {
+  it('all six keys → the nine tools', async () => {
     const names = await listed(await connect(OWNER_AGENT_PERMISSIONS));
     expect(names).toEqual([
+      'billing_summary',
       'campaigns_status_summary',
       'events_pipeline',
       'inquiries_summary',
+      'rsvp_totals',
       'system_health',
       'voice_calls_summary',
       'web_traffic_summary',
@@ -114,8 +130,9 @@ describe('tools/list offers only what the permission set unlocks', () => {
   });
 
   it("each tool carries the Mastra tool's description and a strict { range } JSON Schema", async () => {
-    const [tool] = (await (await connect(['view_events'])).listTools()).tools;
-    expect(tool.name).toBe('events_pipeline');
+    const tools = (await (await connect(['view_events'])).listTools()).tools;
+    const tool = tools.find((t) => t.name === 'events_pipeline');
+    if (!tool) throw new Error('events_pipeline not listed');
     expect(tool.description).toBe(eventsPipelineTool.description);
     expect(tool.inputSchema).toMatchObject({
       type: 'object',
@@ -145,12 +162,20 @@ describe('tools/call', () => {
     expect(vi.mocked(createAdminClient)).not.toHaveBeenCalled();
   });
 
-  it('a pending-migration tool fails as unknown_tool even with its permission granted', async () => {
-    const c = await connect(['view_billing']);
-    expect(errorCode(await c.callTool({ name: 'billing_summary', arguments: { range: 'today' } }))).toBe(
-      'unknown_tool',
-    );
+  it('billing_summary is callable only under view_billing', async () => {
+    const withoutBilling = await connect(['view_events', 'manage_billing']);
+    expect(
+      errorCode(await withoutBilling.callTool({ name: 'billing_summary', arguments: { range: 'today' } })),
+    ).toBe('unknown_tool');
     expect(vi.mocked(getBillingSummary)).not.toHaveBeenCalled();
+    await withoutBilling.close();
+
+    vi.mocked(getBillingSummary).mockResolvedValue(billing);
+    const withBilling = await connect(['view_billing']);
+    const r = await withBilling.callTool({ name: 'billing_summary', arguments: { range: 'today' } });
+    expect(r.isError).toBeFalsy();
+    expect(JSON.parse(textOf(r))).toEqual(billing);
+    expect(vi.mocked(getBillingSummary)).toHaveBeenCalledWith(FAKE_CLIENT, 'today');
   });
 
   it.each(['constructor', '__proto__', 'toString', 'hasOwnProperty', '', 'mcp__owner_agent__events_pipeline'])(

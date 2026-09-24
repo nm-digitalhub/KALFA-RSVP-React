@@ -20,6 +20,12 @@
 //
 // Every query is recorded in `calls` (table, select options, filters) so a
 // test can pin the query shape too.
+//
+// `rpc(fn, args)` answers from `opts.rpc[fn]` (a table-returning function is
+// an array of rows, as PostgREST returns it) and records the call in
+// `rpcCalls`; an rpc with no handler answers with an error, so a core that
+// starts calling a new function fails its test until the test says what the
+// function returns.
 
 export type FakeRow = Record<string, unknown>;
 
@@ -32,9 +38,18 @@ export interface RecordedQuery {
   filters: Array<{ op: string; args: unknown[] }>;
 }
 
+export interface FakeRpcResult {
+  data: unknown;
+  error: { message: string } | null;
+}
+
 export interface FakeCountClient {
-  client: { from: (table: string) => unknown };
+  client: {
+    from: (table: string) => unknown;
+    rpc: (fn: string, args?: Record<string, unknown>) => Promise<FakeRpcResult>;
+  };
   calls: RecordedQuery[];
+  rpcCalls: Array<{ fn: string; args: Record<string, unknown> | undefined }>;
 }
 
 // Column value, following a dotted path into embedded objects.
@@ -114,9 +129,19 @@ export function parseOrFilter(filter: string): Predicate {
 
 export function createFakeCountClient(
   tables: Record<string, FakeRow[]>,
-  opts: { failTables?: string[] } = {},
+  opts: {
+    failTables?: string[];
+    rpc?: Record<string, (args: Record<string, unknown> | undefined) => FakeRpcResult>;
+  } = {},
 ): FakeCountClient {
   const calls: RecordedQuery[] = [];
+  const rpcCalls: FakeCountClient['rpcCalls'] = [];
+
+  function rpc(fn: string, args?: Record<string, unknown>): Promise<FakeRpcResult> {
+    rpcCalls.push({ fn, args });
+    const handler = opts.rpc?.[fn];
+    return Promise.resolve(handler ? handler(args) : { data: null, error: { message: `no rpc ${fn}` } });
+  }
 
   function from(table: string) {
     const rec: RecordedQuery = { table, columns: undefined, selectOptions: undefined, filters: [] };
@@ -238,7 +263,7 @@ export function createFakeCountClient(
     return builder;
   }
 
-  return { client: { from }, calls };
+  return { client: { from, rpc }, calls, rpcCalls };
 }
 
 // Every leaf of a core's result must be a number, null, or one of the allowed

@@ -22,19 +22,16 @@ import { rangeStartIso, type OwnerAgentRange } from '@/lib/owner-agent/range';
 // that was not closed yet still counts here; events_pipeline reports how many
 // of those exist (activePastDay).
 //
-// PENDING MIGRATION — the PEOPLE sums. Rows are counted below; people are a
-// SUM (a row may stand for a family), with the guest_totals definitions:
+// The PEOPLE sums come from ONE rpc. Rows are counted below; people are a SUM
+// (a row may stand for a family), with the guest_totals definitions:
 //   invited people   = greatest(coalesce(expected_count, 1), 1)
 //   attending people = guest_effective_attending(g)
 // PostgREST aggregates are disabled on this project (measured 2026-09-24), so
-// they live in public.owner_agent_rsvp_people_totals(), in
-// supabase/migrations/20260924061630_owner_agent_read_aggregates.sql, NOT
-// applied. After it is applied and types.generated.ts regenerated, this core
-// adds one `.rpc('owner_agent_rsvp_people_totals')` call and two number fields.
-// Until then its tool is withheld from the agent (tools/registry.ts
-// OWNER_AGENT_TOOLS_PENDING_MIGRATION).
+// they come from public.owner_agent_rsvp_people_totals(), in
+// supabase/migrations/20260924061630_owner_agent_read_aggregates.sql — applied,
+// with its types in types.generated.ts.
 //
-// Errors THROW: a failed count must not reach the owner as a confident 0.
+// Errors THROW: a failed count or sum must not reach the owner as a confident 0.
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -52,6 +49,23 @@ function countOf(result: { count: number | null; error: unknown }, code: string)
   return result.count ?? 0;
 }
 
+// Exactly one row of two non-negative integers, or a bare code — never a
+// guessed number.
+function people(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error('rsvp_people_totals_unexpected');
+  }
+  return value;
+}
+
+async function peopleTotals(client: AdminClient) {
+  const { data, error } = await client.rpc('owner_agent_rsvp_people_totals');
+  if (error) throw new Error('rsvp_people_totals_failed');
+  if (!Array.isArray(data) || data.length !== 1) throw new Error('rsvp_people_totals_unexpected');
+  const [row] = data;
+  return { invitedPeople: people(row.invited_people), attendingPeople: people(row.attending_people) };
+}
+
 export interface RsvpTotals {
   // Current state across active events (not range-bound).
   activeEvents: number;
@@ -63,6 +77,10 @@ export interface RsvpTotals {
   // RSVP submissions recorded (rsvp_responses, written by submit_rsvp) for
   // active events within the range.
   responsesInRange: number;
+  // PEOPLE, not rows, across active events (current state), with the
+  // guest_totals definitions (owner_agent_rsvp_people_totals).
+  invitedPeople: number;
+  attendingPeople: number;
 }
 
 export async function getRsvpTotals(
@@ -71,7 +89,7 @@ export async function getRsvpTotals(
   nowMs: number = Date.now(),
 ): Promise<RsvpTotals> {
   const sinceIso = rangeStartIso(range, nowMs);
-  const [activeEvents, guestRows, attending, declined, maybe, pending, responses] =
+  const [activeEvents, guestRows, attending, declined, maybe, pending, responses, totals] =
     await Promise.all([
       client
         .from('events')
@@ -87,6 +105,7 @@ export async function getRsvpTotals(
         .select('id, events!inner(status)', { count: 'exact', head: true })
         .eq('events.status', 'active')
         .gte('created_at', sinceIso),
+      peopleTotals(client),
     ]);
   return {
     activeEvents: countOf(activeEvents, 'count_active_events_failed'),
@@ -96,5 +115,7 @@ export async function getRsvpTotals(
     maybe: countOf(maybe, 'count_guests_maybe_failed'),
     pending: countOf(pending, 'count_guests_pending_failed'),
     responsesInRange: countOf(responses, 'count_rsvp_responses_failed'),
+    invitedPeople: totals.invitedPeople,
+    attendingPeople: totals.attendingPeople,
   };
 }
