@@ -5,7 +5,7 @@
 // registries would simply keep a literal of their own, and the folder would be a
 // second source of truth instead of the only one. This walks EVERY folder on
 // disk, so the 2nd…23rd node are checked the moment they land, with no edit here.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -67,7 +67,19 @@ describe('node definitions', () => {
     it('declares isTrigger, and the catalogue reads exactly that', async () => {
       const def = (await import(path)) as Definition;
       expect(typeof def.isTrigger).toBe('boolean');
+      // Pinned to something that does NOT read the definition. The catalogue is
+      // built FROM `isTrigger`, so comparing the two alone can never fail — a
+      // flipped flag would flip both. The folder name is fixed by the type
+      // (asserted above), and every trigger type is spelled `trigger.*`.
+      expect(def.isTrigger).toBe(folder.startsWith('trigger-'));
       expect(findCatalogueEntry(def.type as string)?.isTrigger).toBe(def.isTrigger);
+    });
+
+    it('has no index.ts — every import names its file (matrix §2, rule 2)', () => {
+      // A folder barrel would let one import pull the editor half and the
+      // server half in together, which is how the SDK would reach the server.
+      expect(existsSync(join(NODES_DIR, folder, 'index.ts'))).toBe(false);
+      expect(existsSync(join(NODES_DIR, folder, 'index.tsx'))).toBe(false);
     });
 
     it('declares requiredFields, and NODE_REQUIRED_FIELDS is the SAME array', async () => {

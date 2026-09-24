@@ -39,6 +39,37 @@ export type WebhookMethod = (typeof WEBHOOK_METHODS)[number];
 export const WEBHOOK_METHODS_WITH_BODY: readonly WebhookMethod[] = ['POST', 'PUT', 'PATCH'];
 
 /**
+ * WHERE an inbound call proves itself.
+ *
+ * ⚠️ TWO MODES BECAUSE TWO CALLERS EXIST, not because one shape was unfinished.
+ *
+ *   `header`  — the address is public and the secret rides in
+ *               `x-kalfa-webhook-secret`. The DEFAULT, and what every diagram
+ *               saved before this field means: a secret in a path is written to
+ *               every access log, proxy record and Referer that stores a URL,
+ *               and the address has to stay showable so the owner can recover
+ *               it. See plans/webhook-address-vs-secret.md.
+ *
+ *   `address` — the path segment IS the credential and nothing else is asked
+ *               for. Not a weakening: the segment is the same 32 CSPRNG bytes
+ *               the header secret was, only its sha256 is stored, and it is
+ *               displayed exactly once. What it costs is the recoverability
+ *               `header` buys — which is the trade the owner made on 2026-09-23.
+ *
+ * ⚠️ IT EXISTS BECAUSE A REAL CALLER CANNOT SEND A HEADER. SUMIT's
+ * `/triggers/triggers/subscribe/` takes one field for the destination — `URL` —
+ * and its help article's HTTP-call step offers nowhere to put a header. Make's
+ * own hook address (`hook.eu2.make.com/<random>`) is built the same way. A
+ * header-only endpoint simply cannot be reached by either.
+ *
+ * Declared with this node because it is this node's `auth` field.
+ * `catalogue/types.ts` derives `WebhookAuthMode` from it, and `readWebhookAuthMode`
+ * and `authModeFor` stay there because they answer for `trigger.sumit_card` too.
+ */
+export const WEBHOOK_AUTH_MODES = ['header', 'address'] as const;
+export type WebhookAuthMode = (typeof WEBHOOK_AUTH_MODES)[number];
+
+/**
  * An external system calls in, and a run starts.
  *
  * THE DYNAMIC TRIGGER. It declares no field list: whatever JSON the caller POSTs
@@ -78,14 +109,11 @@ export type WebhookTriggerConfig = {
   /** Empty means POST only — see `webhookAllowsMethod` (`match.ts`). */
   methods?: readonly { value: string }[] | readonly string[];
   /**
-   * Absent means `header` — see `readWebhookAuthMode`.
-   *
-   * The union is `WebhookAuthMode` from `catalogue/types.ts`, spelled out
-   * rather than imported because this file imports nothing. The auth modes stay
-   * there because `authModeFor` answers for `trigger.sumit_card` too; types.ts
-   * pins the two spellings against each other at compile time.
+   * Absent means `header` — see `readWebhookAuthMode` in `catalogue/types.ts`.
+   * One of `WEBHOOK_AUTH_MODES` above, which `WebhookAuthMode` there is derived
+   * from.
    */
-  auth?: 'header' | 'address';
+  auth?: WebhookAuthMode;
 };
 
 /**

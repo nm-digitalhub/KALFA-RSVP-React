@@ -6,8 +6,11 @@
 // it is: it is orchestration, and `inbound.ts` and the admin data layer read the
 // predicates through `trigger.ts`, which re-exports them for existing readers.
 //
+// `triggerKeywordCanNeverMatch` lives here too: a predicate over this node's own
+// two filters, read by `arm-check.ts` straight from this file.
+//
 // Imports only its own definition.
-import { DEFAULT_WHATSAPP_MESSAGE_KINDS } from './definition';
+import { DEFAULT_WHATSAPP_MESSAGE_KINDS, TEXT_BEARING_WHATSAPP_MESSAGE_KINDS, type } from './definition';
 
 /**
  * The keyword filter, applied at enqueue time (`planRuns` in `trigger.ts`)
@@ -101,4 +104,48 @@ export function matchesNumber(configured: unknown, arrivedOn: string | null): bo
   if (typeof configured !== 'string' || configured.trim() === '') return true;
   if (arrivedOn === null) return false;
   return configured.trim() === arrivedOn;
+}
+
+/**
+ * Has this trigger been narrowed until nothing can ever match it?
+ *
+ * ⚠️ THE TWO FILTERS ARE ANDed, AND THAT IS WHY THIS CAN HAPPEN. `planRuns`
+ * applies `matchesKind` and then `matchesKeyword` to the same message. A keyword
+ * is only ever tested against `text.body`, so a trigger that accepts NO
+ * text-bearing kind and still carries a keyword has asked for a message that
+ * does not exist: every candidate either fails the kind filter or arrives with
+ * an empty body and fails the keyword.
+ *
+ * ⚠️ AND THIS IS NOT EXPRESSIBLE IN THE NODE'S SCHEMA. Both halves live in one
+ * node, so a JsonForms rule could see them — but the only honest UI response is
+ * to HIDE or DISABLE the keyword box, and neither CLEARS the stored value. A
+ * trigger that already carries `keyword: 'שיחה'` with kinds excluding `text`
+ * would stay just as dead while losing the one visible clue why. So the refusal
+ * belongs at arming, where it can name the fix.
+ *
+ * Absent or empty `messageKinds` is NEVER dead: it means
+ * `DEFAULT_WHATSAPP_MESSAGE_KINDS`, which includes `text`.
+ *
+ * Both persisted shapes are accepted, the same tolerance `matchesKind` has.
+ */
+export function triggerKeywordCanNeverMatch(
+  triggerType: string,
+  properties: Record<string, unknown>,
+): boolean {
+  if (triggerType !== type) return false;
+
+  const keyword = properties.keyword;
+  if (typeof keyword !== 'string' || keyword.trim() === '') return false;
+
+  const kinds = properties.messageKinds;
+  if (!Array.isArray(kinds) || kinds.length === 0) return false;
+
+  return !kinds.some((entry) => {
+    const value =
+      typeof entry === 'string' ? entry : (entry as { value?: unknown } | null)?.value;
+    return (
+      typeof value === 'string' &&
+      TEXT_BEARING_WHATSAPP_MESSAGE_KINDS.includes(value)
+    );
+  });
 }

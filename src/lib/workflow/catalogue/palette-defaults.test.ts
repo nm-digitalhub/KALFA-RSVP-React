@@ -15,6 +15,8 @@
 //
 // So the rule is not about `topic`. It is: a field that presents a closed menu
 // must be seeded from that menu.
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { PALETTE_ITEMS } from './schemas';
@@ -280,8 +282,11 @@ describe('⚠️ every palette entry is type-checked against its own schema', ()
   //
   // Every palette entry is declared in its node folder's palette file,
   // `nodes/<name>/<name>.ts`, which holds exactly one item; `schemas.ts` only
-  // assembles them. So the scan reads those files, and the first test pins that
-  // layout, so an entry declared anywhere else cannot escape the scan.
+  // assembles them. So the scan reads those files. The scan alone cannot tell
+  // whether `PALETTE_ITEMS` actually USES them: an inline literal in
+  // `schemas.ts` that replaced an import would leave the count and the file
+  // intact. So the second test pins each entry to its folder's export BY
+  // IDENTITY, and an entry declared anywhere else cannot escape the scan.
   const nodeFiles = nodePaletteSources();
 
   /** `logic.set_value` → `src/lib/workflow/nodes/logic-set-value/logic-set-value.ts`. */
@@ -292,15 +297,30 @@ describe('⚠️ every palette entry is type-checked against its own schema', ()
 
   it('the scan found the palette — one node palette file per palette item', () => {
     // As many palette files as palette items, and every item's own file among
-    // them. An entry declared inline in `schemas.ts` (or anywhere outside its
-    // folder) breaks the count; a node folder without its palette file breaks
-    // the mapping.
+    // them. An ADDED entry declared outside a folder breaks the count; a node
+    // folder without its palette file breaks the mapping. An entry that REPLACES
+    // an import breaks neither — the next test catches that one.
     expect(nodeFiles.length).toBe(PALETTE_ITEMS.length);
     expect(nodeFiles.length).toBeGreaterThan(20);
     const scanned = new Set(nodeFiles.map(({ path }) => path));
     expect(PALETTE_ITEMS.map((item) => paletteFileOf(item.type)).filter((path) => !scanned.has(path))).toEqual(
       [],
     );
+  });
+
+  it('⚠️ every palette entry IS the item its folder exports — the same object, not a copy', async () => {
+    // Identity, not equality: an inline literal in `schemas.ts` (or a spread of
+    // the folder's item) is a different object, so it fails here even when it
+    // is field-for-field identical — and it is exactly the entry the
+    // `satisfies` scan below would never read.
+    const notFromFolder: string[] = [];
+    for (const item of PALETTE_ITEMS) {
+      const exported = Object.values(
+        (await import(join(process.cwd(), paletteFileOf(item.type)))) as Record<string, unknown>,
+      );
+      if (!exported.includes(item)) notFromFolder.push(item.type);
+    }
+    expect(notFromFolder).toEqual([]);
   });
 
   it('⚠️ each node palette file carries exactly one `satisfies PaletteItem<`', () => {

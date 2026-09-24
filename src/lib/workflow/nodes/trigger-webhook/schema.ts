@@ -18,7 +18,8 @@ export const webhookTriggerSchema = {
   properties: {
     ...identityProperties,
     ...statusProperty,
-    // WHERE the caller proves itself. See `WEBHOOK_AUTH_MODES`: `header` is the
+    // WHERE the caller proves itself. See `WEBHOOK_AUTH_MODES` in
+    // ./definition.ts: `header` is the
     // default and what every diagram saved before this field means, `address`
     // exists for a caller that can be handed a URL and nothing else.
     auth: {

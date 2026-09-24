@@ -113,9 +113,9 @@ const voiceCallWithOutcome: DiagramModel = {
             // port vanished between parking and waking (the `!readOutcome`
             // resume fallback in nodes/action-start-voice-call/runtime.ts), and
             // a replay collision whose re-read came back empty, leaving an
-            // empty `attemptId` (voice-purpose-dispatch.ts:172 → the
-            // `!outcome.attemptId` "nothing to wait on" guard in the same
-            // runtime.ts).
+            // empty `attemptId` (the 23505 re-read in voice-purpose-dispatch.ts
+            // that returns `existing?.id ?? ''` → the `!outcome.attemptId`
+            // "nothing to wait on" guard in the same runtime.ts).
             // In both the owner ticked "wait for the outcome" and did everything
             // right, and an infrastructure blip would have killed the run.
             //

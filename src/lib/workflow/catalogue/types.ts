@@ -13,7 +13,7 @@
 // Everything the EDITOR needs — property schemas, labels, icons — lives in each
 // node folder's editor files instead, assembled into the palette by ./schemas.ts.
 //
-// Besides data and a few pure helpers, it holds three COMPILE-TIME drift guards
+// Besides data and a few pure helpers, it holds two COMPILE-TIME drift guards
 // (the `_…MatchesTheDefinition` / `_KALFA_NODE_CONFIG_COVERS_ALL_TYPES`
 // constants). Each emits one inert constant and a `void` at run time and has no
 // side effect.
@@ -131,32 +131,12 @@ export {
   type WebhookMethod,
 } from '../nodes/trigger-webhook/definition';
 
-/**
- * WHERE an inbound call proves itself.
- *
- * ⚠️ TWO MODES BECAUSE TWO CALLERS EXIST, not because one shape was unfinished.
- *
- *   `header`  — the address is public and the secret rides in
- *               `x-kalfa-webhook-secret`. The DEFAULT, and what every diagram
- *               saved before this field means: a secret in a path is written to
- *               every access log, proxy record and Referer that stores a URL,
- *               and the address has to stay showable so the owner can recover
- *               it. See plans/webhook-address-vs-secret.md.
- *
- *   `address` — the path segment IS the credential and nothing else is asked
- *               for. Not a weakening: the segment is the same 32 CSPRNG bytes
- *               the header secret was, only its sha256 is stored, and it is
- *               displayed exactly once. What it costs is the recoverability
- *               `header` buys — which is the trade the owner made on 2026-09-23.
- *
- * ⚠️ IT EXISTS BECAUSE A REAL CALLER CANNOT SEND A HEADER. SUMIT's
- * `/triggers/triggers/subscribe/` takes one field for the destination — `URL` —
- * and its help article's HTTP-call step offers nowhere to put a header. Make's
- * own hook address (`hook.eu2.make.com/<random>`) is built the same way. A
- * header-only endpoint simply cannot be reached by either.
- */
-export const WEBHOOK_AUTH_MODES = ['header', 'address'] as const;
-export type WebhookAuthMode = (typeof WEBHOOK_AUTH_MODES)[number];
+// WHERE an inbound call proves itself — `header` or `address`. The modes are
+// declared, with the reason there are two, as `WEBHOOK_AUTH_MODES` in
+// `nodes/trigger-webhook/definition.ts`, the node whose `auth` field they are.
+// The type is derived from there; `readWebhookAuthMode` and `authModeFor` stay
+// here because they answer for `trigger.sumit_card` too.
+export type WebhookAuthMode = webhookTriggerDefinition.WebhookAuthMode;
 
 /**
  * The mode a stored node is in.
@@ -173,22 +153,10 @@ export function readWebhookAuthMode(value: unknown): WebhookAuthMode {
   return value === 'address' ? 'address' : 'header';
 }
 
-// `trigger.webhook` — its config (with its own `auth` union, pinned to
-// `WebhookAuthMode` below) is declared with the rest of its contract in
+// `trigger.webhook` — its config (whose `auth` field is a `WebhookAuthMode`) is
+// declared with the rest of its contract in
 // `nodes/trigger-webhook/definition.ts`, re-exported here for existing readers.
 export type WebhookTriggerConfig = webhookTriggerDefinition.WebhookTriggerConfig;
-
-/**
- * ⚠️ A COMPILE ERROR IF THE DEFINITION'S AUTH MODES DRIFT FROM `WebhookAuthMode`.
- * The definition imports nothing, so it spells the union out; assigning across
- * it in both directions fails the moment the two lists disagree.
- */
-type _DefinitionWebhookAuthMode = NonNullable<WebhookTriggerConfig['auth']>;
-const _webhookAuthModeMatchesTheDefinition: [_DefinitionWebhookAuthMode, WebhookAuthMode] = [
-  null as unknown as WebhookAuthMode,
-  null as unknown as _DefinitionWebhookAuthMode,
-];
-void _webhookAuthModeMatchesTheDefinition;
 
 // `trigger.sumit_card` — declared with the rest of its contract (and with its
 // output fields) in `nodes/trigger-sumit-card/definition.ts`, re-exported here
@@ -619,25 +587,17 @@ export type DeploymentBinding =
  * Per node type, the properties that do NOT simply travel with the diagram.
  *
  * ⚠️ DERIVED FROM THE CATALOGUE, NOT FROM SAVED DATA. A first pass built from
- * the 21 nodes present in this installation's saved workflows missed
- * `trigger.webhook.token` and `action.start_for_each_guest.targetWorkflowId`
+ * the 21 nodes present in this installation's saved workflows missed the
+ * webhook trigger's credential field (then `token`, since split into
+ * `endpointId` and `tokenHash`) and `action.start_for_each_guest.targetWorkflowId`
  * outright — neither node type had ever been used here. The classification was
  * read from the node property schemas (then all in `schemas.ts`, now each in
  * its `nodes/<name>/schema.ts`), which is the list of what a node CAN hold
- * rather than what one happens to. Each node now declares its own bindings in
- * its folder's `definition.ts`, and this map reads them.
+ * rather than what one happens to.
  *
- * Each entry was then checked at its use site rather than from its name:
- *
- *   token             `webhook-trigger.ts` compares it in constant time and the
- *                     field's own label calls it a password. It IS the trigger's
- *                     whole credential.
- *   targetWorkflowId  a `workflows.id` uuid.
- *   url / headers     `dry-run.ts` already refuses to print header values,
- *                     because an owner may type a literal secret before reading
- *                     the warning. An export file is the same class of artefact.
- *   topic             a closed `CALLBACK_TOPICS` list compiled into the app,
- *                     so it travels — unlike `purposeKey`, which names a row.
+ * Each node declares its own bindings in its folder's `definition.ts`, together
+ * with the reason for each one, checked at its use site rather than from its
+ * name; this map only reads them.
  *
  * Fail-closed: `portability.test.ts` refuses a property that neither appears
  * here nor in its allow-list of reviewed portable names, so a new node cannot
@@ -855,50 +815,6 @@ export function triggerSuppliesGuestContext(
     return (
       typeof value === 'string' &&
       !whatsappInboundDefinition.OWNER_WHATSAPP_MESSAGE_KINDS.includes(value)
-    );
-  });
-}
-
-/**
- * Has this trigger been narrowed until nothing can ever match it?
- *
- * ⚠️ THE TWO FILTERS ARE ANDed, AND THAT IS WHY THIS CAN HAPPEN. `planRuns`
- * applies `matchesKind` and then `matchesKeyword` to the same message. A keyword
- * is only ever tested against `text.body`, so a trigger that accepts NO
- * text-bearing kind and still carries a keyword has asked for a message that
- * does not exist: every candidate either fails the kind filter or arrives with
- * an empty body and fails the keyword.
- *
- * ⚠️ AND THIS IS NOT EXPRESSIBLE IN THE NODE'S SCHEMA. Both halves live in one
- * node, so a JsonForms rule could see them — but the only honest UI response is
- * to HIDE or DISABLE the keyword box, and neither CLEARS the stored value. A
- * trigger that already carries `keyword: 'שיחה'` with kinds excluding `text`
- * would stay just as dead while losing the one visible clue why. So the refusal
- * belongs at arming, where it can name the fix.
- *
- * Absent or empty `messageKinds` is NEVER dead: it means
- * `DEFAULT_WHATSAPP_MESSAGE_KINDS`, which includes `text`.
- *
- * Both persisted shapes are accepted, the same tolerance `matchesKind` has.
- */
-export function triggerKeywordCanNeverMatch(
-  triggerType: string,
-  properties: Record<string, unknown>,
-): boolean {
-  if (triggerType !== whatsappInboundDefinition.type) return false;
-
-  const keyword = properties.keyword;
-  if (typeof keyword !== 'string' || keyword.trim() === '') return false;
-
-  const kinds = properties.messageKinds;
-  if (!Array.isArray(kinds) || kinds.length === 0) return false;
-
-  return !kinds.some((entry) => {
-    const value =
-      typeof entry === 'string' ? entry : (entry as { value?: unknown } | null)?.value;
-    return (
-      typeof value === 'string' &&
-      whatsappInboundDefinition.TEXT_BEARING_WHATSAPP_MESSAGE_KINDS.includes(value)
     );
   });
 }

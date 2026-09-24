@@ -4,6 +4,7 @@ import * as startForEachGuestDefinition from '../nodes/action-start-for-each-gue
 import * as startVoiceCallDefinition from '../nodes/action-start-voice-call/definition';
 import * as webhookTriggerDefinition from '../nodes/trigger-webhook/definition';
 import { webhookAllowsMethod } from '../nodes/trigger-webhook/match';
+import { triggerKeywordCanNeverMatch } from '../nodes/trigger-whatsapp-inbound/match';
 import { isKnownNodeType, isTriggerType } from './nodes';
 import {
   activeConditionalRequirements,
@@ -18,7 +19,6 @@ import {
   INBOUND_HTTP_TRIGGER_TYPES,
   readWebhookAuthMode,
   SALES_CALLBACK_TOPIC,
-  triggerKeywordCanNeverMatch,
   triggerSuppliesGuestContext,
   type KalfaNodeType,
 } from './types';
