@@ -9,8 +9,8 @@
 // It was not dead data either. The SDK's node body renders it: `fs({ label,
 // description })` in the 2.3.0 bundle emits a title span followed by a subtitle
 // span, and all four node templates call it. The owner read the sentence on the
-// card and had no way to change it; the only writers were `templates.ts` and the
-// palette's own `defaultPropertiesData`.
+// card and had no way to change it; the only writers were the starter templates
+// (`catalogue/templates/`) and the palette's own `defaultPropertiesData`.
 //
 // So the rule this file states is not about `description`. It is the general
 // one: every property that can BLOCK ARMING must be reachable from the panel

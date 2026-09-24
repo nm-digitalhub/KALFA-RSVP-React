@@ -293,7 +293,7 @@ export function statusControl(scope: string): UISchema {
  *     five different ones across five `notify_team` nodes. They are real,
  *     per-node sentences.
  *   • AND WRITTEN ONLY BY US: every one of those strings is authored in
- *     `templates.ts` or in a palette `defaultPropertiesData`. The owner could
+ *     `catalogue/templates/` or in a palette `defaultPropertiesData`. The owner could
  *     read the subtitle on the card and had no way to change it, because no
  *     uischema declared a control for it — measured: 0 of 18.
  *
