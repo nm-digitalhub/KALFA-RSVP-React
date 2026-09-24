@@ -22,8 +22,10 @@ export const metadata: Metadata = { title: 'סוכן WhatsApp לבעלים — �
 
 // The owner WhatsApp business-data agent, stage 2 of plans/owner-whatsapp-agent-plan.md:
 // the kill switch, the number it answers on, the daily cap, the allow-list, and the
-// recent audit. Nothing on this page diverts a message yet — the webhook change is
-// stage 4 — and with no number selected (the default) nothing ever will.
+// recent audit. The webhook reads these settings (stage 4, src/lib/owner-agent/
+// intake.ts): with a number selected, an allow-listed phone's messages to it are
+// diverted and audited here. With no number selected (the default) nothing is.
+// Nothing replies yet — that is stage 6.
 //
 // OWNER ONLY (decision 9.4, 2026-09-24). Every reader and writer below calls
 // requirePlatformOwner itself, and so does every action; this page-level call is
@@ -65,22 +67,18 @@ export default async function OwnerAgentPage() {
         </p>
       </div>
 
-      {/* Stage 2 ships the controls before anything reads them. Without this, the
-          owner turns the switch on after the merge and reasonably waits for answers
-          that cannot come. Remove it in stage 4 (the webhook diversion), rewording the
-          second sentence rather than dropping it until stage 6 is live as well. */}
+      {/* The webhook diversion (stage 4) reads these settings; the reply process
+          (stage 6) does not exist yet. Without this, the owner turns the switch on and
+          reasonably waits for answers that cannot come. Remove it when stage 6 is live. */}
       <div
         role="note"
         className="space-y-1 rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm"
       >
-        <p className="font-semibold">הסוכן עדיין לא מחובר</p>
+        <p className="font-semibold">עדיין אין תשובות</p>
         <p>
-          ההסטה ב-webhook (שלב 4) ותהליך הסוכן (שלב 6) עדיין לא נפרסו, ולכן להגדרות כאן
-          אין כרגע שום השפעה: אף הודעה לא מוסטת ואף אחת לא נענית.
-        </p>
-        <p>
-          מספר שייבחר כאן ייכנס לתוקף ברגע ששלב 4 ייפרס, גם כשהמתג כבוי: הודעות מהטלפונים
-          שברשימת ההיתר למספר הזה יוסטו מהמסלול הרגיל, ובלי המתג לא יקבלו תשובה.
+          תהליך התשובה (שלב 6) עדיין לא נפרס, ולכן אף הודעה לא נענית. ההסטה עצמה כבר פעילה:
+          כשנבחר מספר, הודעות מהטלפונים שברשימת ההיתר למספר הזה יוצאות מהמסלול הרגיל ונרשמות
+          ביומן למטה, גם כשהמתג כבוי.
         </p>
       </div>
 

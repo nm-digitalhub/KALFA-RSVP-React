@@ -142,11 +142,15 @@ describe('/admin/integrations/owner-agent', () => {
   // so it would only be checking its own fixtures. page-privacy.test.ts runs the real
   // DAL under this page, fed raw E.164 rows, and asserts it there.
 
-  it('says, until stages 4 and 6 ship, that nothing here takes effect yet', async () => {
+  it('says, until stage 6 ships, that nothing is answered yet — and that diversion is live', async () => {
     const tree = await OwnerAgentPage();
     const note = collect(tree).find((p) => p.role === 'note');
     expect(note).toBeDefined();
-    expect(JSON.stringify(note?.children)).toContain('הסוכן עדיין לא מחובר');
+    const text = JSON.stringify(note?.children);
+    expect(text).toContain('עדיין אין תשובות');
+    expect(text).toContain('שלב 6');
+    expect(text).toContain('ההסטה עצמה כבר פעילה');
+    expect(text).not.toContain('הסוכן עדיין לא מחובר');
   });
 
   it('links back to the index', async () => {

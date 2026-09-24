@@ -28,6 +28,12 @@ NAV: "בדיקת Webhooks" תחת תפריט-האדמין (אייקון `Webhook
 - אם המסך ריק *למרות* שאתה מצפה לתעבורה — בדוק את ה-401 ב-`/admin/integrations/meta-whatsapp`
   (אי-התאמת App Secret דוחה כל callback לפני שהוא נקלט). ראה
   `plans/whatsapp-webhook-hardening-spec.md §9`.
+- **הודעה של איש צוות לסוכן הבעלים לא מופיעה כאן, בכוונה.** כשב-`/admin/integrations/owner-agent`
+  נבחר מספר, הודעה (לא status) מטלפון שנמצא ברשימת ההיתר ופעיל, למספר הזה, מוסטת לסוכן ולא נכנסת
+  ל-`webhook_inbox`. היא נרשמת ב"יומן אחרון" שבאותו עמוד (מזהים וקודים בלבד). כל שאר התעבורה,
+  כולל statuses על אותו מספר, מופיעה כאן כרגיל. אם כל האירועים ב-delivery הוסטו, גם המעטפה לא
+  נשמרת ב-`webhook_deliveries`; ב-delivery מעורבת היא נשמרת כלשונה (החלטה 9.13).
+  מקור: `src/lib/owner-agent/intake.ts`, `plans/owner-whatsapp-agent-plan.md` §2.2–2.3.
 
 ה-EmptyState מבחין בין "אין אירועים עדיין" ל"אין תואמים לסינון".
 

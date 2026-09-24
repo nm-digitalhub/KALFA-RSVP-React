@@ -238,7 +238,26 @@ export const QUEUES = {
   // resolution the config offers, so anything coarser would mean a schedule set
   // for 09:00 firing at 09:05.
   workflowSchedule: 'workflow-schedule-sweep',
+
+  // Owner WhatsApp business-data agent (plans/owner-whatsapp-agent-plan.md §2.2,
+  // stage 4). Event-driven: the WhatsApp webhook enqueues ONE job per diverted,
+  // gate-passing staff question, with id deterministicJobId(wamid), so a Meta
+  // retry of the same message is a no-op. The payload is the intake row id and
+  // nothing else (OwnerAgentReplyJob) — the question text stays in
+  // owner_agent_intake.
+  //
+  // NO CONSUMER YET. Stage 6 adds the boss.work(); until then jobs wait here.
+  // It is declared now only because pg-boss refuses send() to a queue that does
+  // not exist ("Queue … does not exist"), and the worker's createQueue loop over
+  // QUEUES is what creates every queue.
+  ownerAgentReply: 'owner-agent-reply',
 } as const;
+
+// The owner-agent-reply job payload. The intake row id ONLY — never the question,
+// never a phone. The consumer (stage 6) re-reads the row and re-runs the gate.
+export type OwnerAgentReplyJob = {
+  intakeId: string;
+};
 
 // workflow-run retry policy. Deliberately NO `deadLetter`, for the same reason
 // CALL_RETRY omits it: QUEUES.dead's consumer (handleDead) hard-assumes an

@@ -5,12 +5,24 @@ import { WhatsAppAPI } from 'whatsapp-api-js';
 import type { PostData } from 'whatsapp-api-js/types';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import { getOutreachEnabled, getWhatsAppConfig } from '@/lib/data/outreach-config';
+import {
+  getOutreachEnabled,
+  getWhatsAppConfig,
+  type WhatsAppConfig,
+} from '@/lib/data/outreach-config';
 import {
   insertWebhookDelivery,
   insertWebhookEvents,
   type WebhookInboxInsert,
 } from '@/lib/data/webhooks';
+import {
+  getOwnerAgentRouting,
+  handleOwnerAgentMessages,
+  planOwnerAgentDiversion,
+  withoutDivertedRows,
+  type OwnerAgentDiversion,
+  type OwnerAgentRouting,
+} from '@/lib/owner-agent/intake';
 import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 
 // Meta WhatsApp inbound webhook — persist-then-process (B2). Server-to-server:
@@ -20,6 +32,11 @@ import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 // webhook_inbox, and return 200 fast. A pg-boss worker does all economic logic
 // out-of-band. Fail-closed: disabled/unsigned ⇒ nothing is written. Never log the
 // raw body, phone, payload, or app secret.
+//
+// One exception, and only one (plans/owner-whatsapp-agent-plan.md §2.2–§2.3): a
+// message on the number chosen for the owner agent, FROM a phone on its enabled
+// allow-list, goes to src/lib/owner-agent/intake.ts instead of webhook_inbox.
+// With no number chosen (the default) nothing below differs from before it.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -250,6 +267,73 @@ async function alertRejectedDelivery(
   });
 }
 
+// Verify with the library's HMAC (no hand-rolled crypto). secure:true derives
+// the key from appSecret and validates X-Hub-Signature-256 over the raw body.
+async function verifySignature(
+  raw: string,
+  signature: string | null,
+  config: WhatsAppConfig,
+  appSecret: string,
+): Promise<boolean> {
+  const wa = new WhatsAppAPI({
+    token: config.accessToken,
+    appSecret,
+    secure: true,
+    v: GRAPH_API_VERSION,
+  });
+  try {
+    return await wa.verifyRequestSignature(raw, signature ?? '');
+  } catch {
+    // Missing appSecret/crypto.subtle — appSecret is gated by the caller and
+    // subtle is present on the Node runtime; fail closed on the unexpected.
+    return false;
+  }
+}
+
+// Outreach is off, so today's answer is a bare 200 with the body unread, and it
+// stays exactly that. Only when an owner-agent number is chosen (and has enabled
+// allow-list rows) is the body read and verified — solely to find staff
+// messages on that number. A bad signature or bad JSON returns silently: in the
+// off state nothing ever alerted on those, and nothing starts to. Every event
+// that is not a diverted message is dropped unwritten, exactly as today.
+// Never throws: handleOwnerAgentMessages alerts on its own failures.
+async function divertWhileOutreachOff(
+  request: NextRequest,
+  config: WhatsAppConfig,
+  appSecret: string,
+  routing: OwnerAgentRouting,
+): Promise<void> {
+  const raw = await request.text().catch(() => null);
+  if (raw === null) return;
+  const signature = request.headers.get('x-hub-signature-256');
+  if (!(await verifySignature(raw, signature, config, appSecret))) return;
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  const diversion = planOwnerAgentDiversion(data, routing);
+  await handleOwnerAgentMessages(diversion.messages, routing);
+}
+
+// The rows to persist when some messages were diverted, or null for "nothing was
+// diverted: take today's path unchanged". normalizeWebhookRows runs here BEFORE
+// the envelope is stored (the envelope is skipped when nothing is left for it),
+// so if it throws, return null and let today's path run it again after
+// insertWebhookDelivery — failing exactly where and how it fails today.
+function rowsKeptForGuests(
+  data: PostData,
+  diversion: OwnerAgentDiversion,
+): WebhookInboxInsert[] | null {
+  if (diversion.messages.length === 0) return null;
+  try {
+    return withoutDivertedRows(normalizeWebhookRows(data), diversion);
+  } catch {
+    return null;
+  }
+}
+
 // GET: Meta's subscription verification challenge. Gate on the configured verify
 // token ONLY — Meta may verify the callback URL before outreach is switched on.
 export async function GET(request: NextRequest) {
@@ -269,35 +353,27 @@ export async function GET(request: NextRequest) {
 
 // POST: a signed inbound delivery. Verify → normalize → persist. No billing here.
 export async function POST(request: NextRequest) {
-  const [enabled, config] = await Promise.all([
+  // The third read is the owner agent's routing (§2.3 A): null unless a number is
+  // chosen and has enabled allow-list rows; null on any error too (alerted).
+  const [enabled, config, ownerAgent] = await Promise.all([
     getOutreachEnabled(),
     getWhatsAppConfig(),
+    getOwnerAgentRouting(),
   ]);
   // 200 (not 5xx) so a misconfigured/disabled endpoint doesn't trigger Meta
   // retry storms; nothing is written.
   if (!enabled || !config?.appSecret) {
+    // §2.3 B: the owner agent does not depend on outreach_enabled.
+    if (config?.appSecret && ownerAgent) {
+      await divertWhileOutreachOff(request, config, config.appSecret, ownerAgent);
+    }
     return new NextResponse('ok', { status: 200 });
   }
 
   const raw = await request.text();
   const signature = request.headers.get('x-hub-signature-256');
 
-  // Verify with the library's HMAC (no hand-rolled crypto). secure:true derives
-  // the key from appSecret and validates X-Hub-Signature-256 over the raw body.
-  const wa = new WhatsAppAPI({
-    token: config.accessToken,
-    appSecret: config.appSecret,
-    secure: true,
-    v: GRAPH_API_VERSION,
-  });
-  let verified = false;
-  try {
-    verified = await wa.verifyRequestSignature(raw, signature ?? '');
-  } catch {
-    // Missing appSecret/crypto.subtle — appSecret is gated above and subtle is
-    // present on the Node runtime; fail closed on the unexpected.
-    verified = false;
-  }
+  const verified = await verifySignature(raw, signature, config, config.appSecret);
   if (!verified) {
     await alertRejectedDelivery('invalid_signature', raw.length);
     return new NextResponse('invalid signature', { status: 401 });
@@ -311,22 +387,37 @@ export async function POST(request: NextRequest) {
     return new NextResponse('bad request', { status: 400 });
   }
 
+  // §2.3 C: which messages go to the owner agent. Pure and total. With nothing
+  // diverted, keptRows is null and every line below runs exactly as before.
+  const diversion = planOwnerAgentDiversion(data, ownerAgent);
+  const keptRows = rowsKeptForGuests(data, diversion);
+
   // The verified envelope, verbatim, so the admin can always see what Meta
   // actually sent next to what we normalized out of it. Stored before the
   // events so each row can point at it; a null id (store failure / duplicate
-  // race) never blocks the events themselves.
-  const deliveryId = await insertWebhookDelivery({
-    provider: 'whatsapp',
-    raw,
-    body: data as unknown as Parameters<typeof insertWebhookDelivery>[0]['body'],
-  });
+  // race) never blocks the events themselves. When EVERY event in the delivery
+  // was diverted there is no guest event to keep an envelope for, so none is
+  // stored; otherwise it is stored verbatim, as today (decision 9.13).
+  const deliveryId =
+    keptRows !== null && keptRows.length === 0
+      ? null
+      : await insertWebhookDelivery({
+          provider: 'whatsapp',
+          raw,
+          body: data as unknown as Parameters<typeof insertWebhookDelivery>[0]['body'],
+        });
 
-  const rows = normalizeWebhookRows(data).map((row) => ({
+  const rows = (keptRows ?? normalizeWebhookRows(data)).map((row) => ({
     ...row,
     delivery_id: deliveryId,
   }));
   if (rows.length > 0) {
     await insertWebhookEvents(rows);
+  }
+  // Only after the guests are persisted. Never throws and never changes the
+  // answer: a failure here is alerted (ids only) and the staff member asks again.
+  if (keptRows !== null && ownerAgent) {
+    await handleOwnerAgentMessages(diversion.messages, ownerAgent);
   }
   return new NextResponse('ok', { status: 200 });
 }

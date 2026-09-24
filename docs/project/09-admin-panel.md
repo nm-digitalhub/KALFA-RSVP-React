@@ -26,7 +26,7 @@
 | `/admin/integrations` | `(admin)/admin/integrations/page.tsx` | אינדקס הספקים: כרטיס מצב לכל ספק + קטלוג הערוצים. **מחליף את `/admin/channels` ואת `/admin/alerts`**, ששניהם נמחקו (Task 0.6 Step 4b) ומפנים לכאן/ל-slack |
 | `/admin/integrations/<provider>` | `(admin)/admin/integrations/{meta-whatsapp,voximplant,extra-sms,resend-email,microsoft,sumit,slack}/page.tsx` | עמוד לכל ספק: מצב, פרטי התחברות, webhooks, מתגים |
 | `/admin/integrations/numbers` | `(admin)/admin/integrations/numbers/page.tsx` | כל מספרי הטלפון בכל הספקים + שיוך תפקידים (`provider_number_roles`) |
-| `/admin/integrations/owner-agent` | `(admin)/admin/integrations/owner-agent/page.tsx` | סוכן WhatsApp לבעלים (שלב 2 ב-`plans/owner-whatsapp-agent-plan.md`): מתג, בחירת המספר מכל מספרי ה-WABA, תקרה יומית, רשימת היתר עם חיווי התאמה לטלפון המאומת, ויומן אחרון (מזהים וקודים בלבד). **בעלים בלבד** (`requirePlatformOwner`, החלטה 9.4); DAL: `src/lib/data/admin/owner-agent.ts` |
+| `/admin/integrations/owner-agent` | `(admin)/admin/integrations/owner-agent/page.tsx` | סוכן WhatsApp לבעלים (שלב 2 ב-`plans/owner-whatsapp-agent-plan.md`; מאז שלב 4 ה-webhook קורא את ההגדרות ומסיט לפיהן, ותהליך התשובה, שלב 6, עוד לא קיים): מתג, בחירת המספר מכל מספרי ה-WABA, תקרה יומית, רשימת היתר עם חיווי התאמה לטלפון המאומת, ויומן אחרון (מזהים וקודים בלבד). **בעלים בלבד** (`requirePlatformOwner`, החלטה 9.4); DAL: `src/lib/data/admin/owner-agent.ts` |
 | `/admin/templates` | `(admin)/admin/templates/page.tsx` | תבניות הפנייה לאורחים (WhatsApp / סקריפט שיחה) |
 | `/admin/webhooks` | `(admin)/admin/webhooks/page.tsx` | Webhook Inspector: רשימת `webhook_inbox`, מגירת-פירוט, reprocess |
 | `/admin/sumit-test` | `(admin)/admin/sumit-test/page.tsx` | PoC אבחוני מול SUMIT החי (מסלול A/B) |
