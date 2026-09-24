@@ -56,7 +56,7 @@ function RelabelForm({ entry }: { entry: OwnerAgentAllowlistEntry }) {
       <input type="hidden" name="id" value={entry.id} />
       <div className="flex items-center gap-2">
         <label htmlFor={inputId} className="sr-only">
-          תווית
+          {`תווית עבור ${entry.maskedNumber}`}
         </label>
         <input
           id={inputId}
@@ -67,7 +67,7 @@ function RelabelForm({ entry }: { entry: OwnerAgentAllowlistEntry }) {
           className={`${inputClass} min-w-32`}
         />
         <SubmitButton className="w-auto" size="sm">
-          שמירה
+          שמירה<span className="sr-only">{` תווית עבור ${entry.maskedNumber}`}</span>
         </SubmitButton>
       </div>
       <FieldError errors={state?.fieldErrors?.label} />
@@ -77,6 +77,8 @@ function RelabelForm({ entry }: { entry: OwnerAgentAllowlistEntry }) {
   );
 }
 
+// Every row has the same buttons, so each one carries the row's masked number for a
+// screen reader — "השבתה" alone, heard while tabbing through a table, names no row.
 function RowActions({ entry }: { entry: OwnerAgentAllowlistEntry }) {
   const [toggleState, toggleAction] = useActionState(setAllowlistEntryEnabledAction, null);
   const [removeState, removeAction] = useActionState(removeAllowlistEntryAction, null);
@@ -92,20 +94,33 @@ function RowActions({ entry }: { entry: OwnerAgentAllowlistEntry }) {
           <input type="hidden" name="enabled" value={entry.enabled ? 'false' : 'true'} />
           <SubmitButton className="w-auto" size="sm">
             {entry.enabled ? 'השבתה' : 'הפעלה'}
+            <span className="sr-only">{` ${entry.maskedNumber}`}</span>
           </SubmitButton>
         </form>
         {confirming ? (
           <form action={removeAction} className="flex items-center gap-2">
             <input type="hidden" name="id" value={entry.id} />
             <SubmitButton className="w-auto" size="sm">
-              אישור הסרה
+              אישור הסרה<span className="sr-only">{` ${entry.maskedNumber}`}</span>
             </SubmitButton>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={`ביטול הסרה ${entry.maskedNumber}`}
+              onClick={() => setConfirming(false)}
+            >
               ביטול
             </Button>
           </form>
         ) : (
-          <Button type="button" variant="outline" size="sm" onClick={() => setConfirming(true)}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label={`הסרה ${entry.maskedNumber}`}
+            onClick={() => setConfirming(true)}
+          >
             הסרה
           </Button>
         )}

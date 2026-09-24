@@ -149,6 +149,13 @@ describe('/admin/integrations/owner-agent', () => {
     expect(json).not.toMatch(/\+\d{7,}/);
   });
 
+  it('says, until stages 4 and 6 ship, that nothing here takes effect yet', async () => {
+    const tree = await OwnerAgentPage();
+    const note = collect(tree).find((p) => p.role === 'note');
+    expect(note).toBeDefined();
+    expect(JSON.stringify(note?.children)).toContain('הסוכן עדיין לא מחובר');
+  });
+
   it('links back to the index', async () => {
     const tree = await OwnerAgentPage();
     const hrefs = collect(tree)

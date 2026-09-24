@@ -65,6 +65,25 @@ export default async function OwnerAgentPage() {
         </p>
       </div>
 
+      {/* Stage 2 ships the controls before anything reads them. Without this, the
+          owner turns the switch on after the merge and reasonably waits for answers
+          that cannot come. Remove it in stage 4 (the webhook diversion), rewording the
+          second sentence rather than dropping it until stage 6 is live as well. */}
+      <div
+        role="note"
+        className="space-y-1 rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm"
+      >
+        <p className="font-semibold">הסוכן עדיין לא מחובר</p>
+        <p>
+          ההסטה ב-webhook (שלב 4) ותהליך הסוכן (שלב 6) עדיין לא נפרסו, ולכן להגדרות כאן
+          אין כרגע שום השפעה: אף הודעה לא מוסטת ואף אחת לא נענית.
+        </p>
+        <p>
+          מספר שייבחר כאן ייכנס לתוקף ברגע ששלב 4 ייפרס, גם כשהמתג כבוי: הודעות מהטלפונים
+          שברשימת ההיתר למספר הזה יוסטו מהמסלול הרגיל, ובלי המתג לא יקבלו תשובה.
+        </p>
+      </div>
+
       <section className="space-y-3" aria-labelledby="owner-agent-switch-heading">
         <h2 id="owner-agent-switch-heading" className="text-lg font-semibold">
           הפעלה
@@ -108,7 +127,8 @@ export default async function OwnerAgentPage() {
           </h2>
           <p className="text-sm text-muted-foreground">
             כל טלפון משויך לאיש צוות אחד. הסוכן עונה רק כשהטלפון זהה לטלפון המאומת של
-            אותו איש צוות, ורק כל עוד הוא בצוות.
+            אותו איש צוות, ורק כל עוד הוא בצוות. איש הצוות מאמת את הטלפון שלו בעצמו,
+            בקוד SMS, בהגדרות החשבון שלו.
           </p>
         </div>
         <AllowlistPanel entries={entries} staff={staff} />
