@@ -95,7 +95,8 @@ export async function listVoicePurposes(): Promise<VoicePurpose[]> {
  * The editor's own property panel was already written for this list rather than
  * for the raw one: the `MessageOnError` beside the dropdown exists because "an
  * empty dropdown is a legitimate state… whose three shipped rows are all
- * built-in and refused by the dialler by design" (schemas.ts). That note
+ * built-in and refused by the dialler by design"
+ * (nodes/action-start-voice-call/uischema.ts). That note
  * described an intent nothing implemented — every row reached the dropdown.
  *
  * As of 2026-09-15 the live table holds exactly three rows, all built-in and all
