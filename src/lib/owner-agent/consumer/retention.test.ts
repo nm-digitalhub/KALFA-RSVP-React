@@ -93,11 +93,16 @@ function age(p: string, ageMs: number) {
   utimesSync(p, t, t);
 }
 
+// The fixture places the sessions by the measured rule written out HERE, not
+// by claudeProjectDir(): a retention that pointed at the wrong directory must
+// fail these tests, not move the fixture along with it.
+const measuredName = (cwd: string) => cwd.replace(/[^a-zA-Z0-9]/g, '-');
+
 function fixture() {
   const repo = path.join(host, 'beta');
   const paths = ownerAgentPaths(repo);
-  const ours = claudeProjectDir(paths);
-  const projects = path.dirname(ours);
+  const projects = path.join(host, '.claude', 'projects');
+  const ours = path.join(projects, measuredName(path.join(repo, '.fleet-logs/owner-agent/cwd')));
   const sibling = path.join(projects, '-var-www-vhosts-kalfa-me-beta'); // the fleet's / interactive sessions
 
   // Ours.

@@ -417,6 +417,25 @@ describe('never twice', () => {
     expect(w.sendText).toHaveBeenCalledTimes(1);
   });
 
+  it('a row another delivery moved to `sending` after this one loaded it is not claimed', async () => {
+    const w = world();
+    const real = w.deps.store;
+    let raced = false;
+    w.deps.store = {
+      ...real,
+      transition: async (id, from, to) => {
+        if (!raced) {
+          raced = true;
+          intakeRow(w)!.status = 'sending'; // the other delivery, between our load and our claim
+        }
+        return real.transition(id, from, to);
+      },
+    };
+    expect(await handleOwnerAgentReply(job, w.deps)).toBe('lost_race');
+    expect(w.run).not.toHaveBeenCalled();
+    expectSilence(w);
+  });
+
   it('a failed send is final: a later delivery does not try again', async () => {
     const w = world();
     w.sendText.mockResolvedValue({ kind: 'unknown', reason: 'send_threw' });
