@@ -1,8 +1,11 @@
 // Pins the two condition-branch handle ids to the SDK's own formatter.
 //
-// `CONDITION_BRANCH_HANDLES` is spelled out as string literals because
-// catalogue/types.ts is read by the pg-boss worker and must not import
-// @workflowbuilder/sdk. That is the right trade, but it means two things can
+// `CONDITION_BRANCH_HANDLES` (and the switch's `SWITCH_DEFAULT_HANDLE` and
+// `switchBranchHandle`) are spelled out as string literals because they live in
+// nodes/logic-condition/definition.ts and nodes/logic-switch/definition.ts,
+// which the pg-boss worker reads and which must not import @workflowbuilder/sdk;
+// catalogue/types.ts only re-exports them, and this test imports that
+// re-export. That is the right trade, but it means two things can
 // drift apart silently: the literal the worker returns as `nextPort`, and the id
 // the editor actually writes on the handle. `isEdgeLive` compares them with
 // `===`, so a drift of one character stops every condition node from branching

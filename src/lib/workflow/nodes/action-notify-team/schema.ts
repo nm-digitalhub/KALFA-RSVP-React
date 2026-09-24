@@ -11,13 +11,16 @@ import {
   statusProperty,
 } from '../../catalogue/editor-shared';
 
-import { requiredFields } from './definition';
+import { requiredFields, type NotifyLevel } from './definition';
 
+// Keyed by `NotifyLevel`, so a level added to or removed from `NOTIFY_LEVELS`
+// without a matching option here is a type error rather than a Select that
+// silently disagrees with the handler's `readEnum` guard.
 export const notifyLevelOptions = {
   info: { label: 'מידע', value: 'info' },
   warn: { label: 'אזהרה', value: 'warn' },
   error: { label: 'שגיאה', value: 'error' },
-} as const;
+} as const satisfies Record<NotifyLevel, { label: string; value: NotifyLevel }>;
 
 export const notifyTeamSchema = {
   type: 'object',
