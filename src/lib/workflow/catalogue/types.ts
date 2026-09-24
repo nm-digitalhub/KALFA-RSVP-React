@@ -17,6 +17,7 @@ import type { RsvpStatus } from '@/lib/constants';
 
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
+import * as switchDefinition from '../nodes/logic-switch/definition';
 
 // ---------------------------------------------------------------------------
 // Node types
@@ -31,7 +32,7 @@ export const NODE_TYPES = [
   'trigger.schedule',
   'trigger.sumit_card',
   conditionDefinition.type,
-  'logic.switch',
+  switchDefinition.type,
   'action.update_guest_status',
   'action.send_whatsapp',
   'action.microsoft_send_email',
@@ -462,113 +463,21 @@ export function authModeFor(nodeType: string, properties: Record<string, unknown
 export { CONDITION_BRANCH_HANDLES, type ConditionBranchHandle } from '../nodes/logic-condition/definition';
 export type ConditionConfig = conditionDefinition.ConditionConfig;
 
-// ---------------------------------------------------------------------------
-// logic.switch
-// ---------------------------------------------------------------------------
-
-/**
- * `logic.switch` — N named branches, each with its own conditions.
- *
- * REBUILT 1:1 ON THE SDK'S OWN `DecisionBranches` CONTROL (2026-09-13). The first
- * version hard-coded three cases and a default because I had not read far enough:
- * the SDK ships a composer that gives the owner add / remove / reorder / rename
- * over the branch list, and `ArrayFieldSchema` to declare it. The ceiling was
- * mine, not the package's.
- *
- * The operators below are the SDK's own `comparisonsOperators`, copied as
- * literals rather than imported — this module is read by the pg-boss worker and
- * must not load `@workflowbuilder/sdk`. `branch-handles.test.ts` pins them
- * against the package so a drift fails a test rather than a live workflow.
- */
-export const SWITCH_COMPARISON_OPERATORS = [
-  'isEqual',
-  'isNotEqual',
-  'isGreaterThan',
-  'isLessThan',
-  'isLessThanOrEqual',
-  'isGreaterThanOrEqual',
-  'isContaining',
-  'isNotContaining',
-  'isBefore',
-  'isAfter',
-] as const;
-export type SwitchComparisonOperator = (typeof SWITCH_COMPARISON_OPERATORS)[number];
-
-/**
- * The SDK's `LogicalOperator`, joining the rows within ONE branch.
- *
- * ONE per branch, not one per join: the control renders its picker on the first
- * row only (measured — see `evaluateSwitchBranch`), so `conditions[0]` is the
- * only authoritative copy and the field on later rows is inert.
- */
-export const SWITCH_LOGICAL_OPERATORS = ['AND', 'OR'] as const;
-export type SwitchLogicalOperator = (typeof SWITCH_LOGICAL_OPERATORS)[number];
-
-/**
- * One condition row, exactly the SDK's `DynamicCondition`.
- *
- * `x` and `y` are free values — literal text or `{{…}}` references — and both
- * arrive ALREADY RESOLVED, because `resolveConfigTemplates` walks the whole
- * config before the handler runs. That is what the earlier note in schemas.ts
- * said we could not do ("their conditions resolve through resolveTemplate, which
- * we did not vendor"); resolve-template IS vendored and wired, so the reason is
- * gone and the control can be exposed as designed.
- */
-export type SwitchCondition = {
-  x: string;
-  comparisonOperator: SwitchComparisonOperator;
-  y: string;
-  logicalOperator: SwitchLogicalOperator;
-};
-
-/**
- * One branch: a handle, a label and the rows that select it.
- *
- * `sourceHandle` is minted by the EDITOR through `getHandleId`, so unlike the
- * fixed three-case version the worker cannot know the ports in advance — it
- * reads them from the branch the conditions selected. That is the whole reason
- * this shape can be dynamic at all.
- */
-export type SwitchBranch = {
-  id: string;
-  sourceHandle: string;
-  label?: string;
-  conditions?: SwitchCondition[];
-};
-
-/**
- * The DEFAULT port — fired when no branch matched.
- *
- * Seeded by the palette and NOT removable from the control, because "none of the
- * above" is the one route that must always exist: without it an unmatched value
- * names no port, `isEdgeLive` prunes every edge, and the run ends `incomplete`
- * with a dead end rather than going somewhere a person chose.
- */
-export const SWITCH_DEFAULT_HANDLE = 'source:inner:default';
-export const SWITCH_DEFAULT_BRANCH_ID = 'default';
-
-/**
- * The handle id a branch of `id` draws, spelled once.
- *
- * This is the SDK's `getHandleId({ handleType: 'source', innerId })` output —
- * reproduced as a string template rather than imported, because this module is
- * read by the pg-boss worker and must not load `@workflowbuilder/sdk`.
- * `branch-handles.test.ts` pins the two against each other, so a change in the
- * SDK's format fails a test instead of silently orphaning every seeded branch.
- *
- * Branches the OWNER adds get theirs minted by the control in this same shape;
- * this exists for the ones WE seed (the palette default, the diagram templates).
- */
-export function switchBranchHandle(branchId: string): string {
-  return `source:inner:${branchId}`;
-}
-
-export type SwitchConfig = {
-  /** The value every branch's conditions are compared against, if they use it. */
-  left?: string;
-  /** Read by the SDK's node renderer AND by the handler. One array, one truth. */
-  decisionBranches: SwitchBranch[];
-};
+// `logic.switch` — its config, branch and condition shapes, the SDK's operators
+// and the default handle are declared with the rest of its contract in
+// `nodes/logic-switch/definition.ts`. Re-exported here for existing readers.
+export {
+  SWITCH_COMPARISON_OPERATORS,
+  SWITCH_DEFAULT_BRANCH_ID,
+  SWITCH_DEFAULT_HANDLE,
+  SWITCH_LOGICAL_OPERATORS,
+  switchBranchHandle,
+  type SwitchBranch,
+  type SwitchComparisonOperator,
+  type SwitchCondition,
+  type SwitchLogicalOperator,
+} from '../nodes/logic-switch/definition';
+export type SwitchConfig = switchDefinition.SwitchConfig;
 
 // Per-STEP on/off, distinct from the workflow-level `is_active` switch.
 //
@@ -1100,7 +1009,7 @@ export type KalfaNodeConfig =
   | { type: 'trigger.schedule'; config: ScheduleTriggerConfig }
   | { type: 'trigger.sumit_card'; config: SumitCardTriggerConfig }
   | { type: typeof conditionDefinition.type; config: ConditionConfig }
-  | { type: 'logic.switch'; config: SwitchConfig }
+  | { type: typeof switchDefinition.type; config: SwitchConfig }
   | { type: 'action.update_guest_status'; config: UpdateGuestStatusConfig }
   | { type: 'action.send_whatsapp'; config: SendWhatsappConfig }
   | { type: 'action.microsoft_send_email'; config: MicrosoftSendEmailConfig }
@@ -1259,6 +1168,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   // A moved node declares its own — even `{}` — in its definition.
   [setValueDefinition.type]: setValueDefinition.deploymentBindings,
   [conditionDefinition.type]: conditionDefinition.deploymentBindings,
+  [switchDefinition.type]: switchDefinition.deploymentBindings,
   'trigger.whatsapp_inbound': { phoneNumberId: 'identifier' },
   // A HASH, not the token — so this is no longer a secret that must not travel,
   // but it still authenticates to THIS installation and resolves to nothing
@@ -1311,7 +1221,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [conditionDefinition.type]: conditionDefinition.requiredFields,
-  'logic.switch': ['label', 'description'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [switchDefinition.type]: switchDefinition.requiredFields,
   'logic.wait': ['label', 'description', 'amount', 'unit'],
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.

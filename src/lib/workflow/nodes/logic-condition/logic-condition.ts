@@ -43,7 +43,7 @@ export const conditionPaletteItem = {
   //     vendored and wired into `activity-runner.ts` — the very next bullet
   //     says so about `outputSchema` — and `logic.switch` already ships the
   //     vendor's `DecisionBranches` control (see `switchUiSchema` in
-  //     `catalogue/schemas.ts`). So the mechanism works and is in use.
+  //     `nodes/logic-switch/uischema.ts`). So the mechanism works and is in use.
   //
   //     ⚠️ AND IT NAMED THE WRONG CONTROL. `DecisionBranches` belongs to the
   //     vendor's DECISION node (docs/workflowbuilder/nodes/decision.md); their

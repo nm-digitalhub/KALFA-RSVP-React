@@ -13,6 +13,7 @@
 // the definition. No adapter changes.
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
+import * as switchDefinition from '../nodes/logic-switch/definition';
 
 import { NODE_TYPES, type CatalogueEntry, type KalfaNodeType } from './types';
 
@@ -22,7 +23,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'trigger.schedule', isTrigger: true },
   { type: 'trigger.sumit_card', isTrigger: true },
   { type: conditionDefinition.type, isTrigger: conditionDefinition.isTrigger },
-  { type: 'logic.switch', isTrigger: false },
+  { type: switchDefinition.type, isTrigger: switchDefinition.isTrigger },
   { type: 'action.update_guest_status', isTrigger: false },
   { type: 'action.send_whatsapp', isTrigger: false },
   { type: 'action.microsoft_send_email', isTrigger: false },

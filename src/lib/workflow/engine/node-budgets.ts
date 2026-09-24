@@ -1,6 +1,7 @@
 import type { KalfaNodeType } from '../catalogue/types';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
+import * as switchDefinition from '../nodes/logic-switch/definition';
 
 // How long ONE execution of a node may take — the missing half of the wait work,
 // adopted from the engine this project vendored its graph runner from.
@@ -58,7 +59,7 @@ export const DEFAULT_NODE_ACTIVITY_PROFILE: NodeActivityProfile = { timeoutMs: 1
 export const NODE_ACTIVITY_PROFILES: Readonly<Partial<Record<KalfaNodeType, NodeActivityProfile>>> =
   Object.freeze({
     [conditionDefinition.type]: conditionDefinition.activityProfile,
-    'logic.switch': { timeoutMs: 5_000 },
+    [switchDefinition.type]: switchDefinition.activityProfile,
     [setValueDefinition.type]: setValueDefinition.activityProfile,
     'logic.wait': { timeoutMs: 5_000 },
     'action.webhook': { timeoutMs: 20_000 },

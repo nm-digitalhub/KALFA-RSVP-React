@@ -52,6 +52,7 @@ import {
 
 import { conditionPaletteItem } from '../nodes/logic-condition/logic-condition';
 import { setValuePaletteItem } from '../nodes/logic-set-value/logic-set-value';
+import { switchPaletteItem } from '../nodes/logic-switch/logic-switch';
 
 import {
   ACTION_BRANCH_HANDLES,
@@ -63,8 +64,6 @@ import {
   NODE_NUMBER_RANGES,
   NODE_REQUIRED_FIELDS,
   type SumitDocumentTypeOption,
-  SWITCH_DEFAULT_BRANCH_ID,
-  SWITCH_DEFAULT_HANDLE,
   WAIT_UNIT_VALUES,
   WHATSAPP_MESSAGE_KINDS,
   type GuestField,
@@ -788,79 +787,6 @@ const webhookUiSchema: UISchema = {
       text: 'המשך ללא עצירה: הפנייה לא תישלח שוב, והמערכת החיצונית פשוט לא תקבל אותה.',
     },
     statusControl(webhookScope('properties.status')),
-  ],
-};
-
-// ---------------------------------------------------------------------------
-// logic.switch
-// ---------------------------------------------------------------------------
-
-// N OWNER-DEFINED BRANCHES, on the SDK's own `DecisionBranches` control.
-//
-// REBUILT 2026-09-13, replacing a fixed `case1/case2/case3`. The old note here
-// said the branches were "NOT exposed in the uischema" because the worker named
-// the ports from `SWITCH_CASE_HANDLES` without reading the diagram. That was a
-// self-imposed ceiling: the handler now reads the branch the conditions selected,
-// so the port list may be anything the owner builds.
-//
-// `conditions` is a NESTED array inside each branch — `FieldSchema` admits an
-// `ArrayFieldSchema`, so this type-checks — and it must be declared, or the
-// control has nowhere to persist its rows and validation strips them on save.
-// Its four fields are the SDK's `DynamicCondition` exactly.
-const switchSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['logic.switch'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    left: { type: 'string' },
-    decisionBranches: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          sourceHandle: { type: 'string' },
-          label: { type: 'string' },
-          conditions: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                x: { type: 'string' },
-                comparisonOperator: { type: 'string' },
-                y: { type: 'string' },
-                logicalOperator: { type: 'string' },
-              },
-            },
-          },
-        },
-      },
-    },
-  },
-} satisfies NodeSchema;
-
-const switchScope = getScope<typeof switchSchema>;
-
-const switchUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(switchScope('properties.label'), switchScope('properties.description')),
-    // Kept as a convenience, NOT as the thing branches compare against: each row
-    // carries its own `x`. An owner who wants one value routed several ways can
-    // paste it here and reference it, and one who does not can ignore it. The
-    // handler never reads it, which is why it left `required`.
-    {
-      type: 'VariableText',
-      scope: switchScope('properties.left'),
-      label: 'הערך לניתוב (לא חובה)',
-      placeholder: 'למשל {{trigger.button_payload}}',
-    },
-    // THE control. Renders one card per branch — rename, reorder, delete — each
-    // opening the SDK's condition editor with its ten operators and the variable
-    // picker fed by every upstream node's `outputSchema`.
-    { type: 'DecisionBranches', scope: switchScope('properties.decisionBranches') },
-    statusControl(switchScope('properties.status')),
   ],
 };
 
@@ -2792,58 +2718,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
   } satisfies PaletteItem<typeof sumitCardTriggerSchema>,
   // Moved to its own folder — see nodes/logic-condition/.
   conditionPaletteItem,
-  {
-    type: 'logic.switch' satisfies KalfaNodeType,
-    label: 'ניתוב לפי תנאים',
-    description: 'מפצל את התהליך לכמה מסלולים — מסלול לכל תנאי, ועוד ברירת מחדל',
-    icon: 'ArrowsSplit',
-    // Same renderer as the condition, and REQUIRED rather than cosmetic: without
-    // it the N branches render as no handles at all, because the default node
-    // body draws exactly one bare 'source'.
-    templateType: NodeType.DecisionNode,
-    schema: switchSchema,
-    uischema: switchUiSchema,
-    outputSchema: {
-      type: 'default',
-      properties: {
-        matched: { type: 'boolean', label: 'נמצאה התאמה', description: 'האם תנאי כלשהו התקיים' },
-        // A NAME now, not a number. With N owner-named branches "מסלול 3" is not
-        // a fact the node knows; the label the owner typed is.
-        branch: { type: 'string', label: 'שם המסלול שנבחר', description: 'ריק כאשר נבחרה ברירת המחדל' },
-      },
-    },
-    defaultPropertiesData: {
-      status: nodeStatusOptions.active.value,
-      label: 'ניתוב לפי תנאים',
-      description: 'מפצל את התהליך לכמה מסלולים — מסלול לכל תנאי, ועוד ברירת מחדל',
-      left: '',
-      // SEEDED, and both entries matter.
-      //
-      // The DEFAULT must exist from the first drop: the handler falls through to
-      // it by elimination, and a node dropped with `[]` would have no port to
-      // fall through to and would dead-end the run on its very first unmatched
-      // value. It is last so it reads as the fall-through it is.
-      //
-      // One empty branch above it is the affordance: an owner who drops the node
-      // sees a card to fill in rather than an empty panel and a lone "אחרת". Its
-      // `conditions: []` never matches until the owner writes a row, which is the
-      // same rule the SDK's own "add branch" produces.
-      //
-      // `source:inner:<id>` is `getHandleId({ handleType: 'source', innerId })` —
-      // spelled as a constant here because this module's worker-side twin
-      // (`types.ts`) must not import the SDK. Branches the OWNER adds get theirs
-      // minted by the control, in this same shape.
-      decisionBranches: [
-        { id: 'branch-1', sourceHandle: 'source:inner:branch-1', label: 'מסלול ראשון', conditions: [] },
-        {
-          id: SWITCH_DEFAULT_BRANCH_ID,
-          sourceHandle: SWITCH_DEFAULT_HANDLE,
-          label: 'אחרת',
-          conditions: [],
-        },
-      ],
-    },
-  } satisfies PaletteItem<typeof switchSchema>,
+  // Moved to its own folder — see nodes/logic-switch/.
+  switchPaletteItem,
   {
     type: 'action.update_guest_status' satisfies KalfaNodeType,
     // Rendered as a decision node so the failure branch has a handle to leave
