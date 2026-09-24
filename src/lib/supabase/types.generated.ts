@@ -1483,7 +1483,6 @@ export type Database = {
           approved_at: string | null
           approved_by: string | null
           auth_amount: number | null
-          auth_expires_at: string | null
           auth_external_ref: string | null
           auth_number: string | null
           authorized_at: string | null
@@ -1535,7 +1534,6 @@ export type Database = {
           approved_at?: string | null
           approved_by?: string | null
           auth_amount?: number | null
-          auth_expires_at?: string | null
           auth_external_ref?: string | null
           auth_number?: string | null
           authorized_at?: string | null
@@ -1587,7 +1585,6 @@ export type Database = {
           approved_at?: string | null
           approved_by?: string | null
           auth_amount?: number | null
-          auth_expires_at?: string | null
           auth_external_ref?: string | null
           auth_number?: string | null
           authorized_at?: string | null
@@ -6923,6 +6920,27 @@ export type Database = {
         }
         Returns: string
       }
+      scatter_internal: {
+        Args: { state: Database["public"]["CompositeTypes"]["scatter_state"] }
+        Returns: string
+      }
+      scatter_sfunc: {
+        Args: {
+          height: number
+          state: Database["public"]["CompositeTypes"]["scatter_state"]
+          title: string
+          width: number
+          x: number
+          y: number
+        }
+        Returns: Database["public"]["CompositeTypes"]["scatter_state"]
+        SetofOptions: {
+          from: "*"
+          to: "scatter_state"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       signup_reminder_candidates: {
         Args: { max_age_days?: number; min_age_hours?: number }
         Returns: {
@@ -7062,7 +7080,13 @@ export type Database = {
         | "business_line_inbound"
     }
     CompositeTypes: {
-      [_ in never]: never
+      scatter_state: {
+        x_arr: number[] | null
+        y_arr: number[] | null
+        title: string | null
+        height: number | null
+        width: number | null
+      }
     }
   }
 }

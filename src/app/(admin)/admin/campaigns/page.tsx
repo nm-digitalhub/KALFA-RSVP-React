@@ -39,13 +39,15 @@ function chargeCell(c: {
   return '—';
 }
 
-// The hold cell: a badge for capture_status — or "שוחרר" once the reconciler
-// saw SUMIT release the hold (src/lib/data/admin/campaign-hold-badge.ts) —
+// The hold cell: what became of the hold — held, captured (חויב), released
+// (שוחרר) or closed and awaiting release — decided from capture_status,
+// charge_status and release_status together (campaign-hold-badge.ts), and
 // rendered AS the document link (Base UI's render prop) when we have one,
 // never a separate link beside it.
 function HoldCell(c: {
   captureStatus: string | null;
   releaseStatus: string | null;
+  chargeStatus: string | null;
   holdOrderDocumentNumber: number | null;
   holdOrderDocumentUrl: string | null;
 }) {
@@ -129,6 +131,7 @@ export default async function AdminCampaignsPage() {
                     <HoldCell
                       captureStatus={c.captureStatus}
                       releaseStatus={c.releaseStatus}
+                      chargeStatus={c.chargeStatus}
                       holdOrderDocumentNumber={c.holdOrderDocumentNumber}
                       holdOrderDocumentUrl={c.holdOrderDocumentUrl}
                     />
