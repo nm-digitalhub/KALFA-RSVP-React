@@ -52,6 +52,7 @@ import {
 } from './editor-shared';
 
 import { aiAgentPaletteItem } from '../nodes/action-ai-agent/action-ai-agent';
+import { callbackRequestPaletteItem } from '../nodes/action-create-callback-request/action-create-callback-request';
 import { microsoftSendEmailPaletteItem } from '../nodes/action-microsoft-send-email/action-microsoft-send-email';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import {
@@ -68,7 +69,6 @@ import { setValuePaletteItem } from '../nodes/logic-set-value/logic-set-value';
 import { switchPaletteItem } from '../nodes/logic-switch/logic-switch';
 
 import {
-  CALLBACK_TOPICS,
   NODE_NUMBER_RANGES,
   NODE_REQUIRED_FIELDS,
   WAIT_UNIT_VALUES,
@@ -80,8 +80,6 @@ import {
 // ---------------------------------------------------------------------------
 // Option sets — the same `{ label, value }` shape the SDK's own statusOptions use
 // ---------------------------------------------------------------------------
-
-const callbackTopicOptions = CALLBACK_TOPICS.map((value) => ({ label: value, value }));
 
 const rsvpStatusOptions = {
   attending: { label: 'מגיע/ה', value: RSVP_STATUSES[0] },
@@ -437,52 +435,6 @@ const sumitCardTriggerUiSchema: UISchema = {
       text: 'הרצה שמתחילה כאן אינה קשורה לאורח, ולכן צעדים שפועלים על אורח (עדכון סטטוס, שליחת וואטסאפ, בקשת חזרה) ייכשלו בתוכה.',
     },
     statusControl(sumitCardTriggerScope('properties.status')),
-  ],
-};
-
-// ---------------------------------------------------------------------------
-// action.create_callback_request
-// ---------------------------------------------------------------------------
-
-const callbackRequestSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['action.create_callback_request'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
-    topic: { ...requiredText, options: callbackTopicOptions },
-    note: { type: 'string' },
-    decisionBranches: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: { id: { type: 'string' }, sourceHandle: { type: 'string' }, label: { type: 'string' } },
-      },
-    },
-  },
-} satisfies NodeSchema;
-
-const callbackRequestScope = getScope<typeof callbackRequestSchema>;
-
-const callbackRequestUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(callbackRequestScope('properties.label'), callbackRequestScope('properties.description')),
-    { type: 'Select', scope: callbackRequestScope('properties.topic'), label: 'נושא הפנייה' },
-    {
-      type: 'VariableText',
-      scope: callbackRequestScope('properties.note'),
-      label: 'הערה למי שיחזור לאורח',
-      placeholder: '{{trigger.guest_name}} כתב: {{trigger.message_text}}',
-    },
-    {
-      // The dedupe is behaviour an owner should not discover from a support call.
-      type: 'Label',
-      text: 'אם כבר פתוחה בקשת חזרה לאותו מספר בשעתיים האחרונות — לא תיווצר בקשה נוספת.',
-    },
-    { type: 'Select', scope: callbackRequestScope('properties.errorPolicy'), label: 'אם הצעד נכשל' },
-    statusControl(callbackRequestScope('properties.status')),
   ],
 };
 
@@ -1817,38 +1769,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
   notifyTeamPaletteItem,
   // Moved to its own folder — see nodes/action-set-guest-field/.
   setGuestFieldPaletteItem,
-  {
-    type: 'action.create_callback_request' satisfies KalfaNodeType,
-    templateType: NodeType.DecisionNode,
-    label: 'בקשת חזרה לאורח',
-    description: 'מוסיף את האורח לתור שיחות החזרה של הצוות',
-    icon: 'PhoneCall',
-    schema: callbackRequestSchema,
-    uischema: callbackRequestUiSchema,
-    outputSchema: {
-      type: 'default',
-      properties: {
-        created: { type: 'boolean', label: 'נוצרה בקשה', description: 'ריק כאשר כבר קיימת בקשה פתוחה' },
-        reason: { type: 'string', label: 'סיבה' },
-      },
-    },
-    defaultPropertiesData: {
-      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
-      status: nodeStatusOptions.active.value,
-      label: 'בקשת חזרה לאורח',
-      description: 'מוסיף את האורח לתור שיחות החזרה של הצוות',
-      // ⚠️ AN OFFERED VALUE, NOT AN INTERNAL LABEL. This used to seed
-      // 'פנייה מתהליך אוטומטי', which is not in `CALLBACK_TOPICS` — so the Select
-      // rendered a value absent from its own options, and a node dropped and
-      // never opened created a callback whose topic the team reads in the queue
-      // and the agent is handed as `{{topic_he}}`. The handler's blank-fallback
-      // was fixed to `CALLBACK_TOPICS[0]` (`steps/index.ts`) and this was not:
-      // the default is non-blank, so the fallback never sees it.
-      topic: CALLBACK_TOPICS[0],
-      note: '',
-      errorPolicy: errorPolicyOptions.fail.value,
-    },
-  } satisfies PaletteItem<typeof callbackRequestSchema>,
+  // Moved to its own folder — see nodes/action-create-callback-request/.
+  callbackRequestPaletteItem,
   // Moved to its own folder — see nodes/action-webhook/.
   webhookPaletteItem,
   {

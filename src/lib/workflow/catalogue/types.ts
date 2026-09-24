@@ -16,6 +16,7 @@
 import type { RsvpStatus } from '@/lib/constants';
 
 import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
+import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
@@ -47,7 +48,7 @@ export const NODE_TYPES = [
   notifyTeamDefinition.type,
   webhookDefinition.type,
   setGuestFieldDefinition.type,
-  'action.create_callback_request',
+  callbackRequestDefinition.type,
   'action.import_guest_list',
   'logic.wait',
   'action.send_template',
@@ -720,29 +721,16 @@ export type AiAgentConfig = aiAgentDefinition.AiAgentConfig;
 export { GUEST_FIELDS, type GuestField } from '../nodes/action-set-guest-field/definition';
 export type SetGuestFieldConfig = setGuestFieldDefinition.SetGuestFieldConfig;
 
-// ---------------------------------------------------------------------------
-// action.create_callback_request
-// ---------------------------------------------------------------------------
-
-/**
- * Ask a human to call this guest back.
- *
- * The escape hatch every automation needs: a workflow that cannot answer a guest
- * should put them in front of a person rather than guess. `action.notify_team`
- * tells the team something happened; this one creates a row in the queue they
- * actually work from, with the guest's name and number already on it.
- *
- * ⚠️ NOT IDEMPOTENT ON ITS OWN — a second row is a second phone call to a real
- * person. The implementation therefore dedupes on an OPEN request for the same
- * phone inside a window, the same rule `console-calls.ts` already applies to
- * missed inbound calls. Without it, a guest who writes twice gets called twice.
- */
-export type CreateCallbackRequestConfig = {
-  /** What the callback is about — shown to whoever picks it up. */
-  topic: string;
-  /** Free text, template-resolved. */
-  note: string;
-};
+// `action.create_callback_request` — its config, the closed topic list and the
+// sales topic it refuses are declared with the rest of its contract in
+// `nodes/action-create-callback-request/definition.ts`. Re-exported here for
+// existing readers (`arm-check.ts` and the export check among them).
+export {
+  CALLBACK_TOPICS,
+  SALES_CALLBACK_TOPIC,
+  type CallbackTopic,
+} from '../nodes/action-create-callback-request/definition';
+export type CreateCallbackRequestConfig = callbackRequestDefinition.CreateCallbackRequestConfig;
 
 // `logic.set_value` — declared with the rest of its contract in
 // `nodes/logic-set-value/definition.ts`, re-exported here for existing readers.
@@ -777,7 +765,7 @@ export type KalfaNodeConfig =
   | { type: typeof notifyTeamDefinition.type; config: NotifyTeamConfig }
   | { type: typeof webhookDefinition.type; config: WebhookConfig }
   | { type: typeof setGuestFieldDefinition.type; config: SetGuestFieldConfig }
-  | { type: 'action.create_callback_request'; config: CreateCallbackRequestConfig }
+  | { type: typeof callbackRequestDefinition.type; config: CreateCallbackRequestConfig }
   | { type: 'action.import_guest_list'; config: ImportGuestListConfig }
   | { type: 'logic.wait'; config: WaitConfig }
   | { type: 'action.send_template'; config: SendTemplateConfig }
@@ -939,7 +927,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   'trigger.sumit_card': { tokenHash: 'identifier' },
   [microsoftSendEmailDefinition.type]: microsoftSendEmailDefinition.deploymentBindings,
   'action.send_template': { messageKey: 'catalogue' },
-  'action.create_callback_request': { topic: 'catalogue' },
+  [callbackRequestDefinition.type]: callbackRequestDefinition.deploymentBindings,
   'action.start_for_each_guest': { targetWorkflowId: 'identifier' },
   [webhookDefinition.type]: webhookDefinition.deploymentBindings,
   [aiAgentDefinition.type]: aiAgentDefinition.deploymentBindings,
@@ -996,7 +984,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [setGuestFieldDefinition.type]: setGuestFieldDefinition.requiredFields,
-  'action.create_callback_request': ['label', 'description', 'topic'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [callbackRequestDefinition.type]: callbackRequestDefinition.requiredFields,
   'action.import_guest_list': ['label', 'description'],
   'action.start_for_each_guest': ['label', 'description', 'targetWorkflowId', 'maxGuests'],
   'action.start_voice_call': ['label', 'description', 'purposeKey'],
@@ -1050,7 +1040,7 @@ export const GUEST_SCOPED_NODE_TYPES: readonly KalfaNodeType[] = [
   'action.send_whatsapp',
   'action.send_template',
   setGuestFieldDefinition.type,
-  'action.create_callback_request',
+  callbackRequestDefinition.type,
   'action.start_voice_call',
   'action.start_rsvp_ai_callback',
 ];
@@ -1298,38 +1288,3 @@ export const NODE_NUMBER_RANGES: Partial<
  * flow needs more, and a chain that does is better stopped and read than run.
  */
 export const MAX_FANOUT_DEPTH = 3;
-
-/**
- * What a guest's callback request is about.
- *
- * ⚠️ CLOSED, AND THE REASON IS WHO GETS CALLED. `topic` is not a label — it is
- * the ROUTER. `enqueueSalesCallDispatch` gates on `topic !== 'מכירות'` and
- * `enqueueMeetingConfirmDispatch` on `topic === 'מכירות'`, so the string decides
- * which ElevenLabs agent dials the person.
- *
- * The node is guest-scoped: `requireGuestContext` refuses it without an event
- * and a contact, and the port reads `guests.full_name` / `guests.phone`. So the
- * person on the other end is always an EVENT GUEST — and `'מכירות'` would put
- * "עומר", the sales-closing agent, on the phone to a wedding guest to sell them
- * KALFA. As free text that was one natural Hebrew word away.
- *
- * Every value here routes to the callback-confirm agent, which is the one whose
- * own prompt describes this exact call: "מתקשר בנוגע לבקשה שלך לשיחה חוזרת".
- * `'מכירות'` is deliberately ABSENT, and refused again in the handler and at
- * arming, because the field lives in a jsonb row that no form re-validates.
- */
-export const CALLBACK_TOPICS = [
-  'שאלה על האירוע',
-  'שינוי באישור ההגעה',
-  'בקשה מיוחדת',
-  'אחר',
-] as const;
-export type CallbackTopic = (typeof CALLBACK_TOPICS)[number];
-
-/**
- * The topic that routes to the SALES agent — never valid from a guest node.
- *
- * Named rather than inlined so the two refusals and the router cannot drift:
- * this is the exact string `enqueueSalesCallDispatch` compares against.
- */
-export const SALES_CALLBACK_TOPIC = 'מכירות';

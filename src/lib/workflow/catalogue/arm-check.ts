@@ -1,4 +1,5 @@
 import { editorDiagramSchema } from '../adapter/editor-schema';
+import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
 import { isKnownNodeType, isTriggerType } from './nodes';
 import {
   activeConditionalRequirements,
@@ -339,7 +340,7 @@ function collectArmBlockers(
     // from a run log afterwards. The handler refuses it again at run time,
     // because the value is a jsonb field the form does not re-validate.
     if (
-      nodeType === 'action.create_callback_request' &&
+      nodeType === callbackRequestDefinition.type &&
       typeof properties.topic === 'string' &&
       properties.topic.trim() === SALES_CALLBACK_TOPIC
     ) {

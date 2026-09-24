@@ -13,10 +13,8 @@ import { toBusinessOutcome } from '../voice-outcome';
 
 import {
   ACTION_BRANCH_HANDLES,
-  CALLBACK_TOPICS,
   LEGACY_PROPERTY_ALIASES,
   MAX_FANOUT_DEPTH,
-  SALES_CALLBACK_TOPIC,
   type KalfaNodeType,
 } from '../catalogue/types';
 
@@ -35,6 +33,8 @@ import {
 import { WorkflowWaitSignal } from '../engine/wait-signal';
 import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
 import { aiAgent } from '../nodes/action-ai-agent/runtime';
+import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
+import { createCallbackRequest } from '../nodes/action-create-callback-request/runtime';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import { microsoftSendEmail } from '../nodes/action-microsoft-send-email/runtime';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
@@ -553,76 +553,6 @@ const sendWhatsapp: StepHandler = async (config, ctx) => {
 };
 
 // ---------------------------------------------------------------------------
-// action.create_callback_request
-// ---------------------------------------------------------------------------
-
-// Put the guest in front of a person.
-//
-// The escape hatch every automation owes: a workflow that cannot answer should
-// hand over rather than guess. Unlike `action.notify_team`, which tells the team
-// something happened, this creates a row in the queue they work from — with the
-// name and number already on it.
-//
-// `created: false` is a SUCCESS, not the error branch. It means an open request
-// already covers this guest, and the dedupe that produced it is what stops a
-// guest who writes twice from being called twice. Routing that to the error
-// branch would send a workflow down a failure path for the system working.
-const createCallbackRequest: StepHandler = async (config, ctx) => {
-  const topic = readString(config, 'topic').trim();
-  const note = readString(config, 'note');
-
-  // ⚠️ NEVER THE SALES TOPIC FROM A GUEST NODE.
-  //
-  // `topic` is not a label, it is the ROUTER: `enqueueSalesCallDispatch` gates
-  // on `topic === 'מכירות'` and nothing downstream re-examines who the person
-  // is. This node is guest-scoped — `requireGuestContext` below, and the port
-  // reads `guests.full_name` / `guests.phone` — so that string would put the
-  // sales-closing agent on the phone to a wedding guest to sell them KALFA.
-  //
-  // The form no longer offers it, and this refuses it anyway: the value lives in
-  // a jsonb row that the form does not re-validate, and an older saved diagram
-  // may carry anything. Permanent rather than routed to the error branch — it is
-  // a configuration mistake, not a runtime condition, and retrying cannot help.
-  if (topic === SALES_CALLBACK_TOPIC) {
-    throw new PermanentNodeExecutionError(
-      'invalid_config',
-      `הצעד "בקשת חזרה לאורח" לא יכול לפנות בנושא "${SALES_CALLBACK_TOPIC}" — הנושא הזה מנתב לסוכן המכירות, והצעד הזה פונה לאורח באירוע.`,
-    );
-  }
-
-  const create = ctx.deps.guests.createCallbackRequest;
-  if (!create) {
-    throw new PermanentNodeExecutionError(
-      'unsupported',
-      'יצירת בקשת חזרה אינה זמינה בהרצה הזו.',
-    );
-  }
-
-  const guest = requireGuestContext(ctx, 'action.create_callback_request');
-  const result = await create({
-    eventId: guest.eventId,
-    contactId: guest.contactId,
-    // An empty topic falls back to the first of the offered values rather than
-    // to an internal label: the team reads this column in the callback queue,
-    // and the agent is handed it as `{{topic_he}}`.
-    topic: topic === '' ? CALLBACK_TOPICS[0] : topic,
-    note,
-  });
-
-  if (!result.ok) {
-    return {
-      output: { created: false, reason: result.reason ?? null },
-      nextPort: ACTION_BRANCH_HANDLES.error,
-    };
-  }
-  return {
-    output: result.created
-      ? { created: true }
-      : { created: false, skipped: true, reason: 'already_open' },
-  };
-};
-
-// ---------------------------------------------------------------------------
 // action.import_guest_list
 // ---------------------------------------------------------------------------
 
@@ -952,7 +882,7 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   [notifyTeamDefinition.type]: notifyTeam,
   [webhookDefinition.type]: webhook,
   [setGuestFieldDefinition.type]: setGuestField,
-  'action.create_callback_request': createCallbackRequest,
+  [callbackRequestDefinition.type]: createCallbackRequest,
   'action.import_guest_list': importGuestList,
   'logic.wait': waitNode,
   'action.send_template': sendTemplate,

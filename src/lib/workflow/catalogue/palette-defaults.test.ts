@@ -7,7 +7,8 @@
 // opened created a callback whose topic a human reads in the callback queue and
 // the voice agent is handed as `{{topic_he}}`.
 //
-// The handler's blank-fallback (`steps/index.ts`: `topic === '' ? CALLBACK_TOPICS[0]`)
+// The handler's blank-fallback (`nodes/action-create-callback-request/runtime.ts`:
+// `topic === '' ? CALLBACK_TOPICS[0]`)
 // did not save it, and could not: the default is non-blank, so the fallback
 // never ran. That is the general shape of the bug — a default that is *valid*
 // but not *offered* passes every schema check there is.

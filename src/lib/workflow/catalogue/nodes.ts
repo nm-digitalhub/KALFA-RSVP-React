@@ -12,6 +12,7 @@
 // `NODE_REQUIRED_FIELDS`, `PALETTE_ITEMS` and `STEP_HANDLERS`, each read from
 // the definition. No adapter changes.
 import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
+import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
@@ -38,7 +39,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: notifyTeamDefinition.type, isTrigger: notifyTeamDefinition.isTrigger },
   { type: webhookDefinition.type, isTrigger: webhookDefinition.isTrigger },
   { type: setGuestFieldDefinition.type, isTrigger: setGuestFieldDefinition.isTrigger },
-  { type: 'action.create_callback_request', isTrigger: false },
+  { type: callbackRequestDefinition.type, isTrigger: callbackRequestDefinition.isTrigger },
   { type: 'action.import_guest_list', isTrigger: false },
   { type: 'logic.wait', isTrigger: false },
   { type: 'action.send_template', isTrigger: false },
