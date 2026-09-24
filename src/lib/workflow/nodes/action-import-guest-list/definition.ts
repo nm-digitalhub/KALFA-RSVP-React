@@ -65,16 +65,17 @@ export const activityProfile = { timeoutMs: 300_000 };
  */
 export const deploymentBindings: Readonly<Record<string, 'identifier' | 'secret' | 'catalogue'>> = {};
 
+// NOT GUEST-SCOPED, deliberately, so there is no `guestScoped` flag here where
+// the guest-scoped definitions declare theirs: this run is about an OWNER
+// sending a list, so it has no contact — the handler checks for an event and an
+// inbox row instead of calling `requireGuestContext`.
+
 /**
  * What the handler returns, as the variable picker offers it.
  *
  * The palette entry's `outputSchema.properties` is built from this, so the
  * picker has one declaration of the node's output. The handler (`runtime.ts`)
  * still writes the same keys by hand.
- *
- * NOT GUEST-SCOPED, deliberately: this run is about an OWNER sending a list, so
- * it has no contact — the handler checks for an event and an inbox row instead
- * of calling `requireGuestContext`.
  */
 export const outputFields = {
   // Declared so the variable picker OFFERS it: a later step can post the

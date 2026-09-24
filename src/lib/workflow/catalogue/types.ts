@@ -12,6 +12,11 @@
 //
 // Everything the EDITOR needs — property schemas, labels, icons — lives in each
 // node folder's editor files instead, assembled into the palette by ./schemas.ts.
+//
+// Besides data and a few pure helpers, it holds three COMPILE-TIME drift guards
+// (the `_…MatchesTheDefinition` / `_KALFA_NODE_CONFIG_COVERS_ALL_TYPES`
+// constants). Each emits one inert constant and a `void` at run time and has no
+// side effect.
 import type { RsvpStatus } from '@/lib/constants';
 
 import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
@@ -42,9 +47,9 @@ import * as whatsappInboundDefinition from '../nodes/trigger-whatsapp-inbound/de
 // Node types
 // ---------------------------------------------------------------------------
 
-// The three types of the first slice. Stored verbatim in the diagram's
-// `data.type`, so these strings are a persistence contract: renaming one
-// orphans every saved workflow that used it.
+// Every node type, each read from its definition. Stored verbatim in the
+// diagram's `data.type`, so these strings are a persistence contract: renaming
+// one orphans every saved workflow that used it.
 export const NODE_TYPES = [
   whatsappInboundDefinition.type,
   webhookTriggerDefinition.type,
@@ -586,30 +591,6 @@ export const LEGACY_PROPERTY_ALIASES: Readonly<Record<string, string>> = {
 };
 
 /**
- * Which properties each node type cannot run without.
- *
- * ⚠️ THIS LIVES HERE, NOT IN `schemas.ts`, AND THE REASON IS A PRODUCTION OUTAGE.
- *
- * `schemas.ts` imports runtime values from `@workflowbuilder/sdk` and is reached
- * from a `'use client'` editor, so Next puts it in the CLIENT module graph. A
- * server module that imports it does NOT get the values — it gets a client
- * reference stub, and `PALETTE_ITEMS.find` is then a function that throws.
- * Measured on 2026-09-14 in `.next/server/chunks`:
- *
- *     registerClientReference(function(){ throw Error("Attempted to call
- *       PALETTE_ITEMS() from the server but PALETTE_ITEMS is on the client…") })
- *
- * The arm-time check runs on the server and needs exactly this data, so the data
- * moved to the module BOTH graphs can hold. `types.ts` imports nothing from the
- * SDK — the same rule `nodes.ts` states for the worker.
- *
- * Each node's editor schema (`nodes/<name>/schema.ts`) reads its definition's
- * `requiredFields` — the same array listed here — instead of declaring its own
- * copy, so the editor form and the arming gate cannot drift apart: a field
- * required in one is required in the other, by construction rather than by
- * discipline.
- */
-/**
  * How a stored property's value relates to the installation it was saved in.
  *
  * Absent means PORTABLE, which is the common case and therefore the default: a
@@ -640,9 +621,11 @@ export type DeploymentBinding =
  * ⚠️ DERIVED FROM THE CATALOGUE, NOT FROM SAVED DATA. A first pass built from
  * the 21 nodes present in this installation's saved workflows missed
  * `trigger.webhook.token` and `action.start_for_each_guest.targetWorkflowId`
- * outright — neither node type had ever been used here. Anything classified
- * below was read from the property schemas in `schemas.ts`, which is the list of
- * what a node CAN hold rather than what one happens to.
+ * outright — neither node type had ever been used here. The classification was
+ * read from the node property schemas (then all in `schemas.ts`, now each in
+ * its `nodes/<name>/schema.ts`), which is the list of what a node CAN hold
+ * rather than what one happens to. Each node now declares its own bindings in
+ * its folder's `definition.ts`, and this map reads them.
  *
  * Each entry was then checked at its use site rather than from its name:
  *
@@ -653,7 +636,7 @@ export type DeploymentBinding =
  *   url / headers     `dry-run.ts` already refuses to print header values,
  *                     because an owner may type a literal secret before reading
  *                     the warning. An export file is the same class of artefact.
- *   topic             a closed `callbackTopicOptions` list compiled into the app,
+ *   topic             a closed `CALLBACK_TOPICS` list compiled into the app,
  *                     so it travels — unlike `purposeKey`, which names a row.
  *
  * Fail-closed: `portability.test.ts` refuses a property that neither appears
@@ -663,7 +646,8 @@ export type DeploymentBinding =
 export const NODE_DEPLOYMENT_BINDINGS: Partial<
   Record<KalfaNodeType, Record<string, DeploymentBinding>>
 > = {
-  // A moved node declares its own — even `{}` — in its definition.
+  // Every node declares its own — even `{}` — in its definition, together with
+  // the reason for each binding.
   [setValueDefinition.type]: setValueDefinition.deploymentBindings,
   [conditionDefinition.type]: conditionDefinition.deploymentBindings,
   [switchDefinition.type]: switchDefinition.deploymentBindings,
@@ -676,12 +660,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   [waitDefinition.type]: waitDefinition.deploymentBindings,
   [scheduleDefinition.type]: scheduleDefinition.deploymentBindings,
   [whatsappInboundDefinition.type]: whatsappInboundDefinition.deploymentBindings,
-  // A HASH, not the token, and the public id — no longer a secret that must not
-  // travel, but both authenticate to THIS installation and resolve to nothing
-  // anywhere else. Declared with the rest of the node's contract.
   [webhookTriggerDefinition.type]: webhookTriggerDefinition.deploymentBindings,
-  // The same reasoning: a hash that authenticates to THIS installation only.
-  // Declared with the rest of the node's contract.
   [sumitCardTriggerDefinition.type]: sumitCardTriggerDefinition.deploymentBindings,
   [microsoftSendEmailDefinition.type]: microsoftSendEmailDefinition.deploymentBindings,
   [sendTemplateDefinition.type]: sendTemplateDefinition.deploymentBindings,
@@ -689,14 +668,36 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   [startForEachGuestDefinition.type]: startForEachGuestDefinition.deploymentBindings,
   [webhookDefinition.type]: webhookDefinition.deploymentBindings,
   [aiAgentDefinition.type]: aiAgentDefinition.deploymentBindings,
-  // Both SUMIT ids point INTO this installation: they are our own reference for
-  // a customer, so a diagram carrying one would reach for a record that does not
-  // exist anywhere else.
   [sumitCreateDocumentDefinition.type]: sumitCreateDocumentDefinition.deploymentBindings,
   [sumitCreateCustomerDefinition.type]: sumitCreateCustomerDefinition.deploymentBindings,
   [startVoiceCallDefinition.type]: startVoiceCallDefinition.deploymentBindings,
 };
 
+/**
+ * Which properties each node type cannot run without.
+ *
+ * ⚠️ THIS LIVES HERE, NOT IN `schemas.ts`, AND THE REASON IS A PRODUCTION OUTAGE.
+ *
+ * `schemas.ts` loads runtime values from `@workflowbuilder/sdk` (through the node
+ * palette files it imports) and is reached from a `'use client'` editor, so
+ * Next puts it in the CLIENT module graph. A server module that imports it does
+ * NOT get the values — it gets a client reference stub, and `PALETTE_ITEMS.find`
+ * is then a function that throws.
+ * Measured on 2026-09-14 in `.next/server/chunks`:
+ *
+ *     registerClientReference(function(){ throw Error("Attempted to call
+ *       PALETTE_ITEMS() from the server but PALETTE_ITEMS is on the client…") })
+ *
+ * The arm-time check runs on the server and needs exactly this data, so the data
+ * moved to the module BOTH graphs can hold. `types.ts` imports nothing from the
+ * SDK — the same rule `nodes.ts` states for the worker.
+ *
+ * Each node's editor schema (`nodes/<name>/schema.ts`) reads its definition's
+ * `requiredFields` — the same array listed here — instead of declaring its own
+ * copy, so the editor form and the arming gate cannot drift apart: a field
+ * required in one is required in the other, by construction rather than by
+ * discipline.
+ */
 export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
@@ -770,6 +771,23 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
 };
 
 /**
+ * The `instancePath` an arm refusal carries when it belongs to the NODE rather
+ * than to one of its fields — and the `scope` of the control that displays it.
+ *
+ * ⚠️ IT LIVES HERE, NOT IN `schemas.ts`, FOR THE REASON THAT FILE'S HEADER
+ * GIVES: `arm-check.ts` runs on the SERVER and `schemas.ts` pulls runtime values
+ * out of `@workflowbuilder/sdk`, so a server import of it yields a client
+ * reference rather than the value. `types.ts` imports nothing from the SDK, so
+ * both halves can name the same constant.
+ *
+ * ⚠️ AND THE TWO HALVES MUST AGREE EXACTLY. JsonForms routes an external error
+ * to a control by STRING-COMPARING this against the control's scope suffix; a
+ * mismatch is not an error anywhere, it simply renders nothing — which is the
+ * failure the `armNotice` control was added to close. One constant, both ends.
+ */
+export const ARM_NOTICE_PATH = '/armNotice';
+
+/**
  * The node types that refuse to run outside a run about a GUEST.
  *
  * ⚠️ THIS LIST IS NOT A NEW RULE — it is the existing one, written down. Every
@@ -789,23 +807,6 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
  * guard and is not added here fails a test rather than shipping an automation
  * that cannot run.
  */
-/**
- * The `instancePath` an arm refusal carries when it belongs to the NODE rather
- * than to one of its fields — and the `scope` of the control that displays it.
- *
- * ⚠️ IT LIVES HERE, NOT IN `schemas.ts`, FOR THE REASON THAT FILE'S HEADER
- * GIVES: `arm-check.ts` runs on the SERVER and `schemas.ts` pulls runtime values
- * out of `@workflowbuilder/sdk`, so a server import of it yields a client
- * reference rather than the value. `types.ts` imports nothing from the SDK, so
- * both halves can name the same constant.
- *
- * ⚠️ AND THE TWO HALVES MUST AGREE EXACTLY. JsonForms routes an external error
- * to a control by STRING-COMPARING this against the control's scope suffix; a
- * mismatch is not an error anywhere, it simply renders nothing — which is the
- * failure the `armNotice` control was added to close. One constant, both ends.
- */
-export const ARM_NOTICE_PATH = '/armNotice';
-
 export const GUEST_SCOPED_NODE_TYPES: readonly KalfaNodeType[] = [
   updateGuestStatusDefinition.type,
   sendWhatsappDefinition.type,
@@ -963,12 +964,16 @@ export type ConditionalRequirement = {
 /**
  * The conditional contracts, by node type.
  *
- * ⚠️ ONE ENTRY TODAY, AND THAT IS DELIBERATE. All 24 handler refusals were read
+ * ⚠️ FEW ENTRIES, AND THAT IS DELIBERATE. All 24 handler refusals were read
  * before this existed and not one of them is of the form "field X is required
  * because field Y is Z" — so this is not a mechanism looking for a use. It is
  * here because `sendOutboundWebhook` genuinely branches on the verb: it builds,
  * resolves and secret-checks the body and then, for GET and DELETE, does not
  * send it. The panel offered a three-row editor for a field that went nowhere.
+ *
+ * TWO ENTRIES TODAY: that `action.webhook` body rule, and `trigger.webhook`'s
+ * `endpointId`, which exists only in `header` auth mode. Only `action.webhook`'s
+ * editor schema turns its rule into an `allOf`; both are enforced at arming.
  */
 export const NODE_CONDITIONAL_REQUIRED_FIELDS: Partial<
   Record<KalfaNodeType, readonly ConditionalRequirement[]>

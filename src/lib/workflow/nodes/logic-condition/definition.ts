@@ -82,8 +82,8 @@ export const UNARY_CONDITION_OPERATORS = ['is_empty', 'is_not_empty'] as const;
 //
 // They are spelled out as literals rather than computed, because this module is
 // read by the pg-boss worker and must not import @workflowbuilder/sdk.
-// `schemas.test.ts` asserts each literal equals `getHandleId(...)` on the SDK
-// side, so if the SDK ever changes the format the test fails rather than the
+// `catalogue/branch-handles.test.ts` asserts each literal equals
+// `getHandleId(...)` on the SDK side, so if the SDK ever changes the format the test fails rather than the
 // workflow.
 export const CONDITION_BRANCH_HANDLES = {
   true: 'source:inner:true',

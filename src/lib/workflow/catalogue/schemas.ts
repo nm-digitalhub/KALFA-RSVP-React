@@ -81,14 +81,11 @@ export type { WhatsAppNumberOption };
 
 // Its schema, uischema and palette entry live in `nodes/trigger-sumit-card/`,
 // and its config and output fields in that folder's `definition.ts` — an
-// SDK-free file, so server code can read the output fields too. They are
-// re-exported here for the editor, which reads them from this module.
-export {
-  SUMIT_CARD_BASE_OUTPUT,
-  SUMIT_HOLD_FIELDS_OUTPUT,
-  type SumitCardOutput,
-  type SumitCardOutputField,
-} from '../nodes/trigger-sumit-card/definition';
+// SDK-free file, so server code can read the output fields too, and so does
+// anything else that wants the VALUES (`sumit-sample-output.ts` among them).
+// Only the output TYPES are re-exported here, for the editor, which reads
+// `SumitCardOutput` from this module.
+export type { SumitCardOutput, SumitCardOutputField } from '../nodes/trigger-sumit-card/definition';
 
 // ---------------------------------------------------------------------------
 // action.microsoft_send_email
@@ -100,17 +97,11 @@ export {
 export type { MicrosoftConnectionOption };
 
 // ---------------------------------------------------------------------------
-// The palette
-// ---------------------------------------------------------------------------
-
-
-// ---------------------------------------------------------------------------
 // trigger.schedule
 // ---------------------------------------------------------------------------
 
 // Its schema, day options, uischema and palette entry live in
 // `nodes/trigger-schedule/`, and its config in that folder's `definition.ts`.
-
 
 // ---------------------------------------------------------------------------
 // action.send_template
@@ -130,22 +121,6 @@ export { TEMPLATE_KEYS } from '../nodes/action-send-template/definition';
 // `nodes/action-start-for-each-guest/`, and its config, caps and ranges in that
 // folder's `definition.ts`.
 
-/**
- * Built at MODULE SCOPE.
- *
- * `<WorkflowBuilder.Root nodeTypes={…} />` wants a stable reference: an array
- * rebuilt each render re-renders the palette on every diagram change, which on a
- * large graph is the difference between a canvas that drags and one that
- * stutters. This is static data, so there is nothing to recompute anyway.
- *
- * EVERY entry carries an `outputSchema`, which is what puts a node into the
- * variable picker's suggestion list. An earlier note here said the opposite —
- * "omitted deliberately, until a template resolver exists". That resolver is
- * `resolve-template.ts`: vendored, wired into `activity-runner.ts`, and proven
- * on the `nodes.` namespace by `references.test.ts`. The note described a state
- * that had already ended.
- */
-
 // ---------------------------------------------------------------------------
 // action.start_voice_call
 // ---------------------------------------------------------------------------
@@ -154,6 +129,10 @@ export { TEMPLATE_KEYS } from '../nodes/action-send-template/definition';
 // shapes live in `nodes/action-start-voice-call/schema.ts`. The option types are
 // re-exported for the editor, which passes the live lists in.
 export type { VoiceDialOption, VoicePurposeOption };
+
+// ---------------------------------------------------------------------------
+// The palette
+// ---------------------------------------------------------------------------
 
 /**
  * The read-only run report, drawn by `node-run-control.tsx`.
@@ -174,7 +153,7 @@ const NODE_RUN_ELEMENT: UISchema = {
 /**
  * Put the run report at the top of a node's properties panel.
  *
- * ⚠️ HERE AND NOT IN THE NINETEEN UISCHEMAS, because it is not a property of any
+ * ⚠️ HERE AND NOT IN EVERY NODE'S UISCHEMA, because it is not a property of any
  * node — it is the editor reporting on a run. One place also means a node type
  * added later gets it without anyone remembering to.
  *
@@ -269,6 +248,19 @@ export function buildPaletteItems(
  *
  * Kept as the base the factory rewrites one entry of, so every other node type
  * is declared exactly once. It is also what the tests and the i18n audit read.
+ *
+ * Built at MODULE SCOPE. `<WorkflowBuilder.Root nodeTypes={…} />` wants a
+ * stable reference: an array rebuilt each render re-renders the palette on
+ * every diagram change, which on a large graph is the difference between a
+ * canvas that drags and one that stutters. This is static data, so there is
+ * nothing to recompute anyway.
+ *
+ * EVERY entry carries an `outputSchema`, which is what puts a node into the
+ * variable picker's suggestion list. An earlier note here said the opposite —
+ * "omitted deliberately, until a template resolver exists". That resolver is
+ * `resolve-template.ts`: vendored, wired into `activity-runner.ts`, and proven
+ * on the `nodes.` namespace by `references.test.ts`. The note described a state
+ * that had already ended.
  */
 export const PALETTE_ITEMS: PaletteItem[] = [
   // Moved to its own folder — see nodes/action-sumit-create-document/.

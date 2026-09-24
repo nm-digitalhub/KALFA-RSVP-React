@@ -8,7 +8,7 @@
 // "what starts the flow" switcher element.
 //
 // ⚠️ ITS OWN MODULE SO A NODE FOLDER CAN IMPORT IT. `schemas.ts` is the palette
-// aggregator — it imports every moved node's palette file — so a node that
+// aggregator — it imports every node's palette file — so a node that
 // imported these helpers from `schemas.ts` would close a cycle. Both import
 // from here instead.
 //
@@ -104,7 +104,7 @@ export const errorPolicyOptions = {
  * ⚠️ OUR HAND-WRITTEN LIST, PINNED TO THE SDK'S.
  *
  * `ERROR_POLICIES` lives in `catalogue/types.ts` because the SERVER reads it and
- * the server must not reach this file — like `schemas.ts`, it imports SDK runtime
+ * the server must not reach this file — like `schemas.ts`, it loads SDK runtime
  * values and resolves to a client reference when imported from a server module,
  * which is what `server-code-must-not-reach-the-editor-sdk` exists to stop. So
  * the list is written twice: once here in a shape the SDK owns, once there in a
@@ -241,9 +241,9 @@ export const identityProperties = {
    * "arm". This is the property those two now address.
    *
    * ⚠️ NOT IN `NODE_REQUIRED_FIELDS`, NOT IN ANY `defaultPropertiesData`, AND
-   * NEVER EDITED. It is a scope to aim at, not a value — `armNoticeControl`
-   * below renders only when an error names it, so on a clean node the panel is
-   * byte-identical to what it was.
+   * NEVER EDITED. It is a scope to aim at, not a value — the `MessageOnError`
+   * control `identityControls` (below) puts on it renders only when an error
+   * names it, so on a clean node the panel is byte-identical to what it was.
    */
   armNotice: { type: 'string' },
 } as const;
@@ -251,10 +251,10 @@ export const identityProperties = {
 // "מה מפעיל את התהליך" — the switcher that lets an owner change a trigger node
 // into a different KIND of trigger without rebuilding the diagram.
 //
-// ⚠️ DECLARED ONCE AND SPREAD INTO ALL THREE TRIGGER UISCHEMAS, so a fourth
-// trigger cannot ship without it by omission. The uischema carries NO list of
-// the available triggers: the control derives them from the palette itself, so
-// this stays a single element with no catalogue data duplicated three times.
+// ⚠️ DECLARED ONCE AND SPREAD INTO EVERY TRIGGER'S UISCHEMA, so a new trigger
+// cannot ship without it by omission. The uischema carries NO list of the
+// available triggers: the control derives them from the palette itself, so this
+// stays a single element with no catalogue data duplicated per trigger.
 //
 // ⚠️ A `Label`, WITH `text` THAT IS NEVER DRAWN. The value it edits is
 // `data.type`, which is node data rather than a `data.properties.*` field, so
@@ -281,7 +281,7 @@ export function statusControl(scope: string): UISchema {
  * ⚠️ `description` WAS REQUIRED ON ALL EIGHTEEN NODE TYPES AND EDITABLE ON NONE,
  * and every part of that sentence was measured before this control was added.
  *
- *   • REQUIRED: it appears in all 18 entries of `NODE_REQUIRED_FIELDS`, so
+ *   • REQUIRED: it appears in every entry of `NODE_REQUIRED_FIELDS`, so
  *     `arm-check.ts` refuses to arm a workflow whose node has it blank.
  *   • USER-VISIBLE: the SDK's node body renders it. `fs({ label, description })`
  *     in the 2.3.0 bundle emits `<span class="title">{label}</span>` followed by
@@ -302,7 +302,7 @@ export function statusControl(scope: string): UISchema {
  * This closes that, in our own layout rather than through the SDK's
  * `generalInformation` fragment — that one ships an English label inside the
  * schema and folds title/status/description into an Accordion, which is a
- * different panel shape on all 18 nodes and a change nobody asked for.
+ * different panel shape on every node and a change nobody asked for.
  *
  * `Text` and not `TextArea`, matching the SDK's own reference node: the value
  * renders as a single-line subtitle on a card, so a multi-line box would invite

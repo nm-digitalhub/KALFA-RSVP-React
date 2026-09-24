@@ -98,12 +98,6 @@ export type { StepContext, StepHandler, WorkflowTriggerPayload };
 export { evaluateSwitchBranch, evaluateSwitchCondition } from '../nodes/logic-switch/runtime';
 
 // ---------------------------------------------------------------------------
-// Dispatch
-// ---------------------------------------------------------------------------
-
-// Total over KalfaNodeType: adding a type to the catalogue without a handler is
-// a compile error, not a run-time surprise.
-// ---------------------------------------------------------------------------
 // logic.wait — the run parks here and comes back later
 // ---------------------------------------------------------------------------
 
@@ -119,6 +113,12 @@ export { WORKFLOW_WAIT_CODE, WorkflowWaitSignal, readWaitSignal, type WaitVerifi
 // The handler, and the depth cap it enforces, live in
 // `nodes/action-start-for-each-guest/`.
 
+// ---------------------------------------------------------------------------
+// Dispatch
+// ---------------------------------------------------------------------------
+
+// Total over KalfaNodeType: adding a type to the catalogue without a handler is
+// a compile error, not a run-time surprise.
 export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   [whatsappInboundDefinition.type]: whatsappInbound,
   [webhookTriggerDefinition.type]: webhookTrigger,

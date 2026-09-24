@@ -21,9 +21,9 @@ export const updateGuestStatusSchema = {
   // Active/Draft/Disabled lifecycle — it is in `statusOptions` and drives the
   // status badge — and this node happened to have picked the same word for the
   // guest's RSVP. Two different meanings under one key in one object is a bug
-  // waiting for whoever reads it next, so ours moved. `readRsvpStatus` in the
-  // handler still accepts the old key, because diagrams saved before this carry
-  // it.
+  // waiting for whoever reads it next, so ours moved. The handler (`runtime.ts`)
+  // still accepts the old key through `LEGACY_PROPERTY_ALIASES`, because
+  // diagrams saved before this carry it.
   //
   // The definition's own array, not a copy: `NODE_REQUIRED_FIELDS` points at the
   // same object, and `arm-check.test.ts` asserts that identity with `toBe`.

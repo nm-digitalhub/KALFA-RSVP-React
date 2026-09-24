@@ -15,9 +15,6 @@
 //
 // So the rule is not about `topic`. It is: a field that presents a closed menu
 // must be seeded from that menu.
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
 import { PALETTE_ITEMS } from './schemas';
@@ -279,38 +276,38 @@ describe('⚠️ every palette entry is type-checked against its own schema', ()
   // instead. Both halves, two mechanisms.
   //
   // This test only guards that the clause is PRESENT — the compiler does the
-  // rest. Without it a 23rd node would silently opt out.
-  const source = readFileSync(join(__dirname, 'schemas.ts'), 'utf8');
-
-  const entries = [...source.matchAll(/^ {4}type: '([a-z_.]+)' satisfies KalfaNodeType,$/gm)];
-
-  // The entries that already moved to `nodes/<name>/<name>.ts`. Each such file
-  // holds exactly one palette item and must carry the same clause.
+  // rest. Without it a new node would silently opt out.
+  //
+  // Every palette entry is declared in its node folder's palette file,
+  // `nodes/<name>/<name>.ts`, which holds exactly one item; `schemas.ts` only
+  // assembles them. So the scan reads those files, and the first test pins that
+  // layout, so an entry declared anywhere else cannot escape the scan.
   const nodeFiles = nodePaletteSources();
 
-  it('the scan found the palette — not an empty file or a changed spelling', () => {
-    // Inline entries plus moved ones must account for EVERY palette item, so an
-    // entry that moved into a file the scan does not read fails here.
-    expect(entries.length + nodeFiles.length).toBe(PALETTE_ITEMS.length);
-    expect(entries.length + nodeFiles.length).toBeGreaterThan(20);
+  /** `logic.set_value` → `src/lib/workflow/nodes/logic-set-value/logic-set-value.ts`. */
+  const paletteFileOf = (type: string) => {
+    const folder = type.replace(/[._]/g, '-');
+    return `src/lib/workflow/nodes/${folder}/${folder}.ts`;
+  };
+
+  it('the scan found the palette — one node palette file per palette item', () => {
+    // As many palette files as palette items, and every item's own file among
+    // them. An entry declared inline in `schemas.ts` (or anywhere outside its
+    // folder) breaks the count; a node folder without its palette file breaks
+    // the mapping.
+    expect(nodeFiles.length).toBe(PALETTE_ITEMS.length);
+    expect(nodeFiles.length).toBeGreaterThan(20);
+    const scanned = new Set(nodeFiles.map(({ path }) => path));
+    expect(PALETTE_ITEMS.map((item) => paletteFileOf(item.type)).filter((path) => !scanned.has(path))).toEqual(
+      [],
+    );
   });
 
-  it('⚠️ each moved node file carries exactly one `satisfies PaletteItem<`', () => {
+  it('⚠️ each node palette file carries exactly one `satisfies PaletteItem<`', () => {
     const wrong = nodeFiles
       .filter(({ source: file }) => file.split('satisfies PaletteItem<').length - 1 !== 1)
       .map(({ path }) => path);
     expect(wrong).toEqual([]);
-  });
-
-  it('⚠️ each one carries `satisfies PaletteItem<typeof …Schema>`', () => {
-    const without = entries
-      .filter((entry, i) => {
-        const to = i + 1 < entries.length ? entries[i + 1]!.index : source.length;
-        return !source.slice(entry.index, to).includes('satisfies PaletteItem<');
-      })
-      .map((entry) => entry[1]);
-
-    expect(without).toEqual([]);
   });
 });
 

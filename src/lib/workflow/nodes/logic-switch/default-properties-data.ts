@@ -31,10 +31,12 @@ export const switchDefaultPropertiesData: NodeDataProperties<SwitchSchema> = {
   // `conditions: []` never matches until the owner writes a row, which is the
   // same rule the SDK's own "add branch" produces.
   //
-  // `source:inner:<id>` is `getHandleId({ handleType: 'source', innerId })` —
-  // spelled as a constant here because this node's worker-side twin
-  // (`definition.ts`) must not import the SDK. Branches the OWNER adds get theirs
-  // minted by the control, in this same shape.
+  // `source:inner:<id>` is `getHandleId({ handleType: 'source', innerId })`.
+  // The first branch's handle is the same string `switchBranchHandle('branch-1')`
+  // in ./definition returns — the helper that spells it once for branches WE
+  // seed — but it is still written out as a literal here, exactly as the entry
+  // carried it before it moved into this folder. Branches the OWNER adds get
+  // theirs minted by the control, in this same shape.
   decisionBranches: [
     { id: 'branch-1', sourceHandle: 'source:inner:branch-1', label: 'מסלול ראשון', conditions: [] },
     {

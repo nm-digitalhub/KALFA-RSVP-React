@@ -56,7 +56,7 @@ export type SumitDocumentTypeOption = (typeof SUMIT_DOCUMENT_TYPES)[number];
  * that without a charge having happened is a bookkeeping hazard, not a feature.
  */
 export type SumitCreateDocumentConfig = {
-  /** `Accounting_Typed_DocumentType`. See DOCUMENT_TYPES for why the list is narrowed. */
+  /** `Accounting_Typed_DocumentType`. See SUMIT_DOCUMENT_TYPES for why the list is narrowed. */
   documentType: SumitDocumentTypeOption;
   customerName: string;
   customerEmail?: string;
@@ -74,7 +74,7 @@ export type SumitCreateDocumentConfig = {
    * NOT named `description`: every node already carries its own `description`
    * (the caption the owner reads on the canvas), and one object cannot hold
    * both. The document's text is the one that gets the qualified name, because
-   * the node-level field is shared by all 21 node types.
+   * the node-level field is shared by every node type.
    */
   documentDescription?: string;
   /** `Details.IsDraft` — spec: "Leave empty for final document". */

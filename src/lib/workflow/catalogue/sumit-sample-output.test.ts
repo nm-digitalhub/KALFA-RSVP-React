@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPaletteItems, SUMIT_HOLD_FIELDS_OUTPUT } from './schemas';
+import { SUMIT_HOLD_FIELDS_OUTPUT } from '../nodes/trigger-sumit-card/definition';
+
+import { buildPaletteItems } from './schemas';
 import { sumitCardOutputFromSample } from './sumit-sample-output';
 
 // The SUMIT trigger's picker fields, derived from a real stored call.

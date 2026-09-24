@@ -115,9 +115,10 @@ export const activityProfile = 'default' as const;
  * Properties whose values point into THIS installation and are blanked on
  * export — `NODE_DEPLOYMENT_BINDINGS` reads this.
  *
- * A HASH, not the token — so this is no longer a secret that must not travel,
- * but it still authenticates to THIS installation and resolves to nothing
- * anywhere else. See webhook-token.ts for why the value moved out. Values are
+ * `tokenHash` is a HASH, not the token, and `endpointId` is the public id — so
+ * neither is a secret that must not travel, but both authenticate to THIS
+ * installation and resolve to nothing anywhere else. See webhook-token.ts for
+ * why the value moved out. Values are
  * `'identifier' | 'secret' | 'catalogue'` — spelled out here rather than
  * imported, because this file imports nothing.
  */

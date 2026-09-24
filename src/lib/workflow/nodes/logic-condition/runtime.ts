@@ -56,9 +56,11 @@ export function compareValues(
 }
 
 /**
- * @deprecated Kept because it is the shape the pre-`left` diagrams evaluate
- * under, and because `dry-run`'s trace and two test files name it. Reads a field
- * off the trigger payload and defers to {@link compareValues}.
+ * @deprecated NOTHING CALLS THIS ANY MORE. It is the shape the pre-`left`
+ * diagrams evaluate under — read a field off the trigger payload and defer to
+ * {@link compareValues} — but the handler below does that read inline, and
+ * neither `dry-run`'s trace nor any test names it now. Deleting it is a separate
+ * decision from the node-folder move, which promised no behaviour change.
  */
 export function evaluateCondition(
   field: ConditionField,

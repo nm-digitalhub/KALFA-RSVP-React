@@ -110,11 +110,12 @@ const voiceCallWithOutcome: DiagramModel = {
             //
             // And the call node really can complete without an `outcome`, in two
             // cases that are nobody's mistake: a rolling deploy where the read
-            // port vanished between parking and waking
-            // (nodes/action-start-voice-call/runtime.ts:110), and a replay
-            // collision whose re-read came back empty, leaving an empty
-            // `attemptId` (voice-purpose-dispatch.ts:172 →
-            // nodes/action-start-voice-call/runtime.ts:192).
+            // port vanished between parking and waking (the `!readOutcome`
+            // resume fallback in nodes/action-start-voice-call/runtime.ts), and
+            // a replay collision whose re-read came back empty, leaving an
+            // empty `attemptId` (voice-purpose-dispatch.ts:172 → the
+            // `!outcome.attemptId` "nothing to wait on" guard in the same
+            // runtime.ts).
             // In both the owner ticked "wait for the outcome" and did everything
             // right, and an infrastructure blip would have killed the run.
             //

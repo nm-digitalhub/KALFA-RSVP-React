@@ -34,9 +34,11 @@ export const webhookTriggerSchema = {
     //
     // ⚠️ NOT `requiredText`, AND NOT BECAUSE IT IS OPTIONAL. It is required in
     // `header` mode and forbidden in `address` mode, which is a CONDITIONAL
-    // contract — declared once in `NODE_CONDITIONAL_REQUIRED_FIELDS` and applied
-    // to this schema by the same `allOf` machinery `action.webhook` uses. A
-    // `required` here would fire in both modes and make `address` unarmable.
+    // contract — declared once, in the definition's `conditionalRequirements`
+    // (read into `NODE_CONDITIONAL_REQUIRED_FIELDS`), and enforced at ARMING by
+    // `arm-check.ts`. It is NOT applied to this editor schema: unlike
+    // `action.webhook`'s schema, this one carries no `allOf`. A `required` here
+    // would fire in both modes and make `address` unarmable.
     endpointId: { type: 'string' },
     // WHICH HTTP METHODS open this address. Objects, not bare strings, for the
     // reason `messageKinds` records at length: the SDK's `ArrayFieldSchema`

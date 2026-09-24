@@ -8,9 +8,19 @@
 //
 // Adding a step type in the one-folder-per-node layout: a `nodes/<name>/`
 // folder (definition, schema, uischema, defaults, palette item, runtime — see
-// plans/node-folders-file-matrix.md), then one entry here, in `NODE_TYPES`,
-// `NODE_REQUIRED_FIELDS`, `PALETTE_ITEMS` and `STEP_HANDLERS`, each read from
-// the definition. No adapter changes.
+// plans/node-folders-file-matrix.md), then one entry in each registry, each
+// read from the definition:
+//
+//   * `CATALOGUE` here;
+//   * `NODE_TYPES`, `KalfaNodeConfig`, `NODE_REQUIRED_FIELDS` and
+//     `NODE_DEPLOYMENT_BINDINGS` in ./types.ts — plus
+//     `GUEST_SCOPED_NODE_TYPES`, `NODE_CONDITIONAL_REQUIRED_FIELDS` and
+//     `NODE_NUMBER_RANGES` when the node has such a contract;
+//   * `NODE_ACTIVITY_PROFILES` in ../engine/node-budgets.ts, unless the node
+//     takes the default budget;
+//   * `PALETTE_ITEMS` in ./schemas.ts and `STEP_HANDLERS` in ../steps/index.ts.
+//
+// No adapter changes.
 import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
 import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
 import * as importGuestListDefinition from '../nodes/action-import-guest-list/definition';

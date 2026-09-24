@@ -206,6 +206,11 @@ describe('⚠️ the step layer never reaches SUMIT except through the port', ()
           // (`../nodes/action-sumit-create-customer/runtime`) — the folder name
           // says `sumit`, the module is ours. Anything that resolves outside the
           // scanned set (`@/lib/sumit/…`, `../../../sumit/…`) still counts.
+          //
+          // ⚠️ THE LIMIT, stated so nobody reads more into this scan: it guards
+          // IMPORTS. A scanned file that called SUMIT's HTTP API itself with a
+          // global `fetch` imports nothing, so no name match — before or after
+          // this skip — would see it.
           .filter(
             (spec) =>
               !(spec.startsWith('.') && scanned.has(`${posix.join(posix.dirname(path), spec)}.ts`)),

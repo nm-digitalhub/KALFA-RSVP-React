@@ -60,8 +60,8 @@ export type SwitchLogicalOperator = (typeof SWITCH_LOGICAL_OPERATORS)[number];
  *
  * `x` and `y` are free values — literal text or `{{…}}` references — and both
  * arrive ALREADY RESOLVED, because `resolveConfigTemplates` walks the whole
- * config before the handler runs. That is what the earlier note in schemas.ts
- * said we could not do ("their conditions resolve through resolveTemplate, which
+ * config before the handler runs. That is what an earlier note (quoted, and
+ * retracted, in `nodes/logic-condition/logic-condition.ts`) said we could not do ("their conditions resolve through resolveTemplate, which
  * we did not vendor"); resolve-template IS vendored and wired, so the reason is
  * gone and the control can be exposed as designed.
  */
@@ -115,7 +115,11 @@ export function switchBranchHandle(branchId: string): string {
 }
 
 export type SwitchConfig = {
-  /** The value every branch's conditions are compared against, if they use it. */
+  /**
+   * An optional convenience value the owner may fill in and reference from a
+   * row. The handler never reads it — each row compares its own `x` — which is
+   * why it is not in `requiredFields` (see `uischema.ts`).
+   */
   left?: string;
   /** Read by the SDK's node renderer AND by the handler. One array, one truth. */
   decisionBranches: SwitchBranch[];
