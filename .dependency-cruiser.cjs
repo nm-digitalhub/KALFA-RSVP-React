@@ -106,6 +106,25 @@ module.exports = {
     },
   },
   {
+    // dependency-cruiser cannot see a 'use client' directive, so this rule fences
+    // off the DIRECTORIES that hold them. Measured 2026-09-24 (grep for a
+    // leading 'use client' under src/): every such module lives in src/app,
+    // src/components, src/hooks or src/lib/workflow, and none of those four is
+    // reached from src/lib/owner-agent (42 modules, none under them). A client
+    // module reached from server code arrives as a client REFERENCE (see
+    // `server-code-must-not-reach-the-editor-schemas` above); the agent process
+    // has no use for UI, hooks or the workflow editor either way.
+    //
+    // A 'use client' module added OUTSIDE these four directories is not caught
+    // here; if one appears, add its directory.
+    name: 'owner-agent-no-client-or-ui-modules',
+    comment:
+      "src/lib/owner-agent/** may not reach src/app, src/components, src/hooks or src/lib/workflow, directly or transitively. Those are the directories every 'use client' module under src/ lives in (measured 2026-09-24); dependency-cruiser cannot detect the directive itself, so a new 'use client' module elsewhere must add its directory here.",
+    severity: 'error',
+    from: { path: '^src/lib/owner-agent/' },
+    to: { path: '^src/(app|components|hooks)/|^src/lib/workflow/', reachable: true },
+  },
+  {
     name: 'worker-no-request-scoped-next',
     comment: 'The pg-boss worker (worker/**) and the CLI scripts (scripts/**) are non-request processes; neither may (transitively) reach request-scoped Next APIs (next/headers|navigation|cache). Keep their send paths request-free (admin client) — see resolveSendableContacts. scripts/ was added 15.8: the rule covered only worker/, so `npm run worker:deps` passed while scripts/fleet-agent-cli.ts pulled the same next/headers chain in through sendPushToUser. A guard over one of two identical entry points is half a guard. src/lib/owner-agent/ was added 24.9 (owner agent plan §5, stage 5): its read cores and its nine Mastra tools (cores/, tools/) will run in the agent process, a third non-request process. `owner-agent-request-free` above already covers the same targets (plus dal.ts) for that path; listing it here too keeps the one rule that names every non-request process complete. The agent\'s own ENTRY POINT does not exist yet — stage 6 adds it, and unless it lives under src/lib/owner-agent/ must add it to this `from`; either way it must be a `worker:deps` root in package.json (a rule over a file the cruise never visits is no guard).',
     severity: 'error',

@@ -17,7 +17,9 @@ import {
 // supabase/migrations/20260924061630_owner_agent_read_aggregates.sql, created
 // but NOT applied. When it is, the core and this schema gain two number
 // fields. Until then the description says rows, so the model does not present
-// them as a head count. No event names (decision 9.7, assumed default).
+// them as a head count, and the tool is WITHHELD: it sits in registry.ts
+// OWNER_AGENT_TOOLS_PENDING_MIGRATION, which toolsForPermissions() never
+// offers. No event names (decision 9.7, assumed default).
 export const RSVP_TOTALS_ID = 'rsvp_totals';
 export const RSVP_TOTALS_PERMISSION = 'view_events' satisfies OwnerAgentPermission;
 

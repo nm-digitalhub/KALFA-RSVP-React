@@ -4,13 +4,19 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { OWNER_AGENT_TOOLS, toolsForPermissions, type OwnerAgentToolId } from './registry';
+import {
+  OWNER_AGENT_TOOLS,
+  OWNER_AGENT_TOOLS_PENDING_MIGRATION,
+  toolsForPermissions,
+  type OwnerAgentPendingToolId,
+  type OwnerAgentToolId,
+} from './registry';
 import { OWNER_AGENT_PERMISSIONS } from './shared';
 
 // The §5 table, restated as the binding contract: tool id → the one permission
-// that unlocks it. Decision 9.10 (recommended default, assumed) puts tools 7
-// and 9 under view_webhooks.
-const PLAN_TABLE: Record<OwnerAgentToolId, string> = {
+// that unlocks it, for all nine tools (offered or withheld). Decision 9.10
+// (recommended default, assumed) puts tools 7 and 9 under view_webhooks.
+const PLAN_TABLE: Record<OwnerAgentToolId | OwnerAgentPendingToolId, string> = {
   inquiries_summary: 'view_customer_data',
   campaigns_status_summary: 'manage_billing',
   billing_summary: 'view_billing',
@@ -22,20 +28,36 @@ const PLAN_TABLE: Record<OwnerAgentToolId, string> = {
   system_health: 'view_webhooks',
 };
 
+// Tools 3 and 6 need the unapplied aggregates migration for their sums, so
+// they are withheld (registry.ts OWNER_AGENT_TOOLS_PENDING_MIGRATION).
+const PENDING: readonly OwnerAgentPendingToolId[] = ['billing_summary', 'rsvp_totals'];
+
 const ids = (o: object) => Object.keys(o).sort();
+const entries = (list: ReadonlyArray<{ tool: { id: string }; permission: string }>) =>
+  Object.fromEntries(list.map((t) => [t.tool.id, t.permission]));
 
 describe('OWNER_AGENT_TOOLS', () => {
-  it('holds exactly the nine §5 tools, each with its §5 permission', () => {
-    expect(OWNER_AGENT_TOOLS).toHaveLength(9);
-    expect(Object.fromEntries(OWNER_AGENT_TOOLS.map((t) => [t.tool.id, t.permission]))).toEqual(
-      PLAN_TABLE,
+  it('offers the seven §5 tools that need no migration, each with its §5 permission', () => {
+    expect(OWNER_AGENT_TOOLS).toHaveLength(7);
+    const offered = Object.fromEntries(
+      Object.entries(PLAN_TABLE).filter(([id]) => !(PENDING as readonly string[]).includes(id)),
+    );
+    expect(entries(OWNER_AGENT_TOOLS)).toEqual(offered);
+  });
+
+  it('withholds exactly tools 3 and 6 (pending migration), with their §5 permissions', () => {
+    expect(OWNER_AGENT_TOOLS_PENDING_MIGRATION).toHaveLength(2);
+    expect(entries(OWNER_AGENT_TOOLS_PENDING_MIGRATION)).toEqual(
+      Object.fromEntries(PENDING.map((id) => [id, PLAN_TABLE[id]])),
     );
   });
 
-  it('ids are unique and every permission is one of the six keys', () => {
-    const all = OWNER_AGENT_TOOLS.map((t) => t.tool.id);
-    expect(new Set(all).size).toBe(all.length);
-    for (const { permission } of OWNER_AGENT_TOOLS) {
+  it('offered + withheld = the nine §5 tools; ids unique; every permission one of the six keys', () => {
+    const all = [...OWNER_AGENT_TOOLS, ...OWNER_AGENT_TOOLS_PENDING_MIGRATION];
+    expect(entries(all)).toEqual(PLAN_TABLE);
+    const allIds = all.map((t) => t.tool.id);
+    expect(new Set(allIds).size).toBe(9);
+    for (const { permission } of all) {
       expect(OWNER_AGENT_PERMISSIONS).toContain(permission);
     }
   });
@@ -47,14 +69,13 @@ describe('OWNER_AGENT_TOOLS', () => {
     expectTypeOf<OwnerAgentToolId>().toEqualTypeOf<
       | 'inquiries_summary'
       | 'campaigns_status_summary'
-      | 'billing_summary'
       | 'voice_calls_summary'
       | 'events_pipeline'
-      | 'rsvp_totals'
       | 'whatsapp_delivery_summary'
       | 'web_traffic_summary'
       | 'system_health'
     >();
+    expectTypeOf<OwnerAgentPendingToolId>().toEqualTypeOf<'billing_summary' | 'rsvp_totals'>();
   });
 });
 
@@ -72,19 +93,36 @@ describe('toolsForPermissions', () => {
   it.each([
     ['view_customer_data', ['inquiries_summary', 'web_traffic_summary']],
     ['manage_billing', ['campaigns_status_summary']],
-    ['view_billing', ['billing_summary']],
+    // billing_summary is withheld (pending migration): view_billing unlocks
+    // nothing yet.
+    ['view_billing', []],
     ['manage_voice', ['voice_calls_summary']],
-    ['view_events', ['events_pipeline', 'rsvp_totals']],
+    // rsvp_totals is withheld (pending migration).
+    ['view_events', ['events_pipeline']],
     ['view_webhooks', ['system_health', 'whatsapp_delivery_summary']],
   ])('%s alone unlocks exactly %j', (key, expected) => {
     expect(ids(toolsForPermissions(new Set([key])))).toEqual(expected);
   });
 
-  it('all six keys unlock all nine tools, keyed by id, the same objects', () => {
+  it('all six keys unlock the seven offered tools, keyed by id, the same objects', () => {
     const tools = toolsForPermissions(new Set(OWNER_AGENT_PERMISSIONS));
-    expect(ids(tools)).toEqual(Object.keys(PLAN_TABLE).sort());
+    expect(ids(tools)).toEqual(OWNER_AGENT_TOOLS.map((t) => t.tool.id).sort());
     for (const { tool } of OWNER_AGENT_TOOLS) {
       expect(tools[tool.id]).toBe(tool);
+    }
+  });
+
+  it('never returns a pending-migration tool, whatever is granted', () => {
+    const everything = new Set<string>([
+      ...OWNER_AGENT_PERMISSIONS,
+      ...OWNER_AGENT_TOOLS_PENDING_MIGRATION.map((t) => t.permission),
+      ...PENDING,
+    ]);
+    const tools = toolsForPermissions(everything);
+    for (const id of PENDING) expect(Object.keys(tools)).not.toContain(id);
+    const offered = Object.values(tools);
+    for (const { tool } of OWNER_AGENT_TOOLS_PENDING_MIGRATION) {
+      expect(offered).not.toContain(tool);
     }
   });
 

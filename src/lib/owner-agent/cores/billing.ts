@@ -27,7 +27,8 @@ import { rangeStartIso, type OwnerAgentRange } from '@/lib/owner-agent/range';
 // NOT applied. Once it is applied and types.generated.ts is regenerated, this
 // core adds one `.rpc('owner_agent_billing_sums', { _since })` call and four
 // number fields. Until then it returns the counts below and nothing that
-// pretends to be a sum.
+// pretends to be a sum, and its tool is withheld from the agent
+// (tools/registry.ts OWNER_AGENT_TOOLS_PENDING_MIGRATION).
 //
 // Errors THROW: a failed count must not reach the owner as a confident 0.
 //

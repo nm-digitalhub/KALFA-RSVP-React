@@ -6,10 +6,13 @@ import { rangeStartIso, type OwnerAgentRange } from '@/lib/owner-agent/range';
 // Request-free CORE for inquiry counts (owner-agent tool 1, inquiries_summary;
 // plan §5). Takes a service-role client and returns numbers only.
 //
-// Same split as message-templates-resolve.ts: this module imports no DAL, no
-// next/headers|navigation|cache and no 'use client' module (enforced by the
-// `owner-agent-request-free` rule in .dependency-cruiser.cjs), so a non-request
-// process can call it. Authorization is NOT here — the caller holds it:
+// Same split as message-templates-resolve.ts: this module reaches no DAL and
+// no next/headers|navigation|cache (the `owner-agent-request-free` rule in
+// .dependency-cruiser.cjs), and nothing under src/app, src/components,
+// src/hooks or src/lib/workflow, where every 'use client' module lives
+// (`owner-agent-no-client-or-ui-modules`; the directive itself is invisible to
+// dependency-cruiser, measured 2026-09-24). So a non-request process can call
+// it. Authorization is NOT here — the caller holds it:
 //   - the admin sidebar badge and the /admin dashboard tiles reach these
 //     counters through nav-counts.ts, which checks view_customer_data first;
 //   - the owner agent will expose this core only to a staff member whose

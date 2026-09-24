@@ -18,7 +18,9 @@ import {
 // created but NOT applied (PostgREST aggregates are off on this project). When
 // it is applied and types regenerated, the core gains the sum fields and this
 // output schema gains them too. The description tells the model there are no
-// amounts, so it does not invent one.
+// amounts, so it does not invent one. Until then the tool is WITHHELD: it sits
+// in registry.ts OWNER_AGENT_TOOLS_PENDING_MIGRATION, which
+// toolsForPermissions() never offers.
 export const BILLING_SUMMARY_ID = 'billing_summary';
 export const BILLING_SUMMARY_PERMISSION = 'view_billing' satisfies OwnerAgentPermission;
 

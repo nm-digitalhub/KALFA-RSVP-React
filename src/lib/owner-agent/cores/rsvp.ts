@@ -31,6 +31,8 @@ import { rangeStartIso, type OwnerAgentRange } from '@/lib/owner-agent/range';
 // supabase/migrations/20260924061630_owner_agent_read_aggregates.sql, NOT
 // applied. After it is applied and types.generated.ts regenerated, this core
 // adds one `.rpc('owner_agent_rsvp_people_totals')` call and two number fields.
+// Until then its tool is withheld from the agent (tools/registry.ts
+// OWNER_AGENT_TOOLS_PENDING_MIGRATION).
 //
 // Errors THROW: a failed count must not reach the owner as a confident 0.
 

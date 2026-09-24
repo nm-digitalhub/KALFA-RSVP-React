@@ -62,7 +62,7 @@ import {
   webTrafficSummaryTool,
 } from './web-traffic-summary';
 import { systemHealthOutput, systemHealthTool } from './system-health';
-import { OWNER_AGENT_TOOLS } from './registry';
+import { OWNER_AGENT_TOOLS, OWNER_AGENT_TOOLS_PENDING_MIGRATION } from './registry';
 import { rangeInputSchema } from './shared';
 
 // ---------------------------------------------------------------------------
@@ -192,7 +192,12 @@ const health: SystemHealthSummary = {
 
 const FAKE_CLIENT = { marker: 'fake-admin-client' };
 
-type AnyTool = (typeof OWNER_AGENT_TOOLS)[number]['tool'];
+// Every tool built, offered or not: the two pending-migration tools are
+// withheld from toolsForPermissions() but must meet the same contract (range
+// only in, numbers only out), so they are tested here all the same.
+const ALL_TOOLS = [...OWNER_AGENT_TOOLS, ...OWNER_AGENT_TOOLS_PENDING_MIGRATION];
+
+type AnyTool = (typeof ALL_TOOLS)[number]['tool'];
 type Execute = (input: unknown, ctx?: unknown) => Promise<unknown>;
 const run = (tool: AnyTool, input: unknown) => (tool.execute as unknown as Execute)(input);
 
@@ -235,10 +240,9 @@ beforeEach(() => {
   );
 });
 
-it('the cases cover every registered tool exactly once', () => {
-  expect(CASES.map((c) => c.tool.id).sort()).toEqual(
-    OWNER_AGENT_TOOLS.map((t) => t.tool.id).sort(),
-  );
+it('the cases cover every tool (offered or pending migration) exactly once', () => {
+  expect(ALL_TOOLS).toHaveLength(9);
+  expect(CASES.map((c) => c.tool.id).sort()).toEqual(ALL_TOOLS.map((t) => t.tool.id).sort());
 });
 
 describe.each(CASES)('$tool.id', ({ tool, core, samples, usesClient, numericField }) => {
@@ -365,7 +369,7 @@ function sameSet(a: readonly unknown[], b: readonly unknown[]): boolean {
 }
 
 describe('output schemas: numbers only', () => {
-  it.each(OWNER_AGENT_TOOLS.map((t) => [t.tool.id, t.tool]))(
+  it.each(ALL_TOOLS.map((t) => [t.tool.id, t.tool]))(
     '%s has no string, typeless or open-keyed field outside the allow-list',
     (id, tool) => {
       const json = z.toJSONSchema(tool.outputSchema as unknown as z.ZodType) as JsonNode;
@@ -377,7 +381,7 @@ describe('output schemas: numbers only', () => {
     for (const [path, { reason }] of Object.entries(ALLOWED_STRING_FIELDS)) {
       expect(reason.length).toBeGreaterThan(20);
       const [id, ...rest] = path.split('.');
-      const entry = OWNER_AGENT_TOOLS.find((t) => t.tool.id === id);
+      const entry = ALL_TOOLS.find((t) => t.tool.id === id);
       expect(entry, path).toBeDefined();
       let node = z.toJSONSchema(entry!.tool.outputSchema as unknown as z.ZodType) as JsonNode;
       for (const key of rest) node = (node.properties as Record<string, JsonNode>)[key];
@@ -407,7 +411,7 @@ describe('output schemas: numbers only', () => {
 });
 
 describe('input schemas: the range enum and nothing else', () => {
-  it.each(OWNER_AGENT_TOOLS.map((t) => [t.tool.id, t.tool]))('%s takes only { range }', (_id, tool) => {
+  it.each(ALL_TOOLS.map((t) => [t.tool.id, t.tool]))('%s takes only { range }', (_id, tool) => {
     expect(tool.inputSchema).toBe(rangeInputSchema);
     const json = z.toJSONSchema(tool.inputSchema as unknown as z.ZodType) as JsonNode;
     expect(json.type).toBe('object');
