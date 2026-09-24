@@ -323,6 +323,14 @@ if (!enabled || !config?.appSecret) {
 
 ### 3.6 זיכרון ואחסון
 
+**עדכון, 2026-09-24 (בעקבות ההחלטה בסעיף 4): אין זיכרון של Mastra.** לא `Memory`, לא `PostgresStore` ולא חבילות. היסטוריית השיחה תבוא מאחד משני מקורות, וההכרעה בשלב 6b:
+- **סשנים של ה-CLI עם `--resume <session_id>`.** ה-CLI שומר כל סשן בקובץ `$HOME/.claude/projects/-var-www-vhosts-kalfa-me-beta--fleet-logs-owner-agent-cwd/<session_id>.jsonl`, בנפרד מסשנים של ה-fleet. הקובץ מכיל את השאלות ואת תוצאות הכלים, ולכן הוא חייב להיכנס ל-retention (החלטה 9.8, שלב 8). שני דברים לדעת:
+  - `--resume` מחפש את הסשן לפי ה-cwd, ולכן ה-cwd הייעודי אסור שיזוז.
+  - ברירת המחדל של `--system-prompt-snapshot` היא `on` (לפי ה-help של 2.1.281, "where system-prompt recording is … enabled"): בסשן שממשיך, ה-system prompt שנרשם בפעם הראשונה נשלח שוב כלשונו, גם אם הועבר טקסט אחר. תאריך או נתון משתנה ב-system prompt "יקפא". שלב 6b מעביר נתונים משתנים ב-prompt, או מעביר `--system-prompt-snapshot off`.
+- **טקסט מטבלת הקליטה** (`owner_agent_intake`), שמורכב לתוך ה-prompt בכל ריצה, עם `--no-session-persistence` כדי שלא יישמר קובץ סשן בכלל.
+
+הטקסט שמכאן ועד סוף הסעיף (Mastra memory ו-`owner_agent_mastra`) הוא התכנון הקודם, והוא הוחלף. הסכמה `owner_agent_mastra` כבר נוצרה בשלב 1, ריקה ובלי הרשאות. היא לא בשימוש.
+
 - **חבילות:** `@mastra/memory` ו-`@mastra/pg` לא מותקנות [נמדד]. הגרסאות העדכניות ב-npm: `@mastra/pg@1.26.0` עם peer ל-`@mastra/core >=1.68`, ו-`@mastra/memory@1.31.0` [נמדד npm view]. ההתקנה בהצמדת גרסה ובאישור.
 - **`PostgresStore` יוצר טבלאות לבד** (`docs/integrations-databases-postgresql.md:128–139`), וברירת המחדל היא `public` (`:64`). [נמדד] ב-Supabase, `public` חשוף ל-Data API. **לכן:**
   - `schemaName: 'owner_agent_mastra'`. הסכמה נוצרת במיגרציה, לפי התקדים של `pgboss` [נמדד: owner `postgres`, ACL ריק, לא חשופה]. אין grant ל-`anon`, ל-`authenticated` או ל-`service_role`. התהליך מתחבר כמו ה-worker, כתפקיד שמחזיק ב-`pgboss` [מוסק מהבעלות על `pgboss`]. **לעולם לא להוסיף את הסכמה לרשימת הסכמות החשופות ב-API.**
@@ -363,7 +371,12 @@ if (!enabled || !config?.appSecret) {
 
 ## 4. גישה למודל
 
-**בקצרה: הרצה על טוקן ה-OAuth של Claude Code אינה מותרת, וגם אינה ישימה טכנית. הדרך היא `ANTHROPIC_API_KEY` עם מחרוזת `anthropic/…`.**
+**החלטת הבעלים, 2026-09-24 (מחייבת): "לעבוד בדיוק כמו ה-fleet".** הסוכן מגיע למודל דרך `claude -p` של ה-CLI המותקן, עם `CLAUDE_CODE_OAUTH_TOKEN` מ-`.claude/fleet/.token.env`. זה אותו טוקן ואותה שיטה שבהם כבר משתמשים `.claude/fleet/bin/run-role.sh` והצומת `action.ai_agent` של מנוע ה-workflow (פורט ה-`ai` ב-`src/lib/workflow/enqueue.ts`).
+- **אין מפתח API**, אין `Agent` או קריאת מודל של Mastra, אין `@mastra/memory`/`@mastra/pg` ואין חבילות חדשות.
+- Mastra נשארת רק כהגדרות הכלים (`createTool`, שלב 5). הכלים נחשפים ל-CLI דרך שרת MCP מקומי (stdio), וכל הכלים המובנים של ה-CLI כבויים (`--tools ""`). המימוש: שלב 6a בסעיף 8.
+- **כל מה שכתוב מכאן ועד סוף הסעיף הוא הניתוח הקודם, והוא הוחלף.** הוא נשאר לתיעוד בלבד. גם ההפניות ל-`ANTHROPIC_API_KEY` ולקובץ env נפרד בסעיפים 6 ו-7 (סיכון 10) ובשלב 0 הוחלפו בהחלטה הזאת.
+
+**הניתוח הקודם (הוחלף): הרצה על טוקן ה-OAuth של Claude Code אינה מותרת, וגם אינה ישימה טכנית. הדרך היא `ANTHROPIC_API_KEY` עם מחרוזת `anthropic/…`.**
 
 **מה אומרים התנאים.** מדף "Legal and compliance" הנוכחי של Claude Code (code.claude.com/docs/en/legal-and-compliance, נשלף היום) [נמדד]:
 > "OAuth authentication … is designed to support ordinary use of Claude Code and other native Anthropic applications."
@@ -672,6 +685,45 @@ if (!enabled || !config?.appSecret) {
   - **השוואה ידנית מול דפי `/admin`** עוד לא נעשתה. היא דורשת את ה-DB החי והדפדפן.
 
 **שלב 6: תהליך הסוכן.**
+
+**סטטוס 6a: ✅ בקוד, 24.9.2026** (commit `37acd86`, ענף `owner-agent-stage6`), לפי החלטת הבעלים בסעיף 4. זה חצי ה-runner בלבד. אין עדיין צרכן, אין pg-boss ואין שליחה. ה-CLI האמיתי לא הורץ מול המודל.
+- **שרת MCP (stdio):** `src/lib/owner-agent/mcp/server.ts`, ונקודת הכניסה `mcp/main.ts`. שם השרת `owner_agent`, ולכן הכלים נקראים `mcp__owner_agent__<id>`.
+  - הוא רושם רק את הכלים ש-`toolsForPermissions` מחזירה, לפי `OWNER_AGENT_PERMISSIONS` שה-runner מעביר בסביבה. כלומר עד 7, ואף פעם לא שני הכלים המעוכבים.
+  - כל שגיאה היא קוד בלבד: `unknown_tool`, `invalid_input`, `tool_failed`.
+  - הבנייה: `npm run owner-agent:mcp:build` ל-`dist/owner-agent-mcp.cjs`, עם `@google-analytics/data` חיצוני ובדיקת bundle (`scripts/check-owner-agent-mcp-bundle.mjs`). נבנה ל-scratchpad (2.6MB), עבר `node --check`, והורץ על stdio עם ה-client של ה-SDK, בלי DB ובלי CLI: רשימה מסוננת, כלי לא מורשה ← `unknown_tool`, יציאה כש-stdin נסגר.
+- **הגדרות:** `.claude/fleet/settings/owner-agent.settings.json`.
+  - `dontAsk`. ב-allow רק 7 ה-id המפורשים, בלי wildcard. ב-deny כל משפחות הכלים המובנים של 2.1.281, וגם חסימות הקריאה של tier0.
+  - `disableAllHooks`. ה-`guard.sh` של ה-fleet **לא מחובר**: הוא בודק רק `tool_input.command`, ובקריאת MCP אין כזה.
+- **Runner:** `src/lib/owner-agent/runner.ts`, `runOwnerAgent({prompt, systemPrompt, permissions, resumeSessionId?, model, maxTurns, timeoutMs})` ← `{text, costUsd, sessionId, toolNames, turns}`.
+  - הדגלים: `-p --permission-mode dontAsk --setting-sources project --settings … --strict-mcp-config --mcp-config … --tools "" --allowedTools … --system-prompt … --model … --max-turns … --output-format stream-json --verbose [--resume …]`.
+  - השאלה עוברת ב-stdin, לא ב-argv.
+  - הסביבה נבנית במפורש: HOME ו-PATH כמו ב-run-role.sh, הטוקן מהקובץ, ו-`CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`. אין ירושה של `process.env`.
+  - cwd ייעודי: `.fleet-logs/owner-agent/cwd`.
+  - אין flock גלובלי.
+  - timeout עם SIGKILL אחרי 10 שניות.
+  - כל כשל הוא `OwnerAgentRunError` עם קוד בלבד.
+  - מסנן טלפונים על הטקסט.
+  - כל חריגה מ-run-role.sh מתועדת בראש הקובץ.
+- **Smoke ידני (לא בדיקה):** `scripts/owner-agent-smoke.ts`, דרך `npm run owner-agent:smoke`, מוגן ב-`OWNER_AGENT_SMOKE_CONFIRM=yes`. הבעלים מריץ אותו, לא סוכן.
+- **שערים:** `tsc` 0 שגיאות; `lint` 0; `worker:deps` בלי הפרות; בדיקות ממוקדות `src/lib/owner-agent` 406/406, מתוכן 160 חדשות; `npm test` מלא 7732 עברו, 23 דולגו, 5 נכשלו, כולם 5 הכשלים הידועים של ה-worktree בשלושה קבצים.
+- **הזרקת תקלות:** הסרנו כל הגנה בנפרד, מעותק `.bak`, ושחזרנו עם `cp` ו-`cmp`. כל הסרה הפילה בדיקות:
+  - `--tools ""`: 11 בדיקות;
+  - `--strict-mcp-config`: 11;
+  - סינון ההרשאות בשרת: 9;
+  - סינון ההרשאות ב-runner: 7;
+  - redaction: 1;
+  - `Object.hasOwn`: 4;
+  - בדיקת `is_error`: 1;
+  - בדיקת חיבור ה-MCP: 3;
+  - ירושת `process.env`: 1;
+  - הסרת `WebFetch` מה-deny: 1.
+- **לשלב 6b:**
+  - צרכן pg-boss, בדיקה חוזרת של השער, system prompt, פיצול ל-4096 ו-`sendWhatsAppText`;
+  - הכרעה בין `--resume` לטקסט מהקליטה (3.6);
+  - הוספת `owner-agent:mcp:build` ל-`deploy`.
+
+הסעיפים שלמטה (`@mastra/memory`, `PostgresStore`, `Agent` עם `anthropic/…`, `llm-mock`) הם התכנון הקודם, והוחלפו בהחלטה שבסעיף 4.
+
 - התקנה מוצמדת של `@mastra/memory` ו-`@mastra/pg`, באישור.
 - `PostgresStore` עם `schemaName`, ו-`init` אחד באישור. אחר כך `disableInit: true`.
 - `Agent` עם:
@@ -711,7 +763,7 @@ if (!enabled || !config?.appSecret) {
    - אין override ואין route נפרד;
    - ההסטה נעשית ב-`route.ts` לפי מספר נבחר + רשימת היתר (2.2–2.3).
 2. ~~האם לאשר את קריאת ה-Graph של Meta (override)?~~ **הוסרה.** אין קריאת Graph.
-3. **האם לאשר מפתח Anthropic API בתשלום** לסוכן, עם תקרה יומית של 50 הודעות? (כן, עם תקרה)
+3. ~~האם לאשר מפתח Anthropic API בתשלום לסוכן?~~ **נענתה, הבעלים, 2026-09-24: לא. שיטת ה-fleet.** `claude -p` עם טוקן ה-OAuth שה-fleet ו-`action.ai_agent` כבר משתמשים בו, בלי מפתח בתשלום (סעיף 4). התקרה היומית (`owner_agent_daily_cap`, ברירת מחדל 50) נשארת.
 4. ~~האם רק הבעלים יכול לערוך את רשימת ההיתר?~~ **נענתה, הבעלים, 2026-09-24: כן.** עריכה רק עם `requirePlatformOwner`, בלי `manage_settings`.
 5. **האם בגרסה הראשונה רק הבעלים עצמו מורשה?** (כן)
 6. **כשהמתג כבוי, האם שולח מורשה לא מקבל שום תשובה?** (כן, שקט מוחלט)
