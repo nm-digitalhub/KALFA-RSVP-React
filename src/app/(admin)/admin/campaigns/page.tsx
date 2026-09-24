@@ -2,6 +2,7 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 
 import { listCampaignsForAdmin } from '@/lib/data/admin/campaigns';
+import { holdBadge } from '@/lib/data/admin/campaign-hold-badge';
 import { CAMPAIGN_STATUS_LABELS } from '@/lib/data/event-labels';
 import { formatIsraelDate } from '@/lib/date';
 import {
@@ -13,7 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-import { PageHeading, EmptyState, Badge, formatCurrency, type BadgeVariant } from '../_components';
+import { PageHeading, EmptyState, Badge, formatCurrency } from '../_components';
 
 export const metadata = { title: 'קמפיינים' };
 
@@ -38,26 +39,18 @@ function chargeCell(c: {
   return '—';
 }
 
-// capture_status is text, not a DB enum (verified 2026-08-30 — types.generated.ts
-// reflects it as bare string). hold_review is the most severe: it can mean a
-// hold SUMIT confirmed but our own DB failed to persist — an admin needs to see
-// this distinctly, not lump it with a routine decline.
-const CAPTURE_STATUS_LABELS: Record<string, { label: string; variant: BadgeVariant }> = {
-  pending: { label: 'תפיסה בתהליך', variant: 'warning' },
-  authorized: { label: 'תפוס', variant: 'success' },
-  hold_failed: { label: 'תפיסה נדחתה', variant: 'destructive' },
-  hold_review: { label: 'תפיסה — נדרשת בדיקה ידנית', variant: 'destructive' },
-};
-
-// The hold cell: a badge for capture_status, rendered AS the document link
-// (Base UI's render prop) when we have one — never a separate link beside it.
+// The hold cell: a badge for capture_status — or "שוחרר" once the reconciler
+// saw SUMIT release the hold (src/lib/data/admin/campaign-hold-badge.ts) —
+// rendered AS the document link (Base UI's render prop) when we have one,
+// never a separate link beside it.
 function HoldCell(c: {
   captureStatus: string | null;
+  releaseStatus: string | null;
   holdOrderDocumentNumber: number | null;
   holdOrderDocumentUrl: string | null;
 }) {
   if (!c.captureStatus) return <span className="text-muted-foreground">—</span>;
-  const entry = CAPTURE_STATUS_LABELS[c.captureStatus];
+  const entry = holdBadge(c);
   const label = entry
     ? c.holdOrderDocumentNumber
       ? `${entry.label} (הזמנה ${c.holdOrderDocumentNumber})`
@@ -135,6 +128,7 @@ export default async function AdminCampaignsPage() {
                   <TableCell>
                     <HoldCell
                       captureStatus={c.captureStatus}
+                      releaseStatus={c.releaseStatus}
                       holdOrderDocumentNumber={c.holdOrderDocumentNumber}
                       holdOrderDocumentUrl={c.holdOrderDocumentUrl}
                     />

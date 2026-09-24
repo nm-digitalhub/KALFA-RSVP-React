@@ -225,6 +225,12 @@ export interface AdminCampaignListItem {
   // below. captureStatus itself is text, not a typed enum (types.generated.ts
   // reflects capture_status as bare string — no DB enum backs it).
   captureStatus: string | null;
+  // 'released' once the hold-release reconciler (sumit-hold-reconcile.ts)
+  // has seen SUMIT mark the hold released. capture_status stays 'authorized'
+  // for the campaign's whole life, so without this the screen kept saying
+  // "תפוס" for holds SUMIT had long released (verified live 2026-09-24: all
+  // three "תפוס" rows were released in SUMIT's holds folder).
+  releaseStatus: string | null;
   holdOrderDocumentNumber: number | null;
   holdOrderDocumentUrl: string | null;
 }
@@ -249,7 +255,7 @@ export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> 
   const { data, error } = await admin
     .from('campaigns')
     .select(
-      'id, status, event_id, created_at, charge_status, final_charge_amount, credit_applied, capture_status, hold_order_document_number, hold_order_document_url, events(name, event_date)',
+      'id, status, event_id, created_at, charge_status, final_charge_amount, credit_applied, capture_status, release_status, hold_order_document_number, hold_order_document_url, events(name, event_date)',
     )
     .or(ADMIN_ATTENTION_FILTER)
     .order('created_at', { ascending: false });
@@ -266,6 +272,7 @@ export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> 
     finalChargeAmount: c.final_charge_amount,
     creditApplied: Number(c.credit_applied ?? 0),
     captureStatus: c.capture_status,
+    releaseStatus: c.release_status,
     holdOrderDocumentNumber: c.hold_order_document_number,
     holdOrderDocumentUrl: c.hold_order_document_url,
   }));
