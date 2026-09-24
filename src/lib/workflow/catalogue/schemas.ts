@@ -27,7 +27,7 @@
 //
 // Every entry ends in `satisfies NodeSchema` / typed as `PaletteItem`, so a
 // mistake here is a compile error rather than an empty properties panel.
-import { NodeType, errorPolicyProperty, getScope } from '@workflowbuilder/sdk';
+import { NodeType, getScope } from '@workflowbuilder/sdk';
 import type { NodeSchema, PaletteItem, UISchema } from '@workflowbuilder/sdk';
 
 import { RSVP_STATUSES } from '@/lib/constants';
@@ -51,6 +51,7 @@ import {
   statusProperty,
 } from './editor-shared';
 
+import { aiAgentPaletteItem } from '../nodes/action-ai-agent/action-ai-agent';
 import { microsoftSendEmailPaletteItem } from '../nodes/action-microsoft-send-email/action-microsoft-send-email';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import {
@@ -73,8 +74,6 @@ import {
   WHATSAPP_MESSAGE_KINDS,
   type GuestField,
   type KalfaNodeType,
-  AI_AGENT_MAX_TURNS,
-  aiAgentModelOptions,
   webhookMethodOptions,
 } from './types';
 
@@ -1486,98 +1485,6 @@ function withNodeRunControl(item: PaletteItem): PaletteItem {
  * palette on every keystroke. The editor therefore calls this inside `useMemo`;
  * calling it in a render body would be the bug this note exists to prevent.
  */
-// ---------------------------------------------------------------------------
-// action.ai_agent
-// ---------------------------------------------------------------------------
-
-const aiAgentSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['action.ai_agent'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    ...errorPolicyProperty,
-    systemPrompt: { ...requiredText },
-    model: { ...requiredText, options: aiAgentModelOptions.map((o) => ({ ...o })) },
-    maxTurns: { type: 'number' },
-    // ⚠️ THE VENDOR'S FIXED ROW SHAPE, AND `apiKey` IS DELIBERATELY UNUSED.
-    // `AiTools` is a repeater bound to `{ id, sourceHandle, tool, description,
-    // apiKey }` and its own docs say the surface is "specific to the demo's
-    // AI-agent node" — the shape cannot be changed. Our tools are KALFA
-    // capabilities reached through the settings file the port passes, so none
-    // of them has a per-tool key; and a diagram is exportable, which is why
-    // nothing would justify putting one there. The handler reads `tool` only.
-    tools: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          sourceHandle: { type: 'string' },
-          tool: { type: 'string' },
-          description: { type: 'string' },
-          apiKey: { type: 'string' },
-        },
-      },
-    },
-  },
-} satisfies NodeSchema;
-
-const aiAgentScope = getScope<typeof aiAgentSchema>;
-
-const aiAgentUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(aiAgentScope('properties.label'), aiAgentScope('properties.description')),
-    {
-      type: 'Accordion',
-      label: 'ההנחיה',
-      elements: [
-        {
-          // `VariableTextArea`, the same control the vendor's own AI node uses —
-          // so `{{nodes.<id>.<field>}}` from an earlier step can be named inside
-          // the prompt, with the picker offering them.
-          type: 'VariableTextArea',
-          scope: aiAgentScope('properties.systemPrompt'),
-          label: 'מה לבקש מהמודל',
-          placeholder: 'כתבו כאן. השתמשו ב-{{ כדי להכניס ערך מצעד קודם.',
-          minRows: 5,
-        },
-        {
-          type: 'Label',
-          text: 'התשובה זמינה לצעדים הבאים כ-{{nodes.<מזהה>.text}}. הצעד הזה אינו מחליט לבד — כדי להסתעף לפי התשובה, הוסיפו אחריו צומת "תנאי".',
-        },
-      ],
-    },
-    {
-      type: 'Accordion',
-      label: 'מודל ותקרה',
-      elements: [
-        { type: 'Select', scope: aiAgentScope('properties.model'), label: 'מודל' },
-        {
-          type: 'Text',
-          scope: aiAgentScope('properties.maxTurns'),
-          label: 'מקסימום סבבים',
-          inputType: 'number',
-        },
-      ],
-    },
-    {
-      type: 'Accordion',
-      label: 'כלים',
-      elements: [
-        { type: 'AiTools', scope: aiAgentScope('properties.tools') },
-        {
-          type: 'Label',
-          text: 'הכלים עדיין אינם פעילים — הצעד שואל את המודל ומחזיר טקסט בלבד, ומה שנכתב כאן אינו נשלח לשום מקום. אל תזינו מפתח בשדה ה-API Key: התרשים ניתן לייצוא, ומה שיוזן שם יימחק בייצוא.',
-        },
-      ],
-    },
-    statusControl(aiAgentScope('properties.status')),
-    { type: 'Select', scope: aiAgentScope('properties.errorPolicy'), label: 'אם הצעד נכשל' },
-  ],
-};
-
 export function buildPaletteItems(
   numbers: readonly WhatsAppNumberOption[] = [],
   /**
@@ -1640,44 +1547,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
   sumitCreateDocumentPaletteItem,
   // Moved to its own folder — see nodes/action-sumit-create-customer/.
   sumitCreateCustomerPaletteItem,
-  {
-    type: 'action.ai_agent' satisfies KalfaNodeType,
-    label: 'סוכן AI',
-    description: 'שואל מודל שפה ומעביר את התשובה לצעדים הבאים',
-    icon: 'Sparkle',
-    // The SDK's own visual template for an AI step. Not a cosmetic choice: the
-    // guide warns that a `nodeTemplates` key colliding with a built-in name
-    // ('node', 'start-node', 'ai-node', 'decision-node') OVERRIDES that
-    // category's renderer — so declaring the template type is how we get the
-    // vendor's AI body rather than accidentally replacing it.
-    templateType: NodeType.AiNode,
-    schema: aiAgentSchema,
-    uischema: aiAgentUiSchema,
-    outputSchema: {
-      type: 'default',
-      properties: {
-        text: {
-          type: 'string',
-          label: 'תשובת המודל',
-          description: 'זמינה כ-{{nodes.<מזהה>.text}}',
-        },
-        // Published so a run's cost is visible on the step that spent it — the
-        // way the fleet's own index line records it per role.
-        costUsd: { type: 'number', label: 'עלות הקריאה', description: 'בדולרים; ריק בהרצה יבשה' },
-        sessionId: { type: 'string', label: 'מזהה הסשן', description: 'לאיתור מול עקבת ה-CLI' },
-      },
-    },
-    defaultPropertiesData: {
-      status: nodeStatusOptions.active.value,
-      label: 'סוכן AI',
-      description: 'שואל מודל שפה ומעביר את התשובה לצעדים הבאים',
-      systemPrompt: '',
-      model: 'haiku',
-      maxTurns: AI_AGENT_MAX_TURNS.default,
-      tools: [],
-      errorPolicy: errorPolicyOptions.fail.value,
-    },
-  } satisfies PaletteItem<typeof aiAgentSchema>,
+  // Moved to its own folder — see nodes/action-ai-agent/.
+  aiAgentPaletteItem,
   {
     type: 'action.start_voice_call' satisfies KalfaNodeType,
     label: 'שיחה עם סוכן קולי',

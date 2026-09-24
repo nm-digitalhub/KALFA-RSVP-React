@@ -19,8 +19,6 @@ import {
   MAX_FANOUT_DEPTH,
   SALES_CALLBACK_TOPIC,
   type KalfaNodeType,
-  AI_AGENT_MAX_TURNS,
-  AI_AGENT_MODELS,
 } from '../catalogue/types';
 
 import { PermanentNodeExecutionError } from '../vendor/workflowbuilder/execution-core/errors';
@@ -36,6 +34,8 @@ import {
   type WorkflowTriggerPayload,
 } from './shared';
 import { WorkflowWaitSignal } from '../engine/wait-signal';
+import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
+import { aiAgent } from '../nodes/action-ai-agent/runtime';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import { microsoftSendEmail } from '../nodes/action-microsoft-send-email/runtime';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
@@ -982,75 +982,6 @@ const sendTemplate: StepHandler = async (config, ctx) => {
     : { output: { sent: false, skipped: true, reason: result.reason ?? 'send_failed' } };
 };
 
-// ---------------------------------------------------------------------------
-// action.ai_agent — one headless Claude run, as a workflow step
-// ---------------------------------------------------------------------------
-
-/**
- * Ask a model, and put its answer on the run.
- *
- * ⚠️ IT REACHES THE MODEL ONLY THROUGH `ctx.deps.ai`, which is the property the
- * dry run depends on. The editor's "הרצת בדיקה" panel promises the run changes
- * nothing; a model call changes no row but does cost money and does return prose
- * an owner could mistake for a real answer. The dry run swaps PORTS, so a future
- * edit that spawned the CLI directly here would bill a card from a test button
- * — the same trap `sumit-accounting.test.ts` source-scans for.
- *
- * ⚠️ THE ANSWER IS TEXT, AND THAT IS THE WHOLE CONTRACT. No JSON parsing, no
- * schema coercion, no "the model said yes so branch left". A step that tried to
- * interpret the answer would be deciding, silently and differently every run,
- * what counts as agreement. Branching stays where it already works: put a
- * `logic.condition` after this node and compare `{{nodes.<id>.text}}` yourself,
- * in a rule that is visible on the canvas and the same on every run.
- */
-const aiAgent: StepHandler = async (config, ctx) => {
-  const prompt = readString(config, 'systemPrompt').trim();
-  if (prompt === '') {
-    throw new PermanentNodeExecutionError(
-      'invalid_config',
-      'הצעד "סוכן AI" לא הוגדר עם הנחיה.',
-    );
-  }
-
-  const model = readEnum(config, 'model', [...AI_AGENT_MODELS], 'action.ai_agent');
-
-  const rawTurns = config.maxTurns;
-  const requested = typeof rawTurns === 'number' ? rawTurns : Number(rawTurns);
-  // Clamped rather than refused: a value outside the range is a slider that
-  // moved, not a step nobody configured, and failing a run over it would be the
-  // wrong trade. The CEILING is what matters — it is what stops a loop.
-  const maxTurns = Number.isFinite(requested)
-    ? Math.min(Math.max(Math.floor(requested), AI_AGENT_MAX_TURNS.min), AI_AGENT_MAX_TURNS.max)
-    : AI_AGENT_MAX_TURNS.default;
-
-  // ⚠️ NAMES ONLY, AND THE PORT DOES NOT ACT ON THEM YET. `apiKey` is part of the
-  // SDK control's fixed row shape and is deliberately never read — a diagram is
-  // exportable. The names are collected here so the shape is right the day a
-  // tool layer exists; until then the live port drops them, and the panel says
-  // so in as many words.
-  const tools = Array.isArray(config.tools)
-    ? config.tools
-        .map((row) =>
-          row && typeof row === 'object' && typeof (row as { tool?: unknown }).tool === 'string'
-            ? (row as { tool: string }).tool.trim()
-            : '',
-        )
-        .filter((name) => name !== '')
-    : [];
-
-  const answer = await ctx.deps.ai.run({ prompt, model, tools, maxTurns });
-
-  return {
-    output: {
-      text: answer.text,
-      // Published so a run's cost is visible on the step that spent it, the way
-      // the fleet's own index line records it per role.
-      costUsd: answer.costUsd,
-      sessionId: answer.sessionId,
-    },
-  };
-};
-
 export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'trigger.whatsapp_inbound': whatsappInbound,
   'trigger.webhook': webhookTrigger,
@@ -1074,5 +1005,5 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   [setValueDefinition.type]: setValue,
   [sumitCreateDocumentDefinition.type]: sumitCreateDocument,
   [sumitCreateCustomerDefinition.type]: sumitCreateCustomer,
-  'action.ai_agent': aiAgent,
+  [aiAgentDefinition.type]: aiAgent,
 };

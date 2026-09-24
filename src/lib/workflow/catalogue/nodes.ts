@@ -11,6 +11,7 @@
 // plans/node-folders-file-matrix.md), then one entry here, in `NODE_TYPES`,
 // `NODE_REQUIRED_FIELDS`, `PALETTE_ITEMS` and `STEP_HANDLERS`, each read from
 // the definition. No adapter changes.
+import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
@@ -45,7 +46,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: setValueDefinition.type, isTrigger: setValueDefinition.isTrigger },
   { type: sumitCreateDocumentDefinition.type, isTrigger: sumitCreateDocumentDefinition.isTrigger },
   { type: sumitCreateCustomerDefinition.type, isTrigger: sumitCreateCustomerDefinition.isTrigger },
-  { type: 'action.ai_agent', isTrigger: false },
+  { type: aiAgentDefinition.type, isTrigger: aiAgentDefinition.isTrigger },
 ];
 
 // Lookup by the string stored in the diagram. `undefined` is rule 5: an unknown

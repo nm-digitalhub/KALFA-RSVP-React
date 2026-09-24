@@ -15,6 +15,7 @@
 // folder's editor files.
 import type { RsvpStatus } from '@/lib/constants';
 
+import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
 import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
@@ -54,7 +55,7 @@ export const NODE_TYPES = [
   setValueDefinition.type,
   sumitCreateDocumentDefinition.type,
   sumitCreateCustomerDefinition.type,
-  'action.ai_agent',
+  aiAgentDefinition.type,
 ] as const;
 
 export type KalfaNodeType = (typeof NODE_TYPES)[number];
@@ -706,46 +707,10 @@ export const SECRET_NAME_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
  */
 export const SECRET_BEARING_NODE_TYPES: readonly string[] = [webhookDefinition.type];
 
-// ---------------------------------------------------------------------------
-// action.ai_agent
-// ---------------------------------------------------------------------------
-
-/**
- * The models this node may ask, spelled as the `claude` CLI spells them.
- *
- * ⚠️ ALIASES, NOT MODEL IDS. `run-role.sh` passes `--model "$MODEL"` with values
- * from `fleet.json` (`haiku`, `sonnet`), and the CLI resolves an alias to
- * whatever the current model behind it is. Pinning an id here would freeze this
- * node on a model that is eventually retired, and the fleet would already have
- * moved on.
- */
-export const AI_AGENT_MODELS = ['haiku', 'sonnet'] as const;
-export type AiAgentModel = (typeof AI_AGENT_MODELS)[number];
-export const aiAgentModelOptions = [
-  { value: 'haiku', label: 'מהיר (haiku)' },
-  { value: 'sonnet', label: 'חזק (sonnet)' },
-];
-
-/** Bounds a single step. Low on purpose — a workflow step is not a conversation. */
-export const AI_AGENT_MAX_TURNS = { min: 1, max: 20, default: 4 } as const;
-
-export type AiAgentConfig = {
-  /** Free text with `{{…}}` references, resolved before the handler sees it. */
-  systemPrompt: string;
-  model: AiAgentModel;
-  maxTurns: number;
-  /**
-   * The tools the node asks for, in the SDK's fixed `AiTools` row shape.
-   *
-   * ⚠️ `apiKey` IS PART OF THAT SHAPE AND WE LEAVE IT EMPTY. The vendor's control
-   * is a repeater bound to `{ id, sourceHandle, tool, description, apiKey }` and
-   * the shape cannot be changed (its own docs: "Surface specific to the demo's
-   * AI-agent node"). Our tools are KALFA capabilities reached through the
-   * settings file, so none of them has a per-tool key — and a diagram is
-   * exportable, which is why nothing would justify putting one there.
-   */
-  tools?: readonly { tool?: string; description?: string; apiKey?: string }[];
-};
+// `action.ai_agent` — its config, the model aliases and the turn bounds are
+// declared with the rest of its contract in `nodes/action-ai-agent/definition.ts`.
+// The config type is re-exported here for existing readers.
+export type AiAgentConfig = aiAgentDefinition.AiAgentConfig;
 
 // ---------------------------------------------------------------------------
 // action.set_guest_field
@@ -833,7 +798,7 @@ export type SumitCreateCustomerConfig = sumitCreateCustomerDefinition.SumitCreat
 export type KalfaNodeConfig =
   | { type: 'trigger.whatsapp_inbound'; config: WhatsappInboundConfig }
   | { type: 'trigger.webhook'; config: WebhookTriggerConfig }
-  | { type: 'action.ai_agent'; config: AiAgentConfig }
+  | { type: typeof aiAgentDefinition.type; config: AiAgentConfig }
   | { type: 'trigger.schedule'; config: ScheduleTriggerConfig }
   | { type: 'trigger.sumit_card'; config: SumitCardTriggerConfig }
   | { type: typeof conditionDefinition.type; config: ConditionConfig }
@@ -1010,18 +975,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   'action.create_callback_request': { topic: 'catalogue' },
   'action.start_for_each_guest': { targetWorkflowId: 'identifier' },
   [webhookDefinition.type]: webhookDefinition.deploymentBindings,
-  // ⚠️ `secret`, WHICH STRIPS THE WHOLE ARRAY ON EXPORT — and that is the right
-  // trade even though the tool NAMES would travel fine.
-  //
-  // `AiTools` is a repeater bound to a row shape we cannot change:
-  // `{ id, sourceHandle, tool, description, apiKey }`, per the vendor's own
-  // docs ("Surface specific to the demo's AI-agent node"). The handler never
-  // reads `apiKey` and the panel tells the owner not to type one — but a
-  // diagram is EXPORTABLE, the editor's menu puts one in a copyable box, and a
-  // field that CAN hold a credential eventually does. Losing re-enterable tool
-  // names at the destination costs a minute; exporting a key someone typed
-  // anyway is not recoverable.
-  'action.ai_agent': { tools: 'secret' },
+  [aiAgentDefinition.type]: aiAgentDefinition.deploymentBindings,
   // Both SUMIT ids point INTO this installation: they are our own reference for
   // a customer, so a diagram carrying one would reach for a record that does not
   // exist anywhere else.
@@ -1044,7 +998,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // `tokenHash` stays: BOTH modes have one, it is just a hash of a different
   // half.
   'trigger.webhook': ['label', 'description', 'tokenHash'],
-  'action.ai_agent': ['label', 'description', 'systemPrompt', 'model'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [aiAgentDefinition.type]: aiAgentDefinition.requiredFields,
   'trigger.schedule': ['label', 'description', 'time'],
   'trigger.sumit_card': ['label', 'description', 'tokenHash'],
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
