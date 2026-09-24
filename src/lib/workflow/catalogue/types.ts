@@ -16,6 +16,7 @@
 import type { RsvpStatus } from '@/lib/constants';
 
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
+import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import * as webhookDefinition from '../nodes/action-webhook/definition';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
@@ -50,7 +51,7 @@ export const NODE_TYPES = [
   'action.start_voice_call',
   setValueDefinition.type,
   'action.sumit_create_document',
-  'action.sumit_create_customer',
+  sumitCreateCustomerDefinition.type,
   'action.ai_agent',
 ] as const;
 
@@ -904,18 +905,10 @@ export type SumitCreateDocumentConfig = {
   sendByEmail?: boolean;
 };
 
-/** `action.sumit_create_customer` — `Accounting_Typed_Customer`, creating side only. */
-export type SumitCreateCustomerConfig = {
-  customerName: string;
-  customerEmail?: string;
-  customerPhone?: string;
-  city?: string;
-  address?: string;
-  /** `CompanyNumber` — spec: "Customer registered company number (VAT number)". */
-  companyNumber?: string;
-  externalId?: string;
-  noVat?: boolean;
-};
+// `action.sumit_create_customer` — declared with the rest of its contract in
+// `nodes/action-sumit-create-customer/definition.ts`, re-exported here for
+// existing readers.
+export type SumitCreateCustomerConfig = sumitCreateCustomerDefinition.SumitCreateCustomerConfig;
 
 /**
  * The document types this node may issue.
@@ -967,7 +960,7 @@ export type KalfaNodeConfig =
   | { type: 'action.start_for_each_guest'; config: ForEachGuestConfig }
   | { type: typeof setValueDefinition.type; config: SetValueConfig }
   | { type: 'action.sumit_create_document'; config: SumitCreateDocumentConfig }
-  | { type: 'action.sumit_create_customer'; config: SumitCreateCustomerConfig };
+  | { type: typeof sumitCreateCustomerDefinition.type; config: SumitCreateCustomerConfig };
 
 /**
  * ⚠️ A COMPILE ERROR IF `KalfaNodeConfig` MISSES A TYPE. `action.start_voice_call`
@@ -1140,7 +1133,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   // a customer, so a diagram carrying one would reach for a record that does not
   // exist anywhere else.
   'action.sumit_create_document': { customerExternalId: 'identifier' },
-  'action.sumit_create_customer': { externalId: 'identifier' },
+  [sumitCreateCustomerDefinition.type]: sumitCreateCustomerDefinition.deploymentBindings,
   'action.start_voice_call': {
     purposeKey: 'catalogue',
     callerId: 'identifier',
@@ -1190,7 +1183,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // documentType + a customer name are the minimum SUMIT itself requires
   // (`Details.Type`, and `Customer.Name` "Required for creating a new customer").
   'action.sumit_create_document': ['label', 'description', 'documentType', 'customerName'],
-  'action.sumit_create_customer': ['label', 'description', 'customerName'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [sumitCreateCustomerDefinition.type]: sumitCreateCustomerDefinition.requiredFields,
 };
 
 /**

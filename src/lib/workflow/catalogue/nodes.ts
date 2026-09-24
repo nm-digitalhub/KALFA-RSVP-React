@@ -12,6 +12,7 @@
 // `NODE_REQUIRED_FIELDS`, `PALETTE_ITEMS` and `STEP_HANDLERS`, each read from
 // the definition. No adapter changes.
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
+import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import * as webhookDefinition from '../nodes/action-webhook/definition';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
@@ -41,7 +42,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'action.start_voice_call', isTrigger: false },
   { type: setValueDefinition.type, isTrigger: setValueDefinition.isTrigger },
   { type: 'action.sumit_create_document', isTrigger: false },
-  { type: 'action.sumit_create_customer', isTrigger: false },
+  { type: sumitCreateCustomerDefinition.type, isTrigger: sumitCreateCustomerDefinition.isTrigger },
   { type: 'action.ai_agent', isTrigger: false },
 ];
 

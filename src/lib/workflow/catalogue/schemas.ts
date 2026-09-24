@@ -53,6 +53,7 @@ import {
 } from './editor-shared';
 
 import { notifyTeamPaletteItem } from '../nodes/action-notify-team/action-notify-team';
+import { sumitCreateCustomerPaletteItem } from '../nodes/action-sumit-create-customer/action-sumit-create-customer';
 import { webhookPaletteItem } from '../nodes/action-webhook/action-webhook';
 import { conditionPaletteItem } from '../nodes/logic-condition/logic-condition';
 import { setValuePaletteItem } from '../nodes/logic-set-value/logic-set-value';
@@ -1804,12 +1805,13 @@ export function buildPaletteItems(
  * is declared exactly once. It is also what the tests and the i18n audit read.
  */
 // ---------------------------------------------------------------------------
-// action.sumit_create_document / action.sumit_create_customer
+// action.sumit_create_document
 // ---------------------------------------------------------------------------
 //
-// Both are ACCOUNTING nodes: they create a record, they do not move money.
-// Every option below is a value swagger.json accepts — no label here invents a
-// capability the API does not have.
+// An ACCOUNTING node: it creates a record, it does not move money. Every option
+// below is a value swagger.json accepts — no label here invents a capability the
+// API does not have. Its sibling `action.sumit_create_customer` lives in
+// nodes/action-sumit-create-customer/.
 
 const sumitDocumentTypeOptions = {
   Receipt: { label: 'קבלה', value: 'Receipt' },
@@ -1847,27 +1849,7 @@ const sumitCreateDocumentSchema = {
   },
 } satisfies NodeSchema;
 
-const sumitCreateCustomerSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['action.sumit_create_customer'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    ...actionBranchesProperty,
-    customerName: { ...requiredText },
-    customerEmail: { type: 'string' },
-    customerPhone: { type: 'string' },
-    city: { type: 'string' },
-    address: { type: 'string' },
-    companyNumber: { type: 'string' },
-    externalId: { type: 'string' },
-    noVat: { type: 'boolean' },
-    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
-  },
-} satisfies NodeSchema;
-
 const sumitCreateDocumentScope = getScope<typeof sumitCreateDocumentSchema>;
-const sumitCreateCustomerScope = getScope<typeof sumitCreateCustomerSchema>;
 
 // The four ARM-BLOCKING fields stay FLAT — the house rule this file records
 // elsewhere: a field `arm-check.ts` refuses to arm on must be visible without
@@ -1972,78 +1954,6 @@ const sumitCreateDocumentUiSchema: UISchema = {
   ],
 };
 
-const sumitCreateCustomerUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(
-      sumitCreateCustomerScope('properties.label'),
-      sumitCreateCustomerScope('properties.description'),
-    ),
-    {
-      type: 'VariableText',
-      scope: sumitCreateCustomerScope('properties.customerName'),
-      label: 'שם הלקוח',
-      placeholder: 'הקלידו {{ כדי לשלב ערך מצעד קודם',
-    },
-    {
-      type: 'Accordion',
-      label: 'פרטי קשר',
-      elements: [
-        {
-          type: 'VariableText',
-          scope: sumitCreateCustomerScope('properties.customerEmail'),
-          label: 'אימייל',
-        },
-        {
-          type: 'VariableText',
-          scope: sumitCreateCustomerScope('properties.customerPhone'),
-          label: 'טלפון',
-        },
-        {
-          type: 'VariableText',
-          scope: sumitCreateCustomerScope('properties.city'),
-          label: 'עיר',
-        },
-        {
-          type: 'VariableText',
-          scope: sumitCreateCustomerScope('properties.address'),
-          label: 'כתובת',
-        },
-      ],
-    },
-    {
-      type: 'Accordion',
-      label: 'פרטים עסקיים',
-      elements: [
-        {
-          type: 'VariableText',
-          scope: sumitCreateCustomerScope('properties.companyNumber'),
-          label: 'ח.פ. / ע.מ.',
-        },
-        {
-          type: 'VariableText',
-          scope: sumitCreateCustomerScope('properties.externalId'),
-          label: 'מזהה חיצוני',
-        },
-        {
-          type: 'Switch',
-          scope: sumitCreateCustomerScope('properties.noVat'),
-          label: 'הלקוח פטור ממע״מ',
-        },
-      ],
-    },
-    // status and errorPolicy stay FLAT: accordion-classification.test.ts
-    // refuses to let a node-level switch be folded away, and `status` is
-    // what decides whether the step runs at all.
-    statusControl(sumitCreateCustomerScope('properties.status')),
-    {
-      type: 'Select',
-      scope: sumitCreateCustomerScope('properties.errorPolicy'),
-      label: 'התנהגות בשגיאה',
-    },
-  ],
-};
-
 export const PALETTE_ITEMS: PaletteItem[] = [
   {
     type: 'action.sumit_create_document' satisfies KalfaNodeType,
@@ -2093,37 +2003,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       },
     },
   } satisfies PaletteItem<typeof sumitCreateDocumentSchema>,
-  {
-    type: 'action.sumit_create_customer' satisfies KalfaNodeType,
-    label: 'יצירת לקוח ב-SUMIT',
-    description: 'יוצר כרטיס לקוח. לא מבצע חיוב.',
-    icon: 'UserPlus',
-    templateType: NodeType.DecisionNode,
-    schema: sumitCreateCustomerSchema,
-    uischema: sumitCreateCustomerUiSchema,
-    defaultPropertiesData: {
-      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
-      status: nodeStatusOptions.active.value,
-      label: 'יצירת לקוח ב-SUMIT',
-      description: 'יוצר כרטיס לקוח. לא מבצע חיוב.',
-      customerName: '',
-      customerEmail: '',
-      customerPhone: '',
-      city: '',
-      address: '',
-      companyNumber: '',
-      externalId: '',
-      noVat: false,
-      errorPolicy: errorPolicyOptions.continue.value,
-    },
-    outputSchema: {
-      type: 'default',
-      properties: {
-        customerId: { type: 'number', label: 'מזהה הלקוח' },
-        customerHistoryUrl: { type: 'string', label: 'קישור לכרטיס הלקוח' },
-      },
-    },
-  } satisfies PaletteItem<typeof sumitCreateCustomerSchema>,
+  // Moved to its own folder — see nodes/action-sumit-create-customer/.
+  sumitCreateCustomerPaletteItem,
   {
     type: 'action.ai_agent' satisfies KalfaNodeType,
     label: 'סוכן AI',

@@ -45,6 +45,8 @@ import {
 import { WorkflowWaitSignal } from '../engine/wait-signal';
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import { notifyTeam } from '../nodes/action-notify-team/runtime';
+import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
+import { sumitCreateCustomer } from '../nodes/action-sumit-create-customer/runtime';
 import * as webhookDefinition from '../nodes/action-webhook/definition';
 import { webhook } from '../nodes/action-webhook/runtime';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
@@ -1126,35 +1128,6 @@ const sumitCreateDocument: StepHandler = async (config, ctx) => {
   return { output: result };
 };
 
-/** `action.sumit_create_customer` — create a customer card. No money moves. */
-const sumitCreateCustomer: StepHandler = async (config, ctx) => {
-  const name = readString(config, 'customerName').trim();
-  if (!name) {
-    throw new PermanentNodeExecutionError(
-      'invalid_config',
-      'הצעד "יצירת לקוח ב-SUMIT" חסר שם לקוח.',
-    );
-  }
-
-  const optional = (key: string): string | undefined => {
-    const value = readString(config, key).trim();
-    return value ? value : undefined;
-  };
-
-  const result = await ctx.deps.accounting.createCustomer({
-    name,
-    email: optional('customerEmail'),
-    phone: optional('customerPhone'),
-    city: optional('city'),
-    address: optional('address'),
-    companyNumber: optional('companyNumber'),
-    externalId: optional('externalId'),
-    ...(typeof config.noVat === 'boolean' ? { noVat: config.noVat } : {}),
-  });
-
-  return { output: result };
-};
-
 // ---------------------------------------------------------------------------
 // action.ai_agent — one headless Claude run, as a workflow step
 // ---------------------------------------------------------------------------
@@ -1246,6 +1219,6 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'action.start_for_each_guest': startForEachGuest,
   [setValueDefinition.type]: setValue,
   'action.sumit_create_document': sumitCreateDocument,
-  'action.sumit_create_customer': sumitCreateCustomer,
+  [sumitCreateCustomerDefinition.type]: sumitCreateCustomer,
   'action.ai_agent': aiAgent,
 };

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 
 import { STEP_HANDLERS, type StepContext } from './index';
 import { assertCoversEveryNodeFolder, serverStepSources } from '../node-sources';
@@ -191,19 +191,30 @@ describe('⚠️ the step layer never reaches SUMIT except through the port', ()
     // a handler that moved cannot take the guarantee with it silently.
     const files = serverStepSources();
     expect(assertCoversEveryNodeFolder(files)).toEqual([]);
+    const scanned = new Set(files.map((file) => file.path));
 
     const sumitImports = files
       // `from '…'` AND a bare side-effect `import '…'` — the second has no
       // `from`, and a scan that only read `from` let it through (measured by
       // fault injection 2026-09-24).
-      .flatMap(({ source }) => [
-        ...source.matchAll(/(?:\bfrom|^\s*import)\s+['"]([^'"]*sumit[^'"]*)['"]/gm),
-      ])
-      .map((m) => m[1])
+      .flatMap(({ path, source }) =>
+        [...source.matchAll(/(?:\bfrom|^\s*import)\s+['"]([^'"]*sumit[^'"]*)['"]/gm)]
+          .map((m) => m[1]!)
+          // A RELATIVE import of a file THIS SCAN ALREADY READS is not a way out:
+          // that file's own imports are checked in this same pass. It is what
+          // the registry's import of a SUMIT node's folder looks like
+          // (`../nodes/action-sumit-create-customer/runtime`) — the folder name
+          // says `sumit`, the module is ours. Anything that resolves outside the
+          // scanned set (`@/lib/sumit/…`, `../../../sumit/…`) still counts.
+          .filter(
+            (spec) =>
+              !(spec.startsWith('.') && scanned.has(`${posix.join(posix.dirname(path), spec)}.ts`)),
+          ),
+      )
       // ONE named exception, and the next test is what earns it: `hold-status`
       // is data — the holds folder id and what its status codes mean — with no
       // import and no I/O, so it cannot reach SUMIT from a dry run or anywhere.
-      .filter((path) => !PURE_SUMIT_MODULES.includes(path!));
+      .filter((path) => !PURE_SUMIT_MODULES.includes(path));
     expect(
       sumitImports,
       'a step handler must reach SUMIT through ctx.deps.accounting — a direct ' +
