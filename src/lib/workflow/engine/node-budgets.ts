@@ -1,4 +1,5 @@
 import type { KalfaNodeType } from '../catalogue/types';
+import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
 import * as switchDefinition from '../nodes/logic-switch/definition';
@@ -65,7 +66,7 @@ export const NODE_ACTIVITY_PROFILES: Readonly<Partial<Record<KalfaNodeType, Node
     'action.webhook': { timeoutMs: 20_000 },
     'action.send_whatsapp': { timeoutMs: 30_000 },
     'action.send_template': { timeoutMs: 30_000 },
-    'action.notify_team': { timeoutMs: 20_000 },
+    [notifyTeamDefinition.type]: notifyTeamDefinition.activityProfile,
     'action.update_guest_status': { timeoutMs: 20_000 },
     'action.set_guest_field': { timeoutMs: 20_000 },
     'action.create_callback_request': { timeoutMs: 30_000 },

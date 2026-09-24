@@ -2,7 +2,8 @@
 
 // The editor helpers every node's schema and uischema are built from: the
 // identity fields (name, description, arm notice), the per-step status switch,
-// and the "required and not blank" string field.
+// the "required and not blank" string field, and — for action nodes — the two
+// branch handles and the error-policy options.
 //
 // ⚠️ ITS OWN MODULE SO A NODE FOLDER CAN IMPORT IT. `schemas.ts` is the palette
 // aggregator — it imports every moved node's palette file — so a node that
@@ -12,10 +13,76 @@
 // CLIENT ONLY, for the reason `schemas.ts` gives: `sharedProperties` and
 // `statusOptions` are runtime values from @workflowbuilder/sdk. Server code
 // reads `types.ts` / `nodes.ts` and the node `definition.ts` files instead.
-import { sharedProperties, statusOptions } from '@workflowbuilder/sdk';
+import { errorPolicyProperty, sharedProperties, statusOptions } from '@workflowbuilder/sdk';
 import type { UISchema } from '@workflowbuilder/sdk';
 
-import { ARM_NOTICE_PATH, NODE_STATUSES } from './types';
+import { ACTION_BRANCH_HANDLES, ARM_NOTICE_PATH, ERROR_POLICIES, NODE_STATUSES } from './types';
+
+// The two handles an action node draws, as DATA — the same mechanism already
+// proven on `logic.condition`, whose branches were verified rendering on a live
+// canvas. `templateType: NodeType.DecisionNode` on the palette entry turns each
+// array member into a labelled handle.
+//
+// The error handle is what makes `errorPolicy: 'errorRoute'` reachable at all.
+// It leaves the editor as `source:inner:error` and the adapter rewrites it to
+// the runner's reserved `errorRoute` — see ACTION_BRANCH_HANDLES.
+export const actionBranches = [
+  { id: 'ok', sourceHandle: ACTION_BRANCH_HANDLES.ok, label: 'הצליח' },
+  { id: 'error', sourceHandle: ACTION_BRANCH_HANDLES.error, label: 'נכשל' },
+] as const;
+
+export const actionBranchesProperty = {
+  decisionBranches: {
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        sourceHandle: { type: 'string' },
+        label: { type: 'string' },
+      },
+    },
+  },
+} as const;
+
+// Hebrew labels, authored here rather than taken from the SDK's exported
+// `errorPolicyProperty`. That fragment ships English strings ("Fail workflow")
+// inside the JSON schema, where our i18n bundle cannot reach them — i18n
+// translates SDK chrome, not schema option labels. The `value` strings are the
+// SDK's own, because the runner compares against those.
+export const errorPolicyOptions = {
+  fail: { label: 'עצור את כל התהליך', value: ERROR_POLICIES[0] },
+  continue: { label: 'המשך, וסמן את ההרצה כהושלמה', value: ERROR_POLICIES[1] },
+  errorRoute: { label: 'המשך במסלול השגיאה', value: ERROR_POLICIES[2] },
+} as const;
+
+/**
+ * ⚠️ OUR HAND-WRITTEN LIST, PINNED TO THE SDK'S.
+ *
+ * `ERROR_POLICIES` lives in `catalogue/types.ts` because the SERVER reads it and
+ * the server must not reach this file — like `schemas.ts`, it imports SDK runtime
+ * values and resolves to a client reference when imported from a server module,
+ * which is what `server-code-must-not-reach-the-editor-sdk` exists to stop. So
+ * the list is written twice: once here in a shape the SDK owns, once there in a
+ * shape the server can hold.
+ *
+ * Nothing guarded the two against each other. The values are not decorative —
+ * the vendored runner compares `node.errorPolicy` against exactly these strings
+ * (graph-runner.ts `resolveErrorPolicy`), so an SDK release that renames or adds
+ * one would leave every node carrying a policy the runner no longer understands,
+ * with a green build and a green test suite.
+ *
+ * `errorPolicyProperty` is the SDK's own declaration of that union. Assigning
+ * across it in both directions is a compile-time check that costs nothing at run
+ * time and fails the moment the two disagree.
+ */
+type SdkErrorPolicy = (typeof errorPolicyProperty)['errorPolicy']['options'][number]['value'];
+type OurErrorPolicy = (typeof ERROR_POLICIES)[number];
+const _errorPoliciesMatchTheSdk: [SdkErrorPolicy, OurErrorPolicy] = [
+  null as unknown as OurErrorPolicy,
+  null as unknown as SdkErrorPolicy,
+];
+void _errorPoliciesMatchTheSdk;
 
 // Per-step Active / Draft / Disabled.
 //

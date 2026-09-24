@@ -42,6 +42,9 @@ import {
 } from './ui-formats';
 
 import {
+  actionBranches,
+  actionBranchesProperty,
+  errorPolicyOptions,
   identityControls,
   identityProperties,
   nodeStatusOptions,
@@ -50,14 +53,13 @@ import {
   statusProperty,
 } from './editor-shared';
 
+import { notifyTeamPaletteItem } from '../nodes/action-notify-team/action-notify-team';
 import { conditionPaletteItem } from '../nodes/logic-condition/logic-condition';
 import { setValuePaletteItem } from '../nodes/logic-set-value/logic-set-value';
 import { switchPaletteItem } from '../nodes/logic-switch/logic-switch';
 
 import {
-  ACTION_BRANCH_HANDLES,
   CALLBACK_TOPICS,
-  ERROR_POLICIES,
   HTTP_METHODS,
   HTTP_METHODS_WITH_BODY,
   NODE_CONDITIONAL_REQUIRED_FIELDS,
@@ -78,33 +80,6 @@ import {
 // ---------------------------------------------------------------------------
 // Option sets — the same `{ label, value }` shape the SDK's own statusOptions use
 // ---------------------------------------------------------------------------
-
-// The two handles an action node draws, as DATA — the same mechanism already
-// proven on `logic.condition`, whose branches were verified rendering on a live
-// canvas. `templateType: NodeType.DecisionNode` on the palette entry turns each
-// array member into a labelled handle.
-//
-// The error handle is what makes `errorPolicy: 'errorRoute'` reachable at all.
-// It leaves the editor as `source:inner:error` and the adapter rewrites it to
-// the runner's reserved `errorRoute` — see ACTION_BRANCH_HANDLES.
-const actionBranches = [
-  { id: 'ok', sourceHandle: ACTION_BRANCH_HANDLES.ok, label: 'הצליח' },
-  { id: 'error', sourceHandle: ACTION_BRANCH_HANDLES.error, label: 'נכשל' },
-] as const;
-
-const actionBranchesProperty = {
-  decisionBranches: {
-    type: 'array',
-    items: {
-      type: 'object',
-      properties: {
-        id: { type: 'string' },
-        sourceHandle: { type: 'string' },
-        label: { type: 'string' },
-      },
-    },
-  },
-} as const;
 
 /**
  * The `allOf` block for one node type, built from its conditional contracts.
@@ -133,45 +108,6 @@ function conditionalRules(nodeType: KalfaNodeType) {
     })),
   );
 }
-
-// Hebrew labels, authored here rather than taken from the SDK's exported
-// `errorPolicyProperty`. That fragment ships English strings ("Fail workflow")
-// inside the JSON schema, where our i18n bundle cannot reach them — i18n
-// translates SDK chrome, not schema option labels. The `value` strings are the
-// SDK's own, because the runner compares against those.
-const errorPolicyOptions = {
-  fail: { label: 'עצור את כל התהליך', value: ERROR_POLICIES[0] },
-  continue: { label: 'המשך, וסמן את ההרצה כהושלמה', value: ERROR_POLICIES[1] },
-  errorRoute: { label: 'המשך במסלול השגיאה', value: ERROR_POLICIES[2] },
-} as const;
-
-/**
- * ⚠️ OUR HAND-WRITTEN LIST, PINNED TO THE SDK'S.
- *
- * `ERROR_POLICIES` lives in `catalogue/types.ts` because the SERVER reads it and
- * the server must not reach this file — `schemas.ts` imports SDK runtime values
- * and resolves to a client reference when imported from a server module, which
- * is what `server-code-must-not-reach-the-editor-schemas` exists to stop. So the
- * list is written twice: once here in a shape the SDK owns, once there in a
- * shape the server can hold.
- *
- * Nothing guarded the two against each other. The values are not decorative —
- * the vendored runner compares `node.errorPolicy` against exactly these strings
- * (graph-runner.ts `resolveErrorPolicy`), so an SDK release that renames or adds
- * one would leave every node carrying a policy the runner no longer understands,
- * with a green build and a green test suite.
- *
- * `errorPolicyProperty` is the SDK's own declaration of that union. Assigning
- * across it in both directions is a compile-time check that costs nothing at run
- * time and fails the moment the two disagree.
- */
-type SdkErrorPolicy = (typeof errorPolicyProperty)['errorPolicy']['options'][number]['value'];
-type OurErrorPolicy = (typeof ERROR_POLICIES)[number];
-const _errorPoliciesMatchTheSdk: [SdkErrorPolicy, OurErrorPolicy] = [
-  null as unknown as OurErrorPolicy,
-  null as unknown as SdkErrorPolicy,
-];
-void _errorPoliciesMatchTheSdk;
 
 // GET/DELETE carry no body — the port drops it rather than sending an empty one.
 const httpMethodOptions = {
@@ -1077,74 +1013,6 @@ const microsoftSendEmailUiSchema: UISchema = {
     },
     { type: 'Select', scope: microsoftSendEmailScope('properties.errorPolicy'), label: 'אם השליחה נכשלת' },
     statusControl(microsoftSendEmailScope('properties.status')),
-  ],
-};
-
-// ---------------------------------------------------------------------------
-// action.notify_team
-// ---------------------------------------------------------------------------
-
-const notifyLevelOptions = {
-  info: { label: 'מידע', value: 'info' },
-  warn: { label: 'אזהרה', value: 'warn' },
-  error: { label: 'שגיאה', value: 'error' },
-} as const;
-
-const notifyTeamSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['action.notify_team'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    ...actionBranchesProperty,
-    title: { ...requiredText },
-    detail: { type: 'string' },
-    level: { type: 'string', options: Object.values(notifyLevelOptions) },
-    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
-  },
-} satisfies NodeSchema;
-
-const notifyTeamScope = getScope<typeof notifyTeamSchema>;
-
-const notifyTeamUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(notifyTeamScope('properties.label'), notifyTeamScope('properties.description')),
-    {
-      // VariableText, matching `detail` below rather than differing from it.
-      //
-      // The runtime resolves `{{…}}` in EVERY config field — `resolveConfigTemplates`
-      // walks the whole object — so this field already accepted references; what it
-      // did not do was offer the picker. An owner typing `{{` here got no
-      // suggestions on a field that would have resolved them, which reads as
-      // "references do not work here" and is the opposite of the truth.
-      //
-      // ⚠️ NOT extended to `action.webhook`'s url. That one is plain Text
-      // deliberately — see the note there: a destination assembled at run time is
-      // a destination nobody reviewed, and the https/private-space check would be
-      // judging a string that did not exist when the diagram was saved.
-      type: 'VariableText',
-      scope: notifyTeamScope('properties.title'),
-      label: 'כותרת ההתראה',
-      placeholder: 'למשל: אורח {{trigger.guest_name}} כתב משהו שלא זוהה',
-    },
-    {
-      type: 'VariableTextArea',
-      scope: notifyTeamScope('properties.detail'),
-      label: 'פירוט',
-      placeholder: 'הקלידו {{ כדי לצטט ערך מהצעדים הקודמים',
-      minRows: 3,
-    },
-    { type: 'Select', scope: notifyTeamScope('properties.level'), label: 'רמה' },
-    {
-      type: 'Label',
-      // Not a caveat — a fact an owner needs before writing the title. Slack
-      // suppresses a repeated title inside the dedup window, so a per-message
-      // alert with a fixed title arrives once and then goes quiet.
-      text: 'ההתראה נשלחת לערוץ הצוות בלבד ולא לאורח. כותרת זהה שחוזרת נדחסת לפי חלון הכיווץ של ההתראות.',
-    },
-    { type: 'Select', scope: notifyTeamScope('properties.errorPolicy'), label: 'אם ההתראה נכשלת' },
-    statusControl(notifyTeamScope('properties.status')),
   ],
 };
 
@@ -2837,34 +2705,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       errorPolicy: errorPolicyOptions.fail.value,
     },
   } satisfies PaletteItem<typeof startRsvpAiCallbackSchema>,
-  {
-    type: 'action.notify_team' satisfies KalfaNodeType,
-    // Rendered as a decision node so the failure branch has a handle to leave
-    // from. Without it `errorPolicy: 'errorRoute'` names a port no edge carries,
-    // which is a guaranteed dead end — the reason the option was withheld.
-    templateType: NodeType.DecisionNode,
-    label: 'התראה לצוות',
-    description: 'שולח הודעה לערוץ הצוות',
-    icon: 'Bell',
-    schema: notifyTeamSchema,
-    uischema: notifyTeamUiSchema,
-    outputSchema: {
-      type: 'default',
-      properties: {
-        sent: { type: 'boolean', label: 'נשלח', description: 'האם ההתראה יצאה או נדחסה' },
-      },
-    },
-    defaultPropertiesData: {
-      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
-      status: nodeStatusOptions.active.value,
-      label: 'התראה לצוות',
-      description: 'שולח הודעה לערוץ הצוות',
-      title: '',
-      detail: '',
-      level: notifyLevelOptions.warn.value,
-      errorPolicy: errorPolicyOptions.continue.value,
-    },
-  } satisfies PaletteItem<typeof notifyTeamSchema>,
+  // Moved to its own folder — see nodes/action-notify-team/.
+  notifyTeamPaletteItem,
   {
     type: 'action.set_guest_field' satisfies KalfaNodeType,
     templateType: NodeType.DecisionNode,

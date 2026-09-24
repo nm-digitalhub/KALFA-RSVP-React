@@ -11,6 +11,7 @@
 // plans/node-folders-file-matrix.md), then one entry here, in `NODE_TYPES`,
 // `NODE_REQUIRED_FIELDS`, `PALETTE_ITEMS` and `STEP_HANDLERS`, each read from
 // the definition. No adapter changes.
+import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
 import * as switchDefinition from '../nodes/logic-switch/definition';
@@ -28,7 +29,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'action.send_whatsapp', isTrigger: false },
   { type: 'action.microsoft_send_email', isTrigger: false },
   { type: 'action.start_rsvp_ai_callback', isTrigger: false },
-  { type: 'action.notify_team', isTrigger: false },
+  { type: notifyTeamDefinition.type, isTrigger: notifyTeamDefinition.isTrigger },
   { type: 'action.webhook', isTrigger: false },
   { type: 'action.set_guest_field', isTrigger: false },
   { type: 'action.create_callback_request', isTrigger: false },

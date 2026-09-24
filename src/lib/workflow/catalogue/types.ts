@@ -15,6 +15,7 @@
 // folder's editor files.
 import type { RsvpStatus } from '@/lib/constants';
 
+import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
 import * as switchDefinition from '../nodes/logic-switch/definition';
@@ -37,7 +38,7 @@ export const NODE_TYPES = [
   'action.send_whatsapp',
   'action.microsoft_send_email',
   'action.start_rsvp_ai_callback',
-  'action.notify_team',
+  notifyTeamDefinition.type,
   'action.webhook',
   'action.set_guest_field',
   'action.create_callback_request',
@@ -670,24 +671,11 @@ export type StartVoiceCallConfig = {
   waitForOutcome?: boolean;
 };
 
-// An internal alert to the KALFA team — never to a guest.
-//
-// The one action here whose audience is us. It exists because an automation
-// that quietly does the wrong thing is worse than one that fails: a workflow
-// can now say "a guest asked something I do not understand" and put it in front
-// of a person.
-// Declared here rather than beside the handler because THREE modules have to
-// agree on it — the palette's Select options, the handler's `readEnum` guard,
-// and the port the alert crosses — and this module is the one they can all
-// import (it pulls in nothing, so the worker can bundle it).
-export const NOTIFY_LEVELS = ['info', 'warn', 'error'] as const;
-export type NotifyLevel = (typeof NOTIFY_LEVELS)[number];
-
-export type NotifyTeamConfig = {
-  title: string;
-  detail: string;
-  level: NotifyLevel;
-};
+// `action.notify_team` — its config and alert levels are declared with the rest
+// of its contract in `nodes/action-notify-team/definition.ts`. Re-exported here
+// for existing readers (the `TeamAlertsPort` in engine/ports.ts among them).
+export { NOTIFY_LEVELS, type NotifyLevel } from '../nodes/action-notify-team/definition';
+export type NotifyTeamConfig = notifyTeamDefinition.NotifyTeamConfig;
 
 /**
  * An HTTP call to a system that is not ours.
@@ -1015,7 +1003,7 @@ export type KalfaNodeConfig =
   | { type: 'action.microsoft_send_email'; config: MicrosoftSendEmailConfig }
   | { type: 'action.start_rsvp_ai_callback'; config: StartRsvpAiCallbackConfig }
   | { type: 'action.start_voice_call'; config: StartVoiceCallConfig }
-  | { type: 'action.notify_team'; config: NotifyTeamConfig }
+  | { type: typeof notifyTeamDefinition.type; config: NotifyTeamConfig }
   | { type: 'action.webhook'; config: WebhookConfig }
   | { type: 'action.set_guest_field'; config: SetGuestFieldConfig }
   | { type: 'action.create_callback_request'; config: CreateCallbackRequestConfig }
@@ -1169,6 +1157,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   [setValueDefinition.type]: setValueDefinition.deploymentBindings,
   [conditionDefinition.type]: conditionDefinition.deploymentBindings,
   [switchDefinition.type]: switchDefinition.deploymentBindings,
+  [notifyTeamDefinition.type]: notifyTeamDefinition.deploymentBindings,
   'trigger.whatsapp_inbound': { phoneNumberId: 'identifier' },
   // A HASH, not the token — so this is no longer a secret that must not travel,
   // but it still authenticates to THIS installation and resolves to nothing
@@ -1233,7 +1222,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   'action.microsoft_send_email': ['label', 'description', 'connectionId', 'to', 'subject', 'body'],
   'action.send_template': ['label', 'description', 'messageKey'],
   'action.start_rsvp_ai_callback': ['label', 'description'],
-  'action.notify_team': ['label', 'description', 'title'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [notifyTeamDefinition.type]: notifyTeamDefinition.requiredFields,
   'action.webhook': ['label', 'description', 'url'],
   'action.set_guest_field': ['label', 'description', 'field'],
   'action.create_callback_request': ['label', 'description', 'topic'],
