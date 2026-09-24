@@ -18,6 +18,7 @@ import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as sendTemplateDefinition from '../nodes/action-send-template/definition';
 import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
+import * as startRsvpAiCallbackDefinition from '../nodes/action-start-rsvp-ai-callback/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
 import * as updateGuestStatusDefinition from '../nodes/action-update-guest-status/definition';
@@ -38,7 +39,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: updateGuestStatusDefinition.type, isTrigger: updateGuestStatusDefinition.isTrigger },
   { type: sendWhatsappDefinition.type, isTrigger: sendWhatsappDefinition.isTrigger },
   { type: microsoftSendEmailDefinition.type, isTrigger: microsoftSendEmailDefinition.isTrigger },
-  { type: 'action.start_rsvp_ai_callback', isTrigger: false },
+  { type: startRsvpAiCallbackDefinition.type, isTrigger: startRsvpAiCallbackDefinition.isTrigger },
   { type: notifyTeamDefinition.type, isTrigger: notifyTeamDefinition.isTrigger },
   { type: webhookDefinition.type, isTrigger: webhookDefinition.isTrigger },
   { type: setGuestFieldDefinition.type, isTrigger: setGuestFieldDefinition.isTrigger },

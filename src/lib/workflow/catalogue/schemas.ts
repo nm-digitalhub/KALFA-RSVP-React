@@ -62,6 +62,7 @@ import { notifyTeamPaletteItem } from '../nodes/action-notify-team/action-notify
 import { sendTemplatePaletteItem } from '../nodes/action-send-template/action-send-template';
 import { sendWhatsappPaletteItem } from '../nodes/action-send-whatsapp/action-send-whatsapp';
 import { setGuestFieldPaletteItem } from '../nodes/action-set-guest-field/action-set-guest-field';
+import { startRsvpAiCallbackPaletteItem } from '../nodes/action-start-rsvp-ai-callback/action-start-rsvp-ai-callback';
 import { sumitCreateCustomerPaletteItem } from '../nodes/action-sumit-create-customer/action-sumit-create-customer';
 import { sumitCreateDocumentPaletteItem } from '../nodes/action-sumit-create-document/action-sumit-create-document';
 import { updateGuestStatusPaletteItem } from '../nodes/action-update-guest-status/action-update-guest-status';
@@ -438,42 +439,6 @@ const sumitCardTriggerUiSchema: UISchema = {
 // shape live in `nodes/action-microsoft-send-email/schema.ts`. The option type is
 // re-exported for the editor, which passes the live connections in.
 export type { MicrosoftConnectionOption };
-
-// ---------------------------------------------------------------------------
-// action.start_rsvp_ai_callback
-// ---------------------------------------------------------------------------
-
-const startRsvpAiCallbackSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['action.start_rsvp_ai_callback'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    ...actionBranchesProperty,
-    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
-  },
-} satisfies NodeSchema;
-const startRsvpAiCallbackScope = getScope<typeof startRsvpAiCallbackSchema>;
-const startRsvpAiCallbackUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(startRsvpAiCallbackScope('properties.label'), startRsvpAiCallbackScope('properties.description')),
-    {
-      type: 'Label',
-      text: 'מפעיל את סוכן RSVP הקולי הקיים דרך Voximplant ו-ElevenLabs. המודל, מאגר הידע והכלים מוגדרים בסוכן ואינם נשמרים בתהליך.',
-    },
-    {
-      type: 'Label',
-      text: 'השיחה אסינכרונית. הצעד מחזיר את תוצאת ההפעלה; ניתוח השיחה נשמר לאחר מכן דרך ה-webhook הקיים של ElevenLabs.',
-    },
-    {
-      type: 'Select',
-      scope: startRsvpAiCallbackScope('properties.errorPolicy'),
-      label: 'אם הפעלת השיחה נכשלת',
-    },
-    statusControl(startRsvpAiCallbackScope('properties.status')),
-  ],
-};
 
 // ---------------------------------------------------------------------------
 // The palette
@@ -1524,32 +1489,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
   sendWhatsappPaletteItem,
   // Moved to its own folder — see nodes/action-microsoft-send-email/.
   microsoftSendEmailPaletteItem,
-  {
-    type: 'action.start_rsvp_ai_callback' satisfies KalfaNodeType,
-    templateType: NodeType.DecisionNode,
-    label: 'הפעלת סוכן RSVP קולי',
-    description: 'מפעיל שיחה חוזרת באמצעות סוכן ה-RSVP הקולי הקיים',
-    icon: 'PhoneCall',
-    schema: startRsvpAiCallbackSchema,
-    uischema: startRsvpAiCallbackUiSchema,
-    outputSchema: {
-      type: 'default',
-      properties: {
-        started: { type: 'boolean', label: 'הופעלה' },
-        status: { type: 'string', label: 'סטטוס הפעלה' },
-        reason: { type: 'string', label: 'סיבה' },
-        attemptId: { type: 'string', label: 'מזהה ניסיון שיחה' },
-        callSessionHistoryId: { type: 'number', label: 'מזהה שיחת Voximplant' },
-      },
-    },
-    defaultPropertiesData: {
-      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
-      status: nodeStatusOptions.active.value,
-      label: 'הפעלת סוכן RSVP קולי',
-      description: 'מפעיל שיחה חוזרת באמצעות סוכן ה-RSVP הקולי הקיים',
-      errorPolicy: errorPolicyOptions.fail.value,
-    },
-  } satisfies PaletteItem<typeof startRsvpAiCallbackSchema>,
+  // Moved to its own folder — see nodes/action-start-rsvp-ai-callback/.
+  startRsvpAiCallbackPaletteItem,
   // Moved to its own folder — see nodes/action-notify-team/.
   notifyTeamPaletteItem,
   // Moved to its own folder — see nodes/action-set-guest-field/.

@@ -22,6 +22,7 @@ import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
 import * as sendTemplateDefinition from '../nodes/action-send-template/definition';
 import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
+import * as startRsvpAiCallbackDefinition from '../nodes/action-start-rsvp-ai-callback/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
 import * as updateGuestStatusDefinition from '../nodes/action-update-guest-status/definition';
@@ -47,7 +48,7 @@ export const NODE_TYPES = [
   updateGuestStatusDefinition.type,
   sendWhatsappDefinition.type,
   microsoftSendEmailDefinition.type,
-  'action.start_rsvp_ai_callback',
+  startRsvpAiCallbackDefinition.type,
   notifyTeamDefinition.type,
   webhookDefinition.type,
   setGuestFieldDefinition.type,
@@ -592,9 +593,10 @@ export type SendTemplateConfig = sendTemplateDefinition.SendTemplateConfig;
 // existing readers.
 export type MicrosoftSendEmailConfig = microsoftSendEmailDefinition.MicrosoftSendEmailConfig;
 
-// Starts the existing RSVP voice agent through KALFA's production dispatcher.
-// Agent/provider/model/knowledge configuration deliberately lives outside the diagram.
-export type StartRsvpAiCallbackConfig = Record<string, unknown>;
+// `action.start_rsvp_ai_callback` — declared with the rest of its contract in
+// `nodes/action-start-rsvp-ai-callback/definition.ts`, re-exported here for
+// existing readers.
+export type StartRsvpAiCallbackConfig = startRsvpAiCallbackDefinition.StartRsvpAiCallbackConfig;
 
 /**
  * `action.start_voice_call` — dial the guest through a configured voice purpose.
@@ -756,7 +758,7 @@ export type KalfaNodeConfig =
   | { type: typeof updateGuestStatusDefinition.type; config: UpdateGuestStatusConfig }
   | { type: typeof sendWhatsappDefinition.type; config: SendWhatsappConfig }
   | { type: typeof microsoftSendEmailDefinition.type; config: MicrosoftSendEmailConfig }
-  | { type: 'action.start_rsvp_ai_callback'; config: StartRsvpAiCallbackConfig }
+  | { type: typeof startRsvpAiCallbackDefinition.type; config: StartRsvpAiCallbackConfig }
   | { type: 'action.start_voice_call'; config: StartVoiceCallConfig }
   | { type: typeof notifyTeamDefinition.type; config: NotifyTeamConfig }
   | { type: typeof webhookDefinition.type; config: WebhookConfig }
@@ -916,6 +918,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   [setGuestFieldDefinition.type]: setGuestFieldDefinition.deploymentBindings,
   [updateGuestStatusDefinition.type]: updateGuestStatusDefinition.deploymentBindings,
   [sendWhatsappDefinition.type]: sendWhatsappDefinition.deploymentBindings,
+  [startRsvpAiCallbackDefinition.type]: startRsvpAiCallbackDefinition.deploymentBindings,
   'trigger.whatsapp_inbound': { phoneNumberId: 'identifier' },
   // A HASH, not the token — so this is no longer a secret that must not travel,
   // but it still authenticates to THIS installation and resolves to nothing
@@ -978,7 +981,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [sendTemplateDefinition.type]: sendTemplateDefinition.requiredFields,
-  'action.start_rsvp_ai_callback': ['label', 'description'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [startRsvpAiCallbackDefinition.type]: startRsvpAiCallbackDefinition.requiredFields,
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [notifyTeamDefinition.type]: notifyTeamDefinition.requiredFields,
@@ -1046,7 +1051,7 @@ export const GUEST_SCOPED_NODE_TYPES: readonly KalfaNodeType[] = [
   setGuestFieldDefinition.type,
   callbackRequestDefinition.type,
   'action.start_voice_call',
-  'action.start_rsvp_ai_callback',
+  startRsvpAiCallbackDefinition.type,
 ];
 
 /**

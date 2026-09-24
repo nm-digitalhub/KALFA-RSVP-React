@@ -43,6 +43,8 @@ import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definitio
 import { sendWhatsapp } from '../nodes/action-send-whatsapp/runtime';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
 import { setGuestField } from '../nodes/action-set-guest-field/runtime';
+import * as startRsvpAiCallbackDefinition from '../nodes/action-start-rsvp-ai-callback/definition';
+import { startRsvpAiCallback } from '../nodes/action-start-rsvp-ai-callback/runtime';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import { sumitCreateCustomer } from '../nodes/action-sumit-create-customer/runtime';
 import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
@@ -193,7 +195,7 @@ export { evaluateSwitchBranch, evaluateSwitchCondition } from '../nodes/logic-sw
 // Total over KalfaNodeType: adding a type to the catalogue without a handler is
 // a compile error, not a run-time surprise.
 // ---------------------------------------------------------------------------
-// action.start_rsvp_ai_callback
+// action.start_voice_call
 // ---------------------------------------------------------------------------
 
 // Dial this run's guest with a configured voice agent.
@@ -402,42 +404,6 @@ const startVoiceCall: StepHandler = async (config, ctx) => {
       return latest !== null && PURPOSE_SETTLED.includes(latest.dispatchStatus);
     },
   );
-};
-
-const startRsvpAiCallback: StepHandler = async (_config, ctx) => {
-  const dispatch = ctx.deps.guests.startRsvpAiCallback;
-  if (!dispatch) {
-    throw new PermanentNodeExecutionError(
-      'voice_agent_not_wired',
-      'צומת סוכן הקול אינו מחובר למימוש השרת.',
-    );
-  }
-
-  const guest = requireGuestContext(ctx, 'action.start_rsvp_ai_callback');
-  const outcome = await dispatch({
-    runId: ctx.runId,
-    nodeId: ctx.nodeId,
-    eventId: guest.eventId,
-    contactId: guest.contactId,
-  });
-
-  if (!outcome.ok) {
-    throw new PermanentNodeExecutionError(
-      'voice_agent_dispatch_refused',
-      `הפעלת שיחת הסוכן נדחתה (${outcome.reason ?? outcome.status}).`,
-    );
-  }
-
-  return {
-    output: {
-      started: true,
-      status: outcome.status,
-      ...(outcome.attemptId ? { attemptId: outcome.attemptId } : {}),
-      ...(outcome.callSessionHistoryId !== undefined
-        ? { callSessionHistoryId: outcome.callSessionHistoryId }
-        : {}),
-    },
-  };
 };
 
 // ---------------------------------------------------------------------------
@@ -721,7 +687,7 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   [updateGuestStatusDefinition.type]: updateGuestStatus,
   [sendWhatsappDefinition.type]: sendWhatsapp,
   [microsoftSendEmailDefinition.type]: microsoftSendEmail,
-  'action.start_rsvp_ai_callback': startRsvpAiCallback,
+  [startRsvpAiCallbackDefinition.type]: startRsvpAiCallback,
   'action.start_voice_call': startVoiceCall,
   [notifyTeamDefinition.type]: notifyTeam,
   [webhookDefinition.type]: webhook,
