@@ -1344,8 +1344,9 @@ export function triggerKeywordCanNeverMatch(
  * names, with no way to say "this one, but only when that one is POST".
  *
  * JSON Schema expresses it with `allOf` + `if`/`then`, and the editor schema
- * emits exactly that (`conditionalRules` in editor-shared.ts) — `then` carrying BOTH `required: [field]` and a `minLength` on
- * it, so the schema alone refuses an absent body and a blank one alike.
+ * emits exactly that (`conditionalRules` in editor-shared.ts) — `then`
+ * carrying BOTH `required: [field]` and a `minLength` on it, so the schema
+ * alone refuses an absent body and a blank one alike.
  *
  * ⚠️ AN EARLIER VERSION OF THIS COMMENT CLAIMED THE SCHEMA COULD NOT DO THAT,
  * on the grounds that the SDK's `ConditionalSchema` is typed as
