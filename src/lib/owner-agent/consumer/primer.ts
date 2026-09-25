@@ -36,8 +36,8 @@ export const PRIMER_TABLES = {
     columns: ['id', 'event_id', 'name'],
   },
   campaigns: {
-    note: 'קמפיין אחד לאירוע (וואטסאפ ושיחות). status: draft|pending_approval|approved|scheduled|active|paused|closed|awaiting_invoice|billed|paid|cancelled. charge_status: pending|charged|nothing_to_charge|charge_failed|charge_review. capture_status (תפיסת מסגרת): authorized, או תקוע: pending|hold_failed|hold_review.',
-    columns: ['id', 'event_id', 'status', 'start_at', 'close_at', 'base_price', 'included_reached', 'price_per_reached', 'max_charge_ceiling', 'auth_amount', 'capture_status', 'charge_status', 'final_charge_amount', 'credit_applied', 'charged_at', 'created_at'],
+    note: 'max_charge_ceiling תוחם את החיוב רק כש-tos_version הוא 2026-07-v4 ומטה (ההסכם נוקב במספר); ב-2026-09-v5 ומעלה אין תקרה — מחויב כל איש קשר שהושג. אין מגבלה על מספר הנמענים. קמפיין אחד לאירוע (וואטסאפ ושיחות). status: draft|pending_approval|approved|scheduled|active|paused|closed|awaiting_invoice|billed|paid|cancelled. charge_status: pending|charged|nothing_to_charge|charge_failed|charge_review. capture_status (תפיסת מסגרת): authorized, או תקוע: pending|hold_failed|hold_review.',
+    columns: ['id', 'event_id', 'status', 'start_at', 'close_at', 'base_price', 'included_reached', 'price_per_reached', 'max_charge_ceiling', 'tos_version', 'auth_amount', 'capture_status', 'charge_status', 'final_charge_amount', 'credit_applied', 'charged_at', 'created_at'],
   },
   billed_results: {
     note: 'איש קשר שהושג (בסיס החיוב), locked_price לכל אחד.',

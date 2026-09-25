@@ -689,13 +689,13 @@ export async function previewCampaignHoldSizing(
 //      uncapped flag) and max_charge_ceiling = full × price (D1=No — closes the
 //      create→approval growth gap; the ceiling is NEVER lowered to covered),
 //   4. returns holdAmount = max(min_hold_floor, covered × price × (1 + buffer)).
-// The hold may be < ceiling — safe ONLY because the SET caps reached at covered.
+// The hold may be < ceiling. The SET no longer caps reached (the funded cap was
+// retired 2026-09-25); the hold is a card guarantee, not a billing bound.
 // CROSS-AGENT CONTRACT: snapshotAuthorizedSet MUST yield set == the current
 // top-`covered` contacts (REPLACE semantics), so a retry after the list / coverage
 // shrinks cannot leave a stale, larger set above the lowered hold.
-// NOTE: the set is no longer a hard freeze — reconcile_authorized_set (live since
-// 2026-07-21) admits later guests up to funded_cap, floored at `included` since
-// 2026-09-02 (a 0-guest hold used to cap the set at 0).
+// NOTE: the set is no longer a hard freeze — reconcile_authorized_set admits every
+// later eligible guest (no cap since 2026-09-25).
 export async function prepareCampaignHold(
   campaignId: string,
 ): Promise<CampaignHoldSizing> {

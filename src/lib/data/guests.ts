@@ -905,7 +905,7 @@ export async function bulkInsertGuests(
   const inserted = data?.length ?? 0;
 
   // P0-1 (A6): a bulk import into a LIVE campaign must link each new contact and
-  // admit it to the authorized set (up to funded_cap) instead of silently
+  // admit it to the authorized set (no size cap) instead of silently
   // dropping it. Kill-switch gated (inert by default → import behaves exactly as
   // before). Best-effort per row; the guests are already committed. `insert
   // ... returning` preserves input order, so rows[i] ↔ data[i].

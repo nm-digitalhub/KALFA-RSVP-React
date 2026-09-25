@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
+import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
 import { getCampaign, previewCampaignHoldSizing } from '@/lib/data/campaigns';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
@@ -119,6 +120,11 @@ export default async function CampaignPaymentPage({
   //    activate HERE, in place; never send the owner back to the event page.
   // HeldAnalytics fires payment_authorized once when arriving via ?held=1 and
   // strips only that param (activate=failed survives for this render).
+  // The payment page is reached after signing, so tos_version is the version the
+  // customer signed: v5+ states a formula (no "up to X"), v4-and-earlier a number.
+  const openCeiling = isOpenCeilingAgreementVersion(campaign.tos_version);
+  const upToCeiling = openCeiling ? '' : ` ולכל היותר עד ${ils(campaign.max_charge_ceiling)}`;
+
   if (campaign.capture_status === 'authorized') {
     // Verified gap (30.8): auth_amount (the REAL J5 hold, sized to `covered` =
     // min(max_contacts, reasonable_coverage_contacts)) can be LESS than
@@ -136,8 +142,7 @@ export default async function CampaignPaymentPage({
             <p className="text-2xl font-bold text-success">הקמפיין פעיל</p>
             <p className="text-sm">
               נתפסה מסגרת אשראי בסך {ils(heldAmount)}. הפניות לאורחים יישלחו לפי לוח
-              הזמנים; החיוב בפועל ייעשה לאחר האירוע, לפי התוצאות, ולכל היותר עד{' '}
-              {ils(campaign.max_charge_ceiling)}.
+              הזמנים; החיוב בפועל ייעשה לאחר האירוע, לפי התוצאות{upToCeiling}.
             </p>
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
               <Link href={`/app/events/${id}/guests`} className={buttonVariants()}>
@@ -163,7 +168,7 @@ export default async function CampaignPaymentPage({
         {header}
         <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
           ✓ נתפסה מסגרת אשראי בסך {ils(heldAmount)}. החיוב בפועל ייעשה לאחר האירוע,
-          לפי התוצאות, ולכל היותר עד {ils(campaign.max_charge_ceiling)}.
+          לפי התוצאות{upToCeiling}.
         </p>
         {activate === 'failed' ? (
           <p
@@ -276,12 +281,16 @@ export default async function CampaignPaymentPage({
         <dd>
           <strong>{ils(holdAmount)}</strong> — תפיסה בלבד, לא חיוב
         </dd>
-        <dt className="text-muted-foreground">תקרת החיוב</dt>
-        <dd>{ils(ceiling)}</dd>
+        {openCeiling ? null : (
+          <>
+            <dt className="text-muted-foreground">תקרת החיוב</dt>
+            <dd>{ils(ceiling)}</dd>
+          </>
+        )}
         <dt className="text-muted-foreground">מתי מתבצע החיוב</dt>
         <dd>
-          לאחר האירוע, עם סגירת הקמפיין וגמר החשבון — לפי התוצאות בפועל ולכל היותר עד
-          התקרה
+          לאחר האירוע, עם סגירת הקמפיין וגמר החשבון — לפי התוצאות בפועל
+          {openCeiling ? '' : ' ולכל היותר עד התקרה'}
         </dd>
         <dt className="text-muted-foreground">אם אף איש קשר לא משיב</dt>
         <dd>
@@ -290,7 +299,7 @@ export default async function CampaignPaymentPage({
       </dl>
       {sizing && sizing.full === 0 ? (
         <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
-          הרשימה ריקה כעת. תקרת החיוב ומסגרת האשראי נקבעות לפי המוזמנים שברשימה ברגע
+          הרשימה ריקה כעת. {openCeiling ? 'מסגרת האשראי נקבעת' : 'תקרת החיוב ומסגרת האשראי נקבעות'} לפי המוזמנים שברשימה ברגע
           התפיסה
           {included > 0
             ? ` — אחרי ההפעלה תוכלו להוסיף עד ${included.toLocaleString('he-IL')} אנשי קשר במסגרת דמי ההפעלה.`

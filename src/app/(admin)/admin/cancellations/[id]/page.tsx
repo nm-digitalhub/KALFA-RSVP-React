@@ -82,8 +82,10 @@ export default async function AdminCancellationDetailPage({
         </p>
         {billingSummary ? (
           <p className="text-sm text-muted-foreground">
-            {billingSummary.reachedCount} אנשי קשר הושגו · נצבר {formatCurrency(accrued)} מתוך
-            תקרה {formatCurrency(billingSummary.ceiling)}
+            {billingSummary.reachedCount} אנשי קשר הושגו · נצבר {formatCurrency(accrued)}
+            {campaign && !isOpenCeilingAgreementVersion(campaign.tosVersion)
+              ? ` מתוך תקרה ${formatCurrency(billingSummary.ceiling)}`
+              : ''}
           </p>
         ) : null}
       </div>

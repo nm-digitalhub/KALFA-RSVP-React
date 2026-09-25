@@ -13,7 +13,7 @@
 
 KALFA מחייבת **לפי איש קשר ייחודי שהושג** (תגובת WhatsApp נכנסת אמיתית או מענה אנושי בשיחה) —
 **לא** רכישת חבילה ולא מנוי. הזרימה המחייבת: אישור קמפיין ← חתימת הסכם (עם OTP) ← תפיסת מסגרת
-J5 בכרטיס ← צבירת `billed_results` ← חיוב סופי בסגירה, עד תקרה.
+J5 בכרטיס ← צבירת `billed_results` ← חיוב סופי בסגירה (עד תקרה רק בהסכם v4 ומטה; ב-v5 אין תקרה).
 
 הנוסחאות (כולן server-side, לעולם לא מהדפדפן):
 
@@ -23,13 +23,13 @@ J5 בכרטיס ← צבירת `billed_results` ← חיוב סופי בסגיר
 | covered | `min(full_unique, reasonable_coverage)` — בסיס ה-hold וה-SET | `campaigns.ts:52-57` (`computeCovered`) |
 | סכום ה-hold (J5) | `max(min_hold_floor, covered × price × (1 + hold_buffer_pct))` | `campaigns.ts:66-75` (`computeHoldAmount`) |
 | סכום צבור (accrued) | `Σ locked_price` על `billed_results` של הקמפיין | RPC `campaign_billing_summary` |
-| חיוב סופי | `max(0, round(min(accrued, ceiling) − credits))` באגורות | `src/lib/data/close-charge.ts:87-99` |
+| חיוב סופי | `max(0, round(gross − credits))`, כש-`gross = base + max(0, reached − included) × overage`; ב-v4 ומטה גם `min(gross, ceiling)` | `src/lib/data/close-charge-amount.ts`, `close-charge.ts` (`isOpenCeilingAgreementVersion`) |
 
 עקרונות מפתח (כולם ממומשים):
 
 - **התקרה לעולם אינה מונמכת ל-covered** — covered מגדיר את גובה ה-hold בלבד (ביטחון), לא את
   התקרה (`campaigns.ts:450-521`, `prepareCampaignHold`; ראו גם `plans/verification-corrections.md`).
-- **SET מורשה קפוא** (`campaign_authorized_contacts`) נוצר בצעד ה-hold ומהווה את התקרה
+- **(היסטוריה — בוטל 2026-09-25, מיגרציה `20260925003335`: אין יותר מגבלת גודל על ה-SET ואין `ceiling_full`/`ceiling_reached`.)** **SET מורשה קפוא** (`campaign_authorized_contacts`) נוצר בצעד ה-hold ומהווה את התקרה
   המחייבת על "הושג": איש קשר שאינו ב-SET לעולם לא מחויב (fail-closed — SET ריק לא מחייב אף אחד).
   זהו "שומר דליפת הכסף" שהופך hold קטן מהתקרה לבטוח: `reached ⊆ set` מבנית
   (מיגרציות `202606290024_billing_authorized_set.sql`, `202606290029_billing_set_membership.sql`).
@@ -253,7 +253,7 @@ Origin; קורא ל-`chargeRaw` ומציג **רק** את ההקרנה הבטוח
 | `campaigns` (עמודות חיוב) | מצב הקמפיין: מחיר/תקרה/חלון; ‏hold: ‏`auth_amount/auth_number/authorized_at/auth_expires_at/auth_external_ref/card_token_ref/card_exp_month/card_exp_year/card_citizen_id/capture_status`; חיוב: ‏`charge_status/charged_at/sumit_charge_document_id/charge_document_number/charge_document_url/charge_auth_number/charge_payment_id` | 0007, 0025, 0026, 0027 |
 | `contacts` | טלפון E.164 ייחודי לאירוע + ‏`op_status` + ‏`removal_requested` + ‏`whatsapp_consent_at` | 0007, 0028 |
 | `billed_results` | **מקור האמת לחיוב**; ‏`UNIQUE(event_id,contact_id)`; ‏`locked_price`, ראיה, ‏provider_ref | 0007 |
-| `campaign_authorized_contacts` | ה-SET הקפוא — התקרה המחייבת על reached | 0024 |
+| `campaign_authorized_contacts` | ה-SET של הנמענים (דינמי; אין מגבלת גודל מאז 25.9) | 0024 |
 | `contact_interactions` | יומן אירועי ספק + dedup ‏`UNIQUE(channel,provider_id)` | 0007 |
 | `billing_credits` | זיכויים append-only | 0007 |
 | `signed_agreements` | ראיות ההסכם (אדמין-בלבד, ללא קריאת-בעלים) | 0007, 0016 |
@@ -270,7 +270,7 @@ Origin; קורא ל-`chargeRaw` ומציג **רק** את ההקרנה הבטוח
   תקרת ספירה, ו-dedup ‏`ON CONFLICT DO NOTHING` — הכל בטרנזקציה אחת. השתלשלות:
   ‏0028 (בסיס) ← 0029 (‏`not_authorized` — כבילה ל-SET) ← ‏`20260630164747` ‏(L2: ‏
   ‏`event_passed` — שומר תאריך-אירוע בלוח ישראל, ו-`event_mismatch` — אימות ש-`p_event` תואם
-  לאירוע של הקמפיין; שורות 262-326). ערכי התוצאה: ‏`billed | already_billed | ceiling_reached |
+  לאירוע של הקמפיין; שורות 262-326). ערכי התוצאה: ‏`billed | already_billed |
   not_active | before_window | closed_window | removal_requested | not_authorized |
   no_campaign | event_passed | event_mismatch`.
 - **`campaign_billing_summary(p_campaign) → (reached_count, accrued, ceiling, max_contacts)`** —

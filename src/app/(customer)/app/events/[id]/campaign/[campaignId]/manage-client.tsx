@@ -283,8 +283,8 @@ function CampaignStatusAndBilling({
   const percentage = ceiling !== null && ceiling > 0 ? Math.min(100, Math.round((accrued / ceiling) * 100)) : 0;
   const pricingExplanation =
     basePrice > 0
-      ? `דמי הפעלה קבועים של ${nis(basePrice)}. ${includedReached.toLocaleString('he-IL')} אנשי הקשר הראשונים שהשיבו כלולים בדמי ההפעלה. לאחר מכן נוסף ${nis(overageRate)} לכל איש קשר נוסף שהשיב, עד לתקרה של ${nis(ceiling)}.`
-      : `החיוב הוא ${nis(overageRate)} לכל איש קשר ייחודי שהשיב בפועל, עד לתקרה של ${nis(ceiling)}.`;
+      ? `דמי הפעלה קבועים של ${nis(basePrice)}. ${includedReached.toLocaleString('he-IL')} אנשי הקשר הראשונים שהשיבו כלולים בדמי ההפעלה. לאחר מכן נוסף ${nis(overageRate)} לכל איש קשר נוסף שהשיב${ceiling === null ? '' : `, עד לתקרה של ${nis(ceiling)}`}.`
+      : `החיוב הוא ${nis(overageRate)} לכל איש קשר ייחודי שהשיב בפועל${ceiling === null ? '' : `, עד לתקרה של ${nis(ceiling)}`}.`;
 
   return (
     <section

@@ -237,7 +237,8 @@ export async function pruneOrphanContact(
 
 // P0-1 (A6): reconcile a campaign's authorized recipient SET after a guest
 // mutation (add / repoint / delete of a contact). Delegates the money-safe
-// decision (admit within funded_cap, exposed-or-billed pin, audit) to the
+// decision (admit every eligible contact — no size cap since 2026-09-25 —,
+// exposed-or-billed pin, audit) to the
 // reconcile_authorized_set RPC, which runs under the same campaigns FOR UPDATE
 // lock as billing. KILL-SWITCH: inert unless RECONCILE_AUTHORIZED_SET_ENABLED
 // (env var, not app_settings — see reconcile-config.ts) — LIVE in production

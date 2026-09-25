@@ -310,8 +310,8 @@ export async function importGuestsAction(
     // were silently excluded forever. reconcileCampaignSetForContact is
     // itself best-effort/never-throws (a cheap no-op when there is no
     // operational campaign or the contact is already a member), so this loop
-    // cannot fail the import; it only ever helps a contact that is eligible
-    // and within funded_cap get admitted.
+    // cannot fail the import; it only ever helps an eligible contact get
+    // admitted (there is no size cap since 2026-09-25).
     for (const contactId of contactIds) {
       await reconcileCampaignSetForContact(eventId, 'add', contactId);
     }

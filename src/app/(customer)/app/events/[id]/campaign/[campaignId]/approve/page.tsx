@@ -9,6 +9,7 @@ import { isPastEventDay } from '@/lib/data/event-date';
 import { getProfile } from '@/lib/data/profiles';
 import { maskPhoneForDisplay } from '@/lib/phone';
 import {
+  isOpenCeilingAgreementVersion,
   renderAgreementBody,
   AGREEMENT_CSS,
 } from '@/lib/agreements/template';
@@ -93,6 +94,10 @@ export default async function ApproveCampaignPage({
   // signature can never disagree with the document being signed.
   const basePrice = Number(campaign.base_price ?? 0);
   const includedReached = Number(campaign.included_reached ?? 0);
+  // The summary must say what the document being signed says: an open-ceiling
+  // agreement (v5+) states the price as a formula, a v4-and-earlier one a number.
+  const openCeiling = isOpenCeilingAgreementVersion(agreementDoc.version);
+  const capSuffix = openCeiling ? '' : ', עד התקרה';
 
   const agreementHtml = renderAgreementBody({
     company,
@@ -149,10 +154,14 @@ export default async function ApproveCampaignPage({
             {includedReached > 0 ? 'מעבר לכך' : 'מחיר לאיש קשר שהושג'}
           </dt>
           <dd>{ils(campaign.price_per_reached)} (מחיר סופי; לא נגבה מע״מ)</dd>
-          <dt className="text-muted-foreground">תקרת חיוב מרבית</dt>
-          <dd>
-            <strong>{ils(campaign.max_charge_ceiling)}</strong>
-          </dd>
+          {openCeiling ? null : (
+            <>
+              <dt className="text-muted-foreground">תקרת חיוב מרבית</dt>
+              <dd>
+                <strong>{ils(campaign.max_charge_ceiling)}</strong>
+              </dd>
+            </>
+          )}
           <dt className="text-muted-foreground">ערוצים</dt>
           <dd>
             {campaign.allowed_channels
@@ -166,8 +175,8 @@ export default async function ApproveCampaignPage({
         </dl>
         <p className="rounded bg-muted/50 p-2 text-xs text-muted-foreground">
           {basePrice > 0
-            ? `דמי ההפעלה (${ils(basePrice)}) נגבים בכל מקרה ואינם מותנים בתוצאה. מעבר להם — חיוב רק על איש קשר שהושג (תגובה אנושית), פעם אחת לכל איש קשר, עד התקרה.`
-            : 'חיוב רק על איש קשר שהושג (תגובה אנושית), פעם אחת לכל איש קשר, עד התקרה.'}
+            ? `דמי ההפעלה (${ils(basePrice)}) נגבים בכל מקרה ואינם מותנים בתוצאה. מעבר להם — חיוב רק על איש קשר שהושג (תגובה אנושית), פעם אחת לכל איש קשר${capSuffix}.`
+            : `חיוב רק על איש קשר שהושג (תגובה אנושית), פעם אחת לכל איש קשר${capSuffix}.`}
         </p>
         <AgreementSheet html={agreementHtml} />
       </section>

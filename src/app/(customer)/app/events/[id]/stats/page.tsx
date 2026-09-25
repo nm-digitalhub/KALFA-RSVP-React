@@ -254,10 +254,12 @@ export default async function EventStatsPage({
                   <dt className="text-muted-foreground">נצבר</dt>
                   <dd className="font-medium">{stats.campaign.billing.accrued}</dd>
                 </div>
-                <div>
-                  <dt className="text-muted-foreground">תקרה</dt>
-                  <dd className="font-medium">{stats.campaign.billing.ceiling}</dd>
-                </div>
+                {stats.campaign.billing.ceiling !== null ? (
+                  <div>
+                    <dt className="text-muted-foreground">תקרה</dt>
+                    <dd className="font-medium">{stats.campaign.billing.ceiling}</dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt className="text-muted-foreground">מגעים מקסימליים</dt>
                   <dd className="font-medium">{stats.campaign.billing.maxContacts}</dd>

@@ -43,9 +43,11 @@ export const SETUP_STEP_LABELS: Record<SetupStepKey, string> = {
 };
 
 export const PAST_EVENT_HINT = 'מועד האירוע חלף — לא ניתן להמשיך בהקמה';
-// G1 (soft gate): the ceiling and the card hold are sized from the guest list
-// at the moment of the hold and are not raised afterwards — say so BEFORE the
-// owner confirms, without blocking (owner ruling 2026-07-26: signing before
+// G1 (soft gate): the card hold is sized from the guest list at the moment of
+// the hold and is not raised afterwards; under a v4-and-earlier agreement (the
+// active one as of 2026-09-25) the signed ceiling is sized the same way. Guests
+// added later are still invited (no recipient cap since 2026-09-25). Say so
+// BEFORE the owner confirms, without blocking (owner ruling 2026-07-26: signing before
 // the list is complete stays allowed).
 export const NO_GUESTS_HINT =
   'מומלץ להוסיף מוזמנים לפני האישור — תקרת החיוב ומסגרת האשראי נקבעות לפי הרשימה ברגע תפיסת המסגרת';

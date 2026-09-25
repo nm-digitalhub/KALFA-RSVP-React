@@ -17,6 +17,7 @@ import {
 } from '@/lib/data/campaign-delivery';
 import { getCampaignBillingSummary, type BillingSummary } from '@/lib/data/billing';
 import { campaignStage } from '@/lib/data/event-labels';
+import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
 import type { Enums } from '@/lib/supabase/types';
 type EventStatus = Enums<'event_status'>;
 
@@ -68,7 +69,8 @@ export type EventStatsResult = {
     billing: {
       reachedCount: number;
       accrued: number;
-      ceiling: number;
+      /** null = open-ceiling agreement (v5+): the price is a formula, nothing caps it. */
+      ceiling: number | null;
       maxContacts: number;
     } | null;
     // The commercial terms + settlement outcome, read off the campaign row that
@@ -124,7 +126,7 @@ export function deriveStatsAlerts(input: {
     // fresh campaign is already 100% pending.
     outreachStarted: boolean;
   } | null;
-  billing?: { accrued: number; ceiling: number } | null;
+  billing?: { accrued: number; ceiling: number | null } | null;
   // The raw status cannot answer "is this campaign over": campaignStage() folds
   // awaiting_invoice | billed | paid into the same 'closed' stage, and the DB
   // close guard (events_guard_update) does not list those three — so an event
@@ -162,7 +164,7 @@ export function deriveStatsAlerts(input: {
     if (input.delivery.wrongNumber > 0)
       alerts.push({ id: 'wrong_numbers', label: 'מספרי טלפון שגויים' });
   }
-  if (input.billing && input.billing.ceiling > 0) {
+  if (input.billing && input.billing.ceiling !== null && input.billing.ceiling > 0) {
     if (input.billing.accrued / input.billing.ceiling >= 0.9) {
       alerts.push({ id: 'ceiling_near_usage', label: 'קירבה לתקרת החיוב' });
     }
@@ -310,7 +312,7 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
             campaign.billing = {
               reachedCount: b.reachedCount,
               accrued: b.accrued,
-              ceiling: b.ceiling,
+              ceiling: isOpenCeilingAgreementVersion(c.tos_version) ? null : b.ceiling,
               maxContacts: b.maxContacts,
             };
         } catch {

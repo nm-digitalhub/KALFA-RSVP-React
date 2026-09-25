@@ -205,7 +205,7 @@ export async function closeCampaignAndCharge(
       : (summary?.ceiling ?? 0);
 
   // D5 GUARD — bind the base-fee to the SIGNED contract. The campaign may carry a
-  // snapshotted base (the gate was on at authorize), but the ₪200 activation fee
+  // snapshotted base (the gate was on at authorize), but the activation fee
   // may be billed ONLY if the customer actually signed a base-fee agreement
   // version. Otherwise suppress base+included → pure per-reached, so a v3-signer
   // (whose contract says "0 → no charge") is NEVER charged the base regardless of
