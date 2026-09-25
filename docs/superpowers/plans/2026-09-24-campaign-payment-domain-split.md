@@ -4,7 +4,7 @@
 
 **Goal:** כל דבר שקורה לכסף של קמפיין נרשם כשורה בטבלה אחת, `payment_operations`. מצב התשלום לא נשמר בשום עמודה: הוא מחושב מרצף השורות. `campaigns` נשארת עם הקמפיין בלבד.
 
-**Architecture:** שלוש טבלאות חדשות, לא חשופות ל-Data API (רק `service_role`), RLS דלוק, בלי policies: `payment_methods` (אמצעי התשלום השמור; ת"ז ב-Vault), `payment_operation_kinds` (רישום סוגי הפעולות) ו-`payment_operations` (יומן של פעולות: אישור מסגרת, חיוב, שחרור מסגרת, גביית ביטול, החזר, כל דבר שיבוא). סוג הפעולה הוא **טקסט ברישום**, לא enum סגור: פעולה חדשה מחר היא שורה ברישום, לא מיגרציה. לרישום יש עמודת `effect` (`commit` / `collect` / `void` / `return` / `none`) שממנה קוד אחד מחשב את המצב לתצוגה, כך שגם החישוב לא תלוי בסוג ספציפי. **עובדה מכריעה למודל (הבעלים 24.9 23:02; `capture.ts:123-162`, נמדד חי 29.6):** החיוב הסופי הוא **חיוב חדש ועצמאי על הטוקן השמור**, לא מימוש של המסגרת; המסגרת נשארת פתוחה בנפרד עד ששוחררה. לכן `charge` הוא פעולה בלי הורה, ו-`release` הוא סיום ערובה (`void`), לא החזר כסף (`return`). המעבר הוא **Expand → Migrate → Contract**: קודם הטבלאות והכתיבה הכפולה, אחר כך הקוראים, ורק בסוף מחיקת 23 העמודות החיות ו-3 המתות של התשלום מ-`campaigns` (26; ועוד 2 מ-`event_cancellation_requests`). כל שלב פרוס וניתן להחזרה בנפרד.
+**Architecture:** שתי טבלאות חדשות, לא חשופות ל-Data API (רק `service_role`), RLS דלוק, בלי policies (הבעלים 25.9: בלי טבלת אמצעי תשלום נפרדת — פרטי הכרטיס נשמרים על שורת הפעולה שבה הכרטיס נשמר, מספר הלקוח ב-SUMIT נשאר ב-`sumit_customers` הקיימת): `payment_operation_kinds` (רישום סוגי הפעולות) ו-`payment_operations` (יומן של פעולות: אישור מסגרת, חיוב, שחרור מסגרת, גביית ביטול, החזר, כל דבר שיבוא). סוג הפעולה הוא **טקסט ברישום**, לא enum סגור: פעולה חדשה מחר היא שורה ברישום, לא מיגרציה. לרישום יש עמודת `effect` (`commit` / `collect` / `void` / `return` / `none`) שממנה קוד אחד מחשב את המצב לתצוגה, כך שגם החישוב לא תלוי בסוג ספציפי. **עובדה מכריעה למודל (הבעלים 24.9 23:02; `capture.ts:123-162`, נמדד חי 29.6):** החיוב הסופי הוא **חיוב חדש ועצמאי על הטוקן השמור**, לא מימוש של המסגרת; המסגרת נשארת פתוחה בנפרד עד ששוחררה. לכן `charge` הוא פעולה בלי הורה, ו-`release` הוא סיום ערובה (`void`), לא החזר כסף (`return`). המעבר הוא **Expand → Migrate → Contract**: קודם הטבלאות והכתיבה הכפולה, אחר כך הקוראים, ורק בסוף מחיקת 23 העמודות החיות ו-3 המתות של התשלום מ-`campaigns` (26; ועוד 2 מ-`event_cancellation_requests`). כל שלב פרוס וניתן להחזרה בנפרד.
 
 **Tech Stack:** Supabase Postgres (מיגרציות ב-`supabase migration new` בלבד), Supabase Vault (הדפוס של `integration_connections`), `supabase-js` service-role בשרת, TypeScript, Zod 4, Vitest.
 
@@ -24,16 +24,16 @@
 | 1 | `capture_status` נשאר `authorized` לתמיד; החיוב/השחרור נרשמים בעמודות אחרות; המסך הציג "תפוס" לשלושה מצבים | המצב מחושב מרצף הפעולות (`deriveStatus`), לא נשמר | 2, 6 |
 | 2 | שלוש שכבות מצב בלי אילוצי ערכים; `captured`/`expired` תוכננו ואף קוד לא כתב אותם | פעולה = שורה עם `outcome` אחד; סוגים ברישום עם FK | 1 |
 | 3 | `billing_route` ריק ב-3 מ-3 | נמחק (יחד עם ה-enum). "איך שולם" = `kind` של הפעולה | 8 |
-| 4 | `card_citizen_id` בטקסט פתוח ב-`campaigns`; ל-`anon` יש GRANT SELECT על הטבלה (מחזיר 0 שורות רק בזכות ה-policy `camp_org_select`, שהיא ל-`authenticated`) | Vault דרך `payment_methods_write`; הטבלאות החדשות בלי grant ל-`anon`/`authenticated` בכלל | 1, 3 |
+| 4 | `card_citizen_id` בטקסט פתוח ב-`campaigns`; ל-`anon` יש GRANT SELECT על הטבלה (מחזיר 0 שורות רק בזכות ה-policy `camp_org_select`, שהיא ל-`authenticated`) | Vault דרך `payment_citizen_id_write` (השורה שומרת רק את מזהה הסוד); הטבלאות החדשות בלי grant ל-`anon`/`authenticated` בכלל | 1, 3 |
 | 5 | שתי תפיסות (4 ₪, 152 ₪) שוחררו ב-SUMIT ב-07.07/21.07 בלי `release_status` | פעולת `release` עם `source='manual_backfill'` לפי מה שנמדד בתיקיית SUMIT | 4 |
 | 6 | ערכים מתים ב-`campaigns.status` (`awaiting_invoice`,`billed`,`paid`) | לא נוגעים ב-enum; מתועד | 9 |
 | 7 | 5 עמודות מתות ב-`campaigns` (נמדד 24.9: ברירת מחדל/null ב-3 מ-3): `billing_route`, `sumit_order_document_id`, `final_invoice_document_id` (תשלום), `enabled`, `steps` (קמפיין); `auth_expires_at` כבר נמחקה ידנית על ידי הבעלים | 3 המתות של התשלום נמחקות ב-Contract; `enabled`/`steps` ממתינות להחלטה; המחיקה הידנית מתועדת במיגרציה עם `if exists` | 8 |
-| 8 | `sumit_customer_id` כפול: ב-`sumit_customers` וב-`campaigns` | נשאר רק ב-`sumit_customers` + `payment_methods.provider_customer_id` | 5, 8 |
+| 8 | `sumit_customer_id` כפול: ב-`sumit_customers` וב-`campaigns` | נשאר רק ב-`sumit_customers` (לפי `user_id`) | 5, 8 |
 | 9 | `event_cancellation_requests.sumit_document_id/_url` = פעולת תשלום שנכתבה לטבלה של תחום אחר | פעולה מסוג `cancellation_charge`; הטבלה מצביעה עליה | 4, 7 |
 
 ## מפת השפעה — היכן משתמשים במה שמפוצל (נמדד 24.9, 22:00)
 
-נמדד בשני מקורות: `pg_depend` + חיפוש בגוף כל פונקציה/view/policy/trigger ב-DB החי, ו-grep על כל 28 שמות העמודות (26 ב-`campaigns` + 2 ב-`event_cancellation_requests`) ב-`src/`, `worker/`, `scripts/`, `supabase/functions/`. **אומת 24.9 22:19 על ידי סוכן `sumit-billing-expert` במעקב זרימת נתונים (לא grep):** 6 החמצות (★★ למטה: camelCase, טיפוסים ו-guards ש-grep לא רואה) ו-3 שגיאות שתוקנו: (א) `campaign_committed_amount` ניכה שחרור והיה מפיל את תקרת הנמענים של קאקון ל-0 → עכשיו "ה-commit המוצלח האחרון", זהה ל-`deriveStatus().committed`; (ב) מחיקת עמודות הנעילה בלי תחליף → אינדקסים `one_pending_uq` + `once_uq` (snapshot `once_slot`, נעילת שורת הקמפיין ב-`before_insert`; הבעלים 25.9: טריגר `exists` אינו נעילה ב-read committed) + `beginOperation`/`completeOperation` (Task 1, 5), `resolvePaymentReview` לאדמין (Task 7) וטריגר `campaigns_guard_activate` (Task 8); (ג) `sumit-customers.ts` שובץ בטעות. **החלטת הבעלים 25.9 03:10 — התקרה הכבולה למסגרת מבוטלת:** `funded_cap` מוסר משתי פונקציות ההקפאה (Task 8), אין `campaign_committed_amount`, שומר ההפעלה בודק אמצעי תשלום בלבד. נמדד: המנגנון חי ב-DB (מיגרציית 2.9) אך מעולם לא הופעל; `billing_exposure_gate` דלוק מאז 24.9 09:36 ולכן חברות ברשימה המוקפאת כבר לא נדרשת לחיוב. **VERIFY-5 25.9 01:34 (42 בדיקות ב-rollback + vitest על ה-TypeScript של Task 2/4): תיקונים 1, 2, 4, 5 מחזיקים; תיקון 3 (backfill) — 3 פגמים שהוכחו בהרצה ותוקנו: פילטר `source` שהסתיר את שורות ה-`release`, יצירת `payment_methods` כפולה בריצה חוזרת, ושורות ביטול בלי בדיקת מפתח; `cancellation_uq` משחרר על `failed`; `effect='none'` בלבד → `none`.** **סבב חמישי 25.9 01:25 (ביקורת חיצונית של הבעלים, 5 פערים שלא היו בהיקף VERIFY-4 — כולם מיושמים):** `deriveStatus` — כל שורה `review`/`pending` קובעת, לא רק האחרונה; `before_insert` בודק את מצב הקמפיין תחת הנעילה וחוסם `commit`/`collect` על מבוטל; backfill אידמפוטנטי לפי פעולה (`meta.backfill_key`); `cancellation_uq` ייחודי; `once_per_parent` → `parent_slot` → `parent_uq` + reconciler אחרי Contract מהיומן. **אימות רביעי 25.9 01:10 (`VERIFY-4.md`, מול ה-DB החי ב-begin…rollback, 36 בדיקות התנהגות): נקודות 1-4 DESIGN-ONLY ונבדקו (SQL של Task 1 התקבל; `for update` נועל; `once_uq` חוסם pending/review/succeeded ולא failed; 14 מעברי `guard_update` כמתואר; CAS מחזיר 0 שורות בלי להגיע לטריגר); נקודה 5 תוקנה: אין חיפוש ב-SUMIT לפי `ExternalIdentifier` (probe לפי תאריכים+CustomerID+Amount) ואין timeout על קריאות SUMIT (נוסף `AbortSignal.timeout(60s)`).** **ביקורת שלישית 25.9 00:10 (`AUDIT-3.md`): 19/21 נפתרו, 2 חוסמים + 6 חשובים + 12 קלים חדשים — כולם מיושמים בגרסה זו** (מפתח `campaignId` ב-backfill; נעילת "פעם אחת" באינדקס `once_uq` (snapshot `once_slot`), לא בטריגר; `authorize` פעם אחת; `paused` בשומר ההפעלה; אי-אטומיות של `db push` מתועדת; גבול ה-admin client לקריאת היומן; `listAttentionCampaigns` במקום `ADMIN_ATTENTION_FILTER`; תוויות הקבלה של Task 6; `default null` ב-RPC; ועוד). **ביקורת שנייה 24.9 23:08 (`rls-schema-engineer`, שורה-שורה; הדוח ב-`2026-09-24-campaign-payment-domain-split-AUDIT.md`): 22 ממצאים, כולם מיושמים בגרסה זו**, למעט אחד שהבעלים דחה במפורש (מחיקה ישירה מהטבלה על ידי `service_role`: "אין שום סיבה שמישהו ימחוק ישירות, מדובר באנשי צוות שלנו" → ההרשאות של `service_role` נשארות ברירת המחדל של Supabase כמו בכל טבלה אחרת). תיקונים עיקריים: זמני השחרור (לא נמדדו; `Billing_Date` = זמן התפיסה), סגירה ב-0 = פעולת `charge` בסכום 0 עם הזיכוי שקוזז, `charge` עצמאי ולא `capture`, `on delete restrict`, v7 גם ב-RPC, חתימת `owner_agent_billing_sums` נשמרת, ספירות 23/26(+2), `fake-table-client` מורחב ב-Task 5 שלב 0. הסוכן אישר נקי: views, policies, פונקציות מחוץ ל-`public`, edge functions, `src/lib/workflow`, Zod, fleet, seed, תבניות מייל/הסכם, רשימת 20 הבדיקות. **כל פריט משובץ ל-Task; מה שלא היה בתוכנית מסומן ★, ומה שרק הסוכן מצא ★★.**
+נמדד בשני מקורות: `pg_depend` + חיפוש בגוף כל פונקציה/view/policy/trigger ב-DB החי, ו-grep על כל 28 שמות העמודות (26 ב-`campaigns` + 2 ב-`event_cancellation_requests`) ב-`src/`, `worker/`, `scripts/`, `supabase/functions/`. **אומת 24.9 22:19 על ידי סוכן `sumit-billing-expert` במעקב זרימת נתונים (לא grep):** 6 החמצות (★★ למטה: camelCase, טיפוסים ו-guards ש-grep לא רואה) ו-3 שגיאות שתוקנו: (א) `campaign_committed_amount` ניכה שחרור והיה מפיל את תקרת הנמענים של קאקון ל-0 → עכשיו "ה-commit המוצלח האחרון", זהה ל-`deriveStatus().committed`; (ב) מחיקת עמודות הנעילה בלי תחליף → אינדקסים `one_pending_uq` + `once_uq` (snapshot `once_slot`, נעילת שורת הקמפיין ב-`before_insert`; הבעלים 25.9: טריגר `exists` אינו נעילה ב-read committed) + `beginOperation`/`completeOperation` (Task 1, 5), `resolvePaymentReview` לאדמין (Task 7) וטריגר `campaigns_guard_activate` (Task 8); (ג) `sumit-customers.ts` שובץ בטעות. **החלטת הבעלים 25.9 03:10 — התקרה הכבולה למסגרת מבוטלת:** `funded_cap` הוסר משתי פונקציות ההקפאה במיגרציה `20260925003335_retire_funded_cap` (חי מ-25.9, מחוץ לתוכנית הזו), אין `campaign_committed_amount`, שומר ההפעלה בודק אמצעי תשלום בלבד. נמדד: המנגנון חי ב-DB (מיגרציית 2.9) אך מעולם לא הופעל; `billing_exposure_gate` דלוק מאז 24.9 09:36 ולכן חברות ברשימה המוקפאת כבר לא נדרשת לחיוב. **VERIFY-5 25.9 01:34 (42 בדיקות ב-rollback + vitest על ה-TypeScript של Task 2/4): תיקונים 1, 2, 4, 5 מחזיקים; תיקון 3 (backfill) — 3 פגמים שהוכחו בהרצה ותוקנו: פילטר `source` שהסתיר את שורות ה-`release`, יצירת אמצעי תשלום כפול בריצה חוזרת, ושורות ביטול בלי בדיקת מפתח; `cancellation_uq` משחרר על `failed`; `effect='none'` בלבד → `none`.** **סבב חמישי 25.9 01:25 (ביקורת חיצונית של הבעלים, 5 פערים שלא היו בהיקף VERIFY-4 — כולם מיושמים):** `deriveStatus` — כל שורה `review`/`pending` קובעת, לא רק האחרונה; `before_insert` בודק את מצב הקמפיין תחת הנעילה וחוסם `commit`/`collect` על מבוטל; backfill אידמפוטנטי לפי פעולה (`meta.backfill_key`); `cancellation_uq` ייחודי; `once_per_parent` → `parent_slot` → `parent_uq` + reconciler אחרי Contract מהיומן. **אימות רביעי 25.9 01:10 (`VERIFY-4.md`, מול ה-DB החי ב-begin…rollback, 36 בדיקות התנהגות): נקודות 1-4 DESIGN-ONLY ונבדקו (SQL של Task 1 התקבל; `for update` נועל; `once_uq` חוסם pending/review/succeeded ולא failed; 14 מעברי `guard_update` כמתואר; CAS מחזיר 0 שורות בלי להגיע לטריגר); נקודה 5 תוקנה: אין חיפוש ב-SUMIT לפי `ExternalIdentifier` (probe לפי תאריכים+CustomerID+Amount) ואין timeout על קריאות SUMIT (נוסף `AbortSignal.timeout(60s)`).** **ביקורת שלישית 25.9 00:10 (`AUDIT-3.md`): 19/21 נפתרו, 2 חוסמים + 6 חשובים + 12 קלים חדשים — כולם מיושמים בגרסה זו** (מפתח `campaignId` ב-backfill; נעילת "פעם אחת" באינדקס `once_uq` (snapshot `once_slot`), לא בטריגר; `authorize` פעם אחת; `paused` בשומר ההפעלה; אי-אטומיות של `db push` מתועדת; גבול ה-admin client לקריאת היומן; `listAttentionCampaigns` במקום `ADMIN_ATTENTION_FILTER`; תוויות הקבלה של Task 6; `default null` ב-RPC; ועוד). **ביקורת שנייה 24.9 23:08 (`rls-schema-engineer`, שורה-שורה; הדוח ב-`2026-09-24-campaign-payment-domain-split-AUDIT.md`): 22 ממצאים, כולם מיושמים בגרסה זו**, למעט אחד שהבעלים דחה במפורש (מחיקה ישירה מהטבלה על ידי `service_role`: "אין שום סיבה שמישהו ימחוק ישירות, מדובר באנשי צוות שלנו" → ההרשאות של `service_role` נשארות ברירת המחדל של Supabase כמו בכל טבלה אחרת). תיקונים עיקריים: זמני השחרור (לא נמדדו; `Billing_Date` = זמן התפיסה), סגירה ב-0 = פעולת `charge` בסכום 0 עם הזיכוי שקוזז, `charge` עצמאי ולא `capture`, `on delete restrict`, v7 גם ב-RPC, חתימת `owner_agent_billing_sums` נשמרת, ספירות 23/26(+2), `fake-table-client` מורחב ב-Task 5 שלב 0. הסוכן אישר נקי: views, policies, פונקציות מחוץ ל-`public`, edge functions, `src/lib/workflow`, Zod, fleet, seed, תבניות מייל/הסכם, רשימת 20 הבדיקות. **כל פריט משובץ ל-Task; מה שלא היה בתוכנית מסומן ★, ומה שרק הסוכן מצא ★★.**
 
 ### א. אובייקטים ב-DB (חייבים להשתנות לפני Contract, אחרת `drop column` נכשל או שובר לוגיקה)
 
@@ -42,23 +42,23 @@
 | ★ `campaigns_guard_cancel()` (trigger על `campaigns`) | `capture_status`, `charge_status` | חוסם `status='cancelled'` אם יש תפיסה חיה או חיוב | הבדיקה הופכת ל-"אין ב-`payment_operations` פעולה עם `outcome in ('succeeded','pending','review')` ו-`effect<>'none'`"; `create or replace function` בלבד — הטריגר וה-SECDEF הקיימים נשמרים (audit finding 18) | 8 |
 | ★ `cancel_campaign()` (RPC) | `capture_status`, `charge_status` | אותו תנאי, בצד ה-RPC | אותו תיקון | 8 |
 | ★ `owner_agent_billing_sums(_since)` (RPC של הסוכן) | `final_charge_amount`, `charge_status`, `charged_at`, `credit_applied` | מחזירה **4 עמודות** (`charged_amount, credit_applied_amount, unvoided_credit_amount, credit_granted_amount`; השתיים האחרונות מ-`billing_credits`; הצרכן קורא את כולן, `cores/billing.ts:67-70`) | **החתימה נשמרת**; רק שתי הראשונות משתנות: `sum(amount)` / `sum(credit_applied)` על `payment_operations` join `kinds` where `effect='collect' and outcome='succeeded' and occurred_at >= _since` (כולל `charge` בסכום 0 — audit finding 2) | 7 |
-| ★ `reconcile_authorized_set(...)` (RPC, הקפאת נמענים; נקראת מ-`contacts.ts:268`) | `auth_amount` | תקרת נמענים: `included + floor((auth − base) / price)` | **ה-cap מוסר** (הבעלים 25.9: התקרה הכבולה למסגרת מבוטלת; אף פעם לא הופעלה בפועל — 0 שורות לוג, 0 שורות ביקורת). כל אורח כשיר מתקבל לרשימה. הפונקציה החיה היא SECDEF; `create or replace` שומר אותה כפי שהיא | 8 |
-| ★ `try_record_billed_result(...)` (RPC, רישום נמען שהושג; נקראת מ-`billing.ts:34` לכל נמען) | `auth_amount` | אותה תקרה בזמן אמת (`ceiling_reached`) | **ה-cap מוסר**: כל נמען עם חשיפה אמיתית (`exposed_for_billing`) מחויב | 8 |
+| `reconcile_authorized_set(...)` (RPC; נקראת מ-`contacts.ts:268`) | **כבר לא קוראת עמודת תשלום** | מקבלת כל אורח כשיר | ללא שינוי: התקרה הוסרה ב-`20260925003335` | — |
+| `try_record_billed_result(...)` (RPC; נקראת מ-`billing.ts:34`) | **כבר לא קוראת עמודת תשלום** | מחייבת כל נמען עם חשיפה אמיתית | ללא שינוי: התקרה הוסרה ב-`20260925003335` | — |
 | `billing_route` (enum) | העמודה `campaigns.billing_route` בלבד | אין קוראים | `drop column` ואז `drop type` | 8 |
 | `campaigns_require_active_event`, `trg_campaigns_updated`, שני הטריגרים של `event_cancellation_requests` | לא נוגעים בעמודות המפוצלות | — | ללא שינוי | — |
 | views (`console_campaigns` ועוד) | אף view לא קורא עמודה מפוצלת (נמדד ב-`pg_depend` וב-`pg_views`) | — | ללא שינוי | — |
 | policies | אף policy לא מפנה לעמודה מפוצלת | — | ללא שינוי | — |
 
-> **התקרה (הבעלים 25.9):** `funded_cap` בשתי הפונקציות נגזר מסכום המסגרת שנתפסה. הוא מעולם לא הופעל (0 שורות `ceiling_full`/`ceiling_reached` בלוגים, 0 ברישום הביקורת), ובקמפיין החי היה חוסם הזמנה מהאורח הראשון שמעבר לכמות הכלולה. הוא **מוסר** ב-Task 8, לא מועבר ליומן. החיוב מוגבל במספר האנשים שהושגו בפועל.
+> **התקרה (הבעלים 25.9):** `funded_cap` בשתי הפונקציות נגזר מסכום המסגרת שנתפסה. הוא מעולם לא הופעל (0 שורות `ceiling_full`/`ceiling_reached` בלוגים, 0 ברישום הביקורת), ובקמפיין החי היה חוסם הזמנה מהאורח הראשון שמעבר לכמות הכלולה. הוא **הוסר** במיגרציה `20260925003335_retire_funded_cap` (חי מ-25.9), ולכן שתי הפונקציות אינן חלק מהפיצול. החיוב מוגבל במספר האנשים שהושגו בפועל; תקרת סכום נשארת רק להסכם v4 ומטה (`max_charge_ceiling`, מחושב ב-`close-charge.ts`, לא ביומן).
 
 ### ב. קוד — לפי Task
 
 | קובץ | עמודות | תיקון | Task |
 |---|---|---|---|
 | `src/lib/data/campaigns.ts` | 22 עמודות: כל הכתיבה של תפיסה/חיוב + `CAMPAIGN_COLUMNS` | כותב: Task 5; קורא/`OwnerCampaign`: Task 7 | 5, 7 |
-| `src/lib/data/close-charge.ts` | `card_*`, `sumit_customer_id`, `auth_external_ref`, `capture_status`, `charge_status`, `credit_applied` | הכרטיס מ-`payment_methods` (+ ת"ז מ-Vault), ההרשאה מפעולת `authorize`, החיוב = פעולת `charge` עצמאית (בלי הורה); סגירה ב-0 = `charge` בסכום 0 עם הזיכוי | 5, 7 |
+| `src/lib/data/close-charge.ts` | `card_*`, `sumit_customer_id`, `auth_external_ref`, `capture_status`, `charge_status`, `credit_applied` | הכרטיס מ-`currentCard` (שורת הפעולה האחרונה שנשמר בה כרטיס; ת"ז מ-Vault), ההרשאה מפעולת `authorize`, החיוב = פעולת `charge` עצמאית (בלי הורה); סגירה ב-0 = `charge` בסכום 0 עם הזיכוי | 5, 7 |
 | `src/lib/data/sumit-hold-reconcile.ts` | `auth_amount`, `capture_status`, `hold_order_document_id`, `release_status` | מתאים לפי `provider_document_id` של פעולת `authorize`; כותב פעולת `release` | 5, 7 |
-| `src/lib/data/event-cancellation.ts` | `card_*`, `auth_external_ref`, `charge_status`, `credit_applied`, `final_charge_amount`, `sumit_document_id/_url` | כרטיס מ-`payment_methods`; גביית ביטול = פעולת `cancellation_charge` | 5, 7 |
+| `src/lib/data/event-cancellation.ts` | `card_*`, `auth_external_ref`, `charge_status`, `credit_applied`, `final_charge_amount`, `sumit_document_id/_url` | כרטיס מ-`currentCard`; גביית ביטול = פעולת `cancellation_charge` | 5, 7 |
 | `src/lib/data/admin/campaigns.ts` + `campaign-hold-badge.ts` + `src/app/(admin)/admin/campaigns/page.tsx` | `capture_status`, `charge_status`, `release_status`, `credit_applied`, `final_charge_amount`, `hold_order_document_*` | מסך הקמפיינים קורא מהיומן | 6 |
 | ★ `src/app/(customer)/app/events/[id]/campaign/[campaignId]/page.tsx` + `manage-client.tsx` | `capture_status`, `charge_status`, `credit_applied`, `final_charge_amount` | מסך הקמפיין של הלקוח: `payment` מ-`deriveStatus` במקום 4 העמודות | 7 |
 | ★ `src/app/(customer)/app/events/[id]/campaign/[campaignId]/payment/page.tsx` | `capture_status`, `auth_amount` | "כבר אושר?" = `status in ('committed','collected')`; הסכום = `committed` | 7 |
@@ -68,12 +68,12 @@
 | ★ `src/lib/data/admin/callbacks.ts:652` | `authorized_at` | "מתי נתפסה המסגרת הראשונה" = `min(occurred_at)` של `authorize` מוצלח | 7 |
 | ★ `src/lib/data/admin/users.ts:278`, `src/lib/data/billing.ts:113` | `credit_applied` | יתרת זיכוי לאירוע = מוענק − `sum(credit_applied)` על פעולות `collect` מוצלחות, **כולל `charge` בסכום 0** (audit finding 2: היום 84 ₪ ו-4 ₪ מנוצלים בקמפיינים שנסגרו ב-0; היתרות של האירועים `294d23e1` ו-`659ae5e7` חייבות להישאר 0 ו-6) | 7 |
 | ★ `src/lib/data/tax-ceiling.ts:30` | `final_charge_amount`, `charge_status`, `charged_at` | הכנסה שנתית = `sum(amount)` על `collect` מוצלח מתחילת השנה (אותה שאילתה כמו `owner_agent_billing_sums`; להוציא ל-`src/lib/payments/sums.ts` ולהשתמש בשניים) | 7 |
-| ★ `src/lib/data/admin/sumit-test.ts:40`, `scripts/sumit-doc-check.ts:45` | `card_*`, `sumit_customer_id` | כלי אבחון: "קמפיין עם כרטיס שמור" = `payment_methods` פעיל | 7 |
+| ★ `src/lib/data/admin/sumit-test.ts:40`, `scripts/sumit-doc-check.ts:45` | `card_*`, `sumit_customer_id` | כלי אבחון: "קמפיין עם כרטיס שמור" = `currentCard` לא ריק | 7 |
 | `src/lib/data/sumit-customers.ts` | — | **לא נוגע ב-`campaigns`** (verifier): משווה `sumit_customers.sumit_customer_id` לתשובת SUMIT. ללא שינוי | — |
 | `src/lib/data/event-labels.ts`, `setup-steps.ts` | `capture_status` | `PaymentStatus` | 6, 7 |
 | `src/lib/owner-agent/cores/billing.ts`, `cores/campaigns.ts`, `consumer/primer.ts`, ★ `consumer/reply-text.ts` | 11 שמות עמודות | הסוכן קורא מהיומן; ה-primer מתאר את הטבלאות החדשות; `stuckHolds` שומר את ההתנהגות של היום (`pending`, **`failed`**, `review` — `STUCK_CAPTURE_STATUSES` כולל `hold_failed`, `cores/campaigns.ts:45`) | 7 |
 | ★ הערות בלבד: `src/lib/queue/queues.ts:184`, `worker/main.ts:1532`, `src/lib/sumit/capture.ts:21`, `crm-holds.ts:15,29`, `hold-status.ts:18` | שמות עמודות בהערות | עדכון ההערות ב-Contract | 8 |
-| ★★ `src/app/(admin)/admin/cancellations/[id]/page.tsx:41,44,96` (verifier, camelCase) | `campaign.chargeStatus`, `campaign.hasCardOnFile` דרך ה-DTO של `getCampaignForEventAdmin` | "לפני חיוב / יש כרטיס" מ-`payment.status` ומ-`payment_methods` | 7 |
+| ★★ `src/app/(admin)/admin/cancellations/[id]/page.tsx:41,44,96` (verifier, camelCase) | `campaign.chargeStatus`, `campaign.hasCardOnFile` דרך ה-DTO של `getCampaignForEventAdmin` | "לפני חיוב / יש כרטיס" מ-`payment.status` ומ-`currentCard` | 7 |
 | ★★ אותו דף, שורות 124-126 (verifier) | `request.sumitDocumentUrl` ← `ADMIN_SELECT` ← `sumit_document_url` | ה-URL מפעולת `cancellation_charge` | 7 |
 | ★★ `src/lib/data/campaigns.ts` `activateCampaign` (verifier) | `.eq('capture_status','authorized')` כ-guard אטומי ב-UPDATE (לא קורא, לא כותב) | טריגר `campaigns_guard_activate` | 5, 8 |
 | ★★ `src/lib/data/campaigns.ts` `lockCampaignForHold` / `lockCampaignForCharge` / `markCampaignChargeOutcome` (verifier) | UPDATE מסונן על `capture_status`/`charge_status` = ה-mutex של "חיוב פעם אחת" | `beginOperation`/`completeOperation` (compare-and-set: `from`) + אינדקסים `one_pending_uq`/`once_uq` + טריגר `guard_update` | 1, 5 |
@@ -93,8 +93,8 @@
 
 | כלל | מה נבדק | תוצאה |
 |---|---|---|
-| schema-foreign-key-indexes | כל FK ב-`payment_operations`/`payment_methods` | תוקן: נוספו אינדקסים ל-`event_id`, `payment_method_id`, `parent_operation_id`; `owner_user_id` הפך לאינדקס מלא (cascade מ-`auth.users`). `kind` לא מאונדקס בכוונה (רישום של 5 שורות, אין מחיקה ממנו). `campaign_id`/`event_id` ב-`on delete restrict` כמו `billed_results` (audit finding 9). בדיקה (e)+(g) ב-dry-run |
-| schema-primary-keys | uuid v4 מפצל אינדקסים | **תוקן 21:49:** הבעלים התקין `cem-uuidv7` 1.0.2 בסכימה `extensions`; אומת חי: `extensions.uuid_generate_v7()` מחזירה v7 (nibble 7), מונוטונית, ו-`service_role` יכול להריץ. שתי הטבלאות החדשות ב-v7, גם ב-RPC `payment_methods_write` (audit finding 5). שאר 96 הטבלאות נשארות v4 (לא נוגעים) |
+| schema-foreign-key-indexes | כל FK ב-`payment_operations` | תוקן: נוספו אינדקסים ל-`event_id`, `parent_operation_id`. `kind` לא מאונדקס בכוונה (רישום של 5 שורות, אין מחיקה ממנו). `campaign_id`/`event_id` ב-`on delete restrict` כמו `billed_results` (audit finding 9). בדיקה (e)+(g) ב-dry-run |
+| schema-primary-keys | uuid v4 מפצל אינדקסים | **תוקן 21:49:** הבעלים התקין `cem-uuidv7` 1.0.2 בסכימה `extensions`; אומת חי: `extensions.uuid_generate_v7()` מחזירה v7 (nibble 7), מונוטונית, ו-`service_role` יכול להריץ. שתי הטבלאות החדשות ב-v7 (`payment_operations.id`; `payment_operation_kinds` ממפתח טקסט). audit finding 5 (v4 ב-RPC) לא רלוונטי עוד — ה-RPC לא יוצר שורות. שאר 96 הטבלאות נשארות v4 (לא נוגעים) |
 | schema-data-types | `numeric(12,2)` לכסף, `timestamptz`, `text` ולא `varchar`, `bigint` למזהי ספק | תואם |
 | schema-constraints | `add constraint if not exists` אסור | לא בשימוש; אילוצים inline ב-`create table` |
 | security-privileges | least privilege | בלי grant/policy ל-`anon`/`authenticated`; `service_role` בברירת המחדל של Supabase (החלטת הבעלים); append-only נאכף בטריגר `guard_update`; "פעם אחת" נאכף באינדקס `once_uq` (btree, אטומי), לא בטריגר |
@@ -113,7 +113,7 @@
 - **RLS על `campaigns` לא משתנה** בתוכנית הזו.
 - **אין `SECURITY DEFINER` חדש.** פונקציות Vault הן `security invoker` + `set search_path = ''` + `revoke execute from public, anon, authenticated` + `grant execute to service_role`, הדפוס של `20260916002343_integration_credential_store.sql`.
 - **היומן נקרא רק דרך `createAdminClient()`, אחרי בדיקת בעלות** (`requireOwnedEvent`/`requireEventAccess`/`requirePlatformPermission`). ל-`authenticated` אין grant ולא policy על `payment_*`, ולכן `loadOperations` עם ה-cookie client או embed של `payment_operations` בתוך `CAMPAIGN_COLUMNS` (שנקראת ב-`getCampaign`/`listCampaignsForEvent`/`getCampaignForEvent`/`getCampaignStageForEvent`, `campaigns.ts:287-366`, cookie client) נכשלים ב-42501 (audit-3 #28). הדפוס: הקורא של הקמפיין נשאר cookie; `payment` מצורף בשלב שני דרך admin.
-- **שלמות ב-DB (owner 25.9 01:47):** `event_id` נגזר מהקמפיין הנעול ולא מהקלט; הורה חייב להיות מאותו קמפיין ומוצלח; מסמך SUMIT נרשם פעם אחת (`doc_uq`); `effect`/דגלי הרישום בלתי-ניתנים לשינוי (סוג חדש במקום עריכה). **לא נאכף בכוונה:** התאמה בין `payment_methods.owner_user_id` לבעל האירוע — עם ריבוי בעלים (`approved_by` לעומת `events.owner_id`) אין כלל אחד נכון; הקוד מעביר את הבעלים הנכון (`approved_by`).
+- **שלמות ב-DB (owner 25.9 01:47):** `event_id` נגזר מהקמפיין הנעול ולא מהקלט; הורה חייב להיות מאותו קמפיין ומוצלח; מסמך SUMIT נרשם פעם אחת (`doc_uq`); `effect`/דגלי הרישום בלתי-ניתנים לשינוי (סוג חדש במקום עריכה). **לא נאכף בכוונה:** מי הלקוח ב-SUMIT — עם ריבוי בעלים (`approved_by` לעומת `events.owner_id`) אין כלל אחד נכון; הקוד קורא את `sumit_customers` לפי `campaigns.approved_by` (מי שהזין את הכרטיס), כמו היום.
 - **ייחודיות נאכפת רק באינדקס ייחודי, לעולם לא בטריגר עם `exists`** (הבעלים 25.9; `default_transaction_isolation = read committed` נמדד): טריגר שבודק "אין עדיין שורה" לא רואה טרנזקציה מקבילה שטרם עברה commit. הרישום מגדיר (`once_per_campaign`, `once_per_parent`), הטריגר מצלם לעמודה (`once_slot`, `parent_slot`), ה-btree אוכף (`once_uq`, `parent_uq`). `pending`, `review` ו-`succeeded` תופסים את המקום; `failed` משחרר.
 - **כל השלמה של פעולה היא compare-and-set:** `completeOperation(id, { from: 'pending'|'review', … })` = `update … where id = $id and outcome = $from`; 0 שורות → שגיאה. זרימות האפליקציה תמיד `from: 'pending'`; `resolvePaymentReview` של האדמין תמיד `from: 'review'`. `review` חוסם עד הכרעה ידנית (שינוי מתועד מול היום).
 - **כל קריאה ל-SUMIT עם `signal: AbortSignal.timeout(60_000)`** (`authorize.ts`, `capture.ts` ×2, `charge.ts`, `raw-charge.ts`, `probe.ts`); היום אין timeout באף אחת מהן (VERIFY-4). `AbortError` → `SumitNetworkError` → `review` באותו תהליך.
@@ -136,18 +136,19 @@
 6. **קריסה של התהליך באמצע פעולה** (pm2 kill / deploy / OOM אחרי `beginOperation` ולפני `completeOperation`): השורה נשארת `pending` ונועלת. היום (`capture_status='pending'`/`charge_status='pending'`) זה תקוע לנצח בלי sweeper ובלי פעולת אדמין; בתוכנית: job `payment-orphans` מעביר `pending` ישן מ-10 דקות ל-`review` + Slack, והאדמין מכריע דרך `resolvePaymentReview` אחרי בדיקה ב-SUMIT (`probeSumitOperation`: חלון תאריכים + `CustomerID` + סכום; אין ב-SUMIT חיפוש לפי `ExternalIdentifier` — VERIFY-4). אין חיוב כפול בשום שלב, כי `once_uq` מחזיק גם על `review`. (Task 5 שלב 5א, Task 7 שלב 0א.)
 7. **`review` שאינו הפעולה האחרונה** (ביקורת חיצונית 25.9): `authorize → charge(review) → release(succeeded)` חייב להציג "נדרשת בדיקה ידנית", לא "שוחרר". כל שורה `review`/`pending` בכל מקום ברצף קובעת; `review` גובר על `pending`. (Task 2; הורץ ב-VERIFY-5.)
 8. **ביטול שעבר commit רגע לפני תחילת חיוב:** `before_insert` נועל את שורת הקמפיין ורק אז קורא את מצבו; `commit`/`collect` על קמפיין `cancelled` נזרק (`check_violation`), `release`/`refund` עליו מותרים. (Task 1; הורץ ב-VERIFY-5 עם 12 בדיקות.)
-9. **ריצה חוזרת של ה-backfill אחרי קריסה באמצע קמפיין:** אידמפוטנטיות לפי פעולה (`meta.backfill_key`), בלי פילטר `source`, בלי יצירת `payment_methods` שני, ושורות ביטול מדלגות על מפתח קיים. ריצה מלאה חוזרת = 0 הכנסות. (Task 4; VERIFY-5 מצא את שלושת הפגמים בגרסה הקודמת, התיקון עדיין לא הורץ.)
+9. **ריצה חוזרת של ה-backfill אחרי קריסה באמצע קמפיין:** אידמפוטנטיות לפי פעולה (`meta.backfill_key`), בלי פילטר `source`, בלי סוד Vault שני לאותו כרטיס, ושורות ביטול מדלגות על מפתח קיים. ריצה מלאה חוזרת = 0 הכנסות. (Task 4; VERIFY-5 מצא את שלושת הפגמים בגרסה הקודמת, התיקון עדיין לא הורץ.)
+10. **כרטיס שנשמר בחיוב פשוט, והמותג שמגיע מאוחר** (הבעלים 25.9): חיוב J4 מחזיר טוקן קבוע → פרטי הכרטיס (סוג, 4 ספרות, מסכה, תוקף, ת"ז ב-Vault) על פעולת ה-`charge`; `currentCard` מוצא אותם בלי `authorize`; המותג והמנפיק מתמלאים פעם אחת אחרי החיוב (מקור: `creditguy/gateway/gettransaction`, טרם נבדק חי), וכישלון בשליפתו לא מכשיל את החיוב. (Task 3, Task 5 Step 4, dry-run c2.)
 
 ---
 
-### Task 1: מיגרציה Expand — `payment_methods`, `payment_operation_kinds`, `payment_operations`, Vault, ACL
+### Task 1: מיגרציה Expand — `payment_operation_kinds`, `payment_operations` (כולל פרטי כרטיס), Vault, ACL
 
 **Files:**
 - Create: `supabase/migrations/<timestamp>_payment_operations_expand.sql` (השם נוצר ב-CLI)
 - Commit also: `src/lib/supabase/types.generated.ts`
 
 **Interfaces:**
-- Produces: הטבלאות `public.payment_methods`, `public.payment_operation_kinds` (5 סוגים; `effect` ∈ commit/collect/void/return/none; `once_per_campaign`), `public.payment_operations`; ה-enum `payment_operation_outcome` (`pending|succeeded|failed|review`); הטריגרים `payment_operations_before_insert` (נעילת שורת הקמפיין + snapshot של `once_slot`) ו-`payment_operations_guard_update` (מעברים מותרים בלבד); האינדקסים `one_pending_uq` ו-`once_uq`; הפונקציות `public.payment_methods_write(...)` ו-`public.payment_method_citizen_id(p_id uuid)` (`security invoker`, `service_role` בלבד).
+- Produces: הטבלאות `public.payment_operation_kinds` (5 סוגים; `effect` ∈ commit/collect/void/return/none; `once_per_campaign`), `public.payment_operations`; ה-enum `payment_operation_outcome` (`pending|succeeded|failed|review`); הטריגרים `payment_operations_before_insert` (נעילת שורת הקמפיין + snapshot של `once_slot`) ו-`payment_operations_guard_update` (מעברים מותרים בלבד); האינדקסים `one_pending_uq` ו-`once_uq`; הפונקציות `public.payment_citizen_id_write(p_citizen_id text, p_campaign_id uuid)` ו-`public.payment_citizen_id(p_operation_id uuid)` (`security invoker`, `service_role` בלבד).
 
 - [ ] **Step 1: צור את הקובץ עם ה-CLI**
 
@@ -164,29 +165,10 @@ cd /var/www/vhosts/kalfa.me/beta && npx supabase migration new payment_operation
 -- ── outcome of ONE attempt. The only enum here: it is about the attempt, not the kind of money movement. ──
 create type public.payment_operation_outcome as enum ('pending', 'succeeded', 'failed', 'review');
 
--- ── payment_methods: the saved instrument. Citizen id lives in Vault, never here. ──
 -- Time-ordered v7 ids (schema-primary-keys): cem-uuidv7 1.0.2 is installed in `extensions` (owner, 24.9 21:49;
 -- verified: version nibble 7, monotonic, executable by service_role). Not core Postgres — the `if not exists` below
 -- makes the migration honest about the dependency; on this project it is a no-op.
 create extension if not exists "cem-uuidv7" with schema extensions;
-
-create table public.payment_methods (
-  id                   uuid primary key default extensions.uuid_generate_v7(),
-  owner_user_id        uuid not null references auth.users (id) on delete cascade,
-  kind                 text not null default 'saved_card',   -- free text on purpose
-  provider             text not null default 'sumit',
-  provider_token_ref   text,                                 -- campaigns.card_token_ref today
-  provider_customer_id bigint,                               -- campaigns.sumit_customer_id today (also sumit_customers)
-  exp_month            smallint check (exp_month between 1 and 12),
-  exp_year             smallint check (exp_year between 2024 and 2100),
-  citizen_id_secret    uuid,                                 -- vault.secrets.id — the ONLY link to the ת"ז
-  meta                 jsonb not null default '{}'::jsonb,   -- non-sensitive provider extras only
-  created_at           timestamptz not null default now(),
-  revoked_at           timestamptz
-);
-comment on table public.payment_methods is 'Saved payment instruments. The card-holder citizen id is a Vault secret (citizen_id_secret), never a column. Server-only: RLS enabled, zero policies, no grants to anon/authenticated.';
--- FK index (schema-foreign-key-indexes): full, not partial — ON DELETE CASCADE from auth.users must find revoked rows too.
-create index payment_methods_owner_idx on public.payment_methods (owner_user_id);
 
 -- ── payment_operation_kinds: the registry. A new kind is a ROW, not a migration. ──
 -- effect drives the derived status (src/lib/payments/status.ts): commit = money reserved,
@@ -236,7 +218,17 @@ create table public.payment_operations (
   -- silently because a campaign or event was deleted.
   campaign_id          uuid not null references public.campaigns (id) on delete restrict,
   event_id             uuid not null references public.events (id) on delete restrict,
-  payment_method_id    uuid references public.payment_methods (id),
+  -- ── the card, on the operation where the provider returned it (a hold, or a simple charge — SUMIT saves a
+  --    reusable token unless CardTokenNotNeeded=true). NULL on every other operation. Owner 25.9: no separate table.
+  payment_method_type  text,            -- as the provider reports it (SUMIT PaymentMethod.Type: credit card / direct debit)
+  card_token_ref       text,            -- reusable CreditCard_Token (campaigns.card_token_ref today)
+  card_exp_month       smallint check (card_exp_month between 1 and 12),
+  card_exp_year        smallint check (card_exp_year between 2024 and 2100),
+  card_last4           text,            -- CreditCard_LastDigits (masked, safe to show)
+  card_mask            text,            -- CreditCard_CardMask
+  card_brand           text,            -- card brand (Visa / Isracard / …) as the provider reports it; filled after the charge
+  card_issuer          text,            -- issuing company, as the provider reports it; filled after the charge
+  citizen_id_secret    uuid,            -- vault.secrets.id — the ONLY link to the ת"ז
   kind                 text not null references public.payment_operation_kinds (kind),
   outcome              public.payment_operation_outcome not null default 'pending',
   amount               numeric(12,2) not null default 0 check (amount >= 0),
@@ -258,7 +250,6 @@ comment on table public.payment_operations is 'Append-only ledger of every money
 -- Indexes. Every FK column is indexed (schema-foreign-key-indexes: Postgres does not do it for you; cascades and joins scan otherwise).
 create index payment_operations_campaign_idx on public.payment_operations (campaign_id, occurred_at desc);  -- loadOperations: equality then order
 create index payment_operations_event_idx    on public.payment_operations (event_id);
-create index payment_operations_method_idx   on public.payment_operations (payment_method_id) where payment_method_id is not null;
 create index payment_operations_parent_idx   on public.payment_operations (parent_operation_id) where parent_operation_id is not null;
 -- UNIQUE: one SUMIT document (receipt/order) is recorded once. Recording the same receipt twice would double the
 -- collected sum. The backfill maps hold_order_document_id → authorize and sumit_charge_document_id
@@ -342,10 +333,17 @@ create unique index payment_operations_parent_uq
   where parent_slot and outcome in ('pending', 'review', 'succeeded');
 
 -- Append-only with controlled completion. Allowed transitions: pending → succeeded | failed | review,
--- review → succeeded | failed (the human reconciliation). Nothing else ever changes.
+-- review → succeeded | failed (the human reconciliation). One late fill: card_brand + card_issuer, once, from NULL, on a
+-- succeeded row that holds a card (it arrives only with a later charge document). Nothing else ever changes.
 create or replace function public.payment_operations_guard_update()
 returns trigger language plpgsql security invoker set search_path = '' as $$
 begin
+  if old.outcome = 'succeeded' and new.outcome = 'succeeded' and old.card_token_ref is not null
+     and old.card_brand is null and old.card_issuer is null
+     and (new.card_brand is not null or new.card_issuer is not null)
+     and (to_jsonb(new) - 'card_brand' - 'card_issuer') = (to_jsonb(old) - 'card_brand' - 'card_issuer') then
+    return new;
+  end if;
   if not (
        (old.outcome = 'pending' and new.outcome in ('succeeded', 'failed', 'review'))
     or (old.outcome = 'review'  and new.outcome in ('succeeded', 'failed'))
@@ -367,47 +365,27 @@ create trigger payment_operations_guard_update before update on public.payment_o
   for each row execute function public.payment_operations_guard_update();
 
 -- ── ACL: not part of the Data API. ──
-alter table public.payment_methods         enable row level security;
 alter table public.payment_operation_kinds enable row level security;
 alter table public.payment_operations      enable row level security;
-revoke all on table public.payment_methods, public.payment_operation_kinds, public.payment_operations from public, anon, authenticated;
+revoke all on table public.payment_operation_kinds, public.payment_operations from public, anon, authenticated;
 -- service_role keeps Supabase's default privileges (the public default ACL grants it full table rights on every new
 -- table; measured 2026-09-24) — the same as every other table here, by the owner's decision. Append-only is enforced
 -- by the two triggers above, not by privileges.
 -- No policies on purpose: RLS with none denies every non-bypass role; service_role bypasses RLS.
 
 -- ── Vault write + read, the SAME shape as integrations_write/read_credential (20260916002343). ──
--- Optional args carry `default null`: supabase gen types makes a no-default arg REQUIRED and non-nullable in TS
--- (types.generated.ts: integrations_write_credential Args), and createPaymentMethod passes number | null.
-create or replace function public.payment_methods_write(
-  p_owner_user_id        uuid,
-  p_provider_token_ref   text,
-  p_exp_month            smallint default null,
-  p_exp_year             smallint default null,
-  p_provider_customer_id bigint default null,
-  p_citizen_id           text default null
-)
+-- Write returns the secret id; the caller puts it on the operation row with the rest of the card (completeOperation).
+create or replace function public.payment_citizen_id_write(p_citizen_id text, p_campaign_id uuid)
 returns uuid
-language plpgsql
+language sql
 security invoker
 set search_path = ''
 as $$
-declare
-  v_id        uuid := extensions.uuid_generate_v7();   -- same generator as the table default
-  v_secret_id uuid;
-begin
-  if p_citizen_id is not null then
-    v_secret_id := vault.create_secret(p_citizen_id, 'pm:' || v_id::text, 'payment method citizen id', null);
-  end if;
-  insert into public.payment_methods
-    (id, owner_user_id, provider_token_ref, exp_month, exp_year, provider_customer_id, citizen_id_secret)
-  values
-    (v_id, p_owner_user_id, p_provider_token_ref, p_exp_month, p_exp_year, p_provider_customer_id, v_secret_id);
-  return v_id;
-end;
+  select vault.create_secret(p_citizen_id, 'pay:' || p_campaign_id::text || ':' || extensions.uuid_generate_v7()::text,
+                             'card-holder citizen id', null)
 $$;
 
-create or replace function public.payment_method_citizen_id(p_id uuid)
+create or replace function public.payment_citizen_id(p_operation_id uuid)
 returns text
 language sql
 security invoker
@@ -415,14 +393,14 @@ stable
 set search_path = ''
 as $$
   select s.decrypted_secret
-    from public.payment_methods m
-    join vault.decrypted_secrets s on s.id = m.citizen_id_secret
-   where m.id = p_id and m.revoked_at is null
+    from public.payment_operations o
+    join vault.decrypted_secrets s on s.id = o.citizen_id_secret
+   where o.id = p_operation_id
 $$;
-revoke execute on function public.payment_methods_write(uuid, text, smallint, smallint, bigint, text) from public, anon, authenticated;
-revoke execute on function public.payment_method_citizen_id(uuid) from public, anon, authenticated;
-grant execute on function public.payment_methods_write(uuid, text, smallint, smallint, bigint, text) to service_role;
-grant execute on function public.payment_method_citizen_id(uuid) to service_role;
+revoke execute on function public.payment_citizen_id_write(text, uuid) from public, anon, authenticated;
+revoke execute on function public.payment_citizen_id(uuid) from public, anon, authenticated;
+grant execute on function public.payment_citizen_id_write(text, uuid) to service_role;
+grant execute on function public.payment_citizen_id(uuid) to service_role;
 
 -- ── Records the owner's manual drop of 2026-09-24 so migration history matches the live schema. No-op live. ──
 alter table public.campaigns drop column if exists auth_expires_at;
@@ -433,8 +411,10 @@ alter table public.campaigns drop column if exists auth_expires_at;
 --    from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname like 'payment\_%';
 --    expect: anon f, auth f, sr t (default ACL, owner's decision)
 -- b) select count(*) from pg_policies where tablename like 'payment\_%';  -- 0
--- c) select has_function_privilege('anon','public.payment_method_citizen_id(uuid)','execute'),
---           has_function_privilege('service_role','public.payment_method_citizen_id(uuid)','execute'); -- f, t
+-- c) select has_function_privilege('anon','public.payment_citizen_id(uuid)','execute'),
+--           has_function_privilege('service_role','public.payment_citizen_id(uuid)','execute'); -- f, t
+-- c2) (ROLLBACK) on a succeeded authorize with a card: update card_brand/card_issuer from NULL → accepted; update again → check_violation;
+--     update card_brand together with amount → check_violation
 -- d) select kind, effect, once_per_campaign from public.payment_operation_kinds order by sort_order; -- 5 rows; authorize+charge once
 -- e) FK columns without an index (schema-foreign-key-indexes) — expect 0 rows (kind is the second column of
 --    one_pending_uq and once_uq, which the query counts;):
@@ -462,8 +442,9 @@ alter table public.campaigns drop column if exists auth_expires_at;
 -- ROLLBACK (manual): drop trigger payment_operation_kinds_guard_update on public.payment_operation_kinds; drop function public.payment_operation_kinds_guard_update();
 --   drop trigger payment_operations_before_insert on public.payment_operations; drop function public.payment_operations_before_insert();
 --   drop trigger payment_operations_guard_update on public.payment_operations; drop function public.payment_operations_guard_update();
---   drop function public.payment_methods_write(uuid, text, smallint, smallint, bigint, text);
---   drop function public.payment_method_citizen_id(uuid); drop table public.payment_operations, public.payment_operation_kinds, public.payment_methods;
+--   drop function public.payment_citizen_id_write(text, uuid); drop function public.payment_citizen_id(uuid);
+--   drop table public.payment_operations, public.payment_operation_kinds;
+--   delete from vault.secrets where name like 'pay:%';
 --   drop type public.payment_operation_outcome;
 ```
 
@@ -489,7 +470,7 @@ npx supabase db advisors --linked --type security
 
 ```bash
 git add supabase/migrations/<timestamp>_payment_operations_expand.sql src/lib/supabase/types.generated.ts
-git commit -m "feat(db): payment operations ledger — expand: payment_methods, payment_operation_kinds, payment_operations, Vault citizen id"
+git commit -m "feat(db): payment operations ledger — expand: payment_operation_kinds, payment_operations with card details, Vault citizen id"
 ```
 
 ---
@@ -669,44 +650,54 @@ export function paymentBadge(state: PaymentState): { label: string; variant: Bad
 
 ---
 
-### Task 3: אמצעי תשלום + ת"ז ב-Vault
+### Task 3: פרטי הכרטיס + ת"ז ב-Vault
 
 **Files:**
-- Create: `src/lib/payments/payment-methods.ts`, `src/lib/payments/payment-methods.test.ts`
-- Read first: `src/lib/integrations/credential-accessor.ts:140-170` (הקריאה ל-`integrations_read_credential`, אותו דפוס)
+- Create: `src/lib/payments/card.ts`, `src/lib/payments/card.test.ts`
+- Read first: `src/lib/integrations/credential-accessor.ts:140-170` (הקריאה ל-`integrations_read_credential`, אותו דפוס); `src/lib/sumit/types.generated.ts` (`OfficeGuy.Apps.Billing.MVC.API.Typed.PaymentMethod`: `Type`, `CreditCard_LastDigits`, `CreditCard_CardMask`, `CreditCard_Token`, תוקף; `Accounting_Typed_Payment_CreditCard.CardBrand`)
 
 **Interfaces:**
 - Produces:
   ```ts
-  export async function createPaymentMethod(admin: AdminClient, input: { ownerUserId: string; providerTokenRef: string; expMonth: number|null; expYear: number|null; providerCustomerId: number|null; citizenId: string|null }): Promise<string>;
-  export async function readCitizenId(admin: AdminClient, paymentMethodId: string): Promise<string | null>;
-```
+  export type CardDetails = { methodType: string | null; tokenRef: string; expMonth: number | null; expYear: number | null; last4: string | null; mask: string | null; citizenSecretId: string | null };
+  // The SUMIT PaymentMethod of a hold / charge response → CardDetails (without the ת"ז). null when no reusable token came back.
+  export function cardFromSumit(pm: { Type?: unknown; CreditCard_Token?: string | null; CreditCard_ExpirationMonth?: number | null; CreditCard_ExpirationYear?: number | null; CreditCard_LastDigits?: string | null; CreditCard_CardMask?: string | null } | null | undefined): Omit<CardDetails, 'citizenSecretId'> | null;
+  export async function saveCitizenId(admin: AdminClient, campaignId: string, citizenId: string | null): Promise<string | null>;  // Vault secret id
+  export async function readCitizenId(admin: AdminClient, operationId: string): Promise<string | null>;
+  ```
 
 - [ ] **Step 1: בדיקה נכשלת**
 
 ```ts
 import { describe, expect, it, vi } from 'vitest';
-import { createPaymentMethod, readCitizenId } from './payment-methods';
+import { cardFromSumit, readCitizenId, saveCitizenId } from './card';
 
 const rpcClient = (data: unknown, error: { message: string } | null = null) => ({ rpc: vi.fn().mockResolvedValue({ data, error }) });
 
-describe('payment methods — the citizen id never touches a table column', () => {
-  it('createPaymentMethod → payment_methods_write with the ת"ז as an RPC arg, returns the id', async () => {
+describe('card details — the citizen id never touches a table column', () => {
+  it('cardFromSumit keeps type, token, expiry, last4 and mask; the provider type is kept as text', () =>
+    expect(cardFromSumit({ Type: 1, CreditCard_Token: 'tok', CreditCard_ExpirationMonth: 7, CreditCard_ExpirationYear: 2031, CreditCard_LastDigits: '9183', CreditCard_CardMask: 'XXXXXXXXXXXX9183' }))
+      .toEqual({ methodType: '1', tokenRef: 'tok', expMonth: 7, expYear: 2031, last4: '9183', mask: 'XXXXXXXXXXXX9183' }));
+  it('cardFromSumit → null without a reusable token (CardTokenNotNeeded=true, or no PaymentMethod)', () => {
+    expect(cardFromSumit({ Type: 1, CreditCard_Token: null })).toBeNull();
+    expect(cardFromSumit(undefined)).toBeNull();
+  });
+  it('saveCitizenId → payment_citizen_id_write, returns the secret id; null ת"ז → no call, null', async () => {
     const admin = rpcClient('9d8c7b6a-5f4e-4d3c-ab2a-1f0e9d8c7b6a');
-    const id = await createPaymentMethod(admin as never, { ownerUserId: '0b2c6e1a-4c3d-4e5f-8a9b-1c2d3e4f5a6b', providerTokenRef: 'tok', expMonth: 9, expYear: 2031, providerCustomerId: 2327129071, citizenId: '316125434' });
-    expect(id).toBe('9d8c7b6a-5f4e-4d3c-ab2a-1f0e9d8c7b6a');
-    expect(admin.rpc).toHaveBeenCalledWith('payment_methods_write', { p_owner_user_id: '0b2c6e1a-4c3d-4e5f-8a9b-1c2d3e4f5a6b', p_provider_token_ref: 'tok', p_exp_month: 9, p_exp_year: 2031, p_provider_customer_id: 2327129071, p_citizen_id: '316125434' });
+    await expect(saveCitizenId(admin as never, '39334087-e68c-4c81-aea4-b465cfc205e2', '316125434')).resolves.toBe('9d8c7b6a-5f4e-4d3c-ab2a-1f0e9d8c7b6a');
+    expect(admin.rpc).toHaveBeenCalledWith('payment_citizen_id_write', { p_citizen_id: '316125434', p_campaign_id: '39334087-e68c-4c81-aea4-b465cfc205e2' });
+    const none = rpcClient('x');
+    await expect(saveCitizenId(none as never, '39334087-e68c-4c81-aea4-b465cfc205e2', null)).resolves.toBeNull();
+    expect(none.rpc).not.toHaveBeenCalled();
   });
-  it('failure → Hebrew, provider-free error', async () => {
-    await expect(createPaymentMethod(rpcClient(null, { message: 'permission denied for schema vault' }) as never, { ownerUserId: 'u', providerTokenRef: 't', expMonth: null, expYear: null, providerCustomerId: null, citizenId: null }))
-      .rejects.toThrow('שמירת אמצעי התשלום נכשלה');
+  it('saveCitizenId failure → Hebrew, provider-free error', async () => {
+    await expect(saveCitizenId(rpcClient(null, { message: 'permission denied for schema vault' }) as never, 'c', '316125434'))
+      .rejects.toThrow('שמירת פרטי הכרטיס נכשלה');
   });
-  it('readCitizenId → payment_method_citizen_id by id', async () => {
+  it('readCitizenId → payment_citizen_id by operation id; null on error or non-string', async () => {
     const admin = rpcClient('316125434');
-    await expect(readCitizenId(admin as never, '9d8c7b6a-5f4e-4d3c-ab2a-1f0e9d8c7b6a')).resolves.toBe('316125434');
-    expect(admin.rpc).toHaveBeenCalledWith('payment_method_citizen_id', { p_id: '9d8c7b6a-5f4e-4d3c-ab2a-1f0e9d8c7b6a' });
-  });
-  it('readCitizenId → null on error or non-string', async () => {
+    await expect(readCitizenId(admin as never, '01a0d536-cf40-7d60-8000-000000000001')).resolves.toBe('316125434');
+    expect(admin.rpc).toHaveBeenCalledWith('payment_citizen_id', { p_operation_id: '01a0d536-cf40-7d60-8000-000000000001' });
     await expect(readCitizenId(rpcClient(null, { message: 'x' }) as never, 'a')).resolves.toBeNull();
     await expect(readCitizenId(rpcClient(null) as never, 'a')).resolves.toBeNull();
   });
@@ -723,35 +714,40 @@ import type { Database } from '@/lib/supabase/types';
 
 type AdminClient = SupabaseClient<Database>;
 
-// The saved instrument and the card-holder citizen id SUMIT needs on every
-// saved-token charge (src/lib/sumit/capture.ts, CreditCard_CitizenID). The ת"ז
-// goes to vault.secrets inside payment_methods_write — one transaction, secret
-// + row together, like integrations_write_credential — and payment_methods
-// keeps only the secret's uuid. Both RPCs: security invoker, service_role only.
-export async function createPaymentMethod(
-  admin: AdminClient,
-  input: { ownerUserId: string; providerTokenRef: string; expMonth: number | null; expYear: number | null; providerCustomerId: number | null; citizenId: string | null },
-): Promise<string> {
-  const { data, error } = await admin.rpc('payment_methods_write', {
-    p_owner_user_id: input.ownerUserId,
-    p_provider_token_ref: input.providerTokenRef,
-    p_exp_month: input.expMonth,
-    p_exp_year: input.expYear,
-    p_provider_customer_id: input.providerCustomerId,
-    p_citizen_id: input.citizenId,
-  });
-  if (error || typeof data !== 'string') throw new Error('שמירת אמצעי התשלום נכשלה');
+export type CardDetails = { methodType: string | null; tokenRef: string; expMonth: number | null; expYear: number | null; last4: string | null; mask: string | null; citizenSecretId: string | null };
+
+// The card lives on the payment operation where the provider returned it (a hold, or a simple charge — SUMIT
+// saves a reusable token unless CardTokenNotNeeded=true). The ת"ז SUMIT needs on every saved-token charge
+// (capture.ts, CreditCard_CitizenID) goes to vault.secrets; the row keeps only the secret's uuid.
+export function cardFromSumit(
+  pm: { Type?: unknown; CreditCard_Token?: string | null; CreditCard_ExpirationMonth?: number | null; CreditCard_ExpirationYear?: number | null; CreditCard_LastDigits?: string | null; CreditCard_CardMask?: string | null } | null | undefined,
+): Omit<CardDetails, 'citizenSecretId'> | null {
+  if (!pm?.CreditCard_Token) return null;
+  return {
+    methodType: pm.Type == null ? null : String(pm.Type),
+    tokenRef: pm.CreditCard_Token,
+    expMonth: pm.CreditCard_ExpirationMonth ?? null,
+    expYear: pm.CreditCard_ExpirationYear ?? null,
+    last4: pm.CreditCard_LastDigits ?? null,
+    mask: pm.CreditCard_CardMask ?? null,
+  };
+}
+
+export async function saveCitizenId(admin: AdminClient, campaignId: string, citizenId: string | null): Promise<string | null> {
+  if (!citizenId) return null;
+  const { data, error } = await admin.rpc('payment_citizen_id_write', { p_citizen_id: citizenId, p_campaign_id: campaignId });
+  if (error || typeof data !== 'string') throw new Error('שמירת פרטי הכרטיס נכשלה');
   return data;
 }
 
-export async function readCitizenId(admin: AdminClient, paymentMethodId: string): Promise<string | null> {
-  const { data, error } = await admin.rpc('payment_method_citizen_id', { p_id: paymentMethodId });
+export async function readCitizenId(admin: AdminClient, operationId: string): Promise<string | null> {
+  const { data, error } = await admin.rpc('payment_citizen_id', { p_operation_id: operationId });
   if (error) return null;
   return typeof data === 'string' ? data : null;
 }
 ```
 
-- [ ] **Step 4: הצלחה + `npx tsc --noEmit`**, **Step 5: Commit** `feat(payments): payment methods with the citizen id in Vault`
+- [ ] **Step 4: הצלחה + `npx tsc --noEmit`**, **Step 5: Commit** `feat(payments): card details on the operation, citizen id in Vault`
 
 ---
 
@@ -762,8 +758,8 @@ export async function readCitizenId(admin: AdminClient, paymentMethodId: string)
 - Modify: `package.json`: `"payments:backfill": "esbuild scripts/payments-backfill.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist/payments-backfill.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/navigation=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native && node --env-file=.env.local dist/payments-backfill.cjs"` (אותם aliases כמו `owner-agent:smoke`; `--apply` מועבר אחרי `--`)
 
 **Interfaces:**
-- Consumes: Task 1, Task 3 (`createPaymentMethod`).
-- Produces: לכל קמפיין עם `capture_status` לא-null: `payment_methods` אחד (אם `card_token_ref`), ורצף פעולות לפי העמודות הישנות; לכל `event_cancellation_requests` עם `sumit_document_id`: פעולת `cancellation_charge`.
+- Consumes: Task 1, Task 3 (`saveCitizenId`).
+- Produces: לכל קמפיין עם `capture_status` לא-null: פרטי הכרטיס (אם `card_token_ref`) על שורת ה-`authorize`, ורצף פעולות לפי העמודות הישנות; לכל `event_cancellation_requests` עם `sumit_document_id`: פעולת `cancellation_charge`.
 
 **מה נמדד (24.9) ומה ייכתב:**
 
@@ -841,7 +837,7 @@ describe('planOperations', () => {
 
 ```ts
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createPaymentMethod } from '@/lib/payments/payment-methods';
+import { saveCitizenId } from '@/lib/payments/card';
 
 // Seen released (Billing_Status 3) in SUMIT's holds folder on 2026-09-24. Both predate hold_order_document_id
 // (30.8), so the reconciler can never see them. The folder's Billing_Date is the HOLD time, not the release time
@@ -901,9 +897,9 @@ async function main() {
   // the release insert must not leave the campaign half-migrated forever. Every planned op carries a deterministic
   // meta.backfill_key = '<campaign>:<kind>:<occurred_at>'; a rerun inserts only the keys that are missing.
   // No `source` filter: release rows are provider_sync/manual_backfill and must be seen too.
-  const { data: done } = await admin.from('payment_operations').select('id, campaign_id, kind, meta, payment_method_id').not('meta->>backfill_key', 'is', null);
-  const existingKey = new Map<string, { id: string; paymentMethodId: string | null }>();   // backfill_key → row
-  for (const r of done ?? []) { const k = (r.meta as { backfill_key?: string } | null)?.backfill_key; if (k) existingKey.set(k, { id: r.id, paymentMethodId: r.payment_method_id }); }
+  const { data: done } = await admin.from('payment_operations').select('id, campaign_id, kind, meta').not('meta->>backfill_key', 'is', null);
+  const existingKey = new Map<string, { id: string }>();   // backfill_key → row
+  for (const r of done ?? []) { const k = (r.meta as { backfill_key?: string } | null)?.backfill_key; if (k) existingKey.set(k, { id: r.id }); }
   const keyOf = (campaignId: string, op: { kind: string; occurred_at: string }) => `${campaignId}:${op.kind}:${op.occurred_at}`;
   // The only measured release time: the reconciler's activity_log row (recordReleaseActivity, sumit-hold-reconcile.ts:48-63;
   // meta = { amount, campaignId, holdOrderDocumentId }).
@@ -921,21 +917,21 @@ async function main() {
     n += 1;
     console.log(`campaign ${c.id.slice(0, 8)}: ${ops.map((o) => `${o.kind}/${o.outcome}${o.source !== 'app' ? '(' + o.source + ')' : ''}`).join(' → ')}`);
     if (!apply) continue;
-    // Rerun: if the authorize row already exists, reuse ITS payment method — never create a
-    // second payment_methods row + Vault secret for the same card.
-    const existingAuth = ops.filter((op) => op.kind === 'authorize').map((op) => existingKey.get(keyOf(c.id, op))).find(Boolean);
-    let paymentMethodId: string | null = existingAuth?.paymentMethodId ?? null;
-    if (c.card_token_ref && !existingAuth) {
-      if (!c.approved_by) throw new Error(`campaign ${c.id.slice(0, 8)}: approved_by is null`);
-      paymentMethodId = await createPaymentMethod(admin, { ownerUserId: c.approved_by, providerTokenRef: c.card_token_ref, expMonth: c.card_exp_month, expYear: c.card_exp_year, providerCustomerId: c.sumit_customer_id, citizenId: c.card_citizen_id });
-    }
+    // The card goes on the authorize row, created once: on a rerun the authorize row already exists and is skipped
+    // below, so no second Vault secret is ever written for the same card.
+    const authKey = ops.find((op) => op.kind === 'authorize');
+    const card = c.card_token_ref && authKey && !existingKey.has(keyOf(c.id, authKey))
+      ? { payment_method_type: '1', card_token_ref: c.card_token_ref, card_exp_month: c.card_exp_month, card_exp_year: c.card_exp_year,
+          card_last4: null, card_mask: null, card_brand: null,   // not recorded by the legacy columns; unknown for these 3
+          citizen_id_secret: await saveCitizenId(admin, c.id, c.card_citizen_id) }
+      : null;
     let parentId: string | null = null;
     for (const op of ops) {
       const key = keyOf(c.id, op);
       const already = existingKey.get(key);
       if (already) { if (op.kind === 'authorize') parentId = already.id; continue; }   // rerun: keep going from where it stopped
       const { data: row, error: e } = await admin.from('payment_operations')
-        .insert({ ...op, campaign_id: c.id, event_id: c.event_id, payment_method_id: paymentMethodId, parent_operation_id: op.kind === 'release' ? parentId : null, meta: { backfill_key: key } })
+        .insert({ ...op, ...(op.kind === 'authorize' && card ? card : {}), campaign_id: c.id, event_id: c.event_id, parent_operation_id: op.kind === 'release' ? parentId : null, meta: { backfill_key: key } })
         .select('id').single();
       if (e || !row) throw new Error(`insert ${op.kind} failed for ${c.id.slice(0, 8)}`);
       if (op.kind === 'authorize') parentId = row.id;
@@ -987,7 +983,7 @@ node --env-file=.env.local dist/payments-backfill.cjs --apply
 **Interfaces:**
 - Produces:
   ```ts
-  export async function recordOperation(admin, op: { campaignId: string; eventId: string; kind: string; outcome: OperationOutcome; amount: number; creditApplied?: number; paymentMethodId?: string|null; parentOperationId?: string|null; providerRef?: string|null; providerDocument?: { id: number; number: number|null; url: string|null } | null; source?: 'app'|'provider_sync'|'manual_backfill'; occurredAt?: string; note?: string|null; meta?: Record<string, unknown> }): Promise<string>;  // one-shot: outcome known at write time
+  export async function recordOperation(admin, op: { campaignId: string; eventId: string; kind: string; outcome: OperationOutcome; amount: number; creditApplied?: number; card?: CardDetails | null; parentOperationId?: string|null; providerRef?: string|null; providerDocument?: { id: number; number: number|null; url: string|null } | null; source?: 'app'|'provider_sync'|'manual_backfill'; occurredAt?: string; note?: string|null; meta?: Record<string, unknown> }): Promise<string>;  // one-shot: outcome known at write time
   // Two-phase (the mutex — replaces lockCampaignForHold/lockCampaignForCharge, verifier finding ב):
   export async function beginOperation(admin, op: Omit<Parameters<typeof recordOperation>[1], 'outcome'>): Promise<{ id: string } | { alreadyInProgress: true }>;  // inserts outcome='pending'; 23505 on payment_operations_one_pending_uq → alreadyInProgress
   // Compare-and-set: the caller states the outcome it expects to move FROM. An app flow (close-charge, the hold)
@@ -998,7 +994,7 @@ node --env-file=.env.local dist/payments-backfill.cjs --apply
     outcome: 'succeeded' | 'failed' | 'review';          // from 'review' only succeeded | failed (guard_update enforces too)
     amount?: number; creditApplied?: number;
     providerRef?: string | null; providerDocument?: { id: number; number: number | null; url: string | null } | null;
-    paymentMethodId?: string | null;                     // the authorize completion attaches the method created after SUMIT answered
+    card?: CardDetails | null;                           // set when the provider returned a reusable token (hold OR simple charge)
     occurredAt?: string;                                 // the provider's time, if known; otherwise the begin time stays
     note?: string | null;
   }): Promise<void>;  // UPDATE … where id = $id and outcome = $from; 0 rows → throw ('operation not in expected state')
@@ -1006,8 +1002,10 @@ node --env-file=.env.local dist/payments-backfill.cjs --apply
   // (charge_review is simply retried by close-charge: close-charge.ts:136,172,207,406).
   export async function latestOperation(admin, campaignId: string, kind: string, outcome?: OperationOutcome): Promise<{ id: string } | null>;
   export async function loadOperations(admin, campaignId: string): Promise<OperationRow[]>;  // joined with kinds.effect, for deriveStatus
+  export async function currentCard(admin, campaignId: string): Promise<(CardDetails & { operationId: string }) | null>;  // latest succeeded op with card_token_ref, ANY kind
+  export async function fillCardBrand(admin, campaignId: string, transactionRef: string): Promise<void>;  // best effort, see Step 4
 ```
-- Consumes: Task 2 `OperationRow`, Task 3 `createPaymentMethod`/`readCitizenId`.
+- Consumes: Task 2 `OperationRow`, Task 3 `CardDetails`/`cardFromSumit`/`saveCitizenId`/`readCitizenId`.
 
 - [ ] **Step 1: בדיקות נכשלות** (fake table client מ-`src/test/fake-table-client.ts`)
 
@@ -1057,9 +1055,9 @@ describe('ledger writes', () => {
     expect(reviewed.rows('payment_operations')[0]).toMatchObject({ outcome: 'succeeded', provider_document_id: 9 });
   });
   it('the authorize completion attaches the payment method created after SUMIT answered', async () => {
-    const db = createFakeTableClient({ payment_operations: [{ id: 'a1', campaign_id: 'c1', kind: 'authorize', outcome: 'pending', payment_method_id: null }] });
-    await completeOperation(db.client as never, 'a1', { from: 'pending', outcome: 'succeeded', amount: 200, paymentMethodId: 'pm-1', providerRef: '055528' });
-    expect(db.rows('payment_operations')[0]).toMatchObject({ outcome: 'succeeded', payment_method_id: 'pm-1', provider_ref: '055528' });
+    const db = createFakeTableClient({ payment_operations: [{ id: 'a1', campaign_id: 'c1', kind: 'authorize', outcome: 'pending', card_token_ref: null }] });
+    await completeOperation(db.client as never, 'a1', { from: 'pending', outcome: 'succeeded', amount: 200, card: { methodType: '1', tokenRef: 'tok', expMonth: 7, expYear: 2031, last4: '9183', mask: 'XXXXXXXXXXXX9183', citizenSecretId: 's-1' }, providerRef: '055528' });
+    expect(db.rows('payment_operations')[0]).toMatchObject({ outcome: 'succeeded', card_token_ref: 'tok', card_last4: '9183', citizen_id_secret: 's-1', provider_ref: '055528' });
   });
   it('loadOperations joins the effect from the registry and maps to OperationRow', async () => {
     const db = createFakeTableClient({
@@ -1074,10 +1072,13 @@ describe('ledger writes', () => {
 - [ ] **Step 2: כישלון. Step 3: מימוש `ledger.ts`** (`insert … select('id').single()`; `loadOperations` = `select('kind, outcome, amount, occurred_at, recorded_at, payment_operation_kinds!inner(effect)')` ממוין ב-`occurred_at, recorded_at`).
 
 - [ ] **Step 4: חיבור הכותבים הקיימים**, בלי לשנות את הכתיבה הישנה:
-  - `campaigns.ts` — `authorize` נכתב **פעם אחת, דו-שלבית** (audit-3 #25): `lockCampaignForHold` → `beginOperation({ kind: 'authorize', amount: hold.amount })` (alreadyInProgress = מה שהיום מחזיר "כבר בתהליך"); ה-id של השורה ה-pending עובר ב-`authorize/route.ts` יחד עם ה-lock; אחרי תשובת SUMIT: `recordCampaignHold` → `createPaymentMethod(...)` (ת"ז ל-Vault) ואז `completeOperation(id, { from: 'pending', outcome: 'succeeded', paymentMethodId, providerRef: hold.authNumber, providerDocument })`; `hold_failed`/`hold_review` → `completeOperation(id, { from: 'pending', outcome: 'failed'|'review' })`. אין `recordOperation` חד-פעמי ל-`authorize`. `lockCampaignForCharge` → `beginOperation({ kind: 'charge' })` (**בלי הורה**: חיוב חדש על הטוקן); `recordCampaignCharge` → `completeOperation(id, { from: 'pending', outcome: 'succeeded', amount, creditApplied, providerDocument })`; `markCampaignChargeOutcome('charge_failed'|'charge_review')` → `completeOperation(id, { from: 'pending', outcome: 'failed'|'review' })`; **`markCampaignChargeOutcome('nothing_to_charge', creditApplied)` → `completeOperation(id, { from: 'pending', outcome: 'succeeded', amount: 0, creditApplied })`** (audit finding 2: השורה ה-pending נסגרת, הזיכוי נרשם). עד Task 8 הכתיבה הישנה (UPDATE מסונן) נשארת לצד זה, וה-lock החדש הוא בדיקה כפולה.
+  - `campaigns.ts` — `authorize` נכתב **פעם אחת, דו-שלבית** (audit-3 #25): `lockCampaignForHold` → `beginOperation({ kind: 'authorize', amount: hold.amount })` (alreadyInProgress = מה שהיום מחזיר "כבר בתהליך"); ה-id של השורה ה-pending עובר ב-`authorize/route.ts` יחד עם ה-lock; אחרי תשובת SUMIT: `recordCampaignHold` → `card = cardFromSumit(hold.paymentMethod)` + `citizenSecretId = saveCitizenId(...)` ואז `completeOperation(id, { from: 'pending', outcome: 'succeeded', card, providerRef: hold.authNumber, providerDocument })` (`authorize.ts` מחזיר היום רק את הטוקן והתוקף — מרחיבים את ערך החזרה שלו ל-`paymentMethod`: `Type`, `CreditCard_LastDigits`, `CreditCard_CardMask`, טוקן ותוקף; לעולם לא `CreditCard_Number`/`CVV`); `hold_failed`/`hold_review` → `completeOperation(id, { from: 'pending', outcome: 'failed'|'review' })`. אין `recordOperation` חד-פעמי ל-`authorize`. `lockCampaignForCharge` → `beginOperation({ kind: 'charge' })` (**בלי הורה**: חיוב חדש על הטוקן); `recordCampaignCharge` → `completeOperation(id, { from: 'pending', outcome: 'succeeded', amount, creditApplied, providerDocument })`; `markCampaignChargeOutcome('charge_failed'|'charge_review')` → `completeOperation(id, { from: 'pending', outcome: 'failed'|'review' })`; **`markCampaignChargeOutcome('nothing_to_charge', creditApplied)` → `completeOperation(id, { from: 'pending', outcome: 'succeeded', amount: 0, creditApplied })`** (audit finding 2: השורה ה-pending נסגרת, הזיכוי נרשם). עד Task 8 הכתיבה הישנה (UPDATE מסונן) נשארת לצד זה, וה-lock החדש הוא בדיקה כפולה.
   - `campaigns.ts` `activateCampaign` (★★ verifier): ה-`extraGuard` על `capture_status` נשאר עד Task 8; מ-Task 8 הטריגר `campaigns_guard_activate` (DB) הוא השומר האטומי.
   - `sumit-hold-reconcile.ts` אחרי `update({ release_status: 'released' })`: `release` succeeded, `source: 'provider_sync'`, `parentOperationId` של ה-authorize, `occurredAt` = עכשיו (זמן הזיהוי, כמו שורת ה-`activity_log` שהוא כותב). **מ-Task 8 (אין `release_status`):** המועמדים הם פעולות `authorize` מוצלחות עם `provider_document_id` שאין להן `release` מוצלח (`not exists` על `parent_operation_id`); ההתאמה מול תיקיית SUMIT נשארת לפי `provider_document_id` ↔ `hold_order_document_id` של SUMIT; אם שני runs חופפים, `parent_uq` מכריע (23505 → מדלגים). בדיקה ב-Task 8: fake client עם authorize שכבר יש לו release → לא נכתב שוב.
-  - `close-charge.ts`: הת"ז נקראת דרך `readCitizenId(paymentMethodId)` כשיש `payment_method_id` על ה-authorize; אחרת מ-`campaign.card_citizen_id` (עד Task 8).
+  - `close-charge.ts`: הכרטיס נמצא דרך `currentCard(admin, campaignId)` — הפעולה המוצלחת האחרונה של הקמפיין שיש לה `card_token_ref`, **מכל סוג** (לא דווקא `authorize`); הטוקן, התוקף והת"ז (`readCitizenId(card.operationId)`) נקראים ממנה. בלי כרטיס ביומן — מ-`campaign.card_*` (עד Task 8). מספר הלקוח ב-SUMIT מ-`sumit_customers` לפי `campaigns.approved_by`. בדיקה: קמפיין שהכרטיס שלו הגיע מפעולת `charge` בלי `authorize` → החיוב משתמש בו.
+  - **מותג ומנפיק הכרטיס (הבעלים 25.9):** **נמדד 25.9 05:44 מול SUMIT, בקריאה בלבד, על חיוב אמיתי של ₪1:** `billing/payments/get` ו-`billing/payments/list` מחזירים סוג, 4 ספרות, מסכה ותוקף — **בלי מותג ובלי מנפיק**; `accounting/documents/getdetails` של הקבלה מחזיר `Payments[].Details_CreditCard = null`. לפי המפרט (`src/lib/sumit/types.generated.ts`), המותג והמנפיק נמצאים רק ב-`POST /creditguy/gateway/gettransaction/` (`Brand`, `Issuer`, `Acquirer` — **קודים מספריים**, לא שמות), עם `Core_APIPublicCredentials` ו-`ID` או `UniqueIdentifier` של העסקה; **טרם נבדק חי** — לא ידוע עדיין איזה מזהה של SUMIT מתאים ל-`ID` של העסקה. לפני Step 4: הבעלים מריץ קריאה אחת כזו על החיוב של 25.9 ומאשר את המבנה. אחרי כל `completeOperation(succeeded)` שיש לו מזהה עסקה: `fillCardBrand(admin, campaignId, transactionRef)` — best effort (timeout 60s, כישלון = לוג + נשאר NULL, לא מכשיל את החיוב), שומר את הקוד כטקסט ב-`card_brand`/`card_issuer` של שורת `currentCard` אם שניהם NULL (החריג היחיד ב-`guard_update`); התרגום משם-קוד לשם מוצג ("ויזה", "ישראכרט") הוא טבלת תצוגה בקוד, לא בסכימה. ה-sweep של שלב 5א משלים גם מותגים חסרים. בדיקות: תשובה עם `Brand`/`Issuer` → נשמרים; תשובה בלי → נשאר NULL בלי שגיאה; ערך קיים → לא נדרס.
+  - **חיוב פשוט הוא זרימה תקינה, והוא שומר טוקן קבוע:** חיוב J4 ב-SUMIT מחזיר `CreditCard_Token` לשימוש חוזר כברירת מחדל (כל עוד לא נשלח `CardTokenNotNeeded: true`; `raw-charge.ts:37,145`). לכן חיוב פשוט שומר כרטיס בדיוק כמו תפיסה: `cardFromSumit` + `saveCitizenId` → `card` על פעולת ה-`charge`, והחיוב הסופי משתמש בו דרך `currentCard`. שומר ההפעלה מסתפק בכל פעולה מוצלחת מסוג `commit` או `collect`. בסגירה, מה שכבר נגבה (`deriveStatus().collected`) מקוזז מהסכום. `currentCard` = null קורה רק אם נשלח במפורש `CardTokenNotNeeded: true`; אז יתרה לגבייה הולכת ל-`review`, לא לשגיאה.
+  - **הכרטיס אינו תלוי בתפיסה (החלטת הבעלים 2):** `cardFromSumit` + `saveCitizenId` רצים בכל נקודה שבה ספק מחזיר טוקן כרטיס, ופרטי הכרטיס נשמרים על הפעולה שבה זה קרה. היום הנקודה היחידה היא `authorize` (J5); זרימה שבה הכרטיס נשמר בחיוב ישיר, או בפעולה שאינה מזיזה כסף, לא דורשת שינוי ביומן, בשומר ההפעלה או בחיוב הסופי — רק שורת סוג ברישום.
   - `event-cancellation.ts:520`: לצד `sumit_document_id` גם `recordOperation({ kind: 'cancellation_charge', … meta: { cancellation_request_id } })`.
   - **timeout לכל קריאה ל-SUMIT (VERIFY-4):** `signal: AbortSignal.timeout(60_000)` ב-`authorize.ts:102`, `capture.ts:167`, `capture.ts:289`, `charge.ts:58`, `raw-charge.ts:152`. `AbortError` נופל ל-`catch` הקיים → `SumitNetworkError` → `review` באותו תהליך (לא retry). ה-sweep של שלב 5א נשאר רק למוות של התהליך עצמו (pm2 `kill_timeout: 45000`, `ecosystem.config.cjs:68`). בדיקה: mock fetch שלא עונה → נזרק אחרי 60s (fake timers) → `review`.
 
@@ -1115,15 +1116,15 @@ git commit -m "feat(payments): every payment writer also appends to payment_oper
 **Files:**
 - Modify: `src/lib/owner-agent/cores/billing.ts`, `src/lib/owner-agent/cores/campaigns.ts` (`stuckHolds` → פעולות `authorize` עם `outcome in ('pending','failed','review')` — כמו היום, `STUCK_CAPTURE_STATUSES` כולל `hold_failed`; חדש `openCommitments` = קמפיינים ש-`deriveStatus` שלהם `committed` וסטטוס קמפיין סגור). **שאילתה אחת** לכל הקמפיינים המועמדים (`.in('campaign_id', ids)`) ואז `deriveStatus` בזיכרון לפי `campaign_id`; לא שאילתה לכל קמפיין (data-n-plus-one).
 - Modify: `src/lib/owner-agent/consumer/primer.ts` (+ `primer.test.ts` drift): הטבלאות החדשות; "מצב תשלום = מחושב מ-`payment_operations` לפי `effect`"; קמפיין בלי פעולות = "אין פעולות תשלום" (Review Focus #3)
-- Modify: `src/lib/data/event-cancellation.ts` (`hasCardOnFile` מ-`payment_methods`; ת"ז דרך `readCitizenId`; קריאה של המסמך מ-`payment_operations` לפי `meta.cancellation_request_id`)
+- Modify: `src/lib/data/event-cancellation.ts` (`hasCardOnFile` = `currentCard` לא ריק; ת"ז דרך `readCitizenId(card.operationId)`; קריאה של המסמך מ-`payment_operations` לפי `meta.cancellation_request_id`)
 - Modify: `src/lib/data/event-stats.ts:175,296`, `src/lib/data/setup-steps.ts:31`
-- Modify (★★ verifier 24.9): `src/app/(admin)/admin/cancellations/[id]/page.tsx:41,44,96,124-126` — `campaign.chargeStatus`/`hasCardOnFile` (מ-`getCampaignForEventAdmin` ב-`event-cancellation.ts:206-231`) → `payment.status` + `paymentMethodId != null`; `request.sumitDocumentUrl` (מ-`ADMIN_SELECT` `event-cancellation.ts:118` → `mapAdminRow`:147) → `provider_document_url` של פעולת `cancellation_charge` (`meta.cancellation_request_id`), דרך `loadOperations`
+- Modify (★★ verifier 24.9): `src/app/(admin)/admin/cancellations/[id]/page.tsx:41,44,96,124-126` — `campaign.chargeStatus`/`hasCardOnFile` (מ-`getCampaignForEventAdmin` ב-`event-cancellation.ts:206-231`) → `payment.status` + `currentCard != null`; `request.sumitDocumentUrl` (מ-`ADMIN_SELECT` `event-cancellation.ts:118` → `mapAdminRow`:147) → `provider_document_url` של פעולת `cancellation_charge` (`meta.cancellation_request_id`), דרך `loadOperations`
 - Modify (★ מפת השפעה ב): `src/app/(customer)/app/events/[id]/campaign/[campaignId]/page.tsx` + `manage-client.tsx`, `.../campaign/[campaignId]/payment/page.tsx:90-123`, `src/app/(customer)/app/events/[id]/event-summary.tsx`, `src/app/(customer)/app/events/[id]/stats/page.tsx`, `src/lib/data/admin/callbacks.ts:652`, `src/lib/data/admin/users.ts:278`, `src/lib/data/billing.ts:113`, `src/lib/data/tax-ceiling.ts:30`, `src/lib/data/admin/sumit-test.ts:40`, `scripts/sumit-doc-check.ts:45`, `src/lib/owner-agent/consumer/reply-text.ts`
 - Create: `src/lib/payments/sums.ts` (+ test): `collectedSince(admin, since)`, `creditAppliedByEvent(admin, eventIds)` — שאילתה אחת לכל צרכן (הסוכן, `tax-ceiling`, `users`, `billing`). **שינוי משמעות מתועד (audit-3 #37):** היום שניהם סוכמים רק `charge_status='charged'`; מעכשיו כל `effect='collect'` מוצלח, כלומר **גם `cancellation_charge`**. לתקרת עוסק פטור זה נכון (גביית ביטול היא הכנסה). ל-"כמה נגבה החודש" של הסוכן — אותו דבר, והפריימר אומר זאת. היום 0 שורות כאלה, אין שינוי מספרי.
 - Migration (CLI): `<timestamp>_owner_agent_billing_sums_from_ledger` — `owner_agent_billing_sums(_since)` נכתבת מחדש על `payment_operations` **באותה חתימה (4 עמודות; `unvoided_credit_amount`/`credit_granted_amount` נשארות מ-`billing_credits`)**; `types:check` אחרי; `cores/billing.test.ts` מוכיח שהצרכן לא השתנה
-- Modify: `src/lib/data/campaigns.ts:56-57` (`CAMPAIGN_COLUMNS` בלי עמודות התשלום; `OwnerCampaign` מקבל `payment` מהיומן) ו-`:747-764` (רשימת העמודות של `getCampaignForCharge` → `payment_methods` + היומן)
+- Modify: `src/lib/data/campaigns.ts:56-57` (`CAMPAIGN_COLUMNS` בלי עמודות התשלום; `OwnerCampaign` מקבל `payment` מהיומן) ו-`:747-764` (רשימת העמודות של `getCampaignForCharge` → `currentCard` + היומן)
 
-- [ ] **Step 0א (owner 25.9, review lock):** פעולת אדמין חדשה `resolvePaymentReview(campaignId, operationId, { outcome: 'succeeded'|'failed', amount?, providerDocument?, note })` ב-`src/lib/data/admin/campaigns.ts` (gate `manage_billing` + `recordStaffAccess`, כמו שאר הקוראים שם) שקוראת `completeOperation(operationId, { from: 'review', … })` — ורק `from: 'review'`, כך שאדמין לא יכול לסגור שורה שעדיין `pending`; **ובדיקה מול SUMIT לפני ההכרעה (crash handling; VERIFY-4 תיקן שתי הנחות שגויות):** **אין ב-SUMIT חיפוש לפי `ExternalIdentifier`** (`swagger.json` `PaymentsController_Payments_List_Request` מקבל רק `Credentials/Date_From/Date_To/Valid/StartIndex`, `additionalProperties:false`; `Typed.Payment` מחזיר `CustomerID/Date/Amount/AuthNumber/ValidPayment` — בלי `ExternalIdentifier` ובלי `DocumentID`; וגם החיוב שולח את `auth_external_ref` של התפיסה, `close-charge.ts:344`, לא מזהה משלו). לכן פונקציה חדשה `probeSumitOperation(op)` ב-`src/lib/sumit/probe.ts` (קובץ חדש עם fetch משלו + `signal: AbortSignal.timeout(15_000)` כמו `health.ts:93`; + test עם fixtures): ל-`charge` — `POST /billing/payments/list/` עם `Date_From`/`Date_To` = ±1 יום סביב `recorded_at`, `Valid: true`, והתאמה אצלנו על `CustomerID` (= `payment_methods.provider_customer_id`) ו-`Amount` = סכום הפעולה (ו-`AuthNumber` אם קיים); ל-`authorize` — `POST /billing/paymentmethods/getforcustomer/` עם `Customer: { ID: <CustomerID> }, IncludeInactive: true` (הלוקאפ היחיד שעובד ל-J5, נמדד 14.7; ה-client לא קיים היום, רק טיפוסים) ומחזיר אם יש טוקן פעיל, ובנוסף `listCrmHolds` הקיים (`crm-holds.ts`) בהתאמה לפי סכום + `Billing_Date` ≈ `recorded_at`. התוצאה מוצגת כ-**הצעה** ("נמצא תשלום 120 ₪ ב-25.09, AuthNumber 0759469" / "לא נמצא"); **מספר המסמך אינו זמין מהחיפוש** ומוזן ידנית מה-dashboard של SUMIT, וההכרעה נשארת של אדם: `review` אצלנו פירושו "אולי חויב", ואף פעם לא retry אוטומטי; כפתור במסך `/admin/campaigns` על שורה במצב `review` ("אשר גבייה" עם מספר מסמך מ-SUMIT / "סמן כנכשל"). **היום אין פעולה כזו**: `charge_review` פשוט מנוסה שוב אוטומטית ב-`close-charge` (`close-charge.ts:136`). מעכשיו `review` חוסם עד הכרעה ידנית (אינדקס `once_uq`), ולכן הפעולה הזו חובה לפני Contract. בדיקה: fake client, שורה `review` → `succeeded` עם מסמך; `succeeded` → ניסיון נוסף נזרק.
+- [ ] **Step 0א (owner 25.9, review lock):** פעולת אדמין חדשה `resolvePaymentReview(campaignId, operationId, { outcome: 'succeeded'|'failed', amount?, providerDocument?, note })` ב-`src/lib/data/admin/campaigns.ts` (gate `manage_billing` + `recordStaffAccess`, כמו שאר הקוראים שם) שקוראת `completeOperation(operationId, { from: 'review', … })` — ורק `from: 'review'`, כך שאדמין לא יכול לסגור שורה שעדיין `pending`; **ובדיקה מול SUMIT לפני ההכרעה (crash handling; VERIFY-4 תיקן שתי הנחות שגויות):** **אין ב-SUMIT חיפוש לפי `ExternalIdentifier`** (`swagger.json` `PaymentsController_Payments_List_Request` מקבל רק `Credentials/Date_From/Date_To/Valid/StartIndex`, `additionalProperties:false`; `Typed.Payment` מחזיר `CustomerID/Date/Amount/AuthNumber/ValidPayment` — בלי `ExternalIdentifier` ובלי `DocumentID`; וגם החיוב שולח את `auth_external_ref` של התפיסה, `close-charge.ts:344`, לא מזהה משלו). לכן פונקציה חדשה `probeSumitOperation(op)` ב-`src/lib/sumit/probe.ts` (קובץ חדש עם fetch משלו + `signal: AbortSignal.timeout(15_000)` כמו `health.ts:93`; + test עם fixtures): ל-`charge` — `POST /billing/payments/list/` עם `Date_From`/`Date_To` = ±1 יום סביב `recorded_at`, `Valid: true`, והתאמה אצלנו על `CustomerID` (= `sumit_customers.sumit_customer_id` של `approved_by`) ו-`Amount` = סכום הפעולה (ו-`AuthNumber` אם קיים); ל-`authorize` — `POST /billing/paymentmethods/getforcustomer/` עם `Customer: { ID: <CustomerID> }, IncludeInactive: true` (הלוקאפ היחיד שעובד ל-J5, נמדד 14.7; ה-client לא קיים היום, רק טיפוסים) ומחזיר אם יש טוקן פעיל, ובנוסף `listCrmHolds` הקיים (`crm-holds.ts`) בהתאמה לפי סכום + `Billing_Date` ≈ `recorded_at`. התוצאה מוצגת כ-**הצעה** ("נמצא תשלום 120 ₪ ב-25.09, AuthNumber 0759469" / "לא נמצא"); **מספר המסמך אינו זמין מהחיפוש** ומוזן ידנית מה-dashboard של SUMIT, וההכרעה נשארת של אדם: `review` אצלנו פירושו "אולי חויב", ואף פעם לא retry אוטומטי; כפתור במסך `/admin/campaigns` על שורה במצב `review` ("אשר גבייה" עם מספר מסמך מ-SUMIT / "סמן כנכשל"). **היום אין פעולה כזו**: `charge_review` פשוט מנוסה שוב אוטומטית ב-`close-charge` (`close-charge.ts:136`). מעכשיו `review` חוסם עד הכרעה ידנית (אינדקס `once_uq`), ולכן הפעולה הזו חובה לפני Contract. בדיקה: fake client, שורה `review` → `succeeded` עם מסמך; `succeeded` → ניסיון נוסף נזרק.
 - [ ] **Step 0 (audit-3 #28, #29):** (א) `src/lib/payments/read.ts`: `attachPayment(campaigns: {id}[]) → Map<campaignId, PaymentState>` — שאילתה אחת ב-`createAdminClient()` על `payment_operations` עם `.in('campaign_id', ids)`, `deriveStatus` בזיכרון. כל קורא בצד הלקוח (`getCampaign` ועוד, cookie client) קורא את הקמפיין כמו היום ואז `attachPayment` **אחרי** `requireOwnedEvent`; `CAMPAIGN_COLUMNS` לא מקבל embed. (ב) `ADMIN_ATTENTION_FILTER` (`cores/campaigns.ts:51`, מחרוזת PostgREST על `capture_status`, בשימוש ב-`admin/campaigns.ts:260` וב-`needsAttention` `cores/campaigns.ts:95`) לא ניתן לביטוי כפילטר אחד כשהמידע בטבלת-בת. מוחלף בפונקציה `listAttentionCampaigns(admin)`: שאילתה 1 = `status in WINDDOWN_STATUSES`; שאילתה 2 = `status='approved'` + `attachPayment` + סינון `status in ('pending','declined','review')` בזיכרון; איחוד לפי id. `listCampaignsForAdmin` ו-`needsAttention` קוראים לאותה פונקציה, כך ש-"המספר של הסוכן = אורך הרשימה" נשמר. בדיקה: fake client עם קמפיין `approved` + `authorize` failed → מופיע; `approved` + `authorize` succeeded → לא.
 - [ ] **Step 1:** לכל קובץ: בדיקה שמוכיחה קריאה מהיומן (fake client), כישלון, החלפה, הצלחה.
 - [ ] **Step 2:** `npm run owner-agent:smoke` על 3 שאלות: "האם יש תפיסות פתוחות?", "כמה נגבה החודש?", "מה מצב התשלום של קאקון?"; תעד ב-`plans/owner-whatsapp-agent-plan.md`.
@@ -1145,7 +1146,8 @@ git commit -m "feat(payments): every payment writer also appends to payment_oper
 
 ```sql
 set lock_timeout = '5s';   -- first statement of the file: db push runs this file as one batch (no create/drop index), so it holds for all of it
--- Activation requires a payment method on file — nothing about amounts. (Owner 25.9: the recipient ceiling tied to
+-- Activation requires that SOME payment succeeded — money reserved (effect commit, e.g. a J5 hold) OR money taken
+-- (effect collect, e.g. a simple up-front charge). No specific kind, no saved card required, nothing about amounts. (Owner 25.9: the recipient ceiling tied to
 -- the hold amount is retired; billing is bounded by contacts actually reached, per the outcome-billing model.)
 -- Replaces activateCampaign's `.eq('capture_status','authorized')` guard, atomically, like campaigns_guard_cancel.
 create or replace function public.campaigns_guard_activate()
@@ -1156,19 +1158,17 @@ begin
   if new.status = 'active' and old.status in ('approved', 'scheduled', 'paused')
      and not exists (
        select 1 from public.payment_operations o
-        where o.campaign_id = new.id and o.outcome = 'succeeded' and o.payment_method_id is not null) then
-    raise exception 'campaign cannot be activated: no payment method on file' using errcode = 'check_violation';
+         join public.payment_operation_kinds k on k.kind = o.kind
+        where o.campaign_id = new.id and o.outcome = 'succeeded' and k.effect in ('commit', 'collect')) then
+    raise exception 'campaign cannot be activated: no successful payment' using errcode = 'check_violation';
   end if;
   return new;
 end $$;
 create trigger campaigns_guard_activate before update on public.campaigns
   for each row execute function public.campaigns_guard_activate();
 
--- reconcile_authorized_set / try_record_billed_result: the funded_cap (auth_amount-based) branch is REMOVED, not
--- re-pointed at the ledger. reconcile admits every eligible guest (no 'ceiling_full'); try_record bills every
--- exposed contact (no 'ceiling_reached'). Everything else in each body stays byte-identical (copy from
--- `pg_get_functiondef`, do not retype). The signed agreement (v5) already states the price as a formula of the
--- list, not a frozen number, so no customer-facing promise changes.
+-- reconcile_authorized_set / try_record_billed_result: NOT touched here. Migration 20260925003335_retire_funded_cap
+-- already removed their auth_amount read (funded_cap, 'ceiling_full', 'ceiling_reached'); they read no split column.
 -- campaigns_guard_cancel / cancel_campaign: replace the three `capture_status` lines and the `charge_status` line with
 --   and not exists (select 1 from public.payment_operations o join public.payment_operation_kinds k on k.kind=o.kind
 --                   where o.campaign_id = <id> and k.effect <> 'none' and o.outcome in ('succeeded','pending','review'))
@@ -1176,7 +1176,7 @@ create trigger campaigns_guard_activate before update on public.campaigns
 -- after a release). The ledger would allow a truer rule ("no open commit and nothing collected") — product decision,
 -- deliberately NOT taken in this plan.
 ```
-בדיקה (קריאה בלבד מול החי, בתוך ה-dry-run עם ROLLBACK): ניסיון `update campaigns set status='active'` על קמפיין `approved` בלי פעולה מוצלחת עם אמצעי תשלום נכשל ב-`check_violation`; על קאקון (authorize מוצלח עם `payment_method_id`) עובר; `select public.reconcile_authorized_set(...)` על קמפיין עם רשימה גדולה מ-`max_contacts` מחזיר `added`, לא `ceiling_full`; `pg_get_functiondef` של שתי הפונקציות לא מכיל `auth_amount`, `v_auth`, `v_funded_cap`, `v_cap`. `reconcile.integration.test.ts` **לא** רץ מול החי (Global Constraints); אם יוקם DB בדיקה — מריצים אותו שם אחרי `pg_tle` + `dbdev.install('cem-uuidv7')`.
+בדיקה (קריאה בלבד מול החי, בתוך ה-dry-run עם ROLLBACK): ניסיון `update campaigns set status='active'` על קמפיין `approved` בלי פעולה מוצלחת נכשל ב-`check_violation`; על קאקון (authorize מוצלח, `commit`) עובר; על קמפיין `approved` שיש לו רק `charge` מוצלח (`collect`, בלי פרטי כרטיס) עובר; `authorize` שנכשל בלבד → נכשל; לפני כתיבת המיגרציה: `pg_get_functiondef` של `reconcile_authorized_set` ו-`try_record_billed_result` לא מכיל אף אחת מ-26 העמודות המפוצלות (אם כן — עצור ודווח; אמור להיות נקי מאז `20260925003335`). `reconcile.integration.test.ts` **לא** רץ מול החי (Global Constraints); אם יוקם DB בדיקה — מריצים אותו שם אחרי `pg_tle` + `dbdev.install('cem-uuidv7')`.
 
 - [ ] **Step 3:** באותו קובץ מיגרציה, אחרי הפונקציות (`set lock_timeout = '5s'` בשורה **הראשונה של הקובץ**, לפני ה-`create trigger` של Step 2 שדורש SHARE ROW EXCLUSIVE, ולא רק לפני ה-`drop column`: `drop column` לוקח ACCESS EXCLUSIVE ומחכה מאחורי כל `for update` פתוח ב-`try_record_billed_result`/`reconcile_authorized_set`; אם נכשל על timeout, מריצים שוב בחלון שקט — audit finding 17):
 
@@ -1204,7 +1204,7 @@ alter table public.event_cancellation_requests drop column sumit_document_id, dr
 ```
 - [ ] **Step 4:** הסר את הכתיבות הלגאסי; עדכן את ההערות ב-`queues.ts:184`, `worker/main.ts:1532`, `sumit/capture.ts:21`, `crm-holds.ts:15,29`, `hold-status.ts:18`, `sumit-customers.ts`; `gen:types` → `tsc` מצביע על כל קורא שנשאר; תקן; `npm test`.
 - [ ] **Step 5:** הבעלים: גיבוי → `db push --dry-run` → `db push` → `gen:types` → `deploy`.
-- [ ] **Step 6: Commit** `feat(db): payment operations — contract: 26 payment columns dropped from campaigns (+2 from event_cancellation_requests), ceiling/cancel functions on the ledger`
+- [ ] **Step 6: Commit** `feat(db): payment operations — contract: 26 payment columns dropped from campaigns (+2 from event_cancellation_requests), cancel/activate guards on the ledger`
 
 ---
 
