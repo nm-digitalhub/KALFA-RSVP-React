@@ -107,6 +107,7 @@
     "@voximplant/voxengine-ci": "^36.0.0",
     "@voximplant/websdk": "5.3.0",
     "@workflowbuilder/sdk": "^2.3.0",
+    "@workflowbuilder/ui": "file:vendor/workflowbuilder-ui-0.1.0.tgz",
     "@xyflow/react": "^12.11.6",
     "@zxcvbn-ts/core": "^4.1.2",
     "@zxcvbn-ts/language-common": "^4.1.2",
@@ -197,11 +198,15 @@
     "vitest": "^5.0.1"
   },
   "allowScripts": {
-    "sharp@0.35.3": true,
-    "unrs-resolver@1.12.2": true,
-    "protobufjs@7.6.5": true,
-    "esbuild@0.28.2": true,
-    "puppeteer@25.7.0": true
+    "puppeteer": true,
+    "protobufjs": true,
+    "esbuild": true,
+    "unrs-resolver": true,
+    "sharp": true,
+    "keytar": true,
+    "@azure/msal-node-extensions": true,
+    "@microsoft/m365agentstoolkit-cli": true,
+    "@parcel/watcher": true
   },
   "overrides": {
     "sharp": "^0.35.3",
@@ -221,6 +226,14 @@
     },
     "@voximplant/voxengine-ci": {
       "yaml": "1.10.3"
+    },
+    "@workflowbuilder/ui": {
+      "@base-ui/react": "$@base-ui/react"
+    },
+    "@pnp/cli-microsoft365": {
+      "csv-parse": "^7.0.2",
+      "fast-xml-parser": "^5.11.1",
+      "uuid": "^14.0.2"
     }
   }
 }

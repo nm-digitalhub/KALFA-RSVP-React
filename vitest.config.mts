@@ -63,10 +63,11 @@ export default defineConfig({
     // runs. Inlining hands it to Vite, which stubs CSS imports to an empty
     // module because `test.css` is off.
     //
-    // Scoped to this one package on purpose: it is the only dependency a test
+    // Scoped to these two packages on purpose: the SDK is the only dependency a test
     // needs to import for browser-side code (catalogue/branch-handles.test.ts,
     // which pins the condition handle ids to the SDK's own getHandleId).
-    server: { deps: { inline: ['@workflowbuilder/sdk'] } },
+    // @workflowbuilder/ui imports its per-component stylesheets from its JS the same way.
+    server: { deps: { inline: ['@workflowbuilder/sdk', '@workflowbuilder/ui'] } },
     // Persist transformed modules across runs. Vitest's own diagnostic asked for
     // it: MEASURED 2026-09-23, 39.11s of transforming — 27% of the run — redone
     // from scratch on every `vitest run`.
