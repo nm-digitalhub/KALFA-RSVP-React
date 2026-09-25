@@ -8,7 +8,8 @@ import { sumitCardOutputFromSample } from './sumit-sample-output';
 // The SUMIT trigger's picker fields, derived from a real stored call.
 //
 // What this file holds: the fields come from the SAMPLE (so a folder we never
-// measured still gets a list), VALUES never survive (only keys and types), the
+// measured still gets a list), each field carries ONE example value in its
+// description (owner 25.9 — SUMIT's names do not describe their content), the
 // holds folder keeps its measured labels, and a hostile body cannot turn its
 // keys into anything the picker would offer as a broken or dangerous path.
 
@@ -73,16 +74,32 @@ describe('the holds folder keeps its measured list — the sample only adds', ()
   });
 
   it('a field seen in the call wears its measured label and type, not a guessed one', () => {
-    expect(out['properties.Billing_Amount.0']).toEqual(SUMIT_HOLD_FIELDS_OUTPUT['properties.Billing_Amount.0']);
+    const measured = SUMIT_HOLD_FIELDS_OUTPUT['properties.Billing_Amount.0'];
+    expect(out['properties.Billing_Amount.0']).toMatchObject({ type: measured.type, label: measured.label });
   });
 });
 
-describe('⚠️ values never survive — keys and types only', () => {
-  it('no personal value appears anywhere in the output', () => {
-    const text = JSON.stringify(sumitCardOutputFromSample(HOLD_BODY));
-    expect(text).not.toContain('לקוח לדוגמה');
-    expect(text).not.toContain('0000');
-    expect(text).not.toContain('2385274662');
+describe('each field shows the value it carried in the latest call', () => {
+  const out = sumitCardOutputFromSample(HOLD_BODY)!;
+
+  it('the example is in the description, prefixed "לדוגמה"', () => {
+    expect(out['properties.Billing_Customer.0.Name']?.description).toMatch(/^לדוגמה: לקוח לדוגמה\./);
+    expect(out['properties.Billing_PaymentMethod.0.Name']?.description).toContain('לדוגמה: כרטיס אשראי (0000)');
+  });
+
+  it('a measured field keeps its measured note after the example', () => {
+    expect(out['properties.Billing_Amount.0']?.description).toBe(
+      `לדוגמה: 1. ${SUMIT_HOLD_FIELDS_OUTPUT['properties.Billing_Amount.0'].description}`,
+    );
+  });
+
+  it('a long value is cut to 40 characters', () => {
+    const long = sumitCardOutputFromSample({ Folder: 1, Properties: { Note: ['א'.repeat(60)] } })!;
+    expect(long['properties.Note.0']?.description).toMatch(new RegExp(`^לדוגמה: ${'א'.repeat(40)}…\\. `));
+  });
+
+  it('a field measured in the holds folder but absent from this call gets no example', () => {
+    expect(out['properties.Billing_PaymentDocument.0.Name']?.description).not.toContain('לדוגמה');
   });
 });
 

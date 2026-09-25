@@ -568,9 +568,11 @@ export type RunSummary = {
 /**
  * The SUMIT trigger's picker fields, read off this workflow's latest SUMIT call.
  *
- * Returns KEYS AND TYPES ONLY — `sumitCardOutputFromSample` drops every value,
- * because the stored body carries a customer's name and card digits and the
- * editor needs only the shape. Same gate as the run list on the same page.
+ * Returns keys, types AND ONE EXAMPLE VALUE per field (in its description) —
+ * SUMIT's field names do not describe their content, so the picker needs the
+ * value to be usable (owner 25.9). The value may be a customer's name or card
+ * digits; the run list on the same page already shows the full body under the
+ * same `manage_settings` gate.
  *
  * `null` means "keep the fixed list": no SUMIT call yet, none of the recent
  * webhook runs is a SUMIT card (a `trigger.webhook` run shares the source), or

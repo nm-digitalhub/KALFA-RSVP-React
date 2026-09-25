@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from 'react';
 import { formatIsraelDateTime, formatIsraelTime } from '@/lib/date';
 import type { StreamEvent } from '@/lib/workflow/execution-events';
 
+import { OutputJsonView } from './output-json-view';
 import { toggleLog, useExecutionStore } from './use-execution-store';
 
 const SKIP_REASON_LABEL: Record<string, string> = {
@@ -97,8 +98,10 @@ function detailFor(event: StreamEvent): string | undefined {
     | undefined;
 
   switch (event.type) {
+    // A completed step's output is drawn as a tree by `EventRow`
+    // (`OutputJsonView`), not as one JSON line — so it has no text detail here.
     case 'node_completed':
-      return payload?.output === undefined ? undefined : JSON.stringify(payload.output);
+      return undefined;
     // ⚠️ THE FIELD THE ENGINE ATTACHED FOR THIS PANEL AND NOBODY READ.
     //
     // `run-workflow.ts` extends the vendor's `NodeWaitingPayload` with
@@ -169,6 +172,11 @@ function EventRow({
   const nodeLabel = (event.payload as { nodeLabel?: string } | undefined)?.nodeLabel;
 
   const detail = detailFor(event);
+  // A completed step's output, drawn as a collapsible tree. It is NOT part of
+  // the row's click-to-expand: the tree has its own arrows and field buttons,
+  // and a click there must not collapse the row.
+  const output =
+    event.type === 'node_completed' ? (event.payload as { output?: unknown } | undefined)?.output : undefined;
   const hasDetail = Boolean(detail);
   const truncated =
     detail && detail.length > DETAIL_PREVIEW_CHARS
@@ -214,10 +222,15 @@ function EventRow({
         )}
         {skipReason && <span className="text-muted-foreground">— {skipReason}</span>}
       </div>
-      {hasDetail && (
+      {detail && (
         <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words text-muted-foreground">
           {isExpanded ? detail : truncated}
         </pre>
+      )}
+      {output !== undefined && isNode && (
+        <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+          <OutputJsonView nodeId={event.nodeId as string} value={output} />
+        </div>
       )}
     </div>
   );

@@ -11,6 +11,7 @@ import {
 import { formatIsraelDateTime } from '@/lib/date';
 import { NODE_RUN_FORMAT } from '@/lib/workflow/catalogue/ui-formats';
 
+import { OutputJsonView } from './output-json-view';
 import { useExecutionStore, type NodeExecutionState } from './use-execution-store';
 
 // What this node did on the run being watched — beside its settings, not in a
@@ -176,16 +177,9 @@ function NodeRunControl() {
       {output ? (
         <div className="space-y-1">
           <span className="text-muted-foreground">פלט</span>
-          {/*
-            `wrap-anywhere` rather than a horizontal scroller: the panel is
-            19rem and a JSON line is longer than that, so a scroller would hide
-            the value behind a gesture nobody discovers. Same reasoning as the
-            RTL repair in sdk-overrides.css — content that does not fit should
-            wrap, not vanish.
-          */}
-          <pre className="overflow-x-auto rounded-md bg-muted p-2 text-xs wrap-anywhere whitespace-pre-wrap">
-            {output}
-          </pre>
+          {/* A tree, with each field name copying its `{{nodes.…}}` reference —
+              see output-json-view.tsx. A primitive output still prints as text. */}
+          <OutputJsonView nodeId={nodeId as string} value={state.output} />
         </div>
       ) : null}
 

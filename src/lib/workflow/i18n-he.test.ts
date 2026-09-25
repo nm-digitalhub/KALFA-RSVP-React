@@ -123,7 +123,16 @@ describe('coverage against the shipped English resource', () => {
     // The two plural forms are the exception and are real: i18next derives
     // `conditions.totalNumber_two` / `_other` from Hebrew's plural categories,
     // and neither exists in an English resource, whose categories are one/other.
+    //
+    // The two `plugins.validation.*` keys are also real: the SDK reads them
+    // (variable-text.tsx:197, general-information.ts:41) but ships them in no
+    // language, so without ours the editor printed the raw key.
     const extra = he.filter((key) => !en.includes(key)).sort();
-    expect(extra).toEqual(['conditions.totalNumber_other', 'conditions.totalNumber_two']);
+    expect(extra).toEqual([
+      'conditions.totalNumber_other',
+      'conditions.totalNumber_two',
+      'plugins.validation.missingDependency',
+      'plugins.validation.missingMentionNodePrefix',
+    ]);
   });
 });

@@ -244,6 +244,20 @@ const HE = {
       nodesWithErrors: 'צעדים עם שגיאות: {{nodesIds}}',
     },
   },
+  // Keys the SDK reads from the `plugins.validation` namespace but ships in NO
+  // language (measured: upstream 052c396 defines neither anywhere). Without them
+  // the editor printed the raw key — a chip pointing at a deleted step read
+  // `{{ plugins.validation.missingMentionNodePrefix (tmpl...) · folder }}`
+  // (variable-text.tsx:197). `addResourceBundle(deep)` merges this beside any
+  // plugin's own `plugins.*` keys.
+  plugins: {
+    validation: {
+      // Prefix of a chip whose step no longer exists in the diagram.
+      missingMentionNodePrefix: 'צעד שנמחק',
+      // A "general information" field that depends on a variable no longer available.
+      missingDependency: 'משתנה שהצעד תלוי בו כבר לא קיים בתהליך',
+    },
+  },
   deleteConfirmation: {
     text: 'האם למחוק?',
     cancel: 'ביטול',

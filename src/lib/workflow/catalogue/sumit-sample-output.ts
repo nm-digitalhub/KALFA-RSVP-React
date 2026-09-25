@@ -20,9 +20,14 @@ import {
 // entries. `flatten` (npm `flat`) produces exactly the paths the picker inserts
 // and `resolveTemplate` walks: `properties.Billing_Customer.0.Name`.
 //
-// ⚠️ KEYS AND TYPES LEAVE THE SERVER — NEVER VALUES. The payload carries a
-// customer's name and card digits; only the SHAPE is needed to offer a field,
-// so every value is reduced to a type here and dropped.
+// ONE EXAMPLE VALUE PER FIELD, IN ITS DESCRIPTION (owner's decision 25.9). The
+// names SUMIT sends do not describe their content — measured on folder
+// 1076735286, `Billing_PaymentsCount` holds the status "מאושר" and
+// `Billing_Amount` a date — so a picker of bare names could not be chosen from.
+// This reverses the earlier keys-and-types-only rule: the value may be a
+// customer's name or card digits. Whoever opens the editor already sees the same
+// body in the run log on the same page (same `manage_settings` gate), so no new
+// reader gains access. Values are cut to `MAX_EXAMPLE_CHARS`.
 //
 // ⚠️ THE PAYLOAD IS UNSIGNED, so its keys are hostile input too:
 //   • flattened UNDER a `properties` prefix, so no key can ever be the bare
@@ -41,6 +46,23 @@ const MAX_FIELDS = 80;
 const MAX_PATH_LENGTH = 120;
 const ISO_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
 const SAMPLED_NOTE = 'נמצא בקריאה האחרונה מ-SUMIT לתהליך הזה — ייתכן שלא יישלח בכל קריאה';
+const MAX_EXAMPLE_CHARS = 40;
+
+/** "לדוגמה: …" for the value seen in the latest call, or nothing when there is none to show. */
+function exampleOf(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'object') return null; // an empty {} / [] leaf — nothing to show
+  const text = String(value).trim();
+  if (text === '') return null;
+  const short = text.length > MAX_EXAMPLE_CHARS ? `${text.slice(0, MAX_EXAMPLE_CHARS)}…` : text;
+  return `לדוגמה: ${short}`;
+}
+
+function withExample(field: SumitCardOutputField, value: unknown): SumitCardOutputField {
+  const example = exampleOf(value);
+  if (!example) return field;
+  return { ...field, description: field.description ? `${example}. ${field.description}` : example };
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -92,11 +114,14 @@ export function sumitCardOutputFromSample(body: unknown): SumitCardOutput | null
     const parent = segments.at(-2);
     if (parent !== undefined && /^\d+$/.test(parent) && REFERENCE_INTERNALS.has(segments.at(-1)!)) continue;
 
-    sampled[path] = known[path] ?? {
-      type: typeOf(value),
-      label: segments.slice(1).join('.'),
-      description: SAMPLED_NOTE,
-    };
+    sampled[path] = withExample(
+      known[path] ?? {
+        type: typeOf(value),
+        label: segments.slice(1).join('.'),
+        description: SAMPLED_NOTE,
+      },
+      value,
+    );
     count += 1;
   }
   if (count === 0) return null;
