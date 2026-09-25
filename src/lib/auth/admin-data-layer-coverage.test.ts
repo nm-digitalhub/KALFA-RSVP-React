@@ -250,6 +250,8 @@ const COARSE_GATE_ALLOWED: Record<string, string> = {
   'src/lib/data/admin/nav-visibility.ts':
     'Which sidebar links to show. Read-only and touches no table at all — it returns nine booleans about the CALLER\'s own role. Naming a finer permission would be circular: answering "which permissions do you hold" cannot itself require one of them. Nav visibility is convenience, never authorization; the page keeps the gate.',
   'src/lib/data/admin/labels.ts': 'Pure label maps. No I/O at all.',
+  'src/lib/data/admin/campaign-hold-badge.ts':
+    'Pure badge derivation from three campaign columns the (gated) list reader already fetched. No I/O at all. Removed by the payment-ledger plan (Task 6).',
   'src/lib/data/admin/shared.ts': 'Shared types and helpers. No I/O at all.',
   'src/lib/data/admin/access-log.ts': 'Write-side audit helper called BY gated readers; gating it again would double-count.',
   'src/lib/data/admin/webhook-identity.ts': 'Pure derivation from a payload already fetched by a gated reader.',
