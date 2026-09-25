@@ -34,6 +34,7 @@ import { matchesKind } from '@/lib/workflow/trigger';
 import { toWorkflowDefinition } from '@/lib/workflow/adapter/to-definition';
 import { findArmBlockers } from '@/lib/workflow/catalogue/arm-check';
 import { findVoiceDialBlockers } from '@/lib/data/admin/voice-node-arm-check';
+import { retireSumitTriggers, syncSumitTriggers } from '@/lib/data/admin/sumit-trigger-subscriptions';
 import { runsFingerprint, RUNS_WINDOW } from '@/lib/workflow/runs-fingerprint';
 import { sumitCardOutputFromSample } from '@/lib/workflow/catalogue/sumit-sample-output';
 import type { SumitCardOutput } from '@/lib/workflow/nodes/trigger-sumit-card/definition';
@@ -206,6 +207,17 @@ export async function saveWorkflowDefinition(
   if ((updated?.length ?? 0) === 0) {
     throw new Error('התהליך נערך במקביל. רעננו את הדף לפני שמירה נוספת.');
   }
+
+  // A SUMIT trigger's folder / view / change type may have changed on an active
+  // workflow, or its node may be gone: bring SUMIT in line. Best effort — a
+  // third party must never fail a save; problems are kept on the row and
+  // retried on the next save or arm. A workflow with no SUMIT registration
+  // costs one indexed read here and no network call.
+  try {
+    await syncSumitTriggers(id);
+  } catch {
+    // swallowed on purpose, see above
+  }
 }
 
 export type ArmResult =
@@ -286,7 +298,11 @@ export async function setWorkflowActive(
     // AFTER the workflow is armed, and deliberately in that order: claiming the
     // role is a convenience, and a failure in it must not leave the owner with a
     // workflow they pressed "arm" on that is not armed.
-    const notice = await claimImportRole(workflow.data.definition);
+    const importNotice = await claimImportRole(workflow.data.definition);
+    // AFTER arming, like the role claim: SUMIT must only call an address that
+    // answers. A failure is reported, never un-arms the workflow.
+    const sumitProblems = await syncSumitTriggers(id).catch(() => ['רישום הטריגר ב-SUMIT נכשל']);
+    const notice = [importNotice, ...sumitProblems].filter(Boolean).join(' · ');
     return notice ? { ok: true, notice } : { ok: true };
   }
 
@@ -296,7 +312,10 @@ export async function setWorkflowActive(
     .eq('id', id);
 
   if (error) throw new Error('עדכון מצב התהליך נכשל');
-  return { ok: true };
+  // A disarmed address answers 404, and SUMIT suspends a trigger after five
+  // failures — so its registration leaves SUMIT now and returns on the next arm.
+  const sumitProblems = await syncSumitTriggers(id).catch(() => ['ביטול הטריגר ב-SUMIT נכשל']);
+  return sumitProblems.length > 0 ? { ok: true, notice: sumitProblems.join(' · ') } : { ok: true };
 }
 
 /**
@@ -434,6 +453,11 @@ export async function deleteWorkflow(id: string): Promise<DeleteResult> {
       ],
     };
   }
+
+  // Its SUMIT registrations are retired first: once the row is gone nothing
+  // would remember the addresses SUMIT still holds.
+  const sumitProblems = await retireSumitTriggers(id);
+  if (sumitProblems.length > 0) return { ok: false, errors: sumitProblems };
 
   const { error } = await supabase.from('workflows').delete().eq('id', id);
   if (error) throw new Error('מחיקת התהליך נכשלה');

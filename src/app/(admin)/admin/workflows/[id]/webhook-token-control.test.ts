@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { PALETTE_ITEMS } from '@/lib/workflow/catalogue/schemas';
 import { WEBHOOK_TOKEN_FORMAT } from '@/lib/workflow/catalogue/ui-formats';
@@ -11,6 +11,10 @@ import {
   webhookHashesMatch,
   webhookUrlFor,
 } from '@/lib/workflow/webhook-token';
+
+// The control imports a Server Action module; in a real build that is a
+// client reference, here it would drag `server-only` into the test.
+vi.mock('../actions', () => ({ registerSumitTriggerAction: vi.fn() }));
 
 import { webhookTokenRenderer } from './webhook-token-control';
 

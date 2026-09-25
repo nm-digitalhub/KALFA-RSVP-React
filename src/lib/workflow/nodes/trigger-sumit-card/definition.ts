@@ -29,17 +29,35 @@ export const isTrigger = true;
  * its own "פעולות אוטומציה" log). It cannot send a header, so this node is
  * ALWAYS in `address` mode — the node TYPE decides that, never a stored field.
  *
- * ⚠️ NO FOLDER, VIEW OR CHANGE-TYPE FIELD, and that is deliberate. All three are
- * chosen in SUMIT's own "יצירת טריגר" screen, which is where the filtering
- * happens: SUMIT sends only what its trigger selects. The same values stored
- * here would filter nothing — and on an unsigned payload they would add no
- * security either, since a caller holding the address can put any `Folder` in
- * the body. The panel tells the owner what to choose over there instead.
+ * FOLDER, VIEW AND CHANGE TYPE — OPTIONAL, AND THEY DO NOT FILTER HERE. They
+ * are what WE register in SUMIT (`/triggers/triggers/subscribe/`) on the owner's
+ * behalf, so SUMIT sends only what they select. Left blank, the owner creates the
+ * trigger in SUMIT's own "יצירת טריגר" screen instead, exactly as before these
+ * fields existed. On an unsigned payload they add no security either way: a
+ * caller holding the address can put any `Folder` in the body.
  */
 export type SumitCardTriggerConfig = {
   /** sha256 of the path segment. The address is shown once and never stored. */
   tokenHash: string;
+  /** SUMIT CRM folder id to register the trigger on; '' = registered by hand in SUMIT. */
+  folderId?: string;
+  /** SUMIT view id inside that folder — its filters choose the cards, its columns the fields. */
+  viewId?: string;
+  /** SUMIT's TriggerType. Spelled as SUMIT spells it; see `SUMIT_CHANGE_TYPES`. */
+  changeType?: string;
 };
+
+/**
+ * SUMIT's own change types (swagger `TriggerType`), with the Hebrew the panel
+ * shows. SUMIT's list, not ours — mirrored in `src/lib/sumit/crm-triggers.ts`.
+ */
+export const SUMIT_CHANGE_TYPES = [
+  { value: 'CreateOrUpdate', label: 'יצירה או עדכון' },
+  { value: 'Create', label: 'יצירה' },
+  { value: 'Update', label: 'עדכון' },
+  { value: 'Archive', label: 'העברה לארכיון' },
+  { value: 'Delete', label: 'מחיקה' },
+] as const;
 
 /**
  * The properties this node cannot run without.
@@ -68,6 +86,9 @@ export const activityProfile = 'default' as const;
  */
 export const deploymentBindings: Readonly<Record<string, 'identifier' | 'secret' | 'catalogue'>> = {
   tokenHash: 'identifier',
+  // SUMIT account ids: meaningless on another installation's SUMIT account.
+  folderId: 'identifier',
+  viewId: 'identifier',
 };
 
 // ---------------------------------------------------------------------------

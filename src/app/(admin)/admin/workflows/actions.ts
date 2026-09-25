@@ -24,6 +24,13 @@ import {
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { listVoximplantRules } from '@/lib/data/admin/voximplant-channel';
 import { listElevenLabsAgents } from '@/lib/data/admin/elevenlabs-agents';
+import {
+  listSumitFoldersForEditor,
+  listSumitViewsForEditor,
+  registerSumitTrigger,
+  type SumitListResult,
+  type SumitRegisterResult,
+} from '@/lib/data/admin/sumit-trigger-subscriptions';
 import { logActivity } from '@/lib/data/activity';
 import { startManualRun, type ManualRunResult } from '@/lib/workflow/manual-run';
 import {
@@ -282,4 +289,38 @@ export async function loadVoiceDialListsAction(): Promise<VoiceDialListsResult> 
       ? { ok: true, items: agentsRes.agents.map((a) => ({ value: a.agentId, label: a.name })) }
       : { ok: false, message: agentsRes.message },
   };
+}
+
+// ---------------------------------------------------------------------------
+// The SUMIT trigger node: folder / view lists and "רישום ב-SUMIT"
+// ---------------------------------------------------------------------------
+//
+// Thin wrappers, like the rest of this file: each data function checks
+// `manage_settings` itself. Loaded on demand, never on render — the editor must
+// open when SUMIT is unreachable.
+
+export async function loadSumitFoldersAction(): Promise<SumitListResult> {
+  return listSumitFoldersForEditor();
+}
+
+export async function loadSumitViewsAction(folderId: unknown): Promise<SumitListResult> {
+  return listSumitViewsForEditor(z.string().regex(/^\d{1,19}$/).parse(folderId));
+}
+
+const registerSumitSchema = z.object({
+  workflowId: z.uuid(),
+  nodeId: z.string().min(1).max(200),
+  url: z.url().max(2048),
+});
+
+/**
+ * Register the address just minted for a SUMIT trigger node. The URL is
+ * re-checked against the SAVED diagram inside `registerSumitTrigger` — the
+ * browser's word for it is not enough, because SUMIT will POST card data there.
+ */
+export async function registerSumitTriggerAction(input: unknown): Promise<SumitRegisterResult> {
+  const parsed = registerSumitSchema.parse(input);
+  const result = await registerSumitTrigger(parsed.workflowId, parsed.nodeId, parsed.url);
+  revalidatePath(`/admin/workflows/${parsed.workflowId}`);
+  return result;
 }

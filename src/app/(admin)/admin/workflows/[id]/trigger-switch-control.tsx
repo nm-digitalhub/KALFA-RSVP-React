@@ -18,7 +18,9 @@ import {
   type PaletteItemOrGroup,
 } from '@workflowbuilder/sdk';
 
-import { Button } from '@/components/ui/button';
+// The editor's own component library (@workflowbuilder/ui, the SDK's successor to
+// overflow-ui), not the app's shadcn primitives: it carries the editor's tokens.
+import { Button } from '@workflowbuilder/ui';
 import { TRIGGER_SWITCH_FORMAT } from '@/lib/workflow/catalogue/ui-formats';
 
 // WHAT STARTS THIS FLOW — and the ability to change it without rebuilding the
@@ -144,12 +146,12 @@ function TriggerSwitchControl() {
               <Button
                 key={trigger.type}
                 type="button"
-                size="sm"
-                variant={isCurrent ? 'default' : 'outline'}
+                size="s"
+                variant={isCurrent ? 'primary' : 'secondary'}
                 aria-pressed={isCurrent}
                 onClick={() => (isCurrent ? setPending(null) : setPending(trigger.type))}
+                prefixIcon={<Icon name={trigger.icon as IconType} />}
               >
-                <Icon name={trigger.icon as IconType} />
                 {trigger.label}
               </Button>
             );
@@ -167,10 +169,10 @@ function TriggerSwitchControl() {
               והתיאור יישמרו.
             </p>
             <div className="flex gap-2">
-              <Button type="button" size="sm" onClick={() => swap(pendingItem.type)}>
+              <Button type="button" size="s" onClick={() => swap(pendingItem.type)}>
                 החלפה
               </Button>
-              <Button type="button" size="sm" variant="outline" onClick={() => setPending(null)}>
+              <Button type="button" size="s" variant="secondary" onClick={() => setPending(null)}>
                 ביטול
               </Button>
             </div>

@@ -24,10 +24,15 @@ import {
 } from "react";
 
 import "@workflowbuilder/sdk/style.css";
+// Design tokens for @workflowbuilder/ui components used in custom controls. The SDK sets
+// html[data-theme] itself, which is what these tokens key on.
+import "@workflowbuilder/ui/tokens.css";
 // Immediately after, so its unlayered counters land on top of the SDK's reset.
 import "./sdk-overrides.css";
 
-import { Button } from "@/components/ui/button";
+// The editor's own component library (@workflowbuilder/ui, the SDK's successor to
+// overflow-ui), not the app's shadcn primitives: it carries the editor's tokens.
+import { Button } from "@workflowbuilder/ui";
 import { isTriggerType } from "@/lib/workflow/catalogue/nodes";
 import {
   buildPaletteItems,
@@ -53,6 +58,7 @@ import { normalizeLegacyProperties } from "./normalize-legacy-properties";
 import { checkboxListRenderer } from "./checkbox-list-control";
 import { headerRowsRenderer } from "./header-rows-control";
 import { webhookTokenRenderer } from "./webhook-token-control";
+import { sumitFolderRenderer } from "./sumit-folder-control";
 import { ExecutionHighlighting } from "./highlighting";
 import {
   integrationConnectionRenderer,
@@ -171,6 +177,8 @@ const JSON_FORM = {
     checkboxListRenderer,
     integrationConnectionRenderer,
     webhookTokenRenderer,
+    // The SUMIT trigger's folder + view, loaded from SUMIT on demand.
+    sumitFolderRenderer,
     // Not an input at all: the read-only report of what the selected node did on
     // the run being watched. It is here rather than behind the panel's `tabs`
     // prop because that prop's tab strip is gated on the node's visual template
@@ -458,8 +466,8 @@ export function WorkflowEditor({
           <span>{dialLists.errors.join(" · ")}</span>
           <Button
             type="button"
-            size="sm"
-            variant="outline"
+            size="s"
+            variant="secondary"
             disabled={isLoadingDialLists}
             onClick={loadDialLists}
           >
@@ -729,14 +737,14 @@ function WorkflowEditorLayout({
         >
           <Button
             type="button"
-            variant="ghost"
-            size="icon"
+            variant="ghost-secondary"
+            size="s"
+            shape="square"
             className="kalfa-workflow-panel-close"
             aria-label="סגירת מאפיינים"
             onClick={() => setPropertiesOpen(false)}
-          >
-            <X aria-hidden="true" />
-          </Button>
+            prefixIcon={<X aria-hidden="true" />}
+          />
           <WorkflowBuilder.PropertiesPanel />
         </aside>
       </div>

@@ -9,7 +9,9 @@ import {
   type JsonFormsRendererExtension,
 } from '@workflowbuilder/sdk';
 
-import { Checkbox } from '@/components/ui/checkbox';
+// The editor's own component library (@workflowbuilder/ui, the SDK's successor to
+// overflow-ui), not the app's shadcn primitives: it carries the editor's tokens.
+import { Checkbox } from '@workflowbuilder/ui';
 import { CHECKBOX_LIST_FORMAT } from '@/lib/workflow/catalogue/ui-formats';
 
 // A multi-select stored as an ARRAY OF STRINGS.
@@ -109,7 +111,7 @@ function CheckboxListControl({
                 id={id}
                 checked={selected.includes(choice.value)}
                 disabled={enabled === false}
-                onCheckedChange={(checked) => toggle(choice.value, checked === true)}
+                onChange={(event) => toggle(choice.value, event.target.checked)}
               />
               {choice.label}
             </label>

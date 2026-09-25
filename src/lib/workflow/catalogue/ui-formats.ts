@@ -21,6 +21,9 @@ export const INTEGRATION_CONNECTION_FORMAT = 'integration-connection';
 /** A generated webhook token: shown once, stored only as its hash. */
 export const WEBHOOK_TOKEN_FORMAT = 'webhook-token';
 
+/** The SUMIT trigger's folder + view picker (sumit-folder-control.tsx). */
+export const SUMIT_FOLDER_FORMAT = 'kalfa-sumit-folder';
+
 /**
  * A read-only report of what the selected node did on the run being watched.
  *

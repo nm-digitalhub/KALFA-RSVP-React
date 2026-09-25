@@ -2,7 +2,9 @@
 
 import { useState, useTransition } from 'react';
 
-import { Button } from '@/components/ui/button';
+// The editor's own component library (@workflowbuilder/ui, the SDK's successor to
+// overflow-ui), not the app's shadcn primitives: it carries the editor's tokens.
+import { Button } from '@workflowbuilder/ui';
 import {
   DRY_RUN_GUEST_CASES,
   type DryRunGuestCase,
@@ -126,7 +128,7 @@ export function TestPanel({ workflowId }: { workflowId: string }) {
           {pending ? 'רץ…' : 'הרצה'}
         </Button>
         {result && (
-          <Button type="button" variant="outline" onClick={clear} disabled={pending}>
+          <Button type="button" variant="secondary" onClick={clear} disabled={pending}>
             ניקוי
           </Button>
         )}

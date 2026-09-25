@@ -15,7 +15,9 @@
 // armed, the button says what it will do, and it asks once more.
 import { useEffect, useState, useTransition } from 'react';
 
-import { Button } from '@/components/ui/button';
+// The editor's own component library (@workflowbuilder/ui, the SDK's successor to
+// overflow-ui), not the app's shadcn primitives: it carries the editor's tokens.
+import { Button } from '@workflowbuilder/ui';
 import type { ManualRunContact, ManualRunEvent } from '@/lib/data/admin/workflows';
 
 import {
@@ -227,7 +229,7 @@ export function RunNowPanel({
       {!armed ? (
         <Button
           type="button"
-          variant="outline"
+          variant="secondary"
           disabled={!eventId || !contactId || pending}
           onClick={() => setArmed(true)}
         >
@@ -245,7 +247,7 @@ export function RunNowPanel({
             </Button>
             <Button
               type="button"
-              variant="ghost"
+              variant="ghost-secondary"
               onClick={() => setArmed(false)}
               disabled={pending}
             >

@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 
-import { Switch } from '@/components/ui/switch';
+// The editor's own component library (@workflowbuilder/ui, the SDK's successor to
+// overflow-ui), not the app's shadcn primitives: it carries the editor's tokens.
+import { Switch } from '@workflowbuilder/ui';
 
 import { isWatchedByUser, watchRun } from './run-watcher';
 
@@ -147,7 +149,7 @@ export function RunAutoWatch({ newestRun }: { newestRun: NewestRun }) {
 
   return (
     <label className="flex items-center gap-2 text-sm text-muted-foreground">
-      <Switch checked={enabled} onCheckedChange={onChange} />
+      <Switch checked={enabled} onChange={(checked) => onChange(checked)} />
       הצגה אוטומטית של הרצה חדשה על הקנבס
     </label>
   );

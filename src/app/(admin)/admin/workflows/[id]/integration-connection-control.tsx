@@ -22,7 +22,9 @@ import {
   type ReactNode,
 } from 'react';
 
-import { Button } from '@/components/ui/button';
+// The editor's own component library (@workflowbuilder/ui, the SDK's successor to
+// overflow-ui), not the app's shadcn primitives: it carries the editor's tokens.
+import { Button } from '@workflowbuilder/ui';
 import {
   OAUTH_POPUP_CHANNEL,
   OAUTH_POPUP_PARAM,
@@ -476,13 +478,13 @@ function IntegrationConnectionControl({
 
       <Button
         type="button"
-        variant="outline"
-        size="sm"
+        variant="secondary"
+        size="s"
         className="self-start"
         disabled={!canStart}
         onClick={connect}
+        prefixIcon={<Link2 aria-hidden="true" className="size-4" />}
       >
-        <Link2 aria-hidden="true" className="size-4" />
         {isConnecting ? 'שומר ופותח…' : 'חיבור חשבון חדש'}
       </Button>
 

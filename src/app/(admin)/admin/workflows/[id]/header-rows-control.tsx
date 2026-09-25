@@ -11,8 +11,9 @@ import {
 import { Plus, X } from 'lucide-react';
 import { useCallback } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+// The editor's own component library (@workflowbuilder/ui, the SDK's successor to
+// overflow-ui), not the app's shadcn primitives: it carries the editor's tokens.
+import { Button, Input } from '@workflowbuilder/ui';
 import { SECRET_REFERENCE_REGEX } from '@/lib/workflow/catalogue/types';
 import { HEADER_ROWS_FORMAT } from '@/lib/workflow/catalogue/ui-formats';
 
@@ -184,19 +185,20 @@ function HeaderRowsControl({
                 // real key.
                 spellCheck={false}
                 autoComplete="off"
+                state={unknown.length > 0 ? 'critical' : 'default'}
                 aria-invalid={unknown.length > 0 || undefined}
                 aria-describedby={unknown.length > 0 ? `${listId}-${index}-warn` : undefined}
               />
               <Button
                 type="button"
-                variant="ghost"
-                size="icon"
+                variant="ghost-secondary"
+                size="s"
+                shape="square"
                 aria-label={`הסרת הכותרת ${index + 1}`}
                 disabled={enabled === false}
                 onClick={() => commit(rows.filter((_, i) => i !== index))}
-              >
-                <X aria-hidden="true" className="size-4" />
-              </Button>
+                prefixIcon={<X aria-hidden="true" className="size-4" />}
+              />
             </div>
             {unknown.length > 0 ? (
               // A WARNING, never a block. This list is a snapshot from page load
@@ -231,12 +233,12 @@ function HeaderRowsControl({
       <Button
         type="button"
         variant="secondary"
-        size="sm"
+        size="s"
         disabled={enabled === false}
         onClick={() => commit([...rows, { name: '', value: '' }])}
         className="self-start"
+        prefixIcon={<Plus aria-hidden="true" className="size-4" />}
       >
-        <Plus aria-hidden="true" className="size-4" />
         הוספת כותרת
       </Button>
       </div>

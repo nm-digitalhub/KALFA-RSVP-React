@@ -5,7 +5,7 @@ import { getScope } from '@workflowbuilder/sdk';
 import type { UISchema } from '@workflowbuilder/sdk';
 
 import { identityControls, statusControl, triggerSwitchElement } from '../../catalogue/editor-shared';
-import { WEBHOOK_TOKEN_FORMAT } from '../../catalogue/ui-formats';
+import { SUMIT_FOLDER_FORMAT, WEBHOOK_TOKEN_FORMAT } from '../../catalogue/ui-formats';
 
 import type { SumitCardTriggerSchema } from './schema';
 
@@ -20,6 +20,21 @@ export const sumitCardTriggerUiSchema: UISchema = {
       sumitCardTriggerScope('properties.description'),
     ),
     {
+      // Folder AND view in one control: the view list depends on the folder, so
+      // the control loads both from SUMIT on demand and writes `viewId` beside it.
+      // 'Select', so that once this renderer strips its format marker the SDK's
+      // own Select draws the field (see sumit-folder-control.tsx).
+      type: 'Select',
+      scope: sumitCardTriggerScope('properties.folderId'),
+      label: 'תיקייה ב-SUMIT',
+      options: { format: SUMIT_FOLDER_FORMAT },
+    },
+    {
+      type: 'Select',
+      scope: sumitCardTriggerScope('properties.changeType'),
+      label: 'השינוי שמפעיל את התהליך',
+    },
+    {
       // The same control as the webhook trigger's. It asks `authModeFor`, which
       // answers `address` for this type whatever the row says — so it mints one
       // address, shows it once, and stores only the hash.
@@ -30,14 +45,14 @@ export const sumitCardTriggerUiSchema: UISchema = {
     },
 
     {
-      // SUMIT's own help article, step for step (10442304), because every
-      // choice that decides what fires is made there and not here.
+      // Two ways in, said plainly: we register the trigger (folder + view above,
+      // then the button under the address), or the owner does it in SUMIT.
       type: 'RichText',
       text:
-        '**איך מחברים:** ב-SUMIT, מודול טריגרים ← **יצירת טריגר**.\n\n' +
-        '1. **תיקייה ותצוגה** — התיקייה שעליה התהליך יעבוד, ותצוגה שבה הפילטרים בוחרים רק את הכרטיסים הרלוונטיים.\n' +
-        '2. **השינוי שיוזם את הטריגר** — יצירה, עדכון, העברה לארכיון או מחיקה.\n' +
-        '3. **שלבים לביצוע** — יצירת קריאת HTTP. הדביקו את הכתובת מלמעלה ובחרו סוג קריאה **JSON**.',
+        '**רישום אוטומטי:** בחרו תיקייה, תצוגה ושינוי, צרו כתובת ולחצו **רישום ב-SUMIT**. ' +
+        'הטריגר נרשם כשהתהליך פעיל, ומבוטל כשמכבים אותו.\n\n' +
+        '**רישום ידני (אם לא בחרתם תיקייה):** ב-SUMIT, מודול טריגרים ← **יצירת טריגר** — בחרו תיקייה ותצוגה, ' +
+        'את השינוי, ובשלבים לביצוע קריאת HTTP עם הכתובת ובסוג קריאה **JSON**.',
     },
     {
       type: 'Label',

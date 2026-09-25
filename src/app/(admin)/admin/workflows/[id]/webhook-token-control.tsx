@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
+import { useParams } from 'next/navigation';
 
 import {
   Icon,
@@ -12,8 +13,11 @@ import {
   type JsonFormsRendererExtension,
 } from '@workflowbuilder/sdk';
 
-import { Button } from '@/components/ui/button';
+// The editor's own component library (the SDK's successor to overflow-ui), not the app's
+// shadcn Button: it carries the editor's tokens, so this panel matches the fields beside it.
+import { Button } from '@workflowbuilder/ui';
 import { authModeFor } from '@/lib/workflow/catalogue/types';
+import * as sumitCardTriggerDefinition from '@/lib/workflow/nodes/trigger-sumit-card/definition';
 import { WEBHOOK_TOKEN_FORMAT } from '@/lib/workflow/catalogue/ui-formats';
 import {
   WEBHOOK_SECRET_HEADER,
@@ -22,6 +26,8 @@ import {
   hashWebhookToken,
   webhookUrlFor,
 } from '@/lib/workflow/webhook-token';
+
+import { registerSumitTriggerAction } from '../actions';
 
 // The webhook trigger's ADDRESS and its SECRET — two values, deliberately not
 // one.
@@ -71,6 +77,28 @@ function WebhookTokenControl({ data, handleChange, path, enabled, readonly }: Co
   const addressIsSecret = mode === 'address';
 
   const endpointPath = path.replace(/tokenHash$/, 'endpointId');
+
+  // SUMIT trigger only: register the fresh address in SUMIT for the owner. The
+  // server re-checks the address against the SAVED diagram, so a click before
+  // the auto-save lands is answered with "wait and retry", never a wrong URL.
+  const params = useParams<{ id: string }>();
+  const isSumit = nodeType === sumitCardTriggerDefinition.type;
+  const hasSumitChoice =
+    typeof properties.folderId === 'string' && properties.folderId !== '' &&
+    typeof properties.viewId === 'string' && properties.viewId !== '';
+  const [registering, startRegister] = useTransition();
+  const [registerResult, setRegisterResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const register = (url: string) =>
+    startRegister(async () => {
+      setRegisterResult(null);
+      try {
+        setRegisterResult(
+          await registerSumitTriggerAction({ workflowId: params.id, nodeId: selection?.node?.id ?? '', url }),
+        );
+      } catch {
+        setRegisterResult({ ok: false, message: 'הרישום ב-SUMIT נכשל' });
+      }
+    });
   const hasHash = typeof data === 'string' && data.trim() !== '';
   const canGenerate = enabled !== false && readonly !== true && !busy;
 
@@ -108,6 +136,7 @@ function WebhookTokenControl({ data, handleChange, path, enabled, readonly }: Co
         handleChange(endpointPath, generateWebhookEndpointId());
       }
       setFreshSecret(secret);
+      setRegisterResult(null);
       setConfirmingReplace(false);
     } finally {
       setBusy(false);
@@ -126,8 +155,8 @@ function WebhookTokenControl({ data, handleChange, path, enabled, readonly }: Co
           </code>
           <Button
             type="button"
-            variant="outline"
-            size="sm"
+            variant="secondary"
+            size="s"
             className="self-start"
             onClick={() => copy(address)}
           >
@@ -166,12 +195,12 @@ function WebhookTokenControl({ data, handleChange, path, enabled, readonly }: Co
       <div className="flex items-center gap-2">
         <Button
           type="button"
-          variant="outline"
-          size="sm"
+          variant="secondary"
+          size="s"
           disabled={!canGenerate}
           onClick={() => (hasHash ? setConfirmingReplace(true) : void generate())}
+          prefixIcon={<Icon name="Key" />}
         >
-          <Icon name="Key" />
           {addressIsSecret
             ? hasHash
               ? 'יצירת כתובת חדשה'
@@ -207,13 +236,13 @@ function WebhookTokenControl({ data, handleChange, path, enabled, readonly }: Co
             )}
           </p>
           <div className="flex gap-2">
-            <Button type="button" size="sm" disabled={!canGenerate} onClick={() => void generate()}>
+            <Button type="button" size="s" disabled={!canGenerate} onClick={() => void generate()}>
               {addressIsSecret ? 'יצירת כתובת חדשה' : 'יצירת סוד חדש'}
             </Button>
             <Button
               type="button"
-              size="sm"
-              variant="outline"
+              size="s"
+              variant="secondary"
               onClick={() => setConfirmingReplace(false)}
             >
               ביטול
@@ -241,13 +270,38 @@ function WebhookTokenControl({ data, handleChange, path, enabled, readonly }: Co
           </code>
           <Button
             type="button"
-            variant="outline"
-            size="sm"
+            variant="secondary"
+            size="s"
             className="self-start"
             onClick={() => copy(freshAddress ?? freshSecret)}
           >
             {freshAddress ? 'העתקת הכתובת' : 'העתקת הסוד'}
           </Button>
+          {isSumit && freshAddress && (
+            <div className="mt-2 flex flex-col gap-1 border-t pt-2">
+              {hasSumitChoice ? (
+                <Button
+                  type="button"
+                  size="s"
+                  className="self-start"
+                  isLoading={registering}
+                  disabled={registering || !params?.id}
+                  onClick={() => register(freshAddress)}
+                >
+                  רישום ב-SUMIT
+                </Button>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  לרישום אוטומטי בחרו למעלה תיקייה ותצוגה. בלי זה — הדביקו את הכתובת ידנית במסך הטריגרים של SUMIT.
+                </p>
+              )}
+              {registerResult && (
+                <p role="status" className={registerResult.ok ? 'text-sm' : 'text-sm text-destructive'}>
+                  {registerResult.message}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
 

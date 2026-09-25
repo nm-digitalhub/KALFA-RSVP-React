@@ -19,4 +19,8 @@ export const sumitCardTriggerDefaultPropertiesData: NodeDataProperties<SumitCard
   description: 'SUMIT מודיעה שכרטיס נוצר, עודכן, הועבר לארכיון או נמחק',
   // EMPTY: minted in the editor, shown once, stored only as a hash.
   tokenHash: '',
+  // Blank until the owner picks them; blank = the trigger is created by hand in SUMIT.
+  folderId: '',
+  viewId: '',
+  changeType: 'CreateOrUpdate',
 };

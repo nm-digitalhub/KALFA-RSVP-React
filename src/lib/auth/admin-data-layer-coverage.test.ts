@@ -145,6 +145,8 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // Split by what the function does, not by which page it serves. See the header
   // of workflows.ts for why the manual run additionally needs manage_voice.
   'src/lib/data/admin/workflows.ts': ['manage_settings', 'view_customer_data'],
+  // Registers workflow triggers in SUMIT and lists its folders — workflow configuration.
+  'src/lib/data/admin/sumit-trigger-subscriptions.ts': 'manage_settings',
   // Two keys because the module gates on WHAT A ROLE CONTROLS, not on one floor for
   // the whole file: reads span every provider under manage_settings, while pointing
   // voice_caller_id_* or voice_inbound_did at a different line is voice configuration

@@ -2,15 +2,14 @@
 
 // `trigger.sumit_card` — the JSON schema of its properties panel. Editor side.
 //
-// ⚠️ ONE CREDENTIAL FIELD AND NOTHING ELSE TO CONFIGURE. Folder, view and change
-// type are chosen in SUMIT's own "יצירת טריגר" screen, which is where the
-// filtering happens — see `SumitCardTriggerConfig`. The panel explains what to
-// pick THERE rather than offering copies here that would filter nothing.
+// The credential, plus the three OPTIONAL choices we register in SUMIT on the
+// owner's behalf (folder, view, change type) — see `SumitCardTriggerConfig`.
+// Blank means the owner creates the trigger in SUMIT's own screen, as before.
 import type { NodeSchema } from '@workflowbuilder/sdk';
 
 import { identityProperties, requiredText, statusProperty } from '../../catalogue/editor-shared';
 
-import { requiredFields } from './definition';
+import { requiredFields, SUMIT_CHANGE_TYPES } from './definition';
 
 export const sumitCardTriggerSchema = {
   type: 'object',
@@ -21,6 +20,14 @@ export const sumitCardTriggerSchema = {
     ...identityProperties,
     ...statusProperty,
     tokenHash: requiredText,
+    // Written by the folder picker (sumit-folder-control.tsx), which also writes
+    // `viewId` beside it. Plain strings: SUMIT ids, not a list we own.
+    folderId: { type: 'string' },
+    viewId: { type: 'string' },
+    changeType: {
+      type: 'string',
+      options: SUMIT_CHANGE_TYPES.map((t) => ({ value: t.value, label: t.label })),
+    },
   },
 } satisfies NodeSchema;
 

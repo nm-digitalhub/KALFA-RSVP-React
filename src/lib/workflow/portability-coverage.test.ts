@@ -50,6 +50,9 @@ const REVIEWED_PORTABLE: Record<string, string> = {
   // travels with the diagram unchanged. An import that dropped it would silently
   // narrow the endpoint back to POST.
   methods: 'HTTP verbs; a fact about the caller, not about this installation',
+  // SUMIT's own TriggerType (CreateOrUpdate, Update, …): the same words on every
+  // SUMIT account. The folder and view it applies to are bound; the verb travels.
+  changeType: 'a SUMIT trigger type; the same on every account',
 
   // ⚠️ THE MODE TRAVELS; WHAT IT AUTHENTICATES DOES NOT. `auth` records a fact
   // about the CALLER — "this system cannot send a header" is true of SUMIT on

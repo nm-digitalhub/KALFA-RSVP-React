@@ -15,7 +15,9 @@
 // enforces that — switching rows closes the previous EventSource first.
 import { useEffect } from 'react';
 
-import { Button } from '@/components/ui/button';
+// The editor's own component library (@workflowbuilder/ui, the SDK's successor to
+// overflow-ui), not the app's shadcn primitives: it carries the editor's tokens.
+import { Button } from '@workflowbuilder/ui';
 
 import { connectExecutionStream } from './execution-stream-adapter';
 import { resetExecution, setExecutionStarted, useExecutionStore } from './use-execution-store';
@@ -81,8 +83,8 @@ export function RunWatchButton({ runId }: { runId: string }) {
   return (
     <Button
       type="button"
-      size="sm"
-      variant={isWatching ? 'secondary' : 'outline'}
+      size="s"
+      variant={isWatching ? 'primary' : 'secondary'}
       aria-pressed={isWatching}
       onClick={() => {
         if (isWatching) {
