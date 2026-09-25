@@ -8,6 +8,7 @@ import {
   computeSuggestedCancellationAmount,
 } from '@/lib/data/event-cancellation';
 import { getCampaignBillingSummary } from '@/lib/data/billing';
+import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
 import { computeChargeAmount } from '@/lib/data/close-charge-amount';
 import { PageHeading, Badge, formatCurrency, formatDateTime } from '../../_components';
 import { ResolveForm } from './resolve-form';
@@ -57,7 +58,7 @@ export default async function AdminCancellationDetailPage({
           included: campaign.includedReached,
           overage: campaign.pricePerReached,
           reached: billingSummary.reachedCount,
-          ceiling: billingSummary.ceiling,
+          ceiling: isOpenCeilingAgreementVersion(campaign.tosVersion) ? null : billingSummary.ceiling,
           credits: 0,
         }).amount
       : 0;

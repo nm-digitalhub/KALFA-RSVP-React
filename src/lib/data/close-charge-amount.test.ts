@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { computeChargeAmount } from './close-charge-amount';
 
 const NEW = { base: 200, included: 200, overage: 4, credits: 0 };
+const OLD_UNCAPPED = { base: 0, included: 0, overage: 4, credits: 0 };
 // New-model ceiling for a funded set of 300: 200 + max(0, 300-200)*4 = 600.
 const NEW_CEILING = 600;
 
@@ -19,7 +20,7 @@ describe('computeChargeAmount — pre-model / pre-S3 campaign (base=0, included=
     expect(computeChargeAmount({ ...OLD, reached: 21, ceiling: 152 }).amount).toBe(84);
   });
 
-  it('caps at the ceiling (old semantics)', () => {
+  it('caps at a frozen ceiling (v4-and-earlier agreement states a number)', () => {
     // 30 reached × 4 = 120, ceiling 100 → capped at 100.
     expect(computeChargeAmount({ ...OLD, reached: 30, ceiling: 100 }).amount).toBe(100);
   });
@@ -37,9 +38,22 @@ describe('computeChargeAmount — new model (base ₪200, included 200, overage 
     expect(computeChargeAmount({ ...NEW, reached: 300, ceiling: NEW_CEILING }).amount).toBe(600);
   });
 
-  it('never exceeds the signed ceiling', () => {
-    // reached 500 would gross 200 + 300*4 = 1400, but the funded ceiling caps it.
+  it('never exceeds a frozen signed ceiling', () => {
+    // reached 500 would gross 200 + 300*4 = 1400, but the v4 PDF's number caps it.
     expect(computeChargeAmount({ ...NEW, reached: 500, ceiling: NEW_CEILING }).amount).toBe(600);
+  });
+});
+
+describe('computeChargeAmount — open ceiling (v5+ agreement): ceiling null, no cap', () => {
+  it('bills every reached contact above `included` with no upper bound', () => {
+    // 500 reached would be capped at 600 under a frozen v4 ceiling; open → 200 + 300×4.
+    expect(computeChargeAmount({ ...NEW, reached: 500, ceiling: null }).amount).toBe(1400);
+  });
+  it('the pre-model formula is uncapped too', () => {
+    expect(computeChargeAmount({ ...OLD_UNCAPPED, reached: 30, ceiling: null }).amount).toBe(120);
+  });
+  it('credits still come off the full gross', () => {
+    expect(computeChargeAmount({ ...NEW, reached: 500, ceiling: null, credits: 400 })).toEqual({ amount: 1000, creditApplied: 400 });
   });
 });
 

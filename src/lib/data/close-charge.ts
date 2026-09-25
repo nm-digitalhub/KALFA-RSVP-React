@@ -17,6 +17,7 @@ import {
   getCampaignCreditTotal,
 } from '@/lib/data/billing';
 import { computeChargeAmount } from '@/lib/data/close-charge-amount';
+import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
 import { getSignedAgreementVersion } from '@/lib/data/agreements';
 import { isBaseFeeAgreementVersion } from '@/lib/agreements/template';
 import { checkOsekPaturCeilingAfterCharge } from '@/lib/data/tax-ceiling';
@@ -100,13 +101,14 @@ async function closeEventAfterSettlement(eventId: string): Promise<void> {
 
 // Close a campaign and charge the held card for the flat-base + included +
 // overage total. Fail-closed; server-derives amount = base + max(0, reached −
-// included) × overage, capped at the signed ceiling, minus credits (see
-// computeChargeAmount; base/included = 0 ⇒ pure per-reached, unchanged for
+// included) × overage, minus credits, capped at the signed ceiling ONLY for a
+// v4-and-earlier agreement (a frozen number in the PDF); v5+ states a formula
+// and is not capped (see computeChargeAmount; base/included = 0 ⇒ pure per-reached, unchanged for
 // pre-model campaigns); charges at most once (atomic guard); retry-tolerant
 // (an already-closed campaign in a retryable charge state proceeds to charge).
 // Authorization: platform-admin only (billing operation).
 // opts.overrideAmount (cancellation-resolve flow only): replaces the computed
-// total with an admin-confirmed amount, still capped at the ceiling — every
+// total with an admin-confirmed amount, capped the same way — every
 // other safety property (lock, terminal-state guard, receipt, D5 guard) is
 // unchanged. Every existing caller omits opts and gets byte-identical behavior.
 export async function closeCampaignAndCharge(
@@ -173,14 +175,34 @@ export async function closeCampaignAndCharge(
     return { outcome: 'review', amount: 0 };
   }
 
+  // The signed agreement version drives two decisions below: whether the base
+  // fee may be billed (D5) and whether a frozen ceiling caps the total. A DB
+  // error reading the signature must NOT terminally settle a wrong amount →
+  // review, exactly like the summary/credit reads above.
+  let signedVersion: string | null;
+  try {
+    signedVersion = await getSignedAgreementVersion(campaignId);
+  } catch {
+    await markCampaignChargeOutcome(campaignId, 'charge_review');
+    return { outcome: 'review', amount: 0 };
+  }
+
   // Flat-base + included + overage. base/included from the campaign SNAPSHOT
   // (S3 at authorize); NULL ⇒ 0 = pre-model / pre-S3 campaign ⇒ reduces to pure
   // per-reached (Σ reached × price_per_reached), verified behaviour-neutral for
-  // the live campaigns. price_per_reached is the per-reached (overage) rate. The
-  // ceiling fallback preserves the prior truthiness (0/NULL → summary ceiling).
-  const ceiling = campaign.max_charge_ceiling
-    ? campaign.max_charge_ceiling
-    : (summary?.ceiling ?? 0);
+  // the live campaigns. price_per_reached is the per-reached (overage) rate.
+  //
+  // Ceiling: an open-ceiling agreement (v5+) states the price as a formula of
+  // the list, so nothing caps the total (the funded recipient cap was retired
+  // 2026-09-25; `reached` may exceed what the hold covered, and every reached
+  // contact is billed). A v4-and-earlier PDF states a frozen number the customer
+  // relied on, so that number still caps. The 0/NULL → summary fallback keeps
+  // the prior truthiness for those.
+  const ceiling: number | null = isOpenCeilingAgreementVersion(signedVersion)
+    ? null
+    : campaign.max_charge_ceiling
+      ? campaign.max_charge_ceiling
+      : (summary?.ceiling ?? 0);
 
   // D5 GUARD — bind the base-fee to the SIGNED contract. The campaign may carry a
   // snapshotted base (the gate was on at authorize), but the ₪200 activation fee
@@ -190,23 +212,14 @@ export async function closeCampaignAndCharge(
   // the global gate's state or timing.
   //   NOTE: suppression does NOT merely lower the amount — zeroing `included`
   //   removes the free tier, so per-reached gross can exceed the base+overage
-  //   gross. The overcharge guarantee is NOT "always lower"; it is the hard cap:
-  //   computeChargeAmount caps at `ceiling` = the exact number in the signed PDF
-  //   (agreements.ts passes campaign.max_charge_ceiling), so charge ≤ signed
-  //   ceiling in every branch. Billing every reached contact with no free tier is
-  //   precisely what a v3 signer's contract states (template §3).
+  //   gross. The overcharge guarantee for those (v3 and earlier) signers is the
+  //   hard cap: their PDF states a frozen ceiling and `ceiling` above is that
+  //   number, so charge ≤ signed ceiling in every branch. Billing every reached
+  //   contact with no free tier is precisely what a v3 signer's contract states
+  //   (template §3).
   let effectiveBase = campaign.base_price ?? 0;
   let effectiveIncluded = campaign.included_reached ?? 0;
   if (effectiveBase > 0 || effectiveIncluded > 0) {
-    let signedVersion: string | null;
-    try {
-      signedVersion = await getSignedAgreementVersion(campaignId);
-    } catch {
-      // A real DB error reading the signature must NOT terminally settle a wrong
-      // amount — route to review, exactly like the summary/credit reads above.
-      await markCampaignChargeOutcome(campaignId, 'charge_review');
-      return { outcome: 'review', amount: 0 };
-    }
     if (!isBaseFeeAgreementVersion(signedVersion)) {
       effectiveBase = 0;
       effectiveIncluded = 0;
@@ -227,8 +240,8 @@ export async function closeCampaignAndCharge(
     }
   }
 
-  // final = max(0, min(base + max(0, reached − included) × overage, ceiling) −
-  // credits), rounded to agorot (§14/D5/G4).
+  // final = max(0, base + max(0, reached − included) × overage − credits),
+  // capped at `ceiling` only when it is a number (§14/D5/G4).
   const computed = computeChargeAmount({
     base: effectiveBase,
     included: effectiveIncluded,
@@ -243,11 +256,13 @@ export async function closeCampaignAndCharge(
   // below (idempotency lock, terminal-state guard, receipt generation,
   // Slack alert, D5 guard already applied above) still applies identically —
   // overrideAmount only swaps WHAT gets charged, never HOW it gets charged.
-  // Never allow it to exceed the signed ceiling, regardless of the caller's
-  // request.
+  // Never allow it to exceed a frozen signed ceiling, regardless of the caller's
+  // request (an open-ceiling agreement has none).
   const amount =
     opts?.overrideAmount !== undefined
-      ? Math.min(Math.max(0, opts.overrideAmount), ceiling)
+      ? ceiling === null
+        ? Math.max(0, opts.overrideAmount)
+        : Math.min(Math.max(0, opts.overrideAmount), ceiling)
       : computed.amount;
   const creditApplied = opts?.overrideAmount !== undefined ? 0 : computed.creditApplied;
 
@@ -272,7 +287,7 @@ export async function closeCampaignAndCharge(
   //
   // This is presentation, never arithmetic: captureHeldCardSumit re-checks that
   // the rows sum to `amount` and silently falls back to the single line if they
-  // do not (e.g. the ceiling cap bound and the gross no longer matches). So a
+  // do not (e.g. a frozen ceiling bound and the gross no longer matches). So a
   // mistake here costs receipt detail, never a wrong charge.
   const overageCount =
     opts?.overrideAmount !== undefined

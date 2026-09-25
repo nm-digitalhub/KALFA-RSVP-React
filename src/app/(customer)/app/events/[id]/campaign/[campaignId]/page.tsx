@@ -173,6 +173,7 @@ export default async function CampaignManagePage({
           price_per_reached: campaign.price_per_reached,
           max_contacts: campaign.max_contacts,
           max_charge_ceiling: campaign.max_charge_ceiling,
+          tos_version: campaign.tos_version,
           final_charge_amount: campaign.final_charge_amount,
           credit_applied: campaign.credit_applied,
           capture_status: campaign.capture_status,

@@ -195,6 +195,9 @@ export type CampaignForCancellationAdmin = {
   // — lets the admin UI state the outcome definitively instead of hedging
   // with "if card details are on file".
   hasCardOnFile: boolean;
+  // Signed/approved agreement version — an open-ceiling version (v5+) means the
+  // accrued preview is not capped at maxChargeCeiling.
+  tosVersion: string | null;
   // Needed to compute the live accrued preview with computeChargeAmount —
   // the campaign_billing_summary RPC's own `accrued` is base/overage-blind
   // (verified gap, 2026-08-28), so callers must fold these in themselves.
@@ -211,7 +214,7 @@ export async function getCampaignForEventAdmin(
   const { data, error } = await admin
     .from('campaigns')
     .select(
-      'id, charge_status, max_charge_ceiling, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, base_price, included_reached, price_per_reached',
+      'id, charge_status, max_charge_ceiling, tos_version, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, base_price, included_reached, price_per_reached',
     )
     .eq('event_id', eventId)
     .order('created_at', { ascending: false })
@@ -223,6 +226,7 @@ export async function getCampaignForEventAdmin(
     id: data.id,
     chargeStatus: data.charge_status,
     maxChargeCeiling: data.max_charge_ceiling,
+    tosVersion: data.tos_version,
     hasCardOnFile: !!(data.card_token_ref && data.card_exp_month && data.card_exp_year && data.card_citizen_id),
     basePrice: Number(data.base_price ?? 0),
     includedReached: Number(data.included_reached ?? 0),

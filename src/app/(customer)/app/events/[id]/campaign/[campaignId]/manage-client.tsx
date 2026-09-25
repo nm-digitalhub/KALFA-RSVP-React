@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import type { GaActionEvent } from '@/lib/analytics/ga-event-contracts';
 import type { CampaignStatus } from '@/lib/data/campaigns';
+import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
 import { computeChargeAmount } from '@/lib/data/close-charge-amount';
 import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
 import {
@@ -38,6 +39,7 @@ type Campaign = {
   price_per_reached: number | null;
   max_contacts: number | null;
   max_charge_ceiling: number | null;
+  tos_version: string | null;
   final_charge_amount: number | null;
   credit_applied: number | null;
   capture_status: string | null;
@@ -268,8 +270,8 @@ function CampaignStatusAndBilling({
   captureStatus: string | null;
   reached: number;
   accrued: number;
-  ceiling: number;
-  balance: number;
+  ceiling: number | null; // null = open-ceiling agreement (v5+): no cap, no balance
+  balance: number | null;
   basePrice: number;
   includedReached: number;
   overageRate: number;
@@ -278,7 +280,7 @@ function CampaignStatusAndBilling({
 }) {
   const stage = campaignStage({ status, capture_status: captureStatus });
   const primaryChargeLabel = reached === 0 && basePrice > 0 ? 'דמי הפעלה' : 'חיוב נוכחי';
-  const percentage = ceiling > 0 ? Math.min(100, Math.round((accrued / ceiling) * 100)) : 0;
+  const percentage = ceiling !== null && ceiling > 0 ? Math.min(100, Math.round((accrued / ceiling) * 100)) : 0;
   const pricingExplanation =
     basePrice > 0
       ? `דמי הפעלה קבועים של ${nis(basePrice)}. ${includedReached.toLocaleString('he-IL')} אנשי הקשר הראשונים שהשיבו כלולים בדמי ההפעלה. לאחר מכן נוסף ${nis(overageRate)} לכל איש קשר נוסף שהשיב, עד לתקרה של ${nis(ceiling)}.`
@@ -336,30 +338,34 @@ function CampaignStatusAndBilling({
       <dl className="grid grid-cols-3 divide-x divide-border p-5 sm:p-6">
         <SummaryMetric label="הושגו" value={reached.toLocaleString('he-IL')} />
         <SummaryMetric label={primaryChargeLabel} value={nis(accrued)} emphasized />
-        <SummaryMetric label="תקרת חיוב" value={nis(ceiling)} />
+        {ceiling !== null && <SummaryMetric label="תקרת חיוב" value={nis(ceiling)} />}
       </dl>
 
       {/* The bar sits directly on the card. It used to have its own tinted,
           rounded panel — a frame around a frame, whose only content was a
           number the metric row above already showed. */}
       <div className="border-t border-border px-5 pb-5 pt-4 sm:px-6 sm:pb-6">
-        <div
-          role="progressbar"
-          aria-label="ניצול מסגרת החיוב"
-          aria-valuemin={0}
-          aria-valuemax={ceiling}
-          aria-valuenow={Math.min(accrued, ceiling)}
-          className="h-2.5 overflow-hidden rounded-full bg-primary/15"
-        >
-          <div
-            className="h-full rounded-full bg-primary transition-[inline-size]"
-            style={{ inlineSize: `${percentage}%` }}
-          />
-        </div>
-        <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-          <span>{percentage}% מהמסגרת</span>
-          <span>נותרו {nis(balance)}</span>
-        </div>
+        {ceiling !== null && balance !== null && (
+          <>
+            <div
+              role="progressbar"
+              aria-label="ניצול מסגרת החיוב"
+              aria-valuemin={0}
+              aria-valuemax={ceiling}
+              aria-valuenow={Math.min(accrued, ceiling)}
+              className="h-2.5 overflow-hidden rounded-full bg-primary/15"
+            >
+              <div
+                className="h-full rounded-full bg-primary transition-[inline-size]"
+                style={{ inlineSize: `${percentage}%` }}
+              />
+            </div>
+            <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+              <span>{percentage}% מהמסגרת</span>
+              <span>נותרו {nis(balance)}</span>
+            </div>
+          </>
+        )}
 
         <dl className="mt-4 divide-y divide-border">
           <DetailRow label="דמי הפעלה" value={nis(basePrice)} />
@@ -375,7 +381,7 @@ function CampaignStatusAndBilling({
             label="מכסת אנשי קשר"
             value={campaign.max_contacts?.toLocaleString('he-IL') ?? '—'}
           />
-          <DetailRow label="יתרה עד התקרה" value={nis(balance)} />
+          {balance !== null && <DetailRow label="יתרה עד התקרה" value={nis(balance)} />}
         </dl>
 
         <details className="group mt-2 border-t border-border pt-3">
@@ -933,7 +939,10 @@ export function ManageClient({
 }) {
   const status = campaign.status;
   const reached = summary?.reachedCount ?? 0;
-  const ceiling = Number(campaign.max_charge_ceiling ?? summary?.ceiling ?? 0);
+  // An open-ceiling agreement (v5+) states the price as a formula: no cap, no
+  // "balance up to the ceiling". A v4-and-earlier PDF states a frozen number.
+  const openCeiling = isOpenCeilingAgreementVersion(campaign.tos_version);
+  const ceiling = openCeiling ? null : Number(campaign.max_charge_ceiling ?? summary?.ceiling ?? 0);
   const basePrice = Number(campaign.base_price ?? 0);
   const includedReached = Number(campaign.included_reached ?? 0);
   const overageRate = Number(campaign.price_per_reached ?? 0);
@@ -945,7 +954,7 @@ export function ManageClient({
     ceiling,
     credits: 0,
   }).amount;
-  const balance = Math.max(0, ceiling - accrued);
+  const balance = ceiling === null ? null : Math.max(0, ceiling - accrued);
 
   const heldOrLive =
     campaign.capture_status === 'authorized' &&

@@ -14,6 +14,7 @@ vi.mock('@/lib/agreements/template', async (orig) => {
     VAT_RATE_PERCENT: 18,
     BASE_FEE_AGREEMENT_VERSION: actual.BASE_FEE_AGREEMENT_VERSION,
     isBaseFeeAgreementVersion: actual.isBaseFeeAgreementVersion,
+    isOpenCeilingAgreementVersion: actual.isOpenCeilingAgreementVersion,
   };
 });
 vi.mock('@/lib/data/agreements', () => ({
@@ -339,6 +340,31 @@ describe('closeCampaignAndCharge', () => {
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
       expect.objectContaining({ amount: '60' }),
     );
+  });
+
+  it('does NOT cap a v5 (open-ceiling) signer: every reached contact above `included` is billed', async () => {
+    happy();
+    m.signed.mockResolvedValue('2026-09-v5');
+    m.forCharge.mockResolvedValue({
+      id: 'c1',
+      event_id: 'e1',
+      status: 'active',
+      capture_status: 'authorized',
+      charge_status: null,
+      card_token_ref: 'tok-abc',
+      card_exp_month: 7,
+      card_exp_year: 2031,
+      card_citizen_id: '316125434',
+      auth_external_ref: 'ext-1',
+      max_charge_ceiling: 200, // the hold-sized number — must NOT bind for v5
+      base_price: 200,
+      included_reached: 200,
+      price_per_reached: 4,
+    });
+    m.summary.mockResolvedValue({ reachedCount: 240, accrued: 0, ceiling: 200, maxContacts: 0 });
+    const r = await closeCampaignAndCharge('c1');
+    expect(r).toMatchObject({ outcome: 'charged', amount: 360 });
+    expect(captureHeldCardSumit).toHaveBeenCalledWith(expect.objectContaining({ amount: '360' }));
   });
 
   it('falls back to summary.ceiling when the campaign has no max_charge_ceiling yet (null)', async () => {
