@@ -250,7 +250,6 @@ export const BILLING_OUTCOME_LABELS: Record<string, string> = {
   event_passed: 'לא חויב — האירוע כבר עבר',
   not_authorized: 'לא חויב — איש הקשר אינו ברשימת הנמענים של הקמפיין',
   no_exposure: 'לא חויב — לא נחשף לשליחה בקמפיין',
-  ceiling_reached: 'לא חויב — הגיע לתקרת הקמפיין',
   closed_window: 'לא חויב — אחרי חלון השליחה',
   before_window: 'לא חויב — לפני חלון השליחה',
   removal_requested: 'לא חויב — איש הקשר ביקש הסרה',

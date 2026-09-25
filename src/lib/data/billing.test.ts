@@ -55,9 +55,9 @@ describe('recordReached', () => {
   });
 
   it('does NOT change op_status when the cap is already reached', async () => {
-    mockRpc({ data: 'ceiling_reached', error: null });
+    mockRpc({ data: 'no_exposure', error: null });
     const outcome = await recordReached(args);
-    expect(outcome).toBe('ceiling_reached');
+    expect(outcome).toBe('no_exposure');
     expect(setContactOpStatus).not.toHaveBeenCalled();
   });
 

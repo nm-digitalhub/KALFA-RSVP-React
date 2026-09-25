@@ -242,8 +242,8 @@ export async function pruneOrphanContact(
 // lock as billing. KILL-SWITCH: inert unless RECONCILE_AUTHORIZED_SET_ENABLED
 // (env var, not app_settings — see reconcile-config.ts) — LIVE in production
 // since 2026-07-21, so this path is ACTIVE, not the inert default. Best-effort
-// (the guest mutation is already committed): errors and ceiling_full/
-// not_eligible are logged (no PII), never thrown. Callers must have already
+// (the guest mutation is already committed): errors and not_eligible are
+// logged (no PII), never thrown. Callers must have already
 // verified event access (this is an internal service-role helper, like
 // pruneOrphanContact).
 export async function reconcileCampaignSetForContact(
@@ -276,9 +276,10 @@ export async function reconcileCampaignSetForContact(
       console.error(
         `[reconcile] rpc failed (event=${eventId} campaign=${c.id} op=${op}): ${error.message}`,
       );
-    } else if (outcome === 'ceiling_full' || outcome === 'not_eligible') {
-      // Surfaced, not silent: the owner may need a top-up (ceiling_full) or the
-      // contact was ineligible (foreign/opted-out/no live guest).
+    } else if (outcome === 'not_eligible') {
+      // Surfaced, not silent: the contact was ineligible (foreign/opted-out/no
+      // live guest). There is no size cap on the set: billing is bounded by
+      // contacts actually reached, not by the hold amount.
       console.warn(
         `[reconcile] ${outcome} (event=${eventId} campaign=${c.id} op=${op})`,
       );

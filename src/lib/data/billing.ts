@@ -19,16 +19,16 @@ export type ReachedArgs = {
   providerRef: string;
 };
 
-// Returns the RPC outcome: 'billed' | 'already_billed' | 'ceiling_reached' |
+// Returns the RPC outcome: 'billed' | 'already_billed' |
 // 'not_active' | 'closed_window' | 'before_window' | 'removal_requested' |
 // 'not_authorized' | 'no_campaign' | 'event_passed' | 'event_mismatch' |
 // 'event_not_active' | 'no_exposure'. On 'billed' the contact is moved to
 // reached_billed; every other outcome means NOT billed (the caller only acts on
 // 'billed'). 'not_authorized' = contact not in the frozen authorized SET (the
-// legacy binding cap; fail-closed — an empty set bills nobody). 'no_exposure' =
-// the P0-1 exposure gate rejected the contact; it is returned ONLY when
-// app_settings.billing_exposure_gate=true (default false → legacy 'not_authorized'
-// path), so it is inert until that DB toggle is flipped.
+// legacy binding set; fail-closed — an empty set bills nobody). 'no_exposure' =
+// the exposure gate rejected the contact; returned when
+// app_settings.billing_exposure_gate=true (live since 2026-09-24). There is no
+// count cap: every exposed contact is billed.
 export async function recordReached(args: ReachedArgs): Promise<string> {
   const admin = createAdminClient();
   const { data, error } = await admin.rpc('try_record_billed_result', {

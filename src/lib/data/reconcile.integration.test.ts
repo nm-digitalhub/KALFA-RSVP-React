@@ -44,8 +44,8 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
       auth: number | null;
       price: number | null;
       status?: string;
-      // Omitted → both null → coalesced to 0 in the RPC → legacy formula
-      // (funded_cap = floor(auth/price)), unchanged from before this fix.
+      // Since 2026-09-25 the RPC reads none of auth/price/base/included: there
+      // is no funded_cap. They stay here only to shape realistic campaign rows.
       base?: number;
       included?: number;
     },
@@ -135,7 +135,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
     });
   });
 
-  it('add: eligible contact under funded_cap → added + one in/add audit row', async () => {
+  it('add: eligible contact → added + one in/add audit row', async () => {
     await withCampaign({ max: 10, auth: 40, price: 4 }, async ({ event, campaign, q }) => {
       const contact = await eligibleContact(q, event);
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', contact, null, null])).toBe(
@@ -151,20 +151,20 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
     });
   });
 
-  it('add: at funded_cap = least(max_contacts, floor(auth/price)) → ceiling_full', async () => {
-    // funded_cap = min(1, floor(4/4)) = 1
+  it('add: beyond max_contacts AND beyond the hold → still added (the funded cap was retired 2026-09-25)', async () => {
+    // Old cap: min(1, floor(4/4)) = 1 → the second add returned 'added'.
     await withCampaign({ max: 1, auth: 4, price: 4 }, async ({ event, campaign, q }) => {
       const c1 = await eligibleContact(q, event);
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c1, null, null])).toBe('added');
       const c2 = await eligibleContact(q, event);
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c2, null, null])).toBe(
-        'ceiling_full',
+        'added',
       );
-      expect(await setSize(q, campaign)).toBe(1);
+      expect(await setSize(q, campaign)).toBe(2);
     });
   });
 
-  it('base+overage: funded_cap = included + floor(max(0,auth-base)/price), not floor(auth/price)', async () => {
+  it('base+overage: the first contact beyond `included` is admitted (no ceiling)', async () => {
     // Fix under test (30.8): base=200, included=200, price=4, auth=200 (a
     // fully-funded hold with zero overage headroom) — the OLD formula gave
     // floor(200/4)=50, rejecting real contacts the base fee already covers.
@@ -180,19 +180,18 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
           ).toBe('added');
         }
         expect(await setSize(q, campaign)).toBe(200);
-        // The 201st (beyond the fully-funded 200-included, zero overage room) → ceiling_full.
         const over = await eligibleContact(q, event);
         expect(
           await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', over, null, null]),
-        ).toBe('ceiling_full');
-        expect(await setSize(q, campaign)).toBe(200);
+        ).toBe('added');
+        expect(await setSize(q, campaign)).toBe(201);
       },
     );
   });
 
-  it('base+overage: extra overage headroom beyond auth-base is admitted too', async () => {
-    // base=200, included=200, price=4, auth=240 → 40 of headroom beyond the
-    // base buys 10 more contacts: funded_cap = 200 + floor((240-200)/4) = 210.
+  it('base+overage: nothing about the hold amount bounds the set', async () => {
+    // Fixture: a hold with some headroom above the base. Under the old cap that
+    // headroom bought a fixed number of extra contacts; now nothing bounds the set.
     await withCampaign(
       { max: 1000, auth: 240, price: 4, base: 200, included: 200 },
       async ({ event, campaign, q }) => {
@@ -205,7 +204,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
         const over = await eligibleContact(q, event);
         expect(
           await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', over, null, null]),
-        ).toBe('ceiling_full');
+        ).toBe('added');
       },
     );
   });
@@ -230,7 +229,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
     );
   });
 
-  it('legacy (base=0/included=0): max_contacts still caps exactly as before', async () => {
+  it('legacy (base=0/included=0): max_contacts no longer caps either', async () => {
     // greatest(max, 0) = max → identical to the pre-fix formula for every
     // campaign created before the base+overage gate went live.
     await withCampaign({ max: 1, auth: 40, price: 4 }, async ({ event, campaign, q }) => {
@@ -240,17 +239,17 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
       );
       const c2 = await eligibleContact(q, event);
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c2, null, null])).toBe(
-        'ceiling_full',
+        'added',
       );
-      expect(await setSize(q, campaign)).toBe(1);
+      expect(await setSize(q, campaign)).toBe(2);
     });
   });
 
-  it('funded_cap FAIL-CLOSED: null price → cap 0 → ceiling_full even for the first add', async () => {
+  it('a null price no longer blocks admission (the fail-closed cap is gone)', async () => {
     await withCampaign({ max: 10, auth: 40, price: null }, async ({ event, campaign, q }) => {
       const c = await eligibleContact(q, event);
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c, null, null])).toBe(
-        'ceiling_full',
+        'added',
       );
     });
   });

@@ -64,14 +64,14 @@ describe('reconcileCampaignSetForContact (kill-switch gated)', () => {
     expect(client.rpc).not.toHaveBeenCalled();
   });
 
-  it('surfaces ceiling_full / not_eligible via a warning (best-effort, never throws)', async () => {
+  it('surfaces not_eligible via a warning (best-effort, never throws)', async () => {
     enable(true);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { client } = createMockSupabase<{ id: string }[]>({
       data: [{ id: 'camp1' }],
       error: null,
     });
-    client.rpc.mockResolvedValue({ data: 'ceiling_full', error: null });
+    client.rpc.mockResolvedValue({ data: 'not_eligible', error: null });
     vi.mocked(createAdminClient).mockReturnValue(
       client as unknown as ReturnType<typeof createAdminClient>,
     );
