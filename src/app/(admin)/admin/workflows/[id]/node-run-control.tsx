@@ -8,9 +8,12 @@ import {
   type JsonFormsRendererExtension,
 } from '@workflowbuilder/sdk';
 
+import { useMemo } from 'react';
+
 import { formatIsraelDateTime } from '@/lib/date';
 import { NODE_RUN_FORMAT } from '@/lib/workflow/catalogue/ui-formats';
 
+import { formatDuration, nodeAttempts, type AttemptStatus, type NodeAttempt } from './node-events';
 import { OutputJsonView } from './output-json-view';
 import { useExecutionStore, type NodeExecutionState } from './use-execution-store';
 
@@ -124,51 +127,68 @@ export function describeWait(
   return null;
 }
 
-function NodeRunControl() {
-  // ⚠️ THE NODE ID COMES FROM THE SDK, NOT FROM JSONFORMS. A control is handed
-  // its own data and path; it is never told which node the form belongs to.
-  // `useSingleSelectedElement` is the published hook for exactly that, and the
-  // panel only ever renders for the selected node — the same value its own
-  // container reads to decide what to show.
-  const selection = useSingleSelectedElement();
-  const nodeId = selection?.node?.id;
+const ATTEMPT_STATUS_HE: Record<AttemptStatus, string> = {
+  running: STATUS_HE.running,
+  waiting: STATUS_HE.waiting,
+  completed: STATUS_HE.completed,
+  failed: STATUS_HE.failed,
+  skipped: STATUS_HE.skipped,
+};
 
-  const runId = useExecutionStore((s) => s.runId);
-  const state = useExecutionStore((s) => (nodeId ? s.nodeStates[nodeId] : undefined));
+const SKIP_REASON_HE: Record<string, string> = {
+  branch_not_taken: 'הענף לא נבחר',
+  upstream_skipped: 'הצעד שלפניו לא רץ',
+  error_route_not_taken: 'ענף השגיאה לא נדרש',
+};
 
-  // ⚠️ NOTHING AT ALL WHEN NO RUN IS BEING WATCHED, which is most of the time.
-  // A permanent "אין הרצה במעקב" line at the top of every node's settings would
-  // be a placeholder that goes stale the moment someone stops reading it; the
-  // panel should look exactly as it did before this control existed until there
-  // is something real to report.
-  if (!runId || !state || state.status === 'idle') return null;
-
-  const output = formatOutput(state.output);
-  const waiting = describeWait(state);
+/** One run of the step: when, how long, and what came of it. */
+function AttemptDetails({ nodeId, attempt }: { nodeId: string; attempt: NodeAttempt }) {
+  const waiting = describeWait(attempt);
+  const output = formatOutput(attempt.output);
+  const at = attempt.startedAt ?? attempt.endedAt;
 
   return (
-    <section className="mb-2 space-y-2 rounded-lg border bg-muted/30 p-3 text-sm">
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-medium">בהרצה שמוצגת</span>
-        <span className={`font-medium ${STATUS_TONE[state.status]}`}>
-          {STATUS_HE[state.status]}
-        </span>
-      </div>
+    <div className="space-y-2">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+        {at ? (
+          <>
+            <dt className="text-muted-foreground">{attempt.startedAt ? 'התחילה' : 'בשעה'}</dt>
+            <dd>{formatIsraelDateTime(at)}</dd>
+          </>
+        ) : null}
+        {attempt.startedAt && attempt.endedAt ? (
+          <>
+            <dt className="text-muted-foreground">הסתיימה</dt>
+            <dd>{formatIsraelDateTime(attempt.endedAt)}</dd>
+          </>
+        ) : null}
+        {attempt.durationMs !== undefined ? (
+          <>
+            <dt className="text-muted-foreground">משך</dt>
+            <dd>{formatDuration(attempt.durationMs)}</dd>
+          </>
+        ) : null}
+        {waiting ? (
+          <>
+            <dt className="text-muted-foreground">{waiting.label}</dt>
+            <dd>{waiting.value}</dd>
+          </>
+        ) : null}
+        {attempt.skipReason ? (
+          <>
+            <dt className="text-muted-foreground">סיבה</dt>
+            <dd>{SKIP_REASON_HE[attempt.skipReason] ?? attempt.skipReason}</dd>
+          </>
+        ) : null}
+      </dl>
 
-      {waiting ? (
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-muted-foreground">{waiting.label}</span>
-          <span>{waiting.value}</span>
-        </div>
-      ) : null}
-
-      {state.error ? (
+      {attempt.error ? (
         <div className="space-y-1">
           <span className="text-muted-foreground">שגיאה</span>
-          <p className="rounded-md bg-destructive/10 p-2 text-destructive">
-            {state.error.message || 'ללא פירוט'}
-            {state.error.code ? (
-              <span className="block text-xs opacity-70">{state.error.code}</span>
+          <p className="rounded-md bg-destructive/10 p-2 whitespace-pre-wrap text-destructive">
+            {attempt.error.message || 'ללא פירוט'}
+            {attempt.error.code ? (
+              <span className="block text-xs opacity-70">{attempt.error.code}</span>
             ) : null}
           </p>
         </div>
@@ -179,13 +199,69 @@ function NodeRunControl() {
           <span className="text-muted-foreground">פלט</span>
           {/* A tree, with each field name copying its `{{nodes.…}}` reference —
               see output-json-view.tsx. A primitive output still prints as text. */}
-          <OutputJsonView nodeId={nodeId as string} value={state.output} />
+          <OutputJsonView nodeId={nodeId} value={attempt.output} />
         </div>
       ) : null}
 
-      {!state.error && !output ? (
+      {attempt.status === 'completed' && !output ? (
         <p className="text-muted-foreground">הצעד רץ ולא החזיר פלט.</p>
       ) : null}
+    </div>
+  );
+}
+
+function NodeRunControl() {
+  // ⚠️ THE NODE ID COMES FROM THE SDK, NOT FROM JSONFORMS. A control is handed
+  // its own data and path; it is never told which node the form belongs to.
+  // `useSingleSelectedElement` is the published hook for exactly that, and the
+  // panel only ever renders for the selected node — the same value its own
+  // container reads to decide what to show.
+  const selection = useSingleSelectedElement();
+  const nodeId = selection?.node?.id;
+
+  const runId = useExecutionStore((s) => s.runId);
+  const events = useExecutionStore((s) => s.events);
+
+  // ⚠️ THE FULL EVENT LOG OF THIS STEP, not only its latest state. The vendor's
+  // guidance puts exactly that here — "a side panel that opens when the user
+  // clicks a node, with the full event log for that step" — and `nodeStates`
+  // keeps one state per node, so a step that ran twice lost its first run.
+  const attempts = useMemo(() => (nodeId ? nodeAttempts(events, nodeId) : []), [events, nodeId]);
+
+  // ⚠️ NOTHING AT ALL WHEN NO RUN IS BEING WATCHED, which is most of the time.
+  // A permanent "אין הרצה במעקב" line at the top of every node's settings would
+  // be a placeholder that goes stale the moment someone stops reading it; the
+  // panel should look exactly as it did before this control existed until there
+  // is something real to report.
+  if (!runId || !nodeId || attempts.length === 0) return null;
+
+  const latest = attempts.at(-1) as NodeAttempt;
+
+  return (
+    <section className="mb-2 space-y-3 rounded-lg border bg-muted/30 p-3 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium">בהרצה שמוצגת</span>
+        <span className={`font-medium ${STATUS_TONE[latest.status]}`}>
+          {ATTEMPT_STATUS_HE[latest.status]}
+          {attempts.length > 1 ? ` · ${attempts.length} ריצות` : ''}
+        </span>
+      </div>
+
+      {attempts.length === 1 ? (
+        <AttemptDetails nodeId={nodeId} attempt={latest} />
+      ) : (
+        <ol className="space-y-3">
+          {attempts.map((attempt, index) => (
+            <li key={index} className="space-y-2 border-t pt-2 first:border-t-0 first:pt-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">ריצה {index + 1}</span>
+                <span className={STATUS_TONE[attempt.status]}>{ATTEMPT_STATUS_HE[attempt.status]}</span>
+              </div>
+              <AttemptDetails nodeId={nodeId} attempt={attempt} />
+            </li>
+          ))}
+        </ol>
+      )}
     </section>
   );
 }

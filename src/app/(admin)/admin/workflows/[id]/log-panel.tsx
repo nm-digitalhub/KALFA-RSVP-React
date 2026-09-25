@@ -3,7 +3,8 @@
 // Ported from the reference app's components/execution/log-panel.tsx.
 //
 // Behaviour kept verbatim: collapsible header carrying the run status,
-// per-event rows, click-to-expand detail, skip reasons spelled out, stick-to-
+// per-event rows, click-to-expand detail (run-level rows; a step's row opens
+// its panel instead), skip reasons spelled out, stick-to-
 // bottom that yields the moment the reader scrolls up, and scroll-into-view when
 // a node is selected on the canvas.
 //
@@ -20,7 +21,8 @@ import { useEffect, useRef, useState } from 'react';
 import { formatIsraelDateTime, formatIsraelTime } from '@/lib/date';
 import type { StreamEvent } from '@/lib/workflow/execution-events';
 
-import { OutputJsonView } from './output-json-view';
+import { focusNodeOnCanvas } from './focus-node';
+import { measureInfo } from './node-events';
 import { toggleLog, useExecutionStore } from './use-execution-store';
 
 const SKIP_REASON_LABEL: Record<string, string> = {
@@ -81,7 +83,32 @@ const STATUS_LABEL: Record<string, string> = {
   disconnected: 'החיבור אבד',
 };
 
-const DETAIL_PREVIEW_CHARS = 120;
+// ── resizing the log body ────────────────────────────────────────────────────
+// The body's default height lives in sdk-overrides.css (`[data-log-body]`). A
+// height the owner drags to replaces it inline and is remembered per browser.
+// The log sits under the canvas in a column whose canvas is `flex: 1`, so a
+// taller log takes its room from the canvas, never from the page.
+const LOG_HEIGHT_KEY = 'kalfa.workflowLog.height';
+const MIN_LOG_HEIGHT_PX = 64;
+const MAX_LOG_SHARE = 0.75; // of the editor frame — the canvas keeps a quarter
+const KEY_STEP_PX = 24;
+
+function readStoredHeight(): number | null {
+  try {
+    const value = Number(globalThis.localStorage?.getItem(LOG_HEIGHT_KEY));
+    return Number.isFinite(value) && value >= MIN_LOG_HEIGHT_PX ? value : null;
+  } catch {
+    return null; // private window / blocked storage: fall back to the CSS height
+  }
+}
+
+function storeHeight(value: number): void {
+  try {
+    globalThis.localStorage?.setItem(LOG_HEIGHT_KEY, String(Math.round(value)));
+  } catch {
+    // a convenience only
+  }
+}
 const AT_BOTTOM_TOLERANCE_PX = 4;
 
 /** The one line worth showing for an event, or nothing. */
@@ -98,8 +125,8 @@ function detailFor(event: StreamEvent): string | undefined {
     | undefined;
 
   switch (event.type) {
-    // A completed step's output is drawn as a tree by `EventRow`
-    // (`OutputJsonView`), not as one JSON line — so it has no text detail here.
+    // A completed step's output is measured and shown by `EventRow` on its own
+    // line, and in full in the step's panel — so it has no text detail here.
     case 'node_completed':
       return undefined;
     // ⚠️ THE FIELD THE ENGINE ATTACHED FOR THIS PANEL AND NOBODY READ.
@@ -153,11 +180,14 @@ function detailFor(event: StreamEvent): string | undefined {
 function EventRow({
   event,
   selectedNodeId,
+  onFocusNode,
 }: {
   event: StreamEvent;
   selectedNodeId: string | null;
+  onFocusNode: () => void;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isMissing, setIsMissing] = useState(false);
 
   const isNode = typeof event.nodeId === 'string' && event.nodeId.length > 0;
   const isHighlighted = isNode && event.nodeId === selectedNodeId;
@@ -171,42 +201,54 @@ function EventRow({
   // rather than being replaced by the label.
   const nodeLabel = (event.payload as { nodeLabel?: string } | undefined)?.nodeLabel;
 
-  const detail = detailFor(event);
-  // A completed step's output, drawn as a collapsible tree. It is NOT part of
-  // the row's click-to-expand: the tree has its own arrows and field buttons,
-  // and a click there must not collapse the row.
-  const output =
-    event.type === 'node_completed' ? (event.payload as { output?: unknown } | undefined)?.output : undefined;
-  const hasDetail = Boolean(detail);
-  const truncated =
-    detail && detail.length > DETAIL_PREVIEW_CHARS
-      ? `${detail.slice(0, DETAIL_PREVIEW_CHARS)}…`
-      : detail;
+  // ⚠️ WHAT THE ROW SHOWS IS DECIDED BY HOW MUCH THERE IS, not by the event type
+  // (owner, 25.9): nothing → the bare row; short → inline; long → a summary.
+  // A step's full detail — every run of it, times, the output tree — is in its
+  // properties panel, which a click on the row opens (`focusNodeOnCanvas`), as
+  // the vendor's guidance places it. A run-level row has no step to open, so its
+  // long text expands in place, as before.
+  const detail = measureInfo(detailFor(event));
+  const output = measureInfo(
+    event.type === 'node_completed' ? (event.payload as { output?: unknown } | undefined)?.output : undefined,
+  );
+  const hasLong = detail.kind === 'long' || output.kind === 'long';
+  const canExpand = !isNode && detail.kind === 'long';
+  const interactive = isNode || canExpand;
 
-  const toggle = (e: React.MouseEvent) => {
-    // Don't swallow a click meant for a link, and don't collapse the row out
-    // from under someone selecting its text.
+  const activate = () => {
+    if (isNode) {
+      onFocusNode();
+      setIsMissing(!focusNodeOnCanvas(event.nodeId as string));
+    } else if (canExpand) {
+      setIsExpanded((value) => !value);
+    }
+  };
+
+  const onClick = (e: React.MouseEvent) => {
+    // Don't swallow a click meant for a link, and don't act under someone
+    // selecting the row's text.
     const onInteractive = e.target instanceof Element && Boolean(e.target.closest('a, button'));
     const selecting = Boolean(globalThis.getSelection()?.toString());
-    if (hasDetail && !onInteractive && !selecting) setIsExpanded((v) => !v);
+    if (!onInteractive && !selecting) activate();
   };
 
   return (
     <div
       data-node-id={isNode ? event.nodeId : undefined}
-      onClick={toggle}
-      role={hasDetail ? 'button' : undefined}
-      tabIndex={hasDetail ? 0 : undefined}
-      aria-expanded={hasDetail ? isExpanded : undefined}
-      onKeyDown={(event) => {
-        if (hasDetail && (event.key === 'Enter' || event.key === ' ')) {
-          event.preventDefault();
-          setIsExpanded((value) => !value);
+      onClick={interactive ? onClick : undefined}
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      aria-expanded={canExpand ? isExpanded : undefined}
+      title={isNode ? 'פתיחת פרטי הצעד' : undefined}
+      onKeyDown={(e) => {
+        if (interactive && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          activate();
         }
       }}
       className={[
         'border-b border-border/60 px-3 py-2 text-xs',
-        hasDetail ? 'cursor-pointer' : '',
+        interactive ? 'cursor-pointer hover:bg-muted/60' : '',
         isHighlighted ? 'bg-muted' : '',
       ].join(' ')}
     >
@@ -221,16 +263,28 @@ function EventRow({
           </span>
         )}
         {skipReason && <span className="text-muted-foreground">— {skipReason}</span>}
+        {isNode && hasLong && <span className="ms-auto shrink-0 text-muted-foreground">פרטים ‹</span>}
       </div>
-      {detail && (
+      {detail.kind !== 'none' && (
         <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words text-muted-foreground">
-          {isExpanded ? detail : truncated}
+          {detail.kind === 'short' ? detail.text : isExpanded ? detailFor(event) : detail.summary}
         </pre>
       )}
-      {output !== undefined && isNode && (
-        <div className="mt-1" onClick={(e) => e.stopPropagation()}>
-          <OutputJsonView nodeId={event.nodeId as string} value={output} />
-        </div>
+      {output.kind !== 'none' && (
+        <p className="mt-1 text-muted-foreground">
+          {output.kind === 'short' ? (
+            <>
+              פלט: <code dir="ltr" className="break-all">{output.text}</code>
+            </>
+          ) : (
+            `פלט: ${output.summary}`
+          )}
+        </p>
+      )}
+      {isMissing && (
+        <p className="mt-1 text-muted-foreground" role="status">
+          הצעד הזה כבר לא נמצא בתהליך.
+        </p>
       )}
     </div>
   );
@@ -251,6 +305,26 @@ export function ExecutionLogPanel() {
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
+  // `null` = the CSS default. Read lazily: safe for hydration because the
+  // server never renders the body — with no events the panel returns null.
+  const [height, setHeight] = useState<number | null>(readStoredHeight);
+  const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  // Set when the selection came from a click on a row here: the reader is
+  // already looking at that row, and scrolling to the step's FIRST row (a step
+  // has several) would move the log out from under the one they clicked.
+  const selectedFromLogRef = useRef(false);
+
+  const clampHeight = (value: number): number => {
+    const frame = bodyRef.current?.closest('.kalfa-workflow-frame') as HTMLElement | null;
+    const max = Math.max(MIN_LOG_HEIGHT_PX, (frame?.clientHeight ?? globalThis.innerHeight) * MAX_LOG_SHARE);
+    return Math.min(max, Math.max(MIN_LOG_HEIGHT_PX, value));
+  };
+  const currentHeight = () => height ?? bodyRef.current?.clientHeight ?? 192;
+  const applyHeight = (value: number) => {
+    const next = clampHeight(value);
+    setHeight(next);
+    storeHeight(next);
+  };
 
   // A new run starts pinned to the bottom again, however the reader had left
   // the previous one.
@@ -266,6 +340,10 @@ export function ExecutionLogPanel() {
 
   useEffect(() => {
     if (!selectedNodeId || isCollapsed) return;
+    if (selectedFromLogRef.current) {
+      selectedFromLogRef.current = false;
+      return;
+    }
     bodyRef.current
       ?.querySelector(`[data-node-id="${CSS.escape(selectedNodeId)}"]`)
       ?.scrollIntoView({ block: 'nearest' });
@@ -296,14 +374,69 @@ export function ExecutionLogPanel() {
         <span className="ms-auto text-muted-foreground">{isCollapsed ? '▲' : '▼'}</span>
       </button>
       {!isCollapsed && (
+        // The drag handle. Up = taller (the log grows into the canvas), down =
+        // shorter. Pointer events with capture, so a drag that leaves the strip
+        // keeps tracking; keyboard: arrows resize by 24px, for a keyboard user.
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="שינוי גובה יומן ההרצה"
+          aria-valuenow={Math.round(height ?? 0) || undefined}
+          aria-valuemin={MIN_LOG_HEIGHT_PX}
+          tabIndex={0}
+          className="group flex h-3 cursor-row-resize touch-none items-center justify-center border-t border-border focus-visible:outline-2 focus-visible:outline-ring"
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            dragRef.current = { startY: e.clientY, startHeight: currentHeight() };
+          }}
+          onPointerMove={(e) => {
+            const drag = dragRef.current;
+            if (!drag) return;
+            setHeight(clampHeight(drag.startHeight + (drag.startY - e.clientY)));
+          }}
+          onPointerUp={(e) => {
+            if (!dragRef.current) return;
+            dragRef.current = null;
+            e.currentTarget.releasePointerCapture(e.pointerId);
+            if (height !== null) storeHeight(height);
+          }}
+          onPointerCancel={() => {
+            dragRef.current = null;
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              applyHeight(currentHeight() + KEY_STEP_PX);
+            } else if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              applyHeight(currentHeight() - KEY_STEP_PX);
+            }
+          }}
+        >
+          <span aria-hidden="true" className="h-1 w-10 rounded-full bg-border group-hover:bg-muted-foreground" />
+        </div>
+      )}
+      {!isCollapsed && (
         <div
           ref={bodyRef}
           onScroll={handleScroll}
           data-log-body
-          className="max-h-64 overflow-auto border-t border-border"
+          className="overflow-auto"
+          // Inline beats the stylesheet's max-height, so a dragged height wins.
+          style={height === null ? undefined : { height, maxHeight: 'none' }}
         >
           {events.map((event) => (
-            <EventRow key={`${event.seq}`} event={event} selectedNodeId={selectedNodeId} />
+            <EventRow
+              key={`${event.seq}`}
+              event={event}
+              selectedNodeId={selectedNodeId}
+              onFocusNode={() => {
+                // Only when the selection will actually change — otherwise the
+                // effect does not run and the flag would swallow the next
+                // selection made on the canvas.
+                selectedFromLogRef.current = event.nodeId !== selectedNodeId;
+              }}
+            />
           ))}
         </div>
       )}
