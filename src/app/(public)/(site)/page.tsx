@@ -275,16 +275,16 @@ export default async function HomePage() {
         <section className="relative isolate mx-auto max-w-6xl px-6 py-10 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-radial-[at_top_end] before:from-primary/10 before:via-transparent before:to-transparent motion-safe:pointer-fine-hover:before:animate-k-glow-drift sm:py-20">
           <div className="grid items-center gap-12 lg:grid-cols-2">
             <ParallaxLayer depth={-16}>
-              <Eyebrow icon={Sparkles} className="transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3">ניהול חכם לאירוע מושלם</Eyebrow>
-              <h1 className="mt-4 text-balance text-hero font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-100">
+              <Eyebrow icon={Sparkles} className="transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">ניהול חכם לאירוע מושלם</Eyebrow>
+              <h1 className="mt-4 text-balance text-hero font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-100">
                 אישורי הגעה,
                 <br />
                 <span className="text-primary">במקום אחד.</span>
               </h1>
-              <p className="mt-5 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-200">
+              <p className="mt-5 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-200">
                 שלחו הזמנות, עקבו אחר התגובות בזמן אמת ונהלו את רשימת המוזמנים והמלווים — בלי גיליונות, בלי הודעות מפוזרות, בלי בלגן.
               </p>
-              <div className="mt-7 flex flex-wrap gap-3 transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-300">
+              <div className="mt-7 flex flex-wrap gap-3 transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-300">
                 <Link href={startHref} className={siteCta()}>
                   {startLabel}
                   <ArrowLeft className="size-5" aria-hidden />
@@ -293,7 +293,7 @@ export default async function HomePage() {
                   איך זה עובד
                 </a>
               </div>
-              <div className="mt-6 flex flex-wrap items-center gap-5 text-sm text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-400">
+              <div className="mt-6 flex flex-wrap items-center gap-5 text-sm text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-400">
                 <span className="inline-flex items-center gap-2"><ShieldCheck className="size-4" aria-hidden /> פרטי ומאובטח</span>
                 <span className="inline-flex items-center gap-2"><Clock className="size-4" aria-hidden /> מוכן תוך דקות</span>
               </div>
@@ -305,13 +305,16 @@ export default async function HomePage() {
                 numbers step down below ~22rem (a 320px phone) and the header
                 row stacks below 20rem, where three tiles + a pill no longer
                 fit on one line. */}
-            {/* The entrance (`starting:` opacity/translate) lives on this
+            {/* The entrance (`starting:` translate only — never opacity: a
+                screenshot of a backgrounded tab freezes the first transition
+                frame, and an opacity-0 start left the hero blank for AI
+                agents) lives on this
                 layer, OUTSIDE TiltCard: TiltCard switches from its static
                 <div> to the <Tilt> island once the pointer-fine media query
                 resolves after hydration, which remounts its children — an
-                entrance on the card itself would replay (fade in twice) on
+                entrance on the card itself would replay (slide in twice) on
                 every desktop load. motion only writes `transform` here, so the
-                CSS `translate`/`opacity` transition is untouched. */}
+                CSS `translate` transition is untouched. */}
             {/* Touch (motion spec §10): below `lg` the card rests at -3° (same
                 RTL sign as the desktop -6°, so `perspective-distant` is needed
                 at every width — without a perspective a rotateY is an invisible
@@ -324,7 +327,7 @@ export default async function HomePage() {
                 "248 אישרו" as if it were real data. */}
             <ParallaxLayer
               depth={-40}
-              className="perspective-distant transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-4 k-delay-200"
+              className="perspective-distant transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-4 k-delay-200"
             >
               <TiltCard
                 restAngleY={-6}

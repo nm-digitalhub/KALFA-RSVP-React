@@ -91,18 +91,18 @@ export default async function WhatsappRsvpPage() {
             fluid `text-title` (see docs/design/public-pages-tailwind-v4-upgrade.md). */}
         <section className="relative isolate mx-auto max-w-6xl px-6 py-10 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-radial-[at_top_end] before:from-primary/10 before:via-transparent before:to-transparent sm:py-16">
           <div>
-            <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3">
+            <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">
               <MessageCircle className="size-4" aria-hidden />
               ערוץ השליחה
             </span>
-            <h1 className="mt-4 max-w-3xl text-balance text-title font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-100">
+            <h1 className="mt-4 max-w-3xl text-balance text-title font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-100">
               אישורי הגעה בוואטסאפ
             </h1>
-            <p className="mt-5 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-200">
+            <p className="mt-5 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-200">
               הזמנה אישית לכל מוזמן דרך הפלטפורמה העסקית הרשמית של וואטסאפ — לא קבוצה, לא רשימת תפוצה,
               ולא שליחה ידנית מהטלפון שלכם.
             </p>
-            <div className="mt-7 flex flex-wrap gap-3 transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-300">
+            <div className="mt-7 flex flex-wrap gap-3 transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-300">
               <Link
                 href={startHref}
                 className={siteCta()}

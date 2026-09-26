@@ -71,8 +71,8 @@ export default async function FaqPage() {
       {/* Header: the shared SiteHeader from the (site) layout (24.8). */}
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-12">
         <div>
-          <h1 className="text-balance text-display font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3">שאלות נפוצות</h1>
-          <p className="mt-2 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-100">
+          <h1 className="text-balance text-display font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">שאלות נפוצות</h1>
+          <p className="mt-2 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-100">
             כל מה שצריך לדעת על KALFA — מה זה, איך זה עובד, כמה זה עולה ומה קורה אם רוצים לבטל.
           </p>
         </div>
