@@ -96,7 +96,7 @@ export function NewEventForm() {
           תאריך האירוע
           <RequiredMark />
         </label>
-        <DateSelectIL id="event_date" name="event_date" required />
+        <DateSelectIL id="event_date" name="event_date" required labelPrefix="תאריך האירוע" />
         <p className="mt-1 text-xs text-muted-foreground">יום / חודש / שנה</p>
         <FieldError errors={state?.fieldErrors?.event_date} />
       </div>
@@ -105,7 +105,7 @@ export function NewEventForm() {
         <label htmlFor="event_time" className="mb-1 block text-sm font-medium">
           שעת האירוע
         </label>
-        <TimeSelect24 id="event_time" name="event_time" />
+        <TimeSelect24 id="event_time" name="event_time" labelPrefix="שעת האירוע" />
         <p className="mt-1 text-xs text-muted-foreground">
           רשות — תופיע בהזמנות ובתזכורות (שעון ישראל)
         </p>
@@ -116,7 +116,11 @@ export function NewEventForm() {
         <label htmlFor="rsvp_deadline" className="mb-1 block text-sm font-medium">
           מועד אחרון לאישור הגעה
         </label>
-        <DateSelectIL id="rsvp_deadline" name="rsvp_deadline" />
+        <DateSelectIL
+          id="rsvp_deadline"
+          name="rsvp_deadline"
+          labelPrefix="מועד אחרון לאישור הגעה"
+        />
         <p className="mt-1 text-xs text-muted-foreground">
           רשות — עד יום האירוע, כולל
         </p>

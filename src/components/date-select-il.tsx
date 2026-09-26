@@ -36,6 +36,7 @@ export function DateSelectIL({
   required,
   fromYear,
   toYear,
+  labelPrefix,
 }: {
   id: string;
   // undefined (edit form after publish) keeps the field out of the POST,
@@ -51,7 +52,11 @@ export function DateSelectIL({
   required?: boolean;
   fromYear?: number;
   toYear?: number;
+  // The field's visible label; when set, each select is announced as
+  // "<label> – יום" etc., so a screen reader says WHICH date this part is.
+  labelPrefix?: string;
 }) {
+  const partLabel = (part: string) => (labelPrefix ? `${labelPrefix} – ${part}` : part);
   const [initialY, initialM, initialD] = /^\d{4}-\d{2}-\d{2}$/.test(defaultValue)
     ? defaultValue.split('-')
     : ['', '', ''];
@@ -105,7 +110,7 @@ export function DateSelectIL({
     <div dir="ltr" className="flex w-fit items-center gap-1">
       <select
         id={id}
-        aria-label="יום"
+        aria-label={partLabel('יום')}
         value={day}
         disabled={disabled}
         required={required}
@@ -121,7 +126,7 @@ export function DateSelectIL({
       </select>
       <span aria-hidden>/</span>
       <select
-        aria-label="חודש"
+        aria-label={partLabel('חודש')}
         value={month}
         disabled={disabled}
         onChange={(e) => update('month', e.target.value)}
@@ -136,7 +141,7 @@ export function DateSelectIL({
       </select>
       <span aria-hidden>/</span>
       <select
-        aria-label="שנה"
+        aria-label={partLabel('שנה')}
         value={year}
         disabled={disabled}
         onChange={(e) => update('year', e.target.value)}

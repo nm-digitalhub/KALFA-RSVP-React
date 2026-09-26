@@ -9,7 +9,6 @@ import {
   LifeBuoy,
   LogOut,
   Menu,
-  Search,
   Settings,
   Shield,
   Users,
@@ -39,7 +38,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { OrgSwitcher, type OrgOption } from '@/components/org-switcher';
@@ -78,7 +76,7 @@ function isActive(pathname: string, href: string): boolean {
 // Hamburger that opens the sidebar Sheet on mobile only. The desktop sidebar is
 // fixed (per the approved design), so the trigger is hidden from md upward.
 function MobileMenuTrigger() {
-  const { toggleSidebar } = useSidebar();
+  const { toggleSidebar, openMobile } = useSidebar();
   return (
     <Button
       type="button"
@@ -86,6 +84,7 @@ function MobileMenuTrigger() {
       size="icon-sm"
       onClick={toggleSidebar}
       aria-label="פתיחת תפריט"
+      aria-expanded={openMobile}
       className="size-11 md:hidden"
     >
       <Menu />
@@ -267,21 +266,8 @@ export function AppShell({
           <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-background px-4 py-3">
             <MobileMenuTrigger />
 
-            {/* Search — visual placeholder (no behavior yet); hidden on mobile
-                until it works. A spacer keeps the controls at the inline-end. */}
-            <div className="flex-1 sm:hidden" aria-hidden />
-            <div className="relative hidden max-w-md flex-1 sm:block">
-              <Search
-                className="pointer-events-none absolute top-1/2 start-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden
-              />
-              <Input
-                type="search"
-                aria-label="חיפוש"
-                placeholder="חיפוש…"
-                className="ps-8"
-              />
-            </div>
+            {/* Spacer keeps the controls at the inline-end on every breakpoint. */}
+            <div className="flex-1" aria-hidden />
 
             <OrgSwitcher orgs={orgs} activeOrgId={activeOrgId} />
           </header>

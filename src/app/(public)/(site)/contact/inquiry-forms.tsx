@@ -38,6 +38,18 @@ function useLeadEvent(state: InquiryFormState) {
   }, [state]);
 }
 
+// aria wiring for one field: aria-invalid only while the server reported an
+// error, and aria-describedby naming the error (`<id>-err`, rendered by
+// FieldError) plus any always-present hint ids.
+function fieldA11y(id: string, errors: string[] | undefined, ...hintIds: string[]) {
+  const invalid = Boolean(errors?.length);
+  const describedBy = [...hintIds, ...(invalid ? [`${id}-err`] : [])].join(' ');
+  return {
+    'aria-invalid': invalid ? true : undefined,
+    'aria-describedby': describedBy || undefined,
+  } as const;
+}
+
 // Both public inquiry forms. Server-validated (Zod in the actions); the
 // required/type attributes here are UX hints only. The "company" field is a
 // honeypot — visually hidden, ignored by real users, checked server-side.
@@ -65,15 +77,29 @@ export function ContactForm({
 }) {
   const [state, formAction] = useActionState(submitContactAction, null);
   useLeadEvent(state);
+  const fe = state?.fieldErrors;
 
   return (
     <form action={formAction} className="relative space-y-4">
       <Honeypot />
       <div className="grid gap-1.5">
         <Label htmlFor="contact-name">שם מלא</Label>
-        <Input id="contact-name" name="name" required defaultValue={defaultName} autoComplete="name" className={FIELD_CLS} />
-        <FieldError errors={state?.fieldErrors?.name} />
+        <Input
+          id="contact-name"
+          name="name"
+          required
+          defaultValue={defaultName}
+          autoComplete="name"
+          className={FIELD_CLS}
+          {...fieldA11y('contact-name', fe?.name)}
+        />
+        <FieldError id="contact-name-err" errors={fe?.name} />
       </div>
+      {/* Neither field is required on its own — the server requires at least
+          one — so the rule is stated up front and linked from both inputs. */}
+      <p id="contact-reach-hint" className="text-xs text-muted-foreground">
+        יש למלא אימייל או טלפון (לפחות אחד)
+      </p>
       <div className="grid gap-4 @md/form:grid-cols-2">
         <div className="grid gap-1.5">
           <Label htmlFor="contact-email">אימייל</Label>
@@ -85,20 +111,34 @@ export function ContactForm({
             defaultValue={defaultEmail}
             autoComplete="email"
             className={FIELD_CLS}
+            {...fieldA11y('contact-email', fe?.email, 'contact-reach-hint')}
           />
-          <FieldError errors={state?.fieldErrors?.email} />
+          <FieldError id="contact-email-err" errors={fe?.email} />
         </div>
         <div className="grid gap-1.5">
           <Label htmlFor="contact-phone">טלפון</Label>
-          <PhoneInput id="contact-phone" name="phone" className={FIELD_CLS} />
-          <FieldError errors={state?.fieldErrors?.phone} />
+          <PhoneInput
+            id="contact-phone"
+            name="phone"
+            className={FIELD_CLS}
+            {...fieldA11y('contact-phone', fe?.phone, 'contact-reach-hint')}
+          />
+          <FieldError id="contact-phone-err" errors={fe?.phone} />
         </div>
       </div>
       <TopicSelect id="contact-topic" defaultTopic={defaultTopic} />
       <div className="grid gap-1.5">
         <Label htmlFor="contact-message">תוכן הפנייה</Label>
-        <Textarea id="contact-message" name="message" required rows={5} maxLength={2000} className={FIELD_CLS} />
-        <FieldError errors={state?.fieldErrors?.message} />
+        <Textarea
+          id="contact-message"
+          name="message"
+          required
+          rows={5}
+          maxLength={2000}
+          className={FIELD_CLS}
+          {...fieldA11y('contact-message', fe?.message)}
+        />
+        <FieldError id="contact-message-err" errors={fe?.message} />
       </div>
       <FormError message={state?.error} />
       <FormNotice message={state?.notice} />
@@ -123,19 +163,33 @@ export function ContactForm({
 export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
   const [state, formAction] = useActionState(submitCallbackAction, null);
   useLeadEvent(state);
+  const fe = state?.fieldErrors;
 
   return (
     <form action={formAction} className="relative space-y-4">
       <Honeypot />
       <div className="grid gap-1.5">
         <Label htmlFor="cb-name">שם מלא</Label>
-        <Input id="cb-name" name="full_name" required autoComplete="name" className={FIELD_CLS} />
-        <FieldError errors={state?.fieldErrors?.full_name} />
+        <Input
+          id="cb-name"
+          name="full_name"
+          required
+          autoComplete="name"
+          className={FIELD_CLS}
+          {...fieldA11y('cb-name', fe?.full_name)}
+        />
+        <FieldError id="cb-name-err" errors={fe?.full_name} />
       </div>
       <div className="grid gap-1.5">
         <Label htmlFor="cb-phone">טלפון</Label>
-        <PhoneInput id="cb-phone" name="phone" required className={FIELD_CLS} />
-        <FieldError errors={state?.fieldErrors?.phone} />
+        <PhoneInput
+          id="cb-phone"
+          name="phone"
+          required
+          className={FIELD_CLS}
+          {...fieldA11y('cb-phone', fe?.phone)}
+        />
+        <FieldError id="cb-phone-err" errors={fe?.phone} />
       </div>
       <TopicSelect id="cb-topic" defaultTopic={defaultTopic} />
       <p className="text-xs text-muted-foreground">
@@ -144,8 +198,15 @@ export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
       <CallbackTimePreference />
       <div className="grid gap-1.5">
         <Label htmlFor="cb-note">הערה (לא חובה)</Label>
-        <Textarea id="cb-note" name="note" rows={2} maxLength={500} className={FIELD_CLS} />
-        <FieldError errors={state?.fieldErrors?.note} />
+        <Textarea
+          id="cb-note"
+          name="note"
+          rows={2}
+          maxLength={500}
+          className={FIELD_CLS}
+          {...fieldA11y('cb-note', fe?.note)}
+        />
+        <FieldError id="cb-note-err" errors={fe?.note} />
       </div>
       <FormError message={state?.error} />
       <FormNotice message={state?.notice} />

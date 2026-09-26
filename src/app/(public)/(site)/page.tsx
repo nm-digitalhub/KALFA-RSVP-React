@@ -32,7 +32,6 @@ import {
   MessagesSquare,
   PartyPopper,
   Presentation,
-  Play,
   Route,
   Send,
   ShieldCheck,
@@ -291,8 +290,7 @@ export default async function HomePage() {
                   <ArrowLeft className="size-5" aria-hidden />
                 </Link>
                 <a href="#how" className={siteCta({ variant: 'outline' })}>
-                  <Play className="size-4" aria-hidden />
-                  צפו בהדגמה קצרה
+                  איך זה עובד
                 </a>
               </div>
               <div className="mt-6 flex flex-wrap items-center gap-5 text-sm text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-400">
@@ -320,6 +318,10 @@ export default async function HomePage() {
                 squash); a finger drag tilts it, and on Android the device's own
                 tilt drives it (`gyroscope`, decorative, in-view only — TiltCard
                 never triggers the iOS permission dialog). */}
+            {/* The names and numbers below are invented sample content, so the
+                card is exposed as ONE image: role="img" makes its children
+                presentational, and assistive tech reads only the label — never
+                "248 אישרו" as if it were real data. */}
             <ParallaxLayer
               depth={-40}
               className="perspective-distant transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-4 k-delay-200"
@@ -332,7 +334,11 @@ export default async function HomePage() {
                 scale={1.02}
                 gyroscope
               >
-            <div className="@container/preview overflow-hidden rounded-2xl border border-border bg-background shadow-xl">
+            <div
+              role="img"
+              aria-label="תצוגה לדוגמה של לוח ניהול אירוע"
+              className="@container/preview overflow-hidden rounded-2xl border border-border bg-background shadow-xl"
+            >
               <div className="flex flex-col gap-2 border-b border-border px-4 py-3 @[20rem]/preview:flex-row @[20rem]/preview:items-center @[20rem]/preview:justify-between">
                 <div>
                   <div className="font-bold">חתונה · דנה ויואב</div>
@@ -541,7 +547,8 @@ export default async function HomePage() {
             </div>
             {/* Tiles that are links get the shared focus outline (they had
                 none) and `min-h-11`; the two non-link tiles keep the same box
-                so the grid stays even. */}
+                so the grid stays even, but without the hover border/shadow —
+                a tile that reacts like a link and goes nowhere is a false cue. */}
             <div className="k-reveal-group grid grid-cols-2 gap-3 sm:grid-cols-3">
               {AUDIENCES.map(({ icon: Icon, t, href }) => {
                 const body = (
@@ -551,9 +558,13 @@ export default async function HomePage() {
                   </>
                 );
                 const shell =
-                  'k-card flex min-h-11 items-center gap-3 rounded-lg border border-border bg-background px-4 py-4 hover:border-primary hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
+                  'k-card flex min-h-11 items-center gap-3 rounded-lg border border-border bg-background px-4 py-4';
                 return href ? (
-                  <Link key={t} href={href} className={shell}>
+                  <Link
+                    key={t}
+                    href={href}
+                    className={`${shell} hover:border-primary hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring`}
+                  >
                     {body}
                   </Link>
                 ) : (

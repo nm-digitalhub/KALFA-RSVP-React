@@ -119,6 +119,7 @@ export function PlacesAutocomplete({
   const inputRef = useRef<HTMLInputElement>(null);
   const requestIdRef = useRef(0);
   const debounceTimeoutRef = useRef<number | null>(null);
+  const blurTimeoutRef = useRef<number | null>(null);
   const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
 
   const isControlled = value !== undefined;
@@ -186,6 +187,9 @@ export function PlacesAutocomplete({
       if (debounceTimeoutRef.current !== null) {
         window.clearTimeout(debounceTimeoutRef.current);
       }
+      if (blurTimeoutRef.current !== null) {
+        window.clearTimeout(blurTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -246,9 +250,12 @@ export function PlacesAutocomplete({
           .filter((suggestion): suggestion is AddressSuggestion => Boolean(suggestion));
 
         setSuggestions(nextSuggestions);
-        if (nextSuggestions.length > 0) {
+        // Nothing is pre-highlighted: Enter without arrow navigation keeps the
+        // typed text (a free-typed venue is legal). A response that lands after
+        // focus left the input must not pop the list open again.
+        if (nextSuggestions.length > 0 && document.activeElement === inputRef.current) {
           openSuggestions();
-          setActiveIndex(0);
+          setActiveIndex(-1);
         } else {
           setOpen(false);
           setDropdownRect(null);
@@ -412,13 +419,24 @@ export function PlacesAutocomplete({
             setInputValue(nextValue);
             queueFetchSuggestions(nextValue);
           }}
+          aria-activedescendant={
+            open && activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined
+          }
           onFocus={() => {
+            if (blurTimeoutRef.current !== null) {
+              window.clearTimeout(blurTimeoutRef.current);
+              blurTimeoutRef.current = null;
+            }
             if (suggestions.length > 0) {
               openSuggestions();
             }
           }}
           onBlur={() => {
-            window.setTimeout(() => setOpen(false), 120);
+            blurTimeoutRef.current = window.setTimeout(() => {
+              blurTimeoutRef.current = null;
+              setOpen(false);
+              setActiveIndex(-1);
+            }, 120);
           }}
           onKeyDown={handleKeyDown}
           // The caller's classes first, then ours — `ps-9`/`pe-*` must win over a
@@ -437,6 +455,7 @@ export function PlacesAutocomplete({
             <div
               id={listboxId}
               role="listbox"
+              aria-label="הצעות מקומות"
               dir="rtl"
               style={{
                 position: 'fixed',
@@ -454,9 +473,13 @@ export function PlacesAutocomplete({
                   return (
                     <button
                       key={suggestion.id}
+                      id={`${listboxId}-option-${index}`}
                       type="button"
                       role="option"
                       aria-selected={isActive}
+                      // Focus stays on the input (aria-activedescendant); the
+                      // options are not Tab stops.
+                      tabIndex={-1}
                       onMouseDown={(event) => event.preventDefault()}
                       onMouseEnter={() => setActiveIndex(index)}
                       onClick={() => void handleSelectSuggestion(suggestion)}

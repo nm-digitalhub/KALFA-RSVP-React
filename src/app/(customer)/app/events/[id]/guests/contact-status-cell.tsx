@@ -14,11 +14,15 @@ import type { ContactStatus } from '@/lib/data/guests';
 export function ContactStatusCell({
   eventId,
   guestId,
+  guestName,
   value,
   scope,
 }: {
   eventId: string;
   guestId: string;
+  // Names the control per row ("…יצירת קשר – דני"), so a screen reader can tell
+  // the list's many identical selects apart.
+  guestName?: string;
   value: ContactStatus;
   // The guest list renders this cell twice per guest (a mobile card + a desktop
   // table row, one hidden by CSS). `scope` namespaces the control id so the two
@@ -45,7 +49,7 @@ export function ContactStatusCell({
   return (
     <div className="flex items-center gap-1">
       <label className="sr-only" htmlFor={fieldId}>
-        עדכון סטטוס יצירת קשר
+        עדכון סטטוס יצירת קשר{guestName ? ` – ${guestName}` : ''}
       </label>
       <select
         id={fieldId}

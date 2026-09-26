@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState, useEffect, useRef } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import {
@@ -13,6 +13,16 @@ import { sendBusinessEvent } from '@/components/consent/send-ga-event';
 import { DateSelectIL } from '@/components/date-select-il';
 import { FormError, FormNotice } from '@/components/forms';
 import { TimeSelect24 } from '@/components/time-select-24';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import type { GaActionEvent } from '@/lib/analytics/ga-event-contracts';
@@ -123,6 +133,8 @@ function SubmitButton({
   variant: 'default' | 'primary' | 'danger';
 }) {
   const { pending } = useFormStatus();
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const appearance =
     variant === 'primary'
@@ -131,22 +143,46 @@ function SubmitButton({
         ? 'border border-destructive/40 bg-background text-destructive hover:bg-destructive/10'
         : 'border border-border bg-background text-foreground hover:bg-accent/50';
 
+  const className = `inline-flex min-h-11 w-full items-center justify-center rounded-lg px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${appearance}`;
+  const text = pending ? 'מבצע פעולה...' : label;
+
+  if (!confirm) {
+    return (
+      <button type="submit" disabled={pending} aria-disabled={pending} className={className}>
+        {text}
+      </button>
+    );
+  }
+
+  // The dialog is portaled outside the form, so its confirm button submits the
+  // trigger's form explicitly — the same action the plain submit runs.
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      aria-disabled={pending}
-      onClick={
-        confirm
-          ? (event) => {
-              if (!window.confirm(confirm)) event.preventDefault();
-            }
-          : undefined
-      }
-      className={`inline-flex min-h-11 w-full items-center justify-center rounded-lg px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${appearance}`}
-    >
-      {pending ? 'מבצע פעולה...' : label}
-    </button>
+    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <AlertDialogTrigger
+        ref={buttonRef}
+        disabled={pending}
+        render={<button type="button" aria-disabled={pending} className={className} />}
+      >
+        {text}
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{confirm}</AlertDialogTitle>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>ביטול</AlertDialogCancel>
+          <AlertDialogAction
+            variant={variant === 'danger' ? 'destructive' : 'default'}
+            onClick={() => {
+              setConfirmOpen(false);
+              buttonRef.current?.form?.requestSubmit();
+            }}
+          >
+            {label}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -588,22 +624,30 @@ function ThankyouScheduleForm({
           </label>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            <label className="text-sm">
-              <span className="mb-1.5 block text-muted-foreground">תאריך</span>
+            {/* A group, not a <label>: one label cannot name the several
+                selects inside; each select carries its own labelPrefix name. */}
+            <div role="group" aria-labelledby="send_date-label" className="text-sm">
+              <span id="send_date-label" className="mb-1.5 block text-muted-foreground">
+                תאריך
+              </span>
               <DateSelectIL
                 id="send_date"
                 name="send_date"
+                labelPrefix="תאריך"
                 defaultValue={ilDateInputValue(thankyou.sendAt)}
               />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1.5 block text-muted-foreground">שעה</span>
+            </div>
+            <div role="group" aria-labelledby="send_time-label" className="text-sm">
+              <span id="send_time-label" className="mb-1.5 block text-muted-foreground">
+                שעה
+              </span>
               <TimeSelect24
                 id="send_time"
                 name="send_time"
+                labelPrefix="שעה"
                 defaultValue={ilTimeInputValue(thankyou.sendAt)}
               />
-            </label>
+            </div>
           </div>
 
           <button
@@ -671,16 +715,20 @@ function RescheduleEventForm({
           </p>
         ) : null}
 
-        <label className="block text-sm">
-          <span className="mb-1.5 block text-muted-foreground">מועד חדש</span>
-          <DateSelectIL id="new_event_date" name="new_event_date" />
-        </label>
+        <div role="group" aria-labelledby="new_event_date-label" className="block text-sm">
+          <span id="new_event_date-label" className="mb-1.5 block text-muted-foreground">
+            מועד חדש
+          </span>
+          <DateSelectIL id="new_event_date" name="new_event_date" labelPrefix="מועד חדש" />
+        </div>
         <FieldErrors errors={state?.fieldErrors?.event_date} />
 
-        <label className="block text-sm">
-          <span className="mb-1.5 block text-muted-foreground">שעה</span>
-          <TimeSelect24 id="new_event_time" name="new_event_time" />
-        </label>
+        <div role="group" aria-labelledby="new_event_time-label" className="block text-sm">
+          <span id="new_event_time-label" className="mb-1.5 block text-muted-foreground">
+            שעה
+          </span>
+          <TimeSelect24 id="new_event_time" name="new_event_time" labelPrefix="שעה" />
+        </div>
         <FieldErrors errors={state?.fieldErrors?.event_time} />
 
         <label className="block text-sm">
@@ -1093,7 +1141,7 @@ export function ManageClient({
           )}
         </div>
 
-        <aside className="lg:sticky lg:top-6">
+        <aside className="lg:sticky lg:top-24">
           <ActionsPanel
             campaign={campaign}
             actions={actions}

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   BASELINE_ADMIN_CONFIG,
@@ -71,5 +71,26 @@ describe('buildCookieConsentConfig', () => {
     const sections = he.preferencesModal?.sections ?? [];
     expect(sections.some((s) => s.linkedCategory === 'necessary')).toBe(true);
     expect(sections.some((s) => s.title === 'מידע נוסף')).toBe(true);
+  });
+});
+
+describe('consent box aria-modal', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // disablePageInteraction:false → the page stays usable, so the consent box
+  // must not claim aria-modal; the preferences modal keeps it (really modal).
+  it('strips aria-modal from the consent box only, never from the preferences modal', () => {
+    const removeAttribute = vi.fn();
+    const querySelector = vi.fn(() => ({ removeAttribute }));
+    vi.stubGlobal('document', { querySelector });
+    const cfg = buildCookieConsentConfig(BASELINE_ADMIN_CONFIG);
+    expect(cfg.disablePageInteraction).toBe(false);
+
+    cfg.onModalShow?.({ modalName: 'preferencesModal' });
+    expect(querySelector).not.toHaveBeenCalled();
+
+    cfg.onModalShow?.({ modalName: 'consentModal' });
+    expect(querySelector).toHaveBeenCalledWith('#cc-main .cm');
+    expect(removeAttribute).toHaveBeenCalledWith('aria-modal');
   });
 });

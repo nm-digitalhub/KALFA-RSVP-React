@@ -47,7 +47,10 @@ export function IntakeForm({
 
   if (state?.notice) {
     return (
-      <div className="flex min-h-[300px] flex-col items-center justify-center text-center">
+      <div
+        role="status"
+        className="flex min-h-[300px] flex-col items-center justify-center text-center"
+      >
         <div className="flex size-16 items-center justify-center rounded-full bg-[#fff0ec]">
           <CheckCircle2
             aria-hidden

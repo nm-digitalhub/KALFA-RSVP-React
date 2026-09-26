@@ -170,6 +170,16 @@ export function buildCookieConsentConfig(
     // must stay fully usable while the notice is visible.
     disablePageInteraction: false,
 
+    // …which makes the library's hard-coded aria-modal="true" on the consent
+    // box (#cc-main .cm, set once at creation in 3.1.0) untrue: the page behind
+    // it stays interactive, so assistive tech must not treat the rest of the
+    // page as inert. Stripped each time the box is shown. The preferences
+    // modal keeps its aria-modal — it really is modal (overlay + focus trap).
+    onModalShow: ({ modalName }) => {
+      if (modalName !== 'consentModal') return;
+      document.querySelector('#cc-main .cm')?.removeAttribute('aria-modal');
+    },
+
     cookie: {
       name: 'kalfa_cookie_consent',
       path: '/',

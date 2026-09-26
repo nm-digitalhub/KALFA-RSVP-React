@@ -40,8 +40,10 @@ export const SELECT_CLS =
 export function Honeypot() {
   return (
     <div aria-hidden="true" className="absolute -m-px size-px overflow-hidden p-0 [clip:rect(0,0,0,0)]">
+      {/* The label text tells an automated DOM reader to skip the field;
+          humans never hear it (aria-hidden) nor reach it (tabIndex -1). */}
       <label>
-        חברה
+        השאירו שדה זה ריק
         <input type="text" name="company" tabIndex={-1} autoComplete="off" />
       </label>
     </div>

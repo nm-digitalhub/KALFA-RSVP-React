@@ -100,14 +100,14 @@ export default async function WhatsappImportPage({ params }: PageProps) {
         const errorRows = Array.isArray(s.error_rows)
           ? (s.error_rows as Array<{ row: number; message: string }>)
           : [];
+        const listLabel =
+          s.source === 'whatsapp_document'
+            ? `קובץ${s.file_name ? `: ${s.file_name}` : ''}`
+            : 'אנשי קשר ששותפו';
         return (
           <section key={s.id} className="space-y-3 rounded-lg border border-border p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-semibold">
-                {s.source === 'whatsapp_document'
-                  ? `קובץ${s.file_name ? `: ${s.file_name}` : ''}`
-                  : 'אנשי קשר ששותפו'}
-              </h2>
+              <h2 className="font-semibold">{listLabel}</h2>
               <span className="text-xs text-muted-foreground">
                 {s.row_count} שורות תקינות
                 {errorRows.length ? ` · ${errorRows.length} שורות שגויות` : ''}
@@ -174,6 +174,7 @@ export default async function WhatsappImportPage({ params }: PageProps) {
               confirm={confirmWhatsappImportAction.bind(null, eventId, s.id)}
               discard={discardWhatsappImportAction.bind(null, eventId, s.id)}
               matches={matchesByStaging.get(s.id) ?? []}
+              listLabel={listLabel}
             />
           </section>
         );

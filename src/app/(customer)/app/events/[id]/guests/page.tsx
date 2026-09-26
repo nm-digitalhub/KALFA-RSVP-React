@@ -167,7 +167,7 @@ function GuestCard({
           {GUEST_STATUS_LABELS[g.status]}
         </Badge>
         <p className="min-w-0 flex-1 truncate font-medium">{g.full_name}</p>
-        <GuestRowActions eventId={eventId} guestId={g.id} compact />
+        <GuestRowActions eventId={eventId} guestId={g.id} guestName={g.full_name} compact />
       </div>
 
       <div className="mt-1.5 flex items-center justify-between gap-2">
@@ -186,6 +186,7 @@ function GuestCard({
         <ContactStatusCell
           eventId={eventId}
           guestId={g.id}
+          guestName={g.full_name}
           value={g.contact_status}
           scope="card"
         />
@@ -444,6 +445,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
                         <ContactStatusCell
                           eventId={eventId}
                           guestId={g.id}
+                          guestName={g.full_name}
                           value={g.contact_status}
                           scope="row"
                         />
@@ -457,7 +459,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
                         {headcount ?? '—'}
                       </td>
                       <td className="px-4 py-2">
-                        <GuestRowActions eventId={eventId} guestId={g.id} />
+                        <GuestRowActions eventId={eventId} guestId={g.id} guestName={g.full_name} />
                       </td>
                     </tr>
                   );

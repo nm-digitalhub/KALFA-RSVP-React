@@ -44,12 +44,14 @@ export function OrgSwitcher({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button variant="ghost" className="h-9 gap-2 px-2">
+          // The org name is hidden below sm, so the visible text alone would
+          // leave the trigger unnamed on a phone.
+          <Button variant="ghost" className="h-9 gap-2 px-2" aria-label={`ארגון: ${active.name}`}>
             <Building2 className="size-4" aria-hidden />
             <span className="hidden max-w-32 truncate text-sm sm:inline">
               {active.name}
             </span>
-            <ChevronDown className="size-4 text-muted-foreground" />
+            <ChevronDown className="size-4 text-muted-foreground" aria-hidden />
           </Button>
         }
       />
@@ -68,7 +70,12 @@ export function OrgSwitcher({
                     onClick={(event) => event.currentTarget.form?.requestSubmit()}
                   >
                     <span className="truncate">{o.name}</span>
-                    {o.id === active.id ? <Check className="size-4" /> : null}
+                    {o.id === active.id ? (
+                      <>
+                        <Check className="size-4" aria-hidden />
+                        <span className="sr-only">(נוכחי)</span>
+                      </>
+                    ) : null}
                   </button>
                 }
               />

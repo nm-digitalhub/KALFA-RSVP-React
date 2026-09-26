@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { ManageCookiesButton } from '@/components/consent/manage-cookies-button';
+import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 import { EVENT_TYPES } from '@/lib/marketing/event-types';
 
 // Shared footer for the public MARKETING pages — mounted once in
@@ -56,7 +57,7 @@ const LINK_CLASS = [
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70',
 ].join(' ');
 
-export function SiteFooter({
+export async function SiteFooter({
   widgetClearance = false,
 }: {
   // True when the floating "call me now" widget is mounted (fixed bottom-4
@@ -65,6 +66,10 @@ export function SiteFooter({
   widgetClearance?: boolean;
 }) {
   const year = new Date().getFullYear();
+  // Same React-cache()d read the root and (site) layouts already make for this
+  // request — no extra DB round trip. Hides the cookie control when the admin
+  // has switched the consent mechanism off (see manage-cookies-button.tsx).
+  const { enabled: consentEnabled } = await getCookieConsentPublicConfig();
   return (
     <footer className="bg-[#0b0f1a] text-white/60">
       <div className={`mx-auto max-w-6xl px-6 pt-10 ${widgetClearance ? 'pb-24 sm:pb-10' : 'pb-10'}`}>
@@ -98,7 +103,7 @@ export function SiteFooter({
               {l.label}
             </Link>
           ))}
-          <ManageCookiesButton className={LINK_CLASS}>ניהול עוגיות</ManageCookiesButton>
+          <ManageCookiesButton enabled={consentEnabled} className={LINK_CLASS}>ניהול עוגיות</ManageCookiesButton>
         </nav>
         <p className="mt-3 text-xs">© {year} KALFA · כל הזכויות שמורות</p>
       </div>

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 
-import type { CompanyLegal } from '@/lib/data/company';
+import { toE164Israel, type CompanyLegal } from '@/lib/data/company';
 
 // Shared shell for the public legal pages (privacy policy, terms). RTL Hebrew,
 // reads the company identity from config so it stays in sync with the agreement.
@@ -25,6 +25,9 @@ export function LegalShell({
 }) {
   const todo = (v: string) =>
     v.trim() ? v.trim() : '[יושלם בהגדרות פרטי החברה]';
+  // Contact details are real links (tap-to-call / mail). A phone that does not
+  // normalise to E.164 stays plain text rather than a broken tel: link.
+  const phoneE164 = company.contactPhone ? toE164Israel(company.contactPhone) : '';
 
   return (
     // <main>, like every other (site) page: the header/footer come from the
@@ -54,9 +57,27 @@ export function LegalShell({
         </p>
         {company.address ? <p>{company.address}</p> : null}
         <p>
-          {company.contactPhone ? `טלפון: ${company.contactPhone}` : ''}
+          {company.contactPhone ? (
+            <>
+              טלפון:{' '}
+              {phoneE164 ? (
+                <a href={`tel:${phoneE164}`} dir="ltr" className="underline underline-offset-4 hover:text-foreground">
+                  {company.contactPhone}
+                </a>
+              ) : (
+                company.contactPhone
+              )}
+            </>
+          ) : null}
           {company.contactPhone && company.contactEmail ? ' · ' : ''}
-          {company.contactEmail ? `דוא״ל: ${company.contactEmail}` : ''}
+          {company.contactEmail ? (
+            <>
+              דוא״ל:{' '}
+              <a href={`mailto:${company.contactEmail}`} className="underline underline-offset-4 hover:text-foreground">
+                {company.contactEmail}
+              </a>
+            </>
+          ) : null}
         </p>
       </section>
     </main>
@@ -74,10 +95,12 @@ export function LegalSection({
 }) {
   return (
     <section className="space-y-2">
-      <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold">
-        {title}
+      {/* The badge is a SIBLING of the <h2>, not inside it: status text in the
+          heading would be read as part of the section's name. Same visual row. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-lg font-semibold">{title}</h2>
         {badge}
-      </h2>
+      </div>
       <div className="space-y-2 text-sm leading-7 text-muted-foreground">
         {children}
       </div>

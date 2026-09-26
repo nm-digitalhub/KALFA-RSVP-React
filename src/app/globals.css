@@ -186,6 +186,20 @@ body {
   html {
     @apply font-sans;
   }
+  /* Tailwind v4 preflight leaves buttons on the default arrow; the pointer
+     signals clickability to users and to screenshot-driven AI agents. The
+     same holds for native selects, checkable/file inputs, the labels that
+     wrap them, and <details> summaries. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="file"]:not(:disabled),
+  label:has(> input:not(:disabled)),
+  summary {
+    cursor: pointer;
+  }
 }
 
 /* vanilla-cookieconsent theming — map the plugin's own CSS variables onto our

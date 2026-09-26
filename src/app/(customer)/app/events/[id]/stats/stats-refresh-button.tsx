@@ -1,26 +1,24 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useTransition } from 'react';
 
 import { buttonVariants } from '@/components/ui/button';
 
 export function StatsRefreshButton() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  // router.refresh() returns immediately; the transition stays pending until
+  // the refreshed server payload has rendered.
+  const [pending, startTransition] = useTransition();
 
   return (
     <button
       type="button"
       className={buttonVariants({ variant: 'outline' })}
-      disabled={loading}
-      onClick={() => {
-        setLoading(true);
-        router.refresh();
-        setLoading(false);
-      }}
+      disabled={pending}
+      onClick={() => startTransition(() => router.refresh())}
     >
-      {loading ? 'מרענן…' : 'רענן נתונים'}
+      {pending ? 'מרענן…' : 'רענן נתונים'}
     </button>
   );
 }

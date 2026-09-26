@@ -432,13 +432,15 @@ function PhoneVerification({ profile }: { profile: ProfileDTO | null }) {
           succeeded and the step stayed shut (measured 2026-09-02). */}
       <form action={sendAction} onSubmit={() => setDirty(false)} className="space-y-4">
         <div className="max-w-sm">
-          <label htmlFor="phone" className="mb-1 block text-sm font-medium">
+          {/* `phone` is the section's anchor (#phone in the nav); the input
+              needs its own id. */}
+          <label htmlFor="phone-input" className="mb-1 block text-sm font-medium">
             מספר טלפון
           </label>
           <div className="flex items-center gap-2">
             <input
               ref={phoneInput}
-              id="phone"
+              id="phone-input"
               name="phone"
               type="tel"
               dir="ltr"
@@ -577,6 +579,7 @@ export function SettingsPageClient({
 }: SettingsPageClientProps) {
   const nav = [
     { href: '#profile', label: 'פרופיל', icon: UserRound },
+    { href: '#phone', label: 'טלפון', icon: Smartphone },
     { href: '#notifications', label: 'התראות', icon: Bell },
     { href: '#summary', label: 'סיכום', icon: Settings },
     { href: '#security', label: 'אבטחה', icon: KeyRound },
@@ -603,7 +606,10 @@ export function SettingsPageClient({
 
       <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
         <aside className="lg:sticky lg:top-24 lg:self-start">
-          <nav className="grid gap-1 rounded-lg border border-border bg-card p-2">
+          <nav
+            aria-label="ניווט בהגדרות"
+            className="grid gap-1 rounded-lg border border-border bg-card p-2"
+          >
             {nav.map(({ href, label, icon: Icon }) => (
               <a
                 key={href}

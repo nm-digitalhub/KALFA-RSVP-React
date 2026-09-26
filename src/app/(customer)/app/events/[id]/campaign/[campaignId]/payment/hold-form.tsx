@@ -71,6 +71,12 @@ export function formatCardholderName(fullName: string): string {
 // ever observe it completing — showing it as "done" here would be a lie.
 type HoldStage = 'idle' | 'verifying' | 'placing';
 
+const STAGE_STATE_LABEL = {
+  done: ' (הושלם)',
+  current: ' (בתהליך)',
+  pending: ' (ממתין)',
+} as const;
+
 function StageRow({
   label,
   state,
@@ -99,7 +105,11 @@ function StageRow({
         )}
         {state === 'pending' && <Clock3 className="size-4" aria-hidden="true" />}
       </span>
-      <span>{label}</span>
+      <span>
+        {label}
+        {/* The icons above carry the state visually only. */}
+        <span className="sr-only">{STAGE_STATE_LABEL[state]}</span>
+      </span>
     </li>
   );
 }
@@ -250,7 +260,7 @@ export function CampaignHoldForm({
       >
         {/* payments.js writes tokenization errors into this element (.og-errors).
             Placed above the fields, matching the official SUMIT form. */}
-        <div className="og-errors text-sm text-red-600" />
+        <div role="alert" className="og-errors text-sm text-red-600" />
 
         <div>
           <label htmlFor="cardnumber" className="mb-1 block text-sm font-medium">

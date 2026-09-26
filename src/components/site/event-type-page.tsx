@@ -173,7 +173,7 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
                 {startLabel}
                 <ArrowLeft className="size-5" aria-hidden />
               </Link>
-              <Link href="/" className={siteCta({ variant: 'onPrimary', size: 'xl' })}>
+              <Link href="/#how" className={siteCta({ variant: 'onPrimary', size: 'xl' })}>
                 <CircleCheck className="size-5" aria-hidden />
                 איך המערכת עובדת
               </Link>

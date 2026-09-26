@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 import { formatIsraelDateTime } from '@/lib/date';
+import { formatCurrency } from '@/lib/format';
 import { buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { getEventStats, type EventStatsResult } from '@/lib/data/event-stats';
@@ -217,7 +218,7 @@ export default async function EventStatsPage({
               ) : null}
             </dl>
             {stats.campaign.delivery ? (
-              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+              <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                 <div>
                   <dt className="text-muted-foreground">נשלח</dt>
                   <dd className="font-medium">{stats.campaign.delivery.sent}</dd>
@@ -242,29 +243,29 @@ export default async function EventStatsPage({
                   <dt className="text-muted-foreground">ביקש הסרה</dt>
                   <dd className="font-medium">{stats.campaign.delivery.optedOut}</dd>
                 </div>
-              </div>
+              </dl>
             ) : null}
             {stats.campaign.billing ? (
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <dl className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <dt className="text-muted-foreground">נוצר קשר (לחיוב)</dt>
                   <dd className="font-medium">{stats.campaign.billing.reachedCount}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">נצבר</dt>
-                  <dd className="font-medium">{stats.campaign.billing.accrued}</dd>
+                  <dd className="font-medium">{formatCurrency(stats.campaign.billing.accrued)}</dd>
                 </div>
                 {stats.campaign.billing.ceiling !== null ? (
                   <div>
                     <dt className="text-muted-foreground">תקרה</dt>
-                    <dd className="font-medium">{stats.campaign.billing.ceiling}</dd>
+                    <dd className="font-medium">{formatCurrency(stats.campaign.billing.ceiling)}</dd>
                   </div>
                 ) : null}
                 <div>
                   <dt className="text-muted-foreground">מגעים מקסימליים</dt>
                   <dd className="font-medium">{stats.campaign.billing.maxContacts}</dd>
                 </div>
-              </div>
+              </dl>
             ) : null}
           </div>
         ) : null}

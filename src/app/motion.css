@@ -14,7 +14,7 @@
  *  - Logical direction only. Horizontal movement is never written here;
  *    tw-animate-css's `slide-in-from-start/end` (verified: `:dir()`-aware)
  *    is the only horizontal slide allowed in markup.
- *  - A scroll-driven animation with `animation-fill-mode: both` stays ACTIVE
+ *  - A scroll-driven reveal with `animation-fill-mode: forwards` stays ACTIVE
  *    at 100% for as long as the element exists, and an animated property
  *    beats any hover declaration. So the reveal keyframes own `opacity` +
  *    `translate` (+ the individual `rotate` for `k-reveal-3d`), and every
@@ -140,13 +140,24 @@
    Rest state = fully visible: a browser without scroll timelines, a
    reduced-motion user, or a deep-link straight to the section all see the
    finished state. Entry runs over the first 45% of the element entering the
-   viewport (animation-range), so content is never hidden once it is in view. */
+   viewport (animation-range), so content is never hidden once it is in view.
+   Fill mode is `forwards`, NOT `both`: `both` also applies the 0% keyframe
+   (opacity 0) in the BEFORE phase, i.e. to everything still below the fold —
+   which is why full-page screenshots showed those sections blank. With
+   `forwards` an element that has not entered yet sits at its visible rest
+   state; the animation takes over at entry 0%, when only its first pixel row
+   is in view, so the jump to the 0% keyframe is not seen, and the 100%
+   keyframe (identical to rest) holds after the range. Same for the two
+   group utilities below — which is also why every range there STARTS at
+   entry 0%: a later start would leave the child visible (no fill) while it
+   is already partly on screen, then blink to opacity 0 when its range
+   began. */
 @utility k-reveal {
   @media (prefers-reduced-motion: no-preference) {
     @supports (animation-timeline: view()) {
       animation-name: k-reveal;
       animation-timing-function: var(--ease-k-out);
-      animation-fill-mode: both;
+      animation-fill-mode: forwards;
       animation-timeline: view();
       animation-range: entry 0% entry 45%;
     }
@@ -154,7 +165,8 @@
 }
 
 /* Same, applied to the CHILDREN of a grid with a positional stagger:
-   columns 2 and 3 start a little later (right→left in RTL = reading order).
+   columns 2 and 3 finish a little later (right→left in RTL = reading order) —
+   a longer range from the same entry 0% start, so they trail column 1.
    Each child owns its own view() timeline, so rows below stagger naturally. */
 @utility k-reveal-group {
   @media (prefers-reduced-motion: no-preference) {
@@ -162,15 +174,15 @@
       & > * {
         animation-name: k-reveal;
         animation-timing-function: var(--ease-k-out);
-        animation-fill-mode: both;
+        animation-fill-mode: forwards;
         animation-timeline: view();
         animation-range: entry 0% entry 40%;
       }
       & > :nth-child(3n + 2) {
-        animation-range: entry 8% entry 48%;
+        animation-range: entry 0% entry 48%;
       }
       & > :nth-child(3n + 3) {
-        animation-range: entry 16% entry 56%;
+        animation-range: entry 0% entry 56%;
       }
     }
   }
@@ -192,15 +204,15 @@
       & > * {
         animation-name: k-reveal;
         animation-timing-function: var(--ease-k-out);
-        animation-fill-mode: both;
+        animation-fill-mode: forwards;
         animation-timeline: view();
         animation-range: entry 0% entry 40%;
       }
       & > :nth-child(3n + 2) {
-        animation-range: entry 8% entry 48%;
+        animation-range: entry 0% entry 48%;
       }
       & > :nth-child(3n + 3) {
-        animation-range: entry 16% entry 56%;
+        animation-range: entry 0% entry 56%;
       }
       @media (pointer: coarse) {
         perspective: 1200px;

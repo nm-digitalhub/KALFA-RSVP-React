@@ -16,6 +16,14 @@ import { CampaignSetupForm } from './campaign-setup-form';
 const LOCK_WARNING =
   'לאחר האישור לא ניתן יהיה לשנות את תאריך האירוע, שעת האירוע והמועד האחרון לאישורי הגעה.';
 
+// The icon is aria-hidden, so the state is also spoken as text.
+const STEP_STATE_SR_LABELS: Record<SetupStep['state'], string> = {
+  done: 'הושלם',
+  current: 'שלב נוכחי',
+  pending: 'ממתין',
+  blocked: 'חסום',
+};
+
 function StepIcon({ state }: { state: SetupStep['state'] }) {
   return (
     <span
@@ -78,6 +86,7 @@ export function SetupSteps({
         {steps.map((s, i) => (
           <li
             key={s.key}
+            aria-current={s.state === 'current' ? 'step' : undefined}
             className={cn(
               'flex items-start gap-3 rounded-md px-2 py-2',
               s.state === 'current' && 'bg-primary/5',
@@ -92,6 +101,7 @@ export function SetupSteps({
                 )}
               >
                 {i + 1}. {SETUP_STEP_LABELS[s.key]}
+                <span className="sr-only"> – {STEP_STATE_SR_LABELS[s.state]}</span>
               </p>
               {s.hint ? <p className="text-xs text-muted-foreground">{s.hint}</p> : null}
               {s.key === 'guests' && s.state !== 'done' && !isPast ? (

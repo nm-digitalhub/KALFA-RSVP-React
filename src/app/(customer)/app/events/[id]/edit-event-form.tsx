@@ -195,6 +195,7 @@ export function EditEventForm({
         </label>
         <DateSelectIL
           id="event_date"
+          labelPrefix="תאריך האירוע"
           name={isDraft ? 'event_date' : undefined}
           defaultValue={dateInputValue(event.event_date)}
           disabled={!isDraft}
@@ -211,6 +212,7 @@ export function EditEventForm({
         </label>
         <TimeSelect24
           id="event_time"
+          labelPrefix="שעת האירוע"
           name={isDraft ? 'event_time' : undefined}
           defaultValue={ilTimeInputValue(event.event_date)}
           disabled={!isDraft}
@@ -229,6 +231,7 @@ export function EditEventForm({
         </label>
         <DateSelectIL
           id="rsvp_deadline"
+          labelPrefix="מועד אחרון לאישור הגעה"
           name={isDraft ? 'rsvp_deadline' : undefined}
           defaultValue={dateInputValue(event.rsvp_deadline)}
           disabled={!isDraft}

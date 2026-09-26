@@ -1,9 +1,20 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import { FormError, FormNotice } from '@/components/forms';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import type {
   ImportMatch,
   MergeFieldDiff,
@@ -19,20 +30,78 @@ const FIELD_LABELS: Record<MergeFieldKey, string> = {
   expected_count: 'כמות',
 };
 
-function SubmitButton({ label, danger }: { label: string; danger?: boolean }) {
+const dangerButtonClass =
+  'rounded-md border border-destructive/40 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-60';
+
+function SubmitButton({ label, ariaLabel }: { label: string; ariaLabel?: string }) {
   const { pending } = useFormStatus();
   return (
     <button
       type="submit"
       disabled={pending}
-      className={
-        danger
-          ? 'rounded-md border border-destructive/40 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-60'
-          : 'rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60'
-      }
+      aria-label={ariaLabel}
+      className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
     >
       {pending ? 'רגע…' : label}
     </button>
+  );
+}
+
+// The dialog trigger for the discard form. Rendered inside the <form>, so
+// useFormStatus reflects the submission the dialog starts.
+function PendingDangerTrigger({ children, ...props }: React.ComponentProps<'button'>) {
+  const { pending } = useFormStatus();
+  return (
+    <button type="button" {...props} disabled={pending} className={dangerButtonClass}>
+      {pending ? 'רגע…' : children}
+    </button>
+  );
+}
+
+// "מחיקה" discards the staged list with no way back, so it asks first. The
+// dialog content is portaled outside the <form>, so confirming submits the
+// form by ref rather than by a submit button.
+function DiscardForm({
+  action,
+  listLabel,
+}: {
+  action: (formData: FormData) => void;
+  listLabel?: string;
+}) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const [open, setOpen] = useState(false);
+
+  const onConfirm = (): void => {
+    formRef.current?.requestSubmit();
+    setOpen(false);
+  };
+
+  return (
+    <form ref={formRef} action={action}>
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogTrigger
+          render={
+            <PendingDangerTrigger aria-label={listLabel ? `מחיקה: ${listLabel}` : undefined}>
+              מחיקה
+            </PendingDangerTrigger>
+          }
+        />
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>מחיקת הרשימה</AlertDialogTitle>
+            <AlertDialogDescription>
+              הרשימה תימחק בלי לייבא אף מוזמן. לא ניתן לשחזר את הפעולה.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ביטול</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={onConfirm}>
+              מחיקה
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </form>
   );
 }
 
@@ -123,10 +192,14 @@ export function StagingActions({
   confirm,
   discard,
   matches = [],
+  listLabel,
 }: {
   confirm: BoundAction;
   discard: BoundAction;
   matches?: ImportMatch[];
+  // The staged list's visible heading (file name / shared contacts). Several
+  // lists can be pending at once, so it goes into the buttons' accessible names.
+  listLabel?: string;
 }) {
   const [confirmState, confirmAction] = useActionState(confirm, null);
   const [discardState, discardAction] = useActionState(discard, null);
@@ -151,11 +224,12 @@ export function StagingActions({
               ))}
             </fieldset>
           ) : null}
-          <SubmitButton label="אישור ייבוא" />
+          <SubmitButton
+            label="אישור ייבוא"
+            ariaLabel={listLabel ? `אישור ייבוא: ${listLabel}` : undefined}
+          />
         </form>
-        <form action={discardAction}>
-          <SubmitButton label="מחיקה" danger />
-        </form>
+        <DiscardForm action={discardAction} listLabel={listLabel} />
       </div>
     </div>
   );

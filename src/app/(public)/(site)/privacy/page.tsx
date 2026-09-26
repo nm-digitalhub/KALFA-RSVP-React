@@ -150,10 +150,17 @@ export default async function PrivacyPage() {
           Ads) הן שתי קטגוריות נפרדות, כל אחת כבויה כברירת מחדל, וכל אחת נאספת רק
           בהסכמה מפורשת (opt‑in) נפרדת, בהתאם להנחיות הרשות להגנת הפרטיות. לפירוט מלא
           ראו את <Link href="/cookies" className="underline underline-offset-4">מדיניות
-          העוגיות</Link>, או{' '}
-          <ManageCookiesButton className="underline underline-offset-4">
-            פתחו את הודעת העוגיות
-          </ManageCookiesButton>
+          העוגיות</Link>
+          {/* The "or open the notice" clause only exists while the consent
+              mechanism is on — otherwise the button would be a dead click. */}
+          {consentAdmin.enabled ? (
+            <>
+              , או{' '}
+              <ManageCookiesButton enabled className="underline underline-offset-4">
+                פתחו את הודעת העוגיות
+              </ManageCookiesButton>
+            </>
+          ) : null}
           .
         </p>
       </LegalSection>

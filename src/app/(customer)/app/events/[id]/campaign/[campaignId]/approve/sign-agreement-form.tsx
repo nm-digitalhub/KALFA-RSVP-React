@@ -251,10 +251,20 @@ export function SignAgreementForm({
         <FormError message={state?.error} />
 
         <div>
-          <label className={labelClass}>חתימה *</label>
+          {/* A <label> cannot label a canvas (not a form control), so the
+              visible caption names the drawing surface via aria-labelledby;
+              listing the canvas's own id appends its aria-label, giving
+              "חתימה * משטח חתימה" (aria-labelledby alone would drop it). */}
+          <label id="signature-label" className={labelClass}>
+            חתימה *
+          </label>
           <div className="relative">
             <canvas
               ref={canvasRef}
+              id="signature-canvas"
+              role="img"
+              aria-label="משטח חתימה"
+              aria-labelledby="signature-label signature-canvas"
               className="h-40 w-full touch-none rounded-md border border-border bg-white"
             />
             {!otpVerified ? (

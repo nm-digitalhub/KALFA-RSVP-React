@@ -11,8 +11,8 @@ console.log("Hello from Functions!");
 // This endpoint uses 'publishable' | 'secret' access, apiKey is required.
 // Use publishable for Client-facing, key-validated endpoints
 // Use secret for Server-to-server, internal calls
-export default {
-  fetch: withSupabase({ auth: ["publishable", "secret"] }, async (req, ctx) => {
+const handler = {
+  fetch: withSupabase({ auth: ["publishable", "secret"] }, async (req, _ctx) => {
     // Called by another service with a secret key
     // ctx.supabaseAdmin bypasses RLS — use for privileged operations
     /*
@@ -33,6 +33,8 @@ export default {
     });
   }),
 };
+
+export default handler;
 
 /* To invoke locally:
 

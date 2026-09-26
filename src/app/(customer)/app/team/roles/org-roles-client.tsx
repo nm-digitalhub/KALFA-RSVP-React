@@ -72,7 +72,12 @@ function ResetRoleButton({ role }: { role: OrgRoleDTO }) {
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger
         render={
-          <Button variant="ghost" size="xs" className="text-muted-foreground">
+          <Button
+            variant="ghost"
+            size="xs"
+            className="text-muted-foreground"
+            aria-label={`איפוס ${role.label}`}
+          >
             <RotateCcw aria-hidden />
             איפוס
           </Button>

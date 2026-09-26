@@ -22,6 +22,7 @@ export function TimeSelect24({
   name,
   defaultValue = '',
   disabled,
+  labelPrefix,
 }: {
   id: string;
   // undefined (edit form after publish) keeps the field out of the POST,
@@ -30,7 +31,11 @@ export function TimeSelect24({
   // 'HH:mm' or '' (no time set).
   defaultValue?: string;
   disabled?: boolean;
+  // The field's visible label; when set, each select is announced as
+  // "<label> – שעה" / "<label> – דקות".
+  labelPrefix?: string;
 }) {
+  const partLabel = (part: string) => (labelPrefix ? `${labelPrefix} – ${part}` : part);
   const [initialHour, initialMinute] = /^\d{2}:\d{2}$/.test(defaultValue)
     ? defaultValue.split(':')
     : ['', ''];
@@ -49,7 +54,7 @@ export function TimeSelect24({
     <div dir="ltr" className="flex w-fit items-center gap-1">
       <select
         id={id}
-        aria-label="שעה"
+        aria-label={partLabel('שעה')}
         value={hour}
         disabled={disabled}
         onChange={(e) => {
@@ -71,7 +76,7 @@ export function TimeSelect24({
       </select>
       <span aria-hidden>:</span>
       <select
-        aria-label="דקות"
+        aria-label={partLabel('דקות')}
         value={minute}
         disabled={disabled || hour === ''}
         onChange={(e) => setMinute(e.target.value)}

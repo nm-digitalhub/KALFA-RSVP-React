@@ -66,16 +66,16 @@ export default function NotFound() {
         </Link>
       </div>
 
-      <nav className="mt-8 flex items-center gap-4 text-sm text-muted-foreground">
-        <Link href="/faq" className="hover:underline">
+      <nav aria-label="קישורים שימושיים" className="mt-8 flex items-center gap-4 text-sm text-muted-foreground">
+        <Link href="/faq" className="inline-flex min-h-11 items-center hover:underline">
           שאלות נפוצות
         </Link>
         <span aria-hidden="true">·</span>
-        <Link href="/contact" className="hover:underline">
+        <Link href="/contact" className="inline-flex min-h-11 items-center hover:underline">
           יצירת קשר
         </Link>
         <span aria-hidden="true">·</span>
-        <Link href="/privacy" className="hover:underline">
+        <Link href="/privacy" className="inline-flex min-h-11 items-center hover:underline">
           פרטיות
         </Link>
       </nav>

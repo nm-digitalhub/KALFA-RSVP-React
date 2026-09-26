@@ -240,6 +240,19 @@ const nextConfig: NextConfig = {
           { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
         ],
       },
+      // Org-invitation acceptance page — the invitation token is in the path.
+      // Same posture as /r: never cache, never leak the token via Referer
+      // (no-referrer OVERRIDES the global rule because it is listed after it),
+      // keep out of search indexes (defense-in-depth with the route's `robots`
+      // metadata).
+      {
+        source: '/join/:token*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, max-age=0' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
       // Service worker (guides/progressive-web-apps §8): correct JS content type,
       // never cache so SW updates propagate immediately, and a strict self-only
       // CSP. X-Content-Type-Options is already applied by the global rule above.

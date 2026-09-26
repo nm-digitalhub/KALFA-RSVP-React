@@ -1,8 +1,18 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useRef, useState } from 'react';
 
 import { Button, type buttonVariants } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { FormError, FormNotice } from '@/components/forms';
 import type { FormState } from '@/lib/validation/result';
 import type { EventStatus } from '@/lib/data/events';
@@ -35,22 +45,43 @@ function ActionButton({
   disabledHint?: string;
 }) {
   const [state, formAction] = useActionState(action, null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   return (
-    <form action={formAction} className="space-y-2">
-      <Button
-        type="submit"
-        variant={variant}
-        disabled={disabled}
-        onClick={
-          confirm
-            ? (e) => {
-                if (!window.confirm(confirm)) e.preventDefault();
-              }
-            : undefined
-        }
-      >
-        {label}
-      </Button>
+    <form ref={formRef} action={formAction} className="space-y-2">
+      {confirm ? (
+        // The dialog is portaled outside the form, so its confirm button
+        // submits the form explicitly (same action as the plain submit below).
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogTrigger
+            disabled={disabled}
+            render={<Button type="button" variant={variant} />}
+          >
+            {label}
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{confirm}</AlertDialogTitle>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>ביטול</AlertDialogCancel>
+              <AlertDialogAction
+                variant={variant === 'destructive' ? 'destructive' : 'default'}
+                onClick={() => {
+                  setConfirmOpen(false);
+                  formRef.current?.requestSubmit();
+                }}
+              >
+                {label}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : (
+        <Button type="submit" variant={variant} disabled={disabled}>
+          {label}
+        </Button>
+      )}
       {disabled && disabledHint ? (
         <p className="text-xs text-muted-foreground">{disabledHint}</p>
       ) : null}

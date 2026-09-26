@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { DirectionProvider } from '@base-ui/react/direction-provider';
 import { Loader2, Phone, X } from 'lucide-react';
 
@@ -78,6 +78,8 @@ export function CallMeNowWidget() {
   const [code, setCode] = useState('');
   const [step, setStep] = useState<Step>('phone');
   const [error, setError] = useState<string | null>(null);
+  const titleId = useId();
+  const phoneId = useId();
 
   function reset() {
     setStep('phone');
@@ -141,22 +143,26 @@ export function CallMeNowWidget() {
             type="button"
             size="lg"
             className="shadow-lg"
-            aria-label="בקשת שיחה ממוקד קלפה"
             onClick={() => setOpen(true)}
           >
             <Phone aria-hidden />
             התקשרו אליי עכשיו
           </Button>
         ) : (
-          <div className="w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card shadow-lg">
+          // Non-modal dialog: the page behind stays usable, so no aria-modal.
+          <div
+            role="dialog"
+            aria-labelledby={titleId}
+            className="w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card shadow-lg"
+          >
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
               <Phone className="size-4 text-muted-foreground" aria-hidden />
-              <p className="min-w-0 flex-1 truncate text-sm font-medium">התקשרו אליי עכשיו</p>
+              <p id={titleId} className="min-w-0 flex-1 truncate text-sm font-medium">התקשרו אליי עכשיו</p>
               <button
                 type="button"
                 aria-label="סגירה"
                 onClick={onClose}
-                className="rounded p-1 text-muted-foreground hover:bg-muted"
+                className="-my-2.5 -me-2.5 grid size-11 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted"
               >
                 <X className="size-4" aria-hidden />
               </button>
@@ -177,15 +183,21 @@ export function CallMeNowWidget() {
 
               {step === 'phone' && disclosureAccepted ? (
                 <>
-                  <label className="block space-y-1">
-                    <span className="text-muted-foreground">מספר טלפון</span>
+                  {/* id/htmlFor, not a wrapping <label>: PhoneInput's first
+                      labelable descendant is its country-picker BUTTON, so a
+                      wrapping label named the button, not the number field. */}
+                  <div className="space-y-1">
+                    <label htmlFor={phoneId} className="block text-muted-foreground">
+                      מספר טלפון
+                    </label>
                     <PhoneInput
+                      id={phoneId}
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="050-1234567"
                     />
-                  </label>
-                  {error ? <p className="text-destructive">{error}</p> : null}
+                  </div>
+                  {error ? <p role="alert" className="text-destructive">{error}</p> : null}
                   <Button
                     type="button"
                     className="w-full"
@@ -203,13 +215,15 @@ export function CallMeNowWidget() {
                   <Input
                     type="text"
                     inputMode="numeric"
+                    autoComplete="one-time-code"
+                    aria-label="קוד אימות"
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
                     className="tracking-widest"
                     placeholder="000000"
                     maxLength={6}
                   />
-                  {error ? <p className="text-destructive">{error}</p> : null}
+                  {error ? <p role="alert" className="text-destructive">{error}</p> : null}
                   <Button
                     type="button"
                     className="w-full"
@@ -246,7 +260,7 @@ export function CallMeNowWidget() {
 
               {step === 'error' ? (
                 <>
-                  <p className="text-destructive">{error}</p>
+                  <p role="alert" className="text-destructive">{error}</p>
                   <Button type="button" variant="outline" className="w-full" onClick={reset}>
                     ניסיון נוסף
                   </Button>

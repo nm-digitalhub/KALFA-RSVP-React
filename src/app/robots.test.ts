@@ -10,7 +10,17 @@ describe('robots.txt', () => {
     const r = await robots();
     const rules = Array.isArray(r.rules) ? r.rules[0] : r.rules;
     expect(rules?.disallow).toEqual(
-      expect.arrayContaining(['/r/', '/g/', '/ty/', '/join/', '/app/', '/admin/', '/api/']),
+      expect.arrayContaining([
+        '/r/',
+        '/g/',
+        '/rate/',
+        '/ty/',
+        '/join/',
+        '/cb/',
+        '/app/',
+        '/admin/',
+        '/api/',
+      ]),
     );
   });
 

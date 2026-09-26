@@ -3,6 +3,16 @@
 import { useActionState, useState, useTransition } from 'react';
 
 import { FieldError, FormError, FormNotice } from '@/components/forms';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { recoverFromVersionSkew } from '@/components/use-version-skew-reload';
 import type { GuestGroup } from '@/lib/data/guests';
 import type { FormState } from '@/lib/validation/result';
@@ -64,15 +74,10 @@ function GroupRow({ eventId, group }: { eventId: string; group: GuestGroup }) {
   );
   const [pending, startTransition] = useTransition();
   const [failed, setFailed] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   function onDelete() {
-    if (
-      !window.confirm(
-        'למחוק את הקבוצה? האורחים המשויכים אליה יעברו ל"ללא קבוצה".',
-      )
-    ) {
-      return;
-    }
+    setConfirmOpen(false);
     setFailed(false);
     startTransition(async () => {
       try {
@@ -89,7 +94,7 @@ function GroupRow({ eventId, group }: { eventId: string; group: GuestGroup }) {
     <li className="flex flex-wrap items-center gap-2">
       <form action={renameAction} className="flex flex-wrap items-center gap-2">
         <label className="sr-only" htmlFor={`group-name-${group.id}`}>
-          שם הקבוצה
+          שם הקבוצה – {group.name}
         </label>
         <input
           id={`group-name-${group.id}`}
@@ -104,17 +109,41 @@ function GroupRow({ eventId, group }: { eventId: string; group: GuestGroup }) {
           className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent/40"
         >
           שמירת שם
+          <span className="sr-only"> – {group.name}</span>
         </button>
       </form>
-      <button
-        type="button"
-        onClick={onDelete}
-        disabled={pending}
-        className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-60"
-      >
-        {pending ? 'מוחק…' : 'מחיקה'}
-      </button>
-      {failed ? <span className="text-xs text-destructive">נכשל</span> : null}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogTrigger
+          disabled={pending}
+          render={
+            <button
+              type="button"
+              className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-60"
+            />
+          }
+        >
+          {pending ? 'מוחק…' : 'מחיקה'}
+          <span className="sr-only"> – {group.name}</span>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              למחוק את הקבוצה? האורחים המשויכים אליה יעברו ל&quot;ללא קבוצה&quot;.
+            </AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ביטול</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={onDelete}>
+              מחיקה
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {failed ? (
+        <span role="alert" className="text-xs text-destructive">
+          נכשל
+        </span>
+      ) : null}
       <FieldError errors={state?.fieldErrors?.name} />
       <FormError message={state?.error} />
       <FormNotice message={state?.notice} />
