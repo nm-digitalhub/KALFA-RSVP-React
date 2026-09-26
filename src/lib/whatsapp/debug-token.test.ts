@@ -62,7 +62,29 @@ describe('debugToken — the answer', () => {
       dataAccessExpiresAt: 1796601600,
       scopes: ['whatsapp_business_messaging', 'whatsapp_business_management'],
       invalidReason: null,
+      granularScopes: [],
     });
+  });
+
+  it('returns granular_scopes with their target ids', async () => {
+    // Embedded Signup derives the customer's WABA from these target ids rather
+    // than trusting the ids the browser popup reported.
+    mockFetch(200, {
+      data: {
+        is_valid: true,
+        scopes: ['whatsapp_business_management'],
+        granular_scopes: [
+          { scope: 'whatsapp_business_management', target_ids: ['111', '222'] },
+          { scope: 'whatsapp_business_messaging' },
+          { target_ids: ['333'] },
+        ],
+      },
+    });
+    const r = await debugToken(CREDS);
+    expect(r.granularScopes).toEqual([
+      { scope: 'whatsapp_business_management', targetIds: ['111', '222'] },
+      { scope: 'whatsapp_business_messaging', targetIds: [] },
+    ]);
   });
 
   it('keeps expires_at = 0 as 0 rather than collapsing it into "unknown"', async () => {

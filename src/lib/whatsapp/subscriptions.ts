@@ -40,6 +40,18 @@ import { GRAPH_API_VERSION } from './graph-version';
 export const WHATSAPP_WEBHOOK_FIELDS = [
   'messages',
   'message_template_status_update',
+  // Embedded Signup: Meta requires it ("You must be subscribed to the
+  // account_update webhook") — fires on PARTNER_ADDED / PARTNER_REMOVED.
+  'account_update',
+  // Coexistence (onboarding-business-app-users §Step 1). A DELIBERATE exception
+  // to "add one when something handles it": these are subscribed BEFORE anyone
+  // runs the flow, because the smb_app_data sync is one-shot and 24h-bounded,
+  // and a field not subscribed at that moment is data lost for good. No handler
+  // exists yet — route.ts persists them generically and the worker marks them
+  // processed untouched (webhook-processing.ts: unknown kind).
+  'history',
+  'smb_app_state_sync',
+  'smb_message_echoes',
 ] as const;
 
 export const WHATSAPP_WEBHOOK_TOPIC = 'whatsapp_business_account';

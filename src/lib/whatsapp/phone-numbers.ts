@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { withAppSecretProof } from './appsecret-proof';
 import { GRAPH_API_VERSION } from './graph-version';
 import { createWhatsAppManagementClient } from './whatsapp-client';
 
@@ -67,13 +68,23 @@ const MAX_PAGES = 20;
 export interface WabaCredentials {
   wabaId: string;
   accessToken: string;
+  /**
+   * When given, every page is signed with appsecret_proof (./appsecret-proof.ts).
+   * Optional so the existing callers are byte-for-byte unchanged; the Embedded
+   * Signup flow passes it.
+   */
+  appSecret?: string;
 }
 
 async function getPage(
   url: string,
   accessToken: string,
+  appSecret?: string,
 ): Promise<{ data?: WabaPhoneNumber[]; paging?: { next?: string } }> {
-  const res = await fetch(url, {
+  // Fresh per page: a time-stamped proof expires after 5 minutes, and a
+  // followed paging.next may carry the previous page's.
+  const signed = appSecret ? withAppSecretProof(url, accessToken, appSecret) : url;
+  const res = await fetch(signed, {
     headers: { Authorization: `Bearer ${accessToken}` },
     signal: AbortSignal.timeout(15_000),
   });
@@ -111,7 +122,7 @@ async function fetchNumbers(
 
   const numbers: WabaPhoneNumber[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
-    const body = await getPage(url, creds.accessToken);
+    const body = await getPage(url, creds.accessToken, creds.appSecret);
     numbers.push(...(body.data ?? []));
     const next = body.paging?.next;
     if (!next) return { numbers, complete: true };

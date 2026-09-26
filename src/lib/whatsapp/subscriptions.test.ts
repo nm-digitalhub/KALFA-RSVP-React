@@ -34,6 +34,25 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+describe('Coexistence fields', () => {
+  it('requires the four fields Embedded Signup / Coexistence depend on', () => {
+    for (const f of ['account_update', 'history', 'smb_app_state_sync', 'smb_message_echoes']) {
+      expect(WHATSAPP_WEBHOOK_FIELDS).toContain(f);
+    }
+  });
+
+  it('reports missing_fields for the pre-Coexistence subscription', () => {
+    const state = readWhatsAppSubscription([
+      { topic: WHATSAPP_WEBHOOK_TOPIC, fields: ['messages', 'message_template_status_update'], active: true },
+    ]);
+    expect(state).toEqual({
+      kind: 'missing_fields',
+      fields: ['messages', 'message_template_status_update'],
+      missing: ['account_update', 'history', 'smb_app_state_sync', 'smb_message_echoes'],
+    });
+  });
+});
+
 describe('readWhatsAppSubscription — the four states', () => {
   const sub = (fields: string[], active = true) => [
     { topic: 'catalog', fields: [], active: true },
@@ -59,7 +78,7 @@ describe('readWhatsAppSubscription — the four states', () => {
 
   it('extra fields beyond ours are still ok — we do not own the whole list', () => {
     expect(
-      readWhatsAppSubscription(sub([...WHATSAPP_WEBHOOK_FIELDS, 'account_update'])),
+      readWhatsAppSubscription(sub([...WHATSAPP_WEBHOOK_FIELDS, 'phone_number_quality_update'])),
     ).toMatchObject({ kind: 'ok' });
   });
 
@@ -67,7 +86,8 @@ describe('readWhatsAppSubscription — the four states', () => {
     // Subscribed but useless: the topic exists and the one field that carries
     // inbound traffic is not on it.
     const r = readWhatsAppSubscription(sub(['message_template_status_update']));
-    expect(r).toMatchObject({ kind: 'missing_fields', missing: ['messages'] });
+    expect(r.kind).toBe('missing_fields');
+    expect(r.kind === 'missing_fields' && r.missing).toContain('messages');
   });
 
   it('inactive is its OWN state, not folded into absent', () => {

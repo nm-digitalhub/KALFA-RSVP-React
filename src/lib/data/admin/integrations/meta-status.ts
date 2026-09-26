@@ -2,8 +2,8 @@ import 'server-only';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getWhatsAppConfig } from '@/lib/data/outreach-config';
-import { createAdminClient } from '@/lib/supabase/admin';
 import { debugToken } from '@/lib/whatsapp/debug-token';
+import { resolveMetaAppId } from '@/lib/whatsapp/meta-app-id';
 import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 
 // The Meta connection as Meta describes it, rather than as our own columns
@@ -52,37 +52,6 @@ export type MetaStatus = {
   reason: string | null;
 };
 
-/**
- * The Meta app id. Not a secret (it is public in every OAuth URL), but it is
- * the one input `debug_token` needs that we do not already hold in
- * app_settings.
- *
- * Read from app_settings FIRST and from the environment only as a fallback.
- * The column does not exist yet — §4.4 of the consolidation plan adds
- * `whatsapp_app_id` in Phase 5 — so today this always resolves from env. The
- * order is written this way now, rather than after the migration, so landing
- * that column is a migration and nothing else: `select('*')` simply omits a
- * column that is not there, which is the same forward-compatible pattern
- * getWhatsAppConfig documents.
- */
-async function resolveAppId(): Promise<string | null> {
-  try {
-    const admin = createAdminClient();
-    const { data } = await admin
-      .from('app_settings')
-      .select('*')
-      .eq('id', true)
-      .maybeSingle();
-    const fromRow = (data as Record<string, unknown> | null)?.whatsapp_app_id;
-    if (typeof fromRow === 'string' && fromRow.trim() !== '') return fromRow.trim();
-  } catch {
-    // Fall through to env — a settings read failure must not be reported as
-    // "no app id configured".
-  }
-  const fromEnv = process.env.META_APP_ID_WA?.trim();
-  return fromEnv ? fromEnv : null;
-}
-
 export async function getMetaStatus(): Promise<MetaStatus> {
   await requirePlatformPermission('manage_settings');
 
@@ -102,7 +71,7 @@ export async function getMetaStatus(): Promise<MetaStatus> {
     };
   }
 
-  const appId = await resolveAppId();
+  const appId = await resolveMetaAppId();
   if (!appId) {
     return {
       ...base,

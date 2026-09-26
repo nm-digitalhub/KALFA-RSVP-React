@@ -40,6 +40,12 @@ export type DebugTokenResult = {
   scopes: string[];
   /** Meta's own explanation when is_valid is false (never the token). */
   invalidReason: string | null;
+  /**
+   * Per-permission asset ids. For an Embedded Signup business token,
+   * `whatsapp_business_management`'s targetIds are the WABAs the customer
+   * shared — the server-side source of truth for which account was connected.
+   */
+  granularScopes: Array<{ scope: string; targetIds: string[] }>;
 };
 
 type DebugTokenResponse = {
@@ -48,6 +54,7 @@ type DebugTokenResponse = {
     expires_at?: number;
     data_access_expires_at?: number;
     scopes?: string[];
+    granular_scopes?: Array<{ scope?: unknown; target_ids?: unknown }>;
     error?: { message?: string; code?: number };
   };
   error?: { message?: string; code?: number };
@@ -104,5 +111,19 @@ export async function debugToken(input: {
     // Meta puts the reason inside data.error when the token itself is bad.
     invalidReason:
       typeof data.error?.message === 'string' ? data.error.message : null,
+    granularScopes: Array.isArray(data.granular_scopes)
+      ? data.granular_scopes.flatMap((g) =>
+          typeof g?.scope === 'string'
+            ? [
+                {
+                  scope: g.scope,
+                  targetIds: Array.isArray(g.target_ids)
+                    ? g.target_ids.filter((t): t is string => typeof t === 'string')
+                    : [],
+                },
+              ]
+            : [],
+        )
+      : [],
   };
 }

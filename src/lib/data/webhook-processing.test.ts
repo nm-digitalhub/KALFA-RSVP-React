@@ -28,6 +28,9 @@ vi.mock('@/lib/data/whatsapp-import', () => ({
 // getWhatsAppConsentRequired — if a future test drives a path that reaches one,
 // it fails as "undefined is not a function"; add it here rather than debugging.
 vi.mock('@/lib/data/outreach-config', () => ({ getWhatsAppChannel: vi.fn() }));
+vi.mock('@/lib/whatsapp/embedded-signup/connected-numbers', () => ({
+  isEsConnectedPhoneNumber: vi.fn(async () => false),
+}));
 
 import {
   createWebhookBatchContext,
@@ -56,6 +59,7 @@ import {
   getWhatsAppChannel,
   type WhatsAppChannel,
 } from '@/lib/data/outreach-config';
+import { isEsConnectedPhoneNumber } from '@/lib/whatsapp/embedded-signup/connected-numbers';
 
 // How the channel reads in each of the two states. LEGACY is how this ships —
 // `whatsapp_import_sender` is unassigned on the live WABA.
@@ -707,6 +711,53 @@ describe('processMessage — inbound routing by phone_number_id', () => {
     // No guest phone, no message text anywhere in the alert.
     expect(JSON.stringify(alert)).not.toContain('972501234567');
     expect(JSON.stringify(alert)).not.toContain('הסר');
+  });
+
+  it('split: a number connected via Embedded Signup is stored silently — no alert, no billing', async () => {
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(SPLIT);
+    vi.mocked(isEsConnectedPhoneNumber).mockResolvedValueOnce(true);
+    await processWebhookEvent(
+      messageRow({
+        phone_number_id: '555000555',
+        payload: { type: 'text', from: '972501234567', text: { body: 'הסר' } },
+      }),
+    );
+    expect(isEsConnectedPhoneNumber).toHaveBeenCalledWith('555000555');
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+    expect(insertInteraction).not.toHaveBeenCalled();
+    expect(markContactRemovalRequested).not.toHaveBeenCalled();
+    expect(submitRsvp).not.toHaveBeenCalled();
+  });
+
+  it('legacy (no import role): an Embedded Signup number still never reaches import, RSVP or billing', async () => {
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(LEGACY);
+    vi.mocked(isEsConnectedPhoneNumber).mockResolvedValueOnce(true);
+    await processWebhookEvent(
+      messageRow({
+        phone_number_id: '555000555',
+        payload: { type: 'text', from: '972501234567', text: { body: 'הסר' } },
+      }),
+    );
+    expect(stageWhatsAppImport).not.toHaveBeenCalled();
+    expect(insertInteraction).not.toHaveBeenCalled();
+    expect(markContactRemovalRequested).not.toHaveBeenCalled();
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('legacy: the configured RSVP number is never looked up as an Embedded Signup number', async () => {
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(LEGACY);
+    await processWebhookEvent(messageRow());
+    expect(isEsConnectedPhoneNumber).not.toHaveBeenCalled();
+    expect(insertInteraction).toHaveBeenCalledTimes(1);
+  });
+
+  it('split: an Embedded Signup lookup failure throws so the row retries', async () => {
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(SPLIT);
+    vi.mocked(isEsConnectedPhoneNumber).mockRejectedValueOnce(new Error('read failed'));
+    await expect(
+      processWebhookEvent(messageRow({ phone_number_id: '555000555' })),
+    ).rejects.toThrow(/read failed/);
+    expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 
   it('a read failure is NOT swallowed into "legacy" — it throws so the row retries', async () => {

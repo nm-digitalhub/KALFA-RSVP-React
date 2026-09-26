@@ -27,6 +27,10 @@ function jsonResponse(body: unknown, ok = true, status = 200) {
   } as unknown as Response;
 }
 
+function page(data: unknown[], next?: string) {
+  return jsonResponse({ data, ...(next ? { paging: { next } } : {}) });
+}
+
 let fetchSpy: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -39,6 +43,24 @@ afterEach(() => {
 });
 
 describe('listWabaPhoneNumbers', () => {
+  it('signs every page with appsecret_proof when the app secret is given', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(page([{ id: '1', display_phone_number: '+1' }], 'https://graph.facebook.com/next?after=X'))
+      .mockResolvedValueOnce(page([{ id: '2', display_phone_number: '+2' }]));
+    await listWabaPhoneNumbers({ ...CREDS, appSecret: 'APP-SECRET' });
+    for (const call of fetchSpy.mock.calls) {
+      const u = new URL(call[0] as string);
+      expect(u.searchParams.get('appsecret_proof')).toMatch(/^[0-9a-f]{64}$/);
+      expect(u.searchParams.get('appsecret_time')).toMatch(/^\d+$/);
+    }
+  });
+
+  it('without an app secret the URL is unchanged (existing callers)', async () => {
+    fetchSpy.mockResolvedValueOnce(page([{ id: '1', display_phone_number: '+1' }]));
+    await listWabaPhoneNumbers(CREDS);
+    expect(new URL(fetchSpy.mock.calls[0][0] as string).searchParams.has('appsecret_proof')).toBe(false);
+  });
+
   it('asks the pinned Graph version for the full field list', async () => {
     fetchSpy.mockResolvedValue(jsonResponse({ data: [NUMBER] }));
     const result = await listWabaPhoneNumbers(CREDS);

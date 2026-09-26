@@ -160,6 +160,7 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // requirePlatformOwner to requirePlatformPermission('manage_settings') would leave
   // this list still correct and the suite still green.
   'src/lib/data/admin/integrations/number-registration.ts': 'manage_settings',
+  'src/lib/data/admin/integrations/whatsapp-es.ts': 'manage_settings',
   // Read-only, but NOT exempt from naming a key: it reads the WhatsApp access
   // token and the app secret in order to ask Meta about them. Same permission as
   // the credentials form those values are entered on — anyone who may see the
@@ -798,6 +799,22 @@ describe('the owner-agent data layer gates every export on requirePlatformOwner'
   for (const { name, body } of blocks) {
     it(`${name} calls requirePlatformOwner()`, () => {
       expect(GATED(body)).toBe(true);
+    });
+  }
+});
+
+describe('Embedded Signup (Coexistence) stays owner-only', () => {
+  // Connecting stores a Meta business token in Vault and spends a one-shot,
+  // 24h-bounded history sync. EXPECTED_PERMISSION pins the module to
+  // manage_settings (the key listEsConnections names); these sit above it.
+  const relPath = 'src/lib/data/admin/integrations/whatsapp-es.ts';
+  const blocks = splitIntoFunctionBlocks(readFileSync(join(ROOT, relPath), 'utf8'));
+
+  for (const fn of ['connectViaEmbeddedSignup', 'getEsReadiness']) {
+    it(`${fn} gates on requirePlatformOwner`, () => {
+      const block = blocks.find((b) => b.name === fn);
+      expect(block, `${fn} not found in ${relPath}`).toBeDefined();
+      expect(block!.body).toContain('requirePlatformOwner(');
     });
   }
 });

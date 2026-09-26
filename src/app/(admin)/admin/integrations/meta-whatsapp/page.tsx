@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 
-import { requirePlatformPermission } from '@/lib/auth/dal';
+import { isPlatformOwner, requirePlatformPermission } from '@/lib/auth/dal';
 import { getWhatsAppChannelConfig } from '@/lib/data/admin/channels';
 import { getMetaStatus } from '@/lib/data/admin/integrations/meta-status';
 import { getSendPolicyForAdmin } from '@/lib/data/admin/integrations/send-policy';
@@ -35,7 +35,7 @@ export const metadata: Metadata = { title: 'Meta / WhatsApp — אינטגרצי
 export default async function MetaWhatsAppPage() {
   await requirePlatformPermission('manage_settings');
 
-  const [whatsapp, master, callbackUrl, metaStatus, sendPolicy] = await Promise.all([
+  const [whatsapp, master, callbackUrl, metaStatus, sendPolicy, owner] = await Promise.all([
     getWhatsAppChannelConfig(),
     getOutreachMasterState(),
     getAppUrl('/api/webhooks/whatsapp'),
@@ -45,6 +45,10 @@ export default async function MetaWhatsAppPage() {
     // down with it.
     getMetaStatus(),
     getSendPolicyForAdmin(),
+    // Decides only whether the connect link is drawn: that page is owner-only,
+    // and a link a manage_settings staff member can follow would redirect them
+    // out of the admin area. Not a gate — connect/page.tsx gates itself.
+    isPlatformOwner(),
   ]);
 
   return (
@@ -86,6 +90,24 @@ export default async function MetaWhatsAppPage() {
           outreachEnabled={master.enabled}
         />
       </section>
+
+      {/* A separate page, not a field here: connecting through Embedded Signup
+          never touches the credentials above (see connect/page.tsx). */}
+      {owner ? (
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold">חיבור מספר WhatsApp Business קיים</h2>
+          <p className="text-sm text-muted-foreground">
+            מספר שכבר פעיל באפליקציית WhatsApp Business בטלפון יכול לעבוד גם דרך Cloud API
+            (Coexistence), בלי להחליף את פרטי ההתחברות שלמעלה.
+          </p>
+          <Link
+            href="/admin/integrations/meta-whatsapp/connect"
+            className="inline-flex min-h-11 items-center text-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            מעבר לחיבור עם Meta
+          </Link>
+        </section>
+      ) : null}
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">דרישת הסכמה</h2>

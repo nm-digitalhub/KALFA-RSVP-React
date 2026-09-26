@@ -9,7 +9,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
-vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn(), isPlatformOwner: vi.fn() }));
 vi.mock('@/lib/data/admin/channels', () => ({ getWhatsAppChannelConfig: vi.fn() }));
 vi.mock('@/lib/data/admin/outreach-master', () => ({ getOutreachMasterState: vi.fn() }));
 vi.mock('@/lib/url', () => ({ getAppUrl: vi.fn() }));
@@ -22,7 +22,7 @@ vi.mock('@/lib/data/admin/integrations/send-policy', () => ({
   getSendPolicyForAdmin: vi.fn(),
 }));
 
-import { requirePlatformPermission } from '@/lib/auth/dal';
+import { isPlatformOwner, requirePlatformPermission } from '@/lib/auth/dal';
 import { getWhatsAppChannelConfig } from '@/lib/data/admin/channels';
 import { getOutreachMasterState } from '@/lib/data/admin/outreach-master';
 import { getAppUrl } from '@/lib/url';
@@ -58,8 +58,9 @@ const componentNames = (tree: unknown) =>
     })
     .filter(Boolean);
 
-async function render() {
+async function render(owner = true) {
   vi.mocked(requirePlatformPermission).mockResolvedValue({ id: 'u1' } as never);
+  vi.mocked(isPlatformOwner).mockResolvedValue(owner);
   vi.mocked(getWhatsAppChannelConfig).mockResolvedValue({
     outreach_enabled: true,
     whatsapp_phone_number_id: '1018741517998430',
@@ -93,7 +94,18 @@ async function render() {
   return MetaWhatsAppPage();
 }
 
+const connectLinks = (tree: unknown) =>
+  collect(tree).filter((p) => p.href === '/admin/integrations/meta-whatsapp/connect');
+
 describe('/admin/integrations/meta-whatsapp', () => {
+  it('links the owner to the Embedded Signup connect page', async () => {
+    expect(connectLinks(await render(true))).toHaveLength(1);
+  });
+
+  it('a non-owner staff member gets no link to the owner-only page (it would eject them to /app)', async () => {
+    expect(connectLinks(await render(false))).toHaveLength(0);
+  });
+
   it('gates on manage_settings', async () => {
     await render();
     expect(requirePlatformPermission).toHaveBeenCalledWith('manage_settings');

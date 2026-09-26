@@ -41,6 +41,7 @@ import {
   processTemplateQualityRow,
 } from '@/lib/data/template-health-processing';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { isEsConnectedPhoneNumber } from '@/lib/whatsapp/embedded-signup/connected-numbers';
 import { submitRsvp } from '@/lib/data/rsvp';
 import { handleHeadcountReply, requestHeadcount } from '@/lib/data/headcount';
 import {
@@ -95,10 +96,13 @@ type StatusPayload = {
 // in /admin/integrations/numbers") wait for a restart.
 export type WebhookBatchContext = {
   whatsappChannel(): Promise<WhatsAppChannel | null>;
+  /** Does an Embedded Signup (Coexistence) connection own this number? */
+  isEsConnected(phoneNumberId: string): Promise<boolean>;
 };
 
 export function createWebhookBatchContext(): WebhookBatchContext {
   let cached: WhatsAppChannel | null | undefined;
+  const esConnected = new Map<string, boolean>();
   return {
     async whatsappChannel() {
       // Memoized on SUCCESS only. Caching the promise itself would pin a
@@ -107,6 +111,14 @@ export function createWebhookBatchContext(): WebhookBatchContext {
       // remembered (see resolveNumberForRoleStrict).
       if (cached === undefined) cached = await getWhatsAppChannel();
       return cached;
+    },
+    async isEsConnected(phoneNumberId) {
+      // Same rule: only a successful answer is remembered.
+      const known = esConnected.get(phoneNumberId);
+      if (known !== undefined) return known;
+      const answer = await isEsConnectedPhoneNumber(phoneNumberId);
+      esConnected.set(phoneNumberId, answer);
+      return answer;
     },
   };
 }
@@ -243,6 +255,24 @@ async function processMessage(
   const payload = (row.payload ?? {}) as InboundMessagePayload;
   const channel = await ctx.whatsappChannel();
   const inbound = classifyInboundChannel(row.phone_number_id, channel);
+
+  // A number connected through Embedded Signup (Coexistence) — the owner's
+  // WhatsApp Business app number. Its customers are not our guests: never
+  // imported, billed or RSVP'd, and not an anomaly worth a Slack line per
+  // message. The row stays in webhook_inbox (inspectable in /admin/webhooks).
+  //
+  // Checked BEFORE the channel branches, not inside 'unknown': in legacy mode
+  // (no import role — also the documented rollback) classifyInboundChannel
+  // answers 'rsvp' for EVERY id, which would send these rows down the billing
+  // path. Our own two numbers are never looked up.
+  if (
+    row.phone_number_id &&
+    row.phone_number_id !== channel?.phoneNumberId &&
+    row.phone_number_id !== channel?.importPhoneNumberId &&
+    (await ctx.isEsConnected(row.phone_number_id))
+  ) {
+    return;
+  }
 
   if (inbound === 'import') {
     // Dedicated import number: an owner's CSV / contact cards → staging plus a
