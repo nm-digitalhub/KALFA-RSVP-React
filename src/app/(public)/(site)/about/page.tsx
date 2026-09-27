@@ -31,7 +31,7 @@ const DESCRIPTION =
 export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
-  openGraph: pageOpenGraph(TITLE, DESCRIPTION),
+  openGraph: pageOpenGraph(TITLE, DESCRIPTION, '/about'),
   alternates: { canonical: '/about' },
 };
 

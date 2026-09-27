@@ -126,6 +126,19 @@ describe('public site metadata', () => {
     }
   });
 
+  it('every page, home included, emits og:url through the helper', () => {
+    // No page shipped og:url until an external site audit flagged "Open Graph
+    // tags incomplete" on 2026-09-27; the helper now takes the canonical path.
+    const helper = readFileSync(
+      join(siteDir, '..', '..', '..', 'lib', 'seo', 'open-graph.ts'),
+      'utf8',
+    );
+    expect(helper).toMatch(/url: path/);
+    for (const p of pages) {
+      expect(p.src, p.route).toMatch(/pageOpenGraph\([\s\S]*?,[\s\S]*?,\s*[^)\s]+\s*,?\s*\)/);
+    }
+  });
+
   it('the shared helper carries og:image — a page openGraph replaces the file convention', () => {
     // The regression this pins: src/app/opengraph-image.png is injected into
     // the openGraph object a page INHERITS, so the moment a page declares its

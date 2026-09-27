@@ -47,10 +47,15 @@ export const OPEN_GRAPH_BASE = {
  * NOT get the root layout's `%s | KALFA` template applied, and the brand is
  * already carried by `siteName` in every share preview — appending it by hand
  * would render "KALFA · Page | KALFA".
+ *
+ * `path` is the page's canonical path. It becomes og:url (resolved against the
+ * root layout's metadataBase), which the replaced openGraph object would
+ * otherwise never carry — every public page shipped without og:url until an
+ * external site audit flagged "Open Graph tags incomplete" on 2026-09-27.
  */
-export function pageOpenGraph(title: string, description: string) {
+export function pageOpenGraph(title: string, description: string, path: `/${string}`) {
   // `images` is restated here and NOT in OPEN_GRAPH_BASE — see OG_IMAGE above.
   // A page replaces the inherited openGraph wholesale, so it must carry the
   // image itself; the root layout must not, or the home page emits it twice.
-  return { ...OPEN_GRAPH_BASE, images: [OG_IMAGE], title, description };
+  return { ...OPEN_GRAPH_BASE, images: [OG_IMAGE], url: path, title, description };
 }

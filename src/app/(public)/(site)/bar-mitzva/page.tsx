@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   title: content.title,
   description: content.description,
   // Same reason as the other public pages — see src/lib/seo/open-graph.ts.
-  openGraph: pageOpenGraph(content.title, content.description),
+  openGraph: pageOpenGraph(content.title, content.description, content.path),
   alternates: { canonical: content.path },
 };
 

@@ -5,6 +5,7 @@ import { TiltCard } from '@/components/motion/tilt-card';
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
 import { getCompanyLegal, toE164Israel } from '@/lib/data/company';
+import { pageOpenGraph } from '@/lib/seo/open-graph';
 import { getAppOrigin } from '@/lib/url';
 import {
   Activity,
@@ -49,8 +50,16 @@ import {
 
 // Canonical is declared per (site) page (not inherited from the root layout) so
 // app/admin/auth segments never accidentally inherit a canonical of '/'.
+// openGraph is declared here too (same title/description as the root layout)
+// so the home page carries og:url like every other (site) page; the helper
+// restates og:image, which the page-level object would otherwise drop.
 export const metadata = {
   alternates: { canonical: '/' },
+  openGraph: pageOpenGraph(
+    'KALFA — ניהול אישורי הגעה',
+    'ניהול מוזמנים, הזמנות ותזכורות, מעקב תשובות בזמן אמת ודוחות — הכול במקום אחד.',
+    '/',
+  ),
 };
 
 const PROBLEMS: { icon: LucideIcon; t: string; d: string }[] = [

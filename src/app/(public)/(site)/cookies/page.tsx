@@ -16,7 +16,7 @@ export const metadata = {
   // Nested metadata objects are REPLACED, not merged: a page that sets no
   // openGraph inherits the root layout's wholesale, so its share preview
   // would show the site-wide blurb instead of this page's.
-  openGraph: pageOpenGraph(TITLE, DESCRIPTION),
+  openGraph: pageOpenGraph(TITLE, DESCRIPTION, '/cookies'),
   alternates: { canonical: '/cookies' },
 };
 
