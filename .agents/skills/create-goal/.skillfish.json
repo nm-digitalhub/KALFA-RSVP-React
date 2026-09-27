@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "create-goal",
+  "owner": "v1truv1us",
+  "repo": "ai-eng-system",
+  "path": "plugins/ai-eng-core/skills/create-goal",
+  "branch": "main",
+  "sha": "f316ccd9176966b14366bc4ac8fa37afd997fc69",
+  "source": "manual"
+}
