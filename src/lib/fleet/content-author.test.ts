@@ -56,7 +56,7 @@ describe('fleet agent avatars', () => {
   });
 
   it('returns null for a role without an image or an unsafe value', () => {
-    expect(getFleetAgentAvatarSrc('smoke-test')).toBeNull();
+    expect(getFleetAgentAvatarSrc('smoke-test-t2')).toBeNull();
     expect(getFleetAgentAvatarSrc('../../etc/passwd')).toBeNull();
     expect(getFleetAgentAvatarSrc('constructor')).toBeNull();
     expect(getFleetAgentAvatarSrc('ops-monitor')).toBe('/fleet/avatars/ops-monitor.png');

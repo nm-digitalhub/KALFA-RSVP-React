@@ -2,7 +2,7 @@
 // path built from the role string: role names reach the UI from DB rows, and a
 // template like `/fleet/avatars/${role}.png` would request (and 404 on) any
 // value that happens to be stored there. A role missing from this map — a new
-// role, or smoke-test/smoke-test-t2 today — renders its initials instead.
+// role, or smoke-test-t2 today — renders its initials instead.
 const FLEET_AGENT_AVATARS: Readonly<Record<string, string>> = {
   'brand-director': '/fleet/avatars/brand-director.png',
   'business-ops': '/fleet/avatars/business-ops.png',
@@ -18,6 +18,7 @@ const FLEET_AGENT_AVATARS: Readonly<Record<string, string>> = {
   'marketing-content': '/fleet/avatars/marketing-content.png',
   'ops-monitor': '/fleet/avatars/ops-monitor.png',
   'qa-runner': '/fleet/avatars/qa-runner.png',
+  'smoke-test': '/fleet/avatars/smoke-test.png',
   'social-manager': '/fleet/avatars/social-manager.png',
   'support-drafter': '/fleet/avatars/support-drafter.png',
 };
