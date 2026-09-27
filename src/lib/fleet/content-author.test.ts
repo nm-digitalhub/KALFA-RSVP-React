@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { FLEET_AGENT_AVATAR_ROLES, getFleetAgentAvatarSrc } from './agent-avatars';
+import { buildCompletionAnswer } from './complete';
 import { requestBodyAuthor, splitRequestAnswer } from './content-author';
 
 describe('requestBodyAuthor', () => {
@@ -24,7 +25,7 @@ describe('splitRequestAnswer', () => {
   });
 
   it('splits an owner verdict from the agent completion summary', () => {
-    expect(splitRequestAnswer('מאושר\n[הושלם] פורסם בהצלחה')).toEqual([
+    expect(splitRequestAnswer('מאושר\n\n[הושלם] פורסם בהצלחה')).toEqual([
       { author: 'owner', kind: 'verdict', text: 'מאושר' },
       { author: 'agent', kind: 'completion', text: 'פורסם בהצלחה' },
     ]);
@@ -42,6 +43,35 @@ describe('splitRequestAnswer', () => {
     ]);
   });
 
+  it('does not split on [הושלם] in the middle of the owner verdict', () => {
+    expect(splitRequestAnswer('כתבת [הושלם] בטעות, תקן')).toEqual([
+      { author: 'owner', kind: 'verdict', text: 'כתבת [הושלם] בטעות, תקן' },
+    ]);
+    // a single newline is not the stamp the `complete` verb writes
+    expect(splitRequestAnswer('מאושר\n[הושלם] x')).toEqual([
+      { author: 'owner', kind: 'verdict', text: 'מאושר\n[הושלם] x' },
+    ]);
+  });
+
+  it('matches the exact shape buildCompletionAnswer produces', () => {
+    expect(splitRequestAnswer(buildCompletionAnswer('כן', 'פורסם בכל הערוצים'))).toEqual([
+      { author: 'owner', kind: 'verdict', text: 'כן' },
+      { author: 'agent', kind: 'completion', text: 'פורסם בכל הערוצים' },
+    ]);
+    expect(splitRequestAnswer(buildCompletionAnswer(null, 'סוכם והועבר'))).toEqual([
+      { author: 'agent', kind: 'completion', text: 'סוכם והועבר' },
+    ]);
+  });
+
+  it('reads [withdraw] as the agent only on an expired row when status is given', () => {
+    expect(splitRequestAnswer('[withdraw] לא רלוונטי', 'expired')).toEqual([
+      { author: 'agent', kind: 'withdraw', text: 'לא רלוונטי' },
+    ]);
+    expect(splitRequestAnswer('[withdraw] לא רלוונטי', 'answered')).toEqual([
+      { author: 'owner', kind: 'verdict', text: '[withdraw] לא רלוונטי' },
+    ]);
+  });
+
   it('returns nothing for an empty answer', () => {
     expect(splitRequestAnswer(null)).toEqual([]);
     expect(splitRequestAnswer('  ')).toEqual([]);
@@ -56,7 +86,7 @@ describe('fleet agent avatars', () => {
   });
 
   it('returns null for a role without an image or an unsafe value', () => {
-    expect(getFleetAgentAvatarSrc('smoke-test-t2')).toBeNull();
+    expect(getFleetAgentAvatarSrc('new-role-without-image')).toBeNull();
     expect(getFleetAgentAvatarSrc('../../etc/passwd')).toBeNull();
     expect(getFleetAgentAvatarSrc('constructor')).toBeNull();
     expect(getFleetAgentAvatarSrc('ops-monitor')).toBe('/fleet/avatars/ops-monitor.png');

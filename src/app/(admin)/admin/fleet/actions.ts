@@ -10,55 +10,108 @@ import {
   abandonFleetGoal,
   answerFleetRequest,
   createFleetGoal,
+  createOwnerFleetContinuation,
   createOwnerFleetRequest,
   pauseFleetGoal,
+  readFleetRoles,
   resumeFleetGoal,
 } from '@/lib/data/admin/fleet';
+import { resolveOwnerTitle } from '@/lib/fleet/conversation';
 import { goalWakeAtSchema } from '@/lib/fleet/goal';
 import type { FormState } from '@/lib/validation/result';
 
 const PATH = '/admin/fleet';
 
-// Owner -> agent. Shape only; the real gates are downstream and stay there:
-// admin membership is re-checked inside the SECURITY DEFINER function, the
-// role name is validated against fleet.json by the CLI/scheduler, and the
-// UNIQUE request_key makes a double submit idempotent in the database rather
-// than in this handler. Caps mirror the DB CHECKs (title 200) so the owner
-// gets a field error instead of a raised exception.
+// Owner -> agent, from the conversation composer (/admin/fleet?role=). Two
+// modes share this one action because they share one form:
+//
+// - new message: role (the open conversation), optional subject, body >= 10.
+//   The minimum mirrors the DB-side body rule and keeps a one-word "כן" from
+//   waking an agent run. The title is the visible subject, else the first
+//   line, else "הודעה ל-<role>" (resolveOwnerTitle) — never a hidden value.
+// - continuation ("השב" on a closed message): only the replied-to id travels;
+//   role/tier/thread root/title are derived from the DB row server-side
+//   (createOwnerFleetContinuation). Body >= 2 — the context comes from the root.
+//
+// The real gates stay downstream: admin membership inside the SECURITY
+// DEFINER function, the UNIQUE request_key for double submits. The role is
+// additionally checked against fleet.json here so a tampered hidden field
+// cannot file a dead letter for a role that does not exist.
+const roleField = z
+  .string()
+  .trim()
+  .min(1, { message: 'יש לבחור סוכן' })
+  .regex(/^[a-z0-9][a-z0-9-]*$/, { message: 'שם סוכן לא תקין' });
+
 const composeSchema = z.object({
-  role: z
-    .string()
-    .trim()
-    .min(1, { message: 'יש לבחור סוכן' })
-    .regex(/^[a-z0-9][a-z0-9-]*$/, { message: 'שם סוכן לא תקין' }),
+  role: roleField,
   kind: z.enum(['approval', 'question', 'fyi'], { message: 'סוג פנייה לא תקין' }),
   tier: z.coerce.number().int().min(0).max(2, { message: 'דרגה חייבת להיות 0, 1 או 2' }),
-  title: z
-    .string()
-    .trim()
-    .min(3, { message: 'כותרת קצרה מדי' })
-    .max(200, { message: 'כותרת ארוכה מדי (עד 200 תווים)' }),
+  title: z.string().trim().max(200, { message: 'הנושא ארוך מדי (עד 200 תווים)' }),
   body: z
     .string()
     .trim()
-    .min(10, { message: 'התוכן קצר מדי — תאר לסוכן מה נדרש' })
-    .max(8000, { message: 'התוכן ארוך מדי (עד 8000 תווים)' }),
-  threadRoot: z.uuid().optional().or(z.literal('').transform(() => undefined)),
+    .min(10, { message: 'ההודעה קצרה מדי (לפחות 10 תווים) — תאר לסוכן מה נדרש' })
+    .max(8000, { message: 'ההודעה ארוכה מדי (עד 8000 תווים)' }),
 });
 
+const continueSchema = z.object({
+  continueFrom: z.uuid({ message: 'מזהה הודעה לא תקין' }),
+  body: z
+    .string()
+    .trim()
+    .min(2, { message: 'ההודעה קצרה מדי' })
+    .max(8000, { message: 'ההודעה ארוכה מדי (עד 8000 תווים)' }),
+});
+
+/** FormState plus what the composer needs to focus the resulting message. */
+export type FleetComposeState =
+  | (NonNullable<FormState> & { requestId?: string; deduplicated?: boolean; role?: string })
+  | null;
+
+const DEDUP_NOTICE = 'הודעה זהה כבר נשלחה היום — לא נוצרה כפילות.';
+
 export async function createFleetRequestAction(
-  _prevState: FormState,
+  _prevState: FleetComposeState,
   formData: FormData,
-): Promise<FormState> {
+): Promise<FleetComposeState> {
   await requirePlatformPermission('manage_settings');
+
+  const continueFrom = formData.get('continueFrom');
+  if (typeof continueFrom === 'string' && continueFrom !== '') {
+    const parsed = continueSchema.safeParse({ continueFrom, body: formData.get('body') ?? '' });
+    if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors };
+    try {
+      const result = await createOwnerFleetContinuation(parsed.data);
+      await logActivity({
+        action: 'fleet_request.created_by_owner',
+        meta: {
+          request_id: result.id,
+          role: result.role,
+          kind: 'question',
+          continues: parsed.data.continueFrom,
+          deduplicated: result.deduplicated,
+        },
+      });
+      revalidatePath(PATH, 'layout');
+      return {
+        notice: result.deduplicated ? DEDUP_NOTICE : 'ההודעה נשלחה.',
+        requestId: result.id,
+        deduplicated: result.deduplicated,
+        role: result.role,
+      };
+    } catch (err) {
+      unstable_rethrow(err);
+      return { error: err instanceof Error ? err.message : 'פתיחת הפנייה נכשלה' };
+    }
+  }
 
   const parsed = composeSchema.safeParse({
     role: formData.get('role') ?? '',
-    kind: formData.get('kind') ?? '',
-    tier: formData.get('tier') ?? '0',
+    kind: formData.get('kind') || 'question',
+    tier: formData.get('tier') || '0',
     title: formData.get('title') ?? '',
     body: formData.get('body') ?? '',
-    threadRoot: formData.get('threadRoot') ?? '',
   });
   if (!parsed.success) {
     return { fieldErrors: parsed.error.flatten().fieldErrors };
@@ -66,13 +119,18 @@ export async function createFleetRequestAction(
 
   let result: { id: string; deduplicated: boolean };
   try {
+    const roles = await readFleetRoles();
+    if (!roles) return { error: 'לא ניתן לקרוא את רשימת הסוכנים מ-fleet.json' };
+    if (!roles.some((r) => r.name === parsed.data.role)) {
+      return { fieldErrors: { role: ['הסוכן לא מוגדר ב-fleet.json'] } };
+    }
     result = await createOwnerFleetRequest({
       role: parsed.data.role,
       kind: parsed.data.kind,
       tier: parsed.data.tier,
-      title: parsed.data.title,
+      title: resolveOwnerTitle(parsed.data.title, parsed.data.body, parsed.data.role),
       body: parsed.data.body,
-      threadRoot: parsed.data.threadRoot ?? null,
+      threadRoot: null,
     });
     await logActivity({
       action: 'fleet_request.created_by_owner',
@@ -88,15 +146,15 @@ export async function createFleetRequestAction(
     return { error: err instanceof Error ? err.message : 'פתיחת הפנייה נכשלה' };
   }
 
-  // /admin/fleet is now one unified page (?id=&type= selects the detail pane)
-  // rather than a distinct /admin/fleet/[id] route, so revalidating PATH alone
-  // covers every query-string variant of it — Next's revalidation is by path,
-  // not full URL.
-  revalidatePath(PATH);
+  // 'layout': the conversation list lives in fleet/layout.tsx, which does not
+  // re-render on navigation — a page-only revalidation would leave its
+  // preview/badges stale.
+  revalidatePath(PATH, 'layout');
   return {
-    notice: result.deduplicated
-      ? 'פנייה זהה כבר נשלחה היום — לא נוצרה כפילות.'
-      : 'הפנייה נשלחה. הסוכן יקלוט אותה בהרצה הבאה שלו.',
+    notice: result.deduplicated ? DEDUP_NOTICE : 'ההודעה נשלחה.',
+    requestId: result.id,
+    deduplicated: result.deduplicated,
+    role: parsed.data.role,
   };
 }
 
@@ -145,9 +203,7 @@ export async function answerFleetRequestAction(
     return { error: err instanceof Error ? err.message : 'שמירת המענה נכשלה' };
   }
 
-  // Covers the detail pane too (same path, ?id= selects it) — see the note in
-  // createFleetRequestAction above.
-  revalidatePath(PATH);
+  revalidatePath(PATH, 'layout');
   return { notice: 'המענה נשמר — הסוכן יקלוט אותו בריצה הבאה' };
 }
 
@@ -202,7 +258,7 @@ export async function createFleetGoalAction(
     return { error: err instanceof Error ? err.message : 'יצירת המטרה נכשלה' };
   }
 
-  revalidatePath(PATH);
+  revalidatePath(PATH, 'layout');
   return { notice: 'המטרה נוצרה. הסוכן יקלוט אותה בהרצה הבאה שלו.' };
 }
 
@@ -236,7 +292,7 @@ export async function pauseFleetGoalAction(
       action: 'fleet_goal.paused',
       meta: { goal_id: parsed.data.id, outcome },
     });
-    revalidatePath(PATH);
+    revalidatePath(PATH, 'layout');
     // A no-op is reported as such. 'not_active' is not an error — the goal is
     // simply no longer active.
     return outcome === 'paused'
@@ -278,7 +334,7 @@ export async function resumeFleetGoalAction(
       // The wake time itself is not PII and helps answer "why did it wake then".
       meta: { goal_id: parsed.data.id, outcome, next_wake_at: parsed.data.nextWakeAt ?? null },
     });
-    revalidatePath(PATH);
+    revalidatePath(PATH, 'layout');
     return outcome === 'resumed'
       ? { notice: 'המטרה שוחררה ומונה הכשלים אופס.' }
       : { notice: 'המטרה אינה מושהית — לא בוצע שינוי.' };
@@ -319,7 +375,7 @@ export async function abandonFleetGoalAction(
       action: 'fleet_goal.abandoned',
       meta: { goal_id: parsed.data.id, outcome },
     });
-    revalidatePath(PATH);
+    revalidatePath(PATH, 'layout');
     return outcome === 'abandoned'
       ? { notice: 'המטרה נסגרה כ-failed.' }
       : { notice: 'המטרה כבר סגורה — לא בוצע שינוי.' };

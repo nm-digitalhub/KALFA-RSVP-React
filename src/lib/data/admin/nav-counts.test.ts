@@ -65,6 +65,11 @@ describe('getAdminNavCounts — per-domain permission gating', () => {
     // listCampaignsForAdmin() itself uses).
     expect(builder.eq).toHaveBeenCalledWith('status', 'new');
     expect(builder.eq).toHaveBeenCalledWith('status', 'pending');
+    // fleet counts only agent-filed pending rows: an owner-opened request
+    // waits on the agent, not the owner. NULL-safe (agent rows have no origin).
+    expect(builder.or).toHaveBeenCalledWith(
+      'payload->>origin.is.null,payload->>origin.neq.owner',
+    );
     expect(builder.in).toHaveBeenCalledWith('status', ['active', 'paused', 'closed']);
   });
 

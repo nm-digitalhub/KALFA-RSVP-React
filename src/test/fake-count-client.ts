@@ -110,9 +110,37 @@ function parseTerm(term: string): Predicate {
   const secondDot = rest.indexOf('.');
   const op = rest.slice(0, secondDot);
   const value = rest.slice(secondDot + 1);
+  // `payload->>origin`: PostgREST's JSON text path. Missing key / non-object
+  // column → null, exactly as Postgres returns for `->>`.
+  const read = (row: FakeRow): unknown => {
+    const arrow = col.indexOf('->>');
+    if (arrow === -1) return row[col];
+    const base = row[col.slice(0, arrow)];
+    if (!base || typeof base !== 'object' || Array.isArray(base)) return null;
+    const v = (base as Record<string, unknown>)[col.slice(arrow + 3)];
+    return v === undefined || v === null ? null : String(v);
+  };
   switch (op) {
     case 'eq':
-      return (row) => String(row[col]) === value;
+      return (row) => {
+        const v = read(row);
+        return v !== null && v !== undefined && String(v) === value;
+      };
+    // SQL three-valued logic: NULL <> 'x' is NULL, which a filter treats as
+    // false — the reason callers pair neq with an explicit `is.null`.
+    case 'neq':
+      return (row) => {
+        const v = read(row);
+        return v !== null && v !== undefined && String(v) !== value;
+      };
+    case 'is':
+      return (row) => {
+        const v = read(row);
+        if (value === 'null') return v === null || v === undefined;
+        if (value === 'true') return v === true;
+        if (value === 'false') return v === false;
+        throw new Error(`fake-count-client: unsupported is-value '${value}'`);
+      };
     case 'in': {
       const set = new Set(value.replace(/^\(|\)$/g, '').split(','));
       return (row) => row[col] !== null && row[col] !== undefined && set.has(String(row[col]));

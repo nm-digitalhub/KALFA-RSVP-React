@@ -508,8 +508,13 @@ export function AdminShell({
           </SidebarFooter>
         </Sidebar>
 
-        <SidebarInset>
-          <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-background px-4 py-3">
+        {/* --admin-header-h: the sticky header's exact height (size-11 menu
+            button + py-3 + 1px border below md; one text-sm line above md,
+            where the button is hidden). Pages that stick something under the
+            header or size a full-height pane (/admin/fleet) read it instead
+            of hard-coding top-0, which would slide under this header. */}
+        <SidebarInset className="[--admin-header-h:69px] md:[--admin-header-h:45px]">
+          <header className="sticky top-0 z-10 flex h-(--admin-header-h) items-center gap-3 border-b border-border bg-background px-4 py-3">
             <MobileMenuTrigger />
 
             <span className="text-sm font-medium text-muted-foreground">

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { AGENT_ORIGIN_OR_FILTER } from '@/lib/fleet/content-author';
 import { hasPlatformPermission, requirePlatformStaff } from '@/lib/auth/dal';
 import {
   countNewCallbackRequests,
@@ -13,8 +14,8 @@ import { countWinddownCampaigns as countWinddownCampaignsCore } from '@/lib/owne
 // count-only, per-domain-permission-gated shape. Each predicate matches the
 // domain's own "needs handling" definition exactly (contacts/callbacks:
 // status='new'; campaigns: the same WINDDOWN_STATUSES listCampaignsForAdmin()
-// filters by; fleet: status='pending', the same predicate the fleet page
-// already surfaces inline as "ממתינות למענה (N)"), so the badge number always
+// filters by; fleet: status='pending' AND filed by an agent — the same
+// "ממתין לך" predicate the fleet conversation list uses), so the badge number always
 // matches what the destination page itself calls "needs attention".
 
 export interface AdminNavCounts {
@@ -71,7 +72,10 @@ async function countPendingFleetRequests(supabase: AdminClient): Promise<number>
   const { count, error } = await supabase
     .from('fleet_requests')
     .select('id', { count: 'exact', head: true })
-    .eq('status', 'pending');
+    .eq('status', 'pending')
+    // Only what waits on the OWNER: an owner-opened request that is still
+    // pending is waiting on the agent, not on them (see AGENT_ORIGIN_OR_FILTER).
+    .or(AGENT_ORIGIN_OR_FILTER);
   return error ? 0 : (count ?? 0);
 }
 
