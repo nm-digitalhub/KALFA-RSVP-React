@@ -40,6 +40,7 @@ import { EVENT_TYPES } from '@/lib/marketing/event-types';
 export const FOOTER_LINKS: readonly { href: string; label: string }[] = [
   { href: '/faq', label: 'שאלות נפוצות' },
   { href: '/contact', label: 'יצירת קשר' },
+  { href: '/about', label: 'אודות' },
   { href: '/privacy', label: 'מדיניות פרטיות' },
   { href: '/terms', label: 'תקנון' },
   { href: '/cookies', label: 'מדיניות עוגיות' },

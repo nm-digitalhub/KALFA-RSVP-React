@@ -95,8 +95,8 @@ describe('isNegotiableRequest', () => {
     expect(isNegotiableRequest(request('/faq', { method: 'HEAD' }))).toBe(true);
   });
 
-  it('rejects a path that is not on the allowlist, including the not-yet-built /about', () => {
-    expect(isNegotiableRequest(request('/about'))).toBe(false);
+  it('rejects a path that is not on the allowlist, including a not-yet-built page', () => {
+    expect(isNegotiableRequest(request('/pricing'))).toBe(false);
     expect(isNegotiableRequest(request('/app'))).toBe(false);
     expect(isNegotiableRequest(request('/admin'))).toBe(false);
     expect(isNegotiableRequest(request('/api/whatever'))).toBe(false);
@@ -182,6 +182,7 @@ describe('MARKDOWN_NEGOTIABLE_PATHS', () => {
       '/',
       '/faq',
       '/contact',
+      '/about',
       '/terms',
       '/privacy',
       '/cookies',

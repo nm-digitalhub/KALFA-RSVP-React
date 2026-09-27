@@ -52,6 +52,47 @@ describe('event-type catalogue', () => {
     expect(new Set(challenges).size).toBe(challenges.length);
     const answers = EVENT_TYPES.flatMap((e) => e.faq.map((f) => f.a));
     expect(new Set(answers).size).toBe(answers.length);
+    const questions = EVENT_TYPES.flatMap((e) => e.faq.map((f) => f.q));
+    expect(new Set(questions).size).toBe(questions.length);
+    // The guide is the bulk of each page's text — the place duplication would
+    // do the most damage.
+    expect(new Set(EVENT_TYPES.map((e) => e.guideTitle)).size).toBe(EVENT_TYPES.length);
+    const guideHeads = EVENT_TYPES.flatMap((e) => e.guide.map((g) => g.h));
+    expect(new Set(guideHeads).size).toBe(guideHeads.length);
+    const guideBodies = EVENT_TYPES.flatMap((e) => e.guide.map((g) => g.p));
+    expect(new Set(guideBodies).size).toBe(guideBodies.length);
+    const timing = EVENT_TYPES.flatMap((e) => e.timing);
+    expect(new Set(timing).size).toBe(timing.length);
+  });
+
+  it('every entry carries an in-depth guide, not a stub', () => {
+    for (const e of EVENT_TYPES) {
+      expect(e.guide.length, e.slug).toBeGreaterThanOrEqual(3);
+      for (const g of e.guide) {
+        expect(g.h.trim(), e.slug).not.toBe('');
+        // A guide paragraph answers a question; one line is not an answer.
+        expect(g.p.length, `${e.slug}: ${g.h}`).toBeGreaterThan(120);
+      }
+    }
+  });
+
+  // KALFA's own send cadence is admin-configured on the campaign package and
+  // rendered live by EventTypePage. The catalogue once told wedding couples
+  // "the personal invitation goes out four to six weeks before" while the
+  // package sent it ten days before — copy must describe the ORGANISER's steps,
+  // never pin a date on the system's messages.
+  it('never hand-types a send date for the system\'s own invitation', () => {
+    const everything = JSON.stringify(EVENT_TYPES);
+    expect(everything).not.toMatch(/ההזמנה האישית\s*—\s*כ?(ארבעה|שלושה|שבועיים|שבועות)/);
+    expect(everything).not.toMatch(/ההזמנה האישית יוצאת בדרך כלל/);
+  });
+
+  // Files are imported as CSV only — src/lib/csv.ts rejects .xlsx by magic
+  // bytes, so promising an Excel-file import would be false.
+  it('never promises an .xlsx import', () => {
+    const everything = JSON.stringify(EVENT_TYPES);
+    expect(everything).not.toMatch(/xlsx/i);
+    expect(everything).not.toContain('מקובץ אקסל');
   });
 
   it('every entry carries the content the page renders', () => {

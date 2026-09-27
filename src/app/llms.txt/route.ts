@@ -76,6 +76,7 @@ advertising service.
 
 - [דף הבית / Home](${origin}/): מערכת אישורי הגעה לחתונה ולכל אירוע: ניהול רשימת מוזמנים ומלווים, שליחת הזמנות ותזכורות בוואטסאפ, מעקב תשובות בזמן אמת ודוחות — הכול במקום אחד. Product overview and sign-in.
 - [שאלות נפוצות / FAQ](${origin}/faq): תשובות במקום אחד: מה המערכת עושה, איך מנהלים אירוע מההתחלה ועד הסוף, איך בנוי התמחור והחיוב, ומה קורה במקרה של ביטול. Capabilities, workflow, pricing and billing, cancellation.
+- [אודות / About](${origin}/about): מי אנחנו ומה KALFA עושה: מערכת ישראלית בעברית לניהול אישורי הגעה לאירועים פרטיים — רשימת מוזמנים, הזמנות, תזכורות ומעקב תשובות. What KALFA is, what it does and does not do, and who operates it.
 - [הרשמה ויצירת אירוע / Sign up](${origin}/auth/signup): יצירת חשבון כדי להתחיל לנהל אירוע. Create an account to start managing an event.
 - [יצירת קשר / Contact](${origin}/contact): שליחת פנייה לתמיכה או שאלה לפני הרשמה, או בקשת חזרה טלפונית מהצוות. Support requests, pre-signup questions, callback requests.
 - [אישורי הגעה לחתונה / RSVP for a wedding](${origin}${wedding.path}): ${wedding.description}

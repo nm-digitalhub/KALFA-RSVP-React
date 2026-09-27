@@ -5,6 +5,8 @@ import { ArrowLeft, Download, ListChecks, TriangleAlert } from 'lucide-react';
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
 import { buildFaqJsonLd, faqJsonLdScript } from '@/lib/faq/json-ld';
+import { buildBreadcrumbJsonLd, jsonLdScript } from '@/lib/seo/breadcrumb-json-ld';
+import { getAppOrigin } from '@/lib/url';
 import {
   TEMPLATE_HEADER,
   TEMPLATE_SAMPLE_ROWS,
@@ -51,7 +53,34 @@ const MISTAKES: { t: string; d: string }[] = [
   },
   {
     t: 'אין עמודת קבוצה',
-    d: 'בלי חלוקה לקבוצות אי אפשר לדעת איזה חלק מהרשימה מפגר בתשובות, ותזכורת נשלחת לכולם במקום למי שצריך.',
+    d: 'בלי חלוקה לקבוצות אי אפשר לדעת איזה חלק מהרשימה מפגר בתשובות, ואי אפשר לרכז את המאמץ רק בחלק שעוד לא ענה.',
+  },
+];
+
+// How to build the list — the question behind "רשימת מוזמנים לחתונה" /
+// "אקסל מוזמנים לחתונה" (Keyword Planner IL, 2026-09-27: 110/mo at competition
+// index 6, 40/mo at 2). Organiser steps only; every KALFA mention is a shipped
+// capability (CSV import, groups, duplicate-phone flag in the import draft).
+const STEPS: { t: string; d: string }[] = [
+  {
+    t: 'כל צד ממלא עותק משלו',
+    d: 'כשכל משפחה עובדת על קובץ נפרד מאותה תבנית, אף אחד לא דורס שינויים של אחר. את האיחוד עושים פעם אחת, בסוף.',
+  },
+  {
+    t: 'שורה לכל הזמנה, עם כמות',
+    d: 'זוג הוא שורה אחת עם כמות 2, משפחה עם ילדים היא שורה אחת עם הכמות שלה. כך מספר ההזמנות ומספר האורחים נשארים שני מספרים נפרדים.',
+  },
+  {
+    t: 'קבוצה לכל שורה',
+    d: 'צד החתן, צד הכלה, עבודה, חברים — קבוצה אחת לכל שורה. בהמשך זה מה שמאפשר לראות איזה חלק מהרשימה עוד לא ענה.',
+  },
+  {
+    t: 'טלפון נייד בפורמט אחד',
+    d: 'עמודת הטלפון מוגדרת כטקסט ומכילה מספר נייד אחד לכל שורה. בלי מספר אפשר לנהל את המוזמן, אבל הוא לא יקבל הזמנה אוטומטית.',
+  },
+  {
+    t: 'איחוד ובדיקת כפילויות',
+    d: 'כשמייבאים את הקבצים ל‑KALFA, מספר טלפון שכבר קיים ברשימה מסומן בטיוטת הייבוא עם שם המוזמן הקיים — וכך חבר משותף לא מקבל שתי הזמנות.',
   },
 ];
 
@@ -69,6 +98,14 @@ const FAQ = [
     a: 'כן. זו בדיוק אותה תבנית שמופיעה במסך ייבוא המוזמנים במערכת, עם אותן עמודות — אפשר למלא אותה עכשיו ולייבא אותה בהמשך בלי לשנות דבר.',
   },
   {
+    q: 'איך בונים רשימת מוזמנים לחתונה?',
+    a: 'מתחילים מקובץ אחד לכל צד, שורה לכל הזמנה עם עמודת כמות, קבוצה לכל שורה ומספר נייד בפורמט אחיד. בסוף מאחדים את הקבצים ובודקים כפילויות לפי מספר הטלפון — לפני שמישהו מקבל הזמנה.',
+  },
+  {
+    q: 'אפשר לעבוד על הרשימה בגוגל שיטס עם בן או בת הזוג?',
+    a: 'כן. מעלים את הקובץ לגוגל שיטס ומשתפים אותו, וכשהרשימה מוכנה מורידים אותה שוב כ‑CSV. זה אותו פורמט שהמערכת מייבאת.',
+  },
+  {
     q: 'מה קורה כשהרשימה גדלה?',
     a: 'גיליון עובד מצוין לבנייה הראשונית של הרשימה. הוא מפסיק לעבוד כשצריך לשלוח הזמנה אישית לכל שורה, לעקוב מי ענה ולשלוח תזכורת רק לממתינים — עדכון ידני של מאות שורות הוא מקור הטעויות העיקרי.',
   },
@@ -80,12 +117,17 @@ export default async function GuestListTemplatePage() {
   const startLabel = user ? 'אירוע חדש' : 'צרו אירוע חדש';
 
   const jsonLd = buildFaqJsonLd(FAQ.map((f) => ({ question: f.q, answer: f.a })));
+  const breadcrumb = buildBreadcrumbJsonLd(await getAppOrigin(), 'תבנית רשימת מוזמנים');
 
   return (
     <div className="bg-background">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: faqJsonLdScript(jsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(breadcrumb) }}
       />
 
       <main>
@@ -191,6 +233,31 @@ export default async function GuestListTemplatePage() {
                 <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{d}</p>
               </div>
             ))}
+          </div>
+        </section>
+
+        {/* Step-by-step: how to build the list itself */}
+        <section className="border-t border-border">
+          <div className="mx-auto max-w-3xl px-6 py-16">
+            <h2 className="text-balance text-display font-bold tracking-tight">
+              איך בונים רשימת מוזמנים לחתונה — חמישה צעדים
+            </h2>
+            <ol className="mt-8 grid gap-4">
+              {STEPS.map(({ t, d }, i) => (
+                <li
+                  key={t}
+                  className="flex items-start gap-3.5 rounded-lg border border-border bg-background px-4 py-4"
+                >
+                  <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[#0b0f1a] text-xs font-semibold text-white">
+                    {i + 1}
+                  </span>
+                  <span>
+                    <span className="block font-bold">{t}</span>
+                    <span className="mt-1 block text-sm leading-relaxed text-muted-foreground">{d}</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
           </div>
         </section>
 

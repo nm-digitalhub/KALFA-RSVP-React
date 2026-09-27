@@ -32,6 +32,7 @@ describe('SiteFooter', () => {
     expect(FOOTER_LINKS.map((l) => l.href)).toEqual([
       '/faq',
       '/contact',
+      '/about',
       '/privacy',
       '/terms',
       '/cookies',

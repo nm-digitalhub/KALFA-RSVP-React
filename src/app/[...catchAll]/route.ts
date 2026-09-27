@@ -39,6 +39,7 @@ function markdownNotFoundBody(): string {
     `- [Home](${origin}/)`,
     `- [FAQ](${origin}/faq)`,
     `- [Contact](${origin}/contact)`,
+    `- [About](${origin}/about)`,
     `- [RSVP for a wedding](${origin}/wedding)`,
     `- [RSVP for a bar/bat mitzva](${origin}/bar-mitzva)`,
     `- [RSVP for a brit](${origin}/brit)`,
