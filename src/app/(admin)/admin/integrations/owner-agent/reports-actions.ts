@@ -5,6 +5,7 @@ import { unstable_rethrow } from 'next/navigation';
 
 import { requirePlatformOwner } from '@/lib/auth/dal';
 import {
+  setOwnerAgentCustomReportTemplate,
   setOwnerAgentReportSchedule,
   setOwnerAgentReportTemplate,
   setOwnerAgentReportsEnabled,
@@ -70,6 +71,34 @@ export async function setOwnerAgentReportTemplateAction(
 
   revalidatePath(OWNER_AGENT);
   return { notice: parsed.data.templateName ? 'התבנית נשמרה' : 'התבנית נוקתה — מחוץ לחלון 24 השעות לא יישלח דוח' };
+}
+
+/** The instructions report's template: the same form and rules, its own columns. */
+export async function setOwnerAgentCustomReportTemplateAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const raw = {
+    templateName: String(formData.get('templateName') ?? ''),
+    templateLang: String(formData.get('templateLang') ?? ''),
+  };
+  const parsed = reportTemplateSchema.safeParse(raw);
+  if (!parsed.success) return { fieldErrors: issuesToFieldErrors(parsed.error.issues) };
+
+  await requirePlatformOwner();
+  try {
+    await setOwnerAgentCustomReportTemplate(raw);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: safeMessage(err, 'שמירת התבנית נכשלה') };
+  }
+
+  revalidatePath(OWNER_AGENT);
+  return {
+    notice: parsed.data.templateName
+      ? 'התבנית נשמרה'
+      : 'התבנית נוקתה — מחוץ לחלון 24 השעות יישלח הדוח הרגיל במקום הדוח לפי ההנחיות',
+  };
 }
 
 export async function setOwnerAgentReportScheduleAction(

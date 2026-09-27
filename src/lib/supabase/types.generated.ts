@@ -208,6 +208,8 @@ export type Database = {
           monitor_enabled: boolean
           outreach_enabled: boolean
           owner_agent_burst_ms: number
+          owner_agent_custom_report_template_lang: string | null
+          owner_agent_custom_report_template_name: string | null
           owner_agent_daily_cap: number
           owner_agent_enabled: boolean
           owner_agent_phone_number_id: string | null
@@ -321,6 +323,8 @@ export type Database = {
           monitor_enabled?: boolean
           outreach_enabled?: boolean
           owner_agent_burst_ms?: number
+          owner_agent_custom_report_template_lang?: string | null
+          owner_agent_custom_report_template_name?: string | null
           owner_agent_daily_cap?: number
           owner_agent_enabled?: boolean
           owner_agent_phone_number_id?: string | null
@@ -434,6 +438,8 @@ export type Database = {
           monitor_enabled?: boolean
           outreach_enabled?: boolean
           owner_agent_burst_ms?: number
+          owner_agent_custom_report_template_lang?: string | null
+          owner_agent_custom_report_template_name?: string | null
           owner_agent_daily_cap?: number
           owner_agent_enabled?: boolean
           owner_agent_phone_number_id?: string | null

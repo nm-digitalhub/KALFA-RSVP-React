@@ -23,6 +23,7 @@ import {
   getOwnerAgentReportSettings,
   listOwnerAgentReportRuns,
   listOwnerAgentReportSchedules,
+  setOwnerAgentCustomReportTemplate,
   setOwnerAgentReportSchedule,
   setOwnerAgentReportTemplate,
   setOwnerAgentReportsEnabled,
@@ -66,6 +67,7 @@ describe('the owner gate', () => {
     ['listOwnerAgentReportRuns', () => listOwnerAgentReportRuns()],
     ['setOwnerAgentReportsEnabled', () => setOwnerAgentReportsEnabled(true)],
     ['setOwnerAgentReportTemplate', () => setOwnerAgentReportTemplate({ templateName: 'x', templateLang: '' })],
+    ['setOwnerAgentCustomReportTemplate', () => setOwnerAgentCustomReportTemplate({ templateName: 'x', templateLang: '' })],
     ['setOwnerAgentReportSchedule', () => setOwnerAgentReportSchedule({ entryId: ENTRY_ID, optIn: true, slots: sl('08:00') })],
   ];
   for (const [name, call] of calls) {
@@ -80,16 +82,25 @@ describe('the owner gate', () => {
 });
 
 describe('reads', () => {
-  it('settings: the switch and the template', async () => {
+  it('settings: the switch and both templates', async () => {
     db({
       app_settings: [
-        { id: true, owner_agent_reports_enabled: true, owner_agent_report_template_name: 'kalfa_owner_daily_report_util_v1', owner_agent_report_template_lang: 'he' },
+        {
+          id: true,
+          owner_agent_reports_enabled: true,
+          owner_agent_report_template_name: 'owner_activity_report',
+          owner_agent_report_template_lang: 'he',
+          owner_agent_custom_report_template_name: 'owner_custom_report',
+          owner_agent_custom_report_template_lang: null,
+        },
       ],
     });
     expect(await getOwnerAgentReportSettings()).toEqual({
       reportsEnabled: true,
-      templateName: 'kalfa_owner_daily_report_util_v1',
+      templateName: 'owner_activity_report',
       templateLang: 'he',
+      customTemplateName: 'owner_custom_report',
+      customTemplateLang: null,
     });
   });
 
@@ -298,5 +309,47 @@ describe('app_settings writes', () => {
     });
     await expect(setOwnerAgentReportTemplate({ templateName: 'Bad Name', templateLang: 'he' })).rejects.toThrow();
     await expect(setOwnerAgentReportTemplate({ templateName: 'ok_v1', templateLang: 'hebrew' })).rejects.toThrow();
+  });
+
+  it('the custom template: its own columns only, logged as name and language', async () => {
+    const fake = db({
+      app_settings: [
+        {
+          id: true,
+          owner_agent_report_template_name: 'owner_activity_report',
+          owner_agent_report_template_lang: 'he',
+          owner_agent_custom_report_template_name: null,
+          owner_agent_custom_report_template_lang: null,
+        },
+      ],
+    });
+    await setOwnerAgentCustomReportTemplate({ templateName: ' owner_custom_report ', templateLang: 'he' });
+    expect(fake.tables.app_settings[0]).toMatchObject({
+      owner_agent_report_template_name: 'owner_activity_report',
+      owner_agent_report_template_lang: 'he',
+      owner_agent_custom_report_template_name: 'owner_custom_report',
+      owner_agent_custom_report_template_lang: 'he',
+    });
+    expect(logActivity).toHaveBeenCalledWith({
+      action: 'admin.owner_agent.custom_report_template_set',
+      meta: { templateName: 'owner_custom_report', templateLang: 'he' },
+    });
+    await setOwnerAgentCustomReportTemplate({ templateName: '', templateLang: '' });
+    expect(fake.tables.app_settings[0]).toMatchObject({
+      owner_agent_custom_report_template_name: null,
+      owner_agent_custom_report_template_lang: null,
+    });
+  });
+
+  it('both template names mirror the DB CHECK: ^[a-z0-9_]+$ and at most 512 characters', async () => {
+    db({ app_settings: [{ id: true }] });
+    for (const set of [setOwnerAgentReportTemplate, setOwnerAgentCustomReportTemplate]) {
+      await expect(set({ templateName: 'a'.repeat(512), templateLang: 'he' })).resolves.toBeUndefined();
+      await expect(set({ templateName: 'a'.repeat(513), templateLang: 'he' })).rejects.toThrow();
+      await expect(set({ templateName: 'Owner_Report', templateLang: 'he' })).rejects.toThrow();
+      await expect(set({ templateName: 'owner-report', templateLang: 'he' })).rejects.toThrow();
+      await expect(set({ templateName: 'owner_report', templateLang: 'en_us' })).rejects.toThrow();
+      await expect(set({ templateName: 'owner_report', templateLang: 'en_US' })).resolves.toBeUndefined();
+    }
   });
 });

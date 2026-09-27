@@ -86,7 +86,15 @@ function tick() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  settings = { enabled: true, reportsEnabled: true, phoneNumberId: '123456789012345', templateName: null, templateLang: null };
+  settings = {
+    enabled: true,
+    reportsEnabled: true,
+    phoneNumberId: '123456789012345',
+    templateName: null,
+    templateLang: null,
+    customTemplateName: null,
+    customTemplateLang: null,
+  };
   plannable = [{ id: 's1', slotTime: '08:00:00', timezone: 'Asia/Jerusalem' }];
   runs = [];
   audits = [];

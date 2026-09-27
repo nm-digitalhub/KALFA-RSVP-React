@@ -2,11 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-const { ownerMock, revalidateMock, enabledMock, templateMock, scheduleMock } = vi.hoisted(() => ({
+const { ownerMock, revalidateMock, enabledMock, templateMock, customTemplateMock, scheduleMock } = vi.hoisted(() => ({
   ownerMock: vi.fn(),
   revalidateMock: vi.fn(),
   enabledMock: vi.fn(),
   templateMock: vi.fn(),
+  customTemplateMock: vi.fn(),
   scheduleMock: vi.fn(),
 }));
 
@@ -15,12 +16,14 @@ vi.mock('@/lib/auth/dal', () => ({ requirePlatformOwner: ownerMock }));
 vi.mock('@/lib/data/admin/owner-agent-reports', () => ({
   setOwnerAgentReportsEnabled: enabledMock,
   setOwnerAgentReportTemplate: templateMock,
+  setOwnerAgentCustomReportTemplate: customTemplateMock,
   setOwnerAgentReportSchedule: scheduleMock,
 }));
 
 import { OWNER_AGENT_REPORT_ERRORS } from '@/lib/validation/owner-agent-reports';
 
 import {
+  setOwnerAgentCustomReportTemplateAction,
   setOwnerAgentReportScheduleAction,
   setOwnerAgentReportTemplateAction,
   setOwnerAgentReportsEnabledAction,
@@ -44,11 +47,13 @@ describe('owner gate', () => {
     ownerMock.mockRejectedValue(new Error('NEXT_REDIRECT'));
     await expect(setOwnerAgentReportsEnabledAction(null, form([['owner_agent_reports_enabled', 'on']]))).rejects.toThrow('NEXT_REDIRECT');
     await expect(setOwnerAgentReportTemplateAction(null, form([['templateName', 'x_v1']]))).rejects.toThrow('NEXT_REDIRECT');
+    await expect(setOwnerAgentCustomReportTemplateAction(null, form([['templateName', 'x_v1']]))).rejects.toThrow('NEXT_REDIRECT');
     await expect(
       setOwnerAgentReportScheduleAction(null, form([['entryId', ENTRY_ID], ['optIn', 'on'], ['slots', '08:00']])),
     ).rejects.toThrow('NEXT_REDIRECT');
     expect(enabledMock).not.toHaveBeenCalled();
     expect(templateMock).not.toHaveBeenCalled();
+    expect(customTemplateMock).not.toHaveBeenCalled();
     expect(scheduleMock).not.toHaveBeenCalled();
   });
 });
@@ -80,6 +85,33 @@ describe('setOwnerAgentReportTemplateAction', () => {
   it('passes the raw strings through (the DAL re-parses)', async () => {
     await setOwnerAgentReportTemplateAction(null, form([['templateName', 'kalfa_owner_daily_report_util_v1'], ['templateLang', 'he']]));
     expect(templateMock).toHaveBeenCalledWith({ templateName: 'kalfa_owner_daily_report_util_v1', templateLang: 'he' });
+  });
+});
+
+describe('setOwnerAgentCustomReportTemplateAction', () => {
+  it('a malformed name or language is a field error, with no DAL call', async () => {
+    const bad = await setOwnerAgentCustomReportTemplateAction(null, form([['templateName', 'Bad Name'], ['templateLang', 'he']]));
+    expect(bad?.fieldErrors?.templateName).toBeDefined();
+    const badLang = await setOwnerAgentCustomReportTemplateAction(null, form([['templateName', 'ok_v1'], ['templateLang', 'hebrew']]));
+    expect(badLang?.fieldErrors?.templateLang).toBeDefined();
+    expect(customTemplateMock).not.toHaveBeenCalled();
+  });
+
+  it('saves through its own DAL function, never the numeric one', async () => {
+    const state = await setOwnerAgentCustomReportTemplateAction(
+      null,
+      form([['templateName', 'owner_custom_report'], ['templateLang', 'he']]),
+    );
+    expect(state).toEqual({ notice: 'התבנית נשמרה' });
+    expect(customTemplateMock).toHaveBeenCalledWith({ templateName: 'owner_custom_report', templateLang: 'he' });
+    expect(templateMock).not.toHaveBeenCalled();
+  });
+
+  it('only the DAL’s own messages reach the screen', async () => {
+    customTemplateMock.mockRejectedValueOnce(new Error('new row violates check constraint'));
+    expect(await setOwnerAgentCustomReportTemplateAction(null, form([['templateName', 'ok_v1']]))).toEqual({
+      error: 'שמירת התבנית נכשלה',
+    });
   });
 });
 

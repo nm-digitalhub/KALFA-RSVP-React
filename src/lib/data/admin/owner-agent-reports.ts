@@ -23,6 +23,10 @@ import {
 // GATE: requirePlatformOwner on EVERY export, as owner-agent.ts (decision 9.4): a
 // schedule sends business data to a phone every day.
 //
+// TWO TEMPLATES (20260927173139): the numeric report's (4 params) and the one for a
+// report written from the owner's instructions (2 params). reports/report.ts picks by
+// the content it holds; neither ever carries the other's params.
+//
 // CLIENTS. The cookie client wherever RLS lets the owner through: app_settings (staff
 // policy), and the subscription, run and allow-list READS (owner-select policies). The
 // service-role client for the subscription and allow-list WRITES — neither table has a
@@ -44,8 +48,12 @@ export const OWNER_AGENT_REPORT_RUNS_LIMIT = 30;
 
 export interface OwnerAgentReportSettings {
   reportsEnabled: boolean;
+  /** The numeric report's template (4 params). */
   templateName: string | null;
   templateLang: string | null;
+  /** The template of a report written from the owner's instructions (2 params). */
+  customTemplateName: string | null;
+  customTemplateLang: string | null;
 }
 
 export interface OwnerAgentReportSlot {
@@ -88,7 +96,9 @@ export async function getOwnerAgentReportSettings(): Promise<OwnerAgentReportSet
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('app_settings')
-    .select('owner_agent_reports_enabled, owner_agent_report_template_name, owner_agent_report_template_lang')
+    .select(
+      'owner_agent_reports_enabled, owner_agent_report_template_name, owner_agent_report_template_lang, owner_agent_custom_report_template_name, owner_agent_custom_report_template_lang',
+    )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
   if (error || !data) throw new Error(E.readFailed);
@@ -96,6 +106,8 @@ export async function getOwnerAgentReportSettings(): Promise<OwnerAgentReportSet
     reportsEnabled: data.owner_agent_reports_enabled,
     templateName: data.owner_agent_report_template_name,
     templateLang: data.owner_agent_report_template_lang,
+    customTemplateName: data.owner_agent_custom_report_template_name,
+    customTemplateLang: data.owner_agent_custom_report_template_lang,
   };
 }
 
@@ -181,7 +193,7 @@ export async function setOwnerAgentReportsEnabled(enabled: boolean): Promise<voi
   await logActivity({ action: 'admin.owner_agent.reports_enabled_set', meta: { enabled } });
 }
 
-/** The approved template for a report outside the 24h window; null = none (no such report goes out). */
+/** The approved template for a NUMERIC report outside the 24h window; null = none (no such report goes out). */
 export async function setOwnerAgentReportTemplate(input: ReportTemplateInput): Promise<void> {
   await requirePlatformOwner();
   const parsed = reportTemplateSchema.parse(input);
@@ -199,6 +211,32 @@ export async function setOwnerAgentReportTemplate(input: ReportTemplateInput): P
   // A Meta template identifier and a language code — configuration, not personal data.
   await logActivity({
     action: 'admin.owner_agent.report_template_set',
+    meta: { templateName: parsed.templateName, templateLang: parsed.templateLang },
+  });
+}
+
+/**
+ * The approved template (2 params: period, summary) for a report written from the
+ * owner's instructions, outside the 24h window; null = none — such a report then goes
+ * out as the numeric report through the numeric template, or not at all.
+ */
+export async function setOwnerAgentCustomReportTemplate(input: ReportTemplateInput): Promise<void> {
+  await requirePlatformOwner();
+  const parsed = reportTemplateSchema.parse(input);
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('app_settings')
+    .update({
+      owner_agent_custom_report_template_name: parsed.templateName,
+      owner_agent_custom_report_template_lang: parsed.templateLang,
+    })
+    .eq('id', SETTINGS_ID);
+  if (error) throw new Error(E.templateSaveFailed);
+
+  // A Meta template identifier and a language code — configuration, not personal data.
+  await logActivity({
+    action: 'admin.owner_agent.custom_report_template_set',
     meta: { templateName: parsed.templateName, templateLang: parsed.templateLang },
   });
 }

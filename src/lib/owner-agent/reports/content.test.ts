@@ -105,6 +105,7 @@ describe('buildReportContent', () => {
       'קמפיינים חדשים: 1',
       'שיחות AI: 1 (הושלמו 1)',
     ]);
+    expect(c.kind).toBe('numeric');
     expect(c.templateParams).toEqual(['27.9', '1', '2', '1,350.5 ₪']);
     expect(c.sections).toEqual(ALL);
   });
@@ -162,5 +163,6 @@ describe('templateParam', () => {
   it('is single-line, without runs of spaces, and never empty', () => {
     expect(templateParam('a\nb\tc     d')).toBe('a b c d');
     expect(templateParam('  \n ')).toBe(TEMPLATE_PLACEHOLDER);
+    expect(templateParam('a\u2028b\u2029c\vd\fe\u0085f')).toBe('a b c d e f');
   });
 });

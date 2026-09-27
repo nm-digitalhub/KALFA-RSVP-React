@@ -131,7 +131,7 @@ describe('scans', () => {
 });
 
 describe('reads', () => {
-  it('readSettings maps the switches, number and template', async () => {
+  it('readSettings maps the switches, number and both templates', async () => {
     const { store } = setup({
       app_settings: [
         {
@@ -139,8 +139,10 @@ describe('reads', () => {
           owner_agent_enabled: true,
           owner_agent_phone_number_id: '123456789012345',
           owner_agent_reports_enabled: false,
-          owner_agent_report_template_name: 'kalfa_owner_daily_report_util_v1',
+          owner_agent_report_template_name: 'owner_activity_report',
           owner_agent_report_template_lang: null,
+          owner_agent_custom_report_template_name: 'owner_custom_report',
+          owner_agent_custom_report_template_lang: 'he',
         },
       ],
     });
@@ -148,8 +150,10 @@ describe('reads', () => {
       enabled: true,
       reportsEnabled: false,
       phoneNumberId: '123456789012345',
-      templateName: 'kalfa_owner_daily_report_util_v1',
+      templateName: 'owner_activity_report',
       templateLang: null,
+      customTemplateName: 'owner_custom_report',
+      customTemplateLang: 'he',
     });
   });
 

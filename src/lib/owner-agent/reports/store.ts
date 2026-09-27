@@ -69,8 +69,12 @@ export interface ReportSettings {
   enabled: boolean;
   reportsEnabled: boolean;
   phoneNumberId: string | null;
+  /** The numeric report's template (4 params). */
   templateName: string | null;
   templateLang: string | null;
+  /** The template for a report written from the owner's instructions (2 params). */
+  customTemplateName: string | null;
+  customTemplateLang: string | null;
 }
 
 export interface ReportEntryRow {
@@ -201,7 +205,7 @@ export function createReportStore(client: AdminClient): ReportStore {
       const { data, error } = await client
         .from('app_settings')
         .select(
-          'owner_agent_enabled, owner_agent_phone_number_id, owner_agent_reports_enabled, owner_agent_report_template_name, owner_agent_report_template_lang',
+          'owner_agent_enabled, owner_agent_phone_number_id, owner_agent_reports_enabled, owner_agent_report_template_name, owner_agent_report_template_lang, owner_agent_custom_report_template_name, owner_agent_custom_report_template_lang',
         )
         .eq('id', true)
         .maybeSingle();
@@ -213,6 +217,8 @@ export function createReportStore(client: AdminClient): ReportStore {
         phoneNumberId: data.owner_agent_phone_number_id ?? null,
         templateName: data.owner_agent_report_template_name ?? null,
         templateLang: data.owner_agent_report_template_lang ?? null,
+        customTemplateName: data.owner_agent_custom_report_template_name ?? null,
+        customTemplateLang: data.owner_agent_custom_report_template_lang ?? null,
       };
     },
 

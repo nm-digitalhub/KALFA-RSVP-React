@@ -52,12 +52,14 @@ describe('buildModelReportContent', () => {
     expect(input.permissions).toEqual(['view_events']);
     expect(input.systemPrompt).toBe(OWNER_AGENT_SYSTEM_PROMPT);
     expect(c).toMatchObject({
+      kind: 'custom',
       text: '*סיכום*\nשני אירועים חדשים',
-      templateParams: [MORNING.label, 'סיכום', TEMPLATE_PLACEHOLDER, TEMPLATE_PLACEHOLDER],
       sections: [],
       toolNames: ['events_pipeline', 'execute_sql'],
       permissions: ['view_events'],
     });
+    // The custom template's two params, exactly — nothing padded for the numeric one.
+    expect(c.templateParams).toEqual([MORNING.label, 'סיכום']);
   });
 
   it('an empty answer throws (report.ts falls back to the numbers)', async () => {
@@ -74,5 +76,16 @@ describe('templateSummary', () => {
     const long = templateSummary('א'.repeat(500));
     expect(long.length).toBe(TEMPLATE_SUMMARY_MAX);
     expect(long.endsWith('…')).toBe(true);
+  });
+
+  it('never carries a line break, a tab or a run of 4+ spaces (Meta refuses those in a param)', () => {
+    for (const raw of ['א\tב    ג', 'א\u2028ב', 'א\u2029ב\vג\fד', 'א\u0085ב', 'a\r\nb']) {
+      const out = templateSummary(raw);
+      expect(out).not.toMatch(/[\r\n\t\v\f\u0085\u2028\u2029]/);
+      expect(out).not.toMatch(/ {4,}/);
+      expect(out.length).toBeGreaterThan(0);
+    }
+    const long = templateSummary(`${'א '.repeat(300)}\u2028סוף`);
+    expect(long.length).toBeLessThanOrEqual(TEMPLATE_SUMMARY_MAX);
   });
 });

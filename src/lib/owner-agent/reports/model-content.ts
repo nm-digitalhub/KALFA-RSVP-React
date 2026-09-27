@@ -30,7 +30,7 @@ import type { ReportPeriod } from './planner';
 // sends the deterministic report instead, with a note (graceful degradation),
 // rather than paying for a second model run.
 
-/** Meta allows up to 1024 characters for the whole template body; one parameter gets a short line. */
+/** Meta allows up to 1024 characters for the whole template body; the summary parameter gets a short line. */
 export const TEMPLATE_SUMMARY_MAX = 200;
 
 export function buildReportPrompt(period: ReportPeriod, instructions: string, nowMs: number): string {
@@ -79,9 +79,10 @@ export async function buildModelReportContent(
   const text = answerBody(result.text, result.sqlUnavailable);
   return {
     text,
-    // Draft template A has four slots; a model report fills the period and a
-    // one-line summary, and the two number slots get the placeholder.
-    templateParams: [templateParam(period.label), templateSummary(result.text), TEMPLATE_PLACEHOLDER, TEMPLATE_PLACEHOLDER],
+    // The custom template's two slots: the period and a one-line summary.
+    // Nothing is padded for the numeric template's number slots.
+    kind: 'custom',
+    templateParams: [templateParam(period.label), templateSummary(result.text)],
     // The audit's tool_names: which tools the model used (store.ts sanitizes).
     sections: [],
     toolNames: result.toolNames,

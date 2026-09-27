@@ -28,13 +28,15 @@ import {
 } from '@/lib/validation/owner-agent-reports';
 
 import {
+  setOwnerAgentCustomReportTemplateAction,
   setOwnerAgentReportScheduleAction,
   setOwnerAgentReportTemplateAction,
   setOwnerAgentReportsEnabledAction,
 } from './reports-actions';
 
 // The proactive report (plans/owner-agent-chat-sdk-capabilities-plan.md §4.8): the
-// reports switch, the template used outside the 24h window, per allow-list row the
+// reports switch, the two templates used outside the 24h window (the numeric report's
+// and the instructions report's), per allow-list row the
 // opt-in and the daily hours, and the recent runs. Owner decision 27.9: the schedule is
 // set here and only here.
 //
@@ -113,7 +115,35 @@ export function ReportsPanel({
         agentEnabled={agentEnabled}
         hasTemplate={settings.templateName !== null}
       />
-      <TemplateForm templateName={settings.templateName} templateLang={settings.templateLang} />
+      <div className="space-y-2">
+        <div>
+          <h3 className="text-base font-semibold">תבניות מחוץ לחלון 24 השעות</h3>
+          <p id="report-template-hint" className="text-xs text-muted-foreground">
+            WhatsApp מתיר טקסט חופשי רק עד 24 שעות מההודעה האחרונה של איש הצוות. אחרי זה יוצאת רק
+            תבנית שאושרה ב-Meta. בלי תבנית, דוח מחוץ לחלון לא יוצא בכלל.
+          </p>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <TemplateForm
+            idPrefix="report-template"
+            title="תבנית לדוח הרגיל"
+            hint="4 פרמטרים: תקופה, אירועים חדשים, אישורי הגעה חדשים, הכנסות."
+            placeholder="owner_activity_report"
+            action={setOwnerAgentReportTemplateAction}
+            templateName={settings.templateName}
+            templateLang={settings.templateLang}
+          />
+          <TemplateForm
+            idPrefix="custom-report-template"
+            title="תבנית לדוח לפי הנחיות"
+            hint="2 פרמטרים: תקופה ושורת סיכום. בלי תבנית כזו, דוח לפי הנחיות מחוץ לחלון יוצא כדוח הרגיל."
+            placeholder="owner_custom_report"
+            action={setOwnerAgentCustomReportTemplateAction}
+            templateName={settings.customTemplateName}
+            templateLang={settings.customTemplateLang}
+          />
+        </div>
+      </div>
 
       <div className="space-y-3">
         <h3 className="text-base font-semibold">מי מקבל דוח, ומתי</h3>
@@ -167,8 +197,8 @@ function ReportsSwitch({
       <div className="min-w-0 space-y-1">
         <p className="text-sm font-semibold">מתג הדוחות</p>
         <p className="text-xs text-muted-foreground">
-          מתג נפרד ממתג הסוכן. כשהוא כבוי לא נוצר ולא נשלח אף דוח. הדוח נבנה ממספרים בלבד, בלי
-          מודל, ורק מהנתונים שההרשאות של איש הצוות מתירות.
+          מתג נפרד ממתג הסוכן. כשהוא כבוי לא נוצר ולא נשלח אף דוח. בלי הנחיות הדוח נבנה
+          ממספרים; עם הנחיות הסוכן כותב אותו. בשני המקרים רק מהנתונים שההרשאות מתירות.
         </p>
         {enabled && !agentEnabled ? (
           <p className="text-xs font-medium text-warning">מתג הדוחות דלוק, אבל מתג הסוכן כבוי — לא יישלח דוח.</p>
@@ -197,41 +227,63 @@ function ReportsSwitch({
   );
 }
 
-function TemplateForm({ templateName, templateLang }: { templateName: string | null; templateLang: string | null }) {
-  const [state, action] = useActionState(setOwnerAgentReportTemplateAction, null);
+type TemplateAction = typeof setOwnerAgentReportTemplateAction;
+
+// One name + language pair. Rendered twice (the numeric report's template and the
+// instructions report's), so every element id comes from `idPrefix`.
+function TemplateForm({
+  idPrefix,
+  title,
+  hint,
+  placeholder,
+  action: saveAction,
+  templateName,
+  templateLang,
+}: {
+  idPrefix: string;
+  title: string;
+  hint: string;
+  placeholder: string;
+  action: TemplateAction;
+  templateName: string | null;
+  templateLang: string | null;
+}) {
+  const [state, action] = useActionState(saveAction, null);
+  const nameId = `${idPrefix}-name`;
+  const langId = `${idPrefix}-lang`;
+  const hintId = `${idPrefix}-kind-hint`;
 
   return (
     <form action={action} className="space-y-3 rounded-lg border border-border bg-background p-4">
       <div>
-        <p className="text-sm font-semibold">תבנית מחוץ לחלון 24 השעות</p>
-        <p id="report-template-hint" className="text-xs text-muted-foreground">
-          WhatsApp מתיר טקסט חופשי רק עד 24 שעות מההודעה האחרונה של איש הצוות. אחרי זה יוצאת רק
-          תבנית שאושרה ב-Meta. בלי תבנית, דוח מחוץ לחלון לא יוצא בכלל.
+        <p className="text-sm font-semibold">{title}</p>
+        <p id={hintId} className="text-xs text-muted-foreground">
+          {hint}
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-[1fr_10rem_auto] sm:items-end">
+      <div className="grid gap-3 sm:grid-cols-[1fr_8rem_auto] sm:items-end">
         <div>
-          <label htmlFor="report-template-name" className="mb-1 block text-sm font-medium">
+          <label htmlFor={nameId} className="mb-1 block text-sm font-medium">
             שם התבנית
           </label>
           <input
-            id="report-template-name"
+            id={nameId}
             name="templateName"
             dir="ltr"
             defaultValue={templateName ?? ''}
-            placeholder="kalfa_owner_daily_report_util_v1"
-            aria-describedby="report-template-hint"
+            placeholder={placeholder}
+            aria-describedby={`report-template-hint ${hintId}`}
             aria-invalid={state?.fieldErrors?.templateName ? true : undefined}
             className={`${inputClass} font-mono`}
           />
           <FieldError errors={state?.fieldErrors?.templateName} />
         </div>
         <div>
-          <label htmlFor="report-template-lang" className="mb-1 block text-sm font-medium">
+          <label htmlFor={langId} className="mb-1 block text-sm font-medium">
             שפה
           </label>
           <input
-            id="report-template-lang"
+            id={langId}
             name="templateLang"
             dir="ltr"
             defaultValue={templateLang ?? ''}

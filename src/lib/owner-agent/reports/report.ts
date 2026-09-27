@@ -49,10 +49,21 @@ import type { ReportAuditInput, ReportEntryRow, ReportRunRow, ReportStore, Repor
 //
 // ⚠️ NEVER FREE TEXT OUTSIDE THE WINDOW. Free text goes out only while the
 // staff member's last message to this number is younger than 24h minus a
-// 15-minute margin; otherwise the approved template from app_settings, and no
+// 15-minute margin; otherwise an approved template from app_settings, and no
 // template = skipped/template_unavailable. The one fallback: a text that Meta
 // refused with 131047 (closed window, `definitely_not_sent` — proven not sent)
 // before any part went out is retried once as the template.
+//
+// TWO TEMPLATES, bound to the content's kind (content.ts ReportContent): the
+// numbers go out as the numeric template (4 params), a report written from the
+// owner's instructions as the custom template (2 params: period, summary). A
+// subscription's own template_name overrides the one of ITS mode only. With no
+// custom template, a model report that has to leave outside the window becomes
+// the numeric report (with MODEL_FALLBACK_NOTE in its text, and
+// `custom_template_missing` in the audit) — and that is decided before the
+// model runs, so the run is not paid for. The 131047 fallback has no such
+// switch (nothing may be read after the send claim): model text refused with
+// 131047 and no custom template is `window_closed`.
 //
 // ⚠️ ONE MODEL RUN AT A TIME. A report with instructions runs the model, and a
 // model run must never overlap an answer's. The answer's serialization is the
@@ -128,14 +139,25 @@ export class OwnerAgentReportError extends Error {
   }
 }
 
+/** A template as configured in app_settings: either part may be null. */
+interface ConfiguredTemplate {
+  name: string | null;
+  lang: string | null;
+}
+
+interface Template {
+  templateName: string;
+  language: string;
+}
+
 type GateResult =
   | {
       ok: true;
       entry: ReportEntryRow;
       staffUserId: string | null;
       phoneNumberId: string;
-      templateName: string | null;
-      templateLang: string;
+      numericTemplate: ConfiguredTemplate;
+      customTemplate: ConfiguredTemplate;
       permissions: OwnerAgentPermission[];
     }
   | { ok: false; reason: string; entry?: ReportEntryRow };
@@ -242,33 +264,71 @@ async function handleRun(run: ReportRunRow, deps: ReportDeps): Promise<ReportOut
   const sender = await deps.sender(gate.phoneNumberId);
   if (!sender) throw new OwnerAgentReportError('whatsapp_not_configured');
 
+  // The subscription's own template belongs to its mode: with instructions it
+  // replaces the custom template, without them the numeric one. So a model
+  // report that falls back to the numbers never puts four params into a
+  // subscription's two-param template.
+  const templates = {
+    numeric: resolveTemplate(instructions ? null : sub, gate.numericTemplate),
+    custom: resolveTemplate(instructions ? sub : null, gate.customTemplate),
+  };
+
+  // The window is per business number, so only intake on the number the
+  // report goes out from counts.
+  const windowOpen = async (): Promise<boolean> => {
+    const lastIntake = await store.lastIntakeAt(gate.entry.id, gate.phoneNumberId);
+    const lastMs = lastIntake ? Date.parse(lastIntake) : Number.NaN;
+    return !Number.isNaN(lastMs) && deps.now() - lastMs < REPORT_TEXT_WINDOW_MS;
+  };
+
   const period = reportPeriod(run.localDate, run.slotTime, sub.timezone);
+  // The numeric report standing in for a model report, with a note. One core
+  // read; it throws before the claim, as any content read does.
+  const numbersInstead = async (): Promise<ReportContent> => {
+    const fallback = await deps.content(sections, period, deps.now());
+    return { ...fallback, text: `${MODEL_FALLBACK_NOTE}\n\n${fallback.text}` };
+  };
   let content: ReportContent;
-  let modelFailure: string | null = null;
-  if (useModel) {
+  // Why a model report went out as the numbers: its run failed, or it could
+  // not leave as the custom template.
+  let degraded: 'model_fallback' | 'custom_template_missing' | null = null;
+  if (useModel && !templates.custom && !(await windowOpen())) {
+    // Outside the window with no custom template the model's text cannot go
+    // out: the numbers instead, and no model run is paid for.
+    if (sections.length === 0 || !templates.numeric) {
+      return skip(deps, ctx, ['processing'], 'skipped', 'template_unavailable');
+    }
+    content = await numbersInstead();
+    degraded = 'custom_template_missing';
+  } else if (useModel) {
     try {
       content = await deps.modelContent!(instructions!, gate.permissions, period, deps.now());
     } catch (e) {
       // Graceful degradation: the deterministic report, with a note, rather
       // than a second paid run or silence.
-      modelFailure = runFailureCode(e);
-      if (sections.length === 0) return skip(deps, ctx, ['processing'], 'skipped', modelFailure);
-      const fallback = await deps.content(sections, period, deps.now());
-      content = { ...fallback, text: `${MODEL_FALLBACK_NOTE}\n\n${fallback.text}` };
+      const code = runFailureCode(e);
+      if (sections.length === 0) return skip(deps, ctx, ['processing'], 'skipped', code);
+      content = await numbersInstead();
+      degraded = 'model_fallback';
     }
   } else {
     // A failed core read throws here, before the claim: pg-boss retries.
     content = await deps.content(sections, period, deps.now());
   }
 
-  // The channel, decided right before the claim. The window is per business
-  // number, so only intake on the number the report goes out from counts.
-  const lastIntake = await store.lastIntakeAt(gate.entry.id, gate.phoneNumberId);
-  const lastMs = lastIntake ? Date.parse(lastIntake) : Number.NaN;
-  const inWindow = !Number.isNaN(lastMs) && deps.now() - lastMs < REPORT_TEXT_WINDOW_MS;
-  const templateName = sub.templateName ?? gate.templateName;
-  const templateLang = sub.templateLang ?? gate.templateLang;
-  if (!inWindow && !templateName) {
+  // The channel, decided right before the claim.
+  const inWindow = await windowOpen();
+  if (!inWindow && content.kind === 'custom' && !templates.custom) {
+    // The window closed while the model wrote the report: the same switch as
+    // above, now after the run.
+    if (sections.length === 0 || !templates.numeric) {
+      return skip(deps, ctx, ['processing'], 'skipped', 'template_unavailable', auditSections(content));
+    }
+    content = await numbersInstead();
+    degraded = 'custom_template_missing';
+  }
+  const template = content.kind === 'custom' ? templates.custom : templates.numeric;
+  if (!inWindow && !template) {
     return skip(deps, ctx, ['processing'], 'skipped', 'template_unavailable', auditSections(content));
   }
 
@@ -291,7 +351,6 @@ async function handleRun(run: ReportRunRow, deps: ReportDeps): Promise<ReportOut
   // ── Past the send claim: nothing below may throw. ──────────────────────────
   const from: WhatsAppSender = { ...sender, phoneNumberId: gate.phoneNumberId };
   const to = gate.entry.e164;
-  const template = templateName ? { templateName, language: templateLang } : null;
   let result: DeliveryResult;
   if (inWindow) result = await deliverText(from, to, content, template, deps);
   else if (template) result = await deliverTemplate(from, to, content, template, deps);
@@ -314,7 +373,7 @@ async function handleRun(run: ReportRunRow, deps: ReportDeps): Promise<ReportOut
   }
   await audit(deps, ctx, {
     outcome: result.ok ? 'sent' : 'send_failed',
-    reasonCode: result.ok ? (result.fellBack ? 'template_fallback' : modelFailure ? 'model_fallback' : null) : result.code,
+    reasonCode: result.ok ? (result.fellBack ? 'template_fallback' : degraded) : result.code,
     sections: auditSections(content),
     latencyMs: finished - ctx.started,
   });
@@ -380,8 +439,8 @@ async function reportGate(run: ReportRunRow, deps: ReportDeps): Promise<GateResu
     entry,
     staffUserId,
     phoneNumberId: settings.phoneNumberId,
-    templateName: settings.templateName,
-    templateLang: settings.templateLang ?? DEFAULT_TEMPLATE_LANG,
+    numericTemplate: { name: settings.templateName, lang: settings.templateLang },
+    customTemplate: { name: settings.customTemplateName, lang: settings.customTemplateLang },
     permissions: granted.filter((key): key is OwnerAgentPermission => key !== null),
   };
 }
@@ -393,6 +452,14 @@ function subscriptionHoldsSlot(sub: ReportSubscriptionRow | null, run: ReportRun
   if (!sub || !sub.enabled || sub.reportKey !== DAILY_BUSINESS_REPORT) return false;
   const a = normalizeSlotTime(sub.slotTime);
   return a !== null && a === normalizeSlotTime(run.slotTime);
+}
+
+// The subscription's own name and language first (each on its own, as stored),
+// then app_settings', then Hebrew. No name anywhere = no template.
+function resolveTemplate(sub: ReportSubscriptionRow | null, configured: ConfiguredTemplate): Template | null {
+  const templateName = sub?.templateName ?? configured.name;
+  if (!templateName) return null;
+  return { templateName, language: sub?.templateLang ?? configured.lang ?? DEFAULT_TEMPLATE_LANG };
 }
 
 type DeliveryResult =
@@ -419,7 +486,7 @@ async function deliverText(
   from: WhatsAppSender,
   to: string,
   content: ReportContent,
-  template: { templateName: string; language: string } | null,
+  template: Template | null,
   deps: ReportDeps,
 ): Promise<DeliveryResult> {
   let sent = 0;
@@ -447,7 +514,7 @@ async function deliverTemplate(
   from: WhatsAppSender,
   to: string,
   content: ReportContent,
-  template: { templateName: string; language: string },
+  template: Template,
   deps: ReportDeps,
 ): Promise<DeliveryResult> {
   const outcome = await send(() =>

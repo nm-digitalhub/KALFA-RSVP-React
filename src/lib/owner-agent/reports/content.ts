@@ -54,14 +54,9 @@ export function permittedSections(permissions: readonly OwnerAgentPermission[]):
 /** The template's value for a number the recipient may not see. */
 export const TEMPLATE_PLACEHOLDER = '—';
 
-export interface ReportContent {
+interface ReportContentBase {
   /** The free-text report (inside the 24h window). */
   text: string;
-  /**
-   * The approved template's body parameters, in order ({{1}}..{{4}}): period,
-   * new events, new RSVPs, revenue. Single-line, never empty.
-   */
-  templateParams: [string, string, string, string];
   /** The deterministic sections that went in, for the audit (tool ids); [] for a model report. */
   sections: ReportSection[];
   /** A model report's tools, for the audit. */
@@ -74,6 +69,19 @@ export interface ReportContent {
   permissions: OwnerAgentPermission[];
 }
 
+/**
+ * Two approved templates, and the content says which one it fits — the params
+ * are bound to the template's kind, never padded into the other one's slots:
+ *   - 'numeric' (owner_agent_report_template_*): {{1}}..{{4}} = period, new
+ *     events, new RSVPs, revenue;
+ *   - 'custom' (owner_agent_custom_report_template_*), a report written from
+ *     the owner's instructions: {{1}} period, {{2}} a one-line summary.
+ * Every param is single-line and never empty (templateParam).
+ */
+export type ReportContent =
+  | (ReportContentBase & { kind: 'numeric'; templateParams: [string, string, string, string] })
+  | (ReportContentBase & { kind: 'custom'; templateParams: [string, string] });
+
 function count(n: number): string {
   return n.toLocaleString('en-US');
 }
@@ -83,9 +91,10 @@ function shekels(n: number): string {
 }
 
 // Meta refuses a body parameter with a newline or a tab, or more than four
-// spaces in a row (132000 family); an empty one fails the send.
+// spaces in a row (132000 family); an empty one fails the send. Every line or
+// tab break (Unicode's included) becomes one space.
 export function templateParam(value: string): string {
-  const single = value.replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ').trim();
+  const single = value.replace(/[\r\n\t\v\f\u0085\u2028\u2029]+/g, ' ').replace(/ {2,}/g, ' ').trim();
   return single.length > 0 ? single : TEMPLATE_PLACEHOLDER;
 }
 
@@ -161,6 +170,7 @@ export async function buildReportContent(
   }
 
   return {
+    kind: 'numeric',
     text: lines.join('\n'),
     templateParams: [
       templateParam(period.label),

@@ -796,7 +796,7 @@ describe('the owner-agent data layer gates every export on requirePlatformOwner'
   // Minimum export counts: a silent empty scan is the failure mode.
   const modules: Array<[string, number]> = [
     ['src/lib/data/admin/owner-agent.ts', 12],
-    ['src/lib/data/admin/owner-agent-reports.ts', 6],
+    ['src/lib/data/admin/owner-agent-reports.ts', 7],
   ];
   for (const [relPath, min] of modules) {
     const blocks = splitExportedFunctions(readFileSync(join(ROOT, relPath), 'utf8'));

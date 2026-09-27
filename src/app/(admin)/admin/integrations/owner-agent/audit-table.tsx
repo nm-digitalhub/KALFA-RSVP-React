@@ -118,6 +118,8 @@ const REASON_LABELS: Record<string, string> = {
   permissions_changed: 'ההרשאות השתנו',
   template_unavailable: 'מחוץ לחלון 24 השעות ואין תבנית',
   template_fallback: 'נשלח כתבנית אחרי שהחלון נסגר',
+  model_fallback: 'הדוח לפי ההנחיות נכשל — נשלח הדוח הרגיל',
+  custom_template_missing: 'אין תבנית לדוח לפי הנחיות — נשלח הדוח הרגיל',
   bad_slot: 'שעה לא תקינה',
 };
 

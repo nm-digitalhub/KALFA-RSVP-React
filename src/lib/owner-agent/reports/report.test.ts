@@ -52,8 +52,10 @@ function initialState(): State {
       enabled: true,
       reportsEnabled: true,
       phoneNumberId: AGENT_NUMBER,
-      templateName: 'kalfa_owner_daily_report_util_v1',
+      templateName: 'owner_activity_report',
       templateLang: 'he',
+      customTemplateName: 'owner_custom_report',
+      customTemplateLang: 'he',
     },
     run: { id: RUN, subscriptionId: SUB, localDate: '2026-09-28', slotTime: '08:00:00', status: 'queued', claimedAt: '2026-09-28T05:00:30Z' },
     sub: {
@@ -118,6 +120,7 @@ let deps: ReportDeps & {
 
 function content(text = 'דוח פעילות — 28.9 00:00–08:00\n\nאירועים חדשים: 1'): ReportContent {
   return {
+    kind: 'numeric',
     text,
     templateParams: ['28.9 00:00–08:00', '1', '2', '0 ₪'],
     sections: ['events_pipeline', 'rsvp_totals', 'billing_summary'],
@@ -127,8 +130,9 @@ function content(text = 'דוח פעילות — 28.9 00:00–08:00\n\nאירו�
 
 function modelReport(): ReportContent {
   return {
+    kind: 'custom',
     text: '*סיכום הלילה*\nשלושה אירועים חדשים',
-    templateParams: ['28.9 00:00–08:00', 'סיכום הלילה', '—', '—'],
+    templateParams: ['28.9 00:00–08:00', 'סיכום הלילה'],
     sections: [],
     toolNames: ['execute_sql', 'events_pipeline'],
     permissions: ['view_events', 'view_billing'],
@@ -192,7 +196,7 @@ describe('delivery', () => {
     expect(deps.sendText).not.toHaveBeenCalled();
     expect(deps.sendTemplate).toHaveBeenCalledWith(expect.objectContaining({ phoneNumberId: AGENT_NUMBER }), {
       to: OWNER_PHONE,
-      templateName: 'kalfa_owner_daily_report_util_v1',
+      templateName: 'owner_activity_report',
       language: 'he',
       bodyParams: ['28.9 00:00–08:00', '1', '2', '0 ₪'],
     });
@@ -211,6 +215,14 @@ describe('delivery', () => {
     state.sub = { ...state.sub!, templateName: 'kalfa_owner_daily_report_util_v2', templateLang: 'en' };
     await run();
     expect(deps.sendTemplate.mock.calls[0][1]).toMatchObject({ templateName: 'kalfa_owner_daily_report_util_v2', language: 'en' });
+  });
+
+  it('the numbers never go out as the custom template, even when only that one is configured', async () => {
+    state.lastIntake = null;
+    state.settings = { ...state.settings!, templateName: null };
+    expect(await run()).toBe('skipped');
+    nothingSent();
+    expect(lastAudit()).toMatchObject({ reasonCode: 'template_unavailable' });
   });
 
   it('outside the window with no template: skipped, NEVER free text', async () => {
@@ -463,12 +475,130 @@ describe('reports with the owner’s instructions (model-backed)', () => {
     expect(lastAudit()).toMatchObject({ outcome: 'sent', reasonCode: null, sections: ['execute_sql', 'events_pipeline'] });
   });
 
-  it('outside the window the model report goes out as the template with its summary line', async () => {
+  it('outside the window the model report goes out as the CUSTOM template, exactly [period, summary]', async () => {
     deps.lane = 'model';
     state.lastIntake = null;
-    await run();
+    expect(await run()).toBe('sent');
     expect(deps.sendText).not.toHaveBeenCalled();
-    expect(deps.sendTemplate.mock.calls[0][1].bodyParams).toEqual(['28.9 00:00–08:00', 'סיכום הלילה', '—', '—']);
+    expect(deps.sendTemplate).toHaveBeenCalledTimes(1);
+    expect(deps.sendTemplate.mock.calls[0][1]).toEqual({
+      to: OWNER_PHONE,
+      templateName: 'owner_custom_report',
+      language: 'he',
+      bodyParams: ['28.9 00:00–08:00', 'סיכום הלילה'],
+    });
+    expect(lastAudit()).toMatchObject({ outcome: 'sent', reasonCode: null });
+  });
+
+  it('no custom template, outside the window: the numbers through the numeric template, and no model run', async () => {
+    deps.lane = 'model';
+    state.lastIntake = null;
+    state.settings = { ...state.settings!, customTemplateName: null };
+    expect(await run()).toBe('sent');
+    expect(deps.modelContent).not.toHaveBeenCalled();
+    expect(deps.content).toHaveBeenCalledTimes(1);
+    expect(deps.sendText).not.toHaveBeenCalled();
+    expect(deps.sendTemplate.mock.calls[0][1]).toEqual({
+      to: OWNER_PHONE,
+      templateName: 'owner_activity_report',
+      language: 'he',
+      bodyParams: ['28.9 00:00–08:00', '1', '2', '0 ₪'],
+    });
+    expect(lastAudit()).toMatchObject({ outcome: 'sent', reasonCode: 'custom_template_missing' });
+  });
+
+  it('no custom template, window closed while the model ran: the numbers, one core read, with the note', async () => {
+    deps.lane = 'model';
+    state.settings = { ...state.settings!, customTemplateName: null };
+    deps.modelContent.mockImplementationOnce(async () => {
+      state.lastIntake = null;
+      return modelReport();
+    });
+    expect(await run()).toBe('sent');
+    expect(deps.content).toHaveBeenCalledTimes(1);
+    expect(deps.sendText).not.toHaveBeenCalled();
+    expect(deps.sendTemplate.mock.calls[0][1]).toMatchObject({
+      templateName: 'owner_activity_report',
+      bodyParams: ['28.9 00:00–08:00', '1', '2', '0 ₪'],
+    });
+    expect(lastAudit()).toMatchObject({ outcome: 'sent', reasonCode: 'custom_template_missing' });
+  });
+
+  it('no custom template but inside the window: the model’s text as usual', async () => {
+    deps.lane = 'model';
+    state.settings = { ...state.settings!, customTemplateName: null };
+    expect(await run()).toBe('sent');
+    expect(deps.modelContent).toHaveBeenCalledTimes(1);
+    expect(deps.sendText.mock.calls[0][1]).toEqual({ to: OWNER_PHONE, body: modelReport().text });
+    expect(lastAudit()).toMatchObject({ reasonCode: null });
+  });
+
+  it('no custom template, 131047 on the model text: window_closed — never the numeric template with a model’s params', async () => {
+    deps.lane = 'model';
+    state.settings = { ...state.settings!, customTemplateName: null };
+    deps.sendText.mockResolvedValueOnce(closedWindow);
+    expect(await run()).toBe('send_failed');
+    expect(deps.sendTemplate).not.toHaveBeenCalled();
+    expect(lastAudit()).toMatchObject({ outcome: 'send_failed', reasonCode: 'window_closed' });
+  });
+
+  it('131047 on the model text with a custom template: one fallback, as the custom template', async () => {
+    deps.lane = 'model';
+    deps.sendText.mockResolvedValueOnce(closedWindow);
+    expect(await run()).toBe('sent');
+    expect(deps.sendTemplate.mock.calls[0][1]).toMatchObject({
+      templateName: 'owner_custom_report',
+      bodyParams: ['28.9 00:00–08:00', 'סיכום הלילה'],
+    });
+    expect(lastAudit()).toMatchObject({ reasonCode: 'template_fallback' });
+  });
+
+  it('neither template configured, outside the window: skipped/template_unavailable, no model run, nothing sent', async () => {
+    deps.lane = 'model';
+    state.lastIntake = null;
+    state.settings = { ...state.settings!, templateName: null, customTemplateName: null };
+    expect(await run()).toBe('skipped');
+    expect(deps.modelContent).not.toHaveBeenCalled();
+    expect(deps.content).not.toHaveBeenCalled();
+    nothingSent();
+    expect(lastAudit()).toMatchObject({ outcome: 'skipped', reasonCode: 'template_unavailable' });
+  });
+
+  it('no custom template and no section to fall back to (external row), outside the window: template_unavailable', async () => {
+    deps.lane = 'model';
+    state.lastIntake = null;
+    state.settings = { ...state.settings!, customTemplateName: null };
+    state.entry = { ...state.entry!, approvalKind: 'external_override', staffUserId: null };
+    expect(await run()).toBe('skipped');
+    expect(deps.modelContent).not.toHaveBeenCalled();
+    nothingSent();
+    expect(lastAudit()).toMatchObject({ reasonCode: 'template_unavailable' });
+  });
+
+  it('a subscription’s own template replaces the CUSTOM one for a report with instructions', async () => {
+    deps.lane = 'model';
+    state.lastIntake = null;
+    state.sub = { ...state.sub!, templateName: 'owner_custom_report_v2', templateLang: 'en' };
+    await run();
+    expect(deps.sendTemplate.mock.calls[0][1]).toMatchObject({
+      templateName: 'owner_custom_report_v2',
+      language: 'en',
+      bodyParams: ['28.9 00:00–08:00', 'סיכום הלילה'],
+    });
+  });
+
+  it('a failed model run never sends four params into the subscription’s own (custom-mode) template', async () => {
+    deps.lane = 'model';
+    state.lastIntake = null;
+    state.sub = { ...state.sub!, templateName: 'owner_custom_report_v2', templateLang: 'en' };
+    deps.modelContent.mockRejectedValueOnce(new Error('timeout'));
+    expect(await run()).toBe('sent');
+    expect(deps.sendTemplate.mock.calls[0][1]).toMatchObject({
+      templateName: 'owner_activity_report',
+      language: 'he',
+      bodyParams: ['28.9 00:00–08:00', '1', '2', '0 ₪'],
+    });
+    expect(lastAudit()).toMatchObject({ reasonCode: 'model_fallback' });
   });
 
   it('a failed model run falls back to the numbers, with a note, and says so in the audit', async () => {

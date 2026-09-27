@@ -73,7 +73,15 @@ export const reportScheduleSchema = z
 
 export type ReportScheduleInput = z.input<typeof reportScheduleSchema>;
 
-/** app_settings_owner_agent_report_template_name_check; '' = no template (no out-of-window report). */
+/** A template name's length bound, as the CHECK's char_length (20260927173139). */
+export const MAX_TEMPLATE_NAME = 512;
+
+/**
+ * app_settings_owner_agent_report_template_name_check and
+ * app_settings_owner_agent_custom_report_template_name_check (both
+ * `~ '^[a-z0-9_]+$' and char_length <= 512`, 20260927173139); '' = no template (no
+ * out-of-window report of that kind).
+ */
 export const reportTemplateNameSchema = z
   .string()
   .trim()
@@ -81,11 +89,12 @@ export const reportTemplateNameSchema = z
   .pipe(
     z
       .string()
-      .regex(/^[a-z0-9_]{1,512}$/, 'שם תבנית: אותיות לטיניות קטנות, ספרות וקו תחתון בלבד')
+      .regex(/^[a-z0-9_]+$/, 'שם תבנית: אותיות לטיניות קטנות, ספרות וקו תחתון בלבד')
+      .max(MAX_TEMPLATE_NAME, `שם תבנית: עד ${MAX_TEMPLATE_NAME} תווים`)
       .nullable(),
   );
 
-/** app_settings_owner_agent_report_template_lang_check; '' = Hebrew (the handler's default). */
+/** The two *_template_lang CHECKs (same pattern); '' = Hebrew (the handler's default). */
 export const reportTemplateLangSchema = z
   .string()
   .trim()
@@ -97,6 +106,7 @@ export const reportTemplateLangSchema = z
       .nullable(),
   );
 
+/** One name + language pair: the numeric report's, or the custom (instructions) report's. */
 export const reportTemplateSchema = z.object({
   templateName: reportTemplateNameSchema,
   templateLang: reportTemplateLangSchema,
