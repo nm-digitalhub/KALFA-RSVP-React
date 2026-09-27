@@ -13,9 +13,9 @@
     "fix": {
       "type": "none"
     },
-    "status": "open",
+    "status": "resolved",
     "stale_after_days": 5,
-    "notes": "הוסף/תקן את בניית ה-path לכלול את מקטע ה-beta/ המפורש — ראו 04, §4"
+    "notes": "הוסף/תקן את בניית ה-path לכלול את מקטע ה-beta/ המפורש — ראו 04, §4 Resolved 27.9.2026: fleet-maintainer (13:03) found the check no longer holds; re-verified against code by the main session."
   },
   {
     "id": "fleetjson-main-comment-drift",
@@ -31,9 +31,9 @@
     "fix": {
       "type": "none"
     },
-    "status": "open",
+    "status": "resolved",
     "stale_after_days": 5,
-    "notes": "הוסף ל-$main_comment את owner_direct_request כמסלול-spawn שלישי, מוכר במפורש"
+    "notes": "הוסף ל-$main_comment את owner_direct_request כמסלול-spawn שלישי, מוכר במפורש Resolved 27.9.2026: fleet-maintainer (13:03) found the check no longer holds; re-verified against code by the main session."
   },
   {
     "id": "tier2-comment-vs-smoketest-t2",
@@ -49,9 +49,9 @@
     "fix": {
       "type": "none"
     },
-    "status": "open",
+    "status": "resolved",
     "stale_after_days": 5,
-    "notes": "עדכן מ-'the main executor role ONLY' לתיאור שמכיר גם ב-smoke-test-t2 כמשובץ לאותה דרגה"
+    "notes": "עדכן מ-'the main executor role ONLY' לתיאור שמכיר גם ב-smoke-test-t2 כמשובץ לאותה דרגה Resolved 27.9.2026: fleet-maintainer (13:03) found the check no longer holds; re-verified against code by the main session."
   },
   {
     "id": "todo-git-commit-stale",
@@ -67,9 +67,9 @@
     "fix": {
       "type": "none"
     },
-    "status": "open",
+    "status": "resolved",
     "stale_after_days": 5,
-    "notes": "הסר את השורה — git ls-files .claude/fleet מאשר שהכול כבר במעקב"
+    "notes": "הסר את השורה — git ls-files .claude/fleet מאשר שהכול כבר במעקב Resolved 27.9.2026: fleet-maintainer (13:03) found the check no longer holds; re-verified against code by the main session."
   },
   {
     "id": "cli-synopsis-missing-verbs",
@@ -85,9 +85,9 @@
     "fix": {
       "type": "none"
     },
-    "status": "open",
+    "status": "resolved",
     "stale_after_days": 5,
-    "notes": "הוסף לתקציר את verdicts/sql/triage-claim/triage-finish"
+    "notes": "הוסף לתקציר את verdicts/sql/triage-claim/triage-finish Resolved 27.9.2026: fleet-maintainer (13:03) found the check no longer holds; re-verified against code by the main session."
   },
   {
     "id": "insertandnotify-swallowed-error",
@@ -103,9 +103,9 @@
     "fix": {
       "type": "none"
     },
-    "status": "open",
+    "status": "resolved",
     "stale_after_days": 5,
-    "notes": "בדוק את ה-error של ה-re-select גם במסלול הדדופ, לא רק ב-insert הראשי"
+    "notes": "בדוק את ה-error של ה-re-select גם במסלול הדדופ, לא רק ב-insert הראשי Resolved 27.9.2026: fleet-maintainer (13:03) found the check no longer holds; re-verified against code by the main session."
   },
   {
     "id": "digest-fake-success",
@@ -121,9 +121,9 @@
     "fix": {
       "type": "none"
     },
-    "status": "open",
+    "status": "resolved",
     "stale_after_days": 5,
-    "notes": "דווח את ערך-ההחזרה האמיתי של sendSlackAlert() במקום {posted:true} קבוע"
+    "notes": "דווח את ערך-ההחזרה האמיתי של sendSlackAlert() במקום {posted:true} קבוע Resolved 27.9.2026: fleet-maintainer (13:03) found the check no longer holds; re-verified against code by the main session."
   },
   {
     "id": "withdraw-exit-code-inconsistent",
@@ -139,8 +139,8 @@
     "fix": {
       "type": "none"
     },
-    "status": "open",
+    "status": "resolved",
     "stale_after_days": 5,
-    "notes": "קבע process.exitCode = 2 על no-op, כמו ack/draft-reply/triage-finish/goal-progress/goal-close — כבר מתועד כפער ב-03, §6, ממצא #3"
+    "notes": "קבע process.exitCode = 2 על no-op, כמו ack/draft-reply/triage-finish/goal-progress/goal-close — כבר מתועד כפער ב-03, §6, ממצא #3 Resolved 27.9.2026: fleet-maintainer (13:03) found the check no longer holds; re-verified against code by the main session."
   }
 ]
