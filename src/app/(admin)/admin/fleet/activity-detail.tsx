@@ -15,9 +15,11 @@ import {
   getFleetRequest,
   listFleetRequestsByRole,
 } from '@/lib/data/admin/fleet';
+import { requestBodyAuthor, splitRequestAnswer } from '@/lib/fleet/content-author';
 import type { FleetRoleInfo } from '@/lib/fleet/handoff';
 import { LocalDateTime } from '@/components/local-date-time';
 import { EmptyState } from '../_components';
+import { FleetAuthorAvatar } from './fleet-agent-avatar';
 import {
   GoalCard,
   KIND_LABEL,
@@ -121,14 +123,21 @@ function TimelineItem({
   title,
   at,
   detail,
+  avatar,
 }: {
   title: string;
   at: string | null;
   detail?: React.ReactNode;
+  // Only for entries that carry authored content — the avatar marks WHO
+  // wrote it, so system events (expired, consumed) have none.
+  avatar?: React.ReactNode;
 }) {
   return (
     <li className="flex flex-col gap-1 border-s-2 border-border ps-4 pb-4 last:pb-0">
-      <span className="text-sm font-medium">{title}</span>
+      <span className="flex items-center gap-2 text-sm font-medium">
+        {avatar}
+        <span className="min-w-0">{title}</span>
+      </span>
       {at ? (
         <span className="text-xs text-muted-foreground">
           <LocalDateTime iso={at} />
@@ -174,6 +183,10 @@ export async function RequestDetailPanel({
       ? (request.payload as { prepared_command: string }).prepared_command
       : null;
   const attachments = parseAttachments(request.payload);
+  // Authorship is per field, not per row: `role` only names the agent whose
+  // conversation this is (see lib/fleet/content-author).
+  const bodyAuthor = requestBodyAuthor(request.payload);
+  const answerParts = splitRequestAnswer(request.answer);
 
   return (
     <div className="space-y-6 p-5">
@@ -207,6 +220,7 @@ export async function RequestDetailPanel({
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-center gap-2">
+              <FleetAuthorAvatar author={bodyAuthor} role={request.role} />
               <Badge variant="outline">{request.role}</Badge>
               <Badge variant={KIND_VARIANT[request.kind] ?? 'secondary'}>
                 {KIND_LABEL[request.kind] ?? request.kind}
@@ -253,20 +267,41 @@ export async function RequestDetailPanel({
         </CardHeader>
         <CardContent>
           <ol>
-            <TimelineItem title="הפנייה הוגשה" at={request.created_at} />
-            {request.answered_at ? (
+            <TimelineItem
+              title={bodyAuthor === 'owner' ? 'שלחת את הפנייה' : `${request.role} הגיש את הפנייה`}
+              at={request.created_at}
+              avatar={<FleetAuthorAvatar author={bodyAuthor} role={request.role} size="sm" />}
+            />
+            {answerParts.map((part, i) => (
               <TimelineItem
-                title={`נענתה${answeredByName ? ` על-ידי ${answeredByName}` : ''}`}
-                at={request.answered_at}
+                key={`${part.kind}-${i}`}
+                title={
+                  part.kind === 'verdict'
+                    ? `נענתה${answeredByName ? ` על-ידי ${answeredByName}` : ''}`
+                    : part.kind === 'completion'
+                      ? `${request.role} סיכם את הביצוע`
+                      : `${request.role} משך את הפנייה`
+                }
+                // The verdict carries answered_at; an agent-appended part has
+                // no timestamp of its own on the row.
+                at={part.kind === 'verdict' ? request.answered_at : null}
+                avatar={
+                  <FleetAuthorAvatar
+                    author={part.author}
+                    role={request.role}
+                    ownerName={answeredByName}
+                    size="sm"
+                  />
+                }
                 detail={
-                  request.answer ? (
+                  part.text ? (
                     <p className="wrap-anywhere whitespace-pre-wrap rounded-md bg-muted p-3 text-sm">
-                      {request.answer}
+                      {part.text}
                     </p>
                   ) : undefined
                 }
               />
-            ) : null}
+            ))}
             {request.status === 'expired' ? (
               <TimelineItem title="פגה ללא מענה" at={request.expires_at} />
             ) : null}
@@ -316,6 +351,7 @@ export async function RequestDetailPanel({
             <ul className="divide-y divide-border">
               {related.sameThread.map((item) => (
                 <li key={item.id} className="flex flex-wrap items-center gap-2 py-2">
+                  <FleetAuthorAvatar author={requestBodyAuthor(item.payload)} role={item.role} size="sm" />
                   <Badge variant={STATUS_VARIANT[item.status] ?? 'neutral'}>
                     {STATUS_LABEL[item.status] ?? item.status}
                   </Badge>
@@ -346,6 +382,7 @@ export async function RequestDetailPanel({
             <ul className="divide-y divide-border">
               {related.other.map((item) => (
                 <li key={item.id} className="flex flex-wrap items-center gap-2 py-2">
+                  <FleetAuthorAvatar author={requestBodyAuthor(item.payload)} role={item.role} size="sm" />
                   <Badge variant={STATUS_VARIANT[item.status] ?? 'neutral'}>
                     {STATUS_LABEL[item.status] ?? item.status}
                   </Badge>

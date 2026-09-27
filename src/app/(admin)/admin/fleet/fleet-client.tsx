@@ -14,7 +14,9 @@ import {
 import { FieldError, FormError, FormNotice } from '@/components/forms';
 import { LocalDateTime } from '@/components/local-date-time';
 import type { FleetGoalEntry, FleetRequestEntry } from '@/lib/data/admin/fleet';
+import { requestBodyAuthor } from '@/lib/fleet/content-author';
 import type { FleetRoleInfo } from '@/lib/fleet/handoff';
+import { FleetAuthorAvatar } from './fleet-agent-avatar';
 import {
   abandonFleetGoalAction,
   answerFleetRequestAction,
@@ -559,6 +561,9 @@ export function PendingRequestCard({ request }: { request: FleetRequestEntry }) 
   return (
     <article className="space-y-4 rounded-lg border border-border bg-card p-5">
       <header className="flex flex-wrap items-center gap-2">
+        {/* Avatar of whoever wrote the body below: the agent, or the owner
+            when they opened the request from /admin/fleet (payload.origin). */}
+        <FleetAuthorAvatar author={requestBodyAuthor(request.payload)} role={request.role} />
         <Badge variant={KIND_VARIANT[request.kind] ?? 'secondary'}>
           {KIND_LABEL[request.kind] ?? request.kind}
         </Badge>
