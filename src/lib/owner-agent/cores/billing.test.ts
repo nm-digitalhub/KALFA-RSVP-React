@@ -153,3 +153,31 @@ describe('getBillingSummary (core)', () => {
     ).rejects.toThrow();
   });
 });
+
+// A closed window (cores/window.ts) that holds c2 (charged 20.9) and b2
+// (granted 19.9) and ends before everything dated 24.9 21:00Z or later.
+const WINDOW = { sinceIso: '2026-09-19T00:00:00.000Z', untilIso: '2026-09-24T21:00:00.000Z' };
+
+describe('getBillingSummary with a window', () => {
+  it('bounds the in-range counts and passes _until to the sums rpc', async () => {
+    const { client, rpcCalls } = db();
+    const s = await getBillingSummary(client as unknown as AdminClient, 'today', NOW, WINDOW);
+    expect(s.chargedInRange).toBe(1); // c2; c1 (21:30Z) is after the until bound
+    expect(s.nothingToChargeInRange).toBe(0); // c4 at 22:00Z is after it
+    expect(s.creditsGrantedInRange).toBe(1); // b2
+    expect(s.creditsVoidedInRange).toBe(0); // b3 voided at 21:20Z, after it
+    // Current state ignores the window.
+    expect(s.chargesPending).toBe(1);
+    expect(s.creditsActive).toBe(3);
+    expect(rpcCalls).toEqual([
+      { fn: 'owner_agent_billing_sums', args: { _since: WINDOW.sinceIso, _until: WINDOW.untilIso } },
+    ]);
+  });
+
+  it('without a window the rpc keeps its exact one-argument shape and no until bound is added', async () => {
+    const { client, rpcCalls, calls } = db();
+    await getBillingSummary(client as unknown as AdminClient, 'today', NOW);
+    expect(Object.keys(rpcCalls[0].args ?? {})).toEqual(['_since']);
+    expect(calls.flatMap((c) => c.filters).some((f) => f.op === 'lt')).toBe(false);
+  });
+});

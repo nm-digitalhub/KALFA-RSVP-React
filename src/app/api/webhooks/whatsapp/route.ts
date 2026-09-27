@@ -18,6 +18,7 @@ import {
 import {
   getOwnerAgentRouting,
   handleOwnerAgentMessages,
+  handleOwnerAgentRevocations,
   planOwnerAgentDiversion,
   withoutDivertedRows,
   type OwnerAgentDiversion,
@@ -35,8 +36,11 @@ import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 //
 // One exception, and only one (plans/owner-whatsapp-agent-plan.md §2.2–§2.3): a
 // message on the number chosen for the owner agent, FROM a phone on its enabled
-// allow-list, goes to src/lib/owner-agent/intake.ts instead of webhook_inbox.
-// With no number chosen (the default) nothing below differs from before it.
+// allow-list (or, with no `from`, carrying its bound BSUID), goes to
+// src/lib/owner-agent/intake.ts instead of webhook_inbox. A BSUID rotation that
+// names a bound row is also observed there (the binding is revoked) — the event
+// itself is persisted below exactly as before. With no number chosen (the
+// default) nothing below differs from before it.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -293,10 +297,11 @@ async function verifySignature(
 // Outreach is off, so today's answer is a bare 200 with the body unread, and it
 // stays exactly that. Only when an owner-agent number is chosen (and has enabled
 // allow-list rows) is the body read and verified — solely to find staff
-// messages on that number. A bad signature or bad JSON returns silently: in the
-// off state nothing ever alerted on those, and nothing starts to. Every event
-// that is not a diverted message is dropped unwritten, exactly as today.
-// Never throws: handleOwnerAgentMessages alerts on its own failures.
+// messages on that number (and BSUID rotations of bound rows, which only revoke
+// the binding). A bad signature or bad JSON returns silently: in the off state
+// nothing ever alerted on those, and nothing starts to. Every event that is not a
+// diverted message is dropped unwritten, exactly as today.
+// Never throws: both handlers alert on their own failures.
 async function divertWhileOutreachOff(
   request: NextRequest,
   config: WhatsAppConfig,
@@ -314,6 +319,7 @@ async function divertWhileOutreachOff(
     return;
   }
   const diversion = planOwnerAgentDiversion(data, routing);
+  await handleOwnerAgentRevocations(diversion.revocations);
   await handleOwnerAgentMessages(diversion.messages, routing);
 }
 
@@ -416,6 +422,9 @@ export async function POST(request: NextRequest) {
   }
   // Only after the guests are persisted. Never throws and never changes the
   // answer: a failure here is alerted (ids only) and the staff member asks again.
+  // A rotation diverts nothing, so it has its own call; the revocation runs first
+  // so a message in the same delivery never binds against a stale row.
+  await handleOwnerAgentRevocations(diversion.revocations);
   if (keptRows !== null && ownerAgent) {
     await handleOwnerAgentMessages(diversion.messages, ownerAgent);
   }

@@ -11,12 +11,18 @@ import {
   listOwnerAgentNumbers,
   listOwnerAgentStaff,
 } from '@/lib/data/admin/owner-agent';
+import {
+  getOwnerAgentReportSettings,
+  listOwnerAgentReportRuns,
+  listOwnerAgentReportSchedules,
+} from '@/lib/data/admin/owner-agent-reports';
 
 import { PageHeading } from '../../_components';
 import { AllowlistPanel } from './allowlist-panel';
 import { AuditTable } from './audit-table';
 import { NumberPicker } from './number-picker';
 import { OwnerAgentDailyCapForm, OwnerAgentSwitch } from './owner-agent-settings-forms';
+import { ReportsPanel } from './reports-panel';
 
 export const metadata: Metadata = { title: 'סוכן WhatsApp לבעלים — אינטגרציות' };
 
@@ -40,12 +46,15 @@ export const metadata: Metadata = { title: 'סוכן WhatsApp לבעלים — �
 export default async function OwnerAgentPage() {
   await requirePlatformOwner();
 
-  const [settings, numbers, entries, staff, audit] = await Promise.all([
+  const [settings, numbers, entries, staff, audit, reportSettings, reportSchedules, reportRuns] = await Promise.all([
     getOwnerAgentSettings(),
     listOwnerAgentNumbers(),
     listOwnerAgentAllowlist(),
     listOwnerAgentStaff(),
     listOwnerAgentAudit(),
+    getOwnerAgentReportSettings(),
+    listOwnerAgentReportSchedules(),
+    listOwnerAgentReportRuns(),
   ]);
 
   const activeEntries = entries.filter((e) => e.enabled && e.isStaff).length;
@@ -112,7 +121,8 @@ export default async function OwnerAgentPage() {
           <p className="text-sm text-muted-foreground">
             כל טלפון משויך לאיש צוות אחד. הסוכן עונה רק כשהטלפון זהה לטלפון המאומת של
             אותו איש צוות, ורק כל עוד הוא בצוות. איש הצוות מאמת את הטלפון שלו בעצמו,
-            בקוד SMS, בהגדרות החשבון שלו.
+            בקוד SMS, בהגדרות החשבון שלו. אפשר גם לאשר ידנית, עם סיבה כתובה, איש צוות
+            שהטלפון שלו לא מאומת או אדם שאינו איש צוות. כל אישור ידני נרשם ביומן.
           </p>
         </div>
         <AllowlistPanel entries={entries} staff={staff} />
@@ -123,6 +133,28 @@ export default async function OwnerAgentPage() {
           תקרה יומית
         </h2>
         <OwnerAgentDailyCapForm dailyCap={settings.dailyCap} />
+      </section>
+
+      <section
+        className="space-y-3 rounded-lg border border-border bg-card p-5"
+        aria-labelledby="owner-agent-reports-heading"
+      >
+        <div>
+          <h2 id="owner-agent-reports-heading" className="text-lg font-semibold">
+            דוח יזום
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            הסוכן שולח דוח פעילות בשעות שנבחרו כאן, לרשומות שבחרו לקבל אותו. השעות נקבעות רק במסך
+            הזה.
+          </p>
+        </div>
+        <ReportsPanel
+          settings={reportSettings}
+          schedules={reportSchedules}
+          runs={reportRuns}
+          entries={entries}
+          agentEnabled={settings.enabled}
+        />
       </section>
 
       <section

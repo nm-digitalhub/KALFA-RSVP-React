@@ -2,16 +2,27 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-const { ownerMock, settingsMock, numbersMock, allowlistMock, staffMock, auditMock } = vi.hoisted(
-  () => ({
-    ownerMock: vi.fn(),
-    settingsMock: vi.fn(),
-    numbersMock: vi.fn(),
-    allowlistMock: vi.fn(),
-    staffMock: vi.fn(),
-    auditMock: vi.fn(),
-  }),
-);
+const {
+  ownerMock,
+  settingsMock,
+  numbersMock,
+  allowlistMock,
+  staffMock,
+  auditMock,
+  reportSettingsMock,
+  reportSchedulesMock,
+  reportRunsMock,
+} = vi.hoisted(() => ({
+  ownerMock: vi.fn(),
+  settingsMock: vi.fn(),
+  numbersMock: vi.fn(),
+  allowlistMock: vi.fn(),
+  staffMock: vi.fn(),
+  auditMock: vi.fn(),
+  reportSettingsMock: vi.fn(),
+  reportSchedulesMock: vi.fn(),
+  reportRunsMock: vi.fn(),
+}));
 
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformOwner: ownerMock }));
 vi.mock('@/lib/data/admin/owner-agent', () => ({
@@ -21,6 +32,16 @@ vi.mock('@/lib/data/admin/owner-agent', () => ({
   listOwnerAgentAllowlist: allowlistMock,
   listOwnerAgentStaff: staffMock,
   listOwnerAgentAudit: auditMock,
+}));
+vi.mock('@/lib/data/admin/owner-agent-reports', () => ({
+  getOwnerAgentReportSettings: reportSettingsMock,
+  listOwnerAgentReportSchedules: reportSchedulesMock,
+  listOwnerAgentReportRuns: reportRunsMock,
+}));
+vi.mock('./reports-actions', () => ({
+  setOwnerAgentReportsEnabledAction: vi.fn(),
+  setOwnerAgentReportTemplateAction: vi.fn(),
+  setOwnerAgentReportScheduleAction: vi.fn(),
 }));
 vi.mock('./actions', () => ({
   setOwnerAgentEnabledAction: vi.fn(),
@@ -88,6 +109,9 @@ beforeEach(() => {
     { userId: STAFF_ID, name: 'בעל המערכת', roleLabel: 'בעלים', isOwnerRole: true, hasVerifiedPhone: true },
   ]);
   auditMock.mockResolvedValue([]);
+  reportSettingsMock.mockResolvedValue({ reportsEnabled: true, templateName: null, templateLang: null });
+  reportSchedulesMock.mockResolvedValue([{ entryId: ENTRY_ID, optIn: true, slots: [{ time: '00:00', instructions: null }, { time: '08:00', instructions: 'רק הכנסות' }], configured: true }]);
+  reportRunsMock.mockResolvedValue([]);
 });
 
 describe('/admin/integrations/owner-agent', () => {
@@ -99,7 +123,16 @@ describe('/admin/integrations/owner-agent', () => {
   it('reads nothing when the gate refuses', async () => {
     ownerMock.mockRejectedValue(new Error('NEXT_REDIRECT'));
     await expect(OwnerAgentPage()).rejects.toThrow('NEXT_REDIRECT');
-    for (const m of [settingsMock, numbersMock, allowlistMock, staffMock, auditMock]) {
+    for (const m of [
+      settingsMock,
+      numbersMock,
+      allowlistMock,
+      staffMock,
+      auditMock,
+      reportSettingsMock,
+      reportSchedulesMock,
+      reportRunsMock,
+    ]) {
       expect(m).not.toHaveBeenCalled();
     }
   });
@@ -136,6 +169,17 @@ describe('/admin/integrations/owner-agent', () => {
     const audit = propsOf(tree, 'AuditTable');
     expect(audit?.rows).toEqual([]);
     expect((audit?.staffNames as Map<string, string>).get(STAFF_ID)).toBe('בעל המערכת');
+  });
+
+  it('hands the reports panel its settings, schedules, runs, the allow-list and the agent switch', async () => {
+    const tree = await OwnerAgentPage();
+    expect(propsOf(tree, 'ReportsPanel')).toMatchObject({
+      settings: { reportsEnabled: true, templateName: null, templateLang: null },
+      schedules: [{ entryId: ENTRY_ID, optIn: true, slots: [{ time: '00:00', instructions: null }, { time: '08:00', instructions: 'רק הכנסות' }], configured: true }],
+      runs: [],
+      agentEnabled: false,
+    });
+    expect(propsOf(tree, 'ReportsPanel')?.entries).toHaveLength(1);
   });
 
   // "No raw phone reaches a component" is NOT asserted here: this file mocks the DAL,

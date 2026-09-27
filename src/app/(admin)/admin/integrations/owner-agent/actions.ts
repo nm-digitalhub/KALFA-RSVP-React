@@ -7,7 +7,10 @@ import { z } from 'zod';
 import { requirePlatformOwner } from '@/lib/auth/dal';
 import {
   addOwnerAgentAllowlistEntry,
+  addOwnerAgentExternalEntry,
+  approveOwnerAgentUnverifiedStaff,
   relabelOwnerAgentAllowlistEntry,
+  revokeOwnerAgentManualApproval,
   removeOwnerAgentAllowlistEntry,
   setOwnerAgentAllowlistEnabled,
   setOwnerAgentDailyCap,
@@ -16,8 +19,10 @@ import {
 } from '@/lib/data/admin/owner-agent';
 import {
   addAllowlistEntrySchema,
+  addExternalAllowlistEntrySchema,
   agentNumberSchema,
   allowlistEntryIdSchema,
+  approveUnverifiedStaffSchema,
   dailyCapSchema,
   isOwnerAgentUserError,
   relabelAllowlistEntrySchema,
@@ -215,4 +220,75 @@ export async function removeAllowlistEntryAction(
 
   revalidate();
   return { notice: 'המספר הוסר מרשימת ההיתר' };
+}
+
+// ─── Manual approval (plans/owner-agent-allowlist-override-plan.md) ──────────
+
+export async function approveUnverifiedStaffAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = approveUnverifiedStaffSchema.safeParse({
+    id: formData.get('id'),
+    note: formData.get('note') ?? '',
+  });
+  if (!parsed.success) {
+    return { fieldErrors: issuesToFieldErrors(parsed.error.issues) };
+  }
+
+  await requirePlatformOwner();
+  try {
+    await approveOwnerAgentUnverifiedStaff(parsed.data.id, parsed.data.note);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: safeMessage(err, 'האישור הידני נכשל') };
+  }
+
+  revalidate();
+  return { notice: 'אושר ידנית' };
+}
+
+export async function revokeManualApprovalAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = allowlistEntryIdSchema.safeParse(formData.get('id'));
+  if (!parsed.success) return { error: 'בקשה לא תקינה' };
+
+  await requirePlatformOwner();
+  try {
+    await revokeOwnerAgentManualApproval(parsed.data);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: safeMessage(err, 'ביטול האישור הידני נכשל') };
+  }
+
+  revalidate();
+  return { notice: 'האישור הידני בוטל' };
+}
+
+export async function addExternalAllowlistEntryAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  // Messages only, never the submitted value (issuesToFieldErrors).
+  const parsed = addExternalAllowlistEntrySchema.safeParse({
+    e164: formData.get('e164') ?? '',
+    name: formData.get('name') ?? '',
+    note: formData.get('note') ?? '',
+  });
+  if (!parsed.success) {
+    return { fieldErrors: issuesToFieldErrors(parsed.error.issues) };
+  }
+
+  await requirePlatformOwner();
+  try {
+    await addOwnerAgentExternalEntry(parsed.data);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: safeMessage(err, 'הוספת האדם החיצוני נכשלה') };
+  }
+
+  revalidate();
+  return { notice: 'האדם החיצוני נוסף לרשימת ההיתר' };
 }

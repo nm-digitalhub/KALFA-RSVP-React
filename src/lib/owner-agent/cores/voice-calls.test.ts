@@ -137,3 +137,22 @@ describe('wrapper ↔ core parity (same data, same number)', () => {
     expect(createAdminClient).not.toHaveBeenCalled();
   });
 });
+
+// The proactive report's closed window (cores/window.ts): the Israel day of
+// 24.9, [23.9 21:00Z, 24.9 21:00Z).
+const DAY_24 = { sinceIso: '2026-09-23T21:00:00.000Z', untilIso: '2026-09-24T21:00:00.000Z' };
+
+describe('getVoiceCallsSummary with a window', () => {
+  it('bounds the in-range counts to [since, until); activeNow is the current state', async () => {
+    const { client } = db();
+    const s = await getVoiceCallsSummary(client as unknown as AdminClient, 'today', NOW, DAY_24);
+    // a3 no_answer + a4 cancelled; a1/a2 are after the until bound.
+    expect(s).toEqual({ activeNow: 2, attempts: 2, completed: 0, answerRate: 0 });
+  });
+
+  it('adds the until bound only when a window is given', async () => {
+    const { client, calls } = db();
+    await getVoiceCallsSummary(client as unknown as AdminClient, 'today', NOW);
+    expect(calls.flatMap((c) => c.filters).some((f) => f.op === 'lt')).toBe(false);
+  });
+});

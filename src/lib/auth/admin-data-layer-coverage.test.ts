@@ -138,6 +138,10 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // access over WhatsApp, so the settings key is deliberately NOT enough. Every export
   // is asserted by name below — the pin alone only proves the file mentions the gate.
   'src/lib/data/admin/owner-agent.ts': [],
+  // The same agent's proactive-report schedule (capabilities plan §4.8): a schedule
+  // sends business data to a phone every day, so it is owner-only like the allow-list.
+  // Every export is asserted by name below, with owner-agent.ts.
+  'src/lib/data/admin/owner-agent-reports.ts': [],
   // Two keys each, and the pair is the point — listing call history needs the
   // voice permission, and hearing a recording needs its own on top.
   'src/lib/data/admin/console-history.ts': ['manage_voice', 'view_recordings'],
@@ -789,17 +793,23 @@ describe('the owner-agent data layer gates every export on requirePlatformOwner'
   // checks each exported function — async or not, declared or assigned — with
   // comments stripped, because every one of them either reads the allow-list and
   // audit or changes who may reach business data over WhatsApp.
-  const relPath = 'src/lib/data/admin/owner-agent.ts';
-  const blocks = splitExportedFunctions(readFileSync(join(ROOT, relPath), 'utf8'));
+  // Minimum export counts: a silent empty scan is the failure mode.
+  const modules: Array<[string, number]> = [
+    ['src/lib/data/admin/owner-agent.ts', 12],
+    ['src/lib/data/admin/owner-agent-reports.ts', 6],
+  ];
+  for (const [relPath, min] of modules) {
+    const blocks = splitExportedFunctions(readFileSync(join(ROOT, relPath), 'utf8'));
 
-  it('exports functions to check (a silent empty scan is the failure mode)', () => {
-    expect(blocks.length).toBeGreaterThanOrEqual(12);
-  });
-
-  for (const { name, body } of blocks) {
-    it(`${name} calls requirePlatformOwner()`, () => {
-      expect(GATED(body)).toBe(true);
+    it(`${relPath} exports functions to check`, () => {
+      expect(blocks.length).toBeGreaterThanOrEqual(min);
     });
+
+    for (const { name, body } of blocks) {
+      it(`${relPath}: ${name} calls requirePlatformOwner()`, () => {
+        expect(GATED(body)).toBe(true);
+      });
+    }
   }
 });
 

@@ -23,28 +23,112 @@ const STAGE_LABELS: Record<string, string> = {
   route: 'קליטה',
   agent: 'סוכן',
   send: 'שליחה',
+  sweep: 'ניקוי',
+  report: 'דוח יזום',
+  identity: 'זיהוי',
 };
 
 const OUTCOME_LABELS: Record<string, { label: string; tone: BadgeVariant }> = {
   intake_queued: { label: 'נקלט', tone: 'info' },
   duplicate: { label: 'כפילות', tone: 'neutral' },
   gated: { label: 'נחסם בשער', tone: 'warning' },
+  send_gated: { label: 'נחסם לפני שליחה', tone: 'warning' },
   answered: { label: 'נענה', tone: 'success' },
+  fallback_sent: { label: 'נשלחה תשובת כשל', tone: 'warning' },
+  run_failed: { label: 'הריצה נכשלה', tone: 'destructive' },
   refused: { label: 'סורב', tone: 'warning' },
   send_failed: { label: 'שליחה נכשלה', tone: 'destructive' },
+  expired: { label: 'פג', tone: 'neutral' },
+  // Inbound kinds (capabilities plan §4.2–§4.7).
+  reaction_received: { label: 'התקבלה תגובה', tone: 'info' },
+  bsuid_bound: { label: 'מזהה עסקי קושר', tone: 'success' },
+  bsuid_revoked: { label: 'קישור מזהה בוטל', tone: 'warning' },
+  bsuid_mismatch: { label: 'מזהה עסקי לא תואם', tone: 'destructive' },
+  coalesced: { label: 'אוחד להודעה הבאה', tone: 'neutral' },
+  unknown_action: { label: 'לחיצה לא מזוהה', tone: 'warning' },
+  unsupported_type: { label: 'סוג הודעה לא נתמך', tone: 'warning' },
+  invalid_payload: { label: 'מבנה הודעה לא תקין', tone: 'warning' },
+  unsupported_voice: { label: 'הודעה קולית לא נתמכת', tone: 'warning' },
+  media_rejected: { label: 'מדיה נדחתה', tone: 'warning' },
+  // Proactive report (stage 'report'; reports/report.ts and reports/tick.ts).
+  sent: { label: 'דוח נשלח', tone: 'success' },
+  skipped: { label: 'דוח דולג', tone: 'warning' },
 };
 
 const REASON_LABELS: Record<string, string> = {
   kill_switch_off: 'המתג כבוי',
+  not_configured: 'לא הוגדר',
+  not_allowlisted: 'לא ברשימת ההיתר',
+  number_changed: 'המספר הוחלף',
   not_staff: 'אינו איש צוות',
   phone_unverified: 'טלפון לא מאומת',
   rate_limited: 'חריגה מקצב',
   daily_cap: 'תקרה יומית',
+  // Old rows, from before media was accepted.
   non_text: 'לא טקסט',
+  empty_text: 'טקסט ריק',
   window_closed: 'חלון 24 השעות נסגר',
   run_failed: 'הריצה נכשלה',
   db_error: 'שגיאת מסד נתונים',
+  sql_unavailable: 'גישה חלקית לנתונים',
+  partial_send: 'נשלח חלקית',
+  provider_rejected: 'Meta דחתה את ההודעה',
+  send_unknown: 'תוצאת השליחה לא ידועה',
+  send_unconfirmed: 'שליחה לא אושרה',
+  // Reactions.
+  feedback_up: 'משוב חיובי',
+  feedback_down: 'משוב שלילי',
+  reaction_other: 'תגובה אחרת',
+  reaction_removed: 'תגובה הוסרה',
+  // Manual approval.
+  override_staff_unverified: 'איש צוות שאושר ידנית',
+  override_external: 'אדם חיצוני שאושר ידנית',
+  // Button / list clicks.
+  foreign_id: 'מזהה לחיצה זר',
+  followup_not_found: 'ההצעה לא נמצאה',
+  foreign_owner: 'ההצעה שייכת לאחר',
+  context_mismatch: 'ההקשר לא תואם',
+  followup_expired: 'ההצעה פגה',
+  followup_used: 'ההצעה כבר נוצלה',
+  // BSUID.
+  user_id_update: 'Meta עדכנה את מזהה המשתמש',
+  user_changed_user_id: 'המשתמש החליף מזהה',
+  // Media.
+  media_bad_encoding: 'קידוד מדיה לא תקין',
+  media_budget: 'חריגה מתקציב המדיה',
+  media_download_failed: 'הורדת המדיה נכשלה',
+  media_empty: 'קובץ ריק',
+  media_invalid_id: 'מזהה מדיה לא תקין',
+  media_lookup_failed: 'פרטי המדיה לא נמצאו',
+  media_not_wired: 'קליטת מדיה לא מחוברת',
+  media_rejected: 'מדיה נדחתה',
+  media_too_large: 'קובץ גדול מדי',
+  media_turn_cap: 'יותר מדי קבצים בהודעה',
+  media_unavailable: 'המדיה לא זמינה',
+  media_unsupported: 'סוג קובץ לא נתמך',
+  media_wrong_number: 'מדיה של מספר אחר',
+  // Proactive report.
+  late: 'באיחור של יותר משעה',
+  reports_off: 'מתג הדוחות כבוי',
+  no_number: 'לא נבחר מספר',
+  subscription_off: 'השעה בוטלה',
+  slot_stale: 'השעה כבר לא בתוקף',
+  not_opted_in: 'הרשומה לא מקבלת דוחות',
+  no_permissions: 'אין הרשאות לנתוני הדוח',
+  permissions_changed: 'ההרשאות השתנו',
+  template_unavailable: 'מחוץ לחלון 24 השעות ואין תבנית',
+  template_fallback: 'נשלח כתבנית אחרי שהחלון נסגר',
+  bad_slot: 'שעה לא תקינה',
 };
+
+// Any report_* outcome a later change adds reads as a report outcome rather
+// than as a bare code.
+function outcomeLabel(outcome: string): { label: string; tone: BadgeVariant } | undefined {
+  const known = OUTCOME_LABELS[outcome];
+  if (known) return known;
+  if (outcome.startsWith('report_')) return { label: `דוח: ${outcome.slice('report_'.length)}`, tone: 'neutral' };
+  return undefined;
+}
 
 export function AuditTable({
   rows,
@@ -77,7 +161,7 @@ export function AuditTable({
       </TableHeader>
       <TableBody>
         {rows.map((row) => {
-          const outcome = OUTCOME_LABELS[row.outcome];
+          const outcome = outcomeLabel(row.outcome);
           return (
             <TableRow key={row.id}>
               <TableCell>

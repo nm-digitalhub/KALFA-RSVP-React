@@ -129,3 +129,26 @@ describe('wrapper ↔ core parity (same data, same number)', () => {
     await expect(countNewCallbackRequests(c)).rejects.toThrow();
   });
 });
+
+// The proactive report's closed window (cores/window.ts): the Israel day of
+// 24.9, [23.9 21:00Z, 24.9 21:00Z).
+const DAY_24 = { sinceIso: '2026-09-23T21:00:00.000Z', untilIso: '2026-09-24T21:00:00.000Z' };
+
+describe('getInquiriesSummary with a window', () => {
+  it('bounds the received counts to [since, until); open state is unchanged', async () => {
+    const { client } = db();
+    const s = await getInquiriesSummary(client as unknown as AdminClient, 'today', NOW, DAY_24);
+    expect(s).toEqual({
+      openContacts: 3,
+      newCallbacks: 2,
+      contactsReceived: 1, // c3 at 20:59Z; c1 (21:30Z) is after the until bound
+      callbacksReceived: 0, // b1 exactly at the until bound is excluded (half-open)
+    });
+  });
+
+  it('adds the until bound only when a window is given', async () => {
+    const { client, calls } = db();
+    await getInquiriesSummary(client as unknown as AdminClient, 'today', NOW);
+    expect(calls.flatMap((c) => c.filters).some((f) => f.op === 'lt')).toBe(false);
+  });
+});

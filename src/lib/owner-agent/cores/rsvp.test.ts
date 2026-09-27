@@ -133,3 +133,24 @@ describe('getRsvpTotals (core)', () => {
     await expect(getRsvpTotals(client as unknown as AdminClient, 'today', NOW)).rejects.toThrow();
   });
 });
+
+// The proactive report's closed window (cores/window.ts): the Israel day of
+// 24.9, [23.9 21:00Z, 24.9 21:00Z).
+const DAY_24 = { sinceIso: '2026-09-23T21:00:00.000Z', untilIso: '2026-09-24T21:00:00.000Z' };
+
+describe('getRsvpTotals with a window', () => {
+  it('bounds responsesInRange to [since, until); current state is unchanged', async () => {
+    const { client } = db();
+    const plain = await getRsvpTotals(client as unknown as AdminClient, 'today', NOW);
+    const windowed = await getRsvpTotals(client as unknown as AdminClient, 'today', NOW, DAY_24);
+    // r2 (20:00Z, active); r1 is after the until bound, r4 is a closed event.
+    expect(windowed.responsesInRange).toBe(1);
+    expect({ ...windowed, responsesInRange: 0 }).toEqual({ ...plain, responsesInRange: 0 });
+  });
+
+  it('adds the until bound only when a window is given', async () => {
+    const { client, calls } = db();
+    await getRsvpTotals(client as unknown as AdminClient, 'today', NOW);
+    expect(calls.flatMap((c) => c.filters).some((f) => f.op === 'lt')).toBe(false);
+  });
+});

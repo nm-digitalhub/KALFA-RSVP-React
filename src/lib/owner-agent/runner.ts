@@ -109,6 +109,33 @@ import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-
 //     (owner decision 2026-09-24 on 9.7: "the agent hides nothing"): a staff
 //     member who asks for a phone number gets it. What reaches WhatsApp is
 //     decided by the allow list and the send gate, not by a regex.
+// 12. IMAGES AND DOCUMENTS GO ON STDIN AS CONTENT BLOCKS, never as files
+//     (capabilities plan §4.2). There is no Read tool and there must never be
+//     one (deviation 2), so a run with attachments switches to
+//     `--input-format stream-json`: stdin is ONE user message line whose
+//     content is the attachment blocks and then the prompt text, built with
+//     JSON.stringify. MEASURED against the installed 2.1.283 (2026-09-27,
+//     probes with --tools "" and no MCP server): image (png, and an 8.3MB
+//     jpeg), base64 PDF (up to a 16.7MB file) and text-source documents are
+//     all read. The bytes stay in memory — no temp file is written anywhere.
+//     Such a run also passes `--no-session-persistence`: a normal run writes
+//     its whole transcript, attachment base64 included, to the session file
+//     (measured), and the media must not be kept (§4.2). With `--resume` the
+//     earlier session is READ and left byte-identical (measured: same md5
+//     before and after, no attachment bytes in it; the resumed run answered
+//     with a codeword given only in the earlier turn), so the model keeps the
+//     conversation, and the next question does not see the image. A run
+//     without attachments keeps the plain-text stdin exactly.
+// 13. FOLLOW-UP SUGGESTIONS COME FROM `--json-schema` (§4.3). MEASURED on
+//     2.1.283: the CLI adds a `StructuredOutput` tool (even with --tools ""
+//     and under the dontAsk settings file, no permission denial), the model
+//     calls it as its last turn — one extra turn, so --max-turns gets +1 —
+//     and the result line carries the object in `structured_output` while
+//     `result` holds the same object as a JSON STRING. The JSON string is
+//     never sent: the answer is read from `structured_output`, validated
+//     here; failing that, from `result` parsed as that object; and a
+//     `result` that is JSON of any other shape is a model_error.
+//     `StructuredOutput` is not reported as a tool the model used.
 
 export type OwnerAgentRunErrorCode =
   | 'invalid_input'
@@ -139,9 +166,28 @@ export class OwnerAgentRunError extends Error {
   }
 }
 
+/**
+ * An image or document the staff member sent, already downloaded and checked
+ * by the caller (media type allowlist, size cap). Deviation 12.
+ */
+export type OwnerAgentAttachment =
+  | { kind: 'image'; mediaType: 'image/jpeg' | 'image/png' | 'image/webp'; base64: string }
+  | { kind: 'pdf'; base64: string; title?: string }
+  | { kind: 'text'; text: string; title?: string };
+
 export interface OwnerAgentRunInput {
   /** The owner's question. Sent on stdin, never in argv. */
   prompt: string;
+  /** Images/documents for this turn (deviation 12). Omitted or empty = plain-text stdin. */
+  attachments?: readonly OwnerAgentAttachment[];
+  /** Ask for `{ answer, followups? }` through --json-schema (deviation 13). */
+  structured?: boolean;
+  /**
+   * false = `--no-session-persistence`: a run that will never be resumed (a
+   * proactive report) leaves no session file. Default: persisted, unless the
+   * run has attachments (deviation 12), which never persist.
+   */
+  persistSession?: boolean;
   /** Replaces Claude Code's default system prompt (`--system-prompt`). */
   systemPrompt: string;
   /**
@@ -160,6 +206,16 @@ export interface OwnerAgentRunInput {
 export interface OwnerAgentRunResult {
   /** The model's answer, as the model wrote it (no output filter — deviation 11). */
   text: string;
+  /**
+   * Follow-up questions the model suggested (structured runs only; [] when
+   * none). Unfiltered model text: the consumer sanitizes before showing them.
+   */
+  followups: string[];
+  /**
+   * False when the run wrote no session file (a run with attachments,
+   * deviation 12): `sessionId` then cannot be resumed and must not be kept.
+   */
+  sessionPersisted: boolean;
   /** `total_cost_usd` from the CLI; null when it reported none. */
   costUsd: number | null;
   sessionId: string;
@@ -274,8 +330,34 @@ const MODEL = /^[A-Za-z0-9][A-Za-z0-9._[\]-]{0,63}$/;
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const nonBlank = (s: string) => s.trim().length > 0;
 
+// Attachment ceilings (deviation 12). The caller caps each file (image 5MB,
+// document 16MB); these bound the whole turn — the base64 of 24MB, and a text
+// document that fits the model's context.
+export const MAX_ATTACHMENTS = 4;
+const MAX_ATTACHMENT_BASE64_TOTAL = 32 * 1024 * 1024;
+export const MAX_TEXT_ATTACHMENT_CHARS = 100_000;
+const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
+const TITLE = z.string().min(1).max(255).optional();
+const attachmentSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('image'),
+    mediaType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+    base64: z.string().min(1).regex(BASE64),
+  }),
+  z.object({ kind: z.literal('pdf'), base64: z.string().min(1).regex(BASE64), title: TITLE }),
+  z.object({ kind: z.literal('text'), text: z.string().max(MAX_TEXT_ATTACHMENT_CHARS).refine(nonBlank), title: TITLE }),
+]);
+const base64Length = (a: z.infer<typeof attachmentSchema>) => (a.kind === 'text' ? 0 : a.base64.length);
+
 const runInputSchema = z.object({
   prompt: z.string().max(MAX_PROMPT_CHARS).refine(nonBlank),
+  attachments: z
+    .array(attachmentSchema)
+    .max(MAX_ATTACHMENTS)
+    .refine((list) => list.reduce((sum, a) => sum + base64Length(a), 0) <= MAX_ATTACHMENT_BASE64_TOTAL)
+    .optional(),
+  structured: z.boolean().optional(),
+  persistSession: z.boolean().optional(),
   systemPrompt: z.string().max(MAX_SYSTEM_PROMPT_CHARS).refine(nonBlank),
   permissions: z.array(z.enum(OWNER_AGENT_PERMISSIONS)),
   resumeSessionId: z.string().regex(SESSION_ID).optional(),
@@ -472,6 +554,12 @@ export function buildOwnerAgentArgs(options: {
   model: string;
   maxTurns: number;
   resumeSessionId?: string;
+  /** Deviation 12: stream-json stdin and no session file. */
+  withAttachments?: boolean;
+  /** false = no session file, whatever the input format. */
+  persistSession?: boolean;
+  /** Deviation 13: the follow-up schema, and one more turn for it. */
+  structured?: boolean;
 }): string[] {
   const args = [
     '-p',
@@ -501,13 +589,61 @@ export function buildOwnerAgentArgs(options: {
     // Hidden from --help but defined in 2.1.281: "Maximum number of agentic
     // turns in non-interactive mode … (only works with --print)".
     '--max-turns',
-    String(options.maxTurns),
+    String(options.maxTurns + (options.structured ? 1 : 0)),
     '--output-format',
     'stream-json',
     '--verbose',
   );
+  if (options.withAttachments) args.push('--input-format', 'stream-json');
+  if (options.withAttachments || options.persistSession === false) args.push('--no-session-persistence');
+  if (options.structured) args.push('--json-schema', OWNER_AGENT_ANSWER_SCHEMA);
   if (options.resumeSessionId) args.push('--resume', options.resumeSessionId);
   return args;
+}
+
+// Deviation 13. At most 10 suggestions (a WhatsApp list's row limit), each a
+// short question; the consumer still trims and sanitizes them.
+export const MAX_FOLLOWUPS = 10;
+const MAX_FOLLOWUP_CHARS = 72;
+export const OWNER_AGENT_ANSWER_SCHEMA = JSON.stringify({
+  type: 'object',
+  properties: {
+    answer: { type: 'string', minLength: 1 },
+    followups: {
+      type: 'array',
+      maxItems: MAX_FOLLOWUPS,
+      items: { type: 'string', minLength: 1, maxLength: MAX_FOLLOWUP_CHARS },
+    },
+  },
+  required: ['answer'],
+  additionalProperties: false,
+});
+
+// The one user message of a run with attachments (deviation 12): the blocks
+// first, then the prompt text — the Messages API content-block shapes, which
+// the 2.1.283 probe fed through `--input-format stream-json` as-is.
+export function buildStreamJsonInput(prompt: string, attachments: readonly OwnerAgentAttachment[]): string {
+  const blocks = attachments.map((a) => {
+    if (a.kind === 'image') {
+      return { type: 'image', source: { type: 'base64', media_type: a.mediaType, data: a.base64 } };
+    }
+    if (a.kind === 'pdf') {
+      return {
+        type: 'document',
+        source: { type: 'base64', media_type: 'application/pdf', data: a.base64 },
+        ...(a.title ? { title: a.title } : {}),
+      };
+    }
+    return {
+      type: 'document',
+      source: { type: 'text', media_type: 'text/plain', data: a.text },
+      ...(a.title ? { title: a.title } : {}),
+    };
+  });
+  return `${JSON.stringify({
+    type: 'user',
+    message: { role: 'user', content: [...blocks, { type: 'text', text: prompt }] },
+  })}\n`;
 }
 
 // --- the trace ------------------------------------------------------------------
@@ -532,12 +668,54 @@ const resultLine = z.object({
   num_turns: z.number().int().nonnegative(),
   session_id: z.string(),
   total_cost_usd: z.number().optional(),
+  structured_output: z.unknown().optional(),
 });
+
+// The CLI's structured-output tool (deviation 13): not one of ours, not audited.
+const STRUCTURED_OUTPUT_TOOL = 'StructuredOutput';
+const structuredAnswer = z.object({
+  answer: z.string().refine(nonBlank),
+  followups: z.array(z.unknown()).optional(),
+});
+
+function cleanFollowups(raw: readonly unknown[] | undefined): string[] {
+  const out: string[] = [];
+  for (const item of raw ?? []) {
+    if (typeof item !== 'string') continue;
+    const text = item.replace(/\s+/g, ' ').trim();
+    if (!text || [...text].length > MAX_FOLLOWUP_CHARS || out.includes(text)) continue;
+    out.push(text);
+    if (out.length === MAX_FOLLOWUPS) break;
+  }
+  return out;
+}
+
+// Deviation 13: the answer of a structured run. `structured_output` first;
+// then `result` as the same object; plain prose `result` (the model skipped
+// the tool) is still an answer, without suggestions. JSON of any other shape
+// is never passed on as text.
+function readStructured(
+  result: z.infer<typeof resultLine> & { result: string },
+): { text: string; followups: string[] } | null {
+  const direct = structuredAnswer.safeParse(result.structured_output);
+  if (direct.success) return { text: direct.data.answer, followups: cleanFollowups(direct.data.followups) };
+  const trimmed = result.result.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return { text: result.result, followups: [] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return { text: result.result, followups: [] };
+  }
+  const fromText = structuredAnswer.safeParse(parsed);
+  return fromText.success ? { text: fromText.data.answer, followups: cleanFollowups(fromText.data.followups) } : null;
+}
 
 export type ParsedTrace =
   | {
       ok: true;
       text: string;
+      followups: string[];
       costUsd: number | null;
       sessionId: string;
       toolNames: string[];
@@ -546,7 +724,7 @@ export type ParsedTrace =
     }
   | { ok: false; code: OwnerAgentRunErrorCode };
 
-export function parseStreamJson(stdout: string): ParsedTrace {
+export function parseStreamJson(stdout: string, options: { structured?: boolean } = {}): ParsedTrace {
   let init: z.infer<typeof initLine> | undefined;
   let result: z.infer<typeof resultLine> | undefined;
   const toolNames: string[] = [];
@@ -568,7 +746,7 @@ export function parseStreamJson(stdout: string): ParsedTrace {
     if (asAssistant.success) {
       for (const block of asAssistant.data.message.content) {
         const toolUse = toolUseBlock.safeParse(block);
-        if (!toolUse.success) continue;
+        if (!toolUse.success || toolUse.data.name === STRUCTURED_OUTPUT_TOOL) continue;
         const id = toolIdFromMcpName(toolUse.data.name);
         if (!toolNames.includes(id)) toolNames.push(id);
       }
@@ -596,9 +774,16 @@ export function parseStreamJson(stdout: string): ParsedTrace {
   if (result.subtype !== 'success' || result.is_error || result.result === undefined) {
     return { ok: false, code: 'model_error' };
   }
+  let answer = { text: result.result, followups: [] as string[] };
+  if (options.structured) {
+    const structured = readStructured({ ...result, result: result.result });
+    if (!structured) return { ok: false, code: 'model_error' };
+    answer = structured;
+  }
   return {
     ok: true,
-    text: result.result,
+    text: answer.text,
+    followups: answer.followups,
     costUsd: result.total_cost_usd ?? null,
     sessionId: result.session_id,
     toolNames,
@@ -643,6 +828,9 @@ export async function runOwnerAgent(
 
   const permissions = [...new Set(run.permissions)].sort();
   const allowedTools = allowedToolsFor(permissions);
+  const withAttachments = (run.attachments?.length ?? 0) > 0;
+  const persistSession = !withAttachments && run.persistSession !== false;
+  const structured = run.structured === true;
 
   const outcome = await (deps.exec ?? nodeExec)({
     file: 'claude',
@@ -661,10 +849,13 @@ export async function runOwnerAgent(
       model: run.model,
       maxTurns: run.maxTurns,
       resumeSessionId: run.resumeSessionId,
+      withAttachments,
+      persistSession,
+      structured,
     }),
     cwd: paths.cwd,
     env: buildCliEnv(paths.hostDir, token, supabase.token),
-    input: run.prompt,
+    input: withAttachments ? buildStreamJsonInput(run.prompt, run.attachments ?? []) : run.prompt,
     timeoutMs: run.timeoutMs,
     killAfterMs: deps.killAfterMs ?? KILL_AFTER_MS,
     maxBuffer: MAX_BUFFER,
@@ -683,7 +874,7 @@ export async function runOwnerAgent(
       case 'exit': {
         // The CLI writes its result record before a non-zero exit, so the
         // specific reason (max turns, a model error) is read first.
-        const trace = parseStreamJson(outcome.stdout);
+        const trace = parseStreamJson(outcome.stdout, { structured });
         throw new OwnerAgentRunError(
           trace.ok || trace.code === 'unparsable_output' ? 'cli_failed' : trace.code,
         );
@@ -691,10 +882,12 @@ export async function runOwnerAgent(
     }
   }
 
-  const trace = parseStreamJson(outcome.stdout);
+  const trace = parseStreamJson(outcome.stdout, { structured });
   if (!trace.ok) throw new OwnerAgentRunError(trace.code);
   return {
     text: trace.text,
+    followups: trace.followups,
+    sessionPersisted: persistSession,
     costUsd: trace.costUsd,
     sessionId: trace.sessionId,
     toolNames: trace.toolNames,

@@ -260,6 +260,18 @@ export const QUEUES = {
   // agent's own CLI session files after 14 (consumer/retention.ts, stage 8).
   ownerAgentIntakeSweep: 'owner-agent-intake-sweep',
   ownerAgentRetention: 'owner-agent-retention',
+  // Owner-agent proactive report (plans/owner-agent-chat-sdk-capabilities-plan.md
+  // §4.8), worked by kalfa-owner-agent. Event-driven like ownerAgentReply: the
+  // planner tick (on the intake-sweep schedule) inserts one
+  // owner_agent_report_run per due slot and enqueues ONE job per inserted run,
+  // with id deterministicJobId('owner-report:' + runId). The payload is the run
+  // id and nothing else (OwnerAgentReportJob); the handler
+  // (src/lib/owner-agent/reports/report.ts) re-reads everything and re-gates.
+  // A report whose subscription carries the owner's instructions runs the
+  // model; that one is handed to ownerAgentReply ({ runId } payload, id
+  // deterministicJobId('owner-report-model:' + runId)), whose single worker is
+  // what keeps model runs one at a time.
+  ownerAgentReport: 'owner-agent-report',
 } as const;
 
 // The owner-agent-reply job payload. The intake row id ONLY — never the question,
@@ -267,6 +279,12 @@ export const QUEUES = {
 // the gate.
 export type OwnerAgentReplyJob = {
   intakeId: string;
+};
+
+// The owner-agent-report job payload. The run id ONLY — never a phone, never
+// report content.
+export type OwnerAgentReportJob = {
+  runId: string;
 };
 
 // workflow-run retry policy. Deliberately NO `deadLetter`, for the same reason

@@ -10,7 +10,10 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 import { MAX_REPLY_PARTS } from './reply-text';
 import {
   OWNER_AGENT_DB_POOL_MAX,
+  OWNER_AGENT_INTERACTIVE_SEND_MS,
   OWNER_AGENT_MAX_TURNS,
+  OWNER_AGENT_MEDIA_BUDGET_MS,
+  OWNER_AGENT_MEDIA_LOOKUP_TIMEOUT_MS,
   OWNER_AGENT_MODEL,
   OWNER_AGENT_PM2_KILL_TIMEOUT_MS,
   OWNER_AGENT_REPLY_EXPIRE_SECONDS,
@@ -20,6 +23,8 @@ import {
   OWNER_AGENT_RUN_KILL_AFTER_MS,
   OWNER_AGENT_RUN_TIMEOUT_MS,
   OWNER_AGENT_STOP_TIMEOUT_MS,
+  OWNER_AGENT_TYPING_TIMEOUT_MS,
+  typingRefreshMs,
 } from './budgets';
 
 // The budget chain, asserted rather than trusted (budgets.ts header):
@@ -33,12 +38,17 @@ const dedicated = load('ecosystem.owner-agent.config.cjs');
 const app = dedicated.apps.find((a) => a.name === 'kalfa-owner-agent');
 
 describe('the free-read budgets (free-read plan §3.5), pinned', () => {
-  it('180s run, 12 turns, 5 reply parts; 15 + 180 + 10 + 50 = 255 < 300 < 310 < 330', () => {
+  it('180s run, 12 turns, 5 reply parts; 15 + 180 + 10 + 50 + 2×5 + 15 + 15 = 295 < 300 < 310 < 330', () => {
     expect(OWNER_AGENT_RUN_TIMEOUT_MS).toBe(180_000);
     expect(OWNER_AGENT_MAX_TURNS).toBe(12);
     expect(OWNER_AGENT_MODEL).toBe('sonnet');
     expect(MAX_REPLY_PARTS).toBe(5);
-    expect(OWNER_AGENT_REPLY_MAX_MS).toBe(255_000);
+    expect(OWNER_AGENT_REPLY_MAX_MS).toBe(295_000);
+    // Capabilities (plan §4.1–4.3): typing (before the run and the last
+    // refresh after it), all media of a turn, one interactive send.
+    expect(OWNER_AGENT_TYPING_TIMEOUT_MS).toBe(5_000);
+    expect(OWNER_AGENT_MEDIA_BUDGET_MS).toBe(15_000);
+    expect(OWNER_AGENT_INTERACTIVE_SEND_MS).toBe(15_000);
     expect(OWNER_AGENT_REPLY_EXPIRE_SECONDS).toBe(300);
     expect(OWNER_AGENT_STOP_TIMEOUT_MS).toBe(310_000);
     expect(OWNER_AGENT_PM2_KILL_TIMEOUT_MS).toBe(330_000);
@@ -48,7 +58,13 @@ describe('the free-read budgets (free-read plan §3.5), pinned', () => {
 describe('the owner-agent budget chain', () => {
   it('one answer fits inside the job expiry', () => {
     expect(OWNER_AGENT_REPLY_MAX_MS).toBe(
-      OWNER_AGENT_RESUME_FAIL_FAST_MS + OWNER_AGENT_RUN_TIMEOUT_MS + OWNER_AGENT_RUN_KILL_AFTER_MS + 50_000,
+      OWNER_AGENT_RESUME_FAIL_FAST_MS +
+        OWNER_AGENT_RUN_TIMEOUT_MS +
+        OWNER_AGENT_RUN_KILL_AFTER_MS +
+        50_000 +
+        2 * OWNER_AGENT_TYPING_TIMEOUT_MS +
+        OWNER_AGENT_MEDIA_BUDGET_MS +
+        OWNER_AGENT_INTERACTIVE_SEND_MS,
     );
     expect(OWNER_AGENT_REPLY_MAX_MS).toBeLessThan(OWNER_AGENT_REPLY_EXPIRE_SECONDS * 1000);
   });
@@ -72,6 +88,26 @@ describe('the owner-agent budget chain', () => {
       node_args: '--env-file=.env.local',
       env: expect.objectContaining({ MASTRA_TELEMETRY_DISABLED: 'true', TZ: 'Asia/Jerusalem' }),
     });
+  });
+});
+
+describe('the capability budgets (capabilities plan §4.1–4.2)', () => {
+  it('a media lookup fits twice inside the turn budget (reply.ts halves the remainder)', () => {
+    expect(OWNER_AGENT_MEDIA_LOOKUP_TIMEOUT_MS * 2).toBeLessThanOrEqual(OWNER_AGENT_MEDIA_BUDGET_MS);
+  });
+
+  it('the typing refresh is off unless the env names a whole number in [5000, 24000]', () => {
+    expect(typingRefreshMs(undefined)).toBe(0);
+    expect(typingRefreshMs('')).toBe(0);
+    expect(typingRefreshMs('0')).toBe(0);
+    expect(typingRefreshMs('4999')).toBe(0);
+    expect(typingRefreshMs('24001')).toBe(0);
+    expect(typingRefreshMs('20000.5')).toBe(0);
+    expect(typingRefreshMs('-20000')).toBe(0);
+    expect(typingRefreshMs('20000')).toBe(20_000);
+    expect(typingRefreshMs(' 5000 ')).toBe(5_000);
+    // Below Meta's 25s indicator life, so a refresh can land before it fades.
+    expect(typingRefreshMs('24000')).toBe(24_000);
   });
 });
 

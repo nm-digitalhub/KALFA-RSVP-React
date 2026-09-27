@@ -3,6 +3,8 @@ import 'server-only';
 import type { createAdminClient } from '@/lib/supabase/admin';
 import { rangeStartIso, type OwnerAgentRange } from '@/lib/owner-agent/range';
 
+import { upTo, type CoreWindow } from './window';
+
 // Request-free CORE for inquiry counts (owner-agent tool 1, inquiries_summary;
 // plan §5). Takes a service-role client and returns numbers only.
 //
@@ -53,11 +55,13 @@ async function countCreatedSince(
   client: AdminClient,
   table: 'contact_messages' | 'callback_requests',
   sinceIso: string,
+  window: CoreWindow | undefined,
 ): Promise<number> {
-  const { count, error } = await client
-    .from(table)
-    .select('id', { count: 'exact', head: true })
-    .gte('created_at', sinceIso);
+  const { count, error } = await upTo(
+    client.from(table).select('id', { count: 'exact', head: true }).gte('created_at', sinceIso),
+    'created_at',
+    window,
+  );
   if (error) throw new Error('count_received_failed');
   return count ?? 0;
 }
@@ -75,13 +79,15 @@ export async function getInquiriesSummary(
   client: AdminClient,
   range: OwnerAgentRange,
   nowMs: number = Date.now(),
+  window?: CoreWindow,
 ): Promise<InquiriesSummary> {
-  const sinceIso = rangeStartIso(range, nowMs);
+  // `window` (cores/window.ts) bounds the two *Received fields only.
+  const sinceIso = window?.sinceIso ?? rangeStartIso(range, nowMs);
   const [openContacts, newCallbacks, contactsReceived, callbacksReceived] = await Promise.all([
     countOpenContacts(client),
     countNewCallbackRequests(client),
-    countCreatedSince(client, 'contact_messages', sinceIso),
-    countCreatedSince(client, 'callback_requests', sinceIso),
+    countCreatedSince(client, 'contact_messages', sinceIso, window),
+    countCreatedSince(client, 'callback_requests', sinceIso, window),
   ]);
   return { openContacts, newCallbacks, contactsReceived, callbacksReceived };
 }

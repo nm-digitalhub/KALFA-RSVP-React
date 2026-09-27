@@ -35,6 +35,11 @@ export const OWNER_AGENT_ERRORS = {
   entryNotFound: 'הרשומה לא נמצאה',
   relabelFailed: 'עדכון התווית נכשל',
   removeFailed: 'הסרת המספר נכשלה',
+  approveFailed: 'האישור הידני נכשל',
+  approveNotApplicable: 'אפשר לאשר ידנית רק איש צוות שהטלפון שלו לא מאומת',
+  revokeFailed: 'ביטול האישור הידני נכשל',
+  revokeNotApplicable: 'לרשומה הזו אין אישור ידני לבטל',
+  externalAddFailed: 'הוספת האדם החיצוני נכשלה',
 } as const;
 
 const KNOWN_ERRORS: ReadonlySet<string> = new Set(Object.values(OWNER_AGENT_ERRORS));
@@ -130,3 +135,38 @@ export const relabelAllowlistEntrySchema = z.object({
   id: allowlistEntryIdSchema,
   label: allowlistLabelSchema,
 });
+
+/**
+ * owner_agent_allowlist_approval_note_len: 1..500 after trimming. Required on every
+ * manual approval — the owner writes why (plans/owner-agent-allowlist-override-plan.md).
+ */
+export const approvalNoteSchema = z
+  .string()
+  .trim()
+  .min(1, 'יש לכתוב את סיבת האישור')
+  .max(500, 'הסיבה ארוכה מדי (עד 500 תווים)');
+
+/** Approve, by hand, a staff row whose phone is not the staff member's verified phone. */
+export const approveUnverifiedStaffSchema = z.object({
+  id: allowlistEntryIdSchema,
+  note: approvalNoteSchema,
+});
+
+/**
+ * owner_agent_allowlist_external_label_chk: an external person is shown by name, so the
+ * label is required (1..120).
+ */
+export const externalNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'יש להזין שם')
+  .max(120, 'השם ארוך מדי (עד 120 תווים)');
+
+/** Add a person who is not platform staff, approved by hand with a reason. */
+export const addExternalAllowlistEntrySchema = z.object({
+  e164: allowlistPhoneSchema,
+  name: externalNameSchema,
+  note: approvalNoteSchema,
+});
+
+export type AddExternalAllowlistEntryInput = z.input<typeof addExternalAllowlistEntrySchema>;

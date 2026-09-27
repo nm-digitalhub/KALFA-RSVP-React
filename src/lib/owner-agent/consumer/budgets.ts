@@ -51,12 +51,50 @@ export const OWNER_AGENT_REPLY_OVERHEAD_MS = 50_000;
  */
 export const OWNER_AGENT_RESUME_FAIL_FAST_MS = 15_000;
 
+/**
+ * "Read" + "typing…" (capabilities plan §4.1): one Graph call, cut off after
+ * this long. It is on the critical path TWICE: the first call is awaited
+ * before the run, and the refresh in flight when the run ends (flag on) is
+ * awaited before the send gate — so the chain counts it twice.
+ */
+export const OWNER_AGENT_TYPING_TIMEOUT_MS = 5_000;
+
+/**
+ * Every media download of one turn together (§4.2): the scoped lookup and the
+ * download of each file share this deadline, so a burst of files cannot
+ * multiply it. A file whose turn ran out of time is "unreadable".
+ */
+export const OWNER_AGENT_MEDIA_BUDGET_MS = 15_000;
+/** The scoped metadata lookup of one file, within the budget above. */
+export const OWNER_AGENT_MEDIA_LOOKUP_TIMEOUT_MS = 5_000;
+/** Files downloaded per turn at most; the rest of a burst's files are "unreadable". */
+export const OWNER_AGENT_MAX_MEDIA_PER_TURN = 3;
+
+/** The one interactive follow-up message after the answer's text parts (§4.3). */
+export const OWNER_AGENT_INTERACTIVE_SEND_MS = 15_000;
+
 /** One answer, end to end, at most. */
 export const OWNER_AGENT_REPLY_MAX_MS =
   OWNER_AGENT_RESUME_FAIL_FAST_MS +
   OWNER_AGENT_RUN_TIMEOUT_MS +
   OWNER_AGENT_RUN_KILL_AFTER_MS +
-  OWNER_AGENT_REPLY_OVERHEAD_MS;
+  OWNER_AGENT_REPLY_OVERHEAD_MS +
+  2 * OWNER_AGENT_TYPING_TIMEOUT_MS +
+  OWNER_AGENT_MEDIA_BUDGET_MS +
+  OWNER_AGENT_INTERACTIVE_SEND_MS;
+
+/**
+ * The typing refresh during a run (§4.1): Meta clears the indicator after 25s,
+ * and whether a second read call re-shows it is not documented — so it is off
+ * unless OWNER_AGENT_TYPING_REFRESH_MS says otherwise. A value outside
+ * [5000, 24000] (or not a whole number) is off.
+ */
+export const OWNER_AGENT_TYPING_REFRESH_ENV = 'OWNER_AGENT_TYPING_REFRESH_MS';
+export function typingRefreshMs(raw: string | undefined): number {
+  if (raw === undefined || !/^[0-9]{1,6}$/.test(raw.trim())) return 0;
+  const ms = Number(raw.trim());
+  return ms >= 5_000 && ms <= 24_000 ? ms : 0;
+}
 
 /** QUEUES.ownerAgentReply expireInSeconds (set by consumer/main.ts at start). */
 export const OWNER_AGENT_REPLY_EXPIRE_SECONDS = 300;

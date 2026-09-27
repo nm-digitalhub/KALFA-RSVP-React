@@ -3,6 +3,8 @@ import 'server-only';
 import type { createAdminClient } from '@/lib/supabase/admin';
 import { rangeStartIso, type OwnerAgentRange } from '@/lib/owner-agent/range';
 
+import { upTo, type CoreWindow } from './window';
+
 // Request-free CORE for RSVP totals across ACTIVE events (owner-agent tool 6,
 // rsvp_totals; plan §5). Takes a service-role client and returns numbers only.
 // Authorization is the caller's: view_events, resolved server-side for the
@@ -87,8 +89,10 @@ export async function getRsvpTotals(
   client: AdminClient,
   range: OwnerAgentRange,
   nowMs: number = Date.now(),
+  window?: CoreWindow,
 ): Promise<RsvpTotals> {
-  const sinceIso = rangeStartIso(range, nowMs);
+  // `window` (cores/window.ts) bounds responsesInRange only.
+  const sinceIso = window?.sinceIso ?? rangeStartIso(range, nowMs);
   const [activeEvents, guestRows, attending, declined, maybe, pending, responses, totals] =
     await Promise.all([
       client
@@ -100,11 +104,15 @@ export async function getRsvpTotals(
       activeGuests(client).eq('status', 'declined'),
       activeGuests(client).eq('status', 'maybe'),
       activeGuests(client).eq('status', 'pending'),
-      client
-        .from('rsvp_responses')
-        .select('id, events!inner(status)', { count: 'exact', head: true })
-        .eq('events.status', 'active')
-        .gte('created_at', sinceIso),
+      upTo(
+        client
+          .from('rsvp_responses')
+          .select('id, events!inner(status)', { count: 'exact', head: true })
+          .eq('events.status', 'active')
+          .gte('created_at', sinceIso),
+        'created_at',
+        window,
+      ),
       peopleTotals(client),
     ]);
   return {

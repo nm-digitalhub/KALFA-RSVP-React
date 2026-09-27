@@ -3,6 +3,8 @@ import 'server-only';
 import type { createAdminClient } from '@/lib/supabase/admin';
 import { rangeStartIso, type OwnerAgentRange } from '@/lib/owner-agent/range';
 
+import { upTo, type CoreWindow } from './window';
+
 // Request-free CORE for billing counts (owner-agent tool 3, billing_summary;
 // plan §5). Takes a service-role client and returns numbers only.
 // Authorization is the caller's: view_billing, resolved server-side for the
@@ -58,8 +60,13 @@ function amount(value: unknown, code: string): number {
   return value;
 }
 
-async function billingSums(client: AdminClient, sinceIso: string) {
-  const { data, error } = await client.rpc('owner_agent_billing_sums', { _since: sinceIso });
+// `_until` is passed only for a window: the default call keeps its exact
+// one-argument shape (the function's _until defaults to null = open-ended).
+async function billingSums(client: AdminClient, sinceIso: string, window: CoreWindow | undefined) {
+  const { data, error } = await client.rpc(
+    'owner_agent_billing_sums',
+    window ? { _since: sinceIso, _until: window.untilIso } : { _since: sinceIso },
+  );
   if (error) throw new Error('billing_sums_failed');
   if (!Array.isArray(data) || data.length !== 1) throw new Error('billing_sums_unexpected');
   const [row] = data;
@@ -102,8 +109,11 @@ export async function getBillingSummary(
   client: AdminClient,
   range: OwnerAgentRange,
   nowMs: number = Date.now(),
+  window?: CoreWindow,
 ): Promise<BillingSummary> {
-  const sinceIso = rangeStartIso(range, nowMs);
+  // `window` (cores/window.ts) bounds the *InRange counts and the in-range
+  // sums; the current-state counts and creditUnvoidedAmountIls ignore it.
+  const sinceIso = window?.sinceIso ?? rangeStartIso(range, nowMs);
   const [
     chargedInRange,
     nothingToChargeInRange,
@@ -116,8 +126,12 @@ export async function getBillingSummary(
     creditsVoidedInRange,
     sums,
   ] = await Promise.all([
-    campaigns(client).eq('charge_status', 'charged').gte('charged_at', sinceIso),
-    campaigns(client).eq('charge_status', 'nothing_to_charge').gte('charged_at', sinceIso),
+    upTo(campaigns(client).eq('charge_status', 'charged').gte('charged_at', sinceIso), 'charged_at', window),
+    upTo(
+      campaigns(client).eq('charge_status', 'nothing_to_charge').gte('charged_at', sinceIso),
+      'charged_at',
+      window,
+    ),
     campaigns(client).eq('charge_status', 'pending'),
     campaigns(client).eq('charge_status', 'charge_failed'),
     campaigns(client).eq('charge_status', 'charge_review'),
@@ -126,9 +140,9 @@ export async function getBillingSummary(
       .is('charge_status', null)
       .is('release_status', null),
     credits(client).is('voided_at', null),
-    credits(client).is('voided_at', null).gte('created_at', sinceIso),
-    credits(client).gte('voided_at', sinceIso),
-    billingSums(client, sinceIso),
+    upTo(credits(client).is('voided_at', null).gte('created_at', sinceIso), 'created_at', window),
+    upTo(credits(client).gte('voided_at', sinceIso), 'voided_at', window),
+    billingSums(client, sinceIso, window),
   ]);
   return {
     chargedInRange: countOf(chargedInRange, 'count_charged_failed'),

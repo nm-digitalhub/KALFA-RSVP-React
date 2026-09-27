@@ -4,6 +4,8 @@ import type { createAdminClient } from '@/lib/supabase/admin';
 import type { CampaignStatus } from '@/lib/data/campaign-status';
 import { rangeStartIso, type OwnerAgentRange } from '@/lib/owner-agent/range';
 
+import { upTo, type CoreWindow } from './window';
+
 // Request-free CORE for campaign status counts (owner-agent tool 2,
 // campaigns_status_summary; plan §5). Takes a service-role client and returns
 // numbers only.
@@ -83,8 +85,10 @@ export async function getCampaignsStatusSummary(
   client: AdminClient,
   range: OwnerAgentRange,
   nowMs: number = Date.now(),
+  window?: CoreWindow,
 ): Promise<CampaignsStatusSummary> {
-  const sinceIso = rangeStartIso(range, nowMs);
+  // `window` (cores/window.ts) bounds createdInRange only.
+  const sinceIso = window?.sinceIso ?? rangeStartIso(range, nowMs);
   const [active, paused, closed, winddown, stuckHolds, needsAttention, createdInRange] =
     await Promise.all([
       head(client).eq('status', 'active'),
@@ -93,7 +97,7 @@ export async function getCampaignsStatusSummary(
       countWinddownCampaigns(client),
       head(client).eq('status', 'approved').in('capture_status', [...STUCK_CAPTURE_STATUSES]),
       head(client).or(ADMIN_ATTENTION_FILTER),
-      head(client).gte('created_at', sinceIso),
+      upTo(head(client).gte('created_at', sinceIso), 'created_at', window),
     ]);
   return {
     active: countOf(active, 'count_active_failed'),

@@ -76,6 +76,11 @@ const DEFINITELY_NOT_SENT_CODES = new Set<number>([
   // `unknown` (one advance-skip) is the safe default per the file-header policy.
 ]);
 
+/** True for a Meta error code that means the message was KNOWN not delivered (see the list above). */
+export function isDefinitelyNotSentCode(code: number): boolean {
+  return DEFINITELY_NOT_SENT_CODES.has(code);
+}
+
 // Classify a RESOLVED sendMessage body. whatsapp-api-js returns the parsed JSON
 // (it does NOT throw on an HTTP 4xx/5xx — a Meta error arrives as { error: {…} }
 // in the body). A message id ⇒ accepted; a mapped error code ⇒ definitely_not_sent;
@@ -115,7 +120,7 @@ function classifyThrow(e: unknown): DeliveryOutcome {
 // classifyResponse outcomes: a Meta error CODE (e.g. 131049/131026) is a
 // per-recipient business result, not a provider outage. NO PII: only the safe
 // reason + optional HTTP status. Fire-and-forget (sendSlackAlert never throws).
-function alertWhatsAppThrow(outcome: DeliveryOutcome): void {
+export function alertWhatsAppThrow(outcome: DeliveryOutcome): void {
   const status = outcome.kind === 'unknown' ? outcome.providerStatus : undefined;
   void sendSlackAlert({
     level: 'warn',

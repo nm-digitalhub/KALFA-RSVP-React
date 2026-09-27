@@ -13,6 +13,9 @@ const {
   toggleMock,
   relabelMock,
   removeMock,
+  approveMock,
+  revokeMock,
+  externalMock,
 } = vi.hoisted(() => ({
   ownerMock: vi.fn(),
   revalidateMock: vi.fn(),
@@ -23,6 +26,9 @@ const {
   toggleMock: vi.fn(),
   relabelMock: vi.fn(),
   removeMock: vi.fn(),
+  approveMock: vi.fn(),
+  revokeMock: vi.fn(),
+  externalMock: vi.fn(),
 }));
 
 vi.mock('next/cache', () => ({ revalidatePath: revalidateMock }));
@@ -35,12 +41,18 @@ vi.mock('@/lib/data/admin/owner-agent', () => ({
   setOwnerAgentAllowlistEnabled: toggleMock,
   relabelOwnerAgentAllowlistEntry: relabelMock,
   removeOwnerAgentAllowlistEntry: removeMock,
+  approveOwnerAgentUnverifiedStaff: approveMock,
+  revokeOwnerAgentManualApproval: revokeMock,
+  addOwnerAgentExternalEntry: externalMock,
 }));
 
 import {
   addAllowlistEntryAction,
+  addExternalAllowlistEntryAction,
+  approveUnverifiedStaffAction,
   relabelAllowlistEntryAction,
   removeAllowlistEntryAction,
+  revokeManualApprovalAction,
   setAllowlistEntryEnabledAction,
   setOwnerAgentDailyCapAction,
   setOwnerAgentEnabledAction,
@@ -57,7 +69,18 @@ function form(entries: Record<string, string>) {
   return fd;
 }
 
-const DAL_MOCKS = [enabledMock, numberMock, capMock, addMock, toggleMock, relabelMock, removeMock];
+const DAL_MOCKS = [
+  enabledMock,
+  numberMock,
+  capMock,
+  addMock,
+  toggleMock,
+  relabelMock,
+  removeMock,
+  approveMock,
+  revokeMock,
+  externalMock,
+];
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -88,6 +111,15 @@ const VALID: Array<[string, () => Promise<unknown>]> = [
     () => relabelAllowlistEntryAction(null, form({ id: ENTRY_ID, label: 'נייד' })),
   ],
   ['removeAllowlistEntryAction', () => removeAllowlistEntryAction(null, form({ id: ENTRY_ID }))],
+  [
+    'approveUnverifiedStaffAction',
+    () => approveUnverifiedStaffAction(null, form({ id: ENTRY_ID, note: 'אושר בטלפון' })),
+  ],
+  ['revokeManualApprovalAction', () => revokeManualApprovalAction(null, form({ id: ENTRY_ID }))],
+  [
+    'addExternalAllowlistEntryAction',
+    () => addExternalAllowlistEntryAction(null, form({ e164: '0501234567', name: 'דנה', note: 'רו"ח' })),
+  ],
 ];
 
 describe('every owner-agent action is owner-only', () => {
@@ -238,5 +270,27 @@ describe('errors stay safe', () => {
         form({ e164: '0501234567', staffUserId: STAFF_ID, label: '' }),
       ),
     ).toEqual({ error: 'הוספת המספר נכשלה' });
+  });
+});
+
+describe('manual approval actions', () => {
+  it('an approval without a reason is refused before the gate and the DAL', async () => {
+    const res = await approveUnverifiedStaffAction(null, form({ id: ENTRY_ID, note: '  ' }));
+    expect(res?.fieldErrors?.note).toBeDefined();
+    expect(ownerMock).not.toHaveBeenCalled();
+    expect(approveMock).not.toHaveBeenCalled();
+  });
+
+  it('an external person without a name or reason is refused, and the phone is not echoed', async () => {
+    const res = await addExternalAllowlistEntryAction(null, form({ e164: '0501234567', name: '', note: '' }));
+    expect(res?.fieldErrors?.name).toBeDefined();
+    expect(res?.fieldErrors?.note).toBeDefined();
+    expect(JSON.stringify(res)).not.toContain('0501234567');
+    expect(externalMock).not.toHaveBeenCalled();
+  });
+
+  it('the external entry reaches the DAL normalised to E.164, with the trimmed name and reason', async () => {
+    await addExternalAllowlistEntryAction(null, form({ e164: '050-123-4567', name: ' דנה ', note: ' רו"ח ' }));
+    expect(externalMock).toHaveBeenCalledWith({ e164: '+972501234567', name: 'דנה', note: 'רו"ח' });
   });
 });

@@ -57,6 +57,7 @@ export async function runStrandedIntakeSweep(deps: SweepDeps): Promise<{ expired
       outcome: 'expired',
       reasonCode: 'window_closed',
       staffUserId: row.staffUserId,
+      allowlistEntryId: row.allowlistEntryId,
       intakeId: row.id,
       wamid: row.wamid,
     });

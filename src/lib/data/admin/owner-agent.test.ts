@@ -11,7 +11,9 @@ vi.mock('@/lib/auth/dal', () => ({ requirePlatformOwner: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
+vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import { requirePlatformOwner } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -20,6 +22,8 @@ import { createClient } from '@/lib/supabase/server';
 import {
   OWNER_AGENT_AUDIT_COLUMNS,
   addOwnerAgentAllowlistEntry,
+  addOwnerAgentExternalEntry,
+  approveOwnerAgentUnverifiedStaff,
   getOwnerAgentSettings,
   listOwnerAgentAllowlist,
   listOwnerAgentAudit,
@@ -27,6 +31,7 @@ import {
   listOwnerAgentStaff,
   relabelOwnerAgentAllowlistEntry,
   removeOwnerAgentAllowlistEntry,
+  revokeOwnerAgentManualApproval,
   setOwnerAgentAllowlistEnabled,
   setOwnerAgentDailyCap,
   setOwnerAgentEnabled,
@@ -118,6 +123,12 @@ describe('the owner gate', () => {
     ['setOwnerAgentAllowlistEnabled', () => setOwnerAgentAllowlistEnabled(ENTRY_ID, false)],
     ['relabelOwnerAgentAllowlistEntry', () => relabelOwnerAgentAllowlistEntry(ENTRY_ID, 'x')],
     ['removeOwnerAgentAllowlistEntry', () => removeOwnerAgentAllowlistEntry(ENTRY_ID)],
+    ['approveOwnerAgentUnverifiedStaff', () => approveOwnerAgentUnverifiedStaff(ENTRY_ID, 'סיבה')],
+    ['revokeOwnerAgentManualApproval', () => revokeOwnerAgentManualApproval(ENTRY_ID)],
+    [
+      'addOwnerAgentExternalEntry',
+      () => addOwnerAgentExternalEntry({ e164: OWNER_PHONE, name: 'דנה', note: 'סיבה' }),
+    ],
   ];
 
   for (const [name, call] of calls) {
@@ -238,6 +249,9 @@ describe('reads', () => {
             enabled: true,
             label: 'נייד',
             created_at: '2026-09-24T08:00:00Z',
+            approval_kind: 'verified_staff',
+            approved_at: null,
+            approval_note: null,
           },
           {
             id: 'c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f',
@@ -246,6 +260,9 @@ describe('reads', () => {
             enabled: false,
             label: null,
             created_at: '2026-09-24T09:00:00Z',
+            approval_kind: 'verified_staff',
+            approved_at: null,
+            approval_note: null,
           },
           {
             // A row whose staff member has since left (read defensively).
@@ -255,6 +272,9 @@ describe('reads', () => {
             enabled: true,
             label: null,
             created_at: '2026-09-24T10:00:00Z',
+            approval_kind: 'verified_staff',
+            approved_at: null,
+            approval_note: null,
           },
         ],
         error: null,
@@ -545,5 +565,106 @@ describe('allow-list writes (service role)', () => {
     const { from } = wireAdmin({});
     await expect(removeOwnerAgentAllowlistEntry('not-an-id')).rejects.toThrow();
     expect(from).not.toHaveBeenCalled();
+  });
+});
+
+describe('manual approval writes (service role, always logged)', () => {
+  it('approves an unverified staff row: only a verified_staff row with a staff member moves; approver = the acting owner', async () => {
+    const { builders } = wireAdmin({
+      owner_agent_allowlist: { data: [{ id: ENTRY_ID, staff_user_id: STAFF_ID }], error: null },
+    });
+    await approveOwnerAgentUnverifiedStaff(ENTRY_ID, '  בעלים אישר בטלפון  ');
+    expect(builders.owner_agent_allowlist.update).toHaveBeenCalledWith({
+      approval_kind: 'staff_unverified_override',
+      approved_by: OWNER_ID,
+      approved_at: expect.any(String),
+      approval_note: 'בעלים אישר בטלפון',
+    });
+    expect(builders.owner_agent_allowlist.eq).toHaveBeenCalledWith('id', ENTRY_ID);
+    expect(builders.owner_agent_allowlist.eq).toHaveBeenCalledWith('approval_kind', 'verified_staff');
+    expect(builders.owner_agent_allowlist.not).toHaveBeenCalledWith('staff_user_id', 'is', null);
+    expect(logActivity).toHaveBeenCalledWith({
+      action: 'admin.owner_agent.allowlist_override_approved',
+      meta: {
+        entryId: ENTRY_ID,
+        approvalKind: 'staff_unverified_override',
+        staffUserId: STAFF_ID,
+        noteLength: 'בעלים אישר בטלפון'.length,
+      },
+    });
+    // The reason text stays in the row, never in the activity log.
+    expect(JSON.stringify(vi.mocked(logActivity).mock.calls)).not.toContain('בעלים אישר');
+  });
+
+  it('refuses an approval with no reason, before any query', async () => {
+    const { from } = wireAdmin({});
+    await expect(approveOwnerAgentUnverifiedStaff(ENTRY_ID, '   ')).rejects.toThrow();
+    expect(from).not.toHaveBeenCalled();
+    expect(logActivity).not.toHaveBeenCalled();
+  });
+
+  it('says so when the row is not an unverified staff row (nothing moved), and logs nothing', async () => {
+    wireAdmin({ owner_agent_allowlist: { data: [], error: null } });
+    await expect(approveOwnerAgentUnverifiedStaff(ENTRY_ID, 'סיבה')).rejects.toThrow(
+      'אפשר לאשר ידנית רק איש צוות שהטלפון שלו לא מאומת',
+    );
+    expect(logActivity).not.toHaveBeenCalled();
+  });
+
+  it('revokes a manual staff approval back to verified_staff, and logs it', async () => {
+    const { builders } = wireAdmin({
+      owner_agent_allowlist: { data: [{ id: ENTRY_ID, staff_user_id: STAFF_ID }], error: null },
+    });
+    await revokeOwnerAgentManualApproval(ENTRY_ID);
+    expect(builders.owner_agent_allowlist.update).toHaveBeenCalledWith({
+      approval_kind: 'verified_staff',
+      approved_by: null,
+      approved_at: null,
+      approval_note: null,
+    });
+    expect(builders.owner_agent_allowlist.eq).toHaveBeenCalledWith('approval_kind', 'staff_unverified_override');
+    expect(logActivity).toHaveBeenCalledWith({
+      action: 'admin.owner_agent.allowlist_override_revoked',
+      meta: { entryId: ENTRY_ID, approvalKind: 'staff_unverified_override', staffUserId: STAFF_ID },
+    });
+  });
+
+  it('adds an external person: no staff id, name as label, approval recorded; log and alert carry ids only', async () => {
+    const { builders } = wireAdmin({ owner_agent_allowlist: { data: { id: ENTRY_ID }, error: null } });
+    await expect(
+      addOwnerAgentExternalEntry({ e164: '052-111-2233', name: ' דנה כהן ', note: 'רואת החשבון' }),
+    ).resolves.toBe(ENTRY_ID);
+    expect(builders.owner_agent_allowlist.insert).toHaveBeenCalledWith({
+      e164: STAFF_PHONE,
+      staff_user_id: null,
+      label: 'דנה כהן',
+      approval_kind: 'external_override',
+      approved_by: OWNER_ID,
+      approved_at: expect.any(String),
+      approval_note: 'רואת החשבון',
+      created_by: OWNER_ID,
+    });
+    expect(logActivity).toHaveBeenCalledWith({
+      action: 'admin.owner_agent.allowlist_override_approved',
+      meta: { entryId: ENTRY_ID, approvalKind: 'external_override', noteLength: 'רואת החשבון'.length },
+    });
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1);
+    const leaked = JSON.stringify([vi.mocked(logActivity).mock.calls, vi.mocked(sendSlackAlert).mock.calls]);
+    for (const text of ['972', 'דנה', 'רואת']) expect(leaked).not.toContain(text);
+  });
+
+  it('refuses an external person with no name or no reason, before any query', async () => {
+    const { from } = wireAdmin({});
+    await expect(addOwnerAgentExternalEntry({ e164: STAFF_PHONE, name: '', note: 'x' })).rejects.toThrow();
+    await expect(addOwnerAgentExternalEntry({ e164: STAFF_PHONE, name: 'x', note: '' })).rejects.toThrow();
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('maps a duplicate phone to the owner sentence', async () => {
+    wireAdmin({ owner_agent_allowlist: { data: null, error: { message: 'raw', code: '23505' } } });
+    await expect(addOwnerAgentExternalEntry({ e164: STAFF_PHONE, name: 'x', note: 'y' })).rejects.toThrow(
+      'המספר הזה כבר ברשימת ההיתר',
+    );
+    expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 });

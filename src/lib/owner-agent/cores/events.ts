@@ -9,6 +9,8 @@ import {
   type OwnerAgentRange,
 } from '@/lib/owner-agent/range';
 
+import { upTo, type CoreWindow } from './window';
+
 // Request-free CORE for the events pipeline (owner-agent tool 5,
 // events_pipeline; plan §5). Takes a service-role client and returns numbers
 // only. Authorization is the caller's: view_events, resolved server-side for
@@ -70,8 +72,11 @@ export async function getEventsPipelineSummary(
   client: AdminClient,
   range: OwnerAgentRange,
   nowMs: number = Date.now(),
+  window?: CoreWindow,
 ): Promise<EventsPipelineSummary> {
-  const sinceIso = rangeStartIso(range, nowMs);
+  // `window` (cores/window.ts) bounds createdInRange only; the forward window
+  // below stays RANGE_DAYS from today.
+  const sinceIso = window?.sinceIso ?? rangeStartIso(range, nowMs);
   const todayStartIso = israelMidnightIso(nowMs, 0);
   const windowEndIso = israelMidnightIso(nowMs, RANGE_DAYS[range]);
 
@@ -111,7 +116,7 @@ export async function getEventsPipelineSummary(
     active().lt('event_date', todayStartIso),
     active().is('event_date', null),
     active().gte('event_date', todayStartIso).lt('event_date', windowEndIso),
-    head(client).gte('created_at', sinceIso),
+    upTo(head(client).gte('created_at', sinceIso), 'created_at', window),
   ]);
 
   // Typed as the full enum Records: a status or type added to the database is

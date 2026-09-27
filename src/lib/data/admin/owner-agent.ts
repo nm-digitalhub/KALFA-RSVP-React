@@ -1,18 +1,23 @@
 import 'server-only';
 
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import { requirePlatformOwner } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
+import { isApprovalKind, type ApprovalKind } from '@/lib/owner-agent/approval';
 import { maskPhoneForDisplay } from '@/lib/phone';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import {
   OWNER_AGENT_ERRORS as E,
   addAllowlistEntrySchema,
+  addExternalAllowlistEntrySchema,
   allowlistEntryIdSchema,
+  approveUnverifiedStaffSchema,
   dailyCapSchema,
   relabelAllowlistEntrySchema,
   setAllowlistEnabledSchema,
   type AddAllowlistEntryInput,
+  type AddExternalAllowlistEntryInput,
 } from '@/lib/validation/owner-agent';
 import { phoneNumberIdSchema } from '@/lib/validation/whatsapp-numbers';
 import type { NumberRole } from '@/lib/validation/provider-numbers';
@@ -61,7 +66,8 @@ export interface OwnerAgentNumber {
 export interface OwnerAgentAllowlistEntry {
   id: string;
   maskedNumber: string;
-  staffUserId: string;
+  /** null for an external person (approvalKind 'external_override'). */
+  staffUserId: string | null;
   staffName: string | null;
   /** False once the person is no longer platform staff (the FK cascade removes the row, but read defensively). */
   isStaff: boolean;
@@ -70,6 +76,12 @@ export interface OwnerAgentAllowlistEntry {
   createdAt: string;
   /** e164 === that staff member's profiles.phone_verified_e164. The phone itself never leaves. */
   verifiedMatch: boolean;
+  /** How the row was approved (approval.ts). */
+  approvalKind: ApprovalKind;
+  /** When the owner approved it by hand; null for verified_staff. */
+  approvedAt: string | null;
+  /** The owner's written reason for a manual approval (this page is owner-only). */
+  approvalNote: string | null;
 }
 
 export interface OwnerAgentStaffOption {
@@ -247,15 +259,18 @@ export async function listOwnerAgentAllowlist(): Promise<OwnerAgentAllowlistEntr
   const [{ data, error }, directory] = await Promise.all([
     supabase
       .from('owner_agent_allowlist')
-      .select('id, e164, staff_user_id, enabled, label, created_at')
+      .select('id, e164, staff_user_id, enabled, label, created_at, approval_kind, approved_at, approval_note')
       .order('created_at', { ascending: true }),
     loadStaffDirectory(),
   ]);
   if (error) throw new Error(E.allowlistReadFailed);
 
-  return (data ?? []).map((row) => {
-    const staff = directory.get(row.staff_user_id);
-    return {
+  const entries: OwnerAgentAllowlistEntry[] = [];
+  for (const row of data ?? []) {
+    // A kind this code does not know is not shown as if it were understood.
+    if (!isApprovalKind(row.approval_kind)) continue;
+    const staff = row.staff_user_id ? directory.get(row.staff_user_id) : undefined;
+    entries.push({
       id: row.id,
       maskedNumber: maskPhoneForDisplay(row.e164),
       staffUserId: row.staff_user_id,
@@ -265,8 +280,12 @@ export async function listOwnerAgentAllowlist(): Promise<OwnerAgentAllowlistEntr
       label: row.label,
       createdAt: row.created_at,
       verifiedMatch: staff?.verifiedE164 != null && staff.verifiedE164 === row.e164,
-    };
-  });
+      approvalKind: row.approval_kind,
+      approvedAt: row.approved_at,
+      approvalNote: row.approval_note,
+    });
+  }
+  return entries;
 }
 
 /** The most recent audit rows: ids and codes only (see OWNER_AGENT_AUDIT_COLUMNS). */
@@ -465,4 +484,118 @@ export async function removeOwnerAgentAllowlistEntry(id: string): Promise<void> 
     action: 'admin.owner_agent.allowlist_removed',
     meta: { entryId, staffUserId: data[0].staff_user_id },
   });
+}
+
+// ─── WRITES: manual approval (plans/owner-agent-allowlist-override-plan.md) ───
+// The owner may let through, by hand and with a written reason, a staff member whose
+// phone is not verified, or a person who is not staff at all. Every approval and
+// revocation is logged (owner requirement): logActivity carries ids, the kind and the
+// reason's LENGTH — never a phone, never the reason text (that stays in the row).
+
+/** Approve by hand a staff row whose phone is not that staff member's verified phone. */
+export async function approveOwnerAgentUnverifiedStaff(id: string, note: string): Promise<void> {
+  const actor = await requirePlatformOwner();
+  const parsed = approveUnverifiedStaffSchema.parse({ id, note });
+
+  const admin = createAdminClient();
+  // Only a verified_staff row that still belongs to a staff member moves. The filter
+  // is in the UPDATE itself, so a row that changed meanwhile is not touched.
+  const { data, error } = await admin
+    .from('owner_agent_allowlist')
+    .update({
+      approval_kind: 'staff_unverified_override',
+      // The acting owner, from the session — never from the form.
+      approved_by: actor.id,
+      approved_at: new Date().toISOString(),
+      approval_note: parsed.note,
+    })
+    .eq('id', parsed.id)
+    .eq('approval_kind', 'verified_staff')
+    .not('staff_user_id', 'is', null)
+    .select('id, staff_user_id');
+  if (error) throw new Error(E.approveFailed);
+  if (!data || data.length === 0) throw new Error(E.approveNotApplicable);
+
+  await logActivity({
+    action: 'admin.owner_agent.allowlist_override_approved',
+    meta: {
+      entryId: parsed.id,
+      approvalKind: 'staff_unverified_override',
+      staffUserId: data[0].staff_user_id,
+      noteLength: parsed.note.length,
+    },
+  });
+}
+
+/**
+ * Take back a manual approval of a staff row: it returns to verified_staff, so the
+ * gate again requires the verified phone. An external person has no verified form to
+ * return to — disable or remove that row instead.
+ */
+export async function revokeOwnerAgentManualApproval(id: string): Promise<void> {
+  await requirePlatformOwner();
+  const entryId = allowlistEntryIdSchema.parse(id);
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('owner_agent_allowlist')
+    .update({ approval_kind: 'verified_staff', approved_by: null, approved_at: null, approval_note: null })
+    .eq('id', entryId)
+    .eq('approval_kind', 'staff_unverified_override')
+    .select('id, staff_user_id');
+  if (error) throw new Error(E.revokeFailed);
+  if (!data || data.length === 0) throw new Error(E.revokeNotApplicable);
+
+  await logActivity({
+    action: 'admin.owner_agent.allowlist_override_revoked',
+    meta: { entryId, approvalKind: 'staff_unverified_override', staffUserId: data[0].staff_user_id },
+  });
+}
+
+/**
+ * Add a person who is NOT platform staff, approved by hand. They get no platform
+ * permissions (so none of the count tools), but — per the owner's free-read decisions
+ * — the same read-only SQL every allow-listed phone gets.
+ */
+export async function addOwnerAgentExternalEntry(input: AddExternalAllowlistEntryInput): Promise<string> {
+  const actor = await requirePlatformOwner();
+  const parsed = addExternalAllowlistEntrySchema.parse(input);
+  const now = new Date().toISOString();
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('owner_agent_allowlist')
+    .insert({
+      e164: parsed.e164,
+      staff_user_id: null,
+      label: parsed.name,
+      approval_kind: 'external_override',
+      approved_by: actor.id,
+      approved_at: now,
+      approval_note: parsed.note,
+      created_by: actor.id,
+    })
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    if (error?.code === '23505') throw new Error(E.duplicate);
+    if (error?.code === '23514') throw new Error(E.invalidE164);
+    throw new Error(E.externalAddFailed);
+  }
+
+  await logActivity({
+    action: 'admin.owner_agent.allowlist_override_approved',
+    meta: { entryId: data.id, approvalKind: 'external_override', noteLength: parsed.note.length },
+  });
+  // Ids only: a person outside the staff can now reach the agent.
+  await sendSlackAlert({
+    level: 'warn',
+    category: 'security',
+    source: 'owner-agent',
+    title: 'סוכן הבעלים — אדם חיצוני אושר ידנית',
+    detail: 'הבעלים הוסיף לרשימת ההיתר אדם שאינו איש צוות. הסיבה שמורה ברשומה.',
+    fields: { entry: data.id },
+  });
+  return data.id;
 }

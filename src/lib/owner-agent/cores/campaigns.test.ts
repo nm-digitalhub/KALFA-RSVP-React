@@ -136,3 +136,29 @@ describe('wrapper ↔ core parity (same data, same number)', () => {
     expect((await getAdminNavCounts()).campaigns).toBe(0);
   });
 });
+
+// The proactive report's closed window (cores/window.ts): the Israel day of
+// 24.9, [23.9 21:00Z, 24.9 21:00Z).
+const DAY_24 = { sinceIso: '2026-09-23T21:00:00.000Z', untilIso: '2026-09-24T21:00:00.000Z' };
+
+describe('getCampaignsStatusSummary with a window', () => {
+  it('bounds createdInRange to [since, until); current state is unchanged', async () => {
+    const { client } = db();
+    const s = await getCampaignsStatusSummary(client as unknown as AdminClient, 'today', NOW, DAY_24);
+    expect(s).toEqual({
+      active: 2,
+      paused: 1,
+      closed: 1,
+      winddown: 4,
+      stuckHolds: 2,
+      needsAttention: 6,
+      createdInRange: 1, // k5 (20:00Z); k1 and k9 are after the until bound
+    });
+  });
+
+  it('adds the until bound only when a window is given', async () => {
+    const { client, calls } = db();
+    await getCampaignsStatusSummary(client as unknown as AdminClient, 'today', NOW);
+    expect(calls.flatMap((c) => c.filters).some((f) => f.op === 'lt')).toBe(false);
+  });
+});

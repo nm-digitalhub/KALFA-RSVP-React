@@ -4,6 +4,8 @@ import type { createAdminClient } from '@/lib/supabase/admin';
 import { countActiveCalls } from '@/lib/data/call-attempts';
 import { rangeStartIso, type OwnerAgentRange } from '@/lib/owner-agent/range';
 
+import { upTo, type CoreWindow } from './window';
+
 // Request-free CORE for AI-call counts (owner-agent tool 4,
 // voice_calls_summary; plan §5). Takes a service-role client and returns
 // numbers only. The /admin/voice summary tiles (voice-ops.ts
@@ -49,6 +51,18 @@ export async function countCallAttemptsSince(
   return count ?? 0;
 }
 
+// Attempts created in [window.sinceIso, window.untilIso). countCallAttemptsSince
+// above keeps its exported one-bound shape for the /admin/voice tile.
+async function countCallAttemptsBetween(client: AdminClient, window: CoreWindow): Promise<number> {
+  const { count, error } = await client
+    .from('call_attempts')
+    .select('id', { count: 'exact', head: true })
+    .gte('created_at', window.sinceIso)
+    .lt('created_at', window.untilIso);
+  if (error) throw new Error('count_attempts_failed');
+  return count ?? 0;
+}
+
 export interface VoiceCallsSummary {
   // Current state (not range-bound): calls in a pre-terminal status now.
   activeNow: number;
@@ -62,23 +76,34 @@ export async function getVoiceCallsSummary(
   client: AdminClient,
   range: OwnerAgentRange,
   nowMs: number = Date.now(),
+  window?: CoreWindow,
 ): Promise<VoiceCallsSummary> {
-  const sinceIso = rangeStartIso(range, nowMs);
+  // `window` (cores/window.ts) bounds the three in-range counts; activeNow is
+  // the current state.
+  const sinceIso = window?.sinceIso ?? rangeStartIso(range, nowMs);
   // Explicit head-counts, one complete chain each — no builder indirection, so
   // the generated types check every filter.
   const [activeNow, attempts, completed, denom] = await Promise.all([
     countActiveCalls(client),
-    countCallAttemptsSince(client, sinceIso),
-    client
-      .from('call_attempts')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', sinceIso)
-      .eq('status', 'completed'),
-    client
-      .from('call_attempts')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', sinceIso)
-      .in('status', [...ANSWER_RATE_DENOM]),
+    window ? countCallAttemptsBetween(client, window) : countCallAttemptsSince(client, sinceIso),
+    upTo(
+      client
+        .from('call_attempts')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', sinceIso)
+        .eq('status', 'completed'),
+      'created_at',
+      window,
+    ),
+    upTo(
+      client
+        .from('call_attempts')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', sinceIso)
+        .in('status', [...ANSWER_RATE_DENOM]),
+      'created_at',
+      window,
+    ),
   ]);
   if (completed.error) throw new Error('count_completed_failed');
   if (denom.error) throw new Error('count_answer_denom_failed');

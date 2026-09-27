@@ -116,3 +116,29 @@ describe('getEventsPipelineSummary (core)', () => {
     ).rejects.toThrow();
   });
 });
+
+// The proactive report's closed window (cores/window.ts): the Israel day of
+// 24.9, [23.9 21:00Z, 24.9 21:00Z).
+const DAY_24 = { sinceIso: '2026-09-23T21:00:00.000Z', untilIso: '2026-09-24T21:00:00.000Z' };
+
+describe('getEventsPipelineSummary with a window', () => {
+  it('bounds createdInRange to [since, until) and leaves the rest as without one', async () => {
+    const { client } = db();
+    const plain = await getEventsPipelineSummary(client as unknown as AdminClient, 'today', NOW);
+    const windowed = await getEventsPipelineSummary(client as unknown as AdminClient, 'today', NOW, DAY_24);
+    // e6 (24.9 20:00Z); e1 (21:30Z) and e7 (22:00Z) are after the until bound.
+    expect(windowed.createdInRange).toBe(1);
+    expect({ ...windowed, createdInRange: 0 }).toEqual({ ...plain, createdInRange: 0 });
+  });
+
+  it('adds the until bound only when a window is given', async () => {
+    const { client, calls } = db();
+    await getEventsPipelineSummary(client as unknown as AdminClient, 'today', NOW);
+    expect(calls.flatMap((c) => c.filters).filter((f) => f.op === 'lt' && f.args[0] === 'created_at')).toEqual([]);
+    const windowed = db();
+    await getEventsPipelineSummary(windowed.client as unknown as AdminClient, 'today', NOW, DAY_24);
+    expect(
+      windowed.calls.flatMap((c) => c.filters).filter((f) => f.op === 'lt' && f.args[0] === 'created_at'),
+    ).toEqual([{ op: 'lt', args: ['created_at', DAY_24.untilIso] }]);
+  });
+});

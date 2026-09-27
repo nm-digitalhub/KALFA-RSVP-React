@@ -207,9 +207,13 @@ export type Database = {
           inquiry_followup_enabled: boolean
           monitor_enabled: boolean
           outreach_enabled: boolean
+          owner_agent_burst_ms: number
           owner_agent_daily_cap: number
           owner_agent_enabled: boolean
           owner_agent_phone_number_id: string | null
+          owner_agent_report_template_lang: string | null
+          owner_agent_report_template_name: string | null
+          owner_agent_reports_enabled: boolean
           payments_enabled: boolean
           privacy_url: string | null
           reasonable_coverage_contacts: number
@@ -316,9 +320,13 @@ export type Database = {
           inquiry_followup_enabled?: boolean
           monitor_enabled?: boolean
           outreach_enabled?: boolean
+          owner_agent_burst_ms?: number
           owner_agent_daily_cap?: number
           owner_agent_enabled?: boolean
           owner_agent_phone_number_id?: string | null
+          owner_agent_report_template_lang?: string | null
+          owner_agent_report_template_name?: string | null
+          owner_agent_reports_enabled?: boolean
           payments_enabled?: boolean
           privacy_url?: string | null
           reasonable_coverage_contacts?: number
@@ -425,9 +433,13 @@ export type Database = {
           inquiry_followup_enabled?: boolean
           monitor_enabled?: boolean
           outreach_enabled?: boolean
+          owner_agent_burst_ms?: number
           owner_agent_daily_cap?: number
           owner_agent_enabled?: boolean
           owner_agent_phone_number_id?: string | null
+          owner_agent_report_template_lang?: string | null
+          owner_agent_report_template_name?: string | null
+          owner_agent_reports_enabled?: boolean
           payments_enabled?: boolean
           privacy_url?: string | null
           reasonable_coverage_contacts?: number
@@ -4424,31 +4436,58 @@ export type Database = {
       }
       owner_agent_allowlist: {
         Row: {
+          approval_kind: string
+          approval_note: string | null
+          approved_at: string | null
+          approved_by: string | null
+          bound_from_e164: string | null
+          bsuid: string | null
+          bsuid_bound_at: string | null
           created_at: string
           created_by: string
           e164: string
           enabled: boolean
           id: string
           label: string | null
-          staff_user_id: string
+          parent_bsuid: string | null
+          report_opt_in: boolean
+          staff_user_id: string | null
         }
         Insert: {
+          approval_kind?: string
+          approval_note?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          bound_from_e164?: string | null
+          bsuid?: string | null
+          bsuid_bound_at?: string | null
           created_at?: string
           created_by: string
           e164: string
           enabled?: boolean
           id?: string
           label?: string | null
-          staff_user_id: string
+          parent_bsuid?: string | null
+          report_opt_in?: boolean
+          staff_user_id?: string | null
         }
         Update: {
+          approval_kind?: string
+          approval_note?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          bound_from_e164?: string | null
+          bsuid?: string | null
+          bsuid_bound_at?: string | null
           created_at?: string
           created_by?: string
           e164?: string
           enabled?: boolean
           id?: string
           label?: string | null
-          staff_user_id?: string
+          parent_bsuid?: string | null
+          report_opt_in?: boolean
+          staff_user_id?: string | null
         }
         Relationships: [
           {
@@ -4462,6 +4501,7 @@ export type Database = {
       }
       owner_agent_audit: {
         Row: {
+          allowlist_entry_id: string | null
           id: string
           input_tokens: number | null
           intake_id: string | null
@@ -4470,13 +4510,16 @@ export type Database = {
           outcome: string
           output_tokens: number | null
           reason_code: string | null
+          report_run_id: string | null
           staff_user_id: string | null
           stage: string
           steps: number | null
           tool_names: string[] | null
+          turn_intake_id: string | null
           wamid_sha256: string | null
         }
         Insert: {
+          allowlist_entry_id?: string | null
           id?: string
           input_tokens?: number | null
           intake_id?: string | null
@@ -4485,13 +4528,16 @@ export type Database = {
           outcome: string
           output_tokens?: number | null
           reason_code?: string | null
+          report_run_id?: string | null
           staff_user_id?: string | null
           stage: string
           steps?: number | null
           tool_names?: string[] | null
+          turn_intake_id?: string | null
           wamid_sha256?: string | null
         }
         Update: {
+          allowlist_entry_id?: string | null
           id?: string
           input_tokens?: number | null
           intake_id?: string | null
@@ -4500,16 +4546,39 @@ export type Database = {
           outcome?: string
           output_tokens?: number | null
           reason_code?: string | null
+          report_run_id?: string | null
           staff_user_id?: string | null
           stage?: string
           steps?: number | null
           tool_names?: string[] | null
+          turn_intake_id?: string | null
           wamid_sha256?: string | null
         }
         Relationships: [
           {
+            foreignKeyName: "owner_agent_audit_allowlist_entry_id_fkey"
+            columns: ["allowlist_entry_id"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_allowlist"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "owner_agent_audit_intake_id_fkey"
             columns: ["intake_id"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_intake"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_agent_audit_report_run_id_fkey"
+            columns: ["report_run_id"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_report_run"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_agent_audit_turn_intake_id_fkey"
+            columns: ["turn_intake_id"]
             isOneToOne: false
             referencedRelation: "owner_agent_intake"
             referencedColumns: ["id"]
@@ -4518,39 +4587,208 @@ export type Database = {
       }
       owner_agent_intake: {
         Row: {
+          allowlist_entry_id: string | null
+          coalesced_into: string | null
+          followups: Json | null
           id: string
-          message_text: string
+          interactive_id: string | null
+          interactive_title: string | null
+          location_label: string | null
+          location_lat: number | null
+          location_lng: number | null
+          media_bytes: number | null
+          media_filename: string | null
+          media_id: string | null
+          media_mime: string | null
+          media_sha256_b64: string | null
+          media_voice: boolean | null
+          message_text: string | null
+          message_type: string
           phone_number_id: string
           processed_at: string | null
           received_at: string
-          staff_user_id: string
+          reply_to_wamid: string | null
+          reply_wamids: string[] | null
+          staff_user_id: string | null
           status: string
+          transcript: string | null
           updated_at: string
           wamid: string
         }
         Insert: {
+          allowlist_entry_id?: string | null
+          coalesced_into?: string | null
+          followups?: Json | null
           id?: string
-          message_text: string
+          interactive_id?: string | null
+          interactive_title?: string | null
+          location_label?: string | null
+          location_lat?: number | null
+          location_lng?: number | null
+          media_bytes?: number | null
+          media_filename?: string | null
+          media_id?: string | null
+          media_mime?: string | null
+          media_sha256_b64?: string | null
+          media_voice?: boolean | null
+          message_text?: string | null
+          message_type?: string
           phone_number_id: string
           processed_at?: string | null
           received_at?: string
-          staff_user_id: string
+          reply_to_wamid?: string | null
+          reply_wamids?: string[] | null
+          staff_user_id?: string | null
           status?: string
+          transcript?: string | null
           updated_at?: string
           wamid: string
         }
         Update: {
+          allowlist_entry_id?: string | null
+          coalesced_into?: string | null
+          followups?: Json | null
           id?: string
-          message_text?: string
+          interactive_id?: string | null
+          interactive_title?: string | null
+          location_label?: string | null
+          location_lat?: number | null
+          location_lng?: number | null
+          media_bytes?: number | null
+          media_filename?: string | null
+          media_id?: string | null
+          media_mime?: string | null
+          media_sha256_b64?: string | null
+          media_voice?: boolean | null
+          message_text?: string | null
+          message_type?: string
           phone_number_id?: string
           processed_at?: string | null
           received_at?: string
-          staff_user_id?: string
+          reply_to_wamid?: string | null
+          reply_wamids?: string[] | null
+          staff_user_id?: string | null
           status?: string
+          transcript?: string | null
           updated_at?: string
           wamid?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "owner_agent_intake_allowlist_entry_id_fkey"
+            columns: ["allowlist_entry_id"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_allowlist"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_agent_intake_coalesced_into_fkey"
+            columns: ["coalesced_into"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_intake"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      owner_agent_report_run: {
+        Row: {
+          channel: string | null
+          claimed_at: string
+          error_code: string | null
+          id: string
+          local_date: string
+          outbound_wamid: string | null
+          sent_at: string | null
+          slot_time: string
+          status: string
+          subscription_id: string
+        }
+        Insert: {
+          channel?: string | null
+          claimed_at?: string
+          error_code?: string | null
+          id?: string
+          local_date: string
+          outbound_wamid?: string | null
+          sent_at?: string | null
+          slot_time: string
+          status?: string
+          subscription_id: string
+        }
+        Update: {
+          channel?: string | null
+          claimed_at?: string
+          error_code?: string | null
+          id?: string
+          local_date?: string
+          outbound_wamid?: string | null
+          sent_at?: string | null
+          slot_time?: string
+          status?: string
+          subscription_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_agent_report_run_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_report_subscription"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      owner_agent_report_subscription: {
+        Row: {
+          allowlist_entry_id: string
+          created_at: string
+          created_by: string | null
+          enabled: boolean
+          id: string
+          instructions: string | null
+          report_key: string
+          slot_time: string
+          template_lang: string | null
+          template_name: string | null
+          timezone: string
+          updated_at: string
+        }
+        Insert: {
+          allowlist_entry_id: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          id?: string
+          instructions?: string | null
+          report_key: string
+          slot_time: string
+          template_lang?: string | null
+          template_name?: string | null
+          timezone: string
+          updated_at?: string
+        }
+        Update: {
+          allowlist_entry_id?: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          id?: string
+          instructions?: string | null
+          report_key?: string
+          slot_time?: string
+          template_lang?: string | null
+          template_name?: string | null
+          timezone?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_agent_report_subscription_allowlist_entry_id_fkey"
+            columns: ["allowlist_entry_id"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_allowlist"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       packages: {
         Row: {
@@ -6844,7 +7082,7 @@ export type Database = {
         Returns: boolean
       }
       owner_agent_billing_sums: {
-        Args: { _since: string }
+        Args: { _since: string; _until?: string }
         Returns: {
           charged_amount: number
           credit_applied_amount: number
