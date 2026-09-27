@@ -163,9 +163,7 @@
 
 1. **Deploy ובדיקה חיה** של השינויים (אחרי review ו-commit).
 2. **Bing Webmaster**: להגיש את `https://beta.kalfa.me/sitemap.xml` (האתר כבר מאומת). ההצדקה: Copilot, ‏ChatGPT search ו-DuckDuckGo נשענים על אינדקס Bing.
-3. **IndexNow** אחרי ה-deploy, לכתובות: ‏/wedding, ‏/bar-mitzva, ‏/brit, ‏/event, ‏/guest-list-template, ‏/about.
-   - דרך `seo` CLI: קודם `--dry-run --json`, ורק אחר כך שליחה בפועל.
-   - דורש קובץ key ב-`public/`. זו החלטה נפרדת.
+3. ~~**IndexNow**~~ — **כבר אוטומטי**: `scripts/seo-indexnow.mjs` רץ בסוף כל `npm run deploy` ושולח את כל כתובות ה-sitemap; קובץ המפתח כבר ב-`public/` (200). בפריסה של 27.9: "submitted 13 URLs".
 4. **GSC**: ‏Request Indexing ל-‏/about ול-‏/wedding אחרי ה-deploy.
 5. **Google Business Profile**: **לבדוק זכאות קודם.** GBP מיועד לעסקים עם מגע פיזי עם לקוחות (חנות או אזור שירות). שירות מקוון בלבד בדרך כלל לא זכאי. אם לא זכאי, מדלגים.
 6. **דירקטוריז ואתרי חתונות**: לבדוק תנאים ועלות לפני הרשמה. mit4mit, ‏engaged ו-iplan הופיעו ב-SERP ל"אישורי הגעה".
