@@ -2,7 +2,8 @@
   "$comment": "kalfa-fleet configuration. The pm2 scheduler (bin/scheduler.mjs) reloads this every tick, so edits take effect within 60s without a restart. KILLSWITCH file in this directory stops everything. answer_watcher: detects owner verdicts autonomously — roles with auto_ack get an immediate CLI ack (trivial consumers); scheduled roles get their headless run spawned to act on the verdict. Times are Asia/Jerusalem, days 0=Sunday (Israel work week Sun-Thu = '0-4').",
   "timezone": "Asia/Jerusalem",
   "daily_run_cap": 14,
-  "answer_daily_run_cap": 50,
+  "answer_daily_run_cap": 100,
+  "answer_role_daily_cap": 10,
   "dry_run": false,
   "answer_watcher": {
     "enabled": true
@@ -123,6 +124,8 @@
       "enabled": true,
       "reactive": ["owner_direct_request", "goal_due"],
       "tier": 0,
+      "settings": "tier0-design",
+      "mcp_config": "design",
       "model": "sonnet",
       "timeout_minutes": 20,
       "schedule": [
@@ -149,6 +152,8 @@
       "enabled": true,
       "reactive": ["owner_direct_request", "goal_due"],
       "tier": 0,
+      "settings": "tier0-design",
+      "mcp_config": "design",
       "model": "sonnet",
       "timeout_minutes": 30,
       "schedule": [
@@ -162,6 +167,8 @@
       "enabled": true,
       "reactive": ["owner_direct_request", "goal_due"],
       "tier": 0,
+      "settings": "tier0-design",
+      "mcp_config": "design",
       "model": "sonnet",
       "timeout_minutes": 45,
       "schedule": [

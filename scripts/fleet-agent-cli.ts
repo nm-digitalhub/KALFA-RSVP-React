@@ -234,6 +234,21 @@
 //     mismatch/grounding failed/REVIEW.md not ready/retry ceiling
 //     reached/missing credential/Meta API error/post-publish ledger-write
 //     failure).
+//   abandon-publish --id UUID --role social-manager --reason TEXT|--reason-file PATH
+//     The one legal exit for an APPROVED publish_social verdict that can never
+//     be published. Allowed only when fleet_social_posts shows the request's
+//     platform row at status='failed' with attempt_count >= PUBLISH_RETRY_CEILING
+//     (decideAbandonPublish) — an approved verdict with no attempt is the
+//     ack-trap and stays refused. Files an owner-facing question FIRST
+//     (request_key abandon-<original request_key>, idempotent) as the audit
+//     record, then consumes the verdict via fleet_consume_request
+//     (approved->consumed is already a legal DB edge — no migration). exit 0 =
+//     consumed; exit 2 = already consumed by someone else; exit 1 = refused.
+//   run-stats [--range 1d|7d|30d] [--max-per-day N]
+//     Read-only per-role/per-day counts from .fleet-logs/runs/index.ndjson
+//     (started, lock-skips, verdict-triggered starts, stranded verdicts) plus
+//     the role-days over --max-per-day (default 10) or with any stranded
+//     verdict. fleet-maintainer / chief-of-staff input for runaway detection.
 //   render-image --html TEXT --out PATH [--width N] [--height N]
 //     social-manager's actual image-production path: it authors a small
 //     HTML+CSS mockup itself (--html, or --html-file for a large one — see
@@ -305,6 +320,7 @@ import {
 import { buildCompletionAnswer, isCompletableStatus } from '@/lib/fleet/complete';
 import { validateWithdrawOwnership } from '@/lib/fleet/withdraw';
 import { runFleetExpireSweep } from '@/lib/fleet/expire';
+import { aggregateRunIndex, findRunaways, rangeStartDate } from '@/lib/fleet/run-stats';
 import {
   renderExamplesMarkdown,
   summarizeMetric,
@@ -329,6 +345,7 @@ import {
   buildDryRunArtifact,
   buildInstagramPublishPlan,
   checkReviewApproved,
+  decideAbandonPublish,
   decideContainerPoll,
   decideExistingRow,
   deriveDryRunArtifactPath,
@@ -957,7 +974,8 @@ async function assertNotPublishSocialVerdict(
   if (action === 'publish_social') {
     fail(
       `ack refused: this is an APPROVED publish_social verdict — acking it consumes it ` +
-        `WITHOUT publishing (the 2026-08-23/2026-08-30 ack-trap). Run publish-social instead.`,
+        `WITHOUT publishing (the 2026-08-23/2026-08-30 ack-trap). Run publish-social instead; ` +
+        `if it already answered retry_ceiling_reached, use abandon-publish (never ack).`,
     );
   }
 }
@@ -993,6 +1011,105 @@ async function cmdAck(args: Record<string, string | undefined>): Promise<void> {
     ),
   );
   if (!claimed) process.exitCode = 2;
+}
+
+// See the header doc and decideAbandonPublish's own comment. Order matters:
+// the audit question is filed BEFORE the consume, so a crash in between
+// leaves an extra note and a still-approved verdict (safe to re-run — the
+// question's request_key dedups), never a consumed verdict with no record of
+// why. The consumed row itself cannot carry the reason: fleet_requests_guard
+// freezes `answer` on approved->consumed.
+async function cmdAbandonPublish(args: Record<string, string | undefined>): Promise<void> {
+  const id = requireOption(args.id, 'id');
+  const role = requireOption(args.role, 'role');
+  const reason = requireOption(args.reason, 'reason');
+  const admin = createAdminClient();
+
+  const { data: request, error: requestError } = await admin
+    .from('fleet_requests')
+    .select('id, role, kind, status, title, request_key, payload')
+    .eq('id', id)
+    .maybeSingle();
+  if (requestError) fail(`abandon-publish lookup failed: ${requestError.message}`);
+  const rowError = validatePublishRequestRow(request);
+  if (rowError || !request) return fail(`abandon-publish: ${rowError ?? 'request-id not found'}`);
+  if (request.role !== role) fail(`abandon-publish: request belongs to "${request.role}", not "${role}"`);
+
+  const { data: ledgerRows, error: ledgerError } = await admin
+    .from('fleet_social_posts')
+    .select('id, platform, status, attempt_count, error')
+    .eq('request_id', id);
+  if (ledgerError) fail(`abandon-publish: ledger lookup failed: ${ledgerError.message}`);
+
+  const decision = decideAbandonPublish(request.payload, ledgerRows ?? []);
+  if (!decision.ok) return fail(`abandon-publish refused: ${decision.reason}`);
+
+  const payloadRecord =
+    request.payload && typeof request.payload === 'object' && !Array.isArray(request.payload)
+      ? (request.payload as Record<string, Json | undefined>)
+      : {};
+  const threadRoot = typeof payloadRecord.thread_root === 'string' ? payloadRecord.thread_root : id;
+  const audit = await insertAndNotify({
+    requestKey: `abandon-${request.request_key}`,
+    role,
+    runId: null,
+    kind: 'question',
+    tier: 0,
+    title: `פרסום נעצר סופית: ${decision.platform} — ${request.title.replace(/^🔴 פרסום בפועל:\s*/, '')}`.slice(0, 200),
+    body:
+      `הבקשה המאושרת ${id} לא פורסמה אחרי ${decision.row.attempt_count} ניסיונות, ` +
+      `והמערכת לא תנסה שוב אוטומטית. היא נסגרה (consumed) כדי שהסוכן לא יופעל עליה שוב.\n\n` +
+      `שגיאה אחרונה: ${decision.row.error ?? '(לא נרשמה)'}\n\nסיבת הסוכן: ${reason}\n\n` +
+      `כדי לפרסם בכל זאת: אשר בקשת פרסום חדשה (מפתח חדש) אחרי תיקון הכיתוב או עם facts_source.`,
+    payload: {
+      action: 'abandon_publish',
+      abandoned_request_id: id,
+      ledger_row_id: decision.row.id,
+      platform: decision.platform,
+      attempt_count: decision.row.attempt_count,
+      thread_root: threadRoot,
+    },
+  });
+
+  const { data: consumed, error: consumeError } = await admin.rpc('fleet_consume_request', { p_id: id });
+  if (consumeError) fail(`abandon-publish: consume failed: ${consumeError.message}`);
+  const claimed = Array.isArray(consumed) && consumed.length > 0 ? consumed[0] : null;
+  if (claimed) {
+    await sendSlackAlert({
+      level: 'warn',
+      title: `פרסום נעצר סופית: ${claimed.title}`,
+      detail: `${decision.row.attempt_count} ניסיונות נכשלו. נפתחה שאלה לבעלים.`,
+      source: `fleet:${role}`,
+      category: 'errors',
+      threadTs: (await threadTsFor(id)) ?? undefined,
+    });
+  }
+  console.log(
+    JSON.stringify(
+      { abandoned: !!claimed, request_id: id, audit_request_id: audit.request?.id ?? null },
+      null,
+      2,
+    ),
+  );
+  if (!claimed) process.exitCode = 2;
+}
+
+async function cmdRunStats(args: Record<string, string | undefined>): Promise<void> {
+  const range = args.range ?? '7d';
+  const maxPerDay = args['max-per-day'] ? Number(args['max-per-day']) : 10;
+  if (!Number.isInteger(maxPerDay) || maxPerDay < 1) fail('--max-per-day must be a positive integer');
+  const since = rangeStartDate(range, new Date());
+  if (!since) return fail('--range must be one of: 1d, 7d, 30d');
+  let raw: string;
+  try {
+    raw = readFileSync(join(process.cwd(), '.fleet-logs', 'runs', 'index.ndjson'), 'utf8');
+  } catch {
+    return fail('run-stats: .fleet-logs/runs/index.ndjson not found');
+  }
+  const stats = aggregateRunIndex(raw.split('\n'), since);
+  console.log(
+    JSON.stringify({ since, maxPerDay, runaways: findRunaways(stats, maxPerDay), stats }, null, 2),
+  );
 }
 
 // Retire one still-pending request THE CALLING ROLE FILED (superseded / no
@@ -2210,7 +2327,7 @@ async function cmdPublishSocial(
     // 'failed' with attempt_count already at the ceiling would otherwise fall
     // into 'retry' below and re-claim indefinitely on every weekly poll.
     if (decision === 'retry' && isRetryCeilingReached(existing.attempt_count)) {
-      const reason = `retry ceiling reached (attempt_count=${existing.attempt_count} >= ${PUBLISH_RETRY_CEILING}) — publish-social will not retry automatically; escalate via --kind question, do not retry`;
+      const reason = `retry ceiling reached (attempt_count=${existing.attempt_count} >= ${PUBLISH_RETRY_CEILING}) — publish-social will not retry automatically; run abandon-publish (it files the owner question itself) — do not retry, do not ack, do not open your own question`;
       console.log(
         JSON.stringify(
           {
@@ -2772,6 +2889,7 @@ async function main(): Promise<void> {
       'evidence-file': { type: 'string' },
       'html-file': { type: 'string' },
       'landing-pages': { type: 'boolean' },
+      'max-per-day': { type: 'string' },
     },
   });
 
@@ -2834,9 +2952,13 @@ async function main(): Promise<void> {
       return cmdPublishSocial(scalarValues, !!dryRun);
     case 'render-image':
       return cmdRenderImage(scalarValues);
+    case 'abandon-publish':
+      return cmdAbandonPublish(scalarValues);
+    case 'run-stats':
+      return cmdRunStats(scalarValues);
     default:
       fail(
-        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts|faq|style|triage-claim|triage-finish|goal-poll|goal-progress|goal-close|analytics-summary|housekeeping-pr|publish-social|render-image> [options]',
+        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts|faq|style|triage-claim|triage-finish|goal-poll|goal-progress|goal-close|analytics-summary|housekeeping-pr|publish-social|render-image|abandon-publish|run-stats> [options]',
       );
   }
 }

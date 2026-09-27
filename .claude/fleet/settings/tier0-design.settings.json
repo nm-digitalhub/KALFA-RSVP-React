@@ -1,5 +1,5 @@
 {
-  "$comment": "Fleet Tier-0 (report-only roles): read + reports + alerts + drafts. dontAsk = fail-closed (anything not allowed is denied, no TTY). deny ALWAYS beats allow. Loaded via `claude -p --settings <this file> --setting-sources project` so the owner's interactive allowlist (settings.local.json) and user-level settings NEVER apply to fleet runs. File-path rules use Edit(path)/Read(path) forms ONLY — Write(path)/NotebookEdit(path)/Glob(path) rules are accepted but never matched by the permission checks (verified against July 2026 docs), so an Edit(path) allow is what grants the Write tool too. The PreToolUse guard hook is a third, hook-layer wall (exit 2 blocks before permission evaluation; allow rules cannot override it). Design plugin (27.9.2026, owner): design@knowledge-work-plugins enabled here; its 7 skills allowed by name only (no blanket Skill); its MCP servers are NOT blocked (owner decision) — unauthenticated ones stay denied by dontAsk.",
+  "$comment": "Tier-0 + Claude Design, for the three design roles only (social-manager, brand-director, creative-producer — fleet.json \"settings\": \"tier0-design\"). It is tier0 VERBATIM plus design (pinned by src/lib/fleet/tier0-design-settings.test.ts: every tier0 allow/deny/hook must stay here). Adds the claude-design MCP tools by exact name (server passed via --mcp-config design.mcp.json, since --setting-sources project skips the user-scope server). Denied on purpose: membership/sharing changes and delete_files — designs stay private drafts; sharing or publishing is the owner's act. Preflight 27.9.2026 proved the fleet OAuth token can create a project and write pages (create_project -> finalize_plan -> write_files). The Artifact tool does not exist in headless runs, so it is not listed.",
   "permissions": {
     "defaultMode": "dontAsk",
     "allow": [
@@ -62,7 +62,25 @@
       "Skill(design:user-research)",
       "Skill(design:user-research *)",
       "Skill(design:research-synthesis)",
-      "Skill(design:research-synthesis *)"
+      "Skill(design:research-synthesis *)",
+      "mcp__claude-design__ack_comments",
+      "mcp__claude-design__copy_files",
+      "mcp__claude-design__create_project",
+      "mcp__claude-design__create_support_js",
+      "mcp__claude-design__finalize_plan",
+      "mcp__claude-design__get_claude_design_prompt",
+      "mcp__claude-design__get_conversation",
+      "mcp__claude-design__get_project",
+      "mcp__claude-design__list_comments",
+      "mcp__claude-design__list_design_systems",
+      "mcp__claude-design__list_files",
+      "mcp__claude-design__list_members",
+      "mcp__claude-design__list_projects",
+      "mcp__claude-design__put_conversation",
+      "mcp__claude-design__read_design_skill",
+      "mcp__claude-design__read_file",
+      "mcp__claude-design__render_preview",
+      "mcp__claude-design__write_files"
     ],
     "deny": [
       "Read(//var/www/vhosts/kalfa.me/beta/.env*)",
@@ -119,7 +137,12 @@
       "Bash(python3:*)",
       "Bash(crontab:*)",
       "Bash(env:*)",
-      "Bash(printenv:*)"
+      "Bash(printenv:*)",
+      "mcp__claude-design__add_member",
+      "mcp__claude-design__remove_member",
+      "mcp__claude-design__update_member_role",
+      "mcp__claude-design__update_sharing",
+      "mcp__claude-design__delete_files"
     ]
   },
   "hooks": {

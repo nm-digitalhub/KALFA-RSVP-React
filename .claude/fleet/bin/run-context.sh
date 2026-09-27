@@ -9,6 +9,8 @@ FLEET_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_DIR="$(cd "$FLEET_DIR/../.." && pwd)"
 ROLE="${1:-}"
 [ -z "$ROLE" ] && exit 0
+# Already allowlisted by run-role.sh; defaulted here for a manual invocation.
+REASON="${2:-manual}"
 
 echo
 echo "---"
@@ -45,6 +47,14 @@ echo "  ל-.env\". כתוב \"מפתחות סודיים\" או \"סודות\", �
 echo
 echo "## הקשר ריצה"
 echo "תאריך: $(TZ=Asia/Jerusalem date '+%Y-%m-%d %H:%M %Z')"
+echo "סיבת ההפעלה: \`$REASON\`"
+case "$REASON" in
+  slot)        echo "(ה-slot המתוזמן שלך ב-fleet.json.)" ;;
+  reactive:*)  echo "(טריגר תגובתי \`${REASON#reactive:}\` — יש עבודה חדשה בתור שלך.)" ;;
+  verdict:*)   echo "(ה-answer-watcher: הבעלים ענה על הפנייה \`${REASON#verdict:}\` והיא עדיין לא נסגרה."
+               echo " זו **לא** תקלת cron. המתזמן יפעיל אותך עליה לכל היותר 3 פעמים ואז יעצור"
+               echo " ויפתח fyi לבעלים — לכן סגור אותה בריצה הזו בכלי שה-prompt שלך מגדיר.)" ;;
+esac
 echo
 echo "## פניות ותשובות (fleet_requests) של התפקיד שלך"
 echo '```json'
@@ -73,8 +83,12 @@ echo "   אחת בלבד, לפני שאתה פועל. אם claimed:false — מ�
 echo "   \`ack\` הוא גם התפיסה וגם ההתראה לבעלים שהתשובה נקלטה — בלעדיו הבעלים"
 echo "   לעולם לא יידע שראית את התשובה שלו, והפנייה נשארת תקועה לצמיתות."
 echo "2. פעל לפי התשובה — בגבולות הדרגה שלך."
-echo "פנייה ב-verdicts שנשארה answered בסוף ריצה (בלי ack) = לא טיפלת בה. זה כשל,"
-echo "בדיוק כמו inbox."
+echo "**חריג יחיד — גובר על סעיף 1:** verdict **מאושר** שה-prompt של התפקיד שלך"
+echo "מגדיר לו כלי סגירה אחר (היום: \`payload.action=publish_social\` אצל"
+echo "social-manager — \`publish-social\`, ואז \`complete\` או \`abandon-publish\`) —"
+echo "**אל תריץ עליו ack**; הקוד גם מסרב. הכלי ההוא הוא התפיסה, וההתראה לבעלים."
+echo "פנייה ב-verdicts שנשארה answered/approved בסוף ריצה, בלי ack ובלי כלי-הסגירה"
+echo "של החריג = לא טיפלת בה. זה כשל, בדיוק כמו inbox."
 echo
 echo "**open** — פניות ש**אתה** פתחת וטרם נענו. אין מה לעשות איתן."
 echo "פנייה חדשה לבעלים: \`npm run fleet:agent -- request --role $ROLE ...\`."

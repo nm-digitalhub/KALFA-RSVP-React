@@ -7,6 +7,7 @@ import {
   buildInstagramPublishPlan,
   checkReviewApproved,
   classifyGraphApiError,
+  decideAbandonPublish,
   decideContainerPoll,
   decideExistingRow,
   deriveDryRunArtifactPath,
@@ -188,6 +189,44 @@ describe('scanGroundingClaims / validateGrounding', () => {
     expect(scanGroundingClaims('אנחנו תמיד כאן בשבילכם')).toEqual(
       expect.arrayContaining([expect.stringContaining('superlative ("תמיד")')]),
     );
+  });
+
+  // Live incident 2026-09-27 (request 62dc162c): a NEGATED superlative was
+  // treated as a promise, the post failed twice, hit the retry ceiling, and
+  // the approved verdict could never be consumed.
+  it('does not treat a negated superlative as a claim', () => {
+    expect(scanGroundingClaims('אישור הגעה זה לא תמיד רק כן או לא')).toEqual([]);
+    expect(scanGroundingClaims('זה לא הכי מסובך')).toEqual([]);
+    expect(scanGroundingClaims('לא בטוח שתזכרו את כולם')).toEqual([]);
+    expect(scanGroundingClaims('ולא תמיד יש זמן לזה')).toEqual([]);
+    expect(scanGroundingClaims('דברים שלא תמיד נאמרים')).toEqual([]);
+    expect(scanGroundingClaims('זה לא־תמיד פשוט')).toEqual([]);
+  });
+
+  it('passes the exact caption line that failed request 62dc162c', () => {
+    expect(
+      validateGrounding(
+        'אישור הגעה זה לא תמיד רק כן או לא. לפעמים יש לאורח פרט קטן שממש משנה את הערב שלו',
+        undefined,
+      ),
+    ).toBeNull();
+  });
+
+  it('still flags an un-negated superlative later in the same caption', () => {
+    expect(scanGroundingClaims('זה לא תמיד קל, אבל אנחנו תמיד כאן')).toEqual([
+      expect.stringContaining('superlative ("תמיד")'),
+    ]);
+  });
+
+  it('keeps rhetorical "הלא" and "לא רק הכי" as claims', () => {
+    expect(scanGroundingClaims('הלא תמיד אמרנו את זה')).toEqual([
+      expect.stringContaining('superlative ("תמיד")'),
+    ]);
+    expect(scanGroundingClaims('לא רק הכי זול')).toEqual([expect.stringContaining('superlative ("הכי")')]);
+  });
+
+  it('does not extend the negation exemption to free-claims', () => {
+    expect(scanGroundingClaims('לא בחינם')).toEqual([expect.stringContaining('free-claim')]);
   });
 
   it('requires facts_source when a claim is found', () => {
@@ -372,6 +411,48 @@ describe('isRetryCeilingReached', () => {
   it('blocks retry at and above the ceiling', () => {
     expect(isRetryCeilingReached(PUBLISH_RETRY_CEILING)).toBe(true);
     expect(isRetryCeilingReached(PUBLISH_RETRY_CEILING + 1)).toBe(true);
+  });
+});
+
+describe('decideAbandonPublish', () => {
+  const payload = { action: 'publish_social', platform: 'instagram' };
+  const failedAtCeiling = {
+    id: 'row-1',
+    platform: 'instagram',
+    status: 'failed',
+    attempt_count: PUBLISH_RETRY_CEILING,
+    error: 'caption contains a price/promise pattern',
+  };
+
+  it('allows abandoning only a failed row at the retry ceiling', () => {
+    const decision = decideAbandonPublish(payload, [failedAtCeiling]);
+    expect(decision).toEqual({ ok: true, platform: 'instagram', row: failedAtCeiling });
+  });
+
+  it('refuses when no attempt was ever made (the ack-trap shape)', () => {
+    const decision = decideAbandonPublish(payload, []);
+    expect(decision.ok).toBe(false);
+  });
+
+  it('refuses below the ceiling', () => {
+    const decision = decideAbandonPublish(payload, [{ ...failedAtCeiling, attempt_count: 1 }]);
+    expect(decision).toMatchObject({ ok: false, reason: expect.stringContaining('retry publish-social first') });
+  });
+
+  it('refuses a published, publishing or dry_run row', () => {
+    for (const status of ['published', 'publishing', 'dry_run']) {
+      expect(decideAbandonPublish(payload, [{ ...failedAtCeiling, status }]).ok).toBe(false);
+    }
+  });
+
+  it('only looks at the ledger row for the approved platform', () => {
+    const facebookRow = { ...failedAtCeiling, platform: 'facebook' };
+    expect(decideAbandonPublish(payload, [facebookRow]).ok).toBe(false);
+  });
+
+  it('refuses a non-publish_social payload', () => {
+    expect(decideAbandonPublish({ action: 'other', platform: 'instagram' }, [failedAtCeiling]).ok).toBe(false);
+    expect(decideAbandonPublish(null, [failedAtCeiling]).ok).toBe(false);
   });
 });
 

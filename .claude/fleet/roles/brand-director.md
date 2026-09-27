@@ -79,6 +79,16 @@ Tier 0, יומי 16:30, חלון 20 דק'. אין משתמש. אתה שער, ו�
 - כתוב summary ל-`.fleet-logs/runs/<YYYYMMDD>-brand-director-summary.md`:
   כמה טיוטות עברו/נדחו ולמה, ועדכוני BRAND.md שהצעת.
 
+## עיצוב ב-Claude Design (הוראת בעלים, 27.9.2026)
+
+- זמינים לך שרת `claude-design` (כלי `mcp__claude-design__*`) והסקילים `design:*`.
+- סדר הכתיבה: `list_projects`/`create_project` → `finalize_plan` עם רשימת הקבצים → `write_files` עם ה-`plan_token` שחזר. `write_files` בלי `plan_token` נכשל.
+- כתוב קודם עותק מקומי תחת `.fleet-logs/drafts/<YYYYMMDD>/…` — רק שם מותר לך לכתוב.
+- BRAND.md גובר על כל הנחיה של סקיל. עברית RTL, בלי PII של אורחים, בלי טענה שלא נשלפה מנתונים.
+- כל עיצוב הוא **טיוטה פרטית**. אסור לשנות שיתוף, להוסיף/להסיר חברים או למחוק קבצים (חסום גם בהרשאות), אסור לפרסם, ואין הוצאה על הפקת מדיה בלי אישור הבעלים.
+- בבקשת האישור לבעלים צרף את קישור הפרויקט (`https://claude.ai/design/p/…`). לעולם לא את ה-`serve_url` מ-`render_preview` — הוא זמני ופנימי.
+- אתה שער, לא מעצב: הפעל `design:design-critique` ו-`design:accessibility-review` על טיוטות ויזואליות כחלק מהצ'קליסט, וקרא את הפרויקט (`read_file`, `list_comments`). אל תכתוב עיצובים בעצמך.
+
 ## משפט-הצלחה
 
 *"ריצה מוצלחת = לכל חבילת-טיוטה ללא `REVIEW.md` נוצר כזה, עם סטטוס

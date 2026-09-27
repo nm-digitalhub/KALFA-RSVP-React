@@ -19,6 +19,16 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, ope
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  ANSWER_ROLE_DAILY_CAP_DEFAULT,
+  VERDICT_MAX_SPAWNS,
+  VERDICT_MAX_STARTS,
+  decideVerdictSpawn,
+  parseVerdictMarker,
+  roleHasAnswerBudget,
+  serializeVerdictMarker,
+} from './verdict-guard.mjs';
+
 const FLEET_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const REPO_DIR = dirname(dirname(FLEET_DIR));
 const LOGS_DIR = join(REPO_DIR, '.fleet-logs');
@@ -148,7 +158,7 @@ function tick() {
 
       log(`spawning ${role}`);
       const out = openSync(join(LOCKS_DIR, `spawn-${role}.log`), 'a');
-      const child = spawn(join(FLEET_DIR, 'bin', 'run-role.sh'), [role], {
+      const child = spawn(join(FLEET_DIR, 'bin', 'run-role.sh'), [role, 'slot'], {
         cwd: REPO_DIR,
         detached: true,
         stdio: ['ignore', out, out],
@@ -261,7 +271,8 @@ const REACTIVE_COOLDOWN_MS = 4 * 60_000;
 // found live 2026-08-30: two verdicts answered back-to-back both fired their
 // spawn on the same tick, one lock-skipped, and with a PERMANENT marker (the
 // original design here) that verdict would never have been retried, ever.
-const VERDICT_RETRY_COOLDOWN_MS = 4 * 60_000;
+// VERDICT_RETRY_COOLDOWN_MS and the per-verdict caps now live in
+// verdict-guard.mjs (see its header for the 2026-09-27 loop they bound).
 
 function runCli(args) {
   return new Promise((resolve) => {
@@ -296,9 +307,15 @@ async function answerWatcherTick(config) {
     return;
   }
 
+  // One spawn per role per tick: the run handles EVERY verdict of its role via
+  // `poll`, so a second spawn in the same tick only ever loses the flock
+  // (measured 2026-09-27 11:57/12:01 — and each such loss still burned cap).
+  const spawnedThisTick = new Set();
+
   for (const v of verdicts) {
     const rc = config.roles?.[v.role];
     if (!rc || !rc.enabled) continue;
+    if (!ROLE_NAME_RE.test(v.role)) continue; // role becomes part of a file name below
 
     if (rc.auto_ack) {
       if (inFlightAcks.has(v.id)) continue;
@@ -325,10 +342,36 @@ async function answerWatcherTick(config) {
     // lock-skipped one gets a real second attempt within a few minutes instead
     // of never.
     const marker = join(LOCKS_DIR, `verdict-${v.id}`);
-    if (existsSync(marker)) {
-      const last = Number(readFileSync(marker, 'utf8').trim()) || 0;
-      if (Date.now() - last < VERDICT_RETRY_COOLDOWN_MS) continue;
+    const state = parseVerdictMarker(existsSync(marker) ? readFileSync(marker, 'utf8') : '');
+    const startsFile = join(LOCKS_DIR, `verdict-${v.id}.starts`);
+    const starts = existsSync(startsFile) ? readFileSync(startsFile).length : 0;
+    const decision = decideVerdictSpawn({ marker: state, starts, now: Date.now() });
+
+    if (decision.action === 'skip') continue;
+    if (decision.action === 'strand' || decision.action === 'escalate') {
+      // Stop spawning for good and tell the owner ONCE. The request_key makes
+      // the fyi idempotent in the DB itself (fleet_requests_request_key_unique),
+      // so a retry after a failed CLI call can never file a second one.
+      if (decision.action === 'strand') {
+        log(`answer-watcher: "${v.title}" (${v.role}) STRANDED — ${decision.reason}; no further spawns`);
+        indexLine({ ts: new Date().toISOString(), role: v.role, stranded_verdict: v.id, starts, spawns: state.spawns });
+      }
+      const { err: escErr } = await runCli([
+        'request', '--role', v.role, '--kind', 'fyi', '--tier', '0',
+        '--request-key', `stranded-verdict-${v.id}`,
+        '--related-to', v.id,
+        '--title', `תשובה שהסוכן לא מצליח לסגור: ${v.title}`.slice(0, 200),
+        '--body',
+        `המתזמן הפסיק להפעיל את ${v.role} על הפנייה ${v.id} אחרי ${starts} ריצות ו-${state.spawns} הפעלות ` +
+          `שלא סגרו אותה. היא נשארת פתוחה (${v.status}) ולא תופעל שוב אוטומטית. ` +
+          `נדרשת החלטה: לסגור אותה בכלי המתאים או לתקן את מה שחוסם את הסוכן. ` +
+          `הפעלה מחדש ידנית: למחוק את .fleet-logs/locks/verdict-${v.id}*.`,
+      ]);
+      if (escErr) log(`answer-watcher: stranded-verdict fyi for ${v.id} failed (will retry next tick): ${escErr.message}`);
+      writeFileSync(marker, serializeVerdictMarker({ ...state, stranded: true, escalated: !escErr }));
+      continue;
     }
+    if (spawnedThisTick.has(v.role)) continue;
 
     // A cap applies here too, but a SEPARATE one from the shared
     // daily_run_cap (see dailyCount's own comment for why): this path only
@@ -347,17 +390,30 @@ async function answerWatcherTick(config) {
     // not start the cooldown clock — leaving the marker unwritten means the
     // very next tick (once the count rolls over) retries immediately instead
     // of waiting out VERDICT_RETRY_COOLDOWN_MS for no reason.
+    //
+    // Per-role budget FIRST, and it `continue`s: one stuck role exhausting its
+    // own budget must not starve every other role's verdicts. Measured
+    // 2026-09-27: a single social-manager verdict used 45 of the shared 50,
+    // and the `break` below then deferred every role until midnight.
+    const roleCap = config.answer_role_daily_cap ?? ANSWER_ROLE_DAILY_CAP_DEFAULT;
+    if (!roleHasAnswerBudget(dailyCount(now.dateKey, `answer-${v.role}`), roleCap)) {
+      log(`answer-watcher: ${v.role} reached its own answer cap ${roleCap} — deferring "${v.title}"`);
+      continue;
+    }
     const cap = config.answer_daily_run_cap ?? 50;
     if (dailyCount(now.dateKey, 'answer') >= cap) {
       log(`answer-watcher: answer cap ${cap} reached — deferring "${v.title}" (${v.role})`);
       break;
     }
 
-    writeFileSync(marker, String(Date.now()));
-    log(`answer-watcher: spawning ${v.role} to consume "${v.title}"`);
+    writeFileSync(marker, serializeVerdictMarker({ ...state, last: Date.now(), spawns: state.spawns + 1 }));
+    spawnedThisTick.add(v.role);
+    log(`answer-watcher: spawning ${v.role} to consume "${v.title}" (spawn ${state.spawns + 1}/${VERDICT_MAX_SPAWNS}, runs ${starts}/${VERDICT_MAX_STARTS})`);
+    indexLine({ ts: new Date().toISOString(), role: v.role, verdict_spawn: v.id, spawn: state.spawns + 1, starts });
     bumpDailyCount(now.dateKey, 'answer');
+    bumpDailyCount(now.dateKey, `answer-${v.role}`);
     const out = openSync(join(LOCKS_DIR, `spawn-${v.role}.log`), 'a');
-    const child = spawn(join(FLEET_DIR, 'bin', 'run-role.sh'), [v.role], {
+    const child = spawn(join(FLEET_DIR, 'bin', 'run-role.sh'), [v.role, `verdict:${v.id}`], {
       cwd: REPO_DIR,
       detached: true,
       stdio: ['ignore', out, out],
@@ -466,7 +522,7 @@ async function inquiryWatcherTick(config) {
       log(`inquiry-watcher: ${trigger.describe(pending)} — spawning ${role}`);
       indexLine({ ts: new Date().toISOString(), role, reactive: name, pending });
       const out = openSync(join(LOCKS_DIR, `spawn-${role}.log`), 'a');
-      const child = spawn(join(FLEET_DIR, 'bin', 'run-role.sh'), [role], {
+      const child = spawn(join(FLEET_DIR, 'bin', 'run-role.sh'), [role, `reactive:${name}`], {
         cwd: REPO_DIR,
         detached: true,
         stdio: ['ignore', out, out],
