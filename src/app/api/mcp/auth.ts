@@ -1,28 +1,16 @@
-import { timingSafeEqual } from 'node:crypto';
+import 'server-only';
 
 import type { NextRequest } from 'next/server';
 
-function equalTokens(actual: string, expected: string): boolean {
-  const actualBytes = Buffer.from(actual);
-  const expectedBytes = Buffer.from(expected);
-  return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes);
-}
+import { getAppOrigin } from '@/lib/url';
 
-export function validateMcpToken(request: NextRequest): boolean {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return false;
-  }
+// Authentication itself is Supabase OAuth (src/lib/owner-agent/mcp/oauth.ts).
+// The static KALFA_MCP_SECRET_TOKEN bearer this file used to check is gone: it
+// carried no user, so it could not be tied to a staff member's permissions.
 
-  const token = authHeader.substring(7);
-  const secureToken = process.env.KALFA_MCP_SECRET_TOKEN;
-
-  if (!secureToken || secureToken.length < 16) {
-    console.error('MCP Init Error: KALFA_MCP_SECRET_TOKEN is not set or too weak.');
-    return false;
-  }
-
-  return equalTokens(token, secureToken);
+/** This MCP server's public URL — the RFC 9728 `resource` identifier. */
+export async function mcpResourceUrl(): Promise<URL> {
+  return new URL('/api/mcp', await getAppOrigin());
 }
 
 export function isAllowedMcpOrigin(request: NextRequest): boolean {

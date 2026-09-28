@@ -5,7 +5,6 @@ import { isValidationError } from '@mastra/core/tools';
 import { Server, type CallToolResult, type Tool } from '@modelcontextprotocol/server';
 import { ToolSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import { parsePermissionsEnv } from '@/lib/owner-agent/mcp/permissions';
 import { toolsForPermissions, type OwnerAgentTool } from '@/lib/owner-agent/tools/registry';
 
 type McpToolErrorCode = 'unknown_tool' | 'invalid_input' | 'tool_failed';
@@ -33,9 +32,9 @@ function toMcpTool(tool: OwnerAgentTool): Tool {
   };
 }
 
-export function createMcpServer(
-  granted: ReadonlySet<string> = parsePermissionsEnv(process.env.KALFA_MCP_PERMISSIONS),
-): Server {
+// `granted`: the caller's platform permissions, resolved per request from the
+// OAuth token's user (route.ts). No default — an env-wide grant is not a user.
+export function createMcpServer(granted: ReadonlySet<string>): Server {
   const tools = toolsForPermissions(granted);
   const listed = Object.values(tools).map(toMcpTool);
   const server = new Server(
