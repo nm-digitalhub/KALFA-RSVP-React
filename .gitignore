@@ -53,6 +53,8 @@ yarn-error.log*
 !.claude/workflows/
 # project harness settings (SessionStart fleet inbox hook) — team asset
 !.claude/settings.json
+# aicode-toolkit instructions — imported by the checked-in CLAUDE.md / AGENTS.md
+!.claude/aicode-instructions.md
 # autonomous fleet — config, roles, scheduler, guards are team assets; the
 # headless OAuth token and the redacted customer-reply corpus NEVER commit
 !.claude/fleet/
@@ -192,3 +194,13 @@ __pycache__/
 # Scoring output from the pronunciation audit. The lexicons beside it are the
 # INPUTS and are committed; these CSVs are what the scripts produce from them.
 voxfiles/pronunciation/audit/results/
+
+# Local backups (fault-injection restores and hand edits restore from these;
+# they stay on disk, never in git).
+*.bak
+
+# Ad-hoc audit dumps written at the repo root during owner-agent sessions.
+/owner-agent-*.txt
+
+# Server-level Python deps (agent360 monitoring, root-owned) — not this app's.
+/requirements.txt
