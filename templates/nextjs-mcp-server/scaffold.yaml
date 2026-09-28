@@ -1,0 +1,13 @@
+name: nextjs-mcp-server
+description: "Scaffolds a secure remote MCP server over Streamable HTTP inside Next.js App Router"
+vars:
+  - name: tokenEnvName
+    description: "The environment variable name storing the secure MCP token"
+    default: "KALFA_MCP_SECRET_TOKEN"
+files:
+  - source: src/app/api/mcp/route.ts
+    target: src/app/api/mcp/route.ts
+  - source: src/app/api/mcp/tools.ts
+    target: src/app/api/mcp/tools.ts
+  - source: src/app/api/mcp/auth.ts
+    target: src/app/api/mcp/auth.ts
