@@ -26,6 +26,7 @@ const STAGE_LABELS: Record<string, string> = {
   sweep: 'ניקוי',
   report: 'דוח יזום',
   identity: 'זיהוי',
+  delivery: 'מסירה',
 };
 
 const OUTCOME_LABELS: Record<string, { label: string; tone: BadgeVariant }> = {
@@ -53,6 +54,10 @@ const OUTCOME_LABELS: Record<string, { label: string; tone: BadgeVariant }> = {
   // Proactive report (stage 'report'; reports/report.ts and reports/tick.ts).
   sent: { label: 'דוח נשלח', tone: 'success' },
   skipped: { label: 'דוח דולג', tone: 'warning' },
+  // Delivery statuses Meta reported for an agent message (stage 'delivery'; owner-agent/delivery.ts).
+  delivered: { label: 'נמסר', tone: 'success' },
+  read: { label: 'נקרא', tone: 'success' },
+  failed: { label: 'לא נמסר', tone: 'destructive' },
 };
 
 const REASON_LABELS: Record<string, string> = {
@@ -125,6 +130,14 @@ const REASON_LABELS: Record<string, string> = {
 
 // Any report_* outcome a later change adds reads as a report outcome rather
 // than as a bare code.
+// A delivery failure carries Meta's own code as meta_<digits>.
+function reasonLabel(code: string): string {
+  const known = REASON_LABELS[code];
+  if (known) return known;
+  if (/^meta_[0-9]+$/.test(code)) return `קוד Meta ${code.slice('meta_'.length)}`;
+  return code;
+}
+
 function outcomeLabel(outcome: string): { label: string; tone: BadgeVariant } | undefined {
   const known = OUTCOME_LABELS[outcome];
   if (known) return known;
@@ -177,7 +190,7 @@ export function AuditTable({
                 <Badge variant={outcome?.tone ?? 'neutral'}>{outcome?.label ?? row.outcome}</Badge>
               </TableCell>
               <TableCell>
-                {row.reasonCode ? (REASON_LABELS[row.reasonCode] ?? row.reasonCode) : '—'}
+                {row.reasonCode ? reasonLabel(row.reasonCode) : '—'}
               </TableCell>
               <TableCell>
                 {row.toolNames.length > 0 ? (

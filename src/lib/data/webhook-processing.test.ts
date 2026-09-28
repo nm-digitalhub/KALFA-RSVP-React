@@ -19,6 +19,7 @@ vi.mock('@/lib/data/interactions', () => ({
 vi.mock('@/lib/data/billing', () => ({ recordReached: vi.fn() }));
 vi.mock('@/lib/data/rsvp', () => ({ submitRsvp: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
+vi.mock('@/lib/owner-agent/delivery', () => ({ recordOwnerAgentDelivery: vi.fn() }));
 vi.mock('@/lib/data/whatsapp-import', () => ({
   stageWhatsAppImport: vi.fn(async () => false),
   replyImportPointer: vi.fn(async () => false),
@@ -51,6 +52,7 @@ import {
 import { recordReached } from '@/lib/data/billing';
 import { submitRsvp } from '@/lib/data/rsvp';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { recordOwnerAgentDelivery } from '@/lib/owner-agent/delivery';
 import {
   replyImportPointer,
   stageWhatsAppImport,
@@ -502,6 +504,34 @@ describe('processWebhookEvent — status', () => {
 
     expect(setDeliveryStatus).toHaveBeenCalledWith('wamid.out', 'failed', '131047');
     expect(setContactOpStatus).not.toHaveBeenCalled();
+  });
+
+  it('hands every status to the owner-agent delivery feed, with the business number and code', async () => {
+    await processWebhookEvent(statusRow());
+    expect(recordOwnerAgentDelivery).toHaveBeenCalledWith('wamid.out', 'p1', 'delivered', null);
+
+    vi.mocked(recordOwnerAgentDelivery).mockClear();
+    await processWebhookEvent(
+      statusRow({
+        dedupe_key: 'wa-status:wamid.out:failed',
+        payload: { status: 'failed', errors: [{ code: 131049 }] },
+      }),
+    );
+    expect(recordOwnerAgentDelivery).toHaveBeenCalledWith('wamid.out', 'p1', 'failed', '131049');
+  });
+
+  it('keeps the guest path intact when the owner-agent feed throws', async () => {
+    vi.mocked(recordOwnerAgentDelivery).mockRejectedValueOnce(new Error('db down'));
+    await expect(
+      processWebhookEvent(
+        statusRow({
+          dedupe_key: 'wa-status:wamid.out:failed',
+          payload: { status: 'failed', errors: [{ code: 131026 }] },
+        }),
+      ),
+    ).resolves.toBeUndefined();
+    expect(setDeliveryStatus).toHaveBeenCalledWith('wamid.out', 'failed', '131026');
+    expect(setContactOpStatus).toHaveBeenCalledWith('k1', 'wrong_number');
   });
 });
 

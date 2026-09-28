@@ -25,6 +25,7 @@ import {
 import { processMeetingOptOutRow } from '@/lib/data/callback-voice-processing';
 import { processSalesOptOutRow } from '@/lib/data/sales-voice-processing';
 import { recordSalesWaDeliveryStatus } from '@/lib/data/sales-call-attempts';
+import { recordOwnerAgentDelivery } from '@/lib/owner-agent/delivery';
 import {
   processElevenLabsRsvpAnalysisRow,
   processElevenLabsSalesAnalysisRow,
@@ -433,6 +434,7 @@ async function processStatus(row: WebhookInboxRow): Promise<void> {
   if (status !== 'failed') {
     await setDeliveryStatus(messageId, status, null);
     await recordSalesWaDeliveryStatus(messageId, status, null, row.event_at);
+    await recordOwnerAgentDeliveryQuietly(messageId, row.phone_number_id, status, null);
     return;
   }
 
@@ -445,9 +447,26 @@ async function processStatus(row: WebhookInboxRow): Promise<void> {
   // nothing. Runs for both branches; a wamid belonging to a guest message
   // simply matches no sales attempt.
   await recordSalesWaDeliveryStatus(messageId, status, errorCode, row.event_at);
+  await recordOwnerAgentDeliveryQuietly(messageId, row.phone_number_id, status, errorCode);
 
   if (errorCode && contactId && WRONG_NUMBER_CODES.has(errorCode)) {
     await setContactOpStatus(contactId, 'wrong_number');
+  }
+}
+
+// Third destination, same rule as the sales one: a status for an owner-agent
+// reply or report matches no guest row, and a guest status matches no agent
+// message. Bookkeeping only — it must never fail the webhook for everyone else.
+async function recordOwnerAgentDeliveryQuietly(
+  messageId: string,
+  phoneNumberId: string | null,
+  status: string,
+  errorCode: string | null,
+): Promise<void> {
+  try {
+    await recordOwnerAgentDelivery(messageId, phoneNumberId, status, errorCode);
+  } catch {
+    // Dropped on purpose; see above.
   }
 }
 

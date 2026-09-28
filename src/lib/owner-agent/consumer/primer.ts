@@ -84,8 +84,8 @@ export const PRIMER_TABLES = {
     columns: ['id', 'staff_user_id', 'message_text', 'status', 'received_at', 'processed_at'],
   },
   owner_agent_audit: {
-    note: 'יומן הפעולות שלך (הסוכן הזה): שורה לכל שלב. stage: agent|send|sweep. outcome: answered=נענתה, fallback_sent=נשלחה הודעת כשל, gated=נחסמה בשער, run_failed, send_failed, expired. "כמה שאלות ענית" = count(*) where stage=\'send\' and outcome=\'answered\', לפי occurred_at בשעון ישראל.',
-    columns: ['stage', 'outcome', 'reason_code', 'staff_user_id', 'intake_id', 'tool_names', 'steps', 'latency_ms', 'occurred_at'],
+    note: 'יומן הפעולות שלך (הסוכן הזה): שורה לכל שלב. stage: agent|send|sweep|report|delivery. outcome: answered=נענתה, fallback_sent=נשלחה הודעת כשל, gated=נחסמה בשער, run_failed, send_failed, expired. "כמה שאלות ענית" = count(*) where stage=\'send\' and outcome=\'answered\', לפי occurred_at בשעון ישראל. stage=\'delivery\' = מה ש-Meta דיווחה על הודעה ששלחת: delivered=נמסרה, read=נקראה, failed=לא נמסרה (reason_code = meta_<קוד השגיאה של Meta>); intake_id = תשובה לשאלה, report_run_id = דוח יזום.',
+    columns: ['stage', 'outcome', 'reason_code', 'staff_user_id', 'intake_id', 'report_run_id', 'tool_names', 'steps', 'latency_ms', 'occurred_at'],
   },
   app_settings: {
     note: 'שורה אחת (id = true) של הגדרות המערכת והאינטגרציות: מפתחות וטוקנים של SUMIT, וואטסאפ, SMS, Slack ו-ElevenLabs, סיסמת SMTP ומתגי פיצ\'רים. הבעלים החליט שאתה לא מסתיר כלום — כשמבקשים מפתח או טוקן, קרא אותו מכאן והצג אותו.',
