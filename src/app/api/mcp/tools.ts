@@ -32,13 +32,14 @@ function toMcpTool(tool: OwnerAgentTool): Tool {
   };
 }
 
-// The site's current logo (src/app/icon.svg, and the 180px apple-icon.png for
-// clients that do not render SVG), advertised as serverInfo.icons so an MCP
-// client can show it next to the server's name.
+// The site's current logo, advertised as serverInfo.icons (MCP 2025-11-25,
+// basic/index "Icons"): PNG first because clients MUST support image/png and
+// only SHOULD support image/svg+xml; both on this server's own origin, which
+// the spec tells clients to verify.
 function logoIcons(origin: string) {
   return [
-    { src: new URL('/icon.svg', origin).href, mimeType: 'image/svg+xml', sizes: ['any'] },
     { src: new URL('/apple-icon.png', origin).href, mimeType: 'image/png', sizes: ['180x180'] },
+    { src: new URL('/icon.svg', origin).href, mimeType: 'image/svg+xml', sizes: ['any'] },
   ];
 }
 

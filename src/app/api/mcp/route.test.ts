@@ -186,8 +186,8 @@ describe('/api/mcp — OAuth (Supabase Auth as Authorization Server)', () => {
     const { serverInfo } = rpcBody.result as { serverInfo: { title?: string; icons?: unknown } };
     expect(serverInfo.title).toBe('KALFA');
     expect(serverInfo.icons).toEqual([
-      { src: 'https://beta.kalfa.me/icon.svg', mimeType: 'image/svg+xml', sizes: ['any'] },
       { src: 'https://beta.kalfa.me/apple-icon.png', mimeType: 'image/png', sizes: ['180x180'] },
+      { src: 'https://beta.kalfa.me/icon.svg', mimeType: 'image/svg+xml', sizes: ['any'] },
     ]);
   });
 
