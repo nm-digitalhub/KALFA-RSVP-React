@@ -182,5 +182,5 @@
    - **יצירה:** `new WhatsAppAdapter({...})` עם קונפיג מפורש מ-`app_settings` ו-logger שקט (חובה).
    - **הורדת מדיה:** קודם קריאת metadata מתוחמת למספר (`retrieveMedia(id, phoneNumberId)`, כמו `whatsapp-import.ts`) — מדיה של מספר אחר נדחית, `file_size` מעל התקרה נדחה — ורק אז `adapter.downloadMedia`.
    - **שליחה:** `WhatsAppApiError.errorCode` ממופה ל-`DeliveryOutcome` (אותה רשימת `DEFINITELY_NOT_SENT_CODES`), כך שה-at-most-once נשמר.
-   - `handleWebhook`/מופע `Chat` עדיין לא מחוברים ל-route הציבורי.
+   - ~~`handleWebhook`/מופע `Chat` עדיין לא מחוברים ל-route הציבורי.~~ **תיקון 28.9:** זו לא הייתה החלטת בעלים. זו המלצה שלי מ־§1 ("לא מתקינים `chat`, לא `state-pg`, לא `handleWebhook`"), שרשמתי כאן בטעות כאילו הבעלים החליט. הבעלים לא החליט על כך — פתוח להחלטה.
    - ההמלצה ב-§8 M3 ("לא להשתמש באדפטר") מוחלפת בהחלטה הזו.
