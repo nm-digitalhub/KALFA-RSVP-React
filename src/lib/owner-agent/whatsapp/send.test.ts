@@ -176,10 +176,28 @@ describe('DeliveryOutcome mapping', () => {
     expect(out).toMatchObject({ kind: 'definitely_not_sent', reason: 'provider_rejected', providerCode: '130429' });
   });
 
-  it('an error Meta flags is_transient → unknown, never resent', async () => {
-    responder = () => json(500, { error: { code: 131000, message: 'Something went wrong', is_transient: true } });
-    const out = await sendOwnerAgentButtons(wa, { to: TO, body: 'x', buttons: [{ id: 'a', title: 'a' }] });
-    expect(out).toMatchObject({ kind: 'unknown', reason: 'provider_error', providerCode: '131000' });
+  it('an error Meta flags is_transient → unknown + retryable; no room in the timeout → one attempt', async () => {
+    let calls = 0;
+    responder = () => {
+      calls += 1;
+      return json(500, { error: { code: 131000, message: 'Something went wrong', is_transient: true } });
+    };
+    const out = await sendOwnerAgentButtons(wa, { to: TO, body: 'x', buttons: [{ id: 'a', title: 'a' }], timeoutMs: 500 });
+    expect(out).toMatchObject({ kind: 'unknown', reason: 'provider_error', providerCode: '131000', retryable: true });
+    expect(calls).toBe(1);
+  });
+
+  it("an is_transient error is sent again after 1s (Meta's 4^X), inside the call's timeout", async () => {
+    let calls = 0;
+    responder = () => {
+      calls += 1;
+      return calls === 1
+        ? json(500, { error: { code: 2, message: 'temporary', is_transient: true } })
+        : json(200, { messaging_product: 'whatsapp', messages: [{ id: 'wamid.RETRY' }] });
+    };
+    const out = await sendOwnerAgentButtons(wa, { to: TO, body: 'x', buttons: [{ id: 'a', title: 'a' }], timeoutMs: 3_000 });
+    expect(out).toEqual({ kind: 'accepted', providerId: 'wamid.RETRY' });
+    expect(calls).toBe(2);
   });
 
   it('a transport throw → unknown', async () => {

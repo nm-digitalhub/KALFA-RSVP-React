@@ -16,7 +16,7 @@ vi.mock('whatsapp-api-js', () => ({
   },
 }));
 
-import { sendWhatsAppMarketingTemplate, sendWhatsAppTemplate } from './client';
+import { sendWhatsAppMarketingTemplate, sendWhatsAppTemplate, sendWhatsAppText, sendWithMetaRetry } from './client';
 
 const cfg = { phoneNumberId: 'PNID', accessToken: 'TKN', appSecret: null };
 
@@ -167,7 +167,7 @@ describe('sendWhatsAppTemplate', () => {
       templateName: 't',
       language: 'he',
     });
-    expect(r).toEqual({ kind: 'unknown', reason: 'provider_error', providerCode: '2' });
+    expect(r).toEqual({ kind: 'unknown', reason: 'provider_error', providerCode: '2', retryable: true });
   });
 
   it('carries the provider code (never PII) on a definitely_not_sent classification', async () => {
@@ -309,5 +309,81 @@ describe('sendWhatsAppMarketingTemplate', () => {
       language: 'he',
     });
     expect(r.kind).toBe('unknown');
+  });
+});
+
+describe("sendWithMetaRetry — Meta's documented retry (is_transient, 4^X seconds)", () => {
+  const transient = { kind: 'unknown', reason: 'provider_error', providerCode: '2', retryable: true } as const;
+  const accepted = { kind: 'accepted', providerId: 'wamid.ok' } as const;
+
+  function clock() {
+    let t = 0;
+    const waits: number[] = [];
+    return {
+      waits,
+      now: () => t,
+      sleep: async (ms: number) => {
+        waits.push(ms);
+        t += ms;
+      },
+    };
+  }
+
+  it('retries an is_transient error after 1s, 4s, 16s — and stops when it succeeds', async () => {
+    const c = clock();
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce(transient)
+      .mockResolvedValueOnce(transient)
+      .mockResolvedValueOnce(accepted);
+    const out = await sendWithMetaRetry(send, { budgetMs: 21_000, now: c.now, sleep: c.sleep });
+    expect(out).toEqual(accepted);
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(c.waits).toEqual([1_000, 4_000]);
+  });
+
+  it('never starts a wait that would end past the budget; returns the last outcome', async () => {
+    const c = clock();
+    const send = vi.fn().mockResolvedValue(transient);
+    const out = await sendWithMetaRetry(send, { budgetMs: 21_000, now: c.now, sleep: c.sleep });
+    expect(c.waits).toEqual([1_000, 4_000, 16_000]);
+    expect(send).toHaveBeenCalledTimes(4);
+    expect(out).toEqual(transient);
+  });
+
+  it('budget 0 = one attempt, no retry', async () => {
+    const c = clock();
+    const send = vi.fn().mockResolvedValue(transient);
+    await sendWithMetaRetry(send, { budgetMs: 0, now: c.now, sleep: c.sleep });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(c.waits).toEqual([]);
+  });
+
+  it.each([
+    ['a rejection (no is_transient)', { kind: 'definitely_not_sent', reason: 'provider_rejected', providerCode: '131047' }],
+    ['a timeout / no answer ("missed success" is possible)', { kind: 'unknown', reason: 'send_threw' }],
+    ['a body with no id', { kind: 'unknown', reason: 'missing_message_id' }],
+  ] as const)('never retries %s', async (_label, outcome) => {
+    const c = clock();
+    const send = vi.fn().mockResolvedValue(outcome);
+    await sendWithMetaRetry(send, { budgetMs: 21_000, now: c.now, sleep: c.sleep });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('sendWhatsAppText retries only when given a budget', async () => {
+    sendMessage.mockResolvedValueOnce({ error: { code: 2, is_transient: true } }).mockResolvedValueOnce({
+      messages: [{ id: 'wamid.second' }],
+    });
+    vi.useFakeTimers();
+    try {
+      const pending = sendWhatsAppText(cfg, { to: '+972500000000', body: 'x' }, { retryBudgetMs: 21_000 });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await pending).toEqual({ kind: 'accepted', providerId: 'wamid.second' });
+    } finally {
+      vi.useRealTimers();
+    }
+    sendMessage.mockResolvedValueOnce({ error: { code: 2, is_transient: true } });
+    const once = await sendWhatsAppText(cfg, { to: '+972500000000', body: 'x' });
+    expect(once).toMatchObject({ kind: 'unknown', retryable: true });
   });
 });

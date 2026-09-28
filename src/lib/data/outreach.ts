@@ -16,6 +16,7 @@ import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import {
   sendWhatsAppMarketingTemplate,
   sendWhatsAppTemplate,
+  type SendOptions,
   type DeliveryOutcome,
 } from '@/lib/whatsapp/client';
 import { RSVP_QUICK_REPLY_PAYLOADS } from '@/lib/whatsapp/rsvp-buttons';
@@ -56,6 +57,10 @@ export async function sendOneWhatsApp(
     headerImage?: { link: string } | { mediaId: string };
     urlButtonParam?: string;
   },
+  // Meta's documented retry for an error it marks temporary (client.ts
+  // sendWithMetaRetry). Background callers pass BACKGROUND_SEND_RETRY_BUDGET_MS;
+  // the default 0 keeps a request/response caller to one attempt.
+  sendOpts: SendOptions = {},
 ): Promise<DeliveryOutcome> {
   const send = MARKETING_MESSAGE_KEYS.has(messageKey)
     ? sendWhatsAppMarketingTemplate
@@ -79,6 +84,7 @@ export async function sendOneWhatsApp(
         // layout carries them (data-driven flag) — so a tap returns 'rsvp_*'.
         rsvpButtonPayloads: template.rsvpQuickReply ? RSVP_QUICK_REPLY_PAYLOADS : undefined,
       },
+      sendOpts,
     );
   } catch {
     // The client classifies transport failures rather than throwing, but stay

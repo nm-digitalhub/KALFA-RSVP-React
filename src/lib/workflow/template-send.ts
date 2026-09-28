@@ -34,6 +34,7 @@ import { terminalReasonFor } from '@/lib/data/outreach-engine';
 import { getWhatsAppConsentRequired } from '@/lib/data/outreach-config';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buildBodyParams, deriveGuestFirstName } from '@/lib/whatsapp/template-spec';
+import { BACKGROUND_SEND_RETRY_BUDGET_MS } from '@/lib/whatsapp/client';
 
 export type TemplateSendResult = { ok: boolean; reason?: string };
 
@@ -147,6 +148,7 @@ export async function sendTemplateToContact(input: {
     // swapped) template; `urlButtonParam` belongs to the gift template only and
     // is not a shape this node builds.
     media.headerImage ? { headerImage: media.headerImage } : undefined,
+    { retryBudgetMs: BACKGROUND_SEND_RETRY_BUDGET_MS },
   );
 
   // 'accepted' is Meta TAKING the message — not delivery, and never a read

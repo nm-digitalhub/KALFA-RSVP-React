@@ -30,9 +30,9 @@ export class WhatsAppSendError extends Error {
 // The PII-free delivery classification the serial-flow worker resolves on (§F.5
 // / §12.8.5). Exactly three outcomes:
 //   accepted            — the provider returned a message id (queued/sent).
-//   definitely_not_sent — Meta answered the send with an error code and no
-//                         message id, and did not mark it temporary (see below).
-//                         Read as "Meta refused this request". It says nothing
+//   definitely_not_sent — our LABEL for a send Meta answered with an error code
+//                         and no message id, not marked temporary (see below; a
+//                         project rule, not Meta's guarantee). It says nothing
 //                         about whether a resend would help — callers must not
 //                         retry on it alone.
 //   unknown             — timeout / network / a thrown send / a body with no id /
@@ -49,27 +49,42 @@ export type DeliveryOutcome =
       providerStatus?: number;
       providerCode?: string;
     }
-  | { kind: 'unknown'; reason: string; providerStatus?: number; providerCode?: string };
+  | {
+      kind: 'unknown';
+      reason: string;
+      providerStatus?: number;
+      providerCode?: string;
+      /** Meta answered with an error marked `is_transient: true` — "the request should be retried". */
+      retryable?: true;
+    };
 
-// How an error response is read — by Meta's documented response shape, not by
-// a list of codes of ours:
-//   - The docs say a failed request "returns an error response instead of a
-//     message ID" (Cloud API message pages, read 2026-09-28). So a body with an
-//     error code and no id is treated as a refusal: `definitely_not_sent`,
-//     carrying the code.
-//   - The Graph error object has `is_transient` ("Whether this error is
-//     temporary", Message Templates API reference → Error). When Meta sets it,
-//     we do not treat the request as refused; it stays `unknown`.
-// `is_transient` is only Meta's temporary/not-temporary flag. Its absence is NOT
-// proof that the message was not delivered, and its presence is not proof that
-// it was — delivery itself is only known from the status webhooks (sent /
-// delivered / read / failed). This rule decides the send-time label and nothing
-// more.
+// How an error response is labelled. THIS IS A PROJECT RULE, not a Meta
+// guarantee — Meta documents no rule that turns a send error into a delivery
+// verdict. What the docs do say (read in full 2026-09-28):
+//   - the send response only acknowledges the request; delivery is reported by
+//     the status webhooks (sent / delivered / read / failed) — send-messages,
+//     messages status webhook reference;
+//   - an error can come back synchronously, asynchronously through a webhook,
+//     or both, and handling should be built on `code` and `details` —
+//     support/error-codes;
+//   - a failed request "returns an error response instead of a message ID" —
+//     image messages → Error handling;
+//   - the Graph Error object has `is_transient`, "Indicates whether this error
+//     is temporary and the request should be retried" — API reference → Error.
+//     The docs do not say that its absence means `false`.
+// On that basis we CHOOSE to label a send answered with an error code and no
+// message id as `definitely_not_sent` ("Meta refused this request"), unless
+// Meta set `is_transient: true`, which we label `unknown`. An absent field is
+// treated like `false` — our choice, not documented. The label is not a delivery
+// status and proves nothing about delivery either way; what reached the phone
+// is only known from the status webhooks. Meta's code is kept in both labels.
 //
-// Neither outcome means "send it again": no caller retries on a classification
-// alone (outreach/enqueue.ts advance-skips both).
+// Neither label by itself means "send it again". The one documented retry — an
+// error Meta marks `is_transient` — happens inside the send call, through
+// sendWithMetaRetry below, when the caller gives it a time budget. After that,
+// the outreach step advance-skips both labels (outreach/enqueue.ts).
 
-/** True when Meta's error reads as a refusal of the request: no id, not marked temporary (see above). */
+/** The project's label rule (see above): an error not marked `is_transient: true` is labelled a refusal. Not a delivery verdict. */
 export function isDefinitelyNotSentError(error: { code: number; isTransient?: unknown }): boolean {
   return error.isTransient !== true;
 }
@@ -89,7 +104,7 @@ function classifyResponse(res: unknown): DeliveryOutcome {
   if (typeof code === 'number') {
     return isDefinitelyNotSentError({ code, isTransient: r?.error?.is_transient })
       ? { kind: 'definitely_not_sent', reason: 'provider_rejected', providerCode: String(code) }
-      : { kind: 'unknown', reason: 'provider_error', providerCode: String(code) };
+      : { kind: 'unknown', reason: 'provider_error', providerCode: String(code), retryable: true };
   }
   // No id and no recognizable error code → the send cannot be confirmed.
   return { kind: 'unknown', reason: 'missing_message_id' };
@@ -106,6 +121,51 @@ function classifyThrow(e: unknown): DeliveryOutcome {
     reason: 'send_threw',
     providerStatus: typeof status === 'number' ? status : undefined,
   };
+}
+
+// Retrying a send, the way Meta documents it:
+//   - the Graph Error field `is_transient`: "Indicates whether this error is
+//     temporary and the request should be retried" (API reference → Error);
+//   - "if a send request fails, retry after 4^X seconds (starting with X=0 and
+//     increasing X by 1 after each failure) until successful" (About the
+//     platform → Rate limits).
+// So only an outcome Meta marked retryable is sent again, after 1s, 4s, 16s, …
+//
+// What is NOT retried, also from Meta's docs: a send with no answer at all (a
+// timeout, a network failure, a thrown send). Meta's reliability FAQ says such a
+// failure shows up "as either error or missed success" (Support → Reliability)
+// — the request may have gone through, so a resend could deliver it twice.
+//
+// "Until successful" is bounded here by the caller's time budget: the loop never
+// starts a wait that would end past `budgetMs` from the first attempt. A budget
+// of 0 means one attempt, no retry — for request/response contexts (a live voice
+// tool call) that cannot wait. The last outcome is returned as is.
+export const META_RETRY_BASE_MS = 1_000;
+/** A background job's retry budget: room for Meta's first three waits (1s + 4s + 16s). */
+export const BACKGROUND_SEND_RETRY_BUDGET_MS = 21_000;
+
+export interface MetaRetryOptions {
+  /** Total time the retries may take, from the first attempt. 0 = no retry. */
+  budgetMs: number;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+}
+
+export async function sendWithMetaRetry(
+  send: () => Promise<DeliveryOutcome>,
+  opts: MetaRetryOptions,
+): Promise<DeliveryOutcome> {
+  const now = opts.now ?? Date.now;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const start = now();
+  let outcome = await send();
+  for (let x = 0; outcome.kind === 'unknown' && outcome.retryable === true; x += 1) {
+    const wait = META_RETRY_BASE_MS * 4 ** x;
+    if (now() - start + wait > opts.budgetMs) break;
+    await sleep(wait);
+    outcome = await send();
+  }
+  return outcome;
 }
 
 // Fail-safe ops alert for a THROWN send (transport/network/timeout/5xx — an
@@ -200,9 +260,15 @@ function buildTemplateMessage(params: TemplateMessageParams): Template {
     : new Template(params.templateName, new Language(params.language));
 }
 
+/** Per-call send options. `retryBudgetMs` > 0 turns on Meta's documented retry (sendWithMetaRetry). */
+export interface SendOptions {
+  retryBudgetMs?: number;
+}
+
 export async function sendWhatsAppTemplate(
   cfg: { phoneNumberId: string; accessToken: string; appSecret: string | null },
   params: TemplateMessageParams & { to: string },
+  opts: SendOptions = {},
 ): Promise<DeliveryOutcome> {
   // Fail-closed: a URL button and RSVP quick-reply payloads share the SAME
   // button-index space, so injecting both would misalign the indices and Meta
@@ -218,14 +284,16 @@ export async function sendWhatsAppTemplate(
   const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: GRAPH_API_VERSION });
   const message = buildTemplateMessage(params);
 
-  try {
-    const res = await api.sendMessage(cfg.phoneNumberId, params.to, message);
-    return classifyResponse(res);
-  } catch (e) {
-    const outcome = classifyThrow(e);
-    alertWhatsAppThrow(outcome);
-    return outcome;
-  }
+  return sendWithMetaRetry(async () => {
+    try {
+      const res = await api.sendMessage(cfg.phoneNumberId, params.to, message);
+      return classifyResponse(res);
+    } catch (e) {
+      const outcome = classifyThrow(e);
+      alertWhatsAppThrow(outcome);
+      return outcome;
+    }
+  }, { budgetMs: opts.retryBudgetMs ?? 0 });
 }
 
 // MM Lite — MARKETING-category templates only (message_key ∈
@@ -243,6 +311,7 @@ export async function sendWhatsAppTemplate(
 export async function sendWhatsAppMarketingTemplate(
   cfg: { phoneNumberId: string; accessToken: string; appSecret: string | null },
   params: TemplateMessageParams & { to: string },
+  opts: SendOptions = {},
 ): Promise<DeliveryOutcome> {
   // Same fail-closed button-index guard as sendWhatsAppTemplate.
   if (params.urlButtonParam && params.rsvpButtonPayloads) {
@@ -267,23 +336,25 @@ export async function sendWhatsAppMarketingTemplate(
     [message._type]: message,
     product_policy: 'CLOUD_API_FALLBACK',
   };
-  try {
-    const res = await api.$$apiFetch$$(
-      `https://graph.facebook.com/${GRAPH_API_VERSION}/${cfg.phoneNumberId}/marketing_messages`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      },
-    );
-    // $$apiFetch$$ returns the RAW fetch Response (unlike sendMessage, which
-    // resolves the parsed body) — parse it ourselves before classifying.
-    return classifyResponse(await res.json());
-  } catch (e) {
-    const outcome = classifyThrow(e);
-    alertWhatsAppThrow(outcome);
-    return outcome;
-  }
+  return sendWithMetaRetry(async () => {
+    try {
+      const res = await api.$$apiFetch$$(
+        `https://graph.facebook.com/${GRAPH_API_VERSION}/${cfg.phoneNumberId}/marketing_messages`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+      );
+      // $$apiFetch$$ returns the RAW fetch Response (unlike sendMessage, which
+      // resolves the parsed body) — parse it ourselves before classifying.
+      return classifyResponse(await res.json());
+    } catch (e) {
+      const outcome = classifyThrow(e);
+      alertWhatsAppThrow(outcome);
+      return outcome;
+    }
+  }, { budgetMs: opts.retryBudgetMs ?? 0 });
 }
 
 // Free-form session message — allowed ONLY inside the 24h customer-service
@@ -293,14 +364,17 @@ export async function sendWhatsAppMarketingTemplate(
 export async function sendWhatsAppText(
   cfg: { phoneNumberId: string; accessToken: string; appSecret: string | null },
   params: { to: string; body: string },
+  opts: SendOptions = {},
 ): Promise<DeliveryOutcome> {
   const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: GRAPH_API_VERSION });
-  try {
-    const res = await api.sendMessage(cfg.phoneNumberId, params.to, new Text(params.body));
-    return classifyResponse(res);
-  } catch (e) {
-    const outcome = classifyThrow(e);
-    alertWhatsAppThrow(outcome);
-    return outcome;
-  }
+  return sendWithMetaRetry(async () => {
+    try {
+      const res = await api.sendMessage(cfg.phoneNumberId, params.to, new Text(params.body));
+      return classifyResponse(res);
+    } catch (e) {
+      const outcome = classifyThrow(e);
+      alertWhatsAppThrow(outcome);
+      return outcome;
+    }
+  }, { budgetMs: opts.retryBudgetMs ?? 0 });
 }

@@ -282,6 +282,8 @@ describe('sendCampaignWhatsApp', () => {
           'אולמי הגן, דרך השלום 10, תל אביב',
         ],
       },
+      // The manual batch runs inside a request: no retry budget, one attempt.
+      {},
     );
     // k2 has no linked guest → the {{1}} greeting falls back, send still goes.
     const second = vi.mocked(sendWhatsAppTemplate).mock.calls[1][1];

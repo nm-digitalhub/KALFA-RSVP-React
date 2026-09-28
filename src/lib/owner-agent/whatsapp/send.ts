@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { isDefinitelyNotSentError, type DeliveryOutcome } from '@/lib/whatsapp/client';
+import { isDefinitelyNotSentError, sendWithMetaRetry, type DeliveryOutcome } from '@/lib/whatsapp/client';
 
 import type { GraphSendResponse, OwnerAgentInteractive, OwnerAgentWhatsApp } from './adapter';
 
@@ -79,7 +79,7 @@ export function classifyAdapterThrow(e: unknown): DeliveryOutcome {
     };
     return isDefinitelyNotSentError({ code: err.errorCode, isTransient: raw.error?.is_transient })
       ? { kind: 'definitely_not_sent', reason: 'provider_rejected', providerStatus: status, providerCode }
-      : { kind: 'unknown', reason: 'provider_error', providerStatus: status, providerCode };
+      : { kind: 'unknown', reason: 'provider_error', providerStatus: status, providerCode, retryable: true };
   }
   if (err.name === 'WhatsAppApiError') {
     return { kind: 'unknown', reason: 'provider_error', providerStatus: status };
@@ -98,7 +98,7 @@ function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
 }
 
 // A request that may already have left: timeout ⇒ unknown, never retried.
-async function attempt(work: () => Promise<string | null | undefined>, timeoutMs: number): Promise<DeliveryOutcome> {
+async function attemptOnce(work: () => Promise<string | null | undefined>, timeoutMs: number): Promise<DeliveryOutcome> {
   try {
     const providerId = await withDeadline(work(), timeoutMs);
     return providerId
@@ -108,6 +108,17 @@ async function attempt(work: () => Promise<string | null | undefined>, timeoutMs
     if (e instanceof SendTimeout) return { kind: 'unknown', reason: 'timeout' };
     return classifyAdapterThrow(e);
   }
+}
+
+// Meta's documented retry (client.ts sendWithMetaRetry) for an error Meta marks
+// `is_transient`, inside the call's own timeout: every attempt and every wait
+// share `timeoutMs`, so a retried call never takes longer than one call could.
+async function attempt(work: () => Promise<string | null | undefined>, timeoutMs: number): Promise<DeliveryOutcome> {
+  const start = Date.now();
+  return sendWithMetaRetry(
+    () => attemptOnce(work, Math.max(1, timeoutMs - (Date.now() - start))),
+    { budgetMs: timeoutMs },
+  );
 }
 
 function idOf(res: GraphSendResponse | null | undefined): string | null {

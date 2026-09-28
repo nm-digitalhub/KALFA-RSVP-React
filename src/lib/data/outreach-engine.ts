@@ -32,6 +32,7 @@ import { buildJewishCalendar } from '@/lib/outreach/jewish-calendar';
 import { enqueueStepJob, type StepSendResult } from '@/lib/outreach/enqueue';
 import { CALL_RETRY, QUEUES, type OutreachCallRequest, type OutreachStepMode } from '@/lib/queue/queues';
 import type { PgBoss } from 'pg-boss';
+import { BACKGROUND_SEND_RETRY_BUDGET_MS } from '@/lib/whatsapp/client';
 
 const DAY_MS = 86_400_000;
 
@@ -455,6 +456,7 @@ export async function executeStep(
       tp.message_key,
       built.params,
       media.headerImage ? { headerImage: media.headerImage } : undefined,
+      { retryBudgetMs: BACKGROUND_SEND_RETRY_BUDGET_MS },
     );
     if (outcome.kind !== 'accepted') return { action: 'skipped' };
     await bumpCount(admin, campaignId, contactId, 'whatsapp_sent_count');
@@ -742,6 +744,7 @@ export async function prepareAndSendStep(
       tp.message_key,
       built.params,
       media.headerImage ? { headerImage: media.headerImage } : undefined,
+      { retryBudgetMs: BACKGROUND_SEND_RETRY_BUDGET_MS },
     );
     if (outcome.kind === 'accepted') {
       await bumpCount(admin, campaignId, contactId, 'whatsapp_sent_count');

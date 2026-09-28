@@ -457,6 +457,8 @@ describe('executeStep — send-time parameter binding', () => {
         'אולמי הגן, דרך השלום 10, תל אביב',
       ],
       undefined,
+      // A campaign step runs in the worker: Meta's retry gets the background budget.
+      { retryBudgetMs: 21_000 },
     );
     // No integrity failure for a fully-bound send.
     expect(recordTemplateFailure).not.toHaveBeenCalled();
