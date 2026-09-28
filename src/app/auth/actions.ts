@@ -16,7 +16,7 @@ import {
   resetPasswordSchema,
   signupSchema,
 } from '@/lib/validation/schemas';
-import { getAppUrl } from '@/lib/url';
+import { getAppUrl, resolveAppRedirectPath } from '@/lib/url';
 import type { FormState } from '@/lib/validation/result';
 
 // The login form needs one thing the shared FormState cannot express: WHICH
@@ -61,7 +61,22 @@ export async function login(
     return { error: 'אימייל או סיסמה שגויים' };
   }
 
-  redirect('/app');
+  // Where to land after sign-in. `next` comes from a flow that sent the visitor
+  // here and must resume — the OAuth consent page (/oauth/consent?authorization_id=…)
+  // stops dead at /app otherwise. `redirectTo` is what the proxy sets for a
+  // protected page. Both are browser-supplied, so the shared same-origin policy
+  // re-validates them; anything ambiguous or off-origin falls back to /app.
+  const rawNext = formData.get('next') ?? formData.get('redirectTo');
+  let destination = '/app';
+  if (typeof rawNext === 'string' && rawNext.startsWith('/')) {
+    try {
+      destination = await resolveAppRedirectPath(rawNext);
+    } catch {
+      // keep /app — never an open redirect
+    }
+  }
+
+  redirect(destination);
 }
 
 // Offered by the login form after an `email_not_confirmed` failure (see above),
