@@ -32,13 +32,29 @@ function toMcpTool(tool: OwnerAgentTool): Tool {
   };
 }
 
+// The site's current logo (src/app/icon.svg, and the 180px apple-icon.png for
+// clients that do not render SVG), advertised as serverInfo.icons so an MCP
+// client can show it next to the server's name.
+function logoIcons(origin: string) {
+  return [
+    { src: new URL('/icon.svg', origin).href, mimeType: 'image/svg+xml', sizes: ['any'] },
+    { src: new URL('/apple-icon.png', origin).href, mimeType: 'image/png', sizes: ['180x180'] },
+  ];
+}
+
 // `granted`: the caller's platform permissions, resolved per request from the
 // OAuth token's user (route.ts). No default — an env-wide grant is not a user.
-export function createMcpServer(granted: ReadonlySet<string>): Server {
+// `origin`: this app's public origin (route.ts), for the logo URLs.
+export function createMcpServer(granted: ReadonlySet<string>, origin?: string): Server {
   const tools = toolsForPermissions(granted);
   const listed = Object.values(tools).map(toMcpTool);
   const server = new Server(
-    { name: 'kalfa-owner-mcp', version: '1.0.0' },
+    {
+      name: 'kalfa-owner-mcp',
+      title: 'KALFA',
+      version: '1.0.0',
+      ...(origin ? { icons: logoIcons(origin) } : {}),
+    },
     { capabilities: { tools: {} } },
   );
 

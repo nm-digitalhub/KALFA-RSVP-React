@@ -175,6 +175,22 @@ describe('/api/mcp — OAuth (Supabase Auth as Authorization Server)', () => {
     expect(rpc).toHaveBeenCalledWith('has_platform_permission_for_user', { _user_id: USER_ID, _key: 'view_events' });
   });
 
+  it("advertises the site's logo as serverInfo.icons on initialize", async () => {
+    const initialize = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1.0.0' } },
+    };
+    const rpcBody = await rpcResult(await POST(request(initialize, { token: await token() })));
+    const { serverInfo } = rpcBody.result as { serverInfo: { title?: string; icons?: unknown } };
+    expect(serverInfo.title).toBe('KALFA');
+    expect(serverInfo.icons).toEqual([
+      { src: 'https://beta.kalfa.me/icon.svg', mimeType: 'image/svg+xml', sizes: ['any'] },
+      { src: 'https://beta.kalfa.me/apple-icon.png', mimeType: 'image/png', sizes: ['180x180'] },
+    ]);
+  });
+
   it('allows originless MCP clients and rejects browser origins unless allowlisted', async () => {
     const valid = await token();
     expect((await POST(request(LIST, { token: valid }))).status).toBe(200);

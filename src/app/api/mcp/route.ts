@@ -19,10 +19,13 @@ export const runtime = 'nodejs';
 // permissions, resolved from the token's `sub` → only those tools.
 // See src/lib/owner-agent/mcp/oauth.ts for what is validated and why.
 
-type GrantedAuthInfo = AuthInfo & { extra: { userId: string; granted: ReadonlySet<string> } };
+type GrantedAuthInfo = AuthInfo & { extra: { userId: string; granted: ReadonlySet<string>; origin: string } };
 
 const mcpHandler = createMcpHandler(
-  (ctx) => createMcpServer((ctx.authInfo as GrantedAuthInfo | undefined)?.extra.granted ?? new Set()),
+  (ctx) => {
+    const extra = (ctx.authInfo as GrantedAuthInfo | undefined)?.extra;
+    return createMcpServer(extra?.granted ?? new Set(), extra?.origin);
+  },
   {
     legacy: 'stateless',
     onerror: () => {
@@ -36,7 +39,8 @@ async function handleMcpRequest(request: NextRequest): Promise<Response> {
     return new NextResponse('Forbidden', { status: 403 });
   }
 
-  const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(await mcpResourceUrl());
+  const resourceUrl = await mcpResourceUrl();
+  const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(resourceUrl);
   const auth = await requireBearerAuth({ verifier: getMcpTokenVerifier(), resourceMetadataUrl })(request);
   if (auth instanceof Response) return auth;
 
@@ -57,7 +61,7 @@ async function handleMcpRequest(request: NextRequest): Promise<Response> {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
-  const authInfo: GrantedAuthInfo = { ...auth, extra: { userId, granted } };
+  const authInfo: GrantedAuthInfo = { ...auth, extra: { userId, granted, origin: resourceUrl.origin } };
   return mcpHandler.fetch(request, { authInfo });
 }
 
