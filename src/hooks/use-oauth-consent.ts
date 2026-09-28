@@ -26,6 +26,29 @@ const LOAD_FAILED = 'לא הצלחנו לטעון את בקשת ההרשאה. ה
 const MISSING_ID = 'חסר מזהה בקשה בקישור. התחילו שוב מהאפליקציה שביקשה גישה.';
 const DECISION_FAILED = 'לא הצלחנו לשמור את ההחלטה. נסו שוב, או התחילו מחדש מהאפליקציה שביקשה גישה.';
 
+// What the consent card shows, read defensively. Supabase Auth serializes
+// AuthorizationDetailsResponse with `omitempty` on redirect_uri, client, user
+// and scope (supabase/auth internal/api/oauthserver), so a request with no
+// `scope` arrives without the field at all — although the installed types
+// declare every field required. Reading `details.scope.split` then threw during
+// render and the page fell to global-error.
+export interface ConsentView {
+  clientName: string;
+  redirectUri: string;
+  email: string | null;
+  scopes: string[];
+}
+
+export function toConsentView(details: OAuthAuthorizationDetails): ConsentView {
+  const d = details as Partial<OAuthAuthorizationDetails>;
+  return {
+    clientName: d.client?.name?.trim() || 'אפליקציה',
+    redirectUri: d.redirect_uri ?? '',
+    email: d.user?.email || null,
+    scopes: (d.scope ?? '').split(' ').filter(Boolean),
+  };
+}
+
 const withNextParam = (path: string, next: string) => {
   const url = new URL(path, window.location.origin);
   const searchParams = new URLSearchParams(url.search);
@@ -132,9 +155,12 @@ const useOAuthConsent = ({ authorizationId, signInPath = '/auth/login' }: UseOAu
     [authorizationId],
   );
 
+  const view = details ? toConsentView(details) : null;
+
   return {
     details,
-    email: details?.user.email ?? null,
+    view,
+    email: view?.email ?? null,
     error,
     isLoading,
     decision,

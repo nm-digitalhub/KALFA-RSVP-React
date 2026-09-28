@@ -57,7 +57,7 @@ export interface OAuthConsentCardProps extends ComponentPropsWithoutRef<'div'> {
   clientName: string;
   productName?: string;
   redirectUri: string;
-  email: string;
+  email: string | null;
   scopes?: string[];
   error?: string | null;
   decision?: OAuthConsentDecision | null;
@@ -83,12 +83,16 @@ export function OAuthConsentCard({
         <DetailRow label="אפליקציה">
           <bdi>{clientName}</bdi>
         </DetailRow>
-        <DetailRow label="תועברו אל">
-          <span dir="ltr">{redirectUri}</span>
-        </DetailRow>
-        <DetailRow label="מחוברים בתור">
-          <span dir="ltr">{email}</span>
-        </DetailRow>
+        {redirectUri && (
+          <DetailRow label="תועברו אל">
+            <span dir="ltr">{redirectUri}</span>
+          </DetailRow>
+        )}
+        {email && (
+          <DetailRow label="מחוברים בתור">
+            <span dir="ltr">{email}</span>
+          </DetailRow>
+        )}
         {scopes.length > 0 && (
           <DetailRow label="הרשאות">
             <span dir="ltr">{scopes.join(', ')}</span>
@@ -127,12 +131,12 @@ export function OAuthConsent({
   productName = 'KALFA',
   ...props
 }: OAuthConsentProps) {
-  const { details, email, error, isLoading, decision, approve, deny } = useOAuthConsent({
+  const { view, error, isLoading, decision, approve, deny } = useOAuthConsent({
     authorizationId,
     signInPath,
   });
 
-  if (isLoading || !details || !email) {
+  if (isLoading || !view) {
     return (
       <ConsentCardShell clientName="אפליקציה" productName={productName} {...props}>
         {isLoading ? (
@@ -150,11 +154,11 @@ export function OAuthConsent({
 
   return (
     <OAuthConsentCard
-      clientName={details.client.name}
+      clientName={view.clientName}
       productName={productName}
-      redirectUri={details.redirect_uri}
-      email={email}
-      scopes={details.scope.split(' ').filter(Boolean)}
+      redirectUri={view.redirectUri}
+      email={view.email}
+      scopes={view.scopes}
       error={error}
       decision={decision}
       onApprove={() => void approve()}
