@@ -571,6 +571,8 @@ The send boundary classifies each attempt into exactly one:
 - `unknown(reason)` — **timeout, network failure, 5xx, or crash after reserve.** Outcome uncertain.
 **Only `definitely_not_sent` releases the reservation and permits retry. `unknown` NEVER resends.**
 
+> **Amended 2026-09-28 (owner):** option A below is retired. Every code mapped to `definitely_not_sent` is deterministic (the same request is rejected again), and 131047 needs a template rather than a resend — so the step now **advance-skips `provider_failure` on the first `definitely_not_sent`**, with no release and no throw (`src/lib/outreach/enqueue.ts`). "Known not sent" no longer implies "retry"; a per-code action (template fallback, wait-and-retry) must be its own decision. The `release_outreach_reservation` RPC is no longer called by the worker.
+
 ### 12.7.3 Retry identity — CHOSEN **Option A** (bounded pg-boss retry → per-step terminalize)
 [PROBE: a terminal `detId` returns null → the same step id cannot be re-enqueued once its job is terminal.]
 - **A (chosen):** `definitely_not_sent` → release + throw → pg-boss retries the SAME job (STEP_RETRY) to `retryLimit`. On the FINAL attempt still `definitely_not_sent` → **advance-skip**: audit `skip{provider_failure}`, cursor `i→i+1`, enqueue `i+1`. Contact NOT terminalized; the next touchpoint self-covers. Matches the corrected promise ("retry on definite failure", **bounded — not until-expiry**). No `attempt_generation`.

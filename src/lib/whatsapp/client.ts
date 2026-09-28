@@ -32,7 +32,8 @@ export class WhatsAppSendError extends Error {
 //   accepted            — the provider returned a message id (queued/sent).
 //   definitely_not_sent — a VERIFIED synchronous provider rejection (invalid
 //                         recipient/template/params, closed 24h window). KNOWN
-//                         not delivered → the worker may release + retry.
+//                         not delivered. It says nothing about whether a resend
+//                         would help — callers must not retry on it alone.
 //   unknown             — timeout / network / 5xx / throttle / unmapped code /
 //                         missing id. Delivery UNCERTAIN → the worker NEVER
 //                         resends (advances at-most-once).
@@ -48,8 +49,8 @@ export type DeliveryOutcome =
   | { kind: 'unknown'; reason: string; providerStatus?: number; providerCode?: string };
 
 // Meta Cloud API error codes that are SYNCHRONOUS pre-queue rejections — the
-// message was KNOWN not delivered. ONLY these map to definitely_not_sent (safe
-// to retry). Everything else — 5xx, network, timeout, throttling, account state,
+// message was KNOWN not delivered. ONLY these map to definitely_not_sent (known
+// not sent — not "retry": each of them repeats on a resend). Everything else — 5xx, network, timeout, throttling, account state,
 // unmapped codes — classifies as unknown (never resends). Conservative by
 // design: an unmapped code costs one advance-skip (the multi-touchpoint schedule
 // self-covers); a wrong 'definite' would cost a resend.

@@ -34,7 +34,6 @@ import {
   prepareAndSendStep,
   checkStepTerminal,
   reserveStep,
-  releaseReservation,
   resolveStep,
   type CampaignContext,
 } from '@/lib/data/outreach-engine';
@@ -167,9 +166,8 @@ async function handleCallRequest(job: CallJob): Promise<void> {
   const result = await dispatchOutreachCall(job.data);
   if (result.kind === 'transient_error') {
     // Not a final outcome — the dispatch row stays 'accepted' while pg-boss
-    // retries. On the LAST permitted delivery (retry_count = retry_limit, same
-    // adapter + semantics as the step path's definitely_not_sent decision),
-    // settle failed/temporary_dispatch_failure BEFORE the rethrow so no 202
+    // retries. On the LAST permitted delivery (retry_count = retry_limit, read
+    // through the pgboss-meta adapter), settle failed/temporary_dispatch_failure BEFORE the rethrow so no 202
     // is left unanswered. A failed meta read degrades safely: the row stays
     // 'accepted' and the retention sweep clears it.
     if (job.data.isManual && job.data.dispatchId) {
@@ -345,9 +343,6 @@ function buildExecutionDeps(
     reserve: (a) => reserveStep(a),
     send: () => prepareAndSendStep(boss, ctx, campaignId, contactId, eventId, stepIndex),
     resolve: (a) => resolveStep(a),
-    release: (a) => releaseReservation(a),
-    getRetryMeta: (jobId) =>
-      getJobRetryMeta({ schema: 'pgboss', queueName: QUEUES.step, jobId }),
     auditId: (reason) => stepAuditId(campaignId, contactId, stepIndex, planRev, reason),
     recheckTerminal: () => checkStepTerminal(ctx, contactId, stepIndex),
   };

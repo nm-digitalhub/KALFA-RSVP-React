@@ -555,25 +555,6 @@ export async function reserveStep(input: {
   return (data as 'reserved' | 'stale') ?? 'error';
 }
 
-export async function releaseReservation(input: {
-  campaignId: string;
-  contactId: string;
-  stepIndex: number;
-  planRev: string;
-  jobId: string;
-}): Promise<'released' | 'stale' | 'error'> {
-  const admin = createAdminClient();
-  const { data, error } = await admin.rpc('release_outreach_reservation', {
-    p_campaign: input.campaignId,
-    p_contact: input.contactId,
-    p_step: input.stepIndex,
-    p_expected_plan_rev: input.planRev,
-    p_job_id: input.jobId,
-  });
-  if (error) return 'error';
-  return (data as 'released' | 'stale') ?? 'error';
-}
-
 export async function resolveStep(input: {
   campaignId: string;
   contactId: string;

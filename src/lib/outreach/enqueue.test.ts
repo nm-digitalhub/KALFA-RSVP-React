@@ -79,7 +79,7 @@ describe('enqueueStepJob — deterministic id BY MODE, IDs-only payload', () => 
 // ─────────────────────────────────────────────────────────────────────────────
 // runStepExecution — reserve → send → resolve, ALL side effects injected. These
 // pin the §12 FINAL certainty taxonomy: at-most-once, unknown never resends, a
-// definite failure retries until exhaustion then advance-skips (NOT dead-letter).
+// definite rejection advance-skips at once (never resends, NOT dead-letter).
 // ─────────────────────────────────────────────────────────────────────────────
 const JOB = 'job-uuid-abc';
 
@@ -87,15 +87,13 @@ function makeDeps(overrides: Partial<StepExecutionDeps> = {}) {
   const reserve = vi.fn(async () => 'reserved' as const);
   const send = vi.fn(async () => ({ kind: 'accepted', providerId: 'wamid.1' }) as StepSendResult);
   const resolve = vi.fn(async () => 'resolved' as const);
-  const release = vi.fn(async () => 'released' as const);
-  const getRetryMeta = vi.fn(async () => ({ state: 'active', retryCount: 0, retryLimit: 3 }));
   const auditId = vi.fn((reason: string) => `audit:${reason}`);
   const recheckTerminal = vi.fn(async (): Promise<{ reason: string } | null> => null);
   const deps: StepExecutionDeps = {
-    reserve, send, resolve, release, getRetryMeta, auditId, recheckTerminal,
+    reserve, send, resolve, auditId, recheckTerminal,
     ...overrides,
   } as StepExecutionDeps;
-  return { deps, reserve, send, resolve, release, getRetryMeta, auditId, recheckTerminal };
+  return { deps, reserve, send, resolve, auditId, recheckTerminal };
 }
 
 const ARGS: StepExecutionArgs = {
@@ -129,46 +127,27 @@ describe('runStepExecution — reservation + certainty taxonomy', () => {
     expect(resolve).not.toHaveBeenCalled();
   });
 
-  it('definitely_not_sent with a retry LEFT → release + THROW (pg-boss re-runs the same J)', async () => {
-    const { deps, release, resolve } = makeDeps({
-      send: vi.fn(async () => ({ kind: 'definitely_not_sent', reason: 'provider_rejected' }) as StepSendResult),
-      getRetryMeta: vi.fn(async () => ({ state: 'active', retryCount: 1, retryLimit: 3 })),
-    });
-    await expect(runStepExecution(deps, ARGS)).rejects.toThrow(/definitely_not_sent_retry/);
-    expect(release).toHaveBeenCalledWith(expect.objectContaining({ jobId: JOB }));
-    expect(resolve).not.toHaveBeenCalled(); // no advance while a retry remains
-  });
+  it.each(['131047', '132001', '132015', '131026', undefined])(
+    'definitely_not_sent (code %s) → advance-skip provider_failure at once: no throw, so pg-boss never resends',
+    async (providerCode) => {
+      const send = vi.fn(
+        async () => ({ kind: 'definitely_not_sent', reason: 'provider_rejected', providerCode }) as StepSendResult,
+      );
+      const { deps, resolve } = makeDeps({ send });
+      await expect(runStepExecution(deps, ARGS)).resolves.toBeUndefined();
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(resolve).toHaveBeenCalledWith(
+        expect.objectContaining({ advance: true, terminalStatus: null, reason: 'provider_failure', jobId: JOB }),
+      );
+    },
+  );
 
-  it('definitely_not_sent on the FINAL attempt (retryCount=retryLimit) → advance-skip provider_failure, NO throw, NO dead-letter', async () => {
-    const { deps, release, resolve } = makeDeps({
-      send: vi.fn(async () => ({ kind: 'definitely_not_sent', reason: 'provider_rejected' }) as StepSendResult),
-      getRetryMeta: vi.fn(async () => ({ state: 'active', retryCount: 3, retryLimit: 3 })),
-    });
-    await expect(runStepExecution(deps, ARGS)).resolves.toBeUndefined(); // returns, never throws
-    expect(release).not.toHaveBeenCalled();
-    expect(resolve).toHaveBeenCalledWith(
-      expect.objectContaining({ advance: true, reason: 'provider_failure', jobId: JOB }),
-    );
-  });
-
-  it('definitely_not_sent with retry meta UNAVAILABLE (null) → treated as final → advance-skip, no throw', async () => {
-    const { deps, resolve } = makeDeps({
-      send: vi.fn(async () => ({ kind: 'definitely_not_sent', reason: 'provider_rejected' }) as StepSendResult),
-      getRetryMeta: vi.fn(async () => null),
-    });
-    await expect(runStepExecution(deps, ARGS)).resolves.toBeUndefined();
-    expect(resolve).toHaveBeenCalledWith(
-      expect.objectContaining({ advance: true, reason: 'provider_failure' }),
-    );
-  });
-
-  it('unknown → resolve{advance, dispatch_outcome_unknown}; NEVER releases, NEVER reads retry meta (no resend)', async () => {
-    const { deps, release, getRetryMeta, resolve } = makeDeps({
-      send: vi.fn(async () => ({ kind: 'unknown', reason: 'send_threw' }) as StepSendResult),
-    });
+  it('unknown → resolve{advance, dispatch_outcome_unknown}; exactly one send (no resend)', async () => {
+    const send = vi.fn(async () => ({ kind: 'unknown', reason: 'send_threw' }) as StepSendResult);
+    const { deps, resolve } = makeDeps({ send });
     await runStepExecution(deps, ARGS);
-    expect(release).not.toHaveBeenCalled();
-    expect(getRetryMeta).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(1);
     expect(resolve).toHaveBeenCalledWith(
       expect.objectContaining({ advance: true, reason: 'dispatch_outcome_unknown', jobId: JOB }),
     );
@@ -204,10 +183,9 @@ describe('runStepExecution — reservation + certainty taxonomy', () => {
     );
   });
 
-  it('accepted + a FAILED resolve → THROW (never release) so the SAME J recovers (no double send)', async () => {
-    const { deps, release } = makeDeps({ resolve: vi.fn(async () => 'error' as const) });
+  it('accepted + a FAILED resolve → THROW so the SAME J recovers (no double send)', async () => {
+    const { deps } = makeDeps({ resolve: vi.fn(async () => 'error' as const) });
     await expect(runStepExecution(deps, ARGS)).rejects.toThrow(/resolve_after_accepted_failed/);
-    expect(release).not.toHaveBeenCalled();
   });
 
   it('alreadyReserved (crash recovery) → advance-once as unknown, NEVER re-reserves or re-sends', async () => {
