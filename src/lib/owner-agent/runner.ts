@@ -57,8 +57,7 @@ import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-
 //     the whole worker environment. The consumer of this runner will hold
 //     the Supabase service-role key, and the CLI has no use for it — so the
 //     CLI gets HOME, PATH, NODE_ENV and TZ (as a fleet run has them), the
-//     token, CLAUDE_CODE_DISABLE_CLAUDE_MDS and the Supabase server's access
-//     token, and nothing else. Our MCP server loads its own credentials with
+//     OAuth token and Supabase access token, and nothing else. Our MCP server loads its own credentials with
 //     `node --env-file` (./mcp/main.ts).
 //
 //     ⚠️ THE SUPABASE ACCESS TOKEN TRAVELS IN THE CLI's ENVIRONMENT, NEVER IN
@@ -87,7 +86,7 @@ import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-
 //  8. `--system-prompt` REPLACES Claude Code's default system prompt (help:
 //     "System prompt to use for the session"; `--append-system-prompt`
 //     would keep the coding-assistant prompt and add to it), and
-//     CLAUDE_CODE_DISABLE_CLAUDE_MDS=1 keeps the repo's CLAUDE.md files out:
+//     CLAUDE.md loading is no longer disabled by an environment variable:
 //     from the dedicated cwd below, the walk up would otherwise reach
 //     beta/CLAUDE.md and ~/.claude/CLAUDE.md. The variable is present in the
 //     2.1.281 binary and is exactly what `--safe-mode` sets, whose help says
@@ -478,7 +477,7 @@ export function allowedToolsFor(permissions: readonly string[]): string[] {
 
 // HOME and PATH exactly as run-role.sh pins them; NODE_ENV and TZ as the
 // kalfa-fleet pm2 entry declares them (ecosystem.config.cjs), so the CLI sees
-// what it sees in a fleet run; then the token, the CLAUDE.md switch and the
+// what it sees in a fleet run; then the OAuth token and the
 // Supabase server's access token (deviation 4: env, never argv). Nothing else,
 // and nothing inherited from process.env.
 export function buildCliEnv(hostDir: string, token: string, supabaseToken: string): NodeJS.ProcessEnv {
@@ -488,7 +487,6 @@ export function buildCliEnv(hostDir: string, token: string, supabaseToken: strin
     NODE_ENV: 'production',
     TZ: 'Asia/Jerusalem',
     CLAUDE_CODE_OAUTH_TOKEN: token,
-    CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
     SUPABASE_ACCESS_TOKEN: supabaseToken,
   };
 }

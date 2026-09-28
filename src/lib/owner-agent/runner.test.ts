@@ -360,9 +360,10 @@ describe('the token', () => {
       NODE_ENV: 'production',
       TZ: 'Asia/Jerusalem',
       CLAUDE_CODE_OAUTH_TOKEN: TOKEN,
-      CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
+
       SUPABASE_ACCESS_TOKEN: SB_TOKEN,
     });
+    expect(call.env).not.toHaveProperty('CLAUDE_CODE_DISABLE_CLAUDE_MDS');
     expect(JSON.stringify(call)).not.toContain('svc-role-SENTINEL');
     // .env.local is read for ONE key; nothing else in it reaches the child.
     expect(JSON.stringify(call)).not.toContain('svc-SENTINEL');
