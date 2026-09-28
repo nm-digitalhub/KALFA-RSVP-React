@@ -14,7 +14,7 @@ import { OwnerAgentRunError, type OwnerAgentRunInput, type OwnerAgentRunResult }
 import { OWNER_AGENT_PERMISSIONS } from '@/lib/owner-agent/tools/shared';
 import type { DeliveryOutcome } from '@/lib/whatsapp/client';
 
-import { OWNER_AGENT_RUN_TIMEOUT_MS } from './budgets';
+import { OWNER_AGENT_RUN_TIMEOUT_MS, OWNER_AGENT_SEND_RETRY_MS } from './budgets';
 import {
   ANSWER_WINDOW_MS,
   OwnerAgentReplyError,
@@ -99,7 +99,7 @@ interface World {
   granted: Set<string>;
   deps: ReplyDeps;
   run: ReturnType<typeof vi.fn<(input: OwnerAgentRunInput) => Promise<OwnerAgentRunResult>>>;
-  sendText: ReturnType<typeof vi.fn<(s: WhatsAppSender, p: { to: string; body: string }) => Promise<DeliveryOutcome>>>;
+  sendText: ReturnType<typeof vi.fn<(s: WhatsAppSender, p: { to: string; body: string; retryBudgetMs?: number }) => Promise<DeliveryOutcome>>>;
   logs: string[];
   alerts: unknown[];
   clock: { now: number };
@@ -164,7 +164,7 @@ function world(opts: { intake?: Partial<TableRow>; settings?: Partial<TableRow>;
   const logs: string[] = [];
   const alerts: unknown[] = [];
   const run = vi.fn<(input: OwnerAgentRunInput) => Promise<OwnerAgentRunResult>>(async () => ok());
-  const sendText = vi.fn<(s: WhatsAppSender, p: { to: string; body: string }) => Promise<DeliveryOutcome>>(
+  const sendText = vi.fn<(s: WhatsAppSender, p: { to: string; body: string; retryBudgetMs?: number }) => Promise<DeliveryOutcome>>(
     async () => ({ kind: 'accepted', providerId: 'wamid.out' }),
   );
   const deps: ReplyDeps = {
@@ -217,7 +217,9 @@ describe('a question that passes every gate', () => {
     expect(w.sendText).toHaveBeenCalledTimes(1);
     const [from, params] = w.sendText.mock.calls[0];
     expect(from.phoneNumberId).toBe(NUMBER);
-    expect(params).toEqual({ to: PHONE, body: ANSWER });
+    expect(params).toEqual({ to: PHONE, body: ANSWER, retryBudgetMs: expect.any(Number) });
+    // The answer's Meta-retry window (budgets.ts), handed to its first part whole.
+    expect(params.retryBudgetMs).toBe(OWNER_AGENT_SEND_RETRY_MS);
 
     expect(intakeRow(w)).toMatchObject({ status: 'answered' });
     expect(intakeRow(w)?.processed_at).toEqual(expect.any(String));
@@ -393,7 +395,7 @@ describe('a failed run gets ONE fixed reply, never the error', () => {
       w.run.mockRejectedValue(new OwnerAgentRunError(code));
       expect(await handleOwnerAgentReply(job, w.deps)).toBe('fallback_sent');
       expect(w.sendText).toHaveBeenCalledTimes(1);
-      expect(w.sendText.mock.calls[0][1]).toEqual({ to: PHONE, body: OWNER_AGENT_FAILURE_REPLY });
+      expect(w.sendText.mock.calls[0][1]).toMatchObject({ to: PHONE, body: OWNER_AGENT_FAILURE_REPLY });
       expect(OWNER_AGENT_FAILURE_REPLY).not.toMatch(/[a-z_]{4,}/);
       expect(intakeRow(w)).toMatchObject({ status: 'answered' });
       expect(audits(w).map((r) => [r.stage, r.outcome, r.reason_code])).toEqual([
@@ -1117,7 +1119,7 @@ describe('voice notes (§4.2: no transcription provider decided)', () => {
     expect(await handleOwnerAgentReply(job, w.deps)).toBe('unsupported_voice');
     expect(w.run).not.toHaveBeenCalled();
     expect(caps.downloadMedia).not.toHaveBeenCalled();
-    expect(w.sendText.mock.calls[0][1]).toEqual({ to: PHONE, body: OWNER_AGENT_UNSUPPORTED_VOICE_REPLY });
+    expect(w.sendText.mock.calls[0][1]).toMatchObject({ to: PHONE, body: OWNER_AGENT_UNSUPPORTED_VOICE_REPLY });
     expect(OWNER_AGENT_UNSUPPORTED_VOICE_REPLY).toBe('הודעות קוליות עוד לא נתמכות — אפשר לשלוח את השאלה בטקסט');
     expect(audits(w)).toHaveLength(1);
     expect(audits(w)[0]).toMatchObject({ stage: 'send', outcome: 'unsupported_voice', reason_code: null });

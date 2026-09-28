@@ -39,9 +39,19 @@ export const OWNER_AGENT_RUN_KILL_AFTER_MS = KILL_AFTER_MS;
 /**
  * Everything around the run: the intake read, the gate (eight small queries),
  * the permission RPCs, up to five WhatsApp sends (MAX_REPLY_PARTS) and the audit. Generous on
- * purpose — the pooler's measured ~134ms round trip times twenty is ~3s.
+ * purpose — the pooler's measured ~134ms round trip times twenty is ~3s. It was
+ * 50s; 20s of that slack is now OWNER_AGENT_SEND_RETRY_MS, so the chain's total
+ * is unchanged.
  */
-export const OWNER_AGENT_REPLY_OVERHEAD_MS = 50_000;
+export const OWNER_AGENT_REPLY_OVERHEAD_MS = 30_000;
+
+/**
+ * Meta's documented retry of a send it answered with an error marked
+ * `is_transient` (whatsapp/client.ts sendWithMetaRetry: waits of 1s, 4s, 16s).
+ * One window per answer or report, SHARED by all its text parts: a part only
+ * retries in whatever the earlier parts left.
+ */
+export const OWNER_AGENT_SEND_RETRY_MS = 20_000;
 
 /**
  * A resumed run that fails within this long is retried once as a fresh
@@ -79,6 +89,7 @@ export const OWNER_AGENT_REPLY_MAX_MS =
   OWNER_AGENT_RUN_TIMEOUT_MS +
   OWNER_AGENT_RUN_KILL_AFTER_MS +
   OWNER_AGENT_REPLY_OVERHEAD_MS +
+  OWNER_AGENT_SEND_RETRY_MS +
   2 * OWNER_AGENT_TYPING_TIMEOUT_MS +
   OWNER_AGENT_MEDIA_BUDGET_MS +
   OWNER_AGENT_INTERACTIVE_SEND_MS;

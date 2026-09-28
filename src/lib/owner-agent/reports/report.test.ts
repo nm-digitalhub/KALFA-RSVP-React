@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
+import { OWNER_AGENT_SEND_RETRY_MS } from '@/lib/owner-agent/consumer/budgets';
 import type { OwnerAgentPermission } from '@/lib/owner-agent/tools/shared';
 import type { DeliveryOutcome } from '@/lib/whatsapp/client';
 
@@ -169,7 +170,7 @@ describe('delivery', () => {
     expect(deps.sendText).toHaveBeenCalledTimes(1);
     const [from, params] = deps.sendText.mock.calls[0];
     expect(from).toEqual({ phoneNumberId: AGENT_NUMBER, accessToken: 'tok', appSecret: null });
-    expect(params).toEqual({ to: OWNER_PHONE, body: content().text });
+    expect(params).toEqual({ to: OWNER_PHONE, body: content().text, retryBudgetMs: OWNER_AGENT_SEND_RETRY_MS });
     expect(deps.sendTemplate).not.toHaveBeenCalled();
     expect(state.run.status).toBe('sent');
     expect(state.run.patch).toMatchObject({ channel: 'text', outboundWamid: 'wamid.OUT', errorCode: null });
@@ -199,6 +200,7 @@ describe('delivery', () => {
       templateName: 'owner_activity_report',
       language: 'he',
       bodyParams: ['28.9 00:00–08:00', '1', '2', '0 ₪'],
+      retryBudgetMs: OWNER_AGENT_SEND_RETRY_MS,
     });
     expect(state.run.patch).toMatchObject({ channel: 'template', outboundWamid: 'wamid.TPL' });
   });
@@ -471,7 +473,7 @@ describe('reports with the owner’s instructions (model-backed)', () => {
     expect([...(permissions as string[])].sort()).toEqual(['view_billing', 'view_events']);
     expect(period).toMatchObject({ untilIso: '2026-09-28T05:00:00.000Z' });
     expect(deps.content).not.toHaveBeenCalled();
-    expect(deps.sendText.mock.calls[0][1]).toEqual({ to: OWNER_PHONE, body: modelReport().text });
+    expect(deps.sendText.mock.calls[0][1]).toEqual({ to: OWNER_PHONE, body: modelReport().text, retryBudgetMs: OWNER_AGENT_SEND_RETRY_MS });
     expect(lastAudit()).toMatchObject({ outcome: 'sent', reasonCode: null, sections: ['execute_sql', 'events_pipeline'] });
   });
 
@@ -486,6 +488,7 @@ describe('reports with the owner’s instructions (model-backed)', () => {
       templateName: 'owner_custom_report',
       language: 'he',
       bodyParams: ['28.9 00:00–08:00', 'סיכום הלילה'],
+      retryBudgetMs: OWNER_AGENT_SEND_RETRY_MS,
     });
     expect(lastAudit()).toMatchObject({ outcome: 'sent', reasonCode: null });
   });
@@ -503,6 +506,7 @@ describe('reports with the owner’s instructions (model-backed)', () => {
       templateName: 'owner_activity_report',
       language: 'he',
       bodyParams: ['28.9 00:00–08:00', '1', '2', '0 ₪'],
+      retryBudgetMs: OWNER_AGENT_SEND_RETRY_MS,
     });
     expect(lastAudit()).toMatchObject({ outcome: 'sent', reasonCode: 'custom_template_missing' });
   });
@@ -529,7 +533,7 @@ describe('reports with the owner’s instructions (model-backed)', () => {
     state.settings = { ...state.settings!, customTemplateName: null };
     expect(await run()).toBe('sent');
     expect(deps.modelContent).toHaveBeenCalledTimes(1);
-    expect(deps.sendText.mock.calls[0][1]).toEqual({ to: OWNER_PHONE, body: modelReport().text });
+    expect(deps.sendText.mock.calls[0][1]).toEqual({ to: OWNER_PHONE, body: modelReport().text, retryBudgetMs: OWNER_AGENT_SEND_RETRY_MS });
     expect(lastAudit()).toMatchObject({ reasonCode: null });
   });
 

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { SlackAlertInput } from '@/lib/alerts/slack';
 import { sendFailureCode, type WhatsAppSender } from '@/lib/owner-agent/consumer/reply';
 import { splitForWhatsApp } from '@/lib/owner-agent/consumer/reply-text';
+import { OWNER_AGENT_SEND_RETRY_MS } from '@/lib/owner-agent/consumer/budgets';
 import { OwnerAgentRunError } from '@/lib/owner-agent/runner';
 import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-agent/tools/shared';
 import type { DeliveryOutcome } from '@/lib/whatsapp/client';
@@ -107,10 +108,20 @@ export interface ReportDeps {
   content: (sections: readonly ReportSection[], period: ReportPeriod, nowMs: number) => Promise<ReportContent>;
   /** Send credentials for `phoneNumberId`, or null when WhatsApp is not configured. */
   sender: (phoneNumberId: string) => Promise<WhatsAppSender | null>;
-  sendText: (sender: WhatsAppSender, params: { to: string; body: string }) => Promise<DeliveryOutcome>;
+  /** `retryBudgetMs`: what is left of this report's Meta-retry window (OWNER_AGENT_SEND_RETRY_MS). */
+  sendText: (
+    sender: WhatsAppSender,
+    params: { to: string; body: string; retryBudgetMs?: number },
+  ) => Promise<DeliveryOutcome>;
   sendTemplate: (
     sender: WhatsAppSender,
-    params: { to: string; templateName: string; language: string; bodyParams: readonly string[] },
+    params: {
+      to: string;
+      templateName: string;
+      language: string;
+      bodyParams: readonly string[];
+      retryBudgetMs?: number;
+    },
   ) => Promise<DeliveryOutcome>;
   alert: (input: SlackAlertInput) => Promise<unknown>;
   log: (line: string) => void;
@@ -352,8 +363,10 @@ async function handleRun(run: ReportRunRow, deps: ReportDeps): Promise<ReportOut
   const from: WhatsAppSender = { ...sender, phoneNumberId: gate.phoneNumberId };
   const to = gate.entry.e164;
   let result: DeliveryResult;
-  if (inWindow) result = await deliverText(from, to, content, template, deps);
-  else if (template) result = await deliverTemplate(from, to, content, template, deps);
+  // One Meta-retry window for the whole report (budgets.ts), shared by its parts.
+  const retryUntil = deps.now() + OWNER_AGENT_SEND_RETRY_MS;
+  if (inWindow) result = await deliverText(from, to, content, template, deps, retryUntil);
+  else if (template) result = await deliverTemplate(from, to, content, template, deps, retryUntil);
   // Unreachable (checked before the claim), and kept that way: outside the
   // window without a template nothing is sent, never free text.
   else result = { ok: false, channel: 'template', wamid: null, code: 'template_unavailable' };
@@ -480,11 +493,13 @@ async function deliverText(
   content: ReportContent,
   template: Template | null,
   deps: ReportDeps,
+  retryUntil: number,
 ): Promise<DeliveryResult> {
   let sent = 0;
   let firstWamid: string | null = null;
   for (const part of splitForWhatsApp(content.text)) {
-    const outcome = await send(() => deps.sendText(from, { to, body: part }));
+    const retryBudgetMs = Math.max(0, retryUntil - deps.now());
+    const outcome = await send(() => deps.sendText(from, { to, body: part, retryBudgetMs }));
     if (outcome.kind === 'accepted') {
       firstWamid ??= outcome.providerId;
       sent += 1;
@@ -494,7 +509,7 @@ async function deliverText(
     const closedWindow =
       sent === 0 && outcome.kind === 'definitely_not_sent' && outcome.providerCode === '131047';
     if (closedWindow && template) {
-      const viaTemplate = await deliverTemplate(from, to, content, template, deps);
+      const viaTemplate = await deliverTemplate(from, to, content, template, deps, retryUntil);
       return viaTemplate.ok ? { ...viaTemplate, fellBack: true } : viaTemplate;
     }
     return { ok: false, channel: 'text', wamid: firstWamid, code: sendFailureCode(outcome, sent) };
@@ -508,13 +523,16 @@ async function deliverTemplate(
   content: ReportContent,
   template: Template,
   deps: ReportDeps,
+  retryUntil: number,
 ): Promise<DeliveryResult> {
+  const retryBudgetMs = Math.max(0, retryUntil - deps.now());
   const outcome = await send(() =>
     deps.sendTemplate(from, {
       to,
       templateName: template.templateName,
       language: template.language,
       bodyParams: content.templateParams,
+      retryBudgetMs,
     }),
   );
   if (outcome.kind === 'accepted') {

@@ -18,6 +18,7 @@ import {
   OWNER_AGENT_PM2_KILL_TIMEOUT_MS,
   OWNER_AGENT_REPLY_EXPIRE_SECONDS,
   OWNER_AGENT_REPLY_MAX_MS,
+  OWNER_AGENT_SEND_RETRY_MS,
   OWNER_AGENT_REPLY_QUEUE_POLICY,
   OWNER_AGENT_RESUME_FAIL_FAST_MS,
   OWNER_AGENT_RUN_KILL_AFTER_MS,
@@ -38,7 +39,7 @@ const dedicated = load('ecosystem.owner-agent.config.cjs');
 const app = dedicated.apps.find((a) => a.name === 'kalfa-owner-agent');
 
 describe('the free-read budgets (free-read plan §3.5), pinned', () => {
-  it('180s run, 12 turns, 5 reply parts; 15 + 180 + 10 + 50 + 2×5 + 15 + 15 = 295 < 300 < 310 < 330', () => {
+  it('180s run, 12 turns, 5 reply parts; 15 + 180 + 10 + 30 + 20 + 2×5 + 15 + 15 = 295 < 300 < 310 < 330', () => {
     expect(OWNER_AGENT_RUN_TIMEOUT_MS).toBe(180_000);
     expect(OWNER_AGENT_MAX_TURNS).toBe(12);
     expect(OWNER_AGENT_MODEL).toBe('sonnet');
@@ -49,6 +50,7 @@ describe('the free-read budgets (free-read plan §3.5), pinned', () => {
     expect(OWNER_AGENT_TYPING_TIMEOUT_MS).toBe(5_000);
     expect(OWNER_AGENT_MEDIA_BUDGET_MS).toBe(15_000);
     expect(OWNER_AGENT_INTERACTIVE_SEND_MS).toBe(15_000);
+    expect(OWNER_AGENT_SEND_RETRY_MS).toBe(20_000);
     expect(OWNER_AGENT_REPLY_EXPIRE_SECONDS).toBe(300);
     expect(OWNER_AGENT_STOP_TIMEOUT_MS).toBe(310_000);
     expect(OWNER_AGENT_PM2_KILL_TIMEOUT_MS).toBe(330_000);
@@ -61,7 +63,8 @@ describe('the owner-agent budget chain', () => {
       OWNER_AGENT_RESUME_FAIL_FAST_MS +
         OWNER_AGENT_RUN_TIMEOUT_MS +
         OWNER_AGENT_RUN_KILL_AFTER_MS +
-        50_000 +
+        30_000 +
+        OWNER_AGENT_SEND_RETRY_MS +
         2 * OWNER_AGENT_TYPING_TIMEOUT_MS +
         OWNER_AGENT_MEDIA_BUDGET_MS +
         OWNER_AGENT_INTERACTIVE_SEND_MS,

@@ -24,6 +24,7 @@ import {
   OWNER_AGENT_MODEL,
   OWNER_AGENT_RESUME_FAIL_FAST_MS,
   OWNER_AGENT_RUN_TIMEOUT_MS,
+  OWNER_AGENT_SEND_RETRY_MS,
   OWNER_AGENT_TYPING_TIMEOUT_MS,
 } from './budgets';
 import {
@@ -163,7 +164,11 @@ export interface ReplyDeps {
   run: (input: OwnerAgentRunInput) => Promise<OwnerAgentRunResult>;
   /** Send credentials for `phoneNumberId`, or null when WhatsApp is not configured. */
   sender: (phoneNumberId: string) => Promise<WhatsAppSender | null>;
-  sendText: (sender: WhatsAppSender, params: { to: string; body: string }) => Promise<DeliveryOutcome>;
+  /** `retryBudgetMs`: what is left of this answer's Meta-retry window (budgets.ts OWNER_AGENT_SEND_RETRY_MS). */
+  sendText: (
+    sender: WhatsAppSender,
+    params: { to: string; body: string; retryBudgetMs?: number },
+  ) => Promise<DeliveryOutcome>;
   alert: (input: SlackAlertInput) => Promise<unknown>;
   log: (line: string) => void;
   now: () => number;
@@ -758,10 +763,13 @@ async function deliver(
   let failure: string | null = null;
   let sent = 0;
   const wamids: string[] = [];
+  // One Meta-retry window for the whole answer, shared by its parts.
+  const retryUntil = deps.now() + OWNER_AGENT_SEND_RETRY_MS;
   for (const part of splitForWhatsApp(body)) {
     let outcome: DeliveryOutcome;
     try {
-      outcome = await deps.sendText(from, { to: recipient, body: part });
+      const retryBudgetMs = Math.max(0, retryUntil - deps.now());
+      outcome = await deps.sendText(from, { to: recipient, body: part, retryBudgetMs });
     } catch {
       outcome = { kind: 'unknown', reason: 'send_threw' };
     }

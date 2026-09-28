@@ -156,7 +156,8 @@ async function main(): Promise<void> {
       const config = await getWhatsAppConfig();
       return config ? { phoneNumberId, accessToken: config.accessToken, appSecret: config.appSecret } : null;
     },
-    sendText: sendWhatsAppText,
+    // Meta's retry (client.ts sendWithMetaRetry) within the window reply.ts hands in.
+    sendText: (s, p) => sendWhatsAppText(s, { to: p.to, body: p.body }, { retryBudgetMs: p.retryBudgetMs }),
     // The wa-layer (whatsapp/adapter.ts): one quiet-logger adapter per call,
     // built from the same sender. A throwing createOwnerAgentWhatsApp is
     // caught on every path in reply.ts.
@@ -182,8 +183,12 @@ async function main(): Promise<void> {
     // Same credentials as an answer; report.ts sets phoneNumberId to
     // owner_agent_phone_number_id, the number the report goes out from.
     sender: replyDeps.sender,
-    sendText: sendWhatsAppText,
-    sendTemplate: sendWhatsAppTemplate,
+    // Meta's retry within the window report.ts hands in (same helper as an answer).
+    sendText: (s, p) => sendWhatsAppText(s, { to: p.to, body: p.body }, { retryBudgetMs: p.retryBudgetMs }),
+    sendTemplate: (s, p) => {
+      const { retryBudgetMs, ...template } = p;
+      return sendWhatsAppTemplate(s, template, { retryBudgetMs });
+    },
     alert: sendSlackAlert,
     log,
     now: Date.now,
