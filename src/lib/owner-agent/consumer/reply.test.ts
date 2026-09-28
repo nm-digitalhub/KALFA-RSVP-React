@@ -542,7 +542,8 @@ describe('the 4096 split', () => {
 describe('send outcomes are codes', () => {
   it.each<[string, DeliveryOutcome, string]>([
     ['the 24h window closed', { kind: 'definitely_not_sent', reason: 'provider_rejected', providerCode: '131047' }, 'window_closed'],
-    ['a definite rejection', { kind: 'definitely_not_sent', reason: 'provider_rejected', providerCode: '131026' }, 'provider_rejected'],
+    ['a definite rejection', { kind: 'definitely_not_sent', reason: 'provider_rejected', providerCode: '131026' }, 'meta_131026'],
+    ['a local rejection (no Meta code)', { kind: 'definitely_not_sent', reason: 'invalid_recipient' }, 'provider_rejected'],
     ['an unknown outcome', { kind: 'unknown', reason: 'provider_error', providerCode: '1' }, 'send_unknown'],
   ])('%s → send_failed/%s', async (_label, outcome, code) => {
     const w = world();

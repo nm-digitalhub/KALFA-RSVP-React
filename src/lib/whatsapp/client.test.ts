@@ -160,14 +160,14 @@ describe('sendWhatsAppTemplate', () => {
     expect(r.kind).toBe('definitely_not_sent');
   });
 
-  it('maps an unmapped provider error code to unknown (conservative)', async () => {
-    sendMessage.mockResolvedValue({ error: { code: 500 } });
+  it('an error Meta flags is_transient stays unknown, with its code', async () => {
+    sendMessage.mockResolvedValue({ error: { code: 2, is_transient: true } });
     const r = await sendWhatsAppTemplate(cfg, {
       to: '+972500000000',
       templateName: 't',
       language: 'he',
     });
-    expect(r.kind).toBe('unknown');
+    expect(r).toEqual({ kind: 'unknown', reason: 'provider_error', providerCode: '2' });
   });
 
   it('carries the provider code (never PII) on a definitely_not_sent classification', async () => {
@@ -196,18 +196,16 @@ describe('sendWhatsAppTemplate', () => {
     expect(r).toEqual({ kind: 'unknown', reason: 'send_threw', providerStatus: 503 });
   });
 
-  it('every verified 4xx code maps to definitely_not_sent; a neighbour code stays unknown', async () => {
-    const definite = [100, 131008, 131026, 131047, 132000, 132001, 132015, 132016];
-    for (const code of definite) {
+  it('any error code without is_transient is a known rejection — no code list', async () => {
+    for (const code of [100, 131026, 131047, 131050, 131056, 130429, 131000, 132015, 987654]) {
       sendMessage.mockResolvedValue({ error: { code } });
       const r = await sendWhatsAppTemplate(cfg, { to: '+972500000000', templateName: 't', language: 'he' });
-      expect(r.kind).toBe('definitely_not_sent');
+      expect(r).toEqual({ kind: 'definitely_not_sent', reason: 'provider_rejected', providerCode: String(code) });
     }
-    // 131050 is NOT in the verified set → conservative unknown (one advance-skip,
-    // never a wrong "definite" that would cost a resend).
-    sendMessage.mockResolvedValue({ error: { code: 131050 } });
+    // is_transient: false is Meta saying "not temporary" — still a rejection.
+    sendMessage.mockResolvedValue({ error: { code: 131048, is_transient: false } });
     const r = await sendWhatsAppTemplate(cfg, { to: '+972500000000', templateName: 't', language: 'he' });
-    expect(r.kind).toBe('unknown');
+    expect(r.kind).toBe('definitely_not_sent');
   });
 });
 
@@ -269,14 +267,26 @@ describe('sendWhatsAppMarketingTemplate', () => {
     expect(r.kind).toBe('definitely_not_sent');
   });
 
-  it('classifies MM Lite ineligibility (131055) as unknown, not definitely_not_sent', async () => {
-    apiFetch.mockResolvedValue({ json: async () => ({ error: { code: 131055 } }) });
+  it('an error code in the body is a known rejection that carries the code (131055, 130429)', async () => {
+    for (const code of [131055, 130429]) {
+      apiFetch.mockResolvedValue({ json: async () => ({ error: { code } }) });
+      const r = await sendWhatsAppMarketingTemplate(cfg, {
+        to: '+972500000000',
+        templateName: 't',
+        language: 'he',
+      });
+      expect(r).toMatchObject({ kind: 'definitely_not_sent', reason: 'provider_rejected', providerCode: String(code) });
+    }
+  });
+
+  it('MM Lite: an is_transient error stays unknown', async () => {
+    apiFetch.mockResolvedValue({ json: async () => ({ error: { code: 131000, is_transient: true } }) });
     const r = await sendWhatsAppMarketingTemplate(cfg, {
       to: '+972500000000',
       templateName: 't',
       language: 'he',
     });
-    expect(r.kind).toBe('unknown');
+    expect(r).toMatchObject({ kind: 'unknown', reason: 'provider_error', providerCode: '131000' });
   });
 
   it('fail-closed: a URL button + RSVP payloads is refused before any provider call', async () => {

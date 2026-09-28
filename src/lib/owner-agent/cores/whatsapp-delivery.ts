@@ -34,8 +34,8 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 // Sources: codes seen on the live table (131026, 130472 — measured 2026-09-24,
 // counts only), the codes the app already handles (131026 in
 // webhook-processing.ts WRONG_NUMBER_CODES; 131049/131047 in the send and
-// template-health paths), the template rejections of src/lib/whatsapp/client.ts
-// DEFINITELY_NOT_SENT_CODES that can also arrive asynchronously, and Meta's
+// template-health paths), the template rejections that can also arrive
+// asynchronously (132001/132015/132016), and Meta's
 // Cloud API error-code reference for the rate limits. Restated here rather than
 // imported: client.ts is the send client, and this core must not pull the
 // send path into its import graph.

@@ -138,10 +138,27 @@ describe('runStepExecution — reservation + certainty taxonomy', () => {
       expect(send).toHaveBeenCalledTimes(1);
       expect(resolve).toHaveBeenCalledTimes(1);
       expect(resolve).toHaveBeenCalledWith(
-        expect.objectContaining({ advance: true, terminalStatus: null, reason: 'provider_failure', jobId: JOB }),
+        expect.objectContaining({
+          advance: true,
+          terminalStatus: null,
+          reason: providerCode ? `provider_failure_${providerCode}` : 'provider_failure',
+          jobId: JOB,
+        }),
       );
     },
   );
+
+  it('unknown with a Meta server code keeps the code in the reason, still one send', async () => {
+    const send = vi.fn(
+      async () => ({ kind: 'unknown', reason: 'provider_error', providerCode: '131000' }) as StepSendResult,
+    );
+    const { deps, resolve } = makeDeps({ send });
+    await runStepExecution(deps, ARGS);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledWith(
+      expect.objectContaining({ advance: true, reason: 'dispatch_outcome_unknown_131000' }),
+    );
+  });
 
   it('unknown → resolve{advance, dispatch_outcome_unknown}; exactly one send (no resend)', async () => {
     const send = vi.fn(async () => ({ kind: 'unknown', reason: 'send_threw' }) as StepSendResult);

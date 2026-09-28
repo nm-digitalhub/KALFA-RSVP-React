@@ -30,13 +30,13 @@ export class WhatsAppSendError extends Error {
 // The PII-free delivery classification the serial-flow worker resolves on (§F.5
 // / §12.8.5). Exactly three outcomes:
 //   accepted            — the provider returned a message id (queued/sent).
-//   definitely_not_sent — a VERIFIED synchronous provider rejection (invalid
-//                         recipient/template/params, closed 24h window). KNOWN
-//                         not delivered. It says nothing about whether a resend
-//                         would help — callers must not retry on it alone.
-//   unknown             — timeout / network / 5xx / throttle / unmapped code /
-//                         missing id. Delivery UNCERTAIN → the worker NEVER
-//                         resends (advances at-most-once).
+//   definitely_not_sent — Meta answered with an error code (see below): the
+//                         request was refused, KNOWN not delivered. It says
+//                         nothing about whether a resend would help — callers
+//                         must not retry on it alone.
+//   unknown             — timeout / network / a thrown send / missing id / one
+//                         of Meta's server-side codes. Delivery UNCERTAIN → the
+//                         worker NEVER resends (advances at-most-once).
 // Carries only status/code numbers — never phone, name, or body.
 export type DeliveryOutcome =
   | { kind: 'accepted'; providerId: string }
@@ -48,38 +48,24 @@ export type DeliveryOutcome =
     }
   | { kind: 'unknown'; reason: string; providerStatus?: number; providerCode?: string };
 
-// Meta Cloud API error codes that are SYNCHRONOUS pre-queue rejections — the
-// message was KNOWN not delivered. ONLY these map to definitely_not_sent (known
-// not sent — not "retry": each of them repeats on a resend). Everything else — 5xx, network, timeout, throttling, account state,
-// unmapped codes — classifies as unknown (never resends). Conservative by
-// design: an unmapped code costs one advance-skip (the multi-touchpoint schedule
-// self-covers); a wrong 'definite' would cost a resend.
-// https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes
-const DEFINITELY_NOT_SENT_CODES = new Set<number>([
-  100, // invalid parameter / unsupported field
-  131008, // required parameter is missing
-  131009, // parameter value is not valid
-  131026, // message undeliverable (recipient cannot receive / not on WhatsApp)
-  131047, // re-engagement required (outside the 24h customer-service window)
-  131051, // unsupported message type
-  132000, // template param count mismatch
-  132001, // template does not exist / not approved for the language
-  132005, // template hydrated text too long
-  132007, // template content violates policy
-  132012, // template parameter format mismatch
-  132015, // template is paused
-  132016, // template is disabled
-  // 131055 (MM Lite: WABA not eligible for /marketing_messages, or ad-sync
-  // still in progress) is DELIBERATELY NOT here — it classifies as `unknown`,
-  // not `definitely_not_sent`. `product_policy: 'CLOUD_API_FALLBACK'` should
-  // already prevent it from ever reaching the caller as a hard rejection, and
-  // a false 'definite' here would cost a real resend; the conservative
-  // `unknown` (one advance-skip) is the safe default per the file-header policy.
-]);
+// A Meta error CODE in the response body means Meta refused the request and no
+// message was created — the API "returns an error response instead of a message
+// ID" (Cloud API message pages, read 2026-09-28). So the rule is Meta's own, not
+// a list of ours: an error body with a code is `definitely_not_sent`, whatever
+// the code, and carries the code so the reason is recorded.
+//
+// The one exception is also Meta's: the Graph error object has `is_transient`
+// ("Whether this error is temporary", Message Templates API reference → Error).
+// When Meta flags an error as temporary, the outcome of that request is left
+// open, so it stays `unknown` — like a timeout, a network failure, a thrown send
+// or a body with no id.
+//
+// Neither outcome means "send it again": no caller retries on a classification
+// alone (outreach/enqueue.ts advance-skips both).
 
-/** True for a Meta error code that means the message was KNOWN not delivered (see the list above). */
-export function isDefinitelyNotSentCode(code: number): boolean {
-  return DEFINITELY_NOT_SENT_CODES.has(code);
+/** True when Meta's error means the message was KNOWN not delivered (see above). */
+export function isDefinitelyNotSentError(error: { code: number; isTransient?: unknown }): boolean {
+  return error.isTransient !== true;
 }
 
 // Classify a RESOLVED sendMessage body. whatsapp-api-js returns the parsed JSON
@@ -89,13 +75,13 @@ export function isDefinitelyNotSentCode(code: number): boolean {
 function classifyResponse(res: unknown): DeliveryOutcome {
   const r = res as {
     messages?: Array<{ id?: string | null } | null> | null;
-    error?: { code?: number } | null;
+    error?: { code?: number; is_transient?: unknown } | null;
   } | null;
   const providerId = r?.messages?.[0]?.id;
   if (providerId) return { kind: 'accepted', providerId };
   const code = r?.error?.code;
   if (typeof code === 'number') {
-    return DEFINITELY_NOT_SENT_CODES.has(code)
+    return isDefinitelyNotSentError({ code, isTransient: r?.error?.is_transient })
       ? { kind: 'definitely_not_sent', reason: 'provider_rejected', providerCode: String(code) }
       : { kind: 'unknown', reason: 'provider_error', providerCode: String(code) };
   }

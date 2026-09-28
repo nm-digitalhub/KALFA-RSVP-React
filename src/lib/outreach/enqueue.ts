@@ -197,13 +197,20 @@ export async function runStepExecution(
       // retry). Advance-skip provider_failure at once — no release, no throw.
       // A per-code action (template fallback, wait-and-retry) is a separate
       // decision; it must not ride on this outcome.
-      const res = await resolve({ advance: true, terminalStatus: null, reason: 'provider_failure', jobId });
+      // The audit reason carries Meta's code (provider_failure_131047), so the
+      // activity log says why the step was skipped.
+      const code = outcome.providerCode && /^[0-9]{1,12}$/.test(outcome.providerCode) ? outcome.providerCode : null;
+      const reason = code ? `provider_failure_${code}` : 'provider_failure';
+      const res = await resolve({ advance: true, terminalStatus: null, reason, jobId });
       if (res === 'error') throw new Error('resolve_after_provider_failure_failed');
       return;
     }
     case 'unknown': {
       // Delivery UNCERTAIN → NEVER resend; advance at-most-once (guarded to J).
-      const res = await resolve({ advance: true, terminalStatus: null, reason: 'dispatch_outcome_unknown', jobId });
+      // Meta's server-side code, when there is one, is kept in the reason.
+      const code = outcome.providerCode && /^[0-9]{1,12}$/.test(outcome.providerCode) ? outcome.providerCode : null;
+      const reason = code ? `dispatch_outcome_unknown_${code}` : 'dispatch_outcome_unknown';
+      const res = await resolve({ advance: true, terminalStatus: null, reason, jobId });
       if (res === 'error') throw new Error('resolve_after_unknown_failed');
       return;
     }

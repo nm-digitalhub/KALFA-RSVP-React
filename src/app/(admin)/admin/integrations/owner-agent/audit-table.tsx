@@ -130,11 +130,34 @@ const REASON_LABELS: Record<string, string> = {
 
 // Any report_* outcome a later change adds reads as a report outcome rather
 // than as a bare code.
-// A delivery failure carries Meta's own code as meta_<digits>.
+// Meta's own error codes (Cloud API error-code reference), for the ones a send or
+// a delivery can realistically hit. Any other code still shows as its number.
+const META_CODE_LABELS: Record<string, string> = {
+  '10': 'אין הרשאה',
+  '190': 'הטוקן פג',
+  '130429': 'חריגה מקצב השליחה',
+  '131026': 'המספר לא יכול לקבל את ההודעה',
+  '131042': 'בעיה באמצעי התשלום',
+  '131045': 'המספר השולח לא רשום',
+  '131048': 'הגבלת ספאם על המספר',
+  '131049': 'מגבלת הודעות שיווק לנמען',
+  '131050': 'הנמען הפסיק לקבל הודעות שיווק',
+  '131056': 'יותר מדי הודעות לאותו נמען',
+  '131057': 'החשבון בתחזוקה',
+  '132001': 'התבנית לא קיימת או לא מאושרת',
+  '132015': 'התבנית מושהית',
+  '132016': 'התבנית הושבתה',
+};
+
+// A failure carries Meta's own code as meta_<digits>.
 function reasonLabel(code: string): string {
   const known = REASON_LABELS[code];
   if (known) return known;
-  if (/^meta_[0-9]+$/.test(code)) return `קוד Meta ${code.slice('meta_'.length)}`;
+  const meta = /^meta_([0-9]+)$/.exec(code);
+  if (meta) {
+    const label = META_CODE_LABELS[meta[1]];
+    return label ? `${label} (קוד Meta ${meta[1]})` : `קוד Meta ${meta[1]}`;
+  }
   return code;
 }
 

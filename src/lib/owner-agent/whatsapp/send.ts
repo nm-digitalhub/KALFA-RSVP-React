@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { isDefinitelyNotSentCode, type DeliveryOutcome } from '@/lib/whatsapp/client';
+import { isDefinitelyNotSentError, type DeliveryOutcome } from '@/lib/whatsapp/client';
 
 import type { GraphSendResponse, OwnerAgentInteractive, OwnerAgentWhatsApp } from './adapter';
 
@@ -64,6 +64,8 @@ interface GraphErrorLike {
   name?: unknown;
   errorCode?: unknown;
   status?: unknown;
+  /** The parsed body; Meta's `error.is_transient` lives there (adapter keeps it verbatim). */
+  raw?: unknown;
 }
 
 // Exported for the tests; the send functions are the API.
@@ -72,7 +74,10 @@ export function classifyAdapterThrow(e: unknown): DeliveryOutcome {
   const status = typeof err.status === 'number' ? err.status : undefined;
   if (err.name === 'WhatsAppApiError' && typeof err.errorCode === 'number') {
     const providerCode = String(err.errorCode);
-    return isDefinitelyNotSentCode(err.errorCode)
+    const raw = (typeof err.raw === 'object' && err.raw !== null ? err.raw : {}) as {
+      error?: { is_transient?: unknown } | null;
+    };
+    return isDefinitelyNotSentError({ code: err.errorCode, isTransient: raw.error?.is_transient })
       ? { kind: 'definitely_not_sent', reason: 'provider_rejected', providerStatus: status, providerCode }
       : { kind: 'unknown', reason: 'provider_error', providerStatus: status, providerCode };
   }

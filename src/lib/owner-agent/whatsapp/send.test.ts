@@ -170,10 +170,16 @@ describe('DeliveryOutcome mapping', () => {
     });
   });
 
-  it('130429 (throttle) → unknown, never resent', async () => {
+  it('130429 (throttle) → a known rejection with its code', async () => {
     responder = () => json(429, { error: { code: 130429, message: 'Rate limit hit' } });
     const out = await sendOwnerAgentButtons(wa, { to: TO, body: 'x', buttons: [{ id: 'a', title: 'a' }] });
-    expect(out).toMatchObject({ kind: 'unknown', reason: 'provider_error', providerCode: '130429' });
+    expect(out).toMatchObject({ kind: 'definitely_not_sent', reason: 'provider_rejected', providerCode: '130429' });
+  });
+
+  it('an error Meta flags is_transient → unknown, never resent', async () => {
+    responder = () => json(500, { error: { code: 131000, message: 'Something went wrong', is_transient: true } });
+    const out = await sendOwnerAgentButtons(wa, { to: TO, body: 'x', buttons: [{ id: 'a', title: 'a' }] });
+    expect(out).toMatchObject({ kind: 'unknown', reason: 'provider_error', providerCode: '131000' });
   });
 
   it('a transport throw → unknown', async () => {

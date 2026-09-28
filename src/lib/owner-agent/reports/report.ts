@@ -477,7 +477,11 @@ async function send(fn: () => Promise<DeliveryOutcome>): Promise<DeliveryOutcome
 function failureCode(outcome: Exclude<DeliveryOutcome, { kind: 'accepted' }>, sentBefore: number): string {
   if (sentBefore > 0) return 'partial_send';
   if (outcome.kind === 'definitely_not_sent') {
-    return outcome.providerCode === '131047' ? 'window_closed' : 'provider_rejected';
+    if (outcome.providerCode === '131047') return 'window_closed';
+    // Meta's own code, so the log says WHY it was refused (meta_<digits>).
+    return outcome.providerCode && /^[0-9]{1,12}$/.test(outcome.providerCode)
+      ? `meta_${outcome.providerCode}`
+      : 'provider_rejected';
   }
   return 'send_unknown';
 }
