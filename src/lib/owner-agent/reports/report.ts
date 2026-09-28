@@ -3,7 +3,7 @@ import 'server-only';
 import { z } from 'zod';
 
 import type { SlackAlertInput } from '@/lib/alerts/slack';
-import type { WhatsAppSender } from '@/lib/owner-agent/consumer/reply';
+import { sendFailureCode, type WhatsAppSender } from '@/lib/owner-agent/consumer/reply';
 import { splitForWhatsApp } from '@/lib/owner-agent/consumer/reply-text';
 import { OwnerAgentRunError } from '@/lib/owner-agent/runner';
 import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-agent/tools/shared';
@@ -51,7 +51,7 @@ import type { ReportAuditInput, ReportEntryRow, ReportRunRow, ReportStore, Repor
 // staff member's last message to this number is younger than 24h minus a
 // 15-minute margin; otherwise an approved template from app_settings, and no
 // template = skipped/template_unavailable. The one fallback: a text that Meta
-// refused with 131047 (closed window, `definitely_not_sent` — proven not sent)
+// refused with 131047 (closed window, `definitely_not_sent` — Meta's refusal)
 // before any part went out is retried once as the template.
 //
 // TWO TEMPLATES, bound to the content's kind (content.ts ReportContent): the
@@ -474,18 +474,6 @@ async function send(fn: () => Promise<DeliveryOutcome>): Promise<DeliveryOutcome
   }
 }
 
-function failureCode(outcome: Exclude<DeliveryOutcome, { kind: 'accepted' }>, sentBefore: number): string {
-  if (sentBefore > 0) return 'partial_send';
-  if (outcome.kind === 'definitely_not_sent') {
-    if (outcome.providerCode === '131047') return 'window_closed';
-    // Meta's own code, so the log says WHY it was refused (meta_<digits>).
-    return outcome.providerCode && /^[0-9]{1,12}$/.test(outcome.providerCode)
-      ? `meta_${outcome.providerCode}`
-      : 'provider_rejected';
-  }
-  return 'send_unknown';
-}
-
 async function deliverText(
   from: WhatsAppSender,
   to: string,
@@ -509,7 +497,7 @@ async function deliverText(
       const viaTemplate = await deliverTemplate(from, to, content, template, deps);
       return viaTemplate.ok ? { ...viaTemplate, fellBack: true } : viaTemplate;
     }
-    return { ok: false, channel: 'text', wamid: firstWamid, code: failureCode(outcome, sent) };
+    return { ok: false, channel: 'text', wamid: firstWamid, code: sendFailureCode(outcome, sent) };
   }
   return { ok: true, channel: 'text', wamid: firstWamid, fellBack: false };
 }
@@ -532,7 +520,7 @@ async function deliverTemplate(
   if (outcome.kind === 'accepted') {
     return { ok: true, channel: 'template', wamid: outcome.providerId, fellBack: false };
   }
-  return { ok: false, channel: 'template', wamid: null, code: failureCode(outcome, 0) };
+  return { ok: false, channel: 'template', wamid: null, code: sendFailureCode(outcome, 0) };
 }
 
 async function skip(

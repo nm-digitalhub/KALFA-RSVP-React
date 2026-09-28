@@ -190,11 +190,11 @@ export async function runStepExecution(
       return;
     }
     case 'definitely_not_sent': {
-      // Meta REJECTED the request (a mapped error code: bad recipient, missing or
-      // paused template, closed 24h window, …). "Known not sent" is not "worth
-      // sending again": every mapped code is deterministic, so resending the same
-      // request only repeats the rejection (and 131047 needs a template, not a
-      // retry). Advance-skip provider_failure at once — no release, no throw.
+      // Meta answered with an error code it did not mark temporary — read as a
+      // refusal of the request (client.ts). A refusal is not "worth sending
+      // again": the same request meets the same answer (and 131047 needs a
+      // template, not a retry). Advance-skip provider_failure at once — no
+      // release, no throw.
       // A per-code action (template fallback, wait-and-retry) is a separate
       // decision; it must not ride on this outcome.
       // The audit reason carries Meta's code (provider_failure_131047), so the
@@ -206,8 +206,9 @@ export async function runStepExecution(
       return;
     }
     case 'unknown': {
-      // Delivery UNCERTAIN → NEVER resend; advance at-most-once (guarded to J).
-      // Meta's server-side code, when there is one, is kept in the reason.
+      // Nothing is assumed about delivery → NEVER resend; advance at-most-once
+      // (guarded to J). Meta's code, when there is one (an error Meta marked
+      // temporary), is kept in the reason.
       const code = outcome.providerCode && /^[0-9]{1,12}$/.test(outcome.providerCode) ? outcome.providerCode : null;
       const reason = code ? `dispatch_outcome_unknown_${code}` : 'dispatch_outcome_unknown';
       const res = await resolve({ advance: true, terminalStatus: null, reason, jobId });

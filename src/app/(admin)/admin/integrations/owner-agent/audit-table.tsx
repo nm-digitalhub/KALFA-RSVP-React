@@ -158,6 +158,9 @@ function reasonLabel(code: string): string {
     const label = META_CODE_LABELS[meta[1]];
     return label ? `${label} (קוד Meta ${meta[1]})` : `קוד Meta ${meta[1]}`;
   }
+  // An unknown outcome that still carried Meta's code (Meta marked it temporary).
+  const unknown = /^send_unknown_([0-9]+)$/.exec(code);
+  if (unknown) return `${REASON_LABELS.send_unknown} (קוד Meta ${unknown[1]})`;
   return code;
 }
 

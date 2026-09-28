@@ -873,18 +873,21 @@ async function sendGate(intake: IntakeRow, recipient: string, deps: ReplyDeps): 
   return null;
 }
 
-// Codes only (they fit the audit CHECK). 131047 is Meta's closed 24h window
-// (plan §2.4); anything else definite is a rejection; the rest is unknown.
-function sendFailureCode(outcome: Exclude<DeliveryOutcome, { kind: 'accepted' }>, sentBefore: number): string {
+// Codes only (they fit the audit CHECK and report_run.error_code). 131047 is
+// Meta's closed 24h window (plan §2.4). Whenever Meta sent a code, it is kept —
+// on a rejection AND on an unknown outcome — so the log says what Meta answered
+// instead of a bare "unknown". Shared with the report sender.
+export function sendFailureCode(
+  outcome: Exclude<DeliveryOutcome, { kind: 'accepted' }>,
+  sentBefore: number,
+): string {
   if (sentBefore > 0) return 'partial_send';
+  const code = outcome.providerCode && /^[0-9]{1,12}$/.test(outcome.providerCode) ? outcome.providerCode : null;
   if (outcome.kind === 'definitely_not_sent') {
-    if (outcome.providerCode === '131047') return 'window_closed';
-    // Meta's own code, so the log says WHY it was refused (meta_<digits>).
-    return outcome.providerCode && /^[0-9]{1,12}$/.test(outcome.providerCode)
-      ? `meta_${outcome.providerCode}`
-      : 'provider_rejected';
+    if (code === '131047') return 'window_closed';
+    return code ? `meta_${code}` : 'provider_rejected';
   }
-  return 'send_unknown';
+  return code ? `send_unknown_${code}` : 'send_unknown';
 }
 
 async function audit(

@@ -30,13 +30,16 @@ export class WhatsAppSendError extends Error {
 // The PII-free delivery classification the serial-flow worker resolves on (§F.5
 // / §12.8.5). Exactly three outcomes:
 //   accepted            — the provider returned a message id (queued/sent).
-//   definitely_not_sent — Meta answered with an error code (see below): the
-//                         request was refused, KNOWN not delivered. It says
-//                         nothing about whether a resend would help — callers
-//                         must not retry on it alone.
-//   unknown             — timeout / network / a thrown send / missing id / one
-//                         of Meta's server-side codes. Delivery UNCERTAIN → the
-//                         worker NEVER resends (advances at-most-once).
+//   definitely_not_sent — Meta answered the send with an error code and no
+//                         message id, and did not mark it temporary (see below).
+//                         Read as "Meta refused this request". It says nothing
+//                         about whether a resend would help — callers must not
+//                         retry on it alone.
+//   unknown             — timeout / network / a thrown send / a body with no id /
+//                         an error Meta marked temporary. Nothing is assumed about
+//                         delivery → the worker NEVER resends (advances
+//                         at-most-once).
+// Both non-accepted outcomes keep Meta's code when there is one.
 // Carries only status/code numbers — never phone, name, or body.
 export type DeliveryOutcome =
   | { kind: 'accepted'; providerId: string }
@@ -48,30 +51,33 @@ export type DeliveryOutcome =
     }
   | { kind: 'unknown'; reason: string; providerStatus?: number; providerCode?: string };
 
-// A Meta error CODE in the response body means Meta refused the request and no
-// message was created — the API "returns an error response instead of a message
-// ID" (Cloud API message pages, read 2026-09-28). So the rule is Meta's own, not
-// a list of ours: an error body with a code is `definitely_not_sent`, whatever
-// the code, and carries the code so the reason is recorded.
-//
-// The one exception is also Meta's: the Graph error object has `is_transient`
-// ("Whether this error is temporary", Message Templates API reference → Error).
-// When Meta flags an error as temporary, the outcome of that request is left
-// open, so it stays `unknown` — like a timeout, a network failure, a thrown send
-// or a body with no id.
+// How an error response is read — by Meta's documented response shape, not by
+// a list of codes of ours:
+//   - The docs say a failed request "returns an error response instead of a
+//     message ID" (Cloud API message pages, read 2026-09-28). So a body with an
+//     error code and no id is treated as a refusal: `definitely_not_sent`,
+//     carrying the code.
+//   - The Graph error object has `is_transient` ("Whether this error is
+//     temporary", Message Templates API reference → Error). When Meta sets it,
+//     we do not treat the request as refused; it stays `unknown`.
+// `is_transient` is only Meta's temporary/not-temporary flag. Its absence is NOT
+// proof that the message was not delivered, and its presence is not proof that
+// it was — delivery itself is only known from the status webhooks (sent /
+// delivered / read / failed). This rule decides the send-time label and nothing
+// more.
 //
 // Neither outcome means "send it again": no caller retries on a classification
 // alone (outreach/enqueue.ts advance-skips both).
 
-/** True when Meta's error means the message was KNOWN not delivered (see above). */
+/** True when Meta's error reads as a refusal of the request: no id, not marked temporary (see above). */
 export function isDefinitelyNotSentError(error: { code: number; isTransient?: unknown }): boolean {
   return error.isTransient !== true;
 }
 
 // Classify a RESOLVED sendMessage body. whatsapp-api-js returns the parsed JSON
 // (it does NOT throw on an HTTP 4xx/5xx — a Meta error arrives as { error: {…} }
-// in the body). A message id ⇒ accepted; a mapped error code ⇒ definitely_not_sent;
-// anything else ⇒ unknown.
+// in the body). A message id ⇒ accepted; an error code not marked temporary ⇒
+// definitely_not_sent; anything else ⇒ unknown. The code is kept either way.
 function classifyResponse(res: unknown): DeliveryOutcome {
   const r = res as {
     messages?: Array<{ id?: string | null } | null> | null;

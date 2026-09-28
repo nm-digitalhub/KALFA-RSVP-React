@@ -255,7 +255,7 @@ describe('delivery', () => {
     deps.sendText.mockResolvedValueOnce({ kind: 'unknown', reason: 'provider_error', providerCode: '131000' });
     expect(await run()).toBe('send_failed');
     expect(deps.sendTemplate).not.toHaveBeenCalled();
-    expect(state.run.patch).toMatchObject({ errorCode: 'send_unknown' });
+    expect(state.run.patch).toMatchObject({ errorCode: 'send_unknown_131000' });
   });
 
   it('a later part failing is partial_send, with no fallback', async () => {
