@@ -964,7 +964,7 @@ describe('inbound media (§4.2)', () => {
     expect(caps.downloadMedia).toHaveBeenCalledTimes(1);
     const [from, req] = caps.downloadMedia.mock.calls[0];
     expect(from.phoneNumberId).toBe(NUMBER);
-    expect(req).toMatchObject({ mediaId: '1234567890', phoneNumberId: NUMBER, maxBytes: 5 * 1024 * 1024 });
+    expect(req).toMatchObject({ mediaId: '1234567890', phoneNumberId: NUMBER, maxBytes: 16 * 1024 * 1024 });
     expect(req.allowedMime).toEqual([
       'image/jpeg',
       'image/png',
@@ -1048,10 +1048,10 @@ describe('inbound media (§4.2)', () => {
     expect(intakeRow(w)?.status).toBe('answered');
   });
 
-  it('an image bigger than 5MB after download is refused even if the lookup let it through', async () => {
+  it('an image bigger than 16MB after download is refused even if the lookup let it through', async () => {
     const w = world({ intake: image });
     const caps = withCaps(w);
-    caps.downloadMedia.mockResolvedValue({ kind: 'ok', bytes: Buffer.alloc(5 * 1024 * 1024 + 1), mime: 'image/png' });
+    caps.downloadMedia.mockResolvedValue({ kind: 'ok', bytes: Buffer.alloc(16 * 1024 * 1024 + 1), mime: 'image/png' });
     expect(await handleOwnerAgentReply(job, w.deps)).toBe('media_rejected');
     expect(audits(w)[0]).toMatchObject({ reason_code: 'media_too_large' });
   });

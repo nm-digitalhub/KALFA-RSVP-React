@@ -329,7 +329,7 @@ const MODEL = /^[A-Za-z0-9][A-Za-z0-9._[\]-]{0,63}$/;
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const nonBlank = (s: string) => s.trim().length > 0;
 
-// Attachment ceilings (deviation 12). The caller caps each file (image 5MB,
+// Attachment ceilings (deviation 12). The caller caps each file (image 16MB,
 // document 16MB); these bound the whole turn — the base64 of 24MB, and a text
 // document that fits the model's context.
 export const MAX_ATTACHMENTS = 4;
@@ -571,7 +571,7 @@ export function buildOwnerAgentArgs(options: {
     '--mcp-config',
     options.mcpConfig,
     '--tools',
-    '',
+    'RemoteTrigger',
   ];
   // Omitted, not passed empty, when nothing is permitted: an empty value of a
   // variadic option is not something the CLI documents. (Since the Supabase

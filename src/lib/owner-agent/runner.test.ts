@@ -204,7 +204,7 @@ function expectedArgs(opts: { allowed: string[]; permissions: string; resume?: s
     '--mcp-config',
     mcpConfig,
     '--tools',
-    '',
+    'RemoteTrigger',
     '--allowedTools',
     [...opts.allowed, ...SUPABASE_TOOLS].join(','),
     '--system-prompt',
@@ -293,11 +293,11 @@ describe('the walls that must always be there', () => {
     [baseInput({ permissions: [] })],
     [baseInput({ permissions: ['view_billing'] })],
     [baseInput({ resumeSessionId: SESSION, permissions: ['view_webhooks', 'manage_voice'] })],
-  ])('--tools "" and --strict-mcp-config are present (%#)', async (input) => {
+  ])('--tools RemoteTrigger and --strict-mcp-config are present (%#)', async (input) => {
     const { call } = await runWith(input);
     const tools = call.args.indexOf('--tools');
     expect(tools).toBeGreaterThan(-1);
-    expect(call.args[tools + 1]).toBe('');
+    expect(call.args[tools + 1]).toBe('RemoteTrigger');
     expect(call.args.filter((a) => a === '--tools')).toHaveLength(1);
     expect(call.args).toContain('--strict-mcp-config');
     expect(call.args.filter((a) => a === '--mcp-config')).toHaveLength(1);

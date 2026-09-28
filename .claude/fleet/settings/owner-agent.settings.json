@@ -14,7 +14,8 @@
       "mcp__owner_agent__web_traffic_summary",
       "mcp__owner_agent__system_health",
       "mcp__supabase__execute_sql",
-      "mcp__supabase__list_tables"
+      "mcp__supabase__list_tables",
+      "RemoteTrigger"
     ],
     "deny": [
       "Agent",
@@ -37,7 +38,6 @@
       "CronCreate",
       "CronDelete",
       "CronList",
-      "RemoteTrigger",
       "EnterWorktree",
       "ExitWorktree",
       "EnterPlanMode",

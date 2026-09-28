@@ -121,7 +121,11 @@ const IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp'] as const;
 const CSV_MIME = ['text/csv', 'text/comma-separated-values', 'application/csv'] as const;
 const DOCUMENT_MIME = ['application/pdf', 'text/plain', ...CSV_MIME] as const;
 export const OWNER_AGENT_MEDIA_ALLOWED_MIME: readonly string[] = [...IMAGE_MIME, ...DOCUMENT_MIME];
-export const OWNER_AGENT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+// Same cap as a document: `claude -p` resizes large images itself (up to 8000px
+// on the longest edge) and the runner caps the whole turn at 32MB of base64
+// (runner.ts MAX_ATTACHMENT_BASE64_TOTAL). The old 5MB was our own choice, not
+// a Claude limit.
+export const OWNER_AGENT_IMAGE_MAX_BYTES = 16 * 1024 * 1024;
 export const OWNER_AGENT_DOCUMENT_MAX_BYTES = 16 * 1024 * 1024;
 
 export interface WhatsAppSender {

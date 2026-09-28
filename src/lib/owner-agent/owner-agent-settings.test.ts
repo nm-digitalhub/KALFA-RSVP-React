@@ -51,7 +51,6 @@ const REQUIRED_DENIED = [
   'CronCreate',
   'CronDelete',
   'CronList',
-  'RemoteTrigger',
   'EnterWorktree',
   'ExitWorktree',
   'EnterPlanMode',
@@ -89,14 +88,15 @@ describe('owner-agent.settings.json', () => {
     const expected = [
       ...OWNER_AGENT_TOOLS.map((t) => mcpToolName(t.tool.id)),
       ...SUPABASE_TOOL_IDS.map(supabaseMcpToolName),
+      'RemoteTrigger',
     ].sort();
     expect([...settings.permissions.allow].sort()).toEqual(expected);
-    expect(settings.permissions.allow).toHaveLength(11);
+    expect(settings.permissions.allow).toHaveLength(12);
   });
 
   it('allows no wildcard, and of the Supabase server only execute_sql and list_tables', () => {
     for (const rule of settings.permissions.allow) {
-      expect(rule).toMatch(/^mcp__(owner_agent__[a-z][a-z0-9_]*|supabase__(execute_sql|list_tables))$/);
+      expect(rule).toMatch(/^(RemoteTrigger|mcp__(owner_agent__[a-z][a-z0-9_]*|supabase__(execute_sql|list_tables)))$/);
     }
   });
 

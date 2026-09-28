@@ -80,7 +80,7 @@ export const OWNER_AGENT_UNSUPPORTED_VOICE_REPLY = 'הודעות קוליות ע
 
 /** The fixed reply when the only thing sent was a file that could not be read. */
 export const OWNER_AGENT_MEDIA_REJECTED_REPLY =
-  'לא הצלחתי לפתוח את הקובץ. אפשר לשלוח תמונה (JPG, PNG או WEBP, עד 5MB) או מסמך (PDF, טקסט או CSV, עד 16MB), או לכתוב את השאלה בטקסט.';
+  'לא הצלחתי לפתוח את הקובץ. אפשר לשלוח תמונה (JPG, PNG או WEBP, עד 16MB) או מסמך (PDF, טקסט או CSV, עד 16MB), או לכתוב את השאלה בטקסט.';
 
 /**
  * One message of a turn, as the prompt shows it. Client-controlled strings
