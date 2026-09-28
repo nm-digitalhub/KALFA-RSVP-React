@@ -7,7 +7,7 @@
 // האחרונים אחרי שההמתנה כבר חזרה, ולכן התקרה עלתה - היא תקרה, לא זמן המתנה:
 // עמוד יציב יוצא ממנה תוך שתי שניות.
 const SETTLE_TIMEOUT_MS = 20_000;
-const SETTLE_MIN_CHARS = 200;
+const SETTLE_SHORT_CONTENT_CHARS = 200;
 /** כמה זמן אורך הטקסט חייב להישאר ללא שינוי לפני שהעמוד נחשב מרונדר. */
 const SETTLE_STABLE_MS = 700;
 /**
@@ -25,6 +25,18 @@ const SETTLE_STABLE_MS = 700;
  */
 const SETTLE_MIN_OBSERVE_MS = 2_000;
 
+function contentRootDescriptor(contentRoot) {
+    if (typeof contentRoot === 'string') {
+        return contentRoot.trim() ? { selector: contentRoot, matchIndex: 0 } : null;
+    }
+    if (!contentRoot || typeof contentRoot.selector !== 'string' || !contentRoot.selector.trim()) {
+        return null;
+    }
+    const matchIndex = contentRoot.matchIndex ?? 0;
+    if (!Number.isInteger(matchIndex) || matchIndex < 0) return null;
+    return { selector: contentRoot.selector, matchIndex };
+}
+
 // ה-root נבחר לפי ניקוד, לא לפי זהות המחולל. המשקלים מתגמלים סימני תוכן
 // (פסקאות, כותרות, בלוקי קוד) ומענישים סימני ניווט (nav/aside/footer וצפיפות
 // קישורים), כך שסרגל צד עם 116 קישורים מפסיד לגוף עמוד גם כשהוא ארוך ממנו.
@@ -40,13 +52,14 @@ export async function detectContentRoot(page) {
             '.documentation',
         ];
         const candidates = [];
+        const seenElements = new WeakSet();
 
         function scoreElement(el) {
             const text = (el.innerText || '').trim();
             if (text.length < 100) return -Infinity;
             const chars = text.length;
             const paragraphs = el.querySelectorAll('p').length;
-            const headings = el.querySelectorAll('h1,h2,h3,h4').length;
+            const headings = el.querySelectorAll('h1,h2,h3,h4,h5,h6').length;
             const codeBlocks = el.querySelectorAll('pre').length;
             const listItems = el.querySelectorAll('li').length;
             const links = el.querySelectorAll('a[href]').length;
@@ -69,6 +82,8 @@ export async function detectContentRoot(page) {
         // על סתירה. זה בדיוק הכשל השקט שהגרסה הזו קיימת כדי למנוע.
         for (const selector of explicitSelectors) {
             document.querySelectorAll(selector).forEach((el, matchIndex) => {
+                if (seenElements.has(el)) return;
+                seenElements.add(el);
                 candidates.push({
                     selector,
                     matchIndex,
@@ -122,13 +137,26 @@ export async function detectContentRoot(page) {
 export async function extractPage(page, contentRoot) {
     // מקבל גם מחרוזת וגם את ה-contentRoot המלא, כדי לא לשבור קריאה קיימת.
     // מחרוזת פירושה "ההתאמה הראשונה", וזו בדיוק ההנחה שהייתה כאן קודם.
-    const descriptor =
-        typeof contentRoot === 'string'
-            ? { selector: contentRoot, matchIndex: 0 }
-            : { selector: contentRoot.selector, matchIndex: contentRoot.matchIndex ?? 0 };
+    const descriptor = contentRootDescriptor(contentRoot);
+
+    if (!descriptor) {
+        return {
+            rootFound: false,
+            html: '',
+            content: '',
+            headings: [],
+            codeBlocks: [],
+            hyperlinks: [],
+        };
+    }
 
     return page.evaluate(({ selector, matchIndex }) => {
-        const root = document.querySelectorAll(selector)[matchIndex];
+        let root;
+        try {
+            root = document.querySelectorAll(selector)[matchIndex];
+        } catch {
+            root = null;
+        }
         if (!root) {
             return {
                 rootFound: false,
@@ -140,7 +168,7 @@ export async function extractPage(page, contentRoot) {
             };
         }
 
-        const headings = [...root.querySelectorAll('h1,h2,h3,h4')]
+        const headings = [...root.querySelectorAll('h1,h2,h3,h4,h5,h6')]
             .map((h) => ({
                 level: Number(h.tagName.slice(1)),
                 text: h.innerText.trim(),
@@ -166,9 +194,11 @@ export async function extractPage(page, contentRoot) {
         const hyperlinks = [...root.querySelectorAll('a[href]')]
             .map((el) => {
                 try {
+                    const url = new URL(el.getAttribute('href'), document.baseURI);
+                    if (!['http:', 'https:', 'mailto:', 'tel:'].includes(url.protocol)) return null;
                     return {
                         text: el.innerText.trim() || '[ללא טקסט/אייקון]',
-                        url: new URL(el.getAttribute('href'), location.href).href,
+                        url: url.href,
                     };
                 } catch {
                     return null;
@@ -213,12 +243,15 @@ export async function extractPage(page, contentRoot) {
             // שעומד להימחק. data-language הוא הדפוס של Expressive Code ו-Shiki;
             // language-/lang- הוא של כל השאר.
             const code = pre.querySelector('code');
-            const declared =
+            const rawDeclared =
                 pre.getAttribute('data-language') ||
                 pre.getAttribute('data-lang') ||
                 `${code?.getAttribute('class') ?? ''} ${pre.getAttribute('class') ?? ''}`
-                    .match(/(?:language-|lang-)([\w+#-]+)/)?.[1] ||
+                    .split(/\s+/)
+                    .map((token) => token.match(/^(?:language-|lang-)([\w+#.-]+)$/)?.[1])
+                    .find(Boolean) ||
                 '';
+            const declared = rawDeclared.trim().match(/^[A-Za-z0-9_+#.-]+$/)?.[0] || '';
             if (declared) {
                 pre.setAttribute('data-language', declared);
             }
@@ -235,19 +268,57 @@ export async function extractPage(page, contentRoot) {
 
         clone.querySelectorAll('script, style, noscript, button, [aria-hidden="true"]')
             .forEach((el) => el.remove());
-        clone.querySelectorAll('a[href]').forEach((a) => {
+        const safeUrl = (raw, { allowContact = false } = {}) => {
             try {
-                a.setAttribute('href', new URL(a.getAttribute('href'), location.href).href);
+                const url = new URL(raw, document.baseURI);
+                const allowed = ['http:', 'https:'];
+                if (allowContact) allowed.push('mailto:', 'tel:');
+                return allowed.includes(url.protocol) ? url.href : null;
             } catch {
-                // קישור שאינו כתובת (javascript:, mailto מעוות). נשאר כפי שהוא.
+                return null;
             }
+        };
+
+        clone.querySelectorAll('a[href]').forEach((a) => {
+            const href = safeUrl(a.getAttribute('href'), { allowContact: true });
+            if (href) a.setAttribute('href', href);
+            else a.removeAttribute('href');
         });
         clone.querySelectorAll('img[src]').forEach((img) => {
-            try {
-                img.setAttribute('src', new URL(img.getAttribute('src'), location.href).href);
-            } catch {
-                // src שאינו כתובת (data: פגום). נשאר כפי שהוא.
-            }
+            const src = safeUrl(img.getAttribute('src'));
+            if (src) img.setAttribute('src', src);
+            else img.removeAttribute('src');
+        });
+
+        const absolutizeAttribute = (selector, attribute, options) => {
+            clone.querySelectorAll(selector).forEach((element) => {
+                const resolved = safeUrl(element.getAttribute(attribute), options);
+                if (resolved) element.setAttribute(attribute, resolved);
+                else element.removeAttribute(attribute);
+            });
+        };
+        absolutizeAttribute('source[src],video[src],audio[src],track[src],iframe[src]', 'src');
+        absolutizeAttribute('video[poster]', 'poster');
+        absolutizeAttribute('[data-src]', 'data-src');
+        clone.querySelectorAll('img[data-src]:not([src]),video[data-src]:not([src]),audio[data-src]:not([src])')
+            .forEach((element) => element.setAttribute('src', element.getAttribute('data-src')));
+
+        const absolutizeSrcset = (element, attribute) => {
+            const candidates = (element.getAttribute(attribute) || '').split(',');
+            const resolved = candidates.map((candidate) => {
+                const match = candidate.trim().match(/^(\S+)(\s+.+)?$/);
+                if (!match) return null;
+                const url = safeUrl(match[1]);
+                return url ? `${url}${match[2] ?? ''}` : null;
+            }).filter(Boolean);
+            if (resolved.length) element.setAttribute(attribute, resolved.join(', '));
+            else element.removeAttribute(attribute);
+        };
+        clone.querySelectorAll('img[srcset],source[srcset]').forEach((element) => {
+            absolutizeSrcset(element, 'srcset');
+        });
+        clone.querySelectorAll('[data-srcset]').forEach((element) => {
+            absolutizeSrcset(element, 'data-srcset');
         });
 
         return {
@@ -268,7 +339,8 @@ export async function collectNavigationLinks(page) {
         return [...document.querySelectorAll('a[href]')]
             .map((a) => {
                 try {
-                    return new URL(a.getAttribute('href'), location.href).href;
+                    const url = new URL(a.getAttribute('href'), document.baseURI);
+                    return ['http:', 'https:'].includes(url.protocol) ? url.href : null;
                 } catch {
                     return null;
                 }
@@ -316,10 +388,10 @@ export async function readMetaRefreshTarget(page) {
             const meta = document.querySelector('meta[http-equiv="refresh" i]');
             if (!meta) return null;
             const content = meta.getAttribute('content') || '';
-            const match = content.match(/url\s*=\s*(.+)$/i);
+            const match = content.match(/(?:^|;)\s*url\s*=\s*([^;]+)\s*(?:;|$)/i);
             if (!match) return null;
             try {
-                return new URL(match[1].trim().replace(/^['"]|['"]$/g, ''), location.href).href;
+                return new URL(match[1].trim().replace(/^['"]|['"]$/g, ''), document.baseURI).href;
             } catch {
                 return null;
             }
@@ -341,38 +413,106 @@ export async function readMetaRefreshTarget(page) {
 // בתוך אקורדיון MUI ריק. הכשל לא הותיר שום סימן: העמוד נראה תקין, עם כותרות
 // ותוכן, רק קצר יותר מהאמת.
 //
-// הסף נשאר כשער כניסה בלבד (עמוד ריק לגמרי לא ייחשב "יציב"), וההכרעה עברה
-// ליציבות: אורך הטקסט חייב להישאר ללא שינוי לאורך SETTLE_STABLE_MS רצופים.
+// הסף משמש לסיווג בלבד, לא כשער: גם עמוד קצר יכול להיות יציב, וה-validator
+// יחליט לאחר מכן אם הוא תוכן תקין או stub. שינוי נמדד באמצעות MutationObserver
+// ולא לפי אורך בלבד, ולכן גם החלפה באותו אורך מאפסת את חלון היציבות.
 export async function settlePage(page) {
-    await page
-        .waitForFunction(
+    try {
+        const result = await page.waitForFunction(
             ({ minChars, stableMs, observeMs }) => {
                 const body = document.body;
                 if (!body) return false;
                 const length = body.innerText.trim().length;
-                if (length < minChars) return false;
 
-                // נשמר על window ולא בסגירה, כי waitForFunction מריץ את הפונקציה
-                // מחדש בכל poll ואין מצב שמחזיק בין קריאות.
-                const state = (window.__kalfaSettle ??= { length: -1, since: 0, first: Date.now() });
+                // MutationObserver תופס גם החלפה באותו אורך, שינוי attributes,
+                // code/headings/links ושינוי מבני שאינו משנה innerText.
+                const state = (window.__kalfaSettle ??= {
+                    revision: 0,
+                    observedRevision: -1,
+                    since: 0,
+                    first: Date.now(),
+                    observer: null,
+                });
+                if (!state.observer) {
+                    state.observer = new MutationObserver(() => state.revision++);
+                    state.observer.observe(body, {
+                        subtree: true,
+                        childList: true,
+                        characterData: true,
+                        attributes: true,
+                    });
+                }
                 const now = Date.now();
-                if (length !== state.length) {
-                    state.length = length;
+                if (state.revision !== state.observedRevision) {
+                    state.observedRevision = state.revision;
                     state.since = now;
                     return false;
                 }
                 // שקט מספיק זמן, וגם נצפה מספיק זמן. השני הוא שמונע סגירה
                 // מוקדמת על עמוד ששקט מהרגע הראשון ורק אחר כך טוען.
-                return now - state.since >= stableMs && now - state.first >= observeMs;
+                if (now - state.since < stableMs || now - state.first < observeMs) return false;
+                return { length, short: length < minChars, revision: state.revision };
             },
             {
-                minChars: SETTLE_MIN_CHARS,
+                minChars: SETTLE_SHORT_CONTENT_CHARS,
                 stableMs: SETTLE_STABLE_MS,
                 observeMs: SETTLE_MIN_OBSERVE_MS,
             },
             { timeout: SETTLE_TIMEOUT_MS, polling: 250 },
-        )
-        .catch(() => null);
+        );
+        return { settled: true, ...(await result.jsonValue()) };
+    } catch (error) {
+        return {
+            settled: false,
+            reason: error?.name === 'TimeoutError' ? 'timeout' : 'page_error',
+            error: error?.message ?? String(error),
+        };
+    }
+}
+
+export async function captureContentSnapshot(page, contentRoot) {
+    const descriptor = contentRootDescriptor(contentRoot);
+    if (!descriptor) return { exists: false, fingerprint: null, length: 0 };
+    try {
+        return await page.evaluate(({ selector, matchIndex }) => {
+            let root;
+            try {
+                root = document.querySelectorAll(selector)[matchIndex];
+            } catch {
+                return { exists: false, fingerprint: null, length: 0 };
+            }
+            if (!root) return { exists: false, fingerprint: null, length: 0 };
+            const text = root.innerText.trim();
+            // innerHTML מכסה שינויי מבנה/attributes; text נשמר גם כדי לדווח delta.
+            return { exists: true, fingerprint: `${text}\u0000${root.innerHTML}`, length: text.length };
+        }, descriptor);
+    } catch {
+        return { exists: false, fingerprint: null, length: 0 };
+    }
+}
+
+export async function measureLateChanges(
+    page,
+    contentRoot,
+    capturedSnapshot,
+    windowMs = SETTLE_STABLE_MS,
+) {
+    try {
+        await page.waitForTimeout(windowMs);
+        const current = await captureContentSnapshot(page, contentRoot);
+        if (!current.exists) {
+            return { changed: Boolean(capturedSnapshot?.exists), disappeared: true, deltaChars: -capturedSnapshot.length };
+        }
+        const changed = current.fingerprint !== capturedSnapshot?.fingerprint;
+        return {
+            changed,
+            disappeared: false,
+            deltaChars: current.length - (capturedSnapshot?.length ?? 0),
+            snapshot: current,
+        };
+    } catch (error) {
+        return { changed: false, disappeared: false, deltaChars: 0, error: error?.message ?? String(error) };
+    }
 }
 
 /**
@@ -395,20 +535,8 @@ export async function measureLateGrowth(
     capturedLength,
     windowMs = SETTLE_STABLE_MS,
 ) {
-    const descriptor =
-        typeof contentRoot === 'string'
-            ? { selector: contentRoot, matchIndex: 0 }
-            : { selector: contentRoot.selector, matchIndex: contentRoot.matchIndex ?? 0 };
-
-    try {
-        await page.waitForTimeout(windowMs);
-        const now = await page.evaluate(({ selector, matchIndex }) => {
-            const root = document.querySelectorAll(selector)[matchIndex];
-            return root ? root.innerText.trim().length : 0;
-        }, descriptor);
-        return Math.max(0, now - capturedLength);
-    } catch {
-        // הדף נסגר או ניווט. אין מה למדוד, ואין על מה לדווח.
-        return 0;
-    }
+    const before = await captureContentSnapshot(page, contentRoot);
+    before.length = capturedLength;
+    const result = await measureLateChanges(page, contentRoot, before, windowMs);
+    return Math.max(0, result.deltaChars);
 }

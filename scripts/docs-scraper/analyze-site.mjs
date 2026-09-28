@@ -311,25 +311,41 @@ export async function analyzeSite({ startUrl, globOverride = null, onlyMode = fa
                 return profile;
             }
 
-            await settlePage(page);
-
-            const resolvedUrl = normalizeUrl(page.url());
             if (hop === 0) {
                 profile.redirect.http = httpRedirected;
             }
 
-            // הדפדפן כבר עקב אחרי ההפניה (content="0;url=..." או ניווט מ-JS):
-            // הכתובת השתנתה בלי שהייתה הפניית שרת.
+            // עמוד-קש עם השהיה שהדפדפן עוד לא ביצע - עוקבים ידנית.
+            // קוראים לפני settle כדי שעמוד קצר עם refresh מושהה לא ימתין לשווא.
+            const beforeSettleUrl = normalizeUrl(page.url());
+            const pendingMetaRefresh = await readMetaRefreshTarget(page);
+            if (pendingMetaRefresh && normalizeUrl(pendingMetaRefresh) !== beforeSettleUrl && hop < MAX_REDIRECT_HOPS) {
+                profile.redirect.metaRefresh = true;
+                profile.redirect.target = normalizeUrl(pendingMetaRefresh);
+                currentUrl = profile.redirect.target;
+                continue;
+            }
+
+            const settlement = await settlePage(page);
+            if (!settlement.settled) {
+                profile.validation.reasons.push(`start_url_settle_${settlement.reason}`);
+                return profile;
+            }
+
+            const resolvedUrl = normalizeUrl(page.url());
+
+            // הדפדפן עקב אחרי content="0;url=..." או ניווט JS בזמן
+            // readMetaRefreshTarget/settle. הכתובת נמדדת מחדש אחרי ההמתנה.
             if (resolvedUrl !== currentUrl && !httpRedirected) {
                 profile.redirect.metaRefresh = true;
                 profile.redirect.target = resolvedUrl;
             }
 
-            // עמוד-קש עם השהיה שהדפדפן עוד לא ביצע - עוקבים ידנית.
-            const metaRefresh = await readMetaRefreshTarget(page);
-            if (metaRefresh && normalizeUrl(metaRefresh) !== resolvedUrl && hop < MAX_REDIRECT_HOPS) {
+            // תג refresh יכול להיווצר בזמן hydration, ולכן בודקים גם אחרי settle.
+            const lateMetaRefresh = await readMetaRefreshTarget(page);
+            if (lateMetaRefresh && normalizeUrl(lateMetaRefresh) !== resolvedUrl && hop < MAX_REDIRECT_HOPS) {
                 profile.redirect.metaRefresh = true;
-                profile.redirect.target = normalizeUrl(metaRefresh);
+                profile.redirect.target = normalizeUrl(lateMetaRefresh);
                 currentUrl = profile.redirect.target;
                 continue;
             }
@@ -455,7 +471,16 @@ export async function analyzeSite({ startUrl, globOverride = null, onlyMode = fa
                         });
                         continue;
                     }
-                    await settlePage(page);
+                }
+                const settlement = await settlePage(page);
+                if (!settlement.settled) {
+                    profile.validation.invalidSamples++;
+                    profile.validation.sampleResults.push({
+                        url: sampleUrl,
+                        valid: false,
+                        reasons: [`settle_${settlement.reason}`],
+                    });
+                    continue;
                 }
                 extracted = profile.contentRoot.selector
                     ? await extractPage(page, profile.contentRoot)

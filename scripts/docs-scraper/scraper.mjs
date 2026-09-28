@@ -33,8 +33,9 @@ import { Dataset, PlaywrightCrawler } from '@crawlee/playwright';
 
 import { analyzeSite, normalizeUrl, shouldAcceptUrl } from './analyze-site.mjs';
 import {
+    captureContentSnapshot,
     extractPage,
-    measureLateGrowth,
+    measureLateChanges,
     readMetaRefreshTarget,
     settlePage,
 } from './extract-page.mjs';
@@ -51,6 +52,7 @@ import {
 import { classifyHttpStatus } from './validate-page.mjs';
 
 const HARD_REQUEST_CAP = 5000;
+const CRAWLER_USER_AGENT = 'KALFA-Docs-Scraper/2.0 (+https://kalfa.me)';
 
 // --- CLI ---------------------------------------------------------------------
 // --glob ו---analyze-only נשלפים ראשונים כדי שיוכלו להופיע בכל מקום. ב-v1
@@ -58,6 +60,18 @@ const HARD_REQUEST_CAP = 5000;
 // קובץ הפלט, בשקט.
 export function parseArgv(rawArgv) {
     let argv = [...rawArgv];
+
+    const knownFlags = new Set(['--only', '--analyze-only', '--glob', '--max-requests']);
+    const unknownFlag = argv.find((arg) => arg.startsWith('--') && !knownFlags.has(arg));
+    if (unknownFlag) return { cliError: `unknown option: ${unknownFlag}` };
+    for (const flag of ['--only', '--analyze-only', '--glob', '--max-requests']) {
+        if (argv.filter((arg) => arg === flag).length > 1) {
+            return { cliError: `${flag} may only be specified once` };
+        }
+    }
+    if (argv.includes('--only') && argv[0] !== '--only') {
+        return { cliError: '--only must be the first argument' };
+    }
 
     const analyzeOnly = argv.includes('--analyze-only');
     argv = argv.filter((arg) => arg !== '--analyze-only');
@@ -68,7 +82,7 @@ export function parseArgv(rawArgv) {
     // `--glob` בסוף השורה הוא בקשה שלא ניתן לקיים, ולא בקשה ריקה. ההתנהגות
     // הקודמת - להשמיט אותו ולרוץ בלי גבול - הייתה סורקת אתר שלם למי שביקש
     // במפורש תת-עץ אחד, בלי לומר מילה.
-    if (globAt !== -1 && !globOverride) {
+    if (globAt !== -1 && (!globOverride || globOverride.startsWith('--'))) {
         return { cliError: '--glob requires a pattern, for example --glob \'https://host/docs/**\'' };
     }
     if (globAt !== -1) {
@@ -84,6 +98,9 @@ export function parseArgv(rawArgv) {
     const maxAt = argv.indexOf('--max-requests');
     let maxRequestsOverride = null;
     if (maxAt !== -1) {
+        if (!argv[maxAt + 1] || argv[maxAt + 1].startsWith('--')) {
+            return { cliError: '--max-requests requires a positive integer' };
+        }
         const raw = Number(argv[maxAt + 1]);
         if (!Number.isInteger(raw) || raw < 1) {
             return { cliError: '--max-requests requires a positive integer' };
@@ -116,10 +133,10 @@ export function createAuditState() {
         skippedNonHtml: [],
         // כשל שהפיל את הזחלן כולו, להבדיל מכשל של כתובת בודדת.
         crawlerError: null,
-        // עמודים שגדלו אחרי שכבר חולצו, כלומר ההמתנה נסגרה מוקדם. התוכן תוקן
-        // בחילוץ חוזר; הרשומה כאן היא הראיה שזה קרה, ומדד לכך שהספים קצרים
-        // מדי לאתר הזה.
+        // עמודים שה-DOM שלהם השתנה אחרי שכבר חולצו, גם אם אורך הטקסט נשאר זהה.
+        // התוכן מתוקן בחילוץ חוזר והרשומה היא הראיה שההמתנה נסגרה מוקדם.
         lateContent: [],
+        settleFailures: [],
         // ⚠️ כתובת שנמצאה בעמוד ונדחתה על ידי הפרופיל שלנו, ב-
         // transformRequestFunction. בלי הרישום הזה היא נעלמת בלי שום עקבה:
         // transformRequestFunction מחזיר false והכתובת פשוט לא נכנסת לתור.
@@ -180,6 +197,7 @@ async function runCrawl({ profile, startUrls, onlyMode, globOverride, maxRequest
     const contentHashes = new Map();
 
     const crawler = new PlaywrightCrawler({
+        launchContext: { userAgent: CRAWLER_USER_AGENT },
         requestHandlerTimeoutSecs: 30,
         navigationTimeoutSecs: 30,
         maxConcurrency: 3,
@@ -187,7 +205,7 @@ async function runCrawl({ profile, startUrls, onlyMode, globOverride, maxRequest
         sameDomainDelaySecs: 0.5,
         maxRequestRetries: 3,
         maxRequestsPerCrawl: maxRequests,
-        respectRobotsTxtFile: true,
+        respectRobotsTxtFile: { userAgent: CRAWLER_USER_AGENT },
 
         // ⚠️ ברמת ה-CRAWLER ולא בתוך enqueueLinks, וזה ההבדל בין השם הזה לבין
         // שקר. שתי הרמות קיימות, והתיעוד של 3.18 מפרט מה כל אחת מכסה:
@@ -254,10 +272,7 @@ async function runCrawl({ profile, startUrls, onlyMode, globOverride, maxRequest
                 return;
             }
 
-            await settlePage(page);
-
             const url = normalizeUrl(request.url);
-            const title = await page.title();
 
             // עמוד-קש של הפניה: אין בו תוכן, אבל יש בו יעד. נרשם כ-redirectStub
             // והיעד נכנס לתור, במקום להיספר כעמוד ריק.
@@ -283,19 +298,32 @@ async function runCrawl({ profile, startUrls, onlyMode, globOverride, maxRequest
                 return;
             }
 
+            const settlement = await settlePage(page);
+            if (!settlement.settled) {
+                audit.settleFailures.push({ url, reason: settlement.reason, error: settlement.error });
+                throw new Error(`Page did not settle: ${settlement.reason}`);
+            }
+
+            const title = await page.title();
+
             let extracted = await extractPage(page, profile.contentRoot);
+            const capturedSnapshot = await captureContentSnapshot(page, profile.contentRoot);
 
             // ⚠️ הבדיקה שהופכת חיתוך מכשל שקט לכשל מדווח.
             //
             // נמדד: עמוד שמוסיף פסקה אחרי 1.5 שניות נסגר ב-772ms עם מחצית
             // התוכן, וההמתנה לא ידעה. שום המתנה לא יכולה לדעת מתי עמוד סיים,
-            // ולכן במקום להאריך אותה עוד — בודקים אחריה. אם ה-root גדל מאז
-            // החילוץ, החילוץ היה מוקדם: מחלצים שוב ורושמים ב-audit, כדי שגם
+            // ולכן במקום להאריך אותה עוד — בודקים אחריה. אם ה-root השתנה מאז
+            // החילוץ, גם באותו אורך, החילוץ היה מוקדם: מחלצים שוב ורושמים ב-audit, כדי שגם
             // התיקון וגם העובדה שהוא נדרש יהיו גלויים.
-            const grew = await measureLateGrowth(page, profile.contentRoot, extracted.content.length);
-            if (grew > 0) {
-                audit.lateContent.push({ url, extraChars: grew });
-                console.warn(`[warn] ${url} grew by ${grew} chars after extraction — re-extracted`);
+            const lateChange = await measureLateChanges(page, profile.contentRoot, capturedSnapshot);
+            if (lateChange.changed) {
+                audit.lateContent.push({
+                    url,
+                    deltaChars: lateChange.deltaChars,
+                    disappeared: lateChange.disappeared,
+                });
+                console.warn(`[warn] ${url} changed after extraction (${lateChange.deltaChars >= 0 ? '+' : ''}${lateChange.deltaChars} chars) — re-extracted`);
                 extracted = await extractPage(page, profile.contentRoot);
             }
 

@@ -1,6 +1,7 @@
 // שלב ה-Exporter: בניית הרשומה וכתיבת הפלט. שום החלטה על האתר לא נופלת כאן.
 
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 // ארבע שכבות לכל עמוד, ולא אחת:
 //
@@ -31,15 +32,33 @@ export function buildPageRecord({ url, title, category, extracted, markdown, scr
 }
 
 export function writeDocs(outputFile, pages) {
-    writeFileSync(outputFile, JSON.stringify(pages, null, 2), 'utf8');
+    const ordered = [...pages].sort((a, b) => a.url.localeCompare(b.url));
+    writeJsonAtomically(outputFile, ordered);
 }
 
 // ה-audit נכתב תמיד, גם כשה-analysis נכשל וגם ב---analyze-only, כי הוא התשובה
 // לשאלה "למה לא נסרק כלום".
 export function writeAudit(outputFile, profile, audit) {
     const auditPath = `${outputFile}.audit.json`;
-    writeFileSync(auditPath, JSON.stringify({ profile, audit }, null, 2), 'utf8');
+    writeJsonAtomically(auditPath, { profile, audit });
     return auditPath;
+}
+
+function writeJsonAtomically(file, value) {
+    const absolute = resolve(file);
+    mkdirSync(dirname(absolute), { recursive: true });
+    const temporary = `${absolute}.${process.pid}.${Date.now()}.tmp`;
+    try {
+        writeFileSync(temporary, JSON.stringify(value, null, 2), 'utf8');
+        renameSync(temporary, absolute);
+    } catch (error) {
+        try {
+            unlinkSync(temporary);
+        } catch {
+            // The temporary file may not have been created.
+        }
+        throw error;
+    }
 }
 
 export function printAnalysisReport(profile) {
@@ -92,6 +111,7 @@ ${audit.crawlerError ? `Crawler aborted:     ${audit.crawlerError}\n` : ''}`);
         audit.redirectStubs.length ||
         audit.skippedNonHtml.length ||
         audit.lateContent.length ||
+        audit.settleFailures.length ||
         audit.filteredByProfile.length ||
         audit.skippedByCrawler.length
     ) {
@@ -100,6 +120,7 @@ Duplicate content:   ${audit.duplicates.length}
 Redirect stubs:      ${audit.redirectStubs.length}
 Skipped non-HTML:    ${audit.skippedNonHtml.length}
 Late content:        ${audit.lateContent.length}
+Settle failures:     ${audit.settleFailures.length}
 Filtered by profile: ${audit.filteredByProfile.length}
 Skipped by crawler:  ${audit.skippedByCrawler.length}${skipReasonBreakdown(audit)}
 `);

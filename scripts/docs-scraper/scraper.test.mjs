@@ -32,8 +32,10 @@ import {
     shouldAcceptUrl,
 } from './analyze-site.mjs';
 import {
+    captureContentSnapshot,
     detectContentRoot,
     extractPage,
+    measureLateChanges,
     measureLateGrowth,
     readMetaRefreshTarget,
     settlePage,
@@ -820,6 +822,13 @@ describe('parseArgv', () => {
         assert.equal(parsed.outputFile, 'out.json');
         assert.deepEqual(parsed.targetUrls, ['https://h.io/a', 'https://h.io/b']);
     });
+
+    it('rejects unknown, duplicate and misplaced flags', () => {
+        assert.match(parseArgv(['https://h.io', 'out.json', '--wat']).cliError, /unknown option/);
+        assert.match(parseArgv(['https://h.io', '--glob', 'a', '--glob', 'b']).cliError, /only be specified once/);
+        assert.match(parseArgv(['https://h.io', '--only', 'out.json']).cliError, /must be the first/);
+        assert.match(parseArgv(['https://h.io', '--glob', '--analyze-only']).cliError, /requires a pattern/);
+    });
 });
 
 // --- 4, 5, 6, 11, 18: מדידת DOM ----------------------------------------------
@@ -848,6 +857,19 @@ describe('detectContentRoot', () => {
         assert.match(extracted.content, /Handwritten/);
         assert.doesNotMatch(extracted.content, /Home \/ Docs/);
     });
+
+    it('deduplicates one element that matches multiple selectors', async () => {
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        try {
+            await page.setContent(`<main role="main"><h1>Only root</h1><p>${LOREM}</p></main>`);
+            const root = await detectContentRoot(page);
+            assert.equal(root.selector, 'main');
+            assert.equal(root.confidence, 1);
+        } finally {
+            await context.close();
+        }
+    });
 });
 
 describe('content root identity', () => {
@@ -874,6 +896,13 @@ describe('content root identity', () => {
             extractPage(page, { selector: 'article', matchIndex: 7 }));
         assert.equal(result.rootFound, false);
         assert.equal(result.content, '');
+    });
+
+    it('invalid root descriptors fail closed instead of throwing', async () => {
+        const missing = await withPage('/two-articles/', (page) => extractPage(page, null));
+        const invalidSelector = await withPage('/two-articles/', (page) => extractPage(page, '['));
+        assert.equal(missing.rootFound, false);
+        assert.equal(invalidSelector.rootFound, false);
     });
 });
 
@@ -922,6 +951,21 @@ describe('htmlToMarkdown', () => {
         assert.match(md, /\| 1 \| 2 \|/);
     });
 
+    it('escapes pipes and keeps line breaks inside simple table cells', () => {
+        const md = htmlToMarkdown('<table><tr><th>a</th><th>b</th></tr><tr><td>x|y</td><td>one<br>two</td></tr></table>');
+        assert.match(md, /x\\\|y/);
+        assert.match(md, /one<br>two/);
+    });
+
+    it('preserves complex and headerless tables as HTML instead of corrupting them', () => {
+        const complex = htmlToMarkdown('<table><tr><th rowspan="2">a</th><th>b</th></tr><tr><td>c<script>bad()</script><a href="javascript:bad()" onclick="bad()">link</a></td></tr></table>');
+        const headerless = htmlToMarkdown('<table><tr><td>a</td><td>b</td></tr></table>');
+        assert.match(complex, /<table>/);
+        assert.match(complex, /rowspan="2"/);
+        assert.doesNotMatch(complex, /script|javascript:|onclick/);
+        assert.match(headerless, /<table>/);
+    });
+
     // ארבעת המקרים נמדדו מול turndown 7.2.4: רק הראשון עובד אצלו מלכתחילה.
     it('recovers the code language from every place documentation generators put it', () => {
         assert.match(htmlToMarkdown('<pre><code class="language-ts">x</code></pre>'), /^```ts$/m);
@@ -929,6 +973,28 @@ describe('htmlToMarkdown', () => {
         assert.match(htmlToMarkdown('<pre class="astro-code language-bash"><code>x</code></pre>'), /^```bash$/m);
         assert.match(htmlToMarkdown('<pre data-language="bash"><code>x</code></pre>'), /^```bash$/m);
         assert.match(htmlToMarkdown('<pre>plain\nlines</pre>'), /^```\nplain\nlines\n```$/m);
+    });
+
+    it('rejects injected or partial code-language tokens', () => {
+        const injected = htmlToMarkdown('<pre data-language="js&#10;# injected"><code>x</code></pre>');
+        const partial = htmlToMarkdown('<pre><code class="notlanguage-js">x</code></pre>');
+        assert.match(injected, /^```$/m);
+        assert.doesNotMatch(injected, /^# injected$/m);
+        assert.match(partial, /^```$/m);
+        assert.doesNotMatch(partial, /^```js$/m);
+    });
+
+    it('keeps structural code-line wrappers when called directly', () => {
+        const md = htmlToMarkdown('<pre data-language="sh"><code><span class="line">echo one</span><span class="line">echo two</span></code></pre>');
+        assert.match(md, /^echo one$/m);
+        assert.match(md, /^echo two$/m);
+        assert.doesNotMatch(md, /oneecho/);
+    });
+
+    it('drops active URL schemes from links and images', () => {
+        const md = htmlToMarkdown('<a href="javascript:alert(1)">click</a><img src="data:text/html,x" alt="bad">');
+        assert.equal(md, 'clickbad');
+        assert.doesNotMatch(md, /javascript:|data:text/);
     });
 
     it('lengthens the fence when the code itself contains one', () => {
@@ -944,6 +1010,8 @@ describe('htmlToMarkdown', () => {
     it('returns an empty string for empty input rather than throwing', () => {
         assert.equal(htmlToMarkdown(''), '');
         assert.equal(htmlToMarkdown(null), '');
+        assert.throws(() => htmlToMarkdown(false), /expects an HTML string/);
+        assert.throws(() => htmlToMarkdown(0), /expects an HTML string/);
     });
 });
 
@@ -977,6 +1045,27 @@ describe('extractPage html layer', () => {
         assert.doesNotMatch(md, /__analytics/);
         // הכותרת נשארת נקייה: העוגן ה-aria-hidden היה הופך אותה ל-"# Markdown page#".
         assert.doesNotMatch(md, /^# Markdown page#/m);
+    });
+
+    it('honors baseURI, removes active schemes and resolves responsive media URLs', async () => {
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        try {
+            await page.setContent(`<!doctype html><base href="https://docs.example/v2/"><article>
+                <h1>Media</h1><p>${LOREM}</p>
+                <a href="guide">guide</a><a href="javascript:alert(1)">unsafe</a>
+                <picture><source srcset="small.webp 1x, large.webp 2x"><img src="cover.png" srcset="a.png 1x, b.png 2x"></picture>
+                <video poster="poster.jpg"><source src="movie.mp4"></video>
+            </article>`);
+            const extracted = await extractPage(page, 'article');
+            assert.match(extracted.html, /href="https:\/\/docs\.example\/v2\/guide"/);
+            assert.doesNotMatch(extracted.html, /javascript:/);
+            assert.match(extracted.html, /srcset="https:\/\/docs\.example\/v2\/a\.png 1x, https:\/\/docs\.example\/v2\/b\.png 2x"/);
+            assert.match(extracted.html, /poster="https:\/\/docs\.example\/v2\/poster\.jpg"/);
+            assert.ok(extracted.hyperlinks.every((link) => !link.url.startsWith('javascript:')));
+        } finally {
+            await context.close();
+        }
     });
 });
 
@@ -1044,6 +1133,34 @@ describe('a page that goes quiet and then adds content', () => {
             return measureLateGrowth(page, 'article', early.content.length);
         });
         assert.equal(grew, 0, 'a 700ms window cannot see content that arrives at 1400ms');
+    });
+
+    it('detects an equal-length replacement and reports the semantic change', async () => {
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        try {
+            await page.setContent('<article><h1>State</h1><p>AAAA</p></article>');
+            const before = await captureContentSnapshot(page, 'article');
+            await page.evaluate(() => setTimeout(() => { document.querySelector('p').textContent = 'BBBB'; }, 50));
+            const change = await measureLateChanges(page, 'article', before, 150);
+            assert.equal(change.changed, true);
+            assert.equal(change.deltaChars, 0);
+        } finally {
+            await context.close();
+        }
+    });
+
+    it('settles short stable pages explicitly instead of timing out', async () => {
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        try {
+            await page.setContent('<main>short</main>');
+            const result = await settlePage(page);
+            assert.equal(result.settled, true);
+            assert.equal(result.short, true);
+        } finally {
+            await context.close();
+        }
     });
 });
 
