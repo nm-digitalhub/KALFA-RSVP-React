@@ -14,6 +14,8 @@ import {
 import { OWNER_AGENT_MCP_SERVER } from '@/lib/owner-agent/mcp/names';
 import { toolsForPermissions, type OwnerAgentTool } from '@/lib/owner-agent/tools/registry';
 
+export { parsePermissionsEnv } from '@/lib/owner-agent/mcp/permissions';
+
 // The owner agent's tools as a stdio MCP server (plan §8 stage 6a). `claude -p`
 // spawns it (../runner.ts) and it is the ONLY source of tools in that session:
 // the runner turns every built-in off with `--tools ""`.
@@ -55,11 +57,6 @@ type ExecuteWithoutAgent = (input: unknown) => Promise<unknown>;
 // case folding, for the same reason toolsForPermissions() does neither: only
 // the exact key counts (registry.test.ts). Unset or empty means no tools —
 // fail closed, never "all".
-export function parsePermissionsEnv(raw: string | undefined): ReadonlySet<string> {
-  if (!raw) return new Set();
-  return new Set(raw.split(',').filter((key) => key.length > 0));
-}
-
 // The tool as tools/list presents it. The JSON Schema is produced the way
 // Mastra produces a tool-parameter schema: standardSchemaToJSONSchema with
 // io 'input' ("Use for tool parameters", @mastra/schema-compat

@@ -95,6 +95,7 @@
     "@microsoft/m365agentstoolkit-cli": "^1.1.15",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/server": "2.1.0",
     "@pg-boss/dashboard": "^1.6.1",
     "@phosphor-icons/core": "^2.1.1",
     "@pnp/cli-microsoft365": "^11.10.0",

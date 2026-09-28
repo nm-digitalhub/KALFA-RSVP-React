@@ -2,7 +2,7 @@ import { createMcpHandler } from '@modelcontextprotocol/server';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { createMcpServer } from './tools';
-import { validateMcpToken } from './auth';
+import { isAllowedMcpOrigin, validateMcpToken } from './auth';
 
 export const runtime = 'nodejs';
 
@@ -16,6 +16,10 @@ const mcpHandler = createMcpHandler(() => createMcpServer(), {
 async function handleMcpRequest(request: NextRequest): Promise<Response> {
   if (!validateMcpToken(request)) {
     return new NextResponse('Unauthorized', { status: 401 });
+  }
+
+  if (!isAllowedMcpOrigin(request)) {
+    return new NextResponse('Forbidden', { status: 403 });
   }
 
   return mcpHandler.fetch(request);
