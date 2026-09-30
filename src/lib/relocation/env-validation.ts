@@ -87,6 +87,11 @@ export const ENV_KEY_SPECS: readonly EnvKeySpec[] = [
   { key: "RECONCILE_AUTHORIZED_SET_ENABLED", kind: "format", format: boolStr },
   { key: "DEVICE_TELEMETRY_ENABLED", kind: "format", format: boolStr },
   { key: "KALFA_CONSOLE_SECRET", kind: "format", format: z.string().min(16) },
+  // MCP server (src/app/api/mcp): comma-separated lists; empty is a valid,
+  // deliberate state (no OAuth client accepted / Origin not restricted), so
+  // neither gates an install.
+  { key: "KALFA_MCP_OAUTH_CLIENT_IDS", kind: "format", format: z.string(), optional: true },
+  { key: "KALFA_MCP_ALLOWED_ORIGINS", kind: "format", format: z.string(), optional: true },
   // Microsoft Graph
   { key: "MS_GRAPH_TENANT_ID", kind: "probe", format: nonEmpty, probe: "graph-app" },
   { key: "MS_GRAPH_CLIENT_ID", kind: "probe", format: nonEmpty, probe: "graph-app" },
