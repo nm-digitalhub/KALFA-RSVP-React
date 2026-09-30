@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-import { captureHeldCardSumit, creditHeldCardSumit } from './capture';
+import { captureAuthorizationSumit, captureHeldCardSumit, creditHeldCardSumit } from './capture';
 import { SumitDeclinedError, SumitNetworkError } from './charge';
 
 const base = {
@@ -46,8 +46,9 @@ describe('captureHeldCardSumit', () => {
     expect(body.PaymentMethod.CreditCard_ExpirationYear).toBe(2031);
     expect(body.PaymentMethod.CreditCard_CitizenID).toBe('316125434');
     expect(body.PaymentMethod.Type).toBe(1);
-    // No explicit VATRate (company default balances the document).
+    // No VAT fields (עוסק פטור, owner decision 2.9.2026 — company default applies).
     expect(body.VATRate).toBeUndefined();
+    expect(body).not.toHaveProperty('VATIncluded');
     // No CreditCardAuthNumber (a fresh token charge, not an auth capture).
     expect(body.CreditCardAuthNumber).toBeUndefined();
     expect(body.AutoCapture).toBe(true);
@@ -129,6 +130,57 @@ describe('captureHeldCardSumit', () => {
   });
 });
 
+describe('captureAuthorizationSumit', () => {
+  // The shape SUMIT support gave (29.9) and that returned 000 live
+  // (sumit_test_transactions fa21e4e3): CreditCardAuthNumber + the same
+  // customer + the same token, AutoCapture NOT sent, no VAT fields.
+  it('captures the J5 by CreditCardAuthNumber under the hold customer, AutoCapture absent', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ok });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const r = await captureAuthorizationSumit({ ...base, authNumber: ' 055528', customerId: 4242 });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.CreditCardAuthNumber).toBe(' 055528'); // exactly as stored
+    expect(body.Customer.ID).toBe(4242);
+    expect(body.Customer.ExternalIdentifier).toBe('kalfa-campaign-c1');
+    expect(body).not.toHaveProperty('AutoCapture');
+    expect(body).not.toHaveProperty('VATRate');
+    expect(body).not.toHaveProperty('VATIncluded');
+    expect(body.PaymentMethod).toEqual({
+      CreditCard_Token: 'tok-abc',
+      CreditCard_ExpirationMonth: 7,
+      CreditCard_ExpirationYear: 2031,
+      CreditCard_CitizenID: '316125434',
+      Type: 1,
+    });
+    expect(body.Items[0].UnitPrice).toBe(4);
+    expect(body.PreventDocumentCreation).toBe(false);
+    expect(r.documentId).toBe(555);
+    expect(r.authNumber).toBe('0692601');
+  });
+
+  it('a consumed hold (ValidPayment false, 004) is a SumitDeclinedError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ Status: 0, Data: { Payment: { ValidPayment: false, Status: '004' } } }),
+    }));
+    await expect(
+      captureAuthorizationSumit({ ...base, authNumber: '1', customerId: 1 }),
+    ).rejects.toBeInstanceOf(SumitDeclinedError);
+  });
+
+  it('an unconfirmed answer (no document) is a SumitNetworkError, not a decline', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ Status: 0, Data: { Payment: { ValidPayment: true } } }),
+    }));
+    await expect(
+      captureAuthorizationSumit({ ...base, authNumber: '1', customerId: 1 }),
+    ).rejects.toBeInstanceOf(SumitNetworkError);
+  });
+});
+
 describe('creditHeldCardSumit', () => {
   it('POSTs to the same charge endpoint with SupportCredit:true and a negative item total', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
@@ -151,6 +203,9 @@ describe('creditHeldCardSumit', () => {
     expect(body.SupportCredit).toBe(true);
     expect(body.Items[0].UnitPrice).toBe(-24.4);
     expect(body.PaymentMethod.CreditCard_Token).toBe('tok-abc');
+    // עוסק פטור — no VAT flags, SUMIT's company default applies (owner decision 2.9.2026).
+    expect(body).not.toHaveProperty('VATIncluded');
+    expect(body).not.toHaveProperty('VATRate');
     expect(result.documentId).toBe(601);
     expect(result.documentUrl).toContain('download=601');
     expect(result.paymentId).toBe(888);

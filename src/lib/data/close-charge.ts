@@ -21,7 +21,12 @@ import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
 import { getSignedAgreementVersion } from '@/lib/data/agreements';
 import { isBaseFeeAgreementVersion } from '@/lib/agreements/template';
 import { checkOsekPaturCeilingAfterCharge } from '@/lib/data/tax-ceiling';
-import { captureHeldCardSumit } from '@/lib/sumit/capture';
+import {
+  captureAuthorizationSumit,
+  captureHeldCardSumit,
+  type SumitCaptureParams,
+  type SumitCaptureResult,
+} from '@/lib/sumit/capture';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
@@ -44,6 +49,11 @@ export type CloseChargeOutcome = {
   // Present only on 'charged': the billing model actually applied AFTER the
   // D5 guard — a coarse analytics label, never an amount.
   billingModel?: 'base_overage' | 'per_reached';
+  // Present only on 'charged': how SUMIT was charged — 'auth_capture' = the J5
+  // hold itself was captured by its AuthNumber (the hold is consumed);
+  // 'token_charge' = a new charge on the saved card token (the hold stays open
+  // until released in SUMIT).
+  chargeMethod?: ChargeMethod;
   // Present only on 'nothing_to_charge': how many contacts were actually
   // reached and how much credit covered them. amount===0 alone does NOT mean
   // nobody was reached — it also fires when credits fully cover a nonzero
@@ -59,7 +69,13 @@ export type CloseChargeOutcome = {
   documentUrl?: string | null;
 };
 
+export type ChargeMethod = 'auth_capture' | 'token_charge';
+
 const CLOSEABLE = ['active', 'paused', 'approved', 'scheduled'];
+
+function agorot(n: number): number {
+  return Math.round(n * 100);
+}
 
 // Final settlement closes the event too, not just the campaign: once billing
 // is final there is no reason for the public RSVP link to keep accepting
@@ -348,21 +364,68 @@ export async function closeCampaignAndCharge(
     ownerName = (prof?.full_name ?? '').trim() || ownerEmail;
   }
 
+  // How the final charge reaches SUMIT. Capturing the J5 hold itself (J4 on
+  // the hold's AuthNumber — SUMIT support 2026-09-29) consumes the hold, so
+  // nothing is left blocked on the customer's card. It is possible only while
+  // the hold is intact (not released), for an amount no higher than the hold,
+  // under the hold's own SUMIT customer. Otherwise: a new charge on the saved
+  // token, as before — and the hold stays open until released in SUMIT.
+  const holdCapture =
+    campaign.auth_number &&
+    campaign.auth_amount != null &&
+    campaign.release_status == null &&
+    campaign.sumit_customer_id != null &&
+    agorot(amount) <= agorot(campaign.auth_amount)
+      ? {
+          authNumber: campaign.auth_number, // exactly as stored
+          customerId: campaign.sumit_customer_id,
+        }
+      : null;
+  // charge_status as read BEFORE the lock overwrote it with 'pending'. A
+  // 'charge_review' retry means an earlier attempt's outcome is unknown: if it
+  // was a capture that went through, the hold is already consumed, and
+  // capturing again is declined with the SAME 004 a card refusal returns
+  // (verified live 2026-09-29). So on such a retry a capture decline is NOT
+  // proof that no money moved, and it must never fall through to a token
+  // charge (a possible double charge) — it stays in review.
+  const retryingUnknownOutcome = campaign.charge_status === 'charge_review';
+
+  const chargeParams: SumitCaptureParams = {
+    companyId: sumit.companyId,
+    apiKey: sumit.apiKey,
+    cardToken: campaign.card_token_ref,
+    expMonth: campaign.card_exp_month,
+    expYear: campaign.card_exp_year,
+    citizenId: campaign.card_citizen_id,
+    externalRef: campaign.auth_external_ref ?? '',
+    amount: amount.toString(),
+    customerEmail: ownerEmail, // non-empty → SendDocumentByEmail:true (receipt)
+    customerName: ownerName,
+    customerId: campaign.sumit_customer_id,
+    lines: receiptLines,
+  };
+
+  let chargeMethod: ChargeMethod = holdCapture ? 'auth_capture' : 'token_charge';
+  // Set when the hold capture was definitively declined and the token charge
+  // ran instead — surfaced in the alert so an admin knows the hold is open.
+  let captureDeclinedFellBack = false;
   try {
-    const result = await captureHeldCardSumit({
-      companyId: sumit.companyId,
-      apiKey: sumit.apiKey,
-      cardToken: campaign.card_token_ref,
-      expMonth: campaign.card_exp_month,
-      expYear: campaign.card_exp_year,
-      citizenId: campaign.card_citizen_id,
-      externalRef: campaign.auth_external_ref ?? '',
-      amount: amount.toString(),
-      customerEmail: ownerEmail, // non-empty → SendDocumentByEmail:true (receipt)
-      customerName: ownerName,
-      customerId: campaign.sumit_customer_id,
-      lines: receiptLines,
-    });
+    let result: SumitCaptureResult;
+    if (holdCapture) {
+      try {
+        result = await captureAuthorizationSumit({ ...chargeParams, ...holdCapture });
+      } catch (e) {
+        if (!(e instanceof SumitDeclinedError) || retryingUnknownOutcome) throw e;
+        // A definitive decline on a first (or post-decline) attempt: no money
+        // moved. The hold may simply be past the issuer's J5 window — fall
+        // back to the token charge, exactly today's path.
+        captureDeclinedFellBack = true;
+        chargeMethod = 'token_charge';
+        result = await captureHeldCardSumit(chargeParams);
+      }
+    } else {
+      result = await captureHeldCardSumit(chargeParams);
+    }
     await recordCampaignCharge(campaignId, {
       amount,
       creditApplied,
@@ -384,6 +447,8 @@ export async function closeCampaignAndCharge(
         amount,
         credit_applied: creditApplied,
         document_id: result.documentId,
+        charge_method: chargeMethod,
+        ...(captureDeclinedFellBack ? { hold_capture_declined: 'true' } : {}),
         ...(opts?.overrideReason ? { override_reason: opts.overrideReason } : {}),
       },
     });
@@ -401,8 +466,26 @@ export async function closeCampaignAndCharge(
         effectiveBase > 0 || effectiveIncluded > 0 ? 'base_overage' : 'per_reached',
       documentId: result.documentId ?? null,
       documentUrl: result.documentUrl ?? null,
+      chargeMethod,
     };
   } catch (e) {
+    // A capture declined while retrying an unknown outcome: the earlier attempt
+    // may already have consumed the hold → review, never charge_failed.
+    if (
+      e instanceof SumitDeclinedError &&
+      chargeMethod === 'auth_capture' &&
+      retryingUnknownOutcome
+    ) {
+      await markCampaignChargeOutcome(campaignId, 'charge_review');
+      void sendSlackAlert({
+        level: 'warn',
+        category: 'campaign_billing',
+        source: 'close-charge',
+        title: 'מימוש המסגרת נדחה בניסיון חוזר — ייתכן שהחיוב הקודם כבר בוצע; לבדוק ב-SUMIT',
+        fields: { campaign_id: campaignId, event_id: campaign.event_id, amount },
+      });
+      return { outcome: 'review', amount };
+    }
     if (e instanceof SumitDeclinedError) {
       await markCampaignChargeOutcome(campaignId, 'charge_failed');
       // Additive ops alert (fire-and-forget, fail-safe): does not change the
@@ -413,7 +496,13 @@ export async function closeCampaignAndCharge(
         category: 'campaign_billing',
         source: 'close-charge',
         title: 'החיוב הסופי נדחה על ידי חברת האשראי',
-        fields: { campaign_id: campaignId, event_id: campaign.event_id, amount },
+        fields: {
+          campaign_id: campaignId,
+          event_id: campaign.event_id,
+          amount,
+          charge_method: chargeMethod,
+          ...(captureDeclinedFellBack ? { hold_capture_declined: 'true' } : {}),
+        },
       });
       return { outcome: 'declined', amount };
     }

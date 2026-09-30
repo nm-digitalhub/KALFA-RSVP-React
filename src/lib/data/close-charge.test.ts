@@ -31,7 +31,10 @@ vi.mock('@/lib/data/billing', () => ({
   getCampaignBillingSummary: vi.fn(),
   getCampaignCreditTotal: vi.fn(),
 }));
-vi.mock('@/lib/sumit/capture', () => ({ captureHeldCardSumit: vi.fn() }));
+vi.mock('@/lib/sumit/capture', () => ({
+  captureHeldCardSumit: vi.fn(),
+  captureAuthorizationSumit: vi.fn(),
+}));
 vi.mock('@/lib/data/tax-ceiling', () => ({
   checkOsekPaturCeilingAfterCharge: vi.fn().mockResolvedValue(undefined),
 }));
@@ -58,9 +61,9 @@ import {
   getCampaignBillingSummary,
   getCampaignCreditTotal,
 } from '@/lib/data/billing';
-import { captureHeldCardSumit } from '@/lib/sumit/capture';
+import { captureAuthorizationSumit, captureHeldCardSumit } from '@/lib/sumit/capture';
 import { getSignedAgreementVersion } from '@/lib/data/agreements';
-import { SumitDeclinedError } from '@/lib/sumit/charge';
+import { SumitDeclinedError, SumitNetworkError } from '@/lib/sumit/charge';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { requirePlatformPermission } from '@/lib/auth/dal';
@@ -127,6 +130,7 @@ const m = {
   summary: getCampaignBillingSummary as unknown as Mock,
   credits: getCampaignCreditTotal as unknown as Mock,
   capture: captureHeldCardSumit as unknown as Mock,
+  authCapture: captureAuthorizationSumit as unknown as Mock,
   signed: getSignedAgreementVersion as unknown as Mock,
 };
 
@@ -197,7 +201,7 @@ describe('closeCampaignAndCharge', () => {
     happy();
     const r = await closeCampaignAndCharge('c1');
     expect(requirePlatformPermission).toHaveBeenCalledWith('manage_billing');
-    expect(r).toEqual({ outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
+    expect(r).toEqual({ outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555', chargeMethod: 'token_charge' });
   });
 
   it('does nothing when close-charge is disabled (fail-closed)', async () => {
@@ -292,7 +296,7 @@ describe('closeCampaignAndCharge', () => {
       authNumber: '0692601',
       paymentId: 777,
     });
-    expect(r).toEqual({ outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
+    expect(r).toEqual({ outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555', chargeMethod: 'token_charge' });
     // Additive campaign_billing alert on a successful final charge.
     expect(sendSlackAlert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -336,7 +340,7 @@ describe('closeCampaignAndCharge', () => {
       maxContacts: 22,
     });
     const r = await closeCampaignAndCharge('c1');
-    expect(r).toEqual({ outcome: 'charged', amount: 60, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
+    expect(r).toEqual({ outcome: 'charged', amount: 60, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555', chargeMethod: 'token_charge' });
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
       expect.objectContaining({ amount: '60' }),
     );
@@ -392,7 +396,7 @@ describe('closeCampaignAndCharge', () => {
       maxContacts: 22,
     });
     const r = await closeCampaignAndCharge('c1');
-    expect(r).toEqual({ outcome: 'charged', amount: 45, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
+    expect(r).toEqual({ outcome: 'charged', amount: 45, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555', chargeMethod: 'token_charge' });
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
       expect.objectContaining({ amount: '45' }),
     );
@@ -420,7 +424,7 @@ describe('closeCampaignAndCharge', () => {
     const r = await closeCampaignAndCharge('c1');
     // Base charged even though nobody was reached (plan D1 — service fee), and
     // NOT settled as nothing_to_charge.
-    expect(r).toEqual({ outcome: 'charged', amount: 200, paymentId: 777, billingModel: 'base_overage', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
+    expect(r).toEqual({ outcome: 'charged', amount: 200, paymentId: 777, billingModel: 'base_overage', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555', chargeMethod: 'token_charge' });
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
       expect.objectContaining({ amount: '200' }),
     );
@@ -431,7 +435,7 @@ describe('closeCampaignAndCharge', () => {
     // accrued 12, ceiling 88, credit ₪5 → charge 7; all ₪5 of the credit used.
     m.credits.mockResolvedValue(5);
     const r = await closeCampaignAndCharge('c1');
-    expect(r).toEqual({ outcome: 'charged', amount: 7, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
+    expect(r).toEqual({ outcome: 'charged', amount: 7, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555', chargeMethod: 'token_charge' });
     // The pool is read for the campaign AND its event (event-level credits).
     expect(getCampaignCreditTotal).toHaveBeenCalledWith('c1', 'e1');
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
@@ -549,7 +553,7 @@ describe('closeCampaignAndCharge', () => {
         level: 'warn',
         category: 'campaign_billing',
         title: 'החיוב הסופי נדחה על ידי חברת האשראי',
-        fields: { campaign_id: 'c1', event_id: 'e1', amount: 12 },
+        fields: { campaign_id: 'c1', event_id: 'e1', amount: 12, charge_method: 'token_charge' },
       }),
     );
   });
@@ -592,7 +596,7 @@ describe('closeCampaignAndCharge', () => {
       m.signed.mockResolvedValue('2026-07-v4');
       m.summary.mockResolvedValue({ reachedCount: 0, accrued: 0, ceiling: 600, maxContacts: 300 });
       const r = await closeCampaignAndCharge('c1');
-      expect(r).toEqual({ outcome: 'charged', amount: 200, paymentId: 777, billingModel: 'base_overage', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
+      expect(r).toEqual({ outcome: 'charged', amount: 200, paymentId: 777, billingModel: 'base_overage', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555', chargeMethod: 'token_charge' });
       expect(sendSlackAlert).not.toHaveBeenCalledWith(
         expect.objectContaining({ source: 'close-charge-d5-guard' }),
       );
@@ -630,7 +634,7 @@ describe('closeCampaignAndCharge', () => {
       m.summary.mockResolvedValue({ reachedCount: 5, accrued: 0, ceiling: 600, maxContacts: 300 });
       const r = await closeCampaignAndCharge('c1');
       // D5-suppressed billing reports the plan ACTUALLY billed: per_reached.
-      expect(r).toEqual({ outcome: 'charged', amount: 20, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
+      expect(r).toEqual({ outcome: 'charged', amount: 20, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555', chargeMethod: 'token_charge' });
       expect(captureHeldCardSumit).toHaveBeenCalledWith(
         expect.objectContaining({ amount: '20' }),
       );
@@ -676,6 +680,7 @@ describe('closeCampaignAndCharge', () => {
       expect(r).toEqual({
         outcome: 'charged', amount: 30, paymentId: 777, billingModel: 'per_reached',
         documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555',
+        chargeMethod: 'token_charge',
       });
     });
 
@@ -711,6 +716,7 @@ describe('closeCampaignAndCharge', () => {
       expect(r).toEqual({
         outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached',
         documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555',
+        chargeMethod: 'token_charge',
       });
     });
   });
@@ -772,6 +778,7 @@ describe('closeCampaignAndCharge', () => {
       expect(r).toEqual({
         outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached',
         documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555',
+        chargeMethod: 'token_charge',
       });
       expect(eventsCloseCalls).toEqual([]);
     });
@@ -783,6 +790,111 @@ describe('closeCampaignAndCharge', () => {
       expect(r.outcome).toBe('charged');
       expect(eventsCloseCalls).toEqual([]);
       expect(logActivity).not.toHaveBeenCalled();
+    });
+  });
+
+  // Capture the J5 hold itself (CreditCardAuthNumber) when it is intact and the
+  // amount fits; otherwise the token charge, as before. A capture decline on a
+  // charge_review retry must never fall through to a token charge: a consumed
+  // hold is declined with the same 004 as a card refusal (verified live 29.9).
+  describe('J5 hold capture by AuthNumber', () => {
+    // happy(): computed amount 12. The hold: ₪200, AuthNumber stored with its
+    // leading space (as the live rows are), intact, under SUMIT customer 4242.
+    function withHold(overrides: Record<string, unknown> = {}) {
+      happy();
+      m.forCharge.mockResolvedValue({
+        id: 'c1', event_id: 'e1', status: 'active', capture_status: 'authorized',
+        charge_status: null, card_token_ref: 'tok-abc', card_exp_month: 7,
+        card_exp_year: 2031, card_citizen_id: '316125434', auth_external_ref: 'ext-1',
+        sumit_customer_id: 4242, auth_number: ' 055528', auth_amount: 200,
+        release_status: null, max_charge_ceiling: 88, base_price: 0,
+        included_reached: 0, price_per_reached: 4,
+        ...overrides,
+      });
+      m.authCapture.mockResolvedValue({
+        documentId: 556, documentNumber: 40104,
+        documentUrl: 'https://pay.sumit.co.il/x?download=556',
+        authNumber: ' 055528', paymentId: 778,
+      });
+    }
+
+    it('captures the hold by its AuthNumber (as stored) under the hold customer — no token charge', async () => {
+      withHold();
+      const r = await closeCampaignAndCharge('c1');
+      expect(captureAuthorizationSumit).toHaveBeenCalledWith(
+        expect.objectContaining({ authNumber: ' 055528', customerId: 4242, amount: '12', cardToken: 'tok-abc' }),
+      );
+      expect(captureHeldCardSumit).not.toHaveBeenCalled();
+      expect(r).toMatchObject({ outcome: 'charged', amount: 12, paymentId: 778, chargeMethod: 'auth_capture' });
+      expect(recordCampaignCharge).toHaveBeenCalledWith('c1', expect.objectContaining({ documentId: 556, amount: 12 }));
+    });
+
+    it('captures an amount exactly equal to the hold', async () => {
+      withHold({ auth_amount: 12 });
+      await closeCampaignAndCharge('c1');
+      expect(captureAuthorizationSumit).toHaveBeenCalled();
+      expect(captureHeldCardSumit).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['the amount exceeds the hold', { auth_amount: 10 }],
+      ['the hold was released', { release_status: 'released' }],
+      ['no AuthNumber', { auth_number: null }],
+      ['no hold amount', { auth_amount: null }],
+      ['no SUMIT customer', { sumit_customer_id: null }],
+    ])('token charge when %s', async (_label, overrides) => {
+      withHold(overrides);
+      const r = await closeCampaignAndCharge('c1');
+      expect(captureAuthorizationSumit).not.toHaveBeenCalled();
+      expect(captureHeldCardSumit).toHaveBeenCalledTimes(1);
+      expect(r).toMatchObject({ outcome: 'charged', chargeMethod: 'token_charge' });
+    });
+
+    it('first attempt: a definitive capture decline falls back to the token charge', async () => {
+      withHold();
+      m.authCapture.mockRejectedValue(new SumitDeclinedError());
+      const r = await closeCampaignAndCharge('c1');
+      expect(captureHeldCardSumit).toHaveBeenCalledTimes(1);
+      expect(r).toMatchObject({ outcome: 'charged', chargeMethod: 'token_charge' });
+      expect(sendSlackAlert).toHaveBeenCalledWith(
+        expect.objectContaining({ fields: expect.objectContaining({ charge_method: 'token_charge', hold_capture_declined: 'true' }) }),
+      );
+    });
+
+    it('after a charge_failed: a capture decline may still fall back (no money moved)', async () => {
+      withHold({ charge_status: 'charge_failed' });
+      m.authCapture.mockRejectedValue(new SumitDeclinedError());
+      const r = await closeCampaignAndCharge('c1');
+      expect(captureHeldCardSumit).toHaveBeenCalledTimes(1);
+      expect(r.outcome).toBe('charged');
+    });
+
+    it('capture decline, then the token charge declines too → declined / charge_failed', async () => {
+      withHold();
+      m.authCapture.mockRejectedValue(new SumitDeclinedError());
+      m.capture.mockRejectedValue(new SumitDeclinedError());
+      const r = await closeCampaignAndCharge('c1');
+      expect(r).toEqual({ outcome: 'declined', amount: 12 });
+      expect(markCampaignChargeOutcome).toHaveBeenCalledWith('c1', 'charge_failed');
+    });
+
+    it('charge_review retry: a capture decline stays in review and NEVER charges the token', async () => {
+      withHold({ charge_status: 'charge_review' });
+      m.authCapture.mockRejectedValue(new SumitDeclinedError());
+      const r = await closeCampaignAndCharge('c1');
+      expect(captureHeldCardSumit).not.toHaveBeenCalled();
+      expect(r).toEqual({ outcome: 'review', amount: 12 });
+      expect(markCampaignChargeOutcome).toHaveBeenCalledWith('c1', 'charge_review');
+      expect(markCampaignChargeOutcome).not.toHaveBeenCalledWith('c1', 'charge_failed');
+    });
+
+    it('an unknown capture outcome (network) → review, no token charge', async () => {
+      withHold();
+      m.authCapture.mockRejectedValue(new SumitNetworkError('x'));
+      const r = await closeCampaignAndCharge('c1');
+      expect(captureHeldCardSumit).not.toHaveBeenCalled();
+      expect(r).toEqual({ outcome: 'review', amount: 12 });
+      expect(markCampaignChargeOutcome).toHaveBeenCalledWith('c1', 'charge_review');
     });
   });
 });

@@ -1,7 +1,11 @@
 import 'server-only';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import { SumitDeclinedError, SumitNetworkError } from '@/lib/sumit/charge';
+import {
+  SumitDeclinedError,
+  SumitNetworkError,
+  type SumitChargeRequestBody,
+} from '@/lib/sumit/charge';
 
 const SUMIT_CHARGE_URL = 'https://api.sumit.co.il/billing/payments/charge/';
 
@@ -122,6 +126,50 @@ export async function captureHeldCardSumit(
   p: SumitCaptureParams,
 ): Promise<SumitCaptureResult> {
   const body = {
+    ...captureBodyBase(p),
+    AutoCapture: true,
+  } satisfies SumitChargeRequestBody;
+  return postCaptureCharge(body);
+}
+
+export interface SumitAuthCaptureParams extends SumitCaptureParams {
+  // Data.Payment.AuthNumber of the J5 hold (campaigns.auth_number), sent
+  // exactly as stored.
+  authNumber: string;
+  // The hold's SUMIT customer. Required here: the only verified capture sent it.
+  customerId: number;
+}
+
+// Close-charge by CAPTURING the J5 hold itself (J4 on the hold), instead of a
+// new charge on the saved token. SUMIT support (2026-09-29): same endpoint,
+// CreditCardAuthNumber = the hold's AuthNumber, the same customer and the same
+// payment method (token), an amount no higher than the hold, and AutoCapture
+// left EMPTY (default = charge) — a tax invoice/receipt is issued.
+// Verified live 2026-09-29 from /admin/sumit-test (sumit_test_transactions
+// fa21e4e3): a ₪1 hold captured in full with exactly this shape → 000, a
+// document, and the capture's AuthNumber equal to the hold's. A second capture
+// of the same, already-consumed hold → ValidPayment false, code 004 — the same
+// shape as a card decline, so a decline here does NOT prove no money moved in
+// an EARLIER attempt (close-charge.ts decides the fallback on that basis).
+// Not yet seen live: a partial capture, an aged hold, a multi-row receipt.
+export async function captureAuthorizationSumit(
+  p: SumitAuthCaptureParams,
+): Promise<SumitCaptureResult> {
+  const body = {
+    ...captureBodyBase(p), // Customer.ID = p.customerId (required above)
+    CreditCardAuthNumber: p.authNumber,
+    // AutoCapture deliberately absent (not true, not null).
+  } satisfies SumitChargeRequestBody;
+  return postCaptureCharge(body);
+}
+
+// The body both final-charge variants share: the hold's customer + saved
+// card, and the receipt rows. No VATIncluded/VATRate (owner decision 2.9.2026,
+// same as authorize.ts): KALFA is an עוסק פטור — the company default applies.
+// An explicit VATRate also unbalanced the document ("products vs payments
+// mismatch").
+function captureBodyBase(p: SumitCaptureParams) {
+  return {
     Credentials: { CompanyID: p.companyId, APIKey: p.apiKey },
     Customer: {
       ID: p.customerId ?? undefined,
@@ -134,10 +182,8 @@ export async function captureHeldCardSumit(
       CreditCard_ExpirationMonth: p.expMonth,
       CreditCard_ExpirationYear: p.expYear,
       CreditCard_CitizenID: p.citizenId,
-      Type: 1,
+      Type: 1 as const,
     },
-    VATIncluded: true,
-    // No VATRate — use the company default (an explicit rate unbalances the doc).
     // An itemised receipt when the breakdown reconciles to `amount`, else the
     // single opaque line. `linesReconcile` is the gate — see its contract.
     Items: linesReconcile(p.lines, parseFloat(p.amount))
@@ -156,12 +202,17 @@ export async function captureHeldCardSumit(
             Description: 'KALFA — חיוב קמפיין',
           },
         ],
-    AutoCapture: true,
     PreventDocumentCreation: false, // a real receipt at charge time
     SendDocumentByEmail: !!p.customerEmail,
     DraftDocument: false,
-  };
+  } satisfies SumitChargeRequestBody;
+}
 
+// POST a final-charge body and classify the answer. Throws SumitDeclinedError
+// on a definitive decline, SumitNetworkError when the outcome is unknown.
+async function postCaptureCharge(
+  body: SumitChargeRequestBody,
+): Promise<SumitCaptureResult> {
   let res: Response;
   try {
     res = await fetch(SUMIT_CHARGE_URL, {
@@ -268,7 +319,9 @@ export async function creditHeldCardSumit(
       CreditCard_CitizenID: p.citizenId,
       Type: 1,
     },
-    VATIncluded: true,
+    // No VATIncluded/VATRate (owner decision 2.9.2026, same as authorize.ts):
+    // KALFA is an עוסק פטור — the amount is final with no VAT component and
+    // SUMIT's company default applies.
     SupportCredit: true,
     Items: [
       {
@@ -282,7 +335,7 @@ export async function creditHeldCardSumit(
     PreventDocumentCreation: false,
     SendDocumentByEmail: !!p.customerEmail,
     DraftDocument: false,
-  };
+  } satisfies SumitChargeRequestBody;
 
   let res: Response;
   try {
