@@ -7,6 +7,7 @@ import {
   getSendPolicy,
   getWhatsAppConsentRequired,
 } from '@/lib/data/outreach-config';
+import { resolveWhatsAppSend } from '@/lib/data/whatsapp-template-send';
 import { resolveTemplateForEvent } from '@/lib/data/message-templates-resolve';
 import { recordTemplateFailure, resolveTemplateMedia, sendOneWhatsApp } from '@/lib/data/outreach';
 import {
@@ -712,15 +713,6 @@ export async function prepareAndSendStep(
   if (tp.channel === 'whatsapp') {
     const config = await getWhatsAppConfig();
     if (!config) return { kind: 'skip', reason: 'whatsapp_not_configured' };
-    const template = await resolveTemplateForEvent(tp.message_key, ctx.event.event_type);
-    if (!template) {
-      await recordTemplateFailure(admin, campaignId, stepIndex, 'template_missing', tp.message_key, tp.channel);
-      return { kind: 'skip', reason: 'template_missing' };
-    }
-    if (template.channel !== 'whatsapp') {
-      await recordTemplateFailure(admin, campaignId, stepIndex, 'channel_mismatch', tp.message_key, tp.channel);
-      return { kind: 'skip', reason: 'channel_mismatch' };
-    }
     const { data: guest } = await admin
       .from('guests')
       .select('full_name')
@@ -729,27 +721,27 @@ export async function prepareAndSendStep(
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle();
-    const guestFirstName = deriveGuestFirstName(guest?.full_name);
-    const family = template.name.startsWith('kalfa_wedding_') ? 'wedding' : 'generic';
-    const built = buildBodyParams({
-      paramContract: template.paramContract,
-      family,
-      ctx: { event: ctx.event, guestFirstName },
+    // Which Meta template (per event type / invite image) and what fills it:
+    // one shared resolver for every send site (routes + mirror + variables).
+    const built = await resolveWhatsAppSend({
+      messageKey: tp.message_key,
+      eventType: ctx.event.event_type,
+      inviteImagePath: ctx.inviteImagePath,
+      values: { event: ctx.event, guestFirstName: deriveGuestFirstName(guest?.full_name) },
     });
-    if ('missing' in built) {
-      await recordTemplateFailure(admin, campaignId, stepIndex, 'params_incomplete', tp.message_key, tp.channel);
-      return { kind: 'skip', reason: 'params_incomplete' };
+    if (built.kind !== 'ok') {
+      await recordTemplateFailure(admin, campaignId, stepIndex, built.kind, tp.message_key, tp.channel);
+      return { kind: 'skip', reason: built.kind };
     }
-    const media = await resolveTemplateMedia(template, ctx.inviteImagePath);
     const outcome = await sendOneWhatsApp(
       admin,
       { id: campaignId, event_id: eventId },
       { id: contactId, normalized_phone: contact.normalized_phone },
-      media.template,
+      built.template,
       config,
       tp.message_key,
-      built.params,
-      media.headerImage ? { headerImage: media.headerImage } : undefined,
+      built.bodyParams,
+      built.extras,
       { retryBudgetMs: BACKGROUND_SEND_RETRY_BUDGET_MS },
     );
     if (outcome.kind === 'accepted') {

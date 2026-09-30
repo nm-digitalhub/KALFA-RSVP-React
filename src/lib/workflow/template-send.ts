@@ -28,12 +28,12 @@ import 'server-only';
 // A second implementation of any of that would be a second set of Meta rules to
 // keep correct, and the first one to fall behind would fail silently.
 import { getWhatsAppConfig } from '@/lib/data/outreach-config';
-import { resolveTemplateForEvent } from '@/lib/data/message-templates-resolve';
-import { resolveTemplateMedia, sendOneWhatsApp } from '@/lib/data/outreach';
+import { sendOneWhatsApp } from '@/lib/data/outreach';
+import { resolveWhatsAppSend } from '@/lib/data/whatsapp-template-send';
 import { terminalReasonFor } from '@/lib/data/outreach-engine';
 import { getWhatsAppConsentRequired } from '@/lib/data/outreach-config';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { buildBodyParams, deriveGuestFirstName } from '@/lib/whatsapp/template-spec';
+import { deriveGuestFirstName } from '@/lib/whatsapp/template-spec';
 import { BACKGROUND_SEND_RETRY_BUDGET_MS } from '@/lib/whatsapp/client';
 
 export type TemplateSendResult = { ok: boolean; reason?: string };
@@ -60,7 +60,7 @@ export async function sendTemplateToContact(input: {
   // rather than sending a template with a blank in it.
   const { data: event } = await admin
     .from('events')
-    .select('id, name, event_type, event_date, venue_name, venue_address, celebrants, invite_image_path')
+    .select('id, name, event_type, event_date, venue_name, venue_address, celebrants, invite_image_path, gift_payment_url, gift_link_token')
     .eq('id', input.eventId)
     .maybeSingle();
   if (!event) return { ok: false, reason: 'event_not_found' };
@@ -89,9 +89,6 @@ export async function sendTemplateToContact(input: {
   );
   if (blocked) return { ok: false, reason: blocked };
 
-  const template = await resolveTemplateForEvent(input.messageKey, event.event_type);
-  if (!template) return { ok: false, reason: 'template_not_available' };
-
   // The guest behind the contact, for {{1}}. `deriveGuestFirstName` is the shared
   // rule — first token, and null for a household ("משפחת כהן") so the greeting
   // falls back to the generic form instead of "שלום משפחת,".
@@ -104,25 +101,26 @@ export async function sendTemplateToContact(input: {
     .limit(1)
     .maybeSingle();
 
-  // Which side of Meta's positional contract to bind. The same expression the
-  // outreach engine uses — the wedding family renders groom/bride in {{2}}/{{3}}.
-  const family = template.name.startsWith('kalfa_wedding_') ? 'wedding' : 'generic';
-  const built = buildBodyParams({
-    paramContract: template.paramContract,
-    family,
-    ctx: { event, guestFirstName: deriveGuestFirstName(guest?.full_name) },
+  // Which Meta template and what fills it — the same resolver every send site
+  // uses (routes + Meta mirror + variable rows). Since 2026-09-30 that includes
+  // the gift / event-day URL button and the gift layout, which this node used
+  // to bind as the generic 7-tuple.
+  const built = await resolveWhatsAppSend({
+    messageKey: input.messageKey,
+    eventType: event.event_type,
+    inviteImagePath: event.invite_image_path ?? null,
+    values: { event, guestFirstName: deriveGuestFirstName(guest?.full_name) },
   });
-  if ('missing' in built) {
-    // FAIL CLOSED. A template sent with an empty positional parameter reaches a
-    // guest with a hole in the sentence, and Meta may reject it outright. The
-    // missing keys are event-level data, never guest data, so naming them is
-    // both safe and the only way an owner can fix it.
+  if (built.kind === 'template_missing' || built.kind === 'channel_mismatch') {
+    return { ok: false, reason: 'template_not_available' };
+  }
+  if (built.kind === 'params_incomplete') {
+    // FAIL CLOSED. A template sent with an empty variable reaches a guest with a
+    // hole in the sentence, and Meta may reject it outright. The missing values
+    // are event-level data paths, never guest data, so naming them is both safe
+    // and the only way an owner can fix it.
     return { ok: false, reason: `params_incomplete:${built.missing.join(',')}` };
   }
-
-  // The IMAGE-header sibling when the row maps one AND the event has an uploaded
-  // invitation — fail-open to the text template, same as every other send path.
-  const media = await resolveTemplateMedia(template, event.invite_image_path ?? null);
 
   // The event's campaign, for the interaction log only. One campaign per event
   // is the product's own rule; without one the send still happens and only the
@@ -140,14 +138,11 @@ export async function sendTemplateToContact(input: {
     admin,
     { id: campaign?.id ?? '', event_id: input.eventId },
     { id: contact.id, normalized_phone: contact.normalized_phone },
-    media.template,
+    built.template,
     config,
     input.messageKey,
-    built.params,
-    // `resolveTemplateMedia` returns the header image alongside the (possibly
-    // swapped) template; `urlButtonParam` belongs to the gift template only and
-    // is not a shape this node builds.
-    media.headerImage ? { headerImage: media.headerImage } : undefined,
+    built.bodyParams,
+    built.extras,
     { retryBudgetMs: BACKGROUND_SEND_RETRY_BUDGET_MS },
   );
 

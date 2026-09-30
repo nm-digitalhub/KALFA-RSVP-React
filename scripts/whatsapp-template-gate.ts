@@ -16,21 +16,11 @@ import { getTemplateByKey, resolveTemplateForEvent } from '@/lib/data/message-te
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Json } from '@/lib/supabase/types';
 import { CELEBRANT_KIND_BY_EVENT_TYPE } from '@/lib/validation/schemas';
-import {
-  bindTemplateParameters,
-  carriesRsvpQuickReplies,
-  pickTemplateRoute,
-  type TemplateParameterRow,
-  type TemplateRouteRow,
-} from '@/lib/whatsapp/template-route';
+import { resolveWhatsAppSend } from '@/lib/data/whatsapp-template-send';
 import {
   buildBodyParams,
   buildGiftParams,
-  buildSendContext,
   MARKETING_MESSAGE_KEYS,
-  readSendContextPath,
-  type SendContext,
-  type SendContextPath,
 } from '@/lib/whatsapp/template-spec';
 
 type EventType = keyof typeof CELEBRANT_KIND_BY_EVENT_TYPE;
@@ -99,30 +89,11 @@ async function oldRequest(key: string, eventType: EventType, withImage: boolean)
   };
 }
 
-function reader(ctx: SendContext) {
-  const extra: Record<string, string> = {
-    'event.invite_image': IMAGE,
-    'lead.full_name': LEAD.full_name,
-    'lead.signup_ref': LEAD.signup_ref,
-  };
-  return (path: string): string | null => {
-    if (path in extra) return extra[path];
-    const group = path.split('.')[0];
-    if (!(group in ctx)) return null;
-    return readSendContextPath(ctx, path as SendContextPath);
-  };
-}
-
 async function main() {
   const admin = createAdminClient();
-  const [{ data: steps }, { data: routes }, { data: params }, { data: mirror }] = await Promise.all([
-    admin.from('message_templates').select('message_key').eq('channel', 'whatsapp').eq('active', true),
-    admin.from('message_template_routes').select('message_key, event_type, with_media, whatsapp_template_id'),
-    admin.from('whatsapp_template_parameters').select('whatsapp_template_id, type, sub_type, index, position, parameter_name, source_path'),
-    admin.from('whatsapp_message_templates').select('id, name, language, components'),
-  ]);
-  if (!steps || !routes || !params || !mirror) throw new Error('failed to load gate data');
-  const byId = new Map(mirror.map((m) => [m.id, m]));
+  const { data: steps } = await admin
+    .from('message_templates').select('message_key').eq('channel', 'whatsapp').eq('active', true);
+  if (!steps) throw new Error('failed to load gate data');
 
   let checked = 0;
   const diffs: string[] = [];
@@ -130,28 +101,38 @@ async function main() {
     for (const eventType of Object.keys(CELEBRANT_KIND_BY_EVENT_TYPE) as EventType[]) {
       for (const withImage of [false, true]) {
         const oldReq = await oldRequest(key, eventType, withImage);
-        const route = pickTemplateRoute(routes as TemplateRouteRow[], key, eventType, withImage);
-        const tpl = route ? byId.get(route.whatsapp_template_id) : undefined;
+        // The NEW side is the production helper itself — the gate proves the
+        // code that sends, not a copy of it.
+        const resolved = await resolveWhatsAppSend({
+          messageKey: key,
+          eventType,
+          inviteImagePath: withImage ? IMAGE : null,
+          signImage: async (path) => path,
+          values:
+            key === 'sales_signup_link'
+              ? { lead: LEAD }
+              : {
+                  event: {
+                    event_type: eventType,
+                    celebrants: CELEBRANTS_BY_KIND[CELEBRANT_KIND_BY_EVENT_TYPE[eventType]],
+                    event_date: '2026-07-20T18:00:00+00:00', venue_name: 'אולמי הגן', venue_address: 'דרך השלום 10',
+                    gift_payment_url: GIFT_URL, gift_link_token: GIFT_TOKEN,
+                  },
+                  guestFirstName: GUEST,
+                },
+        });
         let newReq: Request | null = null;
-        if (tpl) {
-          const ctx = buildSendContext({
-            event: {
-              event_type: eventType, celebrants: CELEBRANTS_BY_KIND[CELEBRANT_KIND_BY_EVENT_TYPE[eventType]],
-              event_date: '2026-07-20T18:00:00+00:00', venue_name: 'אולמי הגן', venue_address: 'דרך השלום 10',
-              gift_payment_url: GIFT_URL, gift_link_token: GIFT_TOKEN,
-            },
-            guestFirstName: GUEST,
-          });
-          const rows = (params as TemplateParameterRow[]).filter((p) => p.whatsapp_template_id === tpl.id);
-          const bound = bindTemplateParameters(rows, reader(ctx));
+        if (resolved.kind === 'ok') {
           newReq = {
-            name: tpl.name, language: tpl.language,
-            body: 'missing' in bound ? { missing: bound.missing } : bound.body,
-            headerImage: 'missing' in bound ? null : bound.headerImagePath ?? null,
-            urlButton: 'missing' in bound ? null : bound.urlButtonParam ?? null,
-            quickReply: carriesRsvpQuickReplies(tpl.components),
+            name: resolved.template.name, language: resolved.template.language,
+            body: resolved.bodyParams,
+            headerImage: resolved.extras.headerImage?.link ?? null,
+            urlButton: resolved.extras.urlButtonParam ?? null,
+            quickReply: !!resolved.template.rsvpQuickReply,
             endpoint: endpointFor(key),
           };
+        } else if (resolved.kind === 'params_incomplete') {
+          newReq = { name: '?', language: '?', body: { missing: resolved.missing }, headerImage: null, urlButton: null, quickReply: false, endpoint: endpointFor(key) };
         }
         checked += 1;
         if (process.env.GATE_SAMPLE === `${key}/${eventType}/${withImage}`) {

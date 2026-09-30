@@ -8,7 +8,7 @@ import {
 import { applyCallOutcome } from '@/lib/data/callback-scheduling';
 import { getSmsSender } from '@/lib/sms/sender';
 import { buildSignupLinkSmsText } from '@/lib/callbacks/signup-link-sms';
-import { getTemplateByKey } from '@/lib/data/message-templates-resolve';
+import { resolveWhatsAppSend } from '@/lib/data/whatsapp-template-send';
 import { getWhatsAppConfig } from '@/lib/data/outreach-config';
 import { sendWhatsAppMarketingTemplate } from '@/lib/whatsapp/client';
 import { getAppOrigin } from '@/lib/url';
@@ -115,8 +115,16 @@ export async function POST(
   // 1. WhatsApp attempt — only with consent AND a real, active template.
   if (parsed.data.wa_consent) {
     try {
-      const [template, waConfig] = await Promise.all([
-        getTemplateByKey(SALES_SIGNUP_MESSAGE_KEY),
+      // Template + variables from the shared resolver (routes + Meta mirror +
+      // variable rows): body {{1}} = lead.full_name, URL-button suffix =
+      // lead.signup_ref (the attempt id). A blank name comes back as
+      // params_incomplete, i.e. the same skip-to-SMS as before.
+      const [built, waConfig] = await Promise.all([
+        resolveWhatsAppSend({
+          messageKey: SALES_SIGNUP_MESSAGE_KEY,
+          eventType: null,
+          values: { lead: { full_name: ref.fullName, signup_ref: attemptId } },
+        }),
         getWhatsAppConfig(),
       ]);
       // The approved template's BODY is "שלום {{1}}, ..." — ONE positional
@@ -130,8 +138,7 @@ export async function POST(
       // SMS. A blank/whitespace name can't fill a required WhatsApp template
       // variable (fails the same way as a missing one), so it also skips to
       // SMS rather than sending a doomed request.
-      const fullName = ref.fullName.trim();
-      if (template && waConfig && fullName) {
+      if (built.kind === 'ok' && waConfig) {
         const outcome = await sendWhatsAppMarketingTemplate(
           {
             phoneNumberId: waConfig.phoneNumberId,
@@ -140,9 +147,9 @@ export async function POST(
           },
           {
             to: ref.phone,
-            templateName: template.name,
-            language: template.language,
-            bodyParams: [fullName],
+            templateName: built.template.name,
+            language: built.template.language,
+            bodyParams: built.bodyParams,
             // The template's URL button base is
             // "https://beta.kalfa.me/auth/signup?ref=" with a {{1}} dynamic
             // suffix (submitted to Meta as kalfa_sales_signup_link_v1) —
@@ -150,7 +157,7 @@ export async function POST(
             // the gift-link precedent's own convention exactly (client.ts's
             // own comment: "the suffix Meta appends to the template's static
             // button URL").
-            urlButtonParam: attemptId,
+            urlButtonParam: built.extras.urlButtonParam,
           },
         );
         if (outcome.kind === 'accepted') {
@@ -161,11 +168,12 @@ export async function POST(
         }
       } else {
         waFailureStatus = 'not_attempted';
-        waFailureCode = !template
-          ? 'no_active_template'
-          : !waConfig
-            ? 'no_whatsapp_config'
-            : 'missing_recipient_name';
+        waFailureCode =
+          built.kind === 'template_missing' || built.kind === 'channel_mismatch'
+            ? 'no_active_template'
+            : built.kind === 'params_incomplete'
+              ? 'missing_recipient_name'
+              : 'no_whatsapp_config';
       }
     } catch {
       // Falls through to SMS — never let a WhatsApp throw block the fallback.
