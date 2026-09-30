@@ -492,3 +492,187 @@ export function buildBodyParams(args: {
       return buildTemplateParams(args.family, args.ctx);
   }
 }
+
+// --- Send context: every value a template can print, computed once ----------
+// Step 4 of docs/superpowers/plans/2026-09-30-whatsapp-templates-meta-mirror.md.
+//
+// ONE object with every value a WhatsApp template variable can be bound to,
+// computed by the SAME formatting rules the builders above always used. Each
+// builder is now a list of paths into it (PARAM_CONTRACT_PATHS) — exactly the
+// data the per-template parameter mapping (whatsapp_template_parameters) will
+// hold — and the admin variable picker lists this object's paths, so a new
+// value added here is offered there without another code change.
+//
+// A null value means "not available"; binding a template position to it fails
+// closed with the stable MissingParamKey the builders have always reported.
+
+export type SendContextInput = {
+  event: {
+    event_type: EventType;
+    celebrants: Json | null;
+    event_date?: string | null;
+    venue_name?: string | null;
+    venue_address?: string | null;
+    gift_payment_url?: string | null;
+    gift_link_token?: string | null;
+  };
+  guestFirstName: string | null;
+};
+
+export type SendContext = {
+  guest: {
+    first_name: string | null;
+    // {{1}} of the guest-addressed layouts: never missing (falls back).
+    greeting_name: string;
+  };
+  event: {
+    type_label: string;
+    celebrants_text: string | null;
+    groom: string | null;
+    bride: string | null;
+    weekday: string | null;
+    date_hebrew: string | null;
+    date_gregorian: string | null;
+    // Both calendars in one slot — the generic/wedding {{5}}.
+    date_hebrew_and_gregorian: string | null;
+    time: string | null;
+    // venue_name + ", " + venue_address (address optional).
+    venue: string | null;
+    // https-only, mirroring the DB CHECK.
+    gift_payment_url: string | null;
+    gift_link_token: string | null;
+  };
+  brit: {
+    invite_line: string | null;
+    reminder_line: string | null;
+    closing: string | null;
+    thanks_line: string | null;
+    family_signature: string | null;
+  };
+};
+
+export function buildSendContext(input: SendContextInput): SendContext {
+  const { event, guestFirstName } = input;
+  const eventMs = event.event_date ? Date.parse(event.event_date) : Number.NaN;
+  const hasDate = !Number.isNaN(eventMs);
+  const dateHebrew = hasDate ? formatIsraelHebrewDate(eventMs) : null;
+  const dateGregorian = hasDate ? dateFmt.format(eventMs) : null;
+  const venueName = event.venue_name?.trim() || null;
+  const venueAddress = event.venue_address?.trim() || null;
+  const giftUrl = event.gift_payment_url?.trim() || null;
+  const phrasing = britPhrasingFor(event.celebrants);
+  const parents = readCelebrantField(event.celebrants, 'parents');
+  return {
+    guest: {
+      first_name: guestFirstName?.trim() || null,
+      greeting_name: guestFirstName?.trim() || GUEST_FIRST_NAME_FALLBACK,
+    },
+    event: {
+      type_label: EVENT_TYPE_LABELS[event.event_type],
+      celebrants_text: genericCelebrantsText(event.event_type, event.celebrants),
+      groom: readCelebrantField(event.celebrants, 'groom'),
+      bride: readCelebrantField(event.celebrants, 'bride'),
+      weekday: hasDate ? formatIsraelWeekday(eventMs) : null,
+      date_hebrew: dateHebrew,
+      date_gregorian: dateGregorian,
+      date_hebrew_and_gregorian:
+        dateHebrew && dateGregorian ? `${dateHebrew} (${dateGregorian})` : null,
+      time: hasDate ? timeFmt.format(eventMs) : null,
+      venue: venueName ? (venueAddress ? `${venueName}, ${venueAddress}` : venueName) : null,
+      gift_payment_url: giftUrl && /^https:\/\//i.test(giftUrl) ? giftUrl : null,
+      gift_link_token: event.gift_link_token?.trim() || null,
+    },
+    brit: {
+      // The invite is signed with the host name ({{7}}), so its opening is
+      // bound only when that signature exists too — the same fail-closed unit
+      // buildBritTradInviteParams has always treated them as.
+      invite_line: phrasing && parents ? phrasing.invite : null,
+      reminder_line: phrasing?.reminder ?? null,
+      // Signed with the host name (בעלת/בעל השמחה) — required, per the owner.
+      closing: phrasing && parents ? phrasing.closing(parents) : null,
+      thanks_line: phrasing?.thanks ?? null,
+      family_signature: parents
+        ? `משפחת ${parents.trim().split(/\s+/).pop() ?? parents}`
+        : null,
+    },
+  };
+}
+
+// Every path the send context exposes, in "<group>.<key>" form.
+export type SendContextPath = {
+  [G in keyof SendContext]: `${G & string}.${keyof SendContext[G] & string}`;
+}[keyof SendContext];
+
+// What an unavailable value reports — the builders' historical vocabulary.
+// guest.greeting_name and event.type_label are never null, so never listed.
+const MISSING_KEY_BY_PATH: Partial<Record<SendContextPath, MissingParamKey | GiftMissingParamKey>> = {
+  'event.celebrants_text': 'celebrants',
+  'event.groom': 'celebrants.groom',
+  'event.bride': 'celebrants.bride',
+  'event.weekday': 'event_date',
+  'event.date_hebrew': 'event_date',
+  'event.date_gregorian': 'event_date',
+  'event.date_hebrew_and_gregorian': 'event_date',
+  'event.time': 'event_date',
+  'event.venue': 'venue_name',
+  'event.gift_payment_url': 'gift_payment_url',
+  'brit.invite_line': 'celebrants',
+  'brit.reminder_line': 'celebrants',
+  'brit.closing': 'celebrants',
+  'brit.thanks_line': 'celebrants',
+  'brit.family_signature': 'celebrants',
+};
+
+export function readSendContextPath(ctx: SendContext, path: SendContextPath): string | null {
+  const [group, key] = path.split('.') as [keyof SendContext, string];
+  const value = (ctx[group] as Record<string, string | null>)[key];
+  return value ?? null;
+}
+
+// Bind each position to its path. Fail-closed: any null → { missing } with each
+// key once, in position order; never an empty parameter.
+export function resolveParams<const P extends readonly SendContextPath[]>(
+  paths: P,
+  ctx: SendContext,
+): { params: { [K in keyof P]: string } } | { missing: Array<MissingParamKey | GiftMissingParamKey> } {
+  const params: string[] = [];
+  const missing: Array<MissingParamKey | GiftMissingParamKey> = [];
+  for (const path of paths) {
+    const value = readSendContextPath(ctx, path);
+    if (value === null) {
+      const key = MISSING_KEY_BY_PATH[path] ?? 'celebrants';
+      if (!missing.includes(key)) missing.push(key);
+    } else {
+      params.push(value);
+    }
+  }
+  if (missing.length > 0) return { missing };
+  // One element per path, in order (every path pushed exactly one value), so
+  // the array has the tuple's shape; TS cannot map a tuple through a loop.
+  return { params: params as { [K in keyof P]: string } };
+}
+
+// Each approved layout as data: position i ↔ {{i+1}}. These arrays are what the
+// step-5 backfill writes into whatsapp_template_parameters.
+export const PARAM_CONTRACT_PATHS = {
+  generic: [
+    'guest.greeting_name', 'event.type_label', 'event.celebrants_text', 'event.weekday',
+    'event.date_hebrew_and_gregorian', 'event.time', 'event.venue',
+  ],
+  wedding: [
+    'guest.greeting_name', 'event.groom', 'event.bride', 'event.weekday',
+    'event.date_hebrew_and_gregorian', 'event.time', 'event.venue',
+  ],
+  gift: ['guest.greeting_name', 'event.type_label', 'event.celebrants_text', 'event.gift_payment_url'],
+  thankyou: ['event.type_label', 'event.celebrants_text'],
+  event_day_pay: ['event.time', 'event.venue'],
+  brit_trad_invite: [
+    'brit.invite_line', 'event.weekday', 'event.date_hebrew', 'event.date_gregorian',
+    'event.time', 'event.venue', 'brit.closing',
+  ],
+  brit_trad_reminder: [
+    'brit.reminder_line', 'event.weekday', 'event.date_hebrew', 'event.date_gregorian',
+    'event.time', 'event.venue',
+  ],
+  brit_trad_thankyou: ['brit.thanks_line', 'brit.family_signature'],
+} as const satisfies Record<string, readonly SendContextPath[]>;

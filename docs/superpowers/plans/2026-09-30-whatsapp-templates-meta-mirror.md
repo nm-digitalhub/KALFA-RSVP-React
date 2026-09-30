@@ -139,7 +139,7 @@
    - יצירת `message_template_routes`, `whatsapp_template_parameters` ו-`whatsapp_template_settings`.
    - הסרת `whatsapp_template_id` ו-`kalfa_send_config` מ-`message_templates`. אין להן קוראים וגם לא כותבים (נמדד).
    - RLS דלוק, `revoke` מ-`anon` ו-`authenticated`.
-4. **`buildSendContext`**, והפונקציות הישנות עוברות לקרוא ממנו. בלי שינוי בשליחה. הבדיקות הקיימות צריכות להישאר ירוקות.
+4. **(בוצע 30.9, בלי שינוי בשליחה)** `buildSendContext` + `resolveParams` + `PARAM_CONTRACT_PATHS` ב-`template-spec.ts`: כל 8 הצורות (generic, wedding, gift, thankyou, event_day_pay, ושלוש של ברית) כנתונים. `send-context.test.ts` מוכיח זהות מלאה מול הבונים הקיימים, כולל סדר מפתחות החסר, על 4,752 צירופים (9 סוגי אירוע × 11 צורות חוגגים × 4 תאריכים × 4 מקומות × 3 אורחים). הבונים הקיימים עדיין בשימוש, וההחלפה בשלב 7. לא כלול: `signup-link` (הקשר של ליד מכירה, לא אירוע), שיטופל בשלב 5 או 7. המקור הקודם: **`buildSendContext`**, והפונקציות הישנות עוברות לקרוא ממנו. בלי שינוי בשליחה. הבדיקות הקיימות צריכות להישאר ירוקות.
 5. **Backfill.**
    - הניתוב נגזר מ-`name` ומ-`components` של כל שלב.
    - המשתנים של כל תבנית נגזרים מהמנגנון שבונה אותם היום.
