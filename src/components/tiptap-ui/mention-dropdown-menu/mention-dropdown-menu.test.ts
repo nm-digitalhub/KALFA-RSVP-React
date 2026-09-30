@@ -226,6 +226,23 @@ describe('closing on an outside press', () => {
     outside.remove();
   });
 
+  // Listened for in the capture phase: a control that stops the press from
+  // bubbling (React's e.stopPropagation() stops it at the root container)
+  // still closes the list. A bubble-phase document listener — what
+  // @mantine/hooks' useClickOutside installs — never sees this press.
+  it('a press outside that stops propagation still closes it', async () => {
+    await mount('{');
+    await type(' {');
+    const wrapper = document.createElement('div');
+    wrapper.addEventListener('pointerdown', (e) => e.stopPropagation());
+    const outside = document.createElement('button');
+    wrapper.appendChild(outside);
+    document.body.appendChild(wrapper);
+    await pointerDown(outside);
+    expect(menu()).toBeNull();
+    wrapper.remove();
+  });
+
   it('a press inside the list or the editor keeps it open', async () => {
     await mount('{');
     await type(' {');
@@ -410,5 +427,42 @@ describe('saved content round trip', () => {
       { id: 'event.date_hebrew', label: 'תאריך עברי', mentionSuggestionChar: '{' },
     ]);
     expect(editor!.getText()).toBe(before);
+  });
+});
+
+describe('aria-activedescendant', () => {
+  const activeTarget = () => {
+    const id = dom().getAttribute('aria-activedescendant');
+    return id ? document.getElementById(id) : null;
+  };
+
+  it('follows ArrowDown to the highlighted option', async () => {
+    await mount('{');
+    await type(' {');
+    await press('ArrowDown');
+    expect(activeTarget()?.getAttribute('data-user-id')).toBe('event.date_gregorian');
+    expect(activeTarget()?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('points at an option that exists after the list shrinks', async () => {
+    await mount('{');
+    await type(' {');
+    await press('End'); // third row
+    expect(activeTarget()?.getAttribute('data-user-id')).toBe('guest.first_name');
+    await type('תאר'); // two rows left
+    expect(options()).toHaveLength(2);
+    expect(activeTarget()).toBe(options()[0]);
+  });
+
+  it('is absent with no results, and Escape still closes the list', async () => {
+    await mount('{');
+    await type(' {zzz');
+    expect(options()).toHaveLength(0);
+    expect(menu()).not.toBeNull();
+    expect(dom().hasAttribute('aria-activedescendant')).toBe(false);
+    const escape = await press('Escape');
+    expect(escape.defaultPrevented).toBe(true);
+    expect(menu()).toBeNull();
+    expect(dom().getAttribute('aria-expanded')).toBe('false');
   });
 });

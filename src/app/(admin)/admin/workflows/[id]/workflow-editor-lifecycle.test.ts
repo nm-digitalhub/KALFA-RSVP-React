@@ -29,14 +29,14 @@ function effectContaining(statement: string): string {
 }
 
 describe('WorkflowEditor lifecycle invariants', () => {
-  it('hydrates SDK global variables when their server prop changes', () => {
-    const effect = effectContaining(
-      'useStore.setState({ globalVariables: initialGlobalVariables ?? {} })',
+  // The behaviour itself — identical content does not re-set the store, changed
+  // content or a changed workflow does — is exercised at runtime in
+  // use-hydrate-global-variables.test.tsx. This only pins that the editor uses it.
+  it('hydrates SDK global variables through the content-keyed hook', () => {
+    expect(EDITOR).toContain(
+      'useHydrateGlobalVariables(workflowId, initialGlobalVariables);',
     );
-
-    expect(effect).toContain('[initialGlobalVariables]');
-    expect(effect).not.toContain('resetExecution()');
-    expect(effect).not.toContain('resetPanels()');
+    expect(EDITOR).not.toMatch(/\[initialGlobalVariables\]/);
   });
 
   it('resets execution and panels only when the workflow identity changes', () => {
@@ -45,5 +45,15 @@ describe('WorkflowEditor lifecycle invariants', () => {
     expect(effect).toContain('resetPanels()');
     expect(effect).toContain('[workflowId]');
     expect(effect).not.toContain('initialGlobalVariables');
+  });
+
+  // The SDK keys its save context, auto-save effect and beforeunload listener on
+  // `onDataSave`'s identity, so the handler must not be rebuilt inline in JSX.
+  it('passes a memoised integration object, never an inline save handler', () => {
+    expect(EDITOR).toContain('integration={integration}');
+    expect(EDITOR).not.toMatch(/integration=\{\{/);
+    expect(EDITOR).toMatch(
+      /const integration = useMemo\([\s\S]*?makeSaveHandler\(workflowId, saveAction\)[\s\S]*?\[workflowId, saveAction\],?\s*\)/,
+    );
   });
 });

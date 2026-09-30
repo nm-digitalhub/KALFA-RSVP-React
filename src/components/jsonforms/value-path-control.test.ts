@@ -40,12 +40,15 @@ let root: Root;
 let latest: Record<string, unknown> = {};
 let setData: (d: Record<string, unknown>) => void = () => {};
 
-async function mount(initial: Record<string, unknown>, extra: { enabled?: boolean; additionalErrors?: ErrorObject[] } = {}) {
+async function mount(
+  initial: Record<string, unknown>,
+  extra: { enabled?: boolean; additionalErrors?: ErrorObject[]; schema?: JsonSchema } = {},
+) {
   function Harness() {
     const [data, set] = useState(initial);
     setData = set;
     return createElement(JsonForms, {
-      schema,
+      schema: extra.schema ?? schema,
       uischema,
       data,
       renderers,
@@ -157,5 +160,44 @@ describe('ValuePathControl in JsonForms', () => {
   it('read-only form: the field cannot be edited', async () => {
     await mount({ p1: 'event.venue' }, { enabled: false });
     expect(field().getAttribute('contenteditable')).toBe('false');
+  });
+
+  it('the field is described by its description, or by the error while there is one', async () => {
+    const described: JsonSchema = {
+      type: 'object',
+      properties: { p1: { type: 'string', description: 'הערך שיוצב במקום המשתנה' } },
+      required: ['p1'],
+    };
+    const serverError: ErrorObject = { instancePath: '/p1', message: 'שגיאה', schemaPath: '', keyword: '', params: {} };
+    await mount({ p1: 'event.venue' }, { schema: described });
+    const describedBy = field().getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy!)?.textContent).toBe('הערך שיוצב במקום המשתנה');
+    await act(async () => root.unmount());
+    container.remove();
+
+    await mount({ p1: 'event.venue' }, { schema: described, additionalErrors: [serverError] });
+    const errorRef = field().getAttribute('aria-describedby');
+    expect(document.getElementById(errorRef!)?.getAttribute('role')).toBe('alert');
+    expect(document.getElementById(errorRef!)?.textContent).toContain('שגיאה');
+  });
+
+  it('two instances on one page get their own label and error ids', async () => {
+    const form = () =>
+      createElement(JsonForms, { schema, uischema, data: {}, renderers, validationMode: 'ValidateAndShow' });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root.render(createElement('div', null, form(), form())));
+    await tick();
+    const fields = [...container.querySelectorAll<HTMLElement>('[contenteditable]')];
+    expect(fields).toHaveLength(2);
+    const ref = (f: HTMLElement, attr: string) => f.getAttribute(attr)!;
+    expect(ref(fields[0], 'aria-labelledby')).not.toBe(ref(fields[1], 'aria-labelledby'));
+    expect(ref(fields[0], 'aria-describedby')).not.toBe(ref(fields[1], 'aria-describedby'));
+    for (const f of fields) {
+      expect(document.getElementById(ref(f, 'aria-labelledby'))?.textContent).toContain('{{1}}');
+      expect(f.closest('[data-slot="value-path-control"]')?.contains(document.getElementById(ref(f, 'aria-describedby')))).toBe(true);
+    }
   });
 });

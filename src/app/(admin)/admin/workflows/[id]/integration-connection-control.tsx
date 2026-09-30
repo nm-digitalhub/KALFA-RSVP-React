@@ -17,6 +17,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -63,15 +64,14 @@ export function OAuthConnectionProvider({
   hasConnections,
   children,
 }: OAuthConnectionContextValue & { children: ReactNode }) {
+  // Stable while the four fields are, so the editor re-rendering (dial lists
+  // landing, a refresh) does not re-render the control through this context.
+  const value = useMemo(
+    () => ({ workflowId, canConnectMicrosoft, unavailableReason, hasConnections }),
+    [workflowId, canConnectMicrosoft, unavailableReason, hasConnections],
+  );
   return (
-    <OAuthConnectionContext.Provider
-      value={{
-        workflowId,
-        canConnectMicrosoft,
-        unavailableReason,
-        hasConnections,
-      }}
-    >
+    <OAuthConnectionContext.Provider value={value}>
       {children}
     </OAuthConnectionContext.Provider>
   );

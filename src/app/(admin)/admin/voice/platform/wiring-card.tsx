@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 
 import {
   AlertDialog,
@@ -32,7 +31,6 @@ export function WiringControls({
   state: string;
   proposedUrl: string;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -53,9 +51,9 @@ export function WiringControls({
       setNotice(res?.notice ?? null);
       setRegisteredUrl(res?.callbackUrl ?? null);
       setOpen(false);
-      // Re-render the server component so the state badge reflects the new
-      // 'wired' state immediately (not only after a manual reload).
-      router.refresh();
+      // No router.refresh(): the action's revalidatePath('/admin/voice/platform')
+      // already re-renders this page in the same response, so the state badge
+      // reflects the new 'wired' state immediately.
     });
   };
 
@@ -70,7 +68,6 @@ export function WiringControls({
       }
       setNotice(res?.notice ?? null);
       setRegisteredUrl(null);
-      router.refresh();
     });
   };
 

@@ -136,7 +136,8 @@ function HeaderRowsControl({
   return (
     // The SDK's wrapper — see the note in checkbox-list-control.tsx.
     <FormControlWithLabel label={label} required={required}>
-      <div className="flex flex-col gap-2" dir="rtl">
+      {/* The SDK's label is a bare <span>, so the group of rows is named here. */}
+      <div role="group" aria-label={label || undefined} className="flex flex-col gap-2" dir="rtl">
 
       {/*
         The names the server has, offered as ready-made tokens. A `datalist` and

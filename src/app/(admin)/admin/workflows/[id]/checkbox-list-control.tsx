@@ -102,19 +102,23 @@ function CheckboxListControl({
     <FormControlWithLabel label={label} required={required}>
       <div className="flex flex-col gap-2" dir="rtl">
 
-      <div className="flex flex-col gap-1.5">
+      {/* The SDK's label is a bare <span>, so the group is named here. */}
+      <div role="group" aria-label={label || undefined} className="flex flex-col gap-1.5">
         {choices.map((choice) => {
           const id = `${path}-${choice.value}`;
+          // The ui Checkbox wraps its input in a <label> of its own, so the
+          // text gets a sibling <label htmlFor> rather than an outer one (a
+          // label inside a label is invalid HTML).
           return (
-            <label key={choice.value} htmlFor={id} className="flex items-center gap-2 text-sm">
+            <div key={choice.value} className="flex items-center gap-2 text-sm">
               <Checkbox
                 id={id}
                 checked={selected.includes(choice.value)}
                 disabled={enabled === false}
                 onChange={(event) => toggle(choice.value, event.target.checked)}
               />
-              {choice.label}
-            </label>
+              <label htmlFor={id}>{choice.label}</label>
+            </div>
           );
         })}
       </div>

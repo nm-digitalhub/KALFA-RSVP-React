@@ -55,6 +55,7 @@ import {
   syncArmBlockerMarkers,
 } from "./arm-blocker-markers";
 import { normalizeLegacyProperties } from "./normalize-legacy-properties";
+import { useHydrateGlobalVariables } from "./use-hydrate-global-variables";
 import { checkboxListRenderer } from "./checkbox-list-control";
 import { headerRowsRenderer } from "./header-rows-control";
 import { webhookTokenRenderer } from "./webhook-token-control";
@@ -352,14 +353,10 @@ export function WorkflowEditor({
     useStore.getState().fetchData();
   }, [paletteItems]);
 
-  // Root 2.3.0 does not expose globalVariables as an initial-data prop.
-  // Its internal integration layer supports them, but Root does not forward
-  // them. Keep this synchronization independent from the workflow-session
-  // lifecycle: an RSC refresh may reconstruct this object without changing
-  // which workflow the owner is editing.
-  useEffect(() => {
-    useStore.setState({ globalVariables: initialGlobalVariables ?? {} });
-  }, [initialGlobalVariables]);
+  // Root 2.3.0 does not forward globalVariables, so they are written to the
+  // store here — keyed on CONTENT and workflow, never on the prop's identity,
+  // or an RSC refresh wipes unsaved edits. See the hook for the whole story.
+  useHydrateGlobalVariables(workflowId, initialGlobalVariables);
 
   // Execution and panel state belong to the workflow visit. Revalidation of
   // this same workflow must not reset them merely because server props were
@@ -441,6 +438,19 @@ export function WorkflowEditor({
     setSecretNames(secretNamesKey === "" ? [] : secretNamesKey.split(","));
   }, [secretNamesKey]);
 
+  // MEMOISED because the SDK keys on `onDataSave`'s identity: its save callback,
+  // the save context, the auto-save effect and the `beforeunload` listener all
+  // depend on it (measured in the 2.3.0 bundle: `bB`, `e4`, `o4`, `a4`). A fresh
+  // handler each render re-installed that listener and re-rendered every
+  // `useWorkflowBuilderActions` consumer for no change.
+  const integration = useMemo(
+    () => ({
+      strategy: "props" as const,
+      onDataSave: makeSaveHandler(workflowId, saveAction),
+    }),
+    [workflowId, saveAction],
+  );
+
   return (
     <>
       {dialLists.errors.length > 0 && (
@@ -521,10 +531,7 @@ export function WorkflowEditor({
             // 'api' is not an option either: upstream documents that it "issues plain
             // fetch() calls with no auth headers", and this endpoint cannot be
             // unauthenticated. 'props' is the only candidate.
-            integration={{
-              strategy: "props",
-              onDataSave: makeSaveHandler(workflowId, saveAction),
-            }}
+            integration={integration}
           >
             <WorkflowEditorLayout
               onVoiceCallNodeSelected={loadDialListsOnce}

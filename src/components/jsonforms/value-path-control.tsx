@@ -82,7 +82,10 @@ function ValuePathControl({
   const domId = React.useId();
   const labelId = `${domId}-label`;
   const errorId = `${domId}-error`;
+  const descriptionId = `${domId}-description`;
   const hasError = errors !== '';
+  // The line under the field that the editor is described by: the error, else the description.
+  const describedBy = hasError ? errorId : description ? descriptionId : null;
 
   // One chip at most. A pick replaces whatever was there (old chip, query
   // text) with exactly the picked chip; deleting the chip clears the value;
@@ -149,16 +152,13 @@ function ValuePathControl({
   React.useEffect(() => {
     const dom = editor?.view.dom;
     if (!dom) return;
-    if (hasError) {
-      dom.setAttribute('aria-invalid', 'true');
-      dom.setAttribute('aria-describedby', errorId);
-    } else {
-      dom.removeAttribute('aria-invalid');
-      dom.removeAttribute('aria-describedby');
-    }
+    if (hasError) dom.setAttribute('aria-invalid', 'true');
+    else dom.removeAttribute('aria-invalid');
+    if (describedBy) dom.setAttribute('aria-describedby', describedBy);
+    else dom.removeAttribute('aria-describedby');
     if (required) dom.setAttribute('aria-required', 'true');
     else dom.removeAttribute('aria-required');
-  }, [editor, hasError, errorId, required]);
+  }, [editor, hasError, describedBy, required]);
 
   if (!visible) return null;
 
@@ -172,7 +172,11 @@ function ValuePathControl({
       </label>
       <MentionDropdownMenu editor={editor} mentions={values} char={trigger} allowedPrefixes={null} emptyLabel="אין ערך כזה" />
       <EditorContent editor={editor} />
-      {description && !hasError ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+      {description && !hasError ? (
+        <p id={descriptionId} className="text-xs text-muted-foreground">
+          {description}
+        </p>
+      ) : null}
       {hasError ? (
         <p id={errorId} className="text-xs text-destructive" role="alert">
           {errors}

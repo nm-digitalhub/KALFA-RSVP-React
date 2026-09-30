@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 // SSR-safe media-query hook for the motion islands. The server snapshot is
 // `false`, and React re-renders once the real value is read after hydration,
@@ -13,8 +13,15 @@ function subscribe(query: string, onChange: () => void): () => void {
 }
 
 export function useMediaQuery(query: string): boolean {
+  // Stable per query: React re-subscribes whenever `subscribe` changes
+  // identity, so an inline arrow would re-add the matchMedia listener on
+  // every render of the caller.
+  const subscribeToQuery = useCallback(
+    (onChange: () => void) => subscribe(query, onChange),
+    [query],
+  );
   return useSyncExternalStore(
-    (onChange) => subscribe(query, onChange),
+    subscribeToQuery,
     () => window.matchMedia(query).matches,
     () => false,
   );
