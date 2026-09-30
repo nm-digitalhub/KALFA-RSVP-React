@@ -134,10 +134,16 @@ describe('runSeoTechnicalWatch', () => {
     expect(exec).not.toHaveBeenCalled();
   });
 
-  it('passes the property, origin and sitemap to the CLI and maps the key under its own name', async () => {
+  // The CLI refuses more than one credential source (AUTH_CONFIG_REQUIRED, exit 3,
+  // measured 2026-09-30 — every weekly run failed on it). Only
+  // GOOGLE_APPLICATION_CREDENTIALS may reach the child, even when the parent env
+  // also carries the CLI's own variables.
+  it('passes the property, origin and sitemap to the CLI with exactly one credential source', async () => {
     const exec = vi.fn(async () => JSON.stringify(CLEAN));
     const prev = process.env.GOOGLE_APPLICATION_CREDENTIALS;
     process.env.GOOGLE_APPLICATION_CREDENTIALS = '/keys/test.json';
+    process.env.SEO_GOOGLE_SERVICE_ACCOUNT_FILE = '/keys/other.json';
+    process.env.SEO_GOOGLE_SERVICE_ACCOUNT_JSON = '{}';
     try {
       const r = await runSeoTechnicalWatch({ exec });
       expect(r.status).toBe('clean');
@@ -152,9 +158,13 @@ describe('runSeoTechnicalWatch', () => {
         'https://beta.example.test/sitemap.xml',
         '--json',
       ]);
-      expect(env.SEO_GOOGLE_SERVICE_ACCOUNT_FILE).toBe('/keys/test.json');
+      expect(env.GOOGLE_APPLICATION_CREDENTIALS).toBe('/keys/test.json');
+      expect(env.SEO_GOOGLE_SERVICE_ACCOUNT_FILE).toBeUndefined();
+      expect(env.SEO_GOOGLE_SERVICE_ACCOUNT_JSON).toBeUndefined();
       expect(env.npm_config_global_ignore_file).toBeUndefined();
     } finally {
+      delete process.env.SEO_GOOGLE_SERVICE_ACCOUNT_FILE;
+      delete process.env.SEO_GOOGLE_SERVICE_ACCOUNT_JSON;
       if (prev === undefined) delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
       else process.env.GOOGLE_APPLICATION_CREDENTIALS = prev;
     }
