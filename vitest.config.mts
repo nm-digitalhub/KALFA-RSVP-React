@@ -2,8 +2,9 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 // Unit tests run in a Node environment. Most testable logic is server-side
-// (Zod schemas, ownership filtering, auth helpers); component tests can add a
-// jsdom environment later if needed.
+// (Zod schemas, ownership filtering, auth helpers). A component or hook test is
+// a `.test.tsx` file that opts into a DOM with a `// @vitest-environment jsdom`
+// first line and renders with @testing-library/react.
 //
 // TZ is pinned so a test suite full of dates gives the same answer on any
 // machine. Without it the runner inherits the host, and a scheduling test that
@@ -54,7 +55,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
     env: { TZ: 'Asia/Jerusalem', NODE_ENV: 'test' },
     // @workflowbuilder/sdk is browser ESM and imports @xyflow/react's
     // stylesheet. Node's loader refuses a .css file outright
