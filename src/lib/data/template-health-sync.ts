@@ -2,7 +2,12 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getWhatsAppConfig } from '@/lib/data/outreach-config';
-import { fetchTemplateHealth, isCategoryDowngraded } from '@/lib/whatsapp/template-health';
+import {
+  fetchTemplateHealth,
+  isCategoryDowngraded,
+  type MetaTemplateHealthRow,
+} from '@/lib/whatsapp/template-health';
+import type { Json, TablesInsert } from '@/lib/supabase/types';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // Daily reconciliation sweep (worker/main.ts, QUEUES.templateHealthSync) — the
@@ -17,13 +22,92 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 // (comparing the freshly-fetched value against what was already stored),
 // never on every daily run for an already-known problem — the webhook path
 // already alerted once when it happened; this sweep's job is to not miss one.
+// Meta template → whatsapp_message_templates row. The columns ARE Meta's
+// keys, so this is a straight copy; a template without id/name/language
+// cannot be keyed and is left out.
+export function toMirrorRow(
+  t: MetaTemplateHealthRow,
+  syncedAt: string,
+): TablesInsert<'whatsapp_message_templates'> | null {
+  // Meta ids are numeric strings; anything else is refused (it is also
+  // interpolated into the PostgREST `not.in` filter below).
+  if (!t.id || !/^\d+$/.test(t.id) || !t.name || !t.language) return null;
+  return {
+    id: t.id,
+    name: t.name,
+    language: t.language,
+    status: t.status ?? null,
+    category: t.category ?? null,
+    sub_category: t.sub_category ?? null,
+    components: (t.components ?? null) as Json,
+    parameter_format: t.parameter_format ?? null,
+    quality_score: (t.quality_score ?? null) as Json,
+    rejected_reason: t.rejected_reason ?? null,
+    correct_category: t.correct_category ?? null,
+    previous_category: t.previous_category ?? null,
+    message_send_ttl_seconds: t.message_send_ttl_seconds ?? null,
+    library_template_name: t.library_template_name ?? null,
+    disable_ios_autofill: t.disable_ios_autofill ?? null,
+    is_primary_device_delivery_only: t.is_primary_device_delivery_only ?? null,
+    synced_at: syncedAt,
+  };
+}
+
+// Mirror EVERY template on the WABA (not only the ones a step uses) into
+// whatsapp_message_templates, in two writes:
+//   1. A mirrored template Meta no longer returns was deleted there → marked
+//      status 'DELETED' (kept, not removed: routes/params reference it with ON
+//      DELETE RESTRICT). This must run FIRST: a template re-created under the
+//      same name + language has a NEW id, and the unique index on (name,
+//      language) covers only non-DELETED rows.
+//   2. Upsert of everything Meta returned, by Meta's id.
+// An empty list from Meta is never read as "everything was deleted".
+// Never throws — a failed write alerts and leaves the health sync below
+// unaffected.
+async function mirrorTemplates(
+  admin: ReturnType<typeof createAdminClient>,
+  templates: MetaTemplateHealthRow[],
+  syncedAt: string,
+): Promise<number> {
+  const rows = templates
+    .map((t) => toMirrorRow(t, syncedAt))
+    .filter((r): r is TablesInsert<'whatsapp_message_templates'> => r !== null);
+  if (rows.length === 0) return 0;
+
+  const fail = async (step: string, code: string | undefined) => {
+    await sendSlackAlert({
+      level: 'warn',
+      category: 'send_health',
+      source: 'whatsapp-template-health-sync',
+      title: 'שמירת תבניות WhatsApp מ-Meta נכשלה',
+      detail: `${step}: ${code ?? 'שגיאה לא ידועה'}`,
+    });
+    return 0;
+  };
+
+  const liveIds = rows.map((r) => r.id);
+  const { error: goneError } = await admin
+    .from('whatsapp_message_templates')
+    .update({ status: 'DELETED', synced_at: syncedAt })
+    .not('id', 'in', `(${liveIds.join(',')})`)
+    .or('status.is.null,status.neq.DELETED');
+  if (goneError) return fail('mark_deleted', goneError.code);
+
+  const { error } = await admin
+    .from('whatsapp_message_templates')
+    .upsert(rows, { onConflict: 'id' });
+  if (error) return fail('upsert', error.code);
+  return rows.length;
+}
+
 export async function runTemplateHealthSync(): Promise<{
   synced: number;
   skipped: number;
   newDowngrades: number;
+  mirrored: number;
 }> {
   const config = await getWhatsAppConfig();
-  if (!config?.wabaId) return { synced: 0, skipped: 0, newDowngrades: 0 };
+  if (!config?.wabaId) return { synced: 0, skipped: 0, newDowngrades: 0, mirrored: 0 };
 
   const admin = createAdminClient();
   const { data: rows, error } = await admin
@@ -31,7 +115,7 @@ export async function runTemplateHealthSync(): Promise<{
     .select('id, name, language, requested_category, category, message_key')
     .eq('channel', 'whatsapp')
     .neq('name', '');
-  if (error || !rows || rows.length === 0) return { synced: 0, skipped: 0, newDowngrades: 0 };
+  if (error || !rows || rows.length === 0) return { synced: 0, skipped: 0, newDowngrades: 0, mirrored: 0 };
 
   let metaTemplates: Awaited<ReturnType<typeof fetchTemplateHealth>>;
   try {
@@ -47,13 +131,15 @@ export async function runTemplateHealthSync(): Promise<{
       title: 'סנכרון בריאות תבניות WhatsApp נכשל',
       detail: err instanceof Error ? err.message : 'שגיאה לא ידועה',
     });
-    return { synced: 0, skipped: rows.length, newDowngrades: 0 };
+    return { synced: 0, skipped: rows.length, newDowngrades: 0, mirrored: 0 };
   }
+
+  const now = new Date().toISOString();
+  const mirrored = await mirrorTemplates(admin, metaTemplates, now);
 
   let synced = 0;
   let skipped = 0;
   let newDowngrades = 0;
-  const now = new Date().toISOString();
 
   for (const row of rows) {
     const match = metaTemplates.find(
@@ -101,5 +187,5 @@ export async function runTemplateHealthSync(): Promise<{
     }
   }
 
-  return { synced, skipped, newDowngrades };
+  return { synced, skipped, newDowngrades, mirrored };
 }

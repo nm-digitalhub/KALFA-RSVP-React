@@ -3825,6 +3825,51 @@ export type Database = {
         }
         Relationships: []
       }
+      message_template_routes: {
+        Row: {
+          created_at: string
+          event_type: Database["public"]["Enums"]["event_type"] | null
+          id: string
+          message_key: string
+          updated_at: string
+          whatsapp_template_id: string
+          with_media: boolean
+        }
+        Insert: {
+          created_at?: string
+          event_type?: Database["public"]["Enums"]["event_type"] | null
+          id?: string
+          message_key: string
+          updated_at?: string
+          whatsapp_template_id: string
+          with_media?: boolean
+        }
+        Update: {
+          created_at?: string
+          event_type?: Database["public"]["Enums"]["event_type"] | null
+          id?: string
+          message_key?: string
+          updated_at?: string
+          whatsapp_template_id?: string
+          with_media?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_template_routes_message_key_fkey"
+            columns: ["message_key"]
+            isOneToOne: false
+            referencedRelation: "message_templates"
+            referencedColumns: ["message_key"]
+          },
+          {
+            foreignKeyName: "message_template_routes_whatsapp_template_id_fkey"
+            columns: ["whatsapp_template_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_message_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_templates: {
         Row: {
           active: boolean
@@ -5627,6 +5672,167 @@ export type Database = {
           },
         ]
       }
+      sumit_test_transactions: {
+        Row: {
+          created_at: string
+          created_by: string
+          data_customer_id: number | null
+          data_document_download_url: string | null
+          data_document_id: number | null
+          data_document_number: number | null
+          http_status: number | null
+          id: string
+          operation: string
+          parent_id: string | null
+          payment_amount: number | null
+          payment_auth_number: string | null
+          payment_currency: string | null
+          payment_customer_id: number | null
+          payment_date: string | null
+          payment_first_payment_amount: number | null
+          payment_id: number | null
+          payment_method_card_mask: string | null
+          payment_method_citizen_id: string | null
+          payment_method_customer_id: number | null
+          payment_method_direct_debit_account: number | null
+          payment_method_direct_debit_bank: number | null
+          payment_method_direct_debit_branch: number | null
+          payment_method_direct_debit_expiration_date: string | null
+          payment_method_direct_debit_maximum_amount: number | null
+          payment_method_expiration_month: number | null
+          payment_method_expiration_year: number | null
+          payment_method_id: number | null
+          payment_method_last_digits: string | null
+          payment_method_token: string | null
+          payment_method_type: string | null
+          payment_non_first_payment_amount: number | null
+          payment_recurring_customer_item_ids: Json | null
+          payment_status: string | null
+          payment_status_description: string | null
+          payment_valid_payment: boolean | null
+          request: Json
+          request_amount: number | null
+          request_authorize_amount: number | null
+          request_auto_capture: boolean | null
+          request_credit_card_auth_number: string | null
+          request_customer_id: number | null
+          request_external_identifier: string | null
+          response: Json | null
+          response_text: string | null
+          status: string | null
+          technical_error_details: string | null
+          user_error_message: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          data_customer_id?: number | null
+          data_document_download_url?: string | null
+          data_document_id?: number | null
+          data_document_number?: number | null
+          http_status?: number | null
+          id?: string
+          operation: string
+          parent_id?: string | null
+          payment_amount?: number | null
+          payment_auth_number?: string | null
+          payment_currency?: string | null
+          payment_customer_id?: number | null
+          payment_date?: string | null
+          payment_first_payment_amount?: number | null
+          payment_id?: number | null
+          payment_method_card_mask?: string | null
+          payment_method_citizen_id?: string | null
+          payment_method_customer_id?: number | null
+          payment_method_direct_debit_account?: number | null
+          payment_method_direct_debit_bank?: number | null
+          payment_method_direct_debit_branch?: number | null
+          payment_method_direct_debit_expiration_date?: string | null
+          payment_method_direct_debit_maximum_amount?: number | null
+          payment_method_expiration_month?: number | null
+          payment_method_expiration_year?: number | null
+          payment_method_id?: number | null
+          payment_method_last_digits?: string | null
+          payment_method_token?: string | null
+          payment_method_type?: string | null
+          payment_non_first_payment_amount?: number | null
+          payment_recurring_customer_item_ids?: Json | null
+          payment_status?: string | null
+          payment_status_description?: string | null
+          payment_valid_payment?: boolean | null
+          request: Json
+          request_amount?: number | null
+          request_authorize_amount?: number | null
+          request_auto_capture?: boolean | null
+          request_credit_card_auth_number?: string | null
+          request_customer_id?: number | null
+          request_external_identifier?: string | null
+          response?: Json | null
+          response_text?: string | null
+          status?: string | null
+          technical_error_details?: string | null
+          user_error_message?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          data_customer_id?: number | null
+          data_document_download_url?: string | null
+          data_document_id?: number | null
+          data_document_number?: number | null
+          http_status?: number | null
+          id?: string
+          operation?: string
+          parent_id?: string | null
+          payment_amount?: number | null
+          payment_auth_number?: string | null
+          payment_currency?: string | null
+          payment_customer_id?: number | null
+          payment_date?: string | null
+          payment_first_payment_amount?: number | null
+          payment_id?: number | null
+          payment_method_card_mask?: string | null
+          payment_method_citizen_id?: string | null
+          payment_method_customer_id?: number | null
+          payment_method_direct_debit_account?: number | null
+          payment_method_direct_debit_bank?: number | null
+          payment_method_direct_debit_branch?: number | null
+          payment_method_direct_debit_expiration_date?: string | null
+          payment_method_direct_debit_maximum_amount?: number | null
+          payment_method_expiration_month?: number | null
+          payment_method_expiration_year?: number | null
+          payment_method_id?: number | null
+          payment_method_last_digits?: string | null
+          payment_method_token?: string | null
+          payment_method_type?: string | null
+          payment_non_first_payment_amount?: number | null
+          payment_recurring_customer_item_ids?: Json | null
+          payment_status?: string | null
+          payment_status_description?: string | null
+          payment_valid_payment?: boolean | null
+          request?: Json
+          request_amount?: number | null
+          request_authorize_amount?: number | null
+          request_auto_capture?: boolean | null
+          request_credit_card_auth_number?: string | null
+          request_customer_id?: number | null
+          request_external_identifier?: string | null
+          response?: Json | null
+          response_text?: string | null
+          status?: string | null
+          technical_error_details?: string | null
+          user_error_message?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sumit_test_transactions_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "sumit_test_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       support_access_log: {
         Row: {
           accessed_at: string
@@ -5677,6 +5883,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      test_events: {
+        Row: {
+          event_id: string
+          marked_at: string
+          marked_by: string
+          purged_at: string | null
+          purged_by: string | null
+          snapshot: Json | null
+        }
+        Insert: {
+          event_id: string
+          marked_at?: string
+          marked_by: string
+          purged_at?: string | null
+          purged_by?: string | null
+          snapshot?: Json | null
+        }
+        Update: {
+          event_id?: string
+          marked_at?: string
+          marked_by?: string
+          purged_at?: string | null
+          purged_by?: string | null
+          snapshot?: Json | null
+        }
+        Relationships: []
       }
       user_roles: {
         Row: {
@@ -6033,6 +6266,142 @@ export type Database = {
             columns: ["delivery_id"]
             isOneToOne: false
             referencedRelation: "webhook_deliveries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_message_templates: {
+        Row: {
+          category: string | null
+          components: Json | null
+          correct_category: string | null
+          disable_ios_autofill: boolean | null
+          id: string
+          is_primary_device_delivery_only: boolean | null
+          language: string
+          library_template_name: string | null
+          message_send_ttl_seconds: number | null
+          name: string
+          parameter_format: string | null
+          previous_category: string | null
+          quality_score: Json | null
+          rejected_reason: string | null
+          status: string | null
+          sub_category: string | null
+          synced_at: string
+        }
+        Insert: {
+          category?: string | null
+          components?: Json | null
+          correct_category?: string | null
+          disable_ios_autofill?: boolean | null
+          id: string
+          is_primary_device_delivery_only?: boolean | null
+          language: string
+          library_template_name?: string | null
+          message_send_ttl_seconds?: number | null
+          name: string
+          parameter_format?: string | null
+          previous_category?: string | null
+          quality_score?: Json | null
+          rejected_reason?: string | null
+          status?: string | null
+          sub_category?: string | null
+          synced_at?: string
+        }
+        Update: {
+          category?: string | null
+          components?: Json | null
+          correct_category?: string | null
+          disable_ios_autofill?: boolean | null
+          id?: string
+          is_primary_device_delivery_only?: boolean | null
+          language?: string
+          library_template_name?: string | null
+          message_send_ttl_seconds?: number | null
+          name?: string
+          parameter_format?: string | null
+          previous_category?: string | null
+          quality_score?: Json | null
+          rejected_reason?: string | null
+          status?: string | null
+          sub_category?: string | null
+          synced_at?: string
+        }
+        Relationships: []
+      }
+      whatsapp_template_parameters: {
+        Row: {
+          created_at: string
+          id: string
+          index: number | null
+          parameter_name: string | null
+          position: number | null
+          source_path: string
+          sub_type: string | null
+          type: string
+          updated_at: string
+          whatsapp_template_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          index?: number | null
+          parameter_name?: string | null
+          position?: number | null
+          source_path: string
+          sub_type?: string | null
+          type: string
+          updated_at?: string
+          whatsapp_template_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          index?: number | null
+          parameter_name?: string | null
+          position?: number | null
+          source_path?: string
+          sub_type?: string | null
+          type?: string
+          updated_at?: string
+          whatsapp_template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_template_parameters_whatsapp_template_id_fkey"
+            columns: ["whatsapp_template_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_message_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_template_settings: {
+        Row: {
+          created_at: string
+          requested_category: string | null
+          updated_at: string
+          whatsapp_template_id: string
+        }
+        Insert: {
+          created_at?: string
+          requested_category?: string | null
+          updated_at?: string
+          whatsapp_template_id: string
+        }
+        Update: {
+          created_at?: string
+          requested_category?: string | null
+          updated_at?: string
+          whatsapp_template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_template_settings_whatsapp_template_id_fkey"
+            columns: ["whatsapp_template_id"]
+            isOneToOne: true
+            referencedRelation: "whatsapp_message_templates"
             referencedColumns: ["id"]
           },
         ]
@@ -7051,6 +7420,10 @@ export type Database = {
         Returns: boolean
       }
       is_staff: { Args: never; Returns: boolean }
+      mark_test_event: {
+        Args: { p_actor: string; p_event: string }
+        Returns: string
+      }
       next_manual_touchpoint: {
         Args: { p_campaign: string; p_contact: string }
         Returns: number
@@ -7105,6 +7478,10 @@ export type Database = {
       }
       owns_event: { Args: { _event_id: string }; Returns: boolean }
       purge_stale_phone_change: { Args: { p_grace?: string }; Returns: number }
+      purge_test_event: {
+        Args: { p_actor: string; p_event: string }
+        Returns: string
+      }
       reconcile_authorized_set: {
         Args: {
           p_actor?: string
@@ -7226,6 +7603,7 @@ export type Database = {
         }
         Returns: Json
       }
+      test_event_purge_blocker: { Args: { p_event: string }; Returns: string }
       try_record_billed_result: {
         Args: {
           p_attempt: string
@@ -7236,6 +7614,10 @@ export type Database = {
           p_evidence: string
           p_provider_ref: string
         }
+        Returns: string
+      }
+      unmark_test_event: {
+        Args: { p_actor: string; p_event: string }
         Returns: string
       }
       upsert_provider_number: {

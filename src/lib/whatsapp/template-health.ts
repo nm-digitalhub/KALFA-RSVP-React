@@ -41,7 +41,27 @@ export interface MetaTemplateHealthRow {
   quality_score?: { score?: string; date?: number };
   rejected_reason?: string;
   status?: string;
+  // The rest of the template (live read 2026-09-30, 80 templates), fetched in
+  // the same call so the daily sync can mirror it into
+  // whatsapp_message_templates, whose columns are these keys.
+  sub_category?: string;
+  components?: unknown[];
+  parameter_format?: string;
+  message_send_ttl_seconds?: number;
+  library_template_name?: string;
+  disable_ios_autofill?: boolean;
+  is_primary_device_delivery_only?: boolean;
 }
+
+// Every key of the message-template resource that whatsapp_message_templates
+// mirrors. quality_score / rejected_reason / correct_category are NOT returned
+// unless named here (verified live 2026-09-30).
+const TEMPLATE_FIELDS = [
+  'id', 'name', 'language', 'status', 'category', 'sub_category', 'components',
+  'parameter_format', 'quality_score', 'rejected_reason', 'correct_category',
+  'previous_category', 'message_send_ttl_seconds', 'library_template_name',
+  'disable_ios_autofill', 'is_primary_device_delivery_only',
+].join(',');
 
 /** Paginated GET of every template's current health fields for the WABA. */
 export async function fetchTemplateHealth(
@@ -49,7 +69,7 @@ export async function fetchTemplateHealth(
 ): Promise<MetaTemplateHealthRow[]> {
   const out: MetaTemplateHealthRow[] = [];
   let url: string | null =
-    `${GRAPH}/${creds.wabaId}/message_templates?fields=id,name,language,category,correct_category,previous_category,quality_score,rejected_reason,status&limit=200`;
+    `${GRAPH}/${creds.wabaId}/message_templates?fields=${TEMPLATE_FIELDS}&limit=100`;
   let guard = 0;
   while (url && guard < 20) {
     guard += 1;
