@@ -101,10 +101,10 @@ proxy_busy_buffers_size 64k;
 - Arm/Sweep עצמי-מרפא: תזמון אידמפוטנטי דרך deterministic job ids.
 
 תורים (מוגדרים ב-`src/lib/queue/queues.ts`, 33 נכון ל-8.9.2026): ליבת ה-outreach
-(`outreach-arm`, `outreach-step`, `outreach-call-request`, `outreach-sweeper`,
-`outreach-dead`), `webhook-process`, ועוד ~27 תורי sweep/cron (thank-you, פניות,
+(`outreach-arm`, `outreach-step`, `outreach-call-request`, `outreach-dead`;
+`outreach-sweeper` הוסר ב-30.9.2026, ראו `RETIRED_QUEUES`), `webhook-process`, ועוד ~27 תורי sweep/cron (thank-you, פניות,
 callbacks, Voximplant, ארכיון, SEO ועוד — הרשימה המלאה בקובץ). תזמוני cron:
-`arm` ו-`webhook` כל דקה, `sweeper` כל 5 דקות; שאר ה-crons מתועדים ב-`worker/main.ts`.
+`arm` כל דקה; `webhook` מתעורר מיד בכל שמירה ל-`webhook_inbox` (`nudgeWebhookProcessing`, 30.9.2026) ו-cron כל 5 דקות כרשת ביטחון; שאר ה-crons מתועדים ב-`worker/main.ts`.
 דגימה (polling): תורי cron נדגמים כל 10–30 שניות, תורים מונעי-אירוע כל 2 שניות
 (ברירת המחדל) — ראה `POLL_MINUTE_CRON`/`POLL_SLOW_CRON` ב-`worker/main.ts`.
 מדיניות retry לצעדים: 3 ניסיונות עם backoff ואז dead-letter.

@@ -246,14 +246,16 @@ export async function stepGate(
   eventId: string,
   nowMs: number = Date.now(),
 ): Promise<{ reason: GateReason; ctx?: CampaignContext }> {
-  if (!(await getOutreachEnabled())) return { reason: 'paused' };
+  // TERMINAL checks come FIRST, before either pause. A 'paused' answer makes
+  // the worker re-poll every 5 minutes (worker/main.ts handleStep), so a
+  // closed campaign answered 'paused' while the global switch is off would
+  // re-poll forever instead of being terminalized (measured 2026-09-30: two
+  // step jobs of closed campaigns wait for 2026-11-30). Terminal = the
+  // campaign is gone/closed/cancelled, its window closed, the event day
+  // passed, or the event is not active — none of which a resume can undo.
   const ctx = await getCampaignContext(campaignId);
   if (!ctx) return { reason: 'stopped' };
-  // §11.7: pause is REVERSIBLE — never terminalize. A paused campaign re-polls
-  // (id-less, like the global outreach_enabled-off gate); only closed/cancelled/
-  // past-event/event-not-active are terminal ('stopped').
-  if (ctx.status === 'paused') return { reason: 'paused' };
-  if (ctx.status !== 'active') return { reason: 'stopped' };
+  if (ctx.status !== 'active' && ctx.status !== 'paused') return { reason: 'stopped' };
   if (ctx.close_at && nowMs > new Date(ctx.close_at).getTime()) {
     return { reason: 'stopped' };
   }
@@ -265,6 +267,10 @@ export async function stepGate(
   // implies it via the DB trigger + R7), explicit per the plan's "ALL
   // commercial paths" requirement.
   if (ctx.eventStatus !== 'active') return { reason: 'stopped' };
+  // §11.7: pause is REVERSIBLE — never terminalize. The global outreach switch
+  // and a paused campaign both re-poll (id-less).
+  if (!(await getOutreachEnabled())) return { reason: 'paused' };
+  if (ctx.status === 'paused') return { reason: 'paused' };
   if (await isContactReached(eventId, contactId)) return { reason: 'reached' };
   return { reason: 'ok', ctx };
 }

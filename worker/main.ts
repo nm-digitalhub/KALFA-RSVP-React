@@ -14,9 +14,10 @@ import path from 'node:path';
 import { PgBoss, type Job } from 'pg-boss';
 import { Client as PgClient } from 'pg';
 
-import { QUEUES, WORKFLOW_RUN_EXPIRE_SECONDS, type OutreachCallRequest, type OutreachStepJob,
+import { QUEUES, RETIRED_QUEUES, WORKFLOW_RUN_EXPIRE_SECONDS, type OutreachCallRequest, type OutreachStepJob,
   type WorkflowRunJob,
 } from '@/lib/queue/queues';
+import { completedRetentionSeconds, PGBOSS_SEND_IT_QUEUE } from '@/lib/ops/queue-schedule';
 import { runWhatsAppHealthCheck } from '@/lib/whatsapp/run-health-check';
 import { runEmailHealthCheck } from '@/lib/email/run-health-check';
 import { runExtraKeyCheck } from '@/lib/sms/run-key-check';
@@ -912,13 +913,10 @@ const SWEEP_EXPIRE_SECONDS = 300;
 const SWEEP_QUEUES = new Set<string>([
   QUEUES.arm,
   QUEUES.webhook,
-  QUEUES.sweeper,
   QUEUES.thankyouSweep,
   QUEUES.inquiryFollowupSweep,
   QUEUES.callbackSweep,
   QUEUES.callReconcile,
-  QUEUES.callbackDispatchReconcile,
-  QUEUES.salesDispatchReconcile,
 ]);
 
 async function main(): Promise<void> {
@@ -1005,6 +1003,13 @@ async function main(): Promise<void> {
   // and 33 of them ran serially on every start. Read the existing queues once,
   // create only the missing ones, and align expireInSeconds on the sweep
   // queues (createQueue never updates an existing row — updateQueue does).
+  // Retired queues: drop the schedule row first (so the cron stops filing),
+  // then the queue and its retained jobs. Both calls are no-ops once done.
+  for (const retired of RETIRED_QUEUES) {
+    await boss.unschedule(retired);
+    await boss.deleteQueue(retired);
+  }
+
   const existingQueues = new Map((await boss.getQueues()).map((q) => [q.name, q]));
 
   for (const q of Object.values(QUEUES)) {
@@ -1093,14 +1098,35 @@ async function main(): Promise<void> {
       : q === QUEUES.workflowRun
         ? WORKFLOW_RUN_EXPIRE_SECONDS
         : undefined;
+    // A completed job must outlive the queue's staleness allowance, or the
+    // Debug badge reads a healthy queue as stale (completedRetentionSeconds).
+    const deleteAfterSeconds = completedRetentionSeconds(q);
     const existing = existingQueues.get(q);
     if (!existing) {
       await boss.createQueue(q, {
         ...(singleton ? { policy: 'singleton' as const } : {}),
         ...(expire ? { expireInSeconds: expire } : {}),
+        deleteAfterSeconds,
       });
-    } else if (expire && existing.expireInSeconds !== expire) {
-      await boss.updateQueue(q, { expireInSeconds: expire });
+    } else {
+      const update = {
+        ...(expire && existing.expireInSeconds !== expire ? { expireInSeconds: expire } : {}),
+        ...(existing.deleteAfterSeconds !== deleteAfterSeconds ? { deleteAfterSeconds } : {}),
+      };
+      if (Object.keys(update).length > 0) await boss.updateQueue(q, update);
+    }
+  }
+  // pg-boss's own scheduler queue: one row per cron tick (half the job table,
+  // measured 2026-09-30). boss.start() already created it; only retention is
+  // aligned — nothing else of pg-boss's own is touched.
+  const sendIt = existingQueues.get(PGBOSS_SEND_IT_QUEUE);
+  const sendItRetention = completedRetentionSeconds(PGBOSS_SEND_IT_QUEUE);
+  if (sendIt && sendIt.deleteAfterSeconds !== sendItRetention) {
+    // An optimisation only: a failure here must never stop the worker starting.
+    try {
+      await boss.updateQueue(PGBOSS_SEND_IT_QUEUE, { deleteAfterSeconds: sendItRetention });
+    } catch (err) {
+      console.warn('[worker] send-it retention update failed', err instanceof Error ? err.message : err);
     }
   }
 
@@ -1120,13 +1146,6 @@ async function main(): Promise<void> {
     QUEUES.arm,
     POLL_MINUTE_CRON,
     guardedWorker(QUEUES.arm, async () => {
-      await handleArm(boss);
-    }),
-  );
-  await boss.work(
-    QUEUES.sweeper,
-    POLL_SLOW_CRON,
-    guardedWorker(QUEUES.sweeper, async () => {
       await handleArm(boss);
     }),
   );
@@ -1400,28 +1419,22 @@ async function main(): Promise<void> {
     }),
   );
   // Voximplant stuck-row reconciler (H3): ALERT-ONLY — surfaces pre-terminal
-  // call_attempts older than 15m. NEVER re-issues StartScenarios.
+  // rows older than 15m in the three dispatch tables that share this account's
+  // concurrency ceiling. NEVER re-issues StartScenarios. One queue, three
+  // independent checks: each table keeps its own alert-dedup closure
+  // (voximplant-reconcile.ts). allSettled so one table's failure never skips
+  // the other two; the first failure still fails the tick (guardedWorker alerts).
   await boss.work(
     QUEUES.callReconcile,
     POLL_SLOW_CRON,
     guardedWorker(QUEUES.callReconcile, async () => {
-      await runCallReconcile();
-    }),
-  );
-  // Same H3 pattern, extended 2026-08-22 to the other two dispatch surfaces
-  // that now share this Voximplant account's concurrency ceiling.
-  await boss.work(
-    QUEUES.callbackDispatchReconcile,
-    POLL_SLOW_CRON,
-    guardedWorker(QUEUES.callbackDispatchReconcile, async () => {
-      await runCallbackDispatchReconcile();
-    }),
-  );
-  await boss.work(
-    QUEUES.salesDispatchReconcile,
-    POLL_SLOW_CRON,
-    guardedWorker(QUEUES.salesDispatchReconcile, async () => {
-      await runSalesDispatchReconcile();
+      const results = await Promise.allSettled([
+        runCallReconcile(),
+        runCallbackDispatchReconcile(),
+        runSalesDispatchReconcile(),
+      ]);
+      const failed = results.find((r) => r.status === 'rejected');
+      if (failed) throw failed.reason;
     }),
   );
   // Voximplant session-log export (A4): daily — downloads logs (which expire
@@ -1534,8 +1547,10 @@ async function main(): Promise<void> {
   );
 
   await boss.schedule(QUEUES.arm, '* * * * *');
-  await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
-  await boss.schedule(QUEUES.webhook, '* * * * *');
+  // Safety net only: every persist nudges the queue itself
+  // (src/lib/data/webhooks.ts nudgeWebhookProcessing), so this cron just drains
+  // anything a failed nudge left behind.
+  await boss.schedule(QUEUES.webhook, '*/5 * * * *');
   // Every minute: the resolution `trigger.schedule` offers is a minute, so a
   // coarser tick would mean a 09:00 schedule firing at 09:05.
   await boss.schedule(QUEUES.workflowSchedule, '* * * * *');
@@ -1567,8 +1582,6 @@ async function main(): Promise<void> {
   // raises is a plan-ahead deadline, not something to wake anyone at night for.
   await boss.schedule(QUEUES.extraKeyCheck, '20 4 * * *', null, { tz: SCHEDULE_TZ });
   await boss.schedule(QUEUES.sumitHealthCheck, '30 4 * * *', null, { tz: SCHEDULE_TZ });
-  await boss.schedule(QUEUES.callbackDispatchReconcile, '*/10 * * * *');
-  await boss.schedule(QUEUES.salesDispatchReconcile, '*/10 * * * *');
   // Anchored to a wall-clock hour → run on Israel local time (DST-aware).
   await boss.schedule(QUEUES.logExport, '20 3 * * *', null, { tz: SCHEDULE_TZ });
   await boss.schedule(QUEUES.elevenlabsQuota, '0 */6 * * *', null, { tz: SCHEDULE_TZ });

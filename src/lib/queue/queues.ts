@@ -1,14 +1,32 @@
 // pg-boss queue names + per-queue config (pure constants — no pg-boss import, so
 // safe to reference anywhere). The worker (worker/main.ts) owns work()/schedule().
+// Queues that no longer exist. pg-boss keeps a schedule row in the database
+// after the code stops calling schedule(), so a retired cron would keep filing
+// jobs that no worker drains; the worker unschedules and deletes these at
+// startup (unschedule and deleteQueue are both no-ops once done).
+//   outreach-sweeper — ran the SAME handleArm as outreach-arm every 5 minutes in
+//   the same process (worker/main.ts), so it added no independent protection:
+//   if the worker is down both stop, and a lost arm schedule shows up as
+//   outreach-arm stale on /admin/debug. Retired 2026-09-30 (576 rows/day).
+//   voximplant-callback-dispatch-reconcile, voximplant-sales-dispatch-reconcile —
+//   ran on the same */10 cron as voximplant-call-reconcile, which now runs all
+//   three table checks. Their alert dedup stays independent: it lives in one
+//   makeStuckAlerter closure per table (voximplant-reconcile.ts), never in the
+//   queue. Retired 2026-09-30 (576 rows/day).
+export const RETIRED_QUEUES = [
+  'outreach-sweeper',
+  'voximplant-callback-dispatch-reconcile',
+  'voximplant-sales-dispatch-reconcile',
+] as const;
+
 export const QUEUES = {
   arm: 'outreach-arm',
   step: 'outreach-step',
   callRequest: 'outreach-call-request',
-  sweeper: 'outreach-sweeper',
   dead: 'outreach-dead',
   // Persist-then-process intake: drains webhook_inbox out-of-band (B2).
   webhook: 'webhook-process',
-  // Auto-thankyou periodic sweep — same idiom as arm/sweeper: a cron-scheduled
+  // Auto-thankyou periodic sweep — same idiom as arm: a cron-scheduled
   // tick that reads fresh DB state, not a per-campaign delayed job. See
   // src/lib/data/auto-thankyou.ts.
   thankyouSweep: 'campaign-thankyou-sweep',
@@ -53,16 +71,10 @@ export const QUEUES = {
   // and today that surfaces as a customer stuck at a payment form.
   sumitHealthCheck: 'sumit-health-check',
   // Voximplant stuck-row reconciler (H3) — every 10m alert (ONLY) on pre-terminal
-  // call_attempts older than 15m. NEVER re-issues StartScenarios. See
-  // src/lib/data/voximplant-reconcile.ts.
+  // rows older than 15m in all three dispatch tables (call_attempts,
+  // callback_request_attempts, sales_call_attempts). NEVER re-issues
+  // StartScenarios. See src/lib/data/voximplant-reconcile.ts.
   callReconcile: 'voximplant-call-reconcile',
-  // Same H3 reconciler pattern, extended 2026-08-22 to the meeting-confirm and
-  // sales-closing dispatch surfaces (callback_request_attempts /
-  // sales_call_attempts) — separate queues so each table's edge-triggered
-  // alert-dedup state is genuinely independent, not because the underlying
-  // logic differs. See src/lib/data/voximplant-reconcile.ts.
-  callbackDispatchReconcile: 'voximplant-callback-dispatch-reconcile',
-  salesDispatchReconcile: 'voximplant-sales-dispatch-reconcile',
   // Voximplant session-log export (A4) — daily; downloads logs (which expire
   // ~1 month) into the private vox-call-logs bucket. Singleton so a manual run
   // never overlaps the cron (an atomic per-row lease is the inner guard). See

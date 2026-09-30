@@ -16,7 +16,7 @@ import type { PgBoss } from 'pg-boss';
 // KALFA dispatcher follow-up". So the agent promised a guest a callback, the
 // promise was written to a column, and nothing ever called. This closes that.
 //
-// Same idiom as the auto-thankyou sweep and the outreach sweeper: a pg-boss
+// Same idiom as the auto-thankyou sweep and the outreach arm: a pg-boss
 // cron tick that reads FRESH DB state every time, with nothing registered or
 // cancelled pg-boss-side. Clearing callback_iso, closing the event or revoking
 // consent is therefore just a DB write — the next tick sees it.

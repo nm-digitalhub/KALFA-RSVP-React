@@ -3,7 +3,14 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { QUEUE_EXPECTED_MAX_MINUTES } from './queue-schedule';
+import {
+  completedRetentionSeconds,
+  DEFAULT_COMPLETED_RETENTION_SECONDS,
+  PGBOSS_SEND_IT_QUEUE,
+  SHORT_COMPLETED_RETENTION_SECONDS,
+  QUEUE_EXPECTED_MAX_MINUTES,
+} from './queue-schedule';
+import { QUEUES, RETIRED_QUEUES } from '@/lib/queue/queues';
 
 // THE DRIFT GATE for the staleness catalog.
 //
@@ -80,5 +87,67 @@ describe('QUEUE_EXPECTED_MAX_MINUTES mirrors the worker cron catalog', () => {
         40 * 24 * 60,
       );
     }
+  });
+});
+
+// A completed job must outlive its queue's staleness allowance, or isQueueStale
+// loses its only evidence and reports a healthy queue as stale (measured
+// 2026-09-30: the monthly archive-backup-sweep read red ~23 days a month).
+describe('completedRetentionSeconds', () => {
+  it('keeps about 1 day for queues ticking at least every 10 minutes and for send-it', () => {
+    // allowance 3 min → 1 day + 3 min of margin
+    expect(completedRetentionSeconds('outreach-arm')).toBe((24 * 60 + 3) * 60);
+    expect(completedRetentionSeconds('voximplant-call-reconcile')).toBe((24 * 60 + 30) * 60);
+    expect(completedRetentionSeconds(PGBOSS_SEND_IT_QUEUE)).toBe(SHORT_COMPLETED_RETENTION_SECONDS);
+    expect(SHORT_COMPLETED_RETENTION_SECONDS).toBe(86400);
+  });
+
+  it('keeps the pg-boss 7-day default for hourly+ queues and uncatalogued (event-driven) ones', () => {
+    expect(completedRetentionSeconds('voximplant-balance-check')).toBe(DEFAULT_COMPLETED_RETENTION_SECONDS);
+    expect(completedRetentionSeconds('whatsapp-health-check')).toBe(DEFAULT_COMPLETED_RETENTION_SECONDS);
+    expect(completedRetentionSeconds('outreach-step')).toBe(DEFAULT_COMPLETED_RETENTION_SECONDS);
+    expect(DEFAULT_COMPLETED_RETENTION_SECONDS).toBe(604800);
+  });
+
+  it('stays above the docs floor ("above a few minutes") for every queue', () => {
+    for (const q of [...Object.keys(QUEUE_EXPECTED_MAX_MINUTES), PGBOSS_SEND_IT_QUEUE]) {
+      expect(completedRetentionSeconds(q)).toBeGreaterThanOrEqual(24 * 60 * 60);
+    }
+  });
+
+  it("pins pg-boss's internal scheduler queue name to the installed pg-boss", () => {
+    const src = readFileSync(join(process.cwd(), 'node_modules/pg-boss/dist/timekeeper.js'), 'utf8');
+    expect(src).toContain(`SEND_IT: '${PGBOSS_SEND_IT_QUEUE}'`);
+  });
+
+  it('keeps a weekly job 11 days and the monthly backup 41 days', () => {
+    expect(completedRetentionSeconds('seo-technical-watch')).toBe(11 * 24 * 60 * 60);
+    expect(completedRetentionSeconds('archive-backup-sweep')).toBe(41 * 24 * 60 * 60);
+  });
+
+  it('never lets a catalogued queue lose its last completion inside its allowance', () => {
+    for (const [queue, allowanceMinutes] of Object.entries(QUEUE_EXPECTED_MAX_MINUTES)) {
+      expect(completedRetentionSeconds(queue)).toBeGreaterThan(allowanceMinutes * 60);
+    }
+  });
+});
+
+// A retired queue must be gone everywhere: not in QUEUES (no work/schedule is
+// registered for it), not on the staleness catalog, and unscheduled + deleted
+// by the worker at startup — otherwise its surviving schedule row keeps filing
+// jobs that nothing drains.
+describe('retired queues', () => {
+  const workerSrc = readFileSync(join(process.cwd(), 'worker', 'main.ts'), 'utf8');
+
+  it('are not live queues and are not on the staleness catalog', () => {
+    const live = new Set<string>(Object.values(QUEUES));
+    for (const name of RETIRED_QUEUES) {
+      expect(live.has(name)).toBe(false);
+      expect(QUEUE_EXPECTED_MAX_MINUTES[name]).toBeUndefined();
+    }
+  });
+
+  it('are unscheduled and deleted by the worker at startup', () => {
+    expect(workerSrc).toMatch(/for \(const retired of RETIRED_QUEUES\)[\s\S]{0,200}boss\.unschedule\(retired\)[\s\S]{0,80}boss\.deleteQueue\(retired\)/);
   });
 });

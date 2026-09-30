@@ -30,18 +30,17 @@
 export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   // Every minute.
   'outreach-arm': 3,
-  'webhook-process': 3,
   'workflow-schedule-sweep': 3,
   // Every 5 minutes.
-  'outreach-sweeper': 15,
+  // webhook-process: event-driven (each persist nudges it) with this cron as a
+  // safety net since 2026-09-30.
+  'webhook-process': 15,
   'campaign-thankyou-sweep': 15,
   'call-callback-sweep': 15,
   'inquiry-followup-sweep': 15,
   // Every 10 minutes.
   'callback-calendar-schedule-sweep': 30,
   'voximplant-call-reconcile': 30,
-  'voximplant-callback-dispatch-reconcile': 30,
-  'voximplant-sales-dispatch-reconcile': 30,
   'console-agent-calendar-presence-sync': 30,
   'fleet-request-expire-sweep': 30,
   // Every 30 minutes.
@@ -89,3 +88,49 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   // longest month plus slack, so one missed snapshot shows up inside six weeks.
   'archive-backup-sweep': 40 * 24 * 60,
 };
+
+// pg-boss's default completed-job retention, `deleteAfterSeconds` = 7 days
+// (https://pgboss.io/api/queues; every live queue measured at 604800 on
+// 2026-09-30).
+export const DEFAULT_COMPLETED_RETENTION_SECONDS = 7 * 24 * 60 * 60;
+
+// The completed job is the ONLY evidence isQueueStale (summary.ts) reads — the
+// ops_job_health RPC takes max(completed_on) from the job table. pg-boss deletes
+// that row `deleteAfterSeconds` after completion, and the check then falls back
+// to the schedule's registration date, long past → "stale". So the row must
+// outlive the queue's allowance: measured 2026-09-30, the monthly
+// archive-backup-sweep (40-day allowance) read red ~23 days a month under the
+// 7-day default, and the weekly queues (10-day allowance) flickered.
+// Retention = max(base, allowance + 1 day of margin). The worker applies this
+// to every queue at startup.
+//
+// BASE: 1 day for the queues that tick at least every 10 minutes (allowance
+// <= 30 min) and for pg-boss's own scheduler queue; the pg-boss 7-day default
+// for everything else (hourly/daily/weekly/monthly and event-driven queues —
+// few rows, and their history is what an incident is debugged from).
+// Why (2026-09-30): pg-boss warned "monitor_backoff" — its queue-stats scan
+// of the job table ran 6–15 s. The docs' remedy is "reduce retention /
+// deleteAfterSeconds" (pgboss.io/api/events). Measured: ~101k rows, ~95% from
+// those frequent queues (their 7-day history), almost none dead (not bloat).
+// The docs set no recommended value, only a floor: "Keep it above a few minutes
+// if you rely on throughput counts" (pgboss.io/api/queues) — 1 day is far above
+// it. Note deletion applies to every finished job, failed ones included
+// (plans.js deletion(): completed_on + deletion_seconds), and runs once per
+// maintenance interval (1 day by default), so a row lives 1–2 days.
+export const SHORT_COMPLETED_RETENTION_SECONDS = 24 * 60 * 60;
+const FREQUENT_ALLOWANCE_MAX_MINUTES = 30;
+// pg-boss's internal scheduler queue: every cron tick files one row here before
+// filing the real job (timekeeper.js). Not exported by pg-boss; the name is
+// pinned by a test against node_modules/pg-boss/dist/timekeeper.js.
+export const PGBOSS_SEND_IT_QUEUE = '__pgboss__send-it';
+
+export function completedRetentionSeconds(queueName: string): number {
+  if (queueName === PGBOSS_SEND_IT_QUEUE) return SHORT_COMPLETED_RETENTION_SECONDS;
+  const allowanceMinutes = QUEUE_EXPECTED_MAX_MINUTES[queueName];
+  if (allowanceMinutes == null) return DEFAULT_COMPLETED_RETENTION_SECONDS;
+  const base =
+    allowanceMinutes <= FREQUENT_ALLOWANCE_MAX_MINUTES
+      ? SHORT_COMPLETED_RETENTION_SECONDS
+      : DEFAULT_COMPLETED_RETENTION_SECONDS;
+  return Math.max(base, (allowanceMinutes + 24 * 60) * 60);
+}
