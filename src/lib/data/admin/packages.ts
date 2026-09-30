@@ -209,20 +209,24 @@ export async function validateOutreachScheduleForPackage(
   if (whatsappTouchpoints.length === 0) return [];
 
   const uniqueKeys = [...new Set(whatsappTouchpoints.map(({ tp }) => tp.message_key))];
+  // Valid = the step is active AND its default route points at a template
+  // Meta has APPROVED — exactly what resolveWhatsAppSend requires to send
+  // (whatsapp-template-send.ts). One query for all unique keys, not N+1.
   const admin = createAdminClient();
   const { data } = await admin
     .from('message_templates')
-    .select('message_key, name, language, channel')
+    .select('message_key, channel, message_template_routes(event_type, with_media, whatsapp_message_templates(status))')
     .in('message_key', uniqueKeys)
     .eq('active', true);
 
-  // Mirrors getTemplateByKey's semantics (message-templates.ts): empty
-  // name/language/channel counts as "not found", not just active/missing.
-  const byKey = new Map(
-    (data ?? [])
-      .filter((t) => t.name && t.language && t.channel)
-      .map((t) => [t.message_key, t]),
-  );
+  const byKey = new Map((data ?? []).map((t) => [t.message_key, t]));
+  const hasApprovedDefault = (t: NonNullable<typeof data>[number]) =>
+    (t.message_template_routes ?? []).some(
+      (r) =>
+        r.event_type === null &&
+        !r.with_media &&
+        (r.whatsapp_message_templates as { status: string | null } | null)?.status === 'APPROVED',
+    );
 
   const errors: { index: number; message: string }[] = [];
   whatsappTouchpoints.forEach(({ tp, index }) => {
@@ -231,6 +235,8 @@ export async function validateOutreachScheduleForPackage(
       errors.push({ index, message: `תבנית "${tp.message_key}" לא נמצאה או אינה פעילה` });
     } else if (template.channel !== tp.channel) {
       errors.push({ index, message: `תבנית "${tp.message_key}" מיועדת לערוץ אחר` });
+    } else if (!hasApprovedDefault(template)) {
+      errors.push({ index, message: `לשלב "${tp.message_key}" אין תבנית מאושרת ב-Meta` });
     }
   });
   return errors;

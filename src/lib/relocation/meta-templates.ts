@@ -274,6 +274,39 @@ export function templateSwitchSql(update: TemplateRowUpdate): string {
   return `UPDATE message_templates SET name = ${sqlLiteral(update.name)}, components = ${components} WHERE message_key = ${sqlLiteral(update.message_key)}`;
 }
 
+/** The routing model (message_template_routes → whatsapp_message_templates,
+ * 2026-09-30): repoint every route from an old template to its APPROVED
+ * successor in the Meta mirror, copying the old template's variable rows and
+ * settings to the successor first (variables belong to the template). A
+ * successor the mirror has not seen yet (the nightly sync) changes nothing and
+ * stays "pending" in G2's verify. Idempotent: re-running copies nothing twice
+ * and repoints nothing twice. */
+export function routeSwitchSql(oldName: string, newName: string): string {
+  const oldLit = sqlLiteral(oldName);
+  const newLit = sqlLiteral(newName);
+  return `WITH pairs AS (
+  SELECT o.id AS old_id, n.id AS new_id
+  FROM whatsapp_message_templates o
+  JOIN whatsapp_message_templates n
+    ON n.name = ${newLit} AND n.language = o.language AND n.status = 'APPROVED'
+  WHERE o.name = ${oldLit}
+), params AS (
+  INSERT INTO whatsapp_template_parameters (whatsapp_template_id, type, sub_type, index, position, parameter_name, source_path)
+  SELECT pairs.new_id, p.type, p.sub_type, p.index, p.position, p.parameter_name, p.source_path
+  FROM whatsapp_template_parameters p JOIN pairs ON p.whatsapp_template_id = pairs.old_id
+  ON CONFLICT DO NOTHING
+  RETURNING 1
+), settings AS (
+  INSERT INTO whatsapp_template_settings (whatsapp_template_id, requested_category)
+  SELECT pairs.new_id, s.requested_category
+  FROM whatsapp_template_settings s JOIN pairs ON s.whatsapp_template_id = pairs.old_id
+  ON CONFLICT (whatsapp_template_id) DO NOTHING
+  RETURNING 1
+)
+UPDATE message_template_routes r SET whatsapp_template_id = pairs.new_id
+FROM pairs WHERE r.whatsapp_template_id = pairs.old_id`;
+}
+
 /* ------------------------------------------------------------------------- *
  * Graph API (read + latched create)
  * ------------------------------------------------------------------------- */

@@ -100,6 +100,75 @@ async function mirrorTemplates(
   return rows.length;
 }
 
+type WatchedTemplate = {
+  id: string;
+  name: string;
+  requested: string;
+  previousCategory: string | null;
+  messageKeys: string[];
+};
+
+// Every template some step sends, with the category it was requested under and
+// the category stored before this sync.
+async function loadWatchedTemplates(
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<WatchedTemplate[]> {
+  const { data, error } = await admin
+    .from('whatsapp_template_settings')
+    .select(
+      'whatsapp_template_id, requested_category, whatsapp_message_templates(name, category, message_template_routes(message_key))',
+    );
+  if (error || !data) return [];
+  const out: WatchedTemplate[] = [];
+  for (const row of data) {
+    const t = row.whatsapp_message_templates as {
+      name: string;
+      category: string | null;
+      message_template_routes: Array<{ message_key: string }> | null;
+    } | null;
+    if (!t || !row.requested_category) continue;
+    out.push({
+      id: row.whatsapp_template_id,
+      name: t.name,
+      requested: row.requested_category,
+      previousCategory: t.category,
+      messageKeys: [...new Set((t.message_template_routes ?? []).map((r) => r.message_key))],
+    });
+  }
+  return out;
+}
+
+// Alert once per genuine transition into a downgrade (was not, now is).
+async function alertNewDowngrades(
+  watched: WatchedTemplate[],
+  metaTemplates: MetaTemplateHealthRow[],
+): Promise<number> {
+  let count = 0;
+  for (const w of watched) {
+    const live = metaTemplates.find((t) => t.id === w.id);
+    if (!live) continue;
+    const was = isCategoryDowngraded(w.requested, w.previousCategory);
+    const now = isCategoryDowngraded(w.requested, live.category ?? null);
+    if (was || !now) continue;
+    count += 1;
+    const label = w.messageKeys.join(', ') || w.name;
+    await sendSlackAlert({
+      level: 'error',
+      category: 'send_health',
+      source: 'whatsapp-template-health-sync',
+      title: `תבנית WhatsApp ירדה בקטגוריה (התגלה בסנכרון יומי): ${label}`,
+      detail: `Meta מסווגת כעת כ-${live.category} במקום ${w.requested} — לא התקבל webhook על השינוי הזה.`,
+      fields: {
+        message_key: label,
+        template_name: w.name,
+        requested: w.requested,
+        actual: live.category ?? 'לא ידוע',
+      },
+    });
+  }
+  return count;
+}
+
 export async function runTemplateHealthSync(): Promise<{
   synced: number;
   skipped: number;
@@ -135,11 +204,15 @@ export async function runTemplateHealthSync(): Promise<{
   }
 
   const now = new Date().toISOString();
+  // Category as stored BEFORE this sync, for every template a step sends — so a
+  // downgrade is alerted once, on the transition, for the event-type / image
+  // variants too (since 2026-09-30), not only a step's base template.
+  const watched = await loadWatchedTemplates(admin);
   const mirrored = await mirrorTemplates(admin, metaTemplates, now);
+  const newDowngrades = await alertNewDowngrades(watched, metaTemplates);
 
   let synced = 0;
   let skipped = 0;
-  let newDowngrades = 0;
 
   for (const row of rows) {
     const match = metaTemplates.find(
@@ -150,12 +223,8 @@ export async function runTemplateHealthSync(): Promise<{
       continue;
     }
 
-    const wasDowngraded = isCategoryDowngraded(row.requested_category, row.category);
-    const isNowDowngraded = isCategoryDowngraded(
-      row.requested_category,
-      match.category ?? null,
-    );
-
+    // Legacy row, kept current for the admin screen until it reads the mirror.
+    // Downgrade alerts come from alertNewDowngrades above.
     await admin
       .from('message_templates')
       .update({
@@ -169,22 +238,6 @@ export async function runTemplateHealthSync(): Promise<{
       .eq('id', row.id);
     synced += 1;
 
-    if (!wasDowngraded && isNowDowngraded) {
-      newDowngrades += 1;
-      await sendSlackAlert({
-        level: 'error',
-        category: 'send_health',
-        source: 'whatsapp-template-health-sync',
-        title: `תבנית WhatsApp ירדה בקטגוריה (התגלה בסנכרון יומי): ${row.message_key}`,
-        detail: `Meta מסווגת כעת כ-${match.category} במקום ${row.requested_category} — לא התקבל webhook על השינוי הזה.`,
-        fields: {
-          message_key: row.message_key,
-          template_name: row.name,
-          requested: row.requested_category,
-          actual: match.category ?? 'לא ידוע',
-        },
-      });
-    }
   }
 
   return { synced, skipped, newDowngrades, mirrored };

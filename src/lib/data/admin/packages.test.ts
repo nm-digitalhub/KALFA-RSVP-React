@@ -381,15 +381,22 @@ describe('deletePackage', () => {
 describe('validateOutreachScheduleForPackage', () => {
   // Template rows as the batched select returns them (the columns picked in
   // packages.ts mirror getTemplateByKey's message_templates shape).
+  type RouteRow = {
+    event_type: string | null;
+    with_media: boolean;
+    whatsapp_message_templates: { status: string | null } | null;
+  };
   type TemplateRow = {
     message_key: string;
-    name: string;
-    language: string;
     channel: string;
+    message_template_routes: RouteRow[];
   };
 
-  const k1: TemplateRow = { message_key: 'k1', name: 'x', language: 'he', channel: 'whatsapp' };
-  const k2: TemplateRow = { message_key: 'k2', name: 'x', language: 'he', channel: 'whatsapp' };
+  const APPROVED_DEFAULT: RouteRow[] = [
+    { event_type: null, with_media: false, whatsapp_message_templates: { status: 'APPROVED' } },
+  ];
+  const k1: TemplateRow = { message_key: 'k1', channel: 'whatsapp', message_template_routes: APPROVED_DEFAULT };
+  const k2: TemplateRow = { message_key: 'k2', channel: 'whatsapp', message_template_routes: APPROVED_DEFAULT };
 
   // Interleaved schedule — whatsapp(k1), call(c1), whatsapp(k1 dup),
   // whatsapp(k2) — exercises key dedup, call-touchpoint exclusion, and
@@ -422,7 +429,9 @@ describe('validateOutreachScheduleForPackage', () => {
     expect(requirePlatformPermission).toHaveBeenCalled();
     expect(client.from).toHaveBeenCalledWith('message_templates');
     expect(client.from).toHaveBeenCalledTimes(1);
-    expect(builder.select).toHaveBeenCalledWith('message_key, name, language, channel');
+    expect(builder.select).toHaveBeenCalledWith(
+      'message_key, channel, message_template_routes(event_type, with_media, whatsapp_message_templates(status))',
+    );
     // Deduped (k1 appears twice) and call keys (c1) excluded.
     expect(builder.in).toHaveBeenCalledWith('message_key', ['k1', 'k2']);
     expect(builder.eq).toHaveBeenCalledWith('active', true);
@@ -442,7 +451,7 @@ describe('validateOutreachScheduleForPackage', () => {
   });
 
   it('reports a channel mismatch when the template belongs to another channel', async () => {
-    wireAdmin([{ message_key: 'k1', name: 'x', language: 'he', channel: 'call' }]);
+    wireAdmin([{ message_key: 'k1', channel: 'call', message_template_routes: [] }]);
 
     const errors = await validateOutreachScheduleForPackage([
       { days_before: 7, channel: 'whatsapp', message_key: 'k1' },
@@ -451,16 +460,21 @@ describe('validateOutreachScheduleForPackage', () => {
     expect(errors).toEqual([{ index: 0, message: 'תבנית "k1" מיועדת לערוץ אחר' }]);
   });
 
-  it('treats a row with empty name/language as not found (getTemplateByKey semantics)', async () => {
-    wireAdmin([{ message_key: 'k1', name: '', language: '', channel: 'whatsapp' }]);
+  // Valid = what resolveWhatsAppSend needs to send: a default text route to a
+  // template Meta has APPROVED.
+  it.each([
+    ['no routes', []],
+    ['only an image route', [{ event_type: null, with_media: true, whatsapp_message_templates: { status: 'APPROVED' } }]],
+    ['only an event-type route', [{ event_type: 'brit', with_media: false, whatsapp_message_templates: { status: 'APPROVED' } }]],
+    ['a paused default template', [{ event_type: null, with_media: false, whatsapp_message_templates: { status: 'PAUSED' } }]],
+  ])('reports a step with no approved default template (%s)', async (_label, routes) => {
+    wireAdmin([{ message_key: 'k1', channel: 'whatsapp', message_template_routes: routes }]);
 
     const errors = await validateOutreachScheduleForPackage([
       { days_before: 7, channel: 'whatsapp', message_key: 'k1' },
     ]);
 
-    expect(errors).toEqual([
-      { index: 0, message: 'תבנית "k1" לא נמצאה או אינה פעילה' },
-    ]);
+    expect(errors).toEqual([{ index: 0, message: 'לשלב "k1" אין תבנית מאושרת ב-Meta' }]);
   });
 
   it('returns [] for a call-only schedule without querying at all', async () => {

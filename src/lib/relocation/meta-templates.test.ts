@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GRAPH_API_VERSION } from "@/lib/whatsapp/graph-version";
 
 import {
+  routeSwitchSql,
   RelocateExecuteLatchError,
   affectedTemplates,
   createMetaTemplate,
@@ -180,5 +181,21 @@ describe("createMetaTemplate latch", () => {
     const body = JSON.parse(String(calls[0].init?.body)) as Record<string, unknown>;
     expect(body).toMatchObject({ name: "a_v2", language: "he", category: "MARKETING", parameter_format: "POSITIONAL" });
     expect(Array.isArray(body.components)).toBe(true);
+  });
+});
+
+describe("routeSwitchSql (routing tables)", () => {
+  it("repoints routes only to an APPROVED successor, copying variables and settings first", () => {
+    const sql = routeSwitchSql("kalfa_event_invite_v2", "kalfa_event_invite_v3");
+    expect(sql).toContain("n.name = 'kalfa_event_invite_v3' AND n.language = o.language AND n.status = 'APPROVED'");
+    expect(sql).toContain("WHERE o.name = 'kalfa_event_invite_v2'");
+    expect(sql).toContain("INSERT INTO whatsapp_template_parameters");
+    expect(sql).toContain("INSERT INTO whatsapp_template_settings");
+    expect(sql).toContain("UPDATE message_template_routes r SET whatsapp_template_id = pairs.new_id");
+    expect(sql.match(/ON CONFLICT/g)).toHaveLength(2);
+  });
+
+  it("escapes names as SQL literals", () => {
+    expect(routeSwitchSql("a'b", "c")).toContain("WHERE o.name = 'a''b'");
   });
 });

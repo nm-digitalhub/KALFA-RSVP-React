@@ -6,6 +6,8 @@ vi.mock('server-only', () => ({}));
 // .update().eq() for each write. Convention matches
 // template-health-processing.test.ts / call-result-processing.test.ts.
 let selectRows: Array<Record<string, unknown>> = [];
+// whatsapp_template_settings joined to the mirror: the templates some step sends.
+let watchedRows: Array<Record<string, unknown>> = [];
 const updateCalls: Array<{ id: string; payload: Record<string, unknown> }> = [];
 
 // whatsapp_message_templates (the Meta mirror): every call is recorded in
@@ -29,6 +31,8 @@ vi.mock('@/lib/supabase/admin', () => ({
         mirrorCalls.push({ op: 'upsert', args: [rows, opts] });
         return { error: mirrorUpsertError };
       },
+    }) : table === 'whatsapp_template_settings' ? ({
+      select: async () => ({ data: watchedRows, error: null }),
     }) : ({
       select: () => ({
         eq: () => ({
@@ -80,6 +84,7 @@ beforeEach(() => {
   selectRows = [ROW];
   updateCalls.length = 0;
   mirrorCalls.length = 0;
+  watchedRows = [];
   mirrorMarkError = null;
   mirrorUpsertError = null;
   getWhatsAppConfig.mockResolvedValue({ wabaId: 'waba-1', accessToken: 't1' });
@@ -136,7 +141,20 @@ describe('runTemplateHealthSync', () => {
     expect(updateCalls).toHaveLength(0);
   });
 
-  it('alerts on a genuine downgrade transition (was not, now is)', async () => {
+  // Every template a step sends is watched — here an event-type variant with
+  // no legacy row — against the category requested for THAT template.
+  it('alerts on a genuine downgrade transition (was not, now is), naming its steps', async () => {
+    watchedRows = [
+      {
+        whatsapp_template_id: 'meta-1',
+        requested_category: 'UTILITY',
+        whatsapp_message_templates: {
+          name: 'invite',
+          category: 'UTILITY',
+          message_template_routes: [{ message_key: 'invite' }, { message_key: 'invite' }],
+        },
+      },
+    ];
     fetchTemplateHealth.mockResolvedValue([
       {
         id: 'meta-1',
@@ -152,7 +170,26 @@ describe('runTemplateHealthSync', () => {
 
     expect(result.newDowngrades).toBe(1);
     expect(sendSlackAlert).toHaveBeenCalledTimes(1);
-    expect(sendSlackAlert.mock.calls[0][0]).toMatchObject({ level: 'error' });
+    expect(sendSlackAlert.mock.calls[0][0]).toMatchObject({
+      level: 'error',
+      fields: expect.objectContaining({ message_key: 'invite', requested: 'UTILITY', actual: 'MARKETING' }),
+    });
+  });
+
+  it('does not re-alert a downgrade that was already stored', async () => {
+    watchedRows = [
+      {
+        whatsapp_template_id: 'meta-1',
+        requested_category: 'UTILITY',
+        whatsapp_message_templates: { name: 'invite', category: 'MARKETING', message_template_routes: [] },
+      },
+    ];
+    fetchTemplateHealth.mockResolvedValue([
+      { id: 'meta-1', name: 'invite', language: 'he', category: 'MARKETING', status: 'APPROVED' },
+    ]);
+    const result = await runTemplateHealthSync();
+    expect(result.newDowngrades).toBe(0);
+    expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 
   it('returns zeroed counts and alerts (warn) when the Meta fetch itself fails', async () => {
