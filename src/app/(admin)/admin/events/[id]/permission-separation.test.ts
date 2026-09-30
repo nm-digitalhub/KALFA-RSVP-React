@@ -46,6 +46,8 @@ describe('the page itself asks for the weakest key only', () => {
       'manage_staff',
       'view_activity_log',
       'view_recordings',
+      'events.mark_test',
+      'events.purge_test',
     ]) {
       expect(page).toContain(`hasPlatformPermission('${key}')`);
       expect(page).not.toContain(`requirePlatformPermission('${key}')`);

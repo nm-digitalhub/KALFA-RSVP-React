@@ -735,6 +735,7 @@
 
 - `on_auth_user_created` על `auth.users` → ‏`handle_new_user()` (יצירת פרופיל).
 - Event trigger ‏`ensure_rls` ‏(`ddl_command_end`) → ‏`rls_auto_enable()` (RLS אוטומטי על טבלאות חדשות ב‑`public`).
+- **מחיקת אירוע בדיקה** (מיגרציה `20260929001415`, החליפה את הטריגר `events_purge_staff_test_dependents` מ‑`20260928231226`, שהוסר): אין טריגר מחיקה על `events`; ‏DELETE רגיל נחסם כרגיל ע"י הפניות ה‑RESTRICT. אירוע נמחק רק אחרי סימון מפורש בטבלה `test_events` (בלי grants ל‑anon/authenticated) ודרך הפונקציות `mark_test_event` / `unmark_test_event` / `purge_test_event` (‏SECURITY DEFINER, ‏service_role בלבד; באפליקציה מאחורי ההרשאות `events.mark_test` / `events.purge_test`). ‏`purge_test_event` מסרב כשיש פעילות כספית כלשהי, שומר snapshot של שורות הכסף והמסמכים ב‑`test_events.snapshot`, מוחק את כל ההפניות החוסמות, מנתק את `support_access_log.event_id`, מוחק את האירוע ורושם ב‑`activity_log` (`event_id` NULL). לא נוגע ב‑SUMIT — תפיסות פתוחות משחררים בלוח הבקרה שלו.
 
 ## 17. ניואנסים חשובים
 

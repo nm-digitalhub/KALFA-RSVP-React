@@ -99,6 +99,9 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // never become the way to read one. Pinning both here is what stops either
   // from quietly absorbing the other's authority.
   'src/lib/data/admin/event-view.ts': 'view_events',
+  // Marker read under the page's own key; marking and the irreversible purge
+  // are two separate keys so marking alone can never delete anything.
+  'src/lib/data/admin/test-events.ts': ['view_events', 'events.mark_test', 'events.purge_test'],
   'src/lib/data/admin/events.ts': 'manage_billing',
   'src/lib/data/admin/packages.ts': 'manage_billing',
   'src/lib/data/admin/settings.ts': 'manage_settings',
@@ -272,12 +275,15 @@ const COARSE_GATE_ALLOWED: Record<string, string> = {
 
 // The permission catalogue as seeded in platform_permission_definitions,
 // MEASURED against the live database 2026-09-10, re-measured 2026-09-16 after
-// 20260916005200 seeded the two `integrations.*` keys. Pinned rather than queried so
+// 20260916005200 seeded the two `integrations.*` keys, plus the two `events.*`
+// test-event keys seeded by 20260929001415. Pinned rather than queried so
 // the suite stays hermetic; a key used in code that is not here is either a typo
 // or a permission nobody created, and both mean the gate never matches and the
 // user is redirected with no explanation.
 const PERMISSION_CATALOGUE = [
   'campaigns.runstate',
+  'events.mark_test',
+  'events.purge_test',
   'integrations.manage',
   'integrations.read',
   'manage_billing',
