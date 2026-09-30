@@ -155,8 +155,8 @@ export type FollowupMessage =
 const codePoints = (s: string) => [...s];
 
 /**
- * Buttons when there are at most three suggestions and each fits a button
- * title whole; otherwise a list, whose row title is cut at 24 with the full
+ * Buttons when there are at most three distinct suggestions and each fits a
+ * button title whole; otherwise a list, whose row title is cut at 24 with the full
  * text as the description. `encodeId(n)` makes the id of suggestion n.
  */
 export function buildFollowupMessage(
@@ -168,7 +168,14 @@ export function buildFollowupMessage(
   // and anything over 72 characters.
   const items = followups.slice(0, 10);
   if (items.length === 0) return null;
-  if (items.length <= BUTTONS_MAX && items.every((f) => codePoints(f).length <= BUTTON_TITLE_MAX)) {
+  // Buttons also need distinct titles (Meta rejects a repeated one); a list
+  // row may repeat, since each is told apart by its id.
+  const distinct = new Set(items.map((f) => f.trim())).size === items.length;
+  if (
+    distinct &&
+    items.length <= BUTTONS_MAX &&
+    items.every((f) => codePoints(f).length <= BUTTON_TITLE_MAX)
+  ) {
     return { kind: 'buttons', body: FOLLOWUP_BODY, buttons: items.map((title, n) => ({ id: encodeId(n), title })) };
   }
   const rows = items.map((text, n) => {

@@ -10,12 +10,22 @@ vi.mock('@/lib/data/message-templates', () => ({
   acknowledgeTemplateCategory: vi.fn(),
 }));
 
+vi.mock('@/lib/data/admin/whatsapp-templates', () => ({
+  setTemplateRoute: vi.fn(),
+  removeTemplateRoute: vi.fn(),
+  saveTemplateParameters: vi.fn(),
+  requestTemplateSync: vi.fn(),
+}));
+
+import { saveTemplateParameters, setTemplateRoute } from '@/lib/data/admin/whatsapp-templates';
 import {
   acknowledgeTemplateCategory,
   updateMessageTemplate,
 } from '@/lib/data/message-templates';
 import {
   acknowledgeTemplateCategoryAction,
+  saveTemplateParametersAction,
+  setTemplateRouteAction,
   updateTemplateAction,
 } from './actions';
 
@@ -111,5 +121,40 @@ describe('acknowledgeTemplateCategoryAction', () => {
     await expect(acknowledgeTemplateCategoryAction(null, fd(OK))).rejects.toBe(
       NEXT_REDIRECT,
     );
+  });
+});
+
+describe('setTemplateRouteAction', () => {
+  it('rejects malformed input without calling the data layer', async () => {
+    expect(await setTemplateRouteAction({ messageKey: 'invite', eventType: 'party', withMedia: false, templateId: '1' }))
+      .toEqual({ ok: false, problems: ['בקשה לא תקינה'] });
+    expect(await setTemplateRouteAction({ messageKey: 'invite', eventType: null, withMedia: false, templateId: 'abc' }))
+      .toEqual({ ok: false, problems: ['בקשה לא תקינה'] });
+    expect(setTemplateRoute).not.toHaveBeenCalled();
+  });
+
+  it('passes validated input through and returns the data layer result', async () => {
+    vi.mocked(setTemplateRoute).mockResolvedValueOnce({ ok: true, warning: 'w' });
+    const input = { messageKey: 'invite', eventType: 'brit', withMedia: true, templateId: '123' };
+    expect(await setTemplateRouteAction(input)).toEqual({ ok: true, warning: 'w' });
+    expect(setTemplateRoute).toHaveBeenCalledWith(input);
+  });
+
+  it('hides internal failures behind a generic message', async () => {
+    vi.mocked(setTemplateRoute).mockRejectedValueOnce(new Error('db exploded'));
+    expect(await setTemplateRouteAction({ messageKey: 'invite', eventType: null, withMedia: false, templateId: '1' }))
+      .toEqual({ ok: false, problems: ['השמירה נכשלה. נסו שוב.'] });
+  });
+});
+
+describe('saveTemplateParametersAction', () => {
+  it('rejects an unknown component type', async () => {
+    expect(
+      await saveTemplateParametersAction({
+        templateId: '1',
+        values: [{ type: 'footer', sub_type: null, index: null, position: 1, source_path: 'guest.first_name' }],
+      }),
+    ).toEqual({ ok: false, problems: ['בקשה לא תקינה'] });
+    expect(saveTemplateParameters).not.toHaveBeenCalled();
   });
 });

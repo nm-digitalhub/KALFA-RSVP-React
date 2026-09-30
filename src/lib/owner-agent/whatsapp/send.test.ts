@@ -251,7 +251,7 @@ describe('local limits (checked before any request)', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('buttons: ≤3, title ≤20 code points, unique ids', async () => {
+  it('buttons: ≤3, title ≤20 code points, unique ids, unique titles', async () => {
     const four = [1, 2, 3, 4].map((i) => ({ id: `b${i}`, title: `t${i}` }));
     expect(await sendOwnerAgentButtons(wa, { to: TO, body: 'x', buttons: four })).toEqual({
       kind: 'definitely_not_sent',
@@ -264,6 +264,11 @@ describe('local limits (checked before any request)', () => {
         .kind,
     ).toBe('definitely_not_sent');
     expect((await sendOwnerAgentButtons(wa, { to: TO, body: 'x', buttons: [] })).kind).toBe('definitely_not_sent');
+    // Meta rejects two buttons with the same title, even with different ids.
+    expect(
+      (await sendOwnerAgentButtons(wa, { to: TO, body: 'x', buttons: [{ id: 'a', title: 'כן' }, { id: 'b', title: 'כן ' }] }))
+        .kind,
+    ).toBe('definitely_not_sent');
     expect(calls).toHaveLength(0);
 
     // 20 emoji = 20 characters, not 40 UTF-16 units.

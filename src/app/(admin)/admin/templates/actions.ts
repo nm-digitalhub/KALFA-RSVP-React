@@ -8,7 +8,14 @@ import {
   acknowledgeTemplateCategory,
   updateMessageTemplate,
 } from '@/lib/data/message-templates';
+import {
+  removeTemplateRoute,
+  requestTemplateSync,
+  saveTemplateParameters,
+  setTemplateRoute,
+} from '@/lib/data/admin/whatsapp-templates';
 import type { FormState } from '@/lib/validation/result';
+import { EVENT_TYPES } from '@/lib/validation/schemas';
 
 const schema = z.object({
   id: z.string().uuid(),
@@ -92,5 +99,89 @@ export async function acknowledgeTemplateCategoryAction(
   } catch (err) {
     unstable_rethrow(err);
     return { error: 'אישור הקטגוריה נכשל. נסו שוב.' };
+  }
+}
+
+// --- WhatsApp routes and variables (step 8, whatsapp-templates-meta-mirror) ---
+//
+// Called with the form's data object (JSON Forms), not FormData. Every input is
+// re-validated here and again in the data layer against the live template;
+// nothing the browser sends is trusted.
+
+export type TemplateAdminActionResult =
+  | { ok: true; warning?: string }
+  | { ok: false; problems: string[] };
+
+const INVALID: TemplateAdminActionResult = { ok: false, problems: ['בקשה לא תקינה'] };
+const FAILED: TemplateAdminActionResult = { ok: false, problems: ['השמירה נכשלה. נסו שוב.'] };
+
+const messageKey = z.string().trim().min(1).max(64);
+const routeTarget = z.object({
+  messageKey,
+  eventType: z.enum(EVENT_TYPES).nullable(),
+  withMedia: z.boolean(),
+});
+
+export async function setTemplateRouteAction(input: unknown): Promise<TemplateAdminActionResult> {
+  const parsed = routeTarget.extend({ templateId: z.string().regex(/^\d{1,32}$/) }).safeParse(input);
+  if (!parsed.success) return INVALID;
+  try {
+    const result = await setTemplateRoute(parsed.data);
+    if (result.ok) revalidatePath('/admin/templates');
+    return result;
+  } catch (err) {
+    unstable_rethrow(err);
+    return FAILED;
+  }
+}
+
+export async function removeTemplateRouteAction(input: unknown): Promise<TemplateAdminActionResult> {
+  const parsed = routeTarget.safeParse(input);
+  if (!parsed.success) return INVALID;
+  try {
+    const result = await removeTemplateRoute(parsed.data);
+    if (result.ok) revalidatePath('/admin/templates');
+    return result;
+  } catch (err) {
+    unstable_rethrow(err);
+    return FAILED;
+  }
+}
+
+const parametersSchema = z.object({
+  templateId: z.string().regex(/^\d{1,32}$/),
+  values: z
+    .array(
+      z.object({
+        type: z.enum(['header', 'body', 'button']),
+        sub_type: z.string().max(32).nullable(),
+        index: z.number().int().min(0).max(10).nullable(),
+        position: z.number().int().min(1).max(100),
+        source_path: z.string().trim().min(1).max(128),
+      }),
+    )
+    .max(100),
+});
+
+export async function saveTemplateParametersAction(input: unknown): Promise<TemplateAdminActionResult> {
+  const parsed = parametersSchema.safeParse(input);
+  if (!parsed.success) return INVALID;
+  try {
+    const result = await saveTemplateParameters(parsed.data);
+    if (result.ok) revalidatePath('/admin/templates');
+    return result;
+  } catch (err) {
+    unstable_rethrow(err);
+    return FAILED;
+  }
+}
+
+export async function requestTemplateSyncAction(): Promise<TemplateAdminActionResult> {
+  try {
+    await requestTemplateSync();
+    return { ok: true };
+  } catch (err) {
+    unstable_rethrow(err);
+    return { ok: false, problems: ['לא הצלחנו לבקש סנכרון. נסו שוב.'] };
   }
 }

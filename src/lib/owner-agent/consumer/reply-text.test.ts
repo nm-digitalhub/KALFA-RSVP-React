@@ -126,6 +126,13 @@ describe('buildFollowupMessage (§4.3)', () => {
     });
   });
 
+  it('a repeated suggestion → a list (buttons need distinct titles), ids keep their index', () => {
+    const msg = buildFollowupMessage(['עוד', 'עוד'], id);
+    expect(msg?.kind).toBe('list');
+    if (msg?.kind !== 'list') throw new Error('list');
+    expect(msg.sections[0].rows.map((r) => r.id)).toEqual(['id-0', 'id-1']);
+  });
+
   it('four → a list; a title over 20 → a list; over 24 → cut, with the whole text as description; ids keep their index', () => {
     const four = buildFollowupMessage(['a', 'b', 'c', 'd'], id);
     expect(four?.kind).toBe('list');

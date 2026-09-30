@@ -8,6 +8,7 @@
 // the variable rows (whatsapp_template_parameters) — and these functions decide.
 
 import { RSVP_QUICK_REPLY } from '@/lib/whatsapp/rsvp-buttons';
+import { buildSendContext, type SendContext, type SendContextInput } from '@/lib/whatsapp/template-spec';
 
 export type TemplateRouteRow = {
   message_key: string;
@@ -76,6 +77,157 @@ export function carriesRsvpQuickReplies(components: unknown): boolean {
     buttons.length === RSVP_QUICK_REPLY.length &&
     buttons.every((b) => b.type === 'QUICK_REPLY')
   );
+}
+
+// --- The values a template variable can be mapped to -------------------------
+//
+// ONE source for three readers: the admin "{" picker (what it offers), the admin
+// save (what it accepts) and resolveWhatsAppSend (what it can read). Paths are
+// DERIVED from the objects the sender builds, so a value added to
+// buildSendContext appears in all three without another list to update.
+
+// Steps sent to a sales lead, not to an event guest: their values are the
+// lead's, and event values do not exist for them.
+export const LEAD_MESSAGE_KEYS = new Set(['sales_signup_link']);
+
+export type SendValueGroups = Record<string, Record<string, string | null>>;
+
+export function buildLeadValues(lead?: { full_name?: string | null; signup_ref?: string | null }) {
+  return {
+    lead: {
+      full_name: lead?.full_name?.trim() || null,
+      signup_ref: lead?.signup_ref?.trim() || null,
+    },
+  };
+}
+
+// The event values plus the one value that exists only at send time: the signed
+// link to the event's invite image (the IMAGE header).
+export function buildEventValues(ctx: SendContext, inviteImageLink: string | null) {
+  return { ...ctx, event: { ...ctx.event, invite_image: inviteImageLink } };
+}
+
+// Values that are an image link — the only thing an IMAGE header can carry.
+export const IMAGE_VALUE_PATHS = new Set(['event.invite_image']);
+
+const SAMPLE_EVENT: SendContextInput = {
+  event: { event_type: 'wedding', celebrants: null },
+  guestFirstName: null,
+};
+
+function pathsOf(groups: SendValueGroups): string[] {
+  return Object.entries(groups).flatMap(([group, values]) =>
+    Object.keys(values).map((key) => `${group}.${key}`),
+  );
+}
+
+/** Every value a template sent by this step may be mapped to. */
+export function sendValuePaths(messageKey: string): string[] {
+  return pathsOf(
+    LEAD_MESSAGE_KEYS.has(messageKey)
+      ? buildLeadValues()
+      : buildEventValues(buildSendContext(SAMPLE_EVENT), null),
+  );
+}
+
+/** Every value any step has (event steps and lead steps together). */
+export function anySendValuePaths(): string[] {
+  return [
+    ...pathsOf(buildEventValues(buildSendContext(SAMPLE_EVENT), null)),
+    ...pathsOf(buildLeadValues()),
+  ];
+}
+
+/** A path's value; undefined = not a path these values have (a bad mapping). */
+export function readSendValue(groups: SendValueGroups, path: string): string | null | undefined {
+  const dot = path.indexOf('.');
+  if (dot < 1) return undefined;
+  const values = groups[path.slice(0, dot)];
+  const key = path.slice(dot + 1);
+  if (!values || !Object.prototype.hasOwnProperty.call(values, key)) return undefined;
+  return values[key];
+}
+
+// --- The variables a Meta template has, and whether a mapping covers them ---
+//
+// Read from Meta's own components (the mirror), limited to what the sender
+// (client.ts buildTemplateComponents) can fill: an IMAGE header, positional
+// {{n}} body variables and one URL-button suffix. Anything else is reported,
+// never guessed — Meta rejects a send whose parameters do not match (132000).
+
+export type TemplateSlot = {
+  type: 'header' | 'body' | 'button';
+  sub_type: string | null;
+  index: number | null;
+  position: number;
+};
+
+type SlotComponent = {
+  type?: string;
+  format?: string;
+  text?: string;
+  buttons?: Array<{ type?: string; url?: string }>;
+};
+
+const VARIABLE = /\{\{\s*([^}\s]+)\s*\}\}/g;
+
+export function templateSlots(components: unknown): { slots: TemplateSlot[]; unsupported: string[] } {
+  const slots: TemplateSlot[] = [];
+  const unsupported: string[] = [];
+  const list = Array.isArray(components) ? (components as SlotComponent[]) : [];
+  for (const c of list) {
+    const vars = [...new Set([...(c.text ?? '').matchAll(VARIABLE)].map((m) => m[1]))];
+    if (c.type === 'HEADER') {
+      if (c.format === 'IMAGE') slots.push({ type: 'header', sub_type: null, index: null, position: 1 });
+      else if (c.format && c.format !== 'TEXT') unsupported.push(`כותרת מסוג ${c.format}`);
+      else if (vars.length > 0) unsupported.push('משתנה בכותרת טקסט');
+    } else if (c.type === 'BODY') {
+      for (const v of vars) {
+        if (/^\d+$/.test(v)) slots.push({ type: 'body', sub_type: null, index: null, position: Number(v) });
+        else unsupported.push(`משתנה בשם {{${v}}}`);
+      }
+    } else if (c.type === 'BUTTONS') {
+      (c.buttons ?? []).forEach((b, index) => {
+        if (b.type === 'URL' && /\{\{\s*1\s*\}\}/.test(b.url ?? '')) {
+          slots.push({ type: 'button', sub_type: 'url', index, position: 1 });
+        } else if (b.type !== 'URL' && b.type !== 'QUICK_REPLY' && b.type !== 'PHONE_NUMBER') {
+          unsupported.push(`כפתור מסוג ${b.type ?? '?'}`);
+        }
+      });
+    }
+  }
+  return { slots, unsupported };
+}
+
+const slotKey = (s: { type: string; sub_type: string | null; index: number | null; position: number | null }) =>
+  `${s.type}|${s.sub_type ?? ''}|${s.index ?? ''}|${s.position ?? ''}`;
+
+/**
+ * Problems (Hebrew, for the admin) with mapping `rows` onto a template whose
+ * components are `components`, for a step whose values are `allowedPaths`.
+ * Empty = every variable is mapped exactly once to a value the sender has.
+ */
+export function parameterCoverageProblems(
+  components: unknown,
+  rows: ReadonlyArray<Pick<TemplateParameterRow, 'type' | 'sub_type' | 'index' | 'position' | 'source_path'>>,
+  allowedPaths: readonly string[],
+): string[] {
+  const { slots, unsupported } = templateSlots(components);
+  const problems = unsupported.map((u) => `התבנית כוללת ${u}, שהמערכת עדיין לא יודעת למלא`);
+  const allowed = new Set(allowedPaths);
+  const byKey = new Map(rows.map((r) => [slotKey(r), r]));
+  for (const slot of slots) {
+    const row = byKey.get(slotKey(slot));
+    const label = slot.type === 'body' ? `{{${slot.position}}}` : slot.type === 'header' ? 'תמונת הכותרת' : 'סיומת הקישור בכפתור';
+    if (!row) problems.push(`חסר ערך ל-${label}`);
+    else if (!allowed.has(row.source_path)) problems.push(`הערך של ${label} לא קיים בשלב הזה`);
+    else if ((slot.type === 'header') !== IMAGE_VALUE_PATHS.has(row.source_path)) {
+      problems.push(slot.type === 'header' ? 'תמונת הכותרת חייבת להיות תמונת ההזמנה' : `תמונה לא יכולה למלא את ${label}`);
+    }
+  }
+  const slotKeys = new Set(slots.map(slotKey));
+  if (rows.some((r) => !slotKeys.has(slotKey(r)))) problems.push('יש ערכים למשתנים שלא קיימים בתבנית');
+  return problems;
 }
 
 export type BoundTemplateParams = {

@@ -102,6 +102,9 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   'src/lib/data/admin/events.ts': 'manage_billing',
   'src/lib/data/admin/packages.ts': 'manage_billing',
   'src/lib/data/admin/settings.ts': 'manage_settings',
+  // Which Meta template each WhatsApp step sends and what fills its variables —
+  // the same key as the message_templates surface it replaces.
+  'src/lib/data/admin/whatsapp-templates.ts': 'manage_settings',
   'src/lib/data/admin/users.ts': 'manage_staff',
   'src/lib/data/admin/webhook-inbox.ts': 'view_webhooks',
   'src/lib/data/admin/access-log-view.ts': 'manage_staff',

@@ -6,18 +6,17 @@ import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
   bindTemplateParameters,
+  buildEventValues,
+  buildLeadValues,
   carriesRsvpQuickReplies,
+  LEAD_MESSAGE_KEYS,
   pickTemplateRoute,
+  readSendValue,
+  type SendValueGroups,
   type TemplateParameterRow,
   type TemplateRouteRow,
 } from '@/lib/whatsapp/template-route';
-import {
-  buildSendContext,
-  readSendContextPath,
-  type SendContext,
-  type SendContextInput,
-  type SendContextPath,
-} from '@/lib/whatsapp/template-spec';
+import { buildSendContext, type SendContextInput } from '@/lib/whatsapp/template-spec';
 
 // The ONE place a WhatsApp send decides which Meta template goes out and what
 // fills its variables — step 7 (cutover) of
@@ -128,19 +127,6 @@ function alertOnce(key: string, title: string, fields: Record<string, string>): 
   });
 }
 
-function reader(ctx: SendContext | null, extra: Record<string, string | null>) {
-  return (path: string): string | null | undefined => {
-    if (path in extra) return extra[path];
-    // Unknown = not a path the send context has at all (a typo in a mapping),
-    // as opposed to a known path whose value is missing for this event (null).
-    const [group, key] = path.split('.');
-    if (!ctx || !(group in ctx) || !key || !(key in ctx[group as keyof SendContext])) {
-      return undefined;
-    }
-    return readSendContextPath(ctx, path as SendContextPath);
-  };
-}
-
 /**
  * Step-level check only: does this step have an approved template for this
  * event type (text route)? For a batch gate before any recipient is bound.
@@ -213,14 +199,18 @@ export async function resolveWhatsAppSend(input: {
     return { kind: 'template_missing' };
   }
 
-  const ctx = input.values.event
-    ? buildSendContext({ event: input.values.event, guestFirstName: input.values.guestFirstName ?? null })
-    : null;
-  const read = reader(ctx, {
-    'event.invite_image': headerLink,
-    'lead.full_name': input.values.lead?.full_name?.trim() || null,
-    'lead.signup_ref': input.values.lead?.signup_ref?.trim() || null,
-  });
+  // The same value builders the admin picker lists (template-route.ts), so a
+  // path it offers is always one this can read. Unknown = not a value this step
+  // has at all (a bad mapping), as opposed to a value missing for this event.
+  const groups: SendValueGroups = LEAD_MESSAGE_KEYS.has(messageKey)
+    ? buildLeadValues(input.values.lead)
+    : input.values.event
+      ? buildEventValues(
+          buildSendContext({ event: input.values.event, guestFirstName: input.values.guestFirstName ?? null }),
+          headerLink,
+        )
+      : {};
+  const read = (path: string) => readSendValue(groups, path);
   const unknown = template.whatsapp_template_parameters
     .map((p) => p.source_path)
     .filter((p) => read(p) === undefined);

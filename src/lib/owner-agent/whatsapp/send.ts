@@ -189,6 +189,9 @@ export async function sendOwnerAgentButtons(
     p.buttons.length >= 1 &&
     p.buttons.length <= WA_LIMITS.buttonsMax &&
     uniqueIds(p.buttons.map((b) => b.id)) &&
+    // Meta also requires the button titles to be unique within one message
+    // (interactive reply buttons reference, read 2026-09-30).
+    uniqueIds(p.buttons.map((b) => b.title.trim())) &&
     p.buttons.every(
       (b) =>
         b.id !== '' &&
