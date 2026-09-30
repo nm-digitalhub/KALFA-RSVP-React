@@ -135,6 +135,12 @@ describe('templateSlots / parameterCoverageProblems', () => {
       .toEqual(['תמונת הכותרת חייבת להיות תמונת ההזמנה']);
   });
 
+  it('refuses two values for the same variable (not silently merged)', () => {
+    expect(parameterCoverageProblems(components, [...full, row('body', 2, 'event.time')], allowed)).toEqual([
+      'יש יותר מערך אחד ל-{{2}}',
+    ]);
+  });
+
   it('reports what the sender cannot fill instead of guessing', () => {
     const odd = [
       { type: 'HEADER', format: 'TEXT', text: 'היי {{1}}' },

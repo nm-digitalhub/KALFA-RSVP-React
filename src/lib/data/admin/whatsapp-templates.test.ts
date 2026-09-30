@@ -171,7 +171,7 @@ describe('saveTemplateParameters', () => {
     expect(result).toEqual({ ok: false, problems: ['הערך של {{1}} לא קיים בשלב הזה'] });
   });
 
-  it('updates the changed variable and logs the change', async () => {
+  it('saves the whole mapping in ONE upsert on the unique key and logs the change', async () => {
     const calls = fakeAdmin({
       whatsapp_message_templates: [{ data: TEXT_INVITE, error: null }],
       message_template_routes: [{ data: [{ message_key: 'invite' }], error: null }],
@@ -182,19 +182,69 @@ describe('saveTemplateParameters', () => {
       values: [{ type: 'body', sub_type: null, index: null, position: 1, source_path: 'guest.first_name' }],
     });
     expect(result).toEqual({ ok: true });
-    expect(calls).toContainEqual({
-      table: 'whatsapp_template_parameters',
-      method: 'update',
-      args: [{ source_path: 'guest.first_name' }],
-    });
+    const writes = calls.filter((c) => c.table === 'whatsapp_template_parameters');
+    expect(writes).toEqual([
+      {
+        table: 'whatsapp_template_parameters',
+        method: 'upsert',
+        args: [
+          [{ whatsapp_template_id: '111', type: 'body', sub_type: null, index: null, position: 1, parameter_name: null, source_path: 'guest.first_name' }],
+          { onConflict: 'whatsapp_template_id,type,index,position,parameter_name' },
+        ],
+      },
+    ]);
     expect(logActivity).toHaveBeenCalledWith({
       action: 'admin.templates.parameters_set',
       meta: {
         whatsapp_template_id: '111',
         template_name: 'invite_v2',
         changed: [{ slot: 'body|||1', from: 'guest.greeting_name', to: 'guest.first_name' }],
+        removed: [],
       },
     });
+  });
+
+  it('refuses two values for the same variable and writes nothing', async () => {
+    const calls = fakeAdmin({
+      whatsapp_message_templates: [{ data: TEXT_INVITE, error: null }],
+      message_template_routes: [{ data: [{ message_key: 'invite' }], error: null }],
+    });
+    const result = await saveTemplateParameters({
+      templateId: '111',
+      values: [
+        { type: 'body', sub_type: null, index: null, position: 1, source_path: 'guest.first_name' },
+        { type: 'body', sub_type: null, index: null, position: 1, source_path: 'event.venue' },
+      ],
+    });
+    expect(result).toEqual({ ok: false, problems: ['יש יותר מערך אחד ל-{{1}}'] });
+    expect(calls.some((c) => c.table === 'whatsapp_template_parameters')).toBe(false);
+  });
+
+  it('a failed upsert throws and deletes nothing (the old mapping stays whole)', async () => {
+    const calls = fakeAdmin({
+      whatsapp_message_templates: [
+        {
+          data: {
+            ...TEXT_INVITE,
+            whatsapp_template_parameters: [
+              ...TEXT_INVITE.whatsapp_template_parameters,
+              { id: 'old', type: 'body', sub_type: null, index: null, position: 9, source_path: 'event.time' },
+            ],
+          },
+          error: null,
+        },
+      ],
+      message_template_routes: [{ data: [{ message_key: 'invite' }], error: null }],
+      whatsapp_template_parameters: [{ data: null, error: { message: 'boom' } }],
+    });
+    await expect(
+      saveTemplateParameters({
+        templateId: '111',
+        values: [{ type: 'body', sub_type: null, index: null, position: 1, source_path: 'guest.first_name' }],
+      }),
+    ).rejects.toThrow('שמירת המשתנים נכשלה');
+    expect(calls.filter((c) => c.table === 'whatsapp_template_parameters').map((c) => c.method)).toEqual(['upsert']);
+    expect(logActivity).not.toHaveBeenCalled();
   });
 });
 

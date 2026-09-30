@@ -307,28 +307,48 @@ export async function saveTemplateParameters(input: {
   if (problems.length > 0) return { ok: false, problems };
 
   const current = new Map(((template.whatsapp_template_parameters ?? []) as ParamRow[]).map((p) => [slotKey(p), p]));
-  const changed: Array<{ slot: string; from: string | null; to: string }> = [];
-  for (const v of input.values) {
-    const row = current.get(slotKey(v));
-    if (row?.source_path === v.source_path) continue;
-    const { error } = row
-      ? await admin.from('whatsapp_template_parameters').update({ source_path: v.source_path }).eq('id', row.id)
-      : await admin.from('whatsapp_template_parameters').insert({
-          whatsapp_template_id: input.templateId,
-          type: v.type,
-          sub_type: v.sub_type,
-          index: v.index,
-          position: v.position,
-          source_path: v.source_path,
-        });
-    if (error) throw new Error('שמירת המשתנים נכשלה');
-    changed.push({ slot: slotKey(v), from: row?.source_path ?? null, to: v.source_path });
+  const changed = input.values
+    .filter((v) => current.get(slotKey(v))?.source_path !== v.source_path)
+    .map((v) => ({ slot: slotKey(v), from: current.get(slotKey(v))?.source_path ?? null, to: v.source_path }));
+  const wanted = new Set(input.values.map(slotKey));
+  const stale = [...current.values()].filter((p) => !wanted.has(slotKey(p)));
+  if (changed.length === 0 && stale.length === 0) return { ok: true };
+
+  // One statement for the whole mapping, so a failure leaves it as it was —
+  // never half old, half new. Conflict target = the table's unique key
+  // (whatsapp_template_parameters_key, NULLS NOT DISTINCT).
+  const { error: upsertError } = await admin.from('whatsapp_template_parameters').upsert(
+    input.values.map((v) => ({
+      whatsapp_template_id: input.templateId,
+      type: v.type,
+      sub_type: v.sub_type,
+      index: v.index,
+      position: v.position,
+      parameter_name: null,
+      source_path: v.source_path,
+    })),
+    { onConflict: 'whatsapp_template_id,type,index,position,parameter_name' },
+  );
+  if (upsertError) throw new Error('שמירת המשתנים נכשלה');
+  // Rows for variables the template no longer has (it changed in Meta). If
+  // this fails, the new mapping is already whole and the leftovers are the
+  // ones that were there before.
+  if (stale.length > 0) {
+    const { error: staleError } = await admin
+      .from('whatsapp_template_parameters')
+      .delete()
+      .in('id', stale.map((p) => p.id));
+    if (staleError) throw new Error('שמירת המשתנים נכשלה');
   }
-  if (changed.length === 0) return { ok: true };
 
   await logActivity({
     action: 'admin.templates.parameters_set',
-    meta: { whatsapp_template_id: input.templateId, template_name: template.name, changed },
+    meta: {
+      whatsapp_template_id: input.templateId,
+      template_name: template.name,
+      changed,
+      removed: stale.map((p) => ({ slot: slotKey(p), from: p.source_path })),
+    },
   });
   return { ok: true };
 }

@@ -215,6 +215,20 @@ export function parameterCoverageProblems(
   const { slots, unsupported } = templateSlots(components);
   const problems = unsupported.map((u) => `התבנית כוללת ${u}, שהמערכת עדיין לא יודעת למלא`);
   const allowed = new Set(allowedPaths);
+  // Two values for the same variable are refused, not silently merged.
+  const seen = new Set<string>();
+  const duplicated = new Set<string>();
+  for (const r of rows) {
+    const k = slotKey(r);
+    if (seen.has(k)) duplicated.add(k);
+    seen.add(k);
+  }
+  for (const slot of slots) {
+    if (duplicated.has(slotKey(slot))) {
+      const label = slot.type === 'body' ? `{{${slot.position}}}` : slot.type === 'header' ? 'תמונת הכותרת' : 'סיומת הקישור בכפתור';
+      problems.push(`יש יותר מערך אחד ל-${label}`);
+    }
+  }
   const byKey = new Map(rows.map((r) => [slotKey(r), r]));
   for (const slot of slots) {
     const row = byKey.get(slotKey(slot));
