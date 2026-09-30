@@ -1,7 +1,8 @@
 'use client';
 
+import { useWindowEvent } from '@mantine/hooks';
 import Script from 'next/script';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -76,29 +77,25 @@ export function EmbeddedSignupLauncher({ appId, configId }: { appId: string; con
   // so the callback reads the latest value without re-binding.
   const finishRef = useRef<FinishEvent | null>(null);
 
-  useEffect(() => {
-    function onMessage(event: MessageEvent) {
-      if (!isMetaOrigin(event.origin)) return;
-      const parsed = parseSessionEvent(event.data);
-      if (!parsed) return;
-      if (parsed.kind === 'finish') {
-        finishRef.current = parsed.event;
-      } else if (parsed.kind === 'cancel') {
-        setState((s) => (s.kind === 'popup' ? { kind: 'cancelled', step: parsed.currentStep } : s));
-      } else {
-        // Only while the popup is open. Once the action is running, its result
-        // decides the screen — leaving 'connecting' here would re-enable the
-        // button and let a second connect spend the one-shot sync again.
-        setState((s) =>
-          s.kind === 'popup'
-            ? { kind: 'meta-error', errorCode: parsed.errorCode, sessionId: parsed.sessionId }
-            : s,
-        );
-      }
+  useWindowEvent('message', (event) => {
+    if (!isMetaOrigin(event.origin)) return;
+    const parsed = parseSessionEvent(event.data);
+    if (!parsed) return;
+    if (parsed.kind === 'finish') {
+      finishRef.current = parsed.event;
+    } else if (parsed.kind === 'cancel') {
+      setState((s) => (s.kind === 'popup' ? { kind: 'cancelled', step: parsed.currentStep } : s));
+    } else {
+      // Only while the popup is open. Once the action is running, its result
+      // decides the screen — leaving 'connecting' here would re-enable the
+      // button and let a second connect spend the one-shot sync again.
+      setState((s) =>
+        s.kind === 'popup'
+          ? { kind: 'meta-error', errorCode: parsed.errorCode, sessionId: parsed.sessionId }
+          : s,
+      );
     }
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-  }, []);
+  });
 
   function initSdk() {
     if (!window.FB) {

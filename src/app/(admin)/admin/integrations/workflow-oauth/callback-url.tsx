@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useClipboard } from '@mantine/hooks';
 import { Check, Copy } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -23,20 +23,12 @@ import { Button } from '@/components/ui/button';
 // whole job here is to read it and paste it somewhere else.
 
 export function OAuthCallbackUrl({ url }: { url: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard?.writeText(url);
-      setCopied(true);
-      // Reverts on its own: a permanent ✓ would claim the clipboard still holds
-      // this value long after the operator has copied something else.
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // A blocked clipboard is not a failure worth interrupting for — the value
-      // is on screen and selectable, which is the fallback that always works.
-    }
-  };
+  // Reverts on its own (timeout): a permanent ✓ would claim the clipboard still
+  // holds this value long after the operator has copied something else. A
+  // blocked or missing clipboard only sets `error`, which is not worth
+  // interrupting for — the value is on screen and selectable, the fallback
+  // that always works.
+  const { copy, copied } = useClipboard({ timeout: 2000 });
 
   return (
     <div className="space-y-1.5 rounded-md border border-border bg-muted/30 p-3">
@@ -45,7 +37,7 @@ export function OAuthCallbackUrl({ url }: { url: string }) {
         <code dir="ltr" className="flex-1 break-all rounded bg-background px-2 py-1 text-xs">
           {url}
         </code>
-        <Button type="button" variant="outline" size="sm" onClick={() => void copy()}>
+        <Button type="button" variant="outline" size="sm" onClick={() => copy(url)}>
           {copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
           {copied ? 'הועתק' : 'העתקה'}
         </Button>

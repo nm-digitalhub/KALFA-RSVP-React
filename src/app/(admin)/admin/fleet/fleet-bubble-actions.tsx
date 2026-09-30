@@ -1,6 +1,7 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useClipboard } from '@mantine/hooks';
+import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { Check, Copy, MessageSquareReply, X } from 'lucide-react';
 
@@ -128,22 +129,15 @@ export function ContinueButton({ id, title }: { id: string; title: string }) {
 }
 
 export function CopyCommandButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
+  const clipboard = useClipboard({ timeout: 1500 });
+  const copied = clipboard.copied && !clipboard.error;
   return (
     <Button
       type="button"
       variant="ghost"
       size="icon-sm"
       aria-label={copied ? 'הועתק' : 'העתקת הפקודה'}
-      onClick={() => {
-        navigator.clipboard.writeText(value).then(
-          () => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          },
-          () => setCopied(false),
-        );
-      }}
+      onClick={() => clipboard.copy(value)}
     >
       {copied ? <Check className="text-success" aria-hidden /> : <Copy aria-hidden />}
     </Button>

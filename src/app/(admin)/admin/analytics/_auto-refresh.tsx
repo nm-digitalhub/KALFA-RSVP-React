@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useInterval } from '@mantine/hooks';
 import { useRouter } from 'next/navigation';
 
 // Gentle realtime refresh: re-runs the page's server components every 60s,
@@ -13,12 +13,14 @@ const REFRESH_MS = 60_000;
 export function AutoRefresh() {
   const router = useRouter();
 
-  useEffect(() => {
-    const id = setInterval(() => {
+  // Starts on mount, stops on unmount; the callback is read fresh on every tick.
+  useInterval(
+    () => {
       if (document.visibilityState === 'visible') router.refresh();
-    }, REFRESH_MS);
-    return () => clearInterval(id);
-  }, [router]);
+    },
+    REFRESH_MS,
+    { autoInvoke: true },
+  );
 
   return null;
 }

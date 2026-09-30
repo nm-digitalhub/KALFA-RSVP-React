@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useLocalStorage } from '@mantine/hooks';
+import { useEffect, useRef } from 'react';
 
 // The editor's own component library (@workflowbuilder/ui, the SDK's successor to
 // overflow-ui), not the app's shadcn primitives: it carries the editor's tokens.
@@ -29,40 +30,19 @@ import { isWatchedByUser, watchRun } from './run-watcher';
 // rows to the browser, `trigger_payload` included, under a wider gate. Not worth
 // it to animate two seconds.
 
-const STORAGE_KEY = 'kalfa-workflow-auto-watch';
-const CHANGE_EVENT = 'kalfa-workflow-auto-watch-change';
-
-function subscribe(callback: () => void) {
-  window.addEventListener('storage', callback);
-  window.addEventListener(CHANGE_EVENT, callback);
-  return () => {
-    window.removeEventListener('storage', callback);
-    window.removeEventListener(CHANGE_EVENT, callback);
-  };
-}
-
 /**
- * ⚠️ DEFAULT ON, WHICH IS WHY THIS READS `!== 'false'` RATHER THAN `=== 'true'`.
- * An absent key is a reader who has never touched the switch, and they get the
- * feature. The two other auto-refresh toggles in /admin default OFF and test for
- * `'true'`; copying that test here would have made this default off and looked
- * right.
+ * ⚠️ DEFAULT ON. An absent key is a reader who has never touched the switch, and
+ * they get the feature. The two other auto-refresh toggles in /admin default
+ * OFF; copying their `defaultValue: false` here would have made this default
+ * off and looked right.
  *
- * Wrapped because `localStorage` THROWS in a browser with site data blocked, and
- * `useSyncExternalStore` calls this during render — an exception here takes the
- * whole editor down, not just the switch.
+ * Mantine's useLocalStorage: the default on the server and in the first client
+ * render (no hydration mismatch), the stored value from an effect right after,
+ * kept in step across tabs and within this one. A browser with site data
+ * blocked (where `localStorage` THROWS) gets the default instead of taking the
+ * whole editor down.
  */
-function getSnapshot() {
-  try {
-    return localStorage.getItem(STORAGE_KEY) !== 'false';
-  } catch {
-    return true;
-  }
-}
-
-function getServerSnapshot() {
-  return true;
-}
+const STORAGE_KEY = 'kalfa-workflow-auto-watch';
 
 export type NewestRun = { id: string; status: string } | null;
 
@@ -104,7 +84,7 @@ export function shouldAutoWatch(args: {
 }
 
 export function RunAutoWatch({ newestRun }: { newestRun: NewestRun }) {
-  const enabled = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const [enabled, setEnabled] = useLocalStorage({ key: STORAGE_KEY, defaultValue: true });
 
   // The newest run this component has already reacted to.
   //
@@ -138,18 +118,9 @@ export function RunAutoWatch({ newestRun }: { newestRun: NewestRun }) {
     }
   }, [newestRun?.id, newestRun?.status, newestRun, enabled]);
 
-  const onChange = (next: boolean) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, String(next));
-    } catch {
-      // Blocked site data: the switch still works for this page's lifetime.
-    }
-    window.dispatchEvent(new Event(CHANGE_EVENT));
-  };
-
   return (
     <label className="flex items-center gap-2 text-sm text-muted-foreground">
-      <Switch checked={enabled} onChange={(checked) => onChange(checked)} />
+      <Switch checked={enabled} onChange={(checked) => setEnabled(checked)} />
       הצגה אוטומטית של הרצה חדשה על הקנבס
     </label>
   );

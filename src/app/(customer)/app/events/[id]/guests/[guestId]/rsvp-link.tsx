@@ -1,6 +1,7 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useClipboard } from '@mantine/hooks';
+import { useActionState } from 'react';
 
 import { FormError, FormNotice } from '@/components/forms';
 import type { FormState } from '@/lib/validation/result';
@@ -25,20 +26,10 @@ export function RsvpLink({
   revokeAction: BoundAction;
   regenerateAction: BoundAction;
 }) {
-  const [copied, setCopied] = useState(false);
+  const clipboard = useClipboard({ timeout: 2000 });
   const [revokeState, revoke] = useActionState(revokeAction, null);
   const [regenState, regenerate] = useActionState(regenerateAction, null);
   const revoked = revokedAt != null;
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
-  }
 
   return (
     <section className="space-y-3 rounded-lg border border-input p-4">
@@ -61,11 +52,11 @@ export function RsvpLink({
         />
         <button
           type="button"
-          onClick={copy}
+          onClick={() => clipboard.copy(url)}
           disabled={revoked || !url}
           className="shrink-0 rounded-md border border-input px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
         >
-          {copied ? 'הועתק' : 'העתקה'}
+          {clipboard.copied && !clipboard.error ? 'הועתק' : 'העתקה'}
         </button>
       </div>
 

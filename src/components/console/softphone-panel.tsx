@@ -1,5 +1,6 @@
 'use client';
 
+import { useTimeout } from '@mantine/hooks';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -284,13 +285,10 @@ function SoftphonePanelBody({
   const [rosterLoaded, setRosterLoaded] = useState(false);
 
   useEffect(() => subscribePhone(setPhoneSnap), []);
-  useEffect(() => {
-    // Deferred by a macrotask (availability-status.tsx precedent): setting
-    // state straight inside the effect body would set state synchronously
-    // during the same commit (cascading render).
-    const timer = setTimeout(() => setNode(readSavedNode()), 0);
-    return () => clearTimeout(timer);
-  }, []);
+  // Deferred by a macrotask (availability-status.tsx precedent): setting
+  // state straight inside an effect body would set state synchronously
+  // during the same commit (cascading render).
+  useTimeout(() => setNode(readSavedNode()), 0, { autoInvoke: true });
 
   // Self presence + roster: initial load, live refresh on any agent_status
   // change, polling fallback only while the Realtime channel isn't joined.

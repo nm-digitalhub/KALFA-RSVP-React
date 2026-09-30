@@ -3,6 +3,7 @@
 // globals must be referenced where they are used (only here).
 'use client';
 
+import { useDebouncedCallback, useUncontrolled } from '@mantine/hooks';
 import { MapPin } from 'lucide-react';
 import {
   useCallback,
@@ -118,13 +119,16 @@ export function PlacesAutocomplete({
   const listboxId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const requestIdRef = useRef(0);
-  const debounceTimeoutRef = useRef<number | null>(null);
   const blurTimeoutRef = useRef<number | null>(null);
   const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
 
-  const isControlled = value !== undefined;
-  const [internalValue, setInternalValue] = useState(defaultValue);
-  const inputValue = isControlled ? value : internalValue;
+  // Controlled when `value` is passed; otherwise owns its state from
+  // `defaultValue`. Either way `onValueChange` hears every change.
+  const [inputValue, setInputValue] = useUncontrolled({
+    value,
+    defaultValue,
+    onChange: onValueChange,
+  });
 
   const { isLoaded, error, hasApiKey, GoogleMapsScript } = useGooglePlacesScript({ apiKey });
   // Graceful degradation: without a key, or once the script failed, this is a
@@ -172,21 +176,8 @@ export function PlacesAutocomplete({
     };
   }, [open, updateDropdownRect]);
 
-  const setInputValue = useCallback(
-    (nextValue: string) => {
-      if (!isControlled) {
-        setInternalValue(nextValue);
-      }
-      onValueChange?.(nextValue);
-    },
-    [isControlled, onValueChange],
-  );
-
   useEffect(() => {
     return () => {
-      if (debounceTimeoutRef.current !== null) {
-        window.clearTimeout(debounceTimeoutRef.current);
-      }
       if (blurTimeoutRef.current !== null) {
         window.clearTimeout(blurTimeoutRef.current);
       }
@@ -272,11 +263,15 @@ export function PlacesAutocomplete({
     [closeSuggestions, countryCode, isLoaded, openSuggestions],
   );
 
+  // Always calls the latest fetchSuggestions; a pending call is cancelled on
+  // unmount (never flushed), so an unmounted field never fetches.
+  const debouncedFetchSuggestions = useDebouncedCallback((input: string) => {
+    void fetchSuggestions(input);
+  }, debounceMs);
+
   const queueFetchSuggestions = useCallback(
     (input: string) => {
-      if (debounceTimeoutRef.current !== null) {
-        window.clearTimeout(debounceTimeoutRef.current);
-      }
+      debouncedFetchSuggestions.cancel();
       requestIdRef.current += 1;
       setLoadingSuggestions(false);
 
@@ -286,12 +281,9 @@ export function PlacesAutocomplete({
         return;
       }
 
-      debounceTimeoutRef.current = window.setTimeout(() => {
-        debounceTimeoutRef.current = null;
-        void fetchSuggestions(input);
-      }, debounceMs);
+      debouncedFetchSuggestions(input);
     },
-    [closeSuggestions, debounceMs, fetchSuggestions],
+    [closeSuggestions, debouncedFetchSuggestions],
   );
 
   const handleSelectSuggestion = useCallback(
