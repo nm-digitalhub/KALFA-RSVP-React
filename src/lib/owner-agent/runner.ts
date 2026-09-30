@@ -427,20 +427,6 @@ export function parseEnvAssignment(contents: string, key: string): string | null
   return token;
 }
 
-async function loadOauthToken(tokenFile: string): Promise<string> {
-  let contents: string;
-  try {
-    // Read at run time, every run: a token the owner rotated with
-    // `claude setup-token` is picked up without a restart.
-    contents = await readFile(tokenFile, 'utf8');
-  } catch {
-    throw new OwnerAgentRunError('token_unavailable');
-  }
-  const token = parseTokenEnv(contents);
-  if (!token) throw new OwnerAgentRunError('token_unavailable');
-  return token;
-}
-
 // Read at run time too, like the OAuth token: a rotated PAT in .env.local is
 // picked up without a restart, and the smoke script (node without --env-file)
 // reads the same file the consumer does.
@@ -480,13 +466,18 @@ export function allowedToolsFor(permissions: readonly string[]): string[] {
 // what it sees in a fleet run; then the OAuth token and the
 // Supabase server's access token (deviation 4: env, never argv). Nothing else,
 // and nothing inherited from process.env.
-export function buildCliEnv(hostDir: string, token: string, supabaseToken: string): NodeJS.ProcessEnv {
+//
+// ⚠️ NO CLAUDE_CODE_OAUTH_TOKEN (owner decision 2026-09-28). The CLI then uses
+// the claude.ai login stored under HOME ($HOME/.claude/.credentials.json),
+// whose scopes include user:sessions:claude_code. The fleet's setup-token was
+// refused by the routines API (401 oauth_scope_insufficient, measured
+// 2026-09-28), so RemoteTrigger needs the stored login.
+export function buildCliEnv(hostDir: string, supabaseToken: string): NodeJS.ProcessEnv {
   return {
     HOME: hostDir,
     PATH: `${hostDir}/.supabase/bin:${hostDir}/.local/bin:/usr/local/bin:/usr/bin:/bin`,
     NODE_ENV: 'production',
     TZ: 'Asia/Jerusalem',
-    CLAUDE_CODE_OAUTH_TOKEN: token,
     SUPABASE_ACCESS_TOKEN: supabaseToken,
   };
 }
@@ -571,7 +562,7 @@ export function buildOwnerAgentArgs(options: {
     '--mcp-config',
     options.mcpConfig,
     '--tools',
-    'RemoteTrigger',
+    'RemoteTrigger,Read',
   ];
   // Omitted, not passed empty, when nothing is permitted: an empty value of a
   // variadic option is not something the CLI documents. (Since the Supabase
@@ -821,7 +812,6 @@ export async function runOwnerAgent(
   } catch {
     throw new OwnerAgentRunError('runner_misconfigured');
   }
-  const token = await loadOauthToken(paths.tokenFile);
   const supabase = await loadSupabaseAccess(paths);
 
   const permissions = [...new Set(run.permissions)].sort();
@@ -852,7 +842,7 @@ export async function runOwnerAgent(
       structured,
     }),
     cwd: paths.cwd,
-    env: buildCliEnv(paths.hostDir, token, supabase.token),
+    env: buildCliEnv(paths.hostDir, supabase.token),
     input: withAttachments ? buildStreamJsonInput(run.prompt, run.attachments ?? []) : run.prompt,
     timeoutMs: run.timeoutMs,
     killAfterMs: deps.killAfterMs ?? KILL_AFTER_MS,

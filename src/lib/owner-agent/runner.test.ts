@@ -204,7 +204,7 @@ function expectedArgs(opts: { allowed: string[]; permissions: string; resume?: s
     '--mcp-config',
     mcpConfig,
     '--tools',
-    'RemoteTrigger',
+    'RemoteTrigger,Read',
     '--allowedTools',
     [...opts.allowed, ...SUPABASE_TOOLS].join(','),
     '--system-prompt',
@@ -293,11 +293,11 @@ describe('the walls that must always be there', () => {
     [baseInput({ permissions: [] })],
     [baseInput({ permissions: ['view_billing'] })],
     [baseInput({ resumeSessionId: SESSION, permissions: ['view_webhooks', 'manage_voice'] })],
-  ])('--tools RemoteTrigger and --strict-mcp-config are present (%#)', async (input) => {
+  ])('--tools RemoteTrigger,Read and --strict-mcp-config are present (%#)', async (input) => {
     const { call } = await runWith(input);
     const tools = call.args.indexOf('--tools');
     expect(tools).toBeGreaterThan(-1);
-    expect(call.args[tools + 1]).toBe('RemoteTrigger');
+    expect(call.args[tools + 1]).toBe('RemoteTrigger,Read');
     expect(call.args.filter((a) => a === '--tools')).toHaveLength(1);
     expect(call.args).toContain('--strict-mcp-config');
     expect(call.args.filter((a) => a === '--mcp-config')).toHaveLength(1);
@@ -343,11 +343,10 @@ describe('the walls that must always be there', () => {
 });
 
 describe('the token', () => {
-  it('is read from .claude/fleet/.token.env into the child env — and only there', async () => {
+  it('is NOT passed: the CLI uses the claude.ai login stored under HOME (routines need its scope)', async () => {
     const { call } = await runWith(baseInput());
-    expect(call.env.CLAUDE_CODE_OAUTH_TOKEN).toBe(TOKEN);
-    expect(call.args.some((a) => a.includes(TOKEN))).toBe(false);
-    expect(call.input).not.toContain(TOKEN);
+    expect(call.env).not.toHaveProperty('CLAUDE_CODE_OAUTH_TOKEN');
+    expect(JSON.stringify(call)).not.toContain(TOKEN);
   });
 
   it('the child env is built, not inherited: HOME/PATH pinned like run-role.sh, no server secrets', async () => {
@@ -359,8 +358,6 @@ describe('the token', () => {
       PATH: `${host}/.supabase/bin:${host}/.local/bin:/usr/local/bin:/usr/bin:/bin`,
       NODE_ENV: 'production',
       TZ: 'Asia/Jerusalem',
-      CLAUDE_CODE_OAUTH_TOKEN: TOKEN,
-
       SUPABASE_ACCESS_TOKEN: SB_TOKEN,
     });
     expect(call.env).not.toHaveProperty('CLAUDE_CODE_DISABLE_CLAUDE_MDS');
@@ -404,26 +401,10 @@ describe('the token', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('is re-read on every run (a rotated token needs no restart)', async () => {
-    const { exec, calls } = fakeExec();
-    await runOwnerAgent(baseInput(), { repoDir: repo, exec, nodePath: NODE });
-    writeFileSync(p('.claude/fleet/.token.env'), 'export CLAUDE_CODE_OAUTH_TOKEN="sk-ant-oat01-ROTATED"\n');
-    await runOwnerAgent(baseInput(), { repoDir: repo, exec, nodePath: NODE });
-    expect(calls.map((c) => c.env.CLAUDE_CODE_OAUTH_TOKEN)).toEqual([TOKEN, 'sk-ant-oat01-ROTATED']);
-  });
-
-  it('a missing file is token_unavailable, and the CLI is never started', async () => {
+  it('runs without the fleet token file', async () => {
     unlinkSync(p('.claude/fleet/.token.env'));
-    const { err, calls } = await failureOf(baseInput());
-    expect(err.code).toBe('token_unavailable');
-    expect(calls).toHaveLength(0);
-  });
-
-  it('a file with no assignment is token_unavailable', async () => {
-    writeFileSync(p('.claude/fleet/.token.env'), '# nothing here\nOTHER=1\n');
-    const { err, calls } = await failureOf(baseInput());
-    expect(err.code).toBe('token_unavailable');
-    expect(calls).toHaveLength(0);
+    const { call } = await runWith(baseInput());
+    expect(call.env).not.toHaveProperty('CLAUDE_CODE_OAUTH_TOKEN');
   });
 
   it('never appears in an error, and the runner logs nothing at all', async () => {

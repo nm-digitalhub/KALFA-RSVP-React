@@ -15,7 +15,8 @@
       "mcp__owner_agent__system_health",
       "mcp__supabase__execute_sql",
       "mcp__supabase__list_tables",
-      "RemoteTrigger"
+      "RemoteTrigger",
+      "Read"
     ],
     "deny": [
       "Agent",
@@ -23,7 +24,6 @@
       "Bash",
       "PowerShell",
       "REPL",
-      "Read",
       "Write",
       "Edit",
       "MultiEdit",
