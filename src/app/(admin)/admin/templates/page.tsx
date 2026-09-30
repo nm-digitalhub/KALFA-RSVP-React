@@ -18,7 +18,7 @@ export default async function AdminTemplatesPage() {
     <div className="space-y-6">
       <PageHeading>תבניות פנייה</PageHeading>
 
-      <section className="space-y-4 rounded-lg border border-border bg-card p-5">
+      <section className="space-y-4 rounded-lg border border-border bg-card p-3 sm:p-5">
         <div>
           <h2 className="text-lg font-semibold">תבניות WhatsApp לפי שלב</h2>
           <p className="text-sm text-muted-foreground">

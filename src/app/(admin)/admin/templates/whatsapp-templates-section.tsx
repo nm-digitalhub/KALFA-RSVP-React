@@ -112,9 +112,17 @@ function TemplateSelect({
 }) {
   const selected = templates.find((t) => t.id === value);
   return (
-    <Select value={value ?? ''} onValueChange={(next) => typeof next === 'string' && next && onChange(next)} disabled={disabled}>
-      <SelectTrigger aria-label={label} className="min-w-0 flex-1">
-        <SelectValue>{selected ? `${selected.name} (${selected.language})` : 'בחרו תבנית מאושרת'}</SelectValue>
+    <Select
+      value={value ?? ''}
+      onValueChange={(next) => typeof next === 'string' && next && onChange(next)}
+      disabled={disabled}
+    >
+      <SelectTrigger aria-label={label} className="h-10 w-full min-w-0 md:h-9">
+        {/* Base UI's value does not truncate on its own: a long template name
+            spilled out of the trigger on a phone (measured 384px wide). */}
+        <SelectValue className="min-w-0 flex-1 truncate text-start">
+          {selected ? `${selected.name} (${selected.language})` : 'בחרו תבנית מאושרת'}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         {templates.map((t) => (
@@ -152,22 +160,26 @@ function RouteRow({
 
   return (
     <li className="flex flex-col gap-1.5 rounded-md border border-border p-2.5">
+      {/* Phone: the label and "הסרה" share a line, the select takes the next
+          one at full width. From sm up: label, select, remove on one line. */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="min-w-28 text-sm font-medium">{routeLabel(route)}</span>
-        <TemplateSelect
-          label={`תבנית עבור ${routeLabel(route)}`}
-          value={route.templateId}
-          templates={eligible}
-          disabled={pending}
-          onChange={(templateId) =>
-            startTransition(async () => setResult(await setTemplateRouteAction({ ...target, templateId })))
-          }
-        />
+        <span className="text-sm font-medium sm:min-w-28">{routeLabel(route)}</span>
+        <div className="order-last w-full min-w-0 sm:order-none sm:w-auto sm:flex-1">
+          <TemplateSelect
+            label={`תבנית עבור ${routeLabel(route)}`}
+            value={route.templateId}
+            templates={eligible}
+            disabled={pending}
+            onChange={(templateId) =>
+              startTransition(async () => setResult(await setTemplateRouteAction({ ...target, templateId })))
+            }
+          />
+        </div>
         {!isDefault ? (
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            className="ms-auto sm:ms-0"
             disabled={pending}
             onClick={() => startTransition(async () => setResult(await removeTemplateRouteAction(target)))}
           >
@@ -193,8 +205,11 @@ function AddRoute({ step, templates }: { step: AdminWhatsAppStep; templates: Adm
     <div className="flex flex-col gap-1.5 rounded-md border border-dashed border-border p-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-muted-foreground">מסלול נוסף:</span>
-        <Select value={eventType} onValueChange={(v) => typeof v === 'string' && setEventType(v as EventType | 'default')}>
-          <SelectTrigger aria-label="סוג אירוע למסלול" className="w-40">
+        <Select
+          value={eventType}
+          onValueChange={(v) => typeof v === 'string' && setEventType(v as EventType | 'default')}
+        >
+          <SelectTrigger aria-label="סוג אירוע למסלול" className="h-10 w-full sm:w-40 md:h-9">
             <SelectValue>{eventType === 'default' ? 'ברירת מחדל' : EVENT_TYPE_LABELS[eventType]}</SelectValue>
           </SelectTrigger>
           <SelectContent>
@@ -206,28 +221,31 @@ function AddRoute({ step, templates }: { step: AdminWhatsAppStep; templates: Adm
             ))}
           </SelectContent>
         </Select>
-        <label className="flex items-center gap-1.5 text-sm">
+        {/* min-h-10: the whole label is the touch target, not the 16px box. */}
+        <label className="flex min-h-10 items-center gap-2 text-sm">
           <Checkbox checked={withMedia} onCheckedChange={(checked) => setWithMedia(checked === true)} />
           עם תמונת הזמנה
         </label>
-        <TemplateSelect
-          label="תבנית למסלול הנוסף"
-          value={null}
-          templates={eligible}
-          disabled={pending || taken(eventType, withMedia)}
-          onChange={(templateId) =>
-            startTransition(async () =>
-              setResult(
-                await setTemplateRouteAction({
-                  messageKey: step.messageKey,
-                  eventType: eventType === 'default' ? null : eventType,
-                  withMedia,
-                  templateId,
-                }),
-              ),
-            )
-          }
-        />
+        <div className="w-full min-w-0 sm:w-auto sm:flex-1">
+          <TemplateSelect
+            label="תבנית למסלול הנוסף"
+            value={null}
+            templates={eligible}
+            disabled={pending || taken(eventType, withMedia)}
+            onChange={(templateId) =>
+              startTransition(async () =>
+                setResult(
+                  await setTemplateRouteAction({
+                    messageKey: step.messageKey,
+                    eventType: eventType === 'default' ? null : eventType,
+                    withMedia,
+                    templateId,
+                  }),
+                ),
+              )
+            }
+          />
+        </div>
       </div>
       {taken(eventType, withMedia) ? (
         <p className="text-xs text-muted-foreground">למסלול הזה כבר יש תבנית — שנו אותה בשורה שלו.</p>
@@ -299,19 +317,17 @@ function TemplateVariables({ template, valuePaths }: { template: AdminMetaTempla
     );
 
   return (
-    <div className="flex flex-col gap-3 rounded-md bg-muted/30 p-3">
+    <div className="flex min-w-0 flex-col gap-3 rounded-md bg-muted/30 p-2.5 sm:p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium" dir="ltr">
+        <span className="min-w-0 font-medium break-all" dir="ltr">
           {template.name}
         </span>
         <Badge variant="outline">{template.language}</Badge>
-        <Badge variant={template.status === 'APPROVED' ? 'secondary' : 'destructive'}>
-          {template.status ?? '—'}
-        </Badge>
+        <Badge variant={template.status === 'APPROVED' ? 'secondary' : 'destructive'}>{template.status ?? '—'}</Badge>
         {template.category ? <Badge variant="outline">{template.category}</Badge> : null}
       </div>
       {bodyText(template.components) ? (
-        <p className="rounded-md border border-border bg-background p-2.5 text-sm leading-6 whitespace-pre-wrap">
+        <p className="rounded-md border border-border bg-background p-2.5 text-sm leading-6 whitespace-pre-wrap wrap-anywhere">
           {bodyText(template.components)}
         </p>
       ) : null}
@@ -343,7 +359,7 @@ function TemplateVariables({ template, valuePaths }: { template: AdminMetaTempla
       )}
       {template.parameters.length > 0 ? (
         <div className="flex items-center gap-3">
-          <Button type="button" size="sm" disabled={pending || !dirty} onClick={save}>
+          <Button type="button" disabled={pending || !dirty} onClick={save}>
             {pending ? 'שומר…' : 'שמירת המשתנים'}
           </Button>
           <Problems result={result} />
@@ -365,7 +381,10 @@ function StepCard({ step, templates }: { step: AdminWhatsAppStep; templates: Adm
     .filter((t): t is AdminMetaTemplate => !!t);
 
   return (
-    <section aria-labelledby={`step-${step.messageKey}`} className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+    <section
+      aria-labelledby={`step-${step.messageKey}`}
+      className="flex flex-col gap-3 rounded-lg border border-border bg-card p-3 sm:p-4"
+    >
       <header className="flex flex-wrap items-center gap-2">
         <h3 id={`step-${step.messageKey}`} className="text-base font-semibold">
           {step.label}
@@ -403,16 +422,13 @@ export function WhatsAppTemplatesSection({ data }: { data: WhatsAppTemplateAdmin
         <Button
           type="button"
           variant="outline"
-          size="sm"
           disabled={pending}
           onClick={() => startTransition(async () => setSyncResult(await requestTemplateSyncAction()))}
         >
           {pending ? 'מבקש…' : 'סנכרון מול Meta עכשיו'}
         </Button>
         <span className="text-xs text-muted-foreground">
-          {data.lastSyncedAt
-            ? `סונכרן לאחרונה: ${formatIsraelDateTime(data.lastSyncedAt)}`
-            : 'עוד לא סונכרן'}
+          {data.lastSyncedAt ? `סונכרן לאחרונה: ${formatIsraelDateTime(data.lastSyncedAt)}` : 'עוד לא סונכרן'}
         </span>
         {syncResult?.ok ? (
           <FormNotice message="הבקשה נשלחה — הסנכרון רץ ברקע, רעננו בעוד דקה" />
