@@ -653,7 +653,9 @@ export function resolveParams<const P extends readonly SendContextPath[]>(
 }
 
 // Each approved layout as data: position i ↔ {{i+1}}. These arrays are what the
-// step-5 backfill writes into whatsapp_template_parameters.
+// step-5 backfill writes into whatsapp_template_parameters. ⚠️ TEMPORARY: once
+// the backfill ran, the table is the source of truth; this constant, the code
+// builders and send-context.test.ts are deleted at step 7 (cutover).
 export const PARAM_CONTRACT_PATHS = {
   generic: [
     'guest.greeting_name', 'event.type_label', 'event.celebrants_text', 'event.weekday',

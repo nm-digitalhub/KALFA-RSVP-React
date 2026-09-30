@@ -152,6 +152,7 @@
    - הבריאות: לכל התבניות שיש להן ניתוב.
    - `admin/packages.ts`.
    - relocation G2: כותב לניתוב.
+   - **מחיקת פיגום המעבר:** הבונים הישנים (`buildTemplateParams` וכו'), `PARAM_CONTRACT_PATHS` ו-`send-context.test.ts`. אחרי שלב זה המקור היחיד לצורת ההודעה הוא `whatsapp_template_parameters`.
 8. **המסך.**
    - לכל שלב, טבלת ניתוב (סוג אירוע, תמונה) עם בחירה מרשימה של התבניות המאושרות.
    - לכל תבנית: התוכן מ-Meta, ולכל משתנה שדה עם רשימה שנפתחת ב-`{`. בנוי על `popover` ו-`command`, שכבר קיימים ב-`src/components/ui`.
