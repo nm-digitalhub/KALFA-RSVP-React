@@ -407,7 +407,7 @@
 | `billing_route` | `billing_route` | כן | `hold_j5` (מסלול A) / `saved_token` (מסלול B) |
 | `final_charge_amount` | `numeric` | כן | |
 | `final_invoice_document_id` | `integer` | כן | |
-| **מסלול A (J5 hold):** `auth_amount` `numeric`, `auth_number` `text`, `authorized_at` / `auth_expires_at` `timestamptz`, `capture_status` `text` (pending/captured/failed…), `release_status` `text` (pending/released/expired), `sumit_order_document_id` `integer`, `auth_external_ref` `text` (ה‑`Customer.ExternalIdentifier` — העוגן היחיד ל‑capture, מיגרציה 0025) | | כולן כן | |
+| **מסלול A (J5 hold):** `auth_amount` `numeric`, `auth_number` `text`, `authorized_at` / `auth_expires_at` `timestamptz`, `capture_status` `text` (CHECK: pending/authorized/hold_failed/hold_review), `release_status` `text` (CHECK: released — נכתב רק ע"י `sumit-hold-reconcile`; ‏NULL = עוד לא נראה שחרור), ‏(`charge_status` בשורת הקבלה למטה — CHECK: pending/charged/nothing_to_charge/charge_failed/charge_review; מיגרציה `20260928231225`), `sumit_order_document_id` `integer`, `auth_external_ref` `text` (ה‑`Customer.ExternalIdentifier` — העוגן היחיד ל‑capture, מיגרציה 0025) | | כולן כן | |
 | **מסלול B / כרטיס שמור:** `card_token_ref` `text`, `card_exp_month` / `card_exp_year` `smallint` (0026 — לעולם לא PAN/CVV), `card_citizen_id` `text` (0027 — **PII**, ת"ז של בעל הכרטיס, נדרש ע"י SUMIT לחיוב טוקן) | | כולן כן | |
 | **קבלה/חיוב (0027):** `charge_status` `text`, `charged_at` `timestamptz`, `sumit_charge_document_id` / `charge_document_number` / `charge_payment_id` `integer`, `charge_document_url` / `charge_auth_number` `text` | | כולן כן | |
 | `created_at`, `updated_at` | `timestamptz` | לא | `now()`; טריגר `trg_campaigns_updated` |

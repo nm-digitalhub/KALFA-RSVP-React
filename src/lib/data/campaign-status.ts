@@ -42,3 +42,35 @@ export function hasAnyOperationalCampaign(
 ): boolean {
   return campaigns.some((c) => isOperationalCampaignStatus(c.status));
 }
+
+// When a campaign may still be CANCELLED (cancelCampaign → cancel_campaign RPC).
+// Cancel is a pre-money wind-down only: once a card hold, a charge or a billed
+// reach exists, money has to be settled or refunded instead (the cancellation-
+// request flow), never erased by flipping the status. This mirrors the RPC's own
+// predicate (migration 20260630223635) so the staff button is shown exactly when
+// the RPC would accept it — before 2026-09-29 the button also showed on active,
+// paused, scheduled and closed campaigns, where every click failed with
+// "לא ניתן לבטל קמפיין זה". campaign-status.test.ts pins the parity.
+export const CANCELLABLE_CAMPAIGN_STATUSES = [
+  'draft',
+  'pending_approval',
+  'approved',
+] as const satisfies readonly CampaignStatus[];
+
+const BLOCKING_CAPTURE_STATUSES = new Set(['authorized', 'pending', 'hold_review']);
+
+export function isCampaignCancellable(
+  campaign: {
+    status: CampaignStatus;
+    capture_status: string | null;
+    charge_status: string | null;
+  },
+  reachedCount: number,
+): boolean {
+  return (
+    (CANCELLABLE_CAMPAIGN_STATUSES as readonly CampaignStatus[]).includes(campaign.status) &&
+    !BLOCKING_CAPTURE_STATUSES.has(campaign.capture_status ?? '') &&
+    campaign.charge_status === null &&
+    reachedCount === 0
+  );
+}

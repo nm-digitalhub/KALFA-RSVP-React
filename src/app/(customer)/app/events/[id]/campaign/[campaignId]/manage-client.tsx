@@ -27,6 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import type { GaActionEvent } from '@/lib/analytics/ga-event-contracts';
 import type { CampaignStatus } from '@/lib/data/campaigns';
+import { isCampaignCancellable } from '@/lib/data/campaign-status';
 import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
 import { computeChargeAmount } from '@/lib/data/close-charge-amount';
 import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
@@ -1030,9 +1031,11 @@ export function ManageClient({
     status === 'closed' &&
     campaign.capture_status === 'authorized' &&
     !settled;
-  const canCancel =
-    viewerIsAdmin &&
-    ['active', 'paused', 'approved', 'scheduled', 'closed'].includes(status);
+  // Only where the cancel_campaign RPC would accept it (pre-money). A campaign
+  // with a hold, a charge or a billed reach is settled or refunded through the
+  // cancellation-request flow instead — the button used to show on closed
+  // campaigns too, and every click failed.
+  const canCancel = viewerIsAdmin && isCampaignCancellable(campaign, reached);
   const showLifecycleWarning = isPast && activatableState;
   // Split from showThankyou so a failed load only warns where the panel would
   // have appeared anyway — a draft campaign has no schedule to miss.
