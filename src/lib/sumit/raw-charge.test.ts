@@ -188,7 +188,7 @@ describe('chargeRaw', () => {
     // path it existed to predict. The business is an עוסק פטור: no VAT field,
     // company default balances the document.
     expect('VATRate' in body).toBe(false);
-    expect(body.VATIncluded).toBe(true); // company-default VAT still applies
+    expect('VATIncluded' in body).toBe(false); // עוסק פטור — company default, same as production
   });
 
   it('sends VATRate only when the operator explicitly supplies one', async () => {
@@ -309,5 +309,39 @@ describe('chargeRaw', () => {
     expect(res.ok).toBe(false);
     expect(res.httpStatus).toBe(500);
     expect(res.raw).toBe('plain error');
+  });
+});
+
+describe('chargeRaw — capture a J5 hold by AuthNumber', () => {
+  it('sends CreditCardAuthNumber and does NOT send AutoCapture (SUMIT support, 2026-09-29)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ Status: 0, Data: { Payment: { ValidPayment: true } } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await chargeRaw({
+      companyId: 1,
+      apiKey: 'k',
+      savedCardToken: 'tok',
+      savedCardExpMonth: 7,
+      savedCardExpYear: 2031,
+      savedCardCitizenId: '000000018',
+      amount: '1',
+      vatRate: '',
+      creditCardAuthNumber: '0759469',
+      customerId: 2127277236,
+      externalId: 'poc-capture-1',
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.CreditCardAuthNumber).toBe('0759469');
+    expect('AutoCapture' in body).toBe(false);
+    expect(body.Customer.ID).toBe(2127277236);
+    expect(body.PaymentMethod.CreditCard_Token).toBe('tok');
+    expect('VATIncluded' in body).toBe(false);
+    expect('VATRate' in body).toBe(false);
+    expect(body.Items[0].UnitPrice).toBe(1);
   });
 });

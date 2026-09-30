@@ -133,6 +133,7 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // campaigns hold a chargeable card, and resolving one for a live test charge,
   // is billing authority, not general staff access.
   'src/lib/data/admin/sumit-test.ts': 'manage_billing',
+  'src/lib/data/admin/sumit-test-transactions.ts': 'manage_billing',
   // Owner-only surfaces: they gate on requirePlatformOwner and name no key.
   'src/lib/data/admin/platform-roles.ts': [],
   'src/lib/data/admin/relocation.ts': [],

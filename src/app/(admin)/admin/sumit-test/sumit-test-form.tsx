@@ -234,9 +234,19 @@ export function SumitTestForm({
   companyId,
   apiPublicKey,
   chargeableCampaigns = [],
+  testHolds = [],
 }: {
   companyId: number;
   apiPublicKey: string;
+  /** Successful J5 holds made on this screen (sumit_test_transactions). Labels
+   *  + row ids ONLY — AuthNumber / token / CitizenID stay on the server. */
+  testHolds?: {
+    id: string;
+    createdAt: string;
+    holdAmount: number | null;
+    capturedAmount: number;
+    lastDigits: string | null;
+  }[];
   /** Campaigns whose J5 hold stored a complete card. Labels + ids ONLY — the
    *  token itself is resolved server-side and never reaches this component. */
   chargeableCampaigns?: { campaignId: string; label: string }[];
@@ -737,6 +747,69 @@ export function SumitTestForm({
         >
           חייב טוקן קיים
         </button>
+      </form>
+
+      {/* ==================================================================
+          FORM 3 — CAPTURE A J5 HOLD (J4 on the hold's AuthNumber).
+          Per SUMIT support 2026-09-29: same customer + same card token +
+          CreditCardAuthNumber, AutoCapture NOT sent, amount ≤ the hold.
+          Posts only the hold's row id; route.ts resolves the rest server-side.
+          ================================================================== */}
+      <form
+        action="/api/admin/sumit-test"
+        method="post"
+        className={`mt-6 ${formClass}`}
+      >
+        <FormHeading
+          n={3}
+          title="מימוש תפיסת מסגרת (J4 על J5)"
+          subtitle="חיוב של תפיסת מסגרת שבוצעה בטופס 1 (AutoCapture=false), לפי מספר האישור שלה. הסכום לא יכול לעלות על סכום המסגרת."
+        />
+        <input type="hidden" name="mode" value="capture" />
+        {testHolds.length === 0 ? (
+          <p className={hintClass}>
+            אין עדיין תפיסות מסגרת שמורות. בצעו תפיסה בטופס 1 (AutoCapture=false) — היא תישמר ותופיע כאן.
+          </p>
+        ) : (
+          <>
+            <div>
+              <label htmlFor="capture_hold_id" className={labelClass}>
+                תפיסת מסגרת
+              </label>
+              <select id="capture_hold_id" name="hold_id" required className={inputClass}>
+                {testHolds.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {new Date(h.createdAt).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' })}
+                    {' · '}
+                    {h.holdAmount != null ? `₪${h.holdAmount}` : 'סכום לא ידוע'}
+                    {h.lastDigits ? ` · ⋯${h.lastDigits}` : ''}
+                    {h.capturedAmount > 0 ? ` · כבר מומש ₪${h.capturedAmount}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="capture_amount" className={labelClass}>
+                סכום למימוש (₪)
+              </label>
+              <input
+                id="capture_amount"
+                name="amount"
+                type="text"
+                inputMode="decimal"
+                dir="ltr"
+                required
+                className={inputClass}
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition-opacity hover:opacity-90"
+            >
+              ממש תפיסת מסגרת
+            </button>
+          </>
+        )}
       </form>
     </>
   );

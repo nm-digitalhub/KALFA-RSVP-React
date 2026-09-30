@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { asObj, type Obj } from '@/lib/sumit/charge-response';
+
 // Safe, admin-facing PREVIEW of the SUMIT POC request/response.
 //
 // SECURITY MODEL: STRICT explicit projection from known paths only. There is
@@ -17,11 +19,6 @@ import 'server-only';
 //     and without them a failed diagnostic reports no reason at all
 // Used by /admin/sumit-test so the raw gateway body never reaches the browser DOM.
 
-type Obj = Record<string, unknown>;
-
-function asObj(v: unknown): Obj | null {
-  return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Obj) : null;
-}
 function present(v: unknown): boolean {
   return v !== null && v !== undefined && v !== '';
 }
@@ -89,7 +86,11 @@ export function summarizeSumitRequest(input: unknown): Obj {
     items: itemLines(b.Items),
     items_total: itemsTotal(b.Items),
     vat_rate: b.VATRate ?? null,
-    auto_capture: b.AutoCapture ?? null,
+    // 'not_sent' (not null) so a capture-by-AuthNumber run shows the key was
+    // deliberately omitted, not lost.
+    auto_capture: 'AutoCapture' in b ? b.AutoCapture : 'not_sent',
+    credit_card_auth_number_present: present(b.CreditCardAuthNumber),
+    customer_id_present: present(cust?.ID),
     authorize_amount: b.AuthorizeAmount ?? null,
     prevent_document_creation: b.PreventDocumentCreation ?? null,
     card_token_present: present(pm?.CreditCard_Token),

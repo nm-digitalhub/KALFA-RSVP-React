@@ -32,7 +32,14 @@ export interface SumitRawChargeParams {
   savedCardCvv?: string;
   amount: string; // Items[0].UnitPrice — numeric string, no float distortion
   vatRate: string;
-  autoCapture: boolean; // false = J5 (authorize/hold), true = J4 (charge)
+  // false = J5 (authorize/hold), true = J4 (charge), undefined = NOT SENT.
+  // Capturing an existing J5 by CreditCardAuthNumber leaves it unsent — SUMIT
+  // support (2026-09-29): "AutoCapture נשאר ריק (ברירת המחדל היא חיוב)".
+  autoCapture?: boolean;
+  // CreditCardAuthNumber — "Transaction authorization number, as received from
+  // a previous Gateway Transaction" (swagger). Set only to capture a J5 hold
+  // (J4 on the hold's AuthNumber); the amount must not exceed the hold.
+  creditCardAuthNumber?: string;
   authorizeAmount?: string; // J5 hold amount (defaults to Items total if absent)
   cardTokenNotNeeded?: boolean; // omit = SUMIT default (saves the card token)
   preventDocumentCreation?: boolean; // J5 hold: skip the Order doc (no payment to balance)
@@ -81,7 +88,6 @@ export async function chargeRaw(p: SumitRawChargeParams): Promise<SumitRawResult
       EmailAddress: p.customerEmail || undefined,
       ExternalIdentifier: p.externalId,
     },
-    VATIncluded: true,
     Items:
       p.lines && p.lines.length > 0
         ? p.lines.map((l) => ({
@@ -101,7 +107,8 @@ export async function chargeRaw(p: SumitRawChargeParams): Promise<SumitRawResult
               Description: 'KALFA — בדיקת POC',
             },
           ],
-    AutoCapture: p.autoCapture,
+    ...(typeof p.autoCapture === 'boolean' ? { AutoCapture: p.autoCapture } : {}),
+    ...(p.creditCardAuthNumber ? { CreditCardAuthNumber: p.creditCardAuthNumber } : {}),
     SendDocumentByEmail: true,
     DraftDocument: false,
   };
@@ -128,8 +135,8 @@ export async function chargeRaw(p: SumitRawChargeParams): Promise<SumitRawResult
   } else {
     body.SingleUseToken = p.ogToken;
   }
-  // VATRate is sent ONLY when the operator typed one. The business is an עוסק
-  // פטור: production (authorize.ts / capture.ts) sends no VAT fields at all and
+  // No VATIncluded, as in production. VATRate is sent ONLY when the operator
+  // typed one. The business is an עוסק פטור: production (authorize.ts / capture.ts) sends no VAT fields at all and
   // lets the company default balance the document. This module used to send an
   // explicit rate on the new-card path (defaulted to 18 in the form) and an
   // explicit `null` on the saved-token path — neither matched what production

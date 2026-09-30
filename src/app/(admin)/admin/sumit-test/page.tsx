@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getSumitPublicConfig } from '@/lib/data/payments';
 import { listChargeableCampaigns } from '@/lib/data/admin/sumit-test';
+import { listTestHolds } from '@/lib/data/admin/sumit-test-transactions';
 
 import { SumitTestForm } from './sumit-test-form';
 
@@ -15,7 +16,10 @@ export default async function SumitTestPage() {
   const config = await getSumitPublicConfig();
   // Labels + ids only — the saved token stays on the server and is resolved at
   // charge time (see src/lib/data/admin/sumit-test.ts).
-  const chargeableCampaigns = await listChargeableCampaigns();
+  const [chargeableCampaigns, testHolds] = await Promise.all([
+    listChargeableCampaigns(),
+    listTestHolds(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -43,6 +47,7 @@ export default async function SumitTestPage() {
           companyId={config.companyId}
           apiPublicKey={config.apiPublicKey}
           chargeableCampaigns={chargeableCampaigns}
+          testHolds={testHolds}
         />
       ) : (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">

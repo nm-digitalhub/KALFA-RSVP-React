@@ -5,11 +5,19 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/payments', () => ({ getSumitServerConfig: vi.fn() }));
 vi.mock('@/lib/sumit/raw-charge', () => ({ chargeRaw: vi.fn() }));
+vi.mock('@/lib/data/admin/sumit-test-transactions', () => ({
+  recordSumitTestTransaction: vi.fn(),
+  getTestHoldForCapture: vi.fn(),
+}));
 
 import { POST } from './route';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getSumitServerConfig } from '@/lib/data/payments';
 import { chargeRaw } from '@/lib/sumit/raw-charge';
+import {
+  getTestHoldForCapture,
+  recordSumitTestTransaction,
+} from '@/lib/data/admin/sumit-test-transactions';
 
 const APP_ORIGIN = 'https://kalfa.test';
 
@@ -343,5 +351,90 @@ describe('POST /api/admin/sumit-test — success/failure banner', () => {
       expect(html).toContain('אושרה');
       expect(html).not.toContain('הסיבה מ-SUMIT');
     });
+  });
+});
+
+describe('POST /api/admin/sumit-test — persistence and J5 capture', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.APP_ORIGIN = APP_ORIGIN;
+    vi.mocked(requirePlatformPermission).mockResolvedValue(undefined as never);
+    vi.mocked(getSumitServerConfig).mockResolvedValue({ companyId: 1, apiKey: 'k' });
+    vi.mocked(chargeRaw).mockResolvedValue({
+      httpStatus: 200,
+      ok: true,
+      sentBody: {},
+      raw: { Status: 0, Data: { Payment: { ValidPayment: true, AuthNumber: '0759469' } } },
+    });
+    vi.mocked(recordSumitTestTransaction).mockResolvedValue('row-1');
+  });
+
+  it('saves every J5 hold with the raw response', async () => {
+    await POST(request({ 'og-token': 'og-1', amount: '2', auto_capture: 'false' }));
+    expect(recordSumitTestTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'hold',
+        requestAutoCapture: false,
+        raw: { Status: 0, Data: { Payment: { ValidPayment: true, AuthNumber: '0759469' } } },
+      }),
+    );
+  });
+
+  it('still shows the live result when saving fails', async () => {
+    vi.mocked(recordSumitTestTransaction).mockRejectedValue(new Error('db down'));
+    const res = await POST(request({ 'og-token': 'og-1', amount: '2', auto_capture: 'false' }));
+    const html = await res.text();
+    expect(html).toContain('עסקה אושרה');
+    expect(html).toContain('שמירת התוצאה בטבלת הבדיקות נכשלה');
+  });
+
+  it('captures a hold by its AuthNumber, resolved server-side, without AutoCapture', async () => {
+    vi.mocked(getTestHoldForCapture).mockResolvedValue({
+      id: 'hold-1',
+      authNumber: '0759469',
+      cardToken: 'tok',
+      expMonth: 7,
+      expYear: 2031,
+      citizenId: '000000018',
+      customerId: 2127277236,
+      externalIdentifier: 'poc-1759178413000',
+      holdAmount: 2,
+      capturedAmount: 0,
+    });
+    await POST(request({ mode: 'capture', hold_id: 'hold-1', amount: '1' }));
+    const params = vi.mocked(chargeRaw).mock.calls[0][0];
+    expect(params.creditCardAuthNumber).toBe('0759469');
+    expect(params.autoCapture).toBeUndefined();
+    expect(params.customerId).toBe(2127277236);
+    expect(params.savedCardToken).toBe('tok');
+    expect(params.externalId).toBe('poc-1759178413000');
+    expect(recordSumitTestTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: 'capture', parentId: 'hold-1', requestAmount: 1 }),
+    );
+  });
+
+  it('does not call SUMIT when the chosen hold is not capturable', async () => {
+    vi.mocked(getTestHoldForCapture).mockResolvedValue(null);
+    const res = await POST(request({ mode: 'capture', hold_id: 'hold-1', amount: '1' }));
+    expect(chargeRaw).not.toHaveBeenCalled();
+    expect(await res.text()).toContain('תפיסת המסגרת שנבחרה לא תקינה');
+  });
+
+  it('refuses to capture more than what is left on the hold, without calling SUMIT', async () => {
+    vi.mocked(getTestHoldForCapture).mockResolvedValue({
+      id: 'hold-1',
+      authNumber: '0759469',
+      cardToken: 'tok',
+      expMonth: 7,
+      expYear: 2031,
+      citizenId: '000000018',
+      customerId: 2127277236,
+      externalIdentifier: 'poc-1',
+      holdAmount: 1,
+      capturedAmount: 1,
+    });
+    const res = await POST(request({ mode: 'capture', hold_id: 'hold-1', amount: '1' }));
+    expect(chargeRaw).not.toHaveBeenCalled();
+    expect(await res.text()).toContain('המסגרת כבר מומשה במלואה');
   });
 });

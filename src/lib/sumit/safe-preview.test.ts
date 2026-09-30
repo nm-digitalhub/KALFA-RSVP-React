@@ -69,6 +69,10 @@ const REQUEST_ALLOWED_KEYS = [
   // operator-entered names/quantities/prices — never card or customer data.
   'items',
   'items_total',
+  // Capture-a-J5 run: whether CreditCardAuthNumber / Customer.ID were sent
+  // (presence only — never the values).
+  'credit_card_auth_number_present',
+  'customer_id_present',
 ].sort();
 
 const RESPONSE = {
