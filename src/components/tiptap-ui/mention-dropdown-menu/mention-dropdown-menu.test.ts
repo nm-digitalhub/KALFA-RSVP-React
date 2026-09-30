@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, createElement } from 'react';
+import { act, createElement, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
@@ -31,13 +31,17 @@ const PEOPLE: MentionEntry[] = [
 let container: HTMLDivElement;
 let root: Root;
 let editor: Editor | null = null;
+let setShowMenu: (v: boolean) => void = () => {};
 
-async function mount(char: string, content = '<p>שלום</p>') {
+async function mount(char: string, content = '<p>שלום</p>', attributes: Record<string, string> = {}) {
   function Harness() {
+    const [showMenu, set] = useState(true);
+    setShowMenu = set;
     const ed = useEditor({
       immediatelyRender: true,
       extensions: [Document, Paragraph, Text, MentionChip],
       content,
+      editorProps: { attributes },
       onCreate: ({ editor: created }) => {
         editor = created as Editor;
       },
@@ -45,7 +49,7 @@ async function mount(char: string, content = '<p>שלום</p>') {
     return createElement(
       'div',
       null,
-      createElement(MentionDropdownMenu, { editor: ed, mentions: PEOPLE, char, allowedPrefixes: null }),
+      showMenu ? createElement(MentionDropdownMenu, { editor: ed, mentions: PEOPLE, char, allowedPrefixes: null }) : null,
       createElement(EditorContent, { editor: ed }),
     );
   }
@@ -148,6 +152,194 @@ describe.each(['@', '{'])('MentionDropdownMenu with trigger %s', (char) => {
     await press('Escape');
     expect(menu()).toBeNull();
     expect(chips()).toEqual([]);
+  });
+});
+
+const activeId = () => options().find((o) => o.getAttribute('data-active-state') === 'on')?.getAttribute('data-user-id');
+const pointer = async (el: HTMLElement, pointerType: string) => {
+  await act(async () => {
+    const ev = new MouseEvent('pointermove', { bubbles: true });
+    Object.defineProperty(ev, 'pointerType', { value: pointerType });
+    el.dispatchEvent(ev);
+  });
+  await tick();
+};
+const deleteLastChar = async () => {
+  await act(async () => {
+    const end = editor!.state.doc.content.size - 1;
+    editor!.chain().focus('end').deleteRange({ from: end - 1, to: end }).run();
+  });
+  await tick();
+};
+
+describe('active row', () => {
+  it('resets to the first row on every query change, including back to the bare trigger', async () => {
+    await mount('{');
+    await type(' {');
+    await press('ArrowDown');
+    expect(activeId()).toBe('event.date_gregorian');
+    await type('ת');
+    expect(activeId()).toBe('event.date_hebrew');
+    await press('ArrowDown');
+    expect(activeId()).toBe('event.date_gregorian');
+    await deleteLastChar(); // query back to ''
+    expect(activeId()).toBe('event.date_hebrew');
+  });
+
+  it('reopening the list starts at the first row', async () => {
+    await mount('{');
+    await type(' {');
+    await press('ArrowDown');
+    await press('Escape');
+    await type(' {');
+    expect(activeId()).toBe('event.date_hebrew');
+  });
+
+  it('mouse hover makes a row active, so Enter picks the highlighted row; touch does not move it', async () => {
+    await mount('{');
+    await type(' {');
+    await pointer(options()[2], 'touch');
+    expect(activeId()).toBe('event.date_hebrew');
+    await pointer(options()[2], 'mouse');
+    expect(activeId()).toBe('guest.first_name');
+    await press('Enter');
+    expect(chips().map((c) => c.id)).toEqual(['guest.first_name']);
+  });
+});
+
+describe('closing on an outside press', () => {
+  const pointerDown = async (el: Element) => {
+    await act(async () => {
+      el.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+    });
+    await tick();
+  };
+
+  it('a press outside the editor and the list closes it, even when focus stays in the editor', async () => {
+    await mount('{');
+    await type(' {');
+    const outside = document.createElement('button');
+    outside.addEventListener('mousedown', (e) => e.preventDefault());
+    document.body.appendChild(outside);
+    await pointerDown(outside);
+    expect(menu()).toBeNull();
+    outside.remove();
+  });
+
+  it('a press inside the list or the editor keeps it open', async () => {
+    await mount('{');
+    await type(' {');
+    await pointerDown(options()[1]);
+    expect(menu()).not.toBeNull();
+    await pointerDown(dom());
+    expect(menu()).not.toBeNull();
+  });
+});
+
+describe('variable list design', () => {
+  it('groups consecutive entries under a heading (role=group, labelled); no avatar without a picture', async () => {
+    const grouped: MentionEntry[] = [
+      { id: 'event.date_hebrew', label: 'תאריך עברי', group: 'פרטי האירוע', subtext: 'למשל ט״ו באב' },
+      { id: 'event.venue', label: 'מקום האירוע', group: 'פרטי האירוע' },
+      { id: 'guest.first_name', label: 'שם האורח', group: 'פרטי האורח' },
+    ];
+    function G() {
+      const ed = useEditor({
+        immediatelyRender: true,
+        extensions: [Document, Paragraph, Text, MentionChip],
+        content: '<p>שלום</p>',
+        onCreate: ({ editor: created }) => {
+          editor = created as Editor;
+        },
+      });
+      return createElement('div', null, createElement(MentionDropdownMenu, { editor: ed, mentions: grouped, char: '{', allowedPrefixes: null }), createElement(EditorContent, { editor: ed }));
+    }
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root.render(createElement(G)));
+    await tick();
+    await type(' {');
+    const groups = [...menu()!.querySelectorAll<HTMLElement>('[role="group"]')];
+    expect(groups.map((g) => document.getElementById(g.getAttribute('aria-labelledby')!)?.textContent)).toEqual(['פרטי האירוע', 'פרטי האורח']);
+    expect(groups.map((g) => g.querySelectorAll('[role="option"]').length)).toEqual([2, 1]);
+    expect(menu()!.querySelector('[data-slot="avatar"]')).toBeNull();
+    expect(options()[0].textContent).toContain('למשל ט״ו באב');
+  });
+
+  it('the chip uses the dedicated variable tokens', async () => {
+    await mount('{');
+    await type(' {');
+    await press('Enter');
+    const chip = dom().querySelector<HTMLElement>('span[data-type="mention"]')!;
+    expect(chip.className).toContain('bg-variable-bg');
+    expect(chip.className).toContain('text-variable-text');
+    expect(chip.className).not.toContain('leading-none');
+  });
+});
+
+describe('empty state and announcements', () => {
+  it('shows "אין תוצאות" by default when nothing matches', async () => {
+    await mount('{');
+    await type(' {zzz');
+    expect(options()).toHaveLength(0);
+    expect(menu()?.textContent).toContain('אין תוצאות');
+  });
+
+  it('announces the result count in a live region outside the listbox', async () => {
+    await mount('{');
+    await type(' {');
+    const status = document.body.querySelector('[role="status"][aria-live="polite"]');
+    expect(status?.textContent).toBe('3 תוצאות');
+    expect(menu()!.contains(status)).toBe(false);
+    await type('תאר');
+    expect(status?.textContent).toBe('2 תוצאות');
+  });
+});
+
+describe('editor attributes', () => {
+  it('keeps role=combobox when the host re-renders with new editorProps (ProseMirror drops role)', async () => {
+    await mount('{');
+    expect(dom().getAttribute('role')).toBe('combobox');
+    // A host re-render: useEditor sees new editorProps and calls setOptions.
+    await act(async () => {
+      editor!.setOptions({ editorProps: { attributes: { 'data-x': String(Math.random()) } } });
+    });
+    await tick();
+    expect(dom().getAttribute('role')).toBe('combobox');
+    expect(dom().getAttribute('aria-expanded')).toBe('false');
+    await type(' {');
+    await act(async () => {
+      editor!.setOptions({ editorProps: { attributes: { 'data-x': 'again' } } });
+    });
+    await tick();
+    expect(dom().getAttribute('aria-expanded')).toBe('true');
+    expect(dom().getAttribute('aria-activedescendant')).toBe(options()[0].id);
+  });
+
+  it('names an unnamed field, and leaves a named one alone', async () => {
+    await mount('{');
+    expect(dom().getAttribute('aria-label')).toBe('בחירת ערך');
+    await act(async () => root.unmount());
+    container.remove();
+    await mount('{', '<p>שלום</p>', { 'aria-labelledby': 'my-label' });
+    expect(dom().hasAttribute('aria-label')).toBe(false);
+  });
+
+  it('restores the attributes it changed when the menu goes away', async () => {
+    await mount('{', '<p>שלום</p>', { 'aria-controls': 'outer-panel', 'aria-autocomplete': 'inline' });
+    expect(dom().getAttribute('role')).toBe('combobox');
+    await type(' {');
+    expect(dom().getAttribute('aria-controls')).toBe(menu()!.id);
+    await press('Escape');
+    expect(dom().getAttribute('aria-controls')).toBe('outer-panel');
+    await act(async () => setShowMenu(false));
+    await tick();
+    // Back to what it was before the menu (Tiptap's role, if ProseMirror still had it).
+    expect(dom().getAttribute('role')).not.toBe('combobox');
+    expect(dom().getAttribute('aria-autocomplete')).toBe('inline');
+    expect(dom().hasAttribute('aria-expanded')).toBe(false);
+    expect(dom().hasAttribute('aria-label')).toBe(false);
   });
 });
 

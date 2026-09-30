@@ -51,6 +51,15 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.511 0.262 276.97);
+  /* Template variables (the `{` value picker): the in-sentence tag and the
+     active suggestion row. Own tokens, hue of --primary indigo, so the variable
+     keeps the brand colour in dark mode too (there --primary turns grey). */
+  --variable-bg: oklch(0.955 0.03 276.97);
+  --variable-border: oklch(0.85 0.08 276.97);
+  --variable-text: oklch(0.43 0.2 276.97);
+  --variable-ring: oklch(0.511 0.262 276.97);
+  --suggestion-active-bg: oklch(0.955 0.03 276.97);
+  --suggestion-active-bar: oklch(0.511 0.262 276.97);
 }
 
 @theme inline {
@@ -84,6 +93,12 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
+  --color-variable-bg: var(--variable-bg);
+  --color-variable-border: var(--variable-border);
+  --color-variable-text: var(--variable-text);
+  --color-variable-ring: var(--variable-ring);
+  --color-suggestion-active-bg: var(--suggestion-active-bg);
+  --color-suggestion-active-bar: var(--suggestion-active-bar);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -170,6 +185,12 @@ body {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --variable-bg: oklch(0.3 0.08 276.97);
+  --variable-border: oklch(0.45 0.13 276.97);
+  --variable-text: oklch(0.87 0.08 276.97);
+  --variable-ring: oklch(0.72 0.16 276.97);
+  --suggestion-active-bg: oklch(0.3 0.08 276.97);
+  --suggestion-active-bar: oklch(0.72 0.16 276.97);
 }
 
 /* The homepage feature-icon loops (`k-ico-pulse`, `k-ico-bars`) moved to

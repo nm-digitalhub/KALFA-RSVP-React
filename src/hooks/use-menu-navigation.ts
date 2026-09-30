@@ -2,8 +2,11 @@
 // apps/web/src/hooks/use-menu-navigation.ts on main, 2026-09-30. One change: the reset on a
 // new query moved from an effect to React's "adjust state on prop change" pattern
 // (react-hooks/set-state-in-effect); same behaviour, no cascading render.
-// And one addition: `tabBehavior` ("navigate", upstream's, is the default;
-// "select" makes Tab pick the active item like Enter).
+// Additions: `tabBehavior` ("navigate", upstream's, is the default; "select"
+// makes Tab pick the active item like Enter). The selection resets on EVERY query
+// change — upstream skips an empty query, so going back to the bare trigger or
+// reopening the menu kept the old row — and an index past the end of a shorter
+// list falls back to the first row instead of pointing at nothing.
 // Upstream: https://github.com/ueberdosis/tiptap-ui-components
 
 "use client"
@@ -76,25 +79,29 @@ export function useMenuNavigation<T>({
   autoSelectFirstItem = true,
   tabBehavior = "navigate",
 }: MenuNavigationOptions<T>) {
-  const [selectedIndex, setSelectedIndex] = React.useState<number>(
-    autoSelectFirstItem ? 0 : -1
-  )
+  const initialIndex = autoSelectFirstItem ? 0 : -1
+  const [selectedIndex, setSelectedIndex] = React.useState<number>(initialIndex)
+
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const [prevQuery, setPrevQuery] = React.useState(query)
+  if (query !== prevQuery) {
+    setPrevQuery(query)
+    setSelectedIndex(initialIndex)
+  }
+  // Never an index outside the current list.
+  const activeIndex = selectedIndex < items.length ? selectedIndex : initialIndex
 
   React.useEffect(() => {
     const handleKeyboardNavigation = (event: KeyboardEvent) => {
       if (!items.length) return false
 
       const moveNext = () =>
-        setSelectedIndex((currentIndex) => {
-          if (currentIndex === -1) return 0
-          return (currentIndex + 1) % items.length
-        })
+        setSelectedIndex(activeIndex === -1 ? 0 : (activeIndex + 1) % items.length)
 
       const movePrev = () =>
-        setSelectedIndex((currentIndex) => {
-          if (currentIndex === -1) return items.length - 1
-          return (currentIndex - 1 + items.length) % items.length
-        })
+        setSelectedIndex(
+          activeIndex === -1 ? items.length - 1 : (activeIndex - 1 + items.length) % items.length
+        )
 
       switch (event.key) {
         case "ArrowUp": {
@@ -127,9 +134,9 @@ export function useMenuNavigation<T>({
 
         case "Tab": {
           if (tabBehavior === "select") {
-            if (event.shiftKey || selectedIndex === -1 || !items[selectedIndex]) return false
+            if (event.shiftKey || activeIndex === -1 || !items[activeIndex]) return false
             event.preventDefault()
-            onSelect?.(items[selectedIndex])
+            onSelect?.(items[activeIndex])
             return true
           }
           event.preventDefault()
@@ -156,8 +163,8 @@ export function useMenuNavigation<T>({
         case "Enter": {
           if (event.isComposing) return false
           event.preventDefault()
-          if (selectedIndex !== -1 && items[selectedIndex]) {
-            onSelect?.(items[selectedIndex])
+          if (activeIndex !== -1 && items[activeIndex]) {
+            onSelect?.(items[activeIndex])
           }
           return true
         }
@@ -198,22 +205,15 @@ export function useMenuNavigation<T>({
     editor,
     containerRef,
     items,
-    selectedIndex,
+    activeIndex,
     onSelect,
     onClose,
     orientation,
     tabBehavior,
   ])
 
-  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
-  const [prevQuery, setPrevQuery] = React.useState(query)
-  if (query !== prevQuery) {
-    setPrevQuery(query)
-    if (query) setSelectedIndex(autoSelectFirstItem ? 0 : -1)
-  }
-
   return {
-    selectedIndex: items.length ? selectedIndex : undefined,
+    selectedIndex: items.length ? activeIndex : undefined,
     setSelectedIndex,
   }
 }
