@@ -76,6 +76,7 @@ function build(overrides: Partial<MockApi> = {}, confirm = true) {
     endGrant: vi.fn().mockResolvedValue({ outcome: 'revoked', grantId: GRANT }),
     markCut: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn().mockResolvedValue({ ok: true, value: { closed: 0 } }),
+    listTunnels: vi.fn().mockResolvedValue({ ok: true, value: { tunnels: [] } }),
     notify: vi.fn().mockResolvedValue(undefined),
     getConfig: vi.fn().mockReturnValue(CONFIG),
     ...overrides,

@@ -2,7 +2,7 @@ import type { createAdminClient } from '@/lib/supabase/admin';
 import type { Json } from '@/lib/supabase/types';
 
 import { getRdpGatewayConfig } from '../config';
-import { disconnectRdpTunnels } from '../gateway-client';
+import { disconnectRdpTunnels, listRdpTunnels } from '../gateway-client';
 import { notifyRdpOwnerAction } from '../notify';
 import { RDP_MINUTES_MAX, RDP_MINUTES_MIN } from '../policy';
 import {
@@ -40,6 +40,7 @@ export type CliApi = {
   endGrant: typeof endRdpGrant;
   markCut: typeof markRdpCut;
   disconnect: typeof disconnectRdpTunnels;
+  listTunnels: typeof listRdpTunnels;
   notify: typeof notifyRdpOwnerAction;
   getConfig: typeof getRdpGatewayConfig;
 };
@@ -49,6 +50,7 @@ export const defaultCliApi: CliApi = {
   endGrant: endRdpGrant,
   markCut: markRdpCut,
   disconnect: disconnectRdpTunnels,
+  listTunnels: listRdpTunnels,
   notify: notifyRdpOwnerAction,
   getConfig: getRdpGatewayConfig,
 };

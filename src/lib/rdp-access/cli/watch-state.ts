@@ -8,9 +8,9 @@ import { RDP_MINUTES_PRESETS } from '../policy';
 
 export type WatchMode =
   | { kind: 'list' }
-  | { kind: 'approve'; minutes: number }
-  | { kind: 'deny' }
-  | { kind: 'revoke' };
+  | { kind: 'approve'; requestId: string; minutes: number }
+  | { kind: 'deny'; requestId: string }
+  | { kind: 'revoke'; grantId: string };
 
 export type WatchState = { selected: number; mode: WatchMode };
 
@@ -30,7 +30,7 @@ export type WatchKey = {
 export type WatchEffect =
   | { kind: 'approve'; requestId: string; minutes: number }
   | { kind: 'deny'; requestId: string }
-  | { kind: 'revoke' }
+  | { kind: 'revoke'; grantId: string }
   | { kind: 'quit' };
 
 export const INITIAL_WATCH_STATE: WatchState = { selected: 0, mode: { kind: 'list' } };
@@ -54,7 +54,7 @@ function cyclePreset(current: number, step: 1 | -1): number {
 export function handleWatchKey(
   state: WatchState,
   rows: readonly WatchRow[],
-  hasActiveGrant: boolean,
+  activeGrantId: string | null,
   key: WatchKey,
 ): { state: WatchState; effect?: WatchEffect } {
   if (key.ctrl && key.input === 'c') return { state, effect: { kind: 'quit' } };
@@ -68,29 +68,45 @@ export function handleWatchKey(
     if (key.upArrow || key.input === 'k') return { state: { ...state, selected: clampSelected(selected - 1, rows.length) } };
     if (key.downArrow || key.input === 'j') return { state: { ...state, selected: clampSelected(selected + 1, rows.length) } };
     if (key.input === 'a' && row) {
-      return { state: { selected, mode: { kind: 'approve', minutes: nearestPreset(row.requestedMinutes) } } };
+      return { state: { selected, mode: { kind: 'approve', requestId: row.id, minutes: nearestPreset(row.requestedMinutes) } } };
     }
-    if (key.input === 'd' && row) return { state: { selected, mode: { kind: 'deny' } } };
-    if (key.input === 'r' && hasActiveGrant) return { state: { selected, mode: { kind: 'revoke' } } };
+    if (key.input === 'd' && row) return { state: { selected, mode: { kind: 'deny', requestId: row.id } } };
+    if (key.input === 'r' && activeGrantId) return { state: { selected, mode: { kind: 'revoke', grantId: activeGrantId } } };
     return { state };
   }
 
   if (key.escape || key.input === 'n') return { state: { selected, mode: { kind: 'list' } } };
 
+  // Refreshes may reorder rows; a confirmation stays bound to its original identity.
+  if ((mode.kind === 'approve' || mode.kind === 'deny') && !rows.some((r) => r.id === mode.requestId)) {
+    return { state: { selected, mode: { kind: 'list' } } };
+  }
+  if (mode.kind === 'revoke' && mode.grantId !== activeGrantId) {
+    return { state: { selected, mode: { kind: 'list' } } };
+  }
+
   if (mode.kind === 'approve') {
-    if (key.leftArrow) return { state: { selected, mode: { kind: 'approve', minutes: cyclePreset(mode.minutes, -1) } } };
-    if (key.rightArrow) return { state: { selected, mode: { kind: 'approve', minutes: cyclePreset(mode.minutes, 1) } } };
-    if (key.return && row) {
-      return { state: { selected, mode: { kind: 'list' } }, effect: { kind: 'approve', requestId: row.id, minutes: mode.minutes } };
+    if (key.leftArrow) return { state: { selected, mode: { ...mode, minutes: cyclePreset(mode.minutes, -1) } } };
+    if (key.rightArrow) return { state: { selected, mode: { ...mode, minutes: cyclePreset(mode.minutes, 1) } } };
+    if (key.return) {
+      return { state: { selected, mode: { kind: 'list' } }, effect: { kind: 'approve', requestId: mode.requestId, minutes: mode.minutes } };
     }
     return { state };
   }
 
   if (key.input === 'y') {
-    if (mode.kind === 'deny' && row) {
-      return { state: { selected, mode: { kind: 'list' } }, effect: { kind: 'deny', requestId: row.id } };
+    if (mode.kind === 'deny') {
+      return { state: { selected, mode: { kind: 'list' } }, effect: { kind: 'deny', requestId: mode.requestId } };
     }
-    if (mode.kind === 'revoke') return { state: { selected, mode: { kind: 'list' } }, effect: { kind: 'revoke' } };
+    if (mode.kind === 'revoke') return { state: { selected, mode: { kind: 'list' } }, effect: { kind: 'revoke', grantId: mode.grantId } };
   }
   return { state };
+}
+
+/** No alert on the initial snapshot; alert only for IDs absent from the previous snapshot. */
+export function hasNewRequest(
+  previousIds: ReadonlySet<string> | null,
+  rows: readonly { id: string }[],
+): boolean {
+  return previousIds !== null && rows.some((row) => !previousIds.has(row.id));
 }
