@@ -1,6 +1,8 @@
 import { Box, Text, useBoxMetrics, type DOMElement } from 'ink';
 import { useRef, type ReactNode } from 'react';
+import { formatIsraelTimeSeconds } from '@/lib/date';
 import type { RdpGrantSummary, RdpRequestExtras, RdpRequestSummary } from '../queries';
+import { shortId as short } from './format';
 import type { HistoryLine, LiveConnections } from './watch-data';
 import type { WatchMode } from './watch-state';
 
@@ -36,12 +38,8 @@ export type WatchViewProps = {
   activity: ActivityLine[];
 };
 
-function time(value: string | Date): string {
-  const date = value instanceof Date ? value : new Date(value);
-  if (!Number.isFinite(date.getTime())) return '-';
-  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(date);
-}
-function short(id: string): string { return id.slice(0, 8); }
+// the shared Israel-time formatter; '-' for a value that is not a date
+const time = (value: string | Date): string => formatIsraelTimeSeconds(value) || '-';
 function wait(created: string, now: Date): string {
   const seconds = Math.max(0, Math.floor((now.getTime() - Date.parse(created)) / 1000));
   if (!Number.isFinite(seconds)) return '-';

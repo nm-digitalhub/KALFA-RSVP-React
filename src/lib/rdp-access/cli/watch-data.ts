@@ -1,5 +1,5 @@
 import type { RdpEventKind } from '../events';
-import { RDP_EVENT_KINDS } from '../events';
+import { outcomeExplains, RDP_EVENT_KINDS } from '../events';
 import type { RdpLiveTunnel } from '../gateway-client';
 import type { RdpRecentEvent } from '../queries';
 import { shortId } from './format';
@@ -29,8 +29,6 @@ const EVENT_LINE: Record<RdpEventKind, string> = {
   disconnect_failed: 'Cutting live connections failed',
 };
 
-const OUTCOME_EXPLAINS: ReadonlySet<string> = new Set(['file_refused', 'file_failed', 'disconnect_failed', 'tunnel_closed']);
-
 function isEventKind(kind: string): kind is RdpEventKind {
   return (RDP_EVENT_KINDS as readonly string[]).includes(kind);
 }
@@ -44,9 +42,7 @@ export function describeRecentEvent(event: Pick<RdpRecentEvent, 'kind' | 'reques
     const reason = event.outcome?.replace(/^deny:/, '');
     return `${id}  ${base}: denied${reason ? ` (${reason})` : ''}`;
   }
-  // the outcome of most kinds only repeats the line ("Approved (approved)"); it is kept where it explains a failure
-  const explains = event.outcome && (OUTCOME_EXPLAINS.has(event.kind) || !isEventKind(event.kind));
-  return `${id}  ${base}${explains ? ` (${event.outcome})` : ''}`;
+  return `${id}  ${base}${event.outcome && outcomeExplains(event.kind) ? ` (${event.outcome})` : ''}`;
 }
 
 export type HistoryLine = { time: string; message: string };

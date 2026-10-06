@@ -1,3 +1,4 @@
+import { outcomeExplains } from './events';
 import { RDP_FILE_MIN_INTERVAL_SECONDS, RDP_REQUESTS_PER_HOUR, RDP_REQUEST_TTL_MINUTES } from './policy';
 import type { RdpDisplayStatus } from './status';
 
@@ -195,10 +196,6 @@ export const EVENT_KIND_TEXT: Record<string, string> = {
   disconnect_failed: 'ניתוק חיבורים: נכשל',
 };
 
-// Outcomes that say something the sentence does not already say. For the rest the outcome only repeats the kind
-// ("הבעלים אישר · approved"), so it is left out of the timeline.
-const OUTCOME_ADDS_INFO: ReadonlySet<string> = new Set(['file_refused', 'file_failed', 'disconnect_failed', 'tunnel_closed']);
-
 /** One timeline line: the sentence for the kind, plus the outcome only where it adds information. */
 export function describeEventLine(kind: string, outcome: string | null): string {
   const text = EVENT_KIND_TEXT[kind] ?? kind;
@@ -207,5 +204,5 @@ export function describeEventLine(kind: string, outcome: string | null): string 
     const reason = outcome?.replace(/^deny:/, '');
     return `${text}: נדחה${reason ? ` (${reason})` : ''}`;
   }
-  return outcome && (OUTCOME_ADDS_INFO.has(kind) || !(kind in EVENT_KIND_TEXT)) ? `${text} · ${outcome}` : text;
+  return outcome && outcomeExplains(kind) ? `${text} · ${outcome}` : text;
 }

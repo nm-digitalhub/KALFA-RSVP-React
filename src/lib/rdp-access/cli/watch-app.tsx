@@ -1,4 +1,5 @@
 import { render, useApp, useInput, useStdout, useWindowSize } from 'ink';
+import { formatIsraelTimeSeconds } from '@/lib/date';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   countRdpRequestsSince, getActiveRdpGrant, listRdpRequestExtras, listRdpRequests, listRecentRdpEvents, nameMap, RdpQueryError,
@@ -24,7 +25,6 @@ const EMPTY: Snapshot = {
   rows: [], names: new Map(), grant: null, error: null, loadedAt: null,
   expired24h: 0, extras: new Map(), history: [], live: { known: false },
 };
-const clock = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'Asia/Jerusalem', hour12: false });
 
 function WatchApp({ ctx, intervalMs }: { ctx: CliContext; intervalMs: number }) {
   const { exit } = useApp();
@@ -40,7 +40,7 @@ function WatchApp({ ctx, intervalMs }: { ctx: CliContext; intervalMs: number }) 
   const snapshotRef = useRef(EMPTY);
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick((t) => t + 1), []);
-  const push = useCallback((line: string) => setLog((prev) => [...prev, { time: ctx.now().toLocaleTimeString('en-GB', { timeZone: 'Asia/Jerusalem', hour12: false }), message: line }].slice(-LOG_LINES)), [ctx]);
+  const push = useCallback((line: string) => setLog((prev) => [...prev, { time: formatIsraelTimeSeconds(ctx.now()), message: line }].slice(-LOG_LINES)), [ctx]);
 
   useEffect(() => {
     const timer = setInterval(refresh, intervalMs);
@@ -72,7 +72,7 @@ function WatchApp({ ctx, intervalMs }: { ctx: CliContext; intervalMs: number }) 
         if (hasNewRequest(previousIds, rows)) stdout.write('\x07');
         const next: Snapshot = {
           rows, names, grant, error: null, loadedAt: now.toISOString(), expired24h, extras,
-          history: toHistoryLines(events, clock), live: liveConnections(tunnels),
+          history: toHistoryLines(events, formatIsraelTimeSeconds), live: liveConnections(tunnels),
         };
         snapshotRef.current = next;
         setSnapshot(next);
