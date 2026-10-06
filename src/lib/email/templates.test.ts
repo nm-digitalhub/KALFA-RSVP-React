@@ -63,6 +63,30 @@ describe('agreementEmail', () => {
   });
 });
 
+describe('agreementEmail — package terms approved (no signature)', () => {
+  const base = { signerName: 'דנה כהן', eventName: 'החתונה', companyName: 'קאלפא', downloadUrl: URL };
+
+  it('says the terms were APPROVED, never that anything was signed', () => {
+    const { subject, html, text } = agreementEmail({ ...base, kind: 'approved' });
+    for (const out of [subject, html, text]) {
+      expect(out).toContain('אושר');
+      expect(out).not.toContain('חתום');
+      expect(out).not.toContain('נחתם');
+    }
+    expect(html).toContain(`href="${URL}"`);
+    expect(text).toContain(URL);
+  });
+
+  it('the signed wording is the default and is unchanged', () => {
+    for (const input of [base, { ...base, kind: 'signed' as const }]) {
+      const { subject, html } = agreementEmail(input);
+      expect(subject).toBe('ההסכם החתום שלך — החתונה');
+      expect(html).toContain('ההסכם נחתם בהצלחה');
+      expect(html).toContain('ההסכם החתום עבור האירוע <strong>החתונה</strong> מוכן.');
+    }
+  });
+});
+
 describe('inquiryReplyEmail', () => {
   it('renders a markdown link as an anchor on our own origin, in both arms', () => {
     const { html, text } = reply('אפשר [להירשם כאן](/auth/signup) בחינם.');

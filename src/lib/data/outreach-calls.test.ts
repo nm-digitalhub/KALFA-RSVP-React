@@ -27,6 +27,9 @@ vi.mock('@/lib/data/outreach-engine', () => ({
   isContactReached: vi.fn(),
   isDncListed: vi.fn(),
 }));
+// Contact-quota seat gate (4a). Defaulted to "allowed" in beforeEach so every pre-existing test
+// exercises its own gate undisturbed; the gate's own behaviour has dedicated tests below.
+vi.mock('@/lib/data/contact-quota', () => ({ checkContactSeat: vi.fn() }));
 vi.mock('@/lib/data/interactions', () => ({
   getGuestsForContact: vi.fn(),
   insertInteraction: vi.fn(),
@@ -40,7 +43,7 @@ vi.mock('@/lib/data/console-calls', () => ({
 // Dial-hours policy read (gate 3b). Mocked so beforeEach can default every test
 // to "inside the window" — the gate's own behaviour gets dedicated tests below.
 vi.mock('@/lib/callbacks/policy-config', () => ({ getCallbackPolicy: vi.fn() }));
-// startScenarios moved to the separated mutations module (plan stage 1).
+// startScenarios lives in the separated mutations module.
 vi.mock('@/lib/voximplant/mutations', () => ({ startScenarios: vi.fn() }));
 vi.mock('@/lib/voximplant/core', () => ({
   getAccountInfo: vi.fn(),
@@ -80,6 +83,7 @@ import {
   isDncListed,
 } from '@/lib/data/outreach-engine';
 import { getGuestsForContact, insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
+import { checkContactSeat } from '@/lib/data/contact-quota';
 import { findRoutableAgentVoxUsernames, consoleDtmfHandoffEnabled, isWithinHumanCallWindow } from '@/lib/data/console-calls';
 import { getCallbackPolicy } from '@/lib/callbacks/policy-config';
 // Deliberately NOT mocked: gate 4b must be exercised against the same shared L1
@@ -130,6 +134,7 @@ beforeEach(() => {
   vi.mocked(hasCallConsent).mockResolvedValue(true);
   vi.mocked(isDncListed).mockResolvedValue(false);
   vi.mocked(isContactReached).mockResolvedValue(false);
+  vi.mocked(checkContactSeat).mockResolvedValue({ allowed: true });
   vi.mocked(getCampaignContext).mockResolvedValue(CCTX as never);
   vi.mocked(getGuestsForContact).mockResolvedValue([{ id: 'g1', full_name: 'א', rsvp_token: 't1' }] as never);
   vi.mocked(getAccountInfo).mockResolvedValue(acct(50) as never);
@@ -168,6 +173,36 @@ describe('gates (no dial)', () => {
     expect(createCallAttempt).not.toHaveBeenCalled();
   });
 
+  it('4a. campaign has a quota and the contact holds no seat → skipped/waiting_for_quota, nothing is dialled', async () => {
+    vi.mocked(checkContactSeat).mockResolvedValue({ allowed: false, reason: 'waiting_for_quota' });
+    const res = await dispatchOutreachCall(job());
+    expect(res).toEqual({ kind: 'skipped', reason: 'waiting_for_quota' });
+    expect(checkContactSeat).toHaveBeenCalledWith(CID, CTID);
+    // Refused before any attempt row, balance read or provider call.
+    expect(createCallAttempt).not.toHaveBeenCalled();
+    expect(getAccountInfo).not.toHaveBeenCalled();
+    expect(startScenarios).not.toHaveBeenCalled();
+  });
+
+  it('4a. a callback the guest asked for is exempt from the seat gate (owner decision 2026-10-04)', async () => {
+    vi.mocked(checkContactSeat).mockResolvedValue({ allowed: false, reason: 'waiting_for_quota' });
+    const res = await dispatchOutreachCall(job({ isCallback: true }));
+    expect(checkContactSeat).not.toHaveBeenCalled();
+    expect(res.kind).toBe('dialed');
+  });
+
+  it('4a. the seat gate does not outrank an inactive campaign (that refusal comes first)', async () => {
+    vi.mocked(getCampaignContext).mockResolvedValue({ ...CCTX, status: 'paused' } as never);
+    expect(await dispatchOutreachCall(job())).toEqual({ kind: 'skipped', reason: 'campaign_not_active' });
+    expect(checkContactSeat).not.toHaveBeenCalled();
+  });
+
+  it('4a. a read error in the seat check propagates (the job retries; it is not silently allowed)', async () => {
+    vi.mocked(checkContactSeat).mockRejectedValue(new Error('בדיקת מכסת אנשי הקשר נכשלה'));
+    await expect(dispatchOutreachCall(job())).rejects.toThrow('בדיקת מכסת אנשי הקשר נכשלה');
+    expect(startScenarios).not.toHaveBeenCalled();
+  });
+
   it('1. config null → blocked, no dial', async () => {
     vi.mocked(getVoximplantConfig).mockResolvedValue(null);
     expect((await dispatchOutreachCall(job())).kind).toBe('blocked');
@@ -200,7 +235,8 @@ describe('gates (no dial)', () => {
   });
   it('5b. already reached + isCallback → DIALS (the sole exemption, spec test 5)', async () => {
     // A guest-requested callback is the SAME billable reach continuing (owner
-    // decision 2026-07-21) — the only gate it skips. Without this case nothing
+    // decision 2026-07-21) — one of only two gates it skips (the other is the
+    // contact-quota seat, 4a). Without this case nothing
     // pinned the exemption; a refactor dropping `!job.isCallback` would have
     // passed the whole suite while silently killing every callback.
     vi.mocked(isContactReached).mockResolvedValue(true);
@@ -477,7 +513,7 @@ describe('payload hygiene', () => {
     expect(bytes).toBeLessThan(200); // well under the VoxEngine.customData() 200-byte cap
     expect(payload).not.toMatch(/SECRET|KEY/i); // no credential of any kind in the payload
     // ca defaults to '' when no agent is passed — always present (never omitted),
-    // matching "the single READY agent's vox_username, or ''".
+    // matching "the first routable agent's vox_username, or ''".
     expect(JSON.parse(payload)).toMatchObject({ ca: '' });
     expect(JSON.parse(payload)).not.toHaveProperty('dh'); // omitted when the flag is off
   });
@@ -487,7 +523,7 @@ describe('payload hygiene', () => {
     // access token (randomBytes(16).toString('hex') — the actual format
     // dispatchOutreachCall generates), the beta app origin, and a
     // console_agent_username in the REAL provisioned shape ('agent_' + a
-    // uuid — provisionConsoleAgentVoxUser's format, platform-roles.ts).
+    // uuid — provisionConsoleAgentVoxUser's format, console-agent-provisioning.ts).
     const { payload, bytes } = buildScriptCustomData({
       to: '+972501234567',
       from: '+972529998888',

@@ -14,6 +14,7 @@ import {
   ChevronDown,
   CircleQuestionMark,
   Cookie,
+  CreditCard,
   ChevronsUpDown,
   FileText,
   FlaskConical,
@@ -84,8 +85,9 @@ import { cn, getInitials } from '@/lib/utils';
 
 // Admin app shell: a fixed right-side sidebar (RTL) plus a top bar. Dedicated to
 // the admin area — it is NOT the customer AppShell. As with the customer shell,
-// Base UI defaults to LTR and ignores the DOM `dir`, so DirectionProvider is
-// required for the menu/sheet to position correctly in RTL.
+// Base UI defaults to LTR and ignores the DOM `dir`, so a DirectionProvider is
+// required for the menu/sheet to position correctly in RTL (the root layout
+// already provides one; the local one is redundant but harmless).
 
 type NavItem = {
   href: string;
@@ -146,16 +148,16 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'קמפיינים ושליחה',
     items: [
       { href: '/admin/campaigns', label: 'קמפיינים', icon: Send, permission: 'manage_billing' },
+      // Payment operations nobody can classify (the process died mid-call, or the provider's answer was unclear), waiting for a
+      // person to check the provider and decide. Same key as /admin/campaigns.
+      { href: '/admin/payments', label: 'תשלומים לבדיקה', icon: CreditCard, permission: 'manage_billing' },
       { href: '/admin/voice', label: 'מוקד שיחות AI', icon: Bot, permission: 'manage_voice' },
       { href: '/admin/templates', label: 'תבניות פנייה', icon: Megaphone, permission: 'manage_settings' },
       { href: '/admin/workflows', label: 'תהליכי אוטומציה', icon: Workflow, permission: 'manage_settings' },
       { href: '/admin/recordings', label: 'הקלטות שיחות', icon: Voicemail, permission: 'view_recordings' },
-      // Console audit 12.8 — the page (src/app/(admin)/admin/voice/console-history)
-      // was fully built and server-side gated (requirePlatformPermission
-      // 'manage_voice') but had no nav entry anywhere, making it reachable
-      // only by typing the URL directly. Placed beside recordings — its own
-      // header comment distinguishes it from both /admin/recordings
-      // (call_attempts, the AI ledger) and /admin/voice/events/[id].
+      // Placed beside recordings — the page's own header comment distinguishes
+      // it from both /admin/recordings (call_attempts, the AI ledger) and
+      // /admin/voice/events/[eventId].
       { href: '/admin/voice/console-history', label: 'היסטוריית מוקד', icon: History, permission: 'manage_voice' },
       { href: '/admin/dnc', label: 'חסימת שיחות (DNC)', icon: PhoneOff, permission: 'manage_voice' },
     ],
@@ -320,7 +322,7 @@ export function AdminShell({
   // Which links this viewer is shown, resolved server-side (nav-visibility.ts).
   // Convenience, never authorization — see the note on NavItem.permission.
   navGrants: AdminNavGrants;
-  // Browser call-center softphone gate (call-center stage 3). Optional so any
+  // Browser call-center softphone gate. Optional so any
   // other future caller of AdminShell renders byte-identically without it;
   // the layout always supplies it today. The panel component itself decides
   // whether to render anything — see SoftphonePanel's early return.
@@ -532,8 +534,8 @@ export function AdminShell({
             page content and survives navigation — AdminShell itself is not
             remounted between admin pages, only `children` swaps. Mounted
             inside DirectionProvider/SidebarProvider: any portaled Base UI
-            piece the panel grows later needs that ancestor for RTL (see
-            SidebarInset RTL memory — Base UI ignores the DOM `dir`). */}
+            piece the panel grows later needs that ancestor for RTL (Base UI
+            ignores the DOM `dir`). */}
         {softphone ? <SoftphonePanelLazy {...softphone} /> : null}
       </SidebarProvider>
     </DirectionProvider>

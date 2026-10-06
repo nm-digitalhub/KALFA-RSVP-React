@@ -36,9 +36,9 @@ export const EVENT_TYPE_LABELS: Record<EventType, string> = {
 
 export const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
   draft: 'טיוטה',
-  // Audit §2/§3: an `active` EVENT only means its details are confirmed and the
-  // dates are locked (R5). "פעיל" is reserved for the CAMPAIGN, so an owner
-  // never reads "פעיל" while nothing is being sent yet.
+  // Audit §2/§3: an `active` EVENT only means its details are confirmed (the
+  // dates lock at the first send, R5). "פעיל" is reserved for the CAMPAIGN, so
+  // an owner never reads "פעיל" while nothing is being sent yet.
   active: 'פרטי האירוע אושרו',
   closed: 'הסתיים',
 };
@@ -58,8 +58,8 @@ export function eventStatusLabel(
 // Hebrew labels for the campaign lifecycle enum, same exhaustive-Record
 // discipline as EVENT_STATUS_LABELS above — a new campaign_status value is a
 // compile error here rather than a silently-missing label. Used by the admin
-// campaigns table and the stats page; owner-facing screens use the DERIVED
-// campaignStage below instead.
+// campaigns table; owner-facing screens (the stats page included) use the
+// DERIVED campaignStage below instead.
 export const CAMPAIGN_STATUS_LABELS: Record<CampaignStatus, string> = {
   draft: 'טיוטה',
   pending_approval: 'ממתין לחתימה', // audit §4: what is actually pending is the owner's signature
@@ -93,13 +93,14 @@ export const CAMPAIGN_STATUS_VARIANTS: Record<CampaignStatus, BadgeVariant> = {
 // --- Owner-facing campaign STAGE (audit §3) -----------------------------------
 // The lifecycle enum alone cannot tell the owner what to do next: `approved`
 // means "signed" BEFORE the card hold and "ready to start" AFTER it. The stage
-// is derived from status + capture_status — a pure function, no new enum value,
-// no migration — and is the ONLY campaign state owner screens show.
+// is derived from status + capture_status (plus the ledger payment for a package
+// campaign) — a pure function, no new enum value, no migration — and is the
+// ONLY campaign state owner screens show.
 export type CampaignStage =
   | 'not_set' // no campaign yet
   | 'awaiting_signature' // created, agreement not signed
-  | 'awaiting_payment' // signed, no confirmed card hold yet
-  | 'awaiting_activation' // held; activation did not happen (auto-activation refused / pre-change campaign)
+  | 'awaiting_payment' // signed, no confirmed card hold or collected package payment yet
+  | 'awaiting_activation' // funded (card hold or paid package); activation did not happen (auto-activation refused / pre-change campaign)
   | 'active'
   | 'paused'
   | 'closed' // closed / awaiting_invoice / billed / paid
@@ -127,9 +128,23 @@ export const CAMPAIGN_STAGE_VARIANTS: Record<CampaignStage, BadgeVariant> = {
   cancelled: 'destructive',
 };
 
-export function campaignStage(
-  campaign: { status: CampaignStatus; capture_status: string | null } | null,
-): CampaignStage {
+export type CampaignStageInput = {
+  status: CampaignStatus;
+  capture_status: string | null;
+  // `package_price` set = a fixed-price package campaign, funded by its payment (the ledger) and not by a card hold.
+  package_price?: number | null;
+  // The ledger-derived payment state of a package campaign (status only, so this leaf module imports nothing).
+  payment?: { status: string } | null;
+};
+
+// Funded = ready to start. Pay-per-result: a confirmed card hold (the only `authorized` is a confirmed hold, see the
+// capture_status vocabulary in campaigns.ts). Package: paid in full according to the ledger.
+function isFunded(c: CampaignStageInput): boolean {
+  if (c.capture_status === 'authorized') return true;
+  return (c.package_price ?? null) != null && c.payment?.status === 'collected';
+}
+
+export function campaignStage(campaign: CampaignStageInput | null): CampaignStage {
   if (!campaign) return 'not_set';
   switch (campaign.status) {
     case 'draft':
@@ -139,7 +154,7 @@ export function campaignStage(
     case 'scheduled':
       // capture_status vocabulary (campaigns.ts): null | pending | authorized |
       // hold_failed | hold_review — only `authorized` is a confirmed hold.
-      return campaign.capture_status === 'authorized' ? 'awaiting_activation' : 'awaiting_payment';
+      return isFunded(campaign) ? 'awaiting_activation' : 'awaiting_payment';
     case 'active':
       return 'active';
     case 'paused':

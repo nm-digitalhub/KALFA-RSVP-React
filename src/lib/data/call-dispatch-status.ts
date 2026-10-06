@@ -16,7 +16,8 @@ import type { OutreachCallRequest } from '@/lib/queue/queues';
 // a reconnect. skipped/already_reached is a valid domain refusal, not an error.
 //
 // The vocabulary here is a CONTRACT with the Android app and with the DB CHECK
-// constraints (migration 20260722170740). Extending either union is a
+// constraints (migration 20260722170740; the reason list was last recreated by
+// 20261004081706). Extending either union is a
 // deliberate contract change: update the migration, this file, and the app
 // mapping together — the corpus test (call-dispatch-status.test.ts) fails if
 // the TS unions and the SQL CHECK lists drift apart, and the exhaustive mapper
@@ -50,6 +51,7 @@ export type DispatchPublicReason =
   | 'concurrent_owner'
   | 'max_concurrency'
   | 'campaign_hour_cap'
+  | 'waiting_for_quota'
   | 'outreach_disabled'
   | 'config_missing'
   | 'live_calls_disabled'
@@ -70,6 +72,7 @@ export const DISPATCH_REASON_VALUES: readonly DispatchPublicReason[] = [
   'concurrent_owner',
   'max_concurrency',
   'campaign_hour_cap',
+  'waiting_for_quota',
   'outreach_disabled',
   'config_missing',
   'live_calls_disabled',
@@ -93,7 +96,7 @@ export type DispatchSettlement = {
 type FinalDispatchResult = Exclude<CallDispatchResult, { kind: 'transient_error' }>;
 
 /**
- * The closed worker→public mapping (binding user decision, 2026-07-22).
+ * The closed worker→public mapping.
  *
  * Two deliberate crosswalks:
  * - outreach_disabled arrives as kind 'skipped' but is published as 'blocked':

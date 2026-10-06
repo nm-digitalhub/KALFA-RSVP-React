@@ -19,7 +19,10 @@ import {
 import { computeChargeAmount } from '@/lib/data/close-charge-amount';
 import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
 import { getSignedAgreementVersion } from '@/lib/data/agreements';
-import { isBaseFeeAgreementVersion } from '@/lib/agreements/template';
+import {
+  isBaseFeeAgreementVersion,
+  isPackageAgreementVersion,
+} from '@/lib/agreements/template';
 import { checkOsekPaturCeilingAfterCharge } from '@/lib/data/tax-ceiling';
 import {
   captureAuthorizationSumit,
@@ -40,7 +43,11 @@ export type CloseChargeOutcome = {
     | 'declined'
     | 'review'
     | 'disabled'
-    | 'bad_state';
+    | 'bad_state'
+    // A fixed-price package campaign: its money was taken at purchase and lives in the payment
+    // ledger. There is nothing to settle here, and the pay-per-result formula below must never
+    // run against it.
+    | 'not_applicable';
   amount: number;
   // Present only on 'charged': the provider's per-charge payment id — the
   // analytics transaction_id (never the campaign id). null when the provider
@@ -80,10 +87,11 @@ function agorot(n: number): number {
 // Final settlement closes the event too, not just the campaign: once billing
 // is final there is no reason for the public RSVP link to keep accepting
 // responses (get_rsvp_by_token/submit_rsvp both gate on events.status =
-// 'active'). The campaign is already closed by this point (CLOSEABLE branch
-// above, or already 'closed' on retry), so the R7 trigger's operational-
-// campaign guard never blocks this. Best-effort by design — never throws —
-// because the charge/no-charge outcome above is already final and recorded;
+// 'active'). The campaign is already closed by this point (the CLOSEABLE
+// branch in closeCampaignAndCharge, or already 'closed' on retry), so the R7
+// trigger's operational-campaign guard never blocks this. Best-effort by
+// design — never throws — because the charge/no-charge outcome is already
+// final and recorded;
 // a failure here must not read back to the admin as a failed settlement.
 // Re-checks the LIVE status first (mirrors event-cancellation.ts's
 // adminCloseEvent) so a campaign settled AFTER the owner already closed the
@@ -126,7 +134,7 @@ async function closeEventAfterSettlement(eventId: string): Promise<void> {
 // opts.overrideAmount (cancellation-resolve flow only): replaces the computed
 // total with an admin-confirmed amount, capped the same way — every
 // other safety property (lock, terminal-state guard, receipt, D5 guard) is
-// unchanged. Every existing caller omits opts and gets byte-identical behavior.
+// unchanged. Every other caller omits opts and gets the computed total.
 export async function closeCampaignAndCharge(
   campaignId: string,
   opts?: { overrideAmount?: number; overrideReason?: string },
@@ -148,6 +156,9 @@ export async function closeCampaignAndCharge(
 
   const campaign = await getCampaignForCharge(campaignId);
   if (!campaign) return { outcome: 'bad_state', amount: 0 };
+
+  // MODEL GUARD 1 of 2 — the campaign's own price snapshot. Checked before ANY state change.
+  if (campaign.package_price != null) return { outcome: 'not_applicable', amount: 0 };
 
   // Terminal charge outcomes are final: a charged (or credit-settled) campaign
   // can never be re-charged NOR re-marked nothing_to_charge (which would zero
@@ -203,8 +214,15 @@ export async function closeCampaignAndCharge(
     return { outcome: 'review', amount: 0 };
   }
 
+  // MODEL GUARD 2 of 2 — the SIGNED agreement version (D5 pattern: the money follows the
+  // immutable signature, not a flag or a snapshot that could be missing). A package signature
+  // never settles under the old formula, whatever the campaign row says.
+  if (isPackageAgreementVersion(signedVersion)) {
+    return { outcome: 'not_applicable', amount: 0 };
+  }
+
   // Flat-base + included + overage. base/included from the campaign SNAPSHOT
-  // (S3 at authorize); NULL ⇒ 0 = pre-model / pre-S3 campaign ⇒ reduces to pure
+  // (taken at campaign creation); NULL ⇒ 0 = pre-model campaign ⇒ reduces to pure
   // per-reached (Σ reached × price_per_reached), verified behaviour-neutral for
   // the live campaigns. price_per_reached is the per-reached (overage) rate.
   //
@@ -221,7 +239,7 @@ export async function closeCampaignAndCharge(
       : (summary?.ceiling ?? 0);
 
   // D5 GUARD — bind the base-fee to the SIGNED contract. The campaign may carry a
-  // snapshotted base (the gate was on at authorize), but the activation fee
+  // snapshotted base (the gate was on at campaign creation), but the activation fee
   // may be billed ONLY if the customer actually signed a base-fee agreement
   // version. Otherwise suppress base+included → pure per-reached, so a v3-signer
   // (whose contract says "0 → no charge") is NEVER charged the base regardless of
@@ -257,7 +275,7 @@ export async function closeCampaignAndCharge(
   }
 
   // final = max(0, base + max(0, reached − included) × overage − credits),
-  // capped at `ceiling` only when it is a number (§14/D5/G4).
+  // capped at `ceiling` only when it is a number.
   const computed = computeChargeAmount({
     base: effectiveBase,
     included: effectiveIncluded,
@@ -369,7 +387,7 @@ export async function closeCampaignAndCharge(
   // nothing is left blocked on the customer's card. It is possible only while
   // the hold is intact (not released), for an amount no higher than the hold,
   // under the hold's own SUMIT customer. Otherwise: a new charge on the saved
-  // token, as before — and the hold stays open until released in SUMIT.
+  // token — and the hold stays open until released in SUMIT.
   const holdCapture =
     campaign.auth_number &&
     campaign.auth_amount != null &&
@@ -418,7 +436,7 @@ export async function closeCampaignAndCharge(
         if (!(e instanceof SumitDeclinedError) || retryingUnknownOutcome) throw e;
         // A definitive decline on a first (or post-decline) attempt: no money
         // moved. The hold may simply be past the issuer's J5 window — fall
-        // back to the token charge, exactly today's path.
+        // back to the plain token charge.
         captureDeclinedFellBack = true;
         chargeMethod = 'token_charge';
         result = await captureHeldCardSumit(chargeParams);

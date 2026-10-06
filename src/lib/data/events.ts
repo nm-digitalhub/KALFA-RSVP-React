@@ -56,8 +56,8 @@ export async function requireOwnedEvent(eventId: string): Promise<OwnedEvent> {
 // `resource` for `eventId` — owner OR an org member holding the permission —
 // via the can_access_event() DB function (single source of truth). notFound()
 // (404) otherwise. requireOwnedEvent remains for strictly owner-only paths;
-// this gate enables shared, org-scoped access once the event-table RLS is
-// widened to org membership (Phase 3).
+// this gate serves shared, org-scoped access — the event-table RLS is widened
+// to org membership (Phase 3).
 export async function requireEventAccess(
   eventId: string,
   resource: string = 'events',
@@ -133,8 +133,8 @@ export interface CreateEventInput {
   event_type: EventType;
   event_date: string | null;
   venue_name: string | null;
-  // The create form mirrors the edit form 1:1 (owner ruling 2026-09-02), so
-  // every owner-editable column is settable at create too.
+  // The create form mirrors the edit form 1:1, so every owner-editable column
+  // is settable at create too.
   venue_address: string | null;
   rsvp_deadline: string | null;
   gift_payment_url: string | null;
@@ -150,7 +150,7 @@ export interface CreateEventInput {
 // `celebrants` is a jsonb column typed `Json`. The CelebrantsInput shapes are
 // structurally compatible at runtime but not directly assignable in TS, so we
 // narrow through unknown — documented per the project's casting rule (same
-// pattern as src/lib/data/campaigns.ts:173).
+// pattern as the outreach_schedule cast in src/lib/data/campaigns.ts).
 function celebrantsJson(celebrants: CelebrantsInput | null): Json | null {
   return celebrants as unknown as Json | null;
 }
@@ -197,7 +197,7 @@ export async function createEvent(input: CreateEventInput): Promise<EventListIte
   if (input.event_date && isBeforeTomorrowIL(input.event_date)) {
     throw new Error('מועד האירוע חייב להיות החל ממחר');
   }
-  // R2b mirror (same as the draft path of updateEvent): a deadline in the past
+  // R2b mirror (same as the date path of updateEvent): a deadline in the past
   // is refused before touching the DB.
   if (input.rsvp_deadline && input.rsvp_deadline < todayIL()) {
     throw new Error('המועד האחרון לאישור הגעה לא יכול להיות בעבר');
@@ -240,7 +240,8 @@ export async function createEvent(input: CreateEventInput): Promise<EventListIte
 
 // Full editable projection for the event detail/edit page. Excludes the
 // billing/feature columns (package_id, with_ai_calls, template) — not
-// owner-editable here — and server-controlled columns (owner_id, timestamps).
+// owner-editable here — and server-controlled columns (owner_id, org_id,
+// gift_link_token, updated_at).
 export type EventDetail = Pick<
   EventRow,
   | 'id'
@@ -286,15 +287,15 @@ export async function getEvent(eventId: string): Promise<EventDetail> {
 // Fields an owner may edit. Deliberately omits id/owner_id/timestamps and the
 // billing/feature columns (package_id, with_ai_calls, template) — those are not
 // settable through this owner path. `status` is NOT here at all — publishEvent
-// and closeEvent are the only legitimate writers of status (R6).
+// and closeEvent are the only owner-path writers of status (R6).
 //
 // event_date/rsvp_deadline are OPTIONAL keys, and KEY PRESENCE carries meaning,
-// not just the value (round-2 design): omitting the key entirely means "do not
-// touch this field" — the only legal shape when the event is not draft (a
-// disabled <input> is never POSTed by the browser, so the key never reaches
-// here for a locked event under normal UI use). Including the key (value:
-// string | null) means "set/clear it" — legal only while draft. NEVER collapse
-// "absent" and "null" into the same thing.
+// not just the value: omitting the key entirely means "do not touch this
+// field" — the only legal shape once the dates are locked (closed, or a first
+// send went out; a disabled <input> is never POSTed by the browser, so the key
+// never reaches here for a locked event under normal UI use). Including the
+// key (value: string | null) means "set/clear it" — legal only while the dates
+// are unlocked. NEVER collapse "absent" and "null" into the same thing.
 export interface UpdateEventInput {
   name: string;
   event_type: EventType;
@@ -344,12 +345,52 @@ export const VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR =
 // pre-Phase-3 leftover matched 0 rows for any non-owner member with events.edit and
 // defeated org sharing; RLS + the column grants are the authority.
 //
+export const DATES_LOCKED_ERROR = 'לא ניתן לשנות תאריך ושעה לאחר שנשלחה ההודעה הראשונה לאורחים';
+
+// Has ANYTHING gone out to a guest for this event? `contact_interactions` with
+// direction 'out' is the one place every outbound is recorded (a WhatsApp template
+// the provider accepted; a call once it started) — the same fact the database
+// trigger events_guard_update locks on. Runs on the caller's cookie client, so RLS
+// scopes it to events the viewer may see; a viewer who cannot read the rows gets
+// `false`, which only ever makes the UI too permissive — the trigger still refuses.
+async function hasOutboundSend(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  eventId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('contact_interactions')
+    .select('id')
+    .eq('event_id', eventId)
+    .eq('direction', 'out')
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error('בדיקת מצב השליחה נכשלה');
+  return data !== null;
+}
+
+/**
+ * Are this event's date, time and RSVP deadline locked right now? (The form uses
+ * it to disable the fields; `updateEvent` enforces the same rule.) A draft never
+ * is, a closed event always is, and an active one is from its first send.
+ */
+export async function eventDatesLocked(
+  eventId: string,
+  status: EventDetail['status'],
+): Promise<boolean> {
+  if (status === 'draft') return false;
+  if (status === 'closed') return true;
+  return hasOutboundSend(await createClient(), eventId);
+}
+
 // R5 lock + R2/R2b mirror (defense-in-depth — the DB triggers are the REST-proof
-// authority): on a non-draft event, an explicit event_date/rsvp_deadline KEY is
-// a forged-request bypass of the disabled UI and is REJECTED outright (not
-// silently dropped) — only the absence of both keys is legal. On a draft event,
-// a present key is validated (R2 for event_date, R2b lower-bound mirror for
-// rsvp_deadline) and included in the patch.
+// authority). event_date/rsvp_deadline are locked by the FIRST SEND (migration
+// 20260930191529), not by leaving draft: while nothing has gone out to a guest
+// they are editable on a draft AND on an active event, and from the first message
+// or call on (or once the event is closed) an explicit date KEY is a forged-request
+// bypass of the disabled UI and is REJECTED outright (not silently dropped) — only
+// the absence of both keys is legal. Whenever the dates are editable, a present key
+// is validated (R2 for event_date, R2b lower-bound mirror for rsvp_deadline) and
+// included in the patch.
 export async function updateEvent(
   eventId: string,
   input: UpdateEventInput,
@@ -375,12 +416,12 @@ export async function updateEvent(
     celebrants: celebrantsJson(input.celebrants),
   };
 
-  if (cur.status !== 'draft') {
-    if (datesPresent) {
-      throw new Error('לא ניתן לשנות מועד לאחר אישור פרטי האירוע');
+  // No date key present → omit both from the patch entirely (never null), and the
+  // send lookup below is not needed, so the common save costs nothing extra.
+  if (datesPresent) {
+    if (cur.status === 'closed' || (cur.status !== 'draft' && (await hasOutboundSend(supabase, eventId)))) {
+      throw new Error(DATES_LOCKED_ERROR);
     }
-    // Neither key present — omit them from the patch entirely (never null).
-  } else {
     if ('event_date' in input) {
       if (input.event_date && isBeforeTomorrowIL(input.event_date)) {
         throw new Error('מועד האירוע חייב להיות החל ממחר');
@@ -398,11 +439,11 @@ export async function updateEvent(
   // While-campaign-live invariants — protect every PENDING send (the send path
   // is fail-closed: a removed ingredient silently skips as params_incomplete, so
   // a "free" edit could drop a scheduled reminder). A save may CHANGE these but
-  // must not REMOVE them, nor re-type the event its templates/pricing bind to:
-  //   • event_type — locked (template family + param contract + pricing)
+  // must not REMOVE them, nor re-type the event its templates bind to:
+  //   • event_type — locked (template family + param contract)
   //   • celebrants — must stay COMPLETE for the type (host signature/composition)
   //   • venue_name — must stay non-empty ({{…}} venue line in every invite/reminder)
-  // event_date/time are already lifecycle-locked post-publish (above). The stored
+  // event_date/time are already locked by the first send (above). The stored
   // type comes from the ownership read (cur) — no extra query; the campaign lookup
   // runs ONLY when one of the three could trip, and keys off the OPERATIONAL
   // status set (SSOT) so a terminal/cancelled campaign never locks the form.
@@ -433,6 +474,11 @@ export async function updateEvent(
     .single();
 
   if (error || !data) {
+    // A first send can land between the lookup above and this write; the database
+    // trigger then refuses, and the owner gets the same message as the pre-check.
+    if (error?.message?.includes('event_date/rsvp_deadline are locked')) {
+      throw new Error(DATES_LOCKED_ERROR);
+    }
     throw new Error('עדכון האירוע נכשל');
   }
 
@@ -507,8 +553,9 @@ export async function closeEvent(eventId: string): Promise<void> {
 }
 
 // Owner-facing: WHY is this event closed? Reads the single closure-cause
-// activity_log entry — closeEvent/adminCloseEvent/closeEventAfterSettlement
-// each re-check the LIVE status before writing+logging, so at most one of
+// activity_log entry — adminCloseEvent/closeEventAfterSettlement re-check the
+// LIVE status before writing+logging, and the owner's close control
+// (closeEvent) is only rendered for a non-closed event, so at most one of
 // these three actions is ever logged per event and "latest" is unambiguous.
 // RLS-scoped (al_org_read), same convention as getCancellationRequestForEvent
 // — no explicit ownership check needed. Returns null for a non-closed event
@@ -544,7 +591,7 @@ export async function getEventClosureReason(
 // Batched sibling of getEventClosureReason, for LIST screens (entry-routing
 // plan §7): ONE query for every event on the page instead of one per row.
 // The `.in('event_id', …)` shape is the established data-layer precedent
-// (admin/users.ts:270,275 · admin/callbacks.ts:653).
+// (admin/users.ts:280,285 · admin/callbacks.ts:653).
 //
 // AUTHORIZATION — unchanged from the single-event helper, no new surface: the
 // ids come from listEvents (already RLS-scoped), and the activity_log read is
@@ -581,9 +628,9 @@ export async function getEventClosureReasons(
     // Newest-first above ⇒ the FIRST row seen per event is the latest one, and
     // an older row for the same event must not overwrite it. This is the
     // batched equivalent of the single-event helper's `.limit(1)`, not a new
-    // assumption: the three closing actions each re-check the live status
-    // before writing, so a second row per event is not expected in the first
-    // place.
+    // assumption: no normal path runs any of the three closing actions on an
+    // already-closed event, so a second row per event is not expected in the
+    // first place.
     if (byEvent.has(row.event_id)) continue;
     const reason = CLOSURE_ACTIONS[row.action];
     if (reason) byEvent.set(row.event_id, reason);

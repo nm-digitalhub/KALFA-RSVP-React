@@ -11,8 +11,16 @@
 // own their own value escaping (see template.ts's `escapedExtra`) — this
 // function does none, by design, since not every caller's values need
 // HTML-escaping (a Hebrew FAQ answer plain-text paragraph doesn't).
+const TOKEN_PATTERN = /\{\{\s*([\w.]+)\s*\}\}/g;
+
 export function substituteTokens(text: string, values: Record<string, string>): string {
-  return text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (whole, key: string) =>
+  return text.replace(TOKEN_PATTERN, (whole, key: string) =>
     Object.prototype.hasOwnProperty.call(values, key) ? values[key] : whole,
   );
+}
+
+// The distinct token names a text uses, in order of first appearance — what a review step needs to tell a typo from
+// a real token without re-implementing the pattern.
+export function listTokens(text: string): string[] {
+  return [...new Set([...text.matchAll(TOKEN_PATTERN)].map((m) => m[1]))];
 }

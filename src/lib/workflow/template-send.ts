@@ -29,6 +29,7 @@ import 'server-only';
 // keep correct, and the first one to fall behind would fail silently.
 import { getWhatsAppConfig } from '@/lib/data/outreach-config';
 import { sendOneWhatsApp } from '@/lib/data/outreach';
+import { checkContactSeat } from '@/lib/data/contact-quota';
 import { resolveWhatsAppSend } from '@/lib/data/whatsapp-template-send';
 import { terminalReasonFor } from '@/lib/data/outreach-engine';
 import { getWhatsAppConsentRequired } from '@/lib/data/outreach-config';
@@ -55,8 +56,8 @@ export async function sendTemplateToContact(input: {
   const config = await getWhatsAppConfig();
   if (!config) return { ok: false, reason: 'whatsapp_not_configured' };
 
-  // Everything the positional parameters need, in one read. `celebrants` and the
-  // venue are what {{2}}–{{7}} are built from; a missing one fails CLOSED below
+  // Everything the template's variables are bound from, in one read — the
+  // celebrants, date, venue and gift fields. A missing one fails CLOSED below
   // rather than sending a template with a blank in it.
   const { data: event } = await admin
     .from('events')
@@ -76,9 +77,8 @@ export async function sendTemplateToContact(input: {
   //
   // `terminalReasonFor` answers "may this contact be sent to on this channel",
   // and it READS THE LIVE SETTING rather than assuming one — so with
-  // `whatsapp_consent_required` off (its state on 2026-09-13, by the owner's
-  // decision) a missing consent does not block, and the day it is switched back
-  // on this node obeys immediately with no code change.
+  // `whatsapp_consent_required` off a missing consent does not block, and the
+  // day it is switched back on this node obeys immediately with no code change.
   //
   // `removal_requested` blocks regardless of that switch, on every channel.
   // Someone who asked to be removed is not a setting.
@@ -102,9 +102,8 @@ export async function sendTemplateToContact(input: {
     .maybeSingle();
 
   // Which Meta template and what fills it — the same resolver every send site
-  // uses (routes + Meta mirror + variable rows). Since 2026-09-30 that includes
-  // the gift / event-day URL button and the gift layout, which this node used
-  // to bind as the generic 7-tuple.
+  // uses (routes + Meta mirror + variable rows). That includes the gift /
+  // event-day URL button and the gift layout.
   const built = await resolveWhatsAppSend({
     messageKey: input.messageKey,
     eventType: event.event_type,
@@ -128,11 +127,22 @@ export async function sendTemplateToContact(input: {
   // message an owner asked for.
   const { data: campaign } = await admin
     .from('campaigns')
-    .select('id')
+    .select('id, status')
     .eq('event_id', input.eventId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  // Contact-quota seat (plan 2026-09-30-contact-quota-package.md §4.1). A workflow reaches
+  // this function directly, bypassing the campaign's authorized list, so the check is made
+  // here: a campaign with a package quota may approach only the contacts that hold a seat.
+  // Unlike the log row above, which is happy with any campaign, the gate applies only to the
+  // event's LIVE campaign: a cancelled one no longer constrains who may be messaged. A
+  // campaign without a quota, or an event without a campaign, is unaffected.
+  if (campaign && campaign.status !== 'cancelled') {
+    const seat = await checkContactSeat(campaign.id, contact.id);
+    if (!seat.allowed) return { ok: false, reason: seat.reason };
+  }
 
   const outcome = await sendOneWhatsApp(
     admin,

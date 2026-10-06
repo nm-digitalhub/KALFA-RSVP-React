@@ -14,6 +14,7 @@ import {
   CELEBRANTS_LOCKED_ERROR,
   closeEvent,
   createEvent,
+  DATES_LOCKED_ERROR,
   ONE_EVENT_PER_ACCOUNT_ERROR,
   EVENT_TYPE_LOCKED_ERROR,
   getEvent,
@@ -28,8 +29,8 @@ import {
   VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR,
 } from '@/lib/data/events';
 
-// S2.3 — relative-to-real-time date strings (Israel calendar day), reusing the
-// SAME production helper the data-layer guards call (todayIL).
+// Relative-to-real-time date strings (Israel calendar day), reusing the SAME
+// production helper the data-layer guards call (todayIL).
 function ilDate(offsetDays: number): string {
   return todayIL(Date.now() + offsetDays * 24 * 60 * 60 * 1000);
 }
@@ -134,8 +135,8 @@ describe('listEvents', () => {
 
     await listEvents();
 
-    // Core ownership-scoping assertion: the query is filtered by the verified
-    // user's id server-side, not by any browser-supplied identifier.
+    // Core scoping assertion: no app-side owner_id filter — tenant scoping is
+    // the RLS policy's job, so org members see shared events.
     expect(builder.eq).not.toHaveBeenCalledWith('owner_id', expect.anything());
     expect(client.from).toHaveBeenCalledWith('events');
   });
@@ -253,9 +254,9 @@ describe('createEvent', () => {
     await expect(createEvent(input)).rejects.toThrow('יצירת האירוע נכשלה');
   });
 
-  // S2.3 (round-3) — createEvent's own data-layer guard, mirroring R2 the same
-  // way updateEvent's draft path does (isBeforeTomorrowIL). Defense-in-depth on
-  // top of the DB trigger (events_before_insert) and the Zod refine (S2.2).
+  // createEvent's own data-layer guard, mirroring R2 the same way updateEvent's
+  // date path does (isBeforeTomorrowIL). Defense-in-depth on top of the DB
+  // trigger (events_before_insert) and the Zod refine.
   it('allows event_date: null (a date-less draft)', async () => {
     const { client } = createMockSupabase<EventListItem>({
       data: sampleRow({ event_date: null }),
@@ -404,10 +405,10 @@ describe('getEvent', () => {
 });
 
 describe('updateEvent', () => {
-  // S2.3 (round-2 design): event_date/rsvp_deadline are OPTIONAL keys — key
-  // ABSENCE means "don't touch" (the only legal shape on a non-draft event);
-  // key PRESENCE (even null) means "set/clear it" (legal only while draft).
-  // `status` is no longer part of the input at all (publishEvent/closeEvent own
+  // event_date/rsvp_deadline are OPTIONAL keys — key ABSENCE means "don't
+  // touch" (the only legal shape once the dates are locked); key PRESENCE (even
+  // null) means "set/clear it" (legal only while the dates are unlocked).
+  // `status` is not part of the input at all (publishEvent/closeEvent own
   // status transitions exclusively).
   const baseInput = {
     name: 'Renamed',
@@ -484,23 +485,80 @@ describe('updateEvent', () => {
     );
   });
 
-  it('on a non-draft event, an explicit date key present is a forged-request REJECT (no DB write)', async () => {
-    const { client, builder } = createMockSupabase<EventDetail>({
-      data: detailRow({ status: 'active' }),
-      error: null,
-    });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
-    );
-    client.rpc.mockResolvedValue({ data: true, error: null });
-    vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
-      (f as (v: unknown) => unknown)({ data: detailRow({ status: 'active' }), error: null }),
-    );
+  // The dates are locked by the FIRST SEND, not by leaving draft (migration
+  // 20260930191529): an active event that nothing has gone out for is still
+  // editable, exactly like a draft. The read order on such an event is:
+  // ownership → "has anything been sent" → campaigns lookup → update.
+  const NOTHING_SENT = { data: null, error: null };
+  const SOMETHING_SENT = { data: { id: 'interaction-1' }, error: null };
 
-    await expect(
-      updateEvent('event-1', { ...baseInput, event_date: '2026-12-01' }),
-    ).rejects.toThrow('לא ניתן לשנות מועד לאחר אישור פרטי האירוע');
+  function activeClient(rows: unknown[], final: unknown) {
+    const { client, builder } = createMockSupabase<EventDetail>({ data: detailRow({ status: 'active' }), error: null });
+    vi.mocked(createClient).mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>);
+    client.rpc.mockResolvedValue({ data: true, error: null });
+    mockReads(builder, ...rows, final);
+    return { client, builder };
+  }
+
+  it('on an ACTIVE event with nothing sent yet, a date key is accepted and validated like a draft\'s', async () => {
+    const row = detailRow({ name: baseInput.name, status: 'active', event_date: ilDate(5) });
+    const { builder } = activeClient([owned({ status: 'active' }), NOTHING_SENT, NO_LIVE_CAMPAIGN], { data: row, error: null });
+
+    await updateEvent('event-1', { ...baseInput, event_date: ilDate(5) });
+
+    const patch = vi.mocked(builder.update).mock.calls[0][0] as Record<string, unknown>;
+    expect(patch.event_date).toBe(ilDate(5));
+    expect(builder.eq).toHaveBeenCalledWith('direction', 'out'); // looked for an outbound send
+  });
+
+  it('on an ACTIVE event with nothing sent yet, a past/today event_date is still rejected (R2 mirror)', async () => {
+    const { builder } = activeClient([owned({ status: 'active' }), NOTHING_SENT], { data: null, error: null });
+
+    await expect(updateEvent('event-1', { ...baseInput, event_date: ilDate(0) })).rejects.toThrow(
+      'מועד האירוע חייב להיות החל ממחר',
+    );
     expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('on an ACTIVE event where something has gone out, a date key is REJECTED and nothing is written', async () => {
+    const { builder } = activeClient([owned({ status: 'active' }), SOMETHING_SENT], { data: null, error: null });
+
+    await expect(updateEvent('event-1', { ...baseInput, event_date: ilDate(5) })).rejects.toThrow(DATES_LOCKED_ERROR);
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('a rsvp_deadline key is locked by the first send too', async () => {
+    const { builder } = activeClient([owned({ status: 'active' }), SOMETHING_SENT], { data: null, error: null });
+
+    await expect(updateEvent('event-1', { ...baseInput, rsvp_deadline: ilDate(3) })).rejects.toThrow(DATES_LOCKED_ERROR);
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('on a CLOSED event a date key is rejected without even looking for sends', async () => {
+    const { client, builder } = activeClient([owned({ status: 'closed' })], { data: null, error: null });
+
+    await expect(updateEvent('event-1', { ...baseInput, event_date: ilDate(5) })).rejects.toThrow(DATES_LOCKED_ERROR);
+    expect(client.from).not.toHaveBeenCalledWith('contact_interactions');
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('with NO date key the send lookup is skipped entirely (the common save costs nothing extra)', async () => {
+    const row = detailRow({ name: baseInput.name, status: 'active' });
+    const { client } = activeClient([owned({ status: 'active' }), NO_LIVE_CAMPAIGN], { data: row, error: null });
+
+    await updateEvent('event-1', baseInput);
+
+    expect(client.from).not.toHaveBeenCalledWith('contact_interactions');
+  });
+
+  it("maps the database's own lock refusal (a send that landed after the check) to the same friendly message", async () => {
+    const { builder } = activeClient([owned({ status: 'active' }), NOTHING_SENT, NO_LIVE_CAMPAIGN], {
+      data: null,
+      error: { message: 'event_date/rsvp_deadline are locked: the event is closed or a message has already been sent', code: '23514' },
+    });
+
+    await expect(updateEvent('event-1', { ...baseInput, event_date: ilDate(5) })).rejects.toThrow(DATES_LOCKED_ERROR);
+    expect(builder.update).toHaveBeenCalled();
   });
 
   it('on a draft event, a past/today event_date is rejected (R2 mirror)', async () => {
@@ -622,7 +680,7 @@ describe('updateEvent', () => {
   });
 
   it('refuses (via the ownership gate) and does not write when not owned', async () => {
-    // requireOwnedEvent reads first; a null row triggers notFound() before any
+    // requireEventAccess reads first; a null row triggers notFound() before any
     // update or activity write happens.
     const { client, builder } = createMockSupabase<EventDetail>({
       data: null,
@@ -1132,7 +1190,7 @@ describe('assertEventNotPast', () => {
   });
 });
 
-// S2.1 — R2/R3's "event_date must be at least tomorrow" boundary. Reuses the
+// R2/R3's "event_date must be at least tomorrow" boundary. Reuses the
 // same Israel-calendar-day rule as isPastEventDay, but the boundary is
 // inclusive of TODAY (today is rejected, not just the past) — distinct from
 // isPastEventDay, where today is still valid (an active event rides through

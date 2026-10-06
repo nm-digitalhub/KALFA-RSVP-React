@@ -1,0 +1,110 @@
+import { describe, expect, it } from 'vitest';
+
+import { packageCancellationState, packageRefundMessage, planPackageRefund } from './package-cancellation';
+
+// What goes back to the customer of a fixed-price package when the admin resolves a cancellation request. The same
+// meaning the existing post-charge branch already gives the two resolutions, so the admin screen needs no new rules:
+//   ביטול מלא   → everything the card paid goes back;
+//   חיוב חלקי   → the amount typed (or the percentage turned into an amount) STAYS with us, the rest goes back.
+
+describe('planPackageRefund', () => {
+  it('full cancellation: all of it goes back, nothing is kept', () => {
+    expect(planPackageRefund({ paid: 120, resolution: 'full_cancellation' })).toEqual({ kept: 0, refund: 120 });
+  });
+
+  it('partial: the amount stays, the rest goes back', () => {
+    expect(planPackageRefund({ paid: 120, resolution: 'partial_charge', resolutionAmount: 15 })).toEqual({ kept: 15, refund: 105 });
+  });
+
+  it('partial that keeps everything: nothing goes back', () => {
+    expect(planPackageRefund({ paid: 120, resolution: 'partial_charge', resolutionAmount: 120 })).toEqual({ kept: 120, refund: 0 });
+  });
+
+  it('whole agorot, no floating-point crumbs: 100.10 − 0.30', () => {
+    expect(planPackageRefund({ paid: 100.1, resolution: 'partial_charge', resolutionAmount: 0.3 })).toEqual({ kept: 0.3, refund: 99.8 });
+  });
+
+  it('keeping more than was paid is refused in plain words', () => {
+    expect(() => planPackageRefund({ paid: 120, resolution: 'partial_charge', resolutionAmount: 120.01 })).toThrow('גדול ממה ששולם');
+  });
+
+  it('a partial resolution without an amount is refused', () => {
+    expect(() => planPackageRefund({ paid: 120, resolution: 'partial_charge' })).toThrow();
+  });
+
+  it('nothing paid, nothing to plan: a full cancellation refunds 0', () => {
+    expect(planPackageRefund({ paid: 0, resolution: 'full_cancellation' })).toEqual({ kept: 0, refund: 0 });
+  });
+});
+
+describe('packageRefundMessage — what the admin is told when the refund did not go through', () => {
+  it('every message is a fixed Hebrew sentence: no provider text, no ids, no amounts typed by anyone', () => {
+    const results = [
+      { status: 'declined' },
+      { status: 'review' },
+      { status: 'in_progress' },
+      { status: 'error' },
+      { status: 'refused', reason: 'disabled' },
+      { status: 'refused', reason: 'invalid_amount' },
+      { status: 'refused', reason: 'no_payment' },
+      { status: 'refused', reason: 'exceeds_refundable' },
+      { status: 'refused', reason: 'no_customer' },
+      { status: 'refused', reason: 'no_card' },
+    ] as const;
+    const messages = results.map((r) => packageRefundMessage(r));
+    for (const m of messages) expect(m).toMatch(/[א-ת]/);
+    expect(new Set(messages).size).toBe(messages.length); // each situation says its own thing
+  });
+
+  it('"review" tells the admin the money may already be back and not to try again', () => {
+    expect(packageRefundMessage({ status: 'review' })).toContain('אל תנסו שוב');
+  });
+
+  it('no card / no customer send the admin to refund by hand', () => {
+    expect(packageRefundMessage({ status: 'refused', reason: 'no_card' })).toContain('ידנית');
+    expect(packageRefundMessage({ status: 'refused', reason: 'no_customer' })).toContain('ידנית');
+  });
+});
+
+// What the admin screen says about a package BEFORE anything is approved. Four states, decided from three facts the server
+// read (was the ledger readable, how much did the card pay, is there a card to send it back to), so a screen never claims
+// "will be refunded" for a package that cannot be, nor "will fail" for one that has nothing to refund.
+describe('packageCancellationState', () => {
+  it('something was paid and there is a card: the refund goes back by itself', () => {
+    expect(packageCancellationState({ unreadable: false, paid: 120, hasCard: true })).toBe('refund');
+  });
+
+  it('something was paid but there is no card: an approval that has money to return is refused', () => {
+    expect(packageCancellationState({ unreadable: false, paid: 120, hasCard: false })).toBe('no_card');
+  });
+
+  it('nothing was paid (or it all went back already): approving moves no money, card or no card', () => {
+    expect(packageCancellationState({ unreadable: false, paid: 0, hasCard: true })).toBe('nothing_to_refund');
+    expect(packageCancellationState({ unreadable: false, paid: 0, hasCard: false })).toBe('nothing_to_refund');
+  });
+
+  it('the ledger could not be read: nothing is claimed about the money, even if a number is at hand', () => {
+    expect(packageCancellationState({ unreadable: true, paid: null, hasCard: true })).toBe('unreadable');
+    expect(packageCancellationState({ unreadable: true, paid: 120, hasCard: true })).toBe('unreadable');
+  });
+
+  it('a refund this request already made: it is being RESUMED, whatever the card or the amounts say', () => {
+    expect(packageCancellationState({ unreadable: false, paid: 120, hasCard: true, refundedForRequest: 105 })).toBe('resume');
+    expect(packageCancellationState({ unreadable: false, paid: 120, hasCard: false, refundedForRequest: 105 })).toBe('resume');
+    expect(packageCancellationState({ unreadable: false, paid: 120, hasCard: true, refundedForRequest: 120 })).toBe('resume');
+  });
+
+  it('an unreadable ledger still wins over a refund count that may be stale', () => {
+    expect(packageCancellationState({ unreadable: true, paid: 120, hasCard: true, refundedForRequest: 105 })).toBe('unreadable');
+  });
+
+  it('no earlier refund (0 or not given) changes nothing', () => {
+    expect(packageCancellationState({ unreadable: false, paid: 120, hasCard: true, refundedForRequest: 0 })).toBe('refund');
+    expect(packageCancellationState({ unreadable: false, paid: 120, hasCard: true, refundedForRequest: null })).toBe('refund');
+  });
+
+  it('a missing or non-numeric amount is "unreadable", never "nothing paid"', () => {
+    expect(packageCancellationState({ unreadable: false, paid: null, hasCard: true })).toBe('unreadable');
+    expect(packageCancellationState({ unreadable: false, paid: Number.NaN, hasCard: true })).toBe('unreadable');
+  });
+});

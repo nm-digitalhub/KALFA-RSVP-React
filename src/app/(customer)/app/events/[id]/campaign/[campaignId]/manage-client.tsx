@@ -57,7 +57,14 @@ type Campaign = {
   charge_status: string | null;
   base_price: number | null;
   included_reached: number | null;
+  // A fixed-price package campaign is funded by its payment (the ledger), not by a card hold: its price, and the ledger
+  // state the page derived for it (null for the other model, or when the ledger could not be read).
+  package_price: number | null;
+  payment_status: string | null;
 };
+
+// What the stage and the cancel rule need from the campaign about its payment.
+const paymentOf = (c: Pick<Campaign, 'payment_status'>) => (c.payment_status ? { status: c.payment_status } : null);
 
 type Summary = {
   reachedCount: number;
@@ -279,15 +286,12 @@ function DeliveryBar({
 }
 
 // Status and money in ONE card, because they are one question: what state is
-// this campaign in and what will it cost. They were two cards (מצב הקמפיין and
-// תוכנית החיוב) that repeated the same three figures — reached, accrued,
-// ceiling — in two different visual languages, one as headline metrics and one
-// as a progress bar with tiles.
+// this campaign in and what will it cost.
 //
-// The rows below are a plain list, NOT tiles. Every figure here used to sit in
-// its own rounded box inside a rounded box inside this card; at mobile width
-// that stacked into a column of nested frames with a couple of words in each.
-// A list of label/value pairs says the same thing and reads faster.
+// The rows below are a plain list, NOT tiles: figures each in its own rounded
+// box inside a rounded box would stack, at mobile width, into a column of nested
+// frames with a couple of words in each. A list of label/value pairs says the
+// same thing and reads faster.
 function CampaignStatusAndBilling({
   campaign,
   status,
@@ -315,7 +319,12 @@ function CampaignStatusAndBilling({
   finalCharge: number | null;
   creditApplied: number | null;
 }) {
-  const stage = campaignStage({ status, capture_status: captureStatus });
+  const stage = campaignStage({
+    status,
+    capture_status: captureStatus,
+    package_price: campaign.package_price,
+    payment: paymentOf(campaign),
+  });
   const primaryChargeLabel = reached === 0 && basePrice > 0 ? 'דמי הפעלה' : 'חיוב נוכחי';
   const percentage = ceiling !== null && ceiling > 0 ? Math.min(100, Math.round((accrued / ceiling) * 100)) : 0;
   const pricingExplanation =
@@ -378,9 +387,9 @@ function CampaignStatusAndBilling({
         {ceiling !== null && <SummaryMetric label="תקרת חיוב" value={nis(ceiling)} />}
       </dl>
 
-      {/* The bar sits directly on the card. It used to have its own tinted,
-          rounded panel — a frame around a frame, whose only content was a
-          number the metric row above already showed. */}
+      {/* The bar sits directly on the card, with no tinted, rounded panel of its
+          own — that would be a frame around a frame, whose only content is a
+          number the metric row above already shows. */}
       <div className="border-t border-border px-5 pb-5 pt-4 sm:px-6 sm:pb-6">
         {ceiling !== null && balance !== null && (
           <>
@@ -670,11 +679,11 @@ function ThankyouScheduleForm({
 
 // Staff-only: move a live event's date.
 //
-// The date is locked once an event leaves draft, and that lock is a database
-// trigger, not a UI rule — so this control is not "the disabled field, enabled".
-// It posts to a separate action that reaches a separate SECURITY DEFINER
-// function, the only thing permitted to lift the lock. The owner's own form
-// keeps refusing exactly as before.
+// The date is locked once the first message or call has gone out to a guest, and
+// that lock is a database trigger, not a UI rule — so this control is not "the
+// disabled field, enabled". It posts to a separate action that reaches a separate
+// SECURITY DEFINER function, the only thing permitted to lift the lock. The
+// owner's own form can change the date only until that first send.
 //
 // Collapsed by default: this is the rarest thing on the page and the most
 // consequential, and an always-open date picker beside "cancel campaign" invites
@@ -769,9 +778,9 @@ function FieldErrors({ errors }: { errors?: string[] }) {
   );
 }
 
-// One actions card, three sections. It was three cards — פעולות הקמפיין,
-// תודה אוטומטית, פעולות מנהל — each a bordered panel holding one to three
-// buttons, stacking on mobile into a column of frames.
+// One actions card, three sections — the owner's campaign actions, תודה אוטומטית,
+// פעולות מנהל — rather than a bordered panel per section, which on mobile would
+// stack into a column of frames.
 //
 // They are kept apart WITHIN the card, by a rule and a heading, because the
 // distinction is real: the admin group ends a campaign's life and settles money.
@@ -1005,8 +1014,10 @@ export function ManageClient({
   }).amount;
   const balance = ceiling === null ? null : Math.max(0, ceiling - accrued);
 
+  // Funded = a confirmed card hold (pay-per-result) or a payment in full (package, from the ledger).
+  const funded = campaign.capture_status === 'authorized' || (campaign.package_price != null && campaign.payment_status === 'collected');
   const heldOrLive =
-    campaign.capture_status === 'authorized' &&
+    funded &&
     ['approved', 'scheduled', 'active', 'paused'].includes(status);
   const showEmptyState = heldOrLive && authorizedCount === 0 && reached === 0;
   const excluded =
@@ -1015,10 +1026,8 @@ export function ManageClient({
       : 0;
 
   const activatableState = ['approved', 'scheduled', 'paused'].includes(status);
-  const canActivate =
-    !isPast && activatableState && campaign.capture_status === 'authorized';
-  const needsPayment =
-    !isPast && status === 'approved' && campaign.capture_status !== 'authorized';
+  const canActivate = !isPast && activatableState && funded;
+  const needsPayment = !isPast && status === 'approved' && !funded;
   const canPause = viewerIsAdmin && status === 'active';
   const canClose =
     viewerIsAdmin &&
@@ -1033,9 +1042,8 @@ export function ManageClient({
     !settled;
   // Only where the cancel_campaign RPC would accept it (pre-money). A campaign
   // with a hold, a charge or a billed reach is settled or refunded through the
-  // cancellation-request flow instead — the button used to show on closed
-  // campaigns too, and every click failed.
-  const canCancel = viewerIsAdmin && isCampaignCancellable(campaign, reached);
+  // cancellation-request flow instead.
+  const canCancel = viewerIsAdmin && isCampaignCancellable({ ...campaign, payment: paymentOf(campaign) }, reached);
   const showLifecycleWarning = isPast && activatableState;
   // Split from showThankyou so a failed load only warns where the panel would
   // have appeared anyway — a draft campaign has no schedule to miss.
@@ -1111,10 +1119,10 @@ export function ManageClient({
         </p>
       ) : null}
 
-      {/* Three cards, not six. On mobile they simply stack in reading order —
-          what the campaign is and costs, how it is performing, what you can do
-          about it — so the old `order-*` swap that pushed the action buttons
-          above the numbers is gone. */}
+      {/* Three cards. On mobile they simply stack in reading order — what the
+          campaign is and costs, how it is performing, what you can do about
+          it — with no `order-*` swap pushing the action buttons above the
+          numbers. */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
         <div className="space-y-6">
           {/* The figures below default to 0 when the summary is missing, and a

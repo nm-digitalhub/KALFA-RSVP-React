@@ -168,3 +168,69 @@ describe('updatePackageAction — Next.js control-flow signals (requireAdmin / g
     expect(result).toEqual({ error: 'עדכון החבילה נכשל. נסו שוב.' });
   });
 });
+
+describe('fixed-price package with a contact quota', () => {
+  // The earlier suites leave a rejected updatePackage behind (clearAllMocks keeps implementations).
+  beforeEach(() => {
+    vi.mocked(createPackage).mockResolvedValue({ id: 'new-id' });
+    vi.mocked(updatePackage).mockResolvedValue(undefined);
+  });
+
+  const quota = {
+    contact_quota: '40',
+    channels: 'whatsapp',
+    outreach_schedule_json: JSON.stringify([
+      { days_before: 3, channel: 'whatsapp', message_key: 'rsvp_reminder' },
+    ]),
+  };
+
+  it('is campaign-enabled without a price per reached: its schedule is validated, and the quota is saved', async () => {
+    await createPackageAction(null, fd({ ...FIELDS, ...quota }));
+
+    expect(validateOutreachScheduleForPackage).toHaveBeenCalledWith([
+      { days_before: 3, channel: 'whatsapp', message_key: 'rsvp_reminder' },
+    ]);
+    expect(createPackage).toHaveBeenCalledWith(
+      expect.objectContaining({ price_with_vat: 1000 }),
+      expect.objectContaining({ contact_quota: 40, price_per_reached: null, min_hold_floor: 0, hold_buffer_pct: 0 }),
+    );
+  });
+
+  it('the same on update', async () => {
+    const result = await updatePackageAction('p-1', null, fd({ ...FIELDS, ...quota }));
+
+    expect(updatePackage).toHaveBeenCalledWith(
+      'p-1',
+      expect.anything(),
+      expect.objectContaining({ contact_quota: 40 }),
+    );
+    expect(result).toEqual({ notice: 'החבילה נשמרה' });
+  });
+
+  it.each([['create'], ['update']])('%s: a fixed price must be positive — a free quota package is refused', async (which) => {
+    const form = fd({ ...FIELDS, ...quota, price_with_vat: '0' });
+    const result =
+      which === 'create'
+        ? await createPackageAction(null, form)
+        : await updatePackageAction('p-1', null, form);
+
+    expect(result?.fieldErrors?.price_with_vat).toEqual(['בחבילה במחיר קבוע המחיר חייב להיות חיובי']);
+    expect(createPackage).not.toHaveBeenCalled();
+    expect(updatePackage).not.toHaveBeenCalled();
+  });
+
+  it('a mix with the per-reached formula is refused before the data layer', async () => {
+    const result = await createPackageAction(null, fd({ ...FIELDS, ...quota, price_per_reached: '5' }));
+
+    expect(result?.fieldErrors?.price_per_reached).toBeDefined();
+    expect(createPackage).not.toHaveBeenCalled();
+    expect(validateOutreachScheduleForPackage).not.toHaveBeenCalled();
+  });
+
+  it('a package without a quota still skips template validation (nothing changed for it)', async () => {
+    await createPackageAction(null, fd({ ...FIELDS, ...{ outreach_schedule_json: quota.outreach_schedule_json } }));
+
+    expect(validateOutreachScheduleForPackage).not.toHaveBeenCalled();
+    expect(createPackage).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ contact_quota: null }));
+  });
+});

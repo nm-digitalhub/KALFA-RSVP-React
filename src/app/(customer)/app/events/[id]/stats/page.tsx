@@ -78,15 +78,16 @@ export default async function EventStatsPage({
     ? campaignStage({
         status: stats.campaign.status,
         capture_status: stats.campaign.captureStatus,
+        package_price: stats.campaign.packagePrice,
+        payment: stats.campaign.paymentStatus ? { status: stats.campaign.paymentStatus } : null,
       })
     : null;
 
   return (
     // No padding and no width of its own: the app shell already wraps every
-    // page in `mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8`. This page was the
-    // only one adding `p-6` on top of that, which doubled the top gap and
-    // squeezed the content, and the only one narrowing to max-w-3xl. Every
-    // other page here is a bare `space-y-6`.
+    // page in `mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8`, so adding padding
+    // or a narrower max-width here would double the top gap and squeeze the
+    // content.
     <div className="space-y-6">
       {/* items-start, not items-center: the left block is two lines tall, so
           centring left the refresh button floating between the back link and

@@ -11,7 +11,7 @@ vi.mock('@/lib/data/events', () => ({
   requireOwnedEvent: vi.fn(),
   requireEventAccess: vi.fn(),
 }));
-// approveCampaign reads the session user; wind-down transitions require admin.
+// approveCampaign reads the session user; wind-down transitions require a platform permission.
 vi.mock('@/lib/auth/dal', () => ({
   requireUser: vi.fn(),
   requireAdmin: vi.fn(),
@@ -32,10 +32,20 @@ vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 // Activation now writes an activity_log row (auditability); stub the logger so
 // lifecycle tests assert the call without touching the activity module.
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
-// Base+overage gate (plan S3): default OFF so createCampaign snapshots 0/0 =
+// Base+overage gate: default OFF so createCampaign snapshots 0/0 =
 // today's pure per-reached. Per-test override for the gate-ON path.
 vi.mock('@/lib/data/payments', () => ({
   getBaseOveragePricingEnabled: vi.fn().mockResolvedValue(false),
+  // The fixed-price package switch: OFF by default (the production default), per-test override for the package path.
+  getPackageModelEnabled: vi.fn().mockResolvedValue(false),
+}));
+// createCampaign's package path requires the ACTIVE agreement to be the package contract.
+vi.mock('@/lib/data/agreements-doc', () => ({ getApprovedPackageAgreementDoc: vi.fn() }));
+// A paid package starts only when the LEDGER says it is paid, and its list is filled first.
+vi.mock('@/lib/data/authorized-fill', () => ({ fillAuthorizedSet: vi.fn() }));
+vi.mock('@/lib/payments/package-paid', () => ({
+  getPackagePaymentState: vi.fn(),
+  packagePaymentOf: vi.fn().mockResolvedValue(null),
 }));
 
 import { createMockSupabase, type QueryResult } from '@/test/supabase-mock';
@@ -76,6 +86,9 @@ import {
   prepareCampaignHold,
   previewCampaignHoldSizing,
   getCampaignForHold,
+  getCampaignForPurchase,
+  listPackageOffers,
+  getPackageOffer,
   lockCampaignForHold,
   recordCampaignHold,
   markCampaignHoldFailed,
@@ -93,7 +106,15 @@ import {
   updateThankyouSchedule,
   getCampaignStageForEvent,
 } from '@/lib/data/campaigns';
-import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
+import { getBaseOveragePricingEnabled, getPackageModelEnabled } from '@/lib/data/payments';
+import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
+import { fillAuthorizedSet } from '@/lib/data/authorized-fill';
+import {
+  PACKAGE_NOT_PAID_ERROR,
+  PACKAGE_NO_CONTACTS_ERROR,
+  PACKAGE_PAYMENT_UNVERIFIED_ERROR,
+} from '@/lib/data/package-activation-errors';
+import { getPackagePaymentState } from '@/lib/payments/package-paid';
 
 function adminWith<T>(result: QueryResult<T>) {
   const { client, builder } = createMockSupabase<T>(result);
@@ -267,7 +288,7 @@ describe('prepareCampaignHold (freeze set + size hold + recompute ceiling)', () 
       error: null,
     });
     vi.mocked(countUniqueContactsForEvent).mockResolvedValue(350);
-    // A stale/larger set survived a prior attempt (insert-on-conflict): 320 > covered 300.
+    // The snapshot reports a set larger than covered (320 > 300) — not expected under REPLACE semantics, but the hold must still cover the actual set.
     vi.mocked(snapshotAuthorizedSet).mockResolvedValue(320);
     vi.spyOn(builder, 'then')
       .mockImplementationOnce((f) =>
@@ -399,9 +420,9 @@ describe('prepareCampaignHold (freeze set + size hold + recompute ceiling)', () 
 
 describe('createCampaign (§5.5#5א — snapshot locked from the canonical template)', () => {
   it('inserts price/channels/outreach_schedule copied+locked from the template (and the derived ceiling)', async () => {
-    // The mock-level equivalent of the plan's "direct campaigns select": the
-    // INSERT payload is asserted directly, explicitly NOT via getCampaign/
-    // getCampaignForHold (neither returns these snapshot fields).
+    // The INSERT payload is asserted directly, explicitly NOT via getCampaign/
+    // getCampaignForHold (neither returns every snapshot field, e.g. template_id
+    // and outreach_schedule).
     vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
     vi.mocked(countUniqueContactsForEvent).mockResolvedValue(100);
 
@@ -640,8 +661,8 @@ describe('createCampaign — celebrants gate (בעלי השמחה)', () => {
       .mockImplementationOnce((f) => f({ data: null, error: null }));
     // No template configured (data: null → listCampaignTemplates → []).
     adminWith({ data: null, error: null });
-    // Zero contacts no longer blocks creation (the base+overage flat fee prices
-    // a 0-contact campaign) — the gate that DOES still fire is the next one.
+    // Zero contacts does not block creation (the base+overage flat fee prices
+    // a 0-contact campaign) — the gate that DOES fire is the next one.
     vi.mocked(countUniqueContactsForEvent).mockResolvedValue(0);
 
     await expect(createCampaign('e1')).rejects.toThrow(
@@ -735,10 +756,36 @@ describe('getCampaignForHold', () => {
 
     expect(client.from).toHaveBeenCalledWith('campaigns');
     expect(builder.select).toHaveBeenCalledWith(
-      'id, event_id, status, max_charge_ceiling, capture_status',
+      'id, event_id, status, max_charge_ceiling, capture_status, package_price',
     );
     expect(builder.eq).toHaveBeenCalledWith('id', 'c1');
     expect(r?.status).toBe('approved');
+  });
+});
+
+describe('getCampaignForPurchase', () => {
+  it('selects only what the package purchase needs, via the admin client', async () => {
+    const { client, builder } = adminWith({
+      data: { id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, capture_status: null, charge_status: null },
+      error: null,
+    });
+
+    const r = await getCampaignForPurchase('c1');
+
+    expect(client.from).toHaveBeenCalledWith('campaigns');
+    expect(builder.select).toHaveBeenCalledWith('id, event_id, status, package_price, capture_status, charge_status');
+    expect(builder.eq).toHaveBeenCalledWith('id', 'c1');
+    expect(r).toEqual({ id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, capture_status: null, charge_status: null });
+  });
+
+  it('returns null for a campaign that does not exist', async () => {
+    adminWith({ data: null, error: null });
+    expect(await getCampaignForPurchase('missing')).toBeNull();
+  });
+
+  it('throws a safe Hebrew message on a read error (never a null that reads as "not found")', async () => {
+    adminWith({ data: null, error: { message: 'boom' } });
+    await expect(getCampaignForPurchase('c1')).rejects.toThrow('טעינת הקמפיין נכשלה');
   });
 });
 
@@ -876,11 +923,9 @@ describe('campaign lifecycle transitions', () => {
   });
 
   // Wind-down is staff-only and NAMED: pause/close/cancel gate on
-  // `campaigns.runstate` (NOT event ownership, and no longer the coarse
-  // requireAdmin floor — that changed 2026-09-10, when the two auth axes were
-  // merged and 'is staff at all' stopped being a meaningful gate). The
-  // regression below (activateCampaign) proves the owner path is unchanged for
-  // forward transitions.
+  // `campaigns.runstate` (NOT event ownership, and not the coarse
+  // requireAdmin floor). The regression below (activateCampaign) proves the
+  // owner path is unchanged for forward transitions.
   it('pauseCampaign: admin allowed → active → paused, WITHOUT an ownership check', async () => {
     const { builder } = adminWith({
       data: { id: 'c1', event_id: 'e1' },
@@ -961,7 +1006,7 @@ describe('campaign lifecycle transitions', () => {
     );
   });
 
-  // S2.4 — R9: every commercial (forward) campaign action requires
+  // R9: every commercial (forward) campaign action requires
   // event.status='active'. App-level defense-in-depth on top of the DB trigger
   // (campaigns_require_active_event); cancel/pause/close are explicitly NOT R9
   // paths (wind-down stays allowed regardless of event status).
@@ -1001,7 +1046,7 @@ describe('campaign lifecycle transitions', () => {
     expect(builder.update).not.toHaveBeenCalled();
   });
 
-  // Auto-thankyou (§4 auto-thankyou-post-event plan): activation seeds the
+  // Auto-thankyou: activation seeds the
   // default schedule (morning after event_date, ~10:00 Israel) exactly once —
   // `.is('thankyou_send_at', null)` is what keeps a re-activation after pause
   // from clobbering an owner-edited send time.
@@ -1038,9 +1083,8 @@ describe('campaign lifecycle transitions', () => {
 });
 
 // Auto-thankyou owner controls (getThankyouSchedule / updateThankyouSchedule).
-// Forward-compat columns (pending migration 20260712205030) — read via
-// select('*') + narrowing, same stance as the rest of this file's pending-
-// column readers.
+// The read keeps select('*') + narrowing as a fail-open guard: an absent
+// column reads as the default (enabled), not "disabled".
 describe('getThankyouSchedule / updateThankyouSchedule', () => {
   it('reads the schedule, fail-open toward auto_enabled=true when the column is absent', async () => {
     serverWith({
@@ -1275,7 +1319,7 @@ describe('B4 close-charge data layer', () => {
 
     expect(client.from).toHaveBeenCalledWith('campaigns');
     expect(builder.select).toHaveBeenCalledWith(
-      'id, event_id, status, capture_status, charge_status, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, sumit_customer_id, auth_number, auth_amount, release_status, max_charge_ceiling, base_price, included_reached, price_per_reached',
+      'id, event_id, status, capture_status, charge_status, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, sumit_customer_id, auth_number, auth_amount, release_status, max_charge_ceiling, base_price, included_reached, price_per_reached, package_price',
     );
     expect(builder.eq).toHaveBeenCalledWith('id', 'c1');
     expect(r).toEqual({
@@ -1619,5 +1663,341 @@ describe('getCampaignStageForEvent', () => {
 
     expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
     expect(builder.neq).toHaveBeenCalledWith('status', 'cancelled');
+  });
+});
+
+// ---- the fixed-price package model (docs/superpowers/plans/2026-10-04-package-payment-plan.md, P-F) ----------------
+// A package with a contact quota is offered and snapshotted onto a campaign ONLY while the package switch is on, and
+// only a quota package (never a pay-per-result one, never a mix) is ever an offer.
+
+const packageRow = (over: Record<string, unknown> = {}) => ({
+  id: 'pkg-fixed',
+  name: 'חבילת זהב',
+  price_with_vat: 150,
+  contact_quota: 40,
+  description: null,
+  includes: ['וואטסאפ', 5, 'שיחות AI'],
+  channels: ['whatsapp'],
+  outreach_schedule: [{ days_before: 7, channel: 'whatsapp', message_key: 'rsvp_1' }],
+  ...over,
+});
+
+describe('listPackageOffers — the catalogue of fixed-price packages', () => {
+  it('is EMPTY while the package switch is off, without even reading the catalogue (fail-closed)', async () => {
+    const { client } = adminWith<unknown>({ data: [packageRow()], error: null });
+    vi.mocked(getPackageModelEnabled).mockResolvedValueOnce(false);
+
+    expect(await listPackageOffers()).toEqual([]);
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('with the switch on, returns only active quota packages that carry no per-reached price', async () => {
+    const { client, builder } = adminWith<unknown>({ data: [packageRow()], error: null });
+    vi.mocked(getPackageModelEnabled).mockResolvedValueOnce(true);
+
+    const offers = await listPackageOffers();
+
+    expect(client.from).toHaveBeenCalledWith('packages');
+    expect(builder.eq).toHaveBeenCalledWith('active', true);
+    expect(builder.not).toHaveBeenCalledWith('contact_quota', 'is', null);
+    expect(builder.is).toHaveBeenCalledWith('price_per_reached', null);
+    expect(offers).toEqual([
+      {
+        id: 'pkg-fixed',
+        name: 'חבילת זהב',
+        price: 150,
+        contact_quota: 40,
+        description: null,
+        // a non-string entry in the JSON column is dropped, not shown
+        includes: ['וואטסאפ', 'שיחות AI'],
+        channels: ['whatsapp'],
+        outreach_schedule: [{ days_before: 7, channel: 'whatsapp', message_key: 'rsvp_1' }],
+      },
+    ]);
+  });
+
+  it('drops a row that is not a sellable package: no price, no quota of at least one, or no channel', async () => {
+    adminWith<unknown>({
+      data: [
+        packageRow({ id: 'free', price_with_vat: 0 }),
+        packageRow({ id: 'zero-quota', contact_quota: 0 }),
+        packageRow({ id: 'no-channel', channels: [] }),
+        packageRow({ id: 'ok' }),
+      ],
+      error: null,
+    });
+    vi.mocked(getPackageModelEnabled).mockResolvedValueOnce(true);
+
+    expect((await listPackageOffers()).map((o) => o.id)).toEqual(['ok']);
+  });
+
+  it('a read error is thrown, never an empty catalogue', async () => {
+    adminWith<unknown>({ data: null, error: { message: 'boom' } });
+    vi.mocked(getPackageModelEnabled).mockResolvedValueOnce(true);
+    await expect(listPackageOffers()).rejects.toThrow('טעינת החבילות נכשלה');
+  });
+
+  it('getPackageOffer finds one offer by id, and is null for anything that is not an offer', async () => {
+    adminWith<unknown>({ data: [packageRow()], error: null });
+    vi.mocked(getPackageModelEnabled).mockResolvedValueOnce(true);
+    expect((await getPackageOffer('pkg-fixed'))?.contact_quota).toBe(40);
+
+    adminWith<unknown>({ data: [packageRow()], error: null });
+    vi.mocked(getPackageModelEnabled).mockResolvedValueOnce(true);
+    expect(await getPackageOffer('other')).toBeNull();
+  });
+});
+
+describe('createCampaign(eventId, packageId) — a campaign from a fixed-price package', () => {
+  const celebrants = {
+    event_type: 'wedding',
+    celebrants: { groom: 'דוד לוי', bride: 'שרה כהן' },
+    venue_name: 'אולמי הגן',
+  };
+  const PACKAGE_DOC = { version: '2026-10-v6', status: 'approved' as const, bodyHtml: '<p>x</p>' };
+
+  // The cookie client serves the celebrants gate then "no existing campaign"; the admin client serves the offers read
+  // then the insert — in that order, exactly as the legacy suite above wires it.
+  function wire(opts: { existing?: boolean; offers?: unknown; insertResult?: unknown } = {}) {
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    vi.mocked(countUniqueContactsForEvent).mockResolvedValue(25);
+    const server = serverWith<Record<string, unknown>>({ data: null, error: null });
+    vi.spyOn(server.builder, 'then')
+      .mockImplementationOnce((f) => f({ data: celebrants, error: null }))
+      .mockImplementationOnce((f) => f({ data: opts.existing ? { id: 'c-existing', status: 'pending_approval' } : null, error: null }));
+    const { builder } = adminWith<unknown>({ data: null, error: null });
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) => f({ data: opts.offers ?? [packageRow()], error: null }))
+      .mockImplementationOnce((f) => f({ data: opts.insertResult ?? { id: 'c-new' }, error: null }));
+    vi.mocked(getPackageModelEnabled).mockResolvedValueOnce(true);
+    vi.mocked(getApprovedPackageAgreementDoc).mockResolvedValue(PACKAGE_DOC);
+    return builder;
+  }
+
+  it('snapshots the package onto the campaign: its price, its quota, and NO per-reached formula or ceiling', async () => {
+    const builder = wire();
+
+    const r = await createCampaign('e1', 'pkg-fixed');
+
+    expect(r.id).toBe('c-new');
+    const inserted = vi.mocked(builder.insert).mock.calls[0][0] as Record<string, unknown>;
+    expect(inserted).toMatchObject({
+      status: 'pending_approval',
+      template_id: 'pkg-fixed',
+      package_price: 150,
+      contact_quota: 40,
+      allowed_channels: ['whatsapp'],
+      outreach_schedule: [{ days_before: 7, channel: 'whatsapp', message_key: 'rsvp_1' }],
+      max_contacts: 25,
+      // billed_results.locked_price is NOT NULL: a NULL price here would make the first reached contact fail to
+      // record. 0 books the reach at no per-contact price, and there is no ceiling to cap.
+      price_per_reached: 0,
+      base_price: 0,
+      included_reached: 0,
+      max_charge_ceiling: 0,
+    });
+  });
+
+  it('refuses while the package switch is off, writing nothing', async () => {
+    const builder = wire();
+    vi.mocked(getPackageModelEnabled).mockReset();
+    vi.mocked(getPackageModelEnabled).mockResolvedValue(false);
+
+    await expect(createCampaign('e1', 'pkg-fixed')).rejects.toThrow('החבילה שנבחרה אינה זמינה');
+    expect(builder.insert).not.toHaveBeenCalled();
+    vi.mocked(getPackageModelEnabled).mockResolvedValue(false);
+  });
+
+  it('refuses a package that is not an offer (another id, a pay-per-result package)', async () => {
+    const builder = wire({ offers: [] });
+    await expect(createCampaign('e1', 'pkg-legacy')).rejects.toThrow('החבילה שנבחרה אינה זמינה');
+    expect(builder.insert).not.toHaveBeenCalled();
+  });
+
+  it('refuses unless the package contract is approved — there would be no terms for the customer to approve', async () => {
+    const builder = wire();
+    vi.mocked(getApprovedPackageAgreementDoc).mockResolvedValue(null);
+
+    await expect(createCampaign('e1', 'pkg-fixed')).rejects.toThrow('הסכם החבילה טרם הופעל');
+    expect(builder.insert).not.toHaveBeenCalled();
+  });
+
+  it('create-or-continue: an existing campaign is returned unchanged, with no offers read and no second campaign', async () => {
+    const builder = wire({ existing: true });
+
+    const r = await createCampaign('e1', 'pkg-fixed');
+
+    expect(r.id).toBe('c-existing');
+    expect(builder.insert).not.toHaveBeenCalled();
+    expect(getApprovedPackageAgreementDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe('approveCampaign — the contract must match the campaign\'s pricing model', () => {
+  async function approveWith(campaignRow: Record<string, unknown>, version: string) {
+    vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    const { builder } = adminWith<unknown>({ data: campaignRow, error: null });
+    return { builder, result: approveCampaign('c1', version) };
+  }
+  const pending = { id: 'c1', event_id: 'e1', status: 'pending_approval' };
+
+  it('a package campaign cannot be approved under a pay-per-result contract', async () => {
+    const { builder, result } = await approveWith({ ...pending, package_price: 150 }, '2026-09-v5');
+    await expect(result).rejects.toThrow('ההסכם אינו תואם למודל התמחור של הקמפיין');
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('a pay-per-result campaign cannot be approved under the package contract', async () => {
+    const { builder, result } = await approveWith({ ...pending, package_price: null }, '2026-10-v6');
+    await expect(result).rejects.toThrow('ההסכם אינו תואם למודל התמחור של הקמפיין');
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('the draft form of the package contract counts as the package contract', async () => {
+    const { builder, result } = await approveWith({ ...pending, package_price: 150 }, 'draft-2026-10-v6');
+    await result;
+    expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'approved', tos_version: 'draft-2026-10-v6' }));
+  });
+
+  it('a matching pay-per-result approval is untouched', async () => {
+    const { builder, result } = await approveWith({ ...pending, package_price: null }, '2026-09-v5');
+    await result;
+    expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'approved', tos_version: '2026-09-v5' }));
+  });
+});
+
+describe('activateCampaign — a paid package campaign', () => {
+  const PACKAGE_ROW = { id: 'c1', event_id: 'e1', package_price: 150 };
+  const FUTURE = { event_date: '2999-01-01T00:00:00+00:00', status: 'active' };
+
+  function wire(row: Record<string, unknown> = PACKAGE_ROW) {
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 150, credit: 0, committed: 0 });
+    vi.mocked(fillAuthorizedSet).mockResolvedValue({ verdict: 'filled', admitted: 3, size: 3, quota: 100, waiting: 0 });
+    return adminByTable({ campaigns: row, events: FUTURE });
+  }
+
+  beforeEach(() => {
+    vi.mocked(getPackagePaymentState).mockReset();
+    vi.mocked(fillAuthorizedSet).mockReset();
+  });
+
+  it('checks the ledger, fills the list, then moves to active — guarded by the package model and not by a card hold', async () => {
+    const b = wire();
+    await activateCampaign('c1');
+    expect(getPackagePaymentState).toHaveBeenCalledWith('c1');
+    expect(fillAuthorizedSet).toHaveBeenCalledWith('e1', 'c1', 'activation');
+    expect(b.campaigns.update).toHaveBeenCalledWith({ status: 'active' });
+    expect(b.campaigns.not).toHaveBeenCalledWith('package_price', 'is', null);
+    expect(b.campaigns.is).toHaveBeenCalledWith('capture_status', null);
+    expect(b.campaigns.is).toHaveBeenCalledWith('charge_status', null);
+    expect(b.campaigns.eq).not.toHaveBeenCalledWith('capture_status', 'authorized');
+  });
+
+  it('proves ownership before it reads the ledger or writes the list', async () => {
+    wire();
+    await activateCampaign('c1');
+    const order = (m: unknown) => (m as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0];
+    expect(order(requireOwnedEvent)).toBeLessThan(order(getPackagePaymentState));
+    expect(order(getPackagePaymentState)).toBeLessThan(order(fillAuthorizedSet));
+  });
+
+  it.each(['none', 'pending', 'review', 'declined', 'refunded', 'released', 'committed'] as const)(
+    'refuses while the payment is %s — and fills nothing',
+    async (status) => {
+      const b = wire();
+      vi.mocked(getPackagePaymentState).mockResolvedValue({ status, collected: 0, credit: 0, committed: 0 });
+      await expect(activateCampaign('c1')).rejects.toThrow(PACKAGE_NOT_PAID_ERROR);
+      expect(fillAuthorizedSet).not.toHaveBeenCalled();
+      expect(b.campaigns.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('an unreadable ledger is "cannot verify", never "paid" and never "not paid"', async () => {
+    const b = wire();
+    vi.mocked(getPackagePaymentState).mockRejectedValue(new Error('db down'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(activateCampaign('c1')).rejects.toThrow(PACKAGE_PAYMENT_UNVERIFIED_ERROR);
+    expect(b.campaigns.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a past event before it touches the ledger or the list', async () => {
+    wire();
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent('2020-01-01T00:00:00+00:00'));
+    await expect(activateCampaign('c1')).rejects.toThrow('האירוע כבר חלף');
+    expect(getPackagePaymentState).not.toHaveBeenCalled();
+    expect(fillAuthorizedSet).not.toHaveBeenCalled();
+  });
+
+  it('refuses to start with nobody to approach: the customer paid, so the message says what to do', async () => {
+    const b = wire();
+    vi.mocked(fillAuthorizedSet).mockResolvedValue({ verdict: 'filled', admitted: 0, size: 0, quota: 100, waiting: 0 });
+    await expect(activateCampaign('c1')).rejects.toThrow(PACKAGE_NO_CONTACTS_ERROR);
+    expect(b.campaigns.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['not_operational', 'לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי'],
+    ['no_quota', 'לא ניתן להפעיל את הקמפיין — פנו לתמיכה'],
+    ['no_campaign', 'לא ניתן להפעיל את הקמפיין — פנו לתמיכה'],
+    ['event_mismatch', 'לא ניתן להפעיל את הקמפיין — פנו לתמיכה'],
+  ] as const)('a %s answer from the fill refuses the activation', async (verdict, message) => {
+    const b = wire();
+    vi.mocked(fillAuthorizedSet).mockResolvedValue({ verdict });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(activateCampaign('c1')).rejects.toThrow(message);
+    expect(b.campaigns.update).not.toHaveBeenCalled();
+  });
+
+  it('a failure of the fill itself refuses the activation and leaves the status alone', async () => {
+    const b = wire();
+    vi.mocked(fillAuthorizedSet).mockRejectedValue(new Error('מילוי רשימת אנשי הקשר נכשל'));
+    await expect(activateCampaign('c1')).rejects.toThrow('מילוי רשימת אנשי הקשר נכשל');
+    expect(b.campaigns.update).not.toHaveBeenCalled();
+  });
+
+  it('a console revival (paused → active) of a package campaign needs the same payment', async () => {
+    const b = wire();
+    vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'refunded', collected: 0, credit: 0, committed: 0 });
+    await expect(activateCampaign('c1', { kind: 'console', staffUserId: 's1' })).rejects.toThrow(PACKAGE_NOT_PAID_ERROR);
+    expect(b.campaigns.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('activateCampaign — the pay-per-result model is unchanged', () => {
+  it('still guards by the card hold, reads no ledger and fills nothing', async () => {
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    vi.mocked(getPackagePaymentState).mockReset();
+    vi.mocked(fillAuthorizedSet).mockReset();
+    const b = adminByTable({ campaigns: { id: 'c1', event_id: 'e1', package_price: null }, events: { event_date: '2999-01-01T00:00:00+00:00', status: 'active' } });
+    await activateCampaign('c1');
+    expect(b.campaigns.eq).toHaveBeenCalledWith('capture_status', 'authorized');
+    expect(b.campaigns.not).not.toHaveBeenCalledWith('package_price', 'is', null);
+    expect(getPackagePaymentState).not.toHaveBeenCalled();
+    expect(fillAuthorizedSet).not.toHaveBeenCalled();
+  });
+});
+
+describe('getCampaignStageForEvent — a package campaign is funded by its payment', () => {
+  it('reads the ledger for a package campaign: paid + approved is "awaiting activation"', async () => {
+    const { packagePaymentOf } = await import('@/lib/payments/package-paid');
+    vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
+    const server = createMockSupabase<unknown>({ data: { id: 'c1', status: 'approved', capture_status: null, package_price: 150 }, error: null });
+    server.client.rpc.mockResolvedValue({ data: true, error: null });
+    vi.mocked(createClient).mockResolvedValue(server.client as never);
+    vi.mocked(packagePaymentOf).mockResolvedValue({ status: 'collected', collected: 150, credit: 0, committed: 0 });
+    expect(await getCampaignStageForEvent('e1')).toBe('awaiting_activation');
+    expect(packagePaymentOf).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1', package_price: 150 }));
+  });
+
+  it('an unpaid package campaign is still "awaiting payment"', async () => {
+    const { packagePaymentOf } = await import('@/lib/payments/package-paid');
+    vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
+    const server = createMockSupabase<unknown>({ data: { id: 'c1', status: 'approved', capture_status: null, package_price: 150 }, error: null });
+    server.client.rpc.mockResolvedValue({ data: true, error: null });
+    vi.mocked(createClient).mockResolvedValue(server.client as never);
+    vi.mocked(packagePaymentOf).mockResolvedValue(null);
+    expect(await getCampaignStageForEvent('e1')).toBe('awaiting_payment');
   });
 });

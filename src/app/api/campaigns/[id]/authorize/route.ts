@@ -26,10 +26,10 @@ import { isAllowedOrigin } from '@/lib/http/allowed-origin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // Route A J5 hold: place a SUMIT authorization hold (AutoCapture:false) up to the
-// campaign ceiling after the agreement is signed. Mirrors the proven
-// Payment route pattern: fail-closed gate, atomic lock/idempotency, and only
-// a verified success persists the hold. The actual charge happens later at
-// campaign close (B4) — this only reserves the frame.
+// campaign ceiling after the agreement is signed. Pattern: fail-closed gate,
+// atomic lock/idempotency, and only a verified success persists the hold. The
+// actual charge happens later at campaign close (B4) — this only reserves the
+// frame.
 
 const ERROR = {
   TOKEN_MISSING: 'token_missing',
@@ -93,6 +93,13 @@ export async function POST(
       origin,
     );
 
+  // A fixed-price package campaign is paid by ONE purchase (../purchase/route.ts), never by a card hold. A hold would
+  // reserve an amount on the card, set capture_status='authorized' and auto-activate the campaign below — outreach
+  // with no payment in the ledger. Refused before anything is locked, sized or sent to the card.
+  if (campaign.package_price != null) {
+    return r303(payUrl(ERROR.BAD_STATE));
+  }
+
   // Check the submitted input itself first — a missing token is a client-side
   // form/tokenization problem, distinct from (and more actionable than) any
   // event/campaign-state error below.
@@ -133,19 +140,19 @@ export async function POST(
   }
 
   // Idempotency: claim the hold slot atomically BEFORE the snapshot + sizing, so
-  // ONLY the winner freezes the authorized set and sizes the hold. A loser
+  // ONLY the winner snapshots the authorized set and sizes the hold. A loser
   // (already pending or authorized) must not place a second hold.
   if (!(await lockCampaignForHold(campaignId))) {
     return r303(payUrl(ERROR.ALREADY));
   }
 
-  // Phase-2 money-leak guard. Freeze the authorized contact SET and size the hold
-  // to the COVERED contacts (min(full, reasonable_coverage)) — NOT the full
-  // ceiling. Also recomputes + persists max_contacts = full and the ceiling
-  // (= full × price), closing the create→approval growth gap. Must run before the
-  // card hold: the set is the binding cap that makes a hold < ceiling safe
-  // (reached ⊆ set by construction). On failure, release the slot to a retryable
-  // state and leave the campaign otherwise untouched.
+  // Snapshot the authorized contact SET and size the hold to the COVERED contacts
+  // (min(full, reasonable_coverage)) — NOT the full ceiling. Also recomputes +
+  // persists max_contacts = full and the ceiling from that count, closing the
+  // create→approval growth gap. Must run before the card hold: outreach and
+  // billing only reach set members, so the set must exist before any billing.
+  // The hold is a card guarantee, not a billing bound. On failure, release the
+  // slot to a retryable state and leave the campaign otherwise untouched.
   let holdAmount: number;
   try {
     ({ holdAmount } = await prepareCampaignHold(campaignId));
@@ -235,9 +242,8 @@ export async function POST(
       orderDocumentUrl: holdResult.orderDocumentUrl,
       sumitCustomerId: holdResult.sumitCustomerId,
     });
-    // Audit trail for the hold itself — verified gap (2026-08-30): nothing
-    // previously logged a successful authorization to activity_log at all,
-    // so campaigns.authorized_at had no independent corroborating record.
+    // Audit trail for the hold itself, so campaigns.authorized_at has an
+    // independent corroborating record in activity_log.
     // Best-effort (never blocks the hold's own success) — no PII/card data,
     // only reconciliation anchors already safe to log elsewhere in this route.
     try {

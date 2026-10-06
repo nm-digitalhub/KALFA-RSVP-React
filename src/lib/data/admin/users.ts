@@ -5,15 +5,18 @@ import type { User } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
+import { getSumitCustomerId } from '@/lib/data/sumit-customers';
+import { creditConsumedByCampaign } from '@/lib/payments/credit-consumed';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { recordStaffAccess } from './access-log';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
-// Admin: cross-user management (platform staff). user_roles/profiles are
-// self-only under RLS and emails live in auth.users, so every read/write here
-// goes through the SERVICE-ROLE client behind a requireAdmin() gate (the
-// platform role layer — orthogonal to the customer org-role layer). Sensitive
-// mutations carry last-admin + no-self-lockout guards and are audited.
+// Admin: cross-user management (platform staff). profiles are self-only and
+// platform_staff is owner-read-only under RLS, and emails live in auth.users, so
+// every read/write here goes through the SERVICE-ROLE client behind a
+// requirePlatformPermission('manage_staff') gate (the platform role layer —
+// orthogonal to the customer org-role layer). Sensitive mutations carry
+// last-admin + no-self-lockout guards and are audited.
 
 // Supabase auth ban sentinels: a long duration to "suspend", 'none' to restore.
 const BAN_FOREVER = '876000h';
@@ -68,7 +71,8 @@ export interface AdminUserEvent {
   campaignId: string | null;
 }
 
-// Per-event credit ledger: granted − consumed (campaigns.credit_applied).
+// Per-event credit ledger: granted − consumed (what each campaign used: the payment ledger, or campaigns.credit_applied
+// for a campaign with no ledger rows — creditConsumedByCampaign).
 export interface AdminUserCreditBalance {
   eventId: string;
   eventName: string;
@@ -79,6 +83,8 @@ export interface AdminUserCreditBalance {
 
 export interface AdminUserDetail extends AdminUser {
   phone: string | null;
+  // The number SUMIT gave this account at its first payment; null until then, or when it could not be read.
+  customerNumber: number | null;
   orgs: AdminUserOrg[];
   ownedEventCount: number;
   events: AdminUserEvent[];
@@ -251,15 +257,17 @@ export async function getUserDetail(
   }
   const u = authData.user;
 
-  const [profileRes, roleRes, membersRes, eventsRes] = await Promise.all([
+  const [profileRes, roleRes, membersRes, eventsRes, customerNumber] = await Promise.all([
     admin.from('profiles').select('full_name, phone').eq('id', userId).maybeSingle(),
-    // platform_staff, not user_roles — see the note in listUsers.
+    // platform_staff, not user_roles — see the note in enrichUsers.
     admin.from('platform_staff').select('user_id').eq('user_id', userId).maybeSingle(),
     admin
       .from('organization_members')
       .select('organization_id, organizations(name), org_roles(label)')
       .eq('user_id', userId),
     admin.from('events').select('id, name').eq('owner_id', userId),
+    // Best effort, like the other lookups here: a number that cannot be read shows as "—" and does not hide the page.
+    getSumitCustomerId(userId),
   ]);
 
   const eventIds = (eventsRes.data ?? []).map((e) => e.id);
@@ -288,19 +296,22 @@ export async function getUserDetail(
       voidedAt: c.voided_at,
       voidReason: c.void_reason,
     }));
+    // What each campaign has used up: the payment ledger when it has ledger rows (a package purchase), the old
+    // campaigns.credit_applied column otherwise (creditConsumedByCampaign). Throws if the ledger cannot be read.
+    const usedByCampaign = await creditConsumedByCampaign(admin, campaignsRes.data ?? []);
     for (const c of campaignsRes.data ?? []) {
       // The grant form offers only the event's live campaign (one per event;
       // cancelled ones are not a valid credit scope).
       if (c.status !== 'cancelled') campaignByEvent.set(c.event_id, c.id);
       appliedByEvent.set(
         c.event_id,
-        (appliedByEvent.get(c.event_id) ?? 0) + Number(c.credit_applied ?? 0),
+        (appliedByEvent.get(c.event_id) ?? 0) + (usedByCampaign.get(c.id) ?? 0),
       );
     }
   }
 
   // Per-event ledger (only for events that ever had a credit): granted −
-  // consumed-by-close-charge = remaining.
+  // consumed by the event's campaigns (a final charge or a package purchase) = remaining.
   const nameByEvent = new Map((eventsRes.data ?? []).map((e) => [e.id, e.name]));
   const grantedByEvent = new Map<string, number>();
   for (const c of credits) {
@@ -334,6 +345,7 @@ export async function getUserDetail(
     email: u.email ?? null,
     fullName: profileRes.data?.full_name ?? null,
     phone: profileRes.data?.phone ?? null,
+    customerNumber,
     createdAt: u.created_at ?? null,
     lastSignInAt: u.last_sign_in_at ?? null,
     isPlatformStaff: Boolean(roleRes.data),
@@ -353,8 +365,7 @@ export async function getUserDetail(
 
 // How many people are platform staff. Counted from platform_staff, not
 // user_roles: since 2026-09-10 staff membership is what grants admin access, so
-// suspending the last STAFF member is what would lock everyone out — the old
-// count guarded an axis that no longer controls anything.
+// suspending the last STAFF member is what would lock everyone out.
 async function platformStaffCount(): Promise<number> {
   const admin = createAdminClient();
   const { count } = await admin
@@ -362,10 +373,7 @@ async function platformStaffCount(): Promise<number> {
     .select('user_id', { count: 'exact', head: true });
   return count ?? 0;
 }
-// `setPlatformAdmin` was removed 2026-09-10 along with its two Server Actions.
-// It wrote `user_roles.admin`, which stopped controlling anything when the admin
-// floor moved to platform_staff — leaving a "revoke admin" endpoint that reported
-// success and removed no access. Staff membership is granted and revoked in
+// Staff membership is granted and revoked in
 // src/lib/data/admin/platform-roles.ts, the one path that carries the owner gate,
 // the last-owner guard, the audit row and the Slack alert.
 
@@ -476,10 +484,11 @@ export async function grantBillingCredit(input: {
 // Void (soft-reverse) a previously granted billing credit. Append-only is
 // preserved — the row is never deleted; voided_at/voided_by/void_reason are
 // stamped and the credit drops out of the event pool (getCampaignCreditTotal)
-// and the ledger. A credit already consumed into a settled campaign's
-// credit_applied snapshot may NOT be voided: the guard blocks any void that
-// would pull the event's live ACTIVE pool below what its campaigns already
-// consumed (Σ credit_applied) — that would falsify a completed charge/receipt.
+// and the ledger. A credit already consumed into a settled campaign (its
+// credit_applied snapshot, or the credit of its payment-ledger collects) may NOT
+// be voided: the guard blocks any void that would pull the event's live ACTIVE
+// pool below what its campaigns already consumed — that would falsify a
+// completed charge/receipt.
 export async function voidBillingCredit(input: {
   creditId: string;
   reason: string;
@@ -509,8 +518,10 @@ export async function voidBillingCredit(input: {
   }
 
   // Pool-invariant guard: after removing this credit the event's ACTIVE pool
-  // must still cover what its campaigns already consumed (Σ credit_applied) —
-  // otherwise the void would falsify a settled, receipted charge.
+  // must still cover what its campaigns already consumed — the payment ledger
+  // for a campaign that has ledger rows (a package purchase), the old
+  // credit_applied column otherwise (creditConsumedByCampaign) — otherwise the
+  // void would falsify a settled, receipted charge.
   const [poolRes, appliedRes] = await Promise.all([
     admin
       .from('billing_credits')
@@ -519,7 +530,7 @@ export async function voidBillingCredit(input: {
       .is('voided_at', null),
     admin
       .from('campaigns')
-      .select('credit_applied')
+      .select('id, credit_applied')
       .eq('event_id', credit.event_id),
   ]);
   if (poolRes.error || appliedRes.error) {
@@ -529,8 +540,9 @@ export async function voidBillingCredit(input: {
     (s, r) => s + Number(r.amount ?? 0),
     0,
   );
-  const consumed = (appliedRes.data ?? []).reduce(
-    (s, r) => s + Number(r.credit_applied ?? 0),
+  // Fails closed: when the ledger cannot be read the void is refused, never decided on a guess.
+  const consumed = [...(await creditConsumedByCampaign(admin, appliedRes.data ?? [])).values()].reduce(
+    (s, v) => s + v,
     0,
   );
   const poolAfterVoid = Math.round((activePool - Number(credit.amount)) * 100) / 100;

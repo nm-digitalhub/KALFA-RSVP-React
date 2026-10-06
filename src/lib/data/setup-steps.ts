@@ -1,10 +1,13 @@
 import type { Enums } from '@/lib/supabase/types';
 import { campaignStage, type CampaignStage } from '@/lib/data/event-labels';
-import { isBeforeTomorrowIL } from '@/lib/data/event-date';
+import { ilTimeInputValue, isBeforeTomorrowIL } from '@/lib/data/event-date';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
 
-// Pure, isomorphic model of the event's SETUP page (audit "הזרימה המומלצת"
-// steps 4–9): what is done, what the owner does next, what is blocked and why.
+// Pure, isomorphic model of the event's ONE-TIME setup flow (audit "הזרימה
+// המומלצת"): what is done, what the owner does next, what is blocked and why.
+// Adding guests is NOT a setup step — it is ongoing event management (guests
+// page) and never gates activation. Once the campaign is active the setup view
+// is no longer shown at all (setup-steps.tsx).
 // No data access — the page loads the rows and calls computeSetupSteps. Kept
 // out of the component so the whole decision table is unit-tested.
 
@@ -12,7 +15,7 @@ type EventStatus = Enums<'event_status'>;
 type EventType = Enums<'event_type'>;
 type CampaignStatus = Enums<'campaign_status'>;
 
-export type SetupStepKey = 'details' | 'guests' | 'confirm' | 'sign' | 'pay' | 'live';
+export type SetupStepKey = 'details' | 'confirm' | 'package' | 'sign' | 'pay' | 'live';
 export type SetupStepState = 'done' | 'current' | 'pending' | 'blocked';
 export interface SetupStep {
   key: SetupStepKey;
@@ -26,43 +29,105 @@ export interface SetupInput {
     event_type: EventType;
     event_date: string | null;
     venue_name: string | null;
+    venue_address: string | null;
     celebrants: unknown;
   };
-  campaign: { status: CampaignStatus; capture_status: string | null } | null;
-  guestCount: number;
+  // `package_price` set = a fixed-price package campaign (the package model); null/absent = pay-per-result.
+  // `payment` = the ledger state of a package campaign (see campaignStage); absent for the other model.
+  campaign: {
+    status: CampaignStatus;
+    capture_status: string | null;
+    package_price?: number | null;
+    payment?: { status: string } | null;
+  } | null;
   isPast: boolean;
+  // A fixed-price package is on offer (the package model is on and the catalogue is not empty). Adds the
+  // package-choice step; absent/false leaves the flow exactly as it was.
+  packageOffered?: boolean;
 }
 
 export const SETUP_STEP_LABELS: Record<SetupStepKey, string> = {
   details: 'פרטי האירוע',
-  guests: 'הוספת מוזמנים',
   confirm: 'אישור פרטי האירוע',
+  package: 'בחירת חבילה',
   sign: 'קריאת ההסכם וחתימה',
-  pay: 'אמצעי תשלום ותפיסת מסגרת',
+  // Deliberately mechanism-neutral: how the card is used (hold, immediate
+  // charge, …) is a property of the payment mode, not of the step's name.
+  pay: 'אמצעי תשלום',
   live: 'הקמפיין פעיל',
 };
 
-export const PAST_EVENT_HINT = 'מועד האירוע חלף — לא ניתן להמשיך בהקמה';
-// G1 (soft gate): the card hold is sized from the guest list at the moment of
-// the hold and is not raised afterwards; under a v4-and-earlier agreement (the
-// active one as of 2026-09-25) the signed ceiling is sized the same way. Guests
-// added later are still invited (no recipient cap since 2026-09-25). Say so
-// BEFORE the owner confirms, without blocking (owner ruling 2026-07-26: signing before
-// the list is complete stays allowed).
-export const NO_GUESTS_HINT =
-  'מומלץ להוסיף מוזמנים לפני האישור — תקרת החיוב ומסגרת האשראי נקבעות לפי הרשימה ברגע תפיסת המסגרת';
-const NO_GUESTS_AFTER_CONFIRM_HINT = 'הפניות יישלחו רק למוזמנים שברשימה';
+// The fixed-price package is APPROVED, not signed (no drawn signature, no phone code), so in its flow the signing step
+// is named for what the owner actually does.
+export const PACKAGE_SIGN_LABEL = 'אישור תנאי החבילה';
+// …and the payment step is a single purchase, not "a payment method".
+export const PACKAGE_PAY_LABEL = 'תשלום החבילה';
 
-// Mirrors createCampaign's own gates (campaigns.ts): future event_date,
-// complete celebrants for the type, non-empty venue_name — surfaced up front so
-// the owner fixes them BEFORE the one-click confirm, not after.
-export function missingEventPrerequisites(event: SetupInput['event']): string[] {
-  const missing: string[] = [];
-  if (!event.event_date || isBeforeTomorrowIL(event.event_date)) missing.push('תאריך אירוע עתידי');
-  if (!celebrantsCompleteFor(event.event_type, event.celebrants)) missing.push('פרטי בעלי השמחה');
-  if (!event.venue_name || event.venue_name.trim() === '') missing.push('מקום האירוע');
+/** The labels for the steps of THIS flow: the standard ones, with the signing and payment steps renamed in the package flow. */
+export function setupStepLabels(steps: readonly SetupStep[]): Record<SetupStepKey, string> {
+  const packageFlow = steps.some((s) => s.key === 'package');
+  return packageFlow ? { ...SETUP_STEP_LABELS, sign: PACKAGE_SIGN_LABEL, pay: PACKAGE_PAY_LABEL } : SETUP_STEP_LABELS;
+}
+
+export const PAST_EVENT_HINT = 'מועד האירוע חלף — לא ניתן להמשיך בהקמה';
+
+// The R5 lock, stated BEFORE the click (audit §2, verbatim requirement): the date,
+// time and RSVP deadline stay editable until the first message or call has gone
+// out to a guest (migration 20260930191529), and are locked from then on.
+export const SETUP_LOCK_WARNING =
+  'התאריך, השעה והמועד האחרון לאישורי הגעה ניתנים לשינוי עד שתישלח ההודעה הראשונה לאורחים. לאחר מכן הם ננעלים.';
+
+/** The event fields the setup model reads — one mapping for every caller. */
+export function toSetupEvent(event: SetupInput['event']): SetupInput['event'] {
+  return {
+    status: event.status,
+    event_type: event.event_type,
+    event_date: event.event_date,
+    venue_name: event.venue_name,
+    venue_address: event.venue_address,
+    celebrants: event.celebrants,
+  };
+}
+// What the owner must fill in BEFORE confirming, surfaced up front so it is fixed
+// in the details step, not discovered after the one-click confirm.
+//  - date in the future, complete celebrants for the type, non-empty venue name:
+//    mirror createCampaign's own gates (campaigns.ts);
+//  - the time of day and the venue address: required by the setup flow itself:
+//    an event without a time or an address cannot produce a correct
+//    invitation or reminder. They stay editable until the first send, like the
+//    date. `setupCampaignAction` re-checks this list on the server, so it cannot
+//    be skipped by a tampered form.
+// A stored date with no time of day is midnight UTC (see `ilWallTimeToIso`);
+// `ilTimeInputValue` returns '' for it.
+export type SetupPrerequisite = {
+  /** What the owner reads ("כתובת המקום"). */
+  label: string;
+  /** The form field it belongs to, or null when no single field does (the celebrants group). */
+  field: string | null;
+};
+
+export function missingSetupPrerequisites(event: SetupInput['event']): SetupPrerequisite[] {
+  const missing: SetupPrerequisite[] = [];
+  if (!event.event_date || isBeforeTomorrowIL(event.event_date)) {
+    missing.push({ label: 'תאריך אירוע עתידי', field: 'event_date' });
+  }
+  if (ilTimeInputValue(event.event_date) === '') missing.push({ label: 'שעת האירוע', field: 'event_time' });
+  if (!celebrantsCompleteFor(event.event_type, event.celebrants)) {
+    missing.push({ label: 'פרטי בעלי השמחה', field: null });
+  }
+  if (!event.venue_name || event.venue_name.trim() === '') missing.push({ label: 'מקום האירוע', field: 'venue_name' });
+  if (!event.venue_address || event.venue_address.trim() === '') {
+    missing.push({ label: 'כתובת המקום', field: 'venue_address' });
+  }
   return missing;
 }
+
+export function missingEventPrerequisites(event: SetupInput['event']): string[] {
+  return missingSetupPrerequisites(event).map((p) => p.label);
+}
+
+/** Stages in which the campaign has been activated: setup is over and is no longer offered. */
+export const POST_ACTIVATION_STAGES: readonly CampaignStage[] = ['active', 'paused', 'closed'];
 
 const SIGNED_STAGES: readonly CampaignStage[] = [
   'awaiting_payment',
@@ -83,22 +148,28 @@ export function computeSetupSteps(input: SetupInput): {
   const held = HELD_STAGES.includes(stage);
   const live = stage === 'active' || stage === 'closed';
   const missing = confirmed ? [] : missingEventPrerequisites(input.event);
-  const hasGuests = input.guestCount > 0;
+
+  // The package-choice step sits between confirming the event and signing, because the choice is what CREATES the
+  // campaign (its price and quota are snapshotted on it) and the agreement is signed for that campaign. It exists
+  // while a package is on offer and nothing is chosen yet, and for as long as the campaign is a package campaign. A
+  // pay-per-result campaign already in flight keeps its own five-step flow.
+  const isPackageCampaign = (input.campaign?.package_price ?? null) != null;
+  const hasPackageStep = isPackageCampaign || (input.packageOffered === true && input.campaign === null);
+  const packageChosen = isPackageCampaign;
+  const canSign = confirmed && (!hasPackageStep || packageChosen);
 
   const steps: SetupStep[] = [
-    { key: 'details', state: 'done' },
     {
-      key: 'guests',
-      // Soft step: a recommendation, never `current` — it does not gate the flow.
-      state: hasGuests ? 'done' : 'pending',
-      hint: hasGuests ? undefined : confirmed ? NO_GUESTS_AFTER_CONFIRM_HINT : NO_GUESTS_HINT,
-    },
-    {
-      key: 'confirm',
-      state: confirmed ? 'done' : missing.length > 0 ? 'blocked' : 'current',
+      // The owner fixes whatever is missing HERE; once nothing is, the flow moves on.
+      key: 'details',
+      state: confirmed || missing.length === 0 ? 'done' : 'current',
       hint: !confirmed && missing.length > 0 ? `יש להשלים: ${missing.join(', ')}` : undefined,
     },
-    { key: 'sign', state: signed ? 'done' : confirmed ? 'current' : 'pending' },
+    { key: 'confirm', state: confirmed ? 'done' : missing.length > 0 ? 'pending' : 'current' },
+    ...(hasPackageStep
+      ? [{ key: 'package' as const, state: (packageChosen ? 'done' : confirmed ? 'current' : 'pending') as SetupStepState }]
+      : []),
+    { key: 'sign', state: signed ? 'done' : canSign ? 'current' : 'pending' },
     { key: 'pay', state: held ? 'done' : signed ? 'current' : 'pending' },
     {
       key: 'live',

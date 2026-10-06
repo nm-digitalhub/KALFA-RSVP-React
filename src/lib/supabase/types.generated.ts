@@ -129,6 +129,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          model: string
           status: Database["public"]["Enums"]["agreement_status"]
           updated_at: string
           version: string
@@ -140,6 +141,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          model?: string
           status?: Database["public"]["Enums"]["agreement_status"]
           updated_at?: string
           version: string
@@ -151,6 +153,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          model?: string
           status?: Database["public"]["Enums"]["agreement_status"]
           updated_at?: string
           version?: string
@@ -216,6 +219,7 @@ export type Database = {
           owner_agent_report_template_lang: string | null
           owner_agent_report_template_name: string | null
           owner_agent_reports_enabled: boolean
+          package_model_enabled: boolean
           payments_enabled: boolean
           privacy_url: string | null
           reasonable_coverage_contacts: number
@@ -331,6 +335,7 @@ export type Database = {
           owner_agent_report_template_lang?: string | null
           owner_agent_report_template_name?: string | null
           owner_agent_reports_enabled?: boolean
+          package_model_enabled?: boolean
           payments_enabled?: boolean
           privacy_url?: string | null
           reasonable_coverage_contacts?: number
@@ -446,6 +451,7 @@ export type Database = {
           owner_agent_report_template_lang?: string | null
           owner_agent_report_template_name?: string | null
           owner_agent_reports_enabled?: boolean
+          package_model_enabled?: boolean
           payments_enabled?: boolean
           privacy_url?: string | null
           reasonable_coverage_contacts?: number
@@ -1495,6 +1501,139 @@ export type Database = {
           },
         ]
       }
+      campaign_quota_alerts: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          delivered_at: string | null
+          event_id: string
+          id: string
+          quota: number
+          threshold_percent: number
+          used: number
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          delivered_at?: string | null
+          event_id: string
+          id?: string
+          quota: number
+          threshold_percent: number
+          used: number
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          delivered_at?: string | null
+          event_id?: string
+          id?: string
+          quota?: number
+          threshold_percent?: number
+          used?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_quota_alerts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_quota_alerts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_quota_alerts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "campaign_quota_alerts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_quota_changes: {
+        Row: {
+          actor: string | null
+          campaign_id: string
+          created_at: string
+          event_id: string
+          id: string
+          idempotency_key: string
+          kind: string
+          new_quota: number | null
+          payment_ref: string | null
+          previous_quota: number | null
+          reason: string | null
+        }
+        Insert: {
+          actor?: string | null
+          campaign_id: string
+          created_at?: string
+          event_id: string
+          id?: string
+          idempotency_key: string
+          kind: string
+          new_quota?: number | null
+          payment_ref?: string | null
+          previous_quota?: number | null
+          reason?: string | null
+        }
+        Update: {
+          actor?: string | null
+          campaign_id?: string
+          created_at?: string
+          event_id?: string
+          id?: string
+          idempotency_key?: string
+          kind?: string
+          new_quota?: number | null
+          payment_ref?: string | null
+          previous_quota?: number | null
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_quota_changes_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_quota_changes_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_quota_changes_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "campaign_quota_changes_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaigns: {
         Row: {
           allowed_channels: Database["public"]["Enums"]["campaign_channel"][]
@@ -1518,6 +1657,7 @@ export type Database = {
           charge_status: string | null
           charged_at: string | null
           close_at: string | null
+          contact_quota: number | null
           created_at: string
           credit_applied: number
           enabled: boolean
@@ -1532,6 +1672,7 @@ export type Database = {
           max_charge_ceiling: number | null
           max_contacts: number
           outreach_schedule: Json | null
+          package_price: number | null
           price_per_reached: number | null
           release_status: string | null
           start_at: string | null
@@ -1569,6 +1710,7 @@ export type Database = {
           charge_status?: string | null
           charged_at?: string | null
           close_at?: string | null
+          contact_quota?: number | null
           created_at?: string
           credit_applied?: number
           enabled?: boolean
@@ -1583,6 +1725,7 @@ export type Database = {
           max_charge_ceiling?: number | null
           max_contacts: number
           outreach_schedule?: Json | null
+          package_price?: number | null
           price_per_reached?: number | null
           release_status?: string | null
           start_at?: string | null
@@ -1620,6 +1763,7 @@ export type Database = {
           charge_status?: string | null
           charged_at?: string | null
           close_at?: string | null
+          contact_quota?: number | null
           created_at?: string
           credit_applied?: number
           enabled?: boolean
@@ -1634,6 +1778,7 @@ export type Database = {
           max_charge_ceiling?: number | null
           max_contacts?: number
           outreach_schedule?: Json | null
+          package_price?: number | null
           price_per_reached?: number | null
           release_status?: string | null
           start_at?: string | null
@@ -3388,6 +3533,7 @@ export type Database = {
           rsvp_note: string | null
           rsvp_token: string
           rsvp_token_revoked_at: string | null
+          seq: number
           show_in_guest_list: boolean
           status: Database["public"]["Enums"]["guest_status"]
           updated_at: string
@@ -3417,6 +3563,7 @@ export type Database = {
           rsvp_note?: string | null
           rsvp_token?: string
           rsvp_token_revoked_at?: string | null
+          seq?: number
           show_in_guest_list?: boolean
           status?: Database["public"]["Enums"]["guest_status"]
           updated_at?: string
@@ -3446,6 +3593,7 @@ export type Database = {
           rsvp_note?: string | null
           rsvp_token?: string
           rsvp_token_revoked_at?: string | null
+          seq?: number
           show_in_guest_list?: boolean
           status?: Database["public"]["Enums"]["guest_status"]
           updated_at?: string
@@ -4847,6 +4995,7 @@ export type Database = {
           base_price: number | null
           category: string
           channels: Database["public"]["Enums"]["campaign_channel"][] | null
+          contact_quota: number | null
           created_at: string
           description: string | null
           hold_buffer_pct: number
@@ -4866,6 +5015,7 @@ export type Database = {
           base_price?: number | null
           category?: string
           channels?: Database["public"]["Enums"]["campaign_channel"][] | null
+          contact_quota?: number | null
           created_at?: string
           description?: string | null
           hold_buffer_pct?: number
@@ -4885,6 +5035,7 @@ export type Database = {
           base_price?: number | null
           category?: string
           channels?: Database["public"]["Enums"]["campaign_channel"][] | null
+          contact_quota?: number | null
           created_at?: string
           description?: string | null
           hold_buffer_pct?: number
@@ -4900,6 +5051,225 @@ export type Database = {
           tier?: string
         }
         Relationships: []
+      }
+      payment_operation_kinds: {
+        Row: {
+          active: boolean
+          effect: string
+          kind: string
+          label_he: string
+          once_per_campaign: boolean
+          once_per_parent: boolean
+          sort_order: number
+        }
+        Insert: {
+          active?: boolean
+          effect: string
+          kind: string
+          label_he: string
+          once_per_campaign?: boolean
+          once_per_parent?: boolean
+          sort_order?: number
+        }
+        Update: {
+          active?: boolean
+          effect?: string
+          kind?: string
+          label_he?: string
+          once_per_campaign?: boolean
+          once_per_parent?: boolean
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      payment_operation_lines: {
+        Row: {
+          description: string
+          id: string
+          line_no: number
+          line_total: number | null
+          operation_id: string
+          quantity: number
+          recorded_at: string
+          unit_price: number
+        }
+        Insert: {
+          description: string
+          id?: string
+          line_no: number
+          line_total?: number | null
+          operation_id: string
+          quantity?: number
+          recorded_at?: string
+          unit_price: number
+        }
+        Update: {
+          description?: string
+          id?: string
+          line_no?: number
+          line_total?: number | null
+          operation_id?: string
+          quantity?: number
+          recorded_at?: string
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_operation_lines_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "payment_operations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_operations: {
+        Row: {
+          amount: number
+          campaign_id: string
+          card_brand: string | null
+          card_exp_month: number | null
+          card_exp_year: number | null
+          card_issuer: string | null
+          card_last4: string | null
+          card_mask: string | null
+          card_token_ref: string | null
+          citizen_id_secret: string | null
+          credit_applied: number
+          event_id: string
+          id: string
+          kind: string
+          meta: Json
+          note: string | null
+          occurred_at: string
+          once_slot: boolean
+          outcome: Database["public"]["Enums"]["payment_operation_outcome"]
+          parent_operation_id: string | null
+          parent_slot: boolean
+          payment_method_type: string | null
+          provider: string
+          provider_auth_ref: string | null
+          provider_document_id: number | null
+          provider_document_number: number | null
+          provider_document_url: string | null
+          provider_payment_id: number | null
+          provider_status: string | null
+          provider_status_description: string | null
+          recorded_at: string
+          source: string
+        }
+        Insert: {
+          amount?: number
+          campaign_id: string
+          card_brand?: string | null
+          card_exp_month?: number | null
+          card_exp_year?: number | null
+          card_issuer?: string | null
+          card_last4?: string | null
+          card_mask?: string | null
+          card_token_ref?: string | null
+          citizen_id_secret?: string | null
+          credit_applied?: number
+          event_id: string
+          id?: string
+          kind: string
+          meta?: Json
+          note?: string | null
+          occurred_at?: string
+          once_slot?: boolean
+          outcome?: Database["public"]["Enums"]["payment_operation_outcome"]
+          parent_operation_id?: string | null
+          parent_slot?: boolean
+          payment_method_type?: string | null
+          provider?: string
+          provider_auth_ref?: string | null
+          provider_document_id?: number | null
+          provider_document_number?: number | null
+          provider_document_url?: string | null
+          provider_payment_id?: number | null
+          provider_status?: string | null
+          provider_status_description?: string | null
+          recorded_at?: string
+          source?: string
+        }
+        Update: {
+          amount?: number
+          campaign_id?: string
+          card_brand?: string | null
+          card_exp_month?: number | null
+          card_exp_year?: number | null
+          card_issuer?: string | null
+          card_last4?: string | null
+          card_mask?: string | null
+          card_token_ref?: string | null
+          citizen_id_secret?: string | null
+          credit_applied?: number
+          event_id?: string
+          id?: string
+          kind?: string
+          meta?: Json
+          note?: string | null
+          occurred_at?: string
+          once_slot?: boolean
+          outcome?: Database["public"]["Enums"]["payment_operation_outcome"]
+          parent_operation_id?: string | null
+          parent_slot?: boolean
+          payment_method_type?: string | null
+          provider?: string
+          provider_auth_ref?: string | null
+          provider_document_id?: number | null
+          provider_document_number?: number | null
+          provider_document_url?: string | null
+          provider_payment_id?: number | null
+          provider_status?: string | null
+          provider_status_description?: string | null
+          recorded_at?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_operations_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_operations_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_operations_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "payment_operations_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_operations_kind_fkey"
+            columns: ["kind"]
+            isOneToOne: false
+            referencedRelation: "payment_operation_kinds"
+            referencedColumns: ["kind"]
+          },
+          {
+            foreignKeyName: "payment_operations_parent_operation_id_fkey"
+            columns: ["parent_operation_id"]
+            isOneToOne: false
+            referencedRelation: "payment_operations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       permission_definitions: {
         Row: {
@@ -7054,6 +7424,10 @@ export type Database = {
           reached_count: number
         }[]
       }
+      campaign_has_payment_activity: {
+        Args: { p_campaign: string }
+        Returns: boolean
+      }
       can_access_event: {
         Args: { _action?: string; _event_id: string; _resource?: string }
         Returns: boolean
@@ -7146,6 +7520,10 @@ export type Database = {
           p_event: string
         }
         Returns: boolean
+      }
+      fill_authorized_set: {
+        Args: { p_actor?: string; p_campaign: string; p_event: string }
+        Returns: Json
       }
       finish_callback_triage: {
         Args: {
@@ -7477,6 +7855,11 @@ export type Database = {
         }[]
       }
       owns_event: { Args: { _event_id: string }; Returns: boolean }
+      payment_citizen_id: { Args: { p_operation_id: string }; Returns: string }
+      payment_citizen_id_write: {
+        Args: { p_campaign_id: string; p_citizen_id: string }
+        Returns: string
+      }
       purge_stale_phone_change: { Args: { p_grace?: string }; Returns: number }
       purge_test_event: {
         Args: { p_actor: string; p_event: string }
@@ -7692,6 +8075,7 @@ export type Database = {
       faq_category: "about" | "pricing" | "how_it_works" | "legal_support"
       guest_status: "pending" | "attending" | "declined" | "maybe"
       order_status: "pending" | "paid"
+      payment_operation_outcome: "pending" | "succeeded" | "failed" | "review"
       provider_key: "meta_whatsapp" | "voximplant" | "extra_sms" | "company"
       provider_number_role:
         | "whatsapp_rsvp_sender"
@@ -7898,6 +8282,7 @@ export const Constants = {
       faq_category: ["about", "pricing", "how_it_works", "legal_support"],
       guest_status: ["pending", "attending", "declined", "maybe"],
       order_status: ["pending", "paid"],
+      payment_operation_outcome: ["pending", "succeeded", "failed", "review"],
       provider_key: ["meta_whatsapp", "voximplant", "extra_sms", "company"],
       provider_number_role: [
         "whatsapp_rsvp_sender",

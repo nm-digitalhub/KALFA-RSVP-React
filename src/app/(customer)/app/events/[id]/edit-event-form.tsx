@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { useActionState, useState } from 'react';
 
-import { updateEventAction } from './actions';
+import { setupSaveEventAction, updateEventAction } from './actions';
 import { CelebrantFields } from '../celebrant-fields';
 import {
   CELEBRANT_KIND_BY_EVENT_TYPE,
@@ -26,7 +26,7 @@ const inputClass =
   'w-full rounded-md border border-border bg-transparent px-3 py-2 disabled:cursor-not-allowed disabled:opacity-60';
 
 // event_date is a timestamptz in the DB, so the value arrives as a full ISO
-// string; a <input type="date"> needs YYYY-MM-DD. ilDateInputValue converts to
+// string; DateSelectIL's defaultValue needs YYYY-MM-DD. ilDateInputValue converts to
 // the ISRAEL calendar day (a raw UTC slice shows the previous day for
 // early-morning IL times); rsvp_deadline is a plain date and passes through.
 const dateInputValue = ilDateInputValue;
@@ -47,30 +47,55 @@ function celebrantDefaults(value: EventDetail['celebrants']): Record<string, str
   return defaults;
 }
 
+// "(חובה)" beside a field the setup flow will not move on without. Text, not colour
+// alone, so it reads the same to everyone.
+function RequiredMark() {
+  return <span className="ms-1 text-xs font-normal text-muted-foreground">(חובה)</span>;
+}
+
 export function EditEventForm({
   event,
   inviteImageUrl,
   hasOperationalCampaign = false,
+  mode = 'edit',
+  datesLocked,
 }: {
   event: EventDetail;
+  // 'setup': the details step of the one-time setup flow — the same form and the
+  // same save, but the button moves on to the next step ("שמירה והמשך") and the
+  // fields the flow requires (time, address) are marked. 'edit' is the ordinary
+  // edit and is unchanged.
+  mode?: 'edit' | 'setup';
+  // True once the date, time and RSVP deadline can no longer change: the event is
+  // closed, or the first message/call has already gone out to a guest
+  // (eventDatesLocked). Defaults to the old rule — locked unless still a draft —
+  // for a caller that does not know. The server enforces the same rule either way
+  // (updateEvent, and the events_guard_update trigger behind it).
+  datesLocked?: boolean;
   // Short-lived signed URL of the CURRENT invitation image (private bucket) —
   // generated per render by the page, so it always reflects the latest upload.
   inviteImageUrl?: string | null;
   // True when an OPERATIONAL (non-terminal) campaign exists for this event — the
-  // page derives it from the already-loaded campaign via isOperationalCampaignStatus
-  // (the SSOT). Drives the "may change, must not remove / re-type" locks that
-  // protect every pending send: event_type locked, celebrant completeness +
-  // venue_name enforced. The server (updateEvent) is the authority — this is UX.
+  // page derives it over all the event's campaigns via hasAnyOperationalCampaign
+  // (fail-closed true when the viewer cannot see campaigns). Drives the "may
+  // change, must not remove / re-type" locks that protect every pending send:
+  // event_type locked, celebrant completeness + venue_name enforced. The server
+  // (updateEvent) is the authority — this is UX.
   hasOperationalCampaign?: boolean;
 }) {
-  const action = updateEventAction.bind(null, event.id);
+  const isSetup = mode === 'setup';
+  const action = (isSetup ? setupSaveEventAction : updateEventAction).bind(null, event.id);
   const [state, formAction] = useActionState(action, null);
 
-  // R5: date fields are editable only while draft. Status itself is no longer
-  // editable here at all (R6) — Publish/Close (EventStatusActions) are the only
-  // legitimate transitions; a free dropdown would let the owner "choose" a
-  // status the server silently ignores (updateEvent no longer accepts it).
-  const isDraft = event.status === 'draft';
+  // R5: the date fields are editable until the first send (or until the event is
+  // closed) — not merely while draft. Status itself is not editable here (R6):
+  // publishing is the setup flow's confirm step and closing is EventStatusActions;
+  // updateEvent does not accept a status.
+  const datesEditable = !(datesLocked ?? event.status !== 'draft');
+  const lockedNote = 'נעול לאחר שנשלחה ההודעה הראשונה לאורחים';
+  // An ACTIVE event whose dates can still move: say until when (a draft needs no note).
+  const editableUntilNote =
+    event.status !== 'draft' && datesEditable ? 'ניתן לשנות עד שתישלח ההודעה הראשונה לאורחים' : null;
 
   // Controlled so the celebrant field group below follows the selected type.
   const [eventType, setEventType] = useState<EventType>(event.event_type);
@@ -120,7 +145,10 @@ export function EditEventForm({
 
   return (
     <form key={serverFingerprint} action={formAction} className="space-y-4">
-      <FormError message={state?.error} />
+      {/* In the setup flow the message sits by the button instead (below): the form
+          is long, and a message at the top is off-screen when the button at the
+          bottom is pressed. */}
+      {isSetup ? null : <FormError message={state?.error} />}
       <FormNotice message={state?.notice} />
 
       <div>
@@ -196,12 +224,14 @@ export function EditEventForm({
         <DateSelectIL
           id="event_date"
           labelPrefix="תאריך האירוע"
-          name={isDraft ? 'event_date' : undefined}
+          name={datesEditable ? 'event_date' : undefined}
           defaultValue={dateInputValue(event.event_date)}
-          disabled={!isDraft}
+          disabled={!datesEditable}
         />
-        {!isDraft ? (
-          <p className="mt-1 text-xs text-muted-foreground">נעול לאחר אישור פרטי האירוע</p>
+        {!datesEditable ? (
+          <p className="mt-1 text-xs text-muted-foreground">{lockedNote}</p>
+        ) : editableUntilNote ? (
+          <p className="mt-1 text-xs text-muted-foreground">{editableUntilNote}</p>
         ) : null}
         <FieldError errors={state?.fieldErrors?.event_date} />
       </div>
@@ -209,18 +239,17 @@ export function EditEventForm({
       <div>
         <label htmlFor="event_time" className="mb-1 block text-sm font-medium">
           שעת האירוע
+          {isSetup ? <RequiredMark /> : null}
         </label>
         <TimeSelect24
           id="event_time"
           labelPrefix="שעת האירוע"
-          name={isDraft ? 'event_time' : undefined}
+          name={datesEditable ? 'event_time' : undefined}
           defaultValue={ilTimeInputValue(event.event_date)}
-          disabled={!isDraft}
+          disabled={!datesEditable}
         />
         <p className="mt-1 text-xs text-muted-foreground">
-          {isDraft
-            ? 'תופיע בהזמנות ובתזכורות (שעון ישראל)'
-            : 'נעול לאחר אישור פרטי האירוע'}
+          {datesEditable ? 'תופיע בהזמנות ובתזכורות (שעון ישראל)' : lockedNote}
         </p>
         <FieldError errors={state?.fieldErrors?.event_time} />
       </div>
@@ -232,12 +261,12 @@ export function EditEventForm({
         <DateSelectIL
           id="rsvp_deadline"
           labelPrefix="מועד אחרון לאישור הגעה"
-          name={isDraft ? 'rsvp_deadline' : undefined}
+          name={datesEditable ? 'rsvp_deadline' : undefined}
           defaultValue={dateInputValue(event.rsvp_deadline)}
-          disabled={!isDraft}
+          disabled={!datesEditable}
         />
-        {!isDraft ? (
-          <p className="mt-1 text-xs text-muted-foreground">נעול לאחר אישור פרטי האירוע</p>
+        {!datesEditable ? (
+          <p className="mt-1 text-xs text-muted-foreground">{lockedNote}</p>
         ) : null}
         <FieldError errors={state?.fieldErrors?.rsvp_deadline} />
       </div>
@@ -270,6 +299,7 @@ export function EditEventForm({
       <div>
         <label htmlFor="venue_address" className="mb-1 block text-sm font-medium">
           כתובת המקום
+          {isSetup ? <RequiredMark /> : null}
         </label>
         <input
           id="venue_address"
@@ -364,7 +394,8 @@ export function EditEventForm({
         </p>
       </div>
 
-      <SubmitButton>שמירת שינויים</SubmitButton>
+      {isSetup ? <FormError message={state?.error} /> : null}
+      <SubmitButton>{isSetup ? 'שמירה והמשך' : 'שמירת שינויים'}</SubmitButton>
     </form>
   );
 }

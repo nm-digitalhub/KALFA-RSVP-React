@@ -22,6 +22,7 @@ import {
 } from '@/lib/data/campaigns';
 import { countAuthorizedContacts, countUniqueContactsForEvent } from '@/lib/data/contacts';
 import { isPastEventDay } from '@/lib/data/event-date';
+import { packagePaymentOf } from '@/lib/payments/package-paid';
 import { requireEventAccess } from '@/lib/data/events';
 import {
   activateCampaignAction,
@@ -62,14 +63,14 @@ export default async function CampaignManagePage({
   const isPast = isPastEventDay(event.event_date);
 
   // Same admin branch the event read above takes. The owner path reads through
-  // RLS, whose only SELECT policy on `campaigns` resolves to
-  // events.owner_id = auth.uid() — so staff got zero rows and a bare 404.
+  // RLS, whose only SELECT policy on `campaigns` (can_access_event) admits just
+  // the event's owner or an org member — so staff got zero rows and a bare 404.
   const campaign = admin
     ? await getCampaignForAdminView(campaignId)
     : await getCampaign(campaignId);
   if (campaign.event_id !== eventId) notFound();
 
-  // Each panel below reports THREE outcomes the page used to collapse into one:
+  // Each panel below reports THREE distinct outcomes:
   // loaded, could-not-load, and genuinely-empty. Collapsing them is how a staff
   // view of a customer's live campaign came to read "add contacts and start
   // activity" — the read had simply returned nothing, and "nothing" was rendered
@@ -131,6 +132,9 @@ export default async function CampaignManagePage({
     uniqueContacts = null;
   }
 
+  // A package campaign is funded by its payment, which only the ledger knows (null for the other model).
+  const payment = await packagePaymentOf(campaign);
+
   const activate = activateCampaignAction.bind(null, eventId, campaignId);
   const pause = pauseCampaignAction.bind(null, eventId, campaignId);
   const close = closeCampaignAction.bind(null, eventId, campaignId);
@@ -180,6 +184,8 @@ export default async function CampaignManagePage({
           charge_status: campaign.charge_status,
           base_price: campaign.base_price,
           included_reached: campaign.included_reached,
+          package_price: campaign.package_price,
+          payment_status: payment?.status ?? null,
         }}
         summary={summary}
         summaryFailed={summaryFailed}

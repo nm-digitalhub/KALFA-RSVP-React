@@ -6,7 +6,7 @@
 // Queues that ARE scheduled but have no boss.schedule() equivalent expected
 // interval hardcoded elsewhere — mirrors the exact cron catalog in
 // worker/main.ts. Used by the Jobs panel to color-code staleness; queues absent
-// from this map are event-driven (outreach-step / outreach-call-request /
+// from this map are event-driven (e.g. outreach-step / outreach-call-request /
 // outreach-dead) and are never flagged stale regardless of how long ago they
 // last completed.
 //
@@ -21,8 +21,8 @@
 // green forever. Nothing was broken; nothing could have been noticed if it were.
 //
 // queue-schedule.test.ts now reads worker/main.ts and fails if the two sets
-// diverge in either direction, so entry 33 is a test failure rather than a
-// silently unmonitored job.
+// diverge in either direction, so a newly scheduled queue with no entry is a test
+// failure rather than a silently unmonitored job.
 //
 // THE ALLOWANCES ARE ~3x THE JOB'S OWN INTERVAL, rounded to the family it belongs
 // to. Three missed runs is late; one is a blip, and a badge that goes red on a
@@ -33,7 +33,7 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   'workflow-schedule-sweep': 3,
   // Every 5 minutes.
   // webhook-process: event-driven (each persist nudges it) with this cron as a
-  // safety net since 2026-09-30.
+  // safety net.
   'webhook-process': 15,
   'campaign-thankyou-sweep': 15,
   'call-callback-sweep': 15,
@@ -43,6 +43,7 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   'voximplant-call-reconcile': 30,
   'console-agent-calendar-presence-sync': 30,
   'fleet-request-expire-sweep': 30,
+  'payment-orphans': 30,
   // Every 30 minutes.
   'voximplant-balance-check': 90,
   'sumit-hold-reconcile': 90,
@@ -73,7 +74,7 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   'unconfirmed-cleanup-sweep': 3 * 24 * 60,
   // Weekly (Monday 09:00 IL): flag only after a whole missed week plus slack.
   'seo-technical-watch': 10 * 24 * 60,
-  // Weekly (Sunday 05:20 IL). Same 10-day allowance as the other weekly job:
+  // Weekly (Sunday 05:20 IL). Same 10-day allowance as the other weekly jobs:
   // a missed CLI upgrade is not urgent, but a job that silently stopped running
   // means the toolchain quietly rots, which is exactly what this watches for.
   'supabase-cli-update': 10 * 24 * 60,

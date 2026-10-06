@@ -18,6 +18,7 @@ import {
 import { getCampaignBillingSummary, type BillingSummary } from '@/lib/data/billing';
 import { campaignStage } from '@/lib/data/event-labels';
 import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
+import { packagePaymentOf } from '@/lib/payments/package-paid';
 import type { Enums } from '@/lib/supabase/types';
 type EventStatus = Enums<'event_status'>;
 
@@ -53,6 +54,9 @@ export type EventStatsResult = {
     id: string | null;
     status: CampaignStatus | null;
     captureStatus: string | null;
+    // A fixed-price package campaign is funded by its payment (the ledger), not by a hold: the stage needs both.
+    packagePrice: number | null;
+    paymentStatus: string | null;
     maxContacts: number | null;
     reachedCount: number | null; // operational, from delivery aggregation
     delivery: {
@@ -237,6 +241,8 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
     id: null,
     status: null,
     captureStatus: null,
+    packagePrice: null,
+    paymentStatus: null,
     maxContacts: null,
     reachedCount: null,
     delivery: null,
@@ -257,9 +263,11 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
       campaign.id = c.id;
       campaign.status = c.status ?? null;
       campaign.captureStatus = c.capture_status ?? null;
+      campaign.packagePrice = c.package_price ?? null;
+      campaign.paymentStatus = (await packagePaymentOf(c))?.status ?? null;
       campaign.maxContacts = c.max_contacts ?? null;
       campaign.state = 'visible';
-      // delivery (org-aware after Task 4 fix)
+      // delivery
       try {
         const d: CampaignDeliveryBreakdown | null = await getCampaignDeliveryBreakdown(c.id);
         if (d) {

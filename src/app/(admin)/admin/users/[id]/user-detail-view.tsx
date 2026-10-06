@@ -143,6 +143,10 @@ export function UserDetailView({
             <dd dir="ltr">{user.phone ?? '—'}</dd>
           </div>
           <div>
+            <dt className="text-muted-foreground">מספר לקוח</dt>
+            <dd dir="ltr">{user.customerNumber ?? '—'}</dd>
+          </div>
+          <div>
             <dt className="text-muted-foreground">נרשם</dt>
             <dd>{user.createdAt ? formatDateTime(user.createdAt) : '—'}</dd>
           </div>

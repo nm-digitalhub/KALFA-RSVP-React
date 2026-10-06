@@ -50,6 +50,45 @@ describe('resolveCancellationRequestAction', () => {
     expect(resolveCancellationRequest).not.toHaveBeenCalled();
   });
 
+  it('passes a percentage fee through as a number, with no amount', async () => {
+    vi.mocked(resolveCancellationRequest).mockResolvedValue(undefined);
+    const action = resolveCancellationRequestAction.bind(null, 'r1');
+    const result = await action(
+      null,
+      fd({ resolution: 'partial_charge', resolutionPercent: '5', resolutionNote: 'דמי ביטול באחוזים' }),
+    );
+    expect(resolveCancellationRequest).toHaveBeenCalledWith('r1', {
+      resolution: 'partial_charge',
+      resolutionPercent: 5,
+      resolutionNote: 'דמי ביטול באחוזים',
+    });
+    expect(result?.notice).toBeDefined();
+  });
+
+  it('refuses an amount and a percentage together, on the percentage field, and calls nothing', async () => {
+    const action = resolveCancellationRequestAction.bind(null, 'r1');
+    const result = await action(
+      null,
+      fd({ resolution: 'partial_charge', resolutionAmount: '30', resolutionPercent: '5', resolutionNote: 'שניהם יחד' }),
+    );
+    expect(result?.fieldErrors?.resolutionPercent).toBeDefined();
+    expect(resolveCancellationRequest).not.toHaveBeenCalled();
+  });
+
+  it('treats an empty percentage box as absent, so the amount alone is accepted', async () => {
+    vi.mocked(resolveCancellationRequest).mockResolvedValue(undefined);
+    const action = resolveCancellationRequestAction.bind(null, 'r1');
+    await action(
+      null,
+      fd({ resolution: 'partial_charge', resolutionAmount: '30', resolutionPercent: '', resolutionNote: 'סכום בלבד' }),
+    );
+    expect(resolveCancellationRequest).toHaveBeenCalledWith('r1', {
+      resolution: 'partial_charge',
+      resolutionAmount: 30,
+      resolutionNote: 'סכום בלבד',
+    });
+  });
+
   it('resolves declined successfully', async () => {
     vi.mocked(resolveCancellationRequest).mockResolvedValue(undefined);
     const action = resolveCancellationRequestAction.bind(null, 'r1');

@@ -91,6 +91,7 @@ function happyPath() {
       status: 'approved',
       max_charge_ceiling: 100,
       capture_status: null,
+      package_price: null,
     } as never);
     vi.mocked(requireOwnedEvent).mockResolvedValue({
       id: EVENT_ID,
@@ -211,5 +212,40 @@ describe('POST /api/campaigns/[id]/authorize — auto-activation after a confirm
     expect(new URL(res.headers.get('location') as string).searchParams.get('error')).toBe(
       'hold_review',
     );
+  });
+});
+
+// A fixed-price package campaign is paid by ONE purchase (../purchase). The old hold would reserve an amount on the
+// card, set capture_status='authorized' and auto-activate the campaign — outreach with no payment recorded in the
+// ledger and no guest list filled.
+describe('POST /api/campaigns/[id]/authorize — a package campaign never takes the old card hold', () => {
+  beforeEach(happyPath);
+
+  it('refuses it as bad_state before the lock, the sizing, the card and the activation', async () => {
+    vi.mocked(getCampaignForHold).mockResolvedValue({
+      id: CAMPAIGN_ID,
+      event_id: EVENT_ID,
+      status: 'approved',
+      max_charge_ceiling: 100,
+      capture_status: null,
+      package_price: 120,
+    } as never);
+
+    const res = await callPost(request({ 'og-token': 'og-123' }));
+
+    expect(res.status).toBe(303);
+    expect(new URL(res.headers.get('location') as string).searchParams.get('error')).toBe('bad_state');
+    expect(lockCampaignForHold).not.toHaveBeenCalled();
+    expect(prepareCampaignHold).not.toHaveBeenCalled();
+    expect(authorizeHoldSumit).not.toHaveBeenCalled();
+    expect(recordCampaignHold).not.toHaveBeenCalled();
+    expect(activateCampaign).not.toHaveBeenCalled();
+  });
+
+  it('a pay-per-result campaign (no package price) still takes the hold', async () => {
+    const res = await callPost(request({ 'og-token': 'og-123' }));
+
+    expect(authorizeHoldSumit).toHaveBeenCalledTimes(1);
+    expect(new URL(res.headers.get('location') as string).searchParams.get('held')).toBe('1');
   });
 });

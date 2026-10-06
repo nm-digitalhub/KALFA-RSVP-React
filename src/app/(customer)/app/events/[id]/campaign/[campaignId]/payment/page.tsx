@@ -9,14 +9,19 @@ import { isPastEventDay } from '@/lib/data/event-date';
 import {
   getPaymentsEnabled,
   getCampaignHoldsEnabled,
+  getPackageModelEnabled,
   getSumitPublicConfig,
 } from '@/lib/data/payments';
 import { getProfile } from '@/lib/data/profiles';
+import { packagePaymentScreen } from '@/lib/payments/package-payment-screen';
+import { getPackagePaymentState } from '@/lib/payments/package-purchase';
+import { purchaseErrorMessage } from '@/lib/payments/package-purchase-errors';
 import { buttonVariants } from '@/components/ui/button';
 import { activateCampaignAction } from '../../campaign-actions';
 import { CampaignHoldForm } from './hold-form';
 import { ActivateNowForm } from './activate-now-form';
 import { HeldAnalytics } from './_held-analytics';
+import { PackagePaymentView } from './package-payment-view';
 
 export const metadata: Metadata = { title: 'תשלום קמפיין' };
 
@@ -25,6 +30,9 @@ export const metadata: Metadata = { title: 'תשלום קמפיין' };
 // card form is rendered ONLY when payments + campaign holds are enabled AND the
 // provider config is present (fail-closed). Otherwise the step is informational
 // and makes no SUMIT call.
+//
+// A fixed-price PACKAGE campaign (package_price set) takes a different path, returned first below: one purchase,
+// decided from the payment ledger. It never reaches any of the hold code.
 
 function ils(n: number | null): string {
   if (n == null) return '—';
@@ -66,7 +74,7 @@ export default async function CampaignPaymentPage({
 
   // The agreement must be signed (campaign approved) before the payment step.
   if (campaign.status === 'pending_approval') {
-    redirect(`/app/events/${id}/campaign/${campaignId}/approve`);
+    redirect(`/app/events/${id}/setup`);
   }
 
   const backLink = (
@@ -85,6 +93,50 @@ export default async function CampaignPaymentPage({
       {backLink}
     </div>
   );
+
+  // A fixed-price package campaign is paid by ONE purchase, and what the page shows is decided from the payment
+  // LEDGER — not from `?paid=1` (stale on reload) and not from the old hold columns. It never gets the hold form,
+  // the hold summary ("תפיסה בלבד") or the held-campaign "activate now": a hold submitted for it would reserve money
+  // on the card and start outreach with no payment recorded. An unreadable ledger is shown as unavailable, never as an
+  // empty form.
+  if (campaign.package_price != null) {
+    const [paymentsEnabled, packageEnabled, publicConfig, profile, payment] = await Promise.all([
+      getPaymentsEnabled(),
+      getPackageModelEnabled(),
+      getSumitPublicConfig(),
+      getProfile(),
+      getPackagePaymentState(campaignId).catch((err: unknown) => {
+        console.error('[payment] package payment state could not be read', {
+          campaignId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+      }),
+    ]);
+    const screen = packagePaymentScreen({
+      price: Number(campaign.package_price),
+      payment,
+      campaignStatus: campaign.status,
+      eventPast: isPast,
+      eventActive: event.status === 'active',
+      gatesOpen: paymentsEnabled && packageEnabled && publicConfig !== null,
+    });
+    return (
+      <div className="mx-auto max-w-2xl space-y-6">
+        {header}
+        <PackagePaymentView
+          screen={screen}
+          errorMessage={purchaseErrorMessage(error)}
+          eventId={id}
+          campaignId={campaignId}
+          formConfig={publicConfig}
+          signerName={profile?.full_name?.trim() || 'לקוח KALFA'}
+          activateAction={activateCampaignAction.bind(null, id, campaignId)}
+          activateReason={activate === 'no_contacts' ? 'no_contacts' : activate === 'failed' ? 'failed' : null}
+        />
+      </div>
+    );
+  }
 
   // L1: a past event can no longer take a card hold (the J5 route rejects it too).
   // An already-placed hold (handled below) is left intact so it can be settled.
@@ -230,8 +282,8 @@ export default async function CampaignPaymentPage({
   // a hardcoded price. The preview is best-effort: if it fails, the page still
   // renders with the snapshot ceiling and no "current hold" line, and the
   // authorize route recomputes authoritatively on submit anyway. The base-fee
-  // line keeps the 30.8 fix: the base is owed even at 0 reached, said plainly on
-  // the exact page where the customer commits a card.
+  // line says plainly that the base is owed even at 0 reached, on the exact page
+  // where the customer commits a card.
   let sizing: Awaited<ReturnType<typeof previewCampaignHoldSizing>> | null = null;
   if (canHold) {
     try {
@@ -337,7 +389,7 @@ export default async function CampaignPaymentPage({
             campaignId={campaignId}
             companyId={publicConfig.companyId}
             apiPublicKey={publicConfig.apiPublicKey}
-            holdAmount={holdAmount ?? campaign.max_charge_ceiling}
+            amount={holdAmount ?? campaign.max_charge_ceiling}
             signerName={profile?.full_name?.trim() || 'לקוח KALFA'}
           />
         </section>

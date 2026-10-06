@@ -47,29 +47,42 @@ export function hasAnyOperationalCampaign(
 // Cancel is a pre-money wind-down only: once a card hold, a charge or a billed
 // reach exists, money has to be settled or refunded instead (the cancellation-
 // request flow), never erased by flipping the status. This mirrors the RPC's own
-// predicate (migration 20260630223635) so the staff button is shown exactly when
-// the RPC would accept it — before 2026-09-29 the button also showed on active,
-// paused, scheduled and closed campaigns, where every click failed with
-// "לא ניתן לבטל קמפיין זה". campaign-status.test.ts pins the parity.
+// predicate (migration 20260630223635) so the staff button is never shown where
+// the RPC would refuse; a package campaign whose payment is collected or in
+// flight is excluded here as well, because the RPC does not look at the
+// payment ledger. campaign-status.test.ts pins the parity.
 export const CANCELLABLE_CAMPAIGN_STATUSES = [
   'draft',
   'pending_approval',
   'approved',
 ] as const satisfies readonly CampaignStatus[];
 
+// The statuses a campaign may be CLOSED from (closeCampaign in campaigns.ts and close-charge.ts use the same four).
+export const CLOSEABLE_CAMPAIGN_STATUSES = [
+  'active',
+  'paused',
+  'approved',
+  'scheduled',
+] as const satisfies readonly CampaignStatus[];
+
 const BLOCKING_CAPTURE_STATUSES = new Set(['authorized', 'pending', 'hold_review']);
+// A package campaign has no hold: money is in the ledger. Paid, or a payment still in flight, is not "pre-money".
+const BLOCKING_PAYMENT_STATUSES = new Set(['collected', 'pending', 'review']);
 
 export function isCampaignCancellable(
   campaign: {
     status: CampaignStatus;
     capture_status: string | null;
     charge_status: string | null;
+    // The ledger state of a package campaign; absent for the other model.
+    payment?: { status: string } | null;
   },
   reachedCount: number,
 ): boolean {
   return (
     (CANCELLABLE_CAMPAIGN_STATUSES as readonly CampaignStatus[]).includes(campaign.status) &&
     !BLOCKING_CAPTURE_STATUSES.has(campaign.capture_status ?? '') &&
+    !BLOCKING_PAYMENT_STATUSES.has(campaign.payment?.status ?? '') &&
     campaign.charge_status === null &&
     reachedCount === 0
   );

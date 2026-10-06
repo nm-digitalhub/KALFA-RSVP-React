@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { redirect, unstable_rethrow } from 'next/navigation';
 
@@ -51,7 +52,7 @@ export async function createGuestAction(
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   const d = parsed.data;
@@ -78,7 +79,7 @@ export async function createGuestAction(
   // Best-effort: keep the contacts table (the billing source-of-truth) in sync.
   // The guest is already created and committed — a failure here must NOT fail the
   // action (a retry would create a duplicate guest); contacts reconcile on the
-  // next mutation or campaign build.
+  // next mutation.
   await syncGuestContact(eventId, createdId, d.phone ? d.phone : null);
 
   revalidatePath(`/app/events/${eventId}/guests`);
@@ -99,8 +100,8 @@ async function syncGuestContact(
       guestId,
       phone,
     );
-    // P0-1 (A6): reconcile the campaign authorized set for this link delta
-    // (kill-switch gated — inert until RECONCILE_AUTHORIZED_SET_ENABLED).
+    // Reconcile the campaign authorized set for this link delta (kill-switch
+    // gated by RECONCILE_AUTHORIZED_SET_ENABLED — a no-op while it is off).
     if (prevContactId && contactId && prevContactId !== contactId) {
       await reconcileCampaignSetForContact(eventId, 'repoint', contactId, prevContactId);
     } else if (contactId) {
@@ -139,7 +140,7 @@ export async function updateGuestAction(
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   const d = parsed.data;
@@ -222,7 +223,7 @@ export async function createGroupAction(
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   try {
@@ -255,7 +256,7 @@ export async function updateGroupAction(
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   try {
@@ -286,7 +287,7 @@ export async function deleteGroupAction(
 }
 
 // RSVP-link management on the guest detail page. The data layer re-verifies
-// event ownership (requireOwnedEvent) before touching the bearer token, which
+// event access (requireEventAccess) before touching the bearer token, which
 // is otherwise excluded from every owner-facing guest projection.
 export async function revokeRsvpTokenAction(
   eventId: string,

@@ -91,6 +91,7 @@ const FINAL_RESULTS: Exclude<CallDispatchResult, { kind: 'transient_error' }>[] 
   { kind: 'skipped', reason: 'concurrent_owner' },
   { kind: 'skipped', reason: 'max_concurrency' },
   { kind: 'skipped', reason: 'campaign_hour_cap' },
+  { kind: 'skipped', reason: 'waiting_for_quota' },
   { kind: 'blocked', reason: 'config_missing' },
   { kind: 'blocked', reason: 'live_calls_disabled' },
   { kind: 'blocked', reason: 'balance_below_reserve' },
@@ -115,6 +116,14 @@ describe('mapDispatchResult — closed public mapping', () => {
     expect(mapDispatchResult({ kind: 'skipped', reason: 'already_reached' })).toEqual({
       status: 'skipped',
       reason: 'already_reached',
+      attemptId: null,
+    });
+  });
+
+  it('publishes skipped/waiting_for_quota as a domain refusal, verbatim', () => {
+    expect(mapDispatchResult({ kind: 'skipped', reason: 'waiting_for_quota' })).toEqual({
+      status: 'skipped',
+      reason: 'waiting_for_quota',
       attemptId: null,
     });
   });
@@ -264,13 +273,14 @@ describe('vocabulary contract with migration 20260722170740', () => {
     'utf8',
   );
   // The reason CHECK was recreated (verbatim + 'outside_dial_window') by
-  // 20260907152244 when dial-hours gate 3b landed; for `reason` the LATEST
-  // recreation is the live contract, so that is the file the reason test must
-  // read. `status` still lives only in the original migration.
+  // 20260907152244 when dial-hours gate 3b landed, and again (verbatim +
+  // 'waiting_for_quota') by 20261004081706 when the contact-quota seat gate landed;
+  // for `reason` the LATEST recreation is the live contract, so that is the file the
+  // reason test must read. `status` still lives only in the original migration.
   const reasonSql = readFileSync(
     join(
       __dirname,
-      '../../../supabase/migrations/20260907152244_dispatch_reason_outside_dial_window.sql',
+      '../../../supabase/migrations/20261004081706_campaign_contact_quota_gate_support.sql',
     ),
     'utf8',
   );

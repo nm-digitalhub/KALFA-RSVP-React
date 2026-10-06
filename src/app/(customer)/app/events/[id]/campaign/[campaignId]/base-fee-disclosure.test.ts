@@ -9,8 +9,8 @@ import { join } from 'node:path';
 // WHY THIS EXISTS. The base fee is charged at 0 reached — `close-charge-amount.ts`
 // adds `input.base` before any reached count is considered, and the agreement
 // body (§3, `agreements/template.ts`) spells that out. The payment page and the
-// agreement both said so. The approve page — the one the customer actually
-// signs from — did not: it listed the per-reached price, the ceiling, the
+// agreement both said so. The approve page (now the agreement step) — the one the
+// customer actually signs from — did not: it listed the per-reached price, the ceiling, the
 // channels and the window, then closed with "חיוב רק על איש קשר שהושג"
 // unconditionally. An owner could read that summary, sign, have nobody respond,
 // and be charged the base fee anyway.
@@ -35,8 +35,8 @@ const UNCONDITIONAL_PHRASE = 'נגבים בכל מקרה';
 
 const SURFACES = [
   {
-    label: 'approve page (the signature surface)',
-    path: join(CAMPAIGN_ROOT, 'approve', 'page.tsx'),
+    label: 'agreement step (the signature surface)',
+    path: join(CAMPAIGN_ROOT, 'approve', 'agreement-step.tsx'),
   },
   {
     label: 'payment page (the card surface)',
@@ -71,12 +71,13 @@ describe('base fee is disclosed as unconditional on every pre-charge surface', (
     },
   );
 
-  // The specific regression: the approve page's closing claim must not assert
+  // The specific regression: the agreement step's closing claim must not assert
   // "charged only for a reached contact" without qualification. Before the fix
-  // that sentence stood alone; now it is reachable only on the `basePrice === 0`
-  // branch, where it is true.
-  it('approve page does not make the reached-only claim unconditionally', () => {
-    const source = readFileSync(join(CAMPAIGN_ROOT, 'approve', 'page.tsx'), 'utf8');
+  // that sentence stood alone; now it follows the unconditional-fee disclosure when
+  // there is a base fee and stands alone only on the `basePrice === 0` branch,
+  // where it is true.
+  it('agreement step does not make the reached-only claim unconditionally', () => {
+    const source = readFileSync(join(CAMPAIGN_ROOT, 'approve', 'agreement-step.tsx'), 'utf8');
     const claim = 'חיוב רק על איש קשר שהושג';
     expect(source, 'the reached-only claim should still exist for zero-base campaigns')
       .toContain(claim);

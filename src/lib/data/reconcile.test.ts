@@ -82,6 +82,40 @@ describe('reconcileCampaignSetForContact (kill-switch gated)', () => {
     expect(warn).toHaveBeenCalled();
   });
 
+  it('surfaces quota_full via a warning too — a waiting guest is never silent (best-effort, never throws)', async () => {
+    enable(true);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { client } = createMockSupabase<{ id: string }[]>({
+      data: [{ id: 'camp1' }],
+      error: null,
+    });
+    client.rpc.mockResolvedValue({ data: 'quota_full', error: null });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await expect(
+      reconcileCampaignSetForContact('e1', 'add', 'ct1'),
+    ).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('quota_full'));
+  });
+
+  it('a normal verdict (added) logs nothing', async () => {
+    enable(true);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { client } = createMockSupabase<{ id: string }[]>({
+      data: [{ id: 'camp1' }],
+      error: null,
+    });
+    client.rpc.mockResolvedValue({ data: 'added', error: null });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await reconcileCampaignSetForContact('e1', 'add', 'ct1');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it('an RPC error is logged, not thrown (the guest mutation is already committed)', async () => {
     enable(true);
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});

@@ -55,4 +55,35 @@ describe('resolveCancellationRequestSchema', () => {
     });
     expect(r.success).toBe(false);
   });
+
+  // The fee may be chosen as a PERCENTAGE: the server turns it into an amount from a base it determines itself.
+  describe('resolutionPercent', () => {
+    const note = 'חויב חלקית עבור שירות שניתן';
+    it('accepts partial_charge with a percentage instead of an amount', () => {
+      const r = resolveCancellationRequestSchema.safeParse({ resolution: 'partial_charge', resolutionPercent: 5, resolutionNote: note });
+      expect(r.success).toBe(true);
+    });
+    it('accepts a fractional percentage and exactly 100', () => {
+      expect(resolveCancellationRequestSchema.safeParse({ resolution: 'partial_charge', resolutionPercent: 2.5, resolutionNote: note }).success).toBe(true);
+      expect(resolveCancellationRequestSchema.safeParse({ resolution: 'partial_charge', resolutionPercent: 100, resolutionNote: note }).success).toBe(true);
+    });
+    it.each([0, -5, 100.01, 250])('rejects a percentage of %s', (resolutionPercent) => {
+      const r = resolveCancellationRequestSchema.safeParse({ resolution: 'partial_charge', resolutionPercent, resolutionNote: note });
+      expect(r.success).toBe(false);
+    });
+    it('rejects an amount AND a percentage together — one decides, never both', () => {
+      const r = resolveCancellationRequestSchema.safeParse({ resolution: 'partial_charge', resolutionAmount: 50, resolutionPercent: 5, resolutionNote: note });
+      expect(r.success).toBe(false);
+      if (!r.success) expect(r.error.issues.some((i) => i.path[0] === 'resolutionPercent')).toBe(true);
+    });
+    it('still requires one of the two for partial_charge, with the error on the amount field', () => {
+      const r = resolveCancellationRequestSchema.safeParse({ resolution: 'partial_charge', resolutionNote: note });
+      expect(r.success).toBe(false);
+      if (!r.success) expect(r.error.issues.some((i) => i.path[0] === 'resolutionAmount')).toBe(true);
+    });
+    it.each(['full_cancellation', 'declined'] as const)('rejects a percentage on %s', (resolution) => {
+      const r = resolveCancellationRequestSchema.safeParse({ resolution, resolutionPercent: 5, resolutionNote: note });
+      expect(r.success).toBe(false);
+    });
+  });
 });

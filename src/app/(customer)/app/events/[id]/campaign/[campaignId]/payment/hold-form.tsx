@@ -14,12 +14,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
+import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
-// SUMIT payments.js card form for the route-A J5 hold. jQuery loads first, then
+// SUMIT payments.js card form. It serves two flows with one tokenization path: the legacy route-A J5 hold
+// (purpose 'hold' → authorize route) and the fixed-price package purchase (purpose 'purchase' → purchase route).
+// jQuery and payments.js both load (in either order — see bind() below), then
 // payments.js binds form[data-og=form], tokenizes the card fields, injects a
 // hidden `og-token`, and (with our ResponseCallback) hands control back to us so
-// we submit natively to the authorize Route Handler. Card fields carry no `name`
+// we submit natively to that purpose's Route Handler. Card fields carry no `name`
 // (the library reads them via data-og and strips names before submit); CitizenID
 // is required by the gateway and reaches SUMIT via the tokenize AJAX only — it is
 // NEVER given a `name`, so it is never POSTed to our server (do not add one).
@@ -41,6 +44,36 @@ declare global {
     };
   }
 }
+
+// What differs between the two flows: where the form posts, and the words around the amount. The purchase charges
+// the customer, so none of its wording speaks of a hold. Wording that touches what is charged is reviewed for
+// compliance before it goes live.
+export type FormPurpose = 'hold' | 'purchase';
+export const FORM_PURPOSE: Record<
+  FormPurpose,
+  {
+    action: (campaignId: string) => string;
+    submit: string;
+    dialogTitle: string;
+    progressLabel: string;
+    placing: (amount: string) => string;
+  }
+> = {
+  hold: {
+    action: (campaignId) => `/api/campaigns/${campaignId}/authorize`,
+    submit: 'אישור ותפיסת מסגרת',
+    dialogTitle: 'מאשרים ותופסים את המסגרת',
+    progressLabel: 'התקדמות אישור ותפיסת המסגרת',
+    placing: (amount) => `תופסים מסגרת אשראי בסך ${amount}`,
+  },
+  purchase: {
+    action: (campaignId) => `/api/campaigns/${campaignId}/purchase`,
+    submit: 'אישור ותשלום',
+    dialogTitle: 'מאשרים ומשלמים',
+    progressLabel: 'התקדמות התשלום',
+    placing: (amount) => `מחייבים את הכרטיס בסך ${amount}`,
+  },
+};
 
 const JQUERY_SRC = 'https://code.jquery.com/jquery-3.7.1.min.js';
 const PAYMENTS_SRC = 'https://app.sumit.co.il/scripts/payments.js';
@@ -66,7 +99,7 @@ export function formatCardholderName(fullName: string): string {
 // instant the form is submitted (tokenization AJAX to SUMIT is in flight);
 // 'placing' starts the instant we call formRef.current.submit() — the browser
 // is now genuinely sending that native POST. There is no third client-visible
-// stage: the actual hold placement happens server-side during that POST, and
+// stage: the actual hold or charge happens server-side during that POST, and
 // the page navigates away (redirect) before any further client state could
 // ever observe it completing — showing it as "done" here would be a lie.
 type HoldStage = 'idle' | 'verifying' | 'placing';
@@ -118,15 +151,19 @@ export function CampaignHoldForm({
   campaignId,
   companyId,
   apiPublicKey,
-  holdAmount,
+  amount,
   signerName,
+  purpose = 'hold',
 }: {
   campaignId: string;
   companyId: number;
   apiPublicKey: string;
-  // The J5 amount that will actually be held (previewCampaignHoldSizing) — NOT
-  // the charge ceiling, which can be larger once the list exceeds coverage.
-  holdAmount: number;
+  // Display only — the server never reads it. For a hold: the J5 amount that will
+  // actually be held (previewCampaignHoldSizing), NOT the charge ceiling, which can
+  // be larger once the list exceeds coverage. For a purchase: the campaign's fixed
+  // package price, which the purchase route reads itself.
+  amount: number;
+  purpose?: FormPurpose;
   // Read-only, for the card preview only — SUMIT never needs a name-on-card
   // field (customerName is sent server-side from the profile), so this adds
   // no new input and collects nothing new from the user.
@@ -155,20 +192,16 @@ export function CampaignHoldForm({
   const [previewFocus, setPreviewFocus] = useState<Focused>('');
   const previewExpiry = expMonth && expYear ? `${expMonth.padStart(2, '0')}/${expYear.slice(-2)}` : '';
   const formRef = useRef<HTMLFormElement>(null);
-  const formattedHold = holdAmount.toLocaleString('he-IL', {
-    style: 'currency',
-    currency: 'ILS',
-    maximumFractionDigits: 0,
-  });
+  const copy = FORM_PURPOSE[purpose];
+  const formattedAmount = formatAmount(amount);
 
   // Bind once BOTH jQuery and payments.js are available. Driven from the
   // payments.js <Script onReady> — `onReady` (unlike `onLoad`) fires on first
   // load AND after every subsequent component re-mount, so a client-side
-  // navigation back to this page re-binds reliably. (The previous onLoad-only
-  // approach left the button stuck on "טוען…" on re-mount because setReady never
-  // re-ran.) BindFormSubmit is idempotent — the library's own `og-initialized`
-  // guard makes repeat calls safe. jQuery load order isn't guaranteed vs
-  // payments.js, so poll briefly until both globals exist.
+  // navigation back to this page re-binds reliably. BindFormSubmit is
+  // idempotent — the library's own `og-initialized` guard makes repeat calls
+  // safe. jQuery load order isn't guaranteed vs payments.js, so poll briefly
+  // until both globals exist.
   const bind = useCallback(() => {
     let attempts = 0;
     function poll() {
@@ -190,7 +223,7 @@ export function CampaignHoldForm({
               setStage('idle');
             } else {
               // Genuinely true the instant this fires — the browser is now
-              // actually sending the real hold-placement request, not a guess.
+              // actually sending the real hold or charge request, not a guess.
               setStage('placing');
               formRef.current?.submit();
             }
@@ -213,8 +246,7 @@ export function CampaignHoldForm({
     <>
       {/* jQuery is not bundled by payments.js. Both load afterInteractive; the
           bind() poll tolerates either load order. next/script dedupes by src, so
-          no manual <script> injection (the old code appended one to <head> on
-          every render). */}
+          no manual <script> injection. */}
       <Script
         src={JQUERY_SRC}
         strategy="afterInteractive"
@@ -246,7 +278,7 @@ export function CampaignHoldForm({
 
       <form
         ref={formRef}
-        action={`/api/campaigns/${campaignId}/authorize`}
+        action={copy.action(campaignId)}
         method="post"
         data-og="form"
         // Capture phase fires before the library's bubble-phase submit handler
@@ -378,7 +410,7 @@ export function CampaignHoldForm({
           disabled={!ready || submitting}
           className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
         >
-          {!ready ? 'טוען…' : submitting ? 'שולח…' : 'אישור ותפיסת מסגרת'}
+          {!ready ? 'טוען…' : submitting ? 'שולח…' : copy.submit}
         </button>
       </form>
 
@@ -392,17 +424,17 @@ export function CampaignHoldForm({
             <LoaderCircle className="size-6 animate-spin" aria-hidden="true" />
           </div>
           <DialogHeader className="items-center text-center">
-            <DialogTitle>מאשרים ותופסים את המסגרת</DialogTitle>
+            <DialogTitle>{copy.dialogTitle}</DialogTitle>
             <DialogDescription>הפעולה עשויה להימשך מספר שניות</DialogDescription>
           </DialogHeader>
-          <Progress value={null} aria-label="התקדמות אישור ותפיסת המסגרת" />
+          <Progress value={null} aria-label={copy.progressLabel} />
           <ol className="divide-y text-start">
             <StageRow
               label="מאמתים פרטי כרטיס מול חברת האשראי"
               state={stage === 'verifying' ? 'current' : 'done'}
             />
             <StageRow
-              label={`תופסים מסגרת אשראי בסך ${formattedHold}`}
+              label={copy.placing(formattedAmount)}
               state={stage === 'placing' ? 'current' : 'pending'}
             />
           </ol>

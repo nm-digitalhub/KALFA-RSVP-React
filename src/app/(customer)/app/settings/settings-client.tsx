@@ -36,6 +36,7 @@ import {
   verifyPhoneChangeAction,
 } from './actions';
 import { formatIsraelDate } from '@/lib/date';
+import { CustomerNumberField } from './customer-number-field';
 import { PasskeyManager } from './passkey-manager';
 import { PushNotificationManager } from './push-notification-manager';
 
@@ -47,6 +48,8 @@ const sectionHeaderClass = 'flex items-start gap-3';
 interface SettingsPageClientProps {
   userEmail: string | undefined;
   profile: ProfileDTO | null;
+  // The SUMIT customer number; null until the first payment.
+  customerNumber: number | null;
   settings: UserSettingsDTO;
   loadError: boolean;
 }
@@ -73,7 +76,13 @@ function SectionTitle({
   );
 }
 
-function ProfileSection({ profile }: { profile: ProfileDTO | null }) {
+function ProfileSection({
+  profile,
+  customerNumber,
+}: {
+  profile: ProfileDTO | null;
+  customerNumber: number | null;
+}) {
   const [state, action] = useActionState(updateProfileAction, null);
 
   // Plain uncontrolled inputs (name + defaultValue), NOT react-hook-form: a
@@ -107,6 +116,8 @@ function ProfileSection({ profile }: { profile: ProfileDTO | null }) {
             <FieldError errors={state?.fieldErrors?.full_name} />
           </div>
 
+          {/* Read-only and nameless: shown, never submitted with the form. */}
+          <CustomerNumberField customerNumber={customerNumber} inputClassName={inputClass} />
         </div>
 
         <div className="max-w-44">
@@ -574,6 +585,7 @@ function PhoneVerification({ profile }: { profile: ProfileDTO | null }) {
 export function SettingsPageClient({
   userEmail,
   profile,
+  customerNumber,
   settings,
   loadError,
 }: SettingsPageClientProps) {
@@ -624,7 +636,7 @@ export function SettingsPageClient({
         </aside>
 
         <div className="space-y-5">
-          <ProfileSection profile={profile} />
+          <ProfileSection profile={profile} customerNumber={customerNumber} />
           <PhoneVerification profile={profile} />
           <NotificationsSection settings={settings} />
           <SummarySection profile={profile} settings={settings} />

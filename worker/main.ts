@@ -1,13 +1,15 @@
 // KALFA outreach worker — the long-lived pg-boss process (pm2 `kalfa-worker`).
 // Drives the §10 schedule across contacts with the §12 FINAL serial flow:
 // cursor-first evaluate → reserve → send → resolve, one step at a time, at most
-// once. This process owns all work()/schedule(); the web tier holds only a
-// send-only connection (src/lib/queue/web-sender.ts, migrate:false) for the
-// handful of routes that enqueue. Inert until outreach_enabled is on (stepGate
-// + the arm fail-close), so it is safe to run before go-live.
+// once. This process owns all work()/schedule() except the owner-agent queues
+// (worked by kalfa-owner-agent); the web tier holds only a send-only connection
+// (src/lib/queue/web-sender.ts, migrate:false) for the handful of routes that
+// enqueue. The outreach path is inert until outreach_enabled is on (stepGate +
+// the arm fail-close), so it is safe to run before go-live.
 //
-// Built with esbuild → dist/worker.cjs (server-only / next/headers / next/cache
-// aliased to an empty stub; node_modules kept external). Run: node dist/worker.cjs.
+// Built with esbuild → dist/worker.cjs (server-only / next/headers / next/navigation
+// / next/cache aliased to an empty stub; node_modules bundled in, only pg-native and
+// deasync kept external). Run: node dist/worker.cjs (pm2 goes through worker/start.mjs).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -114,6 +116,7 @@ import { runInstagramTokenRefresh } from '@/lib/data/instagram-token-refresh';
 import { runConsoleAgentCalendarPresenceSync } from '@/lib/data/console-agent-calendar-presence';
 import { runFleetExpireSweep } from '@/lib/fleet/expire';
 import { runSumitHoldReconcile } from '@/lib/data/sumit-hold-reconcile';
+import { runPaymentOrphanSweep } from '@/lib/data/payment-orphans';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 
@@ -142,14 +145,14 @@ loadEnv();
 
 const DAY_MS = 86_400_000;
 
-// Timezone for the crons anchored to a wall-clock hour (log-export at 03:20,
-// quota-check at 0/6/12/18). pg-boss defaults schedules to UTC; KALFA operates in
-// Israel, so those run on Israel local time (DST-aware via the IANA zone). The
-// interval crons (*/N) are timezone-independent and left as-is.
 import { runPhoneChangeCleanup } from '@/lib/data/auth-phone-change-cleanup';
 import { runSeoTechnicalWatch } from '@/lib/seo/technical-watch';
 import { runSupabaseCliUpdate } from '@/lib/ops/supabase-cli-update';
 
+// Timezone for the crons anchored to a wall-clock hour (e.g. log-export at 03:20,
+// quota-check at 0/6/12/18). pg-boss defaults schedules to UTC; KALFA operates in
+// Israel, so those run on Israel local time (DST-aware via the IANA zone). The
+// interval crons (*/N) are timezone-independent and left as-is.
 const SCHEDULE_TZ = 'Asia/Jerusalem';
 
 type StepJob = { id: string; data: OutreachStepJob };
@@ -330,7 +333,7 @@ function guardedWorker<T>(
 }
 
 // The injected side effects for one step's execution (§12 FINAL): the RPC
-// wrappers + the WhatsApp/call send + the worker-only pg-boss retry adapter.
+// wrappers + the WhatsApp/call send + the read-only terminal re-check.
 function buildExecutionDeps(
   boss: PgBoss,
   ctx: CampaignContext,
@@ -579,7 +582,7 @@ async function handleArm(boss: PgBoss): Promise<void> {
   for (const camp of await listActiveCampaigns()) {
     const ctx = await getCampaignContext(camp.id);
     if (!ctx || ctx.schedule.length === 0) continue;
-    // Seed the cursor from the frozen authorized set (idempotent) — the single,
+    // Seed the cursor from the campaign's authorized set (idempotent) — the single,
     // self-healing seeding path. Activation only flips status; the arm seeds.
     await seedOutreachState(camp.event_id, camp.id);
     for (const row of await listActiveOutreach(camp.id)) {
@@ -660,7 +663,7 @@ async function handleUnconfirmedCleanupSweep(): Promise<void> {
 // Verified on this project's connection before it was written: LISTEN needs a
 // SESSION-mode connection, and transaction-mode pooling drops it in silence.
 // Port 5432 on the Supabase pooler is session mode — hence the same env the
-// pg-boss client above uses, deliberately, rather than a second definition
+// pg-boss client below uses, deliberately, rather than a second definition
 // that could drift out of session mode without anyone noticing.
 //
 // This is an OPTIMISATION, never the guarantee. NOTIFY is fire-and-forget: with
@@ -672,9 +675,8 @@ async function handleUnconfirmedCleanupSweep(): Promise<void> {
 // listener that is attached to nothing and reports no error.
 //
 // The driver arrives as a plain static import. It must NOT be loaded through
-// createRequire(import.meta.url) the way the fleet CLI does: the CLI runs as
-// real ESM, whereas this file is bundled to CJS, where esbuild leaves
-// `import.meta.url` undefined and createRequire throws during module load —
+// createRequire(import.meta.url): this file is bundled to CJS, where esbuild
+// leaves `import.meta.url` undefined and createRequire throws during module load —
 // before a single line here runs, which takes the whole worker down in a
 // restart loop that no amount of typechecking or `next build` would catch.
 
@@ -699,10 +701,11 @@ const NOTIFY_COALESCE_MS = 3_000;
 // the loser must return immediately, not hang — a stuck NOTIFY-driven drain()
 // would delay every later notification, and a stuck pg-boss job ties up a
 // worker slot every OTHER queue also needs. Losing the race is the expected,
-// benign outcome (the winner's tick does the work); reported as `null`
-// (skipped), never thrown. Every error in this function — a bad connection,
-// a query failure, anything — is caught and turned into `null` too, same as
-// losing the lock: this is a best-effort guard against a race, not a
+// benign outcome (the winner's tick does the work); reported as
+// `{ ok: false, contended: true }` (skipped), never thrown. Every error in this
+// function — a bad connection, a query failure, anything — is caught and turned
+// into `{ ok: false, contended: false }` (also skipped, but distinguishable from
+// losing the lock): this is a best-effort guard against a race, not a
 // correctness-critical write path in its own right, and a transient DB blip
 // here must never crash the worker process (the two call sites already run
 // on their own retry/reconnect/next-tick cadence regardless).
@@ -712,7 +715,7 @@ const NOTIFY_COALESCE_MS = 3_000;
 // closed in `finally`, so nothing accumulates. The two triggers fire rarely
 // (a NOTIFY on a new lead, or a several-minute cron tick), so one extra
 // short-lived connection per tick is not the "many small spawns" shape that
-// caused the session-pooler exhaustion this same DB saw earlier this session
+// caused the session-pooler exhaustion this same DB saw earlier
 // (fleet-agent-cli.ts / SUMIT) — bounded to at most a handful of connections
 // a minute, every one of them released.
 const CALLBACK_SCHEDULING_LOCK_KEY = 847_291_063; // arbitrary, fixed — do not reuse for another lock.
@@ -720,9 +723,7 @@ const CALLBACK_SCHEDULING_LOCK_KEY = 847_291_063; // arbitrary, fixed — do not
 // Distinguishes "someone else has the lock" (worth a quick retry — the other
 // side is about to finish the same work in seconds) from "something actually
 // broke" (retrying every few seconds against a broken DB connection would just
-// be a tight failure loop) — the two used to collapse into the same `null`,
-// which is exactly what made a real error retry-storm indistinguishable from
-// contention politely backing off.
+// be a tight failure loop).
 type LockAttempt<T> = { ok: true; value: T } | { ok: false; contended: boolean };
 
 async function withCallbackSchedulingLock<T>(fn: () => Promise<T>): Promise<LockAttempt<T>> {
@@ -775,7 +776,7 @@ function startCallbackWorkListener(boss: PgBoss): () => Promise<void> {
     sweeping = true;
     try {
       // Logged because a push-triggered sweep is otherwise invisible: the
-      // notification line above proves the announcement arrived, not that the
+      // notification line in connect() proves the announcement arrived, not that the
       // work ran or what it decided.
       const r = await withCallbackSchedulingLock(() => runCallbackSchedulingSweep({ boss }));
       if (r.ok) {
@@ -941,9 +942,9 @@ async function main(): Promise<void> {
     max: 8,
     connectionTimeoutMillis: 20_000,
     // Not set: pg's `keepAlive` / `query_timeout`. pg-boss does hand its config
-    // to `new pg.Pool` at runtime, but its typed ConstructorOptions (12.30)
+    // to `new pg.Pool` at runtime, but its typed ConstructorOptions
     // does not admit those keys, and an unsupported passthrough is exactly the
-    // kind of undocumented reliance that bit the calendar generator today. If a
+    // kind of undocumented reliance to avoid. If a
     // frozen-socket hang is ever observed (none measured — every burst so far
     // failed fast at connect), the supported route is the `db` option with our
     // own pg.Pool.
@@ -1000,9 +1001,10 @@ async function main(): Promise<void> {
 
   // Queue setup is idempotent in pg-boss (createQueue is INSERT … ON CONFLICT
   // DO NOTHING), but each call is still a round trip to a pooler ~134ms away,
-  // and 33 of them ran serially on every start. Read the existing queues once,
-  // create only the missing ones, and align expireInSeconds on the sweep
-  // queues (createQueue never updates an existing row — updateQueue does).
+  // and one per queue ran serially on every start. Read the existing queues once,
+  // create only the missing ones, and align expireInSeconds and
+  // deleteAfterSeconds on the existing ones (createQueue never updates an
+  // existing row — updateQueue does).
   // Retired queues: drop the schedule row first (so the cron stops filing),
   // then the queue and its retained jobs. Both calls are no-ops once done.
   for (const retired of RETIRED_QUEUES) {
@@ -1014,7 +1016,7 @@ async function main(): Promise<void> {
 
   for (const q of Object.values(QUEUES)) {
     // thankyouSweep: 'singleton' policy — only 1 job may be ACTIVE at a time
-    // (unlimited queued). Bug fix (thankyou-review, high): without this, an
+    // (unlimited queued). Without this, an
     // overlapping cron tick (the previous sweep still running past the
     // 5-minute interval) could run concurrently with a new one — two
     // processes both reading "not yet claimed" for the same contact before
@@ -1044,8 +1046,8 @@ async function main(): Promise<void> {
       // against each other. Nothing else defends against that (there is no
       // per-row lease here, unlike the other IO-writing crons above).
       q === QUEUES.igTokenRefresh ||
-      // Singleton too: an overlapping tick would open two concurrent NTLM
-      // sessions against the same agent's mailbox for no benefit — the sync
+      // Singleton too: an overlapping tick would open two concurrent Graph
+      // reads against the same agent's mailbox for no benefit — the sync
       // is a plain upsert keyed on agent_id, so a second run mid-flight can
       // only repeat work, never corrupt it, but there is no reason to allow
       // the overlap.
@@ -1084,7 +1086,7 @@ async function main(): Promise<void> {
       // race on deleting them, turning a benign duplicate into a failed run.
       q === QUEUES.unconfirmedCleanupSweep ||
       // Singleton: two overlapping runs would both diff against the same saved
-      // crawl and both spend URL Inspection quota on the same 12 URLs.
+      // crawl and both spend URL Inspection quota on the same sitemap URLs.
       q === QUEUES.seoTechnicalWatch ||
       // Singleton, and this one is not an optimisation: two overlapping runs
       // would both drive the installer into ~/.supabase/bin and both run
@@ -1167,10 +1169,6 @@ async function main(): Promise<void> {
       for (const job of jobs) await handleSalesCallDispatch(job);
     }),
   );
-  // One job runs one whole workflow graph. The vendored runner has no
-  // pause/resume seam, so there is no per-node job; workflow_run_steps'
-  // unique (run_id, node_id) plus the singletonKey on the send are what make a
-  // retry safe. See src/lib/workflow/engine/activity-runner.ts.
   // The clock's half of the workflow engine. Cheap by construction: it reads the
   // armed workflows and creates rows for the ones whose minute matched, and does
   // nothing at all on the overwhelming majority of ticks.
@@ -1206,6 +1204,11 @@ async function main(): Promise<void> {
     }),
   );
 
+  // One job runs one whole workflow graph. The vendored runner has no
+  // pause/resume seam, so there is no per-node job; the unique (run_id, node_id)
+  // ledger in workflow_run_steps (claimed per step under a lease) is what makes
+  // a retry safe — not the job's singletonKey, which constrains nothing on this
+  // queue. See src/lib/workflow/engine/activity-runner.ts.
   await boss.work(
     QUEUES.workflowRun,
     guardedWorker(QUEUES.workflowRun, async (jobs: Job<WorkflowRunJob>[]) => {
@@ -1366,7 +1369,7 @@ async function main(): Promise<void> {
   );
   // Voximplant balance-alert cron (H2): read-only GetAccountInfo poll — Slack when
   // the account balance dips below reserve/low-threshold. runBalanceCheck is
-  // internally dark-safe (no-op while VOXIMPLANT_LIVE_CALLS is off) and never
+  // internally dark-safe (no-op while live calls are disabled) and never
   // throws/dials, so no extra gate is needed here.
   await boss.work(
     QUEUES.balanceCheck,
@@ -1509,8 +1512,8 @@ async function main(): Promise<void> {
       await runGraphIntakeSubscriptionSweep();
     }),
   );
-  // Console-agent calendar presence sync (Outlook/Exchange research, 12.8):
-  // per-agent EWS free/busy read → console_agent_calendar_presence (advisory
+  // Console-agent calendar presence sync:
+  // per-agent Graph free/busy read → console_agent_calendar_presence (advisory
   // only — never writes agent_status). runConsoleAgentCalendarPresenceSync
   // never throws (one agent's broken mailbox does not stop the rest) and
   // is a no-op when no console agent has a verified Exchange connection.
@@ -1535,14 +1538,26 @@ async function main(): Promise<void> {
     }),
   );
 
-  // SUMIT has no release API and no release webhook — this is the only way we
-  // ever find out a hold was released manually in their dashboard. Read-only
-  // against SUMIT; the only write is release_status on our own campaigns.
+  // SUMIT has no release API, and the card-change trigger it can POST is
+  // unsigned (enough for an alert, not for a status write — see the
+  // sumit-hold-changed workflow template), so this poll is the only thing that
+  // records a hold released manually in their dashboard. Read-only against
+  // SUMIT; the only write is release_status on our own campaigns.
   await boss.work(
     QUEUES.sumitHoldReconcile,
     POLL_SLOW_CRON,
     guardedWorker(QUEUES.sumitHoldReconcile, async () => {
       await runSumitHoldReconcile();
+    }),
+  );
+
+  // A payment row left PENDING by a process that died mid-call: moves it to review and alerts a person. It never
+  // retries or settles a charge — whether SUMIT charged is unknown until an admin checks.
+  await boss.work(
+    QUEUES.paymentOrphans,
+    POLL_SLOW_CRON,
+    guardedWorker(QUEUES.paymentOrphans, async () => {
+      await runPaymentOrphanSweep(createAdminClient());
     }),
   );
 
@@ -1617,9 +1632,7 @@ async function main(): Promise<void> {
   await boss.schedule(QUEUES.graphIntakeRenew, '23 */6 * * *', null, { tz: SCHEDULE_TZ });
   // Every 10 minutes — a calendar event's start/end is minute-granular at best,
   // so a tighter tick would only mean more remote Graph round trips against the
-  // same mailbox(es) for no material gain in freshness. (Pre-Graph this also
-  // bought a saved NTLM/SOAP handshake per agent; Graph caches its token, so
-  // freshness is now the whole argument.) Same cadence family as
+  // same mailbox(es) for no material gain in freshness. Same cadence family as
   // callbackScheduleSweep (also calendar-backed, also */10).
   await boss.schedule(QUEUES.calendarPresenceSync, '*/10 * * * *');
   // Every 10 minutes — expiry windows are 72h, so minute-precision buys
@@ -1629,6 +1642,9 @@ async function main(): Promise<void> {
   // detect; this only exists to stop it going unnoticed forever, not to catch
   // it within seconds.
   await boss.schedule(QUEUES.sumitHoldReconcile, '*/30 * * * *');
+  // Every 10 minutes. The age threshold inside the sweep (10 minutes, 10x the SUMIT call timeout) is what protects a
+  // slow-but-alive call; the cron period only sets how long a dead process's row waits before a person is told.
+  await boss.schedule(QUEUES.paymentOrphans, '*/10 * * * *');
 
   console.log('[kalfa-worker] started — queues + schedules up');
 

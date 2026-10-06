@@ -13,12 +13,23 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { logActivity } from '@/lib/data/activity';
-import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
+import { getBaseOveragePricingEnabled, getPackageModelEnabled } from '@/lib/data/payments';
+import { fillAuthorizedSet } from '@/lib/data/authorized-fill';
+import {
+  PACKAGE_NOT_PAID_ERROR,
+  PACKAGE_NO_CONTACTS_ERROR,
+  PACKAGE_PAYMENT_UNVERIFIED_ERROR,
+  PACKAGE_SUPPORT_ERROR,
+} from '@/lib/data/package-activation-errors';
+import { getPackagePaymentState, packagePaymentOf } from '@/lib/payments/package-paid';
+import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
+import { isPackageAgreementVersion } from '@/lib/agreements/template';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
 import type { Enums, Json, Tables, TablesUpdate } from '@/lib/supabase/types';
-// Campaign = "campaign approval for an event" (outcome-billing). Owner sets the
-// commercial terms; the charge ceiling is computed server-side. Reads are
-// owner-scoped via RLS (owns_event); writes go through the service-role admin
+// Campaign = "campaign approval for an event" (outcome-billing). The commercial
+// terms are copied from the service template (or the chosen package offer), never
+// accepted from the client; the charge ceiling is computed server-side. Reads are
+// scoped via RLS (can_access_event); writes go through the service-role admin
 // client after an explicit ownership check (no client-side billing writes, §18).
 
 type CampaignRow = Tables<'campaigns'>;
@@ -49,13 +60,18 @@ export type OwnerCampaign = Pick<
   // max_contacts exceeds the reasonable-coverage cap (300 today). Needed to
   // show what was actually authorized, not the (possibly larger) ceiling.
   | 'auth_amount'
+  // Fixed package price agreed at approval (NULL = a pay-per-result campaign). The payment page branches on it:
+  // a package campaign is paid by one purchase, never by a card hold.
+  | 'package_price'
+  // How many contacts the campaign may approach (the fixed-price package model); NULL = no quota.
+  | 'contact_quota'
 >;
 
 // Exported so the admin cross-tenant reader (src/lib/data/admin/campaigns.ts)
 // selects the SAME shape — an admin viewing a campaign must see exactly what
 // the owner sees, and a second column list here would drift.
 export const CAMPAIGN_COLUMNS =
-  'id, event_id, status, price_per_reached, max_contacts, max_charge_ceiling, base_price, included_reached, tos_version, allowed_channels, start_at, close_at, approved_at, final_charge_amount, credit_applied, capture_status, charge_status, created_at, auth_amount';
+  'id, event_id, status, price_per_reached, max_contacts, max_charge_ceiling, base_price, included_reached, tos_version, allowed_channels, start_at, close_at, approved_at, final_charge_amount, credit_applied, capture_status, charge_status, created_at, auth_amount, package_price, contact_quota';
 
 // R9 refusal, in the owner's vocabulary (audit §2): the event step is
 // "אישור פרטי האירוע", never "פרסום". Exported so the console status route can
@@ -63,15 +79,17 @@ export const CAMPAIGN_COLUMNS =
 export const EVENT_NOT_CONFIRMED_ERROR = 'יש לאשר את פרטי האירוע לפני אישורי הגעה';
 
 // Pure: the approved charge ceiling = price-per-reached × max contacts, rounded
-// to agorot. The ceiling is the maximum the system may ever bill (§7); it is
-// derived server-side and never accepted from the client.
+// to agorot. The ceiling is the maximum the system may bill under an agreement
+// that quotes a frozen figure (v4 and earlier; close-charge.ts leaves an
+// open-ceiling agreement uncapped) (§7); it is derived server-side and never
+// accepted from the client.
 export function computeCeiling(pricePerReached: number, maxContacts: number): number {
   return Math.round(pricePerReached * maxContacts * 100) / 100;
 }
 
 // Pure: the COVERED contact count = min(full_unique, reasonable_coverage). It is
-// the binding cap the frozen authorized SET is snapshotted to (Phase 2) and the
-// basis for the J5 hold. The CHARGE CEILING (full×price) is NOT lowered to this.
+// the cap the authorized SET is snapshotted to at the hold and the basis for the
+// J5 hold. The CHARGE CEILING (full×price) is NOT lowered to this.
 export function computeCovered(
   fullUnique: number,
   reasonableCoverage: number,
@@ -81,11 +99,11 @@ export function computeCovered(
 
 // Pure: the J5 hold (authorization) amount = covered × price × (1 + buffer),
 // rounded to agorot, but never below the package's min_hold_floor. The hold is
-// SECURITY only and is sized to `covered` (NOT the full ceiling) — safe ONLY
-// because the frozen authorized SET caps `reached` at `covered` by construction
-// (the Phase-2 money-leak guard). `holdBufferPct` is a FRACTION, not a percent
+// SECURITY only and is sized to `covered` (NOT the full ceiling); it is a card
+// guarantee, not a billing bound (the authorized set no longer caps `reached`).
+// `holdBufferPct` is a FRACTION, not a percent
 // number (0.1 = +10%); it stays 0 while pricing is uniform. The floor never
-// raises the final charge — that settles from contacts actually reached (≤ ceiling).
+// raises the final charge — that settles from contacts actually reached.
 export function computeHoldAmount(
   covered: number,
   pricePerReached: number,
@@ -100,7 +118,7 @@ export function computeHoldAmount(
 // Pure: the flat-base + included + overage charge ceiling = base + max(0,
 // maxContacts − included) × overage, rounded to agorot. With base=0 & included=0
 // this equals the legacy computeCeiling(overage, maxContacts) — so a gated-OFF
-// campaign (base/included snapshotted 0) keeps today's exact ceiling.
+// campaign (base/included snapshotted 0) keeps the legacy ceiling exactly.
 export function computeCeilingBaseOverage(
   base: number,
   included: number,
@@ -144,7 +162,7 @@ export type CampaignTemplate = {
   id: string;
   name: string;
   price_per_reached: number;
-  // Flat-base + included tier (plan S3). 0 when the package has no base set.
+  // Flat-base + included tier. 0 when the package has no base set.
   // price_per_reached is the per-reached OVERAGE rate above `included_reached`.
   base_price: number;
   included_reached: number;
@@ -181,6 +199,64 @@ export async function listCampaignTemplates(): Promise<CampaignTemplate[]> {
     }));
 }
 
+// The fixed-price package catalogue (docs/superpowers/plans/2026-10-04-package-payment-plan.md, P-F): active packages
+// that carry a contact quota. A package is EITHER pay-per-result (a price per reached contact — listCampaignTemplates
+// above, unchanged) OR fixed-price (a quota); the admin form refuses a mix, and a row that is both is not an offer here
+// either, so it can never be sold under the wrong model.
+//
+// The whole catalogue is behind the package switch: while it is off this is empty without a read, so nothing can be
+// offered, and createCampaign below cannot snapshot one. Fail-closed like every money switch.
+export type PackageOffer = {
+  id: string;
+  name: string;
+  // The package's own price (packages.price_with_vat — the final consumer price; the business is VAT-exempt).
+  price: number;
+  contact_quota: number;
+  description: string | null;
+  // What the package includes, one line each (packages.includes — a JSON array of strings).
+  includes: string[];
+  channels: Channel[];
+  outreach_schedule: OutreachTouchpoint[];
+};
+
+export async function listPackageOffers(): Promise<PackageOffer[]> {
+  if (!(await getPackageModelEnabled())) return [];
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('packages')
+    .select('id, name, price_with_vat, contact_quota, description, includes, channels, outreach_schedule')
+    .eq('active', true)
+    .not('contact_quota', 'is', null)
+    .is('price_per_reached', null)
+    .order('sort_order', { ascending: true });
+  if (error) throw new Error('טעינת החבילות נכשלה');
+  return (data ?? [])
+    .filter(
+      (p) =>
+        p.contact_quota != null &&
+        p.contact_quota >= 1 &&
+        Number(p.price_with_vat) > 0 &&
+        (p.channels ?? []).length > 0,
+    )
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      price: Number(p.price_with_vat),
+      contact_quota: p.contact_quota as number,
+      description: p.description,
+      includes: Array.isArray(p.includes)
+        ? p.includes.filter((x): x is string => typeof x === 'string')
+        : [],
+      channels: p.channels ?? [],
+      outreach_schedule: (p.outreach_schedule as OutreachTouchpoint[] | null) ?? [],
+    }));
+}
+
+// One offer by id; null when it is not an offer (the switch is off, inactive, pay-per-result, not sellable).
+export async function getPackageOffer(packageId: string): Promise<PackageOffer | null> {
+  return (await listPackageOffers()).find((o) => o.id === packageId) ?? null;
+}
+
 // Create-or-continue the event's SINGLE "RSVP confirmations" campaign in
 // `pending_approval`. Idempotent: if a non-cancelled campaign already exists for
 // the event it is returned unchanged (one campaign per event — entered via the
@@ -189,7 +265,15 @@ export async function listCampaignTemplates(): Promise<CampaignTemplate[]> {
 // (§17/§18.7) — the owner chooses nothing. The activity window is derived from
 // the event date: outreach closes at the event; the post-event charge is a
 // separate settle step.
-export async function createCampaign(eventId: string): Promise<{ id: string }> {
+//
+// `packageId` selects the FIXED-PRICE package model instead: the campaign snapshots that package's price
+// (`package_price`) and quota (`contact_quota`) and carries no per-reached formula. Without it everything is exactly as
+// before — the canonical pay-per-result template. The package path is refused unless the package switch is on, the
+// package is an offer, and the ACTIVE agreement is the package contract (so the customer approves the terms they bought).
+export async function createCampaign(
+  eventId: string,
+  packageId?: string,
+): Promise<{ id: string }> {
   const event = await requireOwnedEvent(eventId);
   // L1: block the entry point — never create OR continue a campaign for an event
   // whose day has already passed (the downstream sign/activate/hold guards would
@@ -208,7 +292,7 @@ export async function createCampaign(eventId: string): Promise<{ id: string }> {
   // create-or-continue early return on purpose — the sends depend on these
   // values, so CONTINUING an existing campaign without them must be blocked
   // exactly like creating a new one. requireOwnedEvent's slim column set does
-  // not carry these two fields; this owner-scoped (RLS) read fetches just them.
+  // not carry these two fields; this RLS-scoped read fetches just them.
   const supabase = await createClient();
   const { data: celebrantsRow, error: celebrantsErr } = await supabase
     .from('events')
@@ -240,10 +324,49 @@ export async function createCampaign(eventId: string): Promise<{ id: string }> {
   // max_contacts is DERIVED from the unique-contact count, not owner input (§7).
   // May be 0 at creation — the base+overage flat fee prices a 0-contact campaign
   // just fine (ceiling = base_price), and prepareCampaignHold re-derives the real
-  // count (and independently refuses to place a hold at 0) before any money moves.
+  // count (and the authorize route refuses a ₪0 hold) before any money moves.
   // Letting creation proceed lets the owner sign the agreement before finishing
   // their guest list, instead of being blocked at the very first step.
   const maxContacts = await countUniqueContactsForEvent(eventId);
+
+  const admin = createAdminClient();
+
+  if (packageId !== undefined) {
+    // The fixed-price package path. The offer is read server-side by id — the browser submits only the choice.
+    const offer = await getPackageOffer(packageId);
+    if (!offer) throw new Error('החבילה שנבחרה אינה זמינה');
+    // A package campaign is approved under the package contract — a separate, admin-managed document that must be
+    // approved before any customer is offered it. Without it there would be no terms to approve and the customer would
+    // be stuck at the first step; refusing here avoids that dead end (approveCampaign refuses the version mismatch too).
+    if (!(await getApprovedPackageAgreementDoc())) {
+      throw new Error('הסכם החבילה טרם הופעל — פנו לתמיכה');
+    }
+    const { data, error } = await admin
+      .from('campaigns')
+      .insert({
+        event_id: eventId,
+        status: 'pending_approval',
+        template_id: offer.id,
+        package_price: offer.price, // locked copy of the package price
+        contact_quota: offer.contact_quota, // locked copy of the quota
+        // No per-reached formula in this model. 0 and not NULL on purpose: billed_results.locked_price is NOT NULL
+        // (try_record_billed_result copies price_per_reached into it), so a NULL here would make the first reached
+        // contact fail to record; and recordSignedAgreement refuses a campaign whose terms are NULL.
+        price_per_reached: 0,
+        base_price: 0,
+        included_reached: 0,
+        max_contacts: maxContacts, // derived from the unique-contact count (§7)
+        max_charge_ceiling: 0, // nothing is billed by reach, so there is no ceiling to cap
+        allowed_channels: offer.channels,
+        start_at: null,
+        close_at: event.event_date, // window closes at the event date
+        outreach_schedule: offer.outreach_schedule as unknown as Json,
+      })
+      .select('id')
+      .single();
+    if (error || !data) throw new Error('יצירת הקמפיין נכשלה');
+    return { id: data.id };
+  }
 
   // The single active commercial template (the owner does not choose).
   const template = await resolveCanonicalTemplate();
@@ -251,15 +374,14 @@ export async function createCampaign(eventId: string): Promise<{ id: string }> {
     throw new Error('למסלול השירות לא הוגדרו ערוצי פנייה');
   }
   const price = template.price_per_reached;
-  // Base+overage gate (plan S3): OFF (default) ⇒ snapshot base/included = 0 ⇒
-  // the close-charge formula reduces to pure per-reached (today's behaviour).
+  // Base+overage gate: OFF (default) ⇒ snapshot base/included = 0 ⇒
+  // the close-charge formula reduces to pure per-reached (the legacy behaviour).
   // ON ⇒ snapshot the package's base/included, activating base charging for this
   // NEW campaign. The snapshot pins the terms the customer signs against.
   const useBaseOverage = await getBaseOveragePricingEnabled();
   const base = useBaseOverage ? template.base_price : 0;
   const included = useBaseOverage ? template.included_reached : 0;
 
-  const admin = createAdminClient();
   const { data, error } = await admin
     .from('campaigns')
     .insert({
@@ -316,13 +438,12 @@ export async function listCampaignsForEvent(
 
 // The event's "RSVP confirmations" campaign. Returns the most-recent
 // NON-cancelled campaign (or null), so `cancelled` is excluded to let a future
-// campaign replace a retired one. Owner-scoped via RLS (owns_event).
-// NOTE: "one non-cancelled campaign per event" is an APP-LEVEL invariant only —
-// upheld by createCampaign's create-or-continue early return (a check-then-insert
-// using this function). There is NO DB backstop: no partial UNIQUE on event_id
-// exists (verified — only campaigns_pkey on id), so two non-cancelled rows are
-// not structurally prevented (e.g. a concurrent createCampaign race). Tracked as
-// a follow-up in docs/event-edit-policy-live-campaign-2026-07-07.md.
+// campaign replace a retired one. Scoped via RLS (can_access_event).
+// NOTE: "one non-cancelled campaign per event" is upheld by createCampaign's
+// create-or-continue early return (a check-then-insert using this function) and
+// backstopped in the DB by the partial unique index campaigns_event_noncancelled_uidx
+// (event_id) WHERE status <> 'cancelled', so a concurrent createCampaign race fails
+// the insert instead of creating two non-cancelled rows.
 export async function getCampaignForEvent(
   eventId: string,
 ): Promise<OwnerCampaign | null> {
@@ -364,14 +485,15 @@ export async function getCampaignStageForEvent(
   if (allowed !== true) return null;
   const { data, error } = await supabase
     .from('campaigns')
-    .select('status, capture_status')
+    .select('id, status, capture_status, package_price')
     .eq('event_id', eventId)
     .neq('status', 'cancelled')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
-  return campaignStage(data ?? null);
+  // A package campaign is funded by its payment, which only the ledger knows.
+  return campaignStage(data ? { ...data, payment: await packagePaymentOf(data) } : null);
 }
 
 // The single active commercial template ("canonical") — the owner no longer
@@ -400,13 +522,20 @@ export async function approveCampaign(
 
   const { data: campaign, error } = await admin
     .from('campaigns')
-    .select('id, event_id, status')
+    .select('id, event_id, status, package_price')
     .eq('id', campaignId)
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
   if (!campaign) {
     const { notFound } = await import('next/navigation');
     return notFound();
+  }
+
+  // The contract must match the campaign's pricing model: a fixed-price package campaign is approved under the package
+  // contract and a pay-per-result one is signed under the pay-per-result contract, never the other way round. The money follows
+  // the signed version (close-charge), so a mismatch would bind the customer to terms they did not buy.
+  if (isPackageAgreementVersion(tosVersion) !== (campaign.package_price != null)) {
+    throw new Error('ההסכם אינו תואם למודל התמחור של הקמפיין');
   }
 
   const event = await requireOwnedEvent(campaign.event_id); // ownership
@@ -443,7 +572,7 @@ export async function approveCampaign(
 
 export type CampaignHoldState = Pick<
   CampaignRow,
-  'id' | 'event_id' | 'status' | 'max_charge_ceiling' | 'capture_status'
+  'id' | 'event_id' | 'status' | 'max_charge_ceiling' | 'capture_status' | 'package_price'
 >;
 
 // Read the hold-relevant fields. Service-role (the hold writes bypass RLS); the
@@ -454,7 +583,31 @@ export async function getCampaignForHold(
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('campaigns')
-    .select('id, event_id, status, max_charge_ceiling, capture_status')
+    .select('id, event_id, status, max_charge_ceiling, capture_status, package_price')
+    .eq('id', campaignId)
+    .maybeSingle();
+  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  return data;
+}
+
+// The package purchase's view of a campaign: its status and the fixed price agreed at approval. The price is read here,
+// on the server, and is the ONLY source of the amount charged — the browser submits nothing but a card token.
+// `package_price` NULL means a pay-per-result campaign, which the purchase route must refuse. The two legacy payment
+// states are read so the purchase can refuse a campaign that already carries an old-style hold or final charge: two
+// money mechanisms on one campaign is never right.
+export type CampaignPurchaseState = Pick<
+  CampaignRow,
+  'id' | 'event_id' | 'status' | 'package_price' | 'capture_status' | 'charge_status'
+>;
+
+// Service-role read; the caller (the purchase Route Handler) verifies ownership.
+export async function getCampaignForPurchase(
+  campaignId: string,
+): Promise<CampaignPurchaseState | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('campaigns')
+    .select('id, event_id, status, package_price, capture_status, charge_status')
     .eq('id', campaignId)
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
@@ -478,7 +631,7 @@ export async function lockCampaignForHold(campaignId: string): Promise<boolean> 
   return data !== null;
 }
 
-// Persist a successful hold. auth_amount is the server-derived ceiling (numeric),
+// Persist a successful hold. auth_amount is the server-derived hold amount (numeric),
 // never client input. Card token + auth number are evidence for the later capture.
 export async function recordCampaignHold(
   campaignId: string,
@@ -499,7 +652,7 @@ export async function recordCampaignHold(
     orderDocumentNumber: number | null; // human-readable ("הזמנה / 1002")
     orderDocumentUrl: string | null; // direct download link
     // SUMIT numeric Customer.ID — passed back at close-charge so it reuses the
-    // SAME customer instead of creating a new one (verified gap 30.8).
+    // SAME customer instead of creating a new one.
     sumitCustomerId: number | null;
   },
 ): Promise<void> {
@@ -540,12 +693,14 @@ export async function markCampaignHoldFailed(
   if (error) throw new Error('עדכון מצב התפיסה נכשל');
 }
 
-// --- Phase 2: frozen authorized SET + hold sizing (the money-leak guard) ------
+// --- Authorized SET snapshot + hold sizing -----------------------------------
 // The hold (J5 auth amount) is sized to the COVERED contacts, NOT the full
-// ceiling — this is safe ONLY because the snapshotted authorized SET is the
-// binding cap on `reached` (sole outreach + billing path), so reached ⊆ covered
-// by construction. See supabase/migrations/202606290024_billing_authorized_set.sql
-// and plans/verification-corrections.md §A (SAFETY INVARIANT).
+// ceiling. The authorized SET is snapshotted to the covered contacts at the hold,
+// but it is the membership boundary for outreach + billing, not a cap on how many
+// contacts may be reached: reconcile_authorized_set admits every later eligible
+// guest (the funded cap was retired, see
+// supabase/migrations/20260925003335_retire_funded_cap.sql). The hold is a card
+// guarantee. See supabase/migrations/202606290024_billing_authorized_set.sql.
 
 // Resolve the admin-managed hold-sizing knobs, each falling back FAIL-SAFE
 // (toward the highest / safest hold): a missing global coverage falls back to
@@ -598,7 +753,7 @@ async function getHoldSizingKnobs(
 
 export type CampaignHoldSizing = {
   holdAmount: number; // J5 auth amount = max(floor, covered × price × (1+buffer))
-  ceiling: number; // charge ceiling = full × price (the binding max on the charge)
+  ceiling: number; // charge ceiling = full × price (caps the charge only under frozen-figure agreements, v4 and earlier)
   full: number; // current unique-contact count
   covered: number; // min(full, reasonable_coverage) — the set + hold basis
 };
@@ -607,7 +762,7 @@ export type CampaignHoldSizing = {
 // PREVIEW (payment page, before the card) and the real prepareCampaignHold
 // (after the lock). One code path ⇒ the number the customer sees before
 // entering a card is the number the route will hold, barring a guest-list
-// change in between. Throws the same short, PII-free Hebrew strings as before.
+// change in between. Throws short, PII-free Hebrew strings.
 async function loadHoldSizingInputs(campaignId: string): Promise<{
   eventId: string;
   price: number;
@@ -631,7 +786,7 @@ async function loadHoldSizingInputs(campaignId: string): Promise<{
   if (!Number.isFinite(price) || price <= 0) {
     throw new Error('מחיר לאיש קשר אינו תקין');
   }
-  // Base+overage snapshot frozen at create (plan S3); 0/0 = pre-model campaign.
+  // Base+overage snapshot frozen at create; 0/0 = pre-model campaign.
   const base = Number(campaign.base_price ?? 0);
   const included = Number(campaign.included_reached ?? 0);
 
@@ -682,9 +837,9 @@ export async function previewCampaignHoldSizing(
 // BEFORE the card hold is placed. In one coherent step it:
 //   1. recomputes `full` = the CURRENT unique-contact count (the guest list may
 //      have grown since create) and resolves the admin knobs,
-//   2. FREEZES the authorized SET to the COVERED contacts (min(full, reasonable))
-//      — reached ⊆ set by construction (the money-leak guard); the set MUST exist
-//      before any billing, so this precedes the hold,
+//   2. SNAPSHOTS the authorized SET to the COVERED contacts (min(full, reasonable))
+//      — reached ⊆ set by construction (outreach + billing are bound to set
+//      membership); the set MUST exist before any billing, so this precedes the hold,
 //   3. recomputes + persists max_contacts = full (NON-NULL — closes the nullable-
 //      uncapped flag) and max_charge_ceiling = full × price (D1=No — closes the
 //      create→approval growth gap; the ceiling is NEVER lowered to covered),
@@ -702,13 +857,13 @@ export async function prepareCampaignHold(
   const admin = createAdminClient();
   const i = await loadHoldSizingInputs(campaignId);
 
-  // FREEZE the authorized set BEFORE any billing — the binding cap on `reached`.
+  // Snapshot the authorized set BEFORE any billing — outreach and billing only
+  // reach set members.
   // snapshotAuthorizedSet has REPLACE semantics (set == current top-`covered`
   // contacts; stale/orphan members pruned), and returns the RESULTING set size —
   // on the happy path == `covered`. We STILL size the hold to
   // max(covered, frozenSetSize) as belt-and-suspenders: the hold always covers the
-  // actual frozen set even if they ever diverge. reached ⊆ set ⇒
-  // charge ≤ frozenSetSize × price ≤ hold — the SAFETY INVARIANT holds.
+  // actual snapshotted set even if they ever diverge.
   const frozenSetSize = await snapshotAuthorizedSet(i.eventId, campaignId, i.covered);
   const holdBasis = Math.max(i.covered, frozenSetSize);
 
@@ -759,15 +914,18 @@ export type CampaignChargeState = Pick<
   | 'auth_amount'
   | 'release_status'
   | 'max_charge_ceiling'
-  // Flat-base + included + overage snapshot (S2 charge math; S3 populates at
-  // authorize). price_per_reached is the per-reached overage rate.
+  // Flat-base + included + overage snapshot (populated at campaign creation).
+  // price_per_reached is the per-reached overage rate.
   | 'base_price'
   | 'included_reached'
   | 'price_per_reached'
+  // Fixed package price agreed at approval (NULL = a pay-per-result campaign). When set, the
+  // campaign has no settlement: close-charge refuses it.
+  | 'package_price'
 >;
 
 const CHARGE_COLUMNS =
-  'id, event_id, status, capture_status, charge_status, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, sumit_customer_id, auth_number, auth_amount, release_status, max_charge_ceiling, base_price, included_reached, price_per_reached';
+  'id, event_id, status, capture_status, charge_status, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, sumit_customer_id, auth_number, auth_amount, release_status, max_charge_ceiling, base_price, included_reached, price_per_reached, package_price';
 
 // Read the charge-relevant fields. Service-role (the charge writes bypass RLS);
 // the caller (the Route Handler) has already verified ownership.
@@ -880,7 +1038,7 @@ export type CampaignActor =
   // Cookie session, platform admin. Wind-down ops (pause / close / cancel).
   | { kind: 'admin' }
   // Bearer session, already verified by the console route as a console agent
-  // holding `manage_voice`. Cross-tenant by design (staff), so there is no
+  // holding `campaigns.runstate`. Cross-tenant by design (staff), so there is no
   // ownership check here — the ROUTE is the authorization boundary, and what a
   // console actor may reach is narrowed at the call sites below, not here.
   | { kind: 'console'; staffUserId: string };
@@ -892,12 +1050,20 @@ async function transitionCampaignStatus(
   campaignId: string,
   from: CampaignStatus[],
   to: CampaignStatus,
-  extraGuard?: { column: 'capture_status'; value: string },
+  // 'by_model': the funding precondition depends on the campaign's pricing model — a confirmed card hold
+  // (capture_status='authorized') for pay-per-result, a recorded payment (verified by preparePackage) for a package.
+  funding?: 'by_model',
   // L1/R9: only forward transitions that BEGIN outreach/billing (activate)
   // reject a past event AND require an active event. pause/close must stay
   // allowed for a past/non-active event (cleanup + wind-down paths, per R9's
   // explicit carve-out — cancel/close/settle are not commercial-forward).
-  opts?: { rejectPastEvent?: boolean; requireActiveEvent?: boolean },
+  opts?: {
+    rejectPastEvent?: boolean;
+    requireActiveEvent?: boolean;
+    // Package campaigns only: the funding precondition (payment from the ledger, then the first fill). Runs after the
+    // identity and event checks, before the status write.
+    preparePackage?: (campaign: { id: string; event_id: string }) => Promise<void>;
+  },
   // Returns the event's date so a caller (activateCampaign) can seed
   // auto-thankyou's default schedule without a second identity-checked fetch.
   actor: CampaignActor = { kind: 'owner' },
@@ -905,7 +1071,7 @@ async function transitionCampaignStatus(
   const admin = createAdminClient();
   const { data: campaign, error } = await admin
     .from('campaigns')
-    .select('id, event_id')
+    .select('id, event_id, package_price')
     .eq('id', campaignId)
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
@@ -914,12 +1080,10 @@ async function transitionCampaignStatus(
     return notFound();
   }
 
-  // The business guards are deliberately SEPARATE from the identity check. They
-  // used to be welded to requireOwnedEvent — the only path that returned the
-  // event row — which is why the first draft of the console route silently
-  // dropped rejectPastEvent: it could not call the cookie DAL, so it lost the
-  // guards along with the ownership check. They are two different concerns and
-  // are now applied independently of who the actor is.
+  // The business guards are deliberately SEPARATE from the identity check: they
+  // are two different concerns and are applied independently of who the actor
+  // is. Welding them to requireOwnedEvent (the cookie DAL) would drop them for an
+  // actor that cannot call it, such as the console route.
   const applyEventGuards = (event: { event_date: string | null; status: string }) => {
     if (opts?.rejectPastEvent) assertEventNotPast(event.event_date);
     if (opts?.requireActiveEvent && event.status !== 'active') {
@@ -932,9 +1096,7 @@ async function transitionCampaignStatus(
     // Staff wind-down: no ownership, no past/active gating. Pinned to
     // `campaigns.runstate` rather than the coarse staff floor — the permission
     // catalogue has a key for exactly this (start/pause/close/cancel a live
-    // send), and until 2026-09-10 this branch asked only "is this person staff",
-    // which after the two auth axes were merged would have let an auditor stop
-    // a running campaign.
+    // send), so an auditor cannot stop a running campaign.
     await requirePlatformPermission('campaigns.runstate');
     eventDate = null;
   } else if (actor.kind === 'owner') {
@@ -955,13 +1117,20 @@ async function transitionCampaignStatus(
     eventDate = event.event_date;
   }
 
+  const isPackage = campaign.package_price != null;
+  if (funding === 'by_model' && isPackage) {
+    await opts?.preparePackage?.({ id: campaign.id, event_id: campaign.event_id });
+  }
+
   let query = admin
     .from('campaigns')
     .update({ status: to })
     .eq('id', campaignId)
     .in('status', from);
-  if (extraGuard) {
-    query = query.eq(extraGuard.column, extraGuard.value);
+  if (funding === 'by_model') {
+    query = isPackage
+      ? query.not('package_price', 'is', null).is('capture_status', null).is('charge_status', null)
+      : query.eq('capture_status', 'authorized');
   }
   const { data: updated, error: upErr } = await query
     .select('id')
@@ -973,20 +1142,47 @@ async function transitionCampaignStatus(
   return { eventDate };
 }
 
+const TRANSITION_REFUSED_ERROR = 'לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי';
+
+// What a package campaign needs before it may start, in this order: the payment is recorded in the ledger (the only
+// source of truth for package money), then the list every send reads is filled (D6: charged → filled → activated).
+// Runs AFTER the ownership and event checks of the transition and BEFORE the status write, so a refused activation
+// never leaves a half-filled list behind for a customer who is not allowed to start.
+async function requirePackageFundingAndFill(campaignId: string, eventId: string): Promise<void> {
+  let paid: boolean;
+  try {
+    paid = (await getPackagePaymentState(campaignId)).status === 'collected';
+  } catch {
+    console.error('[campaign-lifecycle] package payment state could not be read', { campaignId });
+    throw new Error(PACKAGE_PAYMENT_UNVERIFIED_ERROR);
+  }
+  if (!paid) throw new Error(PACKAGE_NOT_PAID_ERROR);
+
+  const fill = await fillAuthorizedSet(eventId, campaignId, 'activation');
+  if (fill.verdict === 'not_operational') throw new Error(TRANSITION_REFUSED_ERROR);
+  if (fill.verdict !== 'filled') {
+    console.error('[campaign-lifecycle] package list could not be filled', { campaignId, verdict: fill.verdict });
+    throw new Error(PACKAGE_SUPPORT_ERROR);
+  }
+  // A campaign with nobody on its list would read "active" and approach no one. The customer has paid: tell them what
+  // to do instead of activating into silence.
+  if (fill.size === 0) throw new Error(PACKAGE_NO_CONTACTS_ERROR);
+}
+
 // Activate (begin outreach). Requires an approved/scheduled/paused campaign that
-// already has a card hold (capture_status='authorized') — no outreach without a
-// secured payment method.
+// already has a card hold (capture_status='authorized') — or, for a fixed-price package, a
+// recorded payment — no outreach without a secured payment.
 //
-// `actor` narrows WHICH activations are reachable — the owner decision of
-// 2026-07-21. An owner may activate from any pre-send status; a console agent
-// may only REVIVE, i.e. `paused → active`.
+// `actor` narrows WHICH activations are reachable. An owner may activate from
+// any pre-send status; a console agent may only REVIVE, i.e. `paused → active`.
 //
 // That asymmetry is the whole safety argument, and it lives HERE rather than in
 // the route so a future caller cannot widen it: `paused` is reachable only from
 // `active` (pauseCampaign is the sole writer of that status, and it accepts only
 // `['active']`), so a paused campaign is PROOF the owner already activated it.
 // Staff therefore restore a commitment the owner made; they can never create
-// one. The J5 hold is likewise already present on anything that was live.
+// one. The funding (J5 hold or package payment) is likewise already present on
+// anything that was live.
 export async function activateCampaign(
   campaignId: string,
   actor: CampaignActor = { kind: 'owner' },
@@ -998,9 +1194,13 @@ export async function activateCampaign(
     campaignId,
     from,
     'active',
-    { column: 'capture_status', value: 'authorized' },
+    'by_model',
     // L1: never begin outreach for a past event. R9: requires an active event.
-    { rejectPastEvent: true, requireActiveEvent: true },
+    {
+      rejectPastEvent: true,
+      requireActiveEvent: true,
+      preparePackage: (c) => requirePackageFundingAndFill(c.id, c.event_id),
+    },
     actor,
   );
 
@@ -1015,8 +1215,8 @@ export async function activateCampaign(
     fields: { campaign_id: campaignId },
   });
 
-  // Auditability (CLAUDE.md): the commercial start of the campaign, previously
-  // unlogged. Best-effort like the hold's own log — never fails the activation.
+  // Auditability (CLAUDE.md): the commercial start of the campaign.
+  // Best-effort like the hold's own log — never fails the activation.
   // Needs event_id; the transition helper returns only the date, so one narrow
   // read. No PII: ids + actor kind only.
   try {
@@ -1040,7 +1240,7 @@ export async function activateCampaign(
     });
   }
 
-  // Auto-thankyou (§4 auto-thankyou-post-event plan): seed the default
+  // Auto-thankyou: seed the default
   // schedule ONLY the first time this campaign activates — `.is(...null)`
   // guards a re-activation after pause from clobbering an owner-edited
   // send time. A null/unparseable event_date leaves it unset (the owner can
@@ -1057,7 +1257,7 @@ export async function activateCampaign(
 }
 
 // Wind-down: `active → paused`. Platform admin on the web; a console agent with
-// `manage_voice` may also pause.
+// `campaigns.runstate` may also pause.
 //
 // Opening the stop button wider than the start button is deliberate. Pausing is
 // a SAFETY action — a guest complains, a template is wrong, the owner phones
@@ -1085,8 +1285,9 @@ export async function pauseCampaign(
 // keeps its select('*') + runtime narrowing as a fail-open guard (an absent
 // column must read as the plan's default, not "disabled"); the write is typed.
 // The sweep itself (src/lib/data/auto-thankyou.ts) reads these via its own
-// admin-scoped query; these are the OWNER-FACING read/write, RLS-scoped like
-// the rest of this file's getters/setters.
+// admin-scoped query; these are the OWNER-FACING read/write (the read is
+// RLS-scoped like the rest of this file's getters; the write goes through the
+// service-role client after its own authorization check).
 
 export type ThankyouSchedule = {
   autoEnabled: boolean;
@@ -1094,9 +1295,10 @@ export type ThankyouSchedule = {
   sentAt: string | null;
 };
 
-// Does the CURRENT viewer own the campaign's event? Mirrors the exact rule the
-// write enforces (updateThankyouSchedule -> requireOwnedEvent), so the page can
-// render the thank-you form only where submitting it can actually succeed.
+// Does the CURRENT viewer own the campaign's event? Mirrors the owner rule the
+// write enforces (updateThankyouSchedule -> requireOwnedEvent; platform staff take
+// a separate branch there), so the page can render the thank-you form only where
+// submitting it can actually succeed.
 //
 // Deliberately NOT requireEventAccess: that gate is org-aware, and an org member
 // holding campaigns:view passes it while the owner-only write still refuses —
@@ -1223,7 +1425,7 @@ export async function closeCampaign(campaignId: string): Promise<void> {
 }
 
 // R8 — cancel a campaign with no financial commitment (draft/pending_approval/
-// approved → cancelled). Explicit authorization contract (round-3): the RPC
+// approved → cancelled). Explicit authorization contract: the RPC
 // itself is service_role-only with NO caller-identity check, so authorization is
 // entirely this function's job, BEFORE the RPC is ever called. Cancel is a
 // wind-down operation restricted to holders of `campaigns.runstate` — not the

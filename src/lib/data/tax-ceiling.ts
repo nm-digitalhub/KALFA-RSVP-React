@@ -14,10 +14,14 @@ export const OSEK_PATUR_YEARLY_CEILING_ILS = 122_833;
 const WARN_AT = 0.8;
 const CRIT_AT = 0.95;
 
-// Fire-and-forget after every successful close-charge: sum the calendar year's
-// actually-charged revenue (charge_status='charged' — the only rows that count
-// as turnover) and alert when it approaches the ceiling. Charges are rare, so
-// re-alerting on every post-threshold charge is intentional, not noise.
+// Fire-and-forget after every successful charge — a final charge on the old
+// per-result path (close-charge.ts) and a package purchase (package-purchase.ts):
+// sum the calendar year's actually-collected revenue and alert when it
+// approaches the ceiling. The sum is owner_agent_billing_sums().charged_amount,
+// the one definition of "revenue" that reads both places money is recorded (the
+// payment ledger, and the old campaign columns for a campaign that has no ledger
+// row) without counting a campaign twice, net of money returned. Charges are
+// rare, so re-alerting on every post-threshold charge is intentional, not noise.
 // Fail-safe: a monitoring failure must never affect the charge that fired it.
 // (Year boundary uses server UTC; the ±2h Israel offset around Jan 1 is
 // immaterial for an early-warning threshold.)
@@ -25,16 +29,12 @@ export async function checkOsekPaturCeilingAfterCharge(): Promise<void> {
   try {
     const admin = createAdminClient();
     const yearStart = `${new Date().getUTCFullYear()}-01-01T00:00:00Z`;
-    const { data, error } = await admin
-      .from('campaigns')
-      .select('final_charge_amount')
-      .eq('charge_status', 'charged')
-      .gte('charged_at', yearStart);
-    if (error || !data) return;
-    const total = data.reduce(
-      (sum, r) => sum + Number(r.final_charge_amount ?? 0),
-      0,
-    );
+    const { data, error } = await admin.rpc('owner_agent_billing_sums', { _since: yearStart });
+    // A table-returning function answers with an array; this one always yields exactly one row. Anything else is not a
+    // sum: say nothing rather than alert on a guess.
+    if (error || !Array.isArray(data) || data.length !== 1) return;
+    const total = Number(data[0].charged_amount);
+    if (!Number.isFinite(total) || total < 0) return;
     const ratio = total / OSEK_PATUR_YEARLY_CEILING_ILS;
     if (ratio < WARN_AT) return;
     await sendSlackAlert({

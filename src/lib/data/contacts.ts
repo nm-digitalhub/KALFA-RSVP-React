@@ -10,7 +10,8 @@ import type { Tables } from '@/lib/supabase/types';
 // "Contacts" = unique reachable phones per event (§2–3). Built from the event's
 // guests by normalizing to E.164 and de-duplicating; many guests may share one
 // phone → one contact. Access is enforced (requireEventAccess); contact writes
-// go through the service-role admin client (contacts are admin-write under RLS).
+// go through the service-role admin client (contacts have no client write policy
+// under RLS).
 
 type ContactRow = Tables<'contacts'>;
 export type EventContact = Pick<
@@ -54,14 +55,10 @@ export type BuildContactsResult = {
   withValidPhone: number;
   uniqueContacts: number;
   invalid: number;
-  // Verified gap (30.8): bulk import (CSV/WhatsApp) never called
-  // reconcileCampaignSetForContact — a contact imported into an event whose
-  // campaign was ALREADY approved/scheduled/active/paused was silently
-  // excluded from that campaign forever (no automatic path ever picked it
-  // up; a stale comment claimed otherwise). Every unique contact id this
-  // call touched, so callers can reconcile each one (best-effort, cheap
-  // no-op for already-authorized/no-campaign events — see
-  // reconcileCampaignSetForContact).
+  // Every unique contact id this call touched, so bulk-import callers (CSV/
+  // WhatsApp) can reconcile each one into an event whose campaign is ALREADY
+  // approved/scheduled/active/paused (best-effort, cheap no-op for
+  // already-authorized/no-campaign events — see reconcileCampaignSetForContact).
   contactIds: string[];
 };
 
@@ -77,7 +74,12 @@ export async function buildContactsForEvent(
   const { data: guests, error } = await supabase
     .from('guests')
     .select('id, phone')
-    .eq('event_id', eventId);
+    .eq('event_id', eventId)
+    // Order of addition (guests.seq). Without it the rows come back in heap order, and a
+    // bulk import inserts every guest in one statement (identical created_at), so the
+    // contacts would be created — and, in the contact-quota model, seats handed out — in
+    // an arbitrary order instead of the order the guests were added.
+    .order('seq', { ascending: true });
   if (error) throw new Error('טעינת המוזמנים נכשלה');
 
   const derived = deriveContacts(guests ?? []);
@@ -172,7 +174,7 @@ export async function linkGuestContact(
   }
 
   // Return the link delta so the caller can reconcile the campaign authorized
-  // set (P0-1 A6). Callers that predate reconciliation simply ignore the result.
+  // set (P0-1 A6).
   return { contactId, prevContactId };
 }
 
@@ -182,8 +184,8 @@ export async function linkGuestContact(
 // it deletes ONLY a contact with (a) zero current guest references AND (b) no
 // billing/outreach history (billed_results + contact_interactions), so it never
 // drops an audit trail or violates a FK. Returns true iff a row was deleted.
-// Admin client: contacts are admin-write under RLS. Caller must have verified
-// event ownership.
+// Admin client: contacts have no client write policy under RLS. Caller must have
+// verified event ownership.
 export async function pruneOrphanContact(
   eventId: string,
   contactId: string,
@@ -237,8 +239,8 @@ export async function pruneOrphanContact(
 
 // P0-1 (A6): reconcile a campaign's authorized recipient SET after a guest
 // mutation (add / repoint / delete of a contact). Delegates the money-safe
-// decision (admit every eligible contact — no size cap since 2026-09-25 —,
-// exposed-or-billed pin, audit) to the
+// decision (admit every eligible contact — no size cap other than a campaign's
+// contact_quota —, exposed-or-billed pin, audit) to the
 // reconcile_authorized_set RPC, which runs under the same campaigns FOR UPDATE
 // lock as billing. KILL-SWITCH: inert unless RECONCILE_AUTHORIZED_SET_ENABLED
 // (env var, not app_settings — see reconcile-config.ts) — LIVE in production
@@ -277,10 +279,13 @@ export async function reconcileCampaignSetForContact(
       console.error(
         `[reconcile] rpc failed (event=${eventId} campaign=${c.id} op=${op}): ${error.message}`,
       );
-    } else if (outcome === 'not_eligible') {
-      // Surfaced, not silent: the contact was ineligible (foreign/opted-out/no
-      // live guest). There is no size cap on the set: billing is bounded by
-      // contacts actually reached, not by the hold amount.
+    } else if (outcome === 'not_eligible' || outcome === 'quota_full') {
+      // Surfaced, not silent. not_eligible: the contact was ineligible (foreign/
+      // opted-out/no live guest). quota_full: the campaign has a package quota
+      // (campaigns.contact_quota) and its list is full, so the guest WAITS instead
+      // of being admitted (plan 2026-09-30-contact-quota-package.md §4.3.1); an
+      // upgrade admits him later. A campaign without a quota has no size cap on
+      // the set: billing is bounded by contacts actually reached.
       console.warn(
         `[reconcile] ${outcome} (event=${eventId} campaign=${c.id} op=${op})`,
       );
@@ -289,9 +294,9 @@ export async function reconcileCampaignSetForContact(
 }
 
 // Size of the campaign's authorized set — "how many contacts the campaign will
-// actually reach out to". Service-role read (the table is not owner-readable
-// under RLS); callers must have passed their own access gate first (the manage
-// page does). Used for the empty state and the "not included" banner.
+// actually reach out to". Service-role read; callers must have passed their own
+// access gate first (the manage page does). Used for the empty state and the
+// "not included" banner.
 export async function countAuthorizedContacts(campaignId: string): Promise<number> {
   const admin = createAdminClient();
   const { count, error } = await admin
@@ -354,7 +359,7 @@ export async function recordWhatsAppConsent(
 // Record channel-specific CALL consent for one contact (caller authorized). The
 // twin of recordWhatsAppConsent for the Voximplant AI-call channel (B1): a single
 // non-null timestamp IS the consent record. Service-role write — `contacts` has
-// SELECT-only owner RLS (contacts_owner_select) + admin-ALL, so owners cannot
+// only a SELECT RLS policy (contacts_org_select), so owners cannot
 // UPDATE it under RLS; callers MUST verify event access server-side first (the UI
 // action does requireEventAccess; the public-RSVP path stamps it inside the
 // token-bound submit_rsvp DEFINER RPC). Scoped by BOTH id AND event_id — consent
@@ -373,13 +378,13 @@ export async function recordCallConsent(
   if (error) throw new Error('שמירת ההסכמה לשיחה נכשלה');
 }
 
-// Contacts eligible for a WhatsApp send: not removal-requested AND with recorded
-// WhatsApp consent. When a campaignId is given, membership is ADDITIONALLY bound
-// to that campaign's frozen authorized set (campaign_authorized_contacts) via an
+// Contacts eligible for a WhatsApp send: not removal-requested AND, unless an admin
+// lifted app_settings.whatsapp_consent_required, with recorded WhatsApp consent.
+// When a campaignId is given, membership is ADDITIONALLY bound
+// to that campaign's authorized set (campaign_authorized_contacts) via an
 // INNER JOIN — so the outreach path can never target a contact outside the set:
 // reached ⊆ authorized BY CONSTRUCTION (the Phase-2 money-leak guard, §7/0024).
-// The no-campaign overload is kept for callers that predate the set. (Excluding
-// already-reached contacts is added with B2 via op_status / billed_results.)
+// (Already-reached contacts are excluded by the outreach engine's gate, not here.)
 export async function listSendableContacts(
   eventId: string,
   campaignId?: string,
@@ -391,11 +396,14 @@ export async function listSendableContacts(
   return resolveSendableContacts(eventId, campaignId);
 }
 
-// --- Phase 2: frozen authorized contact SET (the money-leak guard) ----------
-// The authorized set is the BINDING CAP on `reached`: every outreach + billing
-// path is bound to it (listSendableContacts above + the billing path), so
-// reached ⊆ authorized BY CONSTRUCTION (see 0024). The set sizes the J5 hold
-// (security only); the charge CEILING stays full_unique×price (§7 / D1=No).
+// --- Phase 2: authorized contact SET (the money-leak guard) -----------------
+// Every outreach + billing path is bound to the authorized set's membership
+// (listSendableContacts above + the billing path), so reached ⊆ authorized BY
+// CONSTRUCTION (see 0024). The set's size is limited only by a campaign's
+// contact_quota (the hold-bound funded cap was retired 2026-09-25) and it is not
+// a hard freeze after the J5 snapshot.
+// It sizes the J5 hold (security only); the charge CEILING stays
+// full_unique×price (§7 / D1=No).
 
 // Pure: the COVERED contact count = the contacts the hold/set secures =
 // min(full_unique_contacts, reasonable_coverage_contacts). It NEVER lowers the
@@ -423,8 +431,8 @@ export function computeCoveredContacts(
 // Returns the resulting set size for the campaign (read back from the set, so
 // the value is stable across a no-op re-run).
 //
-// Request-free + service-role (campaign_authorized_contacts is admin-write under
-// RLS): runs from the hold-step orchestration, not a user request, so it does
+// Request-free + service-role (campaign_authorized_contacts has only a SELECT RLS
+// policy): runs from the hold-step orchestration, not a user request, so it does
 // NOT call requireOwnedEvent — the caller authorizes. `coverage` is a
 // DATA-derived cap, never an owner-entered value.
 //

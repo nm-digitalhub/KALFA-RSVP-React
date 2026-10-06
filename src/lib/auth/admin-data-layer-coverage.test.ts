@@ -22,11 +22,12 @@ const ROOT = join(__dirname, '..', '..', '..');
 // before adding an entry here. Every other exported async function in these
 // files MUST call one of GATES.
 //
-// ⚠️ This map is NOT the list of files that get checked. It used to be: the
-// suite looped over its keys, so a module absent from it was never scanned and
-// "green" on a new file meant nothing was looked at. Measured 2026-09-10: 36
-// modules under src/lib/data/admin/, 15 in this map. The scan is now driven by
-// readdir (see MODULES below) and this map only records EXEMPTIONS.
+// ⚠️ This map is NOT the list of modules that must be classified. It used to
+// be: the suite looped over its keys, so a module absent from it was never
+// scanned and "green" on a new file meant nothing was looked at. Measured
+// 2026-09-10: 36 modules under src/lib/data/admin/, 15 in this map. The scan is
+// now driven by readdir (see MODULES below); this map only selects the files
+// whose functions are gate-checked one by one, and records EXEMPTIONS.
 const EXEMPT: Record<string, string[]> = {
   'src/lib/data/admin/activity.ts': [],
   'src/lib/data/admin/agreements.ts': [],
@@ -37,6 +38,7 @@ const EXEMPT: Record<string, string[]> = {
   'src/lib/data/admin/event-view.ts': [],
   'src/lib/data/admin/events.ts': [],
   'src/lib/data/admin/packages.ts': [],
+  'src/lib/data/admin/payment-review.ts': [],
   'src/lib/data/admin/settings.ts': [],
   'src/lib/data/admin/users.ts': [],
   'src/lib/data/admin/webhook-inbox.ts': [],
@@ -93,17 +95,19 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   'src/lib/data/admin/callbacks.ts': 'view_customer_data',
   'src/lib/data/admin/channels.ts': 'manage_settings',
   'src/lib/data/admin/contacts.ts': 'view_customer_data',
-  // Two SEPARATE modules on purpose, one key each — the split the owner asked
-  // for on 2026-09-07. event-view.ts answers 'which event is this' and may
-  // never grow a billing field; events.ts moves a live event's date and may
-  // never become the way to read one. Pinning both here is what stops either
-  // from quietly absorbing the other's authority.
+  // Two SEPARATE modules on purpose, one key each. event-view.ts answers
+  // 'which event is this' and may never grow a billing field; events.ts moves
+  // a live event's date and may never become the way to read one. Pinning both
+  // here is what stops either from quietly absorbing the other's authority.
   'src/lib/data/admin/event-view.ts': 'view_events',
   // Marker read under the page's own key; marking and the irreversible purge
   // are two separate keys so marking alone can never delete anything.
   'src/lib/data/admin/test-events.ts': ['view_events', 'events.mark_test', 'events.purge_test'],
   'src/lib/data/admin/events.ts': 'manage_billing',
   'src/lib/data/admin/packages.ts': 'manage_billing',
+  // Payment operations stuck in `review`: listing them, looking one up at the provider, and deciding it. The same key
+  // as every other payment surface; the two targeted functions also record a staff-access audit row (AUDIT_REQUIRED).
+  'src/lib/data/admin/payment-review.ts': 'manage_billing',
   'src/lib/data/admin/settings.ts': 'manage_settings',
   // Which Meta template each WhatsApp step sends and what fills its variables —
   // the same key as the message_templates surface it replaces.
@@ -115,9 +119,6 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // every other voice reader: naming the agents an account owns is the same
   // authority as naming its rules.
   'src/lib/data/admin/elevenlabs-agents.ts': 'manage_voice',
-  // Pinned 2026-09-10. All of these already enforced a permission; none was
-  // recorded here, so a silent downgrade to bare requireAdmin() would have gone
-  // unnoticed — which is exactly what happened to workflows.ts.
   'src/lib/data/admin/alerts.ts': 'manage_settings',
   'src/lib/data/admin/channel-catalog.ts': 'manage_settings',
   'src/lib/data/admin/cookie-consent.ts': 'manage_settings',
@@ -167,8 +168,9 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // ONE KEY, BUT NOT ONE GATE. Adding a number and asking Meta for a verification
   // code are manage_settings. Register and deregister are OWNER-ONLY on top of that,
   // and the pin cannot express the mixture — so the two of them are asserted by name
-  // below ('register/deregister stay owner-only'). Without that, downgrading
-  // requirePlatformOwner to requirePlatformPermission('manage_settings') would leave
+  // below ('the Meta number lifecycle keeps its irreversible half owner-only').
+  // Without that, downgrading requirePlatformOwner to
+  // requirePlatformPermission('manage_settings') would leave
   // this list still correct and the suite still green.
   'src/lib/data/admin/integrations/number-registration.ts': 'manage_settings',
   'src/lib/data/admin/integrations/whatsapp-es.ts': 'manage_settings',
@@ -243,7 +245,7 @@ const MODULES = walkModules(ADMIN_DAL_DIR).sort();
 // if it neither writes nor returns customer data; anything else must name a
 // permission in EXPECTED_PERMISSION.
 //
-// These said requireAdmin() until 2026-09-10, which was not merely untidy:
+// The floor must be requirePlatformStaff(), never requireAdmin():
 // nav-counts.ts is loaded by the ADMIN LAYOUT on every page, and requireAdmin()
 // redirects when user_roles has no row — so a non-owner staff member was ejected
 // from the panel by the module that draws its sidebar. The assertion below keeps
@@ -300,7 +302,7 @@ const PERMISSION_CATALOGUE = [
 ] as const;
 
 // Targeted readers of an identified customer subject that MUST record a
-// staff-access audit row (Step-2 audit layer). A new such reader shipping without
+// staff-access audit row. A new such reader shipping without
 // an audit call — the exact gap that let staff data-access go dark — fails here.
 // support.ts's own two event-view readers audit via a direct support_access_log
 // insert (pre-dating the helper); the rest go through recordStaffAccess.
@@ -330,6 +332,9 @@ const AUDIT_REQUIRED: Record<string, string[]> = {
   // payment instrument. Listing the candidates carries no card data and is
   // deliberately NOT audited.
   'src/lib/data/admin/sumit-test.ts': ['resolveSavedCardForCampaign'],
+  // Looking up, or deciding on, ONE customer's stuck payment. Listing the queue names no card and no PII and is
+  // deliberately NOT audited, like listing card candidates above.
+  'src/lib/data/admin/payment-review.ts': ['probePaymentReview', 'resolvePaymentReview'],
 };
 
 // Module-private wrappers that perform the gate AND the audit, so a reader
@@ -339,6 +344,7 @@ const AUDIT_REQUIRED: Record<string, string[]> = {
 // cannot become a way to wave a reader through.
 const AUDIT_DELEGATES: Record<string, string[]> = {
   'src/lib/data/admin/campaigns.ts': ['auditedCampaignAccess'],
+  'src/lib/data/admin/payment-review.ts': ['auditedReviewAccess'],
 };
 
 describe('targeted admin readers record a staff-access audit', () => {
@@ -574,7 +580,7 @@ describe('the admin layout applies the staff floor', () => {
 // straight to it; the page's requirePlatformPermission() never runs for a caller
 // who invokes the action directly. Same for a route handler. The layout does not
 // save them either — see the note at src/lib/auth/dal.ts and Next's own wording,
-// "a layout does not control whether the rest of the route renders".
+// "a layout also does not control whether the rest of the route renders".
 //
 // MEASURED 2026-09-10, before the fix: 16 exported actions across voice/,
 // alerts/ and fleet/ gated on the coarse staff floor alone — among them one that
@@ -651,13 +657,13 @@ describe('no admin endpoint authorizes on the coarse staff floor', () => {
 });
 
 // ---------------------------------------------------------------------------
-// A stricter splitter, used ONLY for the owner-agent module below.
+// A stricter splitter, used ONLY for the owner-agent modules below.
 //
 // splitIntoFunctionBlocks (top of this file) matches `export async function` and
 // nothing else, and reads comments as code — so a gate named in a comment counts, and
 // an `export const f = async () => …` or a plain `export function` is never looked
 // at. Widening that shared splitter would change what the EXEMPT and AUDIT checks see
-// in every other module, which is its own review; this one is scoped to the module
+// in every other module, which is its own review; this one is scoped to the modules
 // whose every export is owner-only by decision.
 // ---------------------------------------------------------------------------
 

@@ -8,26 +8,52 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 // client grants) — every read/write here MUST use the admin client; there is
 // no owner-scoped path for this table by design.
 
-// The paying account's known SUMIT customer number, if any. Read before
-// placing a hold so the request can send Customer:{ID} and dedupe instead of
-// creating a new SUMIT customer.
-export async function getSumitCustomerId(userId: string): Promise<number | null> {
+// One query for both readers below. createAdminClient() stays OUTSIDE any
+// try/catch on purpose: a missing service-role key must fail loudly, not look
+// like "this account has no customer yet".
+async function selectCustomerNumber(userId: string) {
   const admin = createAdminClient();
-  const { data, error } = await admin
+  return admin
     .from('sumit_customers')
     .select('sumit_customer_id')
     .eq('user_id', userId)
     .maybeSingle();
+}
+
+// The paying account's known SUMIT customer number, if any. Read before
+// placing a hold or a package charge so the request can send Customer:{ID} and
+// dedupe instead of creating a new SUMIT customer.
+export async function getSumitCustomerId(userId: string): Promise<number | null> {
+  const { data, error } = await selectCustomerNumber(userId);
   if (error) return null; // best-effort: falls back to the one-time create path
+  return data ? Number(data.sumit_customer_id) : null;
+}
+
+// The same number, for DISPLAY: the profile screen shows it to the account's own
+// holder (the admin user page uses the best-effort getSumitCustomerId). Unlike
+// getSumitCustomerId, a read failure is thrown, so a screen can say
+// "unavailable" instead of showing "no number yet" for a customer who has one.
+//
+// This is deliberately NOT a column on `profiles`. That table grants the
+// `authenticated` role INSERT/UPDATE/DELETE and carries an ALL policy on the
+// owner's own row, so any column added to it is writable by its owner — a user
+// could point their account at someone else's SUMIT customer. Supabase's own
+// guidance for this is a dedicated table with RLS rather than column-level
+// privileges ("an advanced feature... we do not recommend"; restricted roles lose
+// `select *`). The number stays in this server-only table and reaches a screen
+// through this reader, after the caller has verified whose account it is.
+export async function readSumitCustomerNumber(userId: string): Promise<number | null> {
+  const { data, error } = await selectCustomerNumber(userId);
+  if (error) throw new Error('טעינת מספר הלקוח נכשלה');
   return data ? Number(data.sumit_customer_id) : null;
 }
 
 // Insert-if-absent only — never overwrites an existing anchor. If a row
 // already exists with a DIFFERENT id, SUMIT returned a customer other than
 // the one we sent Customer:{ID} for, which should be impossible; alert
-// instead of silently drifting the anchor. `on conflict do nothing` makes two
+// instead of silently drifting the anchor. The primary key on user_id makes two
 // concurrent first-holds for the same user race-safe (one wins, the other's
-// insert is a no-op, and both then observe the SAME stored id).
+// insert is rejected, and both then observe the SAME stored id).
 export async function recordSumitCustomerId(args: {
   userId: string;
   sumitCustomerId: number;

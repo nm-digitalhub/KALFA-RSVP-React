@@ -143,3 +143,20 @@ describe('isCampaignCancellable mirrors the cancel_campaign RPC', () => {
     expect(fn).toContain('v.charge_status is null');
   });
 });
+
+describe('isCampaignCancellable — a paid package is not erased by flipping its status', () => {
+  const approved = { status: 'approved' as CampaignStatus, capture_status: null, charge_status: null };
+
+  it.each(['collected', 'pending', 'review'])('is false while the payment is %s', (status) => {
+    expect(isCampaignCancellable({ ...approved, payment: { status } }, 0)).toBe(false);
+  });
+
+  it.each(['none', 'declined', 'refunded'])('stays as before when the payment is %s', (status) => {
+    expect(isCampaignCancellable({ ...approved, payment: { status } }, 0)).toBe(true);
+  });
+
+  it('is unchanged for a campaign that was not given a payment', () => {
+    expect(isCampaignCancellable(approved, 0)).toBe(true);
+  });
+});
+

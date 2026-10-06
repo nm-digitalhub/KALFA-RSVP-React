@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { setContactOpStatus } from '@/lib/data/interactions';
+import { creditConsumedByCampaign } from '@/lib/payments/credit-consumed';
 import type { Enums } from '@/lib/supabase/types';
 type Channel = Enums<'campaign_channel'>;
 
@@ -87,7 +88,8 @@ export async function getCampaignBillingSummary(
 // Credit available to THIS campaign's close-charge (§14/§16/D5, gross to match
 // the price basis) = this campaign's own credits + the event's unscoped credits
 // (campaign_id null) − whatever OTHER campaigns of the same event already
-// consumed (campaigns.credit_applied). Under one-campaign-per-event the sibling
+// consumed (the payment ledger, or campaigns.credit_applied for a campaign that
+// has no ledger row — creditConsumedByCampaign). Under one-campaign-per-event the sibling
 // term is empty and this is simply the full pool; the sibling subtraction only
 // matters for the rare cancel-and-recreate case. THROWS on a real error (routes
 // close-charge to review, like the summary), never silently 0.
@@ -110,7 +112,7 @@ export async function getCampaignCreditTotal(
       .is('voided_at', null),
     admin
       .from('campaigns')
-      .select('credit_applied')
+      .select('id, credit_applied')
       .eq('event_id', eventId)
       .neq('id', campaignId),
   ]);
@@ -120,9 +122,9 @@ export async function getCampaignCreditTotal(
   const sumAmount = (rows: { amount: number | string }[] | null) =>
     (rows ?? []).reduce((s, r) => s + Number(r.amount ?? 0), 0);
   const granted = sumAmount(ownRes.data) + sumAmount(eventRes.data);
-  const consumedBySiblings = (siblingsRes.data ?? []).reduce(
-    (s, r) => s + Number(r.credit_applied ?? 0),
-    0,
-  );
+  // What a sibling has used comes from the payment ledger when it has ledger rows (a package purchase), from the old
+  // column otherwise — see creditConsumedByCampaign. Throws when the ledger cannot be read.
+  const usedBySibling = await creditConsumedByCampaign(admin, siblingsRes.data ?? []);
+  const consumedBySiblings = [...usedBySibling.values()].reduce((s, v) => s + v, 0);
   return Math.max(0, granted - consumedBySiblings);
 }

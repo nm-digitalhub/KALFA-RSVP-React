@@ -10,6 +10,7 @@ import {
   validateOutreachScheduleForPackage,
 } from '@/lib/data/admin/packages';
 import { packageBaseSchema, operationalFieldsSchema } from '@/lib/validation/admin';
+import type { OperationalFieldsInput, PackageInput } from '@/lib/validation/admin';
 import { issuesToFieldErrors, mergeFieldErrors } from '@/lib/validation/result';
 import type { FormState } from '@/lib/validation/result';
 
@@ -52,11 +53,30 @@ function readOperationalForm(formData: FormData) {
     price_per_reached: formData.get('price_per_reached'),
     base_price: formData.get('base_price'),
     included_reached: formData.get('included_reached'),
+    contact_quota: formData.get('contact_quota'),
     channels,
     outreach_schedule,
     min_hold_floor: formData.get('min_hold_floor'),
     hold_buffer_pct: formData.get('hold_buffer_pct'),
   };
+}
+
+// A fixed-price quota package is charged once, at its own price: a free one has nothing to charge. The base schema
+// allows 0 (a non-campaign package may be free), so the rule that couples the price to the quota lives here.
+function fixedPriceErrors(
+  base: PackageInput,
+  operational: OperationalFieldsInput,
+): Record<string, string[]> | null {
+  if (operational.contact_quota !== null && base.price_with_vat <= 0) {
+    return { price_with_vat: ['בחבילה במחיר קבוע המחיר חייב להיות חיובי'] };
+  }
+  return null;
+}
+
+// Whether the package is campaign-enabled (a per-reached price, or a contact quota): only then are its outreach
+// templates validated, so a draft of a non-campaign package may name templates that do not exist yet.
+function isCampaignEnabled(operational: OperationalFieldsInput): boolean {
+  return operational.price_per_reached !== null || operational.contact_quota !== null;
 }
 
 export async function createPackageAction(
@@ -74,14 +94,16 @@ export async function createPackageAction(
     };
   }
 
+  const priceErrors = fixedPriceErrors(parsed.data, operationalParsed.data);
+  if (priceErrors) return { fieldErrors: priceErrors };
+
   // Template validation runs only for a campaign-enabled package
-  // (price_per_reached !== null) — campaign-field requirements are never
+  // (a per-reached price, or a contact quota) — campaign-field requirements are never
   // enforced on a non-campaign package (plan §5.3/§2), e.g. a future package
   // drafted with touchpoints whose templates don't exist yet.
-  const templateErrors =
-    operationalParsed.data.price_per_reached !== null
-      ? await validateOutreachScheduleForPackage(operationalParsed.data.outreach_schedule)
-      : [];
+  const templateErrors = isCampaignEnabled(operationalParsed.data)
+    ? await validateOutreachScheduleForPackage(operationalParsed.data.outreach_schedule)
+    : [];
   if (templateErrors.length > 0) {
     const fieldErrors: Record<string, string[]> = {};
     for (const { index, message } of templateErrors) {
@@ -117,11 +139,13 @@ export async function updatePackageAction(
     };
   }
 
+  const priceErrors = fixedPriceErrors(parsed.data, operationalParsed.data);
+  if (priceErrors) return { fieldErrors: priceErrors };
+
   // Same campaign-enabled gate as createPackageAction (plan §5.3/§2).
-  const templateErrors =
-    operationalParsed.data.price_per_reached !== null
-      ? await validateOutreachScheduleForPackage(operationalParsed.data.outreach_schedule)
-      : [];
+  const templateErrors = isCampaignEnabled(operationalParsed.data)
+    ? await validateOutreachScheduleForPackage(operationalParsed.data.outreach_schedule)
+    : [];
   if (templateErrors.length > 0) {
     const fieldErrors: Record<string, string[]> = {};
     for (const { index, message } of templateErrors) {

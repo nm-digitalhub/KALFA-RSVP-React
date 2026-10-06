@@ -18,10 +18,9 @@ import {
   appRoleEnum,
 } from './admin';
 
-// Redesigned 2026-08-19/20: callback_requests.status is now a system-driven
-// scheduling state machine with no dedicated enum/schema of its own (only
-// 'cancelled' is admin-settable, via cancelCallbackSchema below). What used to
-// be callbackStatusEnum/updateCallbackStatusSchema is now split into
+// callback_requests.status is a system-driven scheduling state machine with no
+// dedicated Zod enum/schema of its own (only 'cancelled' is admin-settable, via
+// cancelCallbackSchema below). Separate from it:
 // callOutcomeEnum/updateCallOutcomeSchema (what happened on the call) and
 // contactStatusEnum/updateContactStatusSchema (the unrelated contacts vocabulary).
 
@@ -457,5 +456,78 @@ describe('appRoleEnum', () => {
     expect(appRoleEnum.safeParse('admin').success).toBe(true);
     expect(appRoleEnum.safeParse('user').success).toBe(true);
     expect(appRoleEnum.safeParse('superuser').success).toBe(false);
+  });
+});
+
+// A fixed-price package with a contact quota (docs/superpowers/plans/2026-10-04-package-payment-plan.md, P-F): the
+// price is the package's own price_with_vat, charged once; the quota is how many contacts the campaign may approach.
+// The per-reached formula and the card hold do not exist for it — so the server refuses a mix, whatever the form sent.
+describe('operationalFieldsSchema — fixed-price package with a contact quota', () => {
+  // Shaped like readOperationalForm's output for a fixed-price package: the formula and hold inputs are not rendered
+  // in the browser, so formData.get() yields null for them.
+  const quotaBase = {
+    contact_quota: '40',
+    price_per_reached: null,
+    base_price: null,
+    included_reached: null,
+    min_hold_floor: null,
+    hold_buffer_pct: null,
+    channels: ['whatsapp'],
+    outreach_schedule: [{ days_before: '7', channel: 'whatsapp', message_key: 'rsvp_1' }],
+  };
+  const issue = (r: ReturnType<typeof operationalFieldsSchema.safeParse>, path: string) =>
+    r.success ? undefined : r.error.issues.find((i) => i.path.join('.') === path)?.message;
+
+  it('accepts a quota with channels and a schedule and no formula fields (hold fields absent → 0)', () => {
+    const r = operationalFieldsSchema.safeParse(quotaBase);
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.contact_quota).toBe(40);
+      expect(r.data.price_per_reached).toBeNull();
+      expect(r.data.base_price).toBeNull();
+      expect(r.data.included_reached).toBeNull();
+      expect(r.data.min_hold_floor).toBe(0);
+      expect(r.data.hold_buffer_pct).toBe(0);
+    }
+  });
+
+  it('a blank or absent quota is "no quota" (null), exactly as before', () => {
+    for (const contact_quota of ['', undefined, null]) {
+      const r = operationalFieldsSchema.safeParse({ ...quotaBase, contact_quota, price_per_reached: '4' });
+      expect(r.success).toBe(true);
+      if (r.success) expect(r.data.contact_quota).toBeNull();
+    }
+  });
+
+  it.each(['0', '-5', '2.5', 'abc'])('rejects the quota %j', (contact_quota) => {
+    const r = operationalFieldsSchema.safeParse({ ...quotaBase, contact_quota });
+    expect(r.success).toBe(false);
+    expect(issue(r, 'contact_quota')).toBe('נא להזין מכסה תקינה (מספר שלם, 1 ומעלה)');
+  });
+
+  it('a quota package is campaign-enabled: it needs a channel and a schedule even with no price per reached', () => {
+    const noChannels = operationalFieldsSchema.safeParse({ ...quotaBase, channels: [] });
+    expect(issue(noChannels, 'channels')).toBe('יש לבחור לפחות ערוץ אחד למסלול קמפיין');
+    const noSchedule = operationalFieldsSchema.safeParse({ ...quotaBase, outreach_schedule: [] });
+    expect(issue(noSchedule, 'outreach_schedule')).toBe('יש להוסיף לפחות שלב אחד ללוח הפניות');
+    const wrongChannel = operationalFieldsSchema.safeParse({
+      ...quotaBase,
+      outreach_schedule: [{ days_before: '7', channel: 'call', message_key: 'x' }],
+    });
+    expect(issue(wrongChannel, 'outreach_schedule.0.channel')).toBe('הערוץ אינו נכלל בערוצי החבילה');
+  });
+
+  it('refuses a mix with the per-reached formula — on every formula field', () => {
+    const msg = 'חבילה עם מכסה אינה משתמשת בתמחור לפי מענה — השאירו ריק';
+    expect(issue(operationalFieldsSchema.safeParse({ ...quotaBase, price_per_reached: '4' }), 'price_per_reached')).toBe(msg);
+    const base = operationalFieldsSchema.safeParse({ ...quotaBase, base_price: '200', included_reached: '200' });
+    expect(issue(base, 'base_price')).toBe(msg);
+    expect(issue(base, 'included_reached')).toBe(msg);
+  });
+
+  it('refuses a card-hold floor or buffer — a hold does not exist in this model', () => {
+    const msg = 'שדה זה שייך לתפיסת מסגרת ואינו בשימוש בחבילה עם מכסה';
+    expect(issue(operationalFieldsSchema.safeParse({ ...quotaBase, min_hold_floor: '50' }), 'min_hold_floor')).toBe(msg);
+    expect(issue(operationalFieldsSchema.safeParse({ ...quotaBase, hold_buffer_pct: '10' }), 'hold_buffer_pct')).toBe(msg);
   });
 });

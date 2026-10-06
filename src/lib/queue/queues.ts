@@ -1,5 +1,6 @@
 // pg-boss queue names + per-queue config (pure constants — no pg-boss import, so
-// safe to reference anywhere). The worker (worker/main.ts) owns work()/schedule().
+// safe to reference anywhere). The worker (worker/main.ts) owns work()/schedule()
+// for every queue except the owner-agent ones, which kalfa-owner-agent works.
 // Queues that no longer exist. pg-boss keeps a schedule row in the database
 // after the code stops calling schedule(), so a retired cron would keep filing
 // jobs that no worker drains; the worker unschedules and deletes these at
@@ -49,13 +50,11 @@ export const QUEUES = {
   // while VOXIMPLANT_LIVE_CALLS is off. See src/lib/data/voximplant-balance.ts.
   balanceCheck: 'voximplant-balance-check',
   // Passive WhatsApp connection check — two Graph GETs, no message ever sent.
-  // Closes the "אין בדיקת בריאות זמינה" that /admin/debug reported for WhatsApp
-  // (plan gap G10): "send-only" described how we MESSAGE guests, not whether the
-  // integration can be examined. See src/lib/whatsapp/health.ts.
+  // "Send-only" describes how we MESSAGE guests, not whether the integration can
+  // be examined. See src/lib/whatsapp/health.ts.
   whatsappHealthCheck: 'whatsapp-health-check',
   // Passive outgoing-mail check — Resend's read-only domain registry, or an SMTP
-  // connect+AUTH with no message composed. Closes the same "אין בדיקת בריאות זמינה"
-  // the WhatsApp card used to show. It exists mainly to catch the SILENT failure:
+  // connect+AUTH with no message composed. It exists mainly to catch the SILENT failure:
   // SPF/DKIM breaking while every send call keeps returning success. See
   // src/lib/email/health.ts.
   emailHealthCheck: 'email-health-check',
@@ -80,7 +79,7 @@ export const QUEUES = {
   // never overlaps the cron (an atomic per-row lease is the inner guard). See
   // src/lib/data/vox-log-export.ts.
   logExport: 'voximplant-log-export',
-  // ElevenLabs character-quota alert (item 3) — every 6h read /v1/user/
+  // ElevenLabs character-quota alert — every 6h read /v1/user/
   // subscription and Slack at ≥80% (warn) / ≥95% (error). Config-gated (no key
   // → no-op), read-only, never throws. See src/lib/data/elevenlabs-quota.ts.
   elevenlabsQuota: 'elevenlabs-quota-check',
@@ -104,7 +103,7 @@ export const QUEUES = {
   // 60-day expiry. Singleton so an overlapping run never refreshes the same
   // token twice in flight. See src/lib/data/instagram-token-refresh.ts.
   igTokenRefresh: 'instagram-token-refresh',
-  // Console-agent calendar presence sync (Outlook/Exchange research, 12.8) —
+  // Console-agent calendar presence sync —
   // every 10m, per-agent calendar-derived free/busy into
   // console_agent_calendar_presence (a THIRD, advisory axis — never merged
   // into agent_status, the business truth). Read-only against Exchange;
@@ -203,6 +202,11 @@ export const QUEUES = {
   // discovered after the fact from SUMIT. See
   // src/lib/data/sumit-hold-reconcile.ts.
   sumitHoldReconcile: 'sumit-hold-reconcile',
+  // Payment operations stuck in flight — every 10 minutes. A payment row is written PENDING before SUMIT is called
+  // and completed right after; a process that dies in between (a deploy restart, an out-of-memory kill) leaves it
+  // pending, holding the "pay once" lock with SUMIT's answer unknown. This moves rows older than 10 minutes to REVIEW
+  // (never a retry, never a guess) and alerts, so a person checks SUMIT. See src/lib/data/payment-orphans.ts.
+  paymentOrphans: 'payment-orphans',
   // Abandoned phone-change cleanup — daily. Supabase's own troubleshooting
   // guide prescribes it: phone verification finds the user by SEARCHING
   // auth.users for the number in `phone_change`, which carries no uniqueness
@@ -237,7 +241,7 @@ export const QUEUES = {
   // workflow_run_steps' unique (run_id, node_id) is what stops the second side
   // effect. See src/lib/workflow/engine/activity-runner.ts.
   //
-  // SINCE `logic.wait` (13.9.2026) a run may also park mid-graph. There is still
+  // Since `logic.wait`, a run may also park mid-graph. There is still
   // no per-node job: the run re-enqueues ITSELF with `startAfter`, replays from
   // the start, and the ledger short-circuits everything that already finished.
   // The vendored runGraph is untouched.
@@ -261,9 +265,8 @@ export const QUEUES = {
   // The CONSUMER is not kalfa-worker: it is the separate pm2 process
   // kalfa-owner-agent (src/lib/owner-agent/consumer/main.ts, stage 6b), which
   // creates this queue if missing and sets its retry/expiry. The worker's
-  // createQueue loop over QUEUES creates it too, which is what let stage 4
-  // enqueue before a consumer existed (pg-boss refuses send() to a queue that
-  // does not exist).
+  // createQueue loop over QUEUES creates it too (pg-boss refuses send() to a
+  // queue that does not exist).
   ownerAgentReply: 'owner-agent-reply',
   // Owner-agent housekeeping, worked by kalfa-owner-agent as well (the worker
   // only creates them, through the same loop): every 5 minutes re-enqueue
@@ -306,7 +309,7 @@ export type OwnerAgentReportJob = {
 // crashed dead-letter worker. guardedWorker already Slack-alerts on the final
 // throw, and the run row carries status='failed' with its message.
 //
-// Two attempts, not three: a workflow's steps are claimed in an idempotent
+// Two retries, not three: a workflow's steps are claimed in an idempotent
 // ledger, so a retry re-runs only what genuinely did not finish — but every
 // retry still walks the whole graph, and a permanently broken graph should stop
 // being walked quickly.
@@ -359,7 +362,7 @@ export const STEP_RETRY = {
 } as const;
 
 // outreach-call-request retry policy. Applied at boss.send() time (like
-// STEP_RETRY, per enqueue.ts:53-57). Only the pre-dial GetAccountInfo transport
+// STEP_RETRY, per enqueueStepJob). Only the pre-dial GetAccountInfo transport
 // check is ever retried; once StartScenarios is invoked the dispatcher never
 // asks for a retry (ambiguous ⇒ start_unknown, definite ⇒ failed_to_start), so a
 // retry can never place a second call. Deliberately NO `deadLetter`: QUEUES.dead's
@@ -404,11 +407,12 @@ export type OutreachCallRequest = {
    * This dial fulfils a callback the guest asked for during an earlier call
    * (schedule_callback), not a new campaign touchpoint.
    *
-   * It exempts the dial from the already-reached gate and NOTHING else —
-   * consent, DNC and the event-closed gate are still enforced. Owner decision,
-   * 2026-07-21: a callback is the SAME billable reach continuing, not a second
-   * one. The contact was already billed when they first answered, and finishing
-   * the conversation they asked to postpone must not charge for them twice.
+   * It exempts the dial from the already-reached gate and the contact-quota
+   * seat check, and nothing else — consent, DNC and the event-closed gate are
+   * still enforced. A callback is the SAME billable reach continuing, not a
+   * second one. The contact was already billed when they first answered, and
+   * finishing the conversation they asked to postpone must not charge for them
+   * twice.
    *
    * Absent/false on every ordinary campaign job, so the gate keeps its current
    * behaviour by default.

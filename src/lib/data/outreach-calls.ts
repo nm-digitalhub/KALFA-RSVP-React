@@ -22,6 +22,7 @@ import {
   isContactReached,
   isDncListed,
 } from '@/lib/data/outreach-engine';
+import { checkContactSeat } from '@/lib/data/contact-quota';
 import {
   consoleDtmfHandoffEnabled,
   findRoutableAgentVoxUsernames,
@@ -36,7 +37,7 @@ import {
   VoximplantNetworkError,
 } from '@/lib/voximplant/core';
 // The dial mutation lives in the separated mutations module (never imported by
-// the CLI); this dispatcher is its only worker-side consumer.
+// the CLI); this dispatcher is one of its worker-side consumers.
 import { startScenarios } from '@/lib/voximplant/mutations';
 import type { OutreachCallRequest } from '@/lib/queue/queues';
 
@@ -56,7 +57,7 @@ const BALANCE_TIMEOUT_MS = 10_000;
 const START_TIMEOUT_MS = 25_000;
 
 export type CallDispatchResult =
-  | { kind: 'skipped'; reason: 'outreach_disabled' | 'outside_dial_window' | 'no_call_consent' | 'dnc_listed' | 'already_reached' | 'campaign_not_active' | 'event_closed' | 'concurrent_owner' | 'max_concurrency' | 'campaign_hour_cap' }
+  | { kind: 'skipped'; reason: 'outreach_disabled' | 'outside_dial_window' | 'no_call_consent' | 'dnc_listed' | 'already_reached' | 'campaign_not_active' | 'event_closed' | 'concurrent_owner' | 'max_concurrency' | 'campaign_hour_cap' | 'waiting_for_quota' }
   | { kind: 'blocked'; reason: 'config_missing' | 'live_calls_disabled' | 'balance_below_reserve' }
   | { kind: 'transient_error'; reason: 'balance_check_failed' } // the ONLY retryable kind
   | { kind: 'already_dispatched'; attemptId: string }
@@ -78,7 +79,7 @@ export type CallDispatchResult =
 //   tok — opaque per-call access token (call_attempts.access_token)
 //   u   — app origin (scheme+host) for building the ctx/cb URLs
 //   ca  — COMPACT key for console_agent_username (Stage 6 DTMF-'9' handoff
-//         smoke test): the single READY provisioned console agent's
+//         smoke test): the first routable console agent's
 //         vox_username, or '' when none is routable. RSVPAgent.voxengine.js
 //         reads it into state.consoleAgentUsername. Kept short (not the full
 //         literal name) because the full-key payload measured at 184-195
@@ -159,10 +160,9 @@ export async function dispatchOutreachCall(
   // 3b. Dial-hours gate — the admin-managed per-weekday dialing window
   //     (/admin/callbacks/policy, "חיוג" tab) plus the Shabbat/Yom-Tov block.
   //     This is the SAME policy the meeting-confirm and sales-close dispatchers
-  //     already honour; until 2026-09-07 the RSVP path was the only dial
-  //     surface that ignored it, so a mis-transcribed callback_iso or a manual
-  //     dispatch could ring a guest at 03:00 (the ops launcher even documented
-  //     it). One copy of the gate, HERE, covers every caller that funnels
+  //     already honour; without it a mis-transcribed callback_iso or a manual
+  //     dispatch could ring a guest at 03:00. One copy of the gate, HERE,
+  //     covers every caller that funnels
   //     through this dispatcher: the drip engine, the console on-demand route,
   //     the ops script and the callback sweep. The sweep ALSO defers claiming
   //     outside the window (see runCallbackSweep) — not a duplicate gate but a
@@ -188,16 +188,31 @@ export async function dispatchOutreachCall(
   // UNIQUE(event_id, contact_id) makes that structurally true anyway — the
   // second writeReach returns 'already_billed'.
   //
-  // Deliberately the ONLY gate a callback skips. Consent, DNC and the
-  // event-closed gate above all still apply: asking to be called back is not
-  // consent to be called after opting out, and a callback into a finished event
-  // is as worthless as any other call.
+  // Deliberately one of only two gates a callback skips (the other is the
+  // contact-quota seat, 4a). Consent, DNC and the event-closed gate (4b) all
+  // still apply: asking to be called back is not consent to be called after
+  // opting out, and a callback into a finished event is as worthless as any
+  // other call.
   if (!job.isCallback && (await isContactReached(eventId, contactId))) {
     return { kind: 'skipped', reason: 'already_reached' };
   }
   const cctx = await getCampaignContext(campaignId);
   if (!cctx || cctx.status !== 'active' || !cctx.allowed_channels.includes('call')) {
     return { kind: 'skipped', reason: 'campaign_not_active' };
+  }
+
+  // 4a. Contact-quota seat. A campaign with a package quota may approach only the contacts
+  //     that hold a seat (plan 2026-09-30-contact-quota-package.md §4.1). The outreach
+  //     engine only ever dispatches seated contacts, but the console, the ops script and the
+  //     workflows reach this function directly, so the check lives HERE and covers every
+  //     caller. A campaign without a quota is unaffected.
+  //
+  //     A callback the guest asked for is exempt, like the already-reached gate above and by
+  //     the same owner decision: asking to be called back is the guest's own initiative, not
+  //     an approach we open. Consent, DNC, dial hours and the rest above still apply to it.
+  if (!job.isCallback) {
+    const seat = await checkContactSeat(campaignId, contactId);
+    if (!seat.allowed) return { kind: 'skipped', reason: seat.reason };
   }
 
   // 4b. NEVER place a call whose answer cannot be recorded — submit_rsvp's three
@@ -252,7 +267,7 @@ export async function dispatchOutreachCall(
     const info = await getAccountInfo(config.auth, BALANCE_TIMEOUT_MS);
     balance = info.result.balance;
   } catch {
-    // Read-only, no side effect occurred → safe to retry (correction #6).
+    // Read-only, no side effect occurred → safe to retry.
     return { kind: 'transient_error', reason: 'balance_check_failed' };
   }
   if (balance < config.minCallReserve) {
@@ -330,7 +345,7 @@ export async function dispatchOutreachCall(
   //    the opaque access token (Branch B). No signed token, no key in the payload.
   const origin = await getAppOrigin();
 
-  // 8b. Stage 6 DTMF-'9' handoff smoke test: the single READY provisioned
+  // 8b. Stage 6 DTMF-'9' handoff smoke test: the first routable
   //     console agent (if any) + the owner knob. Read fresh per dial (never
   //     cached) — same freshness discipline as every other gate above.
   const routableAgents = await findRoutableAgentVoxUsernames();
@@ -348,7 +363,7 @@ export async function dispatchOutreachCall(
   });
   console.log('[outreach-calls] dispatching', { campaignId, contactId, attemptId, payloadBytes: bytes });
 
-  // 10. StartScenarios — definite vs ambiguous classification (correction #3).
+  // 10. StartScenarios — definite vs ambiguous classification.
   try {
     const res = await startScenarios(config.auth, { rule_id: config.ruleId, script_custom_data: payload }, START_TIMEOUT_MS);
     if (res.result === 1 && res.call_session_history_id != null) {

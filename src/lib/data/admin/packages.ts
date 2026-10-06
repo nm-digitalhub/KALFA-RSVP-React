@@ -1,12 +1,19 @@
 import 'server-only';
 
 import { notFound } from 'next/navigation';
+import { z } from 'zod';
 
 import { logActivity } from '@/lib/data/activity';
+import {
+  buildScheduleOptions,
+  hasApprovedDefaultRoute,
+  type ScheduleStepOption,
+} from '@/lib/data/schedule-options';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import type { Json, Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
+import { outreachTouchpointSchema } from '@/lib/validation/admin';
 import type {
   PackageInput,
   OperationalFieldsInput,
@@ -14,7 +21,8 @@ import type {
 } from '@/lib/validation/admin';
 
 // Admin: packages CRUD. Authorized by the request-scoped session under the
-// `packages_admin_all` RLS policy plus a server-side requireAdmin() gate.
+// `packages_admin_all` RLS policy plus a server-side
+// requirePlatformPermission('manage_billing') gate.
 // Reads of active packages are public (`packages_public_read`); writes are
 // admin-only. Prices are server-validated (see validation/admin.ts) and never
 // trusted from the browser.
@@ -42,10 +50,13 @@ export type AdminPackage = Pick<
   | 'outreach_schedule'
   | 'min_hold_floor'
   | 'hold_buffer_pct'
+  // How many contacts a campaign created from this package may approach (the fixed-price package model);
+  // NULL = a package without a quota.
+  | 'contact_quota'
 >;
 
 export const PACKAGE_COLUMNS =
-  'id, name, tier, category, description, price_with_vat, includes, active, sort_order, created_at, price_per_reached, base_price, included_reached, channels, outreach_schedule, min_hold_floor, hold_buffer_pct';
+  'id, name, tier, category, description, price_with_vat, includes, active, sort_order, created_at, price_per_reached, base_price, included_reached, channels, outreach_schedule, min_hold_floor, hold_buffer_pct, contact_quota';
 
 // List all packages (active and inactive) for the admin table, ordered by the
 // curated sort order then name. Not paginated: the catalogue is small and
@@ -90,7 +101,7 @@ export async function getPackage(id: string): Promise<AdminPackage> {
 // `includes`/`outreach_schedule` are JSON columns typed `Json`. Plain arrays
 // are structurally compatible at runtime but not directly assignable in TS,
 // so we narrow through unknown — documented per the project's casting rule
-// (same pattern as src/lib/data/campaigns.ts:173).
+// (same pattern as src/lib/data/campaigns.ts).
 function includesJson(includes: string[]): PackageInsert['includes'] {
   return includes as unknown as PackageInsert['includes'];
 }
@@ -117,6 +128,7 @@ function toWritable(
   price_per_reached: number | null;
   base_price: number | null;
   included_reached: number | null;
+  contact_quota: number | null;
   channels: PackageInsert['channels'];
   outreach_schedule: PackageInsert['outreach_schedule'];
   min_hold_floor: number;
@@ -134,6 +146,7 @@ function toWritable(
     price_per_reached: operational.price_per_reached,
     base_price: operational.base_price,
     included_reached: operational.included_reached,
+    contact_quota: operational.contact_quota,
     channels: operational.channels,
     outreach_schedule: outreachScheduleJson(operational.outreach_schedule),
     min_hold_floor: operational.min_hold_floor,
@@ -159,6 +172,7 @@ function packageChangedFields(
     | 'outreach_schedule'
     | 'min_hold_floor'
     | 'hold_buffer_pct'
+    | 'contact_quota'
   >,
   next: ReturnType<typeof toWritable>,
 ): string[] {
@@ -176,6 +190,7 @@ function packageChangedFields(
     previous.price_per_reached !== next.price_per_reached ? 'price_per_reached' : null,
     previous.base_price !== next.base_price ? 'base_price' : null,
     previous.included_reached !== next.included_reached ? 'included_reached' : null,
+    previous.contact_quota !== next.contact_quota ? 'contact_quota' : null,
     // channels/outreach_schedule are arrays/JSON — reference-compare via
     // JSON.stringify, mirroring the existing `includes` precedent above.
     JSON.stringify(previous.channels) !== JSON.stringify(next.channels)
@@ -220,13 +235,9 @@ export async function validateOutreachScheduleForPackage(
     .eq('active', true);
 
   const byKey = new Map((data ?? []).map((t) => [t.message_key, t]));
-  const hasApprovedDefault = (t: NonNullable<typeof data>[number]) =>
-    (t.message_template_routes ?? []).some(
-      (r) =>
-        r.event_type === null &&
-        !r.with_media &&
-        (r.whatsapp_message_templates as { status: string | null } | null)?.status === 'APPROVED',
-    );
+  // The same rule the schedule picker uses to decide what to offer (schedule-options.ts), so what the form lets an
+  // admin pick and what this check accepts cannot drift apart.
+  const hasApprovedDefault = (t: NonNullable<typeof data>[number]) => hasApprovedDefaultRoute(t.message_template_routes);
 
   const errors: { index: number; message: string }[] = [];
   whatsappTouchpoints.forEach(({ tp, index }) => {
@@ -242,9 +253,53 @@ export async function validateOutreachScheduleForPackage(
   return errors;
 }
 
+// The steps an admin may pick for a package's outreach schedule, so the form offers a list instead of a text field to
+// type a key into. Reads with the service-role client strictly AFTER the permission gate (message_templates and its
+// routes are not readable by the packages page's own session), the same way the save-time validation above does.
+export async function getScheduleStepOptions(): Promise<ScheduleStepOption[]> {
+  await requirePlatformPermission('manage_billing');
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('message_templates')
+    .select('message_key, channel, label, active, message_template_routes(event_type, with_media, whatsapp_message_templates(status))');
+  if (error) throw new Error('טעינת תבניות ההודעות נכשלה');
+  return buildScheduleOptions(data ?? []);
+}
+
+export type SuggestedSchedule = {
+  /** The package the schedule was taken from, named to the admin so the copy is never silent. */
+  fromName: string;
+  channels: string[];
+  schedule: OutreachTouchpointInput[];
+};
+
+// What a NEW package starts with instead of an empty schedule: the schedule (and the channels it needs) of the first
+// active package, in catalogue order, that has a valid one. The stored JSON is parsed with the same schema the form is
+// saved with, so a damaged value yields no suggestion rather than a half-filled form. null = nothing to suggest.
+export async function getSuggestedSchedule(): Promise<SuggestedSchedule | null> {
+  await requirePlatformPermission('manage_billing');
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('packages')
+    .select('name, channels, outreach_schedule')
+    .eq('active', true)
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true });
+  if (error) throw new Error('טעינת החבילות נכשלה');
+
+  for (const pkg of data ?? []) {
+    const parsed = z.array(outreachTouchpointSchema).safeParse(pkg.outreach_schedule);
+    if (!parsed.success || parsed.data.length === 0) continue;
+    // The form refuses a step whose channel the package does not carry, so the suggestion carries every channel its
+    // steps use, whatever the stored list says.
+    const channels = [...new Set([...(pkg.channels ?? []), ...parsed.data.map((tp) => tp.channel)])];
+    return { fromName: pkg.name, channels, schedule: parsed.data };
+  }
+  return null;
+}
+
 // Create a package. Returns the new id, but nothing consumes it today:
-// createPackageAction redirects to the list (/admin/packages), the same
-// destination updatePackageAction and deletePackageAction use. Kept on the
+// createPackageAction redirects to the list (/admin/packages). Kept on the
 // signature so a caller that does want to land on the new package's edit page
 // has the id without a second read.
 export async function createPackage(

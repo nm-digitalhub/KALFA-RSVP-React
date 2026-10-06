@@ -20,6 +20,12 @@ import { POST } from './route';
 import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
 import { activateCampaign, pauseCampaign } from '@/lib/data/campaigns';
 import { recordStaffAccess } from '@/lib/data/admin/access-log';
+import {
+  PACKAGE_NOT_PAID_ERROR,
+  PACKAGE_NO_CONTACTS_ERROR,
+  PACKAGE_PAYMENT_UNVERIFIED_ERROR,
+  PACKAGE_SUPPORT_ERROR,
+} from '@/lib/data/package-activation-errors';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 const STAFF_ID = '33333333-3333-4333-8333-333333333333';
@@ -139,6 +145,10 @@ describe('POST /api/campaigns/[id]/status', () => {
     'לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי',
     'האירוע כבר חלף — לא ניתן לבצע פעולה זו עבור אירוע שמועדו עבר',
     'יש לאשר את פרטי האירוע לפני אישורי הגעה',
+    PACKAGE_NOT_PAID_ERROR,
+    PACKAGE_PAYMENT_UNVERIFIED_ERROR,
+    PACKAGE_NO_CONTACTS_ERROR,
+    PACKAGE_SUPPORT_ERROR,
   ])('maps "%s" to 409 with the reason intact', async (message) => {
     authOk();
     campaignRow(FOUND);

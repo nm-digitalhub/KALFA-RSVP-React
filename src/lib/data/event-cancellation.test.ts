@@ -18,6 +18,12 @@ vi.mock('@/lib/email/templates', () => ({ cancellationRequestResponseEmail: vi.f
 vi.mock('@/lib/data/cancellation-sms', () => ({ buildCancellationSmsText: vi.fn() }));
 vi.mock('@/lib/url', () => ({ getAppOrigin: vi.fn().mockResolvedValue('https://beta.kalfa.me') }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
+vi.mock('@/lib/payments/package-refund', () => ({
+  checkPackageRefund: vi.fn(),
+  packageRefundSummary: vi.fn(),
+  refundPackagePayment: vi.fn(),
+}));
+vi.mock('@/lib/data/campaigns', () => ({ closeCampaign: vi.fn() }));
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
@@ -31,6 +37,8 @@ import { getSmsSender } from '@/lib/sms/sender';
 import { cancellationRequestResponseEmail } from '@/lib/email/templates';
 import { buildCancellationSmsText } from '@/lib/data/cancellation-sms';
 import { logActivity } from '@/lib/data/activity';
+import { closeCampaign } from '@/lib/data/campaigns';
+import { checkPackageRefund, packageRefundSummary, refundPackagePayment } from '@/lib/payments/package-refund';
 import {
   createCancellationRequest,
   computeSuggestedCancellationAmount,
@@ -118,6 +126,33 @@ describe('computeSuggestedCancellationAmount', () => {
     const amount = await computeSuggestedCancellationAmount('c1');
     expect(amount).toBeLessThanOrEqual(12);
   });
+
+  // A package has no ceiling: the base of the fee is what the card paid, handed in by the caller.
+  function settings(percent: number, cap: number, ceiling: number | null = null) {
+    (createAdminClient as unknown as Mock).mockReturnValue({
+      from: (table: string) =>
+        table === 'app_settings'
+          ? { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { cancellation_fee_percent: percent, cancellation_fee_cap: cap }, error: null }) }) }) }
+          : { select: () => ({ eq: () => ({ single: async () => ({ data: { max_charge_ceiling: ceiling }, error: null }) }) }) },
+    });
+  }
+
+  it('with a base (a package: what the card paid) it is taken of that base, not of the missing ceiling', async () => {
+    settings(5, 100, null);
+    expect(await computeSuggestedCancellationAmount('c1', 120)).toBeCloseTo(6, 2);
+  });
+
+  it('with a base it is still capped, and never more than the base', async () => {
+    settings(5, 2, null);
+    expect(await computeSuggestedCancellationAmount('c1', 120)).toBeCloseTo(2, 2);
+    settings(100, 100000, null);
+    expect(await computeSuggestedCancellationAmount('c1', 120)).toBeLessThanOrEqual(120);
+  });
+
+  it('without a base and without a ceiling the suggestion is 0, as before', async () => {
+    settings(5, 100, null);
+    expect(await computeSuggestedCancellationAmount('c1')).toBe(0);
+  });
 });
 
 describe('getCampaignForEventAdmin', () => {
@@ -127,7 +162,7 @@ describe('getCampaignForEventAdmin', () => {
     (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
     const maybeSingle = vi.fn().mockResolvedValue({
       data: {
-        id: 'camp1', charge_status: 'charged', max_charge_ceiling: 88,
+        id: 'camp1', charge_status: 'charged', max_charge_ceiling: 88, final_charge_amount: 84,
         card_token_ref: 'tok-abc', card_exp_month: 7, card_exp_year: 2031, card_citizen_id: '316125434',
       },
       error: null,
@@ -140,6 +175,12 @@ describe('getCampaignForEventAdmin', () => {
       id: 'camp1',
       chargeStatus: 'charged',
       maxChargeCeiling: 88,
+      finalChargeAmount: 84,
+      isPackage: false,
+      packagePaid: null,
+      packageRefundable: null,
+      packageRefundedForRequest: null,
+      packageUnreadable: false,
       hasCardOnFile: true,
       basePrice: 0,
       includedReached: 0,
@@ -161,6 +202,56 @@ describe('getCampaignForEventAdmin', () => {
     });
     const r = await getCampaignForEventAdmin('e1');
     expect(r?.hasCardOnFile).toBe(false);
+  });
+
+  // A fixed-price package keeps no charge status, ceiling or card on the campaign: its money is in the payment ledger.
+  function adminClientFor(row: Record<string, unknown>) {
+    const maybeSingle = vi.fn().mockResolvedValue({ data: row, error: null });
+    (createAdminClient as unknown as Mock).mockReturnValue({
+      from: () => ({ select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }),
+    });
+  }
+  const PKG_ROW = {
+    id: 'camp1', charge_status: null, max_charge_ceiling: null, final_charge_amount: 0, package_price: 120,
+    card_token_ref: null, card_exp_month: null, card_exp_year: null, card_citizen_id: null,
+  };
+
+  it('a package campaign: what the card paid and whether a card is on file come from the ledger, not the old columns', async () => {
+    (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
+    adminClientFor(PKG_ROW);
+    (packageRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 70, refundedForRequest: 50, hasCard: true });
+    const r = await getCampaignForEventAdmin('e1', 'req1');
+    expect(packageRefundSummary).toHaveBeenCalledWith('camp1', 'req1');
+    expect(r).toMatchObject({ isPackage: true, packagePaid: 120, packageRefundable: 70, hasCardOnFile: true, packageUnreadable: false });
+  });
+
+  it('a package: what THIS request already sent back is reported, so the screen can say a resolve is being resumed', async () => {
+    (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
+    adminClientFor(PKG_ROW);
+    (packageRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 15, refundedForRequest: 105, hasCard: true });
+    expect(await getCampaignForEventAdmin('e1', 'req1')).toMatchObject({ packagePaid: 120, packageRefundable: 15, packageRefundedForRequest: 105 });
+  });
+
+  it('a package with no usable saved card says so', async () => {
+    (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
+    adminClientFor(PKG_ROW);
+    (packageRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 120, refundedForRequest: 0, hasCard: false });
+    expect((await getCampaignForEventAdmin('e1', 'req1'))?.hasCardOnFile).toBe(false);
+  });
+
+  it('a package whose ledger cannot be read is reported as unreadable — never as "paid nothing"', async () => {
+    (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
+    adminClientFor(PKG_ROW);
+    (packageRefundSummary as unknown as Mock).mockRejectedValue(new Error('db down'));
+    expect(await getCampaignForEventAdmin('e1', 'req1')).toMatchObject({ isPackage: true, packagePaid: null, packageRefundable: null, packageRefundedForRequest: null, hasCardOnFile: false, packageUnreadable: true });
+  });
+
+  it('a campaign that is not a package never touches the ledger', async () => {
+    (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
+    adminClientFor({ ...PKG_ROW, package_price: null, charge_status: 'charged', final_charge_amount: 84 });
+    const r = await getCampaignForEventAdmin('e1', 'req1');
+    expect(packageRefundSummary).not.toHaveBeenCalled();
+    expect(r).toMatchObject({ isPackage: false, packagePaid: null, packageRefundable: null, packageRefundedForRequest: null, packageUnreadable: false });
   });
 
   it('returns null when the event has no campaign', async () => {
@@ -185,6 +276,9 @@ describe('resolveCancellationRequest', () => {
     smsConsent?: boolean;
     finalChargeAmount?: number;
     noCard?: boolean;
+    packagePrice?: number | null;
+    maxChargeCeiling?: number | null;
+    campaignStatus?: string;
   }) {
     (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
     const cardFields = opts.noCard
@@ -205,9 +299,12 @@ describe('resolveCancellationRequest', () => {
           campaigns: [
             {
               id: 'camp1',
+              status: opts.campaignStatus ?? 'active',
               charge_status: opts.chargeStatus,
               final_charge_amount: opts.finalChargeAmount ?? 0,
+              max_charge_ceiling: opts.maxChargeCeiling ?? null,
               auth_external_ref: 'ext-1',
+              package_price: opts.packagePrice ?? null,
               ...cardFields,
             },
           ],
@@ -256,6 +353,217 @@ describe('resolveCancellationRequest', () => {
     return { send, smsSend, update, eventStatusMaybeSingle };
   }
 
+  // A fixed-price package was paid at purchase and has no settlement. Resolving its cancellation request means giving
+  // money BACK: the admin's two resolutions keep the meaning they have for a charged campaign (ביטול מלא = everything
+  // goes back; חיוב חלקי = the typed amount or percentage STAYS, the rest goes back). The customer is e-mailed only
+  // after the refund has been checked to be possible, and the request closes only after the money is confirmed back.
+  describe('a fixed-price package campaign', () => {
+    const DOC = { id: 9001, number: 4023, url: 'https://example.test/doc/9001' };
+    function pkg(over: { status?: string; paid?: number; refundedForRequest?: number } = {}) {
+      const h = happy({ chargeStatus: null, packagePrice: 120, campaignStatus: over.status ?? 'active' });
+      (packageRefundSummary as unknown as Mock).mockResolvedValue({
+        refundable: over.paid ?? 120,
+        refundedForRequest: over.refundedForRequest ?? 0,
+        hasCard: true,
+      });
+      (checkPackageRefund as unknown as Mock).mockResolvedValue(null);
+      (refundPackagePayment as unknown as Mock).mockImplementation(async (i: { amount: number }) => ({
+        status: 'refunded', amount: i.amount, document: DOC, alreadyDone: false,
+      }));
+      return h;
+    }
+    const order = (m: unknown) => (m as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0];
+
+    it('full cancellation: refunds what the card paid, closes the campaign and the event, and records the credit document', async () => {
+      const { update } = pkg();
+      await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' });
+      expect(refundPackagePayment).toHaveBeenCalledWith({ campaignId: 'camp1', eventId: 'e1', amount: 120, cancellationRequestId: 'r1' });
+      expect(closeCampaign).toHaveBeenCalledWith('camp1');
+      expect(update).toHaveBeenCalledWith(expect.objectContaining({
+        capture_outcome: 'refunded', resolution_amount: 120, sumit_document_id: 9001, sumit_document_url: DOC.url, status: 'resolved',
+      }));
+      // never the old per-result money paths
+      expect(closeCampaignAndCharge).not.toHaveBeenCalled();
+      expect(creditHeldCardSumit).not.toHaveBeenCalled();
+    });
+
+    it('the order is the safety: the refund is CHECKED, then the customer is e-mailed, then the money goes back, then the campaign is closed', async () => {
+      const { send } = pkg();
+      await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' });
+      expect(checkPackageRefund).toHaveBeenCalledWith({ campaignId: 'camp1', eventId: 'e1', amount: 120, cancellationRequestId: 'r1' });
+      expect(order(checkPackageRefund)).toBeLessThan(order(send));
+      expect(order(send)).toBeLessThan(order(refundPackagePayment));
+      expect(order(refundPackagePayment)).toBeLessThan(order(closeCampaign));
+    });
+
+    it('partial: the typed amount stays with us, the rest goes back, and the customer is told the amount kept', async () => {
+      pkg();
+      await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionAmount: 15, resolutionNote: 'דמי ביטול' });
+      expect(refundPackagePayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 105 }));
+      expect(cancellationRequestResponseEmail).toHaveBeenCalledWith(expect.objectContaining({ resolution: 'partial_charge', resolutionAmount: 15 }));
+    });
+
+    it('partial as a percentage: 5% of the ₪120 paid stays (₪6.00), ₪114 goes back', async () => {
+      pkg();
+      await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 5, resolutionNote: 'דמי ביטול 5%' });
+      expect(refundPackagePayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 114 }));
+      expect(cancellationRequestResponseEmail).toHaveBeenCalledWith(expect.objectContaining({ resolutionAmount: 6 }));
+    });
+
+    // A refund that exists for THIS request means an earlier attempt got as far as the money and failed at a later step
+    // (closing the campaign, recording the request). The ledger is the truth about what that attempt did, so a retry
+    // RESUMES it: the e-mail, the SMS and the record follow what really went back — never what the admin types this time,
+    // or the customer would be told numbers that never happened.
+    describe('a retry after a half-finished resolve (the money went back, a later step failed)', () => {
+      function resumed(refunded: number, paid = 120) {
+        const h = pkg({ paid: paid - refunded, refundedForRequest: refunded });
+        (checkPackageRefund as unknown as Mock).mockResolvedValue({ status: 'refunded', amount: refunded, document: DOC, alreadyDone: true });
+        (refundPackagePayment as unknown as Mock).mockResolvedValue({ status: 'refunded', amount: refunded, document: DOC, alreadyDone: true });
+        return h;
+      }
+      const emailArg = () => (cancellationRequestResponseEmail as unknown as Mock).mock.calls[0][0] as { resolution: string; resolutionAmount?: number };
+
+      it('the first attempt kept ₪15 (₪105 went back): a "full cancellation" typed now is still told and recorded as that', async () => {
+        const { update } = resumed(105);
+        await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' });
+        expect(emailArg()).toMatchObject({ resolution: 'partial_charge', resolutionAmount: 15 });
+        expect(buildCancellationSmsText).toHaveBeenCalledWith(expect.objectContaining({ resolution: 'partial_charge', resolutionAmount: 105 }));
+        expect(update).toHaveBeenCalledWith(expect.objectContaining({
+          resolution: 'partial_charge', resolution_amount: 105, capture_outcome: 'refunded', sumit_document_id: 9001, status: 'resolved',
+        }));
+      });
+
+      it('the first attempt refunded everything: a "partial" typed now is still told and recorded as a full cancellation', async () => {
+        const { update } = resumed(120);
+        await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionAmount: 15, resolutionNote: 'דמי ביטול' });
+        expect(emailArg().resolution).toBe('full_cancellation');
+        expect(emailArg().resolutionAmount).toBeUndefined();
+        expect(update).toHaveBeenCalledWith(expect.objectContaining({ resolution: 'full_cancellation', resolution_amount: 120 }));
+      });
+
+      it('a percentage typed now is ignored: the ledger already decided the amount', async () => {
+        resumed(105);
+        await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 50, resolutionNote: 'דמי ביטול 50%' });
+        expect(emailArg()).toMatchObject({ resolution: 'partial_charge', resolutionAmount: 15 });
+        expect(refundPackagePayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 105 }));
+      });
+
+      it('nothing is refunded twice, and the campaign and the event are still closed', async () => {
+        resumed(105);
+        await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' });
+        expect(checkPackageRefund).toHaveBeenCalledWith(expect.objectContaining({ amount: 105 }));
+        expect(refundPackagePayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 105, cancellationRequestId: 'r1' }));
+        expect(closeCampaign).toHaveBeenCalledWith('camp1');
+        expect(logActivity).toHaveBeenCalledWith({ eventId: 'e1', action: 'event.closed_by_admin', meta: {} });
+      });
+
+      it('declining it now is refused: the money is already back, and recording "declined" would be untrue', async () => {
+        const { send, update } = resumed(105);
+        await expect(
+          resolveCancellationRequest('r1', { resolution: 'declined', resolutionNote: 'האירוע כבר בעיצומו' }),
+        ).rejects.toThrow('כבר בוצע החזר');
+        expect(send).not.toHaveBeenCalled();
+        expect(update).not.toHaveBeenCalled();
+        expect(closeCampaign).not.toHaveBeenCalled();
+      });
+    });
+
+    it('keeping everything (100%): nothing goes back, no refund is attempted, the request still closes with no money movement', async () => {
+      const { update } = pkg();
+      await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 100, resolutionNote: 'ללא החזר' });
+      expect(checkPackageRefund).not.toHaveBeenCalled();
+      expect(refundPackagePayment).not.toHaveBeenCalled();
+      expect(update).toHaveBeenCalledWith(expect.objectContaining({ capture_outcome: 'not_applicable', resolution_amount: null }));
+      expect(closeCampaign).toHaveBeenCalledWith('camp1');
+    });
+
+    it('declined: no money, no check, the campaign and the event stay open', async () => {
+      const { update } = pkg();
+      await resolveCancellationRequest('r1', { resolution: 'declined', resolutionNote: 'האירוע כבר בעיצומו' });
+      expect(checkPackageRefund).not.toHaveBeenCalled();
+      expect(refundPackagePayment).not.toHaveBeenCalled();
+      expect(closeCampaign).not.toHaveBeenCalled();
+      expect(update).toHaveBeenCalledWith(expect.objectContaining({ capture_outcome: 'not_applicable' }));
+    });
+
+    it('declined with an unreadable ledger still goes ahead: a decline moves no money', async () => {
+      const { update } = pkg();
+      (packageRefundSummary as unknown as Mock).mockRejectedValue(new Error('db down'));
+      await resolveCancellationRequest('r1', { resolution: 'declined', resolutionNote: 'האירוע כבר בעיצומו' });
+      expect(update).toHaveBeenCalledWith(expect.objectContaining({ resolution: 'declined', capture_outcome: 'not_applicable' }));
+      expect(refundPackagePayment).not.toHaveBeenCalled();
+    });
+
+    it('a refund that cannot go ahead is refused BEFORE the e-mail — no promise is made that cannot be kept', async () => {
+      const { send, smsSend, update } = pkg();
+      (checkPackageRefund as unknown as Mock).mockResolvedValue({ status: 'refused', reason: 'no_card' });
+      await expect(
+        resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' }),
+      ).rejects.toThrow('אין כרטיס שמור');
+      expect(send).not.toHaveBeenCalled();
+      expect(smsSend).not.toHaveBeenCalled();
+      expect(refundPackagePayment).not.toHaveBeenCalled();
+      expect(closeCampaign).not.toHaveBeenCalled();
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('more kept than was paid is refused before the e-mail', async () => {
+      const { send } = pkg();
+      await expect(
+        resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionAmount: 200, resolutionNote: 'דמי ביטול' }),
+      ).rejects.toThrow('גדול ממה ששולם');
+      expect(send).not.toHaveBeenCalled();
+      expect(checkPackageRefund).not.toHaveBeenCalled();
+    });
+
+    it('a percentage with nothing paid to take it of is refused before the e-mail', async () => {
+      const { send } = pkg({ paid: 0 });
+      await expect(
+        resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 5, resolutionNote: 'דמי ביטול' }),
+      ).rejects.toThrow('סכום בסיס');
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('an unreadable ledger stops everything before the e-mail', async () => {
+      const { send } = pkg();
+      (packageRefundSummary as unknown as Mock).mockRejectedValue(new Error('db down'));
+      await expect(
+        resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' }),
+      ).rejects.toThrow('נכשלה');
+      expect(send).not.toHaveBeenCalled();
+      expect(refundPackagePayment).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['declined', { status: 'declined' }, 'נדחה'],
+      ['review', { status: 'review' }, 'אל תנסו שוב'],
+      ['in progress', { status: 'in_progress' }, 'כבר בתהליך'],
+      ['an error', { status: 'error' }, 'נכשלה'],
+    ])('when the refund itself ends in %s the request stays open and the campaign is not closed', async (_label, result, message) => {
+      const { update } = pkg();
+      (refundPackagePayment as unknown as Mock).mockResolvedValue(result);
+      await expect(
+        resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' }),
+      ).rejects.toThrow(message);
+      expect(closeCampaign).not.toHaveBeenCalled();
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('a campaign that is already closed is not closed again; the event still is', async () => {
+      pkg({ status: 'closed' });
+      await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' });
+      expect(closeCampaign).not.toHaveBeenCalled();
+      expect(logActivity).toHaveBeenCalledWith({ eventId: 'e1', action: 'event.closed_by_admin', meta: {} });
+    });
+
+    it('the SMS carries the amount that went back', async () => {
+      const { smsSend } = pkg();
+      await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' });
+      expect(smsSend).toHaveBeenCalled();
+      expect(buildCancellationSmsText).toHaveBeenCalledWith(expect.objectContaining({ resolutionAmount: 120 }));
+    });
+  });
+
   it('pre-charge campaign: calls closeCampaignAndCharge with overrideAmount=0 for full_cancellation', async () => {
     happy({ chargeStatus: null });
     await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל במלואו' });
@@ -275,9 +583,9 @@ describe('resolveCancellationRequest', () => {
     expect(closeCampaignAndCharge).not.toHaveBeenCalled();
     expect(creditHeldCardSumit).toHaveBeenCalledWith(expect.objectContaining({ amount: '84' }));
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ capture_outcome: 'refunded' }));
-    // Verified gap fix (2026-08-28): the campaigns row must reflect the net
-    // amount after the SUMIT credit, or the customer's own page and the admin
-    // campaigns list keep showing the stale pre-refund gross forever.
+    // The campaigns row must reflect the net amount after the SUMIT credit, or
+    // the customer's own page and the admin campaigns list keep showing the
+    // stale pre-refund gross forever.
     // full refund of the entire ₪84 charge ⇒ net final_charge_amount = 0.
     expect(update).toHaveBeenCalledWith({ final_charge_amount: 0 });
   });
@@ -290,6 +598,70 @@ describe('resolveCancellationRequest', () => {
     // net final_charge_amount after a ₪54 credit off the original ₪84 = 30 —
     // matches the amount the customer was told they'd keep being charged.
     expect(update).toHaveBeenCalledWith({ final_charge_amount: 30 });
+  });
+
+  // The fee chosen as a PERCENTAGE: the server computes the amount from a base it determines (what was charged, or the
+  // frozen ceiling); the browser never submits a computed amount in this mode.
+  describe('a fee chosen as a percentage', () => {
+    it('post-charge: 5% of the ₪300 that was charged is ₪15 kept, ₪285 credited back, and the customer email carries ₪15', async () => {
+      const { update } = happy({ chargeStatus: 'charged', finalChargeAmount: 300 });
+      await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 5, resolutionNote: 'דמי ביטול 5%' });
+      expect(creditHeldCardSumit).toHaveBeenCalledWith(expect.objectContaining({ amount: '285' }));
+      expect(update).toHaveBeenCalledWith({ final_charge_amount: 15 });
+      expect(cancellationRequestResponseEmail).toHaveBeenCalledWith(expect.objectContaining({ resolution: 'partial_charge', resolutionAmount: 15 }));
+    });
+
+    it('rounds to whole agorot: 12.5% of ₪84 is ₪10.50', async () => {
+      happy({ chargeStatus: 'charged', finalChargeAmount: 84 });
+      await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 12.5, resolutionNote: 'דמי ביטול' });
+      expect(creditHeldCardSumit).toHaveBeenCalledWith(expect.objectContaining({ amount: '73.5' }));
+    });
+
+    it('100% keeps everything: nothing is credited', async () => {
+      happy({ chargeStatus: 'charged', finalChargeAmount: 84 });
+      await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 100, resolutionNote: 'ללא החזר' });
+      expect(creditHeldCardSumit).not.toHaveBeenCalled();
+    });
+
+    it('pre-charge: the base is the frozen ceiling — 5% of ₪400 is a real ₪20 charge', async () => {
+      happy({ chargeStatus: null, maxChargeCeiling: 400 });
+      await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 5, resolutionNote: 'דמי ביטול 5%' });
+      expect(closeCampaignAndCharge).toHaveBeenCalledWith('camp1', { overrideAmount: 20, overrideReason: 'cancellation_partial_charge' });
+    });
+
+    it('pre-charge with NO ceiling (an open-ceiling agreement): no base, refused BEFORE the email or any money', async () => {
+      const { send, smsSend } = happy({ chargeStatus: null, maxChargeCeiling: null });
+      await expect(
+        resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 5, resolutionNote: 'דמי ביטול 5%' }),
+      ).rejects.toThrow('סכום בסיס');
+      expect(send).not.toHaveBeenCalled();
+      expect(smsSend).not.toHaveBeenCalled();
+      expect(closeCampaignAndCharge).not.toHaveBeenCalled();
+      expect(creditHeldCardSumit).not.toHaveBeenCalled();
+    });
+
+    it('a percentage that rounds to nothing is refused before the email or any money', async () => {
+      const { send } = happy({ chargeStatus: 'charged', finalChargeAmount: 0.1 });
+      await expect(
+        resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 1, resolutionNote: 'דמי ביטול' }),
+      ).rejects.toThrow();
+      expect(send).not.toHaveBeenCalled();
+      expect(creditHeldCardSumit).not.toHaveBeenCalled();
+    });
+
+    it('a post-charge campaign with nothing left charged has no base either', async () => {
+      const { send } = happy({ chargeStatus: 'charged', finalChargeAmount: 0 });
+      await expect(
+        resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 5, resolutionNote: 'דמי ביטול' }),
+      ).rejects.toThrow('סכום בסיס');
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('an amount in shekels still works exactly as before', async () => {
+      happy({ chargeStatus: 'charged', finalChargeAmount: 84 });
+      await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionAmount: 30, resolutionNote: 'סכום' });
+      expect(creditHeldCardSumit).toHaveBeenCalledWith(expect.objectContaining({ amount: '54' }));
+    });
   });
 
   it('post-charge campaign WITHOUT a card on file: falls back to manual_refund_required, never calls creditHeldCardSumit', async () => {
@@ -339,8 +711,8 @@ describe('resolveCancellationRequest', () => {
 
   // closeCampaignAndCharge (real implementation, mocked out here) can ITSELF
   // close the event on a terminal settlement outcome — resolveCancellationRequest
-  // then calls adminCloseEvent unconditionally afterward (its own `event.status`
-  // snapshot is read once, before closeCampaignAndCharge runs, so it can't see
+  // then calls adminCloseEvent afterward, gated on its own `event.status`
+  // snapshot (read once, before closeCampaignAndCharge runs, so it can't see
   // that). adminCloseEvent must re-check the LIVE status and no-op rather than
   // write status='closed' again and log a second, misleading activity entry.
   it('adminCloseEvent no-ops (no duplicate write/log) when the event is already closed', async () => {

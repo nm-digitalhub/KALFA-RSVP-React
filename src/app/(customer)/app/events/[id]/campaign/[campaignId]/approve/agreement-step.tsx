@@ -1,0 +1,169 @@
+import { getCompanyLegal } from '@/lib/data/company';
+import type { OwnerCampaign } from '@/lib/data/campaigns';
+import type { OwnedEvent } from '@/lib/data/events';
+import { isPastEventDay } from '@/lib/data/event-date';
+import { getProfile } from '@/lib/data/profiles';
+import { maskPhoneForDisplay } from '@/lib/phone';
+import {
+  isOpenCeilingAgreementVersion,
+  renderAgreementBody,
+  AGREEMENT_CSS,
+} from '@/lib/agreements/template';
+import { getActiveAgreementDoc } from '@/lib/data/agreements-doc';
+import { getAgreementConfigTokens } from '@/lib/data/agreement-config';
+import { formatIsraelDate } from '@/lib/date';
+import Link from 'next/link';
+
+import { SignAgreementForm } from './sign-agreement-form';
+import { AgreementSheet } from './agreement-sheet';
+
+// The signing step's content: the key terms, the full agreement in a sheet, and the
+// identity-verified signature form. It is the body of the setup flow's "קריאת ההסכם
+// וחתימה" step (/setup); the old /approve page now sends the owner there. The caller
+// has already proven ownership and that the campaign is waiting for a signature.
+
+const CHANNEL_LABELS: Record<string, string> = {
+  whatsapp: 'וואטסאפ',
+  call: 'שיחה טלפונית (AI)',
+};
+
+function fmtDate(iso: string | null): string {
+  return iso ? formatIsraelDate(iso) || 'לא הוגדר' : 'לא הוגדר';
+}
+
+function ils(n: number | null): string {
+  if (n == null) return '—';
+  return `₪${n.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+export async function AgreementStep({
+  eventId,
+  campaign,
+  event,
+}: {
+  eventId: string;
+  campaign: OwnerCampaign;
+  event: Pick<OwnedEvent, 'name' | 'event_date'>;
+}) {
+  const campaignId = campaign.id;
+  const id = eventId;
+  const [company, profile, agreementDoc, configTokens] = await Promise.all([
+    getCompanyLegal(),
+    getProfile(),
+    getActiveAgreementDoc(),
+    getAgreementConfigTokens(),
+  ]);
+  const isPast = isPastEventDay(event.event_date);
+
+  // The same three figures the agreement body and the payment page quote, read
+  // from the campaign SNAPSHOT (never the live package) so the summary above the
+  // signature can never disagree with the document being signed.
+  const basePrice = Number(campaign.base_price ?? 0);
+  const includedReached = Number(campaign.included_reached ?? 0);
+  // The summary must say what the document being signed says: an open-ceiling
+  // agreement (v5+) states the price as a formula, a v4-and-earlier one a number.
+  const openCeiling = isOpenCeilingAgreementVersion(agreementDoc.version);
+  const capSuffix = openCeiling ? '' : ', עד התקרה';
+
+  const agreementHtml = renderAgreementBody({
+    company,
+    eventName: event.name,
+    pricePerReached: campaign.price_per_reached ?? 0,
+    maxContacts: campaign.max_contacts ?? 0,
+    ceiling: campaign.max_charge_ceiling ?? 0,
+    channels: campaign.allowed_channels,
+    windowText: `${fmtDate(campaign.start_at)} – ${fmtDate(campaign.close_at)}`,
+    baseFee: campaign.base_price ?? 0,
+    includedReached: campaign.included_reached ?? 0,
+  }, agreementDoc, configTokens);
+
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-muted-foreground">
+        אלו עיקרי התנאים. קראו את ההסכם המלא לפני החתימה; החתימה מחייבת אימות
+        הטלפון שלכם בקוד חד‑פעמי.
+      </p>
+
+      {/* Global CSS for the agreement — styles the (portaled) sheet content too. */}
+      <style dangerouslySetInnerHTML={{ __html: AGREEMENT_CSS }} />
+
+      {/* Concise summary on the page; full agreement opens in a slide-in panel. */}
+      <section className="space-y-3 rounded-lg border border-border bg-card p-4 text-sm">
+        <h2 className="font-semibold">עיקרי התנאים</h2>
+        <dl className="grid grid-cols-1 gap-y-1 sm:grid-cols-2 sm:gap-y-1.5">
+          {/* The activation fee is UNCONDITIONAL — it is charged at 0 reached.
+              Presenting the per-reached price alone above a signature would
+              frame an unconditional fee as outcome-conditional. Wording is the
+              already-live phrasing from the payment page and §3 of the
+              agreement body, so all three surfaces make the same claim. */}
+          {basePrice > 0 ? (
+            <>
+              <dt className="text-muted-foreground">דמי הפעלה</dt>
+              <dd>
+                <strong>{ils(basePrice)}</strong> — נגבים בכל מקרה, גם אם אף איש
+                קשר לא השיב
+              </dd>
+            </>
+          ) : null}
+          {includedReached > 0 ? (
+            <>
+              <dt className="text-muted-foreground">כלולים בדמי ההפעלה</dt>
+              <dd>עד {includedReached.toLocaleString('he-IL')} אנשי קשר שהושגו</dd>
+            </>
+          ) : null}
+          <dt className="text-muted-foreground">
+            {includedReached > 0 ? 'מעבר לכך' : 'מחיר לאיש קשר שהושג'}
+          </dt>
+          <dd>{ils(campaign.price_per_reached)} (מחיר סופי; לא נגבה מע״מ)</dd>
+          {openCeiling ? null : (
+            <>
+              <dt className="text-muted-foreground">תקרת חיוב מרבית</dt>
+              <dd>
+                <strong>{ils(campaign.max_charge_ceiling)}</strong>
+              </dd>
+            </>
+          )}
+          <dt className="text-muted-foreground">ערוצים</dt>
+          <dd>
+            {campaign.allowed_channels
+              .map((c) => CHANNEL_LABELS[c] ?? c)
+              .join(', ')}
+          </dd>
+          <dt className="text-muted-foreground">חלון</dt>
+          <dd>
+            {fmtDate(campaign.start_at)} – {fmtDate(campaign.close_at)}
+          </dd>
+        </dl>
+        <p className="rounded bg-muted/50 p-2 text-xs text-muted-foreground">
+          {basePrice > 0
+            ? `דמי ההפעלה (${ils(basePrice)}) נגבים בכל מקרה ואינם מותנים בתוצאה. מעבר להם — חיוב רק על איש קשר שהושג (תגובה אנושית), פעם אחת לכל איש קשר${capSuffix}.`
+            : `חיוב רק על איש קשר שהושג (תגובה אנושית), פעם אחת לכל איש קשר${capSuffix}.`}
+        </p>
+        <AgreementSheet html={agreementHtml} />
+      </section>
+
+      {isPast ? (
+        <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+          מועד האירוע כבר חלף — לא ניתן לחתום על ההסכם ולהפעיל אישורי הגעה לאירוע
+          שעבר.
+        </p>
+      ) : profile?.phone ? (
+        <SignAgreementForm
+          eventId={id}
+          campaignId={campaignId}
+          signerName={profile.full_name?.trim() || 'לקוח KALFA'}
+          phoneDisplay={maskPhoneForDisplay(profile.phone)}
+        />
+      ) : (
+        <p className="rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
+          כדי לחתום נדרש מספר טלפון בפרופיל (לאימות בקוד חד‑פעמי). הוסיפו טלפון
+          ב{' '}
+          <Link href="/app/settings" className="underline">
+            הגדרות החשבון
+          </Link>
+          .
+        </p>
+      )}
+    </div>
+  );
+}

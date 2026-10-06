@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import {
   canAccessEvent,
+  eventDatesLocked,
   getEvent,
   getEventClosureReason,
   type EventDetail,
@@ -27,7 +28,6 @@ import {
   getCancellationRequestForEvent,
   type OwnCancellationRequest,
 } from '@/lib/data/event-cancellation';
-import { countGuests } from '@/lib/data/guests';
 import { EditEventForm } from './edit-event-form';
 import { EventStatusActions } from './event-status-actions';
 import { EventSummary } from './event-summary';
@@ -95,7 +95,7 @@ export default async function EventPage({
   const event = await getEventCached(id);
 
   // Blocker ח1 (plan §0) in its campaigns dress. getCampaignForEvent
-  // (campaigns.ts:324) — and listCampaignsForEvent (campaigns.ts:301) further
+  // (campaigns.ts) — and listCampaignsForEvent (campaigns.ts) further
   // down — OPEN with a MANDATORY requireEventAccess(id,'campaigns','view') that
   // throws notFound(). Calling them unconditionally narrows this page's gate
   // from events.view to events.view AND campaigns.view, so an org member whose
@@ -108,7 +108,7 @@ export default async function EventPage({
   // (getEvent) has passed — exactly the shape the reports probe below uses — and
   // degrade the campaign surfaces instead of crashing. All three arguments are
   // passed explicitly so the cache() key matches the one getEventStats uses
-  // internally (event-stats.ts:225) and the RPC runs once, not twice.
+  // internally (event-stats.ts) and the RPC runs once, not twice.
   const canViewCampaigns = await canAccessEvent(id, 'campaigns', 'view');
   const campaign = canViewCampaigns ? await getCampaignForEvent(id) : null;
 
@@ -119,7 +119,7 @@ export default async function EventPage({
   // An EARLY RETURN rather than an inline branch, so the open path below keeps
   // every variable unconditionally typed, and so a closed event stops paying for
   // the round-trips it no longer needs (invite-image signing,
-  // listCampaignsForEvent, countGuests).
+  // listCampaignsForEvent).
   if (event.status === 'closed') {
     // Blocker ח1 (plan §0): getEventStats OPENS with a MANDATORY
     // requireEventAccess(eventId,'reports','view') that throws notFound().
@@ -226,6 +226,11 @@ export default async function EventPage({
   }
 
   const isPast = isPastEventDay(event.event_date);
+  // The setup flow (/setup) hosts the details form while it is in progress.
+  const setupInProgress = canViewCampaigns && event.status === 'draft' && !isPast;
+  // Locked by the first send (or by the event being closed), not by leaving draft.
+  // A draft never queries; an active event costs one indexed lookup.
+  const datesLocked = await eventDatesLocked(id, event.status);
 
   // Preview of the current invitation image (private bucket → signed URL,
   // fresh per render so it always shows the latest upload). getEvent above
@@ -260,7 +265,7 @@ export default async function EventPage({
   // Measured on the live DB, not inferred: the campaigns SELECT policy is
   // `camp_org_select USING can_access_event(event_id,'campaigns','view')`, so a
   // viewer without campaigns.view reads ZERO campaign rows — and updateEvent's
-  // own live-campaign lookup (events.ts:382) runs on the SAME RLS-scoped client.
+  // own live-campaign lookup (events.ts) runs on the SAME RLS-scoped client.
   // Assuming `false` here would therefore unlock event_type/celebrants in the
   // form while the server's guard silently fails to fire, letting a live
   // campaign's template contract be re-typed under it. `true` costs this viewer
@@ -272,13 +277,10 @@ export default async function EventPage({
     allCampaigns === null ? true : hasAnyOperationalCampaign(allCampaigns);
   const closeAction = closeEventAction.bind(null, event.id);
   const createCancellationAction = createCancellationRequestAction.bind(null, event.id);
-  // guestCount feeds the setup steps' soft "add guests" recommendation.
   // No closure reason is loaded here: `closed` returned early above, so from
   // this line on the status is draft or active and the reason is always null.
-  const [guestCount, cancellationRequest] = await Promise.all([
-    countGuests(id),
-    event.status !== 'draft' ? getCancellationRequestForEvent(event.id) : Promise.resolve(null),
-  ]);
+  const cancellationRequest =
+    event.status !== 'draft' ? await getCancellationRequestForEvent(event.id) : null;
 
   const summary = [
     EVENT_TYPE_LABELS[event.event_type] ?? event.event_type,
@@ -339,11 +341,11 @@ export default async function EventPage({
       </div>
 
       {canViewCampaigns ? (
-        <SetupSteps event={event} campaign={campaign} guestCount={guestCount} isPast={isPast} />
+        <SetupSteps event={event} campaign={campaign} isPast={isPast} />
       ) : (
         // Without campaigns.view `campaign` is null for a PERMISSION reason, not
         // because no campaign exists. Rendering SetupSteps with it would state
-        // the opposite ("טרם הוקם") and offer a confirm CTA whose action the
+        // the opposite ("טרם הוקם") and offer a "המשך הקמה" link into a flow the
         // viewer cannot complete. Same permission_limited card the stats page
         // uses (stats/page.tsx SectionCard), so the state reads identically
         // across the app.
@@ -369,14 +371,22 @@ export default async function EventPage({
         />
       ) : null}
 
-      <section className="space-y-4 rounded-lg border border-border bg-card p-6">
-        <h2 className="text-lg font-semibold">עריכת פרטי האירוע</h2>
-        <EditEventForm
-          event={event}
-          inviteImageUrl={inviteImageUrl}
-          hasOperationalCampaign={hasOperationalCampaign}
-        />
-      </section>
+      {/* While the setup flow is in progress (a draft event the viewer can set
+          up, not yet past) the details are edited INSIDE the flow (/setup), so
+          this page offers one way forward instead of two buttons that both save.
+          Once setup is over, or when the viewer has no access to it, this is the
+          ordinary edit form. */}
+      {setupInProgress ? null : (
+        <section className="space-y-4 rounded-lg border border-border bg-card p-6">
+          <h2 className="text-lg font-semibold">עריכת פרטי האירוע</h2>
+          <EditEventForm
+            event={event}
+            inviteImageUrl={inviteImageUrl}
+            hasOperationalCampaign={hasOperationalCampaign}
+            datesLocked={datesLocked}
+          />
+        </section>
+      )}
     </div>
   );
 }

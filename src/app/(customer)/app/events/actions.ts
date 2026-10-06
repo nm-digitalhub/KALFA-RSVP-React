@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { redirect, unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 
@@ -25,7 +26,7 @@ function trimmedOrNull(value: string | undefined): string | null {
   return trimmed === '' ? null : trimmed;
 }
 
-// The create form mirrors the edit form 1:1 (owner ruling 2026-09-02), so this
+// The create form mirrors the edit form 1:1, so this
 // action reads the SAME fields updateEventAction does — and the SAME way:
 // checkbox presence for show_meal_pref, '' → null for optional text/date, the
 // celebrant group keyed on the submitted type, and the invitation image
@@ -60,7 +61,7 @@ export async function createEventAction(
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   // The celebrant schema is keyed on event_type, so celebrant inputs are

@@ -7,14 +7,15 @@ vi.mock('@/lib/data/payments', () => ({
   getSumitServerConfig: vi.fn(),
 }));
 vi.mock('@/lib/agreements/template', async (orig) => {
-  // Use the REAL allow-list predicate + version constant (a change to the
-  // allow-list must be caught here), keeping only VAT_RATE_PERCENT explicit.
+  // Use the REAL allow-list predicates + version constant (a change to the
+  // allow-lists must be caught here), keeping only VAT_RATE_PERCENT explicit.
   const actual = await orig<typeof import('@/lib/agreements/template')>();
   return {
     VAT_RATE_PERCENT: 18,
     BASE_FEE_AGREEMENT_VERSION: actual.BASE_FEE_AGREEMENT_VERSION,
     isBaseFeeAgreementVersion: actual.isBaseFeeAgreementVersion,
     isOpenCeilingAgreementVersion: actual.isOpenCeilingAgreementVersion,
+    isPackageAgreementVersion: actual.isPackageAgreementVersion,
   };
 });
 vi.mock('@/lib/data/agreements', () => ({
@@ -360,7 +361,7 @@ describe('closeCampaignAndCharge', () => {
       card_exp_year: 2031,
       card_citizen_id: '316125434',
       auth_external_ref: 'ext-1',
-      max_charge_ceiling: 200, // the hold-sized number — must NOT bind for v5
+      max_charge_ceiling: 200, // the ceiling snapshot — must NOT bind for v5
       base_price: 200,
       included_reached: 200,
       price_per_reached: 4,
@@ -422,7 +423,7 @@ describe('closeCampaignAndCharge', () => {
     });
     m.summary.mockResolvedValue({ reachedCount: 0, accrued: 0, ceiling: 600, maxContacts: 300 });
     const r = await closeCampaignAndCharge('c1');
-    // Base charged even though nobody was reached (plan D1 — service fee), and
+    // Base charged even though nobody was reached (a service fee), and
     // NOT settled as nothing_to_charge.
     expect(r).toEqual({ outcome: 'charged', amount: 200, paymentId: 777, billingModel: 'base_overage', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555', chargeMethod: 'token_charge' });
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
@@ -672,6 +673,66 @@ describe('closeCampaignAndCharge', () => {
     });
   });
 
+  // A fixed-price PACKAGE campaign is paid at purchase and has no settlement. The old
+  // base + overage formula must never run against it, whatever old-model fields the row
+  // carries: it would otherwise be billed a second time.
+  describe('model guard — package campaigns are never settled by the pay-per-result formula', () => {
+    function noMoneyMoved() {
+      expect(closeCampaign).not.toHaveBeenCalled();
+      expect(lockCampaignForCharge).not.toHaveBeenCalled();
+      expect(markCampaignChargeOutcome).not.toHaveBeenCalled();
+      expect(captureHeldCardSumit).not.toHaveBeenCalled();
+      expect(captureAuthorizationSumit).not.toHaveBeenCalled();
+      expect(getCampaignBillingSummary).not.toHaveBeenCalled();
+    }
+
+    it('refuses on the campaign\'s own package_price snapshot — before any state change', async () => {
+      happy();
+      m.forCharge.mockResolvedValue({
+        id: 'c1', event_id: 'e1', status: 'active', capture_status: null, charge_status: null,
+        package_price: 120, base_price: 200, included_reached: 200, price_per_reached: 4,
+        max_charge_ceiling: 600,
+      });
+      const r = await closeCampaignAndCharge('c1');
+      expect(r).toEqual({ outcome: 'not_applicable', amount: 0 });
+      noMoneyMoved();
+      expect(getSignedAgreementVersion).not.toHaveBeenCalled();
+    });
+
+    it('refuses on the SIGNED version even when the snapshot is missing (the old-model fields are all set)', async () => {
+      happy();
+      m.forCharge.mockResolvedValue({
+        id: 'c1', event_id: 'e1', status: 'active', capture_status: 'authorized', charge_status: null,
+        card_token_ref: 'tok-abc', card_exp_month: 7, card_exp_year: 2031, card_citizen_id: '316125434',
+        auth_external_ref: 'ext-1', package_price: null,
+        base_price: 200, included_reached: 200, price_per_reached: 4, max_charge_ceiling: 600,
+      });
+      m.signed.mockResolvedValue('2026-10-v6');
+      m.summary.mockResolvedValue({ reachedCount: 250, accrued: 1000, ceiling: 600, maxContacts: 300 });
+      const r = await closeCampaignAndCharge('c1');
+      expect(r).toEqual({ outcome: 'not_applicable', amount: 0 });
+      expect(captureHeldCardSumit).not.toHaveBeenCalled();
+      expect(captureAuthorizationSumit).not.toHaveBeenCalled();
+      expect(lockCampaignForCharge).not.toHaveBeenCalled();
+      expect(markCampaignChargeOutcome).not.toHaveBeenCalled();
+    });
+
+    it('the draft form of the package version is refused too', async () => {
+      happy();
+      m.signed.mockResolvedValue('draft-2026-10-v6');
+      const r = await closeCampaignAndCharge('c1');
+      expect(r).toEqual({ outcome: 'not_applicable', amount: 0 });
+      expect(captureHeldCardSumit).not.toHaveBeenCalled();
+    });
+
+    it('a legacy v4 campaign is unaffected (the guard is not a blanket refusal)', async () => {
+      happy();
+      m.signed.mockResolvedValue('2026-07-v4');
+      const r = await closeCampaignAndCharge('c1');
+      expect(r.outcome).toBe('charged');
+    });
+  });
+
   describe('with an override amount (cancellation-resolve path)', () => {
     it('captures the override amount instead of the computed reached×price total', async () => {
       happy(); // reachedCount:3, price 4 ⇒ computed total would be 12
@@ -794,7 +855,7 @@ describe('closeCampaignAndCharge', () => {
   });
 
   // Capture the J5 hold itself (CreditCardAuthNumber) when it is intact and the
-  // amount fits; otherwise the token charge, as before. A capture decline on a
+  // amount fits; otherwise the token charge. A capture decline on a
   // charge_review retry must never fall through to a token charge: a consumed
   // hold is declined with the same 004 as a card refusal (verified live 29.9).
   describe('J5 hold capture by AuthNumber', () => {

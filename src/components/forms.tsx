@@ -14,14 +14,18 @@ export function SubmitButton({
   children,
   className,
   size,
+  disabled = false,
 }: {
   children: React.ReactNode;
   className?: string;
   size?: NonNullable<Parameters<typeof buttonVariants>[0]>['size'];
+  // A form that must not be submitted yet (e.g. acknowledgments still unticked).
+  // Convenience only — whatever it guards is enforced by the server action.
+  disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={pending} size={size} className={cn('w-full', className)}>
+    <Button type="submit" disabled={pending || disabled} size={size} className={cn('w-full', className)}>
       {pending ? 'רגע…' : children}
     </Button>
   );
