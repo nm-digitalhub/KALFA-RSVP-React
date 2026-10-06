@@ -45,6 +45,9 @@ export class RdpQueryError extends Error {
   }
 }
 
+// A uuid no row can have: an `active` filter with no live grant must match nothing, not everything.
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
 export type RdpStatusFilter = 'pending' | 'active' | 'all';
 
 export async function listRdpRequests(
@@ -96,6 +99,126 @@ export async function getRdpRequestDetail(admin: AdminClient, requestId: string)
   return { request: row, grant: grants.data[0] ?? null, events: events.data satisfies RdpEventSummary[] };
 }
 
+export type RdpOwnerListFilter = 'all' | 'pending' | 'active' | 'finished';
+export type RdpOwnerListGrant = Pick<
+  RdpGrantSummary,
+  'id' | 'status' | 'files_issued' | 'max_files' | 'expires_at' | 'ended_at' | 'ended_reason'
+>;
+export type RdpOwnerListRow = RdpRequestSummary & { grant: RdpOwnerListGrant | null };
+
+const LIST_GRANT_COLUMNS = 'id, request_id, status, files_issued, max_files, expires_at, ended_at, ended_reason' as const;
+
+/**
+ * One page of requests for the owner's read-only list, filtered and counted in the database.
+ * `active` is the request behind the live grant (at most one); `finished` is everything that has been answered
+ * and is not that one, so an approved request whose grant has ended is "finished" and a live one is not.
+ */
+export async function listRdpRequestsPage(
+  admin: AdminClient,
+  opts: { filter: RdpOwnerListFilter; page: number; pageSize: number; now: Date },
+): Promise<{ rows: RdpOwnerListRow[]; total: number }> {
+  const activeGrant =
+    opts.filter === 'active' || opts.filter === 'finished' ? await getActiveRdpGrant(admin, opts.now) : null;
+
+  let query = admin
+    .from('rdp_access_requests')
+    .select(REQUEST_COLUMNS, { count: 'exact' })
+    .order('created_at', { ascending: false });
+  if (opts.filter === 'pending') query = query.eq('status', 'pending');
+  if (opts.filter === 'active') query = query.eq('id', activeGrant?.request_id ?? NIL_UUID);
+  if (opts.filter === 'finished') {
+    query = query.neq('status', 'pending');
+    if (activeGrant) query = query.neq('id', activeGrant.request_id);
+  }
+  const from = (opts.page - 1) * opts.pageSize;
+  const requests = await query.range(from, from + opts.pageSize - 1);
+  if (requests.error) throw new RdpQueryError('list_requests_page');
+
+  const ids = requests.data.map((r) => r.id);
+  const grantsByRequest = new Map<string, RdpOwnerListGrant>();
+  if (ids.length > 0) {
+    const grants = await admin.from('rdp_access_grants').select(LIST_GRANT_COLUMNS).in('request_id', ids);
+    if (grants.error) throw new RdpQueryError('list_requests_page');
+    for (const { request_id, ...grant } of grants.data) grantsByRequest.set(request_id, grant);
+  }
+  return {
+    rows: requests.data.map((r) => ({ ...r, grant: grantsByRequest.get(r.id) ?? null })),
+    total: requests.count ?? 0,
+  };
+}
+
+/** The request id behind a grant (the audit row of a failed download needs both). */
+export async function getRdpGrantRequestId(admin: AdminClient, grantId: string): Promise<string | null> {
+  const { data, error } = await admin.from('rdp_access_grants').select('request_id').eq('id', grantId).limit(1);
+  if (error) throw new RdpQueryError('get_grant_request_id');
+  return data[0]?.request_id ?? null;
+}
+
+export type RdpRequestExtras = { requestIp: string | null; answerNote: string | null };
+
+/**
+ * The two request fields the summary rows leave out: the address the request came from and the owner's own answer
+ * note. `request_ip` is an inet column the generated types call `unknown`; it reaches here as text. One query for
+ * any number of requests (the CLI asks for every pending row at once, the owner's detail page for one).
+ */
+export async function listRdpRequestExtras(
+  admin: AdminClient,
+  requestIds: readonly string[],
+): Promise<Map<string, RdpRequestExtras>> {
+  const extras = new Map<string, RdpRequestExtras>();
+  if (requestIds.length === 0) return extras;
+  const { data, error } = await admin
+    .from('rdp_access_requests')
+    .select('id, request_ip, answer_note')
+    .in('id', [...requestIds]);
+  if (error) throw new RdpQueryError('list_request_extras');
+  for (const row of data) {
+    extras.set(row.id, {
+      requestIp: typeof row.request_ip === 'string' ? row.request_ip : null,
+      answerNote: row.answer_note ?? null,
+    });
+  }
+  return extras;
+}
+
+export async function getRdpRequestOwnerExtras(admin: AdminClient, requestId: string): Promise<RdpRequestExtras> {
+  const extras = await listRdpRequestExtras(admin, [requestId]);
+  return extras.get(requestId) ?? { requestIp: null, answerNote: null };
+}
+
+export type RdpRecentEvent = {
+  at: string;
+  kind: string;
+  actorKind: string;
+  requestId: string | null;
+  outcome: string | null;
+};
+
+/** The newest audit events across every request, newest first. Kind, actor and a short outcome code only. */
+export async function listRecentRdpEvents(admin: AdminClient, opts: { limit: number }): Promise<RdpRecentEvent[]> {
+  const { data, error } = await admin
+    .from('rdp_access_events')
+    .select('at, kind, actor_kind, request_id, outcome')
+    .order('at', { ascending: false })
+    .limit(opts.limit);
+  if (error) throw new RdpQueryError('list_recent_events');
+  return data.map((e) => ({ at: e.at, kind: e.kind, actorKind: e.actor_kind, requestId: e.request_id, outcome: e.outcome }));
+}
+
+/** How many requests were created since `since` and ended with this status (a measured count, not a guess from a page). */
+export async function countRdpRequestsSince(
+  admin: AdminClient,
+  opts: { status: 'expired' | 'denied' | 'cancelled' | 'approved'; since: Date },
+): Promise<number> {
+  const { count, error } = await admin
+    .from('rdp_access_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', opts.status)
+    .gte('created_at', opts.since.toISOString());
+  if (error) throw new RdpQueryError('count_requests_since');
+  return count ?? 0;
+}
+
 /** Display names for a set of user ids (owner-facing terminal output only). */
 export async function nameMap(admin: AdminClient, ids: readonly (string | null)[]): Promise<Map<string, string>> {
   const wanted = [...new Set(ids.filter((id): id is string => id !== null))];
@@ -139,15 +262,20 @@ export type OwnerResolution =
  * --as <uuid>, and a name that is not an owner is refused. rdp_answer_request / rdp_end_grant verify the owner
  * status again inside the database.
  */
-export async function resolveOwner(admin: AdminClient, hint?: string): Promise<OwnerResolution> {
+/** Every owner's user id (deduplicated). The approver lookup and the owner notifications both start from this one query. */
+export async function listRdpOwnerIds(admin: AdminClient): Promise<string[]> {
   const roles = await admin.from('platform_roles').select('id').eq('is_owner_role', true);
-  if (roles.error) throw new RdpQueryError('resolve_owner');
+  if (roles.error) throw new RdpQueryError('list_owners');
   const roleIds = roles.data.map((r) => r.id);
-  if (roleIds.length === 0) return { ok: false, reason: 'no_owner', ownerIds: [] };
+  if (roleIds.length === 0) return [];
 
   const staff = await admin.from('platform_staff').select('user_id').in('role_id', roleIds);
-  if (staff.error) throw new RdpQueryError('resolve_owner');
-  const ownerIds = [...new Set(staff.data.map((s) => s.user_id))];
+  if (staff.error) throw new RdpQueryError('list_owners');
+  return [...new Set(staff.data.map((s) => s.user_id))];
+}
+
+export async function resolveOwner(admin: AdminClient, hint?: string): Promise<OwnerResolution> {
+  const ownerIds = await listRdpOwnerIds(admin);
 
   if (hint) {
     return ownerIds.includes(hint) ? { ok: true, ownerId: hint } : { ok: false, reason: 'not_owner', ownerIds };

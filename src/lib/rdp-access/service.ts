@@ -223,6 +223,28 @@ export async function markRdpCut(admin: AdminClient, input: { grantId: string; o
 }
 
 /**
+ * Audit row for a download that was reserved (and counted) but never reached the staff member: the gateway
+ * refused, timed out or answered with something unusable. `outcome` is a fixed gateway failure kind, never a body.
+ * The column accepts no tunnel for this event, and the generated argument type has no null, so the empty string
+ * stands for "none" (the column's own check allows it).
+ */
+export async function recordRdpFileFailure(
+  admin: AdminClient,
+  input: { grantId: string; requestId: string; clientIp: string | null; outcome: string },
+) {
+  const { error } = await retryOnDeadlock(() => admin.rpc('rdp_record_event', {
+    p_kind: 'file_failed',
+    p_actor_kind: 'staff',
+    p_grant_id: input.grantId,
+    p_request_id: input.requestId,
+    p_client_ip: input.clientIp,
+    p_tunnel_ref: '',
+    p_outcome: input.outcome,
+  }));
+  if (error) throw new RdpAccessServiceError('record_file_failure');
+}
+
+/**
  * True when a grant is live right now (there is at most one). An expired grant the sweep has not marked yet
  * (its row was locked elsewhere) is NOT live, so it is filtered by expires_at as well as by status.
  */
