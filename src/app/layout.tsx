@@ -52,13 +52,14 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 // Bounds staleness (to at most this many seconds) for any route that would
-// otherwise be statically frozen at build time — the auth pages
-// (src/app/auth/**) have no dynamic API usage today and are the actual risk;
+// otherwise be statically frozen at build time — the static auth pages
+// (src/app/auth/**: forgot-password, signup/success) have no dynamic API usage
+// today and are the actual risk;
 // every other surface is already forced dynamic for unrelated reasons (home
 // via getUser()→cookies(); /contact /terms /cookies /privacy and the guest
 // token routes via their own `dynamic = 'force-dynamic'`; customer/admin via
 // cookies() in their layouts). See plans/cookie-consent-admin-control.md §9
-// for the full reasoning (Next.js 16.3.1, cacheComponents NOT enabled — the
+// for the full reasoning (Next.js 16.3, cacheComponents NOT enabled — the
 // classic model applies, confirmed against node_modules/next/dist/docs).
 // `revalidatePath('/', 'layout')` in every admin write
 // (src/app/(admin)/admin/cookie-consent/actions.ts) gives near-immediate

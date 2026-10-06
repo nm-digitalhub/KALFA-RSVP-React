@@ -6,9 +6,10 @@ import { join } from 'node:path';
 //
 // WHY THIS EXISTS. `campaigns.status` is guarded by more than the from/to pair.
 // activateCampaign additionally enforces the J5 hold (capture_status =
-// 'authorized'), refuses a past event (L1), requires a published event (R9),
-// fires the ops alert, and seeds the auto-thankyou schedule. Only two of those
-// are visible at the call site; the rest live inside transitionCampaignStatus.
+// 'authorized', or a recorded payment for a package), refuses a past event
+// (L1), requires a published event (R9), fires the ops alert, and seeds the
+// auto-thankyou schedule. Only two of those are visible at the call site; the
+// rest live inside activateCampaign and transitionCampaignStatus.
 //
 // So anyone writing a second path — say a Bearer route that cannot reach the
 // cookie DAL — reproduces what they can see and silently drops the rest. That

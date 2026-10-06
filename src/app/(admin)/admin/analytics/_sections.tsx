@@ -106,10 +106,10 @@ export function StatTile({
   );
 }
 
-// KPI delta vs the equal previous period (v3). Renders nothing when there is
-// no previous row, and 'חדש' when the previous value was 0 (a % of zero is
-// meaningless). Directional color only accompanies the arrow + number — never
-// color alone.
+// KPI delta vs the equal previous period. Renders nothing when there is
+// no previous row; when the previous value was 0 (a % of zero is meaningless)
+// it shows 'חדש בתקופה זו' if the current value is above 0, else nothing.
+// Directional color only accompanies the arrow + number — never color alone.
 export function StatDelta({
   current,
   previous,
@@ -239,7 +239,7 @@ export function RealtimeCard({ realtime }: { realtime: RealtimeResult }) {
   );
 }
 
-// v3 funnel: the phase-1 journey in order. Progress bars are relative to the
+// Funnel: the phase-1 journey in order. Progress bars are relative to the
 // widest step (not step #1 — leads can legitimately exceed signups), so the
 // bar always fits; the between-steps percentage reads vs the PREVIOUS step
 // and only when that step has data.

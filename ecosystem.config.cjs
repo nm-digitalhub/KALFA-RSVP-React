@@ -1,8 +1,9 @@
 // PM2 process definitions — the single, reproducible source of the production
 // runtime environment.
 //
-// Both apps load their own configuration/secrets from `.env.local` at boot
-// (`next start` natively; `worker/main.ts` has its own loadEnv), so the
+// kalfa-beta and kalfa-worker load their own configuration/secrets from
+// `.env.local` at boot (`next start` natively; `worker/main.ts` has its own
+// loadEnv), so the
 // PROCESS environment stays minimal and explicit. This exists because
 // `pm2 restart --update-env` used to copy the DEPLOYING shell's environment
 // into production (Claude-session variables, FORCE_COLOR/NO_COLOR conflicts,
@@ -15,6 +16,10 @@
 //   env -i HOME="$HOME" USER="$USER" PATH=/usr/local/bin:/usr/bin:/bin \
 //     pm2 start ecosystem.config.cjs
 //   pm2 save
+//
+// That start never includes kalfa-owner-agent: it is defined in
+// ecosystem.owner-agent.config.cjs on purpose (see the note where it used to
+// be, below). Its clean restart is the same recipe with that file.
 //
 // TZ is declared here rather than inherited from the host (host set to
 // Asia/Jerusalem on 2026-07-28). KALFA is an Israel-only product: every date the
@@ -50,7 +55,7 @@ module.exports = {
       script: 'worker/start.mjs',
       log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS Z',
       // pm2 sends SIGINT, then SIGKILL after kill_timeout (default 1600ms —
-      // pm2 lib/constants.js). worker/main.ts answers SIGINT with
+      // pm2's constants.js). worker/main.ts answers SIGINT with
       // boss.stop({ graceful: true, timeout: 30000 }): pg-boss waits up to 30s
       // for in-flight jobs and then fails whatever is left so it retries at
       // once. With the default, that shutdown never finished — MEASURED
@@ -65,8 +70,10 @@ module.exports = {
       env: { NODE_ENV: 'production', TZ: 'Asia/Jerusalem' },
     },
     // pg-boss ops dashboard, base-path build (source build, base "/admin/jobs"),
-    // loopback-only and WITHOUT its own auth: access is gated by requireAdmin()
-    // in src/app/(admin)/admin/jobs/[[...path]]/route.ts, which reverse-proxies
+    // loopback-only and WITHOUT its own auth: access is gated by
+    // requirePlatformPermission('manage_settings') in
+    // src/lib/pgboss/dashboard-proxy.ts, which
+    // src/app/(admin)/admin/jobs/[[...path]]/route.ts reverse-proxies through to
     // here. This keeps the dashboard off the public internet — the only way in
     // is an authenticated KALFA admin session. Bind config in .env.pgboss-ui
     // (600, not committed): PORT=3011, HOST=127.0.0.1, PGBOSS_DASHBOARD_BASE_PATH.
@@ -77,10 +84,10 @@ module.exports = {
       node_args:
         '--env-file=/var/www/vhosts/kalfa.me/pgboss-dashboard-ui/packages/dashboard/.env.pgboss-ui',
       autorestart: true,
-      // `time: true` removed 2026-07-31 — it unconditionally overwrites
+      // No `time: true` — it unconditionally overwrites
       // log_date_format with a fixed 'YYYY-MM-DDTHH:mm:ss' (no ms, no offset),
       // per pm2's lib/Common.js. The explicit format below is strictly more
-      // precise, so `time` was pure loss once this field existed.
+      // precise, so `time` would be pure loss.
       log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS Z',
       env: { NODE_ENV: 'production', TZ: 'Asia/Jerusalem' },
     },
@@ -132,7 +139,7 @@ module.exports = {
       cwd: '/var/www/vhosts/kalfa.me/beta',
       script: '.claude/fleet/bin/scheduler.mjs',
       autorestart: true,
-      // `time: true` removed 2026-07-31 — see kalfa-pgboss-ui's comment above.
+      // No `time: true` — see kalfa-pgboss-ui's comment above.
       log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS Z',
       env: {
         NODE_ENV: 'production',
@@ -160,8 +167,8 @@ module.exports = {
     // server) never has to shell out — every system probe (pm2 jlist, df, du,
     // git) runs here via execFile with fixed arguments, never in the web
     // request path. PATH is declared explicitly for the same reason
-    // documented at the top of this file: pm2 is in /usr/local/bin; df, du,
-    // and git are in /usr/bin. Added new — start with
+    // documented on kalfa-fleet's entry above: pm2 is in /usr/local/bin; df, du,
+    // and git are in /usr/bin. Start it alone with
     // `pm2 start ecosystem.config.cjs --only kalfa-ops-agent`, which (per
     // pm2's own --only filter) starts only this entry and does not touch any
     // already-running app in this file.
@@ -171,7 +178,7 @@ module.exports = {
       script: 'ops/probe-server.mjs',
       node_args: '--env-file=.env.local',
       autorestart: true,
-      // `time: true` removed 2026-07-31 — see kalfa-pgboss-ui's comment above.
+      // No `time: true` — see kalfa-pgboss-ui's comment above.
       log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS Z',
       env: {
         NODE_ENV: 'production',
@@ -179,13 +186,17 @@ module.exports = {
         PATH: '/usr/local/bin:/usr/bin:/bin',
       },
     },
+    // kalfa-owner-agent (the owner WhatsApp agent's reply consumer) is
+    // deliberately NOT in this file. It lives in ecosystem.owner-agent.config.cjs,
+    // so that no generic start of THIS file — the clean-restart recipe above,
+    // the relocation wizard's step I7 — can ever start it. Its first start is a
+    // go-live decision (the chosen number and the switch decide whom it
+    // answers), taken by hand with that file.
     // Admin-only file browser (SSH-tunnel access, see beta's filebrowser
     // notes) — previously started ad-hoc and undeclared here, so it had no
-    // TZ/log_date_format and no guarantee of coming back correctly after a
-    // reboot. Adopted 2026-07-31, args copied verbatim from the running
-    // process (`pm2 describe kalfa-filebrowser`). Not a Node script —
-    // `interpreter: 'none'` runs the binary directly, same as pm2 already
-    // does for it.
+    // log_date_format and no guarantee of coming back correctly after a
+    // reboot. Not a Node script —
+    // `interpreter: 'none'` runs the binary directly.
     {
       name: 'kalfa-filebrowser',
       cwd: '/var/www/vhosts/kalfa.me/beta',

@@ -7,7 +7,7 @@ import { ConsolePhoneDev } from './_console-client';
 // telephony. Gate = console-agent membership itself (mirrors /api/agents/
 // sdk-auth: being able to log in as yourself IS the membership — manage_voice
 // would lock enrolled agents out of their own phone). The (admin) layout's
-// requireAdmin already ran; console_me self-scopes to auth.uid().
+// requirePlatformStaff already ran; console_me self-scopes to auth.uid().
 export const metadata = { title: 'קונסולת נציג — התחברות' };
 
 export default async function ConsoleDevPage() {

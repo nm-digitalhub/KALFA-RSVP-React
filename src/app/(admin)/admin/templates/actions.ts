@@ -4,11 +4,23 @@ import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
 
-import { updateMessageTemplate } from '@/lib/data/message-templates';
+import {
+  acknowledgeTemplateCategory,
+  updateMessageTemplate,
+} from '@/lib/data/message-templates';
+import {
+  acknowledgeWhatsAppTemplateCategory,
+  removeTemplateRoute,
+  requestTemplateSync,
+  saveTemplateParameters,
+  setTemplateRoute,
+  setWhatsAppStepActive,
+} from '@/lib/data/admin/whatsapp-templates';
 import type { FormState } from '@/lib/validation/result';
+import { EVENT_TYPES } from '@/lib/validation/schemas';
 
 const schema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   name: z.string().trim().max(200).default(''),
   language: z.string().trim().max(16).default('he'),
   body: z.string().trim().max(4000).default(''),
@@ -25,7 +37,7 @@ export async function updateTemplateAction(
     body: formData.get('body') ?? '',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   const active = formData.get('active') === 'on';
@@ -51,4 +63,162 @@ export async function updateTemplateAction(
 
   revalidatePath('/admin/templates');
   return { notice: active ? 'נשמר — התבנית פעילה' : 'התבנית נשמרה' };
+}
+
+// Accept Meta's category for a template that drifted. Not a fix — Meta
+// classifies by message body and the template goes on being billed under Meta's category;
+// this records that we expect it, so the badge clears, the nightly alert stops,
+// and a LATER move by Meta alerts again as a new transition.
+//
+// The category the admin was LOOKING AT is posted alongside the id and the DAL
+// pins the write to it, so a sync landing between page load and click cannot get a
+// different value accepted silently.
+const acknowledgeSchema = z.object({
+  id: z.uuid(),
+  observed_category: z.string().trim().min(1).max(32),
+});
+
+export async function acknowledgeTemplateCategoryAction(
+  _prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = acknowledgeSchema.safeParse({
+    id: formData.get('id'),
+    observed_category: formData.get('observed_category') ?? '',
+  });
+  if (!parsed.success) return { error: 'בקשה לא תקינה' };
+
+  try {
+    const result = await acknowledgeTemplateCategory(
+      parsed.data.id,
+      parsed.data.observed_category,
+    );
+    if (!result.ok) return { error: result.reason };
+    revalidatePath('/admin/templates');
+    return {
+      notice: `הקטגוריה ${result.to} אושרה — ההתראה על הפער תיפסק. החיוב והמגבלות של הקטגוריה הזו נשארים בתוקף.`,
+    };
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: 'אישור הקטגוריה נכשל. נסו שוב.' };
+  }
+}
+
+// --- WhatsApp routes and variables ---
+//
+// Called with plain objects, not FormData (the variables form's data comes from
+// JSON Forms). Every input is re-validated here and again in the data layer
+// against the live template; nothing the browser sends is trusted.
+
+export type TemplateAdminActionResult =
+  | { ok: true; warning?: string }
+  | { ok: false; problems: string[] };
+
+// The list and guest-journey view, and every template's own page. Two calls:
+// there is no layout.tsx at /admin/templates for a 'layout' revalidation to hang on.
+function revalidateTemplates(): void {
+  revalidatePath('/admin/templates');
+  revalidatePath('/admin/templates/[templateId]', 'page');
+}
+
+const INVALID: TemplateAdminActionResult = { ok: false, problems: ['בקשה לא תקינה'] };
+const FAILED: TemplateAdminActionResult = { ok: false, problems: ['השמירה נכשלה. נסו שוב.'] };
+
+const messageKey = z.string().trim().min(1).max(64);
+const routeTarget = z.object({
+  messageKey,
+  eventType: z.enum(EVENT_TYPES).nullable(),
+  withMedia: z.boolean(),
+});
+
+export async function setTemplateRouteAction(input: unknown): Promise<TemplateAdminActionResult> {
+  const parsed = routeTarget.extend({ templateId: z.string().regex(/^\d{1,32}$/) }).safeParse(input);
+  if (!parsed.success) return INVALID;
+  try {
+    const result = await setTemplateRoute(parsed.data);
+    if (result.ok) revalidateTemplates();
+    return result;
+  } catch (err) {
+    unstable_rethrow(err);
+    return FAILED;
+  }
+}
+
+export async function removeTemplateRouteAction(input: unknown): Promise<TemplateAdminActionResult> {
+  const parsed = routeTarget.safeParse(input);
+  if (!parsed.success) return INVALID;
+  try {
+    const result = await removeTemplateRoute(parsed.data);
+    if (result.ok) revalidateTemplates();
+    return result;
+  } catch (err) {
+    unstable_rethrow(err);
+    return FAILED;
+  }
+}
+
+const parametersSchema = z.object({
+  templateId: z.string().regex(/^\d{1,32}$/),
+  values: z
+    .array(
+      z.object({
+        type: z.enum(['header', 'body', 'button']),
+        sub_type: z.string().max(32).nullable(),
+        index: z.number().int().min(0).max(10).nullable(),
+        position: z.number().int().min(1).max(100),
+        source_path: z.string().trim().min(1).max(128),
+      }),
+    )
+    .max(100),
+});
+
+export async function saveTemplateParametersAction(input: unknown): Promise<TemplateAdminActionResult> {
+  const parsed = parametersSchema.safeParse(input);
+  if (!parsed.success) return INVALID;
+  try {
+    const result = await saveTemplateParameters(parsed.data);
+    if (result.ok) revalidateTemplates();
+    return result;
+  } catch (err) {
+    unstable_rethrow(err);
+    return FAILED;
+  }
+}
+
+export async function requestTemplateSyncAction(): Promise<TemplateAdminActionResult> {
+  try {
+    await requestTemplateSync();
+    return { ok: true };
+  } catch (err) {
+    unstable_rethrow(err);
+    return { ok: false, problems: ['לא הצלחנו לבקש סנכרון. נסו שוב.'] };
+  }
+}
+
+export async function setStepActiveAction(input: unknown): Promise<TemplateAdminActionResult> {
+  const parsed = z.object({ messageKey, active: z.boolean() }).safeParse(input);
+  if (!parsed.success) return INVALID;
+  try {
+    const result = await setWhatsAppStepActive(parsed.data);
+    if (result.ok) revalidateTemplates();
+    return result;
+  } catch (err) {
+    unstable_rethrow(err);
+    return FAILED;
+  }
+}
+
+export async function acknowledgeWhatsAppCategoryAction(input: unknown): Promise<TemplateAdminActionResult> {
+  const parsed = z
+    .object({ templateId: z.string().regex(/^\d{1,32}$/), observedCategory: z.string().trim().min(1).max(32) })
+    .safeParse(input);
+  if (!parsed.success) return INVALID;
+  try {
+    const result = await acknowledgeWhatsAppTemplateCategory(parsed.data);
+    if (result.ok) revalidateTemplates();
+    return result;
+  } catch (err) {
+    unstable_rethrow(err);
+    return FAILED;
+  }
 }

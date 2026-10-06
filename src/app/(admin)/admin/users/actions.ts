@@ -1,9 +1,9 @@
 'use server';
 
+import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 
 import {
-  setPlatformAdmin,
   setUserSuspended,
   grantBillingCredit,
   voidBillingCredit,
@@ -29,7 +29,7 @@ function isNextRedirect(err: unknown): boolean {
 }
 
 // The admin data layer only throws Error with our own safe Hebrew messages
-// (last-admin / no-self-lockout / not-found / generic) — never raw DB detail —
+// (last-staff / no-self-lockout / not-found / generic) — never raw DB detail —
 // so surfacing err.message is safe; anything else falls back to a generic.
 function safeMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
@@ -40,44 +40,12 @@ function revalidateUsers(): void {
   revalidatePath('/admin/users', 'layout');
 }
 
-export async function grantAdminAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = adminUserIdSchema.safeParse({ user_id: formData.get('user_id') });
-  if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors };
-  try {
-    await setPlatformAdmin(parsed.data.user_id, true);
-  } catch (err) {
-    if (isNextRedirect(err)) throw err;
-    return { error: safeMessage(err, 'הפעולה נכשלה') };
-  }
-  revalidateUsers();
-  return { notice: 'הוענקה הרשאת מנהל מערכת' };
-}
-
-export async function revokeAdminAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = adminUserIdSchema.safeParse({ user_id: formData.get('user_id') });
-  if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors };
-  try {
-    await setPlatformAdmin(parsed.data.user_id, false);
-  } catch (err) {
-    if (isNextRedirect(err)) throw err;
-    return { error: safeMessage(err, 'הפעולה נכשלה') };
-  }
-  revalidateUsers();
-  return { notice: 'הרשאת מנהל המערכת נשללה' };
-}
-
 export async function suspendUserAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
   const parsed = adminUserIdSchema.safeParse({ user_id: formData.get('user_id') });
-  if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors };
+  if (!parsed.success) return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   try {
     await setUserSuspended(parsed.data.user_id, true);
   } catch (err) {
@@ -93,7 +61,7 @@ export async function reactivateUserAction(
   formData: FormData,
 ): Promise<FormState> {
   const parsed = adminUserIdSchema.safeParse({ user_id: formData.get('user_id') });
-  if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors };
+  if (!parsed.success) return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   try {
     await setUserSuspended(parsed.data.user_id, false);
   } catch (err) {
@@ -115,7 +83,7 @@ export async function grantCreditAction(
     amount: formData.get('amount'),
     reason: formData.get('reason'),
   });
-  if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors };
+  if (!parsed.success) return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   try {
     await grantBillingCredit({
       eventId: parsed.data.event_id,
@@ -165,7 +133,7 @@ export async function voidCreditAction(input: {
   reason: string;
 }): Promise<FormState> {
   const parsed = voidCreditSchema.safeParse(input);
-  if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors };
+  if (!parsed.success) return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   try {
     await voidBillingCredit({
       creditId: parsed.data.credit_id,

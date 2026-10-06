@@ -32,8 +32,12 @@ import { getAppOrigin } from '@/lib/url';
 // The CLI is the same globally-installed `seo` package the deploy gate's
 // sibling (`lacspace-seo`) is resolved through: `npx --no-install`, never a
 // hardcoded home path. Its Google auth is the SAME service-account key the
-// app's own GA4 / Search Console readers use (GOOGLE_APPLICATION_CREDENTIALS),
-// passed under the CLI's own variable name for this child process only.
+// app's own GA4 / Search Console readers use: GOOGLE_APPLICATION_CREDENTIALS,
+// which the CLI reads directly. The CLI accepts exactly ONE credential source
+// and exits 3 (AUTH_CONFIG_REQUIRED) when more than one is set — measured
+// 2026-09-30; that is why every weekly run failed while the job also set
+// SEO_GOOGLE_SERVICE_ACCOUNT_FILE. The child env therefore carries only
+// GOOGLE_APPLICATION_CREDENTIALS and clears the CLI's own two variables.
 
 export const SEO_TECHNICAL_WATCH_TIMEOUT_MS = 10 * 60_000;
 // URL Inspection + a 50-page crawl fit comfortably; the JSON is a few KB.
@@ -181,9 +185,12 @@ function defaultExec(args: string[], env: NodeJS.ProcessEnv): Promise<string> {
       { env, timeout: SEO_TECHNICAL_WATCH_TIMEOUT_MS, maxBuffer: MAX_BUFFER_BYTES },
       (error, stdout, stderr) => {
         if (error) {
-          // stderr is the CLI's own diagnostics (no guest data — it crawls
-          // public pages only). Trim so a Slack alert stays readable.
-          const tail = String(stderr ?? '').trim().slice(-600);
+          // The CLI prints its error object as JSON on STDOUT (with --json) and
+          // only npm noise on stderr, so include both. No guest data — it
+          // crawls public pages only. Trim so a Slack alert stays readable.
+          const tail = `${String(stdout ?? '').trim()}\n${String(stderr ?? '').trim()}`
+            .trim()
+            .slice(-600);
           reject(new Error(`seo technical-watch failed: ${error.message}${tail ? `\n${tail}` : ''}`));
           return;
         }
@@ -228,7 +235,9 @@ export async function runSeoTechnicalWatch(
   ];
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    SEO_GOOGLE_SERVICE_ACCOUNT_FILE: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    // One credential source only (see the header): the CLI refuses two.
+    SEO_GOOGLE_SERVICE_ACCOUNT_FILE: undefined,
+    SEO_GOOGLE_SERVICE_ACCOUNT_JSON: undefined,
     // Same reason as scripts/seo-audit.mjs: the machine-wide npm config file
     // would otherwise be forced onto the child npx.
     npm_config_global_ignore_file: undefined,

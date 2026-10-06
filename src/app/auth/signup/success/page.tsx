@@ -13,7 +13,7 @@ export const metadata = {
 // Post-signup interstitial shown after a successful registration that requires
 // email confirmation. The signup action redirects here instead of showing an
 // inline notice. The actual confirmation happens when the user clicks the email
-// link (handled by /auth/callback). No personal data is passed in the URL.
+// link (handled by /auth/confirm). No personal data is passed in the URL.
 export default async function SignupSuccessPage() {
   // Deduped against any other call in this request tree via React `cache()`
   // (src/lib/consent/admin-config.ts).

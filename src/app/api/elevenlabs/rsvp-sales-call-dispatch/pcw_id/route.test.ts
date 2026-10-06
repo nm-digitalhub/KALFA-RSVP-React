@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { __resetRateLimitStateForTests } from '@/lib/security/rate-limit';
 
-// Rewritten 2026-09-01 with the route itself: storing the analysis and resolving
-// the stuck attempt moved to the worker (elevenlabs-analysis-processing.test.ts
-// covers them). What is left here is the intake contract — verify, persist the
-// raw delivery, answer — plus the security envelope, which did not change.
+// Storing the analysis and resolving the stuck attempt run in the worker
+// (elevenlabs-analysis-processing.test.ts covers them). What is covered here is
+// the intake contract — verify, persist the raw delivery, answer — plus the
+// security envelope.
 vi.mock('server-only', () => ({}));
 const { insertMock, slackMock } = vi.hoisted(() => ({
   insertMock: vi.fn(),

@@ -11,9 +11,7 @@ import { cn } from '@/lib/utils';
 
 // Shared header for the public MARKETING pages — mounted once in
 // src/app/(public)/(site)/layout.tsx, the same nested-layout pattern as
-// SiteFooter (owner report 2026-08-24: the menu existed only on the homepage;
-// /faq and /contact had a bare "KALFA · לעמוד הבית" bar and the legal pages
-// had no header at all).
+// SiteFooter.
 //
 // Server Component: reads the signed-in user (getUser is React-cache()d, so a
 // page that also calls it costs no second round trip) to swap the auth CTAs

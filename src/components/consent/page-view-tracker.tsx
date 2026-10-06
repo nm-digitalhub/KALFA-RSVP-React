@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 
 import { normalizeAnalyticsPath, normalizeAnalyticsUrl } from '@/lib/analytics/normalize-path';
@@ -15,10 +15,18 @@ import { normalizeAnalyticsPath, normalizeAnalyticsUrl } from '@/lib/analytics/n
 // page_referrer mirrors browser semantics: document.referrer (normalized) on
 // the first view, then the previous page's normalized location on SPA
 // navigations.
+//
+// The previous location lives at module scope, not in a ref: moving between
+// route groups (marketing site → /app) remounts GoogleAnalyticsGated, and a
+// ref would reset to null — the first /app view would then re-send the
+// original external document.referrer instead of the page the user came from.
+// Module state survives client navigations and resets on a full page load,
+// which is exactly the browser's referrer semantics.
+let previousLocation: string | null = null;
+
 export function PageViewTracker() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const previousLocation = useRef<string | null>(null);
 
   useEffect(() => {
     const search = searchParams.toString();
@@ -27,10 +35,9 @@ export function PageViewTracker() {
     );
     // Deduplicate: React strict-mode double-invoke and searchParams object
     // identity changes must not double-count a view of the same URL.
-    if (previousLocation.current === location) return;
-    const referrer =
-      previousLocation.current ?? normalizeAnalyticsUrl(document.referrer);
-    previousLocation.current = location;
+    if (previousLocation === location) return;
+    const referrer = previousLocation ?? normalizeAnalyticsUrl(document.referrer);
+    previousLocation = location;
 
     type DataLayerWindow = Window & { dataLayer?: unknown[] };
     const w = window as DataLayerWindow;

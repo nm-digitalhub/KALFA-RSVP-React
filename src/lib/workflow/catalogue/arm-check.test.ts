@@ -1,0 +1,687 @@
+import { describe, expect, it } from 'vitest';
+
+import { isKnownNodeType } from './nodes';
+import { DIAGRAM_TEMPLATES } from './templates';
+
+import { findArmBlockers, findArmBlockersByNode } from './arm-check';
+
+// ⚠️ THE RULE THIS FILE DEFENDS, and the reason it is a SECOND gate rather than
+// part of the converter: conversion asks "can this graph run", arming asks "is
+// every step set up". A starter template must pass the first and may fail the
+// second — that is what makes a template a draft instead of a broken workflow.
+
+const node = (id: string, type: string, properties: Record<string, unknown>) => ({
+  id,
+  type: 'node',
+  position: { x: 0, y: 0 },
+  data: { segments: [], type, properties },
+});
+
+const wrap = (nodes: unknown[]) => ({ name: 'w', nodes, edges: [] });
+
+describe('findArmBlockers', () => {
+  it('⚠️ catches the blank that fails on Sunday at 10:00', () => {
+    // `action.start_for_each_guest` converts fine with no target and then throws
+    // at RUN time. Before this check, the owner pressed "arm", nothing objected,
+    // and the failure arrived hours later in a run log.
+    const blockers = findArmBlockers(
+      wrap([
+        node('fan', 'action.start_for_each_guest', {
+          label: 'לכל אורח',
+          description: 'd',
+          targetWorkflowId: '',
+          maxGuests: 10,
+        }),
+      ]),
+    );
+    expect(blockers).toEqual([
+      'הצעד "לכל אורח": לא נבחר תהליך להרצה. צרו את תהליך-הבן (למשל מהתבנית "תזכורת לאורח אחד") והדביקו את המזהה שלו כאן.',
+    ]);
+  });
+
+  it('⚠️ a PRESENT key with a blank value — the case `required` alone misses', () => {
+    // JSON Schema `required` only asks whether the key exists. The editor form is
+    // satisfied by `''`, and the handler still refuses it. That gap is the whole
+    // reason this is not just an ajv call.
+    expect(
+      findArmBlockers(
+        wrap([node('n', 'action.send_template', { label: 'שליחה', description: 'd', messageKey: '   ' })]),
+      ),
+    ).toEqual(['הצעד "שליחה": השדה "messageKey" ריק.']);
+  });
+
+  it('enforces a declared minimum — a cap of zero reaches nobody', () => {
+    const blockers = findArmBlockers(
+      wrap([
+        node('fan', 'action.start_for_each_guest', {
+          label: 'פיצול',
+          description: 'd',
+          targetWorkflowId: 'wf-child',
+          maxGuests: 0,
+        }),
+      ]),
+    );
+    expect(blockers).toEqual(['הצעד "פיצול": "maxGuests" חייב להיות 1 לפחות.']);
+  });
+
+  it('⚠️ accepts the PRE-RENAME key, because the handler does', () => {
+    // MEASURED AGAINST THE LIVE DATABASE. `rsvpStatus` was called `status` until
+    // the SDK claimed `status` for the node's own lifecycle. A diagram saved
+    // before that still RUNS — `updateGuestStatus` reads both — so refusing to
+    // arm it would be this check inventing a rule the engine does not have.
+    // The first version of this file did exactly that, against a real stored row.
+    expect(
+      findArmBlockers(
+        wrap([node('s', 'action.update_guest_status', { label: 'סמן', description: 'd', status: 'attending' })]),
+      ),
+    ).toEqual([]);
+
+    // …and the current key is of course still fine.
+    expect(
+      findArmBlockers(
+        wrap([
+          node('s', 'action.update_guest_status', {
+            label: 'סמן',
+            description: 'd',
+            rsvpStatus: 'attending',
+          }),
+        ]),
+      ),
+    ).toEqual([]);
+  });
+
+  it('a schedule with no day list arms — empty there means EVERY day', () => {
+    // Pinned as BEHAVIOUR, not as proof of the array carve-out below it: `days`
+    // is not in `trigger.schedule`'s `required`, so it never reaches that branch.
+    // MEASURED: no schema in the catalogue declares a required array field today,
+    // which is why the carve-out has no natural test — it is there so that the
+    // first node to declare one is not refused for a deliberate "no filter".
+    expect(
+      findArmBlockers(
+        wrap([
+          {
+            id: 't',
+            type: 'start-node',
+            position: { x: 0, y: 0 },
+            data: {
+              segments: [],
+              type: 'trigger.schedule',
+              properties: { label: 'שעון', description: 'd', time: '10:00', days: [] },
+            },
+          },
+        ]),
+      ),
+    ).toEqual([]);
+  });
+
+  it('⚠️ a step left in DRAFT blocks arming — the rule NODE_STATUSES states', () => {
+    // Without this rule a half-written step would arm silently and be skipped at
+    // run time with nobody told.
+    const blockers = findArmBlockers(
+      wrap([
+        node('half', 'action.send_template', {
+          label: 'טיוטה',
+          description: 'd',
+          messageKey: 'thankyou',
+          status: 'draft',
+        }),
+      ]),
+    );
+    expect(blockers).toEqual([
+      'הצעד "טיוטה": הצעד בטיוטה. סיימו אותו, או העבירו אותו ל"מושבת" כדי לדלג עליו במכוון.',
+    ]);
+  });
+
+  it('⚠️ but DISABLED does not — that one is the owner’s decision', () => {
+    // Both skip identically at run time. The difference is intent, and arming
+    // must respect a step deliberately switched off.
+    expect(
+      findArmBlockers(
+        wrap([
+          node('off', 'action.send_template', {
+            label: 'כבוי',
+            description: 'd',
+            messageKey: 'thankyou',
+            status: 'disabled',
+          }),
+        ]),
+      ),
+    ).toEqual([]);
+  });
+
+  it('a draft step reports ONLY that, not its empty fields too', () => {
+    // A step nobody finished is expected to have blanks. Listing them as well
+    // would bury the one line that says what to do.
+    const blockers = findArmBlockers(
+      wrap([node('half', 'action.send_template', { label: 'טיוטה', description: '', status: 'draft' })]),
+    );
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]).toContain('בטיוטה');
+  });
+
+  it('⚠️ an UNRECOGNISED status is active, never a block', () => {
+    // MEASURED in production 2026-09-14: two stored nodes carry
+    // `status: 'attending'` / `'declined'` — the RSVP value from before that
+    // field was renamed to `rsvpStatus`. Refusing to arm those would break
+    // workflows that run correctly.
+    for (const status of ['attending', 'declined', '', 'DRAFT', 'archived']) {
+      expect(
+        findArmBlockers(
+          wrap([
+            node('n', 'action.send_template', {
+              label: 'צעד',
+              description: 'd',
+              messageKey: 'thankyou',
+              status,
+            }),
+          ]),
+        ),
+        status,
+      ).toEqual([]);
+    }
+  });
+
+  it('⚠️ refuses to arm a fan-out that points at its own workflow', () => {
+    // Static property of the diagram, so the cheapest place to catch it is before
+    // anything runs. The handler refuses it again at run time, because arming is
+    // not required to be a fan-out TARGET.
+    const diagram = wrap([
+      node('fan', 'action.start_for_each_guest', {
+        label: 'פיצול',
+        description: 'd',
+        targetWorkflowId: 'wf-1',
+        maxGuests: 10,
+      }),
+    ]);
+    expect(findArmBlockers(diagram, 'wf-1')).toEqual([
+      'הצעד "פיצול": הצעד מצביע על התהליך הזה עצמו. תהליך שמפעיל את עצמו לכל אורח אינו נעצר — בחרו תהליך אחר.',
+    ]);
+    // Pointing at a DIFFERENT workflow is the normal case and must pass.
+    expect(findArmBlockers(diagram, 'wf-other')).toEqual([]);
+    // And with no id to compare against, the check cannot run — it must not
+    // guess, and the handler still refuses at run time.
+    expect(findArmBlockers(diagram)).toEqual([]);
+  });
+
+  it('⚠️ refuses to arm a guest callback routed to the SALES agent', () => {
+    // `topic` is the router: `enqueueSalesCallDispatch` gates on this exact
+    // string, and this node is guest-scoped. Static, so it is refused before a
+    // single guest is dialled.
+    const blockers = findArmBlockers(
+      wrap([
+        node('cb', 'action.create_callback_request', {
+          label: 'בקשת חזרה',
+          description: 'd',
+          topic: 'מכירות',
+        }),
+      ]),
+      'wf-1',
+    );
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]).toContain('סוכן המכירות');
+
+    // Any offered topic arms normally.
+    expect(
+      findArmBlockers(
+        wrap([
+          node('cb', 'action.create_callback_request', {
+            label: 'בקשת חזרה',
+            description: 'd',
+            topic: 'שאלה על האירוע',
+          }),
+        ]),
+        'wf-1',
+      ),
+    ).toEqual([]);
+  });
+
+  it('says nothing about an unknown node type — that is the converter’s error', () => {
+    expect(findArmBlockers(wrap([node('x', 'action.not_a_real_node', {})]))).toEqual([]);
+  });
+
+  it('names the step by its id when it has no label to show', () => {
+    const blockers = findArmBlockers(
+      wrap([node('fan-7', 'action.send_template', { description: 'd', label: '  ' })]),
+    );
+    expect(blockers.some((b) => b.includes('fan-7'))).toBe(true);
+  });
+
+  it('survives a definition it cannot parse rather than blocking on it', () => {
+    // Disarming must always work and arming must fail for REAL reasons. A shape
+    // this cannot read is the converter's to reject.
+    expect(findArmBlockers(null)).toEqual([]);
+    expect(findArmBlockers({ nodes: 'not an array' })).toEqual([]);
+  });
+});
+
+describe('the starter templates against this gate', () => {
+  it('⚠️ only the templates with a DELIBERATE blank are blocked', () => {
+    const results = DIAGRAM_TEMPLATES.map((t) => ({
+      name: t.value.name,
+      blockers: findArmBlockers({
+        name: t.value.name,
+        nodes: t.value.diagram.nodes,
+        edges: t.value.diagram.edges,
+      }),
+    }));
+
+    const blocked = results.filter((r) => r.blockers.length > 0);
+    expect(blocked.map((b) => b.name)).toEqual([
+      'תזכורת שבועית למי שטרם ענה',
+      // ⚠️ BLOCKED BY THE GUEST-CONTEXT RULE, AND IT IS NOT A BLANK — it is the
+      // template that must never be armed. Its trigger node is labelled
+      // "מופעל מתהליך אחר" / "לא להפעיל": it is a fan-out CHILD, started by
+      // `startRunsForGuests`, which supplies the contact its steps need. Its
+      // trigger's blank `tokenHash` is a blocker too, so this template reports
+      // BOTH — see below.
+      'תזכורת לאורח אחד (תהליך-בן)',
+      'שיחה קולית עם המתנה לתוצאה',
+      'שיחת ייעוד — עם בחירת סוכן ומספר',
+      // Two deliberate blanks, and both are the owner's to fill: the webhook
+      // trigger's token, and the customer the receipt is FOR. A starter that
+      // shipped a real customer name would issue a document about somebody the
+      // owner never chose, so the blank is the safe default — and this gate is
+      // what turns it into a named instruction instead of a first-run surprise.
+      'הפקת קבלה לפי קריאת webhook',
+      // Same shape, same reason: the webhook token and the customer name are
+      // the owner's to supply. The document node's own customer field is blank
+      // BY DESIGN here — it is filled from the previous node's output, which is
+      // the whole point of this starter.
+      'יצירת לקוח והפקת מסמך עבורו',
+      // One deliberate blank: the address SUMIT will call. It is minted in the
+      // editor and shown once, so no template can carry one — and the sentence
+      // below is the address-mode one, because a SUMIT trigger has no header
+      // secret to generate.
+      'תפיסת מסגרת השתנתה ב-SUMIT — התראה לצוות',
+    ]);
+
+    // ⚠️ EVERY ONE OF THESE NAMES THE NEXT ACTION, not just the field. An owner
+    // who loaded a template cannot act on "targetWorkflowId is empty" — the
+    // workflow it must point at does not exist yet — and cannot act on
+    // "purposeKey is empty" either, because the dropdown they would reach for is
+    // legitimately EMPTY until a non-builtin purpose is created.
+    // ⚠️ LOOKED UP BY NAME, NOT BY POSITION, so that a template joining the
+    // list does not shift the assertions below for a reason that has nothing to
+    // do with what they test.
+    const blockersOf = (name: string) =>
+      blocked.find((b) => b.name === name)?.blockers ?? [`NO SUCH BLOCKED TEMPLATE: ${name}`];
+
+    expect(blockersOf('תזכורת שבועית למי שטרם ענה')).toEqual([
+      'הצעד "לכל אורח שטרם ענה": לא נבחר תהליך להרצה. צרו את תהליך-הבן (למשל מהתבנית "תזכורת לאורח אחד") והדביקו את המזהה שלו כאן.',
+    ]);
+    expect(blockersOf('שיחה קולית עם המתנה לתוצאה')).toEqual([
+      'הצעד "שיחה עם סוכן קולי": לא נבחר ייעוד לשיחה. בחרו ייעוד מהרשימה, ואם היא ריקה — צרו ייעוד חדש ב-/admin/integrations/voximplant וקשרו לו rule.',
+    ]);
+    // The SUMIT trigger: one blank, and the ADDRESS-mode sentence — `authModeFor`
+    // answers by node type, so arming names the button that is actually on the
+    // panel rather than a secret this node never has.
+    expect(blockersOf('תפיסת מסגרת השתנתה ב-SUMIT — התראה לצוות')).toEqual([
+      'הצעד "תפיסת מסגרת השתנתה ב-SUMIT": לא נוצרה עדיין כתובת. לחצו על יצירת כתובת — היא תוצג פעם אחת בלבד, ומרגע שנשמרה לא ניתן לשחזר אותה.',
+    ]);
+    // The fan-out child: blocked for its SHAPE, not for a blank. Its steps need
+    // a guest and its own trigger cannot supply one — which is the same thing
+    // its trigger already says out loud ("לא להפעיל").
+    //
+    // ⚠️ AND IT REPORTS TWO, which is the point of reporting the guest rule
+    // ALONGSIDE the field checks rather than instead of them. The trigger's
+    // `tokenHash` is blank — deliberately, because this template is never meant
+    // to be armed — and that is a blocker in its own right. An owner who fixed
+    // only one would press arm again and meet the other.
+    expect(blockersOf('תזכורת לאורח אחד (תהליך-בן)')).toEqual([
+      'הצעד "מופעל מתהליך אחר": לא נוצר סוד, ולכן אין עדיין כתובת. לחצו על יצירת סוד — הכתובת תיווצר יחד איתו ותישאר גלויה, והסוד יוצג פעם אחת בלבד.',
+      'הצעד "שליחת תבנית תזכורת": הצעד פועל על אורח, והטריגר של התהליך אינו מתחיל מאורח. החליפו לטריגר "הודעת וואטסאפ נכנסת" שמסומן בו לפחות סוג הודעה שאורח שולח, הסירו את הצעד, או השאירו את התהליך לא מחומש והפעילו אותו מתהליך אחר עם "הרצה לכל אורח".',
+    ]);
+    // ⚠️ A DELIBERATE BLANK, AND AMONG ITS FIELD CHECKS IT IS BLOCKED ON
+    // `purposeKey` ALONE.
+    //
+    // That is the assertion worth having: this template also ships `callerId`,
+    // `ruleId`, `agentId` and `toOverride` empty, and NONE of them appears here.
+    // They are overrides — empty means "the purpose's rule, the account's
+    // number, the scenario's agent, the contact's phone" — so a blank one is a
+    // configured state, not a missing one. If a future change made any of them
+    // required, this list would grow and the template would stop being loadable
+    // as a starting point, which is exactly the regression to catch here.
+    // ⚠️ TWO BLOCKERS ON ONE NODE, and both are real: this template ships a
+    // `trigger.schedule` (which cannot supply a guest) AND an empty
+    // `purposeKey`. Reporting only the first would send the owner back for a
+    // second round; the structural line comes first because it is the one that
+    // decides whether the step belongs here at all.
+    expect(blockersOf('שיחת ייעוד — עם בחירת סוכן ומספר')).toEqual([
+      'הצעד "שיחה עם הסוכן שתבחרו": הצעד פועל על אורח, והטריגר של התהליך אינו מתחיל מאורח. החליפו לטריגר "הודעת וואטסאפ נכנסת" שמסומן בו לפחות סוג הודעה שאורח שולח, הסירו את הצעד, או השאירו את התהליך לא מחומש והפעילו אותו מתהליך אחר עם "הרצה לכל אורח".',
+      'הצעד "שיחה עם הסוכן שתבחרו": לא נבחר ייעוד לשיחה. בחרו ייעוד מהרשימה, ואם היא ריקה — צרו ייעוד חדש ב-/admin/integrations/voximplant וקשרו לו rule.',
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The boundary
+// ---------------------------------------------------------------------------
+//
+// ⚠️ WHAT WENT WRONG, so it is written down where the next person will look.
+//
+// The first version of `arm-check.ts` read `PALETTE_ITEMS` from `./schemas`.
+// `schemas.ts` imports runtime values from `@workflowbuilder/sdk` and is reached
+// from a `'use client'` editor, so Next compiles it into the CLIENT graph. On the
+// server the import does not yield the array — it yields a client REFERENCE:
+//
+//   registerClientReference(function(){ throw Error("Attempted to call
+//     PALETTE_ITEMS() from the server but PALETTE_ITEMS is on the client…") })
+//
+// Every attempt to arm a workflow 500'd in production. `tsc` passed (the import
+// is correctly typed), this suite passed (vitest does no Next bundling), and the
+// dependency gate only cruised the worker. A `.dependency-cruiser` rule now
+// covers the server path and fails on the import itself — that is the real
+// protection. This test pins the DATA half of the same fix.
+
+describe('the declarations the gate reads', () => {
+  it('⚠️ cover every node type in the catalogue', async () => {
+    // A node type with no entry silently requires nothing, so a missing target
+    // or cap would arm cleanly again. The map is exhaustive by its
+    // `Record<KalfaNodeType, …>` type — this pins it at runtime too, for the
+    // types that arrive as strings out of stored JSON.
+    const { NODE_REQUIRED_FIELDS } = await import('./types');
+    const { NODE_TYPES } = await import('./types');
+
+    for (const type of NODE_TYPES) {
+      expect(NODE_REQUIRED_FIELDS[type], type).toBeDefined();
+      // Every node is at minimum named and described — the two fields the editor
+      // form shows for all of them.
+      expect(NODE_REQUIRED_FIELDS[type]).toEqual(
+        expect.arrayContaining(['label', 'description']),
+      );
+    }
+  });
+
+  it('⚠️ are the SAME objects the editor form is built from', async () => {
+    // Not "equal to" — the SAME array. Each node's `schema.ts` references its
+    // definition's `requiredFields`, the array this map holds, rather than
+    // declaring its own copy, so a field required to arm is required in the form
+    // by construction. An `toEqual` here would still pass if someone pasted a
+    // second literal; identity will not.
+    const { NODE_REQUIRED_FIELDS } = await import('./types');
+    const { PALETTE_ITEMS } = await import('./schemas');
+
+    for (const item of PALETTE_ITEMS) {
+      // `PaletteItem.type` is a plain string in the SDK; the map is keyed by our
+      // own union. `isKnownNodeType` is the narrowing the rest of the code uses,
+      // so the test asserts through the same door rather than casting past it.
+      expect(isKnownNodeType(item.type), item.type).toBe(true);
+      if (!isKnownNodeType(item.type)) continue;
+      expect(item.schema.required, item.type).toBe(NODE_REQUIRED_FIELDS[item.type]);
+    }
+  });
+});
+
+// A trigger that has been narrowed until nothing can reach it, and a webhook
+// route with no address. Both are static properties of the diagram, and both
+// used to arm cleanly and then simply never fire — the failure mode this whole
+// module exists to move forward in time.
+describe('a trigger that can never fire', () => {
+  const trigger = (properties: Record<string, unknown>) =>
+    wrap([node('t', 'trigger.whatsapp_inbound', { label: 'טריגר', description: 'd', ...properties })]);
+
+  it('⚠️ a keyword with no text-bearing kind selected', () => {
+    // `readTextBody` reads `payload.text?.body` and nothing else, so an image
+    // arrives with `messageText: ''` and `'שיחה'.includes` can never hold. The
+    // owner narrowed the kinds and kept the keyword, and the two filters are
+    // ANDed — the workflow is dead.
+    expect(
+      findArmBlockers(
+        trigger({ keyword: 'שיחה', messageKinds: [{ value: 'image' }, { value: 'document' }] }),
+      ),
+    ).toEqual([
+      'הצעד "טריגר": הוגדרה מילת הפעלה, אך לא נבחר סוג הודעה שמכיל טקסט — ולכן שום הודעה לא תתאים. סמנו גם "הודעת טקסט", או מחקו את מילת ההפעלה.',
+    ]);
+  });
+
+  it('accepts the OLD persisted shape too — bare strings, not objects', () => {
+    // The checkbox control stores objects now; diagrams saved before it stored
+    // strings, and `matchesKind` still matches them. A gate stricter than the
+    // matcher would refuse a workflow that runs.
+    expect(findArmBlockers(trigger({ keyword: 'שיחה', messageKinds: ['image'] }))).toHaveLength(1);
+  });
+
+  it('⚠️ a BUTTON TAP is not text either — the near-miss case', () => {
+    // The one a reader is most likely to get wrong. A quick-reply tap carries a
+    // label under `button.text` and a machine string under `button.payload`, and
+    // `readTextBody` reads neither — it reads `payload.text.body`. The payload is
+    // routed on separately, by `logic.switch` against `{{trigger.button_payload}}`,
+    // which is why the RSVP template uses exact `equals` there and not a keyword.
+    expect(
+      findArmBlockers(trigger({ keyword: 'שיחה', messageKinds: [{ value: 'button' }] })),
+    ).toHaveLength(1);
+  });
+
+  it('does NOT block once a text-bearing kind is mixed in', () => {
+    expect(
+      findArmBlockers(trigger({ keyword: 'שיחה', messageKinds: [{ value: 'image' }, { value: 'text' }] })),
+    ).toEqual([]);
+  });
+
+  it('does NOT block an unset kinds list — that means the default four', () => {
+    // `DEFAULT_WHATSAPP_MESSAGE_KINDS` includes `text`, so every diagram saved
+    // before the field existed keeps arming exactly as it did.
+    expect(findArmBlockers(trigger({ keyword: 'שיחה' }))).toEqual([]);
+    expect(findArmBlockers(trigger({ keyword: 'שיחה', messageKinds: [] }))).toEqual([]);
+  });
+
+  it('does NOT block a narrowed trigger with no keyword — that is a normal filter', () => {
+    expect(findArmBlockers(trigger({ messageKinds: [{ value: 'document' }] }))).toEqual([]);
+    expect(findArmBlockers(trigger({ keyword: '   ', messageKinds: [{ value: 'document' }] }))).toEqual([]);
+  });
+
+  it('does NOT block a DISABLED trigger — it starts nothing to begin with', () => {
+    expect(
+      findArmBlockers(
+        trigger({ keyword: 'שיחה', messageKinds: [{ value: 'image' }], status: 'disabled' }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('⚠️ a webhook trigger with no token has no address', () => {
+    // `findWorkflowForEndpoint` skips every workflow whose configured hash is
+    // blank, so the route `/api/workflows/hook/<endpoint>` resolves to nothing.
+    // Arming one produced an endpoint that existed nowhere, silently.
+    expect(
+      findArmBlockers(wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', endpointId: 'ep', tokenHash: '' })])),
+    ).toEqual([
+      'הצעד "קריאה": לא נוצר סוד, ולכן אין עדיין כתובת. לחצו על יצירת סוד — הכתובת תיווצר יחד איתו ותישאר גלויה, והסוד יוצג פעם אחת בלבד.',
+    ]);
+  });
+
+  it('a webhook trigger WITH a token arms', () => {
+    expect(
+      findArmBlockers(
+        wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', endpointId: 'ep', tokenHash: 'a'.repeat(64) })]),
+      ),
+    ).toEqual([]);
+  });
+});
+
+// The attribution the editor needs, and the guarantee that it cannot disagree
+// with the sentences the arm button shows.
+//
+// ⚠️ WHY THIS IS ONE FUNCTION AND NOT TWO. The SDK marks a node invalid from
+// `data.properties.customErrors`, which is PER NODE — so surfacing any of these
+// in the panel needs an id that `findArmBlockers`' `string[]` threw away. Two
+// implementations would eventually mark a node clean while the arm button
+// refused it, which is the exact confusion this module exists to end.
+describe('findArmBlockersByNode', () => {
+  const twoBadNodes = wrap([
+    node('t', 'trigger.schedule', { label: 'שעון', description: 'd', time: '' }),
+    node('w', 'action.send_whatsapp', { label: 'שליחה', description: 'd', body: 'שלום' }),
+  ]);
+
+  it('returns the same messages as findArmBlockers, in the same order', () => {
+    expect(findArmBlockersByNode(twoBadNodes).map((b) => b.message)).toEqual(
+      findArmBlockers(twoBadNodes),
+    );
+  });
+
+  it('names the node each refusal belongs to', () => {
+    const byNode = findArmBlockersByNode(twoBadNodes);
+    // The schedule's blank `time`, and the WhatsApp step under a clock trigger.
+    expect(byNode.find((b) => b.message.includes('"time"'))?.nodeId).toBe('t');
+    expect(byNode.find((b) => b.message.includes('אינו מתחיל מאורח'))?.nodeId).toBe('w');
+  });
+
+  it('every id it reports is a node that exists in the diagram', () => {
+    const ids = new Set(['t', 'w']);
+    for (const blocker of findArmBlockersByNode(twoBadNodes)) {
+      expect(ids.has(blocker.nodeId), `unknown node ${blocker.nodeId}`).toBe(true);
+    }
+  });
+
+  it('a clean diagram reports nothing from either entry point', () => {
+    const clean = wrap([
+      node('t', 'trigger.whatsapp_inbound', { label: 'טריגר', description: 'd' }),
+      node('w', 'action.send_whatsapp', { label: 'שליחה', description: 'd', body: 'שלום' }),
+    ]);
+    expect(findArmBlockersByNode(clean)).toEqual([]);
+    expect(findArmBlockers(clean)).toEqual([]);
+  });
+
+  it('⚠️ every starter template agrees across the two entry points', () => {
+    // The templates are the widest fixtures there are — several of them block,
+    // for different reasons. If the mapping ever drops or reorders a blocker,
+    // this is where it shows.
+    for (const template of DIAGRAM_TEMPLATES) {
+      const diagram = {
+        name: template.value.name,
+        nodes: template.value.diagram.nodes,
+        edges: template.value.diagram.edges,
+      };
+      expect(
+        findArmBlockersByNode(diagram).map((b) => b.message),
+        template.value.name,
+      ).toEqual(findArmBlockers(diagram));
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('⚠️ the error PORT and the error POLICY must agree', () => {
+  // Both mismatches below are silent at run time, which is the whole reason they
+  // are arm blockers: one builds a recovery path that can never run, the other
+  // tells a node to route errors somewhere that does not exist.
+  const ERROR_HANDLE = 'source:inner:error';
+
+  const graph = (errorPolicy: string, wired: boolean) => ({
+    name: 'w',
+    nodes: [
+      node('t', 'trigger.whatsapp_inbound', {
+        label: 'טריגר', description: 'ת', keyword: '',
+      }),
+      node('a', 'action.notify_team', {
+        label: 'התראה', description: 'ד', title: 'כותרת', errorPolicy,
+      }),
+      node('b', 'action.notify_team', {
+        label: 'אחרי כישלון', description: 'ד', title: 'כותרת', errorPolicy: 'continue',
+      }),
+    ],
+    edges: [
+      { id: 'e1', source: 't', target: 'a' },
+      ...(wired ? [{ id: 'e2', source: 'a', sourceHandle: ERROR_HANDLE, target: 'b' }] : []),
+    ],
+  });
+
+  const about = (blockers: string[]) => blockers.filter((m) => m.includes('נכשל'));
+
+  it('an edge off "נכשל" while the step STOPS on error is a path that can never run', () => {
+    expect(about(findArmBlockers(graph('fail', true)))).toHaveLength(1);
+    expect(about(findArmBlockers(graph('fail', true)))[0]).toContain('לעולם לא ירוץ');
+  });
+
+  it('routing errors with NOTHING connected stops the flow with no one told', () => {
+    expect(about(findArmBlockers(graph('errorRoute', false)))).toHaveLength(1);
+    expect(about(findArmBlockers(graph('errorRoute', false)))[0]).toContain('בלי שאיש יידע');
+  });
+
+  it('the two agreeing states are silent — both directions', () => {
+    // Anti-no-op: a check that fired on everything would pass the two above and
+    // be useless. These are the configurations an owner actually ships.
+    expect(about(findArmBlockers(graph('fail', false)))).toEqual([]);
+    expect(about(findArmBlockers(graph('errorRoute', true)))).toEqual([]);
+    expect(about(findArmBlockers(graph('continue', false)))).toEqual([]);
+  });
+
+  it('⚠️ no starter template trips it — measured, not assumed', async () => {
+    // The rule is only worth shipping if the starter diagrams we hand people are
+    // already consistent. If one is not, that is a defect in the template, not a
+    // reason to soften the rule.
+    const { DIAGRAM_TEMPLATES } = await import('./templates');
+    const offenders = DIAGRAM_TEMPLATES.flatMap((t) =>
+      about(findArmBlockers(t.value.diagram)).map((m) => `${t.value.name}: ${m}`),
+    );
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("trigger.webhook auth: 'address' — the address is the credential", () => {
+  const hook = (properties: Record<string, unknown>) =>
+    wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', ...properties })]);
+
+  it('⚠️ a node with nothing generated is BLOCKED, and the sentence names the right button', () => {
+    // Without `tokenHash` in the required list this would arm with zero blockers:
+    // `endpointId` moved out of NODE_REQUIRED_FIELDS so `address` mode could
+    // exist, and `tokenHash` is the only thing left holding the gate shut.
+    expect(findArmBlockers(hook({ auth: 'address', tokenHash: '' }))).toEqual([
+      'הצעד "קריאה": לא נוצרה עדיין כתובת. לחצו על יצירת כתובת — היא תוצג פעם אחת בלבד, ומרגע שנשמרה לא ניתן לשחזר אותה.',
+    ]);
+  });
+
+  it('a generated node arms with no address stored at all', () => {
+    // The contract: `endpointId` is ABSENT here, not blank, and that must not be
+    // read as a missing required field.
+    expect(findArmBlockers(hook({ auth: 'address', tokenHash: 'a'.repeat(64) }))).toEqual([]);
+  });
+
+  it('⚠️ refuses GET, which would never fire and would look armed', () => {
+    // The route answers a headerless GET with a constant hint so the address bar
+    // cannot be used as an oracle. A caller in this mode sends no header by
+    // definition, so the pair is dead — and nothing downstream would say so.
+    expect(
+      findArmBlockers(
+        hook({ auth: 'address', tokenHash: 'a'.repeat(64), methods: [{ value: 'GET' }] }),
+      ),
+    ).toEqual([
+      'הצעד "קריאה": כשהאימות הוא הכתובת, קריאת GET לעולם לא תפעיל את התהליך — פתיחה בדפדפן מקבלת הודעה קבועה במקום. הסירו את GET מרשימת השיטות, או עברו לאימות בכותרת.',
+    ]);
+  });
+
+  it('refuses a node whose mode was switched after a secret was minted', () => {
+    // A leftover public id means the stored hash is of the HEADER secret, so
+    // nothing can reach this node. Inert rather than unsafe — which is exactly
+    // why it needs a gate instead of a shrug.
+    expect(
+      findArmBlockers(hook({ auth: 'address', tokenHash: 'a'.repeat(64), endpointId: 'ep' })),
+    ).toEqual([
+      'הצעד "קריאה": האימות שונה לכתובת אחרי שנוצר סוד, והכתובת הקודמת כבר לא מפעילה את התהליך. לחצו על יצירת כתובת כדי לקבל כתובת חדשה.',
+    ]);
+  });
+
+  it('POST and the other body verbs are fine', () => {
+    expect(
+      findArmBlockers(
+        hook({ auth: 'address', tokenHash: 'a'.repeat(64), methods: [{ value: 'POST' }, { value: 'PUT' }] }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('⚠️ header mode is untouched: an absent auth still REQUIRES the address', () => {
+    // The compatibility promise. Every diagram saved before this field has no
+    // `auth`, a public `endpointId` and a header secret; reading absent as
+    // `address` would turn all of those published ids into credentials.
+    expect(findArmBlockers(hook({ tokenHash: 'a'.repeat(64) }))).toEqual([
+      'הצעד "קריאה": לא נוצרה כתובת. לחצו על יצירת סוד — הכתובת תיווצר יחד איתו ותישאר גלויה.',
+    ]);
+    expect(findArmBlockers(hook({ auth: 'header', tokenHash: 'a'.repeat(64), endpointId: 'ep' }))).toEqual([]);
+  });
+
+  it('header mode may still accept GET — the refusal is about the OTHER mode', () => {
+    expect(
+      findArmBlockers(hook({ tokenHash: 'a'.repeat(64), endpointId: 'ep', methods: [{ value: 'GET' }] })),
+    ).toEqual([]);
+  });
+});

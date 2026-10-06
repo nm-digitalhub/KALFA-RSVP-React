@@ -3,9 +3,10 @@
 //
 // Runs the bundle-integrity gate (scripts/check-worker-bundle.mjs) BEFORE
 // loading dist/worker.cjs, so a stale/broken bundle is refused here too, not
-// only when `npm run worker:build` happens to run. `npm run deploy` restarts
-// by app name (`pm2 restart kalfa-worker`), which reuses whatever is already
-// on disk without rebuilding; `pm2 resurrect` and a server reboot do the same.
+// only when `npm run worker:build` happens to run. A manual `pm2 restart
+// kalfa-worker` (the deploy rebuilds first, via scripts/worker-build-restart.mjs),
+// `pm2 resurrect` and a server reboot reuse whatever is already on disk without
+// rebuilding.
 // Pointing pm2 at this wrapper instead of dist/worker.cjs directly means the
 // gate runs on EVERY one of those paths, closing the gap documented in
 // scripts/check-worker-bundle.mjs's own header comment (2026-07-29/30: source

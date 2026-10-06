@@ -158,9 +158,8 @@ export interface SupportGuestView {
 // Support-relevant guest fields for one event — name/phone/status/counts/
 // dietary/rsvp-note. NO billing/payment fields (there are none on `guests`
 // anyway; documented here as a guardrail for future columns). Gated the same
-// way as getEventForSupportView; no second audit row is written here — call
-// this right after (or alongside) getEventForSupportView, which already
-// recorded the access.
+// way as getEventForSupportView, and it records its OWN audit row (see below),
+// so it is safe to call without a prior getEventForSupportView.
 export async function listGuestsForSupportView(
   eventId: string,
   reason: string,
@@ -170,9 +169,8 @@ export async function listGuestsForSupportView(
   const admin = createAdminClient();
   // The guest list is the PII-heavy read (names, phones, rsvp notes). It records
   // its OWN audit row rather than relying on a caller having audited the event
-  // first — a break-glass reason is required (view_customer_data), and the F2 gap
-  // (this function unaudited when called alone) is closed. Resolve owner, audit
-  // (fail-closed), then read.
+  // first — a break-glass reason is required (view_customer_data). Resolve owner,
+  // audit (fail-closed), then read.
   const { data: ownerRow } = await admin
     .from('events')
     .select('owner_id')

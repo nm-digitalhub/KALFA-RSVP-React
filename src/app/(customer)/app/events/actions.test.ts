@@ -118,7 +118,7 @@ describe('createEventAction — Next.js control-flow signals', () => {
   });
 });
 
-// The create form mirrors the edit form 1:1 (2.9.2026): the extra fields and
+// The create form mirrors the edit form 1:1: the extra fields and
 // the invitation image follow updateEventAction's contract exactly.
 describe('createEventAction — the edit-form fields at create time', () => {
   beforeEach(() => {

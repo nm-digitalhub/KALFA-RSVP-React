@@ -31,13 +31,13 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // ── the mock admin client ───────────────────────────────────────────────────
 //
-// docs/inquiry-email-threading-fix-plan-2026-08-25.md §2.3/§2.5 rewrote
-// findExistingInquiry into two DIFFERENT query shapes against contact_messages
-// (ref_code lookup, thread_id lookup), added a THIRD (hasSameSenderInquiry's
-// ilike email lookup), and the existing new-inquiry path now performs a FOURTH
-// (the source/source_message_id self-heal lookup, §2.8) alongside the upsert
-// and update. A single fixed-result stub (as the old test used) can no longer
-// tell these apart. Instead, each `.from('contact_messages')` call gets its own
+// docs/inquiry-email-threading-fix-plan-2026-08-25.md §2.3/§2.5:
+// findExistingInquiry issues two DIFFERENT query shapes against contact_messages
+// (ref_code lookup, thread_id lookup), hasSameSenderInquiry adds a THIRD
+// (ilike email lookup), and the new-inquiry path performs a FOURTH (the
+// source/source_message_id self-heal lookup, §2.8) alongside the upsert and
+// update. A single fixed-result stub cannot tell these apart. Instead, each
+// `.from('contact_messages')` call gets its own
 // closure that tracks which filters were applied and dispatches to the matching
 // `AdminBehavior` callback — mirroring PostgREST's real behaviour (a fresh
 // builder per `.from()` call) rather than a single canned response.
@@ -279,8 +279,8 @@ describe('intakeMailAsInquiry', () => {
   });
 
   // The channel is not a topic. 'פנייה בדואר' described where the inquiry came
-  // from — which `source` already stores — and matched no console_queues row,
-  // which is what routing will key on. "Not yet classified" is real information;
+  // from — which `source` already stores — and matched no TOPIC_TO_QUEUE_KEY
+  // entry, which is what routing keys on. "Not yet classified" is real information;
   // a wrong label is not.
   it('leaves topic null, and records the channel in source instead', async () => {
     const captured = makeAdmin({ contactUpsert: () => [{ id: 'cm-5' }] });

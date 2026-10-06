@@ -17,43 +17,39 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // already-reached PREFLIGHT (a synchronous 409 with a typed domain code, so the
 // app never gets a 202 for a dial the worker is certain to refuse) and then
 // only enqueues an `outreach-call-request` job. Every OTHER gate — consent /
-// DNC / campaign-active / concurrency / hourly-cap / balance / event-closed =
-// Gate 4b — stays in the worker's dispatchOutreachCall, which re-checks
-// already-reached too as race protection (src/lib/data/outreach-calls.ts).
+// DNC / campaign-active / dial-window / quota-seat / concurrency / hourly-cap /
+// balance / event-closed = Gate 4b — stays in the worker's dispatchOutreachCall,
+// which re-checks already-reached too as race protection
+// (src/lib/data/outreach-calls.ts).
 // Mirrors exactly how the outreach engine enqueues a call touchpoint
-// (src/lib/data/outreach-engine.ts:726-737).
+// (prepareAndSendStep in src/lib/data/outreach-engine.ts).
 //
 // Auth: requireConsoleAgent (Bearer + staff-gated is_console_agent) +
 // has_platform_permission('manage_voice') — same authority gate as the live-call
 // command routes.
 //
 // ── DECISIONS ────────────────────────────────────────────────────────────────
-// [D3]   CLOSED (2026-07-22): already_reached has NO manual bypass. The
+// [D3]   already_reached has NO manual bypass. The
 //        preflight answers 409 code='already_reached'; the worker's own check
 //        stays as race protection; the SOLE exemption is a guest-requested
 //        callback (isCallback), which is enqueued by the callback sweep and
 //        never passes through this route.
-// ── OPEN DECISIONS ───────────────────────────────────────────────────────────
+// ── NOTES ────────────────────────────────────────────────────────────────────
 // [ARCH] Enqueuing from the web tier goes through the shared SEND-ONLY
 //        PgBoss in lib/queue/web-sender.ts; every supervising boss.send()
 //        lives in the worker. 'pg-boss' is already in
 //        next.config serverExternalPackages, so it is not bundled into the
 //        server build.
-// [D1]   scriptKey — dispatchOutreachCall forwards it as the touchpoint script.
-//        'manual_console_call' must be a script the ctx/scenario understands, or
-//        reuse the campaign's call script key.
 // [D2]   touchpointIndex uniqueness — a fixed index makes getCallAttemptByTouchpoint
-//        return `already_dispatched` on a re-dial. A manual dial uses a unique lane
-//        (below) so re-dialling the same guest is allowed.
-// [D4]   which campaign — an event may have >1 campaign; picking the right one
-//        (active?) is a product decision (see the .limit(1) TODO below).
+//        return `already_dispatched` on a re-dial. A manual dial takes a unique index
+//        allocated in the database (below) so re-dialling the same guest is allowed.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const uuid = z.string().uuid();
-const bodySchema = z.strictObject({ guest_id: z.string().uuid() });
+const uuid = z.uuid();
+const bodySchema = z.strictObject({ guest_id: z.uuid() });
 
 function json(body: unknown, status: number) {
   return NextResponse.json(body, { status, headers: NO_STORE });
@@ -85,9 +81,10 @@ export async function POST(
   // non-active one — so a .limit(1) that happened to pick a draft would answer
   // 202 and then silently never dial. Observed live on 2026-07-21.
   //
-  // Ambiguity is refused rather than resolved. There is no DB constraint making
-  // one-campaign-per-event true (only the PK), so picking "the first" of several
-  // would mean dialling on behalf of a campaign nobody chose.
+  // Ambiguity is refused rather than resolved. The DB allows at most one
+  // non-cancelled campaign per event (campaigns_event_noncancelled_uidx), so
+  // several active ones should be impossible — but picking "the first" of
+  // several would mean dialling on behalf of a campaign nobody chose.
   const { data: campaigns, error: cErr } = await admin
     .from('campaigns')
     .select('id')
@@ -118,7 +115,7 @@ export async function POST(
     .maybeSingle();
   if (!contact?.normalized_phone) return json({ error: 'לאורח אין מספר חיוג' }, 422);
 
-  // PREFLIGHT — the ONE gate this route runs ([D3] CLOSED): a contact already
+  // PREFLIGHT — the ONE gate this route runs ([D3]): a contact already
   // billed as reached for THIS event is refused synchronously with a typed
   // domain code, and no job is created — instead of a 202 for a dial the worker
   // is certain to refuse. Same source of truth the worker re-checks as race
@@ -143,7 +140,7 @@ export async function POST(
     eventId,
     contactId: guest.contact_id,
     normalizedPhone: contact.normalized_phone,
-    // scriptKey is inert: three call sites write it, none read it (verified
+    // scriptKey is inert: every call site writes it, none read it (verified
     // across src/ and worker/). Kept consistent with the callback sweep rather
     // than inventing a value that means nothing.
     scriptKey: 'rsvp_v1',
@@ -179,7 +176,7 @@ export async function POST(
     return json({ error: 'הוספת השיחה לתור נכשלה' }, 502);
   }
 
-  // 'accepted', not 'queued'. The job still has ten more gates to pass in the
+  // 'accepted', not 'queued'. The job still has more gates to pass in the
   // worker, so claiming it is queued to dial would promise more than is known —
   // the same false-confidence shape save_rsvp's three-state contract exists to
   // kill.
@@ -191,7 +188,7 @@ export async function POST(
   // final outcome (dispatched / skipped / blocked / failed / unknown) and the
   // app receives it over Realtime — or polls it after a reconnect. On
   // 'dispatched' the app hops to the console_call_feed row via call_attempt_id.
-  // (call_attempts itself was never app-readable — its only authenticated
-  // policy is admin-read.)
+  // (call_attempts itself is not app-readable — it has no authenticated
+  // policy and its client grants are revoked.)
   return json({ status: 'accepted', dispatch_id: dispatchId, event_id: eventId }, 202);
 }

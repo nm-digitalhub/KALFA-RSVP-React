@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -18,11 +18,18 @@ import {
 } from "./voximplant-relocate";
 
 const repoRoot = join(__dirname, "..", "..", "..");
+const appsRoot = join(repoRoot, "voxfiles", "applications");
+const appDirName = readdirSync(appsRoot)[0];
+const appDir = join(appsRoot, appDirName);
 
 describe("console scenario sources (Phase 0 #4/#4b — origin from the application secret)", () => {
   for (const { scenario } of CONSOLE_SCENARIOS) {
     it(`${scenario}.voxengine.js reads ${APP_ORIGIN_SECRET_NAME} and pins no origin literal in code`, () => {
-      const src = readFileSync(join(repoRoot, "voxfiles", "scenarios", "src", `${scenario}.voxengine.js`), "utf8");
+      // voxengine-ci 36 moved scenario sources under the application
+      // (voxfiles/applications/<app>/scenarios/src). The app directory is
+      // discovered, not hardcoded, so a rename on the platform cannot silently
+      // turn this assertion into a skipped file.
+      const src = readFileSync(join(appDir, "scenarios", "src", `${scenario}.voxengine.js`), "utf8");
       expect(src).toContain(`VoxEngine.getSecretValue('${APP_ORIGIN_SECRET_NAME}')`);
       expect(scenarioCodeMentionsHost(src, "beta.kalfa.me")).toBe(false);
       expect(scenarioReadsOriginSecret(src, "beta.kalfa.me")).toBe(true);

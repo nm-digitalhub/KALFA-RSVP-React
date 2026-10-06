@@ -200,7 +200,7 @@ export function mapEvents(resp: RunReportResponse | null | undefined): EventCoun
   );
 }
 
-// v3: exact-count funnel over the phase-1 events, in journey order; events
+// Exact-count funnel over the phase-1 events, in journey order; events
 // with no data yet render as 0 (a new product's honest funnel).
 export function mapFunnel(resp: RunReportResponse | null | undefined): FunnelStep[] {
   const counts = new Map(rows(resp).map((row) => [dim(row, 0), met(row, 0)]));
@@ -242,7 +242,7 @@ export function mapLandingPages(resp: RunReportResponse | null | undefined): Lan
     .filter((r) => r.landingPage && r.landingPage !== '(not set)');
 }
 
-// v4: custom-dimension breakdowns. Rows with '(not set)'/empty keys are
+// Custom-dimension breakdowns. Rows with '(not set)'/empty keys are
 // dropped — every OTHER event reports '(not set)' for a param it never
 // carried (live-verified 27.7: lead_source returned '(not set)'×59 alongside
 // the real contact_form row).
@@ -264,7 +264,7 @@ export function mapBillingModels(resp: RunReportResponse | null | undefined): Bi
     .filter((r) => r.key && r.key !== '(not set)');
 }
 
-// v5: campaign performance. leadsResp is a SEPARATE eventName='generate_lead'
+// Campaign performance. leadsResp is a SEPARATE eventName='generate_lead'
 // report over the same [campaignName, source, medium] triple (see
 // buildCoreBatchD) — joined here on the FULL triple, not campaignName alone:
 // the same campaign name can legitimately appear with different source/medium

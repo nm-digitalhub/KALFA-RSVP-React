@@ -1,10 +1,12 @@
 // Owner-instructed one-off (2026-08-30): charge ₪1 on an EXISTING saved card
-// token (a fresh J4, AutoCapture:true — mirrors production capture.ts exactly),
-// to hand SUMIT support the exact request/response for their review. Reuses
+// token (a fresh J4, AutoCapture:true — mirrors production capture.ts except
+// VATRate, see the vatRate note below), to hand SUMIT support the exact
+// request/response for their review. Reuses
 // raw-charge.ts's chargeRaw — never a bespoke fetch. Token/expiry/CitizenID come
-// from env vars ONLY (never hardcoded, never written to a file) and are NOT
-// printed in the echoed request body (redacted below); the response IS printed
-// in full because that's the artifact requested.
+// from env vars ONLY (never hardcoded, never written to a file). The echoed
+// request body redacts only Credentials, so it DOES show the token, expiry and
+// CitizenID; the response is printed in full because that's the artifact
+// requested.
 //
 //   CHARGE_TOKEN=<uuid> CHARGE_EXP_MONTH=4 CHARGE_EXP_YEAR=2030 \
 //   CHARGE_CITIZEN_ID=<id> CHARGE_AMOUNT=1 \
@@ -40,7 +42,7 @@ async function main() {
     savedCardExpYear: EXP_YEAR,
     savedCardCitizenId: CITIZEN_ID,
     amount: AMOUNT,
-    vatRate: '18', // ignored on the saved-token path (explicit null is sent)
+    vatRate: '18', // chargeRaw sends VATRate whenever this is non-empty (production sends none)
     autoCapture: true, // J4 — a real charge
     externalId: `owner-charge-${Date.now()}`,
     customerId: CUSTOMER_ID,

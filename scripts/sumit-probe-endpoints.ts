@@ -42,7 +42,7 @@ const CANDIDATES = [
   '/crm/schema/createfolder/',
   // Entirely NEW modules — SUMIT is a full business platform (reports,
   // inventory beyond stock, employees, exports, files) — none of these
-  // appear anywhere in the 85 documented paths.
+  // appear anywhere in the 84 documented paths (swagger.json).
   '/reports/reports/list/',
   '/reports/reports/get/',
   '/reports/reports/run/',

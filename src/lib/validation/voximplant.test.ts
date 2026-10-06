@@ -53,10 +53,10 @@ describe('voxCallbackSchema — completed/rsvp_digit refine per rsvp_method', ()
     }
   });
 
-  // Stage 6: 'handed_off' is the new terminal status RSVPAgent.voxengine.js's
+  // 'handed_off' is the terminal status RSVPAgent.voxengine.js's
   // terminalStatus() posts once a human takeover connected but the AI never
-  // carried the conversation. Accepted BEFORE the scenario deploy (hard
-  // ordering constraint) — see call-attempts.ts TERMINAL_STATUSES and
+  // carried the conversation. It must be accepted BEFORE the scenario can post
+  // it (hard ordering constraint) — see call-attempts.ts TERMINAL_STATUSES and
   // call-result-processing.ts's billing branch.
   it('handed_off is accepted as a terminal call_status, with or without a recording', () => {
     expect(

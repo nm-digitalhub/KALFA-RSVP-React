@@ -1,14 +1,33 @@
 // pg-boss queue names + per-queue config (pure constants — no pg-boss import, so
-// safe to reference anywhere). The worker (worker/main.ts) owns work()/schedule().
+// safe to reference anywhere). The worker (worker/main.ts) owns work()/schedule()
+// for every queue except the owner-agent ones, which kalfa-owner-agent works.
+// Queues that no longer exist. pg-boss keeps a schedule row in the database
+// after the code stops calling schedule(), so a retired cron would keep filing
+// jobs that no worker drains; the worker unschedules and deletes these at
+// startup (unschedule and deleteQueue are both no-ops once done).
+//   outreach-sweeper — ran the SAME handleArm as outreach-arm every 5 minutes in
+//   the same process (worker/main.ts), so it added no independent protection:
+//   if the worker is down both stop, and a lost arm schedule shows up as
+//   outreach-arm stale on /admin/debug. Retired 2026-09-30 (576 rows/day).
+//   voximplant-callback-dispatch-reconcile, voximplant-sales-dispatch-reconcile —
+//   ran on the same */10 cron as voximplant-call-reconcile, which now runs all
+//   three table checks. Their alert dedup stays independent: it lives in one
+//   makeStuckAlerter closure per table (voximplant-reconcile.ts), never in the
+//   queue. Retired 2026-09-30 (576 rows/day).
+export const RETIRED_QUEUES = [
+  'outreach-sweeper',
+  'voximplant-callback-dispatch-reconcile',
+  'voximplant-sales-dispatch-reconcile',
+] as const;
+
 export const QUEUES = {
   arm: 'outreach-arm',
   step: 'outreach-step',
   callRequest: 'outreach-call-request',
-  sweeper: 'outreach-sweeper',
   dead: 'outreach-dead',
   // Persist-then-process intake: drains webhook_inbox out-of-band (B2).
   webhook: 'webhook-process',
-  // Auto-thankyou periodic sweep — same idiom as arm/sweeper: a cron-scheduled
+  // Auto-thankyou periodic sweep — same idiom as arm: a cron-scheduled
   // tick that reads fresh DB state, not a per-campaign delayed job. See
   // src/lib/data/auto-thankyou.ts.
   thankyouSweep: 'campaign-thankyou-sweep',
@@ -30,23 +49,37 @@ export const QUEUES = {
   // when balance dips below reserve/low-threshold. Read-only; never dials. Inert
   // while VOXIMPLANT_LIVE_CALLS is off. See src/lib/data/voximplant-balance.ts.
   balanceCheck: 'voximplant-balance-check',
+  // Passive WhatsApp connection check — two Graph GETs, no message ever sent.
+  // "Send-only" describes how we MESSAGE guests, not whether the integration can
+  // be examined. See src/lib/whatsapp/health.ts.
+  whatsappHealthCheck: 'whatsapp-health-check',
+  // Passive outgoing-mail check — Resend's read-only domain registry, or an SMTP
+  // connect+AUTH with no message composed. It exists mainly to catch the SILENT failure:
+  // SPF/DKIM breaking while every send call keeps returning success. See
+  // src/lib/email/health.ts.
+  emailHealthCheck: 'email-health-check',
+  // ExtrA API-key DEADLINE monitor — one read-only GET a day, no SMS sent. Not a
+  // liveness check like its siblings: the live key expires 2027-10-27 and nothing
+  // else watches that date. On the day it passes, OTP, cancellation SMS, callback
+  // scheduling and the sales signup link all stop at once. See
+  // src/lib/sms/run-key-check.ts.
+  extraKeyCheck: 'extra-key-check',
+  // SUMIT liveness — one read-only POST a day (website/companies/getdetails/), which
+  // takes nothing but the credentials. No expiry to count down here, unlike ExtrA:
+  // it earns a queue on consequence. If the pair stops resolving, every charge stops,
+  // and today that surfaces as a customer stuck at a payment form.
+  sumitHealthCheck: 'sumit-health-check',
   // Voximplant stuck-row reconciler (H3) — every 10m alert (ONLY) on pre-terminal
-  // call_attempts older than 15m. NEVER re-issues StartScenarios. See
-  // src/lib/data/voximplant-reconcile.ts.
+  // rows older than 15m in all three dispatch tables (call_attempts,
+  // callback_request_attempts, sales_call_attempts). NEVER re-issues
+  // StartScenarios. See src/lib/data/voximplant-reconcile.ts.
   callReconcile: 'voximplant-call-reconcile',
-  // Same H3 reconciler pattern, extended 2026-08-22 to the meeting-confirm and
-  // sales-closing dispatch surfaces (callback_request_attempts /
-  // sales_call_attempts) — separate queues so each table's edge-triggered
-  // alert-dedup state is genuinely independent, not because the underlying
-  // logic differs. See src/lib/data/voximplant-reconcile.ts.
-  callbackDispatchReconcile: 'voximplant-callback-dispatch-reconcile',
-  salesDispatchReconcile: 'voximplant-sales-dispatch-reconcile',
   // Voximplant session-log export (A4) — daily; downloads logs (which expire
   // ~1 month) into the private vox-call-logs bucket. Singleton so a manual run
   // never overlaps the cron (an atomic per-row lease is the inner guard). See
   // src/lib/data/vox-log-export.ts.
   logExport: 'voximplant-log-export',
-  // ElevenLabs character-quota alert (item 3) — every 6h read /v1/user/
+  // ElevenLabs character-quota alert — every 6h read /v1/user/
   // subscription and Slack at ≥80% (warn) / ≥95% (error). Config-gated (no key
   // → no-op), read-only, never throws. See src/lib/data/elevenlabs-quota.ts.
   elevenlabsQuota: 'elevenlabs-quota-check',
@@ -70,7 +103,7 @@ export const QUEUES = {
   // 60-day expiry. Singleton so an overlapping run never refreshes the same
   // token twice in flight. See src/lib/data/instagram-token-refresh.ts.
   igTokenRefresh: 'instagram-token-refresh',
-  // Console-agent calendar presence sync (Outlook/Exchange research, 12.8) —
+  // Console-agent calendar presence sync —
   // every 10m, per-agent calendar-derived free/busy into
   // console_agent_calendar_presence (a THIRD, advisory axis — never merged
   // into agent_status, the business truth). Read-only against Exchange;
@@ -169,6 +202,11 @@ export const QUEUES = {
   // discovered after the fact from SUMIT. See
   // src/lib/data/sumit-hold-reconcile.ts.
   sumitHoldReconcile: 'sumit-hold-reconcile',
+  // Payment operations stuck in flight — every 10 minutes. A payment row is written PENDING before SUMIT is called
+  // and completed right after; a process that dies in between (a deploy restart, an out-of-memory kill) leaves it
+  // pending, holding the "pay once" lock with SUMIT's answer unknown. This moves rows older than 10 minutes to REVIEW
+  // (never a retry, never a guess) and alerts, so a person checks SUMIT. See src/lib/data/payment-orphans.ts.
+  paymentOrphans: 'payment-orphans',
   // Abandoned phone-change cleanup — daily. Supabase's own troubleshooting
   // guide prescribes it: phone verification finds the user by SEARCHING
   // auth.users for the number in `phone_change`, which carries no uniqueness
@@ -185,7 +223,134 @@ export const QUEUES = {
   // (scripts/seo-audit.mjs) grades pages at deploy, this watches BETWEEN
   // deploys. See src/lib/seo/technical-watch.ts.
   seoTechnicalWatch: 'seo-technical-watch',
+  // Supabase CLI keep-current — weekly. The CLI only NOTIFIES about new
+  // versions, and this account has no system cron (Plesk denies crontab), so
+  // the upgrade runs here: official installer for the binary, the same exact
+  // version pinned onto npm, and regenerated types parked on a review branch
+  // when they change. Slack only when something actually happened.
+  // See src/lib/ops/supabase-cli-update.ts + scripts/update-supabase-cli.sh.
+  supabaseCliUpdate: 'supabase-cli-update',
+  // One admin-authored workflow execution. Event-driven, enqueued by the
+  // webhook drain the moment an inbound message matches an armed workflow —
+  // never a periodic scan. The payload is the run id and nothing else: the row
+  // already exists (created with its dedupe_key, so a Meta retry of the same
+  // delivery yields one run) and the handler reads the definition and the
+  // trigger payload fresh from it.
+  //
+  // The whole graph runs inside ONE job, and a retry replays every node —
+  // workflow_run_steps' unique (run_id, node_id) is what stops the second side
+  // effect. See src/lib/workflow/engine/activity-runner.ts.
+  //
+  // Since `logic.wait`, a run may also park mid-graph. There is still
+  // no per-node job: the run re-enqueues ITSELF with `startAfter`, replays from
+  // the start, and the ledger short-circuits everything that already finished.
+  // The vendored runGraph is untouched.
+  workflowRun: 'workflow-run',
+
+  // Every minute: which armed workflows does the clock start right now.
+  //
+  // The tick is cheap and does nothing by itself — it reads the armed workflows
+  // and creates run rows for the ones whose time matches. A minute is the
+  // resolution the config offers, so anything coarser would mean a schedule set
+  // for 09:00 firing at 09:05.
+  workflowSchedule: 'workflow-schedule-sweep',
+
+  // Owner WhatsApp business-data agent (plans/owner-whatsapp-agent-plan.md §2.2,
+  // stage 4). Event-driven: the WhatsApp webhook enqueues ONE job per diverted,
+  // gate-passing staff question, with id deterministicJobId(wamid), so a Meta
+  // retry of the same message is a no-op. The payload is the intake row id and
+  // nothing else (OwnerAgentReplyJob) — the question text stays in
+  // owner_agent_intake.
+  //
+  // The CONSUMER is not kalfa-worker: it is the separate pm2 process
+  // kalfa-owner-agent (src/lib/owner-agent/consumer/main.ts, stage 6b), which
+  // creates this queue if missing and sets its retry/expiry. The worker's
+  // createQueue loop over QUEUES creates it too (pg-boss refuses send() to a
+  // queue that does not exist).
+  ownerAgentReply: 'owner-agent-reply',
+  // Owner-agent housekeeping, worked by kalfa-owner-agent as well (the worker
+  // only creates them, through the same loop): every 5 minutes re-enqueue
+  // intake rows whose job never arrived and close rows past Meta's 24h window
+  // (consumer/sweep.ts); daily, delete question text after 7 days and the
+  // agent's own CLI session files after 14 (consumer/retention.ts, stage 8).
+  ownerAgentIntakeSweep: 'owner-agent-intake-sweep',
+  ownerAgentRetention: 'owner-agent-retention',
+  // Owner-agent proactive report (plans/owner-agent-chat-sdk-capabilities-plan.md
+  // §4.8), worked by kalfa-owner-agent. Event-driven like ownerAgentReply: the
+  // planner tick (on the intake-sweep schedule) inserts one
+  // owner_agent_report_run per due slot and enqueues ONE job per inserted run,
+  // with id deterministicJobId('owner-report:' + runId). The payload is the run
+  // id and nothing else (OwnerAgentReportJob); the handler
+  // (src/lib/owner-agent/reports/report.ts) re-reads everything and re-gates.
+  // A report whose subscription carries the owner's instructions runs the
+  // model; that one is handed to ownerAgentReply ({ runId } payload, id
+  // deterministicJobId('owner-report-model:' + runId)), whose single worker is
+  // what keeps model runs one at a time.
+  ownerAgentReport: 'owner-agent-report',
 } as const;
+
+// The owner-agent-reply job payload. The intake row id ONLY — never the question,
+// never a phone. The consumer (consumer/reply.ts) re-reads the row and re-runs
+// the gate.
+export type OwnerAgentReplyJob = {
+  intakeId: string;
+};
+
+// The owner-agent-report job payload. The run id ONLY — never a phone, never
+// report content.
+export type OwnerAgentReportJob = {
+  runId: string;
+};
+
+// workflow-run retry policy. Deliberately NO `deadLetter`, for the same reason
+// CALL_RETRY omits it: QUEUES.dead's consumer (handleDead) hard-assumes an
+// OutreachStepJob shape and would crash on a payload of any other kind. A
+// workflow job is { runId }, so routing it there would turn a failed run into a
+// crashed dead-letter worker. guardedWorker already Slack-alerts on the final
+// throw, and the run row carries status='failed' with its message.
+//
+// Two retries, not three: a workflow's steps are claimed in an idempotent
+// ledger, so a retry re-runs only what genuinely did not finish — but every
+// retry still walks the whole graph, and a permanently broken graph should stop
+// being walked quickly.
+/**
+ * How long ONE delivery of a workflow run may hold its job.
+ *
+ * ⚠️ SET EXPLICITLY, because the inherited value was the same number as the step
+ * lease and that is the one value it must not be. pg-boss defaults
+ * `expireInSeconds` to 900 (dist/plans.js `QUEUE_DEFAULTS`), `STEP_LEASE_MS` is
+ * 15 minutes, and `workflowRun` is not in the worker's sweep-expiry list — so
+ * both timers sat at 900s by inheritance rather than by choice.
+ *
+ * What that collision does: at 900s `failJobsByTimeout` DELETES the active job
+ * and re-inserts it as `retry`, with `GREATEST(retry_delay,1)` putting the next
+ * attempt ~1-2s later. The step row claimed at t=0 becomes reclaimable at that
+ * exact moment too, so the retry takes over a node the first handler may still
+ * be inside. Nothing stops it: `singletonKey` constrains nothing under the
+ * `standard` policy this queue uses.
+ *
+ * 600 < 900 breaks it: a retry now meets a step row still inside its lease,
+ * reads `in_flight`, and comes back as `contended` instead of re-running the
+ * node. And 600 sits above every node budget (`MAX_NODE_TIMEOUT_MS`, 300s), so
+ * a node always times out on its own terms before the job is taken from it.
+ *
+ * node budget (≤300s) < this (600s) < STEP_LEASE_MS (900s) — asserted in
+ * `workflow-budgets.test.ts`, not left to these three files agreeing by hand.
+ */
+export const WORKFLOW_RUN_EXPIRE_SECONDS = 600;
+
+export const WORKFLOW_RETRY = {
+  retryLimit: 2,
+  retryBackoff: true,
+  retryDelayMax: 120,
+} as const;
+
+// The workflow-run job payload. The run id ONLY — never the message, never a
+// phone, never a name. Everything the handler needs is on the row, which keeps
+// guest PII out of pg-boss's own job table and out of its retry history.
+export type WorkflowRunJob = {
+  runId: string;
+};
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The
 // compare-and-advance + deterministic job id make retries at-most-once-effective.
@@ -197,7 +362,7 @@ export const STEP_RETRY = {
 } as const;
 
 // outreach-call-request retry policy. Applied at boss.send() time (like
-// STEP_RETRY, per enqueue.ts:53-57). Only the pre-dial GetAccountInfo transport
+// STEP_RETRY, per enqueueStepJob). Only the pre-dial GetAccountInfo transport
 // check is ever retried; once StartScenarios is invoked the dispatcher never
 // asks for a retry (ambiguous ⇒ start_unknown, definite ⇒ failed_to_start), so a
 // retry can never place a second call. Deliberately NO `deadLetter`: QUEUES.dead's
@@ -242,11 +407,12 @@ export type OutreachCallRequest = {
    * This dial fulfils a callback the guest asked for during an earlier call
    * (schedule_callback), not a new campaign touchpoint.
    *
-   * It exempts the dial from the already-reached gate and NOTHING else —
-   * consent, DNC and the event-closed gate are still enforced. Owner decision,
-   * 2026-07-21: a callback is the SAME billable reach continuing, not a second
-   * one. The contact was already billed when they first answered, and finishing
-   * the conversation they asked to postpone must not charge for them twice.
+   * It exempts the dial from the already-reached gate and the contact-quota
+   * seat check, and nothing else — consent, DNC and the event-closed gate are
+   * still enforced. A callback is the SAME billable reach continuing, not a
+   * second one. The contact was already billed when they first answered, and
+   * finishing the conversation they asked to postpone must not charge for them
+   * twice.
    *
    * Absent/false on every ordinary campaign job, so the gate keeps its current
    * behaviour by default.

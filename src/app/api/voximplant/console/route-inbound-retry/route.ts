@@ -13,15 +13,19 @@ import { routeInboundRetryBodySchema } from '@/lib/validation/console-calls';
 // POST /api/voximplant/console/route-inbound-retry   called BY
 // ConsoleInbound.voxengine.js's ringNext, ONCE, only after the original
 // server-computed ring_order is exhausted (see the scenario's ringNext for
-// the call site). The "written but not deployed" caveat that used to live
-// here is stale: a read-only fetch of the DEPLOYED scenario text (#919510,
-// `npm run voximplant -- scenario --id 919510`, console audit 12.8)
-// confirmed this exact HTTP call is present in what is live on Voximplant.
-// That only proves the scenario SOURCE reached the platform — this audit did
-// NOT confirm the rule binding is live, that consoleWakeEnabled is on (it
-// gates this route to always-empty when off), or that a retry has actually
-// fired on a real call. Re-verify those separately before relying on this
-// path in a live test.
+// the call site). A read-only fetch of the DEPLOYED scenario text
+// (`npm run voximplant -- scenario --id <id>`, console audit 12.8) confirmed
+// this exact HTTP call is present in what is live on Voximplant. That only
+// proves the scenario SOURCE reached the platform — this audit did NOT
+// confirm the rule binding is live, that consoleWakeEnabled is on (it gates
+// this route to always-empty when off), or that a retry has actually fired on
+// a real call. Re-verify those separately before relying on this path in a
+// live test.
+//
+// The scenario id is NOT written down on purpose — ConsoleInbound was 919510
+// and became 920393 in the 2026-09-14 Shared-folder migration, and any number
+// here goes stale the next time a scenario moves. Read it from
+// voxfiles/.voxengine-ci/applications/<app>/rules.metadata.config.json.
 //
 // WHY THIS EXISTS (wake-and-answer research, 12.8): route-inbound computes
 // ring_order ONCE, before Call.answer(). ConsoleInbound then walks that
@@ -98,7 +102,7 @@ export async function POST(request: Request) {
     // 1. Heartbeat-fresh agents (the original behaviour): someone who
     //    connected AFTER the primary ring was computed. They are awake, so
     //    they can answer immediately — always try them first.
-    // 2. On-shift agents, WITHOUT the heartbeat gate (added 14.8). These are
+    // 2. On-shift agents, WITHOUT the heartbeat gate. These are
     //    the sleepers. Ringing one is what makes Voximplant send an
     //    incoming-call push to their device: the platform pushes on
     //    `callUser`, and `callUser` only happens for names in a ring order.

@@ -19,9 +19,8 @@ const inputClass =
 // stale value from another kind ever lingers. Every field is optional here:
 // completeness is enforced only at campaign enablement.
 //
-// ONE component for both the create and the edit form (owner ruling
-// 2026-09-02: the two forms carry the same fields) — the create form passes no
-// defaults and no requiredKeys.
+// ONE component for both the create and the edit form (the two forms carry the
+// same fields) — the create form passes no defaults and no requiredKeys.
 export function CelebrantFields({
   eventType,
   defaults = {},

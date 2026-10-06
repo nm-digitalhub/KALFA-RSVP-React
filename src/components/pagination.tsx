@@ -1,8 +1,8 @@
 import Link from 'next/link';
 
-// Prev/next pager driven by ?page= in the URL. Promoted out of the admin route
-// group's `_components.tsx` so admin, customer and any future list can share it
-// without a cross-route-group import. `total`, `page`, `pageSize` come from the
+// Prev/next pager driven by ?page= in the URL. Lives outside the admin route
+// group so admin, customer and any future list can share it without a
+// cross-route-group import. `total`, `page`, `pageSize` come from the
 // server query; links preserve the base path and extra query params, and
 // first/last pages disable the respective control. Plain <Link>s — works without
 // JS and is bookmarkable.

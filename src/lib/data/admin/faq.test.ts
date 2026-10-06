@@ -13,7 +13,7 @@ import { createFaqItem, deleteFaqItem, listAllFaqItems, updateFaqItem } from './
 
 // Two independent protection layers on this DAL, both re-checked against a
 // fresh DB read BY ID — never trusted from the caller's input:
-//   - Tier 1 (item_key === PROTECTED_FAQ_ITEM_KEY): the ₪200-unconditional
+//   - Tier 1 (item_key === PROTECTED_FAQ_ITEM_KEY): the live pricing
 //     disclosure row. question/published are locked; only answer/sort_order
 //     ever apply.
 //   - Tier 2 (is_structural, a superset including Tier 1 plus the §14ג

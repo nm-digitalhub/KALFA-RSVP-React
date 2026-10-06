@@ -107,7 +107,8 @@
 | `rsvp_token` | `text` | לא | **UNIQUE**; default `encode(gen_random_bytes(16),'hex')` — טוקן bearer של 128 ביט (32 hex), CSPRNG; הוגבה מ‑12 בייט (96 ביט) במיגרציה `202606290034`. הקוד לעולם לא קובע אותו — רק ברירת המחדל ב‑DB |
 | `rsvp_token_revoked_at` | `timestamptz` | כן | ביטול/רוטציה של טוקן; טוקן מבוטל מתנהג כלא‑קיים בשתי פונקציות ה‑RSVP |
 | `full_name` | `text` | לא | PII |
-| `phone` | `text` | כן | PII |
+| `phone` | `text` | כן | PII. נשמר **כפי שהבעלים הקליד** — צורה ישראלית מקומית, E.164 בינלאומית, עם או בלי מפרידים |
+| `phone_digits` | `text` | כן | **stored generated** (9.9.2026): `regexp_replace(phone,'[^0-9]','','g')`, ו‑`nullif` לריק. קיימת אך ורק כדי שחיפוש האורחים יתאים מספר בלי תלות במפרידים או במדינה. פוסטגרס מתחזק אותה בכל כתיבה — אין טריגר ואין קוד אפליקציה. **לא לחייג ולא לשלוח ממנה** — לשליחה יש `contacts.normalized_phone` ב‑E.164 |
 | `language` | `text` | כן | default `'he'` |
 | `expected_count` | `integer` | כן | default `1`; NULL = לא הוגדר (ואז אין תקרה ב‑`submit_rsvp`) |
 | `status` | `guest_status` | לא | default `'pending'` |
@@ -406,7 +407,7 @@
 | `billing_route` | `billing_route` | כן | `hold_j5` (מסלול A) / `saved_token` (מסלול B) |
 | `final_charge_amount` | `numeric` | כן | |
 | `final_invoice_document_id` | `integer` | כן | |
-| **מסלול A (J5 hold):** `auth_amount` `numeric`, `auth_number` `text`, `authorized_at` / `auth_expires_at` `timestamptz`, `capture_status` `text` (pending/captured/failed…), `release_status` `text` (pending/released/expired), `sumit_order_document_id` `integer`, `auth_external_ref` `text` (ה‑`Customer.ExternalIdentifier` — העוגן היחיד ל‑capture, מיגרציה 0025) | | כולן כן | |
+| **מסלול A (J5 hold):** `auth_amount` `numeric`, `auth_number` `text`, `authorized_at` / `auth_expires_at` `timestamptz`, `capture_status` `text` (CHECK: pending/authorized/hold_failed/hold_review), `release_status` `text` (CHECK: released — נכתב רק ע"י `sumit-hold-reconcile`; ‏NULL = עוד לא נראה שחרור), ‏(`charge_status` בשורת הקבלה למטה — CHECK: pending/charged/nothing_to_charge/charge_failed/charge_review; מיגרציה `20260928231225`), `sumit_order_document_id` `integer`, `auth_external_ref` `text` (ה‑`Customer.ExternalIdentifier` — העוגן היחיד ל‑capture, מיגרציה 0025) | | כולן כן | |
 | **מסלול B / כרטיס שמור:** `card_token_ref` `text`, `card_exp_month` / `card_exp_year` `smallint` (0026 — לעולם לא PAN/CVV), `card_citizen_id` `text` (0027 — **PII**, ת"ז של בעל הכרטיס, נדרש ע"י SUMIT לחיוב טוקן) | | כולן כן | |
 | **קבלה/חיוב (0027):** `charge_status` `text`, `charged_at` `timestamptz`, `sumit_charge_document_id` / `charge_document_number` / `charge_payment_id` `integer`, `charge_document_url` / `charge_auth_number` `text` | | כולן כן | |
 | `created_at`, `updated_at` | `timestamptz` | לא | `now()`; טריגר `trg_campaigns_updated` |
@@ -647,7 +648,7 @@
 | SMS ‏(ExtrA) | `extra_sms_token` 🔒, `extra_sms_sender` | OTP לחתימת הסכם |
 | SMTP ‏(IONOS) | `smtp_host`, `smtp_port` `integer`, `smtp_secure` `boolean not null default false`, `smtp_user`, `smtp_password` 🔒, `smtp_from` | דוא"ל עסקי |
 | DKIM | `dkim_domain`, `dkim_selector`, `dkim_private_key` 🔒 | חתימה עצמית של מייל יוצא |
-| WhatsApp Cloud API | `whatsapp_phone_number_id`, `whatsapp_access_token` 🔒, `whatsapp_app_secret` 🔒 (אימות HMAC), `whatsapp_verify_token`, `whatsapp_waba_id` | ‏WABA_ID = היעד של ניהול תבניות |
+| WhatsApp Cloud API | `whatsapp_phone_number_id` (**מספר ה-RSVP בלבד**), `whatsapp_access_token` 🔒, `whatsapp_app_secret` 🔒 (אימות HMAC), `whatsapp_verify_token`, `whatsapp_waba_id` | ‏WABA_ID = היעד של ניהול תבניות. **אין כאן עמודה למספר הייבוא** — ל-WABA יש כמה מספרים, והשיוך של כל אחד לתפקיד חי ב-`provider_numbers` + `provider_number_roles` (מיגרציה `20260910185730`). `whatsapp_import_sender` הוא התפקיד שהניתוב הנכנס קורא; `whatsapp_rsvp_sender` משקף את העמודה הזו. |
 | זהות משפטית (§14ג) | `company_legal_name`, `company_legal_id`, `company_legal_address`, `company_contact_phone`, `company_contact_email`, `privacy_url`, `terms_url`, `warranty_text` | גילויי חובה בהסכם — data, לא hardcode |
 | פרמטרי הסכם | `agr_service_activation_window`, `agr_offer_validity_days`, `agr_charge_window_days`, `agr_hold_release_days`, `agr_liability_cap`, `agr_retention_days`, `agr_record_retention_months` — כולם `text default ''` | טקסט חופשי (ייתכנו ביטויים בעברית); מוזרקים לתבנית ההסכם |
 | ספי כיסוי לחיוב | `reasonable_coverage_contacts` `integer not null default 300`, `extreme_threshold_contacts` `integer not null default 400` | קלט לחישוב גובה ה‑hold ‏(0024) |
@@ -734,6 +735,7 @@
 
 - `on_auth_user_created` על `auth.users` → ‏`handle_new_user()` (יצירת פרופיל).
 - Event trigger ‏`ensure_rls` ‏(`ddl_command_end`) → ‏`rls_auto_enable()` (RLS אוטומטי על טבלאות חדשות ב‑`public`).
+- **מחיקת אירוע בדיקה** (מיגרציה `20260929001415`, החליפה את הטריגר `events_purge_staff_test_dependents` מ‑`20260928231226`, שהוסר): אין טריגר מחיקה על `events`; ‏DELETE רגיל נחסם כרגיל ע"י הפניות ה‑RESTRICT. אירוע נמחק רק אחרי סימון מפורש בטבלה `test_events` (בלי grants ל‑anon/authenticated) ודרך הפונקציות `mark_test_event` / `unmark_test_event` / `purge_test_event` (‏SECURITY DEFINER, ‏service_role בלבד; באפליקציה מאחורי ההרשאות `events.mark_test` / `events.purge_test`). ‏`purge_test_event` מסרב כשיש פעילות כספית כלשהי, שומר snapshot של שורות הכסף והמסמכים ב‑`test_events.snapshot`, מוחק את כל ההפניות החוסמות, מנתק את `support_access_log.event_id`, מוחק את האירוע ורושם ב‑`activity_log` (`event_id` NULL). לא נוגע ב‑SUMIT — תפיסות פתוחות משחררים בלוח הבקרה שלו.
 
 ## 17. ניואנסים חשובים
 
@@ -756,7 +758,7 @@
 ה‑worker ‏(`worker/main.ts`, תהליך pm2 ‏`kalfa-worker`) משתמש ב‑**pg‑boss ‏v12** ‏(`pg-boss@^12.21.2`) עם `schema: 'pgboss'` — סכמה נפרדת באותו מסד Supabase, שמנוהלת כולה ע"י הספרייה (לא ע"י מיגרציות הפרויקט). טבלאות בפועל ב‑DB החי: ‏`job`, ‏`job_common`, ‏`job_dependency`, ‏`queue`, ‏`schedule`, ‏`subscription`, ‏`version`, ‏`warning`, ‏`bam`.
 
 - **חיבור**: ה‑worker מתחבר ישירות ל‑Postgres דרך משתני `SUPABASE_DB_*` (ה‑session pooler של Supabase, פורט 5432 — המארח הישיר הוא IPv6‑only ולא נגיש מהשרת), עם `application_name: 'kalfa-worker'` ו‑`max: 8` (הוגדל מ‑4 ב‑3.8.2026).
-- **תורים** (מוגדרים ב‑`src/lib/queue/queues.ts`): ‏`outreach-arm` ‏(cron כל דקה — זריעה/הזרוע של הצעד הנוכחי), ‏`outreach-step` (צעד בודד; ‏retryLimit 3 עם backoff ו‑dead‑letter ל‑`outreach-dead`), ‏`outreach-call-request`, ‏`outreach-sweeper` (כל 5 דקות — self‑heal), ‏`webhook-process` (כל דקה — ניקוז `webhook_inbox`).
+- **תורים** (מוגדרים ב‑`src/lib/queue/queues.ts`): ‏`outreach-arm` ‏(cron כל דקה — זריעה/הזרוע של הצעד הנוכחי), ‏`outreach-step` (צעד בודד; ‏retryLimit 3 עם backoff ו‑dead‑letter ל‑`outreach-dead`), ‏`outreach-call-request`, ‏`webhook-process` (ניקוז `webhook_inbox`: מתעורר בכל שמירה, ו-cron כל 5 דקות כרשת ביטחון, מ-30.9.2026).
 - **הקשר לסכמת `public`**: העבודות נושאות מזהים בלבד (`campaignId`/`contactId`/`eventId`/`stepIndex`); כל המצב העמיד חי ב‑`public` — הסמן ב‑`outreach_state` (compare‑and‑advance + מזהי job דטרמיניסטיים ⇒ אידמפוטנטיות), הקליטה ב‑`webhook_inbox` (הטעינה דרך `claim_webhook_events`), והחיוב אך ורק דרך `try_record_billed_result`. שערי ההפעלה (`outreach_enabled` וכו') נבדקים בכל צעד, כך שה‑worker אינרטי עד go‑live.
 
 ## 20. היסטוריית מיגרציות

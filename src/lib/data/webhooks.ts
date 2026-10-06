@@ -2,9 +2,11 @@ import 'server-only';
 
 import { createHash } from 'node:crypto';
 
+import { QUEUES } from '@/lib/queue/queues';
+import { getWebJobSender } from '@/lib/queue/web-sender';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Json, Tables, TablesInsert } from '@/lib/supabase/types';
-// Durable intake for provider webhooks (B2). The signature-verified route
+// Durable intake for provider webhooks. The signature-verified route
 // normalizes events and inserts them here; a pg-boss worker processes them
 // out-of-band (persist-then-process), so the economic logic never depends on the
 // HTTP request lifetime and Meta retries can't double-bill. All writes are
@@ -28,6 +30,30 @@ export async function insertWebhookEvents(
     .from('webhook_inbox')
     .upsert(rows, { onConflict: 'provider,dedupe_key', ignoreDuplicates: true });
   if (error) throw new Error('שמירת אירועי הוובהוק נכשלה', { cause: error });
+  await nudgeWebhookProcessing();
+}
+
+// Wake the webhook-process worker now instead of waiting for its safety-net
+// cron. Throttled with pg-boss's own singletonKey + singletonSeconds (one job
+// per 5-second slot); singletonNextSlot moves a throttled send to the NEXT slot
+// instead of dropping it, so an event persisted while the current drain is
+// already running still gets a drain of its own (https://pgboss.io/api/jobs,
+// "throttling" / "debouncing"). Best-effort: the rows above are already
+// durable and the cron drains them if this fails, so it never throws and never
+// changes the webhook's answer. Measured 2026-09-30: the every-minute cron ran
+// 10,195 times in 7 days for 167 inbox rows.
+export const WEBHOOK_NUDGE_SLOT_SECONDS = 5;
+async function nudgeWebhookProcessing(): Promise<void> {
+  try {
+    const boss = await getWebJobSender();
+    await boss.send(QUEUES.webhook, {}, {
+      singletonKey: 'webhook-nudge',
+      singletonSeconds: WEBHOOK_NUDGE_SLOT_SECONDS,
+      singletonNextSlot: true,
+    });
+  } catch {
+    // The cron is the fallback (worker/main.ts).
+  }
 }
 
 // The verified POST body, stored verbatim (the full provider envelope around
@@ -72,8 +98,8 @@ export async function insertWebhookDelivery(input: {
 // budget (attempts<5 dead-letters a poison row so one bad event can't stall the
 // queue forever — it stays for the admin inspector with its last_error). Goes
 // through the claim_webhook_events RPC, which adds `FOR UPDATE SKIP LOCKED` so two
-// overlapping worker drains (cron every minute, max:4) receive DISJOINT sets and
-// never double-process. The RPC is SECURITY DEFINER + service_role-only.
+// overlapping worker drains receive DISJOINT sets and never double-process. The
+// RPC is SECURITY DEFINER + service_role-only.
 export async function claimUnprocessedWebhookEvents(
   limit: number,
 ): Promise<WebhookInboxRow[]> {

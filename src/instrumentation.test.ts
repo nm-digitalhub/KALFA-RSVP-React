@@ -103,10 +103,6 @@ describe('isDestinationStreamClosedError', () => {
   });
 });
 
-// Guards the ops-alert filter for Next's "router state header was sent but
-// could not be parsed" (E10) — a stale/foreign RSC request Next throws on
-// before any component renders, dominated by non-genuine traffic replaying a
-// captured `_rsc=` URL (see the doc comment on isRouterStateParseError).
 // Guards the ops-alert filter for a client that closed the socket mid-request.
 // MEASURED 2026-08-17: the alert fired 668ms after the native console wrote its own
 // `app.crash` line, i.e. the severed upload WAS the app dying — see the doc comment on
@@ -145,6 +141,10 @@ describe('isClientDisconnectError', () => {
   });
 });
 
+// Guards the ops-alert filter for Next's "router state header was sent but
+// could not be parsed" (E10) — a stale/foreign RSC request Next throws on
+// before any component renders, dominated by non-genuine traffic replaying a
+// captured `_rsc=` URL (see the doc comment on isRouterStateParseError).
 describe('isRouterStateParseError', () => {
   it('matches E10 (framework code) regardless of message', () => {
     expect(isRouterStateParseError({ __NEXT_ERROR_CODE: 'E10', message: 'anything' })).toBe(true);

@@ -93,10 +93,9 @@ beforeEach(() => vi.clearAllMocks());
 // This is a credential-COLLECTING entry point reachable from a live admin form
 // at /admin/settings, so what it does with a secret is worth pinning exactly.
 //
-// It used to demand a mailbox password, encrypt it, and store it forever — for a
-// connection Graph authenticates with the application certificate and which
-// never read the stored value. With the EWS backend removed there is no longer
-// any provider that wants one, so the honest answer is that nothing is stored.
+// Graph authenticates with the application certificate and never reads a mailbox
+// password, and the EWS backend is removed, so there is no provider that wants
+// one: the honest answer is that nothing is stored.
 describe('createExchangeConnection', () => {
   it('stores NO credential, and says certificate in auth_method', async () => {
     const inserts: Row[] = [];

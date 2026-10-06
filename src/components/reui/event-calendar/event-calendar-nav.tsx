@@ -253,8 +253,8 @@ interface EventCalendarViewSwitcherProps extends Omit<
   "children"
 > {
   children?: ReactNode
-  /** Hover/focus-visible hint; defaults to the "Select view" label. Pass
-   *  null to disable (overlay-opener policy). */
+  /** Hover-only hint (focus opens are ignored); defaults to the "Select view"
+   *  label. Pass null to disable (overlay-opener policy). */
   tooltip?: ReactNode | null
 }
 
@@ -551,7 +551,7 @@ interface EventCalendarNavProps extends useRender.ComponentProps<"div"> {
 }
 
 /**
- * Default composed nav: Today, prev/next, title, spacer, view switcher.
+ * Default composed nav: Today, view switcher, prev/next, title, spacer.
  * Pass children to use it as a pure layout shell instead.
  */
 function EventCalendarNav({

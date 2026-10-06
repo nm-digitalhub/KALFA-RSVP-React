@@ -1,4 +1,4 @@
-import type { ZodIssue } from 'zod';
+import type { z } from 'zod';
 
 // Shared form state for Server Actions used with React's useActionState.
 // `null` is the initial (untouched) state.
@@ -17,10 +17,10 @@ export type ActionResult<T = void> =
 
 // Build FormState.fieldErrors from raw Zod issues, keyed by the dotted path
 // (e.g. "outreach_schedule.0.message_key", "celebrants.groom") so the form can
-// attach an error to the exact nested field. .flatten() only produces
+// attach an error to the exact nested field. z.flattenError() only produces
 // top-level keys — it cannot express this, so actions that need dotted keys
-// use this instead (and merge with flatten() output where both appear).
-export function issuesToFieldErrors(issues: ZodIssue[]): Record<string, string[]> {
+// use this instead (and merge with z.flattenError() output where both appear).
+export function issuesToFieldErrors(issues: z.core.$ZodIssue[]): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const issue of issues) {
     const key = issue.path.join('.') || '_root';

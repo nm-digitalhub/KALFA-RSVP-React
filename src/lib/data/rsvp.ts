@@ -69,7 +69,7 @@ export interface RsvpGuestInfo {
    */
   show_in_guest_list: boolean;
   /**
-   * B1: whether the contact behind this guest has recorded CALL consent
+   * Whether the contact behind this guest has recorded CALL consent
    * (`contacts.call_consent_at is not null`). Boolean ONLY — the RPC never
    * exposes the contact id/phone. `null` when the guest has no linked contact;
    * treated as "not consented" by the form pre-check.
@@ -113,7 +113,7 @@ export type RsvpSubmitOutcome =
 
 /**
  * Resolve the public RSVP view for a token, or `null` for any token that is
- * unknown, revoked, expired, or whose event is not active. The data layer
+ * unknown, revoked, or whose event is not active. The data layer
  * never distinguishes those cases to the caller — the RPC collapses them all to
  * a NULL result, so the route can return one generic, privacy-safe message.
  *

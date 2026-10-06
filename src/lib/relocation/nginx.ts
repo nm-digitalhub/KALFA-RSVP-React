@@ -14,7 +14,7 @@
  * the app: Voximplant platform callbacks and the installed Android builds
  * POST there, and POST bodies do not survive a 301 (plan Stage E).
  *
- * All rendered config is ASCII-only — nginx files are no place for RTL text.
+ * No rendered config line carries Hebrew/RTL text — nginx files are no place for it.
  */
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

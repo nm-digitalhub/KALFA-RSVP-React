@@ -9,18 +9,16 @@ import { z } from 'zod';
 // `LABELS[s] ?? s` fallback so legacy/foreign values never break the UI.
 
 import { Constants, type Enums } from '@/lib/supabase/types';
+import { AGREEMENT_MODELS } from '@/lib/agreements/model';
 
 // --- callback_requests.status: SCHEDULING status (free text in DB, CHECK-
 // constrained as `callback_requests_status_valid` — mirrors the existing
 // triage_status pattern on the same table) ---
 //
-// Redesigned 2026-08-19/20: the old 4-value vocabulary (new/in_progress/done/
-// cancelled) conflated two unrelated things — whether the SCHEDULER booked a
+// Two unrelated things are tracked separately: whether the SCHEDULER booked a
 // calendar slot, and whether the OWNER finished handling the customer after
-// the call. A request the scheduler successfully booked still showed 'new'
-// in the admin list, indistinguishable from one nobody had touched yet, even
-// a month later. `status` now describes ONLY the scheduler's side; the
-// owner's side is CALL_OUTCOMES below, a fully separate column.
+// the call. `status` describes ONLY the scheduler's side; the owner's side is
+// CALL_OUTCOMES below, a fully separate column.
 //
 // System-driven, not admin-set, except 'cancelled':
 //   new             → created, nothing has touched it yet.
@@ -33,7 +31,7 @@ import { Constants, type Enums } from '@/lib/supabase/types';
 //                      retry (paired with scheduling_failure_reason).
 //   cancelled       → the ONLY value an admin sets directly — the request is
 //                      no longer being pursued at all.
-//   closed          → system-set (2026-08-20): the request reached a
+//   closed          → system-set: the request reached a
 //                      terminal call_outcome (completed/closed/no_contact —
 //                      see applyCallOutcome in callback-scheduling.ts).
 //                      Distinct from 'cancelled': nobody proactively stopped
@@ -109,7 +107,8 @@ export function isCancellableCallbackStatus(status: string): boolean {
 
 // --- callback_requests.call_outcome: what happened when the owner actually
 // made the call — independent of scheduling status. Defaults to 'pending' on
-// every row; the admin sets it after (or instead of) making the call. ---
+// every row; the admin sets it after (or instead of) making the call, and the
+// sales voice agent's tool/callback routes record it too (applyCallOutcome). ---
 export const CALL_OUTCOMES = [
   'pending',
   'completed',
@@ -126,25 +125,24 @@ export const callOutcomeEnum = z.enum(CALL_OUTCOMES, {
 
 // Form payload for recording the outcome of a call.
 export const updateCallOutcomeSchema = z.object({
-  id: z.string().uuid({ error: 'מזהה לא תקין' }),
+  id: z.uuid({ error: 'מזהה לא תקין' }),
   callOutcome: callOutcomeEnum,
 });
 
 // Form payload for cancelling a request outright — the only scheduling-status
 // transition an admin makes directly.
 export const cancelCallbackSchema = z.object({
-  id: z.string().uuid({ error: 'מזהה לא תקין' }),
+  id: z.uuid({ error: 'מזהה לא תקין' }),
 });
 
 // Form payload for rescheduling a callback to a new admin-chosen instant —
 // the caller answered but asked for a different time, or asked to be called
-// again later. `exactAt` is an ISO instant built client-side from a
-// datetime-local input (same pattern as event-form-fields.tsx: `new
-// Date(value).toISOString()`, trusting the admin's own browser is on Israel
-// time — the only browser this panel is used from). Must be in the future:
-// a past instant would search for a slot that can never be found.
+// again later. `exactAt` is the value of a datetime-local input, posted as-is
+// by the form (local wall time, no zone suffix — there is no client-side ISO
+// conversion). Must be in the future: a past instant would search for a slot
+// that can never be found.
 export const rescheduleCallbackSchema = z.object({
-  id: z.string().uuid({ error: 'מזהה לא תקין' }),
+  id: z.uuid({ error: 'מזהה לא תקין' }),
   exactAt: z
     .string()
     .refine((v) => {
@@ -155,13 +153,11 @@ export const rescheduleCallbackSchema = z.object({
 
 // --- contact_messages.status: its own independent vocabulary ---
 //
-// Used to reuse CALLBACK_STATUSES directly ("one inquiry status system, not
-// two"). That stopped being true 2026-08-19/20 when callback_requests.status
-// was redesigned into a scheduling-specific state machine (pending_schedule/
-// scheduled/unschedulable make no sense for a contact-form message, which has
-// no scheduler at all) — so contact messages now get their own vocabulary,
-// unchanged from what callbacks used to share: the general "has anyone
-// handled this" states. `reopened` is a fifth value contact_messages can
+// Not shared with CALLBACK_STATUSES: those are a scheduling-specific state
+// machine (pending_schedule/scheduled/unschedulable make no sense for a
+// contact-form message, which has no scheduler at all) — so contact messages
+// get their own vocabulary: the general "has anyone handled this" states.
+// `reopened` is a fifth value contact_messages can
 // carry (a customer wrote back on an already-answered thread) but is
 // system-set only — never offered as a pickable option — see
 // CONTACT_ONLY_STATUS_LABELS in labels.ts.
@@ -174,7 +170,7 @@ export const contactStatusEnum = z.enum(CONTACT_STATUSES, {
 
 // Form payload for updating a single contact message's status.
 export const updateContactStatusSchema = z.object({
-  id: z.string().uuid({ error: 'מזהה לא תקין' }),
+  id: z.uuid({ error: 'מזהה לא תקין' }),
   status: contactStatusEnum,
 });
 
@@ -182,7 +178,7 @@ export const updateContactStatusSchema = z.object({
 // is staff-authored free text; capped at 4000 chars (matches the drafter's
 // draft_reply cap) so a single email stays reasonable.
 export const sendInquiryReplySchema = z.object({
-  id: z.string().uuid({ error: 'מזהה לא תקין' }),
+  id: z.uuid({ error: 'מזהה לא תקין' }),
   reply: z
     .string()
     .trim()
@@ -270,10 +266,13 @@ export const packageBaseSchema = z.object({
 export type PackageInput = z.infer<typeof packageBaseSchema>;
 
 // --- packages: operational (campaign) fields ---
-// `price_per_reached IS NOT NULL` defines a package as "campaign-enabled"
-// (plans/admin-packages-operational-fields-plan.md §2). A package with
-// price_per_reached=null is a valid, non-campaign package — never forced
-// through the campaign-only requirements below.
+// A package is "campaign-enabled" when it has a price per reached contact (the pay-per-result model,
+// plans/admin-packages-operational-fields-plan.md §2) OR a contact quota (the fixed-price package model,
+// docs/superpowers/plans/2026-10-04-package-payment-plan.md, P-F). A package with neither is a valid, non-campaign
+// package — never forced through the campaign-only requirements below.
+//
+// The two models are exclusive. A quota package is paid once at its own price_with_vat and has no per-reached formula
+// and no card hold, so the server refuses any formula or hold value alongside a quota, whatever the form sent.
 
 const MESSAGE_KEY_MAX = 100;
 const OUTREACH_SCHEDULE_MAX_ITEMS = 50;
@@ -284,6 +283,24 @@ const pricePerReachedField = z.preprocess(
     z.null(),
     z.coerce.number({ error: 'נא להזין מחיר לאיש קשר תקין' }),
   ]),
+);
+
+// Whole contacts, at least one. Blank = no quota (the pay-per-result packages that predate the package model). The
+// message sits on the union itself: when every branch fails Zod reports the union's own text, which would otherwise
+// be its English default.
+const CONTACT_QUOTA_ERROR = 'נא להזין מכסה תקינה (מספר שלם, 1 ומעלה)';
+const contactQuotaField = z.preprocess(
+  (v) => (v === undefined || v === null || v === '' ? null : v),
+  z.union(
+    [
+      z.null(),
+      z.coerce
+        .number({ error: CONTACT_QUOTA_ERROR })
+        .int({ error: CONTACT_QUOTA_ERROR })
+        .min(1, { error: CONTACT_QUOTA_ERROR }),
+    ],
+    { error: CONTACT_QUOTA_ERROR },
+  ),
 );
 
 const channelsField = z.array(z.enum(Constants.public.Enums.campaign_channel));
@@ -327,7 +344,7 @@ const minHoldFloorField = z.coerce
   .number({ error: 'נא להזין רצפת hold תקינה' })
   .nonnegative({ error: 'רצפת ה-hold לא יכולה להיות שלילית' });
 
-// Base+overage (plan S4). Nullable like price_per_reached; non-negative, and
+// Base+overage. Nullable like price_per_reached; non-negative, and
 // included_reached is a whole count. 0 is valid (base-fee-only tier).
 const basePriceField = z.preprocess(
   (v) => (v === undefined || v === null || v === '' ? null : v),
@@ -355,6 +372,7 @@ export const operationalFieldsSchema = z
     price_per_reached: pricePerReachedField,
     base_price: basePriceField,
     included_reached: includedReachedField,
+    contact_quota: contactQuotaField,
     channels: channelsField,
     outreach_schedule: outreachScheduleField,
     min_hold_floor: minHoldFloorField,
@@ -370,7 +388,17 @@ export const operationalFieldsSchema = z
         message: 'מחיר בסיס וכמות כלולה חייבים להיות מוגדרים יחד (או שניהם ריקים)',
       });
     }
-    const campaignEnabled = val.price_per_reached !== null;
+    // A fixed-price quota package: the pay-per-result formula and the card hold do not exist for it.
+    if (val.contact_quota !== null) {
+      const noFormula = 'חבילה עם מכסה אינה משתמשת בתמחור לפי מענה — השאירו ריק';
+      const noHold = 'שדה זה שייך לתפיסת מסגרת ואינו בשימוש בחבילה עם מכסה';
+      if (val.price_per_reached !== null) ctx.addIssue({ code: 'custom', path: ['price_per_reached'], message: noFormula });
+      if (val.base_price !== null) ctx.addIssue({ code: 'custom', path: ['base_price'], message: noFormula });
+      if (val.included_reached !== null) ctx.addIssue({ code: 'custom', path: ['included_reached'], message: noFormula });
+      if (val.min_hold_floor !== 0) ctx.addIssue({ code: 'custom', path: ['min_hold_floor'], message: noHold });
+      if (val.hold_buffer_pct !== 0) ctx.addIssue({ code: 'custom', path: ['hold_buffer_pct'], message: noHold });
+    }
+    const campaignEnabled = val.price_per_reached !== null || val.contact_quota !== null;
     if (!campaignEnabled) return;
     if (val.price_per_reached !== null && val.price_per_reached <= 0) {
       ctx.addIssue({
@@ -411,33 +439,10 @@ export const appRoleEnum = z.enum(Constants.public.Enums.app_role, {
 });
 export type AppRole = Enums<'app_role'>;
 
-// --- app_settings (admin: clearing toggle + SUMIT provider config) ---
-// company id is numeric (digits only) but optional/empty when unset; the keys
-// are free strings. sumit_api_key is write-only: blank means "keep existing".
+// --- app_settings (admin: feature switches + the hold-coverage cap) ---
 export const appSettingsSchema = z.object({
   payments_enabled: z.boolean(),
   close_charge_enabled: z.boolean(),
-  sumit_company_id: z
-    .string()
-    .trim()
-    .regex(/^\d*$/, { error: 'מזהה חברה חייב להכיל ספרות בלבד' }),
-  sumit_api_public_key: z.string().trim(),
-  sumit_api_key: z.string().trim(),
-  // SMS (ExtrA) for OTP at agreement signing. Sender + token are free strings.
-  sms_enabled: z.boolean(),
-  extra_sms_sender: z.string().trim(),
-  extra_sms_token: z.string().trim(),
-  // Email (SMTP) for business emails (signed agreement, etc.).
-  email_enabled: z.boolean(),
-  smtp_host: z.string().trim(),
-  smtp_port: z
-    .string()
-    .trim()
-    .regex(/^\d*$/, { error: 'פורט חייב להכיל ספרות בלבד' }),
-  smtp_secure: z.boolean(),
-  smtp_user: z.string().trim(),
-  smtp_password: z.string().trim(),
-  smtp_from: z.string().trim(),
   // Inquiry silence follow-up sweep (reminder → warning → auto-close on an
   // inquiry the admin replied to and the customer went quiet on) — its OWN
   // switch, deliberately not sharing outreach_enabled (campaign/WhatsApp
@@ -464,7 +469,71 @@ export const appSettingsSchema = z.object({
   console_call_me_now_enabled: z.boolean().default(false),
   console_consult_conference_enabled: z.boolean().default(false),
   console_dtmf_handoff_enabled: z.boolean().default(false),
+  // The only NON-boolean setting on this form. It caps how many contacts count
+  // toward the J5 hold: covered = min(full_unique_contacts, this). Deliberately
+  // NOT `.default(...)` like the booleans above — a default would let an absent
+  // field silently rewrite a money-path number. Required instead, so an absent
+  // or blank value fails loudly and nothing is written. Upper bound mirrors the
+  // existing app_settings cap precedent (callback_intake_sms_daily_cap <= 10000).
+  reasonable_coverage_contacts: z.coerce
+    .number({ error: 'נא להזין מספר אנשי קשר תקין' })
+    .int({ error: 'מספר אנשי הקשר חייב להיות מספר שלם' })
+    .positive({ error: 'מספר אנשי הקשר חייב להיות גדול מאפס' })
+    .max(10000, { error: 'מספר אנשי הקשר גבוה מדי' }),
 });
+
+// ---------------------------------------------------------------------------
+// Provider credentials, split out of appSettingsSchema
+// ---------------------------------------------------------------------------
+//
+// Three schemas because there are three FORMS. The rule that makes that safe is
+// the one appSettingsSchema learned the hard way (see the keepMounted note in
+// settings-form.tsx): a checkbox that is not rendered is absent from the FormData,
+// and absent reads as `false`. In ONE form with ONE save that meant a save from any
+// tab silently switched off the other tabs' toggles. Splitting removes that risk
+// BETWEEN providers — and re-creates it inside each new form unless the schema lists
+// EVERY field its own form renders. Each of the three below is complete for its form.
+
+export const sumitCredentialsSchema = z.object({
+  sumit_company_id: z
+    .string()
+    .trim()
+    .regex(/^\d*$/, { error: 'מזהה חברה חייב להכיל ספרות בלבד' }),
+  sumit_api_public_key: z.string().trim(),
+  sumit_api_key: z.string().trim(),
+});
+
+export const extraSmsSchema = z.object({
+  sms_enabled: z.boolean(),
+  extra_sms_sender: z.string().trim(),
+  extra_sms_token: z.string().trim(),
+  // ⚠️ The missed-call intake SMS: one paid send per call nobody answered, so
+  // inbound volume becomes a spend curve. Default OFF in the database, and the
+  // cap is what survives a bad night — on 2026-08-17 this account took a flood
+  // of fraudulent inbound calls, and with no ceiling the same flood bills once
+  // per call. Kept on THIS form because one screen should own "does this
+  // account send SMS, and how much".
+  callback_intake_sms_enabled: z.boolean(),
+  callback_intake_sms_daily_cap: z.coerce
+    .number({ error: 'תקרה יומית חייבת להיות מספר' })
+    .int({ error: 'תקרה יומית חייבת להיות מספר שלם' })
+    .min(0, { error: 'תקרה יומית לא יכולה להיות שלילית' })
+    .max(10000, { error: 'תקרה יומית גבוהה מדי' }),
+});
+
+export const emailTransportSchema = z.object({
+  email_enabled: z.boolean(),
+  smtp_host: z.string().trim(),
+  smtp_port: z
+    .string()
+    .trim()
+    .regex(/^\d*$/, { error: 'פורט חייב להכיל ספרות בלבד' }),
+  smtp_secure: z.boolean(),
+  smtp_user: z.string().trim(),
+  smtp_password: z.string().trim(),
+  smtp_from: z.string().trim(),
+});
+
 export type AppSettingsInput = z.infer<typeof appSettingsSchema>;
 
 // --- company / legal details (for the signed agreement) ---
@@ -493,7 +562,7 @@ export type CompanySettingsInput = z.infer<typeof companySettingsSchema>;
 
 // --- admin user management (platform staff) ---
 export const adminUserIdSchema = z.object({
-  user_id: z.string().uuid({ error: 'מזהה משתמש לא תקין' }),
+  user_id: z.uuid({ error: 'מזהה משתמש לא תקין' }),
 });
 export type AdminUserIdInput = z.infer<typeof adminUserIdSchema>;
 
@@ -502,7 +571,7 @@ export type AdminUserIdInput = z.infer<typeof adminUserIdSchema>;
 // self-view path never reaches this schema (the page renders the detail
 // directly). Same shape/length as the support-view reason.
 export const adminUserViewSchema = z.object({
-  user_id: z.string().uuid({ error: 'מזהה משתמש לא תקין' }),
+  user_id: z.uuid({ error: 'מזהה משתמש לא תקין' }),
   reason: z
     .string()
     .trim()
@@ -517,11 +586,9 @@ export type AdminUserViewInput = z.infer<typeof adminUserViewSchema>;
 export const grantCreditSchema = z.object({
   // The user the credit is granted to — the server re-checks the chosen event is
   // actually owned by them (never trust the submitted event id on its own).
-  user_id: z.string().uuid({ error: 'מזהה משתמש לא תקין' }),
-  event_id: z.string().uuid({ error: 'מזהה אירוע לא תקין' }),
-  campaign_id: z
-    .string()
-    .uuid({ error: 'מזהה קמפיין לא תקין' })
+  user_id: z.uuid({ error: 'מזהה משתמש לא תקין' }),
+  event_id: z.uuid({ error: 'מזהה אירוע לא תקין' }),
+  campaign_id: z.uuid({ error: 'מזהה קמפיין לא תקין' })
     .optional()
     .or(z.literal('')),
   amount: z.coerce.number().positive({ error: 'הסכום חייב להיות חיובי' }),
@@ -537,8 +604,8 @@ export type GrantCreditInput = z.infer<typeof grantCreditSchema>;
 // owned by user_id and blocks voiding a credit already consumed by a settled
 // charge. There is no in-place edit — a wrong credit is voided + re-granted.
 export const voidCreditSchema = z.object({
-  credit_id: z.string().uuid({ error: 'מזהה זיכוי לא תקין' }),
-  user_id: z.string().uuid({ error: 'מזהה משתמש לא תקין' }),
+  credit_id: z.uuid({ error: 'מזהה זיכוי לא תקין' }),
+  user_id: z.uuid({ error: 'מזהה משתמש לא תקין' }),
   reason: z
     .string()
     .trim()
@@ -547,12 +614,11 @@ export const voidCreditSchema = z.object({
 });
 export type VoidCreditInput = z.infer<typeof voidCreditSchema>;
 
-// --- agreement (contract) document management ---
-// --- support access (P3 staff support-access) ---
+// --- support access (staff) ---
 // Lookup is by EVENT ID (+ optionally the account owner's phone/email) — NOT a
-// free guest search. Two separate schemas: finding candidate events (no reason
-// needed — it's not a data view yet) vs. actually viewing one (requires the
-// break-glass reason). The data layer re-validates the reason length too.
+// free guest search. Two separate schemas: finding candidate events vs.
+// actually viewing one. Both require the break-glass reason, and the data
+// layer re-validates the reason length too.
 // The lookup surfaces customer PII (event name/date + owner name) and can be
 // used to enumerate real customers, so it is treated as a customer-data read:
 // it requires the SAME break-glass reason as an event view (data layer audits
@@ -560,9 +626,9 @@ export type VoidCreditInput = z.infer<typeof voidCreditSchema>;
 // one lookup key.
 export const supportFindSchema = z
   .object({
-    event_id: z.string().uuid({ error: 'מזהה אירוע לא תקין' }).optional().or(z.literal('')),
+    event_id: z.uuid({ error: 'מזהה אירוע לא תקין' }).optional().or(z.literal('')),
     owner_phone: z.string().trim().max(30).optional().or(z.literal('')),
-    owner_email: z.string().trim().email({ error: 'אימייל לא תקין' }).optional().or(z.literal('')),
+    owner_email: z.string().trim().pipe(z.email({ error: 'אימייל לא תקין' })).optional().or(z.literal('')),
     reason: z
       .string()
       .trim()
@@ -575,7 +641,7 @@ export const supportFindSchema = z
 export type SupportFindInput = z.infer<typeof supportFindSchema>;
 
 export const supportViewSchema = z.object({
-  event_id: z.string().uuid({ error: 'מזהה אירוע לא תקין' }),
+  event_id: z.uuid({ error: 'מזהה אירוע לא תקין' }),
   reason: z
     .string()
     .trim()
@@ -584,7 +650,14 @@ export const supportViewSchema = z.object({
 });
 export type SupportViewInput = z.infer<typeof supportViewSchema>;
 
+// --- agreement (contract) document management ---
+// Which contract a form edits: one document per pricing model. Absent = the pay-per-result contract (the original one).
+const agreementModelField = z
+  .enum(AGREEMENT_MODELS, { error: 'מודל חוזה לא מוכר' })
+  .default('per_result');
+
 export const agreementEditSchema = z.object({
+  model: agreementModelField,
   version: z
     .string()
     .trim()
@@ -596,6 +669,7 @@ export const agreementEditSchema = z.object({
 export type AgreementEditInput = z.infer<typeof agreementEditSchema>;
 
 export const agreementApproveSchema = z.object({
+  model: agreementModelField,
   version: z
     .string()
     .trim()
@@ -603,3 +677,75 @@ export const agreementApproveSchema = z.object({
     .max(80, { error: 'הגרסה ארוכה מדי' }),
 });
 export type AgreementApproveInput = z.infer<typeof agreementApproveSchema>;
+
+// --- Voximplant rule-id assignment: one rule, one purpose -------------------
+//
+// Every dialer in this app starts a call with StartScenarios({rule_id}), and the
+// rule decides WHICH SCENARIO RUNS. Point two purposes at one rule and the wrong
+// scenario answers — silently, because the payloads are interchangeable.
+//
+// MEASURED, not feared. meeting-confirm sends {to, from, tok, u}
+// (meeting-confirm-dispatch.ts) and the DTMF RSVP scenario reads exactly
+// {to, from, tok, u} (RSVP.voxengine.js:309-312). Its ctx lookup resolves the
+// token against `call_attempts` while a meeting-confirm token lives in
+// `callback_request_attempts`, so ctx answers 404 — and `VoxEngine.callPSTN`
+// sits OUTSIDE the `if (response.code === 200)` block, so THE CALL STILL GOES
+// OUT. A real person is dialed and hears the event-RSVP DTMF flow with an empty
+// guest name, while `startScenarios` returns result:1 and the attempt is already
+// recorded as dialed. The terminal callback then posts to a token the RSVP cb
+// route cannot resolve, so the attempt never closes.
+//
+// Wrong call, charged, logged as success, and a stuck row. Hence a guard.
+//
+// TWO RULES, because one does not imply the other:
+//   1. A rule id may be claimed by at most ONE field. This is the general case —
+//      it catches a persona given another persona's rule just as well as the
+//      specific mix-up below.
+//   2. Rule 1494311 is rejected outright. It is `OutCall`, the legacy DTMF flow,
+//      it is stored in NO column (so rule 1 cannot see it), and CLAUDE.md forbids
+//      giving it to an agent.
+//
+// Deliberately NOT done here: checking that the rule EXISTS on the platform.
+// That would put a live Voximplant call inside a save, so an outage there would
+// block saving configuration — a worse failure than the one being prevented.
+// The admin rule picker covers existence by listing real rules instead.
+
+/** Rule 1494311 — `OutCall`, the legacy DTMF `RSVP` scenario. Never an agent's. */
+export const DTMF_OUTCALL_RULE_ID = '1494311';
+
+export type RuleIdClaim = {
+  /** Stable field/column identifier, so re-saving a field its own value is fine. */
+  field: string;
+  /** Human label for the error message. */
+  label: string;
+  ruleId: string | null;
+};
+
+/**
+ * Returns a Hebrew error when `submitted` may not be assigned to `ownField`,
+ * or null when the assignment is allowed.
+ *
+ * An empty submission is always allowed: '' is how a field is intentionally
+ * cleared, and every dialer already fails closed on a missing rule id.
+ */
+export function ruleIdAssignmentError(
+  submitted: string,
+  ownField: string,
+  claims: readonly RuleIdClaim[],
+): string | null {
+  const value = submitted.trim();
+  if (value === '') return null;
+
+  if (value === DTMF_OUTCALL_RULE_ID) {
+    return `Rule ID ${DTMF_OUTCALL_RULE_ID} הוא הכלל OutCall — תרחיש ה-DTMF הישן, ואסור להפנות אליו סוכן AI. בחרו כלל אחר מרשימת הכללים בחשבון.`;
+  }
+
+  const taken = claims.find(
+    (c) => c.field !== ownField && (c.ruleId ?? '').trim() === value,
+  );
+  if (taken) {
+    return `Rule ID ${value} כבר משויך ל"${taken.label}". כלל אחד יכול לשרת ייעוד אחד בלבד — שיחה שתצא דרכו תריץ את התרחיש של הייעוד האחר.`;
+  }
+
+  return null;
+}

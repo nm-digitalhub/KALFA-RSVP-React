@@ -4,14 +4,14 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import type { Database } from '@/lib/supabase/types';
 
 // Agreement-document configuration tokens: the numeric/textual legal parameters
 // injected into the signed agreement template (service-activation window, offer
 // validity, charge window, hold-release period, liability cap, and data/record
 // retention periods). NOT secret — disclosed inside the agreement itself.
-// Admin-managed (the /admin/agreement/config screen); modelled on company/legal
+// Admin-managed (the agreement-config form on /admin/agreement); modelled on company/legal
 // config (src/lib/data/company.ts + src/lib/data/admin/settings.ts) since both
 // feed the same agreement. Storing them as admin DB config (not code constants)
 // keeps the agreement free of hardcoded business facts.
@@ -20,7 +20,7 @@ import type { Database } from '@/lib/supabase/types';
 //   • getAgreementConfigTokens()   — live agreement read (service-role client).
 //   • getAgreementConfigForAdmin() — admin-form prefill (session client + gate).
 // Both return the SAME seven camelCase keys; the admin form, its Zod schema, and
-// the writer in /admin/agreement/config all key off these names and map them to
+// the writer in config-actions.ts beside the form all key off these names and map them to
 // the snake_case agr_* columns on save.
 //
 // Token-key ↔ column mapping (THE CONTRACT consumers depend on; mirrors
@@ -32,9 +32,6 @@ import type { Database } from '@/lib/supabase/types';
 //   liabilityCap            → agr_liability_cap
 //   retentionDays           → agr_retention_days
 //   recordRetentionMonths   → agr_record_retention_months
-//
-// (Migration 202606290023 is applied + types regenerated, so the agr_* columns
-// are type-checked against the schema.)
 
 // The seven config values keyed by their camelCase token names. All strings
 // ('' when unset). Structurally identical to the AgreementConfigForm `values`
@@ -68,7 +65,7 @@ const AGREEMENT_CONFIG_COLUMNS =
 
 // Read the agreement-config columns from the app_settings singleton with the
 // given client (service-role for the live agreement read; the request-scoped
-// session client behind requireAdmin for the admin form). Returns null when the
+// session client behind requirePlatformPermission for the admin form). Returns null when the
 // singleton row is missing; the mapper coalesces each field to ''.
 async function readAgreementConfigRow(
   client: SupabaseClient<Database>,
@@ -112,11 +109,11 @@ export async function getAgreementConfigTokens(): Promise<Record<string, string>
 }
 
 // Admin form prefill: the same seven values, keyed for the AgreementConfigForm
-// `values` prop. Authorized by requireAdmin() + the app_settings_admin_all RLS
+// `values` prop. Authorized by requirePlatformPermission('manage_settings') + the app_settings_admin_all RLS
 // policy via the request-scoped session client (NOT the service-role client —
 // admin reads go through the cookie client + RLS), mirroring getCompanySettings.
 export async function getAgreementConfigForAdmin(): Promise<AgreementConfigValues> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   return toAgreementConfigValues(await readAgreementConfigRow(supabase));
 }

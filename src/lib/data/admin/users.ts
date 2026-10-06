@@ -5,17 +5,19 @@ import type { User } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
+import { getSumitCustomerId } from '@/lib/data/sumit-customers';
+import { creditConsumedByCampaign } from '@/lib/payments/credit-consumed';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { recordStaffAccess } from './access-log';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
-// Admin: cross-user management (platform staff). user_roles/profiles are
-// self-only under RLS and emails live in auth.users, so every read/write here
-// goes through the SERVICE-ROLE client behind a requireAdmin() gate (the
-// platform role layer — orthogonal to the customer org-role layer). Sensitive
-// mutations carry last-admin + no-self-lockout guards and are audited.
+// Admin: cross-user management (platform staff). profiles are self-only and
+// platform_staff is owner-read-only under RLS, and emails live in auth.users, so
+// every read/write here goes through the SERVICE-ROLE client behind a
+// requirePlatformPermission('manage_staff') gate (the platform role layer —
+// orthogonal to the customer org-role layer). Sensitive mutations carry
+// last-admin + no-self-lockout guards and are audited.
 
-const PLATFORM_ADMIN = 'admin' as const;
 // Supabase auth ban sentinels: a long duration to "suspend", 'none' to restore.
 const BAN_FOREVER = '876000h';
 const UNBAN = 'none';
@@ -36,7 +38,7 @@ export interface AdminUser {
   fullName: string | null;
   createdAt: string | null;
   lastSignInAt: string | null;
-  isPlatformAdmin: boolean;
+  isPlatformStaff: boolean;
   orgCount: number;
   suspended: boolean;
 }
@@ -69,7 +71,8 @@ export interface AdminUserEvent {
   campaignId: string | null;
 }
 
-// Per-event credit ledger: granted − consumed (campaigns.credit_applied).
+// Per-event credit ledger: granted − consumed (what each campaign used: the payment ledger, or campaigns.credit_applied
+// for a campaign with no ledger rows — creditConsumedByCampaign).
 export interface AdminUserCreditBalance {
   eventId: string;
   eventName: string;
@@ -80,6 +83,8 @@ export interface AdminUserCreditBalance {
 
 export interface AdminUserDetail extends AdminUser {
   phone: string | null;
+  // The number SUMIT gave this account at its first payment; null until then, or when it could not be read.
+  customerNumber: number | null;
   orgs: AdminUserOrg[];
   ownedEventCount: number;
   events: AdminUserEvent[];
@@ -101,7 +106,11 @@ async function enrichUsers(users: User[]): Promise<AdminUser[]> {
   const ids = users.map((u) => u.id);
   const [profilesRes, rolesRes, membersRes] = await Promise.all([
     admin.from('profiles').select('id, full_name').in('id', ids),
-    admin.from('user_roles').select('user_id').eq('role', PLATFORM_ADMIN).in('user_id', ids),
+    // platform_staff, NOT user_roles. The badge this feeds says "מנהל מערכת",
+    // and since 2026-09-10 admin-panel access is platform_staff membership —
+    // reading the retired axis would badge people who cannot get in, and leave
+    // unbadged people who can.
+    admin.from('platform_staff').select('user_id').in('user_id', ids),
     admin.from('organization_members').select('user_id').in('user_id', ids),
   ]);
   const nameById = new Map((profilesRes.data ?? []).map((p) => [p.id, p.full_name]));
@@ -116,7 +125,7 @@ async function enrichUsers(users: User[]): Promise<AdminUser[]> {
     fullName: nameById.get(u.id) ?? null,
     createdAt: u.created_at ?? null,
     lastSignInAt: u.last_sign_in_at ?? null,
-    isPlatformAdmin: adminIds.has(u.id),
+    isPlatformStaff: adminIds.has(u.id),
     orgCount: orgCountById.get(u.id) ?? 0,
     suspended: isSuspended(u.banned_until),
   }));
@@ -248,14 +257,17 @@ export async function getUserDetail(
   }
   const u = authData.user;
 
-  const [profileRes, roleRes, membersRes, eventsRes] = await Promise.all([
+  const [profileRes, roleRes, membersRes, eventsRes, customerNumber] = await Promise.all([
     admin.from('profiles').select('full_name, phone').eq('id', userId).maybeSingle(),
-    admin.from('user_roles').select('id').eq('user_id', userId).eq('role', PLATFORM_ADMIN).maybeSingle(),
+    // platform_staff, not user_roles — see the note in enrichUsers.
+    admin.from('platform_staff').select('user_id').eq('user_id', userId).maybeSingle(),
     admin
       .from('organization_members')
       .select('organization_id, organizations(name), org_roles(label)')
       .eq('user_id', userId),
     admin.from('events').select('id, name').eq('owner_id', userId),
+    // Best effort, like the other lookups here: a number that cannot be read shows as "—" and does not hide the page.
+    getSumitCustomerId(userId),
   ]);
 
   const eventIds = (eventsRes.data ?? []).map((e) => e.id);
@@ -284,19 +296,22 @@ export async function getUserDetail(
       voidedAt: c.voided_at,
       voidReason: c.void_reason,
     }));
+    // What each campaign has used up: the payment ledger when it has ledger rows (a package purchase), the old
+    // campaigns.credit_applied column otherwise (creditConsumedByCampaign). Throws if the ledger cannot be read.
+    const usedByCampaign = await creditConsumedByCampaign(admin, campaignsRes.data ?? []);
     for (const c of campaignsRes.data ?? []) {
       // The grant form offers only the event's live campaign (one per event;
       // cancelled ones are not a valid credit scope).
       if (c.status !== 'cancelled') campaignByEvent.set(c.event_id, c.id);
       appliedByEvent.set(
         c.event_id,
-        (appliedByEvent.get(c.event_id) ?? 0) + Number(c.credit_applied ?? 0),
+        (appliedByEvent.get(c.event_id) ?? 0) + (usedByCampaign.get(c.id) ?? 0),
       );
     }
   }
 
   // Per-event ledger (only for events that ever had a credit): granted −
-  // consumed-by-close-charge = remaining.
+  // consumed by the event's campaigns (a final charge or a package purchase) = remaining.
   const nameByEvent = new Map((eventsRes.data ?? []).map((e) => [e.id, e.name]));
   const grantedByEvent = new Map<string, number>();
   for (const c of credits) {
@@ -330,9 +345,10 @@ export async function getUserDetail(
     email: u.email ?? null,
     fullName: profileRes.data?.full_name ?? null,
     phone: profileRes.data?.phone ?? null,
+    customerNumber,
     createdAt: u.created_at ?? null,
     lastSignInAt: u.last_sign_in_at ?? null,
-    isPlatformAdmin: Boolean(roleRes.data),
+    isPlatformStaff: Boolean(roleRes.data),
     orgCount: orgs.length,
     suspended: isSuspended(u.banned_until),
     orgs,
@@ -347,64 +363,23 @@ export async function getUserDetail(
   };
 }
 
-// How many users currently hold the platform admin role.
-async function platformAdminCount(): Promise<number> {
+// How many people are platform staff. Counted from platform_staff, not
+// user_roles: since 2026-09-10 staff membership is what grants admin access, so
+// suspending the last STAFF member is what would lock everyone out.
+async function platformStaffCount(): Promise<number> {
   const admin = createAdminClient();
   const { count } = await admin
-    .from('user_roles')
-    .select('id', { count: 'exact', head: true })
-    .eq('role', PLATFORM_ADMIN);
+    .from('platform_staff')
+    .select('user_id', { count: 'exact', head: true });
   return count ?? 0;
 }
+// Staff membership is granted and revoked in
+// src/lib/data/admin/platform-roles.ts, the one path that carries the owner gate,
+// the last-owner guard, the audit row and the Slack alert.
 
-// Grant or revoke the platform admin role. Revoke is guarded: the final admin
-// can never be demoted (which also prevents self-lockout).
-export async function setPlatformAdmin(userId: string, grant: boolean): Promise<void> {
-  const actor = await requirePlatformPermission('manage_staff');
-  const admin = createAdminClient();
-
-  if (grant) {
-    const { data: existing } = await admin
-      .from('user_roles')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('role', PLATFORM_ADMIN)
-      .maybeSingle();
-    if (!existing) {
-      const { error } = await admin
-        .from('user_roles')
-        .insert({ user_id: userId, role: PLATFORM_ADMIN });
-      if (error) throw new Error('הענקת ההרשאה נכשלה');
-    }
-  } else {
-    if ((await platformAdminCount()) <= 1) {
-      throw new Error('חייב להישאר לפחות מנהל מערכת אחד');
-    }
-    const { error } = await admin
-      .from('user_roles')
-      .delete()
-      .eq('user_id', userId)
-      .eq('role', PLATFORM_ADMIN);
-    if (error) throw new Error('שלילת ההרשאה נכשלה');
-  }
-
-  await logActivity({
-    action: grant ? 'admin.user.admin_granted' : 'admin.user.admin_revoked',
-    meta: { targetUserId: userId },
-  });
-  // Additive security ops alert (fire-and-forget, fail-safe): constant title per
-  // branch (dedup-friendly), non-PII actor/target ids only.
-  void sendSlackAlert({
-    level: 'warn',
-    category: 'security',
-    source: 'admin-users',
-    title: grant ? 'הוענקה הרשאת מנהל מערכת' : 'נשללה הרשאת מנהל מערכת',
-    fields: { actorUserId: actor.id, targetUserId: userId },
-  });
-}
 
 // Suspend (ban) or restore a user's login. Cannot suspend yourself or the last
-// platform admin.
+// staff member.
 export async function setUserSuspended(userId: string, suspend: boolean): Promise<void> {
   const actor = await requirePlatformPermission('manage_staff');
   if (suspend && userId === actor.id) {
@@ -413,14 +388,13 @@ export async function setUserSuspended(userId: string, suspend: boolean): Promis
   const admin = createAdminClient();
 
   if (suspend) {
-    const { data: isAdminRow } = await admin
-      .from('user_roles')
-      .select('id')
+    const { data: staffRow } = await admin
+      .from('platform_staff')
+      .select('user_id')
       .eq('user_id', userId)
-      .eq('role', PLATFORM_ADMIN)
       .maybeSingle();
-    if (isAdminRow && (await platformAdminCount()) <= 1) {
-      throw new Error('לא ניתן להשהות את מנהל המערכת האחרון');
+    if (staffRow && (await platformStaffCount()) <= 1) {
+      throw new Error('לא ניתן להשהות את חבר הצוות האחרון');
     }
   }
 
@@ -510,10 +484,11 @@ export async function grantBillingCredit(input: {
 // Void (soft-reverse) a previously granted billing credit. Append-only is
 // preserved — the row is never deleted; voided_at/voided_by/void_reason are
 // stamped and the credit drops out of the event pool (getCampaignCreditTotal)
-// and the ledger. A credit already consumed into a settled campaign's
-// credit_applied snapshot may NOT be voided: the guard blocks any void that
-// would pull the event's live ACTIVE pool below what its campaigns already
-// consumed (Σ credit_applied) — that would falsify a completed charge/receipt.
+// and the ledger. A credit already consumed into a settled campaign (its
+// credit_applied snapshot, or the credit of its payment-ledger collects) may NOT
+// be voided: the guard blocks any void that would pull the event's live ACTIVE
+// pool below what its campaigns already consumed — that would falsify a
+// completed charge/receipt.
 export async function voidBillingCredit(input: {
   creditId: string;
   reason: string;
@@ -543,8 +518,10 @@ export async function voidBillingCredit(input: {
   }
 
   // Pool-invariant guard: after removing this credit the event's ACTIVE pool
-  // must still cover what its campaigns already consumed (Σ credit_applied) —
-  // otherwise the void would falsify a settled, receipted charge.
+  // must still cover what its campaigns already consumed — the payment ledger
+  // for a campaign that has ledger rows (a package purchase), the old
+  // credit_applied column otherwise (creditConsumedByCampaign) — otherwise the
+  // void would falsify a settled, receipted charge.
   const [poolRes, appliedRes] = await Promise.all([
     admin
       .from('billing_credits')
@@ -553,7 +530,7 @@ export async function voidBillingCredit(input: {
       .is('voided_at', null),
     admin
       .from('campaigns')
-      .select('credit_applied')
+      .select('id, credit_applied')
       .eq('event_id', credit.event_id),
   ]);
   if (poolRes.error || appliedRes.error) {
@@ -563,8 +540,9 @@ export async function voidBillingCredit(input: {
     (s, r) => s + Number(r.amount ?? 0),
     0,
   );
-  const consumed = (appliedRes.data ?? []).reduce(
-    (s, r) => s + Number(r.credit_applied ?? 0),
+  // Fails closed: when the ledger cannot be read the void is refused, never decided on a guess.
+  const consumed = [...(await creditConsumedByCampaign(admin, appliedRes.data ?? [])).values()].reduce(
+    (s, v) => s + v,
     0,
   );
   const poolAfterVoid = Math.round((activePool - Number(credit.amount)) * 100) / 100;

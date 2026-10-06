@@ -1,7 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-// The module under test is server-only and reaches the admin client at module
-// scope through its imports; the two pure helpers exercised here do not.
+// The module under test is server-only and imports the admin client and the
+// Voximplant config/mutations; they are mocked so the provisioning flows run
+// without any I/O.
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/data/voximplant-config', () => ({ getVoximplantConfig: vi.fn() }));

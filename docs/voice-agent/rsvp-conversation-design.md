@@ -10,9 +10,14 @@
 
 עובדות שאומתו בקוד ובשיחות חיות. כל שינוי בהן מחייב עדכון מסמך זה.
 
+
+> ⚠️ **נתיבי התרחישים במסמך זה עודכנו 2026-09-15.** voxengine-ci 36 העביר
+> את המקורות מ-`voxfiles/scenarios/src/` ל-`voxfiles/applications/<app>/scenarios/src/`.
+> הממצאים עצמם לא שונו — רק המיקום שבו קוראים אותם.
+
 | # | עובדה | מקור אימות |
 |---|---|---|
-| E-1 | הארכיטקטורה: Voximplant מגשר PSTN → סוכן ElevenLabs Conversational (`eleven_v3_conversational`, קול Kalfa, שפה he). | `voxfiles/scenarios/src/VoiceAgentTest.voxengine.js` |
+| E-1 | הארכיטקטורה: Voximplant מגשר PSTN → סוכן ElevenLabs Conversational (`eleven_v3_conversational`, קול Kalfa, שפה he). | `voxfiles/applications/kalfa-rsvp.kalfarsvp.voximplant.com/scenarios/src/VoiceAgentTest.voxengine.js` |
 | E-2 | משתנים דינמיים פר-שיחה: `{{guest_name}}`, `{{event_name}}`, `{{event_date}}`, `{{event_venue}}` — מוזרקים כ-frame ראשון (`conversation_initiation_client_data`) מתוך `GET {u}/api/voximplant/ctx/{tok}`. | אותו קובץ, שורות 205–223 |
 | E-3 | ניקוד בשם האורח משפר הגייה (הוכח חי: זְהָבָה תוקן מ"זה אבא"). השמות יגיעו **מנוקדים** משכבת ה-ctx. | NIQQUD_TEST_MAP בתרחיש + שיחת אימות |
 | E-4 | כלי `save_rsvp` קיים ופרוס: `{attending: boolean, adults: int, children: int}` → נכתב ל-KALFA דרך `submit_rsvp` (endpoint token-scoped: `POST /api/voximplant/agent-tool/rsvp/{token}`). הסוכן רשאי לומר "נרשם" **רק** אחרי תוצאת `saved`. | `src/lib/validation/voximplant.ts` (voxSaveRsvpSchema), `plans/voximplant-tier2-save-rsvp-plan.md` |
@@ -25,6 +30,7 @@
 | E-11 | הסוכן ההופכי (scenario) מדווח תוצאות שיחה (cb) ומטפל ב-`ClientToolCall`; timeout גלובלי סוגר סשן. | VoiceAgentTest.voxengine.js |
 | E-12 | `clientToolResult` **חייב** לכלול `is_error` (boolean) — השמטתו סוגרת את ה-WebSocket ב-1008 (policy violation) מיד אחרי כל קריאת כלי, והסוכן לא מספיק לומר את אישור הסגירה. is_error=false = טופל (saved/queued/removed/noted); true = הכלי לא רץ. | אומת חי session 6760041670 |
 | E-13 | הקול **אינו מונוטוני** — מדד pitch אובייקטיבי (pitchfinder YIN): טווח ~11.9 חצאי-טונים בפתיחה. "רובוטיות" מגיעה ממרקם/איכות אודיו ולא מ-F0. `optimize_streaming_latency` הורד 3→1, stability 0.5→0.4 לשיפור מרקם. | scripts/analyze-call-pitch.ts |
+| E-14 | **כלי שאינו ב-`TOOL_ROUTES`** נענה תמיד ולעולם לא מתעלמים ממנו: `reply('unsupported_tool', true)` — כלי שלא נרשם בתרחיש *לא רץ*, ולכן `is_error:true` הוא הערך הנכון לפי E-12. החזרה בשקט בלי פריים כלל משאירה `tool_call_id` פתוח. שלושת הסוכנים מאוחדים על אותה מחרוזת ואותה שורת לוג (`Unsupported client tool:`). **אזהרה:** הדוגמה הרשמית של Voximplant שולחת `result:{error:…}` **בלי** `is_error` — בדיוק הצורה שנמדדה כסוגרת את ה-WS ב-1008. אין להעתיק אותה. | הועלה 14.9.2026 — #918450 + #919799, אותם scenario_id, ללא rebind |
 
 ---
 

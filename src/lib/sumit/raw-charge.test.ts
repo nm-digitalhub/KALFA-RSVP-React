@@ -160,7 +160,37 @@ describe('chargeRaw', () => {
     });
   });
 
-  it('sends VATRate:null explicitly for a saved-token charge (mirrors capture.ts — an explicit rate produced "products vs payments mismatch", verified live)', async () => {
+  it('OMITS VATRate entirely when no rate is supplied — the shape production sends', async () => {
+    const f = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ Data: { DocumentID: 4 } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', f);
+    await chargeRaw({
+      companyId: 1,
+      apiKey: 'k',
+      savedCardToken: 'saved-abc',
+      savedCardExpMonth: 7,
+      savedCardExpYear: 2031,
+      savedCardCitizenId: '316125434',
+      amount: '5',
+      vatRate: '',
+      autoCapture: true,
+      externalId: 'p',
+    });
+    const body = sentBodyOf(f);
+    // ABSENT, not null: capture.ts does not send the key at all, and the POC
+    // must put the same body on the wire as the production path it exists to
+    // predict. The business is an עוסק פטור: no VAT field, company default
+    // balances the document.
+    expect('VATRate' in body).toBe(false);
+    expect('VATIncluded' in body).toBe(false); // עוסק פטור — company default, same as production
+  });
+
+  it('sends VATRate only when the operator explicitly supplies one', async () => {
     const f = vi.fn(
       async () =>
         new Response(JSON.stringify({ Data: { DocumentID: 4 } }), {
@@ -181,10 +211,40 @@ describe('chargeRaw', () => {
       autoCapture: true,
       externalId: 'p',
     });
-    const body = sentBodyOf(f);
-    expect('VATRate' in body).toBe(true);
-    expect(body.VATRate).toBeNull();
-    expect(body.VATIncluded).toBe(true); // company-default VAT still applies
+    expect(sentBodyOf(f).VATRate).toBe(18);
+  });
+
+  it('omits CreditCard_CVV when blank, and sends it when supplied', async () => {
+    const call = async (cvv?: string) => {
+      const f = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ Data: { DocumentID: 6 } }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      );
+      vi.stubGlobal('fetch', f);
+      await chargeRaw({
+        companyId: 1,
+        apiKey: 'k',
+        savedCardToken: 'saved-abc',
+        savedCardExpMonth: 7,
+        savedCardExpYear: 2031,
+        savedCardCitizenId: '316125434',
+        savedCardCvv: cvv,
+        amount: '5',
+        vatRate: '',
+        autoCapture: true,
+        externalId: 'p',
+      });
+      return sentBodyOf(f).PaymentMethod as Record<string, unknown>;
+    };
+
+    // Conditional per issuer (swagger: "Required when CVV is required by credit
+    // company"), and production charges a saved token without it — so a blank
+    // field must leave the key ABSENT rather than send an empty string.
+    expect('CreditCard_CVV' in (await call())).toBe(false);
+    expect((await call('123')).CreditCard_CVV).toBe('123');
   });
 
   it('still sends VATRate for a new-card (SingleUseToken) charge — unchanged', async () => {
@@ -248,5 +308,39 @@ describe('chargeRaw', () => {
     expect(res.ok).toBe(false);
     expect(res.httpStatus).toBe(500);
     expect(res.raw).toBe('plain error');
+  });
+});
+
+describe('chargeRaw — capture a J5 hold by AuthNumber', () => {
+  it('sends CreditCardAuthNumber and does NOT send AutoCapture (SUMIT support, 2026-09-29)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ Status: 0, Data: { Payment: { ValidPayment: true } } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await chargeRaw({
+      companyId: 1,
+      apiKey: 'k',
+      savedCardToken: 'tok',
+      savedCardExpMonth: 7,
+      savedCardExpYear: 2031,
+      savedCardCitizenId: '000000018',
+      amount: '1',
+      vatRate: '',
+      creditCardAuthNumber: '0759469',
+      customerId: 2127277236,
+      externalId: 'poc-capture-1',
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.CreditCardAuthNumber).toBe('0759469');
+    expect('AutoCapture' in body).toBe(false);
+    expect(body.Customer.ID).toBe(2127277236);
+    expect(body.PaymentMethod.CreditCard_Token).toBe('tok');
+    expect('VATIncluded' in body).toBe(false);
+    expect('VATRate' in body).toBe(false);
+    expect(body.Items[0].UnitPrice).toBe(1);
   });
 });

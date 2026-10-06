@@ -7,8 +7,6 @@ import { FieldError, FormError, FormNotice } from '@/components/forms';
 import type { FormState } from '@/lib/validation/result';
 
 import {
-  grantAdminAction,
-  revokeAdminAction,
   suspendUserAction,
   reactivateUserAction,
   grantCreditAction,
@@ -43,7 +41,7 @@ export interface ConsoleAgentState {
 }
 
 // The owner-only staff panel for one user, threaded page -> gate -> view -> here.
-// Declared once and imported by each of those, rather than restated at every hop.
+// Declared once and imported by the gate and the view, rather than restated at every hop.
 export interface PlatformStaffPanel {
   roles: StaffRoleOption[];
   currentRoleId: string | null;
@@ -146,11 +144,11 @@ function StaffRoleSelector({
   );
 }
 
-// Call-console membership. Deliberately rendered only when the user already holds
-// a staff role: the DB requires an agent to be platform staff (FK to
-// platform_staff, 20260721005100), so offering the control before then would only
-// produce a rejection. Removing the staff role cascades this away — the copy says
-// so, because that happens elsewhere on this screen.
+// Call-console membership. The enrol control is deliberately offered only when the
+// user already holds a staff role: the DB requires an agent to be platform staff
+// (FK to platform_staff, 20260721005100), so offering the control before then would
+// only produce a rejection. Removing the staff role cascades this away — the copy
+// says so, because that happens elsewhere on this screen.
 function ConsoleAgentSection({
   userId,
   isStaff,
@@ -289,27 +287,21 @@ function ConsoleAgentSection({
 
 export function UserActions({
   userId,
-  isPlatformAdmin,
   suspended,
   isSelf,
   events,
   platformStaff,
 }: {
   userId: string;
-  isPlatformAdmin: boolean;
   suspended: boolean;
   isSelf: boolean;
   events: { id: string; name: string; campaignId: string | null }[];
   // Present only when the VIEWER is a platform owner (the only role allowed to
-  // manage staff). null/undefined hides the selector entirely. Console membership
+  // manage staff roles). null/undefined hides the selector entirely. Console membership
   // rides on the same object rather than a parallel prop, so the owner gate stays
   // in exactly one place.
   platformStaff?: PlatformStaffPanel | null;
 }) {
-  const [adminState, adminAction] = useActionState(
-    isPlatformAdmin ? revokeAdminAction : grantAdminAction,
-    null,
-  );
   const [suspendState, suspendAction] = useActionState(
     suspended ? reactivateUserAction : suspendUserAction,
     null,
@@ -329,12 +321,17 @@ export function UserActions({
       <section className={sectionClass}>
         <h3 className="font-medium">הרשאות וסטטוס</h3>
         <div className="flex flex-wrap items-center gap-3">
-          <form action={adminAction}>
-            <input type="hidden" name="user_id" value={userId} />
-            <RowSubmit variant={isPlatformAdmin ? 'danger' : undefined}>
-              {isPlatformAdmin ? 'שלילת הרשאת מנהל' : 'הענקת הרשאת מנהל'}
-            </RowSubmit>
-          </form>
+          {/*
+            There is no "grant/revoke admin" button here: user_roles stopped
+            controlling admin access when the floor moved to platform_staff, so
+            "שלילת הרשאת מנהל" would report success while leaving the person
+            fully inside the panel. False assurance on a revoke control is worse
+            than no control.
+
+            Staff access is granted and revoked by the role selector below, which
+            is the one path that carries the owner gate, the last-owner guard,
+            the audit row and the Slack alert.
+          */}
 
           {isSelf ? null : (
             <form action={suspendAction}>
@@ -345,8 +342,6 @@ export function UserActions({
             </form>
           )}
         </div>
-        {adminState?.error ? <FormError message={adminState.error} /> : null}
-        {adminState?.notice ? <FormNotice message={adminState.notice} /> : null}
         {suspendState?.error ? <FormError message={suspendState.error} /> : null}
         {suspendState?.notice ? <FormNotice message={suspendState.notice} /> : null}
       </section>

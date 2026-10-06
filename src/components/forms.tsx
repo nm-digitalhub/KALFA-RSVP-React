@@ -14,14 +14,18 @@ export function SubmitButton({
   children,
   className,
   size,
+  disabled = false,
 }: {
   children: React.ReactNode;
   className?: string;
   size?: NonNullable<Parameters<typeof buttonVariants>[0]>['size'];
+  // A form that must not be submitted yet (e.g. acknowledgments still unticked).
+  // Convenience only — whatever it guards is enforced by the server action.
+  disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={pending} size={size} className={cn('w-full', className)}>
+    <Button type="submit" disabled={pending || disabled} size={size} className={cn('w-full', className)}>
       {pending ? 'רגע…' : children}
     </Button>
   );
@@ -34,11 +38,13 @@ export function SubmitButton({
 // field-level message is secondary, so it uses the polite region the docs
 // show for form messages (01-app/02-guides/forms.md) — it is read after the
 // current utterance instead of cutting it off, and several fields failing at
-// once queue rather than trample each other.
-export function FieldError({ errors }: { errors?: string[] }) {
+// once queue rather than trample each other. `id` lets the field point at this
+// message: callers set `aria-invalid` and `aria-describedby={id}` on the input
+// while errors exist, so the message is also read when the field is focused.
+export function FieldError({ errors, id }: { errors?: string[]; id?: string }) {
   if (!errors || errors.length === 0) return null;
   return (
-    <p aria-live="polite" className="mt-1 text-sm text-destructive">
+    <p id={id} aria-live="polite" className="mt-1 text-sm text-destructive">
       {errors[0]}
     </p>
   );

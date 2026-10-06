@@ -1,0 +1,287 @@
+'use client';
+
+// The editor's half of the catalogue: the palette. What each node type looks
+// like in the palette and in the properties panel is declared in its node
+// folder's editor files (`nodes/<name>/`); this module assembles them into
+// `PALETTE_ITEMS` and fills the live lists in (`buildPaletteItems`).
+//
+// CLIENT ONLY. Its own SDK import is type-only, but the node palette files it
+// imports are built from @workflowbuilder/sdk runtime values (`sharedProperties`,
+// `getScope`), so loading this module loads the SDK — and with it the
+// module-level `immer.setAutoFreeze(false)` and `i18next.init`. The worker reads
+// ./nodes.ts, which imports nothing from the SDK.
+//
+// The SDK vocabulary those editor files are written in is noted in
+// ./editor-shared.ts.
+import type { PaletteItem, UISchema } from '@workflowbuilder/sdk';
+
+import { NODE_RUN_FORMAT } from './ui-formats';
+
+import { aiAgentPaletteItem } from '../nodes/action-ai-agent/action-ai-agent';
+import { callbackRequestPaletteItem } from '../nodes/action-create-callback-request/action-create-callback-request';
+import { importGuestListPaletteItem } from '../nodes/action-import-guest-list/action-import-guest-list';
+import { microsoftSendEmailPaletteItem } from '../nodes/action-microsoft-send-email/action-microsoft-send-email';
+import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
+import {
+  microsoftSendEmailSchemaFor,
+  type MicrosoftConnectionOption,
+} from '../nodes/action-microsoft-send-email/schema';
+import { notifyTeamPaletteItem } from '../nodes/action-notify-team/action-notify-team';
+import { sendTemplatePaletteItem } from '../nodes/action-send-template/action-send-template';
+import { sendWhatsappPaletteItem } from '../nodes/action-send-whatsapp/action-send-whatsapp';
+import { setGuestFieldPaletteItem } from '../nodes/action-set-guest-field/action-set-guest-field';
+import { forEachGuestPaletteItem } from '../nodes/action-start-for-each-guest/action-start-for-each-guest';
+import { startRsvpAiCallbackPaletteItem } from '../nodes/action-start-rsvp-ai-callback/action-start-rsvp-ai-callback';
+import { voiceCallPaletteItem } from '../nodes/action-start-voice-call/action-start-voice-call';
+import * as startVoiceCallDefinition from '../nodes/action-start-voice-call/definition';
+import {
+  voiceCallSchemaFor,
+  type VoiceDialOption,
+  type VoicePurposeOption,
+} from '../nodes/action-start-voice-call/schema';
+import { sumitCreateCustomerPaletteItem } from '../nodes/action-sumit-create-customer/action-sumit-create-customer';
+import { sumitCreateDocumentPaletteItem } from '../nodes/action-sumit-create-document/action-sumit-create-document';
+import { updateGuestStatusPaletteItem } from '../nodes/action-update-guest-status/action-update-guest-status';
+import { webhookPaletteItem } from '../nodes/action-webhook/action-webhook';
+import { conditionPaletteItem } from '../nodes/logic-condition/logic-condition';
+import { setValuePaletteItem } from '../nodes/logic-set-value/logic-set-value';
+import { switchPaletteItem } from '../nodes/logic-switch/logic-switch';
+import { waitPaletteItem } from '../nodes/logic-wait/logic-wait';
+import { schedulePaletteItem } from '../nodes/trigger-schedule/trigger-schedule';
+import * as sumitCardTriggerDefinition from '../nodes/trigger-sumit-card/definition';
+import { sumitCardTriggerPaletteItem } from '../nodes/trigger-sumit-card/trigger-sumit-card';
+import { webhookTriggerPaletteItem } from '../nodes/trigger-webhook/trigger-webhook';
+import * as whatsappInboundDefinition from '../nodes/trigger-whatsapp-inbound/definition';
+import {
+  whatsappInboundSchemaFor,
+  type WhatsAppNumberOption,
+} from '../nodes/trigger-whatsapp-inbound/schema';
+import { whatsappInboundPaletteItem } from '../nodes/trigger-whatsapp-inbound/trigger-whatsapp-inbound';
+
+// ---------------------------------------------------------------------------
+// trigger.whatsapp_inbound
+// ---------------------------------------------------------------------------
+
+// Its schema, the number-aware factory `whatsappInboundSchemaFor`, uischema and
+// palette entry live in `nodes/trigger-whatsapp-inbound/`, and its config and
+// message kinds in that folder's `definition.ts`. The number option type is
+// re-exported for the editor, which passes the live numbers in.
+export type { WhatsAppNumberOption };
+
+// ---------------------------------------------------------------------------
+// trigger.webhook
+// ---------------------------------------------------------------------------
+
+// Its schema, method options, uischema and palette entry live in
+// `nodes/trigger-webhook/`, and its config in that folder's `definition.ts`.
+
+// ---------------------------------------------------------------------------
+// trigger.sumit_card
+// ---------------------------------------------------------------------------
+
+// Its schema, uischema and palette entry live in `nodes/trigger-sumit-card/`,
+// and its config and output fields in that folder's `definition.ts` — an
+// SDK-free file, so server code can read the output fields too, and so does
+// anything else that wants the VALUES (`sumit-sample-output.ts` among them).
+// Only the output TYPES are re-exported here, for the editor, which reads
+// `SumitCardOutput` from this module.
+export type { SumitCardOutput, SumitCardOutputField } from '../nodes/trigger-sumit-card/definition';
+
+// ---------------------------------------------------------------------------
+// action.microsoft_send_email
+// ---------------------------------------------------------------------------
+
+// Its schema, the connection-aware `microsoftSendEmailSchemaFor` and the option
+// shape live in `nodes/action-microsoft-send-email/schema.ts`. The option type is
+// re-exported for the editor, which passes the live connections in.
+export type { MicrosoftConnectionOption };
+
+// ---------------------------------------------------------------------------
+// trigger.schedule
+// ---------------------------------------------------------------------------
+
+// Its schema, day options, uischema and palette entry live in
+// `nodes/trigger-schedule/`, and its config in that folder's `definition.ts`.
+
+// ---------------------------------------------------------------------------
+// action.send_template
+// ---------------------------------------------------------------------------
+
+// Its schema, uischema and palette entry live in `nodes/action-send-template/`,
+// and the message keys it offers in that folder's `definition.ts`. The bare keys
+// are re-exported for the export check (`export-diagram.tsx`), which reads them
+// from here.
+export { TEMPLATE_KEYS } from '../nodes/action-send-template/definition';
+
+// ---------------------------------------------------------------------------
+// action.start_for_each_guest
+// ---------------------------------------------------------------------------
+
+// Its schema, uischema and palette entry live in
+// `nodes/action-start-for-each-guest/`, and its config, caps and ranges in that
+// folder's `definition.ts`.
+
+// ---------------------------------------------------------------------------
+// action.start_voice_call
+// ---------------------------------------------------------------------------
+
+// Its schema, the live-list factory `voiceCallSchemaFor` and the two option
+// shapes live in `nodes/action-start-voice-call/schema.ts`. The option types are
+// re-exported for the editor, which passes the live lists in.
+export type { VoiceDialOption, VoicePurposeOption };
+
+// ---------------------------------------------------------------------------
+// The palette
+// ---------------------------------------------------------------------------
+
+/**
+ * The read-only run report, drawn by `node-run-control.tsx`.
+ *
+ * ⚠️ A `Label` AND NOT A CONTROL, because it edits nothing. The SDK's UISchema
+ * union is CLOSED — `UISchemaControlElement | UISchemaLayoutElement |
+ * LabelElement | RichTextElement` — so "render my component here" has to be an
+ * existing element carrying `options.format`, which is the same contract the
+ * other custom renderers in ./ui-formats.ts use. `text` is required by the type
+ * and never drawn: the renderer replaces the element outright.
+ */
+const NODE_RUN_ELEMENT: UISchema = {
+  type: 'Label',
+  text: 'הרצה',
+  options: { format: NODE_RUN_FORMAT },
+};
+
+/**
+ * Put the run report at the top of a node's properties panel.
+ *
+ * ⚠️ HERE AND NOT IN EVERY NODE'S UISCHEMA, because it is not a property of any
+ * node — it is the editor reporting on a run. One place also means a node type
+ * added later gets it without anyone remembering to.
+ *
+ * ⚠️ AND HERE RATHER THAN ON `PALETTE_ITEMS` ITSELF. That array is also read by
+ * the tests that police container choice; they have no business seeing an
+ * element that exists only for the editor's live view. `nodeTypes` is the only
+ * consumer that needs it, and this function is what builds it.
+ *
+ * ⚠️ FIRST, matching where the vendor puts `globalControls` in their own nodes.
+ * It is also what an owner opening a node DURING a run came to read; the
+ * settings are still one line below, and the control renders nothing at all
+ * when no run is on the canvas.
+ */
+function withNodeRunControl(item: PaletteItem): PaletteItem {
+  const { uischema } = item;
+  // `uischema` is OPTIONAL on the vendor's `NodeDefinition`, and every entry
+  // here is a VerticalLayout. Both checks are cheaper than a crash if one ever
+  // is not — a node whose panel simply lacks the report is a far better failure
+  // than a panel that does not render.
+  if (!uischema || !('elements' in uischema) || !Array.isArray(uischema.elements)) return item;
+  return {
+    ...item,
+    uischema: { ...uischema, elements: [NODE_RUN_ELEMENT, ...uischema.elements] },
+  };
+}
+
+/**
+ * The palette, built for a given set of live lists (WhatsApp numbers, voice
+ * agents and dial parameters, Microsoft connections, the SUMIT card fields).
+ *
+ * A FACTORY and not a const, because some entries' dropdowns are live lists: the
+ * account's numbers are rows in `provider_numbers` and change without a deploy.
+ *
+ * ⚠️ THE SDK REQUIRES A STABLE REFERENCE for `nodeTypes` ("declare at module
+ * scope or memoize" — README). A fresh array each render would re-register the
+ * palette on every keystroke. The editor therefore calls this inside `useMemo`;
+ * calling it in a render body would be the bug this note exists to prevent.
+ */
+export function buildPaletteItems(
+  numbers: readonly WhatsAppNumberOption[] = [],
+  /**
+   * The configured voice agents, for `action.start_voice_call`'s dropdown.
+   *
+   * Empty means the node offers nothing to pick — which is the honest state
+   * when no purpose has been set up, and the handler refuses a blank anyway.
+   */
+  voicePurposes: readonly VoicePurposeOption[] = [],
+  /**
+   * The dial parameters the call node may be pointed at, both live lists.
+   *
+   * Empty is a legitimate state for either: an account with no synced number,
+   * or a Voximplant read that failed or was never asked for. The node then
+   * offers only its blank default, which is the behaviour that shipped before
+   * these fields existed — never a broken control.
+   */
+  voiceCallerIds: readonly VoiceDialOption[] = [],
+  voiceRules: readonly VoiceDialOption[] = [],
+  voiceAgents: readonly VoiceDialOption[] = [],
+  microsoftConnections: readonly MicrosoftConnectionOption[] = [],
+  /**
+   * The SUMIT trigger's fields as THIS workflow's latest SUMIT call carried
+   * them — see `sumitCardOutputFromSample`. `null` keeps the fixed list, which
+   * is the state of any workflow SUMIT has not called yet.
+   */
+  sumitCardOutput: sumitCardTriggerDefinition.SumitCardOutput | null = null,
+): PaletteItem[] {
+  return PALETTE_ITEMS.map((item) => {
+    if (item.type === sumitCardTriggerDefinition.type && sumitCardOutput) {
+      return withNodeRunControl({ ...item, outputSchema: { type: 'default', properties: sumitCardOutput } });
+    }
+    if (item.type === whatsappInboundDefinition.type) {
+      return withNodeRunControl({ ...item, schema: whatsappInboundSchemaFor(numbers) });
+    }
+    if (item.type === startVoiceCallDefinition.type) {
+      return withNodeRunControl({
+        ...item,
+        schema: voiceCallSchemaFor(voicePurposes, voiceCallerIds, voiceRules, voiceAgents),
+      });
+    }
+    if (item.type === microsoftSendEmailDefinition.type) {
+      return withNodeRunControl({
+        ...item,
+        schema: microsoftSendEmailSchemaFor(microsoftConnections),
+      });
+    }
+    return withNodeRunControl(item);
+  });
+}
+
+/**
+ * The palette with NO numbers offered — the dropdown shows only "כל המספרים".
+ *
+ * Kept as the base the factory rewrites a few entries of, so every other node
+ * type is declared exactly once. It is also what the tests and the i18n audit read.
+ *
+ * Built at MODULE SCOPE. `<WorkflowBuilder.Root nodeTypes={…} />` wants a
+ * stable reference: an array rebuilt each render re-renders the palette on
+ * every diagram change, which on a large graph is the difference between a
+ * canvas that drags and one that stutters. This is static data, so there is
+ * nothing to recompute anyway.
+ *
+ * EVERY entry carries an `outputSchema`, which is what puts a node into the
+ * variable picker's suggestion list. The references it offers are resolved by
+ * `resolve-template.ts`: vendored, wired into `activity-runner.ts`, and proven
+ * on the `nodes.` namespace by `references.test.ts`.
+ */
+export const PALETTE_ITEMS: PaletteItem[] = [
+  sumitCreateDocumentPaletteItem,
+  sumitCreateCustomerPaletteItem,
+  aiAgentPaletteItem,
+  voiceCallPaletteItem,
+  whatsappInboundPaletteItem,
+  webhookTriggerPaletteItem,
+  schedulePaletteItem,
+  sumitCardTriggerPaletteItem,
+  conditionPaletteItem,
+  switchPaletteItem,
+  updateGuestStatusPaletteItem,
+  sendWhatsappPaletteItem,
+  microsoftSendEmailPaletteItem,
+  startRsvpAiCallbackPaletteItem,
+  notifyTeamPaletteItem,
+  setGuestFieldPaletteItem,
+  callbackRequestPaletteItem,
+  webhookPaletteItem,
+  importGuestListPaletteItem,
+  waitPaletteItem,
+  sendTemplatePaletteItem,
+  forEachGuestPaletteItem,
+  setValuePaletteItem,
+];

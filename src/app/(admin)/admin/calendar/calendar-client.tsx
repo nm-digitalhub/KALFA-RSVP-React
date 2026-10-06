@@ -46,7 +46,7 @@ import { CalendarOpTracker } from './op-tracker';
 
 // The admin Exchange calendar client. Exchange is the single source of truth:
 // nothing is persisted locally, every visible range is fetched live, and the
-// owner-approved write mechanism (27.07) applies —
+// owner-approved write mechanism applies —
 //   * onEventUpdate stays SYNCHRONOUS: immediate reject only for readOnly /
 //     series-linked items or a same-event pending write; everything else is
 //     accepted optimistically and the Server Action fires WITHOUT await.
@@ -109,7 +109,7 @@ export function AdminExchangeCalendar({
   mailboxEmail: string;
 }) {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  // Loading is COUNTED, not a hand-toggled boolean (owner review 27.07): every
+  // Loading is COUNTED, not a hand-toggled boolean: every
   // runRefresh increments before the fetch and decrements in finally, so no
   // stale-discard/early-return/throw path can ever strand the UI in a stuck
   // loading state. `loading` is simply "any refresh in flight".
@@ -195,7 +195,7 @@ export function AdminExchangeCalendar({
 
   // The mailbox's category list, fetched ONCE for the screen. It belongs to the
   // mailbox, not to any appointment, and changes only when the owner edits it
-  // in Outlook — so paying an EWS round-trip per dialog open would buy nothing.
+  // in Outlook — so paying a mailbox round-trip per dialog open would buy nothing.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -231,12 +231,12 @@ export function AdminExchangeCalendar({
   );
 
   // Keep the view current WITHOUT the owner having to press anything
-  // (owner requirement 28.07). Three triggers, cheapest first:
+  // (owner requirement). Three triggers, cheapest first:
   //   * window focus / tab becomes visible — the common "I just edited this
   //     in Outlook on my phone and came back" case, refreshed instantly;
   //   * a periodic poll while the tab is visible — catches changes made
   //     elsewhere while the tab simply sits open;
-  //   * (plus every navigation and every write, as before).
+  //   * (plus every navigation, every dialog create/edit/delete and every failed drag).
   // The poll is deliberately paused when the tab is hidden: a background tab
   // has no reader, and Exchange is a third-party network hop.
   useEffect(() => {
@@ -319,7 +319,7 @@ export function AdminExchangeCalendar({
     [openCreate],
   );
 
-  // Creation is NOT optimistic — the real ItemId only exists after Exchange
+  // Creation is NOT optimistic — the real event id only exists after Exchange
   // answers, so the dialog waits and the authoritative refresh brings the new
   // event in with its true id.
   const submitCreate = useCallback(async () => {
@@ -455,8 +455,8 @@ export function AdminExchangeCalendar({
         <EventCalendarContent />
       </EventCalendar>
 
-      {/* Full edit for an existing appointment (title, times, location,
-          reminder, description) — opened by clicking its chip. */}
+      {/* View/edit dialog for an existing appointment — opened by clicking
+          its chip. */}
       <EventEditDialog
         connectionId={connectionId}
         appointmentId={editingId}

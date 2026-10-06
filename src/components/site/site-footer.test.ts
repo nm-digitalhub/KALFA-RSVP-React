@@ -1,15 +1,22 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// site-footer.tsx reads the cookie-consent admin config (server-only module).
+// Only the exported link constants are exercised here — stub the server
+// imports (repo convention, see admin-config.test.ts).
+vi.mock('server-only', () => ({}));
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 
 import { EVENT_TYPES } from '@/lib/marketing/event-types';
 
 import { FOOTER_LINKS, FOOTER_PAGE_LINKS } from './site-footer';
 
 // Source-level guards for the shared marketing footer (footer review
-// 2026-08-24). Component tests run in a Node environment (vitest.config), so
-// these pin the structure through the files rather than a DOM render.
+// 2026-08-24). Component tests default to a Node environment (vitest.config;
+// a DOM test opts in per file), so these pin the structure through the files
+// rather than a DOM render.
 
 const repoRoot = join(__dirname, '..', '..', '..');
 const footerSrc = readFileSync(join(__dirname, 'site-footer.tsx'), 'utf8');
@@ -26,6 +33,7 @@ describe('SiteFooter', () => {
     expect(FOOTER_LINKS.map((l) => l.href)).toEqual([
       '/faq',
       '/contact',
+      '/about',
       '/privacy',
       '/terms',
       '/cookies',
@@ -51,6 +59,8 @@ describe('SiteFooter', () => {
     expect(footerSrc).toContain('aria-label="אישורי הגעה לפי סוג אירוע"');
     expect(footerSrc).toContain('aria-label="משפטי ותמיכה"');
     expect(footerSrc).toContain('<ManageCookiesButton');
+    // Hidden when the admin switched consent off (showPreferences would be dead).
+    expect(footerSrc).toContain('enabled={consentEnabled}');
     expect(footerSrc).toContain('כל הזכויות שמורות');
     expect(footerSrc).not.toContain('FOOTER_COLS');
     // The 2026-08-24 rule that brought the old columns down still holds: a

@@ -9,7 +9,22 @@ export const metadata: Metadata = {
   description: 'כניסה לחשבון KALFA לניהול אישורי ההגעה של האירוע שלכם.',
 };
 
-export default function LoginPage() {
+// `next` (a flow to resume, e.g. /oauth/consent?authorization_id=…) or the
+// proxy's `redirectTo` (a protected page). Only a path is passed on; both the
+// login action (resolveAppRedirectPath) and the passkey button (safeNextPath)
+// re-validate it before redirecting.
+function pickNext(params: { next?: string | string[]; redirectTo?: string | string[] }): string | undefined {
+  const raw = params.next ?? params.redirectTo;
+  return typeof raw === 'string' && raw.startsWith('/') ? raw : undefined;
+}
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string | string[]; redirectTo?: string | string[] }>;
+}) {
+  const next = pickNext(await searchParams);
+
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 px-6">
       <div className="space-y-1 text-center">
@@ -17,7 +32,7 @@ export default function LoginPage() {
         <p className="text-sm text-muted-foreground">התחברו כדי לנהל את האירועים שלכם</p>
       </div>
 
-      <LoginForm />
+      <LoginForm next={next} />
 
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <span className="h-px flex-1 bg-border" />
@@ -25,7 +40,7 @@ export default function LoginPage() {
         <span className="h-px flex-1 bg-border" />
       </div>
 
-      <PasskeySignInButton />
+      <PasskeySignInButton next={next} />
 
       <p className="text-center text-sm text-muted-foreground">
         אין לכם חשבון?{' '}

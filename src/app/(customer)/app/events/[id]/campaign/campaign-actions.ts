@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { redirect, unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { cookies, headers } from 'next/headers';
@@ -20,20 +21,26 @@ import {
   closeCampaign,
   cancelCampaign,
   getCampaignForHold,
+  listPackageOffers,
   updateThankyouSchedule,
 } from '@/lib/data/campaigns';
-import { requireOwnedEvent, publishEvent, closeEvent } from '@/lib/data/events';
+import { requireOwnedEvent, publishEvent, closeEvent, getEvent } from '@/lib/data/events';
+import { logActivity } from '@/lib/data/activity';
+import { missingEventPrerequisites } from '@/lib/data/setup-steps';
 import { syncEventToExchange, markEventExchangeCancelled } from '@/lib/data/event-exchange-sync';
 import { sendCampaignWhatsApp } from '@/lib/data/outreach';
 import { ilWallTimeToIso } from '@/lib/data/event-date';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
-import { recordSignedAgreement } from '@/lib/data/agreements';
+import { recordPackageApproval, recordSignedAgreement } from '@/lib/data/agreements';
 import { getProfile } from '@/lib/data/profiles';
 import { requestOtp, verifyOtp } from '@/lib/data/otp';
 import { getActiveAgreementDoc } from '@/lib/data/agreements-doc';
 import {
+  SETUP_ACKNOWLEDGMENT_KEYS,
   approveCampaignSchema,
+  choosePackageSchema,
   rescheduleEventSchema,
+  setupAcknowledgmentsSchema,
   thankyouScheduleSchema,
 } from '@/lib/validation/campaigns';
 import { rescheduleEventForAdmin } from '@/lib/data/admin/events';
@@ -42,34 +49,60 @@ import type { FormState } from '@/lib/validation/result';
 const OTP_PURPOSE = 'agreement_signing';
 
 // "אישור פרטי האירוע והמשך" — ONE owner decision that (audit §2 / recommended
-// flow step 5): confirms the event details (the former "publish" — locks
-// event_date/rsvp_deadline per R5, moves draft → active so R9 lets a campaign
-// exist), then creates-or-continues the event's single campaign, then lands
-// straight on the agreement. eventId is bound on the client; there is NO form
-// input — the canonical template and the derived window are resolved
-// server-side. On an already-confirmed event this is a plain continue.
+// flow step 5): confirms the event details (the former "publish" — moves
+// draft → active so R9 lets a campaign exist; the dates stay editable until the
+// first message is sent, R5), then creates-or-continues the event's single campaign (unless a
+// fixed-price package is on offer: the owner chooses it in the next step), then returns to the
+// setup flow. eventId is bound on the client; the canonical
+// template and the derived window are resolved server-side.
+//
+// ON A DRAFT EVENT the owner must first acknowledge three things (the date and
+// time, the venue, the lock) and nothing may be missing from the details. BOTH
+// are enforced HERE, on the server: the confirm form disables its button until
+// the boxes are ticked and the details step lists what is missing, but neither
+// is a control. The acknowledgment is recorded on the activity log (keys only,
+// never the wording or any personal data). On an already-confirmed event this is
+// a plain continue and needs neither.
+//
 // publishEvent/createCampaign throw only our own safe Hebrew messages, so
 // surfacing err.message is safe and useful. If createCampaign refuses AFTER a
-// successful confirm (its own gates: celebrants/venue/date), the event stays
-// confirmed — the owner fixes the detail and clicks again (now a continue).
-// The setup page (setup-steps.ts) shows those prerequisites up front so this
-// is the rare path, not the normal one.
+// successful confirm (its own gates), the event stays confirmed — the owner fixes
+// the detail and clicks again (now a continue).
 export async function setupCampaignAction(
   eventId: string,
   _prevState: FormState,
   _formData: FormData,
 ): Promise<FormState> {
-  let created: Awaited<ReturnType<typeof createCampaign>>;
   try {
     const event = await requireOwnedEvent(eventId);
     if (event.status === 'draft') {
+      if (!setupAcknowledgmentsSchema.safeParse(Object.fromEntries(_formData)).success) {
+        return { error: 'יש לאשר את כל הסעיפים כדי להמשיך.' };
+      }
+      // Ownership is already proven above; the prerequisites need the venue and
+      // celebrant columns that the ownership gate does not select.
+      const missing = missingEventPrerequisites(await getEvent(eventId));
+      if (missing.length > 0) {
+        return { error: `יש להשלים לפני האישור: ${missing.join(', ')}` };
+      }
       await publishEvent(eventId);
+      await logActivity({
+        eventId,
+        action: 'event.setup_confirmed',
+        meta: { acknowledged: [...SETUP_ACKNOWLEDGMENT_KEYS], event_date: event.event_date },
+      });
       // Best-effort Exchange calendar sync (Layer 2) — syncEventToExchange never
       // throws (see its own module note), so a mailbox/connection failure here
       // must never surface as a confirm failure to the customer.
       await syncEventToExchange(eventId);
     }
-    created = await createCampaign(eventId);
+    // While a fixed-price package is on offer the owner CHOOSES it in the next step, and that choice creates the
+    // campaign — so its price and quota are the ones chosen. Creating the pay-per-result campaign here would pre-empt
+    // the choice. A catalogue that cannot be read throws (a safe Hebrew message) rather than falling back to it. With
+    // the package switch off (today) the list is empty without a read, and everything is exactly as it was.
+    if ((await listPackageOffers()).length === 0) {
+      await createCampaign(eventId);
+    }
   } catch (err) {
     unstable_rethrow(err);
     return {
@@ -80,7 +113,36 @@ export async function setupCampaignAction(
 
   revalidatePath(`/app/events/${eventId}`);
   revalidatePath(`/app/events/${eventId}/campaign`);
-  redirect(`/app/events/${eventId}/campaign/${created.id}/approve`);
+  redirect(`/app/events/${eventId}/setup`);
+}
+
+// The setup flow's "בחירת חבילה" step: the owner picks one of the fixed-price packages on offer, and the campaign is
+// created from it. The browser submits only the package id; createCampaign re-checks everything on the server —
+// ownership, that the event is open and in the future, that the package is an offer (the package switch is on), and that
+// the package contract (its own agreement document) is approved — and throws only its own safe Hebrew messages.
+export async function choosePackageAction(
+  eventId: string,
+  _prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = choosePackageSchema.safeParse({ package_id: formData.get('package_id') });
+  if (!parsed.success) return { error: 'יש לבחור חבילה' };
+
+  try {
+    const campaign = await createCampaign(eventId, parsed.data.package_id);
+    await logActivity({
+      eventId,
+      action: 'campaign.package_chosen',
+      meta: { campaignId: campaign.id, packageId: parsed.data.package_id },
+    });
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: err instanceof Error ? err.message : 'בחירת החבילה נכשלה. נסו שוב.' };
+  }
+
+  revalidatePath(`/app/events/${eventId}`);
+  revalidatePath(`/app/events/${eventId}/campaign`);
+  redirect(`/app/events/${eventId}/setup`);
 }
 
 // Step 1 of signing: send an OTP to the signer's phone (identity verification).
@@ -176,7 +238,7 @@ export async function signAgreementAction(
   const { version: agreementVersion } = await getActiveAgreementDoc();
 
   // Consents (the explicit affirmations). The billing authorization is NOT one
-  // of them any more — it lives in §4 of the signed agreement itself.
+  // of them — it lives in §4 of the signed agreement itself.
   const consents = approveCampaignSchema.safeParse({
     campaign_id: campaignId,
     tos_version: agreementVersion,
@@ -184,7 +246,7 @@ export async function signAgreementAction(
     privacy_accepted: formData.get('privacy_accepted') === 'on',
   });
   if (!consents.success) {
-    return { fieldErrors: consents.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(consents.error).fieldErrors };
   }
 
   const signature = String(formData.get('signature') ?? '');
@@ -234,12 +296,57 @@ export async function signAgreementAction(
     sameSite: 'lax',
   });
   // Route A: after signing, proceed to the card-capture (payment-method) step.
-  redirect(`/app/events/${eventId}/campaign/${campaignId}/payment`);
+  // Back to the flow: the stepper shows the payment step next.
+  redirect(`/app/events/${eventId}/setup`);
 }
 
-// --- Campaign lifecycle (§9) — wires the previously-orphaned transitions. ------
-// Each binds (eventId, campaignId) on the client; ownership is enforced inside
-// the data-layer transition (requireOwnedEvent). All revalidate the manage page.
+// The fixed-price package is APPROVED, not signed: the customer reads the terms and ticks two boxes (the terms and
+// the privacy policy). No drawn signature and no phone code. The browser sends which version of the terms it showed
+// (`terms_version`); recordPackageApproval compares it with the approved package document, derives everything else on the
+// server, and records who, when, from where and which version.
+export async function approvePackageTermsAction(
+  eventId: string,
+  campaignId: string,
+  _prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const consents = approveCampaignSchema.safeParse({
+    campaign_id: campaignId,
+    tos_version: formData.get('terms_version'),
+    terms_accepted: formData.get('terms_accepted') === 'on',
+    privacy_accepted: formData.get('privacy_accepted') === 'on',
+  });
+  if (!consents.success) {
+    return { fieldErrors: z.flattenError(consents.error).fieldErrors };
+  }
+
+  const h = await headers();
+  const ip = h.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+  const userAgent = h.get('user-agent');
+
+  let result: Awaited<ReturnType<typeof recordPackageApproval>>;
+  try {
+    result = await recordPackageApproval({
+      campaignId,
+      termsVersion: consents.data.tos_version,
+      ip,
+      userAgent,
+    });
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: 'שמירת האישור נכשלה. נסו שוב.' };
+  }
+  if (!result.ok) return { error: result.error };
+
+  revalidatePath(`/app/events/${eventId}`);
+  revalidatePath(`/app/events/${eventId}/campaign`);
+  redirect(`/app/events/${eventId}/setup`);
+}
+
+// --- Campaign lifecycle (§9) ----------------------------------------------------
+// Each binds (eventId, campaignId) on the client; authorization is enforced inside
+// the data-layer transition (requireOwnedEvent for activate, `campaigns.runstate`
+// staff for pause/close). All revalidate the manage page.
 
 export async function activateCampaignAction(
   eventId: string,
@@ -260,8 +367,8 @@ export async function activateCampaignAction(
           : 'הפעלת הקמפיין נכשלה — נדרשת תפיסת מסגרת מאושרת.',
     };
   }
-  // The button lives on three screens (event setup page, payment page, manage
-  // page) — refresh whichever one the owner clicked from.
+  // The button lives on two screens (payment page, manage page) — refresh
+  // whichever one the owner clicked from, and the event page.
   revalidatePath(`/app/events/${eventId}`);
   revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
   revalidatePath(`/app/events/${eventId}/campaign/${campaignId}/payment`);
@@ -300,12 +407,9 @@ export async function closeCampaignAction(
   return { notice: 'הקמפיין נסגר — אפשר לבצע גמר חשבון.' };
 }
 
-// Final settlement: close (if open) + charge the held card for the accrued total
-// (gated by getCloseChargeEnabled inside the orchestrator). Ownership enforced
-// via the close transition.
 // Manual gift-reminder send (message_key 'gift', kalfa_event_gift_v1).
-// Ownership contract mirrors cancelCampaign (R8): resolve the campaign's
-// event server-side, verify the CURRENT user owns it, only then send.
+// Ownership contract: resolve the campaign's event server-side, verify the
+// CURRENT user owns it, only then send.
 // sendCampaignWhatsApp re-checks every §8.3 gate (outreach enabled, campaign
 // active, allowed channel, active template, consent) and fail-closes into the
 // params_incomplete sink when the gift link is not configured.
@@ -382,8 +486,9 @@ export async function sendEventDayReminderAction(
 // Post-event thank-you (message_key 'thankyou'). Manual, non-billable — same
 // gate model as gift/event-day (sendCampaignWhatsApp re-checks outreach enabled +
 // active campaign + approved template). This is the ONE message_key allowed past
-// the L1 past-event gate (POST_EVENT_MESSAGE_KEYS in template-spec.ts) — it can
-// only run AFTER the event day, driven by the authenticated app (never headless).
+// the L1 past-event gate (POST_EVENT_MESSAGE_KEYS in template-spec.ts). This is
+// the manual, owner-driven path; the auto-thankyou sweep (worker) sends the same
+// key headlessly.
 export async function sendThankyouAction(
   eventId: string,
   campaignId: string,
@@ -428,15 +533,18 @@ export type SettleFormState =
     }
   | null;
 
+// Final settlement: close (if open) + charge the held card for the accrued total
+// (gated by getCloseChargeEnabled inside the orchestrator).
 export async function settleCampaignAction(
   eventId: string,
   campaignId: string,
   _prevState: SettleFormState,
   _formData: FormData,
 ): Promise<SettleFormState> {
-  // Authorization is enforced inside closeCampaignAndCharge (platform-admin
-  // only, requireAdmin as its first statement) — settle no longer pre-checks
-  // ownership here. It delegates straight to the self-gating data-layer call.
+  // Authorization is enforced inside closeCampaignAndCharge (platform staff
+  // holding manage_billing, checked as its first statement) — settle does no
+  // ownership pre-check here. It delegates straight to the self-gating
+  // data-layer call.
   let r: Awaited<ReturnType<typeof closeCampaignAndCharge>>;
   try {
     r = await closeCampaignAndCharge(campaignId);
@@ -477,6 +585,8 @@ export async function settleCampaignAction(
         notice: `גמר חשבון הושלם — ${reached} אנשי קשר הושגו, אין חיוב.`,
       };
     }
+    case 'not_applicable':
+      return { error: 'בקמפיין חבילה אין גמר חשבון — התשלום בוצע ברכישה.' };
     case 'disabled':
       return { error: 'החיוב הסופי אינו מופעל עדיין במערכת.' };
     case 'declined':
@@ -488,7 +598,7 @@ export async function settleCampaignAction(
   }
 }
 
-// --- Event lifecycle (R6/R7) — Close, S2.5a ---------------------------------
+// --- Event lifecycle (R6/R7) — Close ----------------------------------------
 // Confirming the details (draft → active, the former "publish") lives in
 // setupCampaignAction above as the first step of the RSVP flow. Ownership +
 // every R1–R9 rule is enforced inside closeEvent (events.ts) and the DB
@@ -515,10 +625,12 @@ export async function closeEventAction(
   return { notice: 'האירוע נסגר' };
 }
 
-// R8 — minimal Cancel-campaign action. Ownership is enforced inside
-// cancelCampaign (campaigns.ts) via getCampaignForHold → requireOwnedEvent,
-// BEFORE the RPC is ever called — campaignId is never trusted from the browser
-// to imply authorization.
+// R8 — minimal Cancel-campaign action. NOT an ownership check, despite living on
+// a customer page: cancelCampaign (campaigns.ts) requires
+// `campaigns.runstate` — staff only, never the event owner — BEFORE the RPC is
+// ever called, and campaignId is never trusted from the browser to imply
+// authorization. The button matches: manage-client.tsx renders it under
+// `canCancel = viewerIsAdmin && …`.
 export async function cancelCampaignAction(
   eventId: string,
   campaignId: string,
@@ -539,9 +651,10 @@ export async function cancelCampaignAction(
 
 // Auto-thankyou owner controls: opt-in toggle + editable schedule. Checkbox
 // semantics: the input is always rendered, so key presence IS the checked
-// state (matches updateEventAction's show_meal_pref convention). Ownership is
-// re-verified inside updateThankyouSchedule; the "already sent" guard there
-// surfaces as a plain error rather than a silent no-op.
+// state (matches updateEventAction's show_meal_pref convention). Authorization
+// (the owner, or platform staff holding manage_billing) is re-verified inside
+// updateThankyouSchedule; the "already sent" guard there surfaces as a plain
+// error rather than a silent no-op.
 export async function updateThankyouScheduleAction(
   eventId: string,
   campaignId: string,
@@ -554,7 +667,7 @@ export async function updateThankyouScheduleAction(
     send_time: formData.get('send_time') ?? '',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
   const { auto_enabled, send_date, send_time } = parsed.data;
 
@@ -589,7 +702,7 @@ export async function rescheduleEventAction(
     reason: formData.get('reschedule_reason') ?? '',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   // The owner's own date fields are stored as an Israel wall-clock instant; a

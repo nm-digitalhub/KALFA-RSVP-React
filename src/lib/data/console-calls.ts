@@ -2,6 +2,7 @@ import 'server-only';
 
 import { randomBytes } from 'node:crypto';
 
+import { armCallbackIntake } from '@/lib/callbacks/intake-dispatch';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { normalizePhone } from '@/lib/phone';
 import { isDncListed } from '@/lib/data/outreach-engine';
@@ -18,9 +19,9 @@ import { fetchReturnableCall } from '@/lib/data/vox-call-history';
 import { getCallbackPolicy } from '@/lib/callbacks/policy-config';
 import { DEFAULT_CALLBACK_POLICY, type CallbackPolicy, type DayWindow } from '@/lib/callbacks/schedule-policy';
 import type { TablesInsert, TablesUpdate } from '@/lib/supabase/types';
-// Service-role DAL for the browser call-center (plan stages 4/5 — internal +
-// outbound manual dial, inbound routing). Every export here runs with the
-// service-role client: there is no browser session on the three routes the
+// Service-role DAL for the browser call-center (internal + outbound manual
+// dial, inbound routing). Every export here runs with the
+// service-role client: there is no browser session on the routes the
 // Voximplant scenarios call directly, and dial-intent's caller identity is
 // already resolved by requireConsoleAgent() at the route layer before any of
 // these functions run.
@@ -67,7 +68,6 @@ export type ConsoleCallStatus = (typeof CONSOLE_CALL_STATUSES)[number];
 
 // Non-terminal statuses — "still live" for every concurrency count in this
 // file. Mirrors the TERMINAL_STATUSES/PRE_TERMINAL idiom in call-attempts.ts.
-// Exported for the stage-7/8 consumers (transfer-target validation, panel UI).
 export const LIVE_STATUSES: readonly ConsoleCallStatus[] = ['initiated', 'ringing', 'connected'];
 
 // How long a 'connected' console_calls row may still mean "this agent is on a
@@ -109,10 +109,7 @@ export const INITIATED_ROW_STALE_MS = 2 * 60 * 1000;
 // Call kinds that carry a real customer leg — the only ones any live-call
 // topology change (blind transfer, consult, conference) may act on. 'internal'
 // (agent<->agent, no customer) and 'ai_handoff' (RSVPAgent's own command
-// channel, see /api/calls/{id}/agent-command) are excluded. Was local to
-// transfer/route.ts as `TRANSFERABLE_KINDS`; promoted here (stage 2) so the
-// new consult/conference routes reuse the exact same set instead of
-// redeclaring it four times.
+// channel, see /api/calls/{id}/agent-command) are excluded.
 //
 // 'call_me_now' is DELIBERATELY EXCLUDED even though it carries a real
 // customer leg: every OTHER member's scenario (ConsoleDial for
@@ -122,8 +119,8 @@ export const INITIATED_ROW_STALE_MS = 2 * 60 * 1000;
 // console_calls and posts a command to the scenario's session_url; if the
 // scenario never listens for it, the command is silently dropped with no
 // visible error, and an agent's "transfer" click would do nothing. The
-// (not yet written) ConsoleCallMeNow scenario does not implement that
-// channel in this pass — add 'call_me_now' back only once it does (port
+// ConsoleCallMeNow scenario does not implement that
+// channel — add 'call_me_now' back only once it does (port
 // ConsoleDial's startTransfer/startConsult/startConference block, which is
 // fully generic over state.operator/state.remote and does not care how the
 // call was established). 'widget' has the identical latent gap (its own
@@ -169,9 +166,10 @@ function israelWeekdayAndMinutes(ms: number): { weekday: number; minutes: number
  * split out from the daily window below (compliance ruling, 12.8) because
  * the two rest on completely different bases and call-me-now's immediate
  * leg (see evaluateCallMeNowConsent) is exempt from ONE of them, never both:
- * this check is UNCONDITIONAL for every caller, with no opt-out parameter of
- * any kind — see evaluateSharedConsentGates for why that is structural, not
- * a convention documented in a comment.
+ * this check takes no opt-out parameter of any kind, and hoursGate/
+ * allowOutsideHours cannot skip it — only a scenario's DIAL_GATE_POLICY row
+ * can (see evaluateSharedConsentGates), which is structural, not a
+ * convention documented in a comment.
  */
 export function isShabbatOrYomTovBlocked(nowMs: number): boolean {
   try {
@@ -204,9 +202,9 @@ function isWithinDailyCallWindow(
 }
 
 /**
- * Convenience combinator over the DEFAULT policy's dial window — for callers
- * with no live policy row to hand it (there are none in-repo today; kept as
- * public API). The live gate (evaluateSharedConsentGates) fetches
+ * Convenience combinator over a dial window — defaults to the DEFAULT policy's;
+ * outreach-calls.ts and call-callbacks.ts pass the live policy's dialWeekday.
+ * The live consent gate (evaluateSharedConsentGates) fetches
  * getCallbackPolicy() itself and does NOT call this. Equivalent to
  * `!isShabbatOrYomTovBlocked(nowMs) && isWithinDailyCallWindow(nowMs, dialWeekday)`.
  * Sunday=0 … Saturday=6.
@@ -240,12 +238,14 @@ export function isWithinHumanCallWindow(
 // it is equally the right answer when every agent is simply busy at 14:00.
 //
 // Cost is bounded by the caps that remain: flag, concurrency, per-CLI rate,
-// balance reserve, and the daily breaker (100 calls / $5) — which this change
-// promotes from theoretical to load-bearing, since out-of-hours calls now
-// cost ~$0.06 instead of $0.
+// balance reserve, and the daily breaker (INBOUND_DAILY_CALL_CAP /
+// INBOUND_DAILY_SPEND_CAP_USD) — which this change promotes from theoretical
+// to load-bearing, since out-of-hours calls now cost money (see
+// INBOUND_ESTIMATED_COST_PER_CALL_USD) instead of $0.
 //
-// Shabbat: removed for ANSWERING only. Outbound dialling keeps its hard block
-// (that is business-initiated contact). Automated answering employs nobody, so
+// Shabbat: removed for ANSWERING only. Business-initiated outbound dialling
+// keeps its hard block (see DIAL_GATE_POLICY for the consumer-initiated and
+// human-dialled exceptions). Automated answering employs nobody, so
 // חוק שעות עבודה ומנוחה does not reach it. If a human agent is ever STAFFED to
 // answer on Shabbat, that is an employment-permit question to settle first —
 // tracked in the plan, not gated here.
@@ -281,12 +281,8 @@ export async function inboundCallsEnabled(): Promise<boolean> {
   return data?.inbound_calls_enabled === true;
 }
 
-// Capability A revision (owner-directed, 12.8) — the browser widget's
-// go-live flag. Same fail-closed, admin-only-RLS reader shape as every other
-// flag in this file. Migration 20260812194830_callcenter_widget_kind.sql was
-// pushed and types.ts regenerated (team-lead, 12.8) — the temporary
-// `as unknown as` cast this function used to need is gone; console_widget_enabled
-// is now a real typed column. NOTE: the widget path itself was subsequently
+// The browser widget's go-live flag. Same fail-closed, admin-only-RLS reader
+// shape as every other flag in this file. NOTE: the widget path itself was
 // superseded by capability A's THIRD design (call-me-now — see
 // evaluateCallMeNowCaps's header) and is now dead code pending a cleanup
 // decision; this reader stays functionally correct either way.
@@ -302,10 +298,7 @@ export async function consoleWidgetEnabled(): Promise<boolean> {
 
 // Wake-and-answer capability (call-center research, 12.8 — follow-on to
 // capability B). Same fail-closed, admin-only-RLS reader shape as every
-// other flag in this file. Migration 20260812200243_callcenter_wake_shift_and_flag.sql
-// was pushed and types.ts regenerated — verified live against the linked
-// project (console audit 12.8): console_wake_enabled is a real typed column,
-// so the former `as unknown as` cast is gone.
+// other flag in this file.
 export async function consoleWakeEnabled(): Promise<boolean> {
   const admin = createAdminClient();
   const { data } = await admin
@@ -320,10 +313,7 @@ export async function consoleWakeEnabled(): Promise<boolean> {
 // browser Voximplant identity at all; the WebRTC widget above was accepted
 // as blocked — see evaluateWidgetCallCaps's header — and this replaces it).
 // Same fail-closed, admin-only-RLS reader shape as every other flag in this
-// file. Migration 20260812202521_callcenter_call_me_now.sql was pushed and
-// types.ts regenerated (team-lead, 12.8, verified live: console_calls_kind_check
-// accepts 'call_me_now', app_settings.console_call_me_now_enabled exists) —
-// the temporary `as unknown as` cast this function used to need is gone.
+// file.
 export async function consoleCallMeNowEnabled(): Promise<boolean> {
   const admin = createAdminClient();
   const { data } = await admin
@@ -334,7 +324,7 @@ export async function consoleCallMeNowEnabled(): Promise<boolean> {
   return data?.console_call_me_now_enabled === true;
 }
 
-// Stage 6 — owner knob for the DTMF '9' handoff smoke test (ops-knobs
+// Owner knob for the DTMF '9' handoff smoke test (ops-knobs
 // decision: "DTMF_HANDOFF_ENABLED כדגל app_settings, לא קבוע בתרחיש", so a
 // test toggle never requires a scenario redeploy). Read by the outbound
 // dispatcher (outreach-calls.ts) and stamped into RSVPAgent's customData as
@@ -344,11 +334,11 @@ export async function consoleCallMeNowEnabled(): Promise<boolean> {
 //
 // ALSO gated on monitorEnabled(): the digit drives the exact same
 // conference-mixer attachSupervisor() path as the /api/calls/{id}/monitor
-// route (RSVPAgent.voxengine.js line ~662), and monitor_enabled is that
+// route (RSVPAgent.voxengine.js's DTMF '9' handler), and monitor_enabled is that
 // path's kill switch — "OFF until the RSVPAgent scenario carries the
 // conference handler AND that change is verified on a live call" (migration
-// 20260721235311_console_monitor_enabled_flag.sql). Before this check the two
-// flags were independent: a guest pressing 9 could reach the never-verified
+// 20260721235311_console_monitor_enabled_flag.sql). Without this check the two
+// flags would be independent: a guest pressing 9 could reach the never-verified
 // path while monitor_enabled stayed false, defeating the kill switch for
 // this entry point entirely.
 export async function consoleDtmfHandoffEnabled(): Promise<boolean> {
@@ -364,7 +354,7 @@ export async function consoleDtmfHandoffEnabled(): Promise<boolean> {
 
 // ─────────────────────────────────────────────────────────────────────────
 // resolveDialTarget — the consent matrix (decide-consent GO/NO-GO table),
-// implemented as the ONLY two admitted shapes. Covers gate steps "fresh DB
+// implemented as the admitted shapes (see DialTargetInput). Covers gate steps "fresh DB
 // load → DNC → opt-out → quiet hours" (decide-consent's route-implementation
 // note, steps 3-6); voximplant_live_calls/env, the manual-dial flag, and
 // concurrency are generic to any target and stay in the route.
@@ -385,11 +375,10 @@ export type DialTargetInput =
   /**
    * A human at the console dialling a number they typed.
    *
-   * This shape did not exist, and its absence was a rule applied to the wrong
-   * situation. The union was built so the AI CAMPAIGN could never cold-call: an
+   * The union was built so the AI CAMPAIGN could never cold-call: an
    * automated system ringing people who asked for nothing is what consent law
    * governs. An owner picking up their own business phone and dialling a number is
-   * not that, and refusing it made the console less capable than the handset it
+   * not that, and refusing it would make the console less capable than the handset it
    * replaced.
    *
    * The number still never becomes a dial target unchecked — it is normalized
@@ -460,7 +449,7 @@ export const DIAL_GATE_POLICY: Record<DialTargetInput['kind'], DialGatePolicy> =
   //            right now has already made that judgement, and a console that
   //            refuses is less useful than the handset beside it.
   //
-  // Every manual dial is audited (see recordDialAudit), which is the accountability
+  // Every manual dial is audited (see recordConsoleDialAudit), which is the accountability
   // that replaces a gate here: who called which number, and when.
   manual: { dnc: true, optOut: false, shabbat: false, dailyWindow: 'skip' },
 };
@@ -470,7 +459,7 @@ export type DialTargetFailureReason =
   | 'not_found'
   | 'not_open' // callback status not in (new, in_progress)
   | 'stale' // callback older than the 30-day freshness window
-  | 'attempt_cap' // ≥3 human-dial attempts already logged in the window
+  | 'attempt_cap' // ≥ CallbackPolicy.maxAttempts dial attempts already logged in the window
   | 'not_linked' // contact not linked to a guest of this event
   | 'event_not_active'
   | 'past_event_day'
@@ -478,7 +467,7 @@ export type DialTargetFailureReason =
   | 'dnc'
   | 'opted_out'
   | 'quiet_hours'
-  // The DAILY window only (08:00–19:00 Sun–Thu, 08:00–13:00 Fri), and separated from
+  // The DAILY window only (default 08:00–19:00 Sun–Thu, 08:00–13:00 Fri; admin-editable), and separated from
   // 'quiet_hours' on purpose: this one an agent may override with an explicit
   // confirmation, and the others may not. Shabbat/Yom-Tov, a caller's OWN stated
   // hours, DNC and opt-out all stay 'quiet_hours'/'dnc'/'opted_out' and stay
@@ -541,13 +530,13 @@ export type DialTargetResolution =
 // decide-consent §2 correction: 30 days, a policy choice, not a statutory
 // figure (the exemption itself carries no expiry). Governs staleness of the
 // callback_requests row itself and returned-call freshness — a DIFFERENT
-// concern from the attempt-cap window below, even though the two happened to
-// share a value before the admin policy page (31.8) made the attempt-cap
-// window independently editable.
+// concern from the attempt-cap window below, which is independently
+// admin-editable (31.8).
 const CALLBACK_FRESHNESS_MS = 30 * 24 * 60 * 60 * 1000;
 // decide-consent §2: counted from logged dial attempts against this
 // callback_requests.id — NEVER callback_requests.attempt_count (that column
-// means something else and nothing in src/lib writes it). "Logged dial
+// counts unreached no-answer attempts, see callback-scheduling.ts's
+// buildCallOutcomeUpdate — a different concept). "Logged dial
 // attempts" is not only human console dials — see meeting-confirm-dispatch.ts
 // and sales-call-dispatch.ts, which write the same CONSOLE_DIAL_AUDIT_ACTION
 // row for an AI-dispatched call so it counts against this same budget.
@@ -561,8 +550,8 @@ const CALLBACK_FRESHNESS_MS = 30 * 24 * 60 * 60 * 1000;
 // boolean, per explicit engineering decision, 12.8): a boolean disabling a
 // safety gate reads as nothing at the call site and invites a careless
 // `false`; this union states its own justification, and 'apply' — meaning
-// "the daily window applies" — is the default every existing caller keeps
-// getting for free by passing no third argument at all. Considered and
+// "the daily window applies" — is the default every caller that leaves it
+// unset gets for free. Considered and
 // REJECTED: splitting this function into a separate DNC/opt-out-only
 // function plus moving the window check out to each call site — that trades
 // a low risk (this option flipping) for a higher one this project has
@@ -570,19 +559,20 @@ const CALLBACK_FRESHNESS_MS = 30 * 24 * 60 * 60 * 1000;
 // window check exists at all). Default-applies is the safer failure mode.
 //
 // The Shabbat/Yom-Tov gate (isShabbatOrYomTovBlocked) is NOT part of this
-// option and never will be — it runs unconditionally below, before hoursGate
-// is even consulted, so it is structurally impossible for any caller,
-// present or future, to skip it by passing the wrong value. That is a
-// stronger guarantee than a comment saying "don't skip this".
+// option and never will be — it runs below, before hoursGate is even
+// consulted, and only a scenario's DIAL_GATE_POLICY row can turn it off, so
+// it is structurally impossible for any caller, present or future, to skip it
+// by passing the wrong value. That is a stronger guarantee than a comment
+// saying "don't skip this".
 export type HoursGate = 'apply' | 'skip_consumer_initiated';
 
-// Exported for meeting-confirm-dispatch.ts (a callback_requests-scoped AI
-// dispatcher, not a console/human dial): it needs the exact same DNC/opt-out/
-// Shabbat/hours gates DIAL_GATE_POLICY.callback already states for a returned
-// callback, and duplicating this function's logic a second time is a far
-// worse outcome than one more exported symbol from this module. No behavior
-// change — this function is unchanged, only newly reachable from outside the
-// file.
+// Exported for the AI dispatchers (meeting-confirm-dispatch.ts,
+// sales-call-dispatch.ts, voice-purpose-dispatch.ts — not console/human
+// dials): they need the exact same DNC/opt-out/Shabbat/hours gates the
+// DIAL_GATE_POLICY rows already state (meeting-confirm-dispatch.ts and
+// sales-call-dispatch.ts use DIAL_GATE_POLICY.callback), and duplicating this
+// function's logic a second time is a far worse outcome than one more exported
+// symbol from this module.
 export async function evaluateSharedConsentGates(
   admin: AdminClient,
   phone: string,
@@ -635,10 +625,11 @@ export async function evaluateSharedConsentGates(
   }
   if (policy.dailyWindow === 'skip') return { ok: true };
 
-  // The daily window — SKIPPED only for call-me-now's immediate leg
-  // (compliance ruling, 12.8; see evaluateCallMeNowConsent's header for the
-  // full basis). Every other caller (callback, guest_service) passes no
-  // options at all and gets today's exact behavior, untouched.
+  // The daily window — SKIPPED for call-me-now's immediate leg (hoursGate
+  // 'skip_consumer_initiated'; compliance ruling, 12.8; see
+  // evaluateCallMeNowConsent's header for the full basis) and by the policy
+  // rows with dailyWindow 'skip' above. Every other caller leaves hoursGate
+  // unset and gets the default 'apply'.
   //
   // OVERRIDABLE, uniquely among the gates in this function, and only when a human
   // has said so for this specific dial (opts.allowOutsideHours). Everything above —
@@ -744,9 +735,9 @@ export async function resolveDialTarget(
 
     // What the CALLER themselves said about when to reach them — the same
     // three columns callback-scheduling.ts already honours when it books an
-    // Exchange slot. The manual-dial gate ignored them until now, which meant
-    // a human operator could dial at a moment the caller had explicitly ruled
-    // out while the automated scheduler would not. This INTERSECTS with the
+    // Exchange slot. Without this check a human operator could dial at a moment
+    // the caller had explicitly ruled out while the automated scheduler would
+    // not. This INTERSECTS with the
     // general window below (never widens it): a stated preference can only
     // narrow when we may call, never authorise a call outside business hours.
     if (!isWithinCallerStatedWindow(data, nowMs)) {
@@ -775,15 +766,16 @@ export async function resolveDialTarget(
 
   // returned_call — ringing back somebody who called US and got no answer.
   //
-  // THE BUG THIS CLOSES, measured 2026-08-17: /api/agents/callbacks was moved to
-  // source its list from `console_calls` (because `callback_requests` was serving
-  // four-day-old rows as though they were today's missed calls), but the dial side
-  // was left resolving against `callback_requests`. The ids therefore never matched
-  // — 200 of 200 sampled missed-call ids were absent from that table — so the
-  // "חזור" button on the missed-call card refused every single time.
+  // The id the device sends names a call in Voximplant's own log, and the list the
+  // agent picks from (/api/agents/callbacks) is sourced from that same log. The
+  // dial side must resolve against the same source: measured 2026-08-17, when the
+  // list came from `console_calls` but the dial side still resolved against
+  // `callback_requests`, the ids never matched — 200 of 200 sampled missed-call ids
+  // were absent from that table — so the "חזור" button on the missed-call card
+  // refused every single time.
   //
-  // The number is read HERE, from the server-only PII table, keyed on a call this
-  // console actually recorded. The device sends an id and never a phone number, so
+  // The number is read HERE, from Voximplant's record of that session
+  // (fetchReturnableCall). The device sends an id and never a phone number, so
   // this stays a resolver and not a hole through which an arbitrary number could be
   // dialled.
   if (input.kind === 'returned_call') {
@@ -913,13 +905,13 @@ export async function resolveDialTarget(
 }
 
 // evaluateCallMeNowConsent — reuses the SAME DNC/opt-out/quiet-hours gate
-// resolveDialTarget's two kinds already share (evaluateSharedConsentGates),
-// for a THIRD provenance: an OTP-verified site visitor's own phone number
-// (capability A, third design, 12.8). Deliberately NOT added as a third
-// DialTargetInput variant: that union's whole reason to exist is dial-intent's
-// own stated invariant ("the browser can only ever name a SERVER-VERIFIED
-// provenance for the dial... never a phone number") for the AGENT-authenticated
-// manual-dial route, which has its own separate concurrency/manual-dial-flag
+// resolveDialTarget's kinds already share (evaluateSharedConsentGates),
+// for another provenance: an OTP-verified site visitor's own phone number
+// (capability A, third design, 12.8). Deliberately NOT added as a
+// DialTargetInput variant: that union exists for the AGENT-authenticated
+// dial-intent route (a server-verified provenance, or a number the agent typed,
+// which the server normalizes and gates), which has its own separate
+// concurrency/manual-dial-flag
 // gates that do not apply here. Call-me-now's phone IS accepted directly from
 // the browser — but only after otp.ts's verifyOtp() has already consumed a
 // one-time code proving control of it, a different and, if anything, stronger
@@ -932,8 +924,9 @@ export async function resolveDialTarget(
 //
 // RULING (israeli-compliance-advisor, 12.8): the DAILY window (08:00–19:00 /
 // Fri 08:00–13:00) is OFF for this function; Shabbat/Yom-Tov stays ON,
-// unconditionally, same as everywhere else (see isShabbatOrYomTovBlocked —
-// structural, not this function's decision to make or unmake). Two separate
+// unconditionally, as in the callback and guest_service rows of
+// DIAL_GATE_POLICY (see isShabbatOrYomTovBlocked — structural, not this
+// function's decision to make or unmake). Two separate
 // conclusions on two separate bases, not one hours ruling:
 //
 //   Daily window OFF: it never rested on §30א or Amendment 61 — both were
@@ -998,8 +991,7 @@ export const DIAL_TOKEN_TTL_MS = 60_000;
 // another flow even if its hash would otherwise match — all three prefixes
 // share the same dial_token_hash column, single-use, so a wrong-flow token
 // accepted by the wrong route would consume it and leave the rightful
-// caller with a dead token and no recovery. (Found and fixed 12.8, before
-// any authorize route went live — see the routes' own schema comments.)
+// caller with a dead token and no recovery.
 const DIAL_TOKEN_PREFIXES = ['ct', 'wt', 'cn'] as const;
 export type DialTokenPrefix = (typeof DIAL_TOKEN_PREFIXES)[number];
 // Derived FROM the array (not a hand-duplicated alternation) so the two can
@@ -1031,7 +1023,7 @@ export type VerifyDialTokenResult =
   | { ok: false; reason: 'not_found' | 'expired' | 'malformed' };
 
 // expectedPrefix is a REQUIRED authorization check, not just a routing hint:
-// ct and wt tokens live in the same dial_token_hash column, so without this a
+// ct, wt and cn tokens live in the same dial_token_hash column, so without this a
 // 'wt' (widget) token handed to ConsoleDial's authorize route — or a 'ct'
 // token handed to widget-authorize — would still hash-match and get
 // consumed by the WRONG flow (single-use, so the rightful caller then gets a
@@ -1154,7 +1146,7 @@ export interface UpdateConsoleCallStatusInput {
   // calls already get it at creation (dial-intent's ctx.userId).
   agentId?: string | null;
   transferredToAgentId?: string | null; // undefined = no change
-  // Stage 2 (consult/conference). Same "undefined = no change" convention as
+  // Consult/conference. Same "undefined = no change" convention as
   // every other field here.
   consultAgentId?: string | null;
   // TRUE stamps consult_connected_at = now (the consult target actually
@@ -1297,12 +1289,12 @@ export function mapEndedReasonToStatus(reason: string): ConsoleCallStatus {
 //      skips the ambiguity below entirely.
 //   1. Already linked (vox_session_id).
 //   2. A still-live dial-token hash (outbound only). ConsoleDial's
-//      handleOutbound now SEQUENCES the authorize call behind the 'started'
+//      handleOutbound SEQUENCES the authorize call behind the 'started'
 //      report's own delivery (not fire-and-forget) specifically so this tier
 //      cannot race authorize's verifyDialToken, which nulls the hash on
 //      success — see handleOutbound's own comment for why that race mattered
-//      (a stage-7 finding: this session_url is now a live-call command
-//      capability, not just a status/timestamp target).
+//      (this session_url is a live-call command capability, not just a
+//      status/timestamp target).
 //   3. Best-effort FIFO fallback onto the oldest still-unlinked row of the
 //      same direction created recently — the last resort now, reachable only
 //      if a report is lost/delayed (e.g. a dropped 'started' report before
@@ -1433,7 +1425,7 @@ export async function findConsoleCallForEvent(input: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Session command access (plan stage 7 — transfer). ConsoleDial/ConsoleInbound
+// Session command access (transfer). ConsoleDial/ConsoleInbound
 // report their own _StartedEvent.accessURL/accessSecureURL on 'started' (the
 // CallAlerting equivalent of RSVPAgent's StartScenarios-only
 // media_session_access_url) — these are the CAPABILITY to command the live
@@ -1472,7 +1464,7 @@ export async function getConsoleCallSessionUrls(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Transfer support (plan stage 7).
+// Transfer support.
 // ─────────────────────────────────────────────────────────────────────────
 
 export interface ConsoleCallSummary {
@@ -1518,12 +1510,11 @@ export type TransferTargetResolution =
  * console_agents_roster's is_console_agent() WHERE would resolve auth.uid()
  * to NULL and silently return nothing).
  *
- * The freshness half was missing until a full telephony audit (13.8) found
- * it: this function is the ONE server-side gate transfer/consult/conference
- * all share, but unlike inbound ring routing it used to accept a bare
- * status='ready' row with no staleness check — an agent whose session died
+ * The freshness half matters because this function is the ONE server-side gate
+ * transfer/consult/conference all share: without a staleness check a bare
+ * status='ready' row would be accepted — an agent whose session died
  * without a clean 'busy'/'offline' transition (tab closed, SDK dropped,
- * laptop asleep) stayed a valid transfer/consult/conference target
+ * laptop asleep) would stay a valid transfer/consult/conference target
  * indefinitely, so naming them rings a phantom agent_<uuid> for up to
  * TRANSFER_TIMEOUT_MS (20s) before the scenario's own timeout gives up —
  * wasted time a consult target spends as customer-facing SILENCE (the
@@ -1655,9 +1646,8 @@ export async function resolveExternalDialTarget(
 // "findRecentConsoleCalls" with no caller is the kind of thing the next change
 // reaches for, and it would quietly reintroduce the wrong number.
 //
-// NOTE `findMissedCalls` below still reads this table and is still in use by
-// /api/agents/callbacks. Moving it to the same source is step 5 of
-// plans/voximplant-authoritative-call-history-plan.md.
+// NOTE `findMissedCalls` below still reads this table, but /api/agents/callbacks
+// no longer calls it (that route reads fetchVoxCallHistory) and nothing else does.
 
 /**
  * How long an inbound call must have lasted before an UNIDENTIFIED caller counts as
@@ -1896,7 +1886,7 @@ export async function recordConsoleTransferAudit(input: {
   }
 }
 
-// Stage 2 — consult-before-transfer / conference. Same shape and rationale as
+// Consult-before-transfer / conference. Same shape and rationale as
 // recordConsoleTransferAudit immediately above (best-effort, non-PII,
 // identifiers + a purpose code only); kept as siblings rather than merged
 // into one parameterized helper, matching this module's own existing
@@ -1977,9 +1967,8 @@ export async function recordConsoleConferenceAudit(input: {
 // Concurrency / rate counters.
 // ─────────────────────────────────────────────────────────────────────────
 
-// dial-intent's own cap — system-wide (any kind/direction), matching the
-// task's literal "count live console_calls ≤2" plus ops-knobs' "V1's staff
-// pool is small" rationale.
+// dial-intent's own cap — system-wide (any kind/direction); V1's staff pool
+// is small.
 export const MANUAL_DIAL_MAX_LIVE_CALLS = 2;
 
 /**
@@ -2070,7 +2059,7 @@ export async function countLiveConsoleCalls(nowMs: number = Date.now()): Promise
   return (connected ?? 0) + (initiated ?? 0);
 }
 
-// Gate E / ops-knobs decision 3 — the operative caps, restated as constants.
+// The operative inbound caps, as constants.
 export const INBOUND_MAX_CONCURRENCY = 2;
 // RAISED 3 → 7 on 17.8 at the owner's explicit instruction, for the same reason
 // INBOUND_DAILY_SPEND_CAP_USD was raised on 15.8: it was refusing his own test
@@ -2358,15 +2347,16 @@ export function evaluateInboundCaps(
 // ─────────────────────────────────────────────────────────────────────────
 
 export const WIDGET_MAX_CONCURRENCY = 2; // same N=1-2 staff-pool rationale as INBOUND_MAX_CONCURRENCY
-export const WIDGET_MAX_PER_IP_HOURLY = 3; // mirrors INBOUND_MAX_PER_CLI_HOURLY
-export const WIDGET_DAILY_CALL_CAP = 100; // mirrors INBOUND_DAILY_CALL_CAP
-export const WIDGET_DAILY_SPEND_CAP_USD = 5; // mirrors INBOUND_DAILY_SPEND_CAP_USD
+export const WIDGET_MAX_PER_IP_HOURLY = 3; // per-IP counterpart of INBOUND_MAX_PER_CLI_HOURLY
+export const WIDGET_DAILY_CALL_CAP = 100; // counterpart of INBOUND_DAILY_CALL_CAP
+export const WIDGET_DAILY_SPEND_CAP_USD = 5; // counterpart of INBOUND_DAILY_SPEND_CAP_USD
 // INFERRED, not MEASURED (flag carried through to the caller, not hidden):
 // a widget call is SDK-leg -> scenario -> agent SDK-leg, with NO PSTN leg on
-// either end, so its real per-call cost should be LOWER than PSTN inbound's
-// measured $0.06 working figure (INBOUND_ESTIMATED_COST_PER_CALL_USD) — but
+// either end, so its real per-call cost should be LOWER than a PSTN call's
+// (INBOUND_ESTIMATED_COST_PER_CALL_USD) — but
 // this account has never carried a widget call, so there is no measured
-// figure to derive a lower number from. Reusing 0.06 here is a deliberately
+// figure to derive a lower number from. 0.06 here (the figure inbound used
+// before its 13.8 recalibration) is a deliberately
 // CONSERVATIVE choice: it trips the spend breaker SOONER than the real cost
 // would justify, never later. Revise down once real widget calls have a
 // resource_charge to measure (same account-data-driven method ops-knobs used
@@ -2445,10 +2435,6 @@ export async function countAnsweredWidgetToday(nowMs: number = Date.now()): Prom
 export async function countWidgetCallsLastHourForIpHash(ipHash: string): Promise<number> {
   const admin = createAdminClient();
   const sinceIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  // Migration 20260812194830_callcenter_widget_kind.sql was pushed and
-  // types.ts regenerated (team-lead, 12.8) — origin_ip_hash is now a real
-  // typed column; the temporary `as unknown as` cast this used to need is
-  // gone.
   const { count, error } = await admin
     .from('console_call_pii')
     .select('call_id', { count: 'exact', head: true })
@@ -2587,13 +2573,6 @@ export const CALL_ME_NOW_DAILY_SPEND_CAP_USD = 5;
 // letting outbound spend run past the $5 the cap promises. $0.09 is the
 // measured floor plus a small margin for speech.
 export const CALL_ME_NOW_ESTIMATED_COST_PER_CALL_USD = 0.09;
-// No separate cost constant: this call's telephony shape (one PSTN leg to
-// the visitor + internal callUser legs ringing agents) is the SAME shape as
-// PSTN inbound, not the widget's all-WebRTC shape — INBOUND_ESTIMATED_COST_PER_CALL_USD
-// is reused directly rather than inventing a third figure with no data
-// behind it either. At $0.06/call the spend breaker fires at 84 answered
-// calls/day (84 x 0.06 = $5.04) — genuinely ahead of the 100-call cap, same
-// arithmetic as inbound/widget.
 
 export interface CallMeNowCapsInput {
   flagEnabled: boolean;
@@ -2671,8 +2650,7 @@ export function computeRingOrder(routableVoxUsernames: string[], rotateBy: numbe
   return [...sorted.slice(start), ...sorted.slice(0, start)];
 }
 
-// Department-queue extension point (plan §10: "מחלקות (נקודת הרחבה = ring-order
-// בשרת)") — pure composition, no new concept. Queue members are rung first (in
+// Department-queue extension point — pure composition, no new concept. Queue members are rung first (in
 // their own rotated order), then every OTHER routable agent as a fallback (also
 // rotated, queue members excluded so nobody rings twice). Zero queue members
 // (queue inactive, unresolvable, or genuinely empty) degenerates to
@@ -2693,8 +2671,8 @@ export function computeQueueRingOrder(
 
 // Calendar-derived presence de-prioritizer (Outlook/Exchange sync research,
 // 12.8) — a THIRD, advisory signal alongside agent_status (business truth)
-// and the SDK connection (technical signal). Two-axis rule
-// (plans/shimmering-snuggling-neumann.md "נוכחות"): a calendar block may
+// and the SDK connection (technical signal). Two-axis rule:
+// a calendar block may
 // REORDER an already-routable ring, never REMOVE an agent from it — an
 // agent who set themselves 'ready' rings, always, even if their calendar
 // also shows them in a meeting. Moves calendar-busy vox_usernames to the end
@@ -2703,9 +2681,8 @@ export function computeQueueRingOrder(
 // (same array values, new array identity).
 //
 // NOT wired into findRoutableAgents/findRoutableAgentVoxUsernames or any
-// route in this pass — inbound routing itself is not yet live (gate E,
-// stage 5). Exists so the two-axis-respecting logic is written, tested, and
-// ready for that call site once inbound goes live, matching this module's
+// route. Exists so the two-axis-respecting logic is written, tested, and
+// ready for a ring-order call site, matching this module's
 // existing computeRingOrder/computeQueueRingOrder — pure, no I/O, caller
 // supplies the calendar-busy set (from console_agent_calendar_presence via
 // console-agent-calendar-presence.ts).
@@ -2719,10 +2696,10 @@ export function deprioritizeCalendarBusyAgents(
   return [...free, ...busy];
 }
 
-// <90s freshness window on agent_status.updated_at (plan §נוכחות). Now that
-// softphone-panel.tsx's heartbeat effect re-POSTs the agent's current
-// presence every 60s while the SDK is logged in and the tab is visible, this
-// gate is no longer vacuous: a genuinely-connected 'ready' agent has
+// <90s freshness window on agent_status.updated_at. softphone-panel.tsx's
+// heartbeat effect re-POSTs the agent's current
+// presence every 60s while the SDK is logged in, so this
+// gate is not vacuous: a genuinely-connected 'ready' agent has
 // updated_at inside the window; a stale/abandoned 'ready' row (tab closed,
 // SDK disconnected, laptop asleep) ages out and stops being routable within
 // two missed beats.
@@ -2791,7 +2768,8 @@ export async function findRoutableAgents(nowMs: number = Date.now()): Promise<Ro
   // and excluding them would remove agents from the very ring being computed.
   //
   // Time-bounded, and that bound is load-bearing rather than defensive. There is
-  // no sweep closing stuck console_calls rows (checked: none in worker/, and the
+  // no sweep closing stuck 'connected' console_calls rows (closeStaleInitiatedCalls
+  // only closes 'initiated' ones; none in worker/, and the
   // module already notes a row "stays stuck non-terminal"), so an unbounded
   // exclusion would drop an agent from routing PERMANENTLY over one leaked row —
   // with a single provisioned agent, that is the whole call centre, silently.
@@ -3335,15 +3313,15 @@ export const CONSOLE_DIAL_AUDIT_ACTION = 'console_call.dial_intent';
  * Turn "נחזור אליכם בהקדם" into an actual callback row.
  *
  * ConsoleInbound already SAYS this — NO_AGENT_LINE_HE plays whenever the ring
- * order is exhausted — but until now nothing recorded the promise, so it was
- * the same class of false assurance as save_rsvp's "queued". This closes it.
+ * order is exhausted — so the promise has to be recorded, otherwise it is
+ * the same class of false assurance as save_rsvp's "queued".
  *
  * Hour-agnostic on purpose: the ring exhausts at 03:00 because nobody is
  * awake, and at 14:00 because everyone is busy. Both deserve a callback.
  *
- * Idempotent per call: a second 'no_agent' report for the same console call
+ * Idempotent: a second 'no_agent' report for the same console call
  * (retry, duplicate delivery) must not create a second row, so an existing
- * open request for the same phone created for this call is left alone.
+ * open request for the same phone inside CALLBACK_DEDUPE_WINDOW_MS is left alone.
  * Best-effort like the rest of this module — a lost write degrades the
  * follow-up, never the live call.
  */
@@ -3440,7 +3418,7 @@ export async function recordMissedCallCallback(input: {
       .maybeSingle();
     if (existing) return;
 
-    await admin.from('callback_requests').insert({
+    const { data: created } = await admin.from('callback_requests').insert({
       full_name: input.callerName?.trim() || 'מתקשר לא מזוהה',
       phone: phoneE164,
       topic: 'שיחה נכנסת ללא נציג זמין',
@@ -3449,7 +3427,17 @@ export async function recordMissedCallCallback(input: {
       requested_at: null,
       requested_rank: 'earliest',
       note: `נוצר אוטומטית משיחה נכנסת ${input.consoleCallId}`,
-    });
+    })
+      .select('id')
+      .maybeSingle();
+
+    // The two values above are STAND-INS, and the confirmation agent later
+    // reads both aloud. Offer the caller the one-screen form that replaces
+    // them with their own name and their own reason — see armCallbackIntake
+    // for the switch, the daily cap and the claim that gate the SMS.
+    if (created?.id) {
+      await armCallbackIntake({ requestId: created.id, phone: phoneE164 });
+    }
   } catch {
     // Best-effort — the console_calls row already records the missed call.
   }
@@ -3479,7 +3467,8 @@ export async function recordMissedCallCallback(input: {
  * panel, through every existing callback gate — never automatically.
  *
  * Idempotent per phone (same check as recordMissedCallCallback): an existing
- * open request for this number is left alone rather than duplicated. Best-
+ * open request for this number inside CALLBACK_DEDUPE_WINDOW_MS is left alone
+ * rather than duplicated. Best-
  * effort — a lost write here degrades the follow-up, never the (already
  * decided) "no agent" response to the visitor.
  */
@@ -3499,7 +3488,7 @@ export async function offerCallbackForCallMeNow(phone: string): Promise<void> {
       .maybeSingle();
     if (existing) return;
 
-    await admin.from('callback_requests').insert({
+    const { data: created } = await admin.from('callback_requests').insert({
       full_name: 'מבקש/ת "התקשרו אליי עכשיו"',
       phone,
       topic: 'בקשת "התקשרו אליי עכשיו" — לא נמצא נציג זמין',
@@ -3509,7 +3498,16 @@ export async function offerCallbackForCallMeNow(phone: string): Promise<void> {
       requested_at: null,
       requested_rank: 'earliest',
       note: 'נוצר אוטומטית מבקשת "התקשרו אליי עכשיו" (capability A, 12.8) — לא נמצא נציג זמין בזמן הבקשה',
-    });
+    })
+      .select('id')
+      .maybeSingle();
+
+    // Same stand-in problem, same offer. "אין נציג זמין" is BOTH paths: this
+    // one is the common case (checked at intent), ring exhaustion above is the
+    // narrow race that survives it.
+    if (created?.id) {
+      await armCallbackIntake({ requestId: created.id, phone });
+    }
   } catch {
     // Best-effort — see header.
   }

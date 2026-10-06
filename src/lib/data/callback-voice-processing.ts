@@ -15,7 +15,7 @@ import type {
 } from '@/lib/validation/voximplant';
 
 // Processing functions for the meeting-booking agent's 4 tool calls
-// (mtg/cb/*/[token] — docs/voice-agent/plans/2026-08-22-meeting-booking-agent-
+// (mtg/tool/*/[token] — docs/voice-agent/plans/2026-08-22-meeting-booking-agent-
 // plan.md §4). Deliberately a SEPARATE module from call-result-processing.ts:
 // that file's functions all resolve identity through call_attempts
 // (RSVP/billing); nothing here ever touches that table, so a bug in this file

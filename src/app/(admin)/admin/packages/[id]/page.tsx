@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 
-import { getPackage } from '@/lib/data/admin/packages';
+import { getPackage, getScheduleStepOptions } from '@/lib/data/admin/packages';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { getChannelCatalog } from '@/lib/data/channel-catalog';
 import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
@@ -35,13 +35,26 @@ export default async function EditPackagePage({
   const { id } = await params;
   const pkg = await getPackage(id);
   // Real 3-state dial status of the AI-voice channel (not_configured /
-  // configured_off / live) so a `call` touchpoint shows an accurate note instead
-  // of a stale "built but off" warning. getVoximplantConfig() reads app_settings
+  // configured_off / live) so a `call` touchpoint shows an accurate note.
+  // getVoximplantConfig() reads app_settings
   // via the service-role client (no manage_voice needed on this manage_billing page).
   const voxCfg = await getVoximplantConfig();
   const callChannelStatus: CallChannelStatus =
     voxCfg == null ? 'not_configured' : voxCfg.liveCallsEnabled ? 'live' : 'configured_off';
   const channelOptions = await getChannelCatalog();
+  const scheduleOptions = await getScheduleStepOptions();
+
+  // outreach_schedule is stored as Json; the column holds an array of
+  // touchpoint objects by contract (locked to what packages.ts writes).
+  // Declared before the pricing status below, which now feeds the cadence into
+  // buildBusinessFacts as well as into the form.
+  const outreachSchedule = Array.isArray(pkg.outreach_schedule)
+    ? (pkg.outreach_schedule as unknown as {
+        days_before: number;
+        channel: string;
+        message_key: string;
+      }[])
+    : [];
 
   // Gate-aware effective pricing model for THIS package, so the base/included
   // fields don't mislead while the base+overage gate is off. Numbers come from
@@ -49,8 +62,21 @@ export default async function EditPackagePage({
   // hardcoded. Only campaign packages (a per-reached price) have an effective
   // price to summarise.
   const gateActive = await getBaseOveragePricingEnabled();
+  // The headline `price_with_vat` and the activation fee `base_price` are
+  // independent columns (no DB constraint relates them, verified live). Both are
+  // returned to the AI sales agent's get_pricing tool, so a divergence under the
+  // base+overage model gives it two contradictory headline prices. Only compared
+  // when that model is the effective one — under pure per-reached there is no
+  // base fee for the headline to agree with.
+  const basePriceNum = Number(pkg.base_price ?? 0);
+  const headlineMismatch =
+    gateActive && pkg.price_per_reached != null && basePriceNum > 0 &&
+    Number(pkg.price_with_vat) !== basePriceNum
+      ? { priceWithVat: Number(pkg.price_with_vat), basePrice: basePriceNum }
+      : null;
   const pricingModelStatus: PricingModelStatus = {
     gateActive,
+    headlineMismatch,
     effectiveSummaryHe:
       pkg.price_per_reached != null
         ? (buildBusinessFacts(gateActive, {
@@ -59,6 +85,7 @@ export default async function EditPackagePage({
             base_price: Number(pkg.base_price ?? 0),
             included_reached: pkg.included_reached ?? 0,
             channels: pkg.channels ?? [],
+            outreach_schedule: outreachSchedule,
           }).summary_he ?? null)
         : null,
   };
@@ -67,16 +94,6 @@ export default async function EditPackagePage({
   // defensively for display (non-string entries are dropped).
   const includes = Array.isArray(pkg.includes)
     ? pkg.includes.filter((x): x is string => typeof x === 'string')
-    : [];
-
-  // outreach_schedule is stored as Json; the column holds an array of
-  // touchpoint objects by contract (locked to what packages.ts writes).
-  const outreachSchedule = Array.isArray(pkg.outreach_schedule)
-    ? (pkg.outreach_schedule as unknown as {
-        days_before: number;
-        channel: string;
-        message_key: string;
-      }[])
     : [];
 
   const initial: PackageFormInitial = {
@@ -91,6 +108,7 @@ export default async function EditPackagePage({
     price_per_reached: pkg.price_per_reached ?? '',
     base_price: pkg.base_price ?? '',
     included_reached: pkg.included_reached ?? '',
+    contact_quota: pkg.contact_quota ?? '',
     channels: pkg.channels ?? [],
     outreach_schedule: outreachSchedule,
     min_hold_floor: pkg.min_hold_floor,
@@ -120,6 +138,7 @@ export default async function EditPackagePage({
         callChannelStatus={callChannelStatus}
         channelOptions={channelOptions}
         pricingModelStatus={pricingModelStatus}
+        scheduleOptions={scheduleOptions}
       />
 
       <div className="border-t border-border pt-6">

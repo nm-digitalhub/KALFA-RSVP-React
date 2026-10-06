@@ -6,6 +6,45 @@ vi.mock('@/lib/data/outreach-config', () => ({
   getOutreachEnabled: vi.fn(),
   getWhatsAppConfig: vi.fn(),
 }));
+// The shared resolver (whatsapp-template-send.ts) reads routes + the Meta
+// mirror; its equivalence with the old per-step mapping + code builders is
+// proven against live data by `npm run whatsapp:template-gate`. These tests are
+// about sendCampaignWhatsApp's OWN behaviour (gates, audience, claims, logging),
+// so the resolver is shimmed onto the old contract they were written against.
+vi.mock('@/lib/data/whatsapp-template-send', async () => {
+  const spec = await vi.importActual<typeof import('@/lib/whatsapp/template-spec')>(
+    '@/lib/whatsapp/template-spec',
+  );
+  const { resolveTemplateForEvent } = await import('@/lib/data/message-templates-resolve');
+  const resolveWhatsAppSend = vi.fn(
+    async (input: {
+      messageKey: string;
+      eventType: string | null;
+      values: { event?: Record<string, unknown>; guestFirstName?: string | null };
+    }) => {
+      const t = await resolveTemplateForEvent(input.messageKey, input.eventType as never);
+      if (!t) return { kind: 'template_missing' as const };
+      if (t.channel !== 'whatsapp') return { kind: 'channel_mismatch' as const };
+      const guestFirstName = input.values.guestFirstName ?? null;
+      const event = input.values.event as never;
+      const built =
+        input.messageKey === 'gift'
+          ? spec.buildGiftParams({ event, guestFirstName })
+          : spec.buildBodyParams({
+              paramContract: t.paramContract,
+              family: t.name.startsWith('kalfa_wedding_') ? 'wedding' : 'generic',
+              ctx: { event, guestFirstName },
+            });
+      if ('missing' in built) return { kind: 'params_incomplete' as const, missing: built.missing };
+      return { kind: 'ok' as const, template: t, templateId: 't', bodyParams: [...built.params], extras: {} };
+    },
+  );
+  const hasApprovedWhatsAppTemplate = vi.fn(async (key: string, eventType: string | null) => {
+    const t = await resolveTemplateForEvent(key, eventType as never);
+    return !!t && t.channel === 'whatsapp';
+  });
+  return { resolveWhatsAppSend, hasApprovedWhatsAppTemplate };
+});
 vi.mock('@/lib/data/message-templates-resolve', () => ({ resolveTemplateForEvent: vi.fn() }));
 vi.mock('@/lib/data/sendable-contacts', () => ({ resolveSendableContacts: vi.fn() }));
 vi.mock('@/lib/whatsapp/client', () => ({
@@ -140,7 +179,7 @@ describe('sendCampaignWhatsApp', () => {
     expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
   });
 
-  // S2.4 — R9: defense-in-depth on top of the DB trigger (campaigns_require_
+  // R9: defense-in-depth on top of the DB trigger (campaigns_require_
   // active_event); campaign.status='active' structurally implies event.status
   // was 'active' at SOME point (R9's DB trigger), but R7 also guarantees the
   // event can't have moved to 'closed' while this campaign stayed 'active' — so
@@ -282,6 +321,8 @@ describe('sendCampaignWhatsApp', () => {
           'אולמי הגן, דרך השלום 10, תל אביב',
         ],
       },
+      // The manual batch runs inside a request: no retry budget, one attempt.
+      {},
     );
     // k2 has no linked guest → the {{1}} greeting falls back, send still goes.
     const second = vi.mocked(sendWhatsAppTemplate).mock.calls[1][1];
@@ -390,14 +431,14 @@ describe('sendCampaignWhatsApp', () => {
   });
 });
 
-// Auto-thankyou 131049 mitigation (plan §2.1/§2.2, hardened after
-// thankyou-review BUG #1): the CORE guard is an ATOMIC claim-before-send via
-// the claim_thankyou_recipient RPC (supabase/migrations/20260712205030_auto_
-// thankyou_schema.sql), backed by a partial UNIQUE index on
-// contact_interactions(campaign_id, contact_id) WHERE message_key='thankyou'.
+// Auto-thankyou 131049 mitigation (plan §2.1/§2.2): the CORE guard is an
+// ATOMIC claim-before-send via the claim_thankyou_recipient RPC
+// (supabase/migrations/20260712205030_auto_thankyou_schema.sql), backed by a
+// partial UNIQUE index on contact_interactions(campaign_id, contact_id) WHERE
+// message_key='thankyou'.
 // A read-then-filter check (read prior rows, then decide) has a check-then-
 // act race between the manual button and the sweep, or between two
-// overlapping sweep ticks — this replaced that with an atomic reserve. The
+// overlapping sweep ticks — hence the atomic reserve. The
 // SQL-level uniqueness itself is exercised at migration-apply time, not here;
 // these tests verify the APPLICATION respects the RPC's verdict correctly.
 // Await order for messageKey='thankyou': campaign, event (first read),
@@ -553,10 +594,9 @@ describe('sendCampaignWhatsApp — thankyou (auto-thankyou 131049 mitigation)', 
     );
   });
 
-  // Bug fix (thankyou-review, high — BUG #1): on an accepted send, the claim
-  // row's placeholder provider_id must be finalized to the REAL one, or
-  // Meta's delivery-status webhook (which matches by provider_id) can never
-  // find this row again.
+  // On an accepted send, the claim row's placeholder provider_id must be
+  // finalized to the REAL one, or Meta's delivery-status webhook (which matches
+  // by provider_id) can never find this row again.
   it('finalizes the claim row with the REAL provider_id on an accepted send', async () => {
     vi.mocked(getOutreachEnabled).mockResolvedValue(true);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
@@ -612,7 +652,7 @@ describe('sendCampaignWhatsApp — thankyou (auto-thankyou 131049 mitigation)', 
 });
 
 // MM Lite routing — the messageKey argument decides the send transport:
-// MARKETING_MESSAGE_KEYS (currently only 'thankyou') go through
+// MARKETING_MESSAGE_KEYS ('thankyou' and 'sales_signup_link') go through
 // sendWhatsAppMarketingTemplate (`/marketing_messages`); every other key keeps
 // using sendWhatsAppTemplate (`/messages`), unchanged.
 describe('sendOneWhatsApp routing', () => {
@@ -663,7 +703,7 @@ describe('sendOneWhatsApp routing', () => {
   });
 });
 
-// §5.6 — the shared sink write (engine executeStep + manual batch path). The
+// §5.6 — the shared sink write (engine step sends + manual batch path). The
 // DB-level dedup contract lives HERE, once: ONE atomic upsert whose
 // (campaign_id, touchpoint_index, reason) conflict key matches the sink's
 // UNIQUE constraint — never select-then-insert, since concurrent workers can

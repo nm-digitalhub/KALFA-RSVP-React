@@ -4,12 +4,12 @@ vi.mock('server-only', () => ({}));
 
 import { pickActiveCalendarWindow } from './provider';
 
-// Outlook/Exchange presence-sync research (12.8): this function is the SINGLE
-// place "what counts as busy right now" is computed for calendar-derived
-// presence — shared (in intent, if not yet in code — see
-// console-agent-calendar-presence.ts's module header) by the interactive
-// admin-avatar dot and the console-agent worker sync. Correctness here is
-// what stands between a real meeting and a false "available" (or vice versa).
+// This function is the place "what counts as busy right now" is computed for
+// the console-agent worker's calendar-derived presence sync
+// (console-agent-calendar-presence.ts); the interactive admin-avatar dot in
+// exchange-availability.ts still carries an inline copy of the same ranking.
+// Correctness here is what stands between a real meeting and a false
+// "available" (or vice versa).
 describe('pickActiveCalendarWindow (pure)', () => {
   const NOW = Date.parse('2026-08-12T12:00:00.000Z');
 

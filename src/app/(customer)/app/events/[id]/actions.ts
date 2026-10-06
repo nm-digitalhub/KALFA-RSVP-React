@@ -1,15 +1,20 @@
 'use server';
 
+import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
-import { unstable_rethrow } from 'next/navigation';
+import { redirect, unstable_rethrow } from 'next/navigation';
 
 import {
   CELEBRANTS_LOCKED_ERROR,
+  DATES_LOCKED_ERROR,
   EVENT_TYPE_LOCKED_ERROR,
   VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR,
+  getEvent,
   requireEventAccess,
   updateEvent,
 } from '@/lib/data/events';
+import { missingSetupPrerequisites } from '@/lib/data/setup-steps';
+import { rescheduleEventExchangeAppointment } from '@/lib/data/event-exchange-sync';
 import { ilWallTimeToIso } from '@/lib/data/event-date';
 import {
   INVITE_IMAGE_MAX_BYTES,
@@ -27,8 +32,9 @@ import { createCancellationRequestSchema } from '@/lib/validation/event-cancella
 import { issuesToFieldErrors, type FormState } from '@/lib/validation/result';
 
 // `eventId` is bound from the route segment (server-side), NOT submitted by the
-// browser. Authorization is enforced again inside updateEvent via the ownership
-// gate, so a tampered id can never edit another owner's event.
+// browser. Authorization is enforced again inside updateEvent via the event-access
+// gate (the owner, or an org member holding events.edit), so a tampered id can
+// never edit an event the user has no access to.
 //
 // '' (rendered-but-empty, a draft owner explicitly clearing the field) → null.
 // Only ever called for a key that IS present in FormData.
@@ -72,7 +78,7 @@ export async function updateEventAction(
   const parsed = updateEventSchema.safeParse(raw);
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   // The celebrant schema is keyed on event_type, so celebrant inputs are
@@ -150,7 +156,7 @@ export async function updateEventAction(
     });
   } catch (err) {
     // Re-throw Next.js control-flow signals (redirect / notFound from the
-    // ownership gate); catching them would silently break that flow.
+    // access gate); catching them would silently break that flow.
     unstable_rethrow(err);
     // The while-campaign-live locks are the guards reachable through ENABLED UI
     // (the form renders these fields) — the user must see the actionable message,
@@ -158,7 +164,8 @@ export async function updateEventAction(
     // pass-through), so a rewording of the message never breaks this surfacing.
     if (
       err instanceof Error &&
-      (err.message === CELEBRANTS_LOCKED_ERROR ||
+      (err.message === DATES_LOCKED_ERROR ||
+        err.message === CELEBRANTS_LOCKED_ERROR ||
         err.message === EVENT_TYPE_LOCKED_ERROR ||
         err.message === VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR)
     ) {
@@ -167,9 +174,46 @@ export async function updateEventAction(
     return { error: 'עדכון האירוע נכשל. נסו שוב.' };
   }
 
+  // A date that moved while the event is live leaves the calendar entry on the old
+  // one. Staff reschedules do the same (rescheduleEventForAdmin). The schema only
+  // accepts a deadline together with a date, so the date key is the signal. A no-op
+  // for an event that was never synced (a draft has no entry), and it never throws,
+  // so it cannot turn a saved edit into a failure.
+  if (formData.has('event_date')) {
+    await rescheduleEventExchangeAppointment(eventId);
+  }
+
   revalidatePath('/app/events');
   revalidatePath(`/app/events/${eventId}`);
   return { notice: 'האירוע עודכן' };
+}
+
+// The details step of the setup flow ("שמירה והמשך"): the SAME save as the plain
+// edit (updateEventAction — validation, ownership, locks all unchanged), then the
+// step moves on. If something the flow needs is still missing the owner stays on
+// this step and is told exactly what; the save is NOT rolled back, since what was
+// typed is valid and worth keeping. The flow's own state is recomputed on the
+// server (computeSetupSteps) when the page loads, so nothing is passed along.
+export async function setupSaveEventAction(
+  eventId: string,
+  prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const saved = await updateEventAction(eventId, prevState, formData);
+  if (saved?.error || saved?.fieldErrors) return saved;
+
+  const missing = missingSetupPrerequisites(await getEvent(eventId));
+  if (missing.length > 0) {
+    // Both: the sentence says what is missing, and each field that has a place in
+    // the form is marked where the owner will look for it.
+    const fieldErrors: Record<string, string[]> = {};
+    for (const { field } of missing) if (field) fieldErrors[field] = ['שדה חובה כדי להמשיך'];
+    return {
+      error: `נשמר. כדי להמשיך יש להשלים: ${missing.map((m) => m.label).join(', ')}`,
+      fieldErrors,
+    };
+  }
+  redirect(`/app/events/${eventId}/setup`);
 }
 
 export async function createCancellationRequestAction(
@@ -182,7 +226,7 @@ export async function createCancellationRequestAction(
     smsConsent: formData.get('smsConsent') === 'on',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
   try {
     const { requestNumber } = await createCancellationRequest(eventId, parsed.data);

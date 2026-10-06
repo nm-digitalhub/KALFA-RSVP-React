@@ -48,10 +48,10 @@ export default async function EventsPage() {
   const canCreate = await canCreateEvent();
 
   // ONE batched query for the whole page (getEventClosureReasons), never one
-  // per row: that N+1 is exactly what kept this list on the raw status label.
-  // Only CLOSED ids are asked for, because the closure reason changes nothing
-  // for any other status (see nextActionLabel / eventStatusLabel) — so a list
-  // without a single closed event issues no query at all.
+  // per row (an N+1). Only CLOSED ids are asked for, because the closure
+  // reason changes nothing for any other status (see nextActionLabel /
+  // eventStatusLabel) — so a list without a single closed event issues no
+  // query at all.
   const closureReasons = await getEventClosureReasons(
     events.filter((event) => event.status === 'closed').map((event) => event.id),
   );
@@ -91,7 +91,7 @@ export default async function EventsPage() {
               <li key={event.id}>
                 {/* ONE action per card. The row itself is the link; the action
                     label below is a span inside it, not a second anchor to the
-                    same destination (the old header + "עריכה" pair). */}
+                    same destination. */}
                 <Link
                   href={`/app/events/${event.id}`}
                   // FOCUS: the row is the focus target, and `focus-visible:bg-muted`

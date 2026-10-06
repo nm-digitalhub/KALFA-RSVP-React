@@ -129,6 +129,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          model: string
           status: Database["public"]["Enums"]["agreement_status"]
           updated_at: string
           version: string
@@ -140,6 +141,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          model?: string
           status?: Database["public"]["Enums"]["agreement_status"]
           updated_at?: string
           version: string
@@ -151,6 +153,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          model?: string
           status?: Database["public"]["Enums"]["agreement_status"]
           updated_at?: string
           version?: string
@@ -170,6 +173,8 @@ export type Database = {
           base_overage_pricing_enabled: boolean
           billing_exposure_gate: boolean
           call_consent_required: boolean
+          callback_intake_sms_daily_cap: number
+          callback_intake_sms_enabled: boolean
           campaign_holds_enabled: boolean
           cancellation_fee_cap: number
           cancellation_fee_percent: number
@@ -205,6 +210,16 @@ export type Database = {
           inquiry_followup_enabled: boolean
           monitor_enabled: boolean
           outreach_enabled: boolean
+          owner_agent_burst_ms: number
+          owner_agent_custom_report_template_lang: string | null
+          owner_agent_custom_report_template_name: string | null
+          owner_agent_daily_cap: number
+          owner_agent_enabled: boolean
+          owner_agent_phone_number_id: string | null
+          owner_agent_report_template_lang: string | null
+          owner_agent_report_template_name: string | null
+          owner_agent_reports_enabled: boolean
+          package_model_enabled: boolean
           payments_enabled: boolean
           privacy_url: string | null
           reasonable_coverage_contacts: number
@@ -256,6 +271,7 @@ export type Database = {
           warranty_text: string | null
           whatsapp_access_token: string | null
           whatsapp_app_secret: string | null
+          whatsapp_consent_required: boolean
           whatsapp_phone_number_id: string | null
           whatsapp_send_policy: Json | null
           whatsapp_verify_token: string | null
@@ -273,6 +289,8 @@ export type Database = {
           base_overage_pricing_enabled?: boolean
           billing_exposure_gate?: boolean
           call_consent_required?: boolean
+          callback_intake_sms_daily_cap?: number
+          callback_intake_sms_enabled?: boolean
           campaign_holds_enabled?: boolean
           cancellation_fee_cap?: number
           cancellation_fee_percent?: number
@@ -308,6 +326,16 @@ export type Database = {
           inquiry_followup_enabled?: boolean
           monitor_enabled?: boolean
           outreach_enabled?: boolean
+          owner_agent_burst_ms?: number
+          owner_agent_custom_report_template_lang?: string | null
+          owner_agent_custom_report_template_name?: string | null
+          owner_agent_daily_cap?: number
+          owner_agent_enabled?: boolean
+          owner_agent_phone_number_id?: string | null
+          owner_agent_report_template_lang?: string | null
+          owner_agent_report_template_name?: string | null
+          owner_agent_reports_enabled?: boolean
+          package_model_enabled?: boolean
           payments_enabled?: boolean
           privacy_url?: string | null
           reasonable_coverage_contacts?: number
@@ -359,6 +387,7 @@ export type Database = {
           warranty_text?: string | null
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
+          whatsapp_consent_required?: boolean
           whatsapp_phone_number_id?: string | null
           whatsapp_send_policy?: Json | null
           whatsapp_verify_token?: string | null
@@ -376,6 +405,8 @@ export type Database = {
           base_overage_pricing_enabled?: boolean
           billing_exposure_gate?: boolean
           call_consent_required?: boolean
+          callback_intake_sms_daily_cap?: number
+          callback_intake_sms_enabled?: boolean
           campaign_holds_enabled?: boolean
           cancellation_fee_cap?: number
           cancellation_fee_percent?: number
@@ -411,6 +442,16 @@ export type Database = {
           inquiry_followup_enabled?: boolean
           monitor_enabled?: boolean
           outreach_enabled?: boolean
+          owner_agent_burst_ms?: number
+          owner_agent_custom_report_template_lang?: string | null
+          owner_agent_custom_report_template_name?: string | null
+          owner_agent_daily_cap?: number
+          owner_agent_enabled?: boolean
+          owner_agent_phone_number_id?: string | null
+          owner_agent_report_template_lang?: string | null
+          owner_agent_report_template_name?: string | null
+          owner_agent_reports_enabled?: boolean
+          package_model_enabled?: boolean
           payments_enabled?: boolean
           privacy_url?: string | null
           reasonable_coverage_contacts?: number
@@ -462,6 +503,7 @@ export type Database = {
           warranty_text?: string | null
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
+          whatsapp_consent_required?: boolean
           whatsapp_phone_number_id?: string | null
           whatsapp_send_policy?: Json | null
           whatsapp_verify_token?: string | null
@@ -626,6 +668,8 @@ export type Database = {
           agent_id: string | null
           agent_turns: number | null
           analysis_at: string | null
+          attempt_id: string | null
+          attempt_table: string | null
           call_attempt_id: string | null
           call_duration_secs: number | null
           call_successful: string | null
@@ -655,6 +699,8 @@ export type Database = {
           agent_id?: string | null
           agent_turns?: number | null
           analysis_at?: string | null
+          attempt_id?: string | null
+          attempt_table?: string | null
           call_attempt_id?: string | null
           call_duration_secs?: number | null
           call_successful?: string | null
@@ -684,6 +730,8 @@ export type Database = {
           agent_id?: string | null
           agent_turns?: number | null
           analysis_at?: string | null
+          attempt_id?: string | null
+          attempt_table?: string | null
           call_attempt_id?: string | null
           call_duration_secs?: number | null
           call_successful?: string | null
@@ -998,6 +1046,8 @@ export type Database = {
             agent_id: string | null
             agent_turns: number | null
             analysis_at: string | null
+            attempt_id: string | null
+            attempt_table: string | null
             call_attempt_id: string | null
             call_duration_secs: number | null
             call_successful: string | null
@@ -1079,6 +1129,13 @@ export type Database = {
           excluded_dates: string[] | null
           full_name: string
           id: string
+          intake_completed_at: string | null
+          intake_sms_claimed_at: string | null
+          intake_sms_error: string | null
+          intake_sms_provider_id: string | null
+          intake_sms_sent_at: string | null
+          intake_token: string | null
+          intake_token_expires_at: string | null
           no_contact_sms_claimed_at: string | null
           no_contact_sms_error: string | null
           no_contact_sms_provider_id: string | null
@@ -1111,6 +1168,13 @@ export type Database = {
           excluded_dates?: string[] | null
           full_name: string
           id?: string
+          intake_completed_at?: string | null
+          intake_sms_claimed_at?: string | null
+          intake_sms_error?: string | null
+          intake_sms_provider_id?: string | null
+          intake_sms_sent_at?: string | null
+          intake_token?: string | null
+          intake_token_expires_at?: string | null
           no_contact_sms_claimed_at?: string | null
           no_contact_sms_error?: string | null
           no_contact_sms_provider_id?: string | null
@@ -1143,6 +1207,13 @@ export type Database = {
           excluded_dates?: string[] | null
           full_name?: string
           id?: string
+          intake_completed_at?: string | null
+          intake_sms_claimed_at?: string | null
+          intake_sms_error?: string | null
+          intake_sms_provider_id?: string | null
+          intake_sms_sent_at?: string | null
+          intake_token?: string | null
+          intake_token_expires_at?: string | null
           no_contact_sms_claimed_at?: string | null
           no_contact_sms_error?: string | null
           no_contact_sms_provider_id?: string | null
@@ -1430,13 +1501,145 @@ export type Database = {
           },
         ]
       }
+      campaign_quota_alerts: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          delivered_at: string | null
+          event_id: string
+          id: string
+          quota: number
+          threshold_percent: number
+          used: number
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          delivered_at?: string | null
+          event_id: string
+          id?: string
+          quota: number
+          threshold_percent: number
+          used: number
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          delivered_at?: string | null
+          event_id?: string
+          id?: string
+          quota?: number
+          threshold_percent?: number
+          used?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_quota_alerts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_quota_alerts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_quota_alerts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "campaign_quota_alerts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_quota_changes: {
+        Row: {
+          actor: string | null
+          campaign_id: string
+          created_at: string
+          event_id: string
+          id: string
+          idempotency_key: string
+          kind: string
+          new_quota: number | null
+          payment_ref: string | null
+          previous_quota: number | null
+          reason: string | null
+        }
+        Insert: {
+          actor?: string | null
+          campaign_id: string
+          created_at?: string
+          event_id: string
+          id?: string
+          idempotency_key: string
+          kind: string
+          new_quota?: number | null
+          payment_ref?: string | null
+          previous_quota?: number | null
+          reason?: string | null
+        }
+        Update: {
+          actor?: string | null
+          campaign_id?: string
+          created_at?: string
+          event_id?: string
+          id?: string
+          idempotency_key?: string
+          kind?: string
+          new_quota?: number | null
+          payment_ref?: string | null
+          previous_quota?: number | null
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_quota_changes_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_quota_changes_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_quota_changes_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "campaign_quota_changes_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaigns: {
         Row: {
           allowed_channels: Database["public"]["Enums"]["campaign_channel"][]
           approved_at: string | null
           approved_by: string | null
           auth_amount: number | null
-          auth_expires_at: string | null
           auth_external_ref: string | null
           auth_number: string | null
           authorized_at: string | null
@@ -1454,6 +1657,7 @@ export type Database = {
           charge_status: string | null
           charged_at: string | null
           close_at: string | null
+          contact_quota: number | null
           created_at: string
           credit_applied: number
           enabled: boolean
@@ -1468,6 +1672,7 @@ export type Database = {
           max_charge_ceiling: number | null
           max_contacts: number
           outreach_schedule: Json | null
+          package_price: number | null
           price_per_reached: number | null
           release_status: string | null
           start_at: string | null
@@ -1488,7 +1693,6 @@ export type Database = {
           approved_at?: string | null
           approved_by?: string | null
           auth_amount?: number | null
-          auth_expires_at?: string | null
           auth_external_ref?: string | null
           auth_number?: string | null
           authorized_at?: string | null
@@ -1506,6 +1710,7 @@ export type Database = {
           charge_status?: string | null
           charged_at?: string | null
           close_at?: string | null
+          contact_quota?: number | null
           created_at?: string
           credit_applied?: number
           enabled?: boolean
@@ -1520,6 +1725,7 @@ export type Database = {
           max_charge_ceiling?: number | null
           max_contacts: number
           outreach_schedule?: Json | null
+          package_price?: number | null
           price_per_reached?: number | null
           release_status?: string | null
           start_at?: string | null
@@ -1540,7 +1746,6 @@ export type Database = {
           approved_at?: string | null
           approved_by?: string | null
           auth_amount?: number | null
-          auth_expires_at?: string | null
           auth_external_ref?: string | null
           auth_number?: string | null
           authorized_at?: string | null
@@ -1558,6 +1763,7 @@ export type Database = {
           charge_status?: string | null
           charged_at?: string | null
           close_at?: string | null
+          contact_quota?: number | null
           created_at?: string
           credit_applied?: number
           enabled?: boolean
@@ -1572,6 +1778,7 @@ export type Database = {
           max_charge_ceiling?: number | null
           max_contacts?: number
           outreach_schedule?: Json | null
+          package_price?: number | null
           price_per_reached?: number | null
           release_status?: string | null
           start_at?: string | null
@@ -3322,9 +3529,11 @@ export type Database = {
           meal_pref: string | null
           note: string | null
           phone: string | null
+          phone_digits: string | null
           rsvp_note: string | null
           rsvp_token: string
           rsvp_token_revoked_at: string | null
+          seq: number
           show_in_guest_list: boolean
           status: Database["public"]["Enums"]["guest_status"]
           updated_at: string
@@ -3350,9 +3559,11 @@ export type Database = {
           meal_pref?: string | null
           note?: string | null
           phone?: string | null
+          phone_digits?: string | null
           rsvp_note?: string | null
           rsvp_token?: string
           rsvp_token_revoked_at?: string | null
+          seq?: number
           show_in_guest_list?: boolean
           status?: Database["public"]["Enums"]["guest_status"]
           updated_at?: string
@@ -3378,9 +3589,11 @@ export type Database = {
           meal_pref?: string | null
           note?: string | null
           phone?: string | null
+          phone_digits?: string | null
           rsvp_note?: string | null
           rsvp_token?: string
           rsvp_token_revoked_at?: string | null
+          seq?: number
           show_in_guest_list?: boolean
           status?: Database["public"]["Enums"]["guest_status"]
           updated_at?: string
@@ -3627,6 +3840,180 @@ export type Database = {
             columns: ["inquiry_id"]
             isOneToOne: false
             referencedRelation: "contact_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      integration_connections: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          credential_kind: string
+          expires_at: string | null
+          id: string
+          label: string
+          last_error: string | null
+          last_refresh_at: string | null
+          metadata: Json
+          provider: string
+          refresh_lease_id: string | null
+          refresh_lease_until: string | null
+          scopes: string[]
+          status: string
+          updated_at: string
+          vault_secret_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          credential_kind: string
+          expires_at?: string | null
+          id?: string
+          label: string
+          last_error?: string | null
+          last_refresh_at?: string | null
+          metadata?: Json
+          provider: string
+          refresh_lease_id?: string | null
+          refresh_lease_until?: string | null
+          scopes?: string[]
+          status?: string
+          updated_at?: string
+          vault_secret_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          credential_kind?: string
+          expires_at?: string | null
+          id?: string
+          label?: string
+          last_error?: string | null
+          last_refresh_at?: string | null
+          metadata?: Json
+          provider?: string
+          refresh_lease_id?: string | null
+          refresh_lease_until?: string | null
+          scopes?: string[]
+          status?: string
+          updated_at?: string
+          vault_secret_id?: string | null
+        }
+        Relationships: []
+      }
+      integration_oauth_states: {
+        Row: {
+          code_verifier: string
+          consumed_at: string | null
+          created_at: string
+          created_by: string
+          expires_at: string
+          id: string
+          provider: string
+          redirect_to: string
+          requested_scopes: string[]
+          state_hash: string
+        }
+        Insert: {
+          code_verifier: string
+          consumed_at?: string | null
+          created_at?: string
+          created_by: string
+          expires_at: string
+          id?: string
+          provider: string
+          redirect_to: string
+          requested_scopes?: string[]
+          state_hash: string
+        }
+        Update: {
+          code_verifier?: string
+          consumed_at?: string | null
+          created_at?: string
+          created_by?: string
+          expires_at?: string
+          id?: string
+          provider?: string
+          redirect_to?: string
+          requested_scopes?: string[]
+          state_hash?: string
+        }
+        Relationships: []
+      }
+      integration_provider_configs: {
+        Row: {
+          client_id: string
+          created_at: string
+          created_by: string | null
+          enabled: boolean
+          extra: Json
+          provider: string
+          updated_at: string
+          vault_secret_id: string | null
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          extra?: Json
+          provider: string
+          updated_at?: string
+          vault_secret_id?: string | null
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          extra?: Json
+          provider?: string
+          updated_at?: string
+          vault_secret_id?: string | null
+        }
+        Relationships: []
+      }
+      message_template_routes: {
+        Row: {
+          created_at: string
+          event_type: Database["public"]["Enums"]["event_type"] | null
+          id: string
+          message_key: string
+          updated_at: string
+          whatsapp_template_id: string
+          with_media: boolean
+        }
+        Insert: {
+          created_at?: string
+          event_type?: Database["public"]["Enums"]["event_type"] | null
+          id?: string
+          message_key: string
+          updated_at?: string
+          whatsapp_template_id: string
+          with_media?: boolean
+        }
+        Update: {
+          created_at?: string
+          event_type?: Database["public"]["Enums"]["event_type"] | null
+          id?: string
+          message_key?: string
+          updated_at?: string
+          whatsapp_template_id?: string
+          with_media?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_template_routes_message_key_fkey"
+            columns: ["message_key"]
+            isOneToOne: false
+            referencedRelation: "message_templates"
+            referencedColumns: ["message_key"]
+          },
+          {
+            foreignKeyName: "message_template_routes_whatsapp_template_id_fkey"
+            columns: ["whatsapp_template_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_message_templates"
             referencedColumns: ["id"]
           },
         ]
@@ -4246,12 +4633,369 @@ export type Database = {
           },
         ]
       }
+      owner_agent_allowlist: {
+        Row: {
+          approval_kind: string
+          approval_note: string | null
+          approved_at: string | null
+          approved_by: string | null
+          bound_from_e164: string | null
+          bsuid: string | null
+          bsuid_bound_at: string | null
+          created_at: string
+          created_by: string
+          e164: string
+          enabled: boolean
+          id: string
+          label: string | null
+          parent_bsuid: string | null
+          report_opt_in: boolean
+          staff_user_id: string | null
+        }
+        Insert: {
+          approval_kind?: string
+          approval_note?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          bound_from_e164?: string | null
+          bsuid?: string | null
+          bsuid_bound_at?: string | null
+          created_at?: string
+          created_by: string
+          e164: string
+          enabled?: boolean
+          id?: string
+          label?: string | null
+          parent_bsuid?: string | null
+          report_opt_in?: boolean
+          staff_user_id?: string | null
+        }
+        Update: {
+          approval_kind?: string
+          approval_note?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          bound_from_e164?: string | null
+          bsuid?: string | null
+          bsuid_bound_at?: string | null
+          created_at?: string
+          created_by?: string
+          e164?: string
+          enabled?: boolean
+          id?: string
+          label?: string | null
+          parent_bsuid?: string | null
+          report_opt_in?: boolean
+          staff_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_agent_allowlist_staff_user_id_fkey"
+            columns: ["staff_user_id"]
+            isOneToOne: false
+            referencedRelation: "platform_staff"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      owner_agent_audit: {
+        Row: {
+          allowlist_entry_id: string | null
+          id: string
+          input_tokens: number | null
+          intake_id: string | null
+          latency_ms: number | null
+          occurred_at: string
+          outcome: string
+          output_tokens: number | null
+          reason_code: string | null
+          report_run_id: string | null
+          staff_user_id: string | null
+          stage: string
+          steps: number | null
+          tool_names: string[] | null
+          turn_intake_id: string | null
+          wamid_sha256: string | null
+        }
+        Insert: {
+          allowlist_entry_id?: string | null
+          id?: string
+          input_tokens?: number | null
+          intake_id?: string | null
+          latency_ms?: number | null
+          occurred_at?: string
+          outcome: string
+          output_tokens?: number | null
+          reason_code?: string | null
+          report_run_id?: string | null
+          staff_user_id?: string | null
+          stage: string
+          steps?: number | null
+          tool_names?: string[] | null
+          turn_intake_id?: string | null
+          wamid_sha256?: string | null
+        }
+        Update: {
+          allowlist_entry_id?: string | null
+          id?: string
+          input_tokens?: number | null
+          intake_id?: string | null
+          latency_ms?: number | null
+          occurred_at?: string
+          outcome?: string
+          output_tokens?: number | null
+          reason_code?: string | null
+          report_run_id?: string | null
+          staff_user_id?: string | null
+          stage?: string
+          steps?: number | null
+          tool_names?: string[] | null
+          turn_intake_id?: string | null
+          wamid_sha256?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_agent_audit_allowlist_entry_id_fkey"
+            columns: ["allowlist_entry_id"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_allowlist"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_agent_audit_intake_id_fkey"
+            columns: ["intake_id"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_intake"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_agent_audit_report_run_id_fkey"
+            columns: ["report_run_id"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_report_run"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_agent_audit_turn_intake_id_fkey"
+            columns: ["turn_intake_id"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_intake"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      owner_agent_intake: {
+        Row: {
+          allowlist_entry_id: string | null
+          coalesced_into: string | null
+          followups: Json | null
+          id: string
+          interactive_id: string | null
+          interactive_title: string | null
+          location_label: string | null
+          location_lat: number | null
+          location_lng: number | null
+          media_bytes: number | null
+          media_filename: string | null
+          media_id: string | null
+          media_mime: string | null
+          media_sha256_b64: string | null
+          media_voice: boolean | null
+          message_text: string | null
+          message_type: string
+          phone_number_id: string
+          processed_at: string | null
+          received_at: string
+          reply_to_wamid: string | null
+          reply_wamids: string[] | null
+          staff_user_id: string | null
+          status: string
+          transcript: string | null
+          updated_at: string
+          wamid: string
+        }
+        Insert: {
+          allowlist_entry_id?: string | null
+          coalesced_into?: string | null
+          followups?: Json | null
+          id?: string
+          interactive_id?: string | null
+          interactive_title?: string | null
+          location_label?: string | null
+          location_lat?: number | null
+          location_lng?: number | null
+          media_bytes?: number | null
+          media_filename?: string | null
+          media_id?: string | null
+          media_mime?: string | null
+          media_sha256_b64?: string | null
+          media_voice?: boolean | null
+          message_text?: string | null
+          message_type?: string
+          phone_number_id: string
+          processed_at?: string | null
+          received_at?: string
+          reply_to_wamid?: string | null
+          reply_wamids?: string[] | null
+          staff_user_id?: string | null
+          status?: string
+          transcript?: string | null
+          updated_at?: string
+          wamid: string
+        }
+        Update: {
+          allowlist_entry_id?: string | null
+          coalesced_into?: string | null
+          followups?: Json | null
+          id?: string
+          interactive_id?: string | null
+          interactive_title?: string | null
+          location_label?: string | null
+          location_lat?: number | null
+          location_lng?: number | null
+          media_bytes?: number | null
+          media_filename?: string | null
+          media_id?: string | null
+          media_mime?: string | null
+          media_sha256_b64?: string | null
+          media_voice?: boolean | null
+          message_text?: string | null
+          message_type?: string
+          phone_number_id?: string
+          processed_at?: string | null
+          received_at?: string
+          reply_to_wamid?: string | null
+          reply_wamids?: string[] | null
+          staff_user_id?: string | null
+          status?: string
+          transcript?: string | null
+          updated_at?: string
+          wamid?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_agent_intake_allowlist_entry_id_fkey"
+            columns: ["allowlist_entry_id"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_allowlist"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_agent_intake_coalesced_into_fkey"
+            columns: ["coalesced_into"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_intake"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      owner_agent_report_run: {
+        Row: {
+          channel: string | null
+          claimed_at: string
+          error_code: string | null
+          id: string
+          local_date: string
+          outbound_wamid: string | null
+          sent_at: string | null
+          slot_time: string
+          status: string
+          subscription_id: string
+        }
+        Insert: {
+          channel?: string | null
+          claimed_at?: string
+          error_code?: string | null
+          id?: string
+          local_date: string
+          outbound_wamid?: string | null
+          sent_at?: string | null
+          slot_time: string
+          status?: string
+          subscription_id: string
+        }
+        Update: {
+          channel?: string | null
+          claimed_at?: string
+          error_code?: string | null
+          id?: string
+          local_date?: string
+          outbound_wamid?: string | null
+          sent_at?: string | null
+          slot_time?: string
+          status?: string
+          subscription_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_agent_report_run_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_report_subscription"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      owner_agent_report_subscription: {
+        Row: {
+          allowlist_entry_id: string
+          created_at: string
+          created_by: string | null
+          enabled: boolean
+          id: string
+          instructions: string | null
+          report_key: string
+          slot_time: string
+          template_lang: string | null
+          template_name: string | null
+          timezone: string
+          updated_at: string
+        }
+        Insert: {
+          allowlist_entry_id: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          id?: string
+          instructions?: string | null
+          report_key: string
+          slot_time: string
+          template_lang?: string | null
+          template_name?: string | null
+          timezone: string
+          updated_at?: string
+        }
+        Update: {
+          allowlist_entry_id?: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          id?: string
+          instructions?: string | null
+          report_key?: string
+          slot_time?: string
+          template_lang?: string | null
+          template_name?: string | null
+          timezone?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_agent_report_subscription_allowlist_entry_id_fkey"
+            columns: ["allowlist_entry_id"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_allowlist"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       packages: {
         Row: {
           active: boolean
           base_price: number | null
           category: string
           channels: Database["public"]["Enums"]["campaign_channel"][] | null
+          contact_quota: number | null
           created_at: string
           description: string | null
           hold_buffer_pct: number
@@ -4271,6 +5015,7 @@ export type Database = {
           base_price?: number | null
           category?: string
           channels?: Database["public"]["Enums"]["campaign_channel"][] | null
+          contact_quota?: number | null
           created_at?: string
           description?: string | null
           hold_buffer_pct?: number
@@ -4290,6 +5035,7 @@ export type Database = {
           base_price?: number | null
           category?: string
           channels?: Database["public"]["Enums"]["campaign_channel"][] | null
+          contact_quota?: number | null
           created_at?: string
           description?: string | null
           hold_buffer_pct?: number
@@ -4305,6 +5051,225 @@ export type Database = {
           tier?: string
         }
         Relationships: []
+      }
+      payment_operation_kinds: {
+        Row: {
+          active: boolean
+          effect: string
+          kind: string
+          label_he: string
+          once_per_campaign: boolean
+          once_per_parent: boolean
+          sort_order: number
+        }
+        Insert: {
+          active?: boolean
+          effect: string
+          kind: string
+          label_he: string
+          once_per_campaign?: boolean
+          once_per_parent?: boolean
+          sort_order?: number
+        }
+        Update: {
+          active?: boolean
+          effect?: string
+          kind?: string
+          label_he?: string
+          once_per_campaign?: boolean
+          once_per_parent?: boolean
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      payment_operation_lines: {
+        Row: {
+          description: string
+          id: string
+          line_no: number
+          line_total: number | null
+          operation_id: string
+          quantity: number
+          recorded_at: string
+          unit_price: number
+        }
+        Insert: {
+          description: string
+          id?: string
+          line_no: number
+          line_total?: number | null
+          operation_id: string
+          quantity?: number
+          recorded_at?: string
+          unit_price: number
+        }
+        Update: {
+          description?: string
+          id?: string
+          line_no?: number
+          line_total?: number | null
+          operation_id?: string
+          quantity?: number
+          recorded_at?: string
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_operation_lines_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "payment_operations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_operations: {
+        Row: {
+          amount: number
+          campaign_id: string
+          card_brand: string | null
+          card_exp_month: number | null
+          card_exp_year: number | null
+          card_issuer: string | null
+          card_last4: string | null
+          card_mask: string | null
+          card_token_ref: string | null
+          citizen_id_secret: string | null
+          credit_applied: number
+          event_id: string
+          id: string
+          kind: string
+          meta: Json
+          note: string | null
+          occurred_at: string
+          once_slot: boolean
+          outcome: Database["public"]["Enums"]["payment_operation_outcome"]
+          parent_operation_id: string | null
+          parent_slot: boolean
+          payment_method_type: string | null
+          provider: string
+          provider_auth_ref: string | null
+          provider_document_id: number | null
+          provider_document_number: number | null
+          provider_document_url: string | null
+          provider_payment_id: number | null
+          provider_status: string | null
+          provider_status_description: string | null
+          recorded_at: string
+          source: string
+        }
+        Insert: {
+          amount?: number
+          campaign_id: string
+          card_brand?: string | null
+          card_exp_month?: number | null
+          card_exp_year?: number | null
+          card_issuer?: string | null
+          card_last4?: string | null
+          card_mask?: string | null
+          card_token_ref?: string | null
+          citizen_id_secret?: string | null
+          credit_applied?: number
+          event_id: string
+          id?: string
+          kind: string
+          meta?: Json
+          note?: string | null
+          occurred_at?: string
+          once_slot?: boolean
+          outcome?: Database["public"]["Enums"]["payment_operation_outcome"]
+          parent_operation_id?: string | null
+          parent_slot?: boolean
+          payment_method_type?: string | null
+          provider?: string
+          provider_auth_ref?: string | null
+          provider_document_id?: number | null
+          provider_document_number?: number | null
+          provider_document_url?: string | null
+          provider_payment_id?: number | null
+          provider_status?: string | null
+          provider_status_description?: string | null
+          recorded_at?: string
+          source?: string
+        }
+        Update: {
+          amount?: number
+          campaign_id?: string
+          card_brand?: string | null
+          card_exp_month?: number | null
+          card_exp_year?: number | null
+          card_issuer?: string | null
+          card_last4?: string | null
+          card_mask?: string | null
+          card_token_ref?: string | null
+          citizen_id_secret?: string | null
+          credit_applied?: number
+          event_id?: string
+          id?: string
+          kind?: string
+          meta?: Json
+          note?: string | null
+          occurred_at?: string
+          once_slot?: boolean
+          outcome?: Database["public"]["Enums"]["payment_operation_outcome"]
+          parent_operation_id?: string | null
+          parent_slot?: boolean
+          payment_method_type?: string | null
+          provider?: string
+          provider_auth_ref?: string | null
+          provider_document_id?: number | null
+          provider_document_number?: number | null
+          provider_document_url?: string | null
+          provider_payment_id?: number | null
+          provider_status?: string | null
+          provider_status_description?: string | null
+          recorded_at?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_operations_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_operations_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_operations_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "payment_operations_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_operations_kind_fkey"
+            columns: ["kind"]
+            isOneToOne: false
+            referencedRelation: "payment_operation_kinds"
+            referencedColumns: ["kind"]
+          },
+          {
+            foreignKeyName: "payment_operations_parent_operation_id_fkey"
+            columns: ["parent_operation_id"]
+            isOneToOne: false
+            referencedRelation: "payment_operations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       permission_definitions: {
         Row: {
@@ -4529,6 +5494,74 @@ export type Database = {
           sales_referral_attempt_id?: string | null
           signup_reminder_sent_at?: string | null
           terms_accepted_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      provider_number_roles: {
+        Row: {
+          number_id: string
+          role: Database["public"]["Enums"]["provider_number_role"]
+          updated_at: string
+        }
+        Insert: {
+          number_id: string
+          role: Database["public"]["Enums"]["provider_number_role"]
+          updated_at?: string
+        }
+        Update: {
+          number_id?: string
+          role?: Database["public"]["Enums"]["provider_number_role"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_number_roles_number_id_fkey"
+            columns: ["number_id"]
+            isOneToOne: false
+            referencedRelation: "provider_numbers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      provider_numbers: {
+        Row: {
+          created_at: string
+          display_label: string | null
+          e164: string | null
+          id: string
+          is_active: boolean
+          provider: Database["public"]["Enums"]["provider_key"]
+          provider_ref: string | null
+          snapshot: Json | null
+          snapshot_at: string | null
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_label?: string | null
+          e164?: string | null
+          id?: string
+          is_active?: boolean
+          provider: Database["public"]["Enums"]["provider_key"]
+          provider_ref?: string | null
+          snapshot?: Json | null
+          snapshot_at?: string | null
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_label?: string | null
+          e164?: string | null
+          id?: string
+          is_active?: boolean
+          provider?: Database["public"]["Enums"]["provider_key"]
+          provider_ref?: string | null
+          snapshot?: Json | null
+          snapshot_at?: string | null
+          source?: string
           updated_at?: string
         }
         Relationships: []
@@ -4799,6 +5832,8 @@ export type Database = {
             agent_id: string | null
             agent_turns: number | null
             analysis_at: string | null
+            attempt_id: string | null
+            attempt_table: string | null
             call_attempt_id: string | null
             call_duration_secs: number | null
             call_successful: string | null
@@ -5007,6 +6042,167 @@ export type Database = {
           },
         ]
       }
+      sumit_test_transactions: {
+        Row: {
+          created_at: string
+          created_by: string
+          data_customer_id: number | null
+          data_document_download_url: string | null
+          data_document_id: number | null
+          data_document_number: number | null
+          http_status: number | null
+          id: string
+          operation: string
+          parent_id: string | null
+          payment_amount: number | null
+          payment_auth_number: string | null
+          payment_currency: string | null
+          payment_customer_id: number | null
+          payment_date: string | null
+          payment_first_payment_amount: number | null
+          payment_id: number | null
+          payment_method_card_mask: string | null
+          payment_method_citizen_id: string | null
+          payment_method_customer_id: number | null
+          payment_method_direct_debit_account: number | null
+          payment_method_direct_debit_bank: number | null
+          payment_method_direct_debit_branch: number | null
+          payment_method_direct_debit_expiration_date: string | null
+          payment_method_direct_debit_maximum_amount: number | null
+          payment_method_expiration_month: number | null
+          payment_method_expiration_year: number | null
+          payment_method_id: number | null
+          payment_method_last_digits: string | null
+          payment_method_token: string | null
+          payment_method_type: string | null
+          payment_non_first_payment_amount: number | null
+          payment_recurring_customer_item_ids: Json | null
+          payment_status: string | null
+          payment_status_description: string | null
+          payment_valid_payment: boolean | null
+          request: Json
+          request_amount: number | null
+          request_authorize_amount: number | null
+          request_auto_capture: boolean | null
+          request_credit_card_auth_number: string | null
+          request_customer_id: number | null
+          request_external_identifier: string | null
+          response: Json | null
+          response_text: string | null
+          status: string | null
+          technical_error_details: string | null
+          user_error_message: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          data_customer_id?: number | null
+          data_document_download_url?: string | null
+          data_document_id?: number | null
+          data_document_number?: number | null
+          http_status?: number | null
+          id?: string
+          operation: string
+          parent_id?: string | null
+          payment_amount?: number | null
+          payment_auth_number?: string | null
+          payment_currency?: string | null
+          payment_customer_id?: number | null
+          payment_date?: string | null
+          payment_first_payment_amount?: number | null
+          payment_id?: number | null
+          payment_method_card_mask?: string | null
+          payment_method_citizen_id?: string | null
+          payment_method_customer_id?: number | null
+          payment_method_direct_debit_account?: number | null
+          payment_method_direct_debit_bank?: number | null
+          payment_method_direct_debit_branch?: number | null
+          payment_method_direct_debit_expiration_date?: string | null
+          payment_method_direct_debit_maximum_amount?: number | null
+          payment_method_expiration_month?: number | null
+          payment_method_expiration_year?: number | null
+          payment_method_id?: number | null
+          payment_method_last_digits?: string | null
+          payment_method_token?: string | null
+          payment_method_type?: string | null
+          payment_non_first_payment_amount?: number | null
+          payment_recurring_customer_item_ids?: Json | null
+          payment_status?: string | null
+          payment_status_description?: string | null
+          payment_valid_payment?: boolean | null
+          request: Json
+          request_amount?: number | null
+          request_authorize_amount?: number | null
+          request_auto_capture?: boolean | null
+          request_credit_card_auth_number?: string | null
+          request_customer_id?: number | null
+          request_external_identifier?: string | null
+          response?: Json | null
+          response_text?: string | null
+          status?: string | null
+          technical_error_details?: string | null
+          user_error_message?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          data_customer_id?: number | null
+          data_document_download_url?: string | null
+          data_document_id?: number | null
+          data_document_number?: number | null
+          http_status?: number | null
+          id?: string
+          operation?: string
+          parent_id?: string | null
+          payment_amount?: number | null
+          payment_auth_number?: string | null
+          payment_currency?: string | null
+          payment_customer_id?: number | null
+          payment_date?: string | null
+          payment_first_payment_amount?: number | null
+          payment_id?: number | null
+          payment_method_card_mask?: string | null
+          payment_method_citizen_id?: string | null
+          payment_method_customer_id?: number | null
+          payment_method_direct_debit_account?: number | null
+          payment_method_direct_debit_bank?: number | null
+          payment_method_direct_debit_branch?: number | null
+          payment_method_direct_debit_expiration_date?: string | null
+          payment_method_direct_debit_maximum_amount?: number | null
+          payment_method_expiration_month?: number | null
+          payment_method_expiration_year?: number | null
+          payment_method_id?: number | null
+          payment_method_last_digits?: string | null
+          payment_method_token?: string | null
+          payment_method_type?: string | null
+          payment_non_first_payment_amount?: number | null
+          payment_recurring_customer_item_ids?: Json | null
+          payment_status?: string | null
+          payment_status_description?: string | null
+          payment_valid_payment?: boolean | null
+          request?: Json
+          request_amount?: number | null
+          request_authorize_amount?: number | null
+          request_auto_capture?: boolean | null
+          request_credit_card_auth_number?: string | null
+          request_customer_id?: number | null
+          request_external_identifier?: string | null
+          response?: Json | null
+          response_text?: string | null
+          status?: string | null
+          technical_error_details?: string | null
+          user_error_message?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sumit_test_transactions_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "sumit_test_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       support_access_log: {
         Row: {
           accessed_at: string
@@ -5058,6 +6254,33 @@ export type Database = {
           },
         ]
       }
+      test_events: {
+        Row: {
+          event_id: string
+          marked_at: string
+          marked_by: string
+          purged_at: string | null
+          purged_by: string | null
+          snapshot: Json | null
+        }
+        Insert: {
+          event_id: string
+          marked_at?: string
+          marked_by: string
+          purged_at?: string | null
+          purged_by?: string | null
+          snapshot?: Json | null
+        }
+        Update: {
+          event_id?: string
+          marked_at?: string
+          marked_by?: string
+          purged_at?: string | null
+          purged_by?: string | null
+          snapshot?: Json | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -5103,6 +6326,149 @@ export type Database = {
           reminder_updates?: boolean
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      voice_purpose_attempts: {
+        Row: {
+          access_token: string
+          agent_id: string | null
+          call_duration_sec: number | null
+          call_status: string | null
+          caller_id: string | null
+          contact_id: string
+          created_at: string
+          dispatch_status: string
+          el_conversation_id: string | null
+          event_id: string | null
+          finish_reason: string | null
+          id: string
+          node_id: string | null
+          purpose_key: string
+          rule_id: string | null
+          run_id: string | null
+          token_expires_at: string
+          updated_at: string
+          vox_call_session_history_id: number | null
+        }
+        Insert: {
+          access_token: string
+          agent_id?: string | null
+          call_duration_sec?: number | null
+          call_status?: string | null
+          caller_id?: string | null
+          contact_id: string
+          created_at?: string
+          dispatch_status?: string
+          el_conversation_id?: string | null
+          event_id?: string | null
+          finish_reason?: string | null
+          id?: string
+          node_id?: string | null
+          purpose_key: string
+          rule_id?: string | null
+          run_id?: string | null
+          token_expires_at: string
+          updated_at?: string
+          vox_call_session_history_id?: number | null
+        }
+        Update: {
+          access_token?: string
+          agent_id?: string | null
+          call_duration_sec?: number | null
+          call_status?: string | null
+          caller_id?: string | null
+          contact_id?: string
+          created_at?: string
+          dispatch_status?: string
+          el_conversation_id?: string | null
+          event_id?: string | null
+          finish_reason?: string | null
+          id?: string
+          node_id?: string | null
+          purpose_key?: string
+          rule_id?: string | null
+          run_id?: string | null
+          token_expires_at?: string
+          updated_at?: string
+          vox_call_session_history_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_purpose_attempts_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_purpose_attempts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "voice_purpose_attempts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_purpose_attempts_purpose_key_fkey"
+            columns: ["purpose_key"]
+            isOneToOne: false
+            referencedRelation: "voice_purposes"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
+      voice_purposes: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          display_name: string
+          enabled: boolean
+          is_builtin: boolean
+          key: string
+          lead_ms: number
+          min_delay_ms: number
+          rule_id: string | null
+          sort_order: number
+          token_ttl_sec: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          display_name: string
+          enabled?: boolean
+          is_builtin?: boolean
+          key: string
+          lead_ms?: number
+          min_delay_ms?: number
+          rule_id?: string | null
+          sort_order?: number
+          token_ttl_sec?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          display_name?: string
+          enabled?: boolean
+          is_builtin?: boolean
+          key?: string
+          lead_ms?: number
+          min_delay_ms?: number
+          rule_id?: string | null
+          sort_order?: number
+          token_ttl_sec?: number
+          updated_at?: string
         }
         Relationships: []
       }
@@ -5270,6 +6636,342 @@ export type Database = {
             columns: ["delivery_id"]
             isOneToOne: false
             referencedRelation: "webhook_deliveries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_message_templates: {
+        Row: {
+          category: string | null
+          components: Json | null
+          correct_category: string | null
+          disable_ios_autofill: boolean | null
+          id: string
+          is_primary_device_delivery_only: boolean | null
+          language: string
+          library_template_name: string | null
+          message_send_ttl_seconds: number | null
+          name: string
+          parameter_format: string | null
+          previous_category: string | null
+          quality_score: Json | null
+          rejected_reason: string | null
+          status: string | null
+          sub_category: string | null
+          synced_at: string
+        }
+        Insert: {
+          category?: string | null
+          components?: Json | null
+          correct_category?: string | null
+          disable_ios_autofill?: boolean | null
+          id: string
+          is_primary_device_delivery_only?: boolean | null
+          language: string
+          library_template_name?: string | null
+          message_send_ttl_seconds?: number | null
+          name: string
+          parameter_format?: string | null
+          previous_category?: string | null
+          quality_score?: Json | null
+          rejected_reason?: string | null
+          status?: string | null
+          sub_category?: string | null
+          synced_at?: string
+        }
+        Update: {
+          category?: string | null
+          components?: Json | null
+          correct_category?: string | null
+          disable_ios_autofill?: boolean | null
+          id?: string
+          is_primary_device_delivery_only?: boolean | null
+          language?: string
+          library_template_name?: string | null
+          message_send_ttl_seconds?: number | null
+          name?: string
+          parameter_format?: string | null
+          previous_category?: string | null
+          quality_score?: Json | null
+          rejected_reason?: string | null
+          status?: string | null
+          sub_category?: string | null
+          synced_at?: string
+        }
+        Relationships: []
+      }
+      whatsapp_template_parameters: {
+        Row: {
+          created_at: string
+          id: string
+          index: number | null
+          parameter_name: string | null
+          position: number | null
+          source_path: string
+          sub_type: string | null
+          type: string
+          updated_at: string
+          whatsapp_template_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          index?: number | null
+          parameter_name?: string | null
+          position?: number | null
+          source_path: string
+          sub_type?: string | null
+          type: string
+          updated_at?: string
+          whatsapp_template_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          index?: number | null
+          parameter_name?: string | null
+          position?: number | null
+          source_path?: string
+          sub_type?: string | null
+          type?: string
+          updated_at?: string
+          whatsapp_template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_template_parameters_whatsapp_template_id_fkey"
+            columns: ["whatsapp_template_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_message_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_template_settings: {
+        Row: {
+          created_at: string
+          requested_category: string | null
+          updated_at: string
+          whatsapp_template_id: string
+        }
+        Insert: {
+          created_at?: string
+          requested_category?: string | null
+          updated_at?: string
+          whatsapp_template_id: string
+        }
+        Update: {
+          created_at?: string
+          requested_category?: string | null
+          updated_at?: string
+          whatsapp_template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_template_settings_whatsapp_template_id_fkey"
+            columns: ["whatsapp_template_id"]
+            isOneToOne: true
+            referencedRelation: "whatsapp_message_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflow_run_events: {
+        Row: {
+          created_at: string
+          node_id: string | null
+          payload: Json | null
+          run_id: string
+          seq: number
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          node_id?: string | null
+          payload?: Json | null
+          run_id: string
+          seq?: number
+          type: string
+        }
+        Update: {
+          created_at?: string
+          node_id?: string | null
+          payload?: Json | null
+          run_id?: string
+          seq?: number
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_run_events_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflow_run_steps: {
+        Row: {
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          node_id: string
+          node_type: string
+          output: Json | null
+          run_id: string
+          started_at: string
+          status: string
+          wait_until: string | null
+        }
+        Insert: {
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          node_id: string
+          node_type: string
+          output?: Json | null
+          run_id: string
+          started_at?: string
+          status?: string
+          wait_until?: string | null
+        }
+        Update: {
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          node_id?: string
+          node_type?: string
+          output?: Json | null
+          run_id?: string
+          started_at?: string
+          status?: string
+          wait_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_run_steps_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflow_runs: {
+        Row: {
+          created_at: string
+          dedupe_key: string | null
+          definition_snapshot: Json | null
+          error_message: string | null
+          event_id: string | null
+          finished_at: string | null
+          id: string
+          resume_at: string | null
+          resume_correlation_id: string | null
+          status: string
+          trigger_payload: Json
+          trigger_source: string
+          workflow_id: string
+        }
+        Insert: {
+          created_at?: string
+          dedupe_key?: string | null
+          definition_snapshot?: Json | null
+          error_message?: string | null
+          event_id?: string | null
+          finished_at?: string | null
+          id?: string
+          resume_at?: string | null
+          resume_correlation_id?: string | null
+          status?: string
+          trigger_payload?: Json
+          trigger_source: string
+          workflow_id: string
+        }
+        Update: {
+          created_at?: string
+          dedupe_key?: string | null
+          definition_snapshot?: Json | null
+          error_message?: string | null
+          event_id?: string | null
+          finished_at?: string | null
+          id?: string
+          resume_at?: string | null
+          resume_correlation_id?: string | null
+          status?: string
+          trigger_payload?: Json
+          trigger_source?: string
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_runs_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "workflow_runs_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workflow_runs_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "workflows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflows: {
+        Row: {
+          created_at: string
+          definition: Json
+          event_id: string | null
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          definition?: Json
+          event_id?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          definition?: Json
+          event_id?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflows_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "workflows_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
             referencedColumns: ["id"]
           },
         ]
@@ -5637,6 +7339,8 @@ export type Database = {
               agent_id: string | null
               agent_turns: number | null
               analysis_at: string | null
+              attempt_id: string | null
+              attempt_table: string | null
               call_attempt_id: string | null
               call_duration_secs: number | null
               call_successful: string | null
@@ -5677,6 +7381,8 @@ export type Database = {
               agent_id: string | null
               agent_turns: number | null
               analysis_at: string | null
+              attempt_id: string | null
+              attempt_table: string | null
               call_attempt_id: string | null
               call_duration_secs: number | null
               call_successful: string | null
@@ -5718,6 +7424,10 @@ export type Database = {
           reached_count: number
         }[]
       }
+      campaign_has_payment_activity: {
+        Args: { p_campaign: string }
+        Returns: boolean
+      }
       can_access_event: {
         Args: { _action?: string; _event_id: string; _resource?: string }
         Returns: boolean
@@ -5735,6 +7445,13 @@ export type Database = {
           excluded_dates: string[] | null
           full_name: string
           id: string
+          intake_completed_at: string | null
+          intake_sms_claimed_at: string | null
+          intake_sms_error: string | null
+          intake_sms_provider_id: string | null
+          intake_sms_sent_at: string | null
+          intake_token: string | null
+          intake_token_expires_at: string | null
           no_contact_sms_claimed_at: string | null
           no_contact_sms_error: string | null
           no_contact_sms_provider_id: string | null
@@ -5803,6 +7520,10 @@ export type Database = {
           p_event: string
         }
         Returns: boolean
+      }
+      fill_authorized_set: {
+        Args: { p_actor?: string; p_campaign: string; p_event: string }
+        Returns: Json
       }
       finish_callback_triage: {
         Args: {
@@ -5940,6 +7661,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      get_callback_intake_by_token: { Args: { _token: string }; Returns: Json }
       get_event_attendees_public: { Args: { _token: string }; Returns: Json }
       get_rsvp_by_token: { Args: { _token: string }; Returns: Json }
       guest_effective_attending: {
@@ -5952,6 +7674,10 @@ export type Database = {
         Returns: boolean
       }
       has_platform_permission: { Args: { _key: string }; Returns: boolean }
+      has_platform_permission_for_user: {
+        Args: { _key: string; _user_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -5963,11 +7689,119 @@ export type Database = {
         Args: { p_campaign: string; p_contact: string }
         Returns: boolean
       }
+      integrations_claim_credential_refresh: {
+        Args: {
+          p_connection_id: string
+          p_expected_kind: string
+          p_expected_provider: string
+          p_lease_seconds?: number
+        }
+        Returns: {
+          lease_id: string
+          lease_until: string
+          outcome: string
+        }[]
+      }
+      integrations_configured_flags: {
+        Args: never
+        Returns: {
+          elevenlabs_configured: boolean
+          email_configured: boolean
+          email_enabled: boolean
+          extra_sms_configured: boolean
+          extra_sms_enabled: boolean
+          slack_configured: boolean
+          slack_enabled: boolean
+          sumit_configured: boolean
+          sumit_enabled: boolean
+          voximplant_configured: boolean
+          voximplant_enabled: boolean
+          whatsapp_configured: boolean
+          whatsapp_enabled: boolean
+        }[]
+      }
+      integrations_delete_credential: {
+        Args: { p_connection_id: string }
+        Returns: boolean
+      }
+      integrations_disconnect_credential: {
+        Args: { p_connection_id: string }
+        Returns: boolean
+      }
+      integrations_read_credential: {
+        Args: {
+          p_connection_id: string
+          p_expected_kind: string
+          p_expected_provider: string
+        }
+        Returns: string
+      }
+      integrations_read_provider_secret: {
+        Args: { p_provider: string }
+        Returns: string
+      }
+      integrations_release_credential_refresh: {
+        Args: {
+          p_connection_id: string
+          p_last_error?: string
+          p_lease_id: string
+          p_next_status?: string
+        }
+        Returns: boolean
+      }
+      integrations_rename_credential: {
+        Args: { p_connection_id: string; p_label: string }
+        Returns: boolean
+      }
+      integrations_replace_credential: {
+        Args: {
+          p_connection_id: string
+          p_expected_kind: string
+          p_expected_provider: string
+          p_expires_at: string
+          p_lease_id: string
+          p_secret: string
+        }
+        Returns: boolean
+      }
+      integrations_upsert_provider_config: {
+        Args: {
+          p_client_id: string
+          p_created_by: string
+          p_enabled: boolean
+          p_extra: Json
+          p_provider: string
+          p_secret: string
+        }
+        Returns: undefined
+      }
+      integrations_write_credential: {
+        Args: {
+          p_created_by: string
+          p_credential_kind: string
+          p_expires_at: string
+          p_label: string
+          p_metadata: Json
+          p_provider: string
+          p_scopes: string[]
+          p_secret: string
+        }
+        Returns: string
+      }
       is_console_agent: { Args: never; Returns: boolean }
       is_org_member: { Args: { _org_id: string }; Returns: boolean }
       is_org_owner: { Args: { _org_id: string }; Returns: boolean }
       is_platform_owner: { Args: never; Returns: boolean }
+      is_platform_staff: { Args: never; Returns: boolean }
+      is_platform_staff_for_user: {
+        Args: { _user_id: string }
+        Returns: boolean
+      }
       is_staff: { Args: never; Returns: boolean }
+      mark_test_event: {
+        Args: { p_actor: string; p_event: string }
+        Returns: string
+      }
       next_manual_touchpoint: {
         Args: { p_campaign: string; p_contact: string }
         Returns: number
@@ -5994,6 +7828,7 @@ export type Database = {
           oldest_pending_on: string
           queue_name: string
           queued_count: number
+          schedule_created_on: string
           schedule_tz: string
           total_count: number
         }[]
@@ -6003,8 +7838,33 @@ export type Database = {
         Args: { g: Database["public"]["Tables"]["guests"]["Row"] }
         Returns: boolean
       }
+      owner_agent_billing_sums: {
+        Args: { _since: string; _until?: string }
+        Returns: {
+          charged_amount: number
+          credit_applied_amount: number
+          credit_granted_amount: number
+          unvoided_credit_amount: number
+        }[]
+      }
+      owner_agent_rsvp_people_totals: {
+        Args: never
+        Returns: {
+          attending_people: number
+          invited_people: number
+        }[]
+      }
       owns_event: { Args: { _event_id: string }; Returns: boolean }
+      payment_citizen_id: { Args: { p_operation_id: string }; Returns: string }
+      payment_citizen_id_write: {
+        Args: { p_campaign_id: string; p_citizen_id: string }
+        Returns: string
+      }
       purge_stale_phone_change: { Args: { p_grace?: string }; Returns: number }
+      purge_test_event: {
+        Args: { p_actor: string; p_event: string }
+        Returns: string
+      }
       reconcile_authorized_set: {
         Args: {
           p_actor?: string
@@ -6064,6 +7924,27 @@ export type Database = {
         }
         Returns: string
       }
+      scatter_internal: {
+        Args: { state: Database["public"]["CompositeTypes"]["scatter_state"] }
+        Returns: string
+      }
+      scatter_sfunc: {
+        Args: {
+          height: number
+          state: Database["public"]["CompositeTypes"]["scatter_state"]
+          title: string
+          width: number
+          x: number
+          y: number
+        }
+        Returns: Database["public"]["CompositeTypes"]["scatter_state"]
+        SetofOptions: {
+          from: "*"
+          to: "scatter_state"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       signup_reminder_candidates: {
         Args: { max_age_days?: number; min_age_hours?: number }
         Returns: {
@@ -6080,6 +7961,17 @@ export type Database = {
           user_id: string
         }[]
       }
+      submit_callback_intake: {
+        Args: {
+          _full_name: string
+          _note?: string
+          _requested_at?: string
+          _requested_rank?: string
+          _token: string
+          _topic: string
+        }
+        Returns: Json
+      }
       submit_rsvp: {
         Args: {
           _adults: number
@@ -6094,6 +7986,7 @@ export type Database = {
         }
         Returns: Json
       }
+      test_event_purge_blocker: { Args: { p_event: string }; Returns: string }
       try_record_billed_result: {
         Args: {
           p_attempt: string
@@ -6105,6 +7998,26 @@ export type Database = {
           p_provider_ref: string
         }
         Returns: string
+      }
+      unmark_test_event: {
+        Args: { p_actor: string; p_event: string }
+        Returns: string
+      }
+      upsert_provider_number: {
+        Args: {
+          p_display_label?: string
+          p_e164?: string
+          p_is_active?: boolean
+          p_provider: Database["public"]["Enums"]["provider_key"]
+          p_provider_ref?: string
+          p_snapshot?: Json
+          p_source?: string
+        }
+        Returns: string
+      }
+      wake_parked_workflow_run: {
+        Args: { p_correlation_id: string; p_node_id: string; p_run_id: string }
+        Returns: boolean
       }
     }
     Enums: {
@@ -6162,9 +8075,28 @@ export type Database = {
       faq_category: "about" | "pricing" | "how_it_works" | "legal_support"
       guest_status: "pending" | "attending" | "declined" | "maybe"
       order_status: "pending" | "paid"
+      payment_operation_outcome: "pending" | "succeeded" | "failed" | "review"
+      provider_key: "meta_whatsapp" | "voximplant" | "extra_sms" | "company"
+      provider_number_role:
+        | "whatsapp_rsvp_sender"
+        | "whatsapp_import_sender"
+        | "voice_caller_id_rsvp"
+        | "voice_caller_id_meeting_confirm"
+        | "voice_caller_id_sales"
+        | "voice_caller_id_call_me_now"
+        | "voice_inbound_did"
+        | "sms_sender"
+        | "company_contact"
+        | "business_line_inbound"
     }
     CompositeTypes: {
-      [_ in never]: never
+      scatter_state: {
+        x_arr: number[] | null
+        y_arr: number[] | null
+        title: string | null
+        height: number | null
+        width: number | null
+      }
     }
   }
 }
@@ -6350,6 +8282,20 @@ export const Constants = {
       faq_category: ["about", "pricing", "how_it_works", "legal_support"],
       guest_status: ["pending", "attending", "declined", "maybe"],
       order_status: ["pending", "paid"],
+      payment_operation_outcome: ["pending", "succeeded", "failed", "review"],
+      provider_key: ["meta_whatsapp", "voximplant", "extra_sms", "company"],
+      provider_number_role: [
+        "whatsapp_rsvp_sender",
+        "whatsapp_import_sender",
+        "voice_caller_id_rsvp",
+        "voice_caller_id_meeting_confirm",
+        "voice_caller_id_sales",
+        "voice_caller_id_call_me_now",
+        "voice_inbound_did",
+        "sms_sender",
+        "company_contact",
+        "business_line_inbound",
+      ],
     },
   },
 } as const

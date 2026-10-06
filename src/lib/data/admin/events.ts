@@ -12,9 +12,10 @@ import { createClient } from '@/lib/supabase/server';
 
 // Platform-staff reschedule of a live event.
 //
-// The date is locked once an event leaves draft, and the lock is a database
-// trigger (events_guard_update, R5) that fires for every writer — service_role
-// included. Migration 20260906203901 opened exactly one door: the SECURITY
+// The date is locked once the first message or call has gone out to a guest (and
+// always once the event is closed; migration 20260930191529). The lock is a database trigger
+// (events_guard_update, R5) that fires for every writer — service_role included.
+// Migration 20260906203901 opened exactly one door: the SECURITY
 // DEFINER function admin_reschedule_event, which checks
 // has_platform_permission('manage_billing') itself and is the only thing that
 // can lift the lock, for the duration of its own transaction.
@@ -128,12 +129,10 @@ export async function rescheduleEventForAdmin(
   });
 
   // The Exchange/Graph appointment is created when a campaign is activated and
-  // was never refreshed afterwards — because until now an event's date could not
-  // change once it was live. syncEventToExchange is create-only and returns at
-  // `already_synced` for exactly this event, so calling THAT here would be a
-  // silent no-op leaving the calendar on the old date. Verified against a real
-  // reschedule before this line was written. Best-effort by contract: it never
-  // throws.
+  // is not refreshed by that path afterwards. syncEventToExchange is create-only
+  // and returns at `already_synced` for exactly this event, so calling THAT here
+  // would be a silent no-op leaving the calendar on the old date. Best-effort by
+  // contract: it never throws.
   await rescheduleEventExchangeAppointment(eventId);
 
   return {

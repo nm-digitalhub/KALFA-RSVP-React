@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Run one fleet role as a headless Claude session. Invoked by scheduler.mjs
-# (schedule slot or answer-watcher) or manually: bin/run-role.sh <role>.
+# (schedule slot, inquiry-watcher or answer-watcher) or manually:
+# bin/run-role.sh <role> [reason]. `reason` says WHY this run exists —
+# slot | reactive:<trigger> | verdict:<request-id> | manual (default). It is
+# recorded in the index and shown to the role; without it the role could not
+# tell an answer-watcher spawn from its schedule and misdiagnosed a verdict
+# loop as "cron" (2026-09-27).
 #
 # Safety order: role argument -> KILLSWITCH -> role enabled -> global flock
 # (serializes ALL fleet work and guarantees never-parallel `next build`) ->
@@ -40,7 +45,11 @@ LOCK_FILE="$LOGS_DIR/locks/global.lock"
 CONFIG="$FLEET_DIR/fleet.json"
 
 ROLE="${1:-}"
-[ -z "$ROLE" ] && { echo "usage: run-role.sh <role>" >&2; exit 1; }
+[ -z "$ROLE" ] && { echo "usage: run-role.sh <role> [reason]" >&2; exit 1; }
+# Allowlisted shape only: the reason reaches a file name, the index and the
+# prompt, so anything unexpected collapses to "unknown" rather than flowing on.
+REASON="${2:-manual}"
+[[ "$REASON" =~ ^(slot|manual|reactive:[a-z_]+|verdict:[0-9a-f-]{36})$ ]] || REASON="unknown"
 
 # Structural preconditions only — see the safety-order note above. Without
 # these, `mkdir` and the index write below cannot happen, so there would be no
@@ -110,6 +119,27 @@ TIMEOUT_MIN="$(jq -r --arg r "$ROLE" '.roles[$r].timeout_minutes // 20' "$CONFIG
 SETTINGS="$FLEET_DIR/settings/tier$TIER.settings.json"
 ROLE_PROMPT="$FLEET_DIR/roles/$ROLE.md"
 
+# Optional per-role overrides (fleet.json): "settings": "<name>" uses
+# settings/<name>.settings.json instead of the tier default, and
+# "mcp_config": "<name>" adds --mcp-config settings/<name>.mcp.json. Added
+# 27.9.2026 so only the design roles get Claude Design (tier0-design + design).
+# Names are restricted to [a-z0-9-] so fleet.json cannot point outside settings/.
+SETTINGS_NAME="$(jq -r --arg r "$ROLE" '.roles[$r].settings // empty' "$CONFIG")"
+MCP_NAME="$(jq -r --arg r "$ROLE" '.roles[$r].mcp_config // empty' "$CONFIG")"
+for n in "$SETTINGS_NAME" "$MCP_NAME"; do
+  if [ -n "$n" ] && ! [[ "$n" =~ ^[a-z0-9-]+$ ]]; then
+    index_line "{\"ts\":\"$(date -Is)\",\"role\":\"$ROLE\",\"error\":\"invalid settings/mcp_config name\"}"
+    exit 78
+  fi
+done
+[ -n "$SETTINGS_NAME" ] && SETTINGS="$FLEET_DIR/settings/$SETTINGS_NAME.settings.json"
+MCP_ARGS=()
+[ -n "$MCP_NAME" ] && MCP_ARGS=(--mcp-config "$FLEET_DIR/settings/$MCP_NAME.mcp.json")
+if [ ! -f "$SETTINGS" ] || { [ -n "$MCP_NAME" ] && [ ! -f "$FLEET_DIR/settings/$MCP_NAME.mcp.json" ]; }; then
+  index_line "{\"ts\":\"$(date -Is)\",\"role\":\"$ROLE\",\"error\":\"missing settings/mcp_config file\"}"
+  exit 1
+fi
+
 if [ ! -f "$ROLE_PROMPT" ]; then
   index_line "{\"ts\":\"$(date -Is)\",\"role\":\"$ROLE\",\"error\":\"missing role prompt\"}"
   exit 1
@@ -125,13 +155,24 @@ fi
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
-  index_line "{\"ts\":\"$(date -Is)\",\"role\":\"$ROLE\",\"skipped\":\"lock\"}"
+  index_line "$(jq -cn --arg ts "$(date -Is)" --arg role "$ROLE" --arg reason "$REASON" \
+    '{ts:$ts, role:$role, skipped:"lock", reason:$reason}')"
   exit 0
 fi
 
-PROMPT="$(cat "$ROLE_PROMPT"; "$FLEET_DIR/bin/run-context.sh" "$ROLE")"
+# A real run for a verdict: one byte per run that actually got the lock.
+# scheduler.mjs (verdict-guard.mjs) caps these per verdict — lock-skips above
+# never reach this line, so they cannot strand a verdict by themselves.
+if [[ "$REASON" == verdict:* ]]; then
+  printf '.' >> "$LOGS_DIR/locks/verdict-${REASON#verdict:}.starts"
+fi
 
-index_line "{\"ts\":\"$(date -Is)\",\"role\":\"$ROLE\",\"started\":\"$STAMP\",\"model\":\"$MODEL\",\"tier\":$TIER}"
+PROMPT="$(cat "$ROLE_PROMPT"; "$FLEET_DIR/bin/run-context.sh" "$ROLE" "$REASON")"
+
+# Built by jq, not interpolated — same reason as index_line's rescue record.
+index_line "$(jq -cn --arg ts "$(date -Is)" --arg role "$ROLE" --arg started "$STAMP" \
+  --arg model "$MODEL" --argjson tier "$TIER" --arg reason "$REASON" \
+  '{ts:$ts, role:$role, started:$started, model:$model, tier:$tier, reason:$reason}')"
 
 # `|| STATUS=$?` — see the set -e note at the top. A non-zero run must still
 # reach the index line below; without the guard, set -e would exit here.
@@ -141,6 +182,7 @@ timeout --kill-after=60 "${TIMEOUT_MIN}m" \
     --permission-mode dontAsk \
     --setting-sources project \
     --settings "$SETTINGS" \
+    "${MCP_ARGS[@]}" \
     --model "$MODEL" \
     --output-format json \
     > "$TRACE.json" 2> "$TRACE.err" || STATUS=$?

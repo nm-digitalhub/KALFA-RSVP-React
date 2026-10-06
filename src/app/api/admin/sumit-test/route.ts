@@ -1,10 +1,15 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getSumitServerConfig } from '@/lib/data/payments';
 import { escapeHtml as esc } from '@/lib/html';
 import { isAllowedOrigin } from '@/lib/http/allowed-origin';
-import { chargeRaw } from '@/lib/sumit/raw-charge';
+import { chargeRaw, type RawChargeLine } from '@/lib/sumit/raw-charge';
+import { resolveSavedCardForCampaign } from '@/lib/data/admin/sumit-test';
+import {
+  getTestHoldForCapture,
+  recordSumitTestTransaction,
+} from '@/lib/data/admin/sumit-test-transactions';
 import {
   summarizeSumitRequest,
   summarizeSumitResponse,
@@ -13,7 +18,7 @@ import {
 // Admin-only SUMIT POC: tokenize a card (payments.js, client) → POST a charge
 // with admin-chosen params (J4/J5, AuthorizeAmount, CardTokenNotNeeded) → render
 // a REDACTED safe preview of the request/response (allow-list projection via
-// safe-preview.ts) so we can verify live behavior before building the production
+// safe-preview.ts) so we can verify live behavior against the production
 // J5 / saved-token flow. The raw gateway body (token/CitizenID/AuthNumber) never
 // reaches the browser DOM and is never logged.
 
@@ -41,6 +46,59 @@ function isSumitSuccess(raw: unknown): boolean {
   return r.Status === 0 && payment?.ValidPayment === true;
 }
 
+// The Items rows the operator typed, synced into one hidden JSON field by the
+// form (the same controlled-JSON bridge the package form uses — the admin never
+// types raw JSON). Parsed defensively: anything malformed yields NO rows, which
+// falls back to the single-line body rather than sending a half-built document.
+//
+// Deliberately NOT reconciled against the amount field. Production
+// (captureHeldCardSumit) refuses a breakdown that does not sum to the computed
+// charge; this screen exists to find out what SUMIT accepts, including bodies
+// that guard would reject — a negative credit row being the case it was added
+// for. SUMIT charges the sum of the rows, so the amount box is ignored whenever
+// rows are present.
+function parseLines(raw: FormDataEntryValue | null): RawChargeLine[] {
+  if (typeof raw !== 'string' || raw.trim() === '') return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out: RawChargeLine[] = [];
+  for (const entry of parsed) {
+    if (entry === null || typeof entry !== 'object') return [];
+    const e = entry as Record<string, unknown>;
+    const name = typeof e.name === 'string' ? e.name.trim() : '';
+    const quantity = Number(e.quantity);
+    const unitPrice = Number(e.unitPrice);
+    // A row with no name would reach SUMIT as an item with no IncomeItem.Name,
+    // which it rejects with "Missing Item details" — catch it here instead.
+    if (!name) return [];
+    if (!Number.isFinite(quantity) || !Number.isFinite(unitPrice)) return [];
+    if (quantity <= 0) return [];
+    out.push({ name, quantity, unitPrice });
+  }
+  return out;
+}
+
+// SUMIT's own payments.js shows a failure as
+// `UserErrorMessage ?? TechnicalErrorDetails` (read from the live script). The
+// same pair is what makes a rejection actionable here: the first live itemised
+// charge returned Status 1 with every other field null, and the reason —
+// "Invalid CreditCard_Token (Guid expected)" — was only findable in SUMIT's own
+// request log. Surfaced in the banner rather than left inside the JSON dump,
+// because the reason IS the result of a diagnostic run.
+function failureReason(summarized: unknown): string | undefined {
+  if (summarized === null || typeof summarized !== 'object') return undefined;
+  const r = summarized as Record<string, unknown>;
+  const user = typeof r.user_error_message === 'string' ? r.user_error_message : '';
+  const tech =
+    typeof r.technical_error_details === 'string' ? r.technical_error_details : '';
+  return user || tech || undefined;
+}
+
 function resultPage(opts: {
   title: string;
   httpStatus?: number;
@@ -48,6 +106,8 @@ function resultPage(opts: {
   response?: unknown;
   error?: string;
   outcome?: 'success' | 'failed';
+  /** The provider's own reason for a failure, shown with the banner. */
+  reason?: string;
 }): NextResponse {
   const block = (label: string, value: unknown) =>
     `<h2 style="font-size:15px;margin:18px 0 6px">${esc(label)}</h2>
@@ -58,7 +118,14 @@ function resultPage(opts: {
     opts.outcome === 'success'
       ? '<p style="background:#e6f4ea;color:#1a7431;font-weight:600;padding:10px 14px;border-radius:8px">✅ עסקה אושרה (Status=0, ValidPayment=true)</p>'
       : opts.outcome === 'failed'
-        ? '<p style="background:#fdecea;color:#b00020;font-weight:600;padding:10px 14px;border-radius:8px">❌ עסקה נדחתה / נכשלה — ראו את הפרטים למטה (HTTP status אינו משקף זאת)</p>'
+        ? `<div style="background:#fdecea;color:#b00020;padding:10px 14px;border-radius:8px">
+             <p style="font-weight:600;margin:0">❌ עסקה נדחתה / נכשלה (HTTP status אינו משקף זאת)</p>
+             ${
+               opts.reason
+                 ? `<p style="margin:8px 0 0"><strong>הסיבה מ-SUMIT:</strong> <span dir="ltr" style="display:inline-block;direction:ltr;text-align:left">${esc(opts.reason)}</span></p>`
+                 : '<p style="margin:8px 0 0">SUMIT לא החזירה נימוק — ראו את הפרטים למטה.</p>'
+             }
+           </div>`
         : '';
   const html = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -78,9 +145,140 @@ ${opts.response != null ? block('תגובת SUMIT (תצוגה בטוחה — ט�
   });
 }
 
+type RecordFields = Omit<
+  Parameters<typeof recordSumitTestTransaction>[0],
+  'request' | 'httpStatus' | 'raw' | 'requestExternalIdentifier'
+>;
+
+// The ONE path every form on this screen takes to SUMIT: load the server
+// config, send, persist every returned field (sumit-test-transactions.ts), and
+// render the safe preview. A failed save must not hide the live result — the
+// money call already happened — so it is reported on the page, not thrown.
+async function chargeSaveAndRender(
+  params: Omit<Parameters<typeof chargeRaw>[0], 'companyId' | 'apiKey'>,
+  record: RecordFields,
+  networkError: string,
+): Promise<NextResponse> {
+  const config = await getSumitServerConfig();
+  if (!config) {
+    return resultPage({ title: 'error', error: 'הגדרות SUMIT חסרות (company id / api key) ב-app_settings.' });
+  }
+
+  let result: Awaited<ReturnType<typeof chargeRaw>>;
+  try {
+    result = await chargeRaw({ ...params, companyId: config.companyId, apiKey: config.apiKey });
+  } catch {
+    return resultPage({ title: 'error', error: networkError });
+  }
+
+  // Allow-list projection: the raw gateway request/response never reach the
+  // browser DOM — only explicitly-approved fields, with token/CitizenID/
+  // AuthNumber reduced to booleans (see safe-preview.ts). The outcome banner
+  // is derived from result.raw (server-only, never itself displayed) since
+  // SUMIT's HTTP status alone doesn't reflect business success/failure.
+  const response = summarizeSumitResponse(result.raw);
+  const ok = isSumitSuccess(result.raw);
+  const sent = summarizeSumitRequest(result.sentBody);
+
+  let saveError: string | undefined;
+  try {
+    await recordSumitTestTransaction({
+      ...record,
+      request: sent,
+      requestExternalIdentifier: params.externalId,
+      httpStatus: result.httpStatus,
+      raw: result.raw,
+    });
+  } catch {
+    saveError = 'הקריאה ל-SUMIT בוצעה, אך שמירת התוצאה בטבלת הבדיקות נכשלה — תעדו את התוצאה ידנית.';
+  }
+
+  return resultPage({
+    title: 'ok',
+    httpStatus: result.httpStatus,
+    sent,
+    response,
+    outcome: ok ? 'success' : 'failed',
+    // Read off the ALREADY-projected response, not the raw body — the
+    // redaction rules stay the single place that decides what may be shown.
+    reason: ok ? undefined : failureReason(response),
+    error: saveError,
+  });
+}
+
+// CAPTURE a J5 hold made on this screen: J4 on the hold's AuthNumber, per SUMIT
+// support (2026-09-29) — same customer + same card token + CreditCardAuthNumber,
+// AutoCapture NOT sent, amount ≤ the hold. The browser posts only the hold's row
+// id and an amount; AuthNumber / token / CitizenID are read here, server-side.
+async function handleCapture(form: FormData): Promise<NextResponse> {
+  const holdId = String(form.get('hold_id') ?? '').trim();
+  const amount = String(form.get('amount') ?? '').trim();
+  const amt = parseFloat(amount);
+  if (!holdId) return resultPage({ title: 'error', error: 'לא נבחרה תפיסת מסגרת.' });
+  if (!Number.isFinite(amt) || amt <= 0) {
+    return resultPage({ title: 'error', error: 'סכום לא תקין.' });
+  }
+
+  let hold: Awaited<ReturnType<typeof getTestHoldForCapture>>;
+  try {
+    hold = await getTestHoldForCapture(holdId);
+  } catch {
+    return resultPage({ title: 'error', error: 'טעינת תפיסת המסגרת נכשלה — לא בוצעה קריאה ל-SUMIT.' });
+  }
+  if (!hold) {
+    return resultPage({
+      title: 'error',
+      error: 'תפיסת המסגרת שנבחרה לא תקינה (לא הצליחה, או חסרים לה AuthNumber / טוקן).',
+    });
+  }
+  if (hold.holdAmount != null) {
+    const remaining = Math.round((hold.holdAmount - hold.capturedAmount) * 100) / 100;
+    if (amt > remaining) {
+      return resultPage({
+        title: 'error',
+        error:
+          remaining > 0
+            ? `הסכום גבוה מהיתרה במסגרת: נתפסו ₪${hold.holdAmount}, מומשו כבר ₪${hold.capturedAmount}, נותרו ₪${remaining}. לא בוצעה קריאה ל-SUMIT.`
+            : `המסגרת כבר מומשה במלואה (₪${hold.capturedAmount} מתוך ₪${hold.holdAmount}). לא בוצעה קריאה ל-SUMIT.`,
+      });
+    }
+  }
+  if (hold.expMonth == null || hold.expYear == null || !hold.citizenId) {
+    return resultPage({
+      title: 'error',
+      error: 'לתפיסה חסרים תוקף הכרטיס או ת״ז בעל הכרטיס — SUMIT לא החזיר אותם בתפיסה.',
+    });
+  }
+
+  return chargeSaveAndRender(
+    {
+      savedCardToken: hold.cardToken,
+      savedCardExpMonth: hold.expMonth,
+      savedCardExpYear: hold.expYear,
+      savedCardCitizenId: hold.citizenId,
+      amount,
+      vatRate: '',
+      // autoCapture deliberately NOT set → AutoCapture not sent.
+      creditCardAuthNumber: hold.authNumber,
+      customerId: hold.customerId ?? undefined,
+      // Same customer as the hold: its ID AND its ExternalIdentifier.
+      externalId: hold.externalIdentifier ?? `poc-capture-${Date.now()}`,
+    },
+    {
+      operation: 'capture',
+      parentId: hold.id,
+      requestAmount: amt,
+      requestAutoCapture: null,
+      requestCreditCardAuthNumber: hold.authNumber,
+      requestCustomerId: hold.customerId,
+    },
+    'הקריאה ל-SUMIT נכשלה (שגיאת תקשורת). ייתכן שהחיוב בוצע למרות זאת — בדקו ב-SUMIT לפני ניסיון נוסף.',
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
-    await requireAdmin();
+    await requirePlatformPermission('manage_billing');
   } catch (err) {
     if (isNextRedirect(err)) return new NextResponse('Forbidden', { status: 403 });
     return new NextResponse('Unexpected error', { status: 500 });
@@ -91,13 +289,56 @@ export async function POST(request: NextRequest) {
   }
 
   const form = await request.formData();
+  if (String(form.get('mode') ?? '') === 'capture') {
+    return handleCapture(form);
+  }
   const ogToken = String(form.get('og-token') ?? '');
-  const savedToken = String(form.get('saved_token') ?? '').trim();
-  const routeBExpMonth = String(form.get('route_b_exp_month') ?? '').trim();
-  const routeBExpYear = String(form.get('route_b_exp_year') ?? '').trim();
-  const routeBCitizenId = String(form.get('route_b_citizen_id') ?? '').trim();
+  const lines = parseLines(form.get('items_json'));
+  let savedToken = String(form.get('saved_token') ?? '').trim();
+  let routeBExpMonth = String(form.get('route_b_exp_month') ?? '').trim();
+  let routeBExpYear = String(form.get('route_b_exp_year') ?? '').trim();
+  let routeBCitizenId = String(form.get('route_b_citizen_id') ?? '').trim();
+  let pickedCustomerId: number | undefined;
+
+  // Token PICKER path: the browser posts only a campaign id and the card is
+  // resolved here. The token is never rendered, so it cannot be screenshotted,
+  // copied out of the DOM or left in browser history — see the header of
+  // lib/data/admin/sumit-test.ts.
+  // The read is audited (fail-closed) inside resolveSavedCardForCampaign.
+  if (String(form.get('token_source') ?? '') === 'campaign') {
+    const campaignId = String(form.get('campaign_id') ?? '').trim();
+    if (!campaignId) {
+      return resultPage({ title: 'error', error: 'לא נבחר קמפיין.' });
+    }
+    let card: Awaited<ReturnType<typeof resolveSavedCardForCampaign>>;
+    try {
+      card = await resolveSavedCardForCampaign(campaignId);
+    } catch {
+      // Includes the fail-closed audit path — an unaudited read must not charge.
+      return resultPage({
+        title: 'error',
+        error: 'טעינת אמצעי התשלום של הקמפיין נכשלה — לא בוצעה קריאה ל-SUMIT.',
+      });
+    }
+    if (!card) {
+      return resultPage({
+        title: 'error',
+        error: 'לקמפיין שנבחר אין אמצעי תשלום שמור מלא (טוקן, תוקף ות״ז).',
+      });
+    }
+    savedToken = card.cardToken;
+    routeBExpMonth = String(card.expMonth);
+    routeBExpYear = String(card.expYear);
+    routeBCitizenId = card.citizenId;
+    pickedCustomerId = card.sumitCustomerId ?? undefined;
+  }
   const amount = String(form.get('amount') ?? '').trim();
-  const vatRate = String(form.get('vat_rate') ?? '18').trim();
+  // Empty default, not 18: the business is an עוסק פטור and production sends no
+  // VAT field at all. An operator who wants to test WITH a rate types one.
+  const vatRate = String(form.get('vat_rate') ?? '').trim();
+  // CreditCard_CVV — conditional per issuer (swagger). Never logged, never
+  // echoed (safe-preview's allow-list does not read it).
+  const routeBCvv = String(form.get('route_b_cvv') ?? '').trim();
   // Route B (saved-token) is a J4 charge by design — its form sends no
   // auto_capture field at all. Default to true when using a saved token;
   // preserve the existing false-default for the new-card path. Omitting this
@@ -137,25 +378,31 @@ export async function POST(request: NextRequest) {
       error: 'חיוב על טוקן שמור (מסלול B) דורש תוקף כרטיס (חודש ושנה) — שדה חובה.',
     });
   }
-  const amt = parseFloat(amount);
-  if (!Number.isFinite(amt) || amt <= 0) {
-    return resultPage({ title: 'error', error: 'סכום לא תקין.' });
+  // With rows present SUMIT charges their sum and the amount box is unused, so
+  // requiring a valid amount there would block a legitimate itemised test.
+  if (lines.length === 0) {
+    const amt = parseFloat(amount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      return resultPage({ title: 'error', error: 'סכום לא תקין.' });
+    }
+  } else {
+    const sum = lines.reduce((acc, l) => acc + l.quantity * l.unitPrice, 0);
+    if (Math.round(sum * 100) / 100 <= 0) {
+      return resultPage({
+        title: 'error',
+        error: 'סכום השורות חייב להיות חיובי — SUMIT מחייב את סכום השורות, לא את שדה הסכום.',
+      });
+    }
   }
 
-  const config = await getSumitServerConfig();
-  if (!config) {
-    return resultPage({ title: 'error', error: 'הגדרות SUMIT חסרות (company id / api key) ב-app_settings.' });
-  }
-
-  try {
-    const result = await chargeRaw({
-      companyId: config.companyId,
-      apiKey: config.apiKey,
+  return chargeSaveAndRender(
+    {
       ogToken: ogToken || undefined,
       savedCardToken: savedToken || undefined,
       savedCardExpMonth: routeBExpMonth ? parseInt(routeBExpMonth, 10) : undefined,
       savedCardExpYear: routeBExpYear ? parseInt(routeBExpYear, 10) : undefined,
       savedCardCitizenId: routeBCitizenId || undefined,
+      savedCardCvv: routeBCvv || undefined,
       amount,
       vatRate,
       autoCapture,
@@ -165,20 +412,18 @@ export async function POST(request: NextRequest) {
       preventDocumentCreation: preventDocRaw === 'true' ? true : undefined,
       customerEmail: email || undefined,
       externalId: `poc-${Date.now()}`,
-    });
-    // Allow-list projection: the raw gateway request/response never reach the
-    // browser DOM — only explicitly-approved fields, with token/CitizenID/
-    // AuthNumber reduced to booleans (see safe-preview.ts). The outcome banner
-    // is derived from result.raw (server-only, never itself displayed) since
-    // SUMIT's HTTP status alone doesn't reflect business success/failure.
-    return resultPage({
-      title: 'ok',
-      httpStatus: result.httpStatus,
-      sent: summarizeSumitRequest(result.sentBody),
-      response: summarizeSumitResponse(result.raw),
-      outcome: isSumitSuccess(result.raw) ? 'success' : 'failed',
-    });
-  } catch {
-    return resultPage({ title: 'error', error: 'הקריאה ל-SUMIT נכשלה (שגיאת תקשורת).' });
-  }
+      lines: lines.length > 0 ? lines : undefined,
+      // Only set by the picker — reuses the hold's SUMIT customer instead of
+      // creating a fresh one for every diagnostic charge.
+      customerId: pickedCustomerId,
+    },
+    {
+      operation: autoCapture ? 'charge' : 'hold',
+      requestAmount: lines.length > 0 ? null : parseFloat(amount),
+      requestAuthorizeAmount: authorizeAmount ? parseFloat(authorizeAmount) : null,
+      requestAutoCapture: autoCapture,
+      requestCustomerId: pickedCustomerId ?? null,
+    },
+    'הקריאה ל-SUMIT נכשלה (שגיאת תקשורת).',
+  );
 }

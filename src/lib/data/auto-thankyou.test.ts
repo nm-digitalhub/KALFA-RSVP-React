@@ -243,7 +243,7 @@ describe('runThankyouSweep', () => {
     errorSpy.mockRestore();
   });
 
-  // Bug fix (thankyou-review, high — BUG #2): a transient config/state gate
+  // A transient config/state gate
   // (kill-switch off, WhatsApp not configured, template not approved,
   // campaign/event not active) makes sendCampaignWhatsApp return
   // `{sent:0, skipped:0, blocked:true}` WITHOUT throwing. Marking

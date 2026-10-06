@@ -1,0 +1,266 @@
+/* The SDK reset belongs to a standalone app. Restore the host scroll and font
+   without overriding every element (which also erased Tailwind font utilities).
+   Next retains imported global styles across client navigation. */
+body { overflow-y: auto; background-color: var(--background); }
+
+/* Restores monospace, which the SDK silently takes away.
+   Its sheet opens with `@layer reset,ext-lib,ui;` (verified in
+   dist/style.css at 2.3.0), and because that declaration
+   is parsed AFTER Tailwind's `@layer theme,base,components,utilities;` (imported
+   by the root layout), the SDK's layers rank ABOVE all of Tailwind's. Its reset
+   then sets `*{font-family:var(--wb-font-family)}` — and layer order is compared
+   BEFORE specificity, so that universal selector beats Tailwind's preflight
+   `code,kbd,samp,pre{font-family:<mono>}` despite having none.
+   The visible symptom is the execution log: `log-panel.tsx` renders node output
+   as JSON inside <pre>, which was being drawn in the UI sans face with every
+   column misaligned.
+   Unlayered, so it outranks every layer rather than joining the contest — and
+   that choice is what makes this survive the upgrade. Upstream's unreleased
+   .changeset/sdk-single-top-layer.md collapses `reset` / `ext-lib` into a
+   single `ui.base` layer and states: "If you targeted the removed reset /
+   ext-lib layer names, plain unlayered CSS wins over all library layers."
+   We target no layer name, so the rule keeps winning; only this comment's
+   description of their layer list goes stale. */
+code, kbd, samp, pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+}
+:root {
+  --wb-font-family: var(--font-sans), system-ui, sans-serif;
+  /* Snackbars are portalled to body, so this SDK token must live above Root. */
+  --ax-public-snackbar-width: min(31.25rem, calc(100vw - 4rem - 2 * var(--ax-token-spacing-snackbar-h-pad-1) - 2 * var(--ax-public-snackbar-border-size)));
+}
+
+.kalfa-workflow-frame { container: workflow / inline-size; }
+.kalfa-workflow-editor {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--background);
+}
+/* ------------------------------------------------------------------------
+   The SDK's own app bar, mounted in our header.
+
+   `<WorkflowBuilder.TopBar />` is the un-Suspended `AppBarContainer` (verified
+   in dist/index-*.js: the export resolves to `Lb`, not the lazy wrapper the
+   DefaultLayout uses), so its root `<div>` is the DIRECT child of our header —
+   which is what makes `> div` a precise, hash-free handle on it.
+   ------------------------------------------------------------------------ */
+.kalfa-workflow-toolbar { flex: none; padding: .5rem; }
+.kalfa-workflow-toolbar > div {
+  /* The bar declares no `position`, and its middle child — the workflow name —
+     is `position:absolute; left:50%; transform:translate(-50%)`. In the SDK's
+     own DefaultLayout that resolves against a full-width absolutely-positioned
+     root, so it happens to land centred. Here it would resolve against
+     `.kalfa-workflow-editor`, i.e. the whole editor including the canvas and the
+     log panel. One line makes the anchor the bar itself, as intended. */
+  position: relative;
+  /* The bar is `display:flex` with no wrap. Nothing forced it to overflow while
+     it was hidden behind DefaultLayout's full-page width; in an admin route
+     beside a sidebar it does. */
+  flex-wrap: wrap;
+  row-gap: .5rem;
+}
+/* The two controls injected into `OptionalAppBarControls`. Icon-sized to match
+   the read-only and dark-mode toggles beside them — a Hebrew text label here is
+   what made the previous hand-rolled toolbar overflow on a phone. */
+.kalfa-workflow-appbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  border-radius: var(--ax-token-radius-button-l, .5rem);
+  cursor: pointer;
+  transition: background-color var(--wb-transition, .15s);
+}
+.kalfa-workflow-appbar-button:hover:not(:disabled) { background: color-mix(in oklab, currentColor 12%, transparent); }
+.kalfa-workflow-appbar-button[aria-pressed='true'] { background: color-mix(in oklab, currentColor 20%, transparent); }
+.kalfa-workflow-appbar-button:disabled { opacity: .4; cursor: not-allowed; }
+.kalfa-workflow-appbar-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.kalfa-workflow-workspace {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.kalfa-workflow-canvas-layer { position: relative; flex: 1; min-width: 0; direction: ltr; }
+.kalfa-workflow-canvas-layer > * { position: absolute; inset: 0; width: 100%; height: 100%; }
+.kalfa-workflow-canvas-layer .react-flow__node { direction: rtl; }
+/* The measuring spacer the SDK looks up by id to compute fitView padding.
+   `visibility: hidden` (what DefaultLayout uses) keeps it laid out, so
+   getBoundingClientRect still reports the canvas area; `display: none` would
+   report zeros. It must never take a click meant for the canvas. */
+.kalfa-workflow-viewport-bounds { visibility: hidden; pointer-events: none; }
+.kalfa-workflow-palette-panel,
+.kalfa-workflow-properties-panel {
+  position: relative;
+  flex: none;
+  width: 19rem;
+  min-height: 0;
+  padding: .5rem;
+  --wb-sidebar-expanded-width: 100%;
+  --ax-public-node-width: 100%;
+}
+.kalfa-workflow-properties-panel { width: 19rem; }
+.kalfa-workflow-workspace[data-palette-expanded='false'] .kalfa-workflow-palette-panel,
+.kalfa-workflow-workspace[data-properties-open='false'] .kalfa-workflow-properties-panel { display: none; }
+/* Target only the sidebar and its direct content, not every nested CSS-module
+   class containing 'content' (forms and menus have their own sizing).
+
+   ⚠️ PINNED TO SDK INTERNALS, AND UPSTREAM HAS ALREADY QUEUED THE BREAK.
+   These four selectors match hashed CSS-module class names belonging to
+   @synergycodes/overflow-ui@1.0.0-beta.27, which sdk@2.3.0 bundles. An
+   unreleased changeset (.changeset/move-ui-library-in-repo.md) replaces that
+   library with the in-repo @workflowbuilder/ui built on Base UI, and says
+   plainly: "the internal DOM structure and class names of all bundled UI
+   changed … styles or tests written against those internal class names may
+   need updating."
+   So these break on the next minor — silently, as CSS always does. On upgrade,
+   re-derive them from the shipped markup before assuming the panel still
+   sizes. Nothing in tsc, lint or the build can see this.
+
+   The container query at the bottom of this file matches three more by
+   substring — 'toolbar', 'project-selection' and 'title'. Those belong to the
+   SDK's OWN app-bar CSS module rather than to overflow-ui, so the library swap
+   does not touch them, but the module hash changes on any rebuild and a rename
+   upstream would be just as silent. Same rule: re-derive from the shipped
+   markup, and re-check the phone. */
+.kalfa-workflow-palette-panel > [class*='_sidebar_'],
+.kalfa-workflow-properties-panel > [class*='_sidebar_'] { width: 100%; max-height: 100%; min-height: 0; }
+.kalfa-workflow-palette-panel > [class*='_sidebar_'] > [class*='_content_'],
+.kalfa-workflow-properties-panel > [class*='_sidebar_'] > [class*='_content_'] { min-height: 0; }
+.kalfa-workflow-panel-close { position: absolute; inset-block-start: .875rem; inset-inline-end: .875rem; z-index: 2; }
+
+/* ------------------------------------------------------------------------
+   RTL REPAIRS FOR THE PROPERTIES PANEL.
+
+   ⚠️ THE SDK HAS NO RTL SUPPORT AT ALL, and that is measured rather than
+   assumed. `dist/style.css` contains ZERO `[dir=rtl]` selectors and
+   ZERO logical properties — no `margin-inline-*`, no `padding-inline-*`, no
+   `inset-inline-*` — against 78 physical `left`/`right`/`margin-left`
+   declarations. Their own theming guide says nothing about direction either.
+   So a Hebrew panel is not a configuration we failed to switch on; it is a
+   case the vendor never wrote.
+
+   Design tokens cannot fix this. They carry VALUES
+   (`--wb-sidebar-horizontal-padding: 1rem`), never DIRECTION, so `margin-left`
+   stays `margin-left` whatever it is set to.
+
+   The two rules below are the only places measured as reaching the owner. Both
+   were verified on a real device (Galaxy S948B, 384px wide, adb screencap) by
+   toggling each one alone and together — see the note on each.
+   ------------------------------------------------------------------------ */
+
+/* ⚠️ A STANDALONE LABEL IS NOT A FIELD LABEL, AND THE SDK STYLES BOTH THE SAME.
+   `_label_` is `white-space: nowrap; overflow: hidden`, which is right for
+   "שם הצעד" beside an input and wrong for a `{ type: 'Label', text: '…' }`
+   paragraph, which is then CLIPPED MID-WORD instead of wrapping.
+
+   Not an RTL bug — it clips in English too — but it is what makes the panel
+   overflow, because the unwrapped line forces the whole collapse chain to
+   338px inside a 320px panel. MEASURED: overflow 73px → 22px, and the text
+   goes from one line to two.
+
+   This affects every node, not only Microsoft: `action.send_whatsapp` and
+   `action.webhook` each carry a long explanatory Label that is clipped today. */
+.kalfa-workflow-properties-panel [class*='_label_'] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* ⚠️ `_extend-bounds_` IS PHYSICAL, SO IT INVERTS IN RTL.
+   The SDK ships:
+       ._extend-bounds_   { margin-left: -1rem; width: calc(100% + 1rem) }
+       ._extend-bounds_>* { padding-left: 1rem }
+   In LTR the two cancel: the box is pulled one rem toward the inline start and
+   its children are padded back, which buys focus rings and shadows room to
+   breathe. In RTL the pull goes to the WRONG SIDE and nothing brings it back,
+   so the fields visibly break out of the panel and the canvas shows behind them.
+
+   ⚠️ AND IT ONLY SHOWS ONCE THE LABEL ABOVE IS FIXED. While the unwrapped
+   Label is inflating the row, this correction is swallowed — measured: on its
+   own it changes nothing (73px / 43px, unmoved). Together with it the last
+   7px disappear and nothing protrudes at all:
+
+       none   overflow 73px   protrudes 43px
+       label  overflow 22px   protrudes  7px
+       bounds overflow 73px   protrudes 43px   ← alone: no effect
+       both   overflow 22px   protrudes  0px
+
+   Same pinning caveat as the block above: a hashed class name, re-derive it
+   from the shipped markup on upgrade. */
+.kalfa-workflow-properties-panel [class*='_extend-bounds_'] {
+  margin-left: 0;
+  margin-inline-start: -1rem;
+}
+.kalfa-workflow-properties-panel [class*='_extend-bounds_'] > * {
+  padding-left: 0;
+  padding-inline-start: 1rem;
+}
+
+.kalfa-workflow-properties-panel > [class*='_sidebar_'] > [class*='_header_'] { padding-inline-end: 3rem; }
+.kalfa-workflow-log { flex: none; min-height: 0; background: var(--card); }
+.kalfa-workflow-log:empty { display: none; }
+.kalfa-workflow-log [data-log-body] { max-height: min(12rem, 22dvh); }
+
+@container workflow (max-width: 900px) {
+  .kalfa-workflow-toolbar { padding: .375rem; }
+  .kalfa-workflow-toolbar > div { padding: .5rem; }
+  /* Their 2rem gap between the logo and the Save button, which buys nothing at
+     this width. */
+  .kalfa-workflow-editor .kalfa-workflow-toolbar [class*='toolbar'] { gap: .75rem; }
+  /* ⚠️ THE SDK DELETES THE WORKFLOW NAME ON A PHONE. This undoes that.
+     `@media screen and (max-width:800px) { ._container_ ._project-selection_
+     { display:none } }` is how the vendor's demo avoids an overflowing app bar
+     — and it is why their screenshots look clean where ours did not. We cannot
+     take that trade: the name is also the only route to the Settings menu, and
+     an admin who cannot see which workflow they are editing is worse off than
+     one with a two-row bar.
+     Their rule keys off the VIEWPORT; everything else in this editor keys off
+     the CONTAINER (the admin sidebar eats width the viewport does not know
+     about). Re-expressing it here puts both under one breakpoint. */
+  .kalfa-workflow-editor .kalfa-workflow-toolbar [class*='project-selection'] {
+    display: flex;
+    position: static;
+    transform: none;
+    order: -1;
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .kalfa-workflow-editor .kalfa-workflow-toolbar [class*='title'] { margin-inline-start: .5rem; margin-left: 0; }
+  .kalfa-workflow-palette-panel,
+  .kalfa-workflow-properties-panel {
+    position: absolute;
+    inset-block: 0;
+    width: min(20rem, 100%);
+    max-width: 100%;
+    z-index: 5;
+    filter: drop-shadow(0 4px 8px rgb(0 0 0 / .12));
+  }
+  /* Each overlay keeps the side its column occupies on a wide screen, which is
+     also the side its button sits on in the app bar.
+
+     This mirrors the SDK rather than inventing a placement. `DefaultLayout` lays
+     `_content_` out as `display:flex; justify-content:space-between` with the
+     palette first, `#viewport-bounds` between, and the properties bar last —
+     inside a wrapper they named `right-panel`. So: palette at the inline start,
+     properties at the inline end. Our DOM order is theirs, so the wide layout
+     already does this on its own; only these absolutely-positioned overlays,
+     which the SDK has no equivalent of, have to say it out loud.
+
+     LOGICAL properties, and that part is NOT copied from them: their sheet
+     carries 78 physical `left`/`right`/`margin-left` declarations and zero
+     logical ones, and neither the stylesheet nor a single page of their
+     documentation mentions RTL. Writing `right: 0` here would put the palette on
+     the correct side in their world and the wrong one in ours. */
+  .kalfa-workflow-palette-panel { inset-inline-start: 0; }
+  .kalfa-workflow-properties-panel { inset-inline-end: 0; }
+}

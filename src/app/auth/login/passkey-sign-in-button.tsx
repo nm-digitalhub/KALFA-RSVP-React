@@ -3,14 +3,16 @@
 import { KeyRound } from 'lucide-react';
 import { useState, useTransition } from 'react';
 
+import { safeNextPath } from '@/lib/safe-next-path';
 import { createClient } from '@/lib/supabase/client';
 
 // Passwordless sign-in via WebAuthn passkey. signInWithPasskey() runs the full
 // discoverable-credential ceremony (the authenticator picks the account — no
 // email needed). On success the @supabase/ssr browser client has written the
 // session cookies, so a hard navigation to /app lets the server pick up the
-// session (mirrors the password login's redirect('/app')).
-export function PasskeySignInButton() {
+// session (mirrors the password login's redirect). `next` resumes a flow such as
+// OAuth consent; safeNextPath keeps it same-origin, else /app.
+export function PasskeySignInButton({ next }: { next?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -34,8 +36,7 @@ export function PasskeySignInButton() {
         setError('ההתחברות עם passkey נכשלה. נסו שוב או התחברו עם סיסמה.');
         return;
       }
-      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- intentional hard navigation, see comment above handleClick
-      window.location.assign('/app');
+      window.location.assign(safeNextPath(next, '/app'));
     });
   }
 

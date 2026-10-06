@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { headers } from 'next/headers';
 
 import { INQUIRY_SUBMIT_RATE } from '@/lib/constants';
@@ -71,7 +72,7 @@ export async function submitContactAction(
   if (!parsed.success) {
     return {
       error: 'נא לבדוק את הפרטים שמולאו.',
-      fieldErrors: parsed.error.flatten().fieldErrors,
+      fieldErrors: z.flattenError(parsed.error).fieldErrors,
     };
   }
 
@@ -104,14 +105,13 @@ export async function submitCallbackAction(
     topic: formData.get('topic'),
     note: trimmedOrUndefined(formData.get('note')),
     // An unchecked radio group posts nothing at all; the schema's default
-    // turns that into 'asap', which is exactly what the form did before this
-    // field existed.
+    // turns that into 'asap'.
     preference: trimmedOrUndefined(formData.get('preference')),
   });
   if (!parsed.success) {
     return {
       error: 'נא לבדוק את הפרטים שמולאו.',
-      fieldErrors: parsed.error.flatten().fieldErrors,
+      fieldErrors: z.flattenError(parsed.error).fieldErrors,
     };
   }
 

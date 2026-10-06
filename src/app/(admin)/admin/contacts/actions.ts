@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 
 import { sendInquiryReply, updateContactStatus } from '@/lib/data/admin/contacts';
@@ -31,7 +32,7 @@ export async function updateContactStatusAction(
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   try {
@@ -60,7 +61,7 @@ export async function sendInquiryReplyAction(
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   try {

@@ -1,0 +1,209 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('server-only', () => ({}));
+
+const {
+  ownerMock,
+  settingsMock,
+  numbersMock,
+  allowlistMock,
+  staffMock,
+  auditMock,
+  reportSettingsMock,
+  reportSchedulesMock,
+  reportRunsMock,
+} = vi.hoisted(() => ({
+  ownerMock: vi.fn(),
+  settingsMock: vi.fn(),
+  numbersMock: vi.fn(),
+  allowlistMock: vi.fn(),
+  staffMock: vi.fn(),
+  auditMock: vi.fn(),
+  reportSettingsMock: vi.fn(),
+  reportSchedulesMock: vi.fn(),
+  reportRunsMock: vi.fn(),
+}));
+
+vi.mock('@/lib/auth/dal', () => ({ requirePlatformOwner: ownerMock }));
+vi.mock('@/lib/data/admin/owner-agent', () => ({
+  OWNER_AGENT_AUDIT_LIMIT: 50,
+  getOwnerAgentSettings: settingsMock,
+  listOwnerAgentNumbers: numbersMock,
+  listOwnerAgentAllowlist: allowlistMock,
+  listOwnerAgentStaff: staffMock,
+  listOwnerAgentAudit: auditMock,
+}));
+vi.mock('@/lib/data/admin/owner-agent-reports', () => ({
+  getOwnerAgentReportSettings: reportSettingsMock,
+  listOwnerAgentReportSchedules: reportSchedulesMock,
+  listOwnerAgentReportRuns: reportRunsMock,
+}));
+vi.mock('./reports-actions', () => ({
+  setOwnerAgentReportsEnabledAction: vi.fn(),
+  setOwnerAgentReportTemplateAction: vi.fn(),
+  setOwnerAgentReportScheduleAction: vi.fn(),
+}));
+vi.mock('./actions', () => ({
+  setOwnerAgentEnabledAction: vi.fn(),
+  setOwnerAgentNumberAction: vi.fn(),
+  setOwnerAgentDailyCapAction: vi.fn(),
+  addAllowlistEntryAction: vi.fn(),
+  setAllowlistEntryEnabledAction: vi.fn(),
+  relabelAllowlistEntryAction: vi.fn(),
+  removeAllowlistEntryAction: vi.fn(),
+}));
+
+import OwnerAgentPage from './page';
+
+type Props = Record<string, unknown> & { __type?: unknown };
+
+function collect(node: unknown, out: Props[] = []): Props[] {
+  if (!node || typeof node !== 'object') return out;
+  if (Array.isArray(node)) {
+    node.forEach((n) => collect(n, out));
+    return out;
+  }
+  const el = node as { type?: unknown; props?: Record<string, unknown> & { children?: unknown } };
+  if (el.props) out.push({ ...el.props, __type: el.type });
+  collect(el.props?.children, out);
+  return out;
+}
+
+function propsOf(tree: unknown, name: string): Props | undefined {
+  return collect(tree).find((p) => {
+    const t = p.__type as { name?: string } | undefined;
+    return typeof t === 'function' && t.name === name;
+  });
+}
+
+const STAFF_ID = '0b7e1f2a-3c4d-4e5f-9a6b-7c8d9e0f1a2b';
+const ENTRY_ID = '9d8c7b6a-5f4e-4d3c-ab2a-1f0e9d8c7b6a';
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  ownerMock.mockResolvedValue({ id: 'owner' });
+  settingsMock.mockResolvedValue({ enabled: false, phoneNumberId: '1234567890123456', dailyCap: 50 });
+  numbersMock.mockResolvedValue([
+    {
+      providerRef: '1234567890123456',
+      label: 'אישורי הגעה',
+      maskedNumber: '033***1505',
+      isActive: true,
+      roles: ['whatsapp_rsvp_sender'],
+    },
+  ]);
+  allowlistMock.mockResolvedValue([
+    {
+      id: ENTRY_ID,
+      maskedNumber: '050***4567',
+      staffUserId: STAFF_ID,
+      staffName: 'בעל המערכת',
+      isStaff: true,
+      enabled: true,
+      label: null,
+      createdAt: '2026-09-24T08:00:00Z',
+      verifiedMatch: true,
+    },
+  ]);
+  staffMock.mockResolvedValue([
+    { userId: STAFF_ID, name: 'בעל המערכת', roleLabel: 'בעלים', isOwnerRole: true, hasVerifiedPhone: true },
+  ]);
+  auditMock.mockResolvedValue([]);
+  reportSettingsMock.mockResolvedValue({ reportsEnabled: true, templateName: null, templateLang: null });
+  reportSchedulesMock.mockResolvedValue([{ entryId: ENTRY_ID, optIn: true, slots: [{ time: '00:00', instructions: null }, { time: '08:00', instructions: 'רק הכנסות' }], configured: true }]);
+  reportRunsMock.mockResolvedValue([]);
+});
+
+describe('/admin/integrations/owner-agent', () => {
+  it('gates on requirePlatformOwner — not on a permission key', async () => {
+    await OwnerAgentPage();
+    expect(ownerMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads nothing when the gate refuses', async () => {
+    ownerMock.mockRejectedValue(new Error('NEXT_REDIRECT'));
+    await expect(OwnerAgentPage()).rejects.toThrow('NEXT_REDIRECT');
+    for (const m of [
+      settingsMock,
+      numbersMock,
+      allowlistMock,
+      staffMock,
+      auditMock,
+      reportSettingsMock,
+      reportSchedulesMock,
+      reportRunsMock,
+    ]) {
+      expect(m).not.toHaveBeenCalled();
+    }
+  });
+
+  it('hands the picker every number and the saved selection', async () => {
+    const tree = await OwnerAgentPage();
+    const picker = propsOf(tree, 'NumberPicker');
+    expect(picker?.selected).toBe('1234567890123456');
+    expect(picker?.numbers).toHaveLength(1);
+  });
+
+  it('tells the switch whether turning it on would actually divert anything', async () => {
+    const tree = await OwnerAgentPage();
+    expect(propsOf(tree, 'OwnerAgentSwitch')).toMatchObject({
+      enabled: false,
+      numberSelected: true,
+      activeEntries: 1,
+    });
+  });
+
+  it('counts only enabled rows that still belong to staff as active', async () => {
+    allowlistMock.mockResolvedValue([
+      { id: ENTRY_ID, enabled: false, isStaff: true },
+      { id: 'c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f', enabled: true, isStaff: false },
+    ]);
+    const tree = await OwnerAgentPage();
+    expect(propsOf(tree, 'OwnerAgentSwitch')?.activeEntries).toBe(0);
+  });
+
+  it('renders the allow-list, the cap and the audit', async () => {
+    const tree = await OwnerAgentPage();
+    expect(propsOf(tree, 'AllowlistPanel')?.entries).toHaveLength(1);
+    expect(propsOf(tree, 'OwnerAgentDailyCapForm')?.dailyCap).toBe(50);
+    const audit = propsOf(tree, 'AuditTable');
+    expect(audit?.rows).toEqual([]);
+    expect((audit?.staffNames as Map<string, string>).get(STAFF_ID)).toBe('בעל המערכת');
+  });
+
+  it('hands the reports panel its settings, schedules, runs, the allow-list and the agent switch', async () => {
+    const tree = await OwnerAgentPage();
+    expect(propsOf(tree, 'ReportsPanel')).toMatchObject({
+      settings: { reportsEnabled: true, templateName: null, templateLang: null },
+      schedules: [{ entryId: ENTRY_ID, optIn: true, slots: [{ time: '00:00', instructions: null }, { time: '08:00', instructions: 'רק הכנסות' }], configured: true }],
+      runs: [],
+      agentEnabled: false,
+    });
+    expect(propsOf(tree, 'ReportsPanel')?.entries).toHaveLength(1);
+  });
+
+  // "No raw phone reaches a component" is NOT asserted here: this file mocks the DAL,
+  // so it would only be checking its own fixtures. page-privacy.test.ts runs the real
+  // DAL under this page, fed raw E.164 rows, and asserts it there.
+
+  it('carries no "not wired / no answers yet" notice now that stage 6 is live', async () => {
+    const tree = await OwnerAgentPage();
+    expect(collect(tree).find((p) => p.role === 'note')).toBeUndefined();
+    // Text children only: element children carry component types (circular for JSON).
+    const text = collect(tree)
+      .flatMap((p) => (Array.isArray(p.children) ? p.children : [p.children]))
+      .filter((c): c is string => typeof c === 'string')
+      .join(' ');
+    expect(text).toContain('סוכן WhatsApp לבעלים'); // the walk really reached page text
+    expect(text).not.toContain('עדיין אין תשובות');
+    expect(text).not.toContain('הסוכן עדיין לא מחובר');
+  });
+
+  it('links back to the index', async () => {
+    const tree = await OwnerAgentPage();
+    const hrefs = collect(tree)
+      .map((p) => p.href)
+      .filter((h): h is string => typeof h === 'string');
+    expect(hrefs).toContain('/admin/integrations');
+  });
+});

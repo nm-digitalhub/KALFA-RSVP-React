@@ -1,0 +1,27 @@
+=== INTEGRATION FILES ===
+src/app/(admin)/admin/integrations/meta-whatsapp/whatsapp-credentials-form.tsx
+src/app/(admin)/admin/integrations/sumit/sumit-credentials-form.tsx
+src/app/(admin)/admin/integrations/voximplant/voximplant-credentials-form.tsx
+src/lib/data/admin/integrations/provider-numbers.test.ts
+src/lib/data/admin/integrations/provider-numbers.ts
+src/lib/data/outreach-serial-flow.integration.test.ts
+src/lib/data/provider-numbers-resolve.test.ts
+src/lib/data/provider-numbers-resolve.ts
+src/lib/data/reconcile.integration.test.ts
+src/lib/exchange-ews/calendar-provider.ts
+src/lib/exchange-ews/mailbox-credential.ts
+src/lib/exchange-ews/provider-selection.ts
+src/lib/exchange-ews/provider.test.ts
+src/lib/exchange-ews/provider.ts
+src/lib/integrations/provider.test.ts
+src/lib/integrations/provider.ts
+src/lib/ops/integrations.test.ts
+src/lib/ops/integrations.ts
+src/lib/outreach/pgboss-isolation.integration.test.ts
+src/lib/validation/provider-numbers.ts
+src/lib/workflow/sdk-integration-invariants.test.ts
+
+=== INTEGRATION IMPORTS / DB ACCESS ===
+src/lib/integrations/provider.ts:3:import type { ServerMetadata } from 'openid-client';
+src/lib/integrations/provider.ts:76:   * metadata when it does not. `openid-client` accepts both — plain OAuth2
+src/lib/integrations/provider.ts:83:   * neither is a safe assumption, so the adapter states it. `openid-client`

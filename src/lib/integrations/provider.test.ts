@@ -1,0 +1,186 @@
+// The provider registry, and the two properties that make it generic.
+//
+// ⚠️ THIS FILE DEFINES NO REAL PROVIDER. Its fixtures are deliberately
+// nonsense ids — naming a real one here would start the drift this layer exists
+// to prevent, where "just this once" fixtures become the shape everything else
+// is written against.
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// `provider.ts` is `import 'server-only'`, which throws outside a Server
+// Component. Stubbed the way every other server-only module is tested here.
+vi.mock('server-only', () => ({}));
+
+import {
+  __resetProviderRegistryForTests,
+  getProvider,
+  listProviders,
+  registerProvider,
+  type ProviderDefinition,
+} from './provider';
+
+const fixture = (id: string): ProviderDefinition => ({
+  id,
+  displayName: `Fixture ${id}`,
+  credentialKind: 'oauth2_authorization_code',
+  presentation: { type: 'bearer' },
+  capabilities: { 'thing.write': ['scope.a'] },
+  apiOrigins: ['https://example.invalid'],
+  oauth: {
+    server: new URL('https://example.invalid/.well-known/openid-configuration'),
+    clientAuth: 'post',
+  },
+  endpoint: (capability, input) => ({
+    url: new URL(`https://example.invalid/${capability}`),
+    init: { method: 'POST', body: JSON.stringify(input) },
+  }),
+});
+
+beforeEach(() => {
+  __resetProviderRegistryForTests();
+});
+
+describe('the provider registry', () => {
+  it('resolves a registered provider', () => {
+    registerProvider(fixture('alpha'));
+
+    expect(getProvider('alpha')?.displayName).toBe('Fixture alpha');
+  });
+
+  it('⚠️ does not resolve a provider id off Object.prototype', () => {
+    // A provider id arrives from the database as arbitrary text. Object
+    // indexing would hand back the Object constructor for 'constructor' —
+    // truthy, and callable, so the caller would treat it as a definition. The
+    // same hazard `isKnownNodeType` closes for node types in activity-runner.
+    registerProvider(fixture('alpha'));
+
+    for (const id of ['constructor', 'toString', 'valueOf', '__proto__', 'hasOwnProperty']) {
+      expect(getProvider(id)).toBeUndefined();
+    }
+  });
+
+  it('returns undefined for an unknown id instead of throwing', () => {
+    // A stored connection may name a provider that has since left the build.
+    // That is a configuration problem to report, not a crash inside a resolve.
+    expect(getProvider('never-registered')).toBeUndefined();
+  });
+
+  it('⚠️ a second registration REPLACES rather than stacks', () => {
+    registerProvider(fixture('alpha'));
+    registerProvider({ ...fixture('alpha'), displayName: 'Replaced' });
+
+    expect(listProviders()).toHaveLength(1);
+    expect(getProvider('alpha')?.displayName).toBe('Replaced');
+  });
+
+  it('a capability maps to scopes without the registry knowing what either means', () => {
+    registerProvider(fixture('alpha'));
+
+    expect(getProvider('alpha')?.capabilities['thing.write']).toEqual(['scope.a']);
+  });
+
+  it('the adapter owns the URL, so a caller never spells one', () => {
+    registerProvider(fixture('alpha'));
+
+    const request = getProvider('alpha')?.endpoint('thing.write', { a: 1 });
+
+    expect(request?.url.href).toBe('https://example.invalid/thing.write');
+    expect(request?.init?.method).toBe('POST');
+  });
+});
+
+describe('the contract stays provider-agnostic', () => {
+  it('⚠️ names no real provider in this directory', async () => {
+    // The guard against the drift this layer exists to prevent: the moment one
+    // vendor is special-cased in the infrastructure, the second provider costs
+    // a migration instead of a registry entry.
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('./provider.ts', import.meta.url), 'utf8');
+
+    // Whole words, not substrings — `meta` would otherwise match inside
+    // `metadata`. The identifier is what matters, not a letter sequence.
+    for (const vendor of ['google', 'microsoft', 'slack', 'notion', 'hubspot', 'meta', 'azure']) {
+      expect(source).not.toMatch(new RegExp(`\\b${vendor}\\b`, 'i'));
+    }
+  });
+});
+
+// Type-level assertions. `@ts-expect-error` is the inverse of a suppression: the
+// build FAILS if the error it names does not occur, so each of these is a test
+// that the union still refuses what it is meant to refuse. They are checked by
+// `tsc --noEmit`, which covers test files, and run here so the file that owns
+// the contract also owns its proof.
+describe('the discriminated union refuses what the flow cannot do', () => {
+  it('⚠️ an authorization-code provider cannot omit its OAuth block', () => {
+    const bad = {
+      id: 'x',
+      displayName: 'x',
+      credentialKind: 'oauth2_authorization_code',
+      presentation: { type: 'bearer' },
+      capabilities: {},
+      apiOrigins: ['https://e.invalid'],
+      endpoint: () => ({ url: new URL('https://e.invalid') }),
+      // @ts-expect-error — `oauth` is required on this arm
+    } satisfies ProviderDefinition;
+    expect(bad).toBeTruthy();
+  });
+
+  it('⚠️ a static provider cannot carry OAuth configuration', () => {
+    const bad = {
+      id: 'x',
+      displayName: 'x',
+      credentialKind: 'static',
+      presentation: { type: 'bearer' },
+      capabilities: {},
+      apiOrigins: ['https://e.invalid'],
+      endpoint: () => ({ url: new URL('https://e.invalid') }),
+      // @ts-expect-error — `oauth?: never` on the static arm
+      oauth: { server: new URL('https://e.invalid'), clientAuth: 'post' },
+    } satisfies ProviderDefinition;
+    expect(bad).toBeTruthy();
+  });
+
+  it('⚠️ a client-credentials provider cannot declare authorizationParams', () => {
+    const bad = {
+      id: 'x',
+      displayName: 'x',
+      credentialKind: 'oauth2_client_credentials',
+      presentation: { type: 'bearer' },
+      capabilities: {},
+      apiOrigins: ['https://e.invalid'],
+      endpoint: () => ({ url: new URL('https://e.invalid') }),
+      oauth: {
+        server: new URL('https://e.invalid'),
+        clientAuth: 'basic',
+        // @ts-expect-error — it has no authorization request to put them on
+        authorizationParams: { prompt: 'consent' },
+      },
+    } satisfies ProviderDefinition;
+    expect(bad).toBeTruthy();
+  });
+
+  it('⚠️ clientAuth and presentation are required — no implicit defaults', () => {
+    const noClientAuth = {
+      id: 'x',
+      displayName: 'x',
+      credentialKind: 'oauth2_authorization_code',
+      presentation: { type: 'bearer' },
+      capabilities: {},
+      apiOrigins: ['https://e.invalid'],
+      endpoint: () => ({ url: new URL('https://e.invalid') }),
+      // @ts-expect-error — `clientAuth` is required
+      oauth: { server: new URL('https://e.invalid') },
+    } satisfies ProviderDefinition;
+
+    const noPresentation = {
+      id: 'x',
+      displayName: 'x',
+      credentialKind: 'static',
+      capabilities: {},
+      apiOrigins: ['https://e.invalid'],
+      endpoint: () => ({ url: new URL('https://e.invalid') }),
+      // @ts-expect-error — `presentation` is required
+    } satisfies ProviderDefinition;
+
+    expect(noClientAuth && noPresentation).toBeTruthy();
+  });
+});

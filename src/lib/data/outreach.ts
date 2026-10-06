@@ -7,21 +7,21 @@ import {
   type WhatsAppConfig,
 } from '@/lib/data/outreach-config';
 import {
-  resolveTemplateForEvent,
-  type ResolvedTemplate,
-} from '@/lib/data/message-templates-resolve';
+  hasApprovedWhatsAppTemplate,
+  resolveWhatsAppSend,
+} from '@/lib/data/whatsapp-template-send';
+import type { ResolvedTemplate } from '@/lib/data/message-templates-resolve';
 import { resolveSendableContacts } from '@/lib/data/sendable-contacts';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import {
   sendWhatsAppMarketingTemplate,
   sendWhatsAppTemplate,
+  type SendOptions,
   type DeliveryOutcome,
 } from '@/lib/whatsapp/client';
 import { RSVP_QUICK_REPLY_PAYLOADS } from '@/lib/whatsapp/rsvp-buttons';
 import {
-  buildBodyParams,
-  buildGiftParams,
   deriveGuestFirstName,
   MARKETING_MESSAGE_KEYS,
   POST_EVENT_MESSAGE_KEYS,
@@ -34,21 +34,21 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 // the classified DeliveryOutcome (accepted / definitely_not_sent / unknown) so
 // the serial-flow worker can drive retry/advance; the manual batch just checks
 // `kind === 'accepted'`. Never logs the token/phone/body. Shared by the batch
-// send below AND the per-contact outreach engine (C1).
+// send below, the per-contact outreach engine and the workflow template send.
 export async function sendOneWhatsApp(
   admin: AdminClient,
   campaign: { id: string; event_id: string },
   contact: { id: string; normalized_phone: string },
   template: ResolvedTemplate,
   config: WhatsAppConfig,
-  // The touchpoint's message_key (both callers already hold it — the manual
+  // The touchpoint's message_key (every caller already holds it — e.g. the manual
   // batch's own `messageKey` param / the engine's `tp.message_key`). Routes
   // MARKETING-classified templates (MARKETING_MESSAGE_KEYS, template-spec.ts)
   // through MM Lite (`/marketing_messages`) instead of the regular `/messages`
   // endpoint; every other key keeps sending exactly as before.
   messageKey: string,
-  // Positional {{1}}..{{7}} values from buildTemplateParams — the callers
-  // build them (fail-closed) and never pass a partial set.
+  // Positional {{1}}..{{7}} values from resolveWhatsAppSend (or buildBodyParams)
+  // — the callers build them (fail-closed) and never pass a partial set.
   bodyParams?: readonly string[],
   // Media/button extras for the newer template shapes (image-header invite,
   // gift URL button) — resolved by the caller, passed through verbatim.
@@ -56,6 +56,10 @@ export async function sendOneWhatsApp(
     headerImage?: { link: string } | { mediaId: string };
     urlButtonParam?: string;
   },
+  // Meta's documented retry for an error it marks temporary (client.ts
+  // sendWithMetaRetry). Background callers pass BACKGROUND_SEND_RETRY_BUDGET_MS;
+  // the default 0 keeps a request/response caller to one attempt.
+  sendOpts: SendOptions = {},
 ): Promise<DeliveryOutcome> {
   const send = MARKETING_MESSAGE_KEYS.has(messageKey)
     ? sendWhatsAppMarketingTemplate
@@ -79,6 +83,7 @@ export async function sendOneWhatsApp(
         // layout carries them (data-driven flag) — so a tap returns 'rsvp_*'.
         rsvpButtonPayloads: template.rsvpQuickReply ? RSVP_QUICK_REPLY_PAYLOADS : undefined,
       },
+      sendOpts,
     );
   } catch {
     // The client classifies transport failures rather than throwing, but stay
@@ -117,7 +122,7 @@ export async function sendOneWhatsApp(
 // (campaign, reason).
 export const MANUAL_SEND_TOUCHPOINT_INDEX = -1;
 
-// Media-invite resolution shared by the manual batch and the worker engine:
+// Media-invite resolution used by the engine's executeStep and the invite scripts:
 // switch to the IMAGE-header sibling template with a short-lived signed URL
 // ONLY when the row maps one AND the event has an uploaded image. ANY failure
 // (no mapping, no image, storage error) falls back to the text template —
@@ -148,8 +153,9 @@ export async function resolveTemplateMedia(
 // deduplicated per (campaign, touchpoint, reason) via an atomic upsert — NOT
 // select-then-insert, since the engine's claimStep advances a per-recipient
 // cursor, so concurrent workers can hit the same broken touchpoint for
-// different contacts at once. Shared by the engine (executeStep) and the
-// manual batch path (sendCampaignWhatsApp, with the sentinel index above).
+// different contacts at once. Shared by the engine (executeStep and
+// prepareAndSendStep) and the manual batch path (sendCampaignWhatsApp, with the
+// sentinel index above).
 export async function recordTemplateFailure(
   admin: AdminClient,
   campaignId: string,
@@ -185,7 +191,8 @@ export async function recordTemplateFailure(
 // §8.3 precondition is re-checked server-side BEFORE any provider call:
 // outreach enabled + WhatsApp configured (fail-closed), campaign active,
 // 'whatsapp' an allowed channel, a resolvable approved template, and per-contact
-// eligibility (consent + not removal-requested, via resolveSendableContacts). Each
+// eligibility (WhatsApp consent unless the admin has lifted that requirement,
+// and not removal-requested, via resolveSendableContacts). Each
 // successful send is logged as an OUTBOUND, non-billable contact_interaction
 // (idempotent on the UNIQUE(channel, provider_id) webhook key). Never log the
 // access token, recipient phone, or message body.
@@ -221,7 +228,8 @@ export async function sendCampaignWhatsApp(
 
   // L1: never send for an event whose day has already passed (Israel calendar) —
   // ONE documented exception: POST_EVENT_MESSAGE_KEYS (currently just 'thankyou',
-  // a manual post-event touchpoint, never the drip engine). R9: every commercial
+  // a post-event send — manual button or the auto-thankyou sweep, never the drip
+  // engine). R9: every commercial
   // campaign action requires event.status='active' — app defense-in-depth
   // (campaign.status='active' here already structurally implies it via the DB
   // trigger + R7, but this is explicit per the plan's "ALL commercial paths"
@@ -237,25 +245,18 @@ export async function sendCampaignWhatsApp(
   }
   if (ev?.status !== 'active') return { sent: 0, skipped: 0, blocked: true };
 
-  // Same event-type-aware resolution as the engine (executeStep): the generic
-  // row's components.variants may swap in the wedding-family template name.
-  const template = await resolveTemplateForEvent(messageKey, ev.event_type);
-  if (!template || template.channel !== 'whatsapp') {
+  // Which template and what fills it are resolved per recipient by
+  // resolveWhatsAppSend (routes + Meta mirror + variable rows) — the same
+  // helper every send site uses. Resolve once here for the step-level gate: a
+  // step with no approved template blocks the batch, as before.
+  if (!(await hasApprovedWhatsAppTemplate(messageKey, ev.event_type))) {
     return { sent: 0, skipped: 0, blocked: true };
   }
-  // Which side of the Meta positional contract to bind — the wedding family
-  // renders groom/bride in {{2}}/{{3}} (docs/whatsapp-templates-meta-submission.md).
-  const family = template.name.startsWith('kalfa_wedding_') ? 'wedding' : 'generic';
-
-  // Media invite: swap to the IMAGE-header sibling when configured + uploaded.
-  const media = await resolveTemplateMedia(template, ev.invite_image_path ?? null);
-  const sendTemplate = media.template;
 
   // Gift reminder (message_key 'gift', kalfa_event_gift_v1): a different
   // positional contract ({{1}}..{{4}} + URL-button token). The gift columns
-  // land with a pending migration, so they are read forward-compat via
-  // select('*') + runtime narrowing (getCampaignHoldsEnabled stance) — absent
-  // columns simply mean "not configured" and the batch fail-closes into the
+  // are read via select('*') + runtime narrowing — a missing value simply
+  // means "not configured" and the batch fail-closes into the
   // params_incomplete sink below.
   const isGift = messageKey === 'gift';
   // Event-day reminder (message_key 'event_day_pay') reuses the SAME Bit
@@ -264,7 +265,7 @@ export async function sendCampaignWhatsApp(
   // targets ONLY confirmed attendees (filtered below) and is non-billable.
   const isEventDay = messageKey === 'event_day_pay';
   // Post-event thank-you (message_key 'thankyou'): same "confirmed attendees
-  // only" audience rule as event-day (plan §2.2 — an attending guest is an
+  // only" audience rule as event-day (an attending guest is an
   // engaged recipient, which is exactly the 131049 mitigation the dedup below
   // depends on being paired with).
   const isThankyou = messageKey === 'thankyou';
@@ -282,11 +283,11 @@ export async function sendCampaignWhatsApp(
       typeof raw.gift_link_token === 'string' ? raw.gift_link_token : null;
     // The approved template carries a URL button — its variable is REQUIRED
     // by Meta, so a missing token must fail-close the whole batch exactly
-    // like a missing link (buildGiftParams reports gift_payment_url).
+    // like a missing link (the resolver reports gift_payment_url as missing).
     if (!giftButtonToken) giftUrl = null;
   }
 
-  // Bind outreach to the campaign's FROZEN authorized set: passing campaign.id
+  // Bind outreach to the campaign's authorized set: passing campaign.id
   // makes resolveSendableContacts INNER JOIN campaign_authorized_contacts, so a
   // send can never target a contact outside the set (reached ⊆ authorized).
   //
@@ -360,21 +361,28 @@ export async function sendCampaignWhatsApp(
     // Shared {{1}} rule (deriveGuestFirstName): first token of the linked
     // guest's name; households/no-guest → null → generic-greeting fallback.
     const firstName = deriveGuestFirstName(guestNameByContact.get(contact.id));
-    const built = isGift
-      ? buildGiftParams({
-          event: {
-            event_type: ev.event_type,
-            celebrants: ev.celebrants,
-            gift_payment_url: giftUrl,
-          },
-          guestFirstName: firstName,
-        })
-      : buildBodyParams({
-          paramContract: template.paramContract,
-          family,
-          ctx: { event: ev, guestFirstName: firstName },
-        });
-    if ('missing' in built) {
+    const built = await resolveWhatsAppSend({
+      messageKey,
+      eventType: ev.event_type,
+      inviteImagePath: ev.invite_image_path ?? null,
+      values: {
+        event: {
+          event_type: ev.event_type,
+          celebrants: ev.celebrants,
+          event_date: ev.event_date,
+          venue_name: ev.venue_name,
+          venue_address: ev.venue_address,
+          gift_payment_url: giftUrl,
+          gift_link_token: giftButtonToken,
+        },
+        guestFirstName: firstName,
+      },
+    });
+    if (built.kind === 'template_missing' || built.kind === 'channel_mismatch') {
+      skipped++;
+      continue;
+    }
+    if (built.kind === 'params_incomplete') {
       // Fail-closed: never send a template with an empty positional parameter
       // (event data incomplete — e.g. no venue). Counted for the caller's
       // sent/skipped summary; nothing goes to the provider. Same §5.6 sink
@@ -395,7 +403,7 @@ export async function sendCampaignWhatsApp(
       continue;
     }
 
-    // Thank-you per-guest dedup (plan §2.1 — the CORE 131049 mitigation):
+    // Thank-you per-guest dedup (the CORE 131049 mitigation):
     // atomic claim-BEFORE-send, not a read-then-filter check. A read-then-
     // filter has a check-then-act race — the manual button (web) and the
     // sweep (worker), or two overlapping sweep ticks, could both read "not
@@ -421,18 +429,13 @@ export async function sendCampaignWhatsApp(
       admin,
       campaign,
       contact,
-      sendTemplate,
+      built.template,
       config,
       messageKey,
-      built.params,
-      // The gift / event-day URL button gets the event's opaque token as its
-      // suffix (https://beta.kalfa.me/g/{token}); giftButtonToken is always
-      // set here — a missing token surfaced as params_incomplete above.
-      (isGift || isEventDay) && giftButtonToken
-        ? { urlButtonParam: giftButtonToken, headerImage: media.headerImage }
-        : media.headerImage
-          ? { headerImage: media.headerImage }
-          : undefined,
+      built.bodyParams,
+      // Header image and URL-button suffix come from the template's own
+      // variable rows (whatsapp_template_parameters).
+      built.extras,
     );
     if (isThankyou && ok.kind === 'accepted') {
       // Finalize the claim row: move the REAL provider_id onto it so Meta's

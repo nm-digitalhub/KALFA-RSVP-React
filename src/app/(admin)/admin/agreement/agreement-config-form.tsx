@@ -6,8 +6,8 @@
 // route). Follows the established admin-form pattern (useActionState + FormState +
 // FieldError/FormError/FormNotice/SubmitButton), mirroring company-form.tsx.
 //
-// Each field carries a help (?) icon with a detailed tooltip bubble explaining the
-// parameter — Base UI Tooltip, RTL-correct via the admin-shell DirectionProvider.
+// Each field carries a help (?) icon that opens a detailed bubble explaining the
+// parameter — Base UI Popover (HelpTip), RTL-correct via the admin-shell DirectionProvider.
 //
 // Field `name` attributes and the inline Zod keys in ./config-actions.ts are kept
 // in camelCase, matching the prop keys returned by getAgreementConfigForAdmin().

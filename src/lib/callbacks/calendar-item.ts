@@ -2,7 +2,7 @@
 //
 // The server composes every field here from STRUCTURED database columns. No
 // agent, and no caller, ever supplies a finished string — that is the whole
-// point of the deterministic gateway (owner ruling 27.07 23:44): an autonomous
+// point of the deterministic gateway: an autonomous
 // agent may schedule a callback without approval precisely because it cannot
 // choose what the appointment says.
 //
@@ -39,7 +39,6 @@ export function archiveCallbackSubject(subject: string, reason: 'completed' | 'c
   return mark + subject.replace(ARCHIVE_MARK_RE, '');
 }
 
-/** Owner decision 28.07. */
 export const CALLBACK_REMINDER_MINUTES = 10;
 
 /**
@@ -71,7 +70,7 @@ export type CallbackItemInput = {
 /**
  * Strips anything that would break the calendar body or arrive as markup.
  *
- * The note is stored plain and written plain (MessageBody defaults to text), so
+ * The note is stored plain and HTML-escaped separately by buildCallbackBody, so
  * this is not HTML escaping — it removes control characters, collapses runs of
  * blank lines, and caps the length. Belt-and-braces: the note reaches Exchange
  * from our own database, never from a model, so injection has no path here.
@@ -90,7 +89,7 @@ export function sanitizeNote(note: string, maxLength = 600): string {
 
 /**
  * "שיחה חוזרת — דנה כהן — מכירות", with "[ניסיון 2]" once a first call went
- * unanswered. The name is deliberate (owner decision 28.07): a subject without
+ * unanswered. The name is deliberate: a subject without
  * it makes the lock-screen reminder useless. Sensitivity 'private' below is
  * what keeps that safe if the mailbox is ever shared or delegated.
  */
@@ -123,7 +122,7 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-/** Israeli E.164 shown as +972 53-274-3588 — owner's format, 28.07. */
+/** Israeli E.164 shown as +972 53-274-3588. */
 export function formatPhoneForDisplay(e164: string): string {
   const m = /^\+972(\d{1,2})(\d{3})(\d{4})$/.exec(e164.trim());
   return m ? `+972 ${m[1]}-${m[2]}-${m[3]}` : e164;
@@ -132,7 +131,7 @@ export function formatPhoneForDisplay(e164: string): string {
 /**
  * The body, as HTML.
  *
- * Every line is `label: value` (owner's format, 28.07). Labels rather than bare
+ * Every line is `label: value`. Labels rather than bare
  * values because this is read on a phone in the seconds before dialling: a lone
  * date or a lone number makes the reader work out what it is, and a label costs
  * nothing. One field per line, in the order the reader needs them.

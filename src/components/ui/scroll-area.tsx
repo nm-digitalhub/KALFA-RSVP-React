@@ -4,8 +4,9 @@ import { ScrollArea as ScrollAreaPrimitive } from '@base-ui/react/scroll-area';
 
 import { cn } from '@/lib/utils';
 
-// Base UI ScrollArea — a styled, accessible scroll container. RTL-safe: the
-// vertical scrollbar sits on the inline-end edge via logical `border-s`.
+// Base UI ScrollArea — a styled, accessible scroll container. RTL-safe: Base UI
+// places the vertical scrollbar on the inline-end edge, and its transparent
+// spacer border uses the logical `border-s`.
 function ScrollArea({
   className,
   children,

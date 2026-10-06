@@ -205,7 +205,7 @@ Spec: `plans/outreach-engine-c1-spec.md` (ממומש). חלוקת אחריות:
 |---|---|---|---|---|
 | `outreach-arm` | — | `handleArm` | cron `* * * * *` | זריעה עצמית‑מרפאת: לכל קמפיין `active` — seed של `outreach_state` מהמערך הקפוא + enqueue הצעד הנוכחי של כל contact פעיל (אידמפוטנטי דרך det‑id) |
 | `outreach-step` | `{campaignId, contactId, eventId, stepIndex}` | `handleStep` | `startAfter` = מועד ה‑touchpoint | ביצוע touchpoint אחד ל‑contact אחד + תזמון הבא |
-| `outreach-sweeper` | — | `handleArm` (אותו handler) | cron `*/5 * * * *` | רשת ביטחון נוספת לאותה זריעה |
+| ~~`outreach-sweeper`~~ | — | — | — | **הוסר 30.9.2026**: הריץ את אותו `handleArm` באותו תהליך, ולכן לא הוסיף הגנה עצמאית. ה-worker מבטל את התזמון ומוחק את התור בעלייה (`RETIRED_QUEUES`, `src/lib/queue/queues.ts`) |
 | `outreach-call-request` | `OutreachCallRequest` (`queues.ts:23-30`) | **אין consumer** | — | ממשק ל‑C2 (שיחות AI) — נכתב אליו, לא נצרך (§9) |
 | `outreach-dead` | jobs שכשלו סופית | אין (dead‑letter) | — | יעד ה‑`deadLetter` של `outreach-step` |
 | `webhook-process` | — | `handleWebhook` | cron `* * * * *` | ניקוז `webhook_inbox` (persist‑then‑process) |
@@ -295,7 +295,7 @@ Spec: `plans/outreach-engine-c1-spec.md` (ממומש). חלוקת אחריות:
 | J5 hold (`campaign_holds_enabled`) | **פעיל** ב‑DB החי |
 | מנוע ה‑outreach (`outreach_enabled`) + קונפיג WhatsApp | **פעיל** ב‑DB החי; ה‑worker רץ תחת pm2 `kalfa-worker` |
 | ערוץ WhatsApp מקצה‑לקצה (שליחה, webhook persist‑then‑process, מסירה, חיוב reach) | **ממומש**; חיווט ה‑button payloads על התבניות היוצאות ב‑WABA (RSVP‑מכפתור) — הצד הנכנס ממומש, הגדרת התבניות היוצאות בהשלמה |
-| ערוץ השיחות (C2, AI calls) | **מתוכנן, טרם מומש** — touchpoints מסוג `call` נרשמים ונשלחים ל‑`outreach-call-request`, אך אין consumer בתור ואין אינטגרציית ספק בקוד (`worker/main.ts` רושם handlers רק ל‑step/arm/sweeper/webhook) |
+| ערוץ השיחות (C2, AI calls) | **מתוכנן, טרם מומש** — touchpoints מסוג `call` נרשמים ונשלחים ל‑`outreach-call-request`, אך אין consumer בתור ואין אינטגרציית ספק בקוד (`worker/main.ts` רושם handlers רק ל‑step/arm/webhook) |
 | גמר חשבון אוטומטי (`close_charge_enabled`) | **כבוי** ב‑DB החי — הקוד קיים (`closeCampaignAndCharge`, `settleCampaignAction`) אך fail‑closed עד הפעלת הדגל |
 | UX לרישום הסכמת WhatsApp | **מתוכנן, טרם מומש** — הפונקציה קיימת ללא caller (§8) |
 | לוח תוצאות (סיכום חיוב + funnel מסירה B8) | **ממומש** במסך ניהול הקמפיין |

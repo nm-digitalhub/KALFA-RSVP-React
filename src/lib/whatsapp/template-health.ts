@@ -2,7 +2,8 @@ import 'server-only';
 
 // WhatsApp template health: category / quality-score / status tracking against
 // Meta's live signals. Two complementary sources feed this, both landing on the
-// same message_templates columns (see 20260827220000_message_templates_health_tracking.sql):
+// same message_templates columns (see 20260827185340_message_templates_health_tracking.sql)
+// and on the whatsapp_message_templates mirror:
 //   1. Webhooks (real-time, incl. Meta's ~24h advance downgrade warning) —
 //      normalized in src/app/api/webhooks/whatsapp/route.ts, applied in
 //      src/lib/data/template-health-processing.ts.
@@ -13,7 +14,10 @@ import 'server-only';
 // the CURRENT one — so a downgrade is detected by comparing the live `category`
 // against our own stored `requested_category` snapshot, not a Meta field.
 
-const GRAPH = 'https://graph.facebook.com/v23.0';
+import type { components, paths } from '@/lib/whatsapp/generated/message-templates';
+import { createMetaGraphClient } from '@/lib/whatsapp/graph-client';
+import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
+
 const TIMEOUT_MS = 15_000;
 
 export interface TemplateHealthCreds {
@@ -21,61 +25,48 @@ export interface TemplateHealthCreds {
   accessToken: string;
 }
 
-// Subset of the message-template resource's `fields=` we care about for
-// health monitoring (live-doc-verified field list, 2026-08-27): id, name,
-// language, category, correct_category, previous_category, quality_score,
-// rejected_reason, status, sub_category.
-export interface MetaTemplateHealthRow {
-  id: string;
-  name: string;
-  language: string;
-  category?: string;
-  correct_category?: string;
-  previous_category?: string;
-  // Live-verified 2026-08-27: Meta returns this as a nested object
-  // (`{ score, date }`), not the plain enum string the field name suggests —
-  // unlike the webhook payload's new_quality_score/previous_quality_score,
-  // which ARE plain strings. Store only `.score`.
-  quality_score?: { score?: string; date?: number };
-  rejected_reason?: string;
-  status?: string;
-}
+/**
+ * One message template as Graph returns it — the type generated from Meta's
+ * published v25.0 spec (`npm run meta:types`, message-template-api). Note
+ * `quality_score` is an object (`{ score, date }`), unlike the webhook's plain
+ * strings; the sync stores `.score`.
+ */
+export type MetaTemplate = components['schemas']['MessageTemplate'];
 
-/** Paginated GET of every template's current health fields for the WABA. */
-export async function fetchTemplateHealth(
-  creds: TemplateHealthCreds,
-): Promise<MetaTemplateHealthRow[]> {
-  const out: MetaTemplateHealthRow[] = [];
-  let url: string | null =
-    `${GRAPH}/${creds.wabaId}/message_templates?fields=id,name,language,category,correct_category,previous_category,quality_score,rejected_reason,status&limit=200`;
-  let guard = 0;
-  while (url && guard < 20) {
-    guard += 1;
-    const res: Response = await fetch(url, {
-      headers: { authorization: `Bearer ${creds.accessToken}` },
+// Every key whatsapp_message_templates mirrors. quality_score / rejected_reason
+// / correct_category are NOT returned unless named here (verified live
+// 2026-09-30). Checked against the generated type: a name Meta does not
+// define fails to compile instead of failing the request.
+const TEMPLATE_FIELDS = [
+  'id', 'name', 'language', 'status', 'category', 'sub_category', 'components',
+  'parameter_format', 'quality_score', 'rejected_reason', 'correct_category',
+  'previous_category', 'message_send_ttl_seconds', 'library_template_name',
+  'disable_ios_autofill', 'is_primary_device_delivery_only',
+] as const satisfies readonly (keyof MetaTemplate)[];
+
+/** Every template on the WABA, page by page (Graph's cursor paging). */
+export async function fetchTemplateHealth(creds: TemplateHealthCreds): Promise<MetaTemplate[]> {
+  const client = createMetaGraphClient<paths>(creds.accessToken);
+  const out: MetaTemplate[] = [];
+  let after: string | undefined;
+  for (let page = 0; page < 20; page += 1) {
+    const { data, response } = await client.GET('/{Version}/{WABA-ID}/message_templates', {
+      params: {
+        header: { Authorization: `Bearer ${creds.accessToken.trim()}` },
+        path: { Version: GRAPH_API_VERSION, 'WABA-ID': creds.wabaId },
+        query: { fields: TEMPLATE_FIELDS.join(','), limit: 100, ...(after ? { after } : {}) },
+      },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    if (!res.ok) throw new Error(`Meta template health fetch failed: HTTP ${res.status}`);
-    const body = (await res.json()) as {
-      data?: MetaTemplateHealthRow[];
-      paging?: { next?: string };
-    };
-    out.push(...(body.data ?? []));
-    // paging.next already carries the access token as a query param on Meta's
-    // side; we still send the header and never print the URL.
-    url = body.paging?.next ?? null;
+    if (!response.ok || !data) throw new Error(`Meta template health fetch failed: HTTP ${response.status}`);
+    out.push(...(data.data ?? []));
+    // `paging.next` is present only while there is a next page.
+    after = data.paging?.next ? data.paging.cursors?.after : undefined;
+    if (!after) break;
   }
   return out;
 }
 
-/** True when the live category has drifted from what we requested/intended —
- * the case that matters is UTILITY (cheap) silently becoming MARKETING
- * (expensive), but this flags ANY drift so a future AUTHENTICATION mix-up
- * would surface too. Null category (never synced) is never a downgrade. */
-export function isCategoryDowngraded(
-  requestedCategory: string,
-  category: string | null,
-): boolean {
-  if (!category) return false;
-  return category !== requestedCategory;
-}
+// The drift rule lives with the other template states (template-status.ts,
+// no 'server-only') so the admin screen uses the same one.
+export { isCategoryDowngraded } from '@/lib/whatsapp/template-status';

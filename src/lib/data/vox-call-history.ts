@@ -79,13 +79,7 @@ function toVoxNumberFilter(e164: string): string {
 const SESSION_LOOKUP_DAYS = 365;
 
 export interface VoxHistoryQuery {
-  /**
-   * Lookback in days. A convenience only — `from`/`to` win when supplied.
-   *
-   * It used to be the ONLY time control the app could express, which reduced a
-   * date range to three preset drawers. The API takes 'YYYY-MM-DD HH:mm:ss' on
-   * both ends and always did.
-   */
+  /** Lookback in days. A convenience only — `from`/`to` win when supplied. */
   days?: number;
   /** Explicit window start. Epoch ms, converted to Asia/Jerusalem clock time. */
   from?: number;
@@ -341,7 +335,7 @@ export async function fetchReturnableCall(
       if (code !== undefined && VOX_ERR.BAD_REQUEST.has(code)) {
         return { ok: false, reason: 'bad_request', code };
       }
-      // 457 codes exist and this names fifteen. An unlisted one is reported as a
+      // 457 codes exist and this names eighteen. An unlisted one is reported as a
       // PLATFORM FAULT carrying its number — never as "no such call", which would
       // turn every new platform error into a confident wrong answer, and never as
       // a generic retry, which would be advice we cannot justify.

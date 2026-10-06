@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { GRAPH_API_VERSION } from "@/lib/whatsapp/graph-version";
+
 import {
+  routeSwitchSql,
   RelocateExecuteLatchError,
   affectedTemplates,
   createMetaTemplate,
@@ -12,11 +15,12 @@ import {
   templateSwitchSql,
   templateUrls,
   type MetaTemplate,
+  type NewMetaTemplate,
 } from "./meta-templates";
 
 // Shape copied from the LIVE inventory (2026-08-24): text-only, POSITIONAL,
 // full example blocks, one URL button with a {{1}} suffix.
-function tpl(name: string, url: string, status = "APPROVED"): MetaTemplate {
+function tpl(name: string, url: string, status: MetaTemplate["status"] = "APPROVED"): MetaTemplate & NewMetaTemplate {
   return {
     name,
     status,
@@ -59,10 +63,10 @@ describe("template inventory helpers", () => {
     const src = tpl("gift_v1", `https://${OLD}/g/{{1}}`);
     const out = rewriteComponents(src.components, OLD, NEW_ORIGIN);
     expect(out[0]).toEqual(src.components[0]);
-    expect(out[1].buttons?.[0].url).toBe(`${NEW_ORIGIN}/g/{{1}}`);
-    expect(out[1].buttons?.[0].example).toEqual([`${NEW_ORIGIN}/g/3f2a9c1b8d4e`]);
+    expect(out[1]?.buttons?.[0]?.url).toBe(`${NEW_ORIGIN}/g/{{1}}`);
+    expect(out[1]?.buttons?.[0]?.example).toEqual([`${NEW_ORIGIN}/g/3f2a9c1b8d4e`]);
     // source untouched
-    expect(src.components[1].buttons?.[0].url).toBe(`https://${OLD}/g/{{1}}`);
+    expect(src.components[1]?.buttons?.[0]?.url).toBe(`https://${OLD}/g/{{1}}`);
   });
 
   it("planTemplateNames recognises an existing successor on the new host (any status) and plans the rest", () => {
@@ -171,10 +175,28 @@ describe("createMetaTemplate latch", () => {
     );
     const res = await createMetaTemplate({ wabaId: "W", accessToken: "SECRET" }, tpl("a_v2", `${NEW_ORIGIN}/g/{{1}}`));
     expect(res.ok).toBe(true);
-    expect(calls[0].url).toBe("https://graph.facebook.com/v23.0/W/message_templates");
+    // Asserts the SHARED constant, not a literal: pinning the version twice is
+    // how the six call sites drifted apart in the first place (G5).
+    expect(calls[0].url).toBe(`https://graph.facebook.com/${GRAPH_API_VERSION}/W/message_templates`);
     expect(calls[0].url).not.toContain("SECRET");
     const body = JSON.parse(String(calls[0].init?.body)) as Record<string, unknown>;
     expect(body).toMatchObject({ name: "a_v2", language: "he", category: "MARKETING", parameter_format: "POSITIONAL" });
     expect(Array.isArray(body.components)).toBe(true);
+  });
+});
+
+describe("routeSwitchSql (routing tables)", () => {
+  it("repoints routes only to an APPROVED successor, copying variables and settings first", () => {
+    const sql = routeSwitchSql("kalfa_event_invite_v2", "kalfa_event_invite_v3");
+    expect(sql).toContain("n.name = 'kalfa_event_invite_v3' AND n.language = o.language AND n.status = 'APPROVED'");
+    expect(sql).toContain("WHERE o.name = 'kalfa_event_invite_v2'");
+    expect(sql).toContain("INSERT INTO whatsapp_template_parameters");
+    expect(sql).toContain("INSERT INTO whatsapp_template_settings");
+    expect(sql).toContain("UPDATE message_template_routes r SET whatsapp_template_id = pairs.new_id");
+    expect(sql.match(/ON CONFLICT/g)).toHaveLength(2);
+  });
+
+  it("escapes names as SQL literals", () => {
+    expect(routeSwitchSql("a'b", "c")).toContain("WHERE o.name = 'a''b'");
   });
 });

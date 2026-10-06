@@ -4,9 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { __resetRateLimitStateForTests } from '@/lib/security/rate-limit';
 
 vi.mock('server-only', () => ({}));
-// Rewritten 2026-09-01 with the route: normalizing and storing the analysis
-// moved to the worker (elevenlabs-analysis-processing.test.ts). What remains
-// here is the intake contract plus the unchanged security envelope.
+// Normalizing and storing the analysis run in the worker
+// (elevenlabs-analysis-processing.test.ts). What is covered here is the intake
+// contract plus the security envelope.
 const { insertMock, slackMock } = vi.hoisted(() => ({ insertMock: vi.fn(), slackMock: vi.fn() }));
 vi.mock('@/lib/data/webhooks', () => ({ insertWebhookEvents: insertMock }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: slackMock }));
@@ -66,9 +66,9 @@ describe('POST /api/elevenlabs/rsvp/update', () => {
         dedupe_key: 'conv_1:1784500000',
       }),
     ]);
-    // The RAW payload is stored on purpose now — the worker needs it to be able
+    // The RAW payload is stored on purpose — the worker needs it to be able
     // to retry — so the transcript IS present in the row. It never leaves the
-    // database: nothing logs it, and the normalizer still drops it on the way
+    // database: nothing logs it, and the normalizer drops it on the way
     // into call_analysis.
     expect(res.headers.get('cache-control')).toBe('no-store');
   });

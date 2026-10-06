@@ -1,11 +1,11 @@
 /**
- * Relocation wizard — Stage-F external-registration clients (plan Stage F,
- * design §6). Small fetch-based clients the wizard's mutating steps will call.
+ * Relocation wizard — Stage-F external-registration clients (plan Stage F).
+ * Small fetch-based clients the wizard's mutating steps call.
  *
  * Contract:
  * - Every MUTATING function checks the execute latch: it throws
  *   {@link RelocateExecuteLatchError} unless `RELOCATE_EXECUTE=1`. Read
- *   functions never check it. The latch is the plan-only build's hard floor —
+ *   functions never check it. The latch is the hard floor —
  *   nothing in this module can touch an external service by accident.
  * - Mutations capture the PREVIOUS value first and return it as `prevValue`,
  *   so the engine can record the rollback inverse (state.ts externalCalls).
@@ -22,6 +22,8 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+
+import { GRAPH_API_VERSION } from "@/lib/whatsapp/graph-version";
 
 export class RelocateExecuteLatchError extends Error {
   constructor() {
@@ -180,7 +182,8 @@ export async function runSupabaseSql(opts: {
 
 /** MUTATING. Registers the app-level WhatsApp webhook. Meta then performs the
  * GET verify handshake against the callback (hub.verify_token must equal the
- * app_settings verify token — src/app/api/webhooks/whatsapp/route.ts:80-93),
+ * app_settings verify token — the GET handler in
+ * src/app/api/webhooks/whatsapp/route.ts),
  * so the route must already be live on the new origin. The app token rides in
  * the POST BODY (never the URL) so transport errors cannot carry it. */
 export async function subscribeMetaWebhook(opts: {
@@ -198,7 +201,7 @@ export async function subscribeMetaWebhook(opts: {
       fields: "messages",
       access_token: opts.appToken,
     });
-    const res = await fetch(`https://graph.facebook.com/v21.0/${opts.appId}/subscriptions`, {
+    const res = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${opts.appId}/subscriptions`, {
       method: "POST",
       body,
       signal: AbortSignal.timeout(TIMEOUT_MS),

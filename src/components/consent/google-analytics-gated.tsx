@@ -15,9 +15,9 @@ import { PageViewTracker } from './page-view-tracker';
 // cookie-consent-config.ts: the tracker renders ONLY after the visitor grants
 // the `analytics` category, so not a single Google request leaves the browser
 // before consent. Mounted ONLY on measured surfaces ((public)/(site) marketing
-// pages and the customer app) — never on the guest token routes (/r /g /ty
-// /join), which sit outside those layouts by design: guests gave no consent
-// and their tokenized URLs must not reach a third party.
+// pages, the customer app and the signup-success page) — never on the guest
+// token routes (/r /g /ty /join), which sit outside those layouts by design:
+// guests gave no consent and their tokenized URLs must not reach a third party.
 //
 // The tag is loaded with the official gtag.js snippet DIRECTLY (not
 // @next/third-parties) so it can be configured with send_page_view:false —

@@ -5,8 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { LANDING_NAV_ITEMS } from '@/components/landing-header-nav';
 
-// Source-level guards for the shared marketing header (owner report
-// 2026-08-24: the menu existed only on the homepage). Node test environment,
+// Source-level guards for the shared marketing header. Node test environment,
 // so the structure is pinned through the files rather than a DOM render.
 
 const repoRoot = join(__dirname, '..', '..', '..');

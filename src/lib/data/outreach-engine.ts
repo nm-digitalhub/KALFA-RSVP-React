@@ -5,7 +5,9 @@ import {
   getOutreachEnabled,
   getWhatsAppConfig,
   getSendPolicy,
+  getWhatsAppConsentRequired,
 } from '@/lib/data/outreach-config';
+import { resolveWhatsAppSend } from '@/lib/data/whatsapp-template-send';
 import { resolveTemplateForEvent } from '@/lib/data/message-templates-resolve';
 import { recordTemplateFailure, resolveTemplateMedia, sendOneWhatsApp } from '@/lib/data/outreach';
 import {
@@ -31,6 +33,7 @@ import { buildJewishCalendar } from '@/lib/outreach/jewish-calendar';
 import { enqueueStepJob, type StepSendResult } from '@/lib/outreach/enqueue';
 import { CALL_RETRY, QUEUES, type OutreachCallRequest, type OutreachStepMode } from '@/lib/queue/queues';
 import type { PgBoss } from 'pg-boss';
+import { BACKGROUND_SEND_RETRY_BUDGET_MS } from '@/lib/whatsapp/client';
 
 const DAY_MS = 86_400_000;
 
@@ -66,8 +69,9 @@ export type CampaignContext = {
   event: TemplateParamsContext['event'];
 };
 
-// Seed one outreach_state row per FROZEN-set contact at activation (idempotent).
-// The set is the binding cap, so the engine can never target a non-set contact.
+// Seed one outreach_state row per authorized-set contact (idempotent; the worker's
+// arm tick calls this — activation only flips status). The set is the binding
+// cap, so the engine can never target a non-set contact.
 export async function seedOutreachState(
   eventId: string,
   campaignId: string,
@@ -244,14 +248,16 @@ export async function stepGate(
   eventId: string,
   nowMs: number = Date.now(),
 ): Promise<{ reason: GateReason; ctx?: CampaignContext }> {
-  if (!(await getOutreachEnabled())) return { reason: 'paused' };
+  // TERMINAL checks come FIRST, before either pause. A 'paused' answer makes
+  // the worker re-poll every 5 minutes (worker/main.ts handleStep), so a
+  // closed campaign answered 'paused' while the global switch is off would
+  // re-poll forever instead of being terminalized (measured 2026-09-30: two
+  // step jobs of closed campaigns wait for 2026-11-30). Terminal = the
+  // campaign is gone/closed/cancelled, its window closed, the event day
+  // passed, or the event is not active — none of which a resume can undo.
   const ctx = await getCampaignContext(campaignId);
   if (!ctx) return { reason: 'stopped' };
-  // §11.7: pause is REVERSIBLE — never terminalize. A paused campaign re-polls
-  // (id-less, like the global outreach_enabled-off gate); only closed/cancelled/
-  // past-event/event-not-active are terminal ('stopped').
-  if (ctx.status === 'paused') return { reason: 'paused' };
-  if (ctx.status !== 'active') return { reason: 'stopped' };
+  if (ctx.status !== 'active' && ctx.status !== 'paused') return { reason: 'stopped' };
   if (ctx.close_at && nowMs > new Date(ctx.close_at).getTime()) {
     return { reason: 'stopped' };
   }
@@ -263,6 +269,10 @@ export async function stepGate(
   // implies it via the DB trigger + R7), explicit per the plan's "ALL
   // commercial paths" requirement.
   if (ctx.eventStatus !== 'active') return { reason: 'stopped' };
+  // §11.7: pause is REVERSIBLE — never terminalize. The global outreach switch
+  // and a paused campaign both re-poll (id-less).
+  if (!(await getOutreachEnabled())) return { reason: 'paused' };
+  if (ctx.status === 'paused') return { reason: 'paused' };
   if (await isContactReached(eventId, contactId)) return { reason: 'reached' };
   return { reason: 'ok', ctx };
 }
@@ -352,7 +362,8 @@ export type StepAction =
   | { action: 'call_request'; callRequest: OutreachCallRequest }
   | { action: 'skipped' };
 
-// Execute touchpoint N for a contact (called AFTER the worker schedules N+1).
+// Execute touchpoint N for a contact. The worker does not call this; it drives
+// prepareAndSendStep through the serial flow below.
 // Re-checks eligibility, atomically claims the step, then sends (WhatsApp) or
 // signals a call dispatch. At-most-once by design (a missed nudge beats a double
 // message; the multi-touchpoint schedule self-covers).
@@ -373,7 +384,14 @@ export async function executeStep(
     .eq('id', contactId)
     .maybeSingle();
   if (!contact || contact.removal_requested) return { action: 'skipped' };
-  if (tp.channel === 'whatsapp' && !contact.whatsapp_consent_at) {
+  // Same admin switch the recipient query honours (whatsapp_consent_required).
+  // Read here too rather than trusted from upstream: a step re-entered after a
+  // restart must make the same decision as the first attempt.
+  if (
+    tp.channel === 'whatsapp' &&
+    !contact.whatsapp_consent_at &&
+    (await getWhatsAppConsentRequired())
+  ) {
     return { action: 'skipped' };
   }
   if (tp.channel === 'call' && !ctx.allowed_channels.includes('call')) {
@@ -446,6 +464,7 @@ export async function executeStep(
       tp.message_key,
       built.params,
       media.headerImage ? { headerImage: media.headerImage } : undefined,
+      { retryBudgetMs: BACKGROUND_SEND_RETRY_BUDGET_MS },
     );
     if (outcome.kind !== 'accepted') return { action: 'skipped' };
     await bumpCount(admin, campaignId, contactId, 'whatsapp_sent_count');
@@ -469,10 +488,11 @@ export async function executeStep(
   };
 }
 
-// The SHARED reach path (both channels). Records the billed reach through the
+// The reach path for call results. Records the billed reach through the
 // SAME try_record_billed_result RPC (cross-channel dedup) — never a raw insert —
-// and on 'billed' stops the contact's outreach. Called by the WhatsApp webhook
-// and (C2) the call result webhook. Must carry campaignId + attemptId.
+// and on 'billed' stops the contact's outreach. Called by the call result
+// webhook (the WhatsApp webhook calls recordReached directly). Must carry
+// campaignId + attemptId.
 export async function writeReach(args: ReachedArgs): Promise<string> {
   const outcome = await recordReached(args);
   if (outcome === 'billed') {
@@ -481,9 +501,9 @@ export async function writeReach(args: ReachedArgs): Promise<string> {
   return outcome;
 }
 
-// Stop a contact's outreach when reached (the data-side cancel; the worker also
-// cancels pending pg-boss jobs, but the execution-time reach check is the
-// guarantee). Idempotent.
+// Stop a contact's outreach when reached (the data-side stop; pending pg-boss
+// jobs are not cancelled — the execution-time reach check is the guarantee).
+// Idempotent.
 export async function cancelOutreachForContact(
   campaignId: string,
   contactId: string,
@@ -493,7 +513,7 @@ export async function cancelOutreachForContact(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // §12 FINAL (M1) SERIAL FLOW — cursor-first reserve → send → resolve.
-// The four RPCs below are SECURITY INVOKER / service_role-only (createAdminClient
+// The three RPCs below are SECURITY INVOKER / service_role-only (createAdminClient
 // runs as service_role). Each returns the RPC's text verdict; a transport error
 // surfaces as 'error' (the caller decides — never silently advance). Some SQL
 // params are NULLABLE (the CAS uses IS NOT DISTINCT FROM); the generated Args
@@ -544,25 +564,6 @@ export async function reserveStep(input: {
   });
   if (error) return 'error';
   return (data as 'reserved' | 'stale') ?? 'error';
-}
-
-export async function releaseReservation(input: {
-  campaignId: string;
-  contactId: string;
-  stepIndex: number;
-  planRev: string;
-  jobId: string;
-}): Promise<'released' | 'stale' | 'error'> {
-  const admin = createAdminClient();
-  const { data, error } = await admin.rpc('release_outreach_reservation', {
-    p_campaign: input.campaignId,
-    p_contact: input.contactId,
-    p_step: input.stepIndex,
-    p_expected_plan_rev: input.planRev,
-    p_job_id: input.jobId,
-  });
-  if (error) return 'error';
-  return (data as 'released' | 'stale') ?? 'error';
 }
 
 export async function resolveStep(input: {
@@ -618,15 +619,6 @@ export async function loadOutreachRow(
   return data ?? null;
 }
 
-// Build + send the WhatsApp/call for the CURSOR step, classified into a
-// StepSendResult. It does NOT reserve/advance (the RPCs own that) — it only
-// performs the external, non-idempotent side effect and reports the outcome:
-//   accepted/definitely_not_sent/unknown — the WhatsApp delivery classification.
-//   skip{reason}     — config/template integrity (advance-skip; schedule covers).
-//   terminal{reason} — opt-out / no consent (terminalize the contact).
-//   advance{reason}  — a call request was dispatched (advance the cursor).
-// On accepted it bumps whatsapp_sent_count + op status adjacent to the send (a
-// resolve failure after accept ⇒ possible sent-count under-count, never resend).
 // The terminal-precheck conditions for one step as a PURE function — the SINGLE
 // source of truth shared by prepareAndSendStep (its first gate) and the
 // crash-recovery re-check. removal_requested terminates on ANY channel; missing
@@ -634,14 +626,21 @@ export async function loadOutreachRow(
 export function terminalReasonFor(
   contact: { removal_requested: boolean | null; whatsapp_consent_at: string | null },
   channel: string,
+  // Whether the WhatsApp consent gate is currently ARMED
+  // (app_settings.whatsapp_consent_required). Defaults to true so every existing
+  // caller and test keeps the pre-switch behaviour, and so an omitted argument
+  // can never be the thing that lifts a consent requirement.
+  whatsAppConsentRequired = true,
 ): string | null {
   if (contact.removal_requested) return 'removal_requested';
-  if (channel === 'whatsapp' && !contact.whatsapp_consent_at) return 'no_whatsapp_consent';
+  if (channel === 'whatsapp' && !contact.whatsapp_consent_at && whatsAppConsentRequired) {
+    return 'no_whatsapp_consent';
+  }
   return null;
 }
 
-// Read-only terminal re-check for the crash-recovery path (terminal-recovery
-// fix): NO send. Lets runStepExecution re-terminalize an opt-out / no-consent
+// Read-only terminal re-check for the crash-recovery path: NO send. Lets
+// runStepExecution re-terminalize an opt-out / no-consent
 // contact instead of blindly advancing a failed terminalize. null → not terminal
 // (a prior real send may have happened → advance once, at-most-once).
 export async function checkStepTerminal(
@@ -658,10 +657,23 @@ export async function checkStepTerminal(
     .eq('id', contactId)
     .maybeSingle();
   if (!contact) return null;
-  const reason = terminalReasonFor(contact, tp.channel);
+  const reason = terminalReasonFor(
+    contact,
+    tp.channel,
+    await getWhatsAppConsentRequired(),
+  );
   return reason ? { reason } : null;
 }
 
+// Build + send the WhatsApp/call for the CURSOR step, classified into a
+// StepSendResult. It does NOT reserve/advance (the RPCs own that) — it only
+// performs the external, non-idempotent side effect and reports the outcome:
+//   accepted/definitely_not_sent/unknown — the WhatsApp delivery classification.
+//   skip{reason}     — config/template integrity (advance-skip; schedule covers).
+//   terminal{reason} — opt-out / no consent (terminalize the contact).
+//   advance{reason}  — a call request was dispatched (advance the cursor).
+// On accepted it bumps whatsapp_sent_count + op status adjacent to the send (a
+// resolve failure after accept ⇒ possible sent-count under-count, never resend).
 export async function prepareAndSendStep(
   boss: PgBoss,
   ctx: CampaignContext,
@@ -680,7 +692,11 @@ export async function prepareAndSendStep(
     .eq('id', contactId)
     .maybeSingle();
   if (!contact) return { kind: 'skip', reason: 'contact_missing' };
-  const terminal = terminalReasonFor(contact, tp.channel);
+  const terminal = terminalReasonFor(
+    contact,
+    tp.channel,
+    await getWhatsAppConsentRequired(),
+  );
   if (terminal) return { kind: 'terminal', reason: terminal };
 
   // P0-1 (A6): a contact PINNED in the authorized set (exposed/billed) but no
@@ -699,15 +715,6 @@ export async function prepareAndSendStep(
   if (tp.channel === 'whatsapp') {
     const config = await getWhatsAppConfig();
     if (!config) return { kind: 'skip', reason: 'whatsapp_not_configured' };
-    const template = await resolveTemplateForEvent(tp.message_key, ctx.event.event_type);
-    if (!template) {
-      await recordTemplateFailure(admin, campaignId, stepIndex, 'template_missing', tp.message_key, tp.channel);
-      return { kind: 'skip', reason: 'template_missing' };
-    }
-    if (template.channel !== 'whatsapp') {
-      await recordTemplateFailure(admin, campaignId, stepIndex, 'channel_mismatch', tp.message_key, tp.channel);
-      return { kind: 'skip', reason: 'channel_mismatch' };
-    }
     const { data: guest } = await admin
       .from('guests')
       .select('full_name')
@@ -716,27 +723,28 @@ export async function prepareAndSendStep(
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle();
-    const guestFirstName = deriveGuestFirstName(guest?.full_name);
-    const family = template.name.startsWith('kalfa_wedding_') ? 'wedding' : 'generic';
-    const built = buildBodyParams({
-      paramContract: template.paramContract,
-      family,
-      ctx: { event: ctx.event, guestFirstName },
+    // Which Meta template (per event type / invite image) and what fills it:
+    // one shared resolver for every send site (routes + mirror + variables).
+    const built = await resolveWhatsAppSend({
+      messageKey: tp.message_key,
+      eventType: ctx.event.event_type,
+      inviteImagePath: ctx.inviteImagePath,
+      values: { event: ctx.event, guestFirstName: deriveGuestFirstName(guest?.full_name) },
     });
-    if ('missing' in built) {
-      await recordTemplateFailure(admin, campaignId, stepIndex, 'params_incomplete', tp.message_key, tp.channel);
-      return { kind: 'skip', reason: 'params_incomplete' };
+    if (built.kind !== 'ok') {
+      await recordTemplateFailure(admin, campaignId, stepIndex, built.kind, tp.message_key, tp.channel);
+      return { kind: 'skip', reason: built.kind };
     }
-    const media = await resolveTemplateMedia(template, ctx.inviteImagePath);
     const outcome = await sendOneWhatsApp(
       admin,
       { id: campaignId, event_id: eventId },
       { id: contactId, normalized_phone: contact.normalized_phone },
-      media.template,
+      built.template,
       config,
       tp.message_key,
-      built.params,
-      media.headerImage ? { headerImage: media.headerImage } : undefined,
+      built.bodyParams,
+      built.extras,
+      { retryBudgetMs: BACKGROUND_SEND_RETRY_BUDGET_MS },
     );
     if (outcome.kind === 'accepted') {
       await bumpCount(admin, campaignId, contactId, 'whatsapp_sent_count');

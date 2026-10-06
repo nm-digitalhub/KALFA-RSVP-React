@@ -1,9 +1,8 @@
 // The step SCHEDULER + the step EXECUTION orchestrator (§12 FINAL M1). Kept free
 // of `server-only` / DB / pg imports so it stays unit-testable: `enqueueStepJob`
 // takes `boss`, and `runStepExecution` takes ALL side effects as injected deps
-// (reserve / send / resolve / release / retry-meta). The worker wires the real
-// implementations (outreach-engine RPC wrappers, the WhatsApp send, and the
-// worker-only pgboss-meta adapter).
+// (reserve / send / resolve / terminal re-check). The worker wires the real
+// implementations (outreach-engine RPC wrappers and the WhatsApp send).
 //
 // Two deterministic identities (§F.1 — do NOT unify):
 //   mode 'plan' | 'replan' → detId(campaign, contact, step, planRev)
@@ -60,7 +59,7 @@ export async function enqueueStepJob(boss: PgBoss, args: EnqueueStepArgs): Promi
 // ─────────────────────────────────────────────────────────────────────────────
 // EXECUTION — reserve → send → resolve, for the job that fired on a 'send'
 // decision. All side effects injected (see module header). The send classifies
-// into a StepSendResult; the RPC verdicts drive advance / retry / recovery.
+// into a StepSendResult; the RPC verdicts drive advance / recovery.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // The classified result of building + performing one step's outreach.
@@ -92,16 +91,6 @@ export interface StepExecutionDeps {
     eventId: string;
     auditId: string;
   }) => Promise<'resolved' | 'stale' | 'error'>;
-  release: (a: {
-    campaignId: string;
-    contactId: string;
-    stepIndex: number;
-    planRev: string;
-    jobId: string;
-  }) => Promise<'released' | 'stale' | 'error'>;
-  getRetryMeta: (
-    jobId: string,
-  ) => Promise<{ state: string; retryCount: number; retryLimit: number } | null>;
   auditId: (reason: string) => string;
   // Read-only terminal re-check (removal / channel-consent) for crash recovery —
   // NO send. Returns the terminal reason, or null when the step is not terminal.
@@ -201,22 +190,28 @@ export async function runStepExecution(
       return;
     }
     case 'definitely_not_sent': {
-      const meta = await deps.getRetryMeta(jobId);
-      if (meta && meta.retryCount < meta.retryLimit) {
-        // A retry attempt remains → release the reservation + throw so pg-boss
-        // re-runs the SAME job J (re-reserve + re-send).
-        await deps.release({ campaignId, contactId, stepIndex, planRev, jobId });
-        throw new Error(`definitely_not_sent_retry:${outcome.reason}`);
-      }
-      // Final attempt (or retry meta unavailable → treat as final to bound the
-      // loop): advance-skip provider_failure. Dead-letter is the crash fallback.
-      const res = await resolve({ advance: true, terminalStatus: null, reason: 'provider_failure', jobId });
+      // Meta answered with an error code it did not mark temporary — read as a
+      // refusal of the request (client.ts). A refusal is not "worth sending
+      // again": the same request meets the same answer (and 131047 needs a
+      // template, not a retry). Advance-skip provider_failure at once — no
+      // release, no throw.
+      // A per-code action (template fallback, wait-and-retry) is a separate
+      // decision; it must not ride on this outcome.
+      // The audit reason carries Meta's code (provider_failure_131047), so the
+      // activity log says why the step was skipped.
+      const code = outcome.providerCode && /^[0-9]{1,12}$/.test(outcome.providerCode) ? outcome.providerCode : null;
+      const reason = code ? `provider_failure_${code}` : 'provider_failure';
+      const res = await resolve({ advance: true, terminalStatus: null, reason, jobId });
       if (res === 'error') throw new Error('resolve_after_provider_failure_failed');
       return;
     }
     case 'unknown': {
-      // Delivery UNCERTAIN → NEVER resend; advance at-most-once (guarded to J).
-      const res = await resolve({ advance: true, terminalStatus: null, reason: 'dispatch_outcome_unknown', jobId });
+      // Nothing is assumed about delivery → NEVER resend; advance at-most-once
+      // (guarded to J). Meta's code, when there is one (an error Meta marked
+      // temporary), is kept in the reason.
+      const code = outcome.providerCode && /^[0-9]{1,12}$/.test(outcome.providerCode) ? outcome.providerCode : null;
+      const reason = code ? `dispatch_outcome_unknown_${code}` : 'dispatch_outcome_unknown';
+      const res = await resolve({ advance: true, terminalStatus: null, reason, jobId });
       if (res === 'error') throw new Error('resolve_after_unknown_failed');
       return;
     }

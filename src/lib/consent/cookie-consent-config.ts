@@ -6,8 +6,8 @@ import type * as CookieConsent from 'vanilla-cookieconsent';
 // Three categories: strictly-necessary (always on), OPT-IN analytics, and
 // OPT-IN marketing — each independently toggled, each off by default. GA4 via
 // the consent-gated component src/components/consent/google-analytics-gated.tsx
-// (mounted only on marketing-site + customer-app surfaces — never on guest
-// token routes) loads NOTHING until `analytics` is granted; the Consent Mode
+// (mounted only on marketing-site, customer-app and signup-success surfaces —
+// never on guest token routes) loads NOTHING until `analytics` is granted; the Consent Mode
 // v2 ad signals it sends alongside the tag reflect `marketing` independently
 // (see analytics-gate.ts). On revoke, each category's autoClear wipes its own
 // cookies.
@@ -74,9 +74,9 @@ export const BASELINE_ADMIN_CONFIG: CookieConsentAdminConfig = {
   revisionBump: 0,
 };
 
-// Category + section definitions — text UNCHANGED from the previous static
-// config, just extracted so buildCookieConsentConfig() can include/omit them
-// by key based on admin availability flags.
+// Category + section definitions, kept as constants so
+// buildCookieConsentConfig() can include/omit them by key based on admin
+// availability flags.
 const ANALYTICS_CATEGORY: CookieConsent.Category = {
   // Google Analytics 4 — opt-in only. The tracker itself is rendered by
   // GoogleAnalyticsGated strictly after this category is granted, so the
@@ -169,6 +169,16 @@ export function buildCookieConsentConfig(
     // Non-blocking notice: never lock the page. Public RSVP pages (/r, /g, /ty)
     // must stay fully usable while the notice is visible.
     disablePageInteraction: false,
+
+    // …which makes the library's hard-coded aria-modal="true" on the consent
+    // box (#cc-main .cm, set once at creation in 3.1.0) untrue: the page behind
+    // it stays interactive, so assistive tech must not treat the rest of the
+    // page as inert. Stripped each time the box is shown. The preferences
+    // modal keeps its aria-modal — it really is modal (overlay + focus trap).
+    onModalShow: ({ modalName }) => {
+      if (modalName !== 'consentModal') return;
+      document.querySelector('#cc-main .cm')?.removeAttribute('aria-modal');
+    },
 
     cookie: {
       name: 'kalfa_cookie_consent',

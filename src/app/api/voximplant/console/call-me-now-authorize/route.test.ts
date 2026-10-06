@@ -53,12 +53,12 @@ function admitAllCaps() {
   vi.mocked(findRoutableAgentVoxUsernames).mockResolvedValue([]);
 }
 
-// Full telephony audit, 13.8: linkConsoleCallSession lets this route
-// correlate the session to its console_calls row DIRECTLY, independent of
-// whether ConsoleCallMeNow's own 'started' /event report lands — MORE
-// load-bearing here than authorize/route.ts's 'ct' twin because this call
-// kind's later events have NO fallback tier at all once 'started' is lost
-// (see console-calls.ts's linkConsoleCallSession header).
+// linkConsoleCallSession lets this route correlate the session to its
+// console_calls row DIRECTLY, independent of whether ConsoleCallMeNow's own
+// 'started' /event report lands — MORE load-bearing here than
+// authorize/route.ts's 'ct' twin because this call kind's later events have
+// NO fallback tier at all once 'started' is lost (see console-calls.ts's
+// linkConsoleCallSession header).
 describe('POST /api/voximplant/console/call-me-now-authorize', () => {
   beforeEach(() => {
     vi.resetAllMocks();

@@ -57,9 +57,7 @@ function israelDay(d: Date): string {
  * Midnight in Israel on a given calendar day, as a real instant.
  *
  * Measures the zone's offset AT that date rather than assuming +2 or +3, so it
- * is correct on both sides of the DST switch. An earlier version guessed the
- * offset and silently fell back to the NEXT day's midnight when neither guess
- * matched — which is what made this very test report a false failure.
+ * is correct on both sides of the DST switch.
  */
 function israelMidnight(y: number, m: number, day: number): Date {
   const asUtc = new Date(Date.UTC(y, m - 1, day, 0, 0, 0));

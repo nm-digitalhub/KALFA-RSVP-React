@@ -1,5 +1,6 @@
 'use client';
 
+import { useTimeout } from '@mantine/hooks';
 import { useCallback, useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -15,10 +16,10 @@ import {
   type ConsolePhoneSnapshot,
 } from '@/lib/voximplant/web-client';
 
-// Dev login surface (stage 2). The ConnectionNode of the account is UNVERIFIED —
-// this panel exists to determine it empirically: pick a node, connect, log in.
-// The chosen node is remembered locally; once proven it graduates to real
-// configuration in stage 3.
+// Dev login surface (stage 2): pick a node, connect, log in. The account's node
+// is already measured (MEASURED_CONNECTION_NODE in web-client.ts), so this picker
+// is a diagnostic override. The chosen node is remembered locally and wins over
+// that default in the softphone panel.
 const NODE_STORAGE_KEY = 'kalfa-console-node';
 
 // Hebrew labels per business state; sdkState is shown raw for diagnostics.
@@ -51,18 +52,19 @@ export function ConsolePhoneDev({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => subscribePhone(setSnap), []);
-  useEffect(() => {
-    // Deferred by a macrotask (availability-status.tsx precedent): setting
-    // state straight inside the effect body would set state synchronously
-    // during the same commit (cascading render).
-    const timer = setTimeout(() => {
+  // Deferred by a macrotask (availability-status.tsx precedent): setting
+  // state straight inside an effect body would set state synchronously
+  // during the same commit (cascading render).
+  useTimeout(
+    () => {
       const saved = window.localStorage.getItem(NODE_STORAGE_KEY);
       if (saved && (CONNECTION_NODES as readonly string[]).includes(saved)) {
         setNode(saved as ConnectionNodeName);
       }
-    }, 0);
-    return () => clearTimeout(timer);
-  }, []);
+    },
+    0,
+    { autoInvoke: true },
+  );
 
   const onConnect = useCallback(async () => {
     setBusy(true);

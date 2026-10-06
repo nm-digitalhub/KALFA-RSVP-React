@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { User } from '@supabase/supabase-js';
 
-// requireAdmin() is the single gate in front of ~35 admin call sites. A wrong
-// boolean or missing await here is a silent privilege escalation — every
-// case below exists to pin the exact contract, not just "it redirects".
+// requireAdmin() is the deprecated has_role('admin') gate (no non-test call
+// sites remain; isAdmin(), which it delegates to, still gates the close-charge
+// route). A wrong boolean or missing await here is a silent privilege
+// escalation — every case below exists to pin the exact contract, not just
+// "it redirects".
 
 vi.mock('server-only', () => ({}));
 
@@ -135,7 +137,7 @@ describe('isAdmin', () => {
 });
 
 // requireOrgOwner() gates the org-scoped RBAC matrix screen — mirrors
-// requirePlatformOwner()'s contract (dal.ts:90-96) one layer down: the org
+// requirePlatformOwner()'s contract (dal.ts) one layer down: the org
 // OWNER, not a KALFA platform admin. Redirects to /app/team (not /app) on
 // failure, since that is the org-scoped surface a non-owner should land on.
 describe('requireOrgOwner', () => {

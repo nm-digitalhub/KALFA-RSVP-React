@@ -487,7 +487,8 @@ function useEventCalendarAllDayBars(days: Date[]): {
           // Compare the OCCURRENCE by identity, not by key: the key encodes
           // id+start only, so a title/color/data edit compared equal and the
           // all-day row kept its stale bars. Occurrences come from the
-          // memoized index (rebuilt exactly when events change), so identity
+          // memoized index (rebuilt only when its inputs - events, range, time
+          // zone, week start, ordering, getOccurrences - change), so identity
           // also subsumes the end-time check it replaces. The positional
           // fields stay because they are recomputed on every read.
           return (
@@ -755,8 +756,9 @@ function EventCalendarAllDayCell({ day }: { day: Date }) {
         "relative flex min-w-0 flex-col gap-0.5 border-e px-1 py-1.5 last:border-e-0",
         isOff && offClassName,
         viewConfig.dayClassName?.(day),
-        // No drop-target bg fill on move/resize (see month view) - a subtle
-        // dashed inset outline below marks the target instead.
+        // No drop-target bg fill on move/resize (see month view) - the
+        // day-granular drag ghost in the bar overlay marks the target instead;
+        // data-drop-target stays as an opt-in styling hook.
         inDraft && cn("bg-primary/10", viewConfig.classNames?.slotDraft),
         viewConfig.classNames?.allDayCell
       )}
@@ -1066,7 +1068,7 @@ function EventCalendarDayColumn({
             key={segment.occurrence.key}
             // min-h keeps 15-min chips readable (Google-style: the block may
             // slightly outgrow its true window); hover raises a squeezed
-            // cascade chip above its overlapping neighbors
+            // chip above its overlapping neighbors
             className="absolute z-(--ec-z) min-h-(--ec-event-min-h,1.5rem) px-0.5 hover:z-40"
             style={
               {
@@ -1239,9 +1241,10 @@ function EventCalendarNowIndicator({
         }}
       >
         <div className="bg-destructive absolute inset-x-0 top-0 h-px" />
-        {/* dot leads the line at today's column-start border: pulled 1px left of
-            center (-start-1 = -4px vs the 6px/size-1.5 circle) so it reads as a
-            distinct bullet instead of merging into the line to its right */}
+        {/* dot leads the line at today's column-start border: pulled 1px toward
+            the inline start of center (-start-1 = -4px vs the 6px/size-1.5
+            circle) so it reads as a distinct bullet instead of merging into the
+            line that follows it */}
         <div className="bg-destructive absolute -start-1 top-0 size-1.5 -translate-y-1/2 rounded-full" />
       </div>
     </div>

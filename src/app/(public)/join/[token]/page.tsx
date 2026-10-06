@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -7,7 +8,11 @@ import { getInvitationPreview } from '@/lib/data/orgs';
 
 import { acceptInvitationAction } from './actions';
 
-export const metadata = { title: 'הצטרפות לארגון' };
+export const metadata: Metadata = {
+  title: 'הצטרפות לארגון',
+  // Personal, link-only page — keep it out of search indexes.
+  robots: { index: false, follow: false },
+};
 
 // Public invitation-acceptance page. Requires login (redirects to /auth/login
 // with a return path). Shows the org behind a still-valid token and a single
@@ -65,9 +70,8 @@ export default async function JoinPage({
           </p>
           <form action={acceptInvitationAction}>
             <input type="hidden" name="token" value={token} />
-            {/* Shared pending-aware submit (design audit: this was the one
-                public form hand-rolling a bare <button> with no pending state,
-                i.e. a double-submit risk on a slow network). */}
+            {/* Shared pending-aware submit (a bare <button> has no pending
+                state, i.e. a double-submit risk on a slow network). */}
             <SubmitButton size="lg">הצטרפות</SubmitButton>
           </form>
         </div>

@@ -1,5 +1,5 @@
-// Concurrency contract for the admin Exchange calendar (owner-approved spec,
-// 27.07.2026). Framework-free on purpose so every rule is unit-testable:
+// Concurrency contract for the admin Exchange calendar (owner-approved spec).
+// Framework-free on purpose so every rule is unit-testable:
 //
 // 1. Every write gets a monotonically increasing operation id.
 // 2. A stale refresh result must never be applied: a refresh captures the

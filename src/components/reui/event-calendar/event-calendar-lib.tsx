@@ -162,7 +162,7 @@ function eventsOverlap(
 
 /**
  * The one canonical multi-day segmentation. Splits an occurrence into per-day
- * segments clamped to the range. Rules (unit-tested in M1): exclusive end - an
+ * segments clamped to the range. Rules: exclusive end - an
  * event ending exactly at zoned midnight emits NO segment for that day;
  * zero-duration events emit one min-height segment; allDay occurrences walk
  * the same absolute instants as timed ones and only drop startMin/endMin, so
@@ -342,10 +342,6 @@ function packTimedSegments<TData>(
   }
 }
 
-/**
- * Greedy lane packing for bar segments within one week row (7 columns).
- * Mutates lane/rowIndex/colStart/colSpan on the segments, in place.
- */
 /**
  * Build the laned month-row bars for one week: consecutive-day segments of
  * the same occurrence merge into ONE bar (colStart -> colSpan) stacked into

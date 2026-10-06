@@ -39,7 +39,7 @@ const windows = new Map<string, WindowState>();
  *   `const h = await headers(); getClientIp((name) => h.get(name));`
  * (or `h.get.bind(h)`), not `getClientIp((await headers()).get)`. Prefers the first
  * comma-separated value of `x-forwarded-for`, falls back to `x-real-ip`, then
- * to the sentinel `'unknown'`. (Next 16 removed `NextRequest.ip`/`geo`, so the
+ * to the sentinel `'unknown'`. (Next 15 removed `NextRequest.ip`/`geo`, so the
  * client IP must come from the proxy headers nginx forwards.)
  */
 export function getClientIp(get: (name: string) => string | null): string {

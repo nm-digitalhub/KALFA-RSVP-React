@@ -10,8 +10,8 @@ import { describe, expect, it } from 'vitest';
 // the list counts the guest as 1 until they answer.
 //
 // Lists exported from a venue or a WhatsApp group routinely carry no count
-// column at all, so before this every such import produced exactly that state
-// with nothing offering to fix it.
+// column at all, so such an import leaves exactly that state unless a default
+// count is given at import or the back-fill below is used.
 
 const root = process.cwd();
 const guestsDir = join(root, 'src', 'app', '(customer)', 'app', 'events', '[id]', 'guests');

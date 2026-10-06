@@ -1,6 +1,5 @@
 /**
- * Voximplant Web SDK — browser-side console-phone controller (call-center
- * stages 2 + [call layer]).
+ * Voximplant Web SDK — browser-side console-phone controller.
  *
  * BROWSER ONLY. This module must never be imported from a Server Component or
  * any server module: the SDK it wraps needs window/WebRTC/microphone. Every
@@ -10,7 +9,7 @@
  * discipline as src/components/consent/cookie-consent.tsx documents).
  *
  * Auth flow (docs/voice-agent/sdk-auth-implementation-plan.md, verified against
- * the installed @voximplant/websdk 5.2.0 typings):
+ * the installed @voximplant/websdk typings):
  *   1. client.connect({ node })                    — WebSocket to the cloud
  *   2. client.requestOneTimeKey({ username: FQDN })→ one-time key
  *   3. POST /api/agents/sdk-auth { one_time_key }  → { hash }   (server signs;
@@ -47,11 +46,13 @@
  *
  * FINDING for the record (not a bug in this file — a fact about the
  * platform): on ConsoleDial.voxengine.js, BOTH branches answer the operator
- * (browser) leg before the far party is confirmed reachable — the internal
- * branch answers before VoxEngine.callUser(callee) even rings, and the
- * outbound branch answers before the PSTN leg connects and before the
- * disclosure+bridge. CallEvent.Connected therefore only proves the
- * browser↔platform leg is up, never that the other party actually answered.
+ * (browser) leg before the two parties are bridged — the internal branch
+ * answers before VoxEngine.callUser(callee) even rings, and the outbound
+ * branch answers when the PSTN leg picks up, before the disclosure+bridge.
+ * CallEvent.Connected therefore only proves the browser↔platform leg is up —
+ * on the internal branch not even that the other party answered, on the
+ * outbound branch only that the callee picked up, never that the parties are
+ * talking.
  * The UI in call-bar.tsx labels this "מחובר למערכת" (not "מחובר") for that
  * reason — do not "fix" that wording without re-reading this comment.
  */
@@ -84,10 +85,10 @@ export type { ConsoleCallSnapshot, ConsoleCallState } from './call-snapshot';
 export { CALL_ACTIVE_STATES } from './call-snapshot';
 export type { ConsolePhoneSnapshot, ConsolePhoneState } from './phone-snapshot';
 
-/** The single Voximplant application console agents belong to (stage-2 scope). */
+/** The single Voximplant application console agents belong to. */
 export const VOX_APP_DOMAIN = 'kalfa-rsvp.kalfarsvp.voximplant.com';
 
-/** Connection nodes the account may belong to (mirrors ConnectionNode 5.2.0). */
+/** Connection nodes the account may belong to (mirrors the SDK's ConnectionNode enum). */
 export const CONNECTION_NODES = [
   'NODE_1', 'NODE_2', 'NODE_3', 'NODE_4', 'NODE_5', 'NODE_6', 'NODE_7',
   'NODE_8', 'NODE_9', 'NODE_10', 'NODE_11', 'NODE_12', 'NODE_13',
@@ -366,9 +367,9 @@ function attachCallListeners(call: Call): void {
     cleanupCall();
   };
   // Diagnostics only — NEVER gates UI state. ConsoleDial.voxengine.js never
-  // calls Call.ring() on either the internal or outbound branch (it answers
-  // straight away), so these may simply never fire on this platform; that
-  // is fine, nothing here depends on them.
+  // calls Call.ring() on either the internal or outbound branch, so these
+  // may simply never fire on this platform; that is fine, nothing here
+  // depends on them.
   const onStartRinging = () => console.debug('[console-call] StartRinging', call.id);
   const onStopRinging = () => console.debug('[console-call] StopRinging', call.id);
 

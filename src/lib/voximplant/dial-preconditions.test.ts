@@ -65,8 +65,7 @@ describe('bridge-call.ts launcher wiring (source guard)', () => {
   it('refuses BEFORE stamping a nonce or calling startScenarios', () => {
     // Measure inside main() only. Searching the whole file finds the IMPORT of
     // stampElCorrelationNonce/startScenarios near the top and reports the gate
-    // as "after" them — a guard that passes no matter where the gate sits. This
-    // test failed exactly that way when first written.
+    // as "after" them — a guard that passes no matter where the gate sits.
     const body = launcher.slice(launcher.indexOf('async function main'));
     const gate = body.indexOf('closedEventRefusal(cctx)');
     const stamp = body.indexOf('await stampElCorrelationNonce');

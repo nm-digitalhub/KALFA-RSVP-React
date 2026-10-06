@@ -42,12 +42,15 @@ function ResendConfirmation({ email }: { email: string }) {
   );
 }
 
-export function LoginForm() {
+// `next`: where to resume after sign-in (e.g. the OAuth consent page). The
+// login action re-validates it server-side — the hidden field is never trusted.
+export function LoginForm({ next }: { next?: string }) {
   const [state, action] = useActionState(login, null);
 
   return (
     <>
       <form action={action} className="space-y-4">
+        {next ? <input type="hidden" name="next" value={next} /> : null}
         <FormError message={state?.error} />
 
         <div>

@@ -9,11 +9,11 @@ import { voxMeetingEscalateSchema } from '@/lib/validation/voximplant';
 // The meeting-booking agent's `escalate_to_queue` tool (plan §4): a
 // wrong-person pickup, a substantive question, an unclear reschedule, a bad
 // line, or any other case the deterministic gateway can't resolve. Writes
-// into contact_messages/console_queues through createContactMessage — the
-// SAME mechanism the public contact/callback forms already use (§4: "לא ערוץ
-// חדש", "לא ל-Slack ישירות") — never a bespoke channel. No queue: this is a
-// synchronous insert, matching how the public forms themselves write (they
-// are not queued either).
+// into contact_messages/console_queues through insertContactMessage (the
+// request-free core createContactMessage wraps) — the SAME mechanism the
+// public contact/callback forms already use (§4: "לא ערוץ חדש", "לא ל-Slack
+// ישירות") — never a bespoke channel. No queue: this is a synchronous insert,
+// matching how the public forms themselves write (they are not queued either).
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

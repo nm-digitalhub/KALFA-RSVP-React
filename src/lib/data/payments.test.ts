@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import {
   getPaymentsEnabled,
   getCampaignHoldsEnabled,
+  getPackageModelEnabled,
   getSumitPublicConfig,
   getSumitServerConfig,
 } from '@/lib/data/payments';
@@ -131,5 +132,36 @@ describe('getCampaignHoldsEnabled', () => {
   it('returns false when the admin client cannot be created', async () => {
     mockAdminThrows();
     await expect(getCampaignHoldsEnabled()).resolves.toBe(false);
+  });
+});
+
+// The package purchase charges real money, so its switch is the one that must never default to "on": every reading
+// that is not an explicit `true` — off, absent, unreadable, no admin client — keeps the purchase route closed.
+describe('getPackageModelEnabled', () => {
+  it('returns true only when the flag is explicitly on', async () => {
+    mockAdmin({ data: { package_model_enabled: true }, error: null });
+    await expect(getPackageModelEnabled()).resolves.toBe(true);
+  });
+
+  it('returns false when the flag is off (the column default)', async () => {
+    mockAdmin({ data: { package_model_enabled: false }, error: null });
+    await expect(getPackageModelEnabled()).resolves.toBe(false);
+  });
+
+  it('returns false when the row or the value is absent', async () => {
+    mockAdmin({ data: null, error: null });
+    await expect(getPackageModelEnabled()).resolves.toBe(false);
+    mockAdmin({ data: { package_model_enabled: null }, error: null });
+    await expect(getPackageModelEnabled()).resolves.toBe(false);
+  });
+
+  it('returns false on a read error', async () => {
+    mockAdmin({ data: null, error: { message: 'boom' } });
+    await expect(getPackageModelEnabled()).resolves.toBe(false);
+  });
+
+  it('returns false when the admin client cannot be created', async () => {
+    mockAdminThrows();
+    await expect(getPackageModelEnabled()).resolves.toBe(false);
   });
 });

@@ -47,10 +47,10 @@ import { startScenarios } from '@/lib/voximplant/mutations';
 //
 // This is a 30-45s confirmation/reschedule ping (meeting-booking plan §3), not
 // the substantive call the row's topic is actually about — the scenario it
-// dials is deliberately minimal (no monitor/takeover conference wiring, no
-// DTMF handoff) and is NOT written yet: it depends on the mtg/ctx + mtg/cb
+// dials (MeetingConfirmAgent) is deliberately minimal (no monitor/takeover
+// conference wiring, no DTMF handoff) and depends on the mtg/ctx + mtg/cb
 // route handlers, which are a separate, security-reviewed (public-rsvp-
-// sentinel) piece of work this dispatcher does not build or assume exists.
+// sentinel) surface this dispatcher does not build.
 
 const CONFIRM_TOKEN_TTL_SEC = 2 * 60 * 60; // 2h, matching outreach-calls.ts's CALL_TOKEN_TTL_SEC.
 // Valid ONLY because this function mints the token and calls StartScenarios
@@ -71,11 +71,10 @@ export type MeetingConfirmDispatchConfig = {
   // The AI-calling-specific kill switch, resolved by the caller. Deliberately
   // NOT read from getOutreachEnabled()/app_settings here — that flag gates
   // the RSVP campaign dispatcher, and the owner must be able to stop this
-  // channel independently of RSVP outreach. The concrete app_settings column
-  // this resolves from does not exist yet (flagged separately, not this
-  // file's concern) — taking it as a plain boolean parameter lets this
-  // function be written and unit-tested now, and wired to a real config
-  // resolver the moment that column lands.
+  // channel independently of RSVP outreach. The caller resolves it from
+  // app_settings.voximplant_meeting_confirm_enabled
+  // (getMeetingConfirmDispatchConfig) — taking it as a plain boolean
+  // parameter keeps this function unit-testable.
   callsEnabled: boolean;
 };
 
@@ -122,6 +121,15 @@ const MEETING_CONFIRM_LEAD_MS = 24 * 60 * 60 * 1000; // plan §2: "~24 שעות 
 // rather than a target instant already in the past.
 const MEETING_CONFIRM_MIN_DELAY_MS = 5 * 60 * 1000;
 
+// Exported so a caller that needs to CANCEL a previously-enqueued job (the
+// calendar-move reconciler in callback-scheduling.ts) derives the exact same
+// id from the same (request, scheduled instant) pair, rather than
+// re-deriving the `meeting-confirm:` prefix by hand in a second place —
+// one string literal, not two copies that could silently drift apart.
+export function meetingConfirmDispatchJobId(requestId: string, scheduledMs: number): string {
+  return deterministicJobId(`meeting-confirm:${requestId}:${scheduledMs}`);
+}
+
 // Event-driven dispatch TRIGGER, called once by runCallbackSchedulingSweep
 // right after a slot is actually booked — NOT a periodic scan. Durable (a
 // pg-boss job persists in Postgres, so it survives a worker restart) and
@@ -132,19 +140,10 @@ const MEETING_CONFIRM_MIN_DELAY_MS = 5 * 60 * 1000;
 // (createCallbackDispatchAttempt) means at most one job for a row can ever
 // actually place a call.
 //
-// Deliberately excludes topic='מכירות' (B1, meeting-booking plan §11):
-// callback_requests rows opened for a sales conversation are the
-// sales-closing agent's own future dispatch surface, not this one — dialling
-// both personas for the same row would double-call the lead.
-// Exported so a caller that needs to CANCEL a previously-enqueued job (the
-// calendar-move reconciler in callback-scheduling.ts) derives the exact same
-// id from the same (request, scheduled instant) pair, rather than
-// re-deriving the `meeting-confirm:` prefix by hand in a second place —
-// one string literal, not two copies that could silently drift apart.
-export function meetingConfirmDispatchJobId(requestId: string, scheduledMs: number): string {
-  return deterministicJobId(`meeting-confirm:${requestId}:${scheduledMs}`);
-}
-
+// Deliberately excludes topic='מכירות': callback_requests rows opened for a
+// sales conversation are the sales-closing agent's own dispatch surface
+// (enqueueSalesCallDispatch), not this one — dialling both personas for the
+// same row would double-call the lead.
 export async function enqueueMeetingConfirmDispatch(
   boss: PgBoss,
   request: { id: string; topic: string | null; scheduledAtIso: string },
@@ -271,7 +270,7 @@ export async function dispatchMeetingConfirmCall(
 
   // 6.5. OUTCOME-AWARE slot dedup (incident 2026-08-23): the technical axis
   //      ("a call happened and ended") must never suppress a retry on its own
-  //      — yesterday's owner-approved early call concluded with NO semantic
+  //      — an owner-approved early call concluded with NO semantic
   //      outcome (confirmation_call_status stayed 'not_sent'), yet its row
   //      blocked the scheduled dispatch and the meeting went unconfirmed.
   //      Rules, checked against ALL of the slot's attempts:

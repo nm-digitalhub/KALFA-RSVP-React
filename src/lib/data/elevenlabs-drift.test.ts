@@ -90,7 +90,7 @@ describe('drift: canonicalizeAgent + compareAgentCanonical (false-positive-proof
     expect(c.name).toBeTruthy();
     expect(c.prompt).toBeTruthy();
     expect(c.language).toBe('he');
-    // 3 client tools; the built-in end_call carries no tool_id, so it is excluded.
+    // 4 client tools; the built-in end_call carries no tool_id, so it is excluded.
     expect(c.toolIds).toHaveLength(4);
   });
 

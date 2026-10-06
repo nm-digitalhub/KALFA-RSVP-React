@@ -9,7 +9,7 @@
  * distributions, pm2.keymetrics.io, nginx.org, certbot.eff.org,
  * docs.npmjs.com) — see plan doc §5b for the source list.
  *
- * Wired 2026-08-23: I0/I1/I2/I5/I6/I7/I8/I9/I10/I11 have real apply/verify,
+ * I0/I1/I2/I5/I6/I7/I8/I9/I10/I11 have real apply/verify,
  * sharing the C2/C3/C4/E1 logic with steps.ts via wiring-helpers.ts. I3
  * (clone source unknown) and I12 (owner-driven via /admin/settings) stay
  * intentional NotImplementedError. I4's setup-form apply is real.
@@ -410,6 +410,7 @@ export function buildInstallStepDefinitions(): StepDefinition[] {
         "env -i HOME=$HOME USER=$USER PATH=/usr/local/bin:/usr/bin:/bin pm2 start ecosystem.config.cjs (scrubbed shell — the repo's documented recipe)",
         "pm2 save",
         "pm2 startup systemd -u <user> --hp <home> — then run the ONE sudo command it prints (that is the documented automation path)",
+        "NOT started here: kalfa-owner-agent (the owner WhatsApp agent) lives in ecosystem.owner-agent.config.cjs — its first start is a go-live decision the owner takes by hand (plans/owner-whatsapp-agent-plan.md §8 stage 6)",
       ],
       apply: async (ctx) => {
         assertExecuteLatch("I7 pm2 start + boot persistence");
@@ -454,7 +455,8 @@ export function buildInstallStepDefinitions(): StepDefinition[] {
         he: "הגדרות שירותים השמורות ב-DB (app_settings)",
       },
       plan: () => [
-        "NOT env keys (owner note 2026-08-23): WhatsApp Cloud API (phone-number-id, access token, WABA id, app secret), SUMIT billing credentials, ExtrA SMS, SMTP identity and Voximplant service account all live in the app_settings ROW — entered via the running app's own admin: /admin/settings + /admin/channels",
+        "NOT env keys (owner note 2026-08-23): WhatsApp Cloud API (phone-number-id, access token, WABA id, app secret), SUMIT billing credentials, ExtrA SMS, SMTP identity and Voximplant service account all live in the app_settings ROW — entered via the running app's own admin: /admin/settings + /admin/integrations",
+        "after the WhatsApp credentials are in: /admin/integrations/numbers -> sync from Meta, then assign the number roles. The inbound router reads whatsapp_import_sender from provider_number_roles, not from an env var or an app_settings column — a restored install with no role assigned routes every inbound message to the RSVP path (the legacy behaviour), which is safe but means guest-list imports land on the wrong line",
         "the wizard polls presence (read-only REST check with the service key; values never read into state) and waits until the channels the owner wants are configured; channels left off are recorded as open items",
       ],
       check: async (ctx) => {
@@ -487,7 +489,7 @@ export function buildInstallStepDefinitions(): StepDefinition[] {
       },
       apply: async () => {
         throw new NotImplementedError(
-          "I12 stays owner-driven: configure channels at /admin/settings and /admin/channels on the running app, then --resume",
+          "I12 stays owner-driven: configure providers at /admin/settings and /admin/integrations on the running app, assign the number roles at /admin/integrations/numbers, then --resume",
         );
       },
     }),

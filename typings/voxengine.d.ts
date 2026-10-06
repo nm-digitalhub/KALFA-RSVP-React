@@ -1,6 +1,6 @@
 /**
  * ===
- * VoxEngine version: 7.51.0
+ * VoxEngine version: 7.64.1
  * ===
  */
 
@@ -32,6 +32,14 @@ declare interface ACDEnqueueParameters {
    * Custom data for the current call object.
    */
   customData: string;
+  /**
+   * Optional. Name of the caller displayed to the agent. Defaults to the caller ID when omitted.
+   */
+  displayName?: string;
+  /**
+   * Optional. Internal information about codecs taken from the [AppEvents.CallAlerting] event.
+   */
+  scheme?: { [id: string]: any };
 }
 
 /**
@@ -150,6 +158,10 @@ declare interface _ACDErrorEvent extends _ACDBaseEvent {
    * Error message
    */
   error: string;
+  /**
+   * Optional. Status code associated with the error.
+   */
+  code?: number;
 }
 
 /**
@@ -225,6 +237,490 @@ declare class ACDRequest {
    * Cancel pending request and remove it from the queue
    */
   cancel(): void;
+}
+
+declare namespace Agentic {
+    /**
+     * Creates an [Agentic.VoiceDSP] instance.
+     * @param parameters The [Agentic.VoiceDSP] parameters
+     */
+    function createVoiceDSP(parameters: VoiceDSPParameters): Promise<Agentic.VoiceDSP>
+}
+declare namespace Agentic {
+  /**
+   * [Hush.NoiseSuppressionParameters] based. Can be passed as [Agentic.VoiceDSPParameters.noiseSuppressionParameters] to [Agentic.createVoiceDSP].
+   */
+  interface NoiseSuppressionParameters extends Hush.NoiseSuppressionParameters {
+  }
+}
+
+declare namespace Agentic {
+  /**
+   * [Pipecat.TurnDetectorParameters] based. Can be passed as [Agentic.VoiceDSPParameters.turnDetectorParameters] to [Agentic.createVoiceDSP].
+   */
+  interface TurnDetectorParameters extends Pipecat.TurnDetectorParameters {
+    /**
+     * Optional. Mirrors [Pipecat SmartTurnParams.stop_secs](https://docs.pipecat.ai/api-reference/server/utilities/turn-detection/smart-turn-overview#param-stop-secs) parameter. If the turn analyzer classifies the turn as incomplete, silence must continue for this many seconds before the turn is finalized. The default value is **3.0**.
+     */
+    stopSecs?: number;
+  }
+}
+
+declare namespace Agentic {
+  /**
+   * [Silero.VADParameters] forwarded to the bundled [Agentic.VoiceDSP] connector (server-side VAD). Can be passed as [Agentic.VoiceDSPParameters.vadParameters] to [Agentic.createVoiceDSP].
+   */
+  interface VADParameters extends Silero.VADParameters {
+  }
+}
+
+declare namespace Agentic {
+  /**
+   * @event
+   */
+  enum VoiceDSPEvents {
+    /**
+     * Triggered when the user's turn starts (mirrors Pipecat `on_user_turn_started`). Only fires when [Agentic.VoiceDSPParameters.startStrategies] are configured via [Agentic.createVoiceDSP].
+     * @typedef _VoiceDSPTurnStartedEvent
+     */
+    TurnStarted = 'Agentic.VoiceDSP.TurnStarted',
+
+    /**
+     * Triggered when a stop strategy has enough signal to start LLM inference for the current turn (mirrors Pipecat `on_user_turn_inference_triggered`). Fires before [Agentic.VoiceDSPEvents.TurnStopped] when [Agentic.VoiceDSPParameters.asr] is configured and the turn analyzer completes before the final transcript arrives. [Agentic.VoiceDSPParameters.asrGraceTimeout] starts from this event.
+     * @typedef _VoiceDSPTurnInferenceTriggeredEvent
+     */
+    TurnInferenceTriggered = 'Agentic.VoiceDSP.TurnInferenceTriggered',
+
+    /**
+     * Triggered when the user's turn ends with the accumulated transcript (mirrors Pipecat `on_user_turn_stopped`).
+     * @typedef _VoiceDSPTurnStoppedEvent
+     */
+    TurnStopped = 'Agentic.VoiceDSP.TurnStopped',
+
+    /**
+     * Triggered before [Agentic.VoiceDSPEvents.TurnStopped] when a turn stop timeout fires. **reason** is **stop_secs** when the turn analyzer classified the turn as incomplete and silence exceeded [Agentic.TurnDetectorParameters.stopSecs], or **controller_timeout** when no stop strategy finalized the turn within [Agentic.VoiceDSPParameters.userTurnStopTimeout].
+     * @typedef _VoiceDSPTurnStopTimeoutEvent
+     */
+    TurnStopTimeout = 'Agentic.VoiceDSP.TurnStopTimeout',
+
+    /**
+     * Triggered when the user has been idle for [Agentic.VoiceDSPParameters.userTurnIdleTimeout] after [Agentic.VoiceDSP.signalAssistantTurnEnded] (mirrors Pipecat `on_user_turn_idle`). Can fire multiple times if the scenario calls [Agentic.VoiceDSP.signalAssistantTurnEnded] again after handling each idle event.
+     * @typedef _VoiceDSPTurnIdleEvent
+     */
+    TurnIdle = 'Agentic.VoiceDSP.TurnIdle',
+
+    /**
+     * The [Agentic.VoiceDSP] is reset.
+     * @typedef _VoiceDSPResetEvent
+     */
+    Reset = 'Agentic.VoiceDSP.Reset',
+
+    /**
+     * The error response event.
+     * @typedef _VoiceDSPErrorEvent
+     */
+    Error = 'Agentic.VoiceDSP.Error',
+
+    /**
+     * Contains information about connector.
+     * @typedef _VoiceDSPConnectorInformationEvent
+     */
+    ConnectorInformation = 'Agentic.VoiceDSP.ConnectorInformation',
+  }
+
+  /**
+   * @private
+   */
+  interface _VoiceDSPEvents {
+    [VoiceDSPEvents.TurnStarted]: _VoiceDSPTurnStartedEvent;
+    [VoiceDSPEvents.TurnInferenceTriggered]: _VoiceDSPTurnInferenceTriggeredEvent;
+    [VoiceDSPEvents.TurnStopped]: _VoiceDSPTurnStoppedEvent;
+    [VoiceDSPEvents.TurnStopTimeout]: _VoiceDSPTurnStopTimeoutEvent;
+    [VoiceDSPEvents.TurnIdle]: _VoiceDSPTurnIdleEvent;
+    [VoiceDSPEvents.Reset]: _VoiceDSPResetEvent;
+    [VoiceDSPEvents.Error]: _VoiceDSPErrorEvent;
+    [VoiceDSPEvents.ConnectorInformation]: _VoiceDSPConnectorInformationEvent;
+  }
+
+  /**
+   * @private
+   */
+  interface _VoiceDSPEvent {
+    /**
+     * The [Agentic.VoiceDSP] instance.
+     */
+    voiceDSP: VoiceDSP;
+  }
+
+  /**
+   * @private
+   */
+  interface _VoiceDSPTurnStartedEvent extends _VoiceDSPEvent {
+    /**
+     * The **type** of the [Agentic.VoiceDSPStrategies.Start] strategy that triggered the turn start (for example [Agentic.VoiceDSPStrategies.VADStart.type]).
+     */
+    strategy: string;
+    /**
+     * Indicates whether the user interrupted the bot (i.e., the bot was speaking when the turn started). Requires the scenario to call [Agentic.VoiceDSP.signalAssistantTurnStarted] / [Agentic.VoiceDSP.signalAssistantTurnEnded] around assistant playback. Independent of **enableInterruptions** on [Agentic.VoiceDSPStrategies.Start] (for example [Agentic.VoiceDSPStrategies.VADStart.enableInterruptions]).
+     */
+    interrupted: boolean;
+  }
+
+  /**
+   * @private
+   */
+  interface _VoiceDSPTurnInferenceTriggeredEvent extends _VoiceDSPEvent {
+    /**
+     * The **type** of the [Agentic.VoiceDSPStrategies.Stop] strategy that triggered inference (for example [Agentic.VoiceDSPStrategies.TurnDetectorStop.type]). Always a configured [Agentic.VoiceDSPParameters.stopStrategies] entry; **'turn_detector'** is used only when [Agentic.VoiceDSPStrategies.TurnDetectorStop] is configured. When the user-turn-stop watchdog force-stops, this is the pending or configured fallback strategy and [Agentic.VoiceDSPEvents.TurnStopTimeout] is emitted with **reason** **controller_timeout**.
+     */
+    strategy: string;
+  }
+
+  /**
+   * @private
+   */
+  interface _VoiceDSPTurnStoppedEvent extends _VoiceDSPEvent {
+    /**
+     * The complete transcribed text from the user's turn. May be empty when transcription is not configured.
+     */
+    content: string;
+    /**
+     * ISO 8601 timestamp indicating when the user turn started.
+     */
+    timestamp: string;
+    /**
+     * The **type** of the [Agentic.VoiceDSPStrategies.Stop] strategy that triggered the turn stop (for example [Agentic.VoiceDSPStrategies.TurnDetectorStop.type]). Always a configured [Agentic.VoiceDSPParameters.stopStrategies] entry; **'turn_detector'** is used only when [Agentic.VoiceDSPStrategies.TurnDetectorStop] is configured. When the user-turn-stop watchdog force-stops, this is the pending or configured fallback strategy.
+     */
+    strategy: string;
+    /**
+     * The turn-detector probability in the range [0.0, 1.0]. **0** when the turn was ended by the [Agentic.TurnDetectorParameters.stopSecs] fallback or a [Agentic.VoiceDSPStrategies.SpeechTimeoutStop] strategy.
+     */
+    probability: number;
+    /**
+     * Optional. Whether **content** is a final or interim transcript snapshot. Present when [Agentic.VoiceDSPParameters.asr] is passed for turn-strategy wiring. Use [ASREvents] on your scenario ASR instance for live transcription updates.
+     */
+    transcriptState?: 'final' | 'interim';
+  }
+
+  /**
+   * @private
+   */
+  interface _VoiceDSPTurnStopTimeoutEvent extends _VoiceDSPEvent {
+    /**
+     * **stop_secs** when silence exceeded [Agentic.TurnDetectorParameters.stopSecs]; **controller_timeout** when no stop strategy finalized the turn within [Agentic.VoiceDSPParameters.userTurnStopTimeout].
+     */
+    reason: 'stop_secs' | 'controller_timeout';
+  }
+
+  /**
+   * @private
+   */
+  interface _VoiceDSPTurnIdleEvent extends _VoiceDSPEvent {
+  }
+
+  /**
+   * @private
+   */
+  interface _VoiceDSPResetEvent extends _VoiceDSPEvent {
+  }
+
+  /**
+   * @private
+   */
+  interface _VoiceDSPErrorEvent extends _VoiceDSPEvent {
+    /**
+     * The error reason.
+     */
+    reason: string;
+  }
+
+  /**
+   * @private
+   */
+  interface _VoiceDSPConnectorInformationEvent extends _VoiceDSPEvent {
+    /**
+     * The event's data.
+     */
+    data?: Object
+  }
+}
+
+declare namespace Agentic {
+  /**
+   * [Agentic.VoiceDSP] parameters. Can be passed as arguments to the [Agentic.createVoiceDSP] method.
+   */
+  interface VoiceDSPParameters extends _VoiceAIClientParameters    {
+    /**
+     * Optional. [ASR] instance used internally for transcription-based start strategies; the latest transcript snapshot is included on [Agentic.VoiceDSPEvents.TurnStopped]. Live transcription should be handled via [ASREvents] on the scenario ASR instance.
+     */
+    asr?: ASR;
+    /**
+     * Optional. VAD configuration forwarded to the bundled voice DSP connector (server-side processing).
+     */
+    vadParameters?: VADParameters;
+    /**
+     * Optional. Turn detector configuration forwarded to the bundled voice DSP connector (server-side processing).
+     */
+    turnDetectorParameters?: TurnDetectorParameters;
+    /**
+     * Optional. Noise suppression configuration forwarded to the bundled voice DSP connector (server-side processing). NOTE: if the parameters are NOT provided, the voice DSP connector will NOT use the noise suppression.
+     */
+    noiseSuppressionParameters?: NoiseSuppressionParameters;
+    /**
+     * Optional. Strategies that determine when a user's turn starts. Multiple strategies can be provided; the first one to trigger signals the start. Use [Agentic.VoiceDSPStrategies] factories (for example [Agentic.VoiceDSPStrategies.createVADStart]).
+     */
+    startStrategies?: VoiceDSPStrategies.Start[];
+    /**
+     * Optional. Strategies that determine when a user's turn ends. Use [Agentic.VoiceDSPStrategies] factories (for example [Agentic.VoiceDSPStrategies.createTurnDetectorStop]). If [Agentic.VoiceDSPStrategies.TurnDetectorStop] is configured, it is authoritative; [Agentic.VoiceDSPStrategies.SpeechTimeoutStop] does not pre-empt it. One turn always finalizes with a single strategy.
+     * NOTE: If no stop strategies are provided, [Agentic.VoiceDSPStrategies.createTurnDetectorStop] is used as the default. Omit [Agentic.VoiceDSPStrategies.TurnDetectorStop] to disable ML Predict (for tests or ASR-only stop logic); [Agentic.VoiceDSPEvents.TurnInferenceTriggered] and [Agentic.VoiceDSPEvents.TurnStopped] then never report **strategy** **'turn_detector'**.
+     */
+    stopStrategies?: VoiceDSPStrategies.Stop[];
+    /**
+     * Optional. User idle timeout in seconds (mirrors Pipecat `UserIdleController.user_idle_timeout`). After [Agentic.VoiceDSP.signalAssistantTurnEnded], if the user remains inactive for this duration, [Agentic.VoiceDSPEvents.TurnIdle] is emitted. **0** disables idle detection. The default value is **0**.
+     */
+    userTurnIdleTimeout?: number;
+    /**
+     * Optional. Pipecat `user_turn_stop_timeout` (seconds). Counts silence while a user turn is active; the timer resets on new speech and on ASR updates. If no stop strategy finalizes the turn within this silence, [Agentic.VoiceDSPEvents.TurnStopTimeout] is emitted with **reason** **controller_timeout**, then [Agentic.VoiceDSPEvents.TurnStopped]. **strategy** on [Agentic.VoiceDSPEvents.TurnInferenceTriggered] and [Agentic.VoiceDSPEvents.TurnStopped] is the pending stop strategy, or the configured fallback if none is pending (never **'turn_detector'** unless [Agentic.VoiceDSPStrategies.TurnDetectorStop] is configured). Default **5.0**. Set **0** to disable.
+     */
+    userTurnStopTimeout?: number;
+    /**
+     * Optional. ASR grace period in seconds after [Agentic.VoiceDSPEvents.TurnInferenceTriggered]. When [Agentic.VoiceDSPParameters.asr] is configured, [Agentic.VoiceDSPEvents.TurnStopped] waits up to this duration for a final transcript; a final transcript ends the wait immediately. Default **0.3** - shorter than typical ASR final latency, so [Agentic.VoiceDSPEvents.TurnStopped] does not wait for ASR final by default. Start LLM inference on [Agentic.VoiceDSPEvents.TurnInferenceTriggered]. When the timer expires, [Agentic.VoiceDSPEvents.TurnStopped] uses the latest snapshot (including interim text).
+     */
+    asrGraceTimeout?: number;
+  }
+}
+
+declare namespace Agentic {
+  namespace VoiceDSPStrategies {
+    /**
+     * A start strategy configuration for the [Agentic.VoiceDSP]. Can be passed via [Agentic.VoiceDSPParameters.startStrategies] to [Agentic.createVoiceDSP].
+     */
+    type Start = VADStart | TranscriptionStart | MinWordsStart;
+
+    /**
+     * Optional parameters for [Agentic.VoiceDSPStrategies.createVADStart].
+     */
+    interface VADStartParameters {
+      /**
+       * Optional. If **true**, the user can interrupt the bot when the turn starts. The default value is **true**.
+       */
+      enableInterruptions?: boolean;
+    }
+
+    /**
+     * A start strategy that triggers a user turn start based on Voice Activity Detection.
+     */
+    class VADStart {
+      /**
+       * Reported as **strategy** on [Agentic.VoiceDSPEvents.TurnStarted].
+       */
+      readonly type: 'vad';
+      /**
+       * Optional. If **true**, the user can interrupt the bot when the turn starts. The default value is **true**.
+       */
+      enableInterruptions?: boolean;
+    }
+
+    /**
+     * Creates a [Agentic.VoiceDSPStrategies.VADStart] strategy.
+     */
+    function createVADStart(parameters?: VADStartParameters): VADStart;
+
+    /**
+     * Optional parameters for [Agentic.VoiceDSPStrategies.createTranscriptionStart].
+     */
+    interface TranscriptionStartParameters {
+      /**
+       * Optional. Whether to trigger on interim (partial) transcription frames for earlier detection. The default value is **true**.
+       */
+      useInterim?: boolean;
+      /**
+       * Optional. If **true**, the user can interrupt the bot when the turn starts. The default value is **true**.
+       */
+      enableInterruptions?: boolean;
+    }
+
+    /**
+     * A start strategy that triggers a user turn start when a transcription is received.
+     */
+    class TranscriptionStart {
+      /**
+       * Reported as **strategy** on [Agentic.VoiceDSPEvents.TurnStarted].
+       */
+      readonly type: 'transcription';
+      /**
+       * Optional. Whether to trigger on interim (partial) transcription frames for earlier detection. The default value is **true**.
+       */
+      useInterim?: boolean;
+      /**
+       * Optional. If **true**, the user can interrupt the bot when the turn starts. The default value is **true**.
+       */
+      enableInterruptions?: boolean;
+    }
+
+    /**
+     * Creates a [Agentic.VoiceDSPStrategies.TranscriptionStart] strategy.
+     */
+    function createTranscriptionStart(parameters?: TranscriptionStartParameters): TranscriptionStart;
+
+    /**
+     * Parameters for [Agentic.VoiceDSPStrategies.createMinWordsStart].
+     */
+    interface MinWordsStartParameters {
+      /**
+       * Minimum number of spoken words required to trigger the start of a user turn.
+       */
+      minWords: number;
+      /**
+       * Optional. Whether to trigger on interim (partial) transcription frames for earlier detection. The default value is **true**.
+       */
+      useInterim?: boolean;
+      /**
+       * Optional. If **true**, the user can interrupt the bot when the turn starts. The default value is **true**.
+       */
+      enableInterruptions?: boolean;
+    }
+
+    /**
+     * A start strategy that requires the user to speak a minimum number of words before triggering a turn start.
+     */
+    class MinWordsStart {
+      /**
+       * Reported as **strategy** on [Agentic.VoiceDSPEvents.TurnStarted].
+       */
+      readonly type: 'min_words';
+      /**
+       * Minimum number of spoken words required to trigger the start of a user turn.
+       */
+      minWords: number;
+      /**
+       * Optional. Whether to trigger on interim (partial) transcription frames for earlier detection. The default value is **true**.
+       */
+      useInterim?: boolean;
+      /**
+       * Optional. If **true**, the user can interrupt the bot when the turn starts. The default value is **true**.
+       */
+      enableInterruptions?: boolean;
+    }
+
+    /**
+     * Creates a [Agentic.VoiceDSPStrategies.MinWordsStart] strategy.
+     */
+    function createMinWordsStart(parameters: MinWordsStartParameters): MinWordsStart;
+
+    /**
+     * A stop strategy configuration for the [Agentic.VoiceDSP]. Can be passed via [Agentic.VoiceDSPParameters.stopStrategies] to [Agentic.createVoiceDSP].
+     */
+    type Stop = TurnDetectorStop | SpeechTimeoutStop;
+
+    /**
+     * A stop strategy that uses the AI-powered turn detection model to determine if the user is done speaking.
+     */
+    class TurnDetectorStop {
+      /**
+       * Reported as **strategy** on [Agentic.VoiceDSPEvents.TurnInferenceTriggered] and [Agentic.VoiceDSPEvents.TurnStopped].
+       */
+      readonly type: 'turn_detector';
+    }
+
+    /**
+     * Creates a [Agentic.VoiceDSPStrategies.TurnDetectorStop] strategy.
+     */
+    function createTurnDetectorStop(): TurnDetectorStop;
+
+    /**
+     * Optional parameters for [Agentic.VoiceDSPStrategies.createSpeechTimeout].
+     */
+    interface SpeechTimeoutStopParameters {
+      /**
+       * Optional. Time to wait (in seconds) after VAD detects silence before finalizing the user turn. The default value is **0.6**.
+       */
+      speechTimeout?: number;
+    }
+
+    /**
+     * A stop strategy that uses a configurable timeout to determine if the user is done speaking.
+     */
+    class SpeechTimeoutStop {
+      /**
+       * Reported as **strategy** on [Agentic.VoiceDSPEvents.TurnInferenceTriggered] and [Agentic.VoiceDSPEvents.TurnStopped].
+       */
+      readonly type: 'speech_timeout';
+      /**
+       * Optional. Time to wait (in seconds) after VAD detects silence before finalizing the user turn. The default value is **0.6**.
+       */
+      speechTimeout?: number;
+    }
+
+    /**
+     * Creates a [Agentic.VoiceDSPStrategies.SpeechTimeoutStop] strategy.
+     */
+    function createSpeechTimeout(parameters?: SpeechTimeoutStopParameters): SpeechTimeoutStop;
+  }
+}
+
+declare namespace Agentic {
+  /**
+   * Agentic voice DSP is a composite connector working with underlying [Silero.VAD] and [Pipecat.TurnDetector].
+   */
+  class VoiceDSP {
+    /**
+     * Returns the VoiceDSP id.
+     */
+    id(): string;
+
+    /**
+     * Returns the VoiceDSP WebSocket id.
+     */
+    webSocketId(): string;
+
+    /**
+     * Reset the VoiceDSP context (sends a **Reset** message to the connector).
+     */
+    reset(): void;
+
+    /**
+     * Signals that the assistant has started speaking. Marks the assistant as speaking for [Agentic.VoiceDSPEvents.TurnStarted] **interrupted** and cancels the [Agentic.VoiceDSPParameters.userTurnIdleTimeout] idle timer (mirrors Pipecat `BotStartedSpeakingFrame`).
+     */
+    signalAssistantTurnStarted(): void;
+
+    /**
+     * Signals that the assistant has finished speaking. Clears the assistant-speaking state used for [Agentic.VoiceDSPEvents.TurnStarted] **interrupted** and starts the [Agentic.VoiceDSPParameters.userTurnIdleTimeout] idle timer when no user turn is in progress (mirrors Pipecat `BotStoppedSpeakingFrame`).
+     */
+    signalAssistantTurnEnded(): void;
+
+    /**
+     * Stops the VoiceDSP (sends **Stop** to the connector, then closes the WebSocket).
+     */
+    stop(): void;
+
+    /**
+     * Closes the VoiceDSP WebSocket connection.
+     */
+    close(): void;
+
+    /**
+     * Adds a handler for [Agentic.VoiceDSPEvents].
+     * Use only functions as handlers; anything except a function leads to the error and scenario
+     * termination when a handler is called.
+     * @param event Event class (for example [Agentic.VoiceDSPEvents.TurnStopped])
+     * @param callback Handler function. A single parameter is passed — object with event information
+     */
+    addEventListener<T extends keyof Agentic._VoiceDSPEvents>(
+      event: Agentic.VoiceDSPEvents | T,
+      callback: (event: Agentic._VoiceDSPEvents[T]) => any
+    ): void;
+
+    /**
+     * Removes a handler for the specified event.
+     * @param event Event class
+     * @param callback Optional. Handler function. If not specified, all handler functions are removed
+     */
+    removeEventListener<T extends keyof Agentic._VoiceDSPEvents>(
+      event: Agentic.VoiceDSPEvents | T,
+      callback?: (event: Agentic._VoiceDSPEvents[T]) => any
+    ): void;
+  }
 }
 
 /**
@@ -1122,10 +1618,6 @@ declare namespace AMD {
      * Optional. Detection timeout in milliseconds. Note that the timeout is only triggered after the [CallEvents.Connected] event. The default value is **6500**. Must not be less than **0** or greater than **20000**.
      */
     timeout?: number;
-    /**
-     * Optional. Detection threshold in the range **0.0** - **1.0**.
-     */
-    thresholds?: AMD.Thresholds;
   }
 }
 
@@ -2320,6 +2812,16 @@ declare class ASR {
 }
 
 /**
+ * @hidden
+ * List of available values for the [CallRecordParameters.audioQuality] and [RecorderParameters.audioQuality] parameters.
+ */
+declare enum AudioQuality {
+  DEFAULT = 'DEFAULT',
+  HD = 'HD',
+  MEDIUM = 'MEDIUM',
+}
+
+/**
  * @private
  */
 declare interface BaseCallParameters {
@@ -3327,6 +3829,11 @@ declare interface CallRecordParameters extends BaseRecorderParameters {
    * Optional. Transcription format. Could be specified as "json". In that case the transcription result is saved in JSON format. The parameter is not available for the [Recorder module](/docs/references/voxengine/modules#recorder).
    */
   format?: string;
+  /**
+   * @hidden
+   * Optional. Recording audio quality preset. Default value is "DEFAULT".
+   */
+  audioQuality?: AudioQuality;
 }
 
 /**
@@ -3496,7 +4003,7 @@ declare interface CallWhatsappUserParameters {
    */
   headers?: Object;
   /**
-   * Optional. Wheter to disable DTX (Discontinuous Transmission) for the audio codec.
+   * Optional. Whether to disable DTX (Discontinuous Transmission) for the audio codec.
    */
   disableDtxForAudio?: boolean;
 }
@@ -5151,6 +5658,15 @@ declare namespace Crypto {
 
 declare namespace Deepgram {
   /**
+   * Creates a new [Deepgram.RealtimeTTSPlayer] instance with the specified text (TTS is used to play the text). You can attach media streams later via the [Deepgram.RealtimeTTSPlayer.sendMediaTo] or [VoxEngine.sendMediaBetween] methods.
+   * @param text Text to synthesize
+   * @param parameters Optional. Realtime TTS player parameters
+   **/
+  function createRealtimeTTSPlayer(text: string, parameters?: RealtimeTTSPlayerParameters): RealtimeTTSPlayer;
+}
+
+declare namespace Deepgram {
+  /**
    * Creates a [Deepgram.VoiceAgentClient] instance.
    * @param parameters The [Deepgram.VoiceAgentClient] parameters
    */
@@ -5207,6 +5723,54 @@ declare namespace Deepgram {
   }
 }
 
+
+declare namespace Deepgram {
+  /**
+   * [Deepgram.RealtimeTTSPlayer] parameters. Can be passed as arguments to the [Deepgram.createRealtimeTTSPlayer] method.
+   */
+  interface RealtimeTTSPlayerParameters extends _WebSocketBasedClientParameters {
+    /**
+     * Object to provide parameters directly to the Deepgram provider Speak WebSocket connection. Find more information in the [documentation](https://developers.deepgram.com/reference/text-to-speech/speak-streaming).
+     *
+     * Supported fields:
+     * - **model** — required. One of the available Deepgram TTS models (model + voice + language). See the [TTS models list](https://developers.deepgram.com/docs/tts-models).
+     * - **language** — optional. Language code when it is not already encoded in **model**.
+     * - **speed** — optional. Speech speed from 0.7 to 1.5. Default is 1. Not supported for all languages.
+     */
+    generationRequestParameters?: Object;
+    /**
+     * Optional. Deepgram API key. Use your Deepgram API key if you have your own Deepgram account.
+     */
+    apiKey?: string;
+  }
+}
+
+declare namespace Deepgram {
+
+  class RealtimeTTSPlayer extends BasePlayer {
+    /**
+     * Sends a text message to the Deepgram provider Speak WebSocket connection.
+     *
+     * Use this to append text for continuous speech generation. Find more information in the [documentation](https://developers.deepgram.com/docs/tts-websocket-streaming).
+     * @param parameters Object provides the parameters directly to the Deepgram provider Speak message. Find more information in the [documentation](https://developers.deepgram.com/reference/text-to-speech/speak-streaming#send.SpeakV1Text)
+     */
+    sendText(parameters: Object): void;
+
+    /**
+     * Forces the Deepgram provider to process all queued text and return the final audio immediately.
+     *
+     * Sends `{ type: "Flush" }` to the provider. Required when the text stream is finished but the WebSocket connection should remain open.
+     * Find more information in the [documentation](https://developers.deepgram.com/reference/text-to-speech/speak-streaming#send.SpeakV1Flush)
+     */
+    flush(): void;
+
+    /**
+     * Clears a [Deepgram.RealtimeTTSPlayer] buffer and resets the provider text/audio queue.
+     * Find more information in the [documentation](https://developers.deepgram.com/reference/text-to-speech/speak-streaming#send.SpeakV1Clear)
+     */
+    clearBuffer(): void;
+  }
+}
 
 declare namespace Deepgram {
   /**
@@ -5406,6 +5970,12 @@ declare namespace Deepgram {
     AgentAudioDone = 'Deepgram.VoiceAgent.AgentAudioDone',
 
     /**
+     * Provides a detailed STT, LLM, and TTS latency breakdown for each turn. [https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1AgentAudioDone#receive.AgentV1LatencyReport](https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1AgentAudioDone#receive.AgentV1LatencyReport)
+     * @typedef _VoiceAgentEvent
+     */
+    LatencyReport = 'Deepgram.VoiceAgent.LatencyReport',
+
+    /**
      * Receive errors from the server if an issue has occurred. [https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1Error](https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1Error)
      * @typedef _VoiceAgentEvent
      */
@@ -5452,6 +6022,7 @@ declare namespace Deepgram {
     [VoiceAgentEvents.PromptUpdated]: _VoiceAgentEvent;
     [VoiceAgentEvents.SpeakUpdated]: _VoiceAgentEvent;
     [VoiceAgentEvents.AgentAudioDone]: _VoiceAgentEvent;
+    [VoiceAgentEvents.LatencyReport]: _VoiceAgentEvent;
     [VoiceAgentEvents.Error]: _VoiceAgentEvent;
     [VoiceAgentEvents.Warning]: _VoiceAgentEvent;
     [VoiceAgentEvents.History]: _VoiceAgentEvent;
@@ -6107,6 +6678,14 @@ declare namespace ElevenLabs {
      * Optional. The base URL for the ElevenLabs Agents.
      */
     baseUrl?: string;
+    /**
+     * Optional. The environment to use for the conversation. When specified, environment variables and tool configurations resolve using values for this environment. See [Environment variables](https://elevenlabs.io/docs/eleven-agents/integrate/environment-variables#websocket).
+     */
+    environment?: string;
+    /**
+     * Optional. The ID of the branch to use.
+     */
+    branchId?: string;
   }
 }
   
@@ -6547,7 +7126,7 @@ declare class Endpoint {
 
 declare namespace Gemini {
   /**
-   * [GenAI backend](https://pkg.go.dev/google.golang.org/genai@v1.61.0#Backend) to use for the [Gemini.LiveAPIClient]. Can be passed via the [Gemini.LiveAPIClientParameters.backend] parameter.
+   * [GenAI backend](https://pkg.go.dev/google.golang.org/genai@v1.71.0#Backend) to use for the [Gemini.LiveAPIClient]. Can be passed via the [Gemini.LiveAPIClientParameters.backend] parameter.
    */
   enum Backend {
     /**
@@ -6657,11 +7236,11 @@ declare namespace Gemini {
      */
     credentials?: string;
     /**
-     * Optional. [HTTP options](https://pkg.go.dev/google.golang.org/genai@v1.61.0#HTTPOptions) to override.<br>NOTE: the 'baseUrl' parameter will be ignored.
+     * Optional. [HTTP options](https://pkg.go.dev/google.golang.org/genai@v1.71.0#HTTPOptions) to override.<br>NOTE: the 'baseUrl' parameter will be ignored.
      */
     httpOptions?: Object;
     /**
-     * Optional. [Session config](https://pkg.go.dev/google.golang.org/genai@v1.61.0#LiveConnectConfig) for the API connection.
+     * Optional. [Session config](https://pkg.go.dev/google.golang.org/genai@v1.71.0#LiveConnectConfig) for the API connection.
      */
     connectConfig?: Object;
   }
@@ -6669,7 +7248,7 @@ declare namespace Gemini {
 
 declare namespace Gemini {
   /**
-   * Note that the [Gemini.LiveAPIClient] using the [Google Gen AI Go SDK v1.61.0](https://pkg.go.dev/google.golang.org/genai@v1.61.0).
+   * Note that the [Gemini.LiveAPIClient] using the [Google Gen AI Go SDK v1.71.0](https://pkg.go.dev/google.golang.org/genai@v1.71.0).
    */
   class LiveAPIClient {
     /**
@@ -6728,21 +7307,21 @@ declare namespace Gemini {
 
     /**
      * Transmits a LiveClientContent over the established connection. 
-     * [https://pkg.go.dev/google.golang.org/genai@v1.61.0#Session.SendClientContent](https://pkg.go.dev/google.golang.org/genai@v1.61.0#Session.SendClientContent)
+     * [https://pkg.go.dev/google.golang.org/genai@v1.71.0#Session.SendClientContent](https://pkg.go.dev/google.golang.org/genai@v1.71.0#Session.SendClientContent)
      * @param input
      */
     sendClientContent(input: Object): void
 
     /**
      * Transmits a LiveClientRealtimeInput over the established connection. 
-     * [https://pkg.go.dev/google.golang.org/genai@v1.61.0#Session.SendRealtimeInput](https://pkg.go.dev/google.golang.org/genai@v1.61.0#Session.SendRealtimeInput)
+     * [https://pkg.go.dev/google.golang.org/genai@v1.71.0#Session.SendRealtimeInput](https://pkg.go.dev/google.golang.org/genai@v1.71.0#Session.SendRealtimeInput)
      * @param input
      */
     sendRealtimeInput(input: Object): void
 
     /**
      * Transmits a LiveClientToolResponse over the established connection. 
-     * [https://pkg.go.dev/google.golang.org/genai@v1.61.0#Session.SendToolResponse](https://pkg.go.dev/google.golang.org/genai@v1.61.0#Session.SendToolResponse)
+     * [https://pkg.go.dev/google.golang.org/genai@v1.71.0#Session.SendToolResponse](https://pkg.go.dev/google.golang.org/genai@v1.71.0#Session.SendToolResponse)
      * @param input
      */
     sendToolResponse(input: Object): void
@@ -6761,19 +7340,19 @@ declare namespace Gemini {
     Unknown = 'Gemini.LiveAPI.Unknown',
 
     /**
-     * Content generated by the model in response to client messages. [https://pkg.go.dev/google.golang.org/genai@v1.61.0#LiveServerContent](https://pkg.go.dev/google.golang.org/genai@v1.61.0#LiveServerContent)
+     * Content generated by the model in response to client messages. [https://pkg.go.dev/google.golang.org/genai@v1.71.0#LiveServerContent](https://pkg.go.dev/google.golang.org/genai@v1.71.0#LiveServerContent)
      * @typedef _LiveAPIEvent
      */
     ServerContent = 'Gemini.LiveAPI.ServerContent',
 
     /**
-     * Request for the client to execute the `function_calls` and return the responses with the matching `id`s. [https://pkg.go.dev/google.golang.org/genai@v1.61.0#LiveServerToolCall](https://pkg.go.dev/google.golang.org/genai@v1.61.0#LiveServerToolCall)
+     * Request for the client to execute the `function_calls` and return the responses with the matching `id`s. [https://pkg.go.dev/google.golang.org/genai@v1.71.0#LiveServerToolCall](https://pkg.go.dev/google.golang.org/genai@v1.71.0#LiveServerToolCall)
      * @typedef _LiveAPIEvent
      */
     ToolCall = 'Gemini.LiveAPI.ToolCall',
 
     /**
-     * Notification for the client that a previously issued `ToolCallMessage` with the specified `id`s should have been not executed and should be cancelled. [https://pkg.go.dev/google.golang.org/genai@v1.61.0#LiveServerToolCallCancellation](https://pkg.go.dev/google.golang.org/genai@v1.61.0#LiveServerToolCallCancellation)
+     * Notification for the client that a previously issued `ToolCallMessage` with the specified `id`s should have been not executed and should be cancelled. [https://pkg.go.dev/google.golang.org/genai@v1.71.0#LiveServerToolCallCancellation](https://pkg.go.dev/google.golang.org/genai@v1.71.0#LiveServerToolCallCancellation)
      * @typedef _LiveAPIEvent
      */
     ToolCallCancellation = 'Gemini.LiveAPI.ToolCallCancellation',
@@ -6871,342 +7450,6 @@ declare namespace Google {
     clearBuffer(): void;
   }
 }
-
-declare namespace Grok {
-    /**
-     * Creates a new [Grok.VoiceAgentAPIClient] instance.
-     * @param parameters The [Grok.VoiceAgentAPIClient] parameters
-     */
-    function createVoiceAgentAPIClient(parameters: VoiceAgentAPIClientParameters): Promise<Grok.VoiceAgentAPIClient>
-}
-declare namespace Grok {
-  /**
-   * @event
-   */
-  enum Events {
-    /**
-     * Triggered when the audio stream sent by a third party through an Grok WebSocket is started playing.
-     * @typedef _WebSocketMediaStartedGrokEvent
-     */
-    WebSocketMediaStarted = 'Grok.Events.WebSocketMediaStarted',
-    /**
-     * Triggers after the end of the audio stream sent by a third party through an Grok WebSocket (**1 second of silence**).
-     * @typedef _WebSocketMediaEndedGrokEvent
-     */
-    WebSocketMediaEnded = 'Grok.Events.WebSocketMediaEnded',
-  }
-
-  /**
-   * @private
-   */
-  interface _Events {
-    [Grok.Events.WebSocketMediaStarted]: _WebSocketMediaStartedGrokEvent;
-    [Grok.Events.WebSocketMediaEnded]: _WebSocketMediaEndedGrokEvent;
-  }
-
-  /**
-   * @private
-   */
-  interface _Event {
-    /**
-     * The [Grok.VoiceAgentAPIClient] instance.
-     */
-    client: VoiceAgentAPIClient;
-  }
-
-  /**
-   * @private
-   */
-  interface _WebSocketMediaStartedGrokEvent extends _Event, _WebSocketMediaStartedWithoutWebSocketEvent {
-  }
-
-  /**
-   * @private
-   */
-  interface _WebSocketMediaEndedGrokEvent extends _Event, _WebSocketMediaEndedWithoutWebSocketEvent {
-  }
-}
-declare namespace Grok {
-}
-declare namespace Grok {
-  /**
-   * @private
-   */
-  interface _VoiceAgentAPIClientEvents extends _Events, _VoiceAgentAPIEvents {
-  }
-}
-declare namespace Grok {
-  /**
-   * [Grok.VoiceAgentAPIClient] parameters. Can be passed as arguments to the [Grok.createVoiceAgentAPIClient] method.
-   */
-  interface VoiceAgentAPIClientParameters extends _VoiceAIClientParameters {
-    /**
-     * The xAI API key for the Grok VoiceAgent API.
-     */
-    xAIApiKey: string;
-    /**
-      * The model to use for the Grok VoiceAgent API.[https://docs.x.ai/developers/model-capabilities/audio/voice-agent#model-selection](https://docs.x.ai/developers/model-capabilities/audio/voice-agent#model-selection)
-     * Note: The default value is **grok-voice-fast-1.0**.
-     */
-    model?: string;
-  }
-}
-declare namespace Grok {
-  class VoiceAgentAPIClient {
-    /**
-     * Returns the VoiceAgentAPIClient id.
-     */
-    id(): string;
-
-    /**
-     * Returns the Grok WebSocket id.
-     */
-    webSocketId(): string;
-
-    /**
-     * Closes the Grok connection (over WebSocket) or connection attempt.
-     */
-    close(): void;
-
-    /**
-     * Starts sending media from the Grok (via WebSocket) to the media unit. Grok works in real time.
-     * @param mediaUnit Media unit that receives media
-     * @param parameters Optional interaction parameters
-     */
-    sendMediaTo(mediaUnit: VoxMediaUnit, parameters?: SendMediaParameters): void;
-
-    /**
-     * Stops sending media from the Grok (via WebSocket) to the media unit.
-     * @param mediaUnit Media unit that stops receiving media
-     */
-    stopMediaTo(mediaUnit: VoxMediaUnit): void;
-
-    /**
-     * Clears the Grok WebSocket media buffer.
-     * @param parameters Optional. Media buffer clearing parameters
-     */
-    clearMediaBuffer(parameters?: ClearMediaBufferParameters): void;
-
-    /**
-     * Adds a handler for the specified [Grok.VoiceAgentAPIEvents] or [Grok.Events] event. Use only functions as handlers; anything except a function leads to the error and scenario termination when a handler is called.
-     * @param event Event class (i.e., [Grok.VoiceAgentAPIEvents.ConversationCreated])
-     * @param callback Handler function. A single parameter is passed - object with event information
-     */
-    addEventListener<T extends keyof Grok._VoiceAgentAPIClientEvents>(
-      event: Grok.Events | Grok.VoiceAgentAPIEvents | T,
-      callback: (event: Grok._VoiceAgentAPIClientEvents[T]) => any,
-    ): void;
-
-    /**
-     * Removes a handler for the specified [Grok.VoiceAgentAPIEvents] or [Grok.Events] event.
-     * @param event Event class (i.e., [Grok.VoiceAgentAPIEvents.ConversationCreated])
-     * @param callback Optional. Handler function. If not specified, all handler functions are removed
-     */
-    removeEventListener<T extends keyof Grok._VoiceAgentAPIClientEvents>(
-      event: Grok.Events | Grok.VoiceAgentAPIEvents | T,
-      callback?: (event: Grok._VoiceAgentAPIClientEvents[T]) => any,
-    ): void;
-
-    /**
-     * Send this event to update the session’s configuration. [https://docs.x.ai/docs/guides/voice/agent#client-events-1](https://docs.x.ai/docs/guides/voice/agent#client-events-1)
-     * @param parameters
-     */
-    sessionUpdate(parameters: Object): void
-
-    /**
-     * Clear input audio buffer. [https://docs.x.ai/docs/guides/voice/agent#client-1](https://docs.x.ai/docs/guides/voice/agent#client-1)
-     * @param parameters
-     */
-    inputAudioBufferClear(parameters: Object): void
-
-    /**
-     * Create a new user message. [https://docs.x.ai/docs/guides/voice/agent#client](https://docs.x.ai/docs/guides/voice/agent#client)
-     * @param parameters
-     */
-    conversationItemCreate(parameters: Object): void
-
-    /**
-     * Request the server to create a new assistant response when using client side vad. (This is handled automatically when using server side vad.) [https://docs.x.ai/docs/guides/voice/agent#client-2](https://docs.x.ai/docs/guides/voice/agent#client-2)
-     * @param parameters
-     */
-    responseCreate(parameters: Object): void
-  }
-}
-  
-declare namespace Grok {
-  /**
-   * @event
-   */
-  enum VoiceAgentAPIEvents {
-    /**
-     * The unknown event.
-     * @typedef _VoiceAgentAPIEvent
-     */
-    Unknown = 'Grok.VoiceAgentAPI.Unknown',
-
-    /**
-     * The first message at connection. Notifies the client that a conversation session has been created. [https://docs.x.ai/docs/guides/voice/agent#server-events-2](https://docs.x.ai/docs/guides/voice/agent#server-events-2)
-     * @typedef _VoiceAgentAPIEvent
-     */
-    ConversationCreated = 'Grok.VoiceAgentAPI.ConversationCreated',
-
-    /**
-     * Acknowledge the client's "session.update" message that the session has been updated. [https://docs.x.ai/docs/guides/voice/agent#server-events-1](https://docs.x.ai/docs/guides/voice/agent#server-events-1)
-     * @typedef _VoiceAgentAPIEvent
-     */
-    SessionUpdated = 'Grok.VoiceAgentAPI.SessionUpdated',
-
-    /**
-     * Responding to the client that a new user message has been added to conversation history, or if an assistance response has been added to conversation history. [https://docs.x.ai/docs/guides/voice/agent#server](https://docs.x.ai/docs/guides/voice/agent#server)
-     * @typedef _VoiceAgentAPIEvent
-     */
-    ConversationItemAdded = 'Grok.VoiceAgentAPI.ConversationItemAdded',
-
-    /**
-     * Notify the client the audio transcription for input has been completed. [https://docs.x.ai/docs/guides/voice/agent#server](https://docs.x.ai/docs/guides/voice/agent#server)
-     * @typedef _VoiceAgentAPIEvent
-     */
-    ConversationItemInputAudioTranscriptionCompleted = 'Grok.VoiceAgentAPI.ConversationItemInputAudioTranscriptionCompleted',
-
-    /**
-     * Input audio buffer has been committed. [https://docs.x.ai/docs/guides/voice/agent#server-1](https://docs.x.ai/docs/guides/voice/agent#server-1)
-     * @typedef _VoiceAgentAPIEvent
-     */
-    InputAudioBufferCommitted = 'Grok.VoiceAgentAPI.InputAudioBufferCommitted',
-
-    /**
-     * Input audio buffer has been cleared. [https://docs.x.ai/docs/guides/voice/agent#server-1](https://docs.x.ai/docs/guides/voice/agent#server-1)
-     * @typedef _VoiceAgentAPIEvent
-     */
-    InputAudioBufferCleared = 'Grok.VoiceAgentAPI.InputAudioBufferCleared',
-
-    /**
-     * Notify the client the server's VAD has detected the start of a speech. [https://docs.x.ai/docs/guides/voice/agent#server-1](https://docs.x.ai/docs/guides/voice/agent#server-1)
-     * @typedef _VoiceAgentAPIEvent
-     */
-    InputAudioBufferSpeechStarted = 'Grok.VoiceAgentAPI.InputAudioBufferSpeechStarted',
-
-    /**
-     * Notify the client the server's VAD has detected the end of a speech. [https://docs.x.ai/docs/guides/voice/agent#server-1](https://docs.x.ai/docs/guides/voice/agent#server-1)
-     * @typedef _VoiceAgentAPIEvent
-     */
-    InputAudioBufferSpeechStopped = 'Grok.VoiceAgentAPI.InputAudioBufferSpeechStopped',
-
-    /**
-     * A new assistant response turn is in progress. Audio delta created from this assistant turn will have the same response id. [https://docs.x.ai/docs/guides/voice/agent#server-2](https://docs.x.ai/docs/guides/voice/agent#server-2)
-     * @typedef _VoiceAgentAPIEvent
-     */
-    ResponseCreated = 'Grok.VoiceAgentAPI.ResponseCreated',
-
-    /**
-     * The assistant's response is completed. [https://docs.x.ai/docs/guides/voice/agent#server-2](https://docs.x.ai/docs/guides/voice/agent#server-2)
-     * @typedef _VoiceAgentAPIEvent
-     */
-    ResponseDone = 'Grok.VoiceAgentAPI.ResponseDone',
-
-    /**
-     * A new assistant response is added to message history. [https://docs.x.ai/docs/guides/voice/agent#server-2](https://docs.x.ai/docs/guides/voice/agent#server-2)
-     * @typedef _VoiceAgentAPIEvent
-     */
-    ResponseOutputItemAdded = 'Grok.VoiceAgentAPI.ResponseOutputItemAdded',
-
-    /**
-     * A new assistant response is done. 
-     * @typedef _VoiceAgentAPIEvent
-     */
-    ResponseOutputItemDone = 'Grok.VoiceAgentAPI.ResponseOutputItemDone',
-
-    /**
-     * Audio transcript delta of the assistant response. [https://docs.x.ai/docs/guides/voice/agent#server-3](https://docs.x.ai/docs/guides/voice/agent#server-3)
-     * @typedef _VoiceAgentAPIEvent
-     */
-    ResponseOutputAudioTranscriptDelta = 'Grok.VoiceAgentAPI.ResponseOutputAudioTranscriptDelta',
-
-    /**
-     * The audio transcript delta of the assistant response has finished generating. [https://docs.x.ai/docs/guides/voice/agent#server-3](https://docs.x.ai/docs/guides/voice/agent#server-3)
-     * @typedef _VoiceAgentAPIEvent
-     */
-    ResponseOutputAudioTranscriptDone = 'Grok.VoiceAgentAPI.ResponseOutputAudioTranscriptDone',
-
-    /**
-     * Notifies client that the audio for this turn has finished generating. [https://docs.x.ai/docs/guides/voice/agent#server-3](https://docs.x.ai/docs/guides/voice/agent#server-3)
-     * @typedef _VoiceAgentAPIEvent
-     */
-    ResponseOutputAudioDone = 'Grok.VoiceAgentAPI.ResponseOutputAudioDone',
-
-    /**
-     * Notifies client that the content part added. 
-     * @typedef _VoiceAgentAPIEvent
-     */
-    ResponseContentPartAdded = 'Grok.VoiceAgentAPI.ResponseContentPartAdded',
-
-    /**
-     * Notifies client that the content part done. 
-     * @typedef _VoiceAgentAPIEvent
-     */
-    ResponseContentPartDone = 'Grok.VoiceAgentAPI.ResponseContentPartDone',
-
-    /**
-     * Function call triggered with complete arguments. [https://docs.x.ai/docs/guides/voice/agent#handling-function-call-responses](https://docs.x.ai/docs/guides/voice/agent#handling-function-call-responses)
-     * @typedef _VoiceAgentAPIEvent
-     */
-    ResponseFunctionCallArgumentsDone = 'Grok.VoiceAgentAPI.ResponseFunctionCallArgumentsDone',
-
-    /**
-     * The WebSocket error response event.
-     * @typedef _VoiceAgentAPIEvent
-     */
-    WebSocketError = 'Grok.VoiceAgentAPI.WebSocketError',
-
-    /**
-    * Contains information about connector.
-    * @typedef _VoiceAgentAPIEvent
-    */
-    ConnectorInformation = 'Grok.VoiceAgentAPI.ConnectorInformation',
-  }
-
-  /**
-   * @private
-   */
-  interface _VoiceAgentAPIEvents {
-    [VoiceAgentAPIEvents.Unknown]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.ConversationCreated]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.SessionUpdated]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.ConversationItemAdded]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.ConversationItemInputAudioTranscriptionCompleted]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.InputAudioBufferCommitted]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.InputAudioBufferCleared]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.InputAudioBufferSpeechStarted]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.InputAudioBufferSpeechStopped]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.ResponseCreated]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.ResponseDone]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.ResponseOutputItemAdded]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.ResponseOutputItemDone]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.ResponseOutputAudioTranscriptDelta]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.ResponseOutputAudioTranscriptDone]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.ResponseOutputAudioDone]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.ResponseContentPartAdded]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.ResponseContentPartDone]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.ResponseFunctionCallArgumentsDone]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.WebSocketError]: _VoiceAgentAPIEvent;
-    [VoiceAgentAPIEvents.ConnectorInformation]: _VoiceAgentAPIEvent;
-  }
-
-  /**
-   * @private
-   */
-  interface _VoiceAgentAPIEvent {
-    /**
-     * The [Grok.VoiceAgentAPIClient] instance.
-     */
-    client: VoiceAgentAPIClient;
-    /**
-    * The 'payload' parameter contains the event's data.
-     */
-    data?: { customEvent?: string; payload?: Object; }
-  }
-}
-
 
 declare namespace Inworld {
   /**
@@ -7780,29 +8023,29 @@ declare interface IVRSettings {
    */
   type: string;
   /**
-   * For **inputunknown** states - whether input is complete (input is passed as string).
+   * Optional. For **inputunknown** states - whether input is complete (input is passed as string).
    */
   inputValidator?: (input: string) => boolean;
   /**
-   * For **inputfixed** - length of desired input.
+   * Optional. For **inputfixed** - length of desired input.
    */
   inputLength?: number;
   /**
-   * Timeout in milliseconds for user input. The default value is **5000**.
+   * Optional. Timeout in milliseconds for user input. The default value is **5000**.
    */
   timeout?: number;
   /**
-   * For **select** type, map of IVR states to go to according to user input. If there is no next state for specific input, **onInputComplete** is invoked.
+   * Optional. For **select** type, map of IVR states to go to according to user input. If there is no next state for specific input, **onInputComplete** is invoked.
    */
-  nextStates: { [name: string]: IVRState };
+  nextStates?: { [name: string]: IVRState };
   /**
-   * When this digit is entered in **inputunknown** mode, input is considered to be complete.
+   * Optional. When this digit is entered in **inputunknown** mode, input is considered to be complete.
    */
-  terminateOn: string;
+  terminateOn?: string;
   /**
-   * Next state to go - for **noinput** state type.
+   * Optional. Next state to go - for **noinput** state type.
    */
-  nextState: IVRState | null;
+  nextState?: IVRState | null;
 }
 
 /**
@@ -8302,6 +8545,12 @@ declare enum Modules {
    */
   ACD = 'acd',
   /**
+   * Provides the functionality for creating voice agents that can analyze the call context and react accordingly.
+   * <br>
+   * This module is based on AI and NLP technologies, and allows you to create voice assistants that can solve business tasks in more productive way.
+   */
+  Agentic = 'agentic',
+  /**
    * Provides additional methods that use Artificial Intelligence. These methods allow solving business tasks in more productive way.
    * <br>
    * Add the following line to your scenario code to use the module:
@@ -8339,6 +8588,11 @@ declare enum Modules {
   Avatar = 'avatar',
   /**
    * Provides the [Cartesia](https://docs.cartesia.ai/get-started/overview) functionality.
+   * <br>
+   * Add the following line to your scenario code to use the module:
+   * ```
+   * require(Modules.Cartesia);
+   * ```
    */
   Cartesia = 'cartesia',
   /**
@@ -8352,26 +8606,65 @@ declare enum Modules {
   Conference = 'conference',
   /**
    * Provides the [Deepgram](https://developers.deepgram.com/home) functionality.
+   * <br>
+   * Add the following line to your scenario code to use the module:
+   * ```
+   * require(Modules.Deepgram);
+   * ```
    */
   Deepgram = 'deepgram',
   /**
+   * Provides the DeepFilterNet noise suppression functionality.
+   * <br>
+   * Add the following line to your scenario code to use the module:
+   * ```
+   * require(Modules.DeepFilterNet);
+   * ```
+   */
+  DeepFilterNet = 'deepfilternet',
+  /**
    * Provides the [ElevenLabs](https://elevenlabs.io) functionality.
+   * <br>
+   * Add the following line to your scenario code to use the module:
+   * ```
+   * require(Modules.ElevenLabs);
+   * ```
    */
   ElevenLabs = 'elevenlabs',
   /**
    * Provides the [Gemini](https://gemini.google.com) functionality.
+   * <br>
+   * Add the following line to your scenario code to use the module:
+   * ```
+   * require(Modules.Gemini);
+   * ```
    */
   Gemini = 'gemini',
   /**
    * Provides the [Google](https://docs.cloud.google.com/text-to-speech/docs) functionality.
+   * <br>
+   * Add the following line to your scenario code to use the module:
+   * ```
+   * require(Modules.Google);
+   * ```
    */
   Google = 'google',
   /**
-   * Provides the [Grok](https://docs.x.ai/docs/guides/voice/agent#grok-voice-agent-api) functionality.
+   * Provides the Hush noise suppression functionality.
+   * <br>
+   * Add the following line to your scenario code to use the module:
+   * ```
+   * require(Modules.Hush);
+   * ```
    */
-  Grok = 'grok',
+  Hush = 'hush',
   /**
    * Provides the [Inworld](https://docs.inworld.ai/docs/introduction) functionality.
+   * <br>
+   * Add the following line to your scenario code to use the module:
+   * ```
+   * require(Modules.Inworld);
+   * ```
    */
   Inworld = 'inworld',
   /**
@@ -8387,10 +8680,20 @@ declare enum Modules {
   IVR = 'ivr',
   /**
    * Provides the [MCP](https://modelcontextprotocol.io/docs/getting-started/intro) functionality.
+   * <br>
+   * Add the following line to your scenario code to use the module:
+   * ```
+   * require(Modules.MCP);
+   * ```
    */
   MCP = 'mcp',
   /**
    * Provides the OpenAI functionality.
+   * <br>
+   * Add the following line to your scenario code to use the module:
+   * ```
+   * require(Modules.OpenAI);
+   * ```
    */
   OpenAI = 'openai',
   /**
@@ -8449,6 +8752,11 @@ declare enum Modules {
   StreamingAgent = 'streamingagent',
   /**
    * Provides the [Ultravox](https://docs.ultravox.ai/introduction) functionality.
+   * <br>
+   * Add the following line to your scenario code to use the module:
+   * ```
+   * require(Modules.Ultravox);
+   * ```
    */
   Ultravox = 'ultravox',
   /**
@@ -8462,14 +8770,29 @@ declare enum Modules {
   VoximplantAPI = 'voximplantapi',
    /**
    * Provides the [VoxTTS](/docs/guides/speech/realtime-tts#voxtts) functionality.
+    * <br>
+    * Add the following line to your scenario code to use the module:
+    * ```
+    * require(Modules.VoxTTS);
+    * ```
    */
-   VoxTTS = 'voxtts',
+  VoxTTS = 'voxtts',
   /**
-   * Provides the [xAI](https://docs.x.ai/developers/model-capabilities/audio/text-to-speech) functionality.
+   * Provides the [xAI](https://docs.x.ai/developers/model-capabilities/audio/voice-agent#grok-voice-agent-api) Voice Agent API and [Realtime TTS](https://docs.x.ai/developers/model-capabilities/audio/text-to-speech) functionality.
+   * <br>
+   * Add the following line to your scenario code to use the module:
+   * ```
+   * require(Modules.XAI);
+   * ```
    */
   XAI = 'xai',
   /**
    * Provides the [Yandex](https://yandex.cloud/ru/docs/ai-studio/concepts/agents/realtime) functionality.
+   * <br>
+   * Add the following line to your scenario code to use the module:
+   * ```
+   * require(Modules.Yandex);
+   * ```
    */
   Yandex = 'yandex',
 }
@@ -9344,11 +9667,11 @@ declare namespace OpenAI {
      */
     apiKey: string;
     /**
-     * Optional. The model to use for OpenAI Realtime API processing. The default value is **gpt-realtime**.
+     * Optional. The model to use for OpenAI Realtime API processing. The default value is **gpt-realtime** for [OpenAI.RealtimeAPIClientType.REALTIME] and **gpt-realtime-translate** for [OpenAI.RealtimeAPIClientType.TRANSLATION].
      */
     model?: string;
     /**
-     * Optional. The type of the client. The default value is **OpenAI.RealtimeAPIClientType.REALTIME**.
+     * Optional. The type of the client. The default value is **OpenAI.RealtimeAPIClientType.REALTIME**. Use [OpenAI.RealtimeAPIClientType.TRANSLATION] for realtime translation sessions.
      */
     type?: OpenAI.RealtimeAPIClientType;
     /**
@@ -9370,6 +9693,10 @@ declare namespace OpenAI {
      * The client type for transcription tasks.
      */
     TRANSCRIPTION =  "transcription",
+    /**
+     * The client type for realtime translation sessions.
+     */
+    TRANSLATION =  "translation",
   }
 }
 
@@ -9482,6 +9809,12 @@ declare namespace OpenAI {
      * @param parameters
      */
     responseCancel(parameters: Object): void
+
+    /**
+     * Gracefully close a realtime translation session. The server flushes pending input audio and emits any remaining translated output before sending [OpenAI.RealtimeAPIEvents.SessionClosed]. Supported only for [OpenAI.RealtimeAPIClientType.TRANSLATION]. [https://developers.openai.com/api/reference/resources/realtime/translation-client-events#session.close](https://developers.openai.com/api/reference/resources/realtime/translation-client-events#session.close)
+     * @param parameters
+     */
+    sessionClose(parameters?: Object): void
   }
 }
   
@@ -9519,6 +9852,24 @@ declare namespace OpenAI {
      * @typedef _RealtimeAPIEvent
      */
     SessionUpdated = 'OpenAI.RealtimeAPI.SessionUpdated',
+
+    /**
+     * Returned when a realtime translation session is closed after [OpenAI.RealtimeAPIClient.sessionClose]. [https://developers.openai.com/api/reference/resources/realtime/translation-server-events#session.closed](https://developers.openai.com/api/reference/resources/realtime/translation-server-events#session.closed)
+     * @typedef _RealtimeAPIEvent
+     */
+    SessionClosed = 'OpenAI.RealtimeAPI.SessionClosed',
+
+    /**
+     * Returned when source-language transcript text is available in a realtime translation session. [https://developers.openai.com/api/reference/resources/realtime/translation-server-events#session.input_transcript.delta](https://developers.openai.com/api/reference/resources/realtime/translation-server-events#session.input_transcript.delta)
+     * @typedef _RealtimeAPIEvent
+     */
+    SessionInputTranscriptDelta = 'OpenAI.RealtimeAPI.SessionInputTranscriptDelta',
+
+    /**
+     * Returned when translated transcript text is available in a realtime translation session. [https://developers.openai.com/api/reference/resources/realtime/translation-server-events#session.output_transcript.delta](https://developers.openai.com/api/reference/resources/realtime/translation-server-events#session.output_transcript.delta)
+     * @typedef _RealtimeAPIEvent
+     */
+    SessionOutputTranscriptDelta = 'OpenAI.RealtimeAPI.SessionOutputTranscriptDelta',
 
     /**
      * Sent by the server when an Item is added to the default Conversation. [https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.added](https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.added)
@@ -9758,6 +10109,9 @@ declare namespace OpenAI {
     [RealtimeAPIEvents.Error]: _RealtimeAPIEvent;
     [RealtimeAPIEvents.SessionCreated]: _RealtimeAPIEvent;
     [RealtimeAPIEvents.SessionUpdated]: _RealtimeAPIEvent;
+    [RealtimeAPIEvents.SessionClosed]: _RealtimeAPIEvent;
+    [RealtimeAPIEvents.SessionInputTranscriptDelta]: _RealtimeAPIEvent;
+    [RealtimeAPIEvents.SessionOutputTranscriptDelta]: _RealtimeAPIEvent;
     [RealtimeAPIEvents.ConversationItemAdded]: _RealtimeAPIEvent;
     [RealtimeAPIEvents.ConversationItemDone]: _RealtimeAPIEvent;
     [RealtimeAPIEvents.ConversationItemInputAudioTranscriptionCompleted]: _RealtimeAPIEvent;
@@ -11195,6 +11549,11 @@ declare interface RecorderParameters extends BaseRecorderParameters{
    * Optional. Speech recognition provider profile. List of all supported provider profiles: [ASRProfileList].
    */
   provider?: ASRProfile;
+  /**
+   * @hidden
+   * Optional. Recording audio quality preset. Default value is "DEFAULT".
+   */
+  audioQuality?: AudioQuality;
 }
 
 /**
@@ -11320,7 +11679,7 @@ declare function require(module: Modules): void;
  * Custom parameters for [WebSocket] interaction. Can be passed as arguments to the [VoxMediaUnit] **sendMediaTo** method.
  */
 declare interface SendMediaParameters {
-  tag: string;
+  tag?: string;
   customParameters?: any;
   encoding?: WebSocketAudioEncoding;
 }
@@ -12999,9 +13358,11 @@ declare type VoxMediaUnit =
   | Yandex.RealtimeAPIClient
   | Cartesia.AgentsClient
   | Deepgram.VoiceAgentClient
-  | Grok.VoiceAgentAPIClient
+  | XAI.VoiceAgentAPIClient
   | Silero.VAD
-  | Pipecat.TurnDetector;
+  | Pipecat.TurnDetector
+  | DeepFilterNet.NoiseSuppression
+  | Hush.NoiseSuppression;
 
 declare namespace VoxEngine {
   /**
@@ -13401,6 +13762,14 @@ declare interface SequencePlayerParameters {
   segments: SequencePlayerSegment[];
 }
 
+/**
+ * Supported video codecs for [VoxEngine.setVideoCodec].
+ */
+declare enum VideoCodecs {
+  VP8 = 'VP8',
+  H264= 'H264',
+}
+
 declare namespace VoxEngine {
   /**
    * Stops sending media between mediaUnit1 and mediaUnit2.
@@ -13417,6 +13786,15 @@ declare namespace VoxEngine {
    * NOTE: if you are using this method inside a code block (e.g., an "if" block), it does not stop the execution of the current block. Use `return;` after using this method to exit the current code block.
    */
   function terminate(): void;
+}
+
+declare namespace VoxEngine {
+  /**
+   * Sets the default video codec for the application session.
+   * @param codec Video codec.
+   * @hidden
+   */
+  function setVideoCodec(codec: VideoCodecs): void;
 }
 
 declare namespace VoxEngine {}
@@ -13471,7 +13849,7 @@ declare namespace VoximplantAPI {
      */
     location?: string;
     /**
-     * The min balance value to notify by email or SMS
+     * The minimum balance value to notify by email or SMS
      */
     minBalanceToNotify?: number;
     /**
@@ -15398,7 +15776,7 @@ declare namespace VoximplantAPI {
      */
     withScenarios?: boolean;
     /**
-     * The max returning record count
+     * The maximum returning record count
      */
     count?: number;
     /**
@@ -15442,11 +15820,11 @@ declare namespace VoximplantAPI {
      */
     userName: string;
     /**
-     * The user display name. The length must be less than 256
+     * The user display name. The length should be less than 256
      */
     userDisplayName: string;
     /**
-     * The user password. Must be at least 8 characters long and contain at least one uppercase and lowercase letter, one number, and one special character
+     * The user password. Should be at least 8 characters long and contain at least one uppercase and lowercase letter, one number, and one special character
      */
     userPassword: string;
     /**
@@ -15529,11 +15907,11 @@ declare namespace VoximplantAPI {
      */
     newUserName?: string;
     /**
-     * The new user display name. The length must be less than 256
+     * The new user display name. The length should be less than 256
      */
     userDisplayName?: string;
     /**
-     * The new user password. Must be at least 8 characters long and contain at least one uppercase and lowercase letter, one number, and one special character
+     * The new user password. Should be at least 8 characters long and contain at least one uppercase and lowercase letter, one number, and one special character
      */
     userPassword?: string;
     /**
@@ -15615,7 +15993,7 @@ declare namespace VoximplantAPI {
      */
     showingSkillId?: number;
     /**
-     * The max returning record count
+     * The maximum returning record count
      */
     count?: number;
     /**
@@ -15710,17 +16088,93 @@ declare namespace VoximplantAPI {
      */
     escape?: string;
     /**
-     * IP from the geolocation of the call list subscribers. It allows selecting the nearest server for serving subscribers
-     */
-    referenceIp?: string;
-    /**
-     * Location of the server where the scenario needs to be executed. Has higher priority than `reference_ip`. Request [getServerLocations](https://api.voximplant.com/getServerLocations) for possible values
+     * Location of the server where the scenario needs to be executed. Has higher priority than `ip_address`. Request [getServerLocations](https://api.voximplant.com/getServerLocations) for possible values
      */
     serverLocation?: string;
     /**
      * Optional. Whether to prioritize first calling attempts or repeated ones. The possible values are: first_attempts, repeated_attempts. The default values is first_attempts.
      */
     taskPriorityStrategy?: string;
+    /**
+     * IP from the geolocation of the call list subscribers. It allows selecting the nearest server for serving subscribers. If not specified, the client IP of the request is used
+     */
+    ipAddress?: string;
+    /**
+     * Call list type. The possible values are: automatic, predictive, progressive. The value is case-insensitive
+     */
+    callListType?: string;
+    /**
+     * The ACD queue ID. <b>Required</b> if <b>call_list_type</b> is predictive or progressive, and should be omitted otherwise
+     */
+    queueId?: number;
+    /**
+     * Time when the call list should start, as a Unix timestamp in seconds (UTC). The default value is the current time. The value cannot be in the past
+     */
+    startAt?: number;
+    /**
+     * Whether to create the call list in the cancelled state
+     */
+    isCancelled?: boolean;
+    /**
+     * Quote character for parsing csv
+     */
+    quote?: string;
+    /**
+     * The ACD version. The possible values are: V1, V2. Applies only if <b>call_list_type</b> is predictive or progressive
+     */
+    acdVersion?: string;
+    /**
+     * The predictive dialing algorithm. The possible values are: DEFAULT_PREDICTIVE_TYPE, AR_OPTIMIZED, BF_OPTIMIZED, AR_SMALL_GROUP, AR_AUTO_BALANCED. Applies only if <b>call_list_type</b> is predictive
+     */
+    predictiveType?: string;
+    /**
+     * The maximum abandoned call rate for predictive dialing, from 0 to 1. Applies only if <b>call_list_type</b> is predictive or progressive
+     */
+    maximumErrorRate?: number;
+    /**
+     * The minimum agent busy factor for predictive dialing, from 0 to 1. Applies only if <b>call_list_type</b> is predictive or progressive
+     */
+    minimumBusyFactor?: number;
+    /**
+     * The task multiplier for progressive dialing. The minimum value is 1. Applies only if <b>call_list_type</b> is progressive
+     */
+    taskMultiplier?: number;
+    /**
+     * Whether the call list is a personal campaign. Applies only if <b>call_list_type</b> is progressive
+     */
+    isPersonalCampaign?: boolean;
+    /**
+     * The personal campaign mode. The possible values are: smart, strict. Allowed only if <b>is_personal_campaign</b> is true; the default value in that case is smart
+     */
+    personalCampaignType?: string;
+    /**
+     * The PDS buffer size target. The possible values are: VALUE, OPERATOR, AGENT. Applies only if <b>call_list_type</b> is predictive or progressive
+     */
+    bufferSizeTarget?: string;
+    /**
+     * The PDS buffer size, from 20 to 500. Applies only if <b>buffer_size_target</b> is VALUE
+     */
+    bufferSizeValue?: number;
+    /**
+     * The PDS buffer threshold factor. Cannot be negative. Applies only if <b>buffer_size_target</b> is specified
+     */
+    bufferThresholdFactor?: number;
+    /**
+     * The initial average dial time in seconds for the dialing statistics. Applies only if <b>call_list_type</b> is predictive or progressive
+     */
+    avgDialTimeSec?: number;
+    /**
+     * The initial average talk time in seconds for the dialing statistics. Applies only if <b>call_list_type</b> is predictive or progressive
+     */
+    avgTimeTalkSec?: number;
+    /**
+     * The initial average total call time in seconds for the dialing statistics. Applies only if <b>call_list_type</b> is predictive or progressive
+     */
+    avgTotalTimeSec?: number;
+    /**
+     * The initial successful call ratio for the dialing statistics. Applies only if <b>call_list_type</b> is predictive or progressive
+     */
+    percentSuccessful?: number;
   }
   interface CreateCallListResponse {
     /**
@@ -15763,6 +16217,10 @@ declare namespace VoximplantAPI {
      * Separator values. The default value is ';'
      */
     delimiter?: string;
+    /**
+     * Quote character for parsing csv
+     */
+    quote?: string;
   }
   interface AppendToCallListResponse {
     /**
@@ -15785,14 +16243,13 @@ declare namespace VoximplantAPI {
   }
   interface CancelCallListBatchRequest {
     /**
+     * Call list ID
+     */
+    listId: number;
+    /**
      * Batch UUIDs of the tasks to cancel, separated by semicolon (;)
      */
     batchIds: string;
-    /**
-     * Call list ID. <b>Required</b> unless <b>list_name</b> is provided.
-     */
-    listId?: number;
-    listName?: string;
   }
   interface CancelCallListBatchResponse {
     /**
@@ -15835,9 +16292,9 @@ declare namespace VoximplantAPI {
      */
     priority?: number;
     /**
-     * Time when the call list should start in the `yyyy-MM-dd HH:mm:ss` format
+     * Time when the call list should start, as a Unix timestamp in seconds (UTC)
      */
-    startAt?: string;
+    startAt?: number;
     /**
      * Optional. Whether to prioritize first calling attempts or repeated ones. The possible values are: first_attempts, repeated_attempts. The default values is first_attempts
      */
@@ -15846,6 +16303,54 @@ declare namespace VoximplantAPI {
      * Location of the server processing the call list. If the ID is non existing, the 496 error returns: The 'server_location' parameter is invalid.
      */
     serverLocation?: string;
+    /**
+     * Call list type. The possible values are: automatic, manual, predictive, progressive. The value is case-insensitive
+     */
+    callListType?: string;
+    /**
+     * Alias for <b>call_list_type</b>. Applies only if <b>call_list_type</b> is not specified
+     */
+    callType?: string;
+    /**
+     * The predictive dialing algorithm. The possible values are: AR_OPTIMIZED, BF_OPTIMIZED, AR_SMALL_GROUP, AR_AUTO_BALANCED. If omitted while <b>call_list_type</b> is set to predictive, the value becomes AR_OPTIMIZED; for progressive the value is reset
+     */
+    predictiveType?: string;
+    /**
+     * The maximum abandoned call rate for predictive dialing, from 0 to 1. If omitted while <b>call_list_type</b> is set to predictive, the value becomes 0.02
+     */
+    maximumErrorRate?: number;
+    /**
+     * The minimum agent busy factor for predictive dialing. Cannot be negative. If omitted while <b>call_list_type</b> is set to predictive, the value becomes 0.8
+     */
+    minimumBusyFactor?: number;
+    /**
+     * The task multiplier for progressive dialing. Cannot be negative. If omitted while <b>call_list_type</b> is set to progressive, the value becomes 1
+     */
+    taskMultiplier?: number;
+    /**
+     * Whether the call list is a personal campaign. <b>Required</b> if <b>personal_campaign_type</b> is specified
+     */
+    isPersonalCampaign?: boolean;
+    /**
+     * The personal campaign mode. The possible values are: smart, strict. Allowed only if <b>is_personal_campaign</b> is true; the default value in that case is smart
+     */
+    personalCampaignType?: string;
+    /**
+     * The average dial time in seconds for the dialing statistics. Cannot be negative
+     */
+    avgDialTimeSec?: number;
+    /**
+     * The average talk time in seconds for the dialing statistics. Cannot be negative
+     */
+    avgTimeTalkSec?: number;
+    /**
+     * The average total call time in seconds for the dialing statistics. Cannot be negative
+     */
+    avgTotalTimeSec?: number;
+    /**
+     * The successful call ratio for the dialing statistics. Cannot be negative
+     */
+    percentSuccessful?: number;
   }
   interface EditCallListResponse {
     /**
@@ -15876,6 +16381,9 @@ declare namespace VoximplantAPI {
      * Account's ID
      */
     accountId: number;
+    /**
+     * Call list's ID to delete
+     */
     listId: number;
   }
   interface DeleteCallListResponse {
@@ -15915,7 +16423,7 @@ declare namespace VoximplantAPI {
      */
     typeList?: string;
     /**
-     * The max returning record count
+     * The maximum returning record count. The maximum value is 1000
      */
     count?: number;
     /**
@@ -15926,6 +16434,22 @@ declare namespace VoximplantAPI {
      * The application ID to filter. Can be a list separated by semicolons (;). Use the 'all' value to select all applications
      */
     applicationId?: 'any' | number | number[];
+    /**
+     * The application name list separated by semicolons (;). Can be used instead of <b>application_id</b>
+     */
+    applicationName?: string | string[];
+    /**
+     * The rule ID to filter. Can be a list separated by semicolons (;). Use the 'all' value to select all rules
+     */
+    ruleId?: 'any' | number | number[];
+    /**
+     * The rule name list separated by semicolons (;). Can be used instead of <b>rule_id</b>
+     */
+    ruleName?: string | string[];
+    /**
+     * The call list status to filter. The possible values are: In progress, Canceled, Completed, Suspended
+     */
+    status?: string;
   }
   interface GetCallListsResponse {
     /**
@@ -15950,15 +16474,15 @@ declare namespace VoximplantAPI {
     /**
      * Call list's ID
      */
-    listId: string;
+    listId: number;
     /**
      * Task IDs separated by a semicolon. Specify either `tasks_ids` or `tasks_uuids`. The method returns an error if none of the parameters is specified
      */
-    tasksIds?: string;
+    tasksIds?: 'any' | number | number[];
     /**
      * Task UUIDs separated by a semicolon. Specify either `tasks_ids` or `tasks_uuids`. The method returns an error if none of the parameters is specified
      */
-    tasksUuids?: string;
+    tasksUuids?: string | string[];
   }
   interface CancelCallListTaskResponse {
     /**
@@ -16019,7 +16543,7 @@ declare namespace VoximplantAPI {
   }
   interface StartConferenceRequest {
     /**
-     * The conference name. The name length must be less than 50 symbols
+     * The conference name. The name length should be less than 50 symbols
      */
     conferenceName: string;
     /**
@@ -16082,13 +16606,29 @@ declare namespace VoximplantAPI {
   }
   interface GetCallHistoryRequest {
     /**
-     * The from date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss
+     * The from date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss. If both dates are omitted, a server-configured default interval is used (default is one month)
      */
-    fromDate: Date;
+    fromDate?: Date;
     /**
-     * The to date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss
+     * The to date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss. If both dates are omitted, a server-configured default interval is used (default is one month)
      */
-    toDate: Date;
+    toDate?: Date;
+    /**
+     * The minimum call duration in seconds to filter. You can restrict the allowed date range via duration filters
+     */
+    minDuration?: number;
+    /**
+     * The maximum call duration in seconds to filter. You can restrict the allowed date range via duration filters
+     */
+    maxDuration?: number;
+    /**
+     * Whether to create an asynchronous history report instead of returning the data immediately. Has the same effect as calling GetCallHistoryAsync and requires the output=csv
+     */
+    isAsync?: boolean;
+    /**
+     * Whether to get a CSV file with the column names if the output=csv
+     */
+    withHeader?: boolean;
     timezone?: string;
     /**
      * To get the call history for the specific sessions, pass the session IDs to this parameter separated by a semicolon (;). The maximum number of records is 1000. You can find the session ID in the <a href='/docs/references/voxengine/appevents#started'>AppEvents.Started</a> event's <b>sessionID</b> property in a scenario, or retrieve it from the <b>call_session_history_id</b> value returned from the <a href='https://voximplant.com/docs/references/httpapi/scenarios#reorderscenarios'>StartScenarios</a> or <a href='https://voximplant.com/docs/references/httpapi/scenarios#startconference'>StartConference</a> methods
@@ -16184,13 +16724,33 @@ declare namespace VoximplantAPI {
   }
   interface GetCallHistoryAsyncRequest {
     /**
-     * The from date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss
+     * The from date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss. If both dates are omitted, a server-configured default interval is used (default is one month)
      */
-    fromDate: Date;
+    fromDate?: Date;
     /**
-     * The to date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss
+     * The to date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss. If both dates are omitted, a server-configured default interval is used (default is one month)
      */
-    toDate: Date;
+    toDate?: Date;
+    /**
+     * The minimum call duration in seconds to filter. You can restrict the allowed date range via duration filters
+     */
+    minDuration?: number;
+    /**
+     * The maximum call duration in seconds to filter. You can restrict the allowed date range via duration filters
+     */
+    maxDuration?: number;
+    /**
+     * A JSON-formatted list of strings containing phone numbers for history filtering. Has a higher priority than the <b>remote_number</b> parameter. If the array is empty, the <b>remote_number</b> parameter is used instead
+     */
+    remoteNumberList?: string;
+    /**
+     * The maximum number of records to include in the report. If omitted, the report service applies its own limit. Unlike GetCallHistory, there is no default of 20 and no cap of 1000 on the Management API side
+     */
+    count?: number;
+    /**
+     * The number of records to skip in the output
+     */
+    offset?: number;
     timezone?: string;
     /**
      * To get the call history for the specific sessions, pass the session IDs to this parameter separated by a semicolon (;). You can find the session ID in the <a href='/docs/references/voxengine/appevents#started'>AppEvents.Started</a> event's <b>sessionID</b> property in a scenario, or retrieve it from the <b>call_session_history_id</b> value returned from the <a href='https://voximplant.com/docs/references/httpapi/scenarios#reorderscenarios'>StartScenarios</a> or <a href='https://voximplant.com/docs/references/httpapi/scenarios#startconference'>StartConference</a> methods
@@ -16270,17 +16830,17 @@ declare namespace VoximplantAPI {
   }
   interface GetBriefCallHistoryRequest {
     /**
-     * The from date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss
-     */
-    fromDate: Date;
-    /**
-     * The to date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss
-     */
-    toDate: Date;
-    /**
      * The output format. The following values available: **csv**.
      */
     output: string;
+    /**
+     * The from date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss
+     */
+    fromDate?: Date;
+    /**
+     * The to date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss
+     */
+    toDate?: Date;
     timezone?: string;
     /**
      * To get the call history for the specific sessions, pass the session IDs to this parameter separated by a semicolon (;). You can find the session ID in the <a href='/docs/references/voxengine/appevents#started'>AppEvents.Started</a> event's <b>sessionID</b> property in a scenario, or retrieve it from the <b>call_session_history_id</b> value returned from the <a href='https://voximplant.com/docs/references/httpapi/scenarios#reorderscenarios'>StartScenarios</a> or <a href='https://voximplant.com/docs/references/httpapi/scenarios#startconference'>StartConference</a> methods
@@ -16332,13 +16892,57 @@ declare namespace VoximplantAPI {
   }
   interface GetTransactionHistoryRequest {
     /**
-     * The from date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss
+     * The from date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss. If both dates are omitted and is_uncommitted is false, a server-configured default interval is used (default is one month)
      */
-    fromDate: Date;
+    fromDate?: Date;
     /**
-     * The to date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss
+     * The to date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss. If both dates are omitted and is_uncommitted is false, a server-configured default interval is used (default is one month)
      */
-    toDate: Date;
+    toDate?: Date;
+    /**
+     * The application ID to filter. Can be used together with or instead of the <b>application_name</b> parameter
+     */
+    applicationId?: number;
+    /**
+     * The application name to filter. Can be used instead of the <b>application_id</b> parameter
+     */
+    applicationName?: string;
+    /**
+     * The subscription ID list separated by semicolons (;) to filter
+     */
+    subscriptionId?: 'any' | number | number[];
+    /**
+     * The subscription name list separated by semicolons (;) to filter
+     */
+    subscriptionName?: string | string[];
+    /**
+     * The resource type list separated by semicolons (;) to filter
+     */
+    resourceType?: string | string[];
+    /**
+     * The price group name list separated by semicolons (;) to filter
+     */
+    priceGroupName?: string | string[];
+    /**
+     * Whether to filter by the accounting dates instead of the transaction's `performed_at` timestamps
+     */
+    useAccountingDates?: boolean;
+    /**
+     * Whether to include the extended transaction fields, such as the application, subscription, resource type and price group, in the response
+     */
+    withExtendedInfo?: boolean;
+    /**
+     * Whether to create an asynchronous history report instead of returning the data immediately. Has the same effect as calling `GetTransactionHistoryAsync` and requires the output=csv
+     */
+    isAsync?: boolean;
+    /**
+     * Whether to get a CSV file with the column names if the output=csv
+     */
+    withHeader?: boolean;
+    /**
+     * The decimal mark for the CSV numbers if the output=csv. If omitted, the account locale setting is used
+     */
+    decimalSeparator?: string;
     timezone?: string;
     /**
      * The transaction ID list separated by semicolons (;)
@@ -16404,13 +17008,49 @@ declare namespace VoximplantAPI {
   }
   interface GetTransactionHistoryAsyncRequest {
     /**
-     * The from date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss
+     * The from date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss. If both dates are omitted and is_uncommitted is false, a server-configured default interval is used (default is one month)
      */
-    fromDate: Date;
+    fromDate?: Date;
     /**
-     * The to date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss
+     * The to date in the selected timezone in 24-h format: YYYY-MM-DD HH:mm:ss. If both dates are omitted and is_uncommitted is false, a server-configured default interval is used (default is one month)
      */
-    toDate: Date;
+    toDate?: Date;
+    /**
+     * The application ID to filter. Can be used together with or instead of the <b>application_name</b> parameter
+     */
+    applicationId?: number;
+    /**
+     * The application name to filter. Can be used instead of the <b>application_id</b> parameter
+     */
+    applicationName?: string;
+    /**
+     * The subscription ID list separated by semicolons (;) to filter
+     */
+    subscriptionId?: 'any' | number | number[];
+    /**
+     * The subscription name list separated by semicolons (;) to filter
+     */
+    subscriptionName?: string | string[];
+    /**
+     * The resource type list separated by semicolons (;) to filter
+     */
+    resourceType?: string | string[];
+    /**
+     * The price group name list separated by semicolons (;) to filter
+     */
+    priceGroupName?: string | string[];
+    /**
+     * Whether to filter by the accounting dates instead of the transaction's `performed_at` timestamps
+     */
+    useAccountingDates?: boolean;
+    /**
+     * The maximum number of records to include in the report. If omitted, the report service applies its own limit. Unlike GetTransactionHistory, there is no default of 20 and no cap of 1000 on the Management API side
+     */
+    count?: number;
+    /**
+     * The number of records to skip in the output
+     */
+    offset?: number;
     timezone?: string;
     /**
      * The transaction ID list separated by semicolons (;)
@@ -16738,7 +17378,7 @@ declare namespace VoximplantAPI {
      */
     pstnBlacklistPhone?: string;
     /**
-     * The max returning record count
+     * The maximum returning record count
      */
     count?: number;
     /**
@@ -16843,7 +17483,7 @@ declare namespace VoximplantAPI {
      */
     sipWhitelistId?: number;
     /**
-     * The max returning record count
+     * The maximum returning record count
      */
     count?: number;
     /**
@@ -16987,7 +17627,7 @@ declare namespace VoximplantAPI {
      */
     statusCode?: string;
     /**
-     * The max returning record count
+     * The maximum returning record count
      */
     count?: number;
     /**
@@ -17102,7 +17742,7 @@ declare namespace VoximplantAPI {
      */
     orderBy?: string;
     /**
-     * The max returning record count
+     * The maximum returning record count
      */
     count?: number;
     /**
@@ -17213,7 +17853,7 @@ declare namespace VoximplantAPI {
   }
   interface AddQueueRequest {
     /**
-     * The queue name. The length must be less than 100
+     * The queue name. The length should be less than 100
      */
     acdQueueName: string;
     /**
@@ -17237,11 +17877,11 @@ declare namespace VoximplantAPI {
      */
     serviceProbability?: number;
     /**
-     * The max queue size
+     * The maximum queue size
      */
     maxQueueSize?: number;
     /**
-     * The max predicted waiting time in minutes. The client is rejected if the predicted waiting time is greater than the max predicted waiting time
+     * The maximum predicted waiting time in minutes. The client is rejected if the predicted waiting time is greater than the maximum predicted waiting time
      */
     maxWaitingTime?: number;
     /**
@@ -17324,7 +17964,7 @@ declare namespace VoximplantAPI {
      */
     acdQueueName?: string;
     /**
-     * The new queue name. The length must be less than 100
+     * The new queue name. The length should be less than 100
      */
     newAcdQueueName?: string;
     /**
@@ -17340,11 +17980,11 @@ declare namespace VoximplantAPI {
      */
     serviceProbability?: number;
     /**
-     * The max queue size
+     * The maximum queue size
      */
     maxQueueSize?: number;
     /**
-     * The max predicted waiting time in minutes. The client is rejected if the predicted waiting time is greater than the max predicted waiting time
+     * The maximum predicted waiting time in minutes. The client is rejected if the predicted waiting time is greater than the maximum predicted waiting time
      */
     maxWaitingTime?: number;
     /**
@@ -17393,7 +18033,7 @@ declare namespace VoximplantAPI {
      */
     showingSkillId?: number;
     /**
-     * The max returning record count
+     * The maximum returning record count
      */
     count?: number;
     /**
@@ -18447,7 +19087,7 @@ declare namespace VoximplantAPI {
   }
   interface AddSkillRequest {
     /**
-     * The ACD operator skill name. The length must be less than 512
+     * The ACD operator skill name. The length should be less than 512
      */
     skillName: string;
   }
@@ -18481,7 +19121,7 @@ declare namespace VoximplantAPI {
   }
   interface SetSkillInfoRequest {
     /**
-     * The new skill name. The length must be less than 512
+     * The new skill name. The length should be less than 512
      */
     newSkillName: string;
     /**
@@ -18510,7 +19150,7 @@ declare namespace VoximplantAPI {
      */
     skillName?: string;
     /**
-     * The max returning record count
+     * The maximum returning record count
      */
     count?: number;
     /**
@@ -18653,7 +19293,7 @@ declare namespace VoximplantAPI {
      */
     containsIp?: string;
     /**
-     * The max returning record count
+     * The maximum returning record count
      */
     count?: number;
     /**
@@ -18830,7 +19470,7 @@ declare namespace VoximplantAPI {
     direction?: string;
     timezone?: string;
     /**
-     * Maximum number of resulting rows fetched. Must be not bigger than 1000. If left blank, then the default value of 1000 is used
+     * Maximum number of resulting rows fetched. Should be not bigger than 1000. If left blank, then the default value of 1000 is used
      */
     count?: number;
     /**
@@ -18872,7 +19512,7 @@ declare namespace VoximplantAPI {
      */
     destinationNumber?: string;
     /**
-     * Maximum number of resulting rows fetched. Must be not bigger than 1000. If left blank, then the default value of 1000 is used
+     * Maximum number of resulting rows fetched. Should be not bigger than 1000. If left blank, then the default value of 1000 is used
      */
     count?: number;
     /**
@@ -18976,11 +19616,11 @@ declare namespace VoximplantAPI {
      */
     applicationName?: string;
     /**
-     * Key expiry time in seconds. The value is in range of 0..7,776,000 (90 days), the default value is 30 days (2,592,000 seconds). The TTL is converted to an **expires_at** Unix timestamp field as part of the storage object. Note that one of the two parameters (ttl or expires_at) must be set
+     * Key expiry time in seconds. The value is in range of 0..7,776,000 (90 days), the default value is 30 days (2,592,000 seconds). The TTL is converted to an **expires_at** Unix timestamp field as part of the storage object. Note that one of the two parameters (ttl or expires_at) should be set
      */
     ttl?: number;
     /**
-     * Expiration date based on **ttl** (timestamp without milliseconds). Note that one of the two parameters (ttl or expires_at) must be set
+     * Expiration date based on **ttl** (timestamp without milliseconds). Note that one of the two parameters (ttl or expires_at) should be set
      */
     expiresAt?: number;
   }
@@ -19161,7 +19801,7 @@ declare namespace VoximplantAPI {
   }
   interface AddSecretRequest {
     /**
-     * Secret name. The name must start with a Latin letter and can contain up to 64 characters, including Latin letters, digits and underscores
+     * Secret name. The name should start with a Latin letter and can contain up to 64 characters, including Latin letters, digits and underscores
      */
     secretName: string;
     /**
@@ -19252,7 +19892,7 @@ declare namespace VoximplantAPI {
      */
     secretNamePart?: string;
     /**
-     * Maximum returning record number
+     * Maximum returning number of records
      */
     count?: number;
     /**
@@ -19293,7 +19933,7 @@ declare namespace VoximplantAPI {
      */
     secretName?: string;
     /**
-     * New secret name. The name must start with a Latin letter and can contain up to 64 characters, including Latin letters, digits and underscores
+     * New secret name. The name should start with a Latin letter and can contain up to 64 characters, including Latin letters, digits and underscores
      */
     newSecretName?: string;
     /**
@@ -19334,8 +19974,12 @@ declare namespace VoximplantAPI {
      */
     setSecretInfo: (request: SetSecretInfoRequest) => Promise<SetSecretInfoResponse>;
   }
+  interface ClientOptions {
+    externalLogging?: boolean;
+  }
   class Client {
-    constructor();
+    private _externalLogging;
+    constructor(options?: ClientOptions);
     
     Accounts: AccountsInterface;
     Applications: ApplicationsInterface;
@@ -19765,6 +20409,10 @@ declare namespace VoxTTS {
        * Optional. Parameters for cloning the TTS context.
        */
       cloning?: Object;
+      /**
+       * Optional. Whether to use stress normalization. The default value is **false**.
+       */
+      normalizeWithStress?: boolean;
     };
     /**
      * Optional. Identifier of the provider context. Use the same value in [VoxTTS.RealtimeTTSPlayer.send] requests.
@@ -20281,27 +20929,67 @@ declare class WebSocket {
 }
 
 declare namespace XAI {
-    /**
-     * Creates a new [XAI.RealtimeTTSPlayer] instance. You can attach media streams later via the [XAI.RealtimeTTSPlayer.sendMediaTo] or [VoxEngine.sendMediaBetween] methods.
-     * @param parameters Optional. Realtime TTS player parameters
-     **/
-    function createRealtimeTTSPlayer(parameters?: RealtimeTTSPlayerParameters): RealtimeTTSPlayer;
+  /**
+   * Creates a new [XAI.RealtimeTTSPlayer] instance. You can attach media streams later via the [XAI.RealtimeTTSPlayer.sendMediaTo] or [VoxEngine.sendMediaBetween] methods.
+   * @param parameters Optional. Realtime TTS player parameters
+   **/
+  function createRealtimeTTSPlayer(parameters?: RealtimeTTSPlayerParameters): RealtimeTTSPlayer;
 }
 
 declare namespace XAI {
-  class RealtimeTTSPlayer extends BasePlayer {
     /**
-     * Send message object to the xAI provider context.
-     * @param parameters Object provides the parameters directly to the xAI provider context. Find more information in the [documentation](https://docs.x.ai/developers/model-capabilities/audio/text-to-speech#streaming-tts-websocket)
+     * Creates a new [XAI.VoiceAgentAPIClient] instance.
+     * @param parameters The [XAI.VoiceAgentAPIClient] parameters
      */
-    send(parameters: Object): void;
+    function createVoiceAgentAPIClient(parameters: VoiceAgentAPIClientParameters): Promise<XAI.VoiceAgentAPIClient>
+}
+declare namespace XAI {
+  /**
+   * @event
+   */
+  enum Events {
     /**
-     * Clears an [XAI.RealtimeTTSPlayer] buffer.
+     * Triggered when the audio stream sent by a third party through an xAI WebSocket is started playing.
+     * @typedef _WebSocketMediaStartedXAIEvent
      */
-    clearBuffer(): void;
+    WebSocketMediaStarted = 'XAI.Events.WebSocketMediaStarted',
+    /**
+     * Triggers after the end of the audio stream sent by a third party through an xAI WebSocket (**1 second of silence**).
+     * @typedef _WebSocketMediaEndedXAIEvent
+     */
+    WebSocketMediaEnded = 'XAI.Events.WebSocketMediaEnded',
+  }
+
+  /**
+   * @private
+   */
+  interface _Events {
+    [XAI.Events.WebSocketMediaStarted]: _WebSocketMediaStartedXAIEvent;
+    [XAI.Events.WebSocketMediaEnded]: _WebSocketMediaEndedXAIEvent;
+  }
+
+  /**
+   * @private
+   */
+  interface _Event {
+    /**
+     * The [XAI.VoiceAgentAPIClient] instance.
+     */
+    client: VoiceAgentAPIClient;
+  }
+
+  /**
+   * @private
+   */
+  interface _WebSocketMediaStartedXAIEvent extends _Event, _WebSocketMediaStartedWithoutWebSocketEvent {
+  }
+
+  /**
+   * @private
+   */
+  interface _WebSocketMediaEndedXAIEvent extends _Event, _WebSocketMediaEndedWithoutWebSocketEvent {
   }
 }
-
 declare namespace XAI {
   /**
    * [XAI.RealtimeTTSPlayer] parameters. Can be passed as arguments to the [XAI.createRealtimeTTSPlayer] method.
@@ -20319,8 +21007,452 @@ declare namespace XAI {
 }
 
 declare namespace XAI {
+  class RealtimeTTSPlayer extends BasePlayer {
+    /**
+     * Send message object to the xAI provider context.
+     * @param parameters Object provides the parameters directly to the xAI provider context. Find more information in the [documentation](https://docs.x.ai/developers/model-capabilities/audio/text-to-speech#streaming-tts-websocket)
+     */
+    send(parameters: Object): void;
+    /**
+     * Clears a [XAI.RealtimeTTSPlayer] buffer.
+     */
+    clearBuffer(): void;
+  }
 }
 
+declare namespace XAI {
+  /**
+   * @private
+   */
+  interface _VoiceAgentAPIClientEvents extends _Events, _VoiceAgentAPIEvents {
+  }
+}
+declare namespace XAI {
+  /**
+   * [XAI.VoiceAgentAPIClient] parameters. Can be passed as arguments to the [XAI.createVoiceAgentAPIClient] method.
+   */
+  interface VoiceAgentAPIClientParameters extends _VoiceAIClientParameters {
+    /**
+     * The xAI API key for the XAI VoiceAgent API.
+     */
+    xAIApiKey: string;
+    /**
+      * The model to use for the XAI VoiceAgent API.[https://docs.x.ai/developers/model-capabilities/audio/voice-agent#model-selection](https://docs.x.ai/developers/model-capabilities/audio/voice-agent#model-selection)
+     * Note: The default value is **grok-voice-fast-1.0**.
+     */
+    model?: string;
+    /**
+     * Optional. Conversation id from a previous [XAI.VoiceAgentAPIEvents.ConversationCreated] event. Pass it when creating a new client to resume the session after a WebSocket disconnect (xAI [session resumption](https://docs.x.ai/docs/guides/voice/agent#session-resumption)). Enable caching with `resumption: { enabled: true }` in [XAI.VoiceAgentAPIClient.sessionUpdate].
+     */
+    conversationId?: string;
+    /**
+     * Optional. Controls whether the model uses reasoning (`high` | `none`). Passed as the WebSocket `reasoning.effort` query parameter. Defaults to `high` on the xAI side when omitted.
+     */
+    reasoningEffort?: string;
+  }
+}
+declare namespace XAI {
+  class VoiceAgentAPIClient {
+    /**
+     * Returns the VoiceAgentAPIClient id.
+     */
+    id(): string;
+
+    /**
+     * Returns the XAI WebSocket id.
+     */
+    webSocketId(): string;
+
+    /**
+     * Closes the XAI connection (over WebSocket) or connection attempt.
+     */
+    close(): void;
+
+    /**
+     * Starts sending media from the XAI (via WebSocket) to the media unit. XAI works in real time.
+     * @param mediaUnit Media unit that receives media
+     * @param parameters Optional interaction parameters
+     */
+    sendMediaTo(mediaUnit: VoxMediaUnit, parameters?: SendMediaParameters): void;
+
+    /**
+     * Stops sending media from the XAI (via WebSocket) to the media unit.
+     * @param mediaUnit Media unit that stops receiving media
+     */
+    stopMediaTo(mediaUnit: VoxMediaUnit): void;
+
+    /**
+     * Clears the XAI WebSocket media buffer.
+     * @param parameters Optional. Media buffer clearing parameters
+     */
+    clearMediaBuffer(parameters?: ClearMediaBufferParameters): void;
+
+    /**
+     * Adds a handler for the specified [XAI.VoiceAgentAPIEvents] or [XAI.Events] event. Use only functions as handlers; anything except a function leads to the error and scenario termination when a handler is called.
+     * @param event Event class (i.e., [XAI.VoiceAgentAPIEvents.ConversationCreated])
+     * @param callback Handler function. A single parameter is passed - object with event information
+     */
+    addEventListener<T extends keyof XAI._VoiceAgentAPIClientEvents>(
+      event: XAI.Events | XAI.VoiceAgentAPIEvents | T,
+      callback: (event: XAI._VoiceAgentAPIClientEvents[T]) => any,
+    ): void;
+
+    /**
+     * Removes a handler for the specified [XAI.VoiceAgentAPIEvents] or [XAI.Events] event.
+     * @param event Event class (i.e., [XAI.VoiceAgentAPIEvents.ConversationCreated])
+     * @param callback Optional. Handler function. If not specified, all handler functions are removed
+     */
+    removeEventListener<T extends keyof XAI._VoiceAgentAPIClientEvents>(
+      event: XAI.Events | XAI.VoiceAgentAPIEvents | T,
+      callback?: (event: XAI._VoiceAgentAPIClientEvents[T]) => any,
+    ): void;
+
+    /**
+     * Send this event to update the session’s configuration. [https://docs.x.ai/developers/rest-api-reference/inference/voice#session.update](https://docs.x.ai/developers/rest-api-reference/inference/voice#session.update)
+     * @param parameters
+     */
+    sessionUpdate(parameters: Object): void
+
+    /**
+     * Clear input audio buffer. [https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.clear](https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.clear)
+     * @param parameters
+     */
+    inputAudioBufferClear(parameters: Object): void
+
+    /**
+     * Commit the input audio buffer as a user message. Only available when turn_detection type is null. [https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.commit](https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.commit)
+     * @param parameters
+     */
+    inputAudioBufferCommit(parameters?: Object): void
+
+    /**
+     * Create a new conversation item. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.create](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.create)
+     * @param parameters
+     */
+    conversationItemCreate(parameters: Object): void
+
+    /**
+     * Delete a conversation item by ID. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.delete](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.delete)
+     * @param parameters
+     */
+    conversationItemDelete(parameters: Object): void
+
+    /**
+     * Truncate a previous assistant audio message item. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.truncate](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.truncate)
+     * @param parameters
+     */
+    conversationItemTruncate(parameters: Object): void
+
+    /**
+     * Request the server to create a new assistant response when using client side vad. (This is handled automatically when using server side vad.) Prefer nested `{ response: { ... } }` body per xAI docs; flat fields are also accepted by the connector. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.create](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.create)
+     * @param parameters
+     */
+    responseCreate(parameters: Object): void
+
+    /**
+     * Send this event to cancel an in-progress response. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.cancel](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.cancel)
+     * @param parameters
+     */
+    responseCancel(parameters: Object): void
+  }
+}
+  
+
+declare namespace XAI {
+  /**
+   * @event
+   */
+  enum VoiceAgentAPIEvents {
+    /**
+     * The unknown event.
+     * @typedef _VoiceAgentAPIEvent
+     */
+    Unknown = 'XAI.VoiceAgentAPI.Unknown',
+
+    /**
+     * Sent when an error occurs. Contains error code and message. [https://docs.x.ai/developers/rest-api-reference/inference/voice#error](https://docs.x.ai/developers/rest-api-reference/inference/voice#error)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    Error = 'XAI.VoiceAgentAPI.Error',
+
+    /**
+     * Returned when a session is created. [https://docs.x.ai/developers/rest-api-reference/inference/voice#session.created](https://docs.x.ai/developers/rest-api-reference/inference/voice#session.created)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    SessionCreated = 'XAI.VoiceAgentAPI.SessionCreated',
+
+    /**
+     * The first message at connection. Notifies the client that a conversation session has been created. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.created](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.created)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ConversationCreated = 'XAI.VoiceAgentAPI.ConversationCreated',
+
+    /**
+     * Acknowledge the client's "session.update" message that the session has been updated. [https://docs.x.ai/developers/rest-api-reference/inference/voice#session.updated](https://docs.x.ai/developers/rest-api-reference/inference/voice#session.updated)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    SessionUpdated = 'XAI.VoiceAgentAPI.SessionUpdated',
+
+    /**
+     * Responding to the client that a new user message has been added to conversation history, or if an assistance response has been added to conversation history. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.added](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.added)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ConversationItemAdded = 'XAI.VoiceAgentAPI.ConversationItemAdded',
+
+    /**
+     * Returned when an item in the conversation is deleted. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.deleted](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.deleted)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ConversationItemDeleted = 'XAI.VoiceAgentAPI.ConversationItemDeleted',
+
+    /**
+     * Returned when a conversation item is truncated. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.truncated](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.truncated)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ConversationItemTruncated = 'XAI.VoiceAgentAPI.ConversationItemTruncated',
+
+    /**
+     * Notify the client the audio transcription for input has been completed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.input_audio_transcription.completed](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.input_audio_transcription.completed)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ConversationItemInputAudioTranscriptionCompleted = 'XAI.VoiceAgentAPI.ConversationItemInputAudioTranscriptionCompleted',
+
+    /**
+     * Returned when input audio transcription is updated. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.input_audio_transcription.updated](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.input_audio_transcription.updated)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ConversationItemInputAudioTranscriptionUpdated = 'XAI.VoiceAgentAPI.ConversationItemInputAudioTranscriptionUpdated',
+
+    /**
+     * Input audio buffer has been committed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.committed](https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.committed)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    InputAudioBufferCommitted = 'XAI.VoiceAgentAPI.InputAudioBufferCommitted',
+
+    /**
+     * Input audio buffer has been cleared. [https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.cleared](https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.cleared)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    InputAudioBufferCleared = 'XAI.VoiceAgentAPI.InputAudioBufferCleared',
+
+    /**
+     * Notify the client the server's VAD has detected the start of a speech. [https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.speech_started](https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.speech_started)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    InputAudioBufferSpeechStarted = 'XAI.VoiceAgentAPI.InputAudioBufferSpeechStarted',
+
+    /**
+     * Notify the client the server's VAD has detected the end of a speech. [https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.speech_stopped](https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.speech_stopped)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    InputAudioBufferSpeechStopped = 'XAI.VoiceAgentAPI.InputAudioBufferSpeechStopped',
+
+    /**
+     * Returned when the input audio buffer idle timeout is triggered. [https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.timeout_triggered](https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.timeout_triggered)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    InputAudioBufferTimeoutTriggered = 'XAI.VoiceAgentAPI.InputAudioBufferTimeoutTriggered',
+
+    /**
+     * A new assistant response turn is in progress. Audio delta created from this assistant turn will have the same response id. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.created](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.created)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseCreated = 'XAI.VoiceAgentAPI.ResponseCreated',
+
+    /**
+     * The assistant's response is completed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.done)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseDone = 'XAI.VoiceAgentAPI.ResponseDone',
+
+    /**
+     * A new assistant response is added to message history. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_item.added](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_item.added)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseOutputItemAdded = 'XAI.VoiceAgentAPI.ResponseOutputItemAdded',
+
+    /**
+     * A new assistant response is done. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_item.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_item.done)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseOutputItemDone = 'XAI.VoiceAgentAPI.ResponseOutputItemDone',
+
+    /**
+     * Text delta of the assistant response. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_text.delta](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_text.delta)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseOutputTextDelta = 'XAI.VoiceAgentAPI.ResponseOutputTextDelta',
+
+    /**
+     * The text of the assistant response has finished generating. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_text.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_text.done)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseOutputTextDone = 'XAI.VoiceAgentAPI.ResponseOutputTextDone',
+
+    /**
+     * Audio transcript delta of the assistant response. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_audio_transcript.delta](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_audio_transcript.delta)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseOutputAudioTranscriptDelta = 'XAI.VoiceAgentAPI.ResponseOutputAudioTranscriptDelta',
+
+    /**
+     * The audio transcript delta of the assistant response has finished generating. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_audio_transcript.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_audio_transcript.done)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseOutputAudioTranscriptDone = 'XAI.VoiceAgentAPI.ResponseOutputAudioTranscriptDone',
+
+    /**
+     * Notifies client that the audio for this turn has finished generating. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_audio.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_audio.done)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseOutputAudioDone = 'XAI.VoiceAgentAPI.ResponseOutputAudioDone',
+
+    /**
+     * Notifies client that the content part added. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.content_part.added](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.content_part.added)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseContentPartAdded = 'XAI.VoiceAgentAPI.ResponseContentPartAdded',
+
+    /**
+     * Notifies client that the content part done. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.content_part.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.content_part.done)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseContentPartDone = 'XAI.VoiceAgentAPI.ResponseContentPartDone',
+
+    /**
+     * Function call arguments delta. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.function_call_arguments.delta](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.function_call_arguments.delta)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseFunctionCallArgumentsDelta = 'XAI.VoiceAgentAPI.ResponseFunctionCallArgumentsDelta',
+
+    /**
+     * Function call triggered with complete arguments. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.function_call_arguments.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.function_call_arguments.done)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseFunctionCallArgumentsDone = 'XAI.VoiceAgentAPI.ResponseFunctionCallArgumentsDone',
+
+    /**
+     * MCP call arguments delta. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call_arguments.delta](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call_arguments.delta)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseMCPCallArgumentsDelta = 'XAI.VoiceAgentAPI.ResponseMCPCallArgumentsDelta',
+
+    /**
+     * MCP call arguments completed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call_arguments.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call_arguments.done)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseMCPCallArgumentsDone = 'XAI.VoiceAgentAPI.ResponseMCPCallArgumentsDone',
+
+    /**
+     * MCP call is in progress. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call.in_progress](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call.in_progress)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseMCPCallInProgress = 'XAI.VoiceAgentAPI.ResponseMCPCallInProgress',
+
+    /**
+     * MCP call completed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call.completed](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call.completed)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseMCPCallCompleted = 'XAI.VoiceAgentAPI.ResponseMCPCallCompleted',
+
+    /**
+     * MCP call failed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call.failed](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call.failed)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    ResponseMCPCallFailed = 'XAI.VoiceAgentAPI.ResponseMCPCallFailed',
+
+    /**
+     * MCP list tools is in progress. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_list_tools.in_progress](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_list_tools.in_progress)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    MCPListToolsInProgress = 'XAI.VoiceAgentAPI.MCPListToolsInProgress',
+
+    /**
+     * MCP list tools completed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_list_tools.completed](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_list_tools.completed)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    MCPListToolsCompleted = 'XAI.VoiceAgentAPI.MCPListToolsCompleted',
+
+    /**
+     * MCP list tools failed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_list_tools.failed](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_list_tools.failed)
+     * @typedef _VoiceAgentAPIEvent
+     */
+    MCPListToolsFailed = 'XAI.VoiceAgentAPI.MCPListToolsFailed',
+
+    /**
+     * The WebSocket error response event.
+     * @typedef _VoiceAgentAPIEvent
+     */
+    WebSocketError = 'XAI.VoiceAgentAPI.WebSocketError',
+
+    /**
+    * Contains information about connector.
+    * @typedef _VoiceAgentAPIEvent
+    */
+    ConnectorInformation = 'XAI.VoiceAgentAPI.ConnectorInformation',
+  }
+
+  /**
+   * @private
+   */
+  interface _VoiceAgentAPIEvents {
+    [VoiceAgentAPIEvents.Unknown]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.Error]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.SessionCreated]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConversationCreated]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.SessionUpdated]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConversationItemAdded]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConversationItemDeleted]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConversationItemTruncated]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConversationItemInputAudioTranscriptionCompleted]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConversationItemInputAudioTranscriptionUpdated]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.InputAudioBufferCommitted]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.InputAudioBufferCleared]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.InputAudioBufferSpeechStarted]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.InputAudioBufferSpeechStopped]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.InputAudioBufferTimeoutTriggered]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseCreated]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseDone]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseOutputItemAdded]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseOutputItemDone]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseOutputTextDelta]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseOutputTextDone]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseOutputAudioTranscriptDelta]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseOutputAudioTranscriptDone]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseOutputAudioDone]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseContentPartAdded]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseContentPartDone]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseFunctionCallArgumentsDelta]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseFunctionCallArgumentsDone]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseMCPCallArgumentsDelta]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseMCPCallArgumentsDone]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseMCPCallInProgress]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseMCPCallCompleted]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseMCPCallFailed]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.MCPListToolsInProgress]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.MCPListToolsCompleted]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.MCPListToolsFailed]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.WebSocketError]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConnectorInformation]: _VoiceAgentAPIEvent;
+  }
+
+  /**
+   * @private
+   */
+  interface _VoiceAgentAPIEvent {
+    /**
+     * The [XAI.VoiceAgentAPIClient] instance.
+     */
+    client: VoiceAgentAPIClient;
+    /**
+    * The 'payload' parameter contains the event's data.
+     */
+    data?: { customEvent?: string; payload?: Object; }
+  }
+}
+
+declare namespace XAI {
+}
 declare namespace Yandex {
     /**
      * Creates a [Yandex.RealtimeAPIClient] instance.
@@ -21554,6 +22686,11 @@ declare interface ASRParameters {
    * *Available for providers: Deepgram, Google, SaluteSpeech, T-Bank, Yandex, YandexV3.*
    */
   request?: Object;
+
+  /**
+   * Optional. Enables statistics functionality.
+   */
+  statistics?: boolean;
 }
 
 declare namespace ASRProfileList {
@@ -21775,6 +22912,11 @@ declare namespace ASRProfileList {
      * @const
      */
     const uk: ASRProfile;
+    /**
+     * Multilingual (All supported languages)
+     * @const
+     */
+    const multi: ASRProfile;
   }
 }
 
@@ -21788,6 +22930,12 @@ declare namespace ASRProfileList {
    * ```
    */
   namespace Google {
+    /**
+     * English (United States)
+     * @const
+     */
+    const en_US: ASRProfile;
+
     /**
      * Afrikaans (South Africa)
      * @const
@@ -21807,118 +22955,10 @@ declare namespace ASRProfileList {
     const am_ET: ASRProfile;
 
     /**
-     * Arabic (Algeria)
-     * @const
-     */
-    const ar_DZ: ASRProfile;
-
-    /**
-     * Arabic (Bahrain)
-     * @const
-     */
-    const ar_BH: ASRProfile;
-
-    /**
      * Arabic (Egypt)
      * @const
      */
     const ar_EG: ASRProfile;
-
-    /**
-     * Arabic (Iraq)
-     * @const
-     */
-    const ar_IQ: ASRProfile;
-
-    /**
-     * Arabic (Israel)
-     * @const
-     */
-    const ar_IL: ASRProfile;
-
-    /**
-     * Arabic (Jordan)
-     * @const
-     */
-    const ar_JO: ASRProfile;
-
-    /**
-     * Arabic (Kuwait)
-     * @const
-     */
-    const ar_KW: ASRProfile;
-
-    /**
-     * Arabic (Lebanon)
-     * @const
-     */
-    const ar_LB: ASRProfile;
-
-    /**
-     * Arabic (Mauritania)
-     * @const
-     */
-    const ar_MR: ASRProfile;
-
-    /**
-     * Arabic (Morocco)
-     * @const
-     */
-    const ar_MA: ASRProfile;
-
-    /**
-     * Arabic (Oman)
-     * @const
-     */
-    const ar_OM: ASRProfile;
-
-    /**
-     * Arabic (Pseudo-Accents)
-     * @const
-     */
-    const ar_XA: ASRProfile;
-
-    /**
-     * Arabic (Qatar)
-     * @const
-     */
-    const ar_QA: ASRProfile;
-
-    /**
-     * Arabic (Saudi Arabia)
-     * @const
-     */
-    const ar_SA: ASRProfile;
-
-    /**
-     * Arabic (State of Palestine)
-     * @const
-     */
-    const ar_PS: ASRProfile;
-
-    /**
-     * Arabic (Syria)
-     * @const
-     */
-    const ar_SY: ASRProfile;
-
-    /**
-     * Arabic (Tunisia)
-     * @const
-     */
-    const ar_TN: ASRProfile;
-
-    /**
-     * Arabic (United Arab Emirates)
-     * @const
-     */
-    const ar_AE: ASRProfile;
-
-    /**
-     * Arabic (Yemen)
-     * @const
-     */
-    const ar_YE: ASRProfile;
 
     /**
      * Armenian (Armenia)
@@ -22065,22 +23105,10 @@ declare namespace ASRProfileList {
     const en_IN: ASRProfile;
 
     /**
-     * English (Philippines)
-     * @const
-     */
-    const en_PH: ASRProfile;
-
-    /**
      * English (United Kingdom)
      * @const
      */
     const en_GB: ASRProfile;
-
-    /**
-     * English (United States)
-     * @const
-     */
-    const en_US: ASRProfile;
 
     /**
      * Estonian (Estonia)
@@ -22473,12 +23501,6 @@ declare namespace ASRProfileList {
     const so_SO: ASRProfile;
 
     /**
-     * Spanish (Mexico)
-     * @const
-     */
-    const es_MX: ASRProfile;
-
-    /**
      * Spanish (Spain)
      * @const
      */
@@ -22599,6 +23621,114 @@ declare namespace ASRProfileList {
     const zu_ZA: ASRProfile;
 
     /**
+     * Arabic (Algeria)
+     * @const
+     */
+    const ar_DZ: ASRProfile;
+
+    /**
+     * Arabic (Bahrain)
+     * @const
+     */
+    const ar_BH: ASRProfile;
+
+    /**
+     * Arabic (Iraq)
+     * @const
+     */
+    const ar_IQ: ASRProfile;
+
+    /**
+     * Arabic (Israel)
+     * @const
+     */
+    const ar_IL: ASRProfile;
+
+    /**
+     * Arabic (Jordan)
+     * @const
+     */
+    const ar_JO: ASRProfile;
+
+    /**
+     * Arabic (Kuwait)
+     * @const
+     */
+    const ar_KW: ASRProfile;
+
+    /**
+     * Arabic (Lebanon)
+     * @const
+     */
+    const ar_LB: ASRProfile;
+
+    /**
+     * Arabic (Mauritania)
+     * @const
+     */
+    const ar_MR: ASRProfile;
+
+    /**
+     * Arabic (Morocco)
+     * @const
+     */
+    const ar_MA: ASRProfile;
+
+    /**
+     * Arabic (Oman)
+     * @const
+     */
+    const ar_OM: ASRProfile;
+
+    /**
+     * Arabic (Pseudo-Accents)
+     * @const
+     */
+    const ar_XA: ASRProfile;
+
+    /**
+     * Arabic (Qatar)
+     * @const
+     */
+    const ar_QA: ASRProfile;
+
+    /**
+     * Arabic (Saudi Arabia)
+     * @const
+     */
+    const ar_SA: ASRProfile;
+
+    /**
+     * Arabic (State of Palestine)
+     * @const
+     */
+    const ar_PS: ASRProfile;
+
+    /**
+     * Arabic (Syria)
+     * @const
+     */
+    const ar_SY: ASRProfile;
+
+    /**
+     * Arabic (Tunisia)
+     * @const
+     */
+    const ar_TN: ASRProfile;
+
+    /**
+     * Arabic (United Arab Emirates)
+     * @const
+     */
+    const ar_AE: ASRProfile;
+
+    /**
+     * Arabic (Yemen)
+     * @const
+     */
+    const ar_YE: ASRProfile;
+
+    /**
      * Dutch (Belgium)
      * @const
      */
@@ -22627,6 +23757,12 @@ declare namespace ASRProfileList {
      * @const
      */
     const en_PK: ASRProfile;
+
+    /**
+     * English (Philippines)
+     * @const
+     */
+    const en_PH: ASRProfile;
 
     /**
      * English (Singapore)
@@ -22737,6 +23873,12 @@ declare namespace ASRProfileList {
     const es_HN: ASRProfile;
 
     /**
+     * Spanish (Mexico)
+     * @const
+     */
+    const es_MX: ASRProfile;
+
+    /**
      * Spanish (Nicaragua)
      * @const
      */
@@ -22795,12 +23937,6 @@ declare namespace ASRProfileList {
      * @const
      */
     const ve_ZA: ASRProfile;
-
-    /**
-     * English (Canada)
-     * @const
-     */
-    const en_CA: ASRProfile;
   }
 }
 
@@ -22951,6 +24087,12 @@ declare namespace ASRProfileList {
      * @const
      */
     const bg_BG: ASRProfile;
+
+    /**
+     * Bhojpuri (India)
+     * @const
+     */
+    const bho_IN: ASRProfile;
 
     /**
      * Bengali (India)
@@ -23565,10 +24707,22 @@ declare namespace ASRProfileList {
     const sq_AL: ASRProfile;
 
     /**
+     * Serbian (Montenegro)
+     * @const
+     */
+    const sr_ME: ASRProfile;
+
+    /**
      * Serbian (Cyrillic, Serbia)
      * @const
      */
     const sr_RS: ASRProfile;
+
+    /**
+     * Serbian (Kosovo)
+     * @const
+     */
+    const sr_XK: ASRProfile;
 
     /**
      * Swedish (Sweden)
@@ -23625,7 +24779,7 @@ declare namespace ASRProfileList {
     const ur_IN: ASRProfile;
 
     /**
-     * Uzbek (Uzbekistan)
+     * Uzbek (Latin, Uzbekistan)
      * @const
      */
     const uz_UZ: ASRProfile;
@@ -24044,6 +25198,10 @@ declare namespace Net {
      * Optional. Whether to enable logging the POST request body. The default value is **false**.
      */
     enableSystemLog?: boolean;
+    /**
+     * Optional. Whether to enable extended logging of the raw HTTP request and response data. The default value is **false**.
+     */
+    externalLogging?: boolean;
   }
 }
 
@@ -24901,6 +26059,7 @@ declare namespace VoiceList {
     const arb_Zeina: Voice;
   }
 }
+
 declare namespace VoiceList {
   namespace Amazon {
     /**
@@ -25226,6 +26385,7 @@ declare namespace VoiceList {
     }
   }
 }
+
 declare namespace VoiceList {
   /**
    * List of available freemium TTS voices for the [Call.say](/docs/references/voxengine/call#say) and [VoxEngine.createTTSPlayer](/docs/references/voxengine/voxengine/createttsplayer) methods. Depending on the voice, different technologies are used to make synthesized voices sound as close as possible to live human voices. Please note that using these text-to-speech capabilities are charged according to the <a href="https://voximplant.com/pricing" target="_blank">pricing</a>.
@@ -35839,6 +36999,7 @@ declare namespace VoiceList {
     const yue_HK_Standard_D: Voice;
   }
 }
+
 declare namespace VoiceList {
   /**
    * List of available IBM TTS voices for the [Call.say](/docs/references/voxengine/call#say) and [VoxEngine.createTTSPlayer](/docs/references/voxengine/voxengine/createttsplayer) methods. Depending on the voice, different technologies are used to make synthesized voices sound as close as possible to live human voices. Please note that using these text-to-speech capabilities are charged according to the <a href="https://voximplant.com/pricing" target="_blank">pricing</a>.
@@ -36055,6 +37216,33 @@ declare namespace VoiceList {
    */
   namespace Microsoft {}
 }
+
+declare namespace VoiceList {
+  namespace Microsoft {
+    /**
+     * List of available premium Microsoft TTS voices for the [Call.say](/docs/references/voxengine/call#say) and [VoxEngine.createTTSPlayer](/docs/references/voxengine/voxengine/createttsplayer) methods that sound more natural due to advanced synthesis technology.
+     * @namespace
+     */
+    namespace Neural {
+      /**
+       * @deprecated
+       * @const
+       */
+      const en_US_JennyMultilingualV2Neural: Voice;
+      /**
+       * @deprecated
+       * @const
+       */
+      const zh_CN_XiaoxuanNeural: Voice;
+      /**
+       * @deprecated
+       * @const
+       */
+      const en_GB_MiaNeural: Voice;
+    }
+  }
+}
+
 declare namespace VoiceList {
   namespace Microsoft {
     /**
@@ -36933,6 +38121,16 @@ declare namespace VoiceList {
        */
       const en_US_BrandonMultilingualNeural: Voice;
       /**
+       * Neural Microsoft voice, English (United States) Male, AIGenerate1Neural.
+       * @const
+       */
+      const en_US_AIGenerate1Neural: Voice;
+      /**
+       * Neural Microsoft voice, English (United States) Female, AIGenerate2Neural.
+       * @const
+       */
+      const en_US_AIGenerate2Neural: Voice;
+      /**
        * Neural Microsoft voice, English (United States) Female, AmberNeural.
        * @const
        */
@@ -36987,6 +38185,11 @@ declare namespace VoiceList {
        * @const
        */
       const en_US_EricNeural: Voice;
+      /**
+       * Neural Microsoft voice, English (United States) Female, EvelynMultilingualNeural.
+       * @const
+       */
+      const en_US_EvelynMultilingualNeural: Voice;
       /**
        * Neural Microsoft voice, English (United States) Male, JacobNeural.
        * @const
@@ -38668,6 +39871,11 @@ declare namespace VoiceList {
        */
       const zh_CN_XiaoruiNeural: Voice;
       /**
+       * Neural Microsoft voice, Chinese (Mandarin, Simplified) Female, XiaoshuangMultilingualNeural.
+       * @const
+       */
+      const zh_CN_XiaoshuangMultilingualNeural: Voice;
+      /**
        * Neural Microsoft voice, Chinese (Mandarin, Simplified) Female, XiaoshuangNeural.
        * @const
        */
@@ -38688,6 +39896,11 @@ declare namespace VoiceList {
        */
       const zh_CN_XiaoyanNeural: Voice;
       /**
+       * Neural Microsoft voice, Chinese (Mandarin, Simplified) Female, XiaoyouMultilingualNeural.
+       * @const
+       */
+      const zh_CN_XiaoyouMultilingualNeural: Voice;
+      /**
        * Neural Microsoft voice, Chinese (Mandarin, Simplified) Female, XiaoyouNeural.
        * @const
        */
@@ -38702,6 +39915,11 @@ declare namespace VoiceList {
        * @const
        */
       const zh_CN_XiaozhenNeural: Voice;
+      /**
+       * Neural Microsoft voice, Chinese (Mandarin, Simplified) Male, YunfanMultilingualNeural.
+       * @const
+       */
+      const zh_CN_YunfanMultilingualNeural: Voice;
       /**
        * Neural Microsoft voice, Chinese (Mandarin, Simplified) Male, YunfengNeural.
        * @const
@@ -38810,6 +40028,7 @@ declare namespace VoiceList {
     }
   }
 }
+
 declare namespace VoiceList {
   /**
    * List of availabl SaluteSpeech TTS voices for the [Call.say](/docs/references/voxengine/call#say) and [VoxEngine.createTTSPlayer](/docs/references/voxengine/voxengine/createttsplayer) methods. Depending on the voice, different technologies are used to make synthesized voices sound as close as possible to live human voices. Please note that using these text-to-speech capabilities are charged according to the <a href="https://voximplant.com/pricing" target="_blank">pricing</a>.

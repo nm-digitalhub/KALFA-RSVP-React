@@ -50,8 +50,8 @@ function salesSummaryText(cb: Awaited<ReturnType<typeof listCallbackRequests>>['
 }
 
 // Admin: callback (call-me-back) requests, paginated server-side. Each row
-// shows the request details, the current status (via free-text-safe label) and
-// an inline form to change the status.
+// shows the request details and the current status (via free-text-safe label),
+// and links to the detail page where the request is managed.
 
 export default async function AdminCallbacksPage({
   searchParams,

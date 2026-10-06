@@ -211,9 +211,9 @@ function EventCalendarAgendaView({
 }
 
 /**
- * One agenda row: a full-width, selectable table row - time column, color dot,
- * and title (all replaceable via renderAgendaEvent). Clicking selects the
- * event (drag/resize stay off in the agenda).
+ * One agenda row: a full-width row - time column, color dot, and title (all
+ * replaceable via renderAgendaEvent). Clicking fires onEventClick but never
+ * selects the event (drag/resize stay off in the agenda).
  */
 function EventCalendarAgendaItem({
   segment,

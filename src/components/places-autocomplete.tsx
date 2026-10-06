@@ -3,6 +3,7 @@
 // globals must be referenced where they are used (only here).
 'use client';
 
+import { useDebouncedCallback, useUncontrolled } from '@mantine/hooks';
 import { MapPin } from 'lucide-react';
 import {
   useCallback,
@@ -22,7 +23,7 @@ import { cn } from '@/lib/utils';
 // list (design tokens, RTL, keyboard) — installed from the shadcn-google-maps
 // registry (2.9.2026) and adapted for KALFA:
 //   • the chosen place fills BOTH the venue name (this input) and, through
-//     onPlaceSelect, the address field next to it (owner decision "א", 2.9);
+//     onPlaceSelect, the address field next to it;
 //   • `name`/`id`/`required`/`autoComplete` reach the input so the value rides
 //     in FormData like any other field and <label htmlFor> works;
 //   • no API key or a failed script load → a plain, ENABLED input. The venue
@@ -118,12 +119,16 @@ export function PlacesAutocomplete({
   const listboxId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const requestIdRef = useRef(0);
-  const debounceTimeoutRef = useRef<number | null>(null);
+  const blurTimeoutRef = useRef<number | null>(null);
   const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
 
-  const isControlled = value !== undefined;
-  const [internalValue, setInternalValue] = useState(defaultValue);
-  const inputValue = isControlled ? value : internalValue;
+  // Controlled when `value` is passed; otherwise owns its state from
+  // `defaultValue`. Either way `onValueChange` hears every change.
+  const [inputValue, setInputValue] = useUncontrolled({
+    value,
+    defaultValue,
+    onChange: onValueChange,
+  });
 
   const { isLoaded, error, hasApiKey, GoogleMapsScript } = useGooglePlacesScript({ apiKey });
   // Graceful degradation: without a key, or once the script failed, this is a
@@ -171,20 +176,10 @@ export function PlacesAutocomplete({
     };
   }, [open, updateDropdownRect]);
 
-  const setInputValue = useCallback(
-    (nextValue: string) => {
-      if (!isControlled) {
-        setInternalValue(nextValue);
-      }
-      onValueChange?.(nextValue);
-    },
-    [isControlled, onValueChange],
-  );
-
   useEffect(() => {
     return () => {
-      if (debounceTimeoutRef.current !== null) {
-        window.clearTimeout(debounceTimeoutRef.current);
+      if (blurTimeoutRef.current !== null) {
+        window.clearTimeout(blurTimeoutRef.current);
       }
     };
   }, []);
@@ -246,9 +241,12 @@ export function PlacesAutocomplete({
           .filter((suggestion): suggestion is AddressSuggestion => Boolean(suggestion));
 
         setSuggestions(nextSuggestions);
-        if (nextSuggestions.length > 0) {
+        // Nothing is pre-highlighted: Enter without arrow navigation keeps the
+        // typed text (a free-typed venue is legal). A response that lands after
+        // focus left the input must not pop the list open again.
+        if (nextSuggestions.length > 0 && document.activeElement === inputRef.current) {
           openSuggestions();
-          setActiveIndex(0);
+          setActiveIndex(-1);
         } else {
           setOpen(false);
           setDropdownRect(null);
@@ -265,11 +263,15 @@ export function PlacesAutocomplete({
     [closeSuggestions, countryCode, isLoaded, openSuggestions],
   );
 
+  // Always calls the latest fetchSuggestions; a pending call is cancelled on
+  // unmount (never flushed), so an unmounted field never fetches.
+  const debouncedFetchSuggestions = useDebouncedCallback((input: string) => {
+    void fetchSuggestions(input);
+  }, debounceMs);
+
   const queueFetchSuggestions = useCallback(
     (input: string) => {
-      if (debounceTimeoutRef.current !== null) {
-        window.clearTimeout(debounceTimeoutRef.current);
-      }
+      debouncedFetchSuggestions.cancel();
       requestIdRef.current += 1;
       setLoadingSuggestions(false);
 
@@ -279,12 +281,9 @@ export function PlacesAutocomplete({
         return;
       }
 
-      debounceTimeoutRef.current = window.setTimeout(() => {
-        debounceTimeoutRef.current = null;
-        void fetchSuggestions(input);
-      }, debounceMs);
+      debouncedFetchSuggestions(input);
     },
-    [closeSuggestions, debounceMs, fetchSuggestions],
+    [closeSuggestions, debouncedFetchSuggestions],
   );
 
   const handleSelectSuggestion = useCallback(
@@ -412,13 +411,24 @@ export function PlacesAutocomplete({
             setInputValue(nextValue);
             queueFetchSuggestions(nextValue);
           }}
+          aria-activedescendant={
+            open && activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined
+          }
           onFocus={() => {
+            if (blurTimeoutRef.current !== null) {
+              window.clearTimeout(blurTimeoutRef.current);
+              blurTimeoutRef.current = null;
+            }
             if (suggestions.length > 0) {
               openSuggestions();
             }
           }}
           onBlur={() => {
-            window.setTimeout(() => setOpen(false), 120);
+            blurTimeoutRef.current = window.setTimeout(() => {
+              blurTimeoutRef.current = null;
+              setOpen(false);
+              setActiveIndex(-1);
+            }, 120);
           }}
           onKeyDown={handleKeyDown}
           // The caller's classes first, then ours — `ps-9`/`pe-*` must win over a
@@ -437,6 +447,7 @@ export function PlacesAutocomplete({
             <div
               id={listboxId}
               role="listbox"
+              aria-label="הצעות מקומות"
               dir="rtl"
               style={{
                 position: 'fixed',
@@ -454,9 +465,13 @@ export function PlacesAutocomplete({
                   return (
                     <button
                       key={suggestion.id}
+                      id={`${listboxId}-option-${index}`}
                       type="button"
                       role="option"
                       aria-selected={isActive}
+                      // Focus stays on the input (aria-activedescendant); the
+                      // options are not Tab stops.
+                      tabIndex={-1}
                       onMouseDown={(event) => event.preventDefault()}
                       onMouseEnter={() => setActiveIndex(index)}
                       onClick={() => void handleSelectSuggestion(suggestion)}

@@ -1,9 +1,10 @@
 // Worker-ONLY adapter over pg-boss's own storage (§F.5 / §12.9.3). Reads a job's
 // retry state directly from `<schema>.job` via the worker's OWN pg connection
 // (the same SUPABASE_DB_* session-pooler creds pg-boss uses) — NOT PostgREST,
-// NOT createAdminClient. Used to decide, on a `definitely_not_sent` send, whether
-// a retry attempt remains (retry_count < retry_limit → release + throw) or the
-// step is exhausted (retry_count = retry_limit → resolve provider_failure).
+// NOT createAdminClient. Used by the call-request path to tell the LAST permitted
+// delivery of a transient pre-dial failure (retry_count = retry_limit) so the
+// dispatch row is settled before the final rethrow (worker/main.ts). The outreach
+// step path does not read it: a definite rejection advance-skips at once.
 //
 // Never imported by the Next app: it lives under worker/ and pulls in `pg`, kept
 // out of the browser/server bundle. Bundled into dist/worker.cjs by esbuild.

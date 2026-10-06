@@ -509,7 +509,7 @@ async function cmdLog(
   console.log(`saved ${buf.length} bytes → ${plan.output}`);
 }
 
-// READ-ONLY (A1): observe server-side dialing campaigns. Output is PII-safe by
+// READ-ONLY: observe server-side dialing campaigns. Output is PII-safe by
 // construction — rows pass through normalizeCallList/Task, which reduce
 // custom_data/result_data to {present, bytes} metadata.
 async function cmdCallLists(
@@ -555,7 +555,7 @@ async function cmdCallLists(
   }
 }
 
-// A2: Voximplant IP inventory for the IONOS firewall allowlist. PUBLIC endpoint —
+// Voximplant IP inventory for the IONOS firewall allowlist. PUBLIC endpoint —
 // runs with no credentials at all (dispatched before loadConfig).
 async function cmdMediaResources(): Promise<void> {
   const raw = await getMediaResources({ with_jsservers: true });
@@ -567,7 +567,7 @@ async function cmdMediaResources(): Promise<void> {
   }
 }
 
-// READ-ONLY (A3): account audit log. GetAuditLog is Owner-only per the docs —
+// READ-ONLY: account audit log. GetAuditLog is Owner-only per the docs —
 // with the service-account key expect a clean degraded message, not a crash.
 async function cmdAudit(
   cfg: VoximplantConfig,
@@ -604,7 +604,7 @@ async function cmdAudit(
   }
 }
 
-// READ-ONLY (stage-0 parity gate): fetch a scenario's DEPLOYED text and save it,
+// READ-ONLY (parity gate): fetch a scenario's DEPLOYED text and save it,
 // so it can be diffed against the local voxfiles build (dist/, which is what
 // voxengine-ci actually uploads). Never creates/edits/binds a scenario. The
 // script is written to a file, never printed — it is code, and diffs belong in

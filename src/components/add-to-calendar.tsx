@@ -57,7 +57,7 @@ export function AddToCalendar({
   className,
 }: {
   event: AddToCalendarEvent;
-  /** Same-origin path of the token-gated ICS route (`/g/<token>/event.ics`). */
+  /** Same-origin path of the token-gated ICS route (`/g/<token>/event.ics` or `/r/<token>/event.ics`). */
   icsHref: string;
   /** `outline` where the page already has one primary CTA (the gift card). */
   variant?: AddToCalendarVariant;

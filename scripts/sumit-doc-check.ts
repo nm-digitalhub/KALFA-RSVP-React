@@ -1,7 +1,8 @@
 // Controlled SUMIT document check (the admin/sumit-test route-B engine, run
 // server-side): place a small J4 charge on a campaign's SAVED card token —
-// exactly the production capture.ts wire shape (VATRate:null → company-default
-// balances the document) — then download the produced receipt PDF so it can be
+// close to the production capture.ts wire shape (production sends no VATRate, so
+// the company default balances the document; this script's vatRate '18' IS sent,
+// see below) — then download the produced receipt PDF so it can be
 // inspected (osek-patur gate: the receipt must carry NO VAT line).
 //
 // The saved token / expiry / CitizenID are read server-side from the campaign
@@ -68,7 +69,7 @@ async function main() {
     savedCardExpYear: c.card_exp_year,
     savedCardCitizenId: c.card_citizen_id,
     amount: AMOUNT,
-    vatRate: '18', // ignored on the saved-token path (explicit null is sent — production semantics)
+    vatRate: '18', // chargeRaw sends VATRate whenever this is non-empty (production sends none)
     autoCapture: true, // J4 — a real small charge, so a real document is produced
     customerEmail: EMAIL || undefined,
     externalId: `doc-check-${Date.now()}`,

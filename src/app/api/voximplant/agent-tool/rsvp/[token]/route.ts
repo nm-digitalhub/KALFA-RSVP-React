@@ -17,7 +17,7 @@ import { voxSaveRsvpSchema, voxSaveRsvpStatus } from '@/lib/validation/voximplan
 // resolved call_attempts row, NEVER the body).
 //
 // PERSIST-THEN-PROCESS + synchronous best-effort: we persist idempotently to
-// webhook_inbox (durable retry via the 1-min drain → processCallRsvpRow) AND run
+// webhook_inbox (durable retry via the webhook drain → processCallRsvpRow) AND run
 // the RSVP write synchronously so the scenario can return a TRUTHFUL ok/fail to
 // the agent (which only claims "נרשם" on ok:true). A sync failure still leaves the
 // durable row for the drain, so the RSVP is never lost.
@@ -84,7 +84,7 @@ export async function POST(
     };
     await insertWebhookEvents([row]);
   } catch {
-    return bad(500); // nothing stored — the scenario will get ok:false and can retry
+    return bad(500); // nothing stored — a non-200, which the scenario answers to the agent as 'error'
   }
 
   // Synchronous best-effort apply so the agent gets a TRUTHFUL confirmation.
@@ -97,8 +97,8 @@ export async function POST(
   //   queued   — a transient failure. The durable row above IS retried by the
   //              drain, so this promise is real.
   //
-  // `ok` is retained for backward compatibility with a scenario that has not
-  // been redeployed yet, and is true only for `saved`.
+  // `ok` is retained for backward compatibility with a consumer that reads only
+  // the boolean, and is true only for `saved`.
   let applyStatus: 'saved' | 'rejected' | 'queued' = 'queued';
   let reason: string | undefined;
   try {

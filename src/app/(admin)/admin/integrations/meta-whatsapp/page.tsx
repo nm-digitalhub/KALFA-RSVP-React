@@ -1,0 +1,147 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { ChevronRight } from 'lucide-react';
+
+import { isPlatformOwner, requirePlatformPermission } from '@/lib/auth/dal';
+import { getWhatsAppChannelConfig } from '@/lib/data/admin/channels';
+import { getMetaStatus } from '@/lib/data/admin/integrations/meta-status';
+import { getSendPolicyForAdmin } from '@/lib/data/admin/integrations/send-policy';
+import { getOutreachMasterState } from '@/lib/data/admin/outreach-master';
+import { getAppUrl } from '@/lib/url';
+
+import { PageHeading } from '../../_components';
+import { OutreachMasterSwitch } from '../_components/outreach-master-switch';
+import { WhatsAppCredentialsForm } from './whatsapp-credentials-form';
+import { WhatsAppConsentToggle } from './whatsapp-consent-toggle';
+import { WhatsAppConnectionTest } from './whatsapp-connection-test';
+import { MetaStatusCard } from './meta-status-card';
+import { SendPolicyForm } from './send-policy-form';
+
+export const metadata: Metadata = { title: 'Meta / WhatsApp — אינטגרציות' };
+
+// Everything about the WhatsApp connection in one place: credentials, the webhook
+// wiring to paste into Meta, the §30א consent gate, and an on-demand connection test.
+//
+// Gated on manage_settings, which is what the DAL behind every one of these enforces
+// for itself — the page gate is defence in depth, not the boundary (see
+// src/lib/auth/dal.ts).
+
+export default async function MetaWhatsAppPage() {
+  await requirePlatformPermission('manage_settings');
+
+  const [whatsapp, master, callbackUrl, metaStatus, sendPolicy, owner] = await Promise.all([
+    getWhatsAppChannelConfig(),
+    getOutreachMasterState(),
+    getAppUrl('/api/webhooks/whatsapp'),
+    // One live Graph call. It is in the Promise.all rather than after it so a
+    // slow Meta never serializes behind the local reads; getMetaStatus
+    // resolves rather than throws on every failure, so it cannot take the page
+    // down with it.
+    getMetaStatus(),
+    getSendPolicyForAdmin(),
+    // Decides only whether the connect link is drawn: that page is owner-only,
+    // and a link a manage_settings staff member can follow would redirect them
+    // out of the admin area. Not a gate — connect/page.tsx gates itself.
+    isPlatformOwner(),
+  ]);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <Link
+          href="/admin/integrations"
+          className="inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <ChevronRight className="size-4" aria-hidden />
+          חזרה לאינטגרציות
+        </Link>
+        <PageHeading>Meta / WhatsApp Cloud API</PageHeading>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {/* The sentence that stops someone reading "מוגדר" as "ready to send". */}
+          הפעלת ערוץ מתחילה שליחות חיות בתשלום. ההפעלה עצמה היא מתג הפנייה הראשי,
+          ולא העמוד הזה.
+        </p>
+      </div>
+
+      {/* The master switch heads this page as well as /admin/integrations/voximplant:
+          it gates every outbound channel, not WhatsApp alone. It also has to be HERE
+          rather than only on the index — WhatsAppCredentialsForm's status line says
+          "הפעלה/כיבוי דרך מתג הפנייה הראשי שמעל", which must point at something on
+          this page. */}
+      <OutreachMasterSwitch enabled={master.enabled} anyChannelReady={master.anyChannelReady} />
+
+      {/* Above the credentials form on purpose: the first question an admin
+          opening this page has is "is it working", and the form answers "what
+          did we type in". */}
+      <MetaStatusCard status={metaStatus} />
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">פרטי התחברות ו-Webhook</h2>
+        <WhatsAppCredentialsForm
+          whatsapp={whatsapp}
+          callbackUrl={callbackUrl}
+          outreachEnabled={master.enabled}
+        />
+      </section>
+
+      {/* A separate page, not a field here: connecting through Embedded Signup
+          never touches the credentials above (see connect/page.tsx). */}
+      {owner ? (
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold">חיבור מספר WhatsApp Business קיים</h2>
+          <p className="text-sm text-muted-foreground">
+            מספר שכבר פעיל באפליקציית WhatsApp Business בטלפון יכול לעבוד גם דרך Cloud API
+            (Coexistence), בלי להחליף את פרטי ההתחברות שלמעלה.
+          </p>
+          <Link
+            href="/admin/integrations/meta-whatsapp/connect"
+            className="inline-flex min-h-11 items-center text-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            מעבר לחיבור עם Meta
+          </Link>
+        </section>
+      ) : null}
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">דרישת הסכמה</h2>
+        <WhatsAppConsentToggle consentRequired={whatsapp.consentRequired} />
+      </section>
+
+      {/* Send timing sits on THIS page because the column is whatsapp_send_policy
+          and WhatsApp is the only channel sending against it today. It is not
+          WhatsApp-only in effect: the worker schedules every campaign send from
+          it, which is why the heading says "פנייה" and not "וואטסאפ". */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">מדיניות שליחה (שעות פנייה)</h2>
+        <p className="text-sm text-muted-foreground">
+          החלון שכל שליחת קמפיין מתוזמנת לתוכו. עד היום ניתן היה לשנות אותו רק
+          ישירות במסד הנתונים.
+        </p>
+        <SendPolicyForm policy={sendPolicy} />
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">בדיקת חיבור</h2>
+        <p className="text-sm text-muted-foreground">
+          קריאה חיה אחת ל-Meta שמאמתת את הטוקן ואת מזהה המספר. בדיקת הבריאות
+          המתוזמנת רצה בנפרד כל שעה ומופיעה בכרטיס באינטגרציות.
+        </p>
+        <WhatsAppConnectionTest />
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-lg font-semibold">תבניות</h2>
+        <p className="text-sm text-muted-foreground">
+          תוכן ההודעות נערך בעמוד התבניות. בריאות התבניות מול Meta — קטגוריה,
+          דירוג איכות, סטטוס — מסונכרנת אוטומטית ותוצג כאן בהמשך.
+        </p>
+        <Link
+          href="/admin/templates"
+          className="inline-flex min-h-11 items-center text-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          מעבר לתבניות פנייה
+        </Link>
+      </section>
+    </div>
+  );
+}

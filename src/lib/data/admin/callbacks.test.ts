@@ -78,11 +78,11 @@ function chainResult<Row>(result: { data: Row | null; error: { message: string }
   return builder;
 }
 
-// Since 2026-09-01 the AI calls arrive EMBEDDED in a second callback_requests
-// select (PostgREST resource embedding + the call_analysis computed
-// relationship), not from separate sales_call_attempts / call_analysis
-// queries. Both selects therefore hit the same table, so the mock answers the
-// first with the callback rows and the second with the embedded shape.
+// The AI calls arrive EMBEDDED in a second callback_requests select
+// (PostgREST resource embedding + the call_analysis computed relationship),
+// not from separate sales_call_attempts / call_analysis queries. Both selects
+// therefore hit the same table, so the mock answers the first with the
+// callback rows and the second with the embedded shape.
 function mockCallbackSalesClient(args: {
   callbacks: CallbackRequest[] | CallbackRequestDetail | null;
   callbackCount?: number;
@@ -632,9 +632,8 @@ describe('getCallbackRequest', () => {
   });
 });
 
-// Redesigned 2026-08-19/20: this used to be updateCallbackStatus, setting
-// `status` to any of new/in_progress/done/cancelled. Cancelling is now the
-// ONLY status transition an admin makes directly — see validation/admin.ts.
+// Cancelling is the ONLY status transition an admin makes directly — see
+// validation/admin.ts.
 describe('cancelCallback', () => {
   it('enforces the admin gate and cancels the matching row', async () => {
     const { client, builder } = createMockSupabase<CallbackRequest>({
@@ -744,8 +743,8 @@ describe('cancelCallback', () => {
 
   // Regression for a measured gap (2026-08-19): closing a request never used
   // to touch its calendar appointment at all, leaving it to sit there forever.
-  // Redesigned 2026-08-20: the appointment is archived (never deleted) and
-  // marked distinctly from a completed call — see closeCallbackAppointment.
+  // The appointment is archived (never deleted) and marked distinctly from a
+  // completed call — see closeCallbackAppointment.
   it('archives the calendar appointment as cancelled (not deleted)', async () => {
     const { client } = createMockSupabase<CallbackRequest>({
       data: row(),
@@ -768,10 +767,10 @@ describe('cancelCallback', () => {
 });
 
 // A fully separate dimension from `status` — what the owner recorded after
-// making the call. See validation/admin.ts. Redesigned 2026-08-20: the actual
-// state machine (archive, retry-vs-close, three-strikes no-contact) now lives
-// in applyCallOutcome (callback-scheduling.ts) — updateCallOutcome is a thin
-// gate-then-delegate wrapper, same split as rescheduleCallback below wrapping
+// making the call. See validation/admin.ts. The actual state machine (archive,
+// retry-vs-close, three-strikes no-contact) lives in applyCallOutcome
+// (callback-scheduling.ts) — updateCallOutcome is a thin gate-then-delegate
+// wrapper, same split as rescheduleCallback below wrapping
 // rescheduleCallbackRequest. Its own coverage (retry logic, the atomic claim,
 // the SMS) lives in callback-scheduling.test.ts.
 describe('updateCallOutcome', () => {

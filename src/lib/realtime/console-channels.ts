@@ -11,8 +11,7 @@
  * postgres_changes replays exactly what that connection's SELECT would
  * return, never more. Both `agent_status` and `console_calls` gate on
  * is_console_agent(), so a non-console-agent subscriber receives zero events
- * (verified pattern on the other four published tables — see the stage-3
- * plan's app-db-foundations report). There is deliberately NO broadcast
+ * (verified pattern on the other four published tables). There is deliberately NO broadcast
  * channel here, and none should be added for this feature: broadcast has no
  * row-level policy of its own, so it would need hand-built authorization to
  * match what postgres_changes gets for free.
@@ -51,7 +50,7 @@ function subscribeTable(
     // payload — if this channel joins before the client has ever resolved a
     // session, it authenticates as anon, and an RLS-gated table like
     // agent_status/console_calls then delivers zero rows to it (verified
-    // against the installed @supabase/realtime-js 2.112.1 source). The
+    // against the installed @supabase/realtime-js 2.117.0 source). The
     // client DOES self-heal this on its next auth cycle — a token-change is
     // pushed to already-joined channels — but that can lag; resolving the
     // session first removes the race window instead of relying on it.
@@ -89,7 +88,7 @@ export function subscribeAgentStatus(onChange: ChangeCallback, onStatus?: Status
   return subscribeTable('agent_status', onChange, onStatus);
 }
 
-/** The live call board (console_calls). Unused before stage 4, wired now for reuse. */
+/** The live call board (console_calls). */
 export function subscribeConsoleCalls(onChange: ChangeCallback, onStatus?: StatusCallback): () => void {
   return subscribeTable('console_calls', onChange, onStatus);
 }
@@ -98,7 +97,7 @@ export function subscribeConsoleCalls(onChange: ChangeCallback, onStatus?: Statu
  * The live AI-call board (console_call_feed — mirrors call_attempts). RLS
  * gates on is_console_agent() same as the others (console_call_feed_select),
  * so a non-agent subscriber gets zero rows. This is the AI-handoff section's
- * feed (plan stage 6-UI): claim ownership lives on THIS row (agent_id /
+ * feed: claim ownership lives on THIS row (agent_id /
  * handled_by / takeover_* — see the stage-1 column-grant migration), never on
  * human_agent_call_legs, which only tracks the human's OWN attach attempts.
  */
@@ -118,7 +117,7 @@ export function subscribeHumanLegs(onChange: ChangeCallback, onStatus?: StatusCa
 }
 
 /**
- * Internal agent-to-agent chat (console_chat_messages — plan "שלב 2"). RLS
+ * Internal agent-to-agent chat (console_chat_messages). RLS
  * gates on is_console_agent() same as every other table here, so a non-agent
  * subscriber gets zero rows. INSERT is append-only client-side (no route —
  * the RLS INSERT policy, author_id = auth.uid(), is the gate), so this is

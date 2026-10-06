@@ -14,6 +14,7 @@
 | אימות קלט (Zod) | `src/lib/validation/guests.ts`, `src/lib/validation/rsvp.ts` |
 | Server Actions (בעלים) | `src/app/(customer)/app/events/[id]/guests/guests-actions.ts` |
 | ייבוא CSV | `src/app/(customer)/app/events/[id]/guests/import/import-actions.ts`, `src/lib/csv.ts` |
+| ייבוא דרך WhatsApp | `src/lib/data/whatsapp-import.ts` (קליטה), `src/lib/data/whatsapp-import-channel.ts` (המספר למסכים), `src/app/(customer)/app/events/[id]/guests/import/whatsapp/` (סקירה ואישור) |
 | טלפון | `src/lib/phone.ts` (E.164), `ISRAELI_PHONE_RE` ב‑`src/lib/constants.ts` |
 | עמוד RSVP ציבורי | `src/app/(public)/r/[token]/page.tsx`, `rsvp-form.tsx`, `actions.ts` |
 | Rate limiting | `src/lib/security/rate-limit.ts` (+ `rate-limit.test.ts`) |
@@ -79,7 +80,7 @@
 `listGuests` (`src/lib/data/guests.ts:167-288`) מבצעת הכול במסד הנתונים; רשימת המוזמנים המלאה לעולם אינה נטענת לדפדפן:
 
 - **עימוד**: `range(offset, offset + pageSize - 1)` עם `count: 'exact'`; גודל עמוד ברירת מחדל 25 (`GUESTS_PAGE_SIZE`, `src/lib/constants.ts:12`, ניתן לכיוון ב‑env).
-- **חיפוש**: `ilike` על `full_name`/`phone` דרך `buildSearchFilter` (שורות 138–143). מכיוון ש‑`.or()` של PostgREST מקבל מחרוזת פילטר גולמית, הפונקציה מסירה כל תו בעל משמעות תחבירית (`, ( ) * % "` ו‑backslash) לפני העטיפה ב‑`*…*` — מניעת הזרקת תנאים.
+- **חיפוש**: `ilike` על `full_name`/`phone` דרך `buildSearchFilter`. מכיוון ש‑`.or()` של PostgREST מקבל מחרוזת פילטר גולמית, הפונקציה מסירה כל תו בעל משמעות תחבירית (`, ( ) * % " _` ו‑backslash) לפני העטיפה ב‑`*…*` — מניעת הזרקת תנאים. **חיפוש טלפון אינו תלוי פורמט ואינו תלוי מדינה** (9.9.2026): `guests.phone` שומר את מה שהבעלים הקליד, ולצדו `guests.phone_digits` — עמודה מחושבת (stored generated) שמכילה ספרות בלבד ומתוחזקת על ידי פוסטגרס בכל כתיבה. `phoneSearchVariants` (`src/lib/phone.ts`) גוזרת מהמונח את צורת ה‑E.164 בספרות ואת הצורה המקומית של אותה מדינה (`formatNational`), ושתיהן נבדקות מול `phone_digits`. כך אורח ששמור כ‑`+33 7 56 98 23 70` נמצא גם בחיפוש `+33756982370` וגם `0756982370`. הווריאנטים הם ספרות בלבד ולעולם לא צורת `+`, כדי שהתו לא ייכנס למחרוזת הפילטר.
 - **מיון**: מפתח המיון עובר דרך whitelist קשיח (`SORT_COLUMNS`, שורות 97–113: `name`/`status`/`contact`/`created`) — ערך שאינו ברשימה נופל לברירת המחדל (`created`), כי שם העמודה משורשר למחרוזת השאילתה (בשונה מ‑`.eq()` הפרמטרי); הכיוון מוגבל ל‑`asc`/`desc`. נוסף tiebreaker יציב על `id` כדי שעמודים לא "יערבבו" שורות שוות.
 - **סינון**: ערכי `status`/`contactStatus` מאומתים מול ה‑enum המחולל (`Constants.public.Enums`) — ערך לא חוקי **מתעלמים ממנו** ואינו מגיע לשאילתה; `groupId` מסונן ב‑`.eq()` פרמטרי.
 - **badges של הודעות (B6)**: מצב ה‑outreach (`op_status`, `removal_requested`) מגיע כ‑embed של ה‑contact המקושר, ו‑`delivery_status` האחרון פר‑contact נשלף בשאילתת batch אחת לכל העמוד (שורות 223–254) — ללא N+1. כשל בשליפת ה‑badges מדרדר לרשימה ללא badges במקום להפיל אותה.
@@ -144,6 +145,33 @@
 5. **קבוצות לפי שם**: שליפה אחת של קבוצות האירוע (מפתח שם lowercase) + יצירה אחת לכל שם חדש באמת — ללא שאילתה פר שורה.
 6. ההוספה עצמה — `insert` יחיד; מוחזרים `id` בלבד (בלי למשוך PII חזרה). `rsvp_token` נשאר ל‑DEFAULT של המסד — לכל מוזמן מיובא נוצר טוקן חדש אוטומטית.
 7. לאחר הייבוא: `buildContactsForEvent` בונה/מרענן את טבלת ה‑contacts (best‑effort — אינו מכשיל ייבוא שהושלם; כשל נרשם ללוג ללא PII), ונרשמת פעולת `guests.imported` ב‑activity log עם ספירות בלבד (`importedCount`, `failedCount`, `newGroupCount`).
+
+### ייבוא דרך WhatsApp — ומאיזה מספר
+
+מלבד ההעלאה במסך, בעל אירוע **מאומת** יכול לשלוח רשימה (קובץ CSV או כרטיסי אנשי
+קשר משותפים) ל-WhatsApp העסקי. ה-worker מפרש אותה ל-`guest_import_staging`
+במצב `pending` ומשיב קישור לסקירה; **אף מוזמן אינו נוצר לפני אישור במסך**
+(`/app/events/[id]/guests/import/whatsapp`). שולח שאינו ממופה לבעלות על אירוע
+פעיל מתעלמים ממנו לגמרי — בלי הורדה ובלי תשובה, כדי שלא ידלוף דבר על המערכת.
+
+**לאיזה מספר לשלוח.** ל-WABA שלנו יותר ממספר אחד, ומי מהם מקבל רשימות נקבע
+בשיוך התפקיד `whatsapp_import_sender` ב-`/admin/integrations/numbers`. המסכים
+אינם מקודדים מספר: `getWhatsAppImportChannel()`
+(`src/lib/data/whatsapp-import-channel.ts`) מחזיר את המספר ואת קישור ה-`wa.me`
+שלו, ושני המסכים משתמשים בו — כפתור "ייבוא דרך WhatsApp" במסך הראשון-ריצה
+ומסך הסקירה כשאין רשימות ממתינות. **המודול חף מסודות במבנה:** הוא קורא דרך
+`resolveNumberForRole` מ-`provider_numbers` בלבד ואינו נוגע ב-`app_settings`,
+כך שלטוקן אין דרך להגיע למודול שמזין רכיב לקוח. כשאין מספר משויך הוא מחזיר
+`null` והמסכים חוזרים לנוסח הקודם עם קישור פנימי — תקלת תצורה לא מפילה את עמוד
+המוזמנים.
+
+**הפרדה קשיחה.** כשמספר ייבוא משויך, רשימה שנשלחה למספר ה-RSVP **אינה נקלטת**:
+בעלים מאומת מקבל שורת הפניה אחת עם מספר הייבוא והקישור אליו (הודעה חופשית בתוך
+חלון 24 השעות שהוא עצמו פתח). הורדת הקובץ מוגבלת למספר שקיבל אותו
+(`retrieveMedia(id, phoneID)`), ותקרת ה-1MB נבדקת פעמיים — מול הגודל ש-Meta
+מדווחת ומול הבייטים שהתקבלו בפועל.
+
+הניתוב עצמו מתועד ב-`docs/project/07-messaging-channels.md` §2.4.
 
 ### נורמליזציית טלפון — שתי שכבות
 

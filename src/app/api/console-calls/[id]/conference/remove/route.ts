@@ -22,11 +22,6 @@ import {
 // Drops the third participant from a live conference and collapses the call back
 // to operator<->customer.
 //
-// Closes a gap that shipped with conference_add: a participant could be joined and
-// never removed, so an agent who conferenced the wrong number was stuck with them
-// on the line until the entire call ended. Found while investigating an unrelated
-// report on 17.8 and fixed on the owner's instruction.
-//
 // No target in the body, exactly like consult/cancel: a conference here has at most
 // ONE additional participant (the scenario's own single conferenceTarget), so there
 // is nothing to name. The scenario acts on whatever it currently has — still
@@ -48,7 +43,7 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 256;
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.uuid();
 
 function json(body: unknown, status: number) {
   return NextResponse.json(body, { status, headers: NO_STORE });
@@ -118,7 +113,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     requestId,
   });
 
-  // Delivered; NOT confirmed. The scenario's own conference_ended report is the
-  // truth the panel watches.
+  // Delivered; NOT confirmed. The scenario's own conference_ended report (or
+  // conference_failed, when the participant was still dialing) is the truth the
+  // panel watches.
   return json({ removing: true, request_id: requestId }, 202);
 }

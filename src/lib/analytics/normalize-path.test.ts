@@ -7,7 +7,7 @@ const C = 'bac77347-91f5-4f4e-9a20-1c7ffcb0f6ab';
 const G = '12345678-90ab-4cde-8f01-234567890abc';
 
 describe('normalizeAnalyticsPath — the full measured-route inventory', () => {
-  // Every measured route with dynamic segments (plans/ga4-url-normalization.md).
+  // Measured routes with dynamic segments, as inventoried in plans/ga4-url-normalization.md (27.7.2026).
   const cases: [string, string][] = [
     [`/app/events/${E}`, '/app/events/[event-id]'],
     [`/app/events/${E}/stats`, '/app/events/[event-id]/stats'],

@@ -16,12 +16,20 @@ import {
 } from '@/lib/data/campaigns';
 import type { OwnedEvent } from '@/lib/data/events';
 import type { CampaignStatus } from '@/lib/data/campaign-status';
+import {
+  ADMIN_ATTENTION_FILTER,
+  WINDDOWN_STATUSES,
+} from '@/lib/owner-agent/cores/campaigns';
+
+// Re-exported for existing importers. The predicate itself lives in the
+// request-free campaigns core so the owner agent counts by the same definition.
+export { WINDDOWN_STATUSES };
 
 // Admin campaign wind-down surface. The four lifecycle controls (close, pause,
 // settle, cancel) are platform-admin-only, so admins need to REACH campaigns of
 // events they do NOT own. These readers use the service-role client (bypassing
-// RLS) and are ALWAYS gated by requireAdmin() — the same trusted has_role('admin')
-// check the customer page and the server actions use. No PII beyond event
+// RLS) and are ALWAYS gated by requirePlatformPermission('manage_billing') — the
+// same permission the customer campaign page branches on. No PII beyond event
 // name/date is read.
 
 const ADMIN_EVENT_COLUMNS = 'id, name, status, event_type, event_date, rsvp_deadline';
@@ -29,7 +37,7 @@ const ADMIN_EVENT_COLUMNS = 'id, name, status, event_type, event_date, rsvp_dead
 // Fetch a single event for a platform admin who is NOT the owner, so the
 // campaign management page can render for admins. Mirrors requireEventAccess's
 // return shape (OwnedEvent) so the page stays field-compatible, but authorizes
-// via requireAdmin() instead of can_access_event(). Does NOT weaken the
+// via requirePlatformPermission('manage_billing') instead of can_access_event(). Does NOT weaken the
 // owner/org path — the page picks this only for admins.
 export async function getEventForAdminView(eventId: string): Promise<OwnedEvent> {
   const staff = await requirePlatformPermission('manage_billing');
@@ -69,23 +77,6 @@ export async function getEventForAdminView(eventId: string): Promise<OwnedEvent>
   return data;
 }
 
-// Fetch ONE campaign for a platform admin who is not the owner.
-//
-// Without this the admin "manage" button was a dead end: the page already
-// branched to getEventForAdminView for the event, but then read the campaign
-// through the owner path, whose only SELECT policy on `campaigns` is
-// can_access_event(...) -> events.owner_id = auth.uid(). RLS returned zero rows
-// for staff and the page rendered notFound() with nothing explaining why.
-//
-// Fixed the same way the event read is, NOT by adding an admin RLS policy.
-// A policy would grant the access silently; Supabase's own guidance is that the
-// service-role identifies WHAT is connecting and carries no user identity, so
-// the "who looked at this customer's data" answer has to come from the
-// application. recordStaffAccess supplies it, fail-closed, BEFORE the read —
-// which an RLS grant could never do.
-//
-// Selects CAMPAIGN_COLUMNS, the same list the owner path uses, so an admin sees
-// exactly what the owner sees and the two cannot drift.
 // Gate + audit for ONE cross-tenant campaign read, resolving the owning event on
 // the way through. Every admin campaign reader below starts here, so the
 // invariant "permission checked, then audit row written, THEN the customer's
@@ -126,6 +117,22 @@ async function auditedCampaignAccess(
   return { eventId: link.event_id, ownerId: link.events.owner_id };
 }
 
+// Fetch ONE campaign for a platform admin who is not the owner.
+//
+// The owner path reads the campaign through RLS, whose only SELECT policy on
+// `campaigns` is can_access_event(...) -> events.owner_id = auth.uid(). RLS
+// returns zero rows for staff, so the page would render notFound() with nothing
+// explaining why.
+//
+// Solved the same way the event read is, NOT by adding an admin RLS policy.
+// A policy would grant the access silently; Supabase's own guidance is that the
+// service-role identifies WHAT is connecting and carries no user identity, so
+// the "who looked at this customer's data" answer has to come from the
+// application. recordStaffAccess supplies it, fail-closed, BEFORE the read —
+// which an RLS grant could never do.
+//
+// Selects CAMPAIGN_COLUMNS, the same list the owner path uses, so an admin sees
+// exactly what the owner sees and the two cannot drift.
 export async function getCampaignForAdminView(campaignId: string): Promise<OwnerCampaign> {
   await auditedCampaignAccess(campaignId);
   const admin = createAdminClient();
@@ -169,10 +176,10 @@ export async function getCampaignDeliveryForAdminView(
 // only. getThankyouSchedule uses the cookie client, so for staff it returned
 // null and the panel simply vanished with nothing said.
 //
-// Read only is not a limitation to route around: updateThankyouSchedule gates
-// on requireOwnedEvent, so a form rendered for a non-owner would be a control
-// whose submit is guaranteed to fail. The page decides what to render from
-// ownership (viewerOwnsCampaignEvent), not from this reader.
+// This reader only reads: the write is updateThankyouSchedule, which authorizes
+// the owner OR platform staff holding manage_billing on its own. The page
+// decides whether to render the form (canEditThankyou, from the same
+// owner-or-staff rule), not this reader.
 export async function getThankyouScheduleForAdminView(
   campaignId: string,
 ): Promise<ThankyouSchedule> {
@@ -210,41 +217,35 @@ export interface AdminCampaignListItem {
   chargeStatus: string | null;
   finalChargeAmount: number | null;
   creditApplied: number;
-  // Hold-tracking (verified gap, 2026-08-30): capture_status was previously
-  // invisible on this screen entirely, and a stuck hold (pending/hold_failed/
-  // hold_review) never even reaches status='active', so it never appeared in
-  // WINDDOWN_STATUSES-filtered results — see the STUCK_CAPTURE_STATUSES query
+  // Hold-tracking: a stuck hold (pending/hold_failed/hold_review) never even
+  // reaches status='active', so it would never appear in WINDDOWN_STATUSES-
+  // filtered results — see ADMIN_ATTENTION_FILTER / STUCK_CAPTURE_STATUSES
   // below. captureStatus itself is text, not a typed enum (types.generated.ts
   // reflects capture_status as bare string — no DB enum backs it).
   captureStatus: string | null;
+  // 'released' once the hold-release reconciler (sumit-hold-reconcile.ts)
+  // has seen SUMIT mark the hold released. capture_status stays 'authorized'
+  // for the campaign's whole life, so without this the screen kept saying
+  // "תפוס" for holds SUMIT had long released (verified live 2026-09-24: all
+  // three "תפוס" rows were released in SUMIT's holds folder).
+  releaseStatus: string | null;
   holdOrderDocumentNumber: number | null;
   holdOrderDocumentUrl: string | null;
 }
 
-// Statuses that may still need a wind-down action (close/pause/settle/cancel).
-// Terminal states (billed/paid/cancelled) are excluded — nothing left to do.
-// Exported so nav-counts.ts can count against the same predicate this list
-// already filters by, instead of duplicating the status list.
-export const WINDDOWN_STATUSES: readonly CampaignStatus[] = [
-  'active',
-  'paused',
-  'closed',
-];
-
-// A campaign whose hold never went through never leaves status='approved'
-// (activateCampaign requires capture_status='authorized' — campaigns.ts:889),
-// so on its own it would never satisfy WINDDOWN_STATUSES above and would stay
-// permanently invisible on this screen. These are exactly the states an admin
-// needs to see: a stuck lock (pending, e.g. a crash between the hold request
-// and its outcome), a declined hold, or an ambiguous/needs-manual-reconciliation
-// outcome. Matches the same three values markCampaignHoldFailed/
-// lockCampaignForHold already use (campaigns.ts / authorize/route.ts).
-const STUCK_CAPTURE_STATUSES = ['pending', 'hold_failed', 'hold_review'] as const;
+// WINDDOWN_STATUSES (wind-down actions: close/pause/settle/cancel) and
+// STUCK_CAPTURE_STATUSES (a hold that never went through, so the campaign
+// never leaves status='approved') live in the request-free campaigns core
+// (src/lib/owner-agent/cores/campaigns.ts), together with
+// ADMIN_ATTENTION_FILTER — the exact `or` filter this list uses. The core's
+// needsAttention count uses the same string, so the owner agent's number is
+// the length of this list by construction. See the core for the reasoning
+// behind each status set.
 
 // List campaigns that may need admin attention — either a wind-down action
 // (close/pause/settle/cancel) or a stuck hold that never activated. Reads via
-// the service-role client (camp_admin_all RLS also covers this) under
-// requireAdmin(). Returns only what the list needs — charge/hold OUTCOME
+// the service-role client under
+// requirePlatformPermission('manage_billing'). Returns only what the list needs — charge/hold OUTCOME
 // fields, never card/token fields.
 export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> {
   await requirePlatformPermission('manage_billing');
@@ -252,11 +253,9 @@ export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> 
   const { data, error } = await admin
     .from('campaigns')
     .select(
-      'id, status, event_id, created_at, charge_status, final_charge_amount, credit_applied, capture_status, hold_order_document_number, hold_order_document_url, events(name, event_date)',
+      'id, status, event_id, created_at, charge_status, final_charge_amount, credit_applied, capture_status, release_status, hold_order_document_number, hold_order_document_url, events(name, event_date)',
     )
-    .or(
-      `status.in.(${WINDDOWN_STATUSES.join(',')}),and(status.eq.approved,capture_status.in.(${STUCK_CAPTURE_STATUSES.join(',')}))`,
-    )
+    .or(ADMIN_ATTENTION_FILTER)
     .order('created_at', { ascending: false });
   if (error) {
     throw new Error('טעינת הקמפיינים נכשלה');
@@ -271,6 +270,7 @@ export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> 
     finalChargeAmount: c.final_charge_amount,
     creditApplied: Number(c.credit_applied ?? 0),
     captureStatus: c.capture_status,
+    releaseStatus: c.release_status,
     holdOrderDocumentNumber: c.hold_order_document_number,
     holdOrderDocumentUrl: c.hold_order_document_url,
   }));

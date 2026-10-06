@@ -4,6 +4,12 @@ import { z } from 'zod';
 import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
 import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import { EVENT_NOT_CONFIRMED_ERROR, activateCampaign, pauseCampaign } from '@/lib/data/campaigns';
+import {
+  PACKAGE_NOT_PAID_ERROR,
+  PACKAGE_NO_CONTACTS_ERROR,
+  PACKAGE_PAYMENT_UNVERIFIED_ERROR,
+  PACKAGE_SUPPORT_ERROR,
+} from '@/lib/data/package-activation-errors';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 // POST /api/campaigns/{id}/status   body: { action: 'activate' | 'pause' }
@@ -52,6 +58,11 @@ const CONFLICT_MESSAGES = new Set([
   'לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי',
   'האירוע כבר חלף — לא ניתן לבצע פעולה זו עבור אירוע שמועדו עבר',
   EVENT_NOT_CONFIRMED_ERROR,
+  // A paid package campaign that cannot start (revival needs the same payment and list as the first start).
+  PACKAGE_NOT_PAID_ERROR,
+  PACKAGE_PAYMENT_UNVERIFIED_ERROR,
+  PACKAGE_NO_CONTACTS_ERROR,
+  PACKAGE_SUPPORT_ERROR,
 ]);
 
 export async function POST(

@@ -7,7 +7,7 @@ import { z } from 'zod';
 // is NOT part of the .claude/fleet/ agent system). Loopback-only, bearer-auth,
 // four fixed GET routes. Every call resolves to a {ok:true,data} / {ok:false}
 // union — a dead or slow sidecar must never throw and take the whole debug
-// page down with it (see plan §8: "כישלון-רך").
+// page down with it.
 
 const UPSTREAM = process.env.OPS_AGENT_UPSTREAM ?? 'http://127.0.0.1:3012';
 const TOKEN = process.env.OPS_AGENT_TOKEN;

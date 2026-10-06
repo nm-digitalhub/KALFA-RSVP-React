@@ -186,7 +186,7 @@ async function processRow(
   }
   if (!logUrl) return terminal('no_log', {});
 
-  // SSRF-hardened download (anonymous first; JWT only on a 401 from an
+  // SSRF-hardened download (anonymous first; JWT only on a 401/403 from an
   // allowlisted+resolved host).
   const dl = await downloadLogFile(logUrl, {
     jwtProvider: () => signManagementJwt(cfg.auth),
@@ -312,5 +312,4 @@ export function shouldAlertLogExport(s: LogExportSummary): boolean {
   return s.failed > 0 && s.stored === 0 && s.noLog === 0;
 }
 
-// Config type is referenced only for the processRow signature.
 export type { VoximplantConfig };

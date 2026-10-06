@@ -15,7 +15,8 @@
 // licensed Israeli consumer-protection lawyer must approve it before go-live.
 
 import { escapeHtml as esc } from '@/lib/html';
-import { substituteTokens as substituteTokensCore } from '@/lib/text/substitute-tokens';
+import { AGREEMENT_MODELS, type AgreementModel } from '@/lib/agreements/model';
+import { listTokens, substituteTokens as substituteTokensCore } from '@/lib/text/substitute-tokens';
 
 // Fallback version when no active DB document is available (e.g. pre-migration).
 export const AGREEMENT_VERSION = 'draft-2026-07-v3';
@@ -29,6 +30,21 @@ export const AGREEMENT_VERSION = 'draft-2026-07-v3';
 // the pricing-gate toggle refuses to enable unless the active APPROVED doc matches it.
 export const BASE_FEE_AGREEMENT_VERSION = '2026-07-v4';
 
+// v5 — the OPEN-CEILING base-fee contract. Same activation fee + included +
+// overage as v4; what changes is §3's ceiling, and it changes because the
+// PRODUCT flow changed.
+//
+// WHY A NEW VERSION RATHER THAN AN EDIT. v4 states a FIXED "תקרת חיוב מרבית"
+// figure, computed from the contact count at signing. In the intended flow the
+// customer signs BEFORE building the guest list (verified live: the only v4
+// campaign held with max_contacts = 0), so that figure is the activation fee
+// alone — and it then caps the close-charge at the base, making the overage
+// unreachable and silently excluding contacts past the funded quota. v5 states
+// the ceiling as the FORMULA the customer controls instead of a frozen number.
+// v4 is left byte-identical: one real signature exists against it (2026-09-02)
+// and a signed contract's text must not change under its own version label.
+export const OPEN_CEILING_AGREEMENT_VERSION = '2026-09-v5';
+
 // D5 guard predicate. The base+overage clauses/charge apply when the version is a
 // base-fee variant — the APPROVED `2026-07-v4` (what a real signer records once the
 // doc is approved) AND its `draft-` form (so the admin preview + a pre-approval
@@ -37,9 +53,15 @@ export const BASE_FEE_AGREEMENT_VERSION = '2026-07-v4';
 // with a base>0 snapshot — harmless to include. SAFE default: unknown/absent → not
 // base-fee → the charge falls back to pure per-reached. Binds the money to the
 // signed contract, independent of the global gate's timing.
+// v5 is ALSO a base-fee version: it bills the same base + included + overage,
+// so it must stay in this set or a v5 signature would fall back to pure
+// per-reached and never charge the activation fee. v4 stays for the signature
+// already recorded against it.
 const BASE_FEE_AGREEMENT_VERSIONS: ReadonlySet<string> = new Set([
   BASE_FEE_AGREEMENT_VERSION,
   `draft-${BASE_FEE_AGREEMENT_VERSION}`,
+  OPEN_CEILING_AGREEMENT_VERSION,
+  `draft-${OPEN_CEILING_AGREEMENT_VERSION}`,
 ]);
 export function isBaseFeeAgreementVersion(
   version: string | null | undefined,
@@ -47,15 +69,52 @@ export function isBaseFeeAgreementVersion(
   return version != null && BASE_FEE_AGREEMENT_VERSIONS.has(version);
 }
 
+// Whether the signed version uses the OPEN ceiling (a formula the customer
+// drives) rather than v4's frozen figure. Selects §3-4's wording, and is the
+// predicate anything that later stops capping the charge at a frozen ceiling
+// must gate on — the contract, not a global setting, is what authorises
+// charging past the figure quoted at signing. SAFE default: unknown/absent →
+// false → the v4 (capped) terms.
+const OPEN_CEILING_AGREEMENT_VERSIONS: ReadonlySet<string> = new Set([
+  OPEN_CEILING_AGREEMENT_VERSION,
+  `draft-${OPEN_CEILING_AGREEMENT_VERSION}`,
+]);
+export function isOpenCeilingAgreementVersion(
+  version: string | null | undefined,
+): boolean {
+  return version != null && OPEN_CEILING_AGREEMENT_VERSIONS.has(version);
+}
+
+// v6 — the fixed-price PACKAGE contract (docs/superpowers/plans/2026-10-04-package-payment-plan.md).
+// The price is one amount agreed up front and charged once at purchase; there is no per-reached
+// component and no settlement. The owner approves the document with EXACTLY this string
+// (approving strips the "draft-" prefix, as for v4). Binding the money to the SIGNED version, not to a
+// flag, is the D5 pattern: close-charge refuses to settle a package signature under the old formula.
+export const PACKAGE_AGREEMENT_VERSION = '2026-10-v6';
+
+const PACKAGE_AGREEMENT_VERSIONS: ReadonlySet<string> = new Set([
+  PACKAGE_AGREEMENT_VERSION,
+  `draft-${PACKAGE_AGREEMENT_VERSION}`,
+]);
+// There is no in-code text for the package contract; it is a document managed in /admin/agreement.
+export { AGREEMENT_MODELS, type AgreementModel };
+
+export const PACKAGE_BODY_MANAGED_IN_ADMIN =
+  'package agreement has no in-code text: its body is managed in the admin panel (/admin/agreement)';
+
+export function isPackageAgreementVersion(
+  version: string | null | undefined,
+): boolean {
+  return version != null && PACKAGE_AGREEMENT_VERSIONS.has(version);
+}
+
 // Standard Israeli VAT rate (18% since 2025-01-01). The business operates as an
 // עוסק פטור (VAT-exempt dealer, VAT Law §31(3)) and does NOT charge VAT —
 // consumer prices are FINAL with no VAT component, and customer-facing wording
-// must never claim "כולל מע"מ". The J5 hold (authorize.ts) and the final
-// charge (capture.ts) send NO VAT fields — SUMIT's company default applies
-// (hold aligned 2.9.2026). This constant remains only for the legacy
-// single-use-token charge (charge.ts) and the admin raw-charge tool
-// (raw-charge.ts); aligning those is pending a SUMIT account-config check
-// (see .claude/agents/shared/tax-catalog-israel.md §2).
+// must never claim "כולל מע"מ". The J5 hold (authorize.ts), the final
+// charge (capture.ts) and the single-use-token charge (charge.ts) send NO VAT
+// fields — SUMIT's company default applies. This constant only feeds the
+// `vatRate` placeholder available to a custom agreement body (tokenMap).
 export const VAT_RATE_PERCENT = 18;
 
 export type AgreementStatus = 'draft' | 'approved';
@@ -89,21 +148,28 @@ export type CompanyInfo = {
 export type AgreementContent = {
   company: CompanyInfo;
   eventName: string;
-  pricePerReached: number; // ₪, VAT-inclusive — per-reached rate / overage above included
+  pricePerReached: number; // ₪, final price (no VAT, עוסק פטור) — per-reached rate / overage above included
   maxContacts: number;
-  ceiling: number; // ₪, VAT-inclusive — model-aware (campaign.max_charge_ceiling)
+  ceiling: number; // ₪, final price (no VAT, עוסק פטור) — model-aware (campaign.max_charge_ceiling)
   channels: string[];
   windowText: string;
   baseFee: number; // ₪ activation fee (base+overage model); 0 = per-reached model
   includedReached: number; // reached contacts included in the base fee; 0 = per-reached
+  // The fixed-price package model (PACKAGE_AGREEMENT_VERSION): the package's one price (₪, final — the business is
+  // VAT-exempt) and how many contacts the campaign may approach. Absent for every other version.
+  packagePrice?: number;
+  contactQuota?: number;
 };
 
+// A signature (the pay-per-result contracts: a drawn signature and a phone verified by a one-time code) or, when
+// `signatureDataUrl` is null, an APPROVAL (the fixed-price package: the customer ticked the box). Both record who, when,
+// from which address and which version.
 export type AgreementSignature = {
   signerName: string;
-  verifiedPhone: string;
+  verifiedPhone: string | null;
   signedDateText: string;
   ip: string | null;
-  signatureDataUrl: string;
+  signatureDataUrl: string | null;
 };
 
 // Exported so other surfaces that display the channel list (e.g. the public
@@ -163,6 +229,10 @@ function tokenMap(c: AgreementContent, version: string): Record<string, string> 
     ceiling: ils(c.ceiling),
     baseFee: ils(c.baseFee),
     includedReached: c.includedReached.toLocaleString('he-IL'),
+    // Empty (not "₪0.00") when absent: a custom body that quotes a package figure on a non-package campaign must show
+    // a visible gap, never a made-up price.
+    packagePrice: c.packagePrice == null ? '' : ils(c.packagePrice),
+    contactQuota: c.contactQuota == null ? '' : c.contactQuota.toLocaleString('he-IL'),
     channels: esc(channelList),
     windowText: esc(c.windowText),
     vatRate: String(VAT_RATE_PERCENT),
@@ -175,6 +245,50 @@ function tokenMap(c: AgreementContent, version: string): Record<string, string> 
     privacyLink,
     termsLink,
   };
+}
+
+// The built-in token names, derived from tokenMap itself so the list the editor shows and the validation below can never
+// drift from what the renderer actually substitutes.
+const PROBE_CONTENT: AgreementContent = {
+  company: { name: '', id: '', address: '', contactPhone: '', contactEmail: '', privacyUrl: '', termsUrl: '', warrantyText: '' },
+  eventName: '',
+  pricePerReached: 0,
+  maxContacts: 0,
+  ceiling: 0,
+  channels: [],
+  windowText: '',
+  baseFee: 0,
+  includedReached: 0,
+};
+export const AGREEMENT_TOKEN_KEYS: readonly string[] = Object.keys(tokenMap(PROBE_CONTENT, ''));
+
+// Tokens a body uses that neither the built-in set nor the admin-config set resolves: a typo would reach the customer
+// as literal {{braces}}, so approval refuses a body that has any.
+export function findUnknownTokens(html: string, configKeys: readonly string[] = []): string[] {
+  const known = new Set([...AGREEMENT_TOKEN_KEYS, ...configKeys]);
+  return listTokens(html).filter((t) => !known.has(t));
+}
+
+// The pay-per-result figures. A package campaign snapshots 0 for them, so a package contract that quoted one would show
+// the customer a price of ₪0.00 next to the real one.
+export const PER_RESULT_FIGURE_TOKENS = ['pricePerReached', 'maxContacts', 'ceiling', 'baseFee', 'includedReached'] as const;
+export function perResultTokensIn(html: string): string[] {
+  const used = new Set(listTokens(html));
+  return PER_RESULT_FIGURE_TOKENS.filter((t) => used.has(t));
+}
+
+// The tokens an editor offers for a model's contract: the built-in set minus the other model's figures, plus the
+// admin-config ones.
+export function tokensForModel(model: AgreementModel, configKeys: readonly string[] = []): string[] {
+  const hidden: readonly string[] = model === 'package' ? PER_RESULT_FIGURE_TOKENS : PACKAGE_REQUIRED_TOKENS;
+  return [...AGREEMENT_TOKEN_KEYS.filter((t) => !hidden.includes(t)), ...configKeys];
+}
+
+// A package contract that does not state the price and the quota is not a package contract.
+export const PACKAGE_REQUIRED_TOKENS = ['packagePrice', 'contactQuota'] as const;
+export function missingPackageTokens(html: string): string[] {
+  const used = new Set(listTokens(html));
+  return PACKAGE_REQUIRED_TOKENS.filter((t) => !used.has(t));
 }
 
 // `extraTokens` lets render callers inject ADDITIONAL placeholders (e.g. the
@@ -207,7 +321,8 @@ function substituteTokens(
 }
 
 // §3-4 (price + payment) — the ONLY clauses that differ between the per-reached
-// (v3) and base-fee (v4) models. All figures are data-driven from AgreementContent
+// (v3), base-fee (v4) and open-ceiling (v5) models; this is the per-reached (v3)
+// variant. All figures are data-driven from AgreementContent
 // (baseFee/includedReached/pricePerReached/ceiling) — no hardcoded prices.
 function pricingClausesPerReached(c: AgreementContent): string {
   return `
@@ -263,10 +378,68 @@ function pricingClausesBaseFee(c: AgreementContent): string {
   <p>בוטלה העסקה עקב פגם, אי‑התאמה או הפרה של KALFA — יושבו ללקוח מלוא התשלומים ששולמו, לרבות דמי ההפעלה, בהתאם לחוק הגנת הצרכן. אין באמור בסעיף זה כדי לגרוע מזכויות הביטול שבסעיף 5.</p>`;
 }
 
+// v5 open-ceiling clauses. Identical pricing to v4 — activation fee, included
+// quota, overage rate — with two deliberate differences, both forced by the
+// product flow where the guest list is built AFTER signing:
+//
+//   §3  The ceiling is stated as a FORMULA, not a frozen figure. v4's
+//       "₪X — ... ועד למספר המרבי" prices the contact count at signing, which
+//       in this flow is zero. The customer is told plainly that the number
+//       moves only when THEY add guests and only for guests who actually
+//       answer, and that the running total is visible to them throughout.
+//   §4  The hold is described for what it actually is — the activation fee
+//       alone — with the balance charged once at close against the saved
+//       payment method. v4's "תפיסת מסגרת עד גובה התקרה" no longer describes
+//       what the code does.
+//
+// Everything quoted is data-driven from AgreementContent; no literal prices.
+// NOTE the two product promises this text makes: a visible running total, and
+// the customer being the only one who can move the amount. Code that breaks
+// either of those makes this clause untrue.
+function pricingClausesOpenCeiling(c: AgreementContent): string {
+  return `
+  <h2>3. המחיר והחיוב</h2>
+  <dl class="terms">
+    <dt>דמי הפעלת שירות</dt><dd>${ils(c.baseFee)} — תשלום עבור הפעלת הקמפיין (הפעלת המערכת והפצת הפניות בערוצים), הכולל עד ${c.includedReached.toLocaleString('he-IL')} אנשי קשר שהושגו. מחיר סופי; לא נגבה מע"מ (עוסק פטור).</dd>
+    <dt>אנשי קשר כלולים בדמי ההפעלה</dt><dd>${c.includedReached.toLocaleString('he-IL')} אנשי קשר שהושגו</dd>
+    <dt>תוספת מעבר לכלול</dt><dd>${ils(c.pricePerReached)} לכל איש קשר ייחודי נוסף שהושג מעבר לכמות הכלולה; מחיר סופי, לא נגבה מע"מ</dd>
+    <dt>מספר אנשי הקשר בקמפיין</dt><dd>נקבע לפי רשימת המוזמנים שהלקוח מעלה למערכת. הלקוח רשאי להוסיף מוזמנים כל עוד הקמפיין פתוח, והמספר מתעדכן בהתאם.</dd>
+    <dt>תקרת חיוב מרבית</dt><dd>${ils(c.baseFee)}, בתוספת ${ils(c.pricePerReached)} לכל איש קשר שנענה בפועל מעבר ל-${c.includedReached.toLocaleString('he-IL')} אנשי הקשר הכלולים בדמי ההפעלה.</dd>
+    <dt>חלון פעילות</dt><dd>${esc(c.windowText)}</dd>
+  </dl>
+  <div class="intent">
+    שימו לב — דמי ההפעלה בסך ${ils(c.baseFee)} נגבים <strong>בכל מקרה, גם אם לא הושג אף איש קשר (0 תוצאות)</strong>. דמי ההפעלה הם תשלום עבור עצם הפעלת השירות והפצת הפניות בערוצים, ואינם מותנים בתוצאה.
+    <br><br>
+    <strong>תקרת החיוב אינה סכום קבוע מראש</strong> — היא נגזרת ממספר אנשי הקשר שהלקוח הוסיף לרשימה ושנענו בפועל. התקרה עולה <strong>רק כתוצאה מפעולה של הלקוח</strong> — הוספת מוזמנים — ו<strong>רק עבור מוזמנים שנענו בפועל</strong>. מוזמן שנוסף ולא נענה אינו מוסיף לחיוב. הסכום המצטבר העדכני מוצג ללקוח במסך ניהול הקמפיין לאורך כל התקופה.
+  </div>
+  <p>"איש קשר שהושג" = אדם שיצר אינטראקציה אנושית מאומתת (תגובת וואטסאפ נכנסת אמיתית, או מענה אנושי בשיחה), פעם אחת לכל איש קשר באותו אירוע. החיוב שמעבר לדמי ההפעלה נקבע בסגירת הקמפיין לפי מספר אנשי הקשר שהושגו בפועל מעל הכמות הכלולה.</p>
+  <p><strong>מעבר לדמי ההפעלה, לא יחויבו:</strong></p>
+  <ul>
+    <li>הודעה שנשלחה / נמסרה / נקראה ללא תגובה</li>
+    <li>צלצול ללא מענה אנושי, תא קולי או משיבון</li>
+    <li>מספר שגוי או לא זמין</li>
+    <li>אותו איש קשר יותר מפעם אחת באותו אירוע</li>
+    <li>אנשי קשר בגבולות הכמות הכלולה בדמי ההפעלה (אינם מוסיפים לחיוב)</li>
+  </ul>
+
+  <h2>4. אמצעי תשלום, מועד חיוב והרשאת חיוב</h2>
+  <p>הלקוח מאשר שמירת אמצעי התשלום שלו לצורך החיוב בסגירת הקמפיין. <strong>במועד הפעלת הקמפיין נתפסת מסגרת אשראי בגובה דמי ההפעלה (${ils(c.baseFee)}) בלבד</strong>, ואינה מהווה חיוב.</p>
+  <p><strong>בסגירת הקמפיין יבוצע חיוב אחד באמצעות אמצעי התשלום השמור, בגובה הסכום שנצבר בפועל</strong> — דמי ההפעלה בתוספת ${ils(c.pricePerReached)} לכל איש קשר שנענה מעבר לכמות הכלולה. נתוני הכרטיס מנוהלים באמצעות ספק סליקה מאובטח (טוקניזציה); KALFA אינה שומרת את פרטי הכרטיס.</p>
+  <p>בוטלה העסקה עקב פגם, אי‑התאמה או הפרה של KALFA — יושבו ללקוח מלוא התשלומים ששולמו, לרבות דמי ההפעלה, בהתאם לחוק הגנת הצרכן. אין באמור בסעיף זה כדי לגרוע מזכויות הביטול שבסעיף 5.</p>`;
+}
+
 // The vetted in-code default body (used when the active document has no custom
 // body). NO draft marker here — the renderer appends it based on status. §3-4 are
-// selected by version: the base-fee (v4) model vs per-reached (v3).
+// selected by version: open-ceiling (v5), fixed-ceiling base-fee (v4), or
+// per-reached (v3). Most specific first — v5 is also a base-fee version.
 function defaultBody(c: AgreementContent, version: string): string {
+  // The fixed-price package contract has NO in-code text: its wording is managed as data from /admin/agreement (the
+  // contract is not hardcoded). Fail closed rather than fall through to the per-reached clauses below, which would put a
+  // pay-per-result contract in front of a customer who is buying a package.
+  if (isPackageAgreementVersion(version)) {
+    throw new Error(PACKAGE_BODY_MANAGED_IN_ADMIN);
+  }
+
   const channelList = c.channels
     .map((ch) => CHANNEL_LABELS[ch] ?? ch)
     .join(', ');
@@ -285,7 +458,13 @@ function defaultBody(c: AgreementContent, version: string): string {
 
   <h2>2. תיאור השירות</h2>
   <p>KALFA מפעילה עבור הלקוח קמפיין אישורי הגעה (RSVP) לאורחי האירוע, בשני ערוצי תקשורת: ${esc(channelList)}. השירות פונה לאנשי הקשר ברשימת המוזמנים ואוסף את תגובותיהם.</p>
-${isBaseFeeAgreementVersion(version) ? pricingClausesBaseFee(c) : pricingClausesPerReached(c)}
+${
+    isOpenCeilingAgreementVersion(version)
+      ? pricingClausesOpenCeiling(c)
+      : isBaseFeeAgreementVersion(version)
+        ? pricingClausesBaseFee(c)
+        : pricingClausesPerReached(c)
+  }
 
   <h2>5. זכות ביטול (חוק הגנת הצרכן §14ג)</h2>
   <p>הלקוח רשאי לבטל את העסקה בכתב (לפרטי הקשר בסעיף 1) בתוך <strong>14 ימים</strong> ממועד ההתקשרות או מקבלת מסמך זה, לפי המאוחר; ובכל מקרה עד <strong>שני ימים (שאינם ימי מנוחה) לפני מועד הפעלת הקמפיין</strong> — שכן הפעלת הקמפיין מהווה תחילת מתן השירות.</p>
@@ -310,6 +489,44 @@ ${isBaseFeeAgreementVersion(version) ? pricingClausesBaseFee(c) : pricingClauses
   </div>`;
 }
 
+// The default body of a version, written back as a TEMPLATE: the same text with {{tokens}} where the figures and the
+// company details go, which is what the admin editor loads so the live wording can be edited as a custom body (the
+// contract is managed from /admin/agreement, not from code). It is derived from the default itself — the default is
+// rendered with distinctive sentinel values and each token's value is turned back into its {{token}} — so the two can
+// never drift apart. The round-trip is pinned by tests: rendering the result with real content gives exactly the
+// default body for that content.
+export function defaultBodyAsTemplate(version: string): string {
+  const sentinel: AgreementContent = {
+    company: {
+      name: 'ZZ_COMPANY_NAME',
+      id: 'ZZ_COMPANY_ID',
+      address: 'ZZ_COMPANY_ADDRESS',
+      contactPhone: 'ZZ_COMPANY_PHONE',
+      contactEmail: 'ZZ_COMPANY_EMAIL',
+      privacyUrl: 'https://zz-privacy.invalid/p',
+      termsUrl: 'https://zz-terms.invalid/t',
+      warrantyText: 'ZZ_COMPANY_WARRANTY',
+    },
+    eventName: 'ZZ_EVENT_NAME',
+    pricePerReached: 1111.11,
+    maxContacts: 5555,
+    ceiling: 2222.22,
+    channels: ['whatsapp', 'call'],
+    windowText: 'ZZ_WINDOW',
+    baseFee: 3333.33,
+    includedReached: 6666,
+  };
+  let html = defaultBody(sentinel, version);
+  // Longest values first, so a value that contains another is replaced whole.
+  const entries = Object.entries(tokenMap(sentinel, version)).sort((a, b) => b[1].length - a[1].length);
+  for (const [key, value] of entries) {
+    // vatRate ("18") is a bare number that would match unrelated digits; the default body does not use it.
+    if (value === '' || key === 'vatRate') continue;
+    html = html.split(value).join(`{{${key}}}`);
+  }
+  return html;
+}
+
 // The agreement body (all clauses) — shown to the customer before signing AND
 // embedded in the PDF. No signature here. `doc` selects custom vs default body,
 // its version, and whether the draft marker is appended (status='draft').
@@ -322,6 +539,10 @@ export function renderAgreementBody(
   doc: AgreementDoc = DEFAULT_AGREEMENT_DOC,
   extraTokens: Record<string, string> = {},
 ): string {
+  // A package contract is never shown with a blank price or quota, whoever wrote its body.
+  if (isPackageAgreementVersion(doc.version) && (c.packagePrice == null || c.contactQuota == null)) {
+    throw new Error('package agreement needs the package price and quota');
+  }
   const inner =
     doc.bodyHtml != null && doc.bodyHtml.trim() !== ''
       ? substituteTokens(doc.bodyHtml, c, doc.version, extraTokens)
@@ -337,11 +558,19 @@ export function renderAgreementDocument(
   doc: AgreementDoc = DEFAULT_AGREEMENT_DOC,
   extraTokens: Record<string, string> = {},
 ): string {
-  const signatureBlock = `
+  const signatureBlock =
+    sig.signatureDataUrl == null
+      ? `
+  <div class="sig">
+    <h2>אישור תנאי החבילה</h2>
+    <div class="meta">אושר על ידי: ${esc(sig.signerName)} · תאריך: ${esc(sig.signedDateText)}${sig.ip ? ` · IP: ${esc(sig.ip)}` : ''} · גרסה: ${esc(doc.version)}</div>
+    <div class="meta">האישור ניתן באתר, בסימון תיבת האישור לאחר שהלקוח קרא את התנאים.</div>
+  </div>`
+      : `
   <div class="sig">
     <h2>חתימה וזיהוי</h2>
     <img src="${sig.signatureDataUrl}" alt="חתימה">
-    <div class="meta">חתם/ה: ${esc(sig.signerName)} · טלפון מאומת: ${esc(sig.verifiedPhone)} · תאריך: ${esc(sig.signedDateText)}${sig.ip ? ` · IP: ${esc(sig.ip)}` : ''} · גרסה: ${esc(doc.version)}</div>
+    <div class="meta">חתם/ה: ${esc(sig.signerName)} · טלפון מאומת: ${esc(sig.verifiedPhone ?? '')} · תאריך: ${esc(sig.signedDateText)}${sig.ip ? ` · IP: ${esc(sig.ip)}` : ''} · גרסה: ${esc(doc.version)}</div>
   </div>`;
 
   return `<!doctype html>

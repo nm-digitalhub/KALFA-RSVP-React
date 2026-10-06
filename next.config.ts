@@ -8,8 +8,8 @@ import type { NextConfig } from 'next';
 // client assets and the one the pm2 `next start` process reads at boot are
 // always the same file → same value. A tab from an older deploy then triggers
 // a hard reload on navigation instead of invoking stale Server Action ids
-// ("Failed to find Server Action"). No .deploy-id (dev, verification builds)
-// → undefined → skew protection simply off, exactly as before.
+// ("Failed to find Server Action"). No .deploy-id (e.g. a fresh checkout,
+// since the file is gitignored) → undefined → skew protection simply off.
 function readDeployId(): string | undefined {
   try {
     const id = readFileSync(join(process.cwd(), '.deploy-id'), 'utf8').trim();
@@ -31,6 +31,23 @@ function supabaseHostname(): string {
 }
 
 const nextConfig: NextConfig = {
+  // The integrations consolidation retired /admin/channels and /admin/alerts;
+  // these redirects keep old bookmarks working.
+  //
+  // /admin/channels lands on the INDEX: it carries the channel catalog the old
+  // page owned AND links to every provider tab, instead of silently picking one
+  // of them for a bookmark that meant "the channels page".
+  //
+  // `permanent: false` (307): a permanent redirect is cached by the browser and
+  // would survive a rollback, which is exactly the property we do not want.
+  async redirects() {
+    return [
+      { source: '/admin/channels', destination: '/admin/integrations', permanent: false },
+      { source: '/admin/alerts', destination: '/admin/integrations/slack', permanent: false },
+      // No redirect for /admin/templates — it stays its own page (§3.3).
+    ];
+  },
+
   deploymentId: readDeployId(),
   // Build output directory. Defaults to `.next`, but verification and deploy
   // builds set NEXT_DIST_DIR to an ISOLATED directory so a build never
@@ -91,14 +108,6 @@ const nextConfig: NextConfig = {
   //
   // Google Analytics Data uses Node-specific runtime loading through
   // google-gax; keep it external to the Next.js server bundle.
-  //
-  // ews-javascript-api + @ewsjs/xhr (IONOS Exchange calendar): @ewsjs/xhr's
-  // NTLM transport pulls http-cookie-agent, whose dynamic require webpack
-  // cannot bundle (the build itself warns "Critical dependency: require
-  // function is used in a way in which dependencies cannot be statically
-  // extracted"). MEASURED 27.07: the identical provider code reaches the
-  // Exchange server fine under plain Node but failed inside the bundle —
-  // same class of problem as puppeteer/pg-boss above.
   serverExternalPackages: [
     'puppeteer',
     'pg-boss',
@@ -116,16 +125,15 @@ const nextConfig: NextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          // HSTS (owner decision 2026-08-24). nginx already 301s http→https for
+          // HSTS. nginx already 301s http→https for
           // beta.kalfa.me; this tells browsers to never try http first. Value
           // per node_modules/next/dist/docs/.../headers.md §Strict-Transport-Security
           // (2 years), WITHOUT `preload` — preload is effectively irreversible.
-          // Measured 24.8: no Strict-Transport-Security anywhere on beta before this.
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
           // Verified gap (30.8): beta-proxy.conf never set proxy_buffering off,
           // so nginx defaults to buffering the ENTIRE response before sending
           // anything to the client — silently defeating the streaming that the
-          // app's loading.tsx/Suspense boundaries (8 routes) depend on for a
+          // app's loading.tsx/Suspense boundaries depend on for a
           // fast first paint. Per node_modules/next/dist/docs/.../self-hosting.md
           // §Streaming and Suspense, this header is nginx's own documented
           // per-response override (nginx.org proxy_buffering: X-Accel-Buffering)
@@ -148,9 +156,10 @@ const nextConfig: NextConfig = {
         ],
       },
       // Voximplant ctx/cb API routes carry a per-call bearer token in the path
-      // and the ctx response includes a provider key — same no-store/no-referrer
-      // posture as the token pages (routes also set no-store explicitly on each
-      // response as the primary control; this block is defense-in-depth).
+      // and the ctx response carries guest-facing call data — same
+      // no-store/no-referrer posture as the token pages (routes also set
+      // no-store explicitly on each response as the primary control; this block
+      // is defense-in-depth).
       {
         source: '/api/voximplant/:path*',
         headers: [
@@ -183,6 +192,19 @@ const nextConfig: NextConfig = {
           { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
         ],
       },
+      // Missed-call intake form — a one-time token in the path, sent to the
+      // caller by SMS. Same posture as every other token page: never cache the
+      // token-specific response, never leak the token through the Referer
+      // header (no-referrer OVERRIDES the global rule because it is listed
+      // after it), and keep it out of search indexes.
+      {
+        source: '/cb/:token*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, max-age=0' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
       // Public post-event thank-you page — same token/posture as /g above (the
       // token is reused, not purpose-bound): never cache, never leak via Referer,
       // keep out of search indexes.
@@ -198,6 +220,19 @@ const nextConfig: NextConfig = {
       // cache, never leak via Referer, keep out of search indexes.
       {
         source: '/rate/:token*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, max-age=0' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
+      // Org-invitation acceptance page — the invitation token is in the path.
+      // Same posture as /r: never cache, never leak the token via Referer
+      // (no-referrer OVERRIDES the global rule because it is listed after it),
+      // keep out of search indexes (defense-in-depth with the route's `robots`
+      // metadata).
+      {
+        source: '/join/:token*',
         headers: [
           { key: 'Cache-Control', value: 'no-store, max-age=0' },
           { key: 'Referrer-Policy', value: 'no-referrer' },

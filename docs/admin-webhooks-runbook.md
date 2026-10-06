@@ -9,7 +9,7 @@
 
 מסך אדמין לבדיקת צינור-ה-webhook של Meta: לראות כל אירוע נכנס (הודעות + status
 callbacks) כפי שנקלט ב-`webhook_inbox`, את מצב-העיבוד שלו, ולעבד-מחדש שורה תקועה.
-**קריאה בלבד + reprocess** — אין כאן שינוי-תצורה (זה ב-`/admin/channels`).
+**קריאה בלבד + reprocess** — אין כאן שינוי-תצורה (זה ב-`/admin/integrations/meta-whatsapp`, ושיוך מספרים ב-`/admin/integrations/numbers`).
 
 מוגן ב-`requireAdmin()` (יורש מ-layout האדמין + נאכף שוב בכל reader/action).
 NAV: "בדיקת Webhooks" תחת תפריט-האדמין (אייקון `Webhook`).
@@ -25,9 +25,15 @@ NAV: "בדיקת Webhooks" תחת תפריט-האדמין (אייקון `Webhook
 - **לנתוני-פרודקשן אמיתיים האפליקציה ב-Meta חייבת להיות PUBLISHED.** אפליקציה לא-מפורסמת
   מקבלת רק קריאות-בדיקה ידניות מה-Meta App Dashboard ("Test" webhook), לא תעבורת-משתמשים
   אמיתית.
-- אם המסך ריק *למרות* שאתה מצפה לתעבורה — בדוק את ה-401 ב-`/admin/channels`
+- אם המסך ריק *למרות* שאתה מצפה לתעבורה — בדוק את ה-401 ב-`/admin/integrations/meta-whatsapp`
   (אי-התאמת App Secret דוחה כל callback לפני שהוא נקלט). ראה
   `plans/whatsapp-webhook-hardening-spec.md §9`.
+- **הודעה של איש צוות לסוכן הבעלים לא מופיעה כאן, בכוונה.** כשב-`/admin/integrations/owner-agent`
+  נבחר מספר, הודעה (לא status) מטלפון שנמצא ברשימת ההיתר ופעיל, למספר הזה, מוסטת לסוכן ולא נכנסת
+  ל-`webhook_inbox`. היא נרשמת ב"יומן אחרון" שבאותו עמוד (מזהים וקודים בלבד). כל שאר התעבורה,
+  כולל statuses על אותו מספר, מופיעה כאן כרגיל. אם כל האירועים ב-delivery הוסטו, גם המעטפה לא
+  נשמרת ב-`webhook_deliveries`; ב-delivery מעורבת היא נשמרת כלשונה (החלטה 9.13).
+  מקור: `src/lib/owner-agent/intake.ts`, `plans/owner-whatsapp-agent-plan.md` §2.2–2.3.
 
 ה-EmptyState מבחין בין "אין אירועים עדיין" ל"אין תואמים לסינון".
 
@@ -98,6 +104,15 @@ processed_at = null,  last_error = null,  attempts = 0
 no-op (בלי רשימה כפולה ובלי תשובה נוספת לבעל האירוע). הדיאלוג (AlertDialog, לא
 `window.confirm`) אומר זאת במפורש. אם הרשימה נמחקה בינתיים — היא תיווצר מחדש.
 
+**ניתוב לפי המספר שקיבל — מאז 13.9.2026:** אם התפקיד `whatsapp_import_sender`
+משויך למספר ב-`/admin/integrations/numbers`, הודעות שהגיעו אליו נכנסות **רק**
+למסלול הייבוא (אפס `contact_interactions`, אפס חיוב), והודעות למספר ה-RSVP
+ממשיכות כרגיל. שורה עם `phone_number_id` שאינו אחד משני המספרים מסומנת מעובדת
+בלי לעשות דבר, ומייצרת התראת Slack אחת עם `rowId` + `phoneNumberId` בלבד.
+**"הודעה לא עובדה" בלי שורת אינטראקציה = לבדוק קודם את המספר בשורה**, לא את
+הקמפיין. כשהתפקיד אינו משויך (המצב היום) ההתנהגות זהה לקודם: כל שורה במסלול
+ה-RSVP.
+
 ---
 
 ## מה הפופאפ (detail) מציג — מאז 4.9.2026
@@ -105,7 +120,7 @@ no-op (בלי רשימה כפולה ובלי תשובה נוספת לבעל הא
 | סעיף | תוכן | מקור |
 |---|---|---|
 | תגיות | סוג אירוע · מצב עיבוד · **"הגיע ללא מספר טלפון (BSUID בלבד)"** כשאין `from`/`wa_id` | `webhook_inbox` + payload |
-| סיכום | זמני Meta/קליטה **עם שניות** · סוג · טקסט/כפתור/קובץ/מס' כרטיסי קשר · **איזה מספר עסקי קיבל** (שם מ-`/admin/channels`, לא רק id) · dedupe_key | payload, `app_settings.whatsapp_phone_number_id` |
+| סיכום | זמני Meta/קליטה **עם שניות** · סוג · טקסט/כפתור/קובץ/מס' כרטיסי קשר · **איזה מספר עסקי קיבל** (התווית מ-`/admin/integrations/numbers`, לא רק id) · dedupe_key | payload, `provider_numbers` |
 | זהות השולח/הנמען | טלפון (מוסווה) או "לא נמסר ע"י Meta" · **BSUID** · Parent BSUID · שם פרופיל · username | `from`/`recipient_id`, `from_user_id`/`recipient_user_id`, `sender_contact`/`recipient_contact` |
 | מסירה (סטטוס) | סטטוס · קוד + **תיאור** השגיאה · **תמחור Meta** (billable/category/type) · לאיזה אירוע שייכת ההודעה היוצאת | payload, `contact_interactions` (out) |
 | **תוצאה — מה המערכת עשתה** (הודעה) | אירוע + סטטוסו · סטטוס קמפיין · סיווג billable · **חיוב בפועל** (`billed_results` / `billing_outcome` עם הסבר) · הסרה · **ייבוא מוזמנים** (רשימה שנקלטה, כמה שורות, סטטוס) | `contact_interactions.billing_outcome`, `billed_results.provider_ref`, `guest_import_staging.source_message_id` |

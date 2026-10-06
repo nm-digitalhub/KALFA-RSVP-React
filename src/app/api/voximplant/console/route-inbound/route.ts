@@ -38,8 +38,8 @@ import { routeInboundBodySchema } from '@/lib/validation/console-calls';
 // AppEvents.CallAlerting handler (ConsoleInbound.voxengine.js — named by
 // handler, not by line number, which has already drifted once):
 //   accept       — must be true, and `ring_order` must be an array; an EMPTY
-//                  array is a valid, intentional accept (see the no-agent
-//                  branch below), NOT a refusal
+//                  array is a valid, intentional accept for a known caller (see
+//                  the no-agent gate below), NOT a refusal
 //   call_id      — stashed before the first reportEvent so every lifecycle
 //                  report resolves this exact console_calls row
 //   caller_display — copied into callUser's `displayName` on each ring (see
@@ -47,9 +47,8 @@ import { routeInboundBodySchema } from '@/lib/validation/console-calls';
 //   display_hint — NOT read by the scenario at all; it is persisted by
 //                  createConsoleCall for the console UI
 //
-// go-live for this endpoint binding to rule 1494687 is Gate E (ops-knobs
-// doc) — a SEPARATE owner approval from this route existing/working. Nothing
-// here flips inbound_calls_enabled or binds the rule.
+// Binding rule 1494687 to the ConsoleInbound scenario is separate from this
+// route. Nothing here flips inbound_calls_enabled or binds the rule.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -67,6 +66,18 @@ function json(body: unknown, status: number) {
 }
 
 const REJECT = { accept: false as const };
+
+/**
+ * The agent-facing label, marked with the channel when it is not a phone call.
+ *
+ * Returns the label UNCHANGED for 'pstn' and for an absent channel — an older
+ * deployed scenario sends nothing, and its calls must read exactly as they did
+ * before this existed.
+ */
+function withChannel(label: string | null, channel: 'pstn' | 'whatsapp' | undefined): string | null {
+  if (channel !== 'whatsapp') return label;
+  return label ? `WhatsApp · ${label}` : 'WhatsApp';
+}
 
 export async function POST(request: Request) {
   const ip = getClientIp(request.headers.get.bind(request.headers));
@@ -100,14 +111,13 @@ export async function POST(request: Request) {
   const nowMs = Date.now();
   const normalizedCli = normalizePhone(body.cli); // null for withheld/unparsable CLI
 
-  // Caller identification moved up (fraud incident, 17.8) — it now FEEDS the
-  // caps decision below, not just the post-accept display_hint enrichment.
-  // Still never a hard fail on its own: an identification-lookup error is
+  // Caller identification (fraud incident, 17.8) FEEDS the caps decision
+  // below, not just the display_hint enrichment.
+  // Never a hard fail on its own: an identification-lookup error is
   // swallowed to `null` (unidentified) here, deliberately OUTSIDE the
   // fail-closed Promise.all below, so a contacts-table hiccup degrades this
   // caller to the tighter unidentified budget rather than refusing the whole
-  // gate — the same lenient-on-this-one-signal posture the ORIGINAL
-  // enrichment-only call already had (`.catch(() => null)`).
+  // gate.
   const identified = normalizedCli ? await identifyInboundCaller(normalizedCli).catch(() => null) : null;
 
   // Gather every capped input FIRST (all pre-answer, all fail-closed on
@@ -128,10 +138,9 @@ export async function POST(request: Request) {
       countAnsweredInboundToday(nowMs),
       countAnsweredUnidentifiedInboundToday(nowMs),
       checkInboundBalanceReserve(nowMs),
-      // FIXED (fraud incident, 17.8): used to pass the string literal
-      // 'unknown-cli' for an unparseable CLI, which console_call_pii never
-      // actually stores (it stores SQL NULL) — that made this cap silently
-      // never bind for exactly the CLI shapes this incident used. See the
+      // An unparseable CLI is passed as null, not a string placeholder:
+      // console_call_pii stores SQL NULL for it, so a placeholder would never
+      // match a row and this cap would silently never bind. See the
       // function's own header in console-calls.ts.
       countAnsweredLastHourForPhone(normalizedCli),
     ]);
@@ -187,7 +196,7 @@ export async function POST(request: Request) {
         });
       }
     }
-    // ADDED (fraud incident, 17.8) — same rate-limited-alert shape as the
+    // Same rate-limited-alert shape as the
     // daily breaker above, DIFFERENT rateLimit key so the two never compete
     // for the same hourly budget. Worth alerting on (unlike concurrency/
     // per_cli_rate, deliberately silent): this reason means the account is
@@ -208,17 +217,17 @@ export async function POST(request: Request) {
   }
 
   // `identified` was resolved above (feeds the caps decision). callerMasked
-  // stays a best-effort DISPLAY enrichment only, same as before.
+  // is a best-effort DISPLAY enrichment only.
   const callerMasked = normalizedCli ? maskPhoneForDisplay(normalizedCli) : null;
 
   let routable: string[];
   try {
     routable = await findRoutableAgentVoxUsernames();
   } catch {
-    routable = []; // fail toward "no agent" (still accept — honest no-agent line), never a hard refuse
+    routable = []; // fail toward "no agent": a known caller still gets the honest no-agent line (an unidentified one is refused below)
   }
 
-  // Department queues (plan §10 extension point) — resolve the target queue
+  // Department queues — resolve the target queue
   // (V1: a flat default, see console-queues.ts's resolveInboundQueueKey doc
   // for why caller-history is NOT used) and ring its members first, THEN
   // every other routable agent as a fallback. Any failure here (queue tables
@@ -235,7 +244,7 @@ export async function POST(request: Request) {
     ringOrder = computeQueueRingOrder([], routable, answeredToday); // == plain computeRingOrder(routable, ...)
   }
 
-  // ADDED (fraud incident, 17.8, owner-approved) — an UNIDENTIFIED caller
+  // Fraud incident (17.8, owner-approved): an UNIDENTIFIED caller
   // arriving when the ring order is EMPTY is a call this account cannot serve
   // by anyone, and answering it buys nothing while costing a real inbound
   // minute plus the disclosure TTS plus a stored recording, purely to say
@@ -256,10 +265,9 @@ export async function POST(request: Request) {
   // must not quietly reverse.
   //
   // Fails closed by construction: findRoutableAgentVoxUsernames() degrading to
-  // [] (above) now REFUSES an unidentified caller instead of answering them.
-  // That is a deliberate change to that catch's "never a hard refuse" comment
-  // — for unidentified callers only — and matches the fail-closed posture
-  // every other gate in this route already takes.
+  // [] (above) REFUSES an unidentified caller instead of answering them — for
+  // unidentified callers only — matching the fail-closed posture every other
+  // gate in this route already takes.
   if (ringOrder.length === 0 && identified === null) {
     return json(REJECT, 200);
   }
@@ -309,7 +317,7 @@ export async function POST(request: Request) {
 
   // call_id: the row this exact call answers for. ConsoleInbound echoes it on
   // every /event report so findConsoleCallForEvent can resolve it EXACTLY
-  // (stage-7 addition) instead of falling to the FIFO tier — inbound never
+  // instead of falling to the FIFO tier — inbound never
   // learns vox_session_id/dial-token any other way, and under concurrent
   // inbound calls the FIFO tier can attach one call's session-command
   // capability to a DIFFERENT call's row.
@@ -330,14 +338,11 @@ export async function POST(request: Request) {
   // scenario says "מספר חסוי" itself, so a withheld number reads as withheld rather
   // than as this fix having failed.
   //
-  // This reverses an earlier choice, and says so plainly. The scenario used to pass
-  // our OWN DID as the callerid on every ring, reasoning that the caller's number
-  // "never needs to ride an internal callUser leg" — but the effect was an agent being
-  // asked to answer a call knowing nothing about who is on it, which is not privacy,
-  // it is a broken console. The agent is about to speak with this person. The other
-  // half of that reasoning, an UNVERIFIED worry about Voximplant's CallerID rules for
-  // an intra-app callUser, resolved against the live reference on 2026-08-17: the
-  // documented restriction is "test numbers rented from Voximplant cannot be used as
+  // The agent is about to speak with this person, so the scenario passes the
+  // caller's own number as callUser's callerid (not our DID) — an agent asked to
+  // answer a call knowing nothing about who is on it is a broken console. The only
+  // documented CallerID restriction for an intra-app callUser (live reference,
+  // 2026-08-17) is "test numbers rented from Voximplant cannot be used as
   // CallerID, use only real numbers" — a real caller's own number is exactly that.
   //
   // ACCEPTED CONSEQUENCE, stated rather than glossed: the CLI and this label now ride
@@ -353,7 +358,13 @@ export async function POST(request: Request) {
       accept: true,
       ring_order: ringOrder,
       display_hint: callerMasked,
-      caller_display: identified?.guestName ?? normalizedCli,
+      // ⚠️ THE CHANNEL IS SAID OUT LOUD, because the agent answers differently.
+      // A WhatsApp call has no telephony billing, can be moved to chat, and the
+      // person is already in a conversation thread with us — none of which is
+      // visible from a number that looks exactly like a phone call. Prefixed
+      // rather than replacing the name, so the identification we already do is
+      // not lost. Absent channel = the old label verbatim.
+      caller_display: withChannel(identified?.guestName ?? normalizedCli, body.channel),
       // The caller's number as a SEPARATE field, because the agent must see it
       // on every call — not only when we failed to recognise them (owner, 17.8:
       // "השם לא מספיק לדעתי, חובה תמיד להציג את המספר ממנו השיחה מתקבלת").
@@ -365,10 +376,9 @@ export async function POST(request: Request) {
       // carry, which in that case is our own DID.
       //
       // Deliberately the SAME value `caller_display` falls back to, so when the
-      // caller is unrecognised the two fields are byte-identical and the app can
-      // suppress the duplicate with a plain equality check. An earlier draft had
-      // the app compare the label against the raw platform CLI instead — one
-      // normalized, one not — which would never have matched.
+      // caller is unrecognised on a phone call the two fields are byte-identical
+      // and the app can suppress the duplicate with a plain equality check (a
+      // WhatsApp label carries the channel prefix, so the two differ there).
       caller_number: normalizedCli,
       call_id: callId,
     },

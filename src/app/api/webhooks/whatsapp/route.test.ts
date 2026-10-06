@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
@@ -13,6 +13,20 @@ vi.mock('@/lib/data/webhooks', () => ({
   insertWebhookDelivery: vi.fn(),
 }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
+// Owner agent: the route also reads its routing through the service-role
+// client and may enqueue. Both are faked; the default state is the migration's
+// own default — no number chosen — so every test that does not set up the owner
+// agent itself runs against the feature UNCONFIGURED, which is exactly "today".
+const ownerAgentFake = vi.hoisted(() => ({
+  admin: null as unknown as import('@/test/owner-agent-fake-admin').FakeAdmin,
+}));
+const ownerAgentSend = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: vi.fn(() => ownerAgentFake.admin.client),
+}));
+vi.mock('@/lib/queue/web-sender', () => ({
+  getWebJobSender: vi.fn(async () => ({ send: ownerAgentSend })),
+}));
 
 import { POST } from './route';
 import {
@@ -25,6 +39,16 @@ import {
   type WebhookInboxInsert,
 } from '@/lib/data/webhooks';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { deterministicJobId } from '@/lib/queue/deterministic-id';
+import { QUEUES } from '@/lib/queue/queues';
+import { __resetRateLimitStateForTests } from '@/lib/security/rate-limit';
+import {
+  createFakeAdmin,
+  unconfiguredState,
+  type FakeAdminState,
+} from '@/test/owner-agent-fake-admin';
+
+ownerAgentFake.admin = createFakeAdmin();
 
 // The HMAC signature IS the auth. The library verifies over escapeUnicode(raw)
 // (non-ASCII → \uXXXX, mirroring Meta's ASCII-safe JSON), so the signer must too.
@@ -101,6 +125,13 @@ beforeEach(() => {
   });
   vi.mocked(insertWebhookEvents).mockResolvedValue();
   vi.mocked(insertWebhookDelivery).mockResolvedValue('del-1');
+});
+
+// Owner agent: back to "unconfigured" before every test, whatever the last one set.
+beforeEach(() => {
+  ownerAgentFake.admin.reset(unconfiguredState());
+  ownerAgentSend.mockResolvedValue('job-id');
+  __resetRateLimitStateForTests();
 });
 
 describe('POST /api/webhooks/whatsapp — the verified envelope is stored verbatim', () => {
@@ -312,7 +343,8 @@ describe('POST /api/webhooks/whatsapp — persist-then-process intake', () => {
 });
 
 // Template-health fields (message_template_status_update / template_category_update /
-// template_correct_category_detection / message_template_quality_update) are
+// template_correct_category_detection / message_template_quality_update /
+// message_template_components_update) are
 // NOT in whatsapp-api-js's typed PostData union — normalizeTemplateHealthRows
 // reads them off the raw payload, so these are exercised directly through the
 // signed HTTP round-trip (same as every other event kind here), not a
@@ -400,6 +432,28 @@ describe('POST /api/webhooks/whatsapp — template-health fields', () => {
     expect(rowsArg()[0]).toMatchObject({ event_kind: 'template_quality' });
   });
 
+  it('persists message_template_components_update with its own event_kind', async () => {
+    // Meta's reference example (webhooks/reference/message_template_components_update).
+    const res = await POST(
+      signed(
+        templateDelivery('message_template_components_update', {
+          message_template_id: 1315502779341834,
+          message_template_name: 'order_confirmation',
+          message_template_language: 'en_US',
+          message_template_element: 'Thank you for your order, {{1}}!',
+          message_template_buttons: [
+            { message_template_button_type: 'URL', message_template_button_text: 'Email support' },
+          ],
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(rowsArg()[0]).toMatchObject({
+      event_kind: 'template_components',
+      dedupe_key: 'wa-tmpl:template_components:1315502779341834:1700000000',
+    });
+  });
+
   it('persists a template-health field that lacks message_template_id under its raw field name', async () => {
     const res = await POST(
       signed(templateDelivery('message_template_status_update', { event: 'APPROVED' })),
@@ -418,8 +472,8 @@ describe('POST /api/webhooks/whatsapp — template-health fields', () => {
 // Every other subscribed field (account_update, business_username_updates,
 // phone_number_quality_update, user_preferences, calls, …) is persisted
 // generically under its Meta field name so nothing Meta delivers is invisible
-// in /admin/webhooks. The worker has no handler for these kinds and marks them
-// processed untouched.
+// in /admin/webhooks. The worker handles the account-level kinds and marks the
+// rest processed untouched.
 describe('POST /api/webhooks/whatsapp — every other subscribed field is persisted', () => {
   it('persists an unrecognized field under its raw field name with a stable dedupe key', async () => {
     const body = templateDelivery('business_username_updates', {
@@ -448,6 +502,20 @@ describe('POST /api/webhooks/whatsapp — every other subscribed field is persis
     vi.mocked(insertWebhookEvents).mockClear();
     await POST(signed(body));
     expect(rowsArg()[0].dedupe_key).toBe(rows[0].dedupe_key);
+  });
+
+  it('carries the WABA id (entry.id) on the row without changing the dedupe key', async () => {
+    // Meta's reference example (webhooks/reference/account_review_update): the
+    // value is `{ decision }` alone, so the account is only in entry.id.
+    const res = await POST(signed(templateDelivery('account_review_update', { decision: 'APPROVED' })));
+    expect(res.status).toBe(200);
+    const row = rowsArg()[0];
+    expect(row).toMatchObject({ event_kind: 'account_review_update' });
+    expect(row.payload).toEqual({ decision: 'APPROVED', entry_waba_id: 'waba-1' });
+    // The digest is taken over Meta's value only, so a row stored before the
+    // id was carried and one stored after share the key.
+    const digest = createHash('sha256').update(JSON.stringify({ decision: 'APPROVED' })).digest('hex').slice(0, 16);
+    expect(row.dedupe_key).toBe(`wa-field:account_review_update:waba-1:1700000000:${digest}`);
   });
 
   it('keeps phone_number_id when the field value carries metadata', async () => {
@@ -597,9 +665,9 @@ describe('POST /api/webhooks/whatsapp — Meta sandbox test payloads persist on 
 
 // The value-level `contacts[]` block is where Meta puts the sender's profile
 // name, `wa_id`, and — per the BSUID/usernames rollout — `user_id` and
-// `username`. It is not part of the message object, so it used to be dropped.
-// It is now carried on the persisted row under a key that cannot collide with a
-// message field (`contacts` is itself a message type).
+// `username`. It is not part of the message object, so it is carried on the
+// persisted row under a key that cannot collide with a message field
+// (`contacts` is itself a message type).
 describe('POST /api/webhooks/whatsapp — sender/recipient contact block is kept', () => {
   it('attaches sender_contact (profile + wa_id + user_id + username) to an inbound message row', async () => {
     await POST(
@@ -704,5 +772,698 @@ describe('POST /api/webhooks/whatsapp — rejected deliveries are visible (ids o
   it('does not alert on an accepted delivery', async () => {
     await POST(signed(delivery({ messages: [] })));
     expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// OWNER AGENT (plans/owner-whatsapp-agent-plan.md stage 4) — THE GOLDEN MATRIX.
+//
+// The invariant: nothing about guest traffic changes. Every fixture below runs in
+// every configuration (outreach on/off × number chosen/null × agent switch on/off
+// × routing-read DB error none/settings/allow-list) and is compared against the
+// SAME fixture, SAME outreach state, with the feature UNCONFIGURED (the
+// migration's defaults). For a fixture with no authorised message, these must be
+// deep-equal — and what reaches insertWebhookEvents equal to the byte:
+//   * the response (status + body, or the same throw);
+//   * every insertWebhookDelivery call;
+//   * every insertWebhookEvents call;
+//   * every sendSlackAlert call from the webhook itself.
+// The permitted differences are owner-agent only: a failed routing read sends one
+// ids-only alert from source 'owner-agent', and a rotation of the bound BSUID
+// revokes the binding (one audit row, one ids-only alert). So alerts are
+// partitioned by source: the webhook's own must match the baseline exactly, and
+// the owner-agent ones must number exactly 1 in a cell where a routing read
+// actually failed or a rotation revoked a binding, else 0.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const OA_CHOSEN = '1111222233334444';
+const OA_OTHER = '5555666677778888';
+const OA_STAFF = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
+const OA_ENTRY = 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e';
+const OA_STAFF_E164 = '+972508412345';
+const OA_STAFF_WA_ID = '972508412345';
+const OA_DISABLED_E164 = '+972507777777';
+const OA_GUEST_WA_ID = '972501111111';
+const OA_QUESTION = 'כמה פניות פתוחות יש היום?';
+// The staff row is BOUND in every golden cell (so rotation and BSUID-only
+// fixtures have something to act on); no staff fixture carries a from_user_id
+// that could bind again.
+const OA_BSUID = 'IL.13491208655302741918';
+const OA_GUEST_BSUID = 'IL.55555555555555555555';
+const OA_MEDIA_ID = '1234567890123456';
+
+function oaValue(phoneNumberId: string, extra: Record<string, unknown>) {
+  return {
+    messaging_product: 'whatsapp',
+    metadata: { display_phone_number: '15550000000', phone_number_id: phoneNumberId },
+    ...extra,
+  };
+}
+function oaBody(changes: Array<{ field: string; value: Record<string, unknown> }>) {
+  return { object: 'whatsapp_business_account', entry: [{ id: 'waba-1', time: 1700000100, changes }] };
+}
+function oaMessages(phoneNumberId: string, messages: unknown[], contacts?: unknown[]) {
+  return oaBody([{ field: 'messages', value: oaValue(phoneNumberId, { ...(contacts ? { contacts } : {}), messages }) }]);
+}
+function oaText(id: string, from: string, text: string) {
+  return { id, from, timestamp: '1700000000', type: 'text', text: { body: text } };
+}
+
+/** What the gate decides for a diverted message when the agent switch is ON. */
+type OaExpect = 'intake' | { gated: string } | { reaction: string };
+
+interface OaFixture {
+  name: string;
+  raw: string;
+  signature: 'valid' | 'invalid';
+  /** Messages that ARE authorised (allow-listed sender, chosen number) → diverted when routed. */
+  authorised: Array<{ wamid: string; expect: OaExpect }>;
+  /** Only where outreach OFF differs from ON (see the malformed-entry fixture). */
+  authorisedOutreachOff?: Array<{ wamid: string; expect: OaExpect }>;
+  /** A rotation of the bound BSUID: when routed, revoked (observed — never diverted). */
+  revokes?: 'user_id_update' | 'user_changed_user_id';
+}
+
+const OA_FIXTURES: OaFixture[] = [
+  {
+    name: 'status only (on the chosen number, to the staff phone)',
+    raw: JSON.stringify(
+      oaBody([
+        {
+          field: 'messages',
+          value: oaValue(OA_CHOSEN, {
+            statuses: [
+              { id: 'wamid.s1', status: 'delivered', timestamp: '1700000000', recipient_id: OA_STAFF_WA_ID },
+              { id: 'wamid.s2', status: 'read', timestamp: '1700000001', recipient_id: OA_GUEST_WA_ID },
+            ],
+          }),
+        },
+      ]),
+    ),
+    signature: 'valid',
+    authorised: [],
+  },
+  {
+    name: 'allow-listed phone, but on ANOTHER number',
+    raw: JSON.stringify(oaMessages(OA_OTHER, [oaText('wamid.other', OA_STAFF_WA_ID, 'אני מגיע')])),
+    signature: 'valid',
+    authorised: [],
+  },
+  {
+    name: 'guest (not allow-listed) on the chosen number',
+    raw: JSON.stringify(
+      oaMessages(
+        OA_CHOSEN,
+        [oaText('wamid.guest', OA_GUEST_WA_ID, 'כן, נגיע 2')],
+        [{ profile: { name: 'אורח' }, wa_id: OA_GUEST_WA_ID }],
+      ),
+    ),
+    signature: 'valid',
+    authorised: [],
+  },
+  {
+    name: 'guest RSVP button reply on the chosen number',
+    raw: JSON.stringify(
+      oaMessages(OA_CHOSEN, [
+        {
+          id: 'wamid.btn',
+          from: OA_GUEST_WA_ID,
+          timestamp: '1700000000',
+          type: 'button',
+          button: { payload: 'rsvp_yes', text: 'מגיע' },
+          context: { id: 'wamid.out' },
+        },
+      ]),
+    ),
+    signature: 'valid',
+    authorised: [],
+  },
+  {
+    name: 'foreign wa_id that normalizePhone() would turn INTO the allow-listed Israeli number',
+    raw: JSON.stringify(oaMessages(OA_CHOSEN, [oaText('wamid.foreign', '508412345', 'hi')])),
+    signature: 'valid',
+    authorised: [],
+  },
+  {
+    name: 'trunk-zero wa_id (+9720…) that normalizes onto the allow-listed number',
+    raw: JSON.stringify(oaMessages(OA_CHOSEN, [oaText('wamid.trunk', '9720508412345', 'hi')])),
+    signature: 'valid',
+    authorised: [],
+  },
+  {
+    name: 'sender on a DISABLED allow-list row',
+    raw: JSON.stringify(oaMessages(OA_CHOSEN, [oaText('wamid.disabled', OA_DISABLED_E164.slice(1), 'hi')])),
+    signature: 'valid',
+    authorised: [],
+  },
+  {
+    name: 'template-health',
+    raw: JSON.stringify(
+      oaBody([
+        {
+          field: 'message_template_status_update',
+          value: { event: 'APPROVED', message_template_id: 42, message_template_name: 'rsvp_invite_he' },
+        },
+      ]),
+    ),
+    signature: 'valid',
+    authorised: [],
+  },
+  {
+    name: 'another field (account_update, phone_number_quality_update)',
+    raw: JSON.stringify(
+      oaBody([
+        { field: 'account_update', value: { event: 'VERIFIED_ACCOUNT' } },
+        {
+          field: 'phone_number_quality_update',
+          value: { metadata: { phone_number_id: OA_CHOSEN }, event: 'FLAGGED', current_limit: 'TIER_1K' },
+        },
+      ]),
+    ),
+    signature: 'valid',
+    authorised: [],
+  },
+  {
+    name: 'messages change with only an errors block, on the chosen number',
+    raw: JSON.stringify(oaBody([{ field: 'messages', value: oaValue(OA_CHOSEN, { errors: [{ code: 130429 }] }) }])),
+    signature: 'valid',
+    authorised: [],
+  },
+  {
+    name: 'bad signature (carrying an allow-listed message)',
+    raw: JSON.stringify(oaMessages(OA_CHOSEN, [oaText('wamid.badsig', OA_STAFF_WA_ID, OA_QUESTION)])),
+    signature: 'invalid',
+    authorised: [],
+  },
+  { name: 'invalid JSON', raw: '{not json', signature: 'valid', authorised: [] },
+  // Signed bodies that are valid JSON but not an object: today the envelope is
+  // stored first and then the normalizer throws (null) or yields nothing. The
+  // diversion must not move either of those.
+  { name: 'signed JSON null', raw: 'null', signature: 'valid', authorised: [] },
+  { name: 'signed JSON array', raw: '[]', signature: 'valid', authorised: [] },
+  { name: 'signed JSON string', raw: '"x"', signature: 'valid', authorised: [] },
+  {
+    name: 'entry with a non-array changes next to an allow-listed message',
+    raw: JSON.stringify({
+      object: 'whatsapp_business_account',
+      entry: [
+        { id: 'waba-1', changes: [{ field: 'messages', value: oaValue(OA_CHOSEN, { messages: [oaText('wamid.bad', OA_STAFF_WA_ID, OA_QUESTION)] }) }] },
+        { id: 'waba-2', changes: 5 },
+      ],
+    }),
+    signature: 'valid',
+    // Outreach ON: the normalizer throws on `changes: 5` exactly as today (after
+    // the envelope is stored), so nothing is diverted — the route keeps today's
+    // failure. Outreach OFF: nothing is ever written for guests, and the staff
+    // message itself is well-formed, so it is diverted.
+    authorised: [],
+    authorisedOutreachOff: [{ wamid: 'wamid.bad', expect: 'intake' }],
+  },
+  // ── authorised ──
+  {
+    name: 'allow-listed sender, text, on the chosen number',
+    raw: JSON.stringify(
+      oaMessages(
+        OA_CHOSEN,
+        [oaText('wamid.staff', OA_STAFF_WA_ID, OA_QUESTION)],
+        [{ profile: { name: 'Owner' }, wa_id: OA_STAFF_WA_ID }],
+      ),
+    ),
+    signature: 'valid',
+    authorised: [{ wamid: 'wamid.staff', expect: 'intake' }],
+  },
+  {
+    name: 'allow-listed sender, image with a media id the CHECK rejects',
+    raw: JSON.stringify(
+      oaMessages(OA_CHOSEN, [{ id: 'wamid.img', from: OA_STAFF_WA_ID, timestamp: '1700000000', type: 'image', image: { id: 'm1' } }]),
+    ),
+    signature: 'valid',
+    authorised: [{ wamid: 'wamid.img', expect: { gated: 'invalid_payload' } }],
+  },
+  {
+    name: 'staff image (valid) mixed with a guest text',
+    raw: JSON.stringify(
+      oaMessages(OA_CHOSEN, [
+        oaText('wamid.cap.guest', OA_GUEST_WA_ID, 'כן'),
+        { id: 'wamid.cap.img', from: OA_STAFF_WA_ID, timestamp: '1700000000', type: 'image', image: { id: OA_MEDIA_ID, mime_type: 'image/jpeg', caption: 'מה זה?' } },
+      ]),
+    ),
+    signature: 'valid',
+    authorised: [{ wamid: 'wamid.cap.img', expect: 'intake' }],
+  },
+  {
+    name: 'staff interactive button_reply mixed with a guest button reply',
+    raw: JSON.stringify(
+      oaMessages(OA_CHOSEN, [
+        { id: 'wamid.ia.guest', from: OA_GUEST_WA_ID, timestamp: '1700000000', type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: 'rsvp_yes', title: 'מגיע' } } },
+        { id: 'wamid.ia.staff', from: OA_STAFF_WA_ID, timestamp: '1700000001', type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: 'oa:fu:x:1', title: 'עוד' } }, context: { id: 'wamid.ours' } },
+      ]),
+    ),
+    signature: 'valid',
+    authorised: [{ wamid: 'wamid.ia.staff', expect: 'intake' }],
+  },
+  {
+    name: 'staff reaction mixed with a guest reaction',
+    raw: JSON.stringify(
+      oaMessages(OA_CHOSEN, [
+        { id: 'wamid.rx.guest', from: OA_GUEST_WA_ID, timestamp: '1700000000', type: 'reaction', reaction: { message_id: 'wamid.inv', emoji: '\u{2764}\u{FE0F}' } },
+        { id: 'wamid.rx.staff', from: OA_STAFF_WA_ID, timestamp: '1700000001', type: 'reaction', reaction: { message_id: 'wamid.ans', emoji: '\u{1F44D}' } },
+      ]),
+    ),
+    signature: 'valid',
+    authorised: [{ wamid: 'wamid.rx.staff', expect: { reaction: 'feedback_up' } }],
+  },
+  {
+    name: 'staff system message (not a BSUID change) mixed with a guest text',
+    raw: JSON.stringify(
+      oaMessages(OA_CHOSEN, [
+        oaText('wamid.sy.guest', OA_GUEST_WA_ID, 'לא'),
+        { id: 'wamid.sy.staff', from: OA_STAFF_WA_ID, timestamp: '1700000001', type: 'system', system: { type: 'customer_changed_number', body: 'x' } },
+      ]),
+    ),
+    signature: 'valid',
+    authorised: [{ wamid: 'wamid.sy.staff', expect: { gated: 'unsupported_type' } }],
+  },
+  {
+    name: 'BSUID-only sender (no from) whose BSUID is bound to no row',
+    raw: JSON.stringify(
+      oaMessages(OA_CHOSEN, [{ id: 'wamid.nf.guest', from_user_id: OA_GUEST_BSUID, timestamp: '1700000000', type: 'text', text: { body: 'היי' } }]),
+    ),
+    signature: 'valid',
+    authorised: [],
+  },
+  {
+    name: 'guest phone carrying the staff BSUID (from present → guest)',
+    raw: JSON.stringify(
+      oaMessages(OA_CHOSEN, [{ id: 'wamid.gb', from: OA_GUEST_WA_ID, from_user_id: OA_BSUID, timestamp: '1700000000', type: 'text', text: { body: 'כן' } }]),
+    ),
+    signature: 'valid',
+    authorised: [],
+  },
+  {
+    name: 'no from, the bound staff BSUID, mixed with a guest text',
+    raw: JSON.stringify(
+      oaMessages(OA_CHOSEN, [
+        oaText('wamid.nf.g', OA_GUEST_WA_ID, 'כן'),
+        { id: 'wamid.nf.staff', from_user_id: OA_BSUID, timestamp: '1700000001', type: 'text', text: { body: OA_QUESTION } },
+      ]),
+    ),
+    signature: 'valid',
+    authorised: [{ wamid: 'wamid.nf.staff', expect: 'intake' }],
+  },
+  {
+    // Verifier M5, documented: a guest RSVP template tap from a phone that is ALSO
+    // on the allow-list, on the agent number, is the staff member's message. It is
+    // diverted (never reaches webhook_inbox, so no RSVP is recorded from it) and
+    // becomes a 'button' intake row; the consumer finds no nonce → unknown_action.
+    name: 'M5: guest RSVP template tap from the allow-listed phone on the agent number',
+    raw: JSON.stringify(
+      oaMessages(OA_CHOSEN, [
+        { id: 'wamid.m5', from: OA_STAFF_WA_ID, timestamp: '1700000000', type: 'button', button: { payload: 'rsvp_yes', text: 'מגיע' }, context: { id: 'wamid.invite' } },
+      ]),
+    ),
+    signature: 'valid',
+    authorised: [{ wamid: 'wamid.m5', expect: 'intake' }],
+  },
+  {
+    name: 'user_id_update rotating the bound staff BSUID (another number)',
+    raw: JSON.stringify(
+      oaBody([
+        {
+          field: 'user_id_update',
+          value: oaValue(OA_OTHER, {
+            user_id_update: [{ wa_id: '972500000009', detail: 'x', user_id: { previous: OA_BSUID, current: 'IL.77777777777777777777' }, timestamp: '1700000000' }],
+          }),
+        },
+      ]),
+    ),
+    signature: 'valid',
+    authorised: [],
+    revokes: 'user_id_update',
+  },
+  {
+    name: 'user_changed_user_id system message from the staff phone, mixed with a guest text',
+    raw: JSON.stringify(
+      oaMessages(OA_CHOSEN, [
+        oaText('wamid.rot.g', OA_GUEST_WA_ID, 'כן'),
+        {
+          id: 'wamid.rot.sys', from: OA_STAFF_WA_ID, from_user_id: OA_BSUID, timestamp: '1700000001', type: 'system',
+          system: { type: 'user_changed_user_id', body: 'User changed', user_id: 'IL.77777777777777777777', wa_id: OA_STAFF_WA_ID },
+        },
+      ]),
+    ),
+    signature: 'valid',
+    authorised: [],
+    revokes: 'user_changed_user_id',
+  },
+  {
+    name: 'user_id_update of a guest BSUID (bound to no row)',
+    raw: JSON.stringify(
+      oaBody([
+        {
+          field: 'user_id_update',
+          value: oaValue(OA_CHOSEN, {
+            user_id_update: [{ wa_id: OA_GUEST_WA_ID, user_id: { previous: OA_GUEST_BSUID, current: 'IL.1' }, timestamp: '1700000000' }],
+          }),
+        },
+      ]),
+    ),
+    signature: 'valid',
+    authorised: [],
+  },
+  {
+    name: 'mixed delivery: guest + staff message, a status, another field',
+    raw: JSON.stringify(
+      oaBody([
+        {
+          field: 'messages',
+          value: oaValue(OA_CHOSEN, {
+            messages: [
+              oaText('wamid.mix.guest', OA_GUEST_WA_ID, 'כן'),
+              oaText('wamid.mix.staff', OA_STAFF_WA_ID, OA_QUESTION),
+            ],
+          }),
+        },
+        {
+          field: 'messages',
+          value: oaValue(OA_CHOSEN, {
+            statuses: [{ id: 'wamid.mix.s', status: 'sent', timestamp: '1700000002', recipient_id: OA_GUEST_WA_ID }],
+          }),
+        },
+        { field: 'account_update', value: { event: 'VERIFIED_ACCOUNT' } },
+      ]),
+    ),
+    signature: 'valid',
+    authorised: [{ wamid: 'wamid.mix.staff', expect: 'intake' }],
+  },
+];
+
+interface OaConfig {
+  outreach: boolean;
+  number: boolean;
+  agentSwitch: boolean;
+  dbError: 'none' | 'settings' | 'allowlist';
+}
+
+const OA_CONFIGS: OaConfig[] = [];
+for (const outreach of [true, false])
+  for (const number of [true, false])
+    for (const agentSwitch of [true, false])
+      for (const dbError of ['none', 'settings', 'allowlist'] as const)
+        OA_CONFIGS.push({ outreach, number, agentSwitch, dbError });
+
+function oaLabel(c: OaConfig): string {
+  return `outreach ${c.outreach ? 'on' : 'off'} · number ${c.number ? 'chosen' : 'null'} · switch ${c.agentSwitch ? 'on' : 'off'} · db error ${c.dbError}`;
+}
+
+function oaState(c: OaConfig): FakeAdminState {
+  const s = unconfiguredState();
+  s.settings = {
+    owner_agent_enabled: c.agentSwitch,
+    owner_agent_phone_number_id: c.number ? OA_CHOSEN : null,
+    owner_agent_daily_cap: 50,
+  };
+  s.allowlist = [
+    {
+      id: OA_ENTRY, e164: OA_STAFF_E164, staff_user_id: OA_STAFF, enabled: true,
+      bsuid: OA_BSUID, bsuid_bound_at: '2026-09-27T00:00:00Z', bound_from_e164: OA_STAFF_E164,
+    },
+    { id: 'c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f', e164: OA_DISABLED_E164, staff_user_id: OA_STAFF, enabled: false },
+  ];
+  s.staff = new Set([OA_STAFF]);
+  s.verifiedPhones = new Map([[OA_STAFF, OA_STAFF_E164]]);
+  const dbErr = { code: '57014', message: `canceling statement; row (${OA_STAFF_E164})` };
+  if (c.dbError === 'settings') s.settingsError = dbErr;
+  if (c.dbError === 'allowlist') s.allowlistError = dbErr;
+  return s;
+}
+
+type Outcome = { status: number; body: string } | { threw: string };
+
+async function oaRun(fx: OaFixture, outreach: boolean, state: FakeAdminState) {
+  vi.clearAllMocks();
+  ownerAgentFake.admin.reset(state);
+  __resetRateLimitStateForTests();
+  vi.mocked(getOutreachEnabled).mockResolvedValue(outreach);
+  const sig = fx.signature === 'valid' ? sign(fx.raw) : 'sha256=deadbeef';
+  let outcome: Outcome;
+  try {
+    const res = await POST(request(fx.raw, sig));
+    outcome = { status: res.status, body: await res.text() };
+  } catch (e) {
+    outcome = { threw: e instanceof Error ? e.constructor.name : typeof e };
+  }
+  const alerts = vi.mocked(sendSlackAlert).mock.calls.map((c) => c[0]);
+  return {
+    outcome,
+    delivery: vi.mocked(insertWebhookDelivery).mock.calls.map((c) => c[0]),
+    events: vi.mocked(insertWebhookEvents).mock.calls.map((c) => c[0]),
+    eventsBytes: JSON.stringify(vi.mocked(insertWebhookEvents).mock.calls),
+    webhookAlerts: alerts.filter((a) => a.source !== 'owner-agent'),
+    agentAlerts: alerts.filter((a) => a.source === 'owner-agent'),
+    audits: ownerAgentFake.admin.writes.filter((w) => w.table === 'owner_agent_audit').map((w) => w.row),
+    intake: ownerAgentFake.admin.writes.filter((w) => w.table === 'owner_agent_intake').map((w) => w.row),
+    allowlistWrites: ownerAgentFake.admin.writes.filter((w) => w.table === 'owner_agent_allowlist'),
+    sends: ownerAgentSend.mock.calls.map((c) => [...c]),
+  };
+}
+
+// A routing read failed in this cell (and so exactly one owner-agent alert).
+function oaRoutingFails(c: OaConfig): boolean {
+  return c.dbError === 'settings' || (c.dbError === 'allowlist' && c.number);
+}
+// The feature is live in this cell: a number chosen and the routing read succeeded.
+function oaRouted(c: OaConfig): boolean {
+  return c.number && c.dbError === 'none';
+}
+
+describe.each(OA_CONFIGS.map((c) => [oaLabel(c), c] as const))(
+  'owner agent golden matrix — %s',
+  (_label, config) => {
+    it.each(OA_FIXTURES.map((fx) => [fx.name, fx] as const))('%s', async (_name, fx) => {
+      const baseline = await oaRun(fx, config.outreach, unconfiguredState());
+      // The baseline itself must be the feature-free path: no owner-agent anything.
+      expect(baseline.agentAlerts).toEqual([]);
+      expect(baseline.audits).toEqual([]);
+      expect(baseline.sends).toEqual([]);
+
+      const got = await oaRun(fx, config.outreach, oaState(config));
+
+      // Owner-agent alerts: exactly one per failed routing read, ids only.
+      if (oaRoutingFails(config)) {
+        expect(got.agentAlerts).toHaveLength(1);
+        expect(got.agentAlerts[0].fields).toEqual({
+          step: config.dbError === 'settings' ? 'routing_settings' : 'routing_allowlist',
+          code: '57014',
+        });
+        expect(JSON.stringify(got.agentAlerts[0])).not.toContain(OA_STAFF_WA_ID);
+      }
+
+      const authorised = config.outreach ? fx.authorised : (fx.authorisedOutreachOff ?? fx.authorised);
+      const diverted = oaRouted(config) ? authorised : [];
+
+      // Response: always what today answers.
+      expect(got.outcome).toStrictEqual(baseline.outcome);
+      // The webhook's own alerts (signature / JSON): always today's.
+      expect(got.webhookAlerts).toStrictEqual(baseline.webhookAlerts);
+
+      if (diverted.length === 0) {
+        // No authorised message in play: byte-for-byte today.
+        expect(got.delivery).toStrictEqual(baseline.delivery);
+        expect(got.events).toStrictEqual(baseline.events);
+        expect(got.eventsBytes).toBe(baseline.eventsBytes);
+        expect(got.intake).toEqual([]);
+        expect(got.sends).toEqual([]);
+        if (fx.revokes && oaRouted(config)) {
+          // A rotation of the bound BSUID: observed only — one revocation (CAS),
+          // one audit row, one ids-only alert, whatever the switch or outreach.
+          expect(got.allowlistWrites).toHaveLength(1);
+          expect(got.allowlistWrites[0].row).toEqual({ bsuid: null, parent_bsuid: null, bsuid_bound_at: null, bound_from_e164: null });
+          expect(got.audits.map((a) => [a.outcome, a.reason_code, a.allowlist_entry_id])).toEqual([
+            ['bsuid_revoked', fx.revokes, OA_ENTRY],
+          ]);
+          expect(got.agentAlerts).toHaveLength(1);
+          expect(got.agentAlerts[0].fields).toEqual({ entry: OA_ENTRY, reason: fx.revokes });
+          expect(JSON.stringify(got.agentAlerts[0])).not.toContain(OA_BSUID);
+          return;
+        }
+        expect(got.audits).toEqual([]);
+        expect(got.allowlistWrites).toEqual([]);
+        if (!oaRoutingFails(config)) expect(got.agentAlerts).toEqual([]);
+        return;
+      }
+
+      // ── An authorised message, routed ──
+      expect(got.agentAlerts).toEqual([]);
+      const divertedIds = new Set(diverted.map((d) => d.wamid));
+
+      // Guests: exactly the baseline minus the diverted message rows — nothing else.
+      if (!config.outreach) {
+        // Outreach off writes nothing for anyone today, and still nothing now.
+        expect(baseline.delivery).toEqual([]);
+        expect(baseline.events).toEqual([]);
+        expect(got.delivery).toEqual([]);
+        expect(got.events).toEqual([]);
+      } else {
+        const baselineRows = baseline.events.flat();
+        const keptRows = baselineRows.filter(
+          (r) => !(r.event_kind === 'message' && r.message_id !== null && divertedIds.has(r.message_id as string)),
+        );
+        expect(keptRows.length).toBe(baselineRows.length - diverted.length);
+        if (keptRows.length === 0) {
+          expect(got.delivery).toEqual([]); // nothing left to keep an envelope for
+          expect(got.events).toEqual([]);
+        } else {
+          expect(got.delivery).toStrictEqual(baseline.delivery); // verbatim (9.13)
+          expect(got.events).toStrictEqual([keptRows]);
+        }
+      }
+      // No diverted wamid ever reaches webhook_inbox.
+      for (const call of got.events) {
+        for (const row of call) expect(divertedIds.has(row.message_id as string)).toBe(false);
+      }
+
+      // Exactly one audit row per diverted message, with its code.
+      const expected = diverted.map((d) => {
+        if (!config.agentSwitch) return ['gated', 'kill_switch_off'];
+        if (d.expect === 'intake') return ['intake_queued', null];
+        if ('gated' in d.expect) return ['gated', d.expect.gated];
+        return ['reaction_received', d.expect.reaction];
+      });
+      expect(got.audits.map((a) => [a.outcome, a.reason_code])).toEqual(expected);
+      expect(JSON.stringify(got.audits)).not.toContain(OA_STAFF_WA_ID);
+      expect(JSON.stringify(got.audits)).not.toContain(OA_QUESTION);
+      expect(JSON.stringify(got.audits)).not.toContain(OA_BSUID);
+      // Nothing binds: the row is already bound and no phone-matched fixture binds.
+      expect(got.allowlistWrites).toEqual([]);
+
+      // Insert + enqueue only when the gate passes.
+      const passing = diverted.filter((d) => config.agentSwitch && d.expect === 'intake');
+      expect(got.intake.map((r) => r.wamid)).toEqual(passing.map((d) => d.wamid));
+      expect(got.sends).toEqual(
+        passing.map((d) => [
+          QUEUES.ownerAgentReply,
+          { intakeId: expect.any(String) },
+          { id: deterministicJobId(d.wamid) },
+        ]),
+      );
+    });
+  },
+);
+
+describe('owner agent — a failure while handling a diverted message never changes the answer', () => {
+  const mixed = OA_FIXTURES.find((f) => f.name.startsWith('mixed delivery'))!;
+
+  it.each([true, false])('intake insert fails (outreach %s): 200 ok, guests persisted, one ids-only alert', async (outreach) => {
+    const baseline = await oaRun(mixed, outreach, unconfiguredState());
+    const state = oaState({ outreach, number: true, agentSwitch: true, dbError: 'none' });
+    state.intakeInsertError = { code: '23514', message: `Failing row contains (${OA_QUESTION}, ${OA_STAFF_E164})` };
+    const got = await oaRun(mixed, outreach, state);
+
+    expect(got.outcome).toStrictEqual({ status: 200, body: 'ok' });
+    expect(got.outcome).toStrictEqual(baseline.outcome);
+    expect(got.delivery).toStrictEqual(baseline.delivery);
+    expect(got.webhookAlerts).toStrictEqual(baseline.webhookAlerts);
+    expect(got.sends).toEqual([]);
+    expect(got.agentAlerts).toHaveLength(1);
+    expect(got.agentAlerts[0].fields).toEqual({ step: 'intake', code: '23514', audit: 'written', entry: OA_ENTRY });
+    const alertText = JSON.stringify(got.agentAlerts[0]);
+    expect(alertText).not.toContain(OA_STAFF_WA_ID);
+    expect(alertText).not.toContain(OA_QUESTION);
+    expect(got.audits.map((a) => [a.outcome, a.reason_code])).toEqual([['failed', 'db_error']]);
+  });
+
+  it('the service-role client itself throws while handling: still 200 ok, guests persisted', async () => {
+    const state = oaState({ outreach: true, number: true, agentSwitch: true, dbError: 'none' });
+    const baseline = await oaRun(mixed, true, unconfiguredState());
+    // First call (routing) succeeds; the second (handling) throws.
+    const { createAdminClient } = await import('@/lib/supabase/admin');
+    vi.mocked(createAdminClient)
+      .mockImplementationOnce(() => ownerAgentFake.admin.client as never)
+      .mockImplementationOnce(() => {
+        throw new Error('boom');
+      });
+    ownerAgentFake.admin.reset(state);
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    vi.mocked(insertWebhookDelivery).mockClear();
+    vi.mocked(insertWebhookEvents).mockClear();
+    vi.mocked(sendSlackAlert).mockClear();
+    const res = await POST(request(mixed.raw, sign(mixed.raw)));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('ok');
+    expect(vi.mocked(insertWebhookDelivery).mock.calls.map((c) => c[0])).toStrictEqual(baseline.delivery);
+    const alerts = vi.mocked(sendSlackAlert).mock.calls.map((c) => c[0]);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatchObject({ source: 'owner-agent', fields: { step: 'client', code: 'exception' } });
+  });
+
+  it('outreach off + number chosen: the body is read only to find staff messages; a guest-only delivery writes nothing', async () => {
+    const guestOnly = OA_FIXTURES.find((f) => f.name.startsWith('guest (not allow-listed)'))!;
+    const got = await oaRun(guestOnly, false, oaState({ outreach: false, number: true, agentSwitch: true, dbError: 'none' }));
+    expect(got.outcome).toStrictEqual({ status: 200, body: 'ok' });
+    expect(got.delivery).toEqual([]);
+    expect(got.events).toEqual([]);
+    expect(got.audits).toEqual([]);
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+});
+
+describe('owner agent — capabilities on the route (plans/owner-agent-chat-sdk-capabilities-plan.md)', () => {
+  const routed = (outreach: boolean) => oaState({ outreach, number: true, agentSwitch: true, dbError: 'none' });
+
+  it('M5: the guest RSVP template tap from an allow-listed phone becomes a button intake row, not an RSVP', async () => {
+    const m5 = OA_FIXTURES.find((f) => f.name.startsWith('M5:'))!;
+    const got = await oaRun(m5, true, routed(true));
+    expect(got.events).toEqual([]); // nothing for the guest pipeline
+    expect(got.delivery).toEqual([]);
+    expect(got.intake).toEqual([
+      expect.objectContaining({
+        wamid: 'wamid.m5',
+        message_type: 'button',
+        interactive_id: 'rsvp_yes',
+        interactive_title: 'מגיע',
+        reply_to_wamid: 'wamid.invite',
+        message_text: null,
+      }),
+    ]);
+    expect(got.audits.map((a) => [a.outcome, a.reason_code])).toEqual([['intake_queued', null]]);
+  });
+
+  it('outreach off: a rotation revokes the binding and writes nothing else', async () => {
+    const rot = OA_FIXTURES.find((f) => f.revokes === 'user_changed_user_id')!;
+    const got = await oaRun(rot, false, routed(false));
+    expect(got.outcome).toStrictEqual({ status: 200, body: 'ok' });
+    expect(got.delivery).toEqual([]);
+    expect(got.events).toEqual([]);
+    expect(got.intake).toEqual([]);
+    expect(got.sends).toEqual([]);
+    expect(got.allowlistWrites).toHaveLength(1);
+    expect(ownerAgentFake.admin.state.allowlist[0]).toMatchObject({ bsuid: null, bound_from_e164: null });
+  });
+
+  it('outreach on: the rotation event itself is persisted for the guest pipeline exactly as today', async () => {
+    const rot = OA_FIXTURES.find((f) => f.revokes === 'user_changed_user_id')!;
+    const baseline = await oaRun(rot, true, unconfiguredState());
+    const got = await oaRun(rot, true, routed(true));
+    expect(got.eventsBytes).toBe(baseline.eventsBytes);
+    expect(got.events.flat().map((r) => r.message_id)).toEqual(['wamid.rot.g', 'wamid.rot.sys']);
+  });
+
+  it('a staff reaction spends no rate limit: 15 reactions and then a question in one delivery still queue the question', async () => {
+    const reactions = Array.from({ length: 15 }, (_, i) => ({
+      id: `wamid.rr${i}`, from: OA_STAFF_WA_ID, timestamp: '1700000000', type: 'reaction',
+      reaction: { message_id: 'wamid.ans', emoji: '\u{1F44E}' },
+    }));
+    const fx: OaFixture = {
+      name: 'reactions then a question',
+      raw: JSON.stringify(oaMessages(OA_CHOSEN, [...reactions, oaText('wamid.q', OA_STAFF_WA_ID, OA_QUESTION)])),
+      signature: 'valid',
+      authorised: [],
+    };
+    const got = await oaRun(fx, true, routed(true));
+    const out = got.audits.map((a) => [a.outcome, a.reason_code]);
+    expect(out.slice(0, 15).every(([o, r]) => o === 'reaction_received' && r === 'feedback_down')).toBe(true);
+    expect(out[15]).toEqual(['intake_queued', null]);
+    expect(got.sends).toHaveLength(1);
   });
 });

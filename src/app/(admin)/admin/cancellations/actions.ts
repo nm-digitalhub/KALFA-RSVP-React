@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 
@@ -18,11 +19,13 @@ export async function resolveCancellationRequestAction(
   const parsed = resolveCancellationRequestSchema.safeParse({
     resolution: formData.get('resolution'),
     resolutionAmount: formData.get('resolutionAmount') || undefined,
+    // An empty box is "not chosen" (the form shows one of the two inputs at a time, but never trust that).
+    resolutionPercent: formData.get('resolutionPercent') || undefined,
     resolutionNote: formData.get('resolutionNote'),
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   try {

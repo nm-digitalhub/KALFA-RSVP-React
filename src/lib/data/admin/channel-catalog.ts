@@ -6,7 +6,7 @@ import type { TablesUpdate } from '@/lib/supabase/types';
 // Admin editor DAL for the outreach-channel catalog (public.channels — Stage 1 of
 // plans/channels-data-driven-plan.md). Reads/writes the DISPLAY metadata only:
 // label, built-flag, active (show/hide in the package form), and order. Gated by
-// manage_settings (the same permission the rest of /admin/channels uses); the
+// manage_settings (the same permission the rest of /admin/integrations uses); the
 // admin-only RLS policy (has_role admin) is the second layer.
 //
 // `key` is NOT editable here and there is no create/delete: the key mirrors the

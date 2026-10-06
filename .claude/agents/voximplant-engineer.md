@@ -29,7 +29,7 @@ shipped code is the source of truth; the docs are for verifying signatures.
 
 ## This repo — authoritative facts (verify against code, not memory)
 
-- **Scenario source:** `voxfiles/scenarios/src/RSVP.voxengine.js` (LIVE, Branch B).
+- **Scenario source:** `voxfiles/applications/kalfa-rsvp.kalfarsvp.voximplant.com/scenarios/src/RSVP.voxengine.js` (LIVE, Branch B).
   Also `Outgoingcall-RSVPAI.voxengine.js`, `KALFA.voxengine.js`.
 - **voxengine-ci project:** `voxfiles/` — `applications/` + `scenarios/`.
   Apps: `kalfa-rsvp` (prod, appId 11107202) and `kalfatest` (test). Prod rule

@@ -1,5 +1,7 @@
 import 'server-only';
 
+import type { components as IncomingWebhook } from '@/lib/whatsapp/generated/incoming-webhook';
+
 import {
   classifyMessagePayload,
   type InboundMessagePayload,
@@ -22,9 +24,15 @@ import {
   processCallRsvpRow,
   processOwnerNoteRow,
 } from '@/lib/data/call-result-processing';
+import {
+  processAccountReviewRow,
+  processAccountUpdateRow,
+  processPhoneNumberQualityRow,
+} from '@/lib/data/whatsapp-account-processing';
 import { processMeetingOptOutRow } from '@/lib/data/callback-voice-processing';
 import { processSalesOptOutRow } from '@/lib/data/sales-voice-processing';
 import { recordSalesWaDeliveryStatus } from '@/lib/data/sales-call-attempts';
+import { recordOwnerAgentDelivery } from '@/lib/owner-agent/delivery';
 import {
   processElevenLabsRsvpAnalysisRow,
   processElevenLabsSalesAnalysisRow,
@@ -39,11 +47,21 @@ import {
   processTemplateCategoryRow,
   processTemplateCategoryMisuseRow,
   processTemplateQualityRow,
+  processTemplateComponentsRow,
 } from '@/lib/data/template-health-processing';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { isEsConnectedPhoneNumber } from '@/lib/whatsapp/embedded-signup/connected-numbers';
 import { submitRsvp } from '@/lib/data/rsvp';
 import { handleHeadcountReply, requestHeadcount } from '@/lib/data/headcount';
-import { stageWhatsAppImport } from '@/lib/data/whatsapp-import';
+import {
+  replyImportPointer,
+  stageWhatsAppImport,
+} from '@/lib/data/whatsapp-import';
+import {
+  getWhatsAppChannel,
+  type WhatsAppChannel,
+} from '@/lib/data/outreach-config';
+import { classifyInboundChannel } from '@/lib/whatsapp/channel-routing';
 import type { WebhookInboxRow } from '@/lib/data/webhooks';
 // RSVP quick-reply button.payload -> RsvpStatus. Single source of truth SHARED
 // with the OUTBOUND send-time payload injection (client.ts via sendOneWhatsApp),
@@ -67,16 +85,61 @@ import { RSVP_BUTTON_MAP } from '@/lib/whatsapp/rsvp-buttons';
 // this set there if the false-positive rate proves too high.
 const WRONG_NUMBER_CODES = new Set(['131026']);
 
-// The persisted status payload shape we read (subset of the provider status
-// object). `errors[0].code` carries the Meta failure code on a `failed` status.
+// The persisted status payload we read: Meta's status object (generated webhook
+// types), every field optional because it is read back from jsonb.
+// `errors[0].code` carries the Meta failure code on a `failed` status.
+type WebhookSchemas = IncomingWebhook['schemas'];
 type StatusPayload = {
-  status?: string;
-  errors?: Array<{ code?: number | string }>;
+  status?: WebhookSchemas['Statuses']['status'];
+  errors?: Array<Partial<WebhookSchemas['StatusError']>>;
 };
 
-export async function processWebhookEvent(row: WebhookInboxRow): Promise<void> {
+// Per-drain memo for the reads that are the SAME for every row in a batch.
+//
+// §1.5.2 requires the `whatsapp_import_sender` resolution to be cached
+// per-message-batch rather than read once per message. The batch boundary is
+// real: the worker's handleWebhook claims up to 50 rows and loops. It creates
+// ONE context per drain and hands it down; every other caller (the admin
+// "reprocess" action, a test) gets a fresh one from the default parameter, so a
+// role change takes effect on the very next drain with no deploy and no
+// restart. Deliberately NOT a module-level cache: that would survive the whole
+// worker process and make the documented rollback ("remove the role assignment
+// in /admin/integrations/numbers") wait for a restart.
+export type WebhookBatchContext = {
+  whatsappChannel(): Promise<WhatsAppChannel | null>;
+  /** Does an Embedded Signup (Coexistence) connection own this number? */
+  isEsConnected(phoneNumberId: string): Promise<boolean>;
+};
+
+export function createWebhookBatchContext(): WebhookBatchContext {
+  let cached: WhatsAppChannel | null | undefined;
+  const esConnected = new Map<string, boolean>();
+  return {
+    async whatsappChannel() {
+      // Memoized on SUCCESS only. Caching the promise itself would pin a
+      // rejection for all 50 rows even if the database recovers mid-batch —
+      // and a rejection here is exactly the case that must be retried, not
+      // remembered (see resolveNumberForRoleStrict).
+      if (cached === undefined) cached = await getWhatsAppChannel();
+      return cached;
+    },
+    async isEsConnected(phoneNumberId) {
+      // Same rule: only a successful answer is remembered.
+      const known = esConnected.get(phoneNumberId);
+      if (known !== undefined) return known;
+      const answer = await isEsConnectedPhoneNumber(phoneNumberId);
+      esConnected.set(phoneNumberId, answer);
+      return answer;
+    },
+  };
+}
+
+export async function processWebhookEvent(
+  row: WebhookInboxRow,
+  ctx: WebhookBatchContext = createWebhookBatchContext(),
+): Promise<void> {
   if (row.event_kind === 'message') {
-    await processMessage(row);
+    await processMessage(row, ctx);
     return;
   }
   if (row.event_kind === 'status') {
@@ -148,6 +211,24 @@ export async function processWebhookEvent(row: WebhookInboxRow): Promise<void> {
     await processTemplateQualityRow(row);
     return;
   }
+  if (row.event_kind === 'template_components') {
+    await processTemplateComponentsRow(row);
+    return;
+  }
+  // Account-level WABA fields, stored under Meta's field name (route.ts
+  // normalizeOtherFieldRows).
+  if (row.event_kind === 'account_review_update') {
+    await processAccountReviewRow(row);
+    return;
+  }
+  if (row.event_kind === 'account_update') {
+    await processAccountUpdateRow(row);
+    return;
+  }
+  if (row.event_kind === 'phone_number_quality_update') {
+    await processPhoneNumberQualityRow(row);
+    return;
+  }
   // Unknown kind — nothing to do; caller marks it processed (no retry storm).
 }
 
@@ -169,25 +250,96 @@ async function processGraphMail(row: WebhookInboxRow): Promise<void> {
   await intakeMailAsInquiry(row.message_id);
 }
 
-// An inbound human message. Bills the reach when it is a billable type AND it
+// An inbound human message. FIRST the row is routed by the business number it
+// arrived at (webhook_inbox.phone_number_id): the number holding the
+// `whatsapp_import_sender` role goes ONLY to the guest-list importer; the RSVP
+// number (or a legacy row with no metadata) goes to the billing/RSVP path
+// below; anything else is ignored with an ids-only alert. With the role
+// UNASSIGNED — how this ships — every row takes the RSVP path and the importer
+// is offered every message first, exactly today's behaviour.
+//
+// Why the routing is not optional: MEASURED 2026-09-03, a message sent to the
+// second WABA number was recorded as a contact_interactions row with
+// billable = true against a CLOSED campaign. The RSVP path is the only one with
+// a financial consequence, so a misroute is a wrong charge.
+//
+// On the RSVP path this bills the reach when it is a billable type AND it
 // resolves to a contact we targeted. Resolution prefers the precise Meta
 // context.id binding (the reply quotes the exact outbound wamid we sent); it
 // falls back to the sender phone when the reply carries no context — a plain
 // typed-in reply (the common "כן אגיע" / "הסר" case, not a swipe/button) — so a
-// billable reach AND any opt-out it carries are never silently dropped (this
-// restores the pre-rework billing surface; the context.id path adds precision on
-// top of it). Double-bill-safe either way: insertInteraction's
+// billable reach AND any opt-out it carries are never silently dropped (the
+// context.id path adds precision on top of it). Double-bill-safe either way:
+// insertInteraction's
 // UNIQUE(channel, provider_id) on this inbound message_id + the `fresh` gate bill
 // at most once. Only when NEITHER context nor phone resolves is it recorded
 // processed without billing.
-async function processMessage(row: WebhookInboxRow): Promise<void> {
+async function processMessage(
+  row: WebhookInboxRow,
+  ctx: WebhookBatchContext,
+): Promise<void> {
   const messageId = row.message_id;
   if (!messageId) return;
 
   const payload = (row.payload ?? {}) as InboundMessagePayload;
-  // Owner-sent guest lists (CSV document / shared contact cards) are an
-  // IMPORT, not a campaign interaction — consumed before any billing logic.
-  if (await stageWhatsAppImport(row)) return;
+  const channel = await ctx.whatsappChannel();
+  const inbound = classifyInboundChannel(row.phone_number_id, channel);
+
+  // A number connected through Embedded Signup (Coexistence) — the owner's
+  // WhatsApp Business app number. Its customers are not our guests: never
+  // imported, billed or RSVP'd, and not an anomaly worth a Slack line per
+  // message. The row stays in webhook_inbox (inspectable in /admin/webhooks).
+  //
+  // Checked BEFORE the channel branches, not inside 'unknown': in legacy mode
+  // (no import role — also the documented rollback) classifyInboundChannel
+  // answers 'rsvp' for EVERY id, which would send these rows down the billing
+  // path. Our own two numbers are never looked up.
+  if (
+    row.phone_number_id &&
+    row.phone_number_id !== channel?.phoneNumberId &&
+    row.phone_number_id !== channel?.importPhoneNumberId &&
+    (await ctx.isEsConnected(row.phone_number_id))
+  ) {
+    return;
+  }
+
+  if (inbound === 'import') {
+    // Dedicated import number: an owner's CSV / contact cards → staging plus a
+    // reply from that number. Anything else sent there (free text, reactions,
+    // button taps) is deliberately dropped — no interaction, no billing, no
+    // RSVP, no headcount. That number never sends outreach, so nothing arriving
+    // on it is a reply to us.
+    await stageWhatsAppImport(row, channel);
+    return;
+  }
+
+  if (inbound === 'unknown') {
+    // Neither of our configured numbers. Never bill on it; say so once. Ids
+    // only — a phone_number_id is a technical Meta id, not a guest phone.
+    await sendSlackAlert({
+      level: 'warn',
+      category: 'send_health',
+      source: 'webhook-processing',
+      title: 'הודעת WhatsApp נכנסת ממספר עסקי לא מוכר — לא עובדה',
+      detail:
+        'webhook_inbox.phone_number_id אינו מספר ה-RSVP ואינו המספר שמחזיק את התפקיד whatsapp_import_sender. ' +
+        'השורה סומנה כמעובדת בלי אינטראקציה, חיוב או RSVP. אם זה מספר שלנו — לסנכרן אותו ב-/admin/integrations/numbers, ' +
+        'לשייך לו תפקיד, ולעבד מחדש מ-/admin/webhooks.',
+      fields: { rowId: row.id, phoneNumberId: row.phone_number_id ?? 'null' },
+    });
+    return;
+  }
+
+  // inbound === 'rsvp'
+  if (channel?.importPhoneNumberId) {
+    // Hard split: the RSVP number no longer stages lists. A verified owner who
+    // still sends one here gets a one-line pointer to the import number.
+    if (await replyImportPointer(row, channel)) return;
+  } else if (await stageWhatsAppImport(row, channel)) {
+    // Legacy: owner-sent guest lists are an IMPORT, not a campaign interaction
+    // — consumed before any billing logic.
+    return;
+  }
 
   const { billable, removal, replyId } = classifyMessagePayload(payload);
   if (!billable) return;
@@ -235,7 +387,7 @@ async function processMessage(row: WebhookInboxRow): Promise<void> {
     }
   }
 
-  // D4: an opt-out reply BILLS (it is a human reach) and only THEN stops future
+  // An opt-out reply BILLS (it is a human reach) and only THEN stops future
   // outreach — never the reverse, or the billing RPC's removal guard would block
   // the reach that carries the removal. Runs even on a deduped re-process
   // (idempotent) so an opt-out is never lost.
@@ -243,7 +395,7 @@ async function processMessage(row: WebhookInboxRow): Promise<void> {
     await markContactRemovalRequested(resolved.contactId);
   }
 
-  // C9: a recognized RSVP quick-reply BUTTON records the RSVP through the same
+  // A recognized RSVP quick-reply BUTTON records the RSVP through the same
   // atomic submit_rsvp gate the public form uses — no RSVP rule is reimplemented
   // here. Gated on `fresh` (NOT just the RPC's data-idempotency) so a Meta retry
   // of the same inbound wamid cannot append duplicate audit rows. attending needs
@@ -310,6 +462,7 @@ async function processStatus(row: WebhookInboxRow): Promise<void> {
   if (status !== 'failed') {
     await setDeliveryStatus(messageId, status, null);
     await recordSalesWaDeliveryStatus(messageId, status, null, row.event_at);
+    await recordOwnerAgentDeliveryQuietly(messageId, row.phone_number_id, status, null);
     return;
   }
 
@@ -322,9 +475,26 @@ async function processStatus(row: WebhookInboxRow): Promise<void> {
   // nothing. Runs for both branches; a wamid belonging to a guest message
   // simply matches no sales attempt.
   await recordSalesWaDeliveryStatus(messageId, status, errorCode, row.event_at);
+  await recordOwnerAgentDeliveryQuietly(messageId, row.phone_number_id, status, errorCode);
 
   if (errorCode && contactId && WRONG_NUMBER_CODES.has(errorCode)) {
     await setContactOpStatus(contactId, 'wrong_number');
+  }
+}
+
+// Third destination, same rule as the sales one: a status for an owner-agent
+// reply or report matches no guest row, and a guest status matches no agent
+// message. Bookkeeping only — it must never fail the webhook for everyone else.
+async function recordOwnerAgentDeliveryQuietly(
+  messageId: string,
+  phoneNumberId: string | null,
+  status: string,
+  errorCode: string | null,
+): Promise<void> {
+  try {
+    await recordOwnerAgentDelivery(messageId, phoneNumberId, status, errorCode);
+  } catch {
+    // Dropped on purpose; see above.
   }
 }
 
@@ -371,8 +541,8 @@ const NON_ACTIONABLE_BOUNCE_TYPES = new Set(['Transient', 'Temporary', 'Undeterm
 
 async function processEmailDelivery(row: WebhookInboxRow): Promise<void> {
   const payload = (row.payload ?? {}) as BouncePayload;
-  // sent / delivered / delivery_delayed / complained are recorded by the route
-  // and acted on by nobody. Only a bounce means a customer got nothing.
+  // sent / delivered / delivery_delayed / complained / failed are recorded by the
+  // route and acted on by nobody. Only a bounce raises an alert.
   if (payload.type !== 'email.bounced') return;
 
   const bounceType = payload.data?.bounce?.type;

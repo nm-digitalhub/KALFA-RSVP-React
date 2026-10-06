@@ -1,14 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { DirectionProvider } from '@base-ui/react/direction-provider';
 import { Loader2, Phone, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PhoneInput } from '@/components/ui/phone-input';
 
-// Floating call-center widget — capability A, THIRD design (owner-directed
-// pivot, 12.8, follow-on to the widget's OWN pivot): OTP-verified,
+// Floating call-center widget — capability A, THIRD design: OTP-verified,
 // PSTN-out, no browser Voximplant identity at all. Replaces
 // call-widget.tsx/call-widget-lazy.tsx (kept in place as dead code pending
 // an explicit cleanup decision — see console-calls.ts's
@@ -16,22 +16,19 @@ import { Input } from '@/components/ui/input';
 // blocked). See evaluateCallMeNowCaps's header in console-calls.ts for the
 // full research trail (OTP reuse, StartScenarios reuse, consent reasoning).
 //
-// DELIBERATELY NOT MOUNTED anywhere yet — app_settings.console_call_me_now_enabled
-// defaults FALSE, no Voximplant rule/scenario (ConsoleCallMeNow) exists yet
-// to route the call, so mounting this today would show every site visitor a
-// form that always refuses after they already gave up a phone number and
-// received an SMS. Mounting is the LAST step of the single approval gate in
-// the report, once the whole chain (rule+scenario created and approved,
-// flag flipped) actually works end-to-end — same discipline
-// console_softphone_enabled/console_widget_enabled both already follow.
+// Mounted CONFIG-GATED in (public)/(site)/layout.tsx: getCallMeNowWidgetEnabled
+// requires BOTH app_settings.console_call_me_now_enabled AND a bound
+// ConsoleCallMeNow routing rule id, so a visitor never sees a form that
+// always refuses after they already gave up a phone number and received an
+// SMS.
 //
 // TEXT disclosure BEFORE the phone step, not spoken over the call itself
-// (that disclosure is the scenario's own DISCLOSURE_LINE_HE, played on the
-// visitor's leg before bridging — see call-me-now-authorize/route.ts's
-// header) — matches the project-wide "honest UI" principle: no state may be
-// implied before a real signal, and the visitor must know a call is about
-// to be recorded BEFORE they hand over a phone number, not only once the
-// phone rings.
+// (that disclosure is the scenario's own DISCLOSURE_LINE_CALL_ME_NOW_HE,
+// played on the visitor's leg before bridging — see
+// call-me-now-authorize/route.ts's header) — matches the project-wide
+// "honest UI" principle: no state may be implied before a real signal, and
+// the visitor must know a call is about to be recorded BEFORE they hand over
+// a phone number, not only once the phone rings.
 
 type Step = 'phone' | 'code' | 'calling' | 'done' | 'callback_offered' | 'error';
 
@@ -54,20 +51,18 @@ const REFUSAL_MESSAGE: Record<string, string> = {
   daily_breaker: 'הגענו למכסת השיחות היומית. נסו שוב מחר.',
   dnc: 'לא ניתן להתקשר למספר זה.',
   opted_out: 'לא ניתן להתקשר למספר זה.',
-  // Shabbat/Yom-Tov only — the daily 08:00-19:00/Fri-13:00 window was
-  // removed for this flow (compliance ruling, 12.8: availability gates the
-  // dial, not the clock — see console-calls.ts's evaluateCallMeNowConsent).
-  // This reason can therefore still surface, just far more rarely than
-  // before, and only for that one remaining basis.
+  // Shabbat/Yom-Tov only — this flow skips the daily call window
+  // (availability gates the dial, not the clock — see console-calls.ts's
+  // evaluateCallMeNowConsent), so this reason surfaces only for that one
+  // basis.
   quiet_hours: 'לא ניתן לבצע שיחה בשבת ובחג. נסו שוב לאחר צאת החג.',
   otp: 'קוד האימות שגוי או שפג תוקפו.',
 };
 
 // Same wording NO_AGENT_LINE_HE uses in ConsoleInbound.voxengine.js — reused
 // verbatim, not paraphrased, so the promise reads identically whether it is
-// made here (the common case now, checked BEFORE any call is placed — owner
-// availability-first decision, 12.8) or by the scenario's own ring-exhausted
-// branch for the narrow race case.
+// made here (the common case, checked BEFORE any call is placed) or by the
+// scenario's own ring-exhausted branch for the narrow race case.
 const NO_AGENT_MESSAGE = 'אין נציג זמין כרגע. נחזור אליכם בהקדם.';
 
 export function CallMeNowWidget() {
@@ -77,6 +72,8 @@ export function CallMeNowWidget() {
   const [code, setCode] = useState('');
   const [step, setStep] = useState<Step>('phone');
   const [error, setError] = useState<string | null>(null);
+  const titleId = useId();
+  const phoneId = useId();
 
   function reset() {
     setStep('phone');
@@ -140,22 +137,26 @@ export function CallMeNowWidget() {
             type="button"
             size="lg"
             className="shadow-lg"
-            aria-label="בקשת שיחה ממוקד קלפה"
             onClick={() => setOpen(true)}
           >
             <Phone aria-hidden />
             התקשרו אליי עכשיו
           </Button>
         ) : (
-          <div className="w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card shadow-lg">
+          // Non-modal dialog: the page behind stays usable, so no aria-modal.
+          <div
+            role="dialog"
+            aria-labelledby={titleId}
+            className="w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card shadow-lg"
+          >
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
               <Phone className="size-4 text-muted-foreground" aria-hidden />
-              <p className="min-w-0 flex-1 truncate text-sm font-medium">התקשרו אליי עכשיו</p>
+              <p id={titleId} className="min-w-0 flex-1 truncate text-sm font-medium">התקשרו אליי עכשיו</p>
               <button
                 type="button"
                 aria-label="סגירה"
                 onClick={onClose}
-                className="rounded p-1 text-muted-foreground hover:bg-muted"
+                className="-my-2.5 -me-2.5 grid size-11 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted"
               >
                 <X className="size-4" aria-hidden />
               </button>
@@ -176,17 +177,21 @@ export function CallMeNowWidget() {
 
               {step === 'phone' && disclosureAccepted ? (
                 <>
-                  <label className="block space-y-1">
-                    <span className="text-muted-foreground">מספר טלפון</span>
-                    <Input
-                      type="tel"
-                      inputMode="tel"
+                  {/* id/htmlFor, not a wrapping <label>: PhoneInput's first
+                      labelable descendant is its country-picker BUTTON, so a
+                      wrapping label named the button, not the number field. */}
+                  <div className="space-y-1">
+                    <label htmlFor={phoneId} className="block text-muted-foreground">
+                      מספר טלפון
+                    </label>
+                    <PhoneInput
+                      id={phoneId}
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="050-1234567"
                     />
-                  </label>
-                  {error ? <p className="text-destructive">{error}</p> : null}
+                  </div>
+                  {error ? <p role="alert" className="text-destructive">{error}</p> : null}
                   <Button
                     type="button"
                     className="w-full"
@@ -204,13 +209,15 @@ export function CallMeNowWidget() {
                   <Input
                     type="text"
                     inputMode="numeric"
+                    autoComplete="one-time-code"
+                    aria-label="קוד אימות"
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
                     className="tracking-widest"
                     placeholder="000000"
                     maxLength={6}
                   />
-                  {error ? <p className="text-destructive">{error}</p> : null}
+                  {error ? <p role="alert" className="text-destructive">{error}</p> : null}
                   <Button
                     type="button"
                     className="w-full"
@@ -247,7 +254,7 @@ export function CallMeNowWidget() {
 
               {step === 'error' ? (
                 <>
-                  <p className="text-destructive">{error}</p>
+                  <p role="alert" className="text-destructive">{error}</p>
                   <Button type="button" variant="outline" className="w-full" onClick={reset}>
                     ניסיון נוסף
                   </Button>

@@ -21,7 +21,7 @@ vi.mock('@/lib/data/call-dispatch-status', () => ({
 
 // vi.mock is hoisted above every declaration, so the capture cell has to be
 // hoisted with it — a plain `let` above would still be in TDZ when the factory
-// runs. This test failed exactly that way when first written.
+// runs.
 const boss = vi.hoisted(() => ({
   send: vi.fn(),
   options: {} as Record<string, unknown>,
@@ -99,7 +99,7 @@ function stubAdmin(opts: {
 beforeEach(() => {
   vi.clearAllMocks();
   boss.send.mockResolvedValue('job');
-  // boss.options is deliberately NOT reset: getSender caches a module-level
+  // boss.options is deliberately NOT reset: getWebJobSender caches a module-level
   // singleton, so PgBoss is constructed exactly once for the whole file.
   // Clearing it here left the assertion below reading {} — which is the
   // singleton working, not the option missing.
@@ -307,10 +307,10 @@ describe('outreach-call route stays enqueue-only (source guard)', () => {
     join(__dirname, 'route.ts'),
     'utf8',
   );
-  // The pg-boss connection moved to the shared web sender on 2026-09-01, when a
-  // second caller (the admin calendar actions) needed to enqueue. The flags
-  // below are asserted where they now live — the guard follows the code rather
-  // than passing vacuously against a file that no longer opens a connection.
+  // The pg-boss connection lives in the shared web sender (lib/queue/web-sender.ts).
+  // The flags below are asserted where they live — the guard follows the code
+  // rather than passing vacuously against a file that does not open a
+  // connection.
   const senderSrc = readFileSync(
     join(__dirname, '..', '..', '..', '..', '..', 'lib', 'queue', 'web-sender.ts'),
     'utf8',
@@ -322,9 +322,9 @@ describe('outreach-call route stays enqueue-only (source guard)', () => {
   });
 
   it('runs no dial gate EXCEPT the already-reached preflight', () => {
-    // Deliberately revised (2026-07-22, [D3] CLOSED): the route runs exactly
-    // ONE gate — the synchronous already-reached preflight, so the app gets a
-    // typed 409 instead of a 202 for a dial the worker is certain to refuse.
+    // The route runs exactly ONE gate — the synchronous already-reached
+    // preflight, so the app gets a typed 409 instead of a 202 for a dial the
+    // worker is certain to refuse.
     // Every OTHER gate stays in the worker, where job-time state is fresh; the
     // worker also re-checks already-reached as race protection.
     for (const gate of ['hasCallConsent', 'isDncListed', 'rsvpClosedReason']) {
@@ -346,7 +346,7 @@ describe('outreach-call route stays enqueue-only (source guard)', () => {
     //
     // Matches an ASSIGNMENT, not the word: the comment above the option
     // deliberately explains why it is absent, and that explanation is worth
-    // more than a grep-clean file. This test failed on the word when written.
+    // more than a grep-clean file.
     expect(senderSrc).not.toMatch(/createSchema\s*:/);
     expect(senderSrc).toMatch(/migrate:\s*false/);
     // And supervise/schedule stay off: a request must never run maintenance or

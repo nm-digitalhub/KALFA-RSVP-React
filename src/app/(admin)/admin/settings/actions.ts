@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 
@@ -23,19 +24,6 @@ export async function updateSettingsAction(
     // A checkbox is present ('on') only when checked; absent means off.
     payments_enabled: formData.get('payments_enabled') === 'on',
     close_charge_enabled: formData.get('close_charge_enabled') === 'on',
-    sumit_company_id: formData.get('sumit_company_id') ?? '',
-    sumit_api_public_key: formData.get('sumit_api_public_key') ?? '',
-    sumit_api_key: formData.get('sumit_api_key') ?? '',
-    sms_enabled: formData.get('sms_enabled') === 'on',
-    extra_sms_sender: formData.get('extra_sms_sender') ?? '',
-    extra_sms_token: formData.get('extra_sms_token') ?? '',
-    email_enabled: formData.get('email_enabled') === 'on',
-    smtp_host: formData.get('smtp_host') ?? '',
-    smtp_port: formData.get('smtp_port') ?? '',
-    smtp_secure: formData.get('smtp_secure') === 'on',
-    smtp_user: formData.get('smtp_user') ?? '',
-    smtp_password: formData.get('smtp_password') ?? '',
-    smtp_from: formData.get('smtp_from') ?? '',
     inquiry_followup_enabled: formData.get('inquiry_followup_enabled') === 'on',
     agreement_archive_enabled: formData.get('agreement_archive_enabled') === 'on',
     signup_reminder_enabled: formData.get('signup_reminder_enabled') === 'on',
@@ -52,10 +40,15 @@ export async function updateSettingsAction(
     console_call_me_now_enabled: formData.get('console_call_me_now_enabled') === 'on',
     console_consult_conference_enabled: formData.get('console_consult_conference_enabled') === 'on',
     console_dtmf_handoff_enabled: formData.get('console_dtmf_handoff_enabled') === 'on',
+    // The one non-checkbox field: passed through raw so Zod coerces and bounds
+    // it. Deliberately NOT given a fallback here — an absent or blank value must
+    // surface as a field error, never silently rewrite a number that resizes
+    // credit holds on live campaigns.
+    reasonable_coverage_contacts: formData.get('reasonable_coverage_contacts'),
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   try {
@@ -112,7 +105,7 @@ export async function updateBaseOveragePricingAction(
   };
 }
 
-// Ownership-model switch for Exchange (EWS) connections (plan §3.1). Does NOT
+// Ownership-model switch for Exchange connections (plan §3.1). Does NOT
 // touch existing exchange_connections rows — only which mode new connections
 // are created under and which UI path /app/settings shows.
 export async function updateExchangeConnectionModeAction(

@@ -14,7 +14,7 @@
 //
 // Postgres cannot declare a function argument NOT NULL, so `supabase gen types`
 // types every argument WITHOUT a default as required non-null `string`. The
-// three RPCs below deliberately accept NULL for specific arguments (their
+// RPCs below deliberately accept NULL for specific arguments (their
 // bodies branch on `is null` / `IS NOT DISTINCT FROM` / `coalesce`), and the
 // callers pass null on purpose. Before this layer each call site carried an
 // `as string` cast that silenced the compiler — the override restores the true
@@ -45,6 +45,18 @@ export type Database = MergeDeep<
         };
         // p_job_id: `is null` / `is not null` branches; p_terminal_status: `coalesce(p_terminal_status, …)`.
         resolve_outreach_step: { Args: { p_job_id: string | null; p_terminal_status: string | null } };
+        // p_expires_at is DELIBERATELY absent from the argument-completeness
+        // check in 20260916160150 — `expires_in` is RECOMMENDED, not REQUIRED
+        // (RFC 6749 §5.1), so NULL is the legal way to record "the server did
+        // not say". It has no SQL default, so the key must still be SENT;
+        // `undefined` would drop it and the RPC would fail on a missing
+        // argument. `string | null`, not `string | undefined`, says exactly that.
+        integrations_replace_credential: { Args: { p_expires_at: string | null } };
+        // Same reason, the other write path: the body passes p_expires_at
+        // straight into a nullable column with no `is null` branch at all, so
+        // NULL records "the server did not say" on a first authorization exactly
+        // as it does on a refresh. No SQL default, so the key must be SENT.
+        integrations_write_credential: { Args: { p_expires_at: string | null } };
       };
     };
   }

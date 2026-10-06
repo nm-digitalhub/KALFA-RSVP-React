@@ -7,7 +7,7 @@
  * Duplicated rather than imported: that module starts with `import
  * 'server-only'`, so it cannot be pulled into browser code (the softphone
  * panel needs this to build an internal-call destination —
- * ConsoleInternal's rule pattern is literally `^agent_.*`). The value is not
+ * ConsoleInternal's rule pattern is literally `agent_.*`). The value is not
  * a secret, just a deterministic naming convention, so mirroring the
  * one-line algorithm here (instead of exposing vox_username through the
  * roster view/RLS) is the smaller surface.

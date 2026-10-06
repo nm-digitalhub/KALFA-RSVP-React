@@ -4,6 +4,7 @@ import { useActionState } from 'react';
 
 import { Constants } from '@/lib/supabase/types';
 import { FieldError, FormError, SubmitButton } from '@/components/forms';
+import { PhoneInput } from '@/components/ui/phone-input';
 import type { FormState } from '@/lib/validation/result';
 import type { GuestDetail, GuestGroup } from '@/lib/data/guests';
 import { GUEST_STATUS_LABELS, CONTACT_STATUS_LABELS } from './labels';
@@ -55,14 +56,10 @@ export function GuestForm({
         <label htmlFor="phone" className="mb-1 block text-sm font-medium">
           טלפון
         </label>
-        <input
+        <PhoneInput
           id="phone"
           name="phone"
-          type="tel"
-          dir="ltr"
-          inputMode="tel"
           defaultValue={initial?.phone ?? ''}
-          className={inputClass}
         />
         <FieldError errors={state?.fieldErrors?.phone} />
       </div>

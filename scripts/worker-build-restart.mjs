@@ -17,9 +17,8 @@
 //     when pm2 reports kalfa-worker as not online (a stopped/errored worker
 //     must come back on deploy regardless of the bundle).
 //   - A changed `.env.local` does NOT trigger a restart here (env is read at
-//     process start). That was already true of the old `pm2 restart` when the
-//     bundle was unchanged in spirit; make it explicit: `pm2 restart
-//     kalfa-worker` by hand after an env-only change.
+//     process start): run `pm2 restart kalfa-worker` by hand after an
+//     env-only change.
 //   - Exit code is that of the build or of pm2, so `npm run deploy`'s `&&`
 //     chain stops on failure exactly as before.
 import { createHash } from 'node:crypto';

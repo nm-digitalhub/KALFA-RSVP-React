@@ -36,11 +36,8 @@ interface EventCalendarI18nConfig {
     timeUntil: (time: string) => string
     /** View-switcher shortcut hint characters, per view. */
     viewShortcuts: Record<CalendarView, string>
-    /** Aria-label of the agenda day collapse/expand toggle. */
     toggleDayEvents: (count: number, expanded: boolean) => string
-    /** Aria-label of the agenda event details toggle. */
     eventDetails: (title: string) => string
-    /** Compact "+N" overflow (agenda summary dot stack). */
     moreCompact: (count: number) => string
     /** Joins a bounded from-to time span. */
     timeRange: (from: string, to: string) => string
@@ -66,9 +63,7 @@ interface EventCalendarI18nConfig {
     monthDayHeaderNarrow: string
     timeGridDayHeader: string
     agendaDayHeader: string
-    /** Agenda date-gutter day number. */
     agendaDayNumber: string
-    /** Agenda date-gutter weekday label. */
     agendaWeekday: string
     /** "+N more" popover day header. */
     moreDayHeader: string
@@ -264,7 +259,7 @@ type EventCalendarI18nOverrides = {
 }
 
 /**
- * Shallow merge per nested object, matching the filters.tsx i18n contract:
+ * Shallow merge per nested object:
  * a partial override replaces individual keys, never whole sections. Default
  * functions are re-bound to the MERGED labels/formats; explicit `functions`
  * overrides still win.

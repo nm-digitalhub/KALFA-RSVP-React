@@ -7,21 +7,22 @@ import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { consoleAuthorizeBodySchema } from '@/lib/validation/console-calls';
 
 // POST /api/voximplant/console/authorize   called BY ConsoleDial.voxengine.js
-// (outbound branch, :563-566) — body: { secret, token }. This is the
+// (handleOutbound) — body: { secret, token, session_id? }. This is the
 // AUTHORITY gate for a manual outbound customer call: the scenario is NEVER
 // trusted to decide whether to dial, only to place the PSTN leg once this
 // route says so. Response shape is exactly what the scenario parses
-// (ConsoleDial.voxengine.js:568-579):
-//   ok  → { ok: true, phone, callerid }  (200)
+// (handleOutbound):
+//   ok  → { ok: true, phone, callerid, kind }  (200)
 //   not → { ok: false }                  (200 or non-200 — the scenario only
-//         requires code===200 && body.ok===true to proceed; anything else,
-//         including a network failure, is treated as a refusal)
+//         requires code===200 && body.ok===true (with phone and callerid) to
+//         proceed; anything else, including a network failure, is treated as
+//         a refusal)
 //
-// Re-runs the SAME server-side gates dial-intent already evaluated (fresh,
-// authoritative second pass per decide-consent step 9-10) — the dial token
-// only proves "an authorized console agent initiated this specific dial
-// within the last 60s", not that DNC/quiet-hours/live-calls are still true
-// a few seconds later.
+// Re-runs the live-dial gate dial-intent already evaluated (fresh,
+// authoritative second pass) — the dial token only proves "an authorized
+// console agent initiated this specific dial within the last 60s", not that
+// live calls are still enabled a few seconds later. DNC/consent/quiet-hours
+// are not re-run here — see the live-dial gate below.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -113,7 +114,7 @@ export async function POST(request: Request) {
     /* best-effort — see comment above */
   }
 
-  // `kind` is NEW and OPTIONAL for the scenario, deliberately — expand then
+  // `kind` is OPTIONAL for the scenario, deliberately — expand then
   // contract, the same reasoning consoleAuthorizeBodySchema's `session_id`
   // carries. This route and the scenario deploy through two different systems
   // that cannot be made atomic, so each side has to tolerate the other being a

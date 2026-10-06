@@ -11,7 +11,7 @@ import 'server-only';
 // the ownership question differs: "the business connection" instead of "this
 // user's connection".
 //
-// The deterministic-gateway rule (owner ruling 27.07 23:44) lives here: an
+// The deterministic-gateway rule lives here: an
 // autonomous agent may cause a callback to be scheduled, but every field of the
 // resulting appointment is composed by this module from database columns. No
 // caller-supplied or model-supplied string is ever passed through.
@@ -118,7 +118,8 @@ async function loadBusinessConnection(
         mailboxEmail: row.mailbox_email,
         password,
         // Narrowed, not cast: the column is plain text, and an unexpected value
-        // must not reach the provider. NTLM is the only method IONOS offers.
+        // must not reach the provider. The value is inert: graph-impl.ts
+        // ignores authMethod.
         authMethod: row.auth_method === 'basic' ? 'basic' : 'ntlm',
       },
     },
@@ -216,7 +217,7 @@ async function toItemInput(
     topic: request.topic,
     note: request.note,
     detailUrl: `${await getAppOrigin()}/admin/callbacks/${request.id}`,
-    // "28.07.2026 בשעה 07:40" — the owner's wording, 28.07.
+    // "28.07.2026 בשעה 07:40" — the owner's wording.
     ...(request.created_at
       ? {
           createdAtText: `${formatIsraelDate(request.created_at)} בשעה ${formatIsraelTime(request.created_at)}`,
@@ -359,18 +360,17 @@ export type CallClosureReason = 'completed' | 'cancelled';
  * scheduleCallbackAppointment's counterpart: retires the calendar appointment
  * for a request that no longer needs one — WITHOUT deleting it.
  *
- * Redesigned 2026-08-20: the original version called deleteAppointment,
- * which erased every trace that a call was ever scheduled, attempted, or how
- * it ended — an admin looking back later could not tell "this was handled"
- * from "nothing ever happened here". This now MUTES the appointment in place
- * instead: cancels its reminder (`isReminderOn: false` — verified against the
+ * Never deletes the appointment: deleting would erase every trace that a call
+ * was ever scheduled, attempted, or how it ended — an admin looking back later
+ * could not tell "this was handled" from "nothing ever happened here". This
+ * MUTES the appointment in place instead: cancels its reminder (`isReminderOn: false` — verified against the
  * live Microsoft Graph Event resource docs; `reminderMinutesBeforeStart`
  * alone has no independent "disabled" meaning, and our own provider mapping
  * already sends isReminderOn:false whenever reminderMinutes is 0), frees the
  * slot (`showAs: 'free'` — no longer blocks scheduling or reads as an open
  * task), and marks the subject/category so it reads as archived at a glance
  * (archiveCallbackSubject). The appointment stays at its ORIGINAL time,
- * permanently, as a historical record — it is never deleted again.
+ * permanently, as a historical record.
  *
  * `calendar_item_id` is still cleared from the row after archiving: the
  * column means "the request's CURRENT active appointment", not a pointer to
@@ -511,9 +511,8 @@ export type CallOutcomeResult = {
 
 /**
  * The single place that decides what recording a call outcome actually DOES
- * — not just writes the column. Design settled 2026-08-20 (owner + friend's
- * CRM-informed review): `call_outcome` and `status` are separate axes (see
- * validation/admin.ts), and most outcomes affect BOTH — the call attempt
+ * — not just writes the column. `call_outcome` and `status` are separate
+ * axes (see validation/admin.ts), and most outcomes affect BOTH — the call attempt
  * that just happened always gets archived (never deleted; see
  * closeCallbackAppointment), but whether the REQUEST itself is done depends
  * on which outcome:
@@ -610,7 +609,9 @@ export async function applyCallOutcome(
   // attempt (double-click, two open tabs, a retried request after a timeout)
   // reads the same starting row but loses the race: by the time its own
   // update runs, calendar_item_id no longer matches, so it affects zero rows
-  // and is treated as already-handled below.
+  // and is treated as already-handled below. That holds for a row that still
+  // carries an appointment; with none, the guard is `calendar_item_id IS NULL`,
+  // which a duplicate satisfies too.
   //
   // This is deliberately ONE statement, not "clear the id here, count there":
   // splitting it across two would leave exactly the gap a duplicate could
@@ -672,7 +673,7 @@ export type RescheduleOutcome = { ok: true } | { ok: false; reason: string };
  * logic: search around the instant the caller named, not only forward from it.
  *
  * Reuses closeCallbackAppointment for the old slot rather than duplicating its
- * safety logic. If an existing appointment fails to delete, this refuses to
+ * safety logic. If an existing appointment cannot be archived, this refuses to
  * proceed — updating requested_at while calendar_item_id still points at a
  * live appointment would let the next sweep tick create a SECOND one for the
  * same request, the exact failure mode this whole feature exists to prevent.
@@ -703,8 +704,7 @@ export async function rescheduleCallbackRequest(
       // Distinct from 'new': this row has already been through the pipeline
       // once (or the admin is redirecting a still-unscheduled one). The admin
       // list needs to be able to tell "never touched" from "was scheduled,
-      // now needs a fresh time" — that distinction is the whole point of
-      // tonight's redesign.
+      // now needs a fresh time".
       status: 'needs_reschedule',
       requested_at: exactIso,
       requested_rank: 'nearest',
@@ -773,12 +773,12 @@ async function recordCalendarSyncAudit(
  * `scheduled_at` is corrected to match the calendar (same "whatever the
  * calendar says, wins" rule as the delete case above), and — when a `boss`
  * instance is supplied — the stale dispatch job for the OLD instant is
- * cancelled and a fresh one enqueued for the NEW instant, through the exact
+ * deleted and a fresh one enqueued for the NEW instant, through the exact
  * same enqueueMeetingConfirmDispatch/enqueueSalesCallDispatch functions
  * runCallbackSchedulingSweep already uses below for a newly-scheduled row —
- * never a second, parallel scheduling path. `boss` is optional (a tick with
- * none just corrects the DB; the NEXT tick, which will have one, re-enqueues)
- * so every existing caller/test of this function keeps working unchanged.
+ * never a second, parallel scheduling path. `boss` is optional (a call with
+ * none only corrects the DB and leaves the old dispatch job untouched) so
+ * every existing caller/test of this function keeps working unchanged.
  */
 export async function reconcileCallbacksWithCalendar(
   opts: { nowMs?: number; boss?: PgBoss; policy?: CallbackPolicy } = {},
@@ -870,7 +870,7 @@ export async function reconcileCallbacksWithCalendar(
       previous_scheduled_at: new Date(m.oldScheduledMs).toISOString(),
       new_scheduled_at: m.newStartIso,
     });
-    if (!opts.boss) continue; // next tick (which will have a boss) re-enqueues instead
+    if (!opts.boss) continue; // no boss: only the DB is corrected, the old job is left as is
 
     // Remove the stale job for the OLD instant, via the SAME id-derivation
     // each dispatch module exports for exactly this purpose — never a second
@@ -966,16 +966,15 @@ export async function countStrandedCallbacks(
     .from('callback_requests')
     .select('id', { count: 'exact', head: true })
     .not('calendar_item_id', 'is', null)
-    // 'cancelled' only, not a closed list: the status vocabulary was
-    // redesigned 2026-08-19/20 (see validation/admin.ts) into a real state
-    // machine, and 'done'/'in_progress' — this line's ORIGINAL values —
-    // don't exist as `status` anymore at all (that meaning moved to
-    // call_outcome, a separate column). Hardcoding a closed list here once
-    // already meant this filter silently excluded nothing (MEASURED
-    // 2026-08-19: it checked for 'completed', which was never a valid value
-    // for THIS column either — see git history). Exclude the one terminal
-    // value instead of enumerating the rest, so a future vocabulary change
-    // can't silently break this again.
+    // 'cancelled' only, not a closed list: it is the one terminal status that
+    // can still hold a calendar_item_id (a cancellation whose appointment
+    // could not be archived stays linked). A 'closed' request cannot —
+    // applyCallOutcome clears the id in the same statement that closes it.
+    // Hardcoding a closed list here once already meant this filter silently
+    // excluded nothing (MEASURED 2026-08-19: it checked for 'completed', which
+    // was never a valid value for THIS column). Exclude the one status
+    // instead of enumerating the rest, so a future vocabulary change can't
+    // silently break this again.
     .not('status', 'eq', 'cancelled')
     .lt('scheduled_at', new Date(nowMs - DAY_MS).toISOString());
   // A failed read must never masquerade as "all clear" — but it must not raise
@@ -1070,11 +1069,10 @@ export async function repairBlankCallbackBodies(
       'id, full_name, phone, topic, note, requested_at, created_at, attempt_count, calendar_item_id',
     )
     .not('calendar_item_id', 'is', null)
-    // 'in_progress' was retired from this column in the 2026-08-19/20
-    // redesign (see validation/admin.ts) — a row with calendar_item_id set
-    // is 'scheduled' by construction, so exclude only the one status that
-    // can coexist with a stale calendar_item_id mid-transition
-    // ('cancelled', briefly, if closeCallbackAppointment's own write fails).
+    // A row with calendar_item_id set is 'scheduled' by construction, so
+    // exclude only the one status that can coexist with a stale
+    // calendar_item_id mid-transition ('cancelled', briefly, if
+    // closeCallbackAppointment's own write fails).
     .not('status', 'eq', 'cancelled')
     .gte('scheduled_at', new Date(nowMs).toISOString())
     .order('scheduled_at', { ascending: true })
@@ -1126,10 +1124,11 @@ export async function repairBlankCallbackBodies(
  * notify-not-ask (owner ruling): items are created immediately and the owner is
  * told, rather than asked. Deleting the appointment is the undo.
  *
- * Reads fresh DB state on every tick and registers nothing pg-boss-side, so
- * changing a request's status or clearing its slot is just a DB write — the
- * next tick sees it. Same idiom as the auto-thankyou and callback re-dial
- * sweeps.
+ * Reads fresh DB state on every tick and keeps no per-request schedule of its
+ * own, so changing a request's status or clearing its slot is just a DB write —
+ * the next tick sees it. The only pg-boss jobs it enqueues are the dispatch
+ * triggers for a freshly booked or moved slot. Same idiom as the auto-thankyou
+ * and callback re-dial sweeps.
  */
 export async function runCallbackSchedulingSweep(
   opts: { limit?: number; nowMs?: number; boss?: PgBoss } = {},
@@ -1144,7 +1143,7 @@ export async function runCallbackSchedulingSweep(
   // Heal first: a request whose appointment the owner deleted is released back
   // into the queue and re-scheduled in THIS tick, not the next one. `boss` is
   // passed through so a MOVED (not deleted) appointment can also have its
-  // stale dispatch job cancelled and a fresh one enqueued in this same tick —
+  // stale dispatch job deleted and a fresh one enqueued in this same tick —
   // see reconcileCallbacksWithCalendar's own doc comment.
   const healed = await reconcileCallbacksWithCalendar({ nowMs: opts.nowMs, boss: opts.boss, policy });
   // Then repair what survived but arrived blank. Runs before scheduling so an
@@ -1159,10 +1158,10 @@ export async function runCallbackSchedulingSweep(
   // (measured 28.07). So a request is held back while triage is still pending.
   //
   // NOT a gate, though: a hard "only schedule after triage" would mean that with
-  // no triage role enabled — which is the state today — every new request waits
-  // forever and no callback is ever booked. That is worse than the bug it
-  // prevents. Past the grace period the request is scheduled with whatever is
-  // known, which is exactly today's behaviour.
+  // no triage role enabled every new request waits forever and no callback is
+  // ever booked. That is worse than the bug it prevents. Past the grace period
+  // the request is scheduled with whatever is known, which is exactly how a
+  // request behaved before triage existed.
   //
   // Fifteen minutes: triage takes seconds when it runs, and the policy already
   // adds two hours of minimum notice on top, so the cost of waiting is a
@@ -1179,11 +1178,12 @@ export async function runCallbackSchedulingSweep(
     // Exclude, don't enumerate: candidates are 'new' / 'pending_schedule' /
     // 'needs_reschedule' — but naming them is exactly the mistake that once
     // stranded claim_callback_triage() (see that RPC's own migration
-    // comment). 'scheduled'/'cancelled' can't structurally coexist with
-    // calendar_item_id IS NULL, 'unschedulable' is what stops automatic
-    // retries once a request's own constraints rule it out, and 'closed'
-    // (2026-08-20) is a request applyCallOutcome already finished — but the
-    // predicate names all four explicitly anyway, matching
+    // comment). 'scheduled' can't structurally coexist with
+    // calendar_item_id IS NULL, 'cancelled' is a request an admin stopped
+    // pursuing, 'unschedulable' is what stops automatic retries once a
+    // request's own constraints rule it out, and 'closed' is a request
+    // applyCallOutcome already finished — the predicate names all four
+    // explicitly, matching
     // callback_requests_unscheduled_idx's WHERE clause exactly (a partial
     // index only gets used when the query's predicate is provably no wider
     // than the index's — Postgres won't infer the calendar_item_id/status
@@ -1214,7 +1214,7 @@ export async function runCallbackSchedulingSweep(
     if (outcome.ok) {
       scheduled += 1;
       // Best-effort trigger for the meeting-confirmation call, ~24h ahead of
-      // this slot (SS2/11a). boss is optional so every existing caller/test
+      // this slot. boss is optional so every existing caller/test
       // of this sweep keeps working unchanged; a real production tick always
       // has one. Never let an enqueue failure stop the row from having been
       // successfully booked — the stuck-row reconciler has no visibility into
@@ -1232,8 +1232,7 @@ export async function runCallbackSchedulingSweep(
         }
         // Sales-closing dispatch trigger — mutually exclusive with the
         // meeting-confirm one above (topic gates both; a row can only ever
-        // match one). This is THE fix for the gap where dispatchSalesCall
-        // had no caller anywhere in the codebase.
+        // match one).
         try {
           await enqueueSalesCallDispatch(opts.boss, {
             id: row.id,

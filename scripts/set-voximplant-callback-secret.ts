@@ -1,14 +1,15 @@
 // Generate a strong random Voximplant CALLBACK SECRET and store it in
-// app_settings.voximplant_callback_secret. This secret is the HMAC key KALFA uses
-// to sign (and verify) the per-call ctx/cb URL tokens — it is KALFA-INTERNAL: the
-// VoxEngine scenario never needs it (it just calls back the signed URLs it is
-// handed). 32 random bytes, base64url-encoded.
+// app_settings.voximplant_callback_secret. The per-call ctx/cb URLs authenticate
+// by an opaque per-call access token stored on call_attempts, so this value signs
+// nothing: getVoximplantConfig only reads it, and call dispatch refuses
+// (config_missing) while it is empty. It is KALFA-INTERNAL: the VoxEngine
+// scenario never needs it. 32 random bytes, base64url-encoded.
 //
 // SECURITY: the generated secret is NEVER printed (only its length + a
 // configured boolean). Write via createAdminClient (service-role, session-less).
 //
 // Write-once by default (won't clobber an existing secret); pass --rotate to
-// replace an existing one (invalidates any in-flight ctx/cb tokens — expected).
+// replace an existing one (in-flight ctx/cb tokens are unaffected).
 //
 // Run: npm run set:voximplant-callback-secret   [-- --rotate]
 

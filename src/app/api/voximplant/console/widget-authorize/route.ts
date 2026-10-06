@@ -22,11 +22,11 @@ import { widgetAuthorizeBodySchema } from '@/lib/validation/console-calls';
 // POST /api/voximplant/console/widget-authorize   body: { secret, token }
 //   → { ok: true, ring_order, call_id } | { ok: false }
 //
-// NOT YET CALLED BY ANY SCENARIO — this is the widget's authorize gate,
-// built and unit-testable ahead of the scenario that will call it, same
-// sequencing this project already used for route-inbound ahead of gate E.
-// The scenario this targets (ConsoleWidgetIn, not written this pass — see
-// the report for why) would call this from CallAlerting, exactly where
+// NOT CALLED BY ANY SCENARIO — this is the widget's authorize gate. The
+// widget design it belongs to was superseded by call-me-now and is dead code
+// pending an owner cleanup decision (see console-calls.ts). The scenario it
+// targets (ConsoleWidgetIn) was never written; it would call this from
+// CallAlerting, exactly where
 // ConsoleDial's outbound branch calls the sibling authorize/route.ts — same
 // body SHAPE (secret, token), verified by the SAME verifyDialToken. It is a
 // SIBLING schema (widgetAuthorizeBodySchema, 'wt'-prefixed only), not a
@@ -142,7 +142,7 @@ export async function POST(request: Request) {
   try {
     routable = await findRoutableAgentVoxUsernames();
   } catch {
-    routable = []; // fail toward "no agent" — still ok:true with an empty ring, never a hard refuse (matches route-inbound)
+    routable = []; // fail toward "no agent" — still ok:true with an empty ring, never a hard refuse (as route-inbound does for a known caller)
   }
   const ringOrder = computeRingOrder(routable, answeredToday);
 

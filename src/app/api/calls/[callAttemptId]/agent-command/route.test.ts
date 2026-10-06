@@ -185,8 +185,8 @@ describe('POST /api/calls/{id}/agent-command', () => {
 });
 
 // This route lets a staff member change what a guest is being told, mid-call.
-// Until console_agent_commands existed it recorded nothing at all — no actor, no
-// time, no call, no words. These pin the trail so it cannot quietly go away.
+// These pin the audit trail (actor, time, call, words) so it cannot quietly go
+// away.
 describe('intervention audit', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -1,0 +1,416 @@
+// ActivityRunnerPort over the KALFA step handlers, with the idempotency claim
+// wrapped around every one of them.
+//
+// THIS IS THE FILE THAT MAKES A RETRY SAFE. The vendored `runGraph` keeps no
+// per-node checkpoint: it resolves the start node and drives waves until the
+// graph ends. pg-boss is at-least-once, so a job that crashes after node 2's
+// side effect and before the run finishes will, on retry, replay nodes 1, 2 and
+// 3 from scratch. Nothing in the runner prevents that; the ledger does.
+//
+// The order is the whole point:
+//
+//     claim  →  side effect  →  complete
+//       │
+//       └── 'already_done'  →  return the ORIGINAL result, run nothing
+//
+// The ORIGINAL result, whole — `{ output, nextPort }`, not just `output`. A
+// condition node's `nextPort` is the branch it chose; a replay that returned a
+// fresh empty result would re-decide that branch and could send half the graph
+// down a path that never ran the first time.
+import { isKnownNodeType } from '../catalogue/nodes';
+import { SECRET_BEARING_NODE_TYPES, type KalfaNodeType } from '../catalogue/types';
+import { STEP_HANDLERS, type WorkflowTriggerPayload } from '../steps';
+import { readWaitSignal } from './wait-signal';
+import type { ExecutionContext } from '../vendor/workflowbuilder/execution-core/execution-context';
+import { PermanentNodeExecutionError } from '../vendor/workflowbuilder/execution-core/errors';
+import { resolveTemplate } from '../vendor/workflowbuilder/execution-core/templates/resolve-template';
+import type {
+  ActivityRunnerPort,
+  NodeExecutionResult,
+} from '../vendor/workflowbuilder/execution-core/ports/activity-runner.port';
+
+import { NODE_TIMEOUT_CODE, nodeBudgetMs } from './node-budgets';
+import { RUN_ABANDONED_CODE, STEP_IN_FLIGHT_CODE } from './ports';
+import type {
+  GuestActionsPort,
+  AccountingPort,
+  AiAgentPort,
+  IntegrationsPort,
+  OutboundWebhookPort,
+  StepLedgerPort,
+  TeamAlertsPort,
+} from './ports';
+
+export type ActivityRunnerArgs = {
+  runId: string;
+  /**
+   * The workflow this run is executing.
+   *
+   * Needed by `action.start_for_each_guest` and nothing else: it is the only
+   * node that can name ANOTHER workflow, so it is the only one that can name
+   * its own and start an unbounded chain.
+   */
+  workflowId: string;
+  trigger: WorkflowTriggerPayload;
+  ledger: StepLedgerPort;
+  guests: GuestActionsPort;
+  alerts: TeamAlertsPort;
+  webhook: OutboundWebhookPort;
+  integrations: IntegrationsPort;
+  accounting: AccountingPort;
+  ai: AiAgentPort;
+  /**
+   * The queue's own "this job is no longer yours" signal.
+   *
+   * pg-boss hands every handler an `AbortSignal` on `job.signal` and aborts it
+   * when the batch ends — including when the handler outlives `expireInSeconds`
+   * and the job has been re-queued under it, and when the process is shutting
+   * down and `failWip()` has already failed the job (manager.js, and
+   * `resolveWithinSeconds` in tools.js). Without reading it, a handler that
+   * lost its job would carry on walking the graph, executing nodes alongside the
+   * retry that had been given the same run.
+   *
+   * Checked BETWEEN nodes rather than inside one: aborting cannot stop work
+   * already in flight, so the honest guarantee is that no FURTHER node is
+   * claimed or executed once the job has been taken away.
+   *
+   * Optional — a dry run and every test port has no queue behind it.
+   */
+  signal?: AbortSignal;
+
+  /**
+   * Called the moment a node parks, with everything the park carried.
+   *
+   * ⚠️ IN MEMORY, AND SEPARATE FROM THE LEDGER ON PURPOSE. `beginWait` takes only
+   * what is durable — a deadline and a correlation id. A wait can also carry a
+   * `verify` closure, which is behaviour belonging to this invocation and has no
+   * row to live in; passing it through `StepLedgerPort` would hand a persistence
+   * contract a function it can never store. This is the seam where the ephemeral
+   * half is handed to whoever is driving the run.
+   */
+  onWait?: (wait: CapturedWait) => void;
+};
+
+/** A park, as the runner saw it — the durable half plus the ephemeral verifier. */
+export type CapturedWait = {
+  resumeAt: string;
+  correlationId?: string;
+  verify?: () => Promise<boolean>;
+};
+
+// The shape the runner sees. Structural rather than an import of KalfaNode, so
+// this module does not depend on the adapter.
+type RunnableNode = {
+  id: string;
+  type: string;
+  config: unknown;
+  status?: string;
+};
+
+/**
+ * Resolve every `{{…}}` reference in a node's config, once, before the handler
+ * runs.
+ *
+ * ONE PLACE, not one per handler. `executeNode` already receives the full
+ * `ExecutionContext` — trigger payload, global variables, and every completed
+ * node's output — so resolving here means a handler never sees a template and
+ * every field of every node type gets references for free, including node types
+ * nobody has written yet.
+ *
+ * Strings only, recursively through objects and arrays. A number, a boolean and
+ * a null are returned untouched: a template is text by definition, and walking
+ * into non-strings would only cost time.
+ *
+ * An unresolved reference is PERMANENT. `resolveTemplate` throws for a path the
+ * context does not carry, and no amount of retrying will make `{{trigger.typo}}`
+ * exist — so it is raised as `PermanentNodeExecutionError` and the node stops on
+ * its first attempt rather than burning the queue's retry budget on a typo.
+ * That is the behaviour upstream chose too, and for the same stated reason: a
+ * broken reference should fail loudly on the first run, not silently resolve to
+ * an empty string and reach a guest.
+ *
+ * ⚠️ ONE NODE TYPE IS TREATED DIFFERENTLY, AND ONLY ONE.
+ *
+ * In `action.webhook`, a `{{secrets.<NAME>}}` is left intact instead of
+ * throwing, so the outbound port can substitute it at the socket — see
+ * secrets.ts.
+ *
+ * SCOPED BY NODE, NOT BY FIELD. Allowing secrets only under a field named
+ * `headers` would refuse a Slack incoming webhook (a URL that is entirely a
+ * secret) and every API that wants its key in the body or a query string. The
+ * field name is not the security boundary — the node is: `action.webhook` is
+ * the only step whose port can substitute, so it is the only step where the
+ * reference means anything.
+ *
+ * It is still NOT global. A deferral everywhere would let `{{secrets.API_KEY}}`
+ * pass through a WhatsApp body and be delivered to a guest as literal text —
+ * which `references.test.ts` has pinned since before secrets existed, and which
+ * is the reason this is a parameter rather than a constant `true`.
+ */
+function resolveConfigTemplates(
+  value: unknown,
+  context: ExecutionContext,
+  deferSecrets = false,
+): unknown {
+  if (typeof value === 'string') {
+    try {
+      return resolveTemplate(value, context, { deferSecrets });
+    } catch (error) {
+      throw new PermanentNodeExecutionError(
+        'unresolved_template_reference',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+  if (Array.isArray(value)) {
+    // The flag travels INTO the array — a header list is rows of objects, and
+    // the reference lives on a row's `value`, two levels below the config root.
+    return value.map((item) => resolveConfigTemplates(item, context, deferSecrets));
+  }
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      out[key] = resolveConfigTemplates(item, context, deferSecrets);
+    }
+    return out;
+  }
+  return value;
+}
+
+export function createActivityRunner<TNode extends RunnableNode>(
+  args: ActivityRunnerArgs,
+): ActivityRunnerPort<TNode> {
+  const { runId, workflowId, trigger, ledger, guests, alerts, webhook, integrations, accounting, ai, signal, onWait } =
+    args;
+
+  return {
+    // `context` carries the trigger payload, nodeOutputs, variables and global,
+    // which is everything a reference can name.
+    async executeNode(node, context): Promise<NodeExecutionResult> {
+      // Rule 5 again, at the last possible moment. The adapter already rejected
+      // unknown types before this graph became a run — this is the assertion
+      // that the two layers agree, and it fails closed if they ever stop
+      // agreeing (a catalogue entry removed while a saved workflow still uses
+      // it, say).
+      //
+      // It also closes a prototype-pollution vector, which is why it must stay
+      // AHEAD of the index below. `node.type` is an arbitrary string that came
+      // from a browser via jsonb, and `STEP_HANDLERS` is an object literal — so
+      // a node typed `constructor` or `toString` would resolve off
+      // Object.prototype and be called as a handler. Upstream documents exactly
+      // this hazard (packages/execution-core/README.md) and prescribes a
+      // membership test rather than a bare index. `isKnownNodeType` is a
+      // Map-backed `.has`, which has no prototype chain to walk, so the lookup
+      // that follows is unreachable with a polluting key.
+      if (!isKnownNodeType(node.type)) {
+        throw new PermanentNodeExecutionError(
+          'unknown_node_type',
+          `סוג הצעד "${node.type}" אינו קיים בקטלוג.`,
+        );
+      }
+      const handler = STEP_HANDLERS[node.type as KalfaNodeType];
+
+      // Active / Draft / Disabled, honoured here rather than in the graph.
+      //
+      // The node still RUNS — it claims its row, records a step, and lets the
+      // graph continue through it — but its handler is never called, so it
+      // performs no side effect. That is a deliberate choice between two
+      // possible meanings of "off":
+      //
+      //   * remove the node and rewire its edges through. Surgery on a graph the
+      //     owner drew, and a disabled node in a branch would silently change
+      //     which branch fires.
+      //   * pass through. `nextPort` is undefined, so every non-error outgoing
+      //     edge stays live and the rest of the workflow behaves as if this step
+      //     had succeeded and done nothing.
+      //
+      // The second is what an owner switching one step off is asking for, and it
+      // is the same behaviour n8n's node-disable has. `draft` is treated
+      // identically and reported separately, so the log says which it was: a
+      // step nobody finished writing is not the same as one deliberately
+      // switched off, even though neither should touch a guest.
+      if (node.status === 'draft' || node.status === 'disabled') {
+        const result: NodeExecutionResult = {
+          output: { skipped: true, reason: `node_${node.status}` },
+        };
+        // Claimed and completed anyway, so the replay path and the run log see
+        // the same node list whether it was on or off. A skipped step that left
+        // no row would look like a crash on the next retry.
+        const skipClaim = await ledger.claimStep({
+          runId,
+          nodeId: node.id,
+          nodeType: node.type,
+        });
+        if (skipClaim.kind === 'already_done') return skipClaim.result as NodeExecutionResult;
+        if (skipClaim.kind === 'claimed') {
+          await ledger.completeStep({ runId, nodeId: node.id, result });
+        }
+        return result;
+      }
+
+      // BEFORE the claim, which is the only placement that helps: claiming a
+      // node this attempt no longer owns writes a 'running' row the retry then
+      // has to wait out, and executing it repeats a side effect the retry is
+      // about to perform.
+      if (signal?.aborted) {
+        throw new PermanentNodeExecutionError(
+          RUN_ABANDONED_CODE,
+          `ההרצה הועברה למסירה אחרת לפני הצעד "${node.id}".`,
+        );
+      }
+
+      const claim = await ledger.claimStep({
+        runId,
+        nodeId: node.id,
+        nodeType: node.type,
+      });
+
+      if (claim.kind === 'already_done') {
+        // The replay path. Nothing runs; the graph continues on the output the
+        // first attempt produced.
+        return claim.result as NodeExecutionResult;
+      }
+
+      if (claim.kind === 'in_flight') {
+        // Another worker holds this node. Not success and not a permanent
+        // failure: the run must stop here rather than proceed on an output that
+        // does not exist. `fail` is the default error policy, so this aborts the
+        // graph — which is correct, because the attempt that owns the node is
+        // still driving its own copy of the same graph.
+        throw new PermanentNodeExecutionError(
+          STEP_IN_FLIGHT_CODE,
+          `הצעד "${node.id}" כבר רץ בהרצה מקבילה.`,
+        );
+      }
+
+      const rawConfig = isConfigObject(node.config) ? node.config : {};
+
+
+      try {
+        // INSIDE the try, and that placement is the whole point of this block.
+        //
+        // Resolution sat outside it and threw past `failStep`, which cost two
+        // things at once. The owner got a failed run with no line naming the
+        // step or the token — the resolver's message is specific and it was
+        // being discarded. And the row this attempt had just CLAIMED stayed
+        // `running`, so a pg-boss retry met it, read `in_flight`, and aborted;
+        // the run was then stuck for the full 15-minute lease over an error that
+        // is permanent and will never succeed on a retry.
+        //
+        // Still AFTER the claim, which is the ordering that matters for
+        // correctness: a replay of an already-completed node returns its stored
+        // result without re-resolving. And still BEFORE the handler, which
+        // therefore never has to know templates exist.
+        // The node type decides whether `{{secrets.…}}` survives resolution.
+        // `isKnownNodeType` above already proved this string is in the catalogue,
+        // so the membership test here is a lookup and not a second trust
+        // boundary.
+        const config = resolveConfigTemplates(
+          rawConfig,
+          context,
+          SECRET_BEARING_NODE_TYPES.includes(node.type),
+        ) as Record<string, unknown>;
+
+        const result = await withNodeBudget(
+          node.type,
+          handler(config, {
+            runId,
+            workflowId,
+            nodeId: node.id,
+            trigger,
+            // Only the nodes that park (`logic.wait`, `action.start_voice_call`)
+            // read it. See StepContext — a wait cannot tell its own resumption
+            // from a first arrival, because the whole graph replays.
+            ...(claim.resumedFromWait ? { resumedFromWait: true } : {}),
+            deps: { guests, alerts, webhook, integrations, accounting, ai },
+          }),
+        );
+        // Persisted AFTER the side effect and BEFORE the runner propagates, so a
+        // crash between the two leaves the row 'running' — visible as stuck
+        // rather than invisible as never-attempted.
+        await ledger.completeStep({ runId, nodeId: node.id, result });
+        return result;
+      } catch (error) {
+        // ⚠️ A WAIT IS NOT A FAILURE, and writing it as one would end the wait.
+        //
+        // `failStep` leaves a row a later attempt may take over immediately
+        // (`takeOverFailedRow`), so the next redelivery — for any reason at all —
+        // would walk straight past a wait that had not elapsed. The row has to
+        // say "parked until", which is what `beginWait` writes.
+        const wait = readWaitSignal(error);
+        if (wait) {
+          if (!ledger.beginWait) {
+            // Fail CLOSED. A ledger that cannot park is one that would silently
+            // turn every wait into a step that runs immediately on the next
+            // delivery — worse than refusing the node outright.
+            throw new PermanentNodeExecutionError(
+              'wait_unsupported',
+              'הצעד "המתנה" אינו נתמך בסביבה הזו.',
+            );
+          }
+          // The DURABLE half only.
+          await ledger.beginWait({
+            runId,
+            nodeId: node.id,
+            waitUntil: wait.resumeAt,
+            ...(wait.correlationId ? { correlationId: wait.correlationId } : {}),
+          });
+          // The EPHEMERAL half, after the row is written: a verifier handed out
+          // before the park was durable would be answered against a run nothing
+          // could wake yet.
+          onWait?.(wait);
+          throw error;
+        }
+
+        await ledger.failStep({
+          runId,
+          nodeId: node.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    },
+  };
+}
+
+function isConfigObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Bound one node's execution by its own budget.
+ *
+ * ⚠️ THE RACE IS THE MECHANISM, and its limit is worth stating plainly: losing
+ * the race REJECTS, it does not cancel. The handler's own work carries on —
+ * JavaScript has no way to stop it — so this bounds how long the GRAPH waits on
+ * a node, not how long the node runs. That is still the property that matters
+ * here: the step row stops being 'running', the run stops being held open, and
+ * a later delivery may take the row over. The same shape as pg-boss's own
+ * `resolveWithinSeconds`, which bounds a handler it equally cannot kill.
+ *
+ * A timeout is thrown as an ORDINARY error, never a `PermanentNodeExecutionError`.
+ * The caller's catch writes `failStep`, and `claimStep` reclaims a 'failed' row
+ * immediately — so the retry this earns can actually take the node, which is the
+ * whole reason for ending the attempt.
+ */
+async function withNodeBudget<T>(nodeType: string, work: Promise<T>): Promise<T> {
+  const ms = nodeBudgetMs(nodeType);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error(`הצעד מסוג "${nodeType}" חרג ממגבלת הזמן (${ms}ms).`);
+          (error as Error & { code?: string }).code = NODE_TIMEOUT_CODE;
+          reject(error);
+        }, ms);
+      }),
+    ]);
+  } finally {
+    // Always, including on the success path: an un-cleared timer keeps the
+    // process's event loop alive for the whole budget after a node that finished
+    // in milliseconds, which in a worker means a shutdown that hangs.
+    if (timer) clearTimeout(timer);
+  }
+}

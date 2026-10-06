@@ -5,6 +5,7 @@ import { TiltCard } from '@/components/motion/tilt-card';
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
 import { getCompanyLegal, toE164Israel } from '@/lib/data/company';
+import { pageOpenGraph } from '@/lib/seo/open-graph';
 import { getAppOrigin } from '@/lib/url';
 import {
   Activity,
@@ -32,7 +33,6 @@ import {
   MessagesSquare,
   PartyPopper,
   Presentation,
-  Play,
   Route,
   Send,
   ShieldCheck,
@@ -50,8 +50,16 @@ import {
 
 // Canonical is declared per (site) page (not inherited from the root layout) so
 // app/admin/auth segments never accidentally inherit a canonical of '/'.
+// openGraph is declared here too (same title/description as the root layout)
+// so the home page carries og:url like every other (site) page; the helper
+// restates og:image, which the page-level object would otherwise drop.
 export const metadata = {
   alternates: { canonical: '/' },
+  openGraph: pageOpenGraph(
+    'KALFA — ניהול אישורי הגעה',
+    'ניהול מוזמנים, הזמנות ותזכורות, מעקב תשובות בזמן אמת ודוחות — הכול במקום אחד.',
+    '/',
+  ),
 };
 
 const PROBLEMS: { icon: LucideIcon; t: string; d: string }[] = [
@@ -106,8 +114,8 @@ const TRUST: { icon: LucideIcon; t: string; d: string }[] = [
 // already scans for their own kind of event. The two without one have no page
 // of their own yet — they stay plain, never a link to a near-duplicate page
 // (the reason the old footer's placeholder columns were removed).
-// 'ברית' replaced the vaguer 'אירועים פרטיים' here: it is a real, distinct
-// event type with its own page and its own search demand.
+// 'ברית' is a real, distinct event type with its own page and its own search
+// demand.
 const AUDIENCES: { icon: LucideIcon; t: string; href?: string }[] = [
   { icon: Heart, t: 'חתונות', href: '/wedding' },
   { icon: Star, t: 'בר/בת מצווה', href: '/bar-mitzva' },
@@ -252,7 +260,7 @@ export default async function HomePage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
       />
       {/* Header: shared SiteHeader, mounted by the (site) layout for every
-          marketing page (owner report 24.8 — the menu was homepage-only). */}
+          marketing page. */}
       <main>
         {/* Hero */}
         {/* py-10 on mobile (not the sections' py-16): the hero sits directly
@@ -276,26 +284,25 @@ export default async function HomePage() {
         <section className="relative isolate mx-auto max-w-6xl px-6 py-10 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-radial-[at_top_end] before:from-primary/10 before:via-transparent before:to-transparent motion-safe:pointer-fine-hover:before:animate-k-glow-drift sm:py-20">
           <div className="grid items-center gap-12 lg:grid-cols-2">
             <ParallaxLayer depth={-16}>
-              <Eyebrow icon={Sparkles} className="transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3">ניהול חכם לאירוע מושלם</Eyebrow>
-              <h1 className="mt-4 text-balance text-hero font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-100">
+              <Eyebrow icon={Sparkles} className="transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">ניהול חכם לאירוע מושלם</Eyebrow>
+              <h1 className="mt-4 text-balance text-hero font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-100">
                 אישורי הגעה,
                 <br />
                 <span className="text-primary">במקום אחד.</span>
               </h1>
-              <p className="mt-5 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-200">
+              <p className="mt-5 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-200">
                 שלחו הזמנות, עקבו אחר התגובות בזמן אמת ונהלו את רשימת המוזמנים והמלווים — בלי גיליונות, בלי הודעות מפוזרות, בלי בלגן.
               </p>
-              <div className="mt-7 flex flex-wrap gap-3 transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-300">
+              <div className="mt-7 flex flex-wrap gap-3 transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-300">
                 <Link href={startHref} className={siteCta()}>
                   {startLabel}
                   <ArrowLeft className="size-5" aria-hidden />
                 </Link>
                 <a href="#how" className={siteCta({ variant: 'outline' })}>
-                  <Play className="size-4" aria-hidden />
-                  צפו בהדגמה קצרה
+                  איך זה עובד
                 </a>
               </div>
-              <div className="mt-6 flex flex-wrap items-center gap-5 text-sm text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-400">
+              <div className="mt-6 flex flex-wrap items-center gap-5 text-sm text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-400">
                 <span className="inline-flex items-center gap-2"><ShieldCheck className="size-4" aria-hidden /> פרטי ומאובטח</span>
                 <span className="inline-flex items-center gap-2"><Clock className="size-4" aria-hidden /> מוכן תוך דקות</span>
               </div>
@@ -307,22 +314,29 @@ export default async function HomePage() {
                 numbers step down below ~22rem (a 320px phone) and the header
                 row stacks below 20rem, where three tiles + a pill no longer
                 fit on one line. */}
-            {/* The entrance (`starting:` opacity/translate) lives on this
+            {/* The entrance (`starting:` translate only — never opacity: a
+                screenshot of a backgrounded tab freezes the first transition
+                frame, and an opacity-0 start left the hero blank for AI
+                agents) lives on this
                 layer, OUTSIDE TiltCard: TiltCard switches from its static
                 <div> to the <Tilt> island once the pointer-fine media query
                 resolves after hydration, which remounts its children — an
-                entrance on the card itself would replay (fade in twice) on
+                entrance on the card itself would replay (slide in twice) on
                 every desktop load. motion only writes `transform` here, so the
-                CSS `translate`/`opacity` transition is untouched. */}
+                CSS `translate` transition is untouched. */}
             {/* Touch (motion spec §10): below `lg` the card rests at -3° (same
                 RTL sign as the desktop -6°, so `perspective-distant` is needed
                 at every width — without a perspective a rotateY is an invisible
                 squash); a finger drag tilts it, and on Android the device's own
                 tilt drives it (`gyroscope`, decorative, in-view only — TiltCard
                 never triggers the iOS permission dialog). */}
+            {/* The names and numbers below are invented sample content, so the
+                card is exposed as ONE image: role="img" makes its children
+                presentational, and assistive tech reads only the label — never
+                "248 אישרו" as if it were real data. */}
             <ParallaxLayer
               depth={-40}
-              className="perspective-distant transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-4 k-delay-200"
+              className="perspective-distant transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-4 k-delay-200"
             >
               <TiltCard
                 restAngleY={-6}
@@ -332,7 +346,11 @@ export default async function HomePage() {
                 scale={1.02}
                 gyroscope
               >
-            <div className="@container/preview overflow-hidden rounded-2xl border border-border bg-background shadow-xl">
+            <div
+              role="img"
+              aria-label="תצוגה לדוגמה של לוח ניהול אירוע"
+              className="@container/preview overflow-hidden rounded-2xl border border-border bg-background shadow-xl"
+            >
               <div className="flex flex-col gap-2 border-b border-border px-4 py-3 @[20rem]/preview:flex-row @[20rem]/preview:items-center @[20rem]/preview:justify-between">
                 <div>
                   <div className="font-bold">חתונה · דנה ויואב</div>
@@ -539,9 +557,10 @@ export default async function HomePage() {
                 מאירוע משפחתי אינטימי ועד כנס חברה גדול — KALFA מתאימה את עצמה לגודל ולסגנון שלכם.
               </p>
             </div>
-            {/* Tiles that are links get the shared focus outline (they had
-                none) and `min-h-11`; the two non-link tiles keep the same box
-                so the grid stays even. */}
+            {/* Tiles that are links get the shared focus outline and
+                `min-h-11`; the two non-link tiles keep the same box
+                so the grid stays even, but without the hover border/shadow —
+                a tile that reacts like a link and goes nowhere is a false cue. */}
             <div className="k-reveal-group grid grid-cols-2 gap-3 sm:grid-cols-3">
               {AUDIENCES.map(({ icon: Icon, t, href }) => {
                 const body = (
@@ -551,9 +570,13 @@ export default async function HomePage() {
                   </>
                 );
                 const shell =
-                  'k-card flex min-h-11 items-center gap-3 rounded-lg border border-border bg-background px-4 py-4 hover:border-primary hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
+                  'k-card flex min-h-11 items-center gap-3 rounded-lg border border-border bg-background px-4 py-4';
                 return href ? (
-                  <Link key={t} href={href} className={shell}>
+                  <Link
+                    key={t}
+                    href={href}
+                    className={`${shell} hover:border-primary hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring`}
+                  >
                     {body}
                   </Link>
                 ) : (
@@ -596,8 +619,7 @@ export default async function HomePage() {
         </section>
       </main>
       {/* Footer: shared SiteFooter, mounted by the (site) layout for every
-          marketing page (footer review 24.8 — the old 3-column placeholder
-          block and the duplicated slogan were removed). */}
+          marketing page. */}
     </div>
   );
 }

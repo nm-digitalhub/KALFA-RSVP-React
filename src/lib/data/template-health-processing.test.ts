@@ -6,6 +6,9 @@ vi.mock('server-only', () => ({}));
 // (name, language) lookup, .update().eq() for the write. Convention matches
 // call-result-processing.test.ts.
 let selectResult: { data: unknown; error: unknown } = { data: null, error: null };
+// The Meta mirror lookup (by template id, one .eq). Default: not in the mirror,
+// so the legacy tests below exercise exactly the legacy path.
+let mirrorResult: { data: unknown; error: unknown } = { data: null, error: null };
 const updateCalls: Array<{ table: string; payload: Record<string, unknown> }> = [];
 
 vi.mock('@/lib/supabase/admin', () => ({
@@ -16,6 +19,7 @@ vi.mock('@/lib/supabase/admin', () => ({
           eq: () => ({
             maybeSingle: async () => selectResult,
           }),
+          maybeSingle: async () => (table === 'whatsapp_message_templates' ? mirrorResult : selectResult),
         }),
       }),
       update: (payload: Record<string, unknown>) => ({
@@ -28,6 +32,9 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }));
 
+const runTemplateHealthSync = vi.fn(async () => ({ synced: 0, skipped: 0, newDowngrades: 0, mirrored: 0 }));
+vi.mock('@/lib/data/template-health-sync', () => ({ runTemplateHealthSync: () => runTemplateHealthSync() }));
+
 const sendSlackAlert = vi.fn(async (..._args: unknown[]) => null as string | null);
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: (...args: unknown[]) => sendSlackAlert(...args) }));
 
@@ -36,6 +43,7 @@ import {
   processTemplateCategoryRow,
   processTemplateCategoryMisuseRow,
   processTemplateQualityRow,
+  processTemplateComponentsRow,
 } from './template-health-processing';
 import { isCategoryDowngraded } from '@/lib/whatsapp/template-health';
 
@@ -48,6 +56,7 @@ const TEMPLATE = { id: 'tmpl-1', requested_category: 'UTILITY', message_key: 'in
 beforeEach(() => {
   vi.clearAllMocks();
   selectResult = { data: TEMPLATE, error: null };
+  mirrorResult = { data: null, error: null };
   updateCalls.length = 0; // a plain array, not a vi.fn() spy — clearAllMocks doesn't touch it
 });
 
@@ -232,5 +241,111 @@ describe('processTemplateQualityRow', () => {
     );
     expect(updateCalls).toHaveLength(1);
     expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+});
+
+// Every template a step sends is watched through the Meta mirror — including the
+// event-type / image variants that have no legacy message_templates row.
+describe('mirror (whatsapp_message_templates)', () => {
+  const VARIANT = {
+    id: '555',
+    whatsapp_template_settings: { requested_category: 'UTILITY' },
+    message_template_routes: [{ message_key: 'reminder_1' }, { message_key: 'reminder_2' }],
+  };
+
+  it('a routed variant with no legacy row: mirror updated, alert names its steps', async () => {
+    selectResult = { data: null, error: null };
+    mirrorResult = { data: VARIANT, error: null };
+    await processTemplateStatusRow(
+      row({ event: 'REJECTED', message_template_id: 555, message_template_name: 'kalfa_brit_reminder_trad_v1', message_template_language: 'he' }),
+    );
+    expect(updateCalls).toEqual([
+      { table: 'whatsapp_message_templates', payload: expect.objectContaining({ status: 'REJECTED' }) },
+    ]);
+    expect(sendSlackAlert.mock.calls[0][0]).toMatchObject({
+      fields: expect.objectContaining({ message_key: 'reminder_1, reminder_2' }),
+    });
+  });
+
+  it('a variant downgrade compares against the category requested for THAT template', async () => {
+    selectResult = { data: null, error: null };
+    mirrorResult = { data: VARIANT, error: null };
+    await processTemplateCategoryRow(
+      row({ message_template_id: 555, message_template_name: 'x', message_template_language: 'he', new_category: 'MARKETING', previous_category: 'UTILITY' }),
+    );
+    expect(updateCalls[0]).toEqual({
+      table: 'whatsapp_message_templates',
+      payload: expect.objectContaining({ category: 'MARKETING', previous_category: 'UTILITY' }),
+    });
+    expect(sendSlackAlert.mock.calls[0][0]).toMatchObject({ level: 'error' });
+  });
+
+  it('quality is stored in Meta\'s own shape ({ score, date })', async () => {
+    selectResult = { data: null, error: null };
+    mirrorResult = { data: VARIANT, error: null };
+    await processTemplateQualityRow(
+      row({ message_template_id: 555, message_template_name: 'x', message_template_language: 'he', new_quality_score: 'YELLOW' }),
+    );
+    expect(updateCalls[0].payload.quality_score).toMatchObject({ score: 'YELLOW', date: expect.any(Number) });
+  });
+
+  it('a mirror template no step sends: ignored here (the nightly sync keeps it current), no alert', async () => {
+    selectResult = { data: null, error: null };
+    mirrorResult = { data: { id: '9', whatsapp_template_settings: null, message_template_routes: [] }, error: null };
+    await processTemplateStatusRow(
+      row({ event: 'REJECTED', message_template_id: 9, message_template_name: 'unused', message_template_language: 'he' }),
+    );
+    expect(updateCalls).toHaveLength(0);
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+});
+
+describe('processTemplateComponentsRow (message_template_components_update)', () => {
+  // Meta's reference example, with an id our mirror knows.
+  const edited = {
+    message_template_id: 555,
+    message_template_name: 'kalfa_invite',
+    message_template_language: 'he',
+    message_template_element: 'שלום {{1}}, {{2}}',
+  };
+  const body = (text: string) => [{ type: 'BODY', text }];
+
+  it('refreshes the mirror from Meta before judging the template', async () => {
+    mirrorResult = { data: null, error: null };
+    await processTemplateComponentsRow(row(edited));
+    expect(runTemplateHealthSync).toHaveBeenCalledTimes(1);
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet for a template no step sends', async () => {
+    mirrorResult = {
+      data: { components: body('שלום {{1}}'), message_template_routes: [], whatsapp_template_parameters: [] },
+      error: null,
+    };
+    await processTemplateComponentsRow(row(edited));
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('reports an error naming the step when the edit added a variable with no value', async () => {
+    mirrorResult = {
+      data: {
+        components: body('שלום {{1}}, {{2}}'),
+        message_template_routes: [{ message_key: 'invite' }, { message_key: 'invite' }],
+        whatsapp_template_parameters: [
+          { type: 'body', sub_type: null, index: null, position: 1, source_path: 'guest.first_name' },
+        ],
+      },
+      error: null,
+    };
+    await processTemplateComponentsRow(row(edited));
+    const a = sendSlackAlert.mock.calls[0][0] as { level: string; title: string; detail: string };
+    expect(a.level).toBe('error');
+    expect(a.title).toContain('invite');
+    expect(a.detail).toContain('חסר ערך ל-{{2}}');
+  });
+
+  it('ignores a payload without the template keys', async () => {
+    await processTemplateComponentsRow(row({ message_template_name: 'x' }));
+    expect(runTemplateHealthSync).not.toHaveBeenCalled();
   });
 });

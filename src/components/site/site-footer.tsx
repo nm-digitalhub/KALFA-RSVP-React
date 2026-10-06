@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { ManageCookiesButton } from '@/components/consent/manage-cookies-button';
+import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 import { EVENT_TYPES } from '@/lib/marketing/event-types';
 
 // Shared footer for the public MARKETING pages — mounted once in
@@ -10,16 +11,15 @@ import { EVENT_TYPES } from '@/lib/marketing/event-types';
 // legal links + the cookie-management control the homepage had, and the guest
 // token surfaces (/r /g /ty /join, outside the group) never do.
 //
-// TWO tiers as of 2026-09-06, and the first tier is new. The 2026-08-24 review
-// removed three "marketing" columns because they were non-clickable
-// placeholder text — "no /about, no /support, no event-type pages exist" — and
-// set the bar for bringing a tier back: real destinations. The event-type
-// pages (/wedding, /bar-mitzva, /brit, /event), /whatsapp and
-// /guest-list-template now exist, so the tier is links, never labels.
+// TWO tiers: page nav (the event-type pages /wedding, /bar-mitzva, /brit,
+// /event, plus /whatsapp and /guest-list-template) and legal nav. The
+// 2026-08-24 review removed three "marketing" columns because they were
+// non-clickable placeholder text, and set the bar for any marketing tier:
+// real destinations, so a tier is links, never labels.
 //
-// It also does real work rather than decoration: a page reachable only from
-// sitemap.xml carries a weak signal, and these pages are the reason the site
-// has anything to rank for beyond the brand name.
+// The page tier also does real work rather than decoration: a page reachable
+// only from sitemap.xml carries a weak signal, and these pages are the reason
+// the site has anything to rank for beyond the brand name.
 //
 // Event-type labels are DERIVED from the catalogue so a fifth type cannot
 // appear on the site while silently missing from the footer.
@@ -39,6 +39,7 @@ import { EVENT_TYPES } from '@/lib/marketing/event-types';
 export const FOOTER_LINKS: readonly { href: string; label: string }[] = [
   { href: '/faq', label: 'שאלות נפוצות' },
   { href: '/contact', label: 'יצירת קשר' },
+  { href: '/about', label: 'אודות' },
   { href: '/privacy', label: 'מדיניות פרטיות' },
   { href: '/terms', label: 'תקנון' },
   { href: '/cookies', label: 'מדיניות עוגיות' },
@@ -56,15 +57,19 @@ const LINK_CLASS = [
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70',
 ].join(' ');
 
-export function SiteFooter({
+export async function SiteFooter({
   widgetClearance = false,
 }: {
   // True when the floating "call me now" widget is mounted (fixed bottom-4
-  // end-4, ~56px tall incl. margin): adds bottom padding on small screens so
+  // end-4, ~60px tall incl. margin): adds bottom padding on small screens so
   // the last footer row is never hidden under the button.
   widgetClearance?: boolean;
 }) {
   const year = new Date().getFullYear();
+  // Same React-cache()d read the root and (site) layouts already make for this
+  // request — no extra DB round trip. Hides the cookie control when the admin
+  // has switched the consent mechanism off (see manage-cookies-button.tsx).
+  const { enabled: consentEnabled } = await getCookieConsentPublicConfig();
   return (
     <footer className="bg-[#0b0f1a] text-white/60">
       <div className={`mx-auto max-w-6xl px-6 pt-10 ${widgetClearance ? 'pb-24 sm:pb-10' : 'pb-10'}`}>
@@ -98,7 +103,7 @@ export function SiteFooter({
               {l.label}
             </Link>
           ))}
-          <ManageCookiesButton className={LINK_CLASS}>ניהול עוגיות</ManageCookiesButton>
+          <ManageCookiesButton enabled={consentEnabled} className={LINK_CLASS}>ניהול עוגיות</ManageCookiesButton>
         </nav>
         <p className="mt-3 text-xs">© {year} KALFA · כל הזכויות שמורות</p>
       </div>

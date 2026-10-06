@@ -70,7 +70,8 @@ const LEADING_WHITESPACE = /^\s/u;
 /**
  * Shared policy: validate a user/template-supplied redirect or link `value` and
  * resolve it to a URL on our EXACT APP_ORIGIN, or THROW. Used by BOTH getAppUrl
- * and the /auth/confirm route so the two can never drift.
+ * and resolveAppRedirectPath (the /auth/confirm route among its callers) so the
+ * two can never drift.
  *
  * Rejected: backslashes / control chars / leading whitespace (URL parsers
  * normalize these into `//host` authority overrides); non-http(s) schemes;

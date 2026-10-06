@@ -1,10 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState } from 'react';
+import { useActionState, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import { FieldError, FormError, FormNotice } from '@/components/forms';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { OrgMemberDTO, OrgInvitationDTO, OrgRoleDTO } from '@/lib/data/orgs';
@@ -23,29 +34,100 @@ const inputClass =
 const selectSmall =
   'rounded-md border border-border bg-background px-2 py-1 text-sm';
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
+const rowButtonClass =
+  'rounded-md px-3 py-1.5 text-sm font-medium transition-opacity disabled:opacity-60';
+const dangerStyle = 'bg-red-50 text-red-700 hover:bg-red-100';
 
 // Pending-aware submit for the inline row/section forms. Must render inside a
 // <form>; useFormStatus reflects that form's submission state.
 function RowSubmit({
   children,
   variant,
+  ariaLabel,
 }: {
   children: React.ReactNode;
   variant?: 'danger';
+  // Row buttons repeat per member; the accessible name carries whose row it is.
+  ariaLabel?: string;
 }) {
   const { pending } = useFormStatus();
   const style =
     variant === 'danger'
-      ? 'bg-red-50 text-red-700 hover:bg-red-100'
+      ? dangerStyle
       : 'bg-primary text-primary-foreground hover:opacity-90';
   return (
     <button
       type="submit"
       disabled={pending}
-      className={`rounded-md px-3 py-1.5 text-sm font-medium transition-opacity disabled:opacity-60 ${style}`}
+      aria-label={ariaLabel}
+      className={`${rowButtonClass} ${style}`}
     >
       {pending ? 'רגע…' : children}
     </button>
+  );
+}
+
+// The dialog trigger for a confirm-gated row form. Rendered inside the <form>,
+// so useFormStatus reflects the submission the dialog starts.
+function PendingDangerTrigger({ children, ...props }: React.ComponentProps<'button'>) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="button"
+      {...props}
+      disabled={pending}
+      className={`${rowButtonClass} ${dangerStyle}`}
+    >
+      {pending ? 'רגע…' : children}
+    </button>
+  );
+}
+
+// "הסרה" is irreversible for the member's access, so it asks first. The
+// dialog content is portaled outside the <form>, so confirming submits the
+// form by ref rather than by a submit button.
+function RemoveMemberForm({
+  action,
+  memberId,
+  memberName,
+}: {
+  action: (formData: FormData) => void;
+  memberId: string;
+  memberName: string;
+}) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const [open, setOpen] = useState(false);
+
+  const onConfirm = (): void => {
+    formRef.current?.requestSubmit();
+    setOpen(false);
+  };
+
+  return (
+    <form ref={formRef} action={action}>
+      <input type="hidden" name="member_id" value={memberId} />
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogTrigger
+          render={
+            <PendingDangerTrigger aria-label={`הסרה של ${memberName}`}>הסרה</PendingDangerTrigger>
+          }
+        />
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>הסרה מהצוות</AlertDialogTitle>
+            <AlertDialogDescription>
+              הגישה של «{memberName}» לארגון תבוטל.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ביטול</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={onConfirm}>
+              הסרה
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </form>
   );
 }
 
@@ -116,6 +198,7 @@ function MemberRow({
 }) {
   const [roleState, roleAction] = useActionState(changeMemberRoleAction, null);
   const [removeState, removeAction] = useActionState(removeMemberAction, null);
+  const memberName = member.fullName || member.email || 'חבר צוות';
   return (
     <li className="py-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -140,19 +223,21 @@ function MemberRow({
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <form action={roleAction} className="flex items-center gap-2">
             <input type="hidden" name="member_id" value={member.id} />
-            <select name="role_id" defaultValue={member.roleId} className={selectSmall}>
+            <select
+              name="role_id"
+              defaultValue={member.roleId}
+              aria-label={`תפקיד של ${memberName}`}
+              className={selectSmall}
+            >
               {roles.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.label}
                 </option>
               ))}
             </select>
-            <RowSubmit>עדכון תפקיד</RowSubmit>
+            <RowSubmit ariaLabel={`עדכון תפקיד של ${memberName}`}>עדכון תפקיד</RowSubmit>
           </form>
-          <form action={removeAction}>
-            <input type="hidden" name="member_id" value={member.id} />
-            <RowSubmit variant="danger">הסרה</RowSubmit>
-          </form>
+          <RemoveMemberForm action={removeAction} memberId={member.id} memberName={memberName} />
         </div>
       ) : null}
 

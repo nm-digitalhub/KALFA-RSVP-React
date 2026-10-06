@@ -2,10 +2,11 @@
 
 // Server Action for /admin/callbacks/policy — saves the admin-editable
 // callback-scheduling policy (business hours per weekday, notice, horizon,
-// call duration, daily cap, motzash resume delay) into the
-// callback_schedule_policies singleton row.
+// call duration, daily cap, motzash resume delay, the actual-dial window and
+// the dial attempt cap/window) into the callback_schedule_policies singleton
+// row.
 //
-// Same authorization shape as config-actions.ts (agreement config): requireAdmin()
+// Same authorization shape as config-actions.ts (agreement config): manage_settings
 // gates the write, and the write goes through the request-scoped cookie session
 // client (createClient) — NOT the service-role client — so
 // callback_schedule_policies_admin_all RLS still applies as a second layer.
@@ -18,7 +19,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createClient } from '@/lib/supabase/server';
 import type { FormState } from '@/lib/validation/result';
 
@@ -146,7 +147,7 @@ export async function saveCallbackPolicyAction(
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   const dayColumns: Record<string, number | null> = {};
@@ -180,7 +181,9 @@ export async function saveCallbackPolicyAction(
   }
 
   try {
-    await requireAdmin();
+    // `manage_settings`, not `requireAdmin()`. Callback policy governs when the
+// system calls people back.
+  await requirePlatformPermission('manage_settings');
     const supabase = await createClient();
     const { error } = await supabase
       .from('callback_schedule_policies')

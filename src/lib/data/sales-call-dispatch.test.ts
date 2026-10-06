@@ -331,8 +331,8 @@ describe('enqueueSalesCallDispatch', () => {
     const scheduledMs = Date.parse(SCHEDULED_ISO);
     // pgboss.job.id is a strict uuid column — the raw composite string must
     // be hashed through deterministicJobId, never passed verbatim (that
-    // throws 22P02 at insert time; the exact live bug found 2026-08-22 —
-    // see deterministic-id.ts's own module comment).
+    // throws 22P02 at insert time — see deterministic-id.ts's own module
+    // comment).
     expect(opts.id).toBe(deterministicJobId(`sales-call-dispatch:${REQ_ID}:${scheduledMs}`));
     expect(opts.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(opts.startAfter).toEqual(new Date(scheduledMs));

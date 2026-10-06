@@ -6,7 +6,7 @@
 // supplied per-send and returns as button.payload on the tap (empirically verified
 // 2026-07-07: without it a tap echoes the Hebrew LABEL and the inbound map misses).
 //
-// Type-only import (erased at build) so the pg-boss worker can bundle client.ts.
+// Type-only import (erased at build) so the pg-boss worker can bundle this module.
 // RsvpStatus's canonical home is the pure constants module (RSVP_STATUSES).
 import type { RsvpStatus } from '@/lib/constants';
 

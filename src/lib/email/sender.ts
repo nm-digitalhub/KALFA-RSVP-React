@@ -81,8 +81,31 @@ export function selectedEmailProvider(): EmailProvider {
   return process.env.EMAIL_PROVIDER === 'resend' ? 'resend' : 'smtp';
 }
 
-/** The admin-managed row both transports read. `email_enabled` gates both. */
-async function emailSettings() {
+/**
+ * The admin-managed row both transports read, or null when mail is switched off or
+ * unconfigured. Non-throwing on purpose: the health check has to tell "nothing is set
+ * up here" (a valid state, never an alert) apart from "it is set up and broken", and a
+ * thrown EmailConfigError flattens the two. getEmailSender still throws — for a caller
+ * about to send, there is nothing to distinguish.
+ */
+export type EmailSettingsRead =
+  | { kind: 'ok'; data: EmailSettingsRow }
+  /** The row could not be read at all — an infrastructure fault, not a mail fault. */
+  | { kind: 'unreadable' }
+  /** Read fine; mail is switched off or has no From address. A valid state. */
+  | { kind: 'unconfigured' };
+
+type EmailSettingsRow = {
+  email_enabled: boolean | null;
+  smtp_host: string | null;
+  smtp_port: number | null;
+  smtp_secure: boolean | null;
+  smtp_user: string | null;
+  smtp_password: string | null;
+  smtp_from: string | null;
+};
+
+export async function readEmailSettings(): Promise<EmailSettingsRead> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('app_settings')
@@ -91,11 +114,17 @@ async function emailSettings() {
     )
     .eq('id', true)
     .maybeSingle();
-  if (error) throw new EmailConfigError('טעינת הגדרות הדואר נכשלה');
-  if (!data?.email_enabled || !data.smtp_from) {
-    throw new EmailConfigError('שירות הדואר אינו מוגדר');
-  }
-  return data;
+  if (error) return { kind: 'unreadable' };
+  if (!data?.email_enabled || !data.smtp_from) return { kind: 'unconfigured' };
+  return { kind: 'ok', data: data as EmailSettingsRow };
+}
+
+/** The same row, as the send path wants it: present or an error, never null. */
+async function emailSettings() {
+  const read = await readEmailSettings();
+  if (read.kind === 'unreadable') throw new EmailConfigError('טעינת הגדרות הדואר נכשלה');
+  if (read.kind === 'unconfigured') throw new EmailConfigError('שירות הדואר אינו מוגדר');
+  return read.data;
 }
 
 function resendSender(apiKey: string, from: string): EmailSender {

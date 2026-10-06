@@ -1,0 +1,2079 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "extra API",
+    "version": "1.0.0",
+    "description": "The exm.co.il public API. Each section below is an API namespace with its own availability notes and conventions.\n\n## Authentication\n\nEvery operation requires a Bearer token - your account API key from [/my/api/](https://www.exm.co.il/my/api/):\n\n```http\nAuthorization: Bearer YOUR_API_KEY\n```\n\nA missing or invalid key returns **401** with a JSON error body (the exact envelope varies per namespace and is documented on each operation). The key grants access to the whole account - keep it server-side only; never embed it in browser or app code.\n\n## Conventions\n\n- ids are opaque string identifiers\n- times are ISO 8601 with timezone offset (Asia/Jerusalem local), e.g. `2026-07-12T15:00:00+03:00`\n- phone numbers are E.164; where a field omits the `+` (e.g. `972501234567`) the operation says so\n"
+  },
+  "servers": [
+    {
+      "url": "https://api.exm.co.il/v1",
+      "description": "Production"
+    },
+    {
+      "url": "https://www.exm.co.il/api/v1",
+      "description": "Production (main-site base, same API)"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Authorization",
+      "description": "Verify and introspect your API key\n\nAuthorization helpers for API consumers.\n\n**Conventions**: ids are opaque string identifiers; dates are `Y-m-d`.\n"
+    },
+    {
+      "name": "Calls",
+      "description": "Call history and recordings\n\nService page (יומן שיחות): [www.exm.co.il/features/call-log/](https://www.exm.co.il/features/call-log/)\n\nCall-history endpoints.\n\nLets the authenticated account list its call history (with filtering and\ncursor pagination), download a single call recording, and trade call ids\nfor publicly accessible recording URLs.\n\n**Error envelope**: the calls handlers return their errors with HTTP\nstatus **200** and `success: false` in the body (only the auth layer uses\n401/403, and an unknown sub-path uses 404). The error body shape is\nendpoint-specific and documented per operation:\n\n| Endpoint | Error body |\n|---|---|\n| `POST /calls/` , `GET /calls/recording/` | `{ \"success\": false, \"errors\": [ { \"id\", \"code\", \"description\" } ] }` (array) |\n| `POST /calls/get-recording-urls/` | `{ \"success\": false, \"error\": { \"code\", \"message\" } }` |\n| Auth layer (HTTP 401/403) | `{ \"success\": false, \"errors\": { \"id\", \"code\", \"description\" } }` (single object) |\n| Unknown sub-path (HTTP 404) | `{ \"success\": false, \"error\": { \"code\": 404, \"description\": \"Path not found\" } }` |\n\n**Conventions**: all ids are opaque string identifiers (never numeric database\nids); phone numbers are E.164 (e.g. `+972501234567` in `e164` fields);\ncall times are local Asia/Jerusalem `Y-m-d H:i:s` strings accompanied by\n`time.timezone` and `time.gmt_offset` fields.\n",
+      "externalDocs": {
+        "description": "Service page",
+        "url": "https://www.exm.co.il/features/call-log/"
+      }
+    },
+    {
+      "name": "Click2Call",
+      "description": "Customer/integration-facing Click2Call API. Trigger outbound calls on a\nregistered device with your account's API key.\n\nService page (קליק2קול): [www.exm.co.il/features/click2call/](https://www.exm.co.il/features/click2call/)\n\nClick2Call lets a registered device (the Extra Android app, and later a\nbrowser extension) place outbound calls triggered remotely over the API.\n\nA device + its SIMs are first registered (app-internal), then a dial request\nnames which SIM to call from and the destination number; the server pushes\nthe dial to that device over FCM and it places the call on the named line.\n",
+      "externalDocs": {
+        "description": "Service page",
+        "url": "https://www.exm.co.il/features/click2call/"
+      }
+    },
+    {
+      "name": "SMS",
+      "description": "Send SMS messages from your verified sender IDs\n\nSMS sending and voice phone-number verification endpoints.\n\n**SMS** - send a text message to an Israeli mobile number from one of your\nverified sender IDs. Requires an active API-SMS billing profile and a\ncredit card on file (pay-as-you-go).\n\n**Verify** - verify possession of a phone number by voice call: we place\nan automated call to the number, the recipient confirms by dialing a code\non the keypad during the call, and the result is POSTed to your\n`callback_url`. Requires an active VERIFY_VOICE monthly billing profile.\n\n**Conventions**: all ids are opaque string identifiers (never numeric database\nids); phone numbers are accepted in local (`050-1234567`) or E.164 form;\nbusiness errors come back as HTTP 200 with `success:false` and an `errors`\narray (multiple validation errors may be returned at once).\n"
+    },
+    {
+      "name": "When",
+      "description": "Booking calendars and bookings\n\nService page (When יומן פגישות): [www.exm.co.il/services/calendar/](https://www.exm.co.il/services/calendar/)\n\nWhen appointment-scheduler endpoints.\n\nLets the authenticated account read its booking calendars and\nbookings, and cancel a booking - the exact same flow as the UI cancel\nbutton (slot freed, Google Calendar event removed best-effort, emails to\nboth sides, cancellation automation event fired).\n\n**Availability**: the entire `/when/` namespace requires an active\n**When Pro** plan on the account. Below that every endpoint returns\n`403 when_pro_required`.\n\n**Conventions**: all ids are opaque string identifiers; all times are ISO 8601 with timezone offset (Asia/Jerusalem local);\nphone numbers are E.164 without `+` (e.g. `972501234567`).\n",
+      "externalDocs": {
+        "description": "Service page",
+        "url": "https://www.exm.co.il/services/calendar/"
+      }
+    }
+  ],
+  "paths": {
+    "/auth/key/": {
+      "get": {
+        "tags": [
+          "Authorization"
+        ],
+        "operationId": "getAuthKey",
+        "summary": "Verify your API key",
+        "description": "Call with no parameters to verify that your Bearer token is valid and\nsee what it may do. Returns the key itself, its scope grants, its\nvalidity window and the account it belongs to.\n\nUseful as a connectivity/credentials check before wiring a client,\nand for clients that adapt to the key's scopes up front (e.g. refuse\nto configure a feature the key has no scope for) instead of failing\nlater on a real call.\n",
+        "responses": {
+          "200": {
+            "description": "The key is valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthKeySuccess"
+                },
+                "example": {
+                  "success": true,
+                  "key": "zLvdabAqcT5uFcEKAPVcT54azqGMiahT5",
+                  "scopes": null,
+                  "times": {
+                    "created": "2026-01-15",
+                    "expire": "2027-01-15"
+                  },
+                  "user": {
+                    "id": "c2yFfPaRcT5",
+                    "email_address": "israel@example.com"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/calls/": {
+      "post": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "Get calls history (filtering + pagination)",
+        "operationId": "getCallsHistory",
+        "description": "The account's call history, newest first (`start_time DESC, id DESC`),\nwith filtering and opaque-cursor pagination.\n\n**Pagination**: the response `metadata.next_page_token` is an opaque\ncursor bound to the exact filter that produced it (the filter is\nbound to the token). To fetch the next page, repeat the SAME\nrequest and add the token as `pagination.next`. Changing any filter\nwhile reusing an old token fails with error code `5010`\n(\"Invalid next token provided: hash does not match.\"). A `null`\n`next_page_token` means there are no more pages.\n\n**Errors** (HTTP 200, `success: false`, `errors` array):\n\n| code | id | Meaning |\n|---|---|---|\n| 5010 | next_token | `pagination.next` token does not match the current filter |\n",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "A single call's id - fetch just that call.",
+                    "example": "zLvdabAqcT5"
+                  },
+                  "freetext": {
+                    "type": "string",
+                    "description": "Free-text search over the calls.",
+                    "example": "0501234567"
+                  },
+                  "starred": {
+                    "type": "boolean",
+                    "description": "When truthy, only starred calls."
+                  },
+                  "call_types": {
+                    "type": "array",
+                    "description": "Call type aliases (any of): `incoming`, `incoming_missed`,\n`incoming_start`, `outgoing`, `outgoing_missed`,\n`outgoing_start`. Unknown aliases are ignored.\n",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "incoming",
+                        "incoming_missed",
+                        "incoming_start",
+                        "outgoing",
+                        "outgoing_missed",
+                        "outgoing_start"
+                      ]
+                    },
+                    "example": [
+                      "incoming",
+                      "incoming_missed"
+                    ]
+                  },
+                  "line_types": {
+                    "type": "array",
+                    "description": "Service (line) type enums, any of: `1` = virtual number,\n`2` = virtual IVR, `5` = mobile line, `7` = SIP line.\n",
+                    "items": {
+                      "type": "integer",
+                      "enum": [
+                        1,
+                        2,
+                        5,
+                        7
+                      ]
+                    },
+                    "example": [
+                      1,
+                      2
+                    ]
+                  },
+                  "direction": {
+                    "type": "string",
+                    "deprecated": true,
+                    "description": "DO NOT USE. Accepted by the server but currently\nmalfunctioning: it overwrites the `line_types` filter with\ncall-type values instead of filtering by direction, so the\nresults are wrong. Use `call_types` to filter by direction\n(e.g. `[\"incoming\", \"incoming_missed\"]`).\n"
+                  },
+                  "duration": {
+                    "type": "object",
+                    "description": "Call duration bounds, in seconds (inclusive).",
+                    "properties": {
+                      "gte": {
+                        "type": "integer",
+                        "description": "Minimum duration (seconds).",
+                        "example": 30
+                      },
+                      "lte": {
+                        "type": "integer",
+                        "description": "Maximum duration (seconds).",
+                        "example": 600
+                      }
+                    }
+                  },
+                  "time": {
+                    "type": "object",
+                    "description": "Call start-time bounds. Each bound is any strtotime()-parseable\nstring (e.g. `2026-07-01`, `2026-07-01 08:00:00`); unparseable\nvalues are silently ignored.\n",
+                    "properties": {
+                      "from": {
+                        "type": "string",
+                        "example": "2026-07-01"
+                      },
+                      "to": {
+                        "type": "string",
+                        "example": "2026-07-31 23:59:59"
+                      }
+                    }
+                  },
+                  "pagination": {
+                    "type": "object",
+                    "properties": {
+                      "items": {
+                        "type": "integer",
+                        "minimum": 20,
+                        "maximum": 100,
+                        "default": 20,
+                        "description": "Items per page (clamped to 20..100)."
+                      },
+                      "next": {
+                        "type": "string",
+                        "description": "Opaque cursor from the previous response's metadata.next_page_token. Must be sent with the exact same filter.\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The matching calls page - or, on a handler-level error (e.g. bad pagination token), an error body with success:false.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "title": "Calls page",
+                      "properties": {
+                        "metadata": {
+                          "type": "object",
+                          "properties": {
+                            "items_per_page": {
+                              "type": "integer",
+                              "example": 20
+                            },
+                            "response_count": {
+                              "type": "integer",
+                              "example": 20,
+                              "description": "Number of calls in this response."
+                            },
+                            "next_page_token": {
+                              "type": "string",
+                              "nullable": true,
+                              "description": "Cursor for the next page; null when this is the last page."
+                            }
+                          }
+                        },
+                        "calls": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Call"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorsArrayEnvelope"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/CallsUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiBlocked"
+          }
+        }
+      }
+    },
+    "/calls/recording/": {
+      "get": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "Download a call recording",
+        "operationId": "downloadCallRecording",
+        "description": "Streams the recording file of one call (the caller's own call). On\nsuccess the response is the raw file bytes with\n`Content-Type: application/octet-stream` and\n`Content-Disposition: attachment; filename=\"<call id>.<ext>\"`\n(e.g. `zLvdabAqcT5.mp3`).\n\n**Errors** are returned as HTTP 200 JSON with `success: false` and an\n`errors` array:\n\n| code | id | Meaning |\n|---|---|---|\n| 7010 | call_id | call_id is missing |\n| 7020 | call_id | no call found (bad id, or not this account's call) |\n| 7030 | call_id | the call has no recording |\n| 9404 | file | failed to fetch the file from storage |\n",
+        "parameters": [
+          {
+            "name": "call_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "zLvdabAqcT5"
+            },
+            "description": "The call's id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The recording bytes - or a JSON error body with success:false.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorsArrayEnvelope"
+                },
+                "example": {
+                  "success": false,
+                  "errors": [
+                    {
+                      "id": "call_id",
+                      "code": 7030,
+                      "description": "no recording found"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/CallsUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiBlocked"
+          }
+        }
+      }
+    },
+    "/calls/ai/": {
+      "get": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "Get the full AI object of a call",
+        "operationId": "getCallAi",
+        "description": "The complete GenieAI result for one call in a single round-trip:\nprocessing status, summary (gist, body, next steps), the custom-fields\nsnapshot, and the full transcription (speakers, timed segments, plain\ntext).\n\nThe `AI` object here is the same canonical shape delivered in the\n`AI-DONE` webhook payload, with the transcription embedded.\n\n`AI` is `null` (with `success: true`) when the call was never\nAI-processed, when the id doesn't match one of the account's calls,\nor when the transcript was deleted (transcripts are deleted together\nwith their recording; `transcription` alone is `null` then).\n",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "zLvdabAqcT5"
+            },
+            "description": "The call's id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The AI object, or null when none exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "AI": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "PENDING",
+                            "COMPLETED"
+                          ]
+                        },
+                        "summary": {
+                          "type": "object",
+                          "nullable": true,
+                          "properties": {
+                            "gist": {
+                              "type": "string",
+                              "description": "One-line essence of the call."
+                            },
+                            "body": {
+                              "type": "string",
+                              "description": "Full summary text."
+                            },
+                            "next_steps": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Follow-up items extracted from the call."
+                            }
+                          }
+                        },
+                        "custom": {
+                          "type": "object",
+                          "nullable": true,
+                          "description": "The line's custom-fields snapshot, keyed by field key.\nPresent only when custom fields were extracted.\n",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "description": "string / number / boolean per the field's type."
+                              },
+                              "type": {
+                                "type": "integer",
+                                "description": "Field type enum (1 int, 2 number, 3 string, 4 boolean, 5 enum)."
+                              }
+                            }
+                          }
+                        },
+                        "transcription": {
+                          "type": "object",
+                          "nullable": true,
+                          "properties": {
+                            "speakers": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "integer"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            },
+                            "segments": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "speaker_id": {
+                                    "type": "integer"
+                                  },
+                                  "start_ms": {
+                                    "type": "integer"
+                                  },
+                                  "end_ms": {
+                                    "type": "integer",
+                                    "nullable": true,
+                                    "description": "null on the last segment when unknown."
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            },
+                            "text": {
+                              "type": "string",
+                              "description": "The full transcript as speaker-labeled plain text."
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "AI": {
+                    "status": "COMPLETED",
+                    "summary": {
+                      "gist": "Customer asked to reschedule the technician visit.",
+                      "body": "The customer called about...",
+                      "next_steps": [
+                        "Send a new appointment slot",
+                        "Confirm by SMS"
+                      ]
+                    },
+                    "custom": {
+                      "call_topic": {
+                        "label": "Call topic",
+                        "value": "support",
+                        "type": 3
+                      }
+                    },
+                    "transcription": {
+                      "speakers": [
+                        {
+                          "id": 0,
+                          "label": "ישראל ישראלי"
+                        },
+                        {
+                          "id": 1,
+                          "label": "נציג"
+                        }
+                      ],
+                      "segments": [
+                        {
+                          "speaker_id": 0,
+                          "start_ms": 0,
+                          "end_ms": 2000,
+                          "text": "שלום, התקשרתי לגבי..."
+                        }
+                      ],
+                      "text": "ישראל ישראלי: שלום, התקשרתי לגבי..."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/CallsUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiBlocked"
+          }
+        }
+      }
+    },
+    "/calls/get-recording-urls/": {
+      "post": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "Get shareable URLs for call recordings",
+        "operationId": "getRecordingUrls",
+        "description": "Trades call ids for publicly accessible recording URLs, in bulk.\n\n**TTL semantics** (`config.ttl`, minutes, required, `>= 0`):\n- `ttl > 0`: returns a **signed** URL valid for that many minutes.\n  Capped at 10 minutes - larger values are silently reduced to 10.\n- `ttl = 0`: the recording object is made **public** (public-read,\n  not time-limited) and its permanent public URL is returned.\n\nOnly calls with an actual recording of at least 1 second are matched;\nevery requested id still appears in the response, with per-id `code`\n`0` (URL returned) or `404` (no such call for this account / no\nusable recording).\n\n**Request-level errors** (HTTP 200, `success: false`,\nsingle `error` object):\n\n| code | message | Meaning |\n|---|---|---|\n| 400 | Invalid ttl in config | `config.ttl` missing or negative |\n| 400 | Invalid or missing ids | `ids` missing/empty |\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ids",
+                  "config"
+                ],
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "description": "Call ids (non-string / empty entries are dropped).",
+                    "items": {
+                      "type": "string"
+                    },
+                    "example": [
+                      "zLvdabAqcT5",
+                      "4azqGMiahT5"
+                    ]
+                  },
+                  "config": {
+                    "type": "object",
+                    "required": [
+                      "ttl"
+                    ],
+                    "properties": {
+                      "ttl": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 10,
+                        "description": "URL lifetime in minutes. 0 = make public (permanent); 1..10 = signed URL for that many minutes (values above 10 are capped to 10).\n",
+                        "example": 10
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-id URL results - or a request-level error body with success:false.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "title": "Recording URLs",
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "urls": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "description": "The requested call id.",
+                                "example": "zLvdabAqcT5"
+                              },
+                              "code": {
+                                "type": "integer",
+                                "description": "0 = URL returned; 404 = call not found / no usable recording.",
+                                "example": 0
+                              },
+                              "url": {
+                                "type": "string",
+                                "description": "The recording URL (only when code is 0)."
+                              },
+                              "ttl": {
+                                "type": "integer",
+                                "description": "The effective TTL in minutes (only when code is 0; 0 = permanent public URL).",
+                                "example": 10
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "title": "Request error",
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "integer",
+                              "example": 400
+                            },
+                            "message": {
+                              "type": "string",
+                              "example": "Invalid ttl in config"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/CallsUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiBlocked"
+          }
+        }
+      }
+    },
+    "/click2call/": {
+      "get": {
+        "tags": [
+          "Click2Call"
+        ],
+        "operationId": "click2call",
+        "summary": "Initiate an outgoing call (click2call)",
+        "description": "Initiate an outgoing call without using the dialer GUI.\n\n**How it works** - the call has two legs, joined once both parties\nanswer:\n- **Leg 1**: `physical` (your device) gets an incoming call. When\n  calling from a virtual/IVR number the screen shows the dialer\n  number (currently `+972778040015` / `+972778050015`); otherwise it\n  shows `caller_id`. The actual dialer number used is returned in\n  the `numbers.dialer` field.\n- **Leg 2**: when `physical` answers, `destination` gets a call\n  showing `caller_id` on their screen.\n\n**Billing notice**: the API is billing-agnostic - it makes the call\nregardless of your billing preferences. Calling from a virtual\nnumber may be priced differently from other numbers (per-minute /\nminutes plan, per your account terms).\n\nError codes (`errors[].code`):\n\n| code | meaning |\n|---|---|\n| 1010 | `caller_id` is not a valid phone number |\n| 1020 | `caller_id` is not a verified number you can call from |\n| 2010 | `physical` is not a valid phone number |\n| 2020 | `physical` is not verified for this account (add it at /my/verified-ids/) |\n| 3010 | `destination` is not a valid Israeli phone number |\n| 4010 | Cannot initiate calls from `caller_id` |\n| 8xxx | Database error (see description) |\n| 93039 | Office hours: `caller_id` is outside its defined working hours |\n",
+        "parameters": [
+          {
+            "name": "caller_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "+972501234567"
+            },
+            "description": "E.164 number to show on the destination's screen (usually your virtual number).\n"
+          },
+          {
+            "name": "physical",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "+972521234567"
+            },
+            "description": "E.164 number of the actual device making the call - must be verified for the account (Leg 1 rings it first).\n"
+          },
+          {
+            "name": "destination",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "+972501234567"
+            },
+            "description": "E.164 Israeli number to call TO."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Call initiated (`success: true`) or a validation/initiation failure (`success: false` with an `errors` array) - business errors return HTTP 200.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/LegacyDialSuccess"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LegacyErrorsResponse"
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "call_id": "zLvdabAqcT5",
+                      "numbers": {
+                        "caller_id": "+972501234567",
+                        "physical": "+972521234567",
+                        "destination": "+972501234567",
+                        "dialer": "+972778040015"
+                      }
+                    }
+                  },
+                  "alreadyDialing": {
+                    "summary": "Duplicate request within the 45s idempotency window",
+                    "value": {
+                      "success": true,
+                      "already_dialing": true,
+                      "call_id": "zLvdabAqcT5",
+                      "numbers": {
+                        "caller_id": "+972501234567",
+                        "physical": "+972521234567",
+                        "destination": "+972501234567"
+                      }
+                    }
+                  },
+                  "notVerified": {
+                    "value": {
+                      "success": false,
+                      "errors": [
+                        {
+                          "id": "physical",
+                          "code": 2020,
+                          "description": "Physical number +972521234567 is not verified for this account. Add and verify it at https://www.exm.co.il/my/verified-ids/"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/C2CUnauthorized"
+          }
+        }
+      }
+    },
+    "/sms/send/": {
+      "post": {
+        "tags": [
+          "SMS"
+        ],
+        "summary": "Send an SMS message",
+        "operationId": "smsSend",
+        "description": "Sends one SMS message to `destination` from `sender`. The sender must\nbe one of the account's verified IDs (managed at /my/verified-ids/) with the\n`sms_sender` permission granted.\n\n**Gating** (all checked before sending; failures return HTTP 200 with\n`success:false` and one error entry per failed check):\n- the account must have a credit card on file (code 9404),\n- the account must have an active API-SMS billing profile - having a\n  pricing row also indicates the KYC forms were signed, so sending is\n  allowed (code 1214),\n- `sender` must be a verified ID of this account with the\n  `sms_sender` flag (code 1215).\n\n**Error codes** (in `errors[].code`):\n\n| Code | `errors[].id` | Meaning |\n|------|---------------|---------|\n| 7321 | `message` | Message body is missing |\n| 7526 | `destination` | Missing destination number, or invalid |\n| 9404 | `payment` | No credit card on file, can't send SMS |\n| 1214 | `billing` | No billing set up for this account. Contact support |\n| 1215 | `sender_id` | Sender ID is not verified for this account (needs a verified ID with the `sms_sender` flag) |\n| 7521 | `sender` | Sender is not verified with extra (provider-side rejection) |\n| 7520 | `destination` | Destination number is not a valid textable Israeli number |\n| 7462 | `destination` | Destination number is a kosher phone and can not receive text messages |\n| 7404 | `NA` | Undocumented provider error (the original code is embedded in the description) |\n\nCodes 7321-1215 are pre-send validation (may arrive several at once in\none response); 7521/7520/7462/7404 are mapped from the SMS provider after a\nsend attempt.\n\n**HTTP statuses**: `200` for both success and business errors, `401`\nfor a missing/invalid Bearer token.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmsSendRequest"
+              },
+              "example": {
+                "message": "התור שלכם נקבע ליום ראשון בשעה 10:00. נתראה!",
+                "destination": "050-1234567",
+                "sender": "052-7654321"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/SmsSendRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Result of the send attempt. Check `success` - business errors also\narrive with HTTP 200.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SmsSendSuccess"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiErrors"
+                    }
+                  ]
+                },
+                "examples": {
+                  "sent": {
+                    "summary": "Message sent",
+                    "value": {
+                      "success": true,
+                      "id": "3yEIZ4jLcT5",
+                      "messages_count": {
+                        "sent": 1,
+                        "charged": 1
+                      }
+                    }
+                  },
+                  "validation_errors": {
+                    "summary": "Multiple validation errors at once",
+                    "value": {
+                      "success": false,
+                      "errors": [
+                        {
+                          "id": "message",
+                          "code": 7321,
+                          "description": "message body is missing"
+                        },
+                        {
+                          "id": "sender_id",
+                          "code": 1215,
+                          "description": "Sender id is not authorized"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/SmsVerifyUnauthorized"
+          }
+        }
+      }
+    },
+    "/when/calendars/": {
+      "get": {
+        "tags": [
+          "When"
+        ],
+        "summary": "List the account's calendars",
+        "operationId": "listCalendars",
+        "description": "Returns ALL of the caller's booking calendars - active and disabled\nalike (see the `active` flag). Each calendar is one bookable meeting\ntype with its own public URL, duration and weekly availability.\n",
+        "responses": {
+          "200": {
+            "description": "The account's calendars",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "calendars": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Calendar"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/WhenUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/WhenProRequired"
+          }
+        }
+      }
+    },
+    "/when/bookings/": {
+      "get": {
+        "tags": [
+          "When"
+        ],
+        "summary": "List the account's bookings",
+        "operationId": "listWhenBookings",
+        "description": "Bookings across all of the caller's calendars, sorted by start time\nascending. Filter by date range, status and calendar.\n",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-07-01"
+            },
+            "description": "Only bookings starting on/after this date (Y-m-d). Malformed value = 400."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-07-31"
+            },
+            "description": "Only bookings starting on/before this date (Y-m-d). Malformed value = 400."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "confirmed",
+                "cancelled",
+                "all"
+              ],
+              "default": "all"
+            },
+            "description": "Booking status filter."
+          },
+          {
+            "name": "calendar_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "c2yFfPaRcT5"
+            },
+            "description": "Calendar id (from `/when/calendars/`) - only that\ncalendar's bookings. An id that isn't one of the caller's\ncalendars safely yields an empty list.\n"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "minimum": 1,
+              "maximum": 500
+            },
+            "description": "Max rows returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching bookings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "bookings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WhenBooking"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed from/to date",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "success": false,
+                  "error": {
+                    "id": "from",
+                    "description": "from must be Y-m-d"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/WhenUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/WhenProRequired"
+          }
+        }
+      }
+    },
+    "/when/bookings/cancel/": {
+      "post": {
+        "tags": [
+          "When"
+        ],
+        "summary": "Cancel a booking (as the owner)",
+        "operationId": "cancelWhenBooking",
+        "description": "Owner-cancels one booking. Runs the EXACT same flow as the UI cancel\nbutton: the slot is freed, the Google Calendar event is removed\n(best-effort), **both sides receive a cancellation email**, and the\n`WhenMeetingCancelled` automation event fires with\n`cancelled_by=owner`.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "booking_id"
+                ],
+                "properties": {
+                  "booking_id": {
+                    "type": "string",
+                    "description": "Booking id (from `/when/bookings/`).",
+                    "example": "Jx8ObCAucT5"
+                  }
+                }
+              }
+            },
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "booking_id"
+                ],
+                "properties": {
+                  "booking_id": {
+                    "type": "string",
+                    "example": "Jx8ObCAucT5"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cancelled; the updated booking is returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "booking": {
+                      "$ref": "#/components/schemas/WhenBooking"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "booking_id missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "success": false,
+                  "error": {
+                    "id": "booking_id",
+                    "description": "booking_id is required"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/WhenUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/WhenProRequired"
+          },
+          "404": {
+            "description": "Booking not found or not owned by the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "success": false,
+                  "error": {
+                    "id": "not_found",
+                    "description": "Booking not found"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not cancellable (already cancelled, or already started)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Standard Bearer token auth (`Authorization: Bearer <token>`). Use your account's API key from /my/api/ (TokensModel TYPE_API). The same key authenticates every exm.co.il API endpoint."
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing/invalid Bearer token",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AuthError"
+            }
+          }
+        }
+      },
+      "CallsUnauthorized": {
+        "description": "Missing/invalid/expired Bearer token, or blocked account",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AuthError"
+            },
+            "example": {
+              "success": false,
+              "errors": {
+                "id": "HTTP_401",
+                "code": 401,
+                "description": "401 Unauthorized"
+              }
+            }
+          }
+        }
+      },
+      "ApiBlocked": {
+        "description": "The account's API access is administratively blocked",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AuthError"
+            },
+            "example": {
+              "success": false,
+              "errors": {
+                "id": "HTTP_403",
+                "code": 403,
+                "description": "403 Forbidden"
+              }
+            }
+          }
+        }
+      },
+      "C2CUnauthorized": {
+        "description": "Missing or invalid bearer token (the caller is unauthenticated).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "error": {
+                "code": "401",
+                "description": "401 Unauthorized"
+              }
+            }
+          }
+        }
+      },
+      "SmsVerifyUnauthorized": {
+        "description": "Missing/invalid Bearer token",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": false
+                },
+                "errors": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "example": "HTTP_401"
+                    },
+                    "code": {
+                      "type": "integer",
+                      "example": 401
+                    },
+                    "description": {
+                      "type": "string",
+                      "example": "401 Unauthorized"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "WhenUnauthorized": {
+        "description": "Missing/invalid Bearer token",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "WhenProRequired": {
+        "description": "The When API requires an active When Pro plan",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "success": false,
+              "error": {
+                "id": "when_pro_required",
+                "code": 403,
+                "description": "The When API is available on the When Pro plan"
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "AuthError": {
+        "type": "object",
+        "description": "Auth-layer error envelope (`errors` is a single object here).",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "errors": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "example": "HTTP_401"
+              },
+              "code": {
+                "type": "integer",
+                "example": 401
+              },
+              "description": {
+                "type": "string",
+                "example": "401 Unauthorized"
+              }
+            }
+          }
+        }
+      },
+      "AuthKeySuccess": {
+        "type": "object",
+        "required": [
+          "success",
+          "key",
+          "times",
+          "user"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "key": {
+            "type": "string",
+            "description": "The API key this request authenticated with."
+          },
+          "scopes": {
+            "type": "object",
+            "nullable": true,
+            "description": "The key's per-scope grants, or `null` for a legacy/unscoped key (which may do everything the account may).\n"
+          },
+          "times": {
+            "type": "object",
+            "properties": {
+              "created": {
+                "type": "string",
+                "description": "Key creation date, Y-m-d.",
+                "example": "2026-01-15"
+              },
+              "expire": {
+                "type": "string",
+                "description": "Key expiry date, Y-m-d.",
+                "example": "2027-01-15"
+              }
+            }
+          },
+          "user": {
+            "type": "object",
+            "description": "The account the key belongs to.",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique account id.",
+                "example": "c2yFfPaRcT5"
+              },
+              "email_address": {
+                "type": "string",
+                "example": "israel@example.com"
+              }
+            }
+          }
+        }
+      },
+      "ErrorsArrayEnvelope": {
+        "type": "object",
+        "description": "Handler-level error envelope used by POST /calls/ and GET /calls/recording/ - `errors` is an ARRAY of error objects. Returned with HTTP status 200.\n",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Machine-readable error key (usually the offending field).",
+                  "example": "call_id"
+                },
+                "code": {
+                  "type": "integer",
+                  "description": "Numeric error code (see the operation's error table).",
+                  "example": 7020
+                },
+                "description": {
+                  "type": "string",
+                  "example": "no call found"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Call": {
+        "type": "object",
+        "description": "One call, as returned by the calls list. This is the same shape as\nthe automations webhook POST payload, plus API-only enrichments\n(`numbers.own.color`, `numbers.own.line_type`, `contact.avatar`).\n\nThe `contact`, `recording` and `AI` keys are `false` (boolean) when\nabsent, an object when present.\n",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The call's id.",
+            "example": "zLvdabAqcT5"
+          },
+          "event": {
+            "type": "string",
+            "enum": [
+              "start",
+              "end"
+            ],
+            "description": "Lifecycle stage - completed calls are `end`, in-progress calls are `start`."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "incoming",
+              "incoming_missed",
+              "incoming_start",
+              "outgoing",
+              "outgoing_missed",
+              "outgoing_start"
+            ],
+            "description": "Call type alias.",
+            "example": "incoming"
+          },
+          "own_type": {
+            "type": "string",
+            "enum": [
+              "VNUM",
+              "VIVR",
+              "MOBL",
+              "SIPL"
+            ],
+            "description": "What kind of line \"own\" is: VNUM = virtual number, VIVR = virtual IVR, MOBL = mobile line, SIPL = SIP line.\n"
+          },
+          "ivr_dialed": {
+            "type": "string",
+            "nullable": true,
+            "description": "The IVR menu digit the caller dialed (null when not an IVR call).",
+            "example": "2"
+          },
+          "duration": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Call duration in seconds (null while the call is in progress).",
+            "example": 74
+          },
+          "note": {
+            "type": "string",
+            "nullable": true,
+            "description": "The user's note on the call."
+          },
+          "starred": {
+            "type": "boolean",
+            "description": "Whether the user starred the call."
+          },
+          "time": {
+            "type": "object",
+            "properties": {
+              "timezone": {
+                "type": "string",
+                "example": "Asia/Jerusalem"
+              },
+              "gmt_offset": {
+                "type": "string",
+                "example": "+03:00"
+              },
+              "start": {
+                "type": "string",
+                "description": "Local start time, `Y-m-d H:i:s` (in `timezone`).",
+                "example": "2026-07-09 14:32:05"
+              },
+              "end": {
+                "type": "string",
+                "nullable": true,
+                "description": "Local end time, `Y-m-d H:i:s` (absent/null while in progress).",
+                "example": "2026-07-09 14:33:19"
+              }
+            }
+          },
+          "numbers": {
+            "type": "object",
+            "properties": {
+              "own": {
+                "type": "object",
+                "description": "The account's own line the call went through.",
+                "properties": {
+                  "friendly": {
+                    "type": "string",
+                    "example": "050-1234567"
+                  },
+                  "e164": {
+                    "type": "string",
+                    "example": "+972501234567"
+                  },
+                  "color": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "The user-assigned line color (API/app-only enrichment; null when unset).",
+                    "example": "#ce081e"
+                  },
+                  "line_type": {
+                    "type": "string",
+                    "nullable": true,
+                    "enum": [
+                      "mobile",
+                      "vn",
+                      "ivr",
+                      "sip",
+                      null
+                    ],
+                    "description": "API/app-only enrichment - which kind of line the call came through."
+                  }
+                }
+              },
+              "caller": {
+                "type": "object",
+                "description": "The call's initiator. For withheld caller id both fields hold the literal string `ANONYMOUS`.\n",
+                "properties": {
+                  "friendly": {
+                    "type": "string",
+                    "example": "050-1234567"
+                  },
+                  "e164": {
+                    "type": "string",
+                    "example": "+972501234567"
+                  }
+                }
+              },
+              "destination": {
+                "type": "object",
+                "description": "The call's receiver.",
+                "properties": {
+                  "friendly": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "050-1234567"
+                  },
+                  "e164": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "+972501234567"
+                  }
+                }
+              }
+            }
+          },
+          "contact": {
+            "description": "The matched contact, or boolean `false` when the other party is not in the user's contacts.\n",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Contact id.",
+                "example": "c2yFfPaRcT5"
+              },
+              "book_id": {
+                "type": "string",
+                "description": "Contact-book id.",
+                "example": "Jx8ObCAucT5"
+              },
+              "name": {
+                "type": "string",
+                "example": "ישראל ישראלי"
+              },
+              "avatar": {
+                "type": "string",
+                "nullable": true,
+                "description": "Contact photo URL (API/app-only enrichment)."
+              }
+            }
+          },
+          "recording": {
+            "description": "Recording marker: an empty object `{}` when the call has a recording, boolean `false` when it doesn't. To fetch the actual file use GET /calls/recording/ or POST /calls/get-recording-urls/.\n",
+            "nullable": true
+          },
+          "AI": {
+            "description": "The GenieAI call summary, or boolean `false` when none exists.\n",
+            "nullable": true,
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "PENDING",
+                  "COMPLETED"
+                ]
+              },
+              "summary": {
+                "type": "object",
+                "properties": {
+                  "gist": {
+                    "type": "string",
+                    "description": "One-line summary title.",
+                    "example": "בירור לגבי התאמת השירות"
+                  },
+                  "body": {
+                    "type": "string",
+                    "description": "The full summary text."
+                  },
+                  "next_steps": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Actionable next-step items the AI extracted from the call."
+                  }
+                }
+              }
+            }
+          },
+          "recording_excluded": {
+            "type": "boolean",
+            "description": "Present only on accounts enrolled in the recording-exclusions feature - true when the recording was deliberately skipped by the line's exclusion list (distinguishes \"excluded\" from plain \"no recording\").\n"
+          }
+        }
+      },
+      "ApiErrorResponse": {
+        "type": "object",
+        "required": [
+          "success",
+          "error"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "description"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Stable error code. Known values: missing_device, missing_sim,\ninvalid_dest, device_not_found, sim_not_found, sim_disabled,\nunregistered, push_failed.\n",
+                "example": "invalid_dest"
+              },
+              "description": {
+                "type": "string",
+                "example": "Destination is not a valid Israeli phone number"
+              }
+            }
+          }
+        }
+      },
+      "LegacyDialSuccess": {
+        "type": "object",
+        "required": [
+          "success",
+          "call_id",
+          "numbers"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "call_id": {
+            "type": "string",
+            "description": "The initiated call's id (also usable with the Calls API).",
+            "example": "zLvdabAqcT5"
+          },
+          "already_dialing": {
+            "type": "boolean",
+            "description": "Idempotency echo. Present (true) when an identical dial - same account, same physical, same destination - is already in flight (initiated within the last 45 seconds and still ringing/connected). NO new call was placed; `call_id` is the existing in-flight call. Safe to treat as success: retrying a timed-out request returns the original call instead of dialing the destination twice.\n"
+          },
+          "numbers": {
+            "type": "object",
+            "description": "The E.164 numbers actually used for the call.",
+            "properties": {
+              "caller_id": {
+                "type": "string",
+                "example": "+972501234567"
+              },
+              "physical": {
+                "type": "string",
+                "example": "+972521234567"
+              },
+              "destination": {
+                "type": "string",
+                "example": "+972501234567"
+              },
+              "dialer": {
+                "type": "string",
+                "example": "+972778040015",
+                "description": "The number Leg 1 shows on the `physical` device's screen."
+              }
+            }
+          }
+        }
+      },
+      "LegacyErrorsResponse": {
+        "type": "object",
+        "required": [
+          "success",
+          "errors"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "The offending field.",
+                  "example": "physical"
+                },
+                "code": {
+                  "type": "integer",
+                  "example": 2020
+                },
+                "description": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ApiErrors": {
+        "type": "object",
+        "description": "Business/validation error envelope. `errors` is an array - several\nvalidation failures may be reported in one response.\n",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "The offending field / machine-readable error key.",
+                  "example": "destination"
+                },
+                "code": {
+                  "type": "integer",
+                  "description": "Numeric error code (see the per-operation code table).",
+                  "example": 7526
+                },
+                "description": {
+                  "type": "string",
+                  "example": "Missing destination number, or invalid"
+                }
+              }
+            }
+          }
+        }
+      },
+      "SmsSendRequest": {
+        "type": "object",
+        "required": [
+          "message",
+          "destination",
+          "sender"
+        ],
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "The message body. Must be non-empty (error 7321).",
+            "example": "התור שלכם נקבע ליום ראשון בשעה 10:00. נתראה!"
+          },
+          "destination": {
+            "type": "string",
+            "description": "Destination phone number - local (`050-1234567`) or E.164\n(`972501234567`). Must be a valid textable Israeli number\n(errors 7526 / 7520).\n",
+            "example": "050-1234567"
+          },
+          "sender": {
+            "type": "string",
+            "description": "Sender identity - a phone number or an alphanumeric sender. Must\nbe one of the account's verified IDs with the `sms_sender`\npermission (error 1215). Manage verified IDs at /my/verified-ids/.\n",
+            "example": "052-7654321"
+          }
+        }
+      },
+      "SmsSendSuccess": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique id of the SMS log record.",
+            "example": "3yEIZ4jLcT5"
+          },
+          "messages_count": {
+            "type": "object",
+            "description": "Segment accounting for the send.",
+            "properties": {
+              "sent": {
+                "type": "integer",
+                "description": "Number of SMS segments the message was split into and sent.",
+                "example": 1
+              },
+              "charged": {
+                "type": "integer",
+                "description": "Number of segments billed.",
+                "example": 1
+              }
+            }
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Machine-readable error key"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "Calendar": {
+        "type": "object",
+        "description": "One calendar - a bookable meeting type.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique calendar id",
+            "example": "c2yFfPaRcT5"
+          },
+          "slug": {
+            "type": "string",
+            "example": "short"
+          },
+          "title": {
+            "type": "string",
+            "example": "שיחה קצרה עם מומחה טלפוניה"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Disabled calendars are hidden from the public pages but still listed here."
+          },
+          "url": {
+            "type": "string",
+            "description": "The public booking page.",
+            "example": "https://when.exm.co.il/extra/short/"
+          },
+          "duration_minutes": {
+            "type": "integer",
+            "example": 10
+          },
+          "buffer_minutes": {
+            "type": "integer",
+            "example": 0
+          },
+          "min_lead_minutes": {
+            "type": "integer",
+            "example": 120,
+            "description": "Bookings must be made at least this many minutes ahead."
+          },
+          "max_days_ahead": {
+            "type": "integer",
+            "example": 14,
+            "description": "The public page offers slots up to this many days out."
+          },
+          "windows": {
+            "type": "object",
+            "description": "Weekly availability - day-of-week keys (\"0\"=Sunday .. \"6\"=Saturday),\neach an array of [start, end] time pairs.\n",
+            "example": {
+              "0": [
+                [
+                  "15:00",
+                  "17:00"
+                ]
+              ],
+              "1": [
+                [
+                  "09:00",
+                  "13:00"
+                ],
+                [
+                  "15:00",
+                  "17:00"
+                ]
+              ]
+            }
+          },
+          "location": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Meeting medium label",
+                "example": "שיחה טלפונית"
+              },
+              "note": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "questions": {
+            "type": "array",
+            "description": "The calendar's custom booking-form questions.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "example": "על מה נדבר?"
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "choice",
+                    "phone",
+                    "date"
+                  ]
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Choice options (empty for other types)."
+                }
+              }
+            }
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "WhenBooking": {
+        "type": "object",
+        "description": "One booked meeting.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique booking id",
+            "example": "Jx8ObCAucT5"
+          },
+          "calendar": {
+            "nullable": true,
+            "description": "The FULL calendar this booking belongs to - same shape as /when/calendars/ items, embedded so no extra call is needed to resolve it.\n",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Calendar"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "cancelled"
+            ]
+          },
+          "cancelled_by": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "booker",
+              "owner",
+              null
+            ],
+            "description": "Who cancelled (null while confirmed)."
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-12T15:00:00+03:00"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-12T15:10:00+03:00"
+          },
+          "booker": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "example": "ישראל ישראלי"
+              },
+              "phone": {
+                "type": "string",
+                "description": "E.164 without '+', empty string when unparseable.",
+                "example": "972501234567"
+              },
+              "email": {
+                "type": "string",
+                "example": "israel@example.com"
+              }
+            }
+          },
+          "answers": {
+            "type": "array",
+            "description": "The booker's answers as asked at booking time (labels are\nsnapshotted - later question edits don't rewrite history). Legacy\nbookings fold their free-text topic into a single 'נושא' answer.\n",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "example": "על מה נדבר?"
+                },
+                "answer": {
+                  "type": "string",
+                  "example": "התייעצות לפני הצטרפות"
+                }
+              }
+            }
+          },
+          "location": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "type": {
+                "type": "string",
+                "example": "שיחה טלפונית"
+              },
+              "note": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "cancel_url": {
+            "type": "string",
+            "description": "The booker's self-cancel page.",
+            "example": "https://when.exm.co.il/c/0123456789abcd.../"
+          },
+          "gcal_synced": {
+            "type": "boolean",
+            "description": "Whether the booking currently exists in the owner's Google Calendar."
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cancelled_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      }
+    }
+  },
+  "x-tagGroups": [
+    {
+      "name": "extra / Authorization",
+      "tags": [
+        "Authorization"
+      ]
+    },
+    {
+      "name": "extra / Calls",
+      "tags": [
+        "Calls"
+      ]
+    },
+    {
+      "name": "extra / Click2Call",
+      "tags": [
+        "Click2Call"
+      ]
+    },
+    {
+      "name": "extra / SMS + Verify",
+      "tags": [
+        "SMS"
+      ]
+    },
+    {
+      "name": "extra / When",
+      "tags": [
+        "When"
+      ]
+    }
+  ]
+}

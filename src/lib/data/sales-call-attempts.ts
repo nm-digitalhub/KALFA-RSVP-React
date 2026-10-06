@@ -13,14 +13,13 @@ import type { Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
 // written directly to callback_requests.call_outcome via the existing
 // applyCallOutcome(), a SEPARATE code path this file does not touch.
 //
-// This file is the DISPATCH-mechanics half only: whether the call itself was
-// placed. It never calls applyCallOutcome and never WRITES outcome_recorded_at
-// (the replay-guard column added by
-// 20260822105346_sales_call_attempts_outcome_claim_guard.sql for the
-// log_outcome/webhook/timeout-sweep write paths) — those routes are separate,
-// pending auth-authz-guardian's outcome-write review, and are not built here.
-// getUnresolvedSalesAttempt below is the one exception that READS the column
-// (never claims/writes it) — see its own doc comment.
+// This file never calls applyCallOutcome. outcome_recorded_at (the replay-guard
+// column added by 20260822105346_sales_call_attempts_outcome_claim_guard.sql)
+// is written only by claimSalesOutcome below, which each of the four outcome-
+// write paths (sls/cb, sls/tool/log-outcome, sls/tool/signup-link, and the
+// ElevenLabs post-call analysis) calls immediately before applyCallOutcome.
+// getUnresolvedSalesAttempt only READS the column (never claims/writes it) —
+// see its own doc comment.
 //
 // Never logs access_token.
 
@@ -97,8 +96,8 @@ export async function getSalesDispatchAttemptBySlot(
 // same reasoning as recordCallbackDialConfirmed in
 // callback-request-attempts.ts and recordDialConfirmed in call-attempts.ts:
 // the row stays pre-terminal until a real terminal signal arrives, which for
-// THIS table is the not-yet-built log_outcome route's dispatch-status write
-// (a separate concern from the outcome it also writes to callback_requests).
+// THIS table is the sls/cb route's recordSalesDispatchConcluded (a separate
+// concern from the outcome written to callback_requests).
 export async function recordSalesDialConfirmed(
   id: string,
   callSessionHistoryId: number,
@@ -142,9 +141,9 @@ async function recordDispatchOutcome(
 // Definite provider rejection (VoximplantApiError). Non-retryable — see
 // createSalesDispatchAttempt's own doc comment on why a same-slot retry is
 // deliberately not supported by this table's uniqueness. A row a crashed
-// process left stuck at 'dialing' forever is now covered by
-// runSalesDispatchReconcile (voximplant-reconcile.ts, extended 2026-08-22) —
-// ALERT-ONLY, same caveat as callback-request-attempts.ts's identical note.
+// process left stuck at 'dialing' forever is covered by
+// runSalesDispatchReconcile (voximplant-reconcile.ts) — ALERT-ONLY, same
+// caveat as callback-request-attempts.ts's identical note.
 export async function markSalesDispatchFailed(
   id: string,
   reason: string,
@@ -171,8 +170,8 @@ export async function markSalesDispatchUnknown(
 // and the row returns to status='scheduled' with a NEW scheduled_at. That is
 // a new, unconflicting sales_call_attempts_request_slot_uidx key, so the
 // unique index does nothing to stop a second real dial while the FIRST
-// call's async outcome (WhatsApp/SMS delivery confirmation, or a pending
-// log_outcome) is still unresolved. Filtering on vox_call_session_history_id
+// call's outcome (not yet claimed by any of the four outcome-write paths in
+// the file header) is still unresolved. Filtering on vox_call_session_history_id
 // IS NOT NULL means a genuine failed_to_start/start_unknown prior attempt
 // (never actually dialed) does NOT block a retry on the new slot — only a
 // call that really went out and hasn't been claimed does. Read-only: never
@@ -195,7 +194,7 @@ export async function getUnresolvedSalesAttempt(
 }
 
 // Looks up the attempt for a given ElevenLabs conversation id, falling back to
-// the non-authorizing sales attempt id injected as kalfa_attempt_token. The
+// the non-authorizing sales attempt id injected as kalfa_correlation_id. The
 // fallback keeps the post-call webhook's catch-all outcome path working even if
 // Voximplant misses the terminal cb that writes el_conversation_id.
 export async function getSalesAttemptIdByConversationId(
@@ -246,7 +245,7 @@ export async function countActiveSalesDispatches(): Promise<number> {
 // counted toward this cap at all.
 //
 // cap/window are admin-editable (CallbackPolicy.maxAttempts/attemptWindowMs,
-// /admin/callbacks/policy as of 31.8) — the caller fetches the policy once
+// /admin/callbacks/policy) — the caller fetches the policy once
 // and passes it in, rather than this function re-fetching it per call.
 export async function countRecentSalesAuditedAttempts(
   callbackRequestId: string,
@@ -281,7 +280,8 @@ export async function recordSalesDialAudit(callbackRequestId: string): Promise<v
     };
     await admin.from('activity_log').insert(row);
   } catch {
-    // Deliberately swallowed — see doc comment.
+    // Deliberately swallowed — best-effort: a lost write only degrades the
+    // attempt cap's visibility for future dials, never this dial.
   }
 }
 
@@ -444,15 +444,14 @@ export async function claimSalesOutcome(
 
 // Best-effort bookkeeping for a send_signup_link call — never gates the
 // tool's own response (see the route's own comment). A lost write here only
-// degrades future WhatsApp-delivery-webhook correlation, which is out of
-// this build's scope (see sales-closing script draft §7).
+// degrades WhatsApp-delivery-webhook correlation (recordSalesWaDeliveryStatus
+// matches on wa_message_id).
 //
 // waDeliveryStatus/waDeliveryErrorCode/waFallbackAttemptedAt capture WHY a
 // WhatsApp attempt did not yield a message id (sendWhatsAppMarketingTemplate's
-// own DeliveryOutcome.kind/reason/providerCode) — until 31.8 this was computed
-// and then discarded by the route on every non-accepted outcome, so a silent
-// WhatsApp rejection (e.g. a Meta error code) left zero trace anywhere: not
-// Slack (alertWhatsAppThrow deliberately only fires on a THROW, never on a
+// own DeliveryOutcome.kind/reason/providerCode) — otherwise a silent WhatsApp
+// rejection (e.g. a Meta error code) leaves zero trace anywhere: not Slack
+// (alertWhatsAppThrow deliberately only fires on a THROW, never on a
 // classified provider error — see that function's own comment), not the DB.
 export async function recordSalesLinkSent(
   id: string,

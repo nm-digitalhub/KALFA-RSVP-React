@@ -1,0 +1,138 @@
+import type { KalfaNodeType } from '../catalogue/types';
+import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
+import * as importGuestListDefinition from '../nodes/action-import-guest-list/definition';
+import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
+import * as sendTemplateDefinition from '../nodes/action-send-template/definition';
+import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definition';
+import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
+import * as startForEachGuestDefinition from '../nodes/action-start-for-each-guest/definition';
+import * as startRsvpAiCallbackDefinition from '../nodes/action-start-rsvp-ai-callback/definition';
+import * as startVoiceCallDefinition from '../nodes/action-start-voice-call/definition';
+import * as updateGuestStatusDefinition from '../nodes/action-update-guest-status/definition';
+import * as webhookDefinition from '../nodes/action-webhook/definition';
+import * as conditionDefinition from '../nodes/logic-condition/definition';
+import * as setValueDefinition from '../nodes/logic-set-value/definition';
+import * as switchDefinition from '../nodes/logic-switch/definition';
+import * as waitDefinition from '../nodes/logic-wait/definition';
+
+// How long ONE execution of a node may take — adopted from the engine this
+// project vendored its graph runner from.
+//
+// ⚠️ WHY IT WAS MISSING. Upstream runs `runGraph` on Temporal, where every node
+// is an ACTIVITY and every activity carries its own `startToCloseTimeout`. Their
+// `packages/temporal/src/workflow/activity-profiles.ts` ships
+// `DEFAULT_NODE_ACTIVITY_PROFILE = { startToCloseTimeout: '10m' }` and a
+// `NodeActivityProfiles` map keyed by `node.type`, so an AI node gets 30m and a
+// decision gets 30s. We run the same `runGraph` on pg-boss, which has no notion
+// of an activity: ONE job covers the WHOLE graph, so without a node budget a
+// single node could hold a run open indefinitely, bounded only by the queue's
+// `expireInSeconds` — which is not a node budget.
+//
+// This is that budget, enforced where we can enforce it: around the handler call
+// in `activity-runner`.
+//
+// ⚠️ WHOLE PROFILES, NEVER PARTIALS — upstream's rule, kept for upstream's
+// reason: "a partial would let you set a timeout and silently drop the retry
+// cap, and what Temporal falls back to is unlimited retries". Ours carries one
+// field today; requiring the whole object means adding a second cannot silently
+// default on entries written before it existed.
+
+export type NodeActivityProfile = {
+  /**
+   * The ceiling for one call of this node's handler. Exceeded, the step is
+   * FAILED (not parked, not abandoned) so a later delivery may take the row
+   * over — `claimStep` reclaims a 'failed' row immediately.
+   */
+  timeoutMs: number;
+};
+
+/**
+ * What a node gets when its type has no entry.
+ *
+ * EXPLICIT, and that is the point. The alternative is no bound at all: a
+ * handler that never settles holds its step row 'running' until the 15-minute
+ * lease, and holds the pg-boss job until the queue expires it — two timers that
+ * were never chosen for this.
+ */
+export const DEFAULT_NODE_ACTIVITY_PROFILE: NodeActivityProfile = { timeoutMs: 120_000 };
+
+/**
+ * Per-type budgets. A type with no entry resolves to the default and nothing
+ * else — no merging, no inheritance.
+ *
+ * The numbers are each node's own worst case plus room, not a guess:
+ *   `action.webhook`        its own `TIMEOUT_MS` is 10s (outbound-webhook.ts).
+ *   `action.send_whatsapp`  one Graph API call.
+ *   `action.start_voice_call` dials and returns; the WAIT is a park, not a call.
+ *   `action.import_guest_list` / `action.start_for_each_guest` walk a guest list
+ *                           and write many rows — minutes, legitimately.
+ */
+export const NODE_ACTIVITY_PROFILES: Readonly<Partial<Record<KalfaNodeType, NodeActivityProfile>>> =
+  Object.freeze({
+    [conditionDefinition.type]: conditionDefinition.activityProfile,
+    [switchDefinition.type]: switchDefinition.activityProfile,
+    [setValueDefinition.type]: setValueDefinition.activityProfile,
+    [waitDefinition.type]: waitDefinition.activityProfile,
+    [webhookDefinition.type]: webhookDefinition.activityProfile,
+    [sendWhatsappDefinition.type]: sendWhatsappDefinition.activityProfile,
+    [sendTemplateDefinition.type]: sendTemplateDefinition.activityProfile,
+    [notifyTeamDefinition.type]: notifyTeamDefinition.activityProfile,
+    [updateGuestStatusDefinition.type]: updateGuestStatusDefinition.activityProfile,
+    [setGuestFieldDefinition.type]: setGuestFieldDefinition.activityProfile,
+    [callbackRequestDefinition.type]: callbackRequestDefinition.activityProfile,
+    [startVoiceCallDefinition.type]: startVoiceCallDefinition.activityProfile,
+    [startRsvpAiCallbackDefinition.type]: startRsvpAiCallbackDefinition.activityProfile,
+    [importGuestListDefinition.type]: importGuestListDefinition.activityProfile,
+    [startForEachGuestDefinition.type]: startForEachGuestDefinition.activityProfile,
+  });
+
+/**
+ * The largest budget any node may be given.
+ *
+ * ⚠️ THIS IS THE BOTTOM OF A CHAIN OF THREE, and the order is the invariant:
+ *
+ *   node budget  <  queue `expireInSeconds`  <  `STEP_LEASE_MS`
+ *
+ * A node must finish or fail before pg-boss gives the job to a retry, and the
+ * retry must not be able to reclaim the step row before the first attempt is
+ * genuinely dead. Collapse any gap and the failure is silent: with the node
+ * budget above the queue expiry, a retry arrives while the first handler is
+ * still inside the node; with the queue expiry at the lease — which is exactly
+ * where they sat, both at 900s, by inheritance rather than by choice — the retry
+ * reclaims the row in the same second the previous attempt was given up on, and
+ * two handlers run the same node.
+ *
+ * `workflow-budgets.test.ts` asserts the chain rather than trusting the comment.
+ */
+export const MAX_NODE_TIMEOUT_MS = 300_000;
+
+/**
+ * The budget for one node, by type.
+ *
+ * Validates rather than trusting the table: a zero, a negative, a NaN or an
+ * over-ceiling entry is a bug that would otherwise present as a node that never
+ * times out (or times out instantly), and both look like something else.
+ */
+export function nodeBudgetMs(nodeType: string): number {
+  return resolveBudgetMs(
+    (NODE_ACTIVITY_PROFILES as Record<string, NodeActivityProfile | undefined>)[nodeType],
+  );
+}
+
+/**
+ * The validation, separated from the lookup so it can be tested at all.
+ *
+ * `NODE_ACTIVITY_PROFILES` is frozen — deliberately, so nothing rewrites a
+ * budget at run time — which also means a test cannot inject a bad entry through
+ * it. The rule is the thing worth pinning, so the rule gets its own function.
+ */
+export function resolveBudgetMs(profile: NodeActivityProfile | undefined): number {
+  const ms = profile?.timeoutMs ?? DEFAULT_NODE_ACTIVITY_PROFILE.timeoutMs;
+  if (!Number.isFinite(ms) || ms <= 0 || ms > MAX_NODE_TIMEOUT_MS) {
+    return DEFAULT_NODE_ACTIVITY_PROFILE.timeoutMs;
+  }
+  return ms;
+}
+
+/** The code a node's own timeout raises, shared with whatever reads it. */
+export const NODE_TIMEOUT_CODE = 'node_timeout';

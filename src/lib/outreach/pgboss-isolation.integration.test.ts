@@ -150,7 +150,7 @@ describe.skipIf(!RUN)('pg-boss isolation — deterministic ids + at-most-once', 
     await pool.query(`update ${schema}.job set retry_count=retry_limit where id=$1 and name=$2`, [id, QUEUES.step]);
     const meta = await getJobRetryMeta({ schema, queueName: QUEUES.step, jobId: id });
     expect(meta).not.toBeNull();
-    expect(meta!.retryCount).toBe(meta!.retryLimit); // → runStepExecution resolves provider_failure (no throw ⇒ no dead-letter)
+    expect(meta!.retryCount).toBe(meta!.retryLimit); // → the last permitted delivery (handleCallRequest settles its dispatch row here)
     // an unknown job id → null (no crash).
     expect(await getJobRetryMeta({ schema, queueName: QUEUES.step, jobId: randomUUID() })).toBeNull();
   });

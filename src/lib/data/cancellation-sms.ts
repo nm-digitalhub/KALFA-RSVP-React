@@ -3,7 +3,7 @@
 // event-cancellation.ts. A service reply to a request the customer themselves
 // initiated (never marketing), same rationale as
 // src/lib/callbacks/no-contact-sms.ts — the consent gate here is extra
-// carefulness on top of that, per an explicit owner decision (2026-08-21).
+// carefulness on top of that, per an explicit owner decision.
 
 export function buildCancellationSmsText(input: {
   fullName: string;

@@ -19,22 +19,23 @@ import {
   type SessionCommandEnvelope,
 } from '@/lib/voximplant/session-command';
 
-// POST /api/console-calls/{id}/consult   body: { to_agent_id: uuid }
+// POST /api/console-calls/{id}/consult   body: { to_agent_id: uuid } | { to_phone: string }
 //
-// Consult-before-transfer, step 1 (plan stage 2 — accelerated ahead of the
-// plan's own "שלב 2" deferral per this build's brief). Mirrors
+// Consult-before-transfer, step 1. Mirrors
 // transfer/route.ts almost verbatim: { id } is a live manual-outbound or
 // inbound-customer console_calls row (never ai_handoff/internal); the
-// browser names the TARGET AGENT only, the route resolves it server-side via
-// the SAME resolveTransferTarget() blind transfer already uses (routable =
-// provisioned + ready, never self), and posts
-// {command:'consult_start', request_id, payload:{vox_username}} —
-// ConsoleDial.voxengine.js / ConsoleInbound.voxengine.js's `consult_start`
-// branch (verbatim).
+// browser names the TARGET only — an agent, which the route resolves
+// server-side via the SAME resolveTransferTarget() blind transfer already uses
+// (routable = provisioned + ready, never self), or an outside number, cleared
+// by resolveExternalDialTarget() — and posts
+// {command:'consult_start', request_id, payload:{vox_username}} or
+// payload:{phone}. ConsoleInbound.voxengine.js's `consult_start` branch reads
+// either shape; ConsoleDial.voxengine.js's reads `vox_username` only.
 //
 // Unlike a blind transfer, this does NOT end the call for the original
-// operator: the scenario puts the customer on hold (silent — no hold-music
-// asset; documented in the scenario) and privately bridges operator<->target
+// operator: the scenario puts the customer on hold (looped hold music, with a
+// spoken cue as the fallback — see the scenario's startHoldAudio) and privately
+// bridges operator<->target
 // so the customer hears neither side of the consultation. The operator then
 // either POSTs .../consult/cancel (return to the customer) or
 // .../consult/complete (the actual warm transfer: drop the operator, bridge
@@ -56,7 +57,7 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 1024;
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.uuid();
 
 function json(body: unknown, status: number) {
   return NextResponse.json(body, { status, headers: NO_STORE });

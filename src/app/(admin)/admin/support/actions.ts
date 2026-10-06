@@ -16,8 +16,9 @@ import type { ActionResult } from '@/lib/validation/result';
 // Server actions backing the /admin/support READ-ONLY customer-support surface.
 // Both actions re-gate via the data layer (requirePlatformPermission —
 // belt-and-suspenders on top of the page's own gate). Neither action ever
-// calls .update()/.insert()/.delete() on a customer table — findEventsAction
-// resolves candidates, viewEventAction is the audited, reason-required view.
+// calls .update()/.insert()/.delete() on a customer table —
+// findSupportEventsAction resolves candidates and viewSupportEventAction returns
+// the event dossier; both are reason-required and audited in the data layer.
 
 function safeMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;

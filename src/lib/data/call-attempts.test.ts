@@ -8,7 +8,7 @@ vi.mock('server-only', () => ({}));
 
 import { TERMINAL_STATUSES } from './call-attempts';
 
-// Stage 6: 'handed_off' (a KALFA console agent took over the call) must be
+// 'handed_off' (a KALFA console agent took over the call) must be
 // terminal — otherwise recordCallOutcome's compare-and-set guard (the CAS
 // that stops a stale/out-of-order callback from downgrading a row that
 // already reached a terminal state) would NOT protect a handed-off row, and

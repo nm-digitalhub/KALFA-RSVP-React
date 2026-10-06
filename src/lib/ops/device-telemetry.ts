@@ -44,8 +44,8 @@ const MAX_BYTES = 32 * 1024 * 1024;
  * Append a whole batch in ONE write.
  *
  * One `appendFile` per batch rather than one per line, and that is a correctness
- * requirement rather than an optimisation: under pm2 several workers append to
- * the same file, and a single `O_APPEND` write stays interleave-safe where a
+ * requirement rather than an optimisation: under pm2 cluster mode several workers
+ * would append to the same file, and a single `O_APPEND` write stays interleave-safe where a
  * per-line loop can have another worker's line land in the middle of ours.
  *
  * Never throws. A telemetry write failing must not become a 500 the app then

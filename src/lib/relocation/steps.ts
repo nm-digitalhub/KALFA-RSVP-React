@@ -1,12 +1,12 @@
 /**
  * Relocation wizard — step definitions for stages B–H.
  *
- * Wired 2026-08-23: apply()/verify()/rollback() call the execution modules
+ * apply()/verify()/rollback() call the execution modules
  * (exec/nginx/env-rewrite/pm2/external/setup-form) behind the RELOCATE_EXECUTE
  * latch those modules already enforce — the CLI is the only thing that ever
  * sets that env var, and only for a real (non-dry-run), gate-approved run.
- * Steps left as NotImplementedError are DELIBERATELY owner-gated/manual
- * (each says why in its message) — not an oversight.
+ * C4 is the only step without an apply(): its check() always reports done, so
+ * the engine never runs the NotImplementedError fallback.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -48,6 +48,7 @@ import {
   referencedOldNames,
   rewriteComponents,
   templateSwitchSql,
+  routeSwitchSql,
   type MetaCreds,
   type TemplateNamePlan,
   type TemplateRow,
@@ -191,6 +192,19 @@ async function readTemplateRows(handle: { token: string; projectRef: string }): 
   return res.value as TemplateRow[];
 }
 
+// Template names the routing tables send today (message_template_routes →
+// whatsapp_message_templates) — the sending source of truth.
+async function readRoutedTemplateNames(handle: { token: string; projectRef: string }): Promise<string[] | null> {
+  const res = await runSupabaseSql({
+    ...handle,
+    query:
+      "SELECT DISTINCT w.name FROM message_template_routes r JOIN whatsapp_message_templates w ON w.id = r.whatsapp_template_id",
+    readOnly: true,
+  });
+  if (!res.ok || !Array.isArray(res.value)) return null;
+  return (res.value as Array<{ name: string }>).map((r) => r.name);
+}
+
 /** Voximplant handle shared by F5/F6/F6b. */
 async function voxHandle(repoRoot: string) {
   const env = readEnv(repoRoot);
@@ -254,6 +268,11 @@ export function buildStepDefinitions(): StepDefinition[] {
           if (p.newStatus !== null) continue;
           const src = byName.get(p.oldName);
           if (!src) continue;
+          // Meta's spec leaves both optional; a new version cannot be submitted
+          // without them, so a template listed without one stops the step loudly.
+          if (!src.language || !src.category) {
+            throw new Error(`Meta returned ${p.oldName} without language/category — cannot submit ${p.newName}`);
+          }
           const res = await createMetaTemplate(creds, {
             name: p.newName,
             language: src.language,
@@ -1090,6 +1109,7 @@ export function buildStepDefinitions(): StepDefinition[] {
       label: { en: "Switch message_templates to the approved successors", he: "מעבר שורות message_templates לתבניות-ההמשך המאושרות" },
       plan: () => [
         "UPDATE message_templates: name + components.variants / media_variants / media_variant → the _vN+1 successor, ONLY where Meta already APPROVED it (unapproved names stay in place and keep working through the Stage E 301)",
+        "Routing tables (what actually sends): repoint message_template_routes to the APPROVED successor in the Meta mirror, copying its variable rows + settings (a successor the nightly template sync has not mirrored yet stays pending)",
         "previous rows saved to .relocate/G2-prev.json for rollback; once Meta approves the rest, re-run `npm run relocate -- repair G2 pending` then `--resume`",
       ],
       check: async (ctx) => {
@@ -1097,9 +1117,13 @@ export function buildStepDefinitions(): StepDefinition[] {
         const creds = await metaCreds(ctx.repoRoot);
         if (!handle || !creds) return "blocked";
         const rows = await readTemplateRows(handle);
-        if (!rows) return "blocked";
+        const routed = await readRoutedTemplateNames(handle);
+        if (!rows || !routed) return "blocked";
         const plans = await metaPlans(ctx, creds);
-        return referencedOldNames(rows, plans).length === 0 ? "done" : "pending";
+        const oldNames = new Set(plans.map((p) => p.oldName));
+        return referencedOldNames(rows, plans).length === 0 && !routed.some((n) => oldNames.has(n))
+          ? "done"
+          : "pending";
       },
       apply: async (ctx) => {
         assertExecuteLatch("G2 message_templates switch");
@@ -1109,20 +1133,27 @@ export function buildStepDefinitions(): StepDefinition[] {
         const rows = await readTemplateRows(handle);
         if (!rows) throw new Error("could not read message_templates");
         savePrevValue(ctx.repoRoot, "G2", rows);
-        const updates = planTemplateRowSwitch(rows, await metaPlans(ctx, creds));
+        const plans = await metaPlans(ctx, creds);
+        const updates = planTemplateRowSwitch(rows, plans);
         for (const u of updates) {
           const res = await runSupabaseSql({ ...handle, query: templateSwitchSql(u), readOnly: false });
           if (!res.ok) throw new Error(`message_templates UPDATE (${u.message_key}) failed: ${res.detail}`);
+        }
+        for (const p of plans.filter((x) => x.newStatus === "APPROVED")) {
+          const res = await runSupabaseSql({ ...handle, query: routeSwitchSql(p.oldName, p.newName), readOnly: false });
+          if (!res.ok) throw new Error(`template routes switch (${p.oldName}) failed: ${res.detail}`);
         }
       },
       verify: async (ctx) => {
         const handle = mgmtHandle(ctx.repoRoot);
         const creds = await metaCreds(ctx.repoRoot);
         const rows = handle ? await readTemplateRows(handle) : null;
+        const routed = handle ? await readRoutedTemplateNames(handle) : null;
         const plans = creds ? await metaPlans(ctx, creds) : [];
-        if (!rows) return { ok: false, checks: [{ label: { en: "message_templates readable", he: "message_templates נקראת" }, ok: false }] };
+        if (!rows || !routed) return { ok: false, checks: [{ label: { en: "message_templates readable", he: "message_templates נקראת" }, ok: false }] };
         const pendingSwitch = planTemplateRowSwitch(rows, plans);
-        const remaining = referencedOldNames(rows, plans);
+        const oldNames = new Set(plans.map((p) => p.oldName));
+        const remaining = [...new Set([...referencedOldNames(rows, plans), ...routed.filter((n) => oldNames.has(n))])];
         const ok = pendingSwitch.length === 0; // every APPROVED successor is in use
         return {
           ok,

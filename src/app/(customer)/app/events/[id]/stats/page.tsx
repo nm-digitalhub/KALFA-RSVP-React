@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 import { formatIsraelDateTime } from '@/lib/date';
+import { formatCurrency } from '@/lib/format';
 import { buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { getEventStats, type EventStatsResult } from '@/lib/data/event-stats';
@@ -77,15 +78,16 @@ export default async function EventStatsPage({
     ? campaignStage({
         status: stats.campaign.status,
         capture_status: stats.campaign.captureStatus,
+        package_price: stats.campaign.packagePrice,
+        payment: stats.campaign.paymentStatus ? { status: stats.campaign.paymentStatus } : null,
       })
     : null;
 
   return (
     // No padding and no width of its own: the app shell already wraps every
-    // page in `mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8`. This page was the
-    // only one adding `p-6` on top of that, which doubled the top gap and
-    // squeezed the content, and the only one narrowing to max-w-3xl. Every
-    // other page here is a bare `space-y-6`.
+    // page in `mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8`, so adding padding
+    // or a narrower max-width here would double the top gap and squeeze the
+    // content.
     <div className="space-y-6">
       {/* items-start, not items-center: the left block is two lines tall, so
           centring left the refresh button floating between the back link and
@@ -217,7 +219,7 @@ export default async function EventStatsPage({
               ) : null}
             </dl>
             {stats.campaign.delivery ? (
-              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+              <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                 <div>
                   <dt className="text-muted-foreground">נשלח</dt>
                   <dd className="font-medium">{stats.campaign.delivery.sent}</dd>
@@ -242,27 +244,29 @@ export default async function EventStatsPage({
                   <dt className="text-muted-foreground">ביקש הסרה</dt>
                   <dd className="font-medium">{stats.campaign.delivery.optedOut}</dd>
                 </div>
-              </div>
+              </dl>
             ) : null}
             {stats.campaign.billing ? (
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <dl className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <dt className="text-muted-foreground">נוצר קשר (לחיוב)</dt>
                   <dd className="font-medium">{stats.campaign.billing.reachedCount}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">נצבר</dt>
-                  <dd className="font-medium">{stats.campaign.billing.accrued}</dd>
+                  <dd className="font-medium">{formatCurrency(stats.campaign.billing.accrued)}</dd>
                 </div>
-                <div>
-                  <dt className="text-muted-foreground">תקרה</dt>
-                  <dd className="font-medium">{stats.campaign.billing.ceiling}</dd>
-                </div>
+                {stats.campaign.billing.ceiling !== null ? (
+                  <div>
+                    <dt className="text-muted-foreground">תקרה</dt>
+                    <dd className="font-medium">{formatCurrency(stats.campaign.billing.ceiling)}</dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt className="text-muted-foreground">מגעים מקסימליים</dt>
                   <dd className="font-medium">{stats.campaign.billing.maxContacts}</dd>
                 </div>
-              </div>
+              </dl>
             ) : null}
           </div>
         ) : null}

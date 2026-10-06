@@ -2,8 +2,9 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 // Unit tests run in a Node environment. Most testable logic is server-side
-// (Zod schemas, ownership filtering, auth helpers); component tests can add a
-// jsdom environment later if needed.
+// (Zod schemas, ownership filtering, auth helpers). A component or hook test is
+// a `.test.tsx` file that opts into a DOM with a `// @vitest-environment jsdom`
+// first line and renders with @testing-library/react.
 //
 // TZ is pinned so a test suite full of dates gives the same answer on any
 // machine. Without it the runner inherits the host, and a scheduling test that
@@ -54,8 +55,38 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
     env: { TZ: 'Asia/Jerusalem', NODE_ENV: 'test' },
+    // @workflowbuilder/sdk is browser ESM and imports @xyflow/react's
+    // stylesheet. Node's loader refuses a .css file outright
+    // ("Unknown file extension .css"), and a package left EXTERNAL is loaded by
+    // Node rather than transformed by Vite — so the import fails before any test
+    // runs. Inlining hands it to Vite, which stubs CSS imports to an empty
+    // module because `test.css` is off.
+    //
+    // Scoped to these two packages on purpose: the SDK is the only dependency a test
+    // needs to import for browser-side code (catalogue/branch-handles.test.ts,
+    // which pins the condition handle ids to the SDK's own getHandleId).
+    // @workflowbuilder/ui imports its per-component stylesheets from its JS the same way.
+    server: { deps: { inline: ['@workflowbuilder/sdk', '@workflowbuilder/ui'] } },
+    // Persist transformed modules across runs. Vitest's own diagnostic asked for
+    // it: MEASURED 2026-09-23, 39.11s of transforming — 27% of the run — redone
+    // from scratch on every `vitest run`.
+    //
+    // ⚠️ A TOP-LEVEL `test` OPTION IN 5.x, NOT `test.experimental`. The published
+    // docs still show `experimental.fsModuleCache` (Context7 indexes up to
+    // 4.1.6); the installed 5.0.1 types declare it beside `css` and `cache`, with
+    // `experimental_defineCacheKeyGenerator` deprecated in favour of
+    // `defineCacheKeyGenerator`. The installed types are the authority.
+    //
+    // SAFE HERE BECAUSE NOTHING TRANSFORMS ON AN OUTSIDE FACTOR. The key is the
+    // file's content, its id, Vite's environment config and coverage status; the
+    // docs warn only about plugins whose output depends on something else, and
+    // this config registers none. `test.env` above is applied at RUN time, not
+    // transform time, so the pinned TZ / NODE_ENV cannot be baked into a cached
+    // module. The cache lives in `node_modules/.vitest-cache`, so a reinstall
+    // clears it and git never sees it.
+    fsModuleCache: true,
   },
   resolve: {
     alias: {

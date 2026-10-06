@@ -47,12 +47,61 @@ const reachArgs = {
   providerRef: 'wamid.1',
 };
 
+// getCampaignContext reads campaigns, then events: answer each read with its
+// own row (the event stays active unless a test says otherwise).
+function mockCampaignRow(row: Record<string, unknown>, eventStatus = 'active') {
+  const { client, builder } = createMockSupabase<Record<string, unknown>>({ data: null, error: null });
+  vi.mocked(createAdminClient).mockReturnValue(
+    client as unknown as ReturnType<typeof createAdminClient>,
+  );
+  vi.spyOn(builder, 'then')
+    .mockImplementationOnce((f) => (f as (v: unknown) => unknown)({ data: row, error: null }))
+    .mockImplementationOnce((f) =>
+      (f as (v: unknown) => unknown)({
+        data: { event_date: row.event_date, status: eventStatus },
+        error: null,
+      }),
+    );
+}
+const LIVE_ROW = {
+  status: 'active',
+  event_id: 'e1',
+  allowed_channels: ['whatsapp'],
+  start_at: null,
+  close_at: null,
+  outreach_schedule: [],
+  event_date: '2099-01-01T00:00:00+00:00',
+};
+
 describe('stepGate (fail-closed)', () => {
   it('returns paused when outreach is globally disabled — no send', async () => {
     vi.mocked(getOutreachEnabled).mockResolvedValue(false);
+    mockCampaignRow(LIVE_ROW);
     const r = await stepGate('c1', 'k1', 'e1');
     expect(r.reason).toBe('paused');
     expect(r.ctx).toBeUndefined();
+  });
+
+  // A 'paused' answer re-polls every 5 minutes; a closed campaign must be
+  // terminalized even while the global switch is off, or it re-polls forever
+  // (two such jobs measured 2026-09-30).
+  it.each([
+    ['closed', { ...LIVE_ROW, status: 'closed' }],
+    ['cancelled', { ...LIVE_ROW, status: 'cancelled' }],
+    ['past close_at', { ...LIVE_ROW, close_at: '2000-01-01T00:00:00Z' }],
+  ])('a %s campaign stops even when outreach is globally disabled', async (_label, row) => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(false);
+    mockCampaignRow(row);
+    const r = await stepGate('c1', 'k1', 'e1');
+    expect(r.reason).toBe('stopped');
+  });
+
+  it('a paused campaign stays paused (reversible), switch on or off', async () => {
+    for (const enabled of [true, false]) {
+      vi.mocked(getOutreachEnabled).mockResolvedValue(enabled);
+      mockCampaignRow({ ...LIVE_ROW, status: 'paused' });
+      expect((await stepGate('c1', 'k1', 'e1')).reason).toBe('paused');
+    }
   });
 });
 
@@ -83,7 +132,7 @@ describe('stepGate — L1 past-event stop (live event_date)', () => {
   });
 });
 
-// S2.4 — R9: defense-in-depth on top of the DB trigger
+// R9: defense-in-depth on top of the DB trigger
 // (campaigns_require_active_event) + R7's structural guarantee. Genuinely
 // redundant under normal DB operation but required explicitly per the plan's
 // "ALL commercial paths" list.
@@ -188,7 +237,7 @@ describe('writeReach (shared reach path — stop on billed)', () => {
 });
 
 // §5.6 — a broken outreach_schedule touchpoint must never send, and must be
-// recorded durably through recordTemplateFailure (now shared via outreach.ts;
+// recorded durably through recordTemplateFailure (shared via outreach.ts;
 // its atomic-upsert/UNIQUE-conflict-key DB contract is pinned in
 // outreach.test.ts). Here we pin WHEN the engine records and with which
 // (campaign, touchpoint, reason, key, channel) identity.
@@ -457,6 +506,8 @@ describe('executeStep — send-time parameter binding', () => {
         'אולמי הגן, דרך השלום 10, תל אביב',
       ],
       undefined,
+      // A campaign step runs in the worker: Meta's retry gets the background budget.
+      { retryBudgetMs: 21_000 },
     );
     // No integrity failure for a fully-bound send.
     expect(recordTemplateFailure).not.toHaveBeenCalled();
@@ -486,7 +537,7 @@ describe('executeStep — send-time parameter binding', () => {
 });
 
 // hasCallConsent is the ONLY gate that blocks an AI dial for a contact without
-// recorded prior consent, and app_settings.call_consent_required can now lift that
+// recorded prior consent, and app_settings.call_consent_required can lift that
 // check at runtime. Because turning it off has LEGAL weight, these tests pin the
 // exact truth table — especially that opt-out and fail-closed are NEVER lifted.
 describe('hasCallConsent — AI-call consent gate', () => {

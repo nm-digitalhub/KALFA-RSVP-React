@@ -7,11 +7,12 @@ import { insertWebhookEvents } from '@/lib/data/webhooks';
 // the Graph and WhatsApp webhooks. Server-to-server: the Standard Webhooks
 // signature IS the auth (no session, no CSRF).
 //
-// Why this exists: once Resend accepts a message, every downstream failure is
-// currently invisible to us. `sender.ts` throws only when the API call itself is
-// rejected — a wrong address, a full mailbox or a spam block is silent, so the
-// follow-up cascade keeps mailing an address that is bouncing every send. See
-// docs/inquiry-routing-and-messageid-plan-2026-08-26.md §8.1/§8.2.
+// Why this exists: once Resend accepts a message, a downstream failure is
+// invisible without this route. `sender.ts` throws only when the API call itself
+// is rejected — a wrong address, a full mailbox or a spam block is silent, so the
+// follow-up cascade keeps mailing an address that is bouncing every send.
+// processEmailDelivery (webhook-processing.ts) turns a hard bounce into an alert.
+// See docs/inquiry-routing-and-messageid-plan-2026-08-26.md §8.1/§8.2.
 //
 // NOTE: no `export const runtime` here on purpose. VERIFIED against the installed
 // Next.js docs (03-file-conventions/02-route-segment-config/runtime.md): 'nodejs'
@@ -117,8 +118,9 @@ export async function POST(request: NextRequest) {
       // provider's message identifier we correlate on" everywhere else in
       // webhook_inbox, and for mail that is the Message-ID header — the value
       // In-Reply-To/References are matched against, which is what the threading
-      // work in §8.1/§8.2 needs. It arrives free on every delivery event, so the
-      // GET /emails/{id} poll (and its two-format trap) is not needed here.
+      // work in §3/§4 of the same plan needs. It arrives free on every delivery
+      // event, so the GET /emails/{id} poll (and its two-format trap) is not
+      // needed here.
       // email_id is not lost: the whole payload is stored below.
       message_id: event.data?.message_id ?? null,
       payload: JSON.parse(raw),

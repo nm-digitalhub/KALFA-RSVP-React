@@ -6,8 +6,9 @@ import { agentStatusSchema } from '@/lib/validation/agent-console';
 // POST /api/agents/status  { "status": "ready|not_ready|dnd" }
 //
 // A console agent sets their OWN presence. `in_call` is system-managed and is
-// deliberately NOT accepted here (agentStatusSchema) — the server infers "busy"
-// from an active human_agent_call_legs row, it is never a client declaration.
+// deliberately NOT accepted here (agentStatusSchema) — the server derives "busy"
+// from a 'connected' console_calls row (findRoutableAgents), it is never a
+// client declaration.
 //
 // Auth = requireConsoleAgent (Bearer Supabase-JWT + the staff-gated
 // is_console_agent). The write is the agent's OWN agent_status row via the

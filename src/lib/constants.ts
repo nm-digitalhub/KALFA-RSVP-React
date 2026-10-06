@@ -31,6 +31,14 @@ export const NOTE_MAX = 1000;
 export const ISRAELI_PHONE_RE =
   /^(?:\+?972[-\s]?|0)(?:5\d|7\d|[23489])[-\s]?\d{3}[-\s]?\d{4}$/;
 
+// Max length of a user-typed phone field. E.164 caps a number at 15 digits, so
+// the longest legitimate value is "+" + 15 digits + separators; a formatted
+// international number ("+33 7 56 98 23 70") already needs 17 characters, and
+// grouped forms with parentheses ("+1 (415) 555-2671") need more. 25 leaves
+// room for those without accepting free text. Israeli local input is far
+// shorter and is unaffected.
+export const PHONE_INPUT_MAX = 25;
+
 // --- CSV import bounds (guests) ---
 export const CSV_MAX_ROWS = intEnv('CSV_MAX_ROWS', 2000);
 export const CSV_MAX_BYTES = intEnv('CSV_MAX_BYTES', 1_000_000);

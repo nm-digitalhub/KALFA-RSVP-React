@@ -30,9 +30,9 @@ import type { AppointmentShowAs, ExchangeAppointment } from '@/lib/exchange-ews/
 export type AvailabilityShowAs = Exclude<AppointmentShowAs, 'free'>;
 
 // What the avatar dot and the menu heading show. Derived from the mailbox's
-// REAL free/busy (getAvailability), so a meeting the owner created in Outlook
-// counts exactly like a status block we wrote — the two directions agree
-// because both read the same source of truth.
+// REAL free/busy (the calendar's own showAs, read in getMyPresence), so a
+// meeting the owner created in Outlook counts exactly like a status block we
+// wrote — the two directions agree because both read the same source of truth.
 export type PresenceSnapshot = {
   /** The state in effect right now, or 'free'. */
   showAs: AvailabilityShowAs | 'free';
@@ -175,9 +175,10 @@ export function findOrphanedStatusAppointments(
 
 /**
  * Live presence: asks Exchange for the mailbox's own free/busy right now.
- * Reads windows only — never subjects or attendees — so nothing sensitive is
- * pulled just to colour a dot. Fails SOFT to 'free': presence is a hint, and
- * an Exchange hiccup must not break the admin shell.
+ * Reads windows and subjects only (subjects just to recognise our own status
+ * blocks) — never attendees or bodies — so nothing sensitive is pulled just to
+ * colour a dot. Fails SOFT to 'free': presence is a hint, and an Exchange
+ * hiccup must not break the admin shell.
  */
 export async function getMyPresence(): Promise<PresenceSnapshot> {
   const free: PresenceSnapshot = { showAs: 'free', untilIso: null, ownedByApp: false };
@@ -190,11 +191,9 @@ export async function getMyPresence(): Promise<PresenceSnapshot> {
     if (!loaded.ok) return free;
 
     const now = new Date();
-    // Read the calendar directly rather than a free-busy service: that service
-    // answered 500 on the old EWS hosting, and the calendar read has served
-    // both purposes ever since — deciding presence AND reconciling our rows
-    // against reality. The 500 is history (the mailbox is on Graph now); the
-    // one-read-serves-both property is why this stayed.
+    // Read the calendar directly rather than a free-busy service: one read
+    // serves both purposes — deciding presence AND reconciling our rows
+    // against reality.
     const result = await calendarProvider.listAppointments(loaded.config, {
       start: new Date(now.getTime() - 24 * 60 * 60_000),
       end: new Date(now.getTime() + 12 * 60 * 60_000),

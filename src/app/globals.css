@@ -51,6 +51,15 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.511 0.262 276.97);
+  /* Template variables (the `{` value picker): the in-sentence tag and the
+     active suggestion row. Own tokens, hue of --primary indigo, so the variable
+     keeps the brand colour in dark mode too (there --primary turns grey). */
+  --variable-bg: oklch(0.955 0.03 276.97);
+  --variable-border: oklch(0.85 0.08 276.97);
+  --variable-text: oklch(0.43 0.2 276.97);
+  --variable-ring: oklch(0.511 0.262 276.97);
+  --suggestion-active-bg: oklch(0.955 0.03 276.97);
+  --suggestion-active-bar: oklch(0.511 0.262 276.97);
 }
 
 @theme inline {
@@ -84,6 +93,12 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
+  --color-variable-bg: var(--variable-bg);
+  --color-variable-border: var(--variable-border);
+  --color-variable-text: var(--variable-text);
+  --color-variable-ring: var(--variable-ring);
+  --color-suggestion-active-bg: var(--suggestion-active-bg);
+  --color-suggestion-active-bar: var(--suggestion-active-bar);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -108,13 +123,11 @@
 
    `--text-*` follows the built-in `--text-4xl` / `--text-4xl--line-height`
    pair shape in node_modules/tailwindcss/theme.css, so `text-hero` etc. emit
-   font-size + line-height like any core text utility. Fluid clamp() replaces
-   the `text-4xl sm:text-6xl` breakpoint jumps on the marketing headings:
-     hero    36px → 60px (homepage h1; was 36 then 60 from `sm`)
-     title   36px → 48px (sub-page h1s; was 36 then 48 from `sm`)
-     display 30px → 36px (section h2s; was 30 then 36 from `sm`)
-   The endpoints are the OLD sizes, so nothing gets bigger or smaller at the
-   extremes — the middle just stops jumping at 640px.
+   font-size + line-height like any core text utility. Fluid clamp() sizes the
+   marketing headings, with no breakpoint jump:
+     hero    36px → 60px (homepage h1)
+     title   36px → 48px (sub-page h1s)
+     display 30px → 36px (section h2s)
 
    Motion (entrances, scroll reveals, hover lifts) for the public pages is a
    separate layer, src/app/motion.css — nothing animated is defined here. */
@@ -170,11 +183,13 @@ body {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --variable-bg: oklch(0.3 0.08 276.97);
+  --variable-border: oklch(0.45 0.13 276.97);
+  --variable-text: oklch(0.87 0.08 276.97);
+  --variable-ring: oklch(0.72 0.16 276.97);
+  --suggestion-active-bg: oklch(0.3 0.08 276.97);
+  --suggestion-active-bar: oklch(0.72 0.16 276.97);
 }
-
-/* The homepage feature-icon loops (`k-ico-pulse`, `k-ico-bars`) moved to
-   src/app/motion.css on 2026-09-08 — one motion system; they now run only
-   while their card is hovered (owner decision, option 2). */
 
 @layer base {
   * {
@@ -185,6 +200,20 @@ body {
   }
   html {
     @apply font-sans;
+  }
+  /* Tailwind v4 preflight leaves buttons on the default arrow; the pointer
+     signals clickability to users and to screenshot-driven AI agents. The
+     same holds for native selects, checkable/file inputs, the labels that
+     wrap them, and <details> summaries. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="file"]:not(:disabled),
+  label:has(> input:not(:disabled)),
+  summary {
+    cursor: pointer;
   }
 }
 

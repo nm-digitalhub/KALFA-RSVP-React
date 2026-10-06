@@ -36,6 +36,7 @@ import {
   verifyPhoneChangeAction,
 } from './actions';
 import { formatIsraelDate } from '@/lib/date';
+import { CustomerNumberField } from './customer-number-field';
 import { PasskeyManager } from './passkey-manager';
 import { PushNotificationManager } from './push-notification-manager';
 
@@ -47,6 +48,8 @@ const sectionHeaderClass = 'flex items-start gap-3';
 interface SettingsPageClientProps {
   userEmail: string | undefined;
   profile: ProfileDTO | null;
+  // The SUMIT customer number; null until the first payment.
+  customerNumber: number | null;
   settings: UserSettingsDTO;
   loadError: boolean;
 }
@@ -73,7 +76,13 @@ function SectionTitle({
   );
 }
 
-function ProfileSection({ profile }: { profile: ProfileDTO | null }) {
+function ProfileSection({
+  profile,
+  customerNumber,
+}: {
+  profile: ProfileDTO | null;
+  customerNumber: number | null;
+}) {
   const [state, action] = useActionState(updateProfileAction, null);
 
   // Plain uncontrolled inputs (name + defaultValue), NOT react-hook-form: a
@@ -107,6 +116,8 @@ function ProfileSection({ profile }: { profile: ProfileDTO | null }) {
             <FieldError errors={state?.fieldErrors?.full_name} />
           </div>
 
+          {/* Read-only and nameless: shown, never submitted with the form. */}
+          <CustomerNumberField customerNumber={customerNumber} inputClassName={inputClass} />
         </div>
 
         <div className="max-w-44">
@@ -432,13 +443,15 @@ function PhoneVerification({ profile }: { profile: ProfileDTO | null }) {
           succeeded and the step stayed shut (measured 2026-09-02). */}
       <form action={sendAction} onSubmit={() => setDirty(false)} className="space-y-4">
         <div className="max-w-sm">
-          <label htmlFor="phone" className="mb-1 block text-sm font-medium">
+          {/* `phone` is the section's anchor (#phone in the nav); the input
+              needs its own id. */}
+          <label htmlFor="phone-input" className="mb-1 block text-sm font-medium">
             מספר טלפון
           </label>
           <div className="flex items-center gap-2">
             <input
               ref={phoneInput}
-              id="phone"
+              id="phone-input"
               name="phone"
               type="tel"
               dir="ltr"
@@ -572,11 +585,13 @@ function PhoneVerification({ profile }: { profile: ProfileDTO | null }) {
 export function SettingsPageClient({
   userEmail,
   profile,
+  customerNumber,
   settings,
   loadError,
 }: SettingsPageClientProps) {
   const nav = [
     { href: '#profile', label: 'פרופיל', icon: UserRound },
+    { href: '#phone', label: 'טלפון', icon: Smartphone },
     { href: '#notifications', label: 'התראות', icon: Bell },
     { href: '#summary', label: 'סיכום', icon: Settings },
     { href: '#security', label: 'אבטחה', icon: KeyRound },
@@ -603,7 +618,10 @@ export function SettingsPageClient({
 
       <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
         <aside className="lg:sticky lg:top-24 lg:self-start">
-          <nav className="grid gap-1 rounded-lg border border-border bg-card p-2">
+          <nav
+            aria-label="ניווט בהגדרות"
+            className="grid gap-1 rounded-lg border border-border bg-card p-2"
+          >
             {nav.map(({ href, label, icon: Icon }) => (
               <a
                 key={href}
@@ -618,7 +636,7 @@ export function SettingsPageClient({
         </aside>
 
         <div className="space-y-5">
-          <ProfileSection profile={profile} />
+          <ProfileSection profile={profile} customerNumber={customerNumber} />
           <PhoneVerification profile={profile} />
           <NotificationsSection settings={settings} />
           <SummarySection profile={profile} settings={settings} />

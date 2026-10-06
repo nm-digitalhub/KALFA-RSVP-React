@@ -23,14 +23,15 @@ import { cn } from '@/lib/utils';
 // — below that breakpoint this hamburger is the only way to reach them, so an anonymous
 // visitor on a phone isn't stuck with only the footer link. Base UI's Dialog
 // portal ignores the DOM `dir` attribute (same as the dropdown menu in
-// landing-user-menu.tsx and the mobile sidebar sheet in app-shell.tsx), so it
-// needs its own DirectionProvider.
+// landing-user-menu.tsx and the mobile sidebar sheet in app-shell.tsx) and
+// reads a DirectionProvider instead; the root layout already provides one, so
+// the local provider here is redundant but harmless.
 //
 // `open` is controlled (rather than left to the Sheet's own state) so nav
 // clicks can close the drawer immediately instead of leaving it open behind
 // the navigation/scroll.
 
-// min-h-11 = a 44px row per item (they were ~42px) + the shared v4 focus
+// min-h-11 = a 44px row per item + the shared v4 focus
 // outline, so the drawer is fully keyboard-legible and thumb-sized.
 const NAV_LINK_CLASS =
   'flex min-h-11 items-center rounded-md px-2 py-2.5 text-base font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
@@ -38,7 +39,7 @@ const NAV_LINK_CLASS =
 export function LandingMobileNav({
   // Anonymous visitors also get כניסה/צרו אירוע inside the drawer — on mobile
   // those buttons are hidden from the header bar itself to avoid crowding
-  // logo + CTAs + hamburger into one row (see the (public)/page.tsx header).
+  // logo + CTAs + hamburger into one row (see site/site-header.tsx).
   // Logged-in visitors already have those account actions in the avatar menu.
   showAuthCta,
 }: {

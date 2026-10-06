@@ -180,12 +180,13 @@ async function sendStageEmail(
 }
 
 /**
- * Runs the three stages IN ORDER, oldest-eligibility-first is unnecessary —
- * each stage's own `.eq('status','in_progress')` + timestamp guards make a
- * row eligible for at most one stage per tick, so there's no double-send risk
- * from processing all three in one pass. Each row is independent: one
- * failing must not block the rest, matching auto-thankyou.ts's own per-row
- * try/catch discipline.
+ * Runs the three stages IN ORDER, each re-reading its due rows after the
+ * previous stage has stamped its own — so a row whose replied_at is already
+ * older than a later stage's threshold can pass through several stages in ONE
+ * tick. Each stage's own `.eq('status','in_progress')` + stamp guards still
+ * make it fire at most once per row per cycle, so there's no double-send
+ * risk. Each row is independent: one failing must not block the rest,
+ * matching auto-thankyou.ts's own per-row try/catch discipline.
  */
 export async function runInquiryFollowupSweep(nowMs: number = Date.now()): Promise<{
   reminded: number;
@@ -254,8 +255,7 @@ export async function runInquiryFollowupSweep(nowMs: number = Date.now()): Promi
       // without ever having been asked for a rating.
       //
       // The rating_token itself is claimed BEFORE the send, not generated
-      // fresh on every attempt — fixed defect, independent adversarial
-      // verification 2026-08-25: a fresh randomBytes() token on every
+      // fresh on every attempt: a fresh randomBytes() token on every
       // attempt produced a DIFFERENT email payload each retry, while the
       // idempotencyKey below is stable across retries of the same cycle
       // (row.id + row.replied_at). Resend's documented behavior is to

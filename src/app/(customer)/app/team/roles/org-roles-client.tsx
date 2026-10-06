@@ -1,6 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { Fragment, useMemo, useState, useTransition } from 'react';
 import { Lock, RotateCcw } from 'lucide-react';
 
@@ -41,12 +40,12 @@ import type {
 import { resetOrgRolePermissionsAction, setOrgRolePermissionAction } from './actions';
 
 // Confirm-gated "reset this role to the factory default" button. Owner role
-// renders nothing (its grants are fixed). On confirm it calls the server action
-// then router.refresh() so the whole matrix re-reads server state; the dialog is
+// renders nothing (its grants are fixed). On confirm it calls the server action,
+// whose revalidatePath re-renders the whole matrix from server state in the
+// same round trip (no client router.refresh() needed); the dialog is
 // controlled so it stays open (with a pending label / inline error) until the
 // action resolves.
 function ResetRoleButton({ role }: { role: OrgRoleDTO }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -64,7 +63,6 @@ function ResetRoleButton({ role }: { role: OrgRoleDTO }) {
         return;
       }
       setOpen(false);
-      router.refresh();
     });
   };
 
@@ -72,7 +70,12 @@ function ResetRoleButton({ role }: { role: OrgRoleDTO }) {
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger
         render={
-          <Button variant="ghost" size="xs" className="text-muted-foreground">
+          <Button
+            variant="ghost"
+            size="xs"
+            className="text-muted-foreground"
+            aria-label={`איפוס ${role.label}`}
+          >
             <RotateCcw aria-hidden />
             איפוס
           </Button>
@@ -256,7 +259,7 @@ function PermissionToggleRow({
         </p>
       </div>
       <MatrixCell
-        // key includes the grant so a post-reset router.refresh() re-mounts it.
+        // key includes the grant so the post-reset server re-render re-mounts it.
         key={`${role.id}:${permission.id}:${initialChecked}`}
         roleId={role.id}
         permissionId={permission.id}
@@ -420,7 +423,7 @@ function RolesMatrix({ roles, permissions, granted }: OrgRolePermissionMatrix) {
                         <TableCell key={role.id} className="text-center">
                           <div className="flex justify-center">
                             <MatrixCell
-                              // key includes the current grant so a router.refresh()
+                              // key includes the current grant so the server re-render
                               // after a reset re-mounts the cell with fresh state
                               // (the optimistic useState wouldn't re-init otherwise).
                               key={`${role.id}:${permission.id}:${grantedNow}`}

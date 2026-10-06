@@ -1,7 +1,11 @@
 import 'server-only';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import { SumitDeclinedError, SumitNetworkError } from '@/lib/sumit/charge';
+import {
+  SumitDeclinedError,
+  SumitNetworkError,
+  type SumitChargeRequestBody,
+} from '@/lib/sumit/charge';
 
 const SUMIT_CHARGE_URL = 'https://api.sumit.co.il/billing/payments/charge/';
 
@@ -19,13 +23,83 @@ export interface SumitCaptureParams {
   // (observed on the live doc-check receipt 40106).
   customerName?: string;
   // The hold's SUMIT customer number (campaigns.sumit_customer_id), when
-  // known. Belt-and-braces: the saved token already resolves to the right
-  // customer via its own PaymentMethod link, but sending Customer.ID too
-  // removes any dependency on that being reliable in every case (verified gap
-  // 2026-08-30: a fresh charge with the SAME token but no Customer.ID DID
-  // create a new customer in one live test — see
-  // plans/sumit-customer-id-reconciliation.md §5a).
+  // known. Belt-and-braces ONLY: a charge on the saved token
+  // lands on the customer the token was saved under at hold time — SUMIT's
+  // documentation says so and it was verified live 2026-06-29 (₪4 hold + ₪1
+  // capture, receipt on the hold's customer; settled 2026-08-27, see
+  // plans/sumit-customer-id-reconciliation.md "Problem 2"). Duplicate
+  // customers arise only CROSS-campaign (a repeat customer's next HOLD without
+  // Customer.ID), which is authorize.ts's concern, not this capture's. Sending
+  // Customer.ID here costs nothing and pins the receipt explicitly.
   customerId?: number | null;
+  /**
+   * OPTIONAL receipt breakdown — one Items row per component ("דמי הפעלה",
+   * "אנשי קשר שנענו…") instead of a single opaque "חיוב קמפיין" line, so the
+   * customer can see where the total came from.
+   *
+   * SUMIT derives the charged total from the Items rows, NOT from `amount` — so
+   * a breakdown that does not sum to `amount` would charge a different number
+   * than the one this system computed, recorded and showed the customer. That
+   * is checked here and the breakdown is DROPPED (single `amount` line) unless
+   * it reconciles to the agora. The caller may pass one freely; this boundary
+   * decides whether it is safe to use.
+   *
+   * A credit is expressed as ONE negative row, which SUMIT support confirmed is
+   * supported and shows as its own line on the document. That confirmation has
+   * NOT been reproduced against this account: this same endpoint has rejected an
+   * over-specified document before ("products vs payments mismatch", see the
+   * VATRate note below). The reconciliation guard is what makes trying it safe —
+   * if SUMIT refuses the document the charge errors and the campaign lands in
+   * review, so the failure mode is a delayed settlement, never a wrong amount.
+   */
+  lines?: SumitChargeLine[];
+}
+
+/**
+ * One receipt row. Quantity × UnitPrice; SUMIT sums the rows into the charge.
+ * `unitPrice` may be negative for the single credit row.
+ */
+export interface SumitChargeLine {
+  name: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+function agorot(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+// A breakdown is usable ONLY if it reconciles EXACTLY to the amount this system
+// computed, recorded and showed the customer — that equality is the whole
+// safety property, because SUMIT charges the sum of the rows and ignores
+// `amount`.
+//
+// Shape rules, each blocking a way a wrong total could look right:
+//   • no non-finite value anywhere;
+//   • at most ONE negative row (the credit) — several could net a malformed
+//     charge row back to a plausible sum;
+//   • no zero rows (a zero row is noise on a receipt, never information);
+//   • quantity always positive — a negative quantity is a second way to encode
+//     a discount and would make "one negative row" unenforceable;
+//   • the total must be positive — a zero/negative charge never reaches SUMIT
+//     (close-charge settles those as nothing_to_charge before calling).
+export function linesReconcile(
+  lines: SumitChargeLine[] | undefined,
+  amount: number,
+): lines is SumitChargeLine[] {
+  if (!lines || lines.length === 0) return false;
+  if (!Number.isFinite(amount) || agorot(amount) <= 0) return false;
+  let sum = 0;
+  let negatives = 0;
+  for (const l of lines) {
+    if (!Number.isFinite(l.quantity) || !Number.isFinite(l.unitPrice)) return false;
+    if (l.quantity <= 0) return false;
+    if (l.unitPrice === 0) return false;
+    if (l.unitPrice < 0) negatives += 1;
+    sum += l.quantity * l.unitPrice;
+  }
+  if (negatives > 1) return false;
+  return agorot(sum) === agorot(amount);
 }
 
 export interface SumitCaptureResult {
@@ -43,8 +117,6 @@ export interface SumitCaptureResult {
 //     authorize response and stored at the hold).
 //   - NO explicit VATRate — the company-default VAT balances the document
 //     (sending VATRate produced "products vs payments mismatch").
-//   - NO CreditCardAuthNumber — capturing the original (often expired) J5 auth is
-//     declined (004); a FRESH charge on the saved token succeeds.
 //   - AutoCapture:true + PreventDocumentCreation:false → a real receipt, emailed.
 // IMPORTANT: a top-level Status of 0 only means the request was well-formed; the
 // PAYMENT can still be DECLINED (Data.Payment.ValidPayment === false, e.g. 004).
@@ -53,6 +125,50 @@ export async function captureHeldCardSumit(
   p: SumitCaptureParams,
 ): Promise<SumitCaptureResult> {
   const body = {
+    ...captureBodyBase(p),
+    AutoCapture: true,
+  } satisfies SumitChargeRequestBody;
+  return postCaptureCharge(body);
+}
+
+export interface SumitAuthCaptureParams extends SumitCaptureParams {
+  // Data.Payment.AuthNumber of the J5 hold (campaigns.auth_number), sent
+  // exactly as stored.
+  authNumber: string;
+  // The hold's SUMIT customer. Required here: the only verified capture sent it.
+  customerId: number;
+}
+
+// Close-charge by CAPTURING the J5 hold itself (J4 on the hold), instead of a
+// new charge on the saved token. SUMIT support (2026-09-29): same endpoint,
+// CreditCardAuthNumber = the hold's AuthNumber, the same customer and the same
+// payment method (token), an amount no higher than the hold, and AutoCapture
+// left EMPTY (default = charge) — a tax invoice/receipt is issued.
+// Verified live 2026-09-29 from /admin/sumit-test (sumit_test_transactions
+// fa21e4e3): a ₪1 hold captured in full with exactly this shape → 000, a
+// document, and the capture's AuthNumber equal to the hold's. A second capture
+// of the same, already-consumed hold → ValidPayment false, code 004 — the same
+// shape as a card decline, so a decline here does NOT prove no money moved in
+// an EARLIER attempt (close-charge.ts decides the fallback on that basis).
+// Not yet seen live: a partial capture, an aged hold, a multi-row receipt.
+export async function captureAuthorizationSumit(
+  p: SumitAuthCaptureParams,
+): Promise<SumitCaptureResult> {
+  const body = {
+    ...captureBodyBase(p), // Customer.ID = p.customerId (required above)
+    CreditCardAuthNumber: p.authNumber,
+    // AutoCapture deliberately absent (not true, not null).
+  } satisfies SumitChargeRequestBody;
+  return postCaptureCharge(body);
+}
+
+// The body both final-charge variants share: the hold's customer + saved
+// card, and the receipt rows. No VATIncluded/VATRate (owner decision 2.9.2026,
+// same as authorize.ts): KALFA is an עוסק פטור — the company default applies.
+// An explicit VATRate also unbalanced the document ("products vs payments
+// mismatch").
+function captureBodyBase(p: SumitCaptureParams) {
+  return {
     Credentials: { CompanyID: p.companyId, APIKey: p.apiKey },
     Customer: {
       ID: p.customerId ?? undefined,
@@ -65,25 +181,37 @@ export async function captureHeldCardSumit(
       CreditCard_ExpirationMonth: p.expMonth,
       CreditCard_ExpirationYear: p.expYear,
       CreditCard_CitizenID: p.citizenId,
-      Type: 1,
+      Type: 1 as const,
     },
-    VATIncluded: true,
-    // No VATRate — use the company default (an explicit rate unbalances the doc).
-    Items: [
-      {
-        Quantity: 1,
-        UnitPrice: parseFloat(p.amount),
-        // SUMIT requires the Item object (IncomeItem.Name), not just a Description.
-        Item: { Name: 'KALFA — חיוב קמפיין' },
-        Description: 'KALFA — חיוב קמפיין',
-      },
-    ],
-    AutoCapture: true,
+    // An itemised receipt when the breakdown reconciles to `amount`, else the
+    // single opaque line. `linesReconcile` is the gate — see its contract.
+    Items: linesReconcile(p.lines, parseFloat(p.amount))
+      ? p.lines.map((l) => ({
+          Quantity: l.quantity,
+          UnitPrice: l.unitPrice,
+          // SUMIT requires the Item object (IncomeItem.Name), not just a Description.
+          Item: { Name: l.name },
+          Description: l.name,
+        }))
+      : [
+          {
+            Quantity: 1,
+            UnitPrice: parseFloat(p.amount),
+            Item: { Name: 'KALFA — חיוב קמפיין' },
+            Description: 'KALFA — חיוב קמפיין',
+          },
+        ],
     PreventDocumentCreation: false, // a real receipt at charge time
     SendDocumentByEmail: !!p.customerEmail,
     DraftDocument: false,
-  };
+  } satisfies SumitChargeRequestBody;
+}
 
+// POST a final-charge body and classify the answer. Throws SumitDeclinedError
+// on a definitive decline, SumitNetworkError when the outcome is unknown.
+async function postCaptureCharge(
+  body: SumitChargeRequestBody,
+): Promise<SumitCaptureResult> {
   let res: Response;
   try {
     res = await fetch(SUMIT_CHARGE_URL, {
@@ -190,7 +318,9 @@ export async function creditHeldCardSumit(
       CreditCard_CitizenID: p.citizenId,
       Type: 1,
     },
-    VATIncluded: true,
+    // No VATIncluded/VATRate (owner decision 2.9.2026, same as authorize.ts):
+    // KALFA is an עוסק פטור — the amount is final with no VAT component and
+    // SUMIT's company default applies.
     SupportCredit: true,
     Items: [
       {
@@ -204,7 +334,7 @@ export async function creditHeldCardSumit(
     PreventDocumentCreation: false,
     SendDocumentByEmail: !!p.customerEmail,
     DraftDocument: false,
-  };
+  } satisfies SumitChargeRequestBody;
 
   let res: Response;
   try {

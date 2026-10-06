@@ -19,14 +19,59 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/data/outreach-config', () => ({
   getOutreachEnabled: vi.fn(),
   getWhatsAppConfig: vi.fn(),
+  // sendable-contacts reads the WhatsApp consent switch through this module, so
+  // the mock has to carry it too. Resolves TRUE — the SAFE default — so this
+  // test keeps exercising the consent-filtered recipient query it was written
+  // for, rather than silently drifting onto the lifted-gate path.
+  getWhatsAppConsentRequired: vi.fn().mockResolvedValue(true),
 }));
+// The shared resolver (whatsapp-template-send.ts) reads routes + the Meta
+// mirror; its equivalence with the old per-step mapping + code builders is
+// proven against live data by `npm run whatsapp:template-gate`. These tests are
+// about sendCampaignWhatsApp's OWN behaviour (gates, audience, claims, logging),
+// so the resolver is shimmed onto the old contract they were written against.
+vi.mock('@/lib/data/whatsapp-template-send', async () => {
+  const spec = await vi.importActual<typeof import('@/lib/whatsapp/template-spec')>(
+    '@/lib/whatsapp/template-spec',
+  );
+  const { resolveTemplateForEvent } = await import('@/lib/data/message-templates-resolve');
+  const resolveWhatsAppSend = vi.fn(
+    async (input: {
+      messageKey: string;
+      eventType: string | null;
+      values: { event?: Record<string, unknown>; guestFirstName?: string | null };
+    }) => {
+      const t = await resolveTemplateForEvent(input.messageKey, input.eventType as never);
+      if (!t) return { kind: 'template_missing' as const };
+      if (t.channel !== 'whatsapp') return { kind: 'channel_mismatch' as const };
+      const guestFirstName = input.values.guestFirstName ?? null;
+      const event = input.values.event as never;
+      const built =
+        input.messageKey === 'gift'
+          ? spec.buildGiftParams({ event, guestFirstName })
+          : spec.buildBodyParams({
+              paramContract: t.paramContract,
+              family: t.name.startsWith('kalfa_wedding_') ? 'wedding' : 'generic',
+              ctx: { event, guestFirstName },
+            });
+      if ('missing' in built) return { kind: 'params_incomplete' as const, missing: built.missing };
+      return { kind: 'ok' as const, template: t, templateId: 't', bodyParams: [...built.params], extras: {} };
+    },
+  );
+  const hasApprovedWhatsAppTemplate = vi.fn(async (key: string, eventType: string | null) => {
+    const t = await resolveTemplateForEvent(key, eventType as never);
+    return !!t && t.channel === 'whatsapp';
+  });
+  return { resolveWhatsAppSend, hasApprovedWhatsAppTemplate };
+});
 vi.mock('@/lib/data/message-templates-resolve', () => ({ resolveTemplateForEvent: vi.fn() }));
 vi.mock('@/lib/whatsapp/client', () => ({
   sendWhatsAppTemplate: vi.fn(),
   sendWhatsAppMarketingTemplate: vi.fn(),
 }));
 // After the request-free split, outreach.ts resolves contacts through
-// @/lib/data/sendable-contacts (which imports ONLY createAdminClient), so
+// @/lib/data/sendable-contacts (which imports only createAdminClient and
+// outreach-config), so
 // contacts.ts / reconcile-config are no longer in the worker send graph. This
 // stub stays as belt-and-suspenders in case the graph regresses back through
 // contacts.ts (module load only — the resolver never calls it).

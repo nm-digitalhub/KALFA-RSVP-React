@@ -52,8 +52,8 @@ import { CALL_ME_NOW_OTP_PURPOSE, callMeNowVerifyBodySchema } from '@/lib/valida
 //      balance / concurrency / per-phone-hourly / daily spend breaker, same
 //      shape as evaluateInboundCaps/evaluateWidgetCallCaps.
 //   7. Only once ALL of the above pass: create the console_calls row, mint a
-//      single-use 'cn'-prefixed dial token, and StartScenarios the (not yet
-//      created) ConsoleCallMeNow rule — the SAME Management-API primitive
+//      single-use 'cn'-prefixed dial token, and StartScenarios the
+//      ConsoleCallMeNow rule — the SAME Management-API primitive
 //      already proven in production by the outbound AI-call campaign
 //      (dispatchOutreachCall / scripts/voximplant/bridge-call.ts), carrying
 //      the SAME tiny {to,from,tok,u} script_custom_data shape
@@ -70,9 +70,7 @@ import { CALL_ME_NOW_OTP_PURPOSE, callMeNowVerifyBodySchema } from '@/lib/valida
 // Reachability is gated by TWO independent pieces of admin config, either of
 // which alone keeps this route inert: console_call_me_now_enabled (the
 // feature flag) and voximplant_call_me_now_rule_id (the ConsoleCallMeNow
-// routing rule). The route was built and unit-tested ahead of both, the same
-// sequencing this project used for route-inbound ahead of gate E and
-// widget-authorize ahead of its own (now-superseded) scenario.
+// routing rule).
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -85,7 +83,7 @@ const START_TIMEOUT_MS = 25_000; // matches outreach-calls.ts's own StartScenari
 // The ConsoleCallMeNow rule id is ADMIN CONFIG, not a constant here:
 // app_settings.voximplant_call_me_now_rule_id, surfaced as
 // getVoximplantConfig().callMeNowRuleId. A rule id is platform-assigned and
-// changes whenever the rule is recreated, and this codebase's ONE precedent
+// changes whenever the rule is recreated, and this codebase's precedent
 // for that fact (voximplant_rule_id → ruleId) already lives in the DB — no
 // rule id is hard-coded anywhere in src/. Blank/absent is the normal
 // fail-closed state and is rejected by the numeric guard below, so this

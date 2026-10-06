@@ -36,7 +36,7 @@ import { createPlatformRoleAction, setRolePermissionAction } from './actions';
 // grants/revokes one (role, permission) pair. Toggling is SERVER-VERIFIED: the
 // switch flips optimistically, awaits the action, and reverts + surfaces the
 // error if the server rejects (mirrors the ToggleRow mechanics in
-// ../alerts/alerts-client.tsx). The owner role's column is locked (its
+// ../integrations/slack/alerts-client.tsx). The owner role's column is locked (its
 // permissions are immutable — owner is always all-permissions).
 //
 // Responsive strategy (Tailwind CSS docs, tailwindcss.com/docs/responsive-design):
@@ -46,8 +46,8 @@ import { createPlatformRoleAction, setRolePermissionAction } from './actions';
 // viewport breakpoint is the right signal, not a parent-size query) switches
 // between two renderings of the SAME data:
 //   - sm and up: the matrix table (roles as columns), sticky permission column.
-//   - below sm: one Accordion per role (shadcn/ui Base UI accordion, already
-//     used in ../channels/channels-client.tsx) whose panel lists permissions
+//   - below sm: one Accordion per role (shadcn/ui Base UI accordion, also
+//     used in ../integrations/meta-whatsapp/whatsapp-credentials-form.tsx) whose panel lists permissions
 //     grouped by category as labeled toggle rows — the standard
 //     table-becomes-cards mobile pattern, and the natural fit for "which
 //     permissions does THIS role have" editing on a narrow screen.
@@ -135,7 +135,8 @@ function CreateRoleForm() {
       <div>
         <h2 className="text-lg font-semibold">תפקיד חדש</h2>
         <p className="text-sm text-muted-foreground">
-          תפקיד חדש נוצר ללא הרשאות. לאחר היצירה סמנו את ההרשאות שלו במטריצה.
+          תפקיד חדש נוצר ללא הרשאות — מי שיוקצה לו ייכנס לפאנל הניהול אך יראה בו רק
+          את מסך הסקירה, עד שתסמנו לו הרשאות במטריצה.
         </p>
       </div>
 
@@ -205,7 +206,7 @@ function groupByCategory(
 }
 
 // One labeled toggle row inside a role's mobile card (mirrors ToggleRow in
-// ../alerts/alerts-client.tsx): permission label + key on the start side, the
+// ../integrations/slack/alerts-client.tsx): permission label + key on the start side, the
 // shared MatrixCell switch on the end side.
 function PermissionToggleRow({
   permission,

@@ -19,24 +19,25 @@ import {
   type SessionCommandEnvelope,
 } from '@/lib/voximplant/session-command';
 
-// POST /api/console-calls/{id}/conference   body: { to_agent_id: uuid }
+// POST /api/console-calls/{id}/conference   body: { to_agent_id: uuid } | { to_phone: string }
 //
-// 3-way conference (plan stage 2). Mirrors transfer/route.ts and
+// 3-way conference. Mirrors transfer/route.ts and
 // consult/route.ts: { id } is a live manual-outbound or inbound-customer
-// console_calls row; the browser names the TARGET AGENT only, resolved
+// console_calls row; the browser names the TARGET only — an agent, resolved
 // server-side via the same resolveTransferTarget() every other live-call
-// action here uses, then posted as
-// {command:'conference_add', request_id, payload:{vox_username}} —
-// ConsoleDial.voxengine.js / ConsoleInbound.voxengine.js's `conference_add`
-// branch (verbatim).
+// action here uses, or an outside number, cleared by resolveExternalDialTarget()
+// — then posted as {command:'conference_add', request_id,
+// payload:{vox_username}} or payload:{phone}. ConsoleInbound.voxengine.js's
+// `conference_add` branch reads either shape; ConsoleDial.voxengine.js's reads
+// `vox_username` only.
 //
 // Unlike consult, the customer is NOT put on hold while the target is dialed
 // — the existing operator<->customer bridge stays live through the ring, and
 // only once the target answers does the scenario create the mixer
 // (VoxEngine.createConference) and rewire customer+operator+target into it
-// (RSVPAgent's supervisor-conference primitives, same as the plan's
-// monitor/takeover topology). V1 supports exactly one additional
-// participant (3-way total, matching this task's scope) — no queued/stacked
+// (RSVPAgent's supervisor-conference primitives, same as its
+// attachSupervisor 'takeover' topology). V1 supports exactly one additional
+// participant (3-way total) — no queued/stacked
 // conference_add while one is already dialing or live.
 //
 // console_calls.conference_agent_ids bookkeeping is EVENT-driven
@@ -49,7 +50,7 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 1024;
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.uuid();
 
 function json(body: unknown, status: number) {
   return NextResponse.json(body, { status, headers: NO_STORE });

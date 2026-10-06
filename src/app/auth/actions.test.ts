@@ -81,6 +81,30 @@ describe('login', () => {
     });
   });
 
+  it('success with `next` → resumes that same-origin path, query intact (OAuth consent)', async () => {
+    const next = '/oauth/consent?authorization_id=abc-123';
+    await expect(login(null, fd({ ...CREDS, next }))).rejects.toMatchObject({
+      digest: expect.stringContaining(`NEXT_REDIRECT;replace;${next};`),
+    });
+  });
+
+  it('success with the proxy’s `redirectTo` → resumes the protected page', async () => {
+    await expect(login(null, fd({ ...CREDS, redirectTo: '/app/events' }))).rejects.toMatchObject({
+      digest: expect.stringContaining('NEXT_REDIRECT;replace;/app/events;'),
+    });
+  });
+
+  it.each([
+    ['an absolute off-origin URL', 'https://evil.example/steal'],
+    ['a protocol-relative URL', '//evil.example/steal'],
+    ['a backslash authority trick', '/\\evil.example'],
+    ['a same-origin absolute URL (not a path)', 'https://beta.kalfa.me/app'],
+  ])('success with %s as `next` → /app, never an open redirect', async (_label, next) => {
+    await expect(login(null, fd({ ...CREDS, next }))).rejects.toMatchObject({
+      digest: expect.stringContaining('NEXT_REDIRECT;replace;/app;'),
+    });
+  });
+
   it('invalid input → fieldErrors; signInWithPassword NOT called', async () => {
     const res = await login(null, fd({ email: 'not-an-email', password: 'x' }));
     expect(signInWithPassword).not.toHaveBeenCalled();

@@ -36,7 +36,7 @@ import type {
 // gated by requirePlatformPermission('manage_settings') — the same gate as
 // the /admin/settings surface that hosts the UI. requireUser() is still
 // called first for identity: user_id records which admin connected the
-// mailbox and binds the credential's AAD. Never accept a user id as a
+// mailbox. Never accept a user id as a
 // parameter from a caller; always take it from the verified session.
 
 type ExchangeConnectionStatus = 'pending' | 'verified' | 'failed' | 'revoked';
@@ -111,20 +111,15 @@ export async function getExchangeConnectionMode(): Promise<'per_user' | 'per_org
 // The connections visible to the current user (see module note). Never
 // selects the credential columns; this is a display read only.
 //
-// Mode-aware (BUG FIXED 2026-08-23): 'per_user' keeps the original self-scope.
+// Mode-aware: 'per_user' self-scopes to the caller's user_id.
 // 'per_org' means "shared with every admin who has manage_settings" — so this
 // drops the user_id filter entirely and returns every row, mirroring what
 // loadBusinessConnection (callback-scheduling.ts, the automated scheduler)
-// has ALWAYS done: a bare `.eq('status','verified')` with no user_id/org_id
-// filter at all. Before this fix, 'per_org' was selected in Settings but
-// every read here stayed user_id-scoped — a connection an admin created
-// under one session/account was invisible to every other admin (including,
-// sometimes, that same admin after re-auth), even though the row was
-// perfectly valid and the scheduler was reading it fine the whole time. Not
-// org_id-scoped either: `organization_members` is the CUSTOMER multi-tenant
-// layer (per-event orgs), unrelated to this business-admin, staff-gated
-// feature — matching it here would be the wrong authorization model, not a
-// fix. The real access boundary stays requirePlatformPermission above.
+// does: a bare `.eq('status','verified')` with no user_id/org_id filter at
+// all. Not org_id-scoped either: `organization_members` is the CUSTOMER
+// multi-tenant layer (per-event orgs), unrelated to this business-admin,
+// staff-gated feature — matching it here would be the wrong authorization
+// model. The real access boundary stays requirePlatformPermission above.
 export async function listMyExchangeConnections(): Promise<ExchangeConnectionView[]> {
   const user = await requireUser();
   await requirePlatformPermission('manage_settings');
@@ -146,9 +141,9 @@ export async function listMyExchangeConnections(): Promise<ExchangeConnectionVie
 // manage_settings permission every function above uses), matching the debug
 // page's own bar for exposing cross-account operational state. Read-only —
 // deliberately no "test connection" action here; testMyExchangeConnection
-// only works for the CALLER's own connection (loadOwnedConnectionConfig is
-// user-scoped), so triggering a live EWS test against another admin's
-// mailbox from this page is out of scope. Manage/test stays on
+// goes through loadOwnedConnectionConfig, which in per_user mode is scoped to
+// the CALLER's own connection, so triggering a live test against another
+// admin's mailbox from this page is out of scope. Manage/test stays on
 // /admin/settings, which this panel links to.
 export async function listAllExchangeConnectionsForDebug(): Promise<ExchangeConnectionView[]> {
   await requirePlatformOwner();
@@ -165,21 +160,15 @@ export type CreateExchangeConnectionResult =
   | { ok: true; id: string }
   | { ok: false; error: string };
 
-// Encrypts the password immediately and inserts one row. The AAD binds the
-// ciphertext to (connectionId, userId) — see crypto.ts — so the id must exist
-// BEFORE encryption, not be left to the column default; it is generated here
-// and inserted explicitly.
+// Inserts one row (or revives a revoked one — see below). No credential is
+// stored; see the notes inline.
 export async function createExchangeConnection(input: {
   mailboxEmail: string;
   /**
-   * The mailbox password — required ONLY under EWS, where NTLM needs it.
-   *
-   * Graph authenticates once as the application with a certificate and never
-   * reads this. Demanding it there made an admin type a live mailbox secret to
-   * create a connection that would not use it, and then stored it encrypted
-   * forever. The §B phase-1 migration made the credential columns nullable and
-   * added `auth_method = 'certificate'` precisely so a connection can exist
-   * without one; this is the code catching up to the schema.
+   * Ignored — never stored. Graph authenticates once as the application with
+   * a certificate and never reads a mailbox password. The credential columns
+   * are nullable and `auth_method = 'certificate'` exists precisely so a
+   * connection can exist without one.
    */
   password?: string;
 }): Promise<CreateExchangeConnectionResult> {
@@ -204,13 +193,13 @@ export async function createExchangeConnection(input: {
   // Reconnect flow (MEASURED gap, 27.07 owner screenshot): revoke is a
   // soft-disconnect that keeps the row, so the unique (user_id, mailbox_email)
   // constraint would block ever reconnecting the same mailbox. A REVOKED row
-  // is therefore REVIVED in place — fresh credential (re-encrypted with the
-  // SAME id, so the AAD binding still matches), status reset to pending, and
+  // is therefore REVIVED in place — auth_method and credential columns reset
+  // (no credential is stored), status reset to pending, and
   // the audit trail (created_at + activity log) stays continuous. An ACTIVE
   // row still refuses a duplicate connect.
   //
-  // Mode-aware duplicate check (BUG FIXED 2026-08-23, same fix as
-  // listMyExchangeConnections above): in 'per_org' mode this must look across
+  // Mode-aware duplicate check (same rule as listMyExchangeConnections
+  // above): in 'per_org' mode this must look across
   // EVERY admin's rows for this mailbox, not just the caller's own. Getting
   // this wrong is not merely a visibility gap here — it is a correctness bug:
   // if two admins could each end up with their own 'verified' row for the
@@ -266,8 +255,8 @@ export async function createExchangeConnection(input: {
 
   // No secret is stored, and none is needed: Graph authenticates with the
   // application certificate. The three credential columns stay NULL — permitted
-  // by the all-or-none constraint — and auth_method finally states what is true
-  // instead of the literal 'ntlm' that used to be written regardless.
+  // by the all-or-none constraint — and auth_method states how the connection
+  // actually authenticates.
 
   const { error } = await admin.from('exchange_connections').insert({
     id: connectionId,
@@ -298,15 +287,16 @@ export async function createExchangeConnection(input: {
   return { ok: true, id: connectionId };
 }
 
-// Loads one connection OWNED by the current user, decrypts its credential,
-// and refuses to hand back a config for a revoked connection — defense in
-// depth beyond the UI simply not offering the buttons.
+// Loads one connection visible to the current user (their own in per_user
+// mode, any in per_org mode), builds its provider config, and refuses to hand
+// back a config for a revoked connection — defense in depth beyond the UI
+// simply not offering the buttons.
 //
 // Exported (as loadExchangeConfigForConnection) for sibling server-only
 // modules that drive the same mailbox — currently the availability-status
 // feature (src/lib/data/exchange-availability.ts). Exporting the guarded
 // loader, rather than letting callers assemble a config themselves, is what
-// keeps ownership + permission + revoked + decrypt checks in ONE place.
+// keeps ownership + permission + revoked checks in ONE place.
 async function loadOwnedConnectionConfig(
   connectionId: string,
 ): Promise<
@@ -335,7 +325,8 @@ async function loadOwnedConnectionConfig(
   try {
     password = resolveMailboxPassword();
   } catch {
-    // Fail closed — never fall back to a default or skip the check (plan §4).
+    // Fail closed if resolving the credential ever throws — never fall back to
+    // a default or skip the check.
     return { ok: false, message: 'פענוח פרטי החיבור נכשל' };
   }
 
@@ -454,8 +445,8 @@ export async function deleteMyExchangeTestAppointment(
 // Soft-disconnect: marks the connection revoked rather than deleting the row,
 // preserving the audit trail (created_at/updated_at/last_error history) —
 // mirrors the project's general auditability requirement. The encrypted
-// credential stays in place but every read path above refuses to use a
-// revoked connection.
+// credential, if any, stays in place but every read path above refuses to use
+// a revoked connection.
 export async function revokeExchangeConnection(connectionId: string): Promise<void> {
   const user = await requireUser();
   await requirePlatformPermission('manage_settings');

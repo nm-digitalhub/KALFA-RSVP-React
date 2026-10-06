@@ -16,7 +16,7 @@ export const metadata = {
   // Nested metadata objects are REPLACED, not merged: a page that sets no
   // openGraph inherits the root layout's wholesale, so its share preview
   // would show the site-wide blurb instead of this page's.
-  openGraph: pageOpenGraph(TITLE, DESCRIPTION),
+  openGraph: pageOpenGraph(TITLE, DESCRIPTION, '/cookies'),
   alternates: { canonical: '/cookies' },
 };
 
@@ -202,12 +202,15 @@ export default async function CookiesPage() {
           אחת מקטגוריות האנליטיקה והשיווק בנפרד:
         </p>
         {/* Standalone control (alone in its paragraph, unlike the inline
-            mention on /privacy) → 44px target. */}
-        <p>
-          <ManageCookiesButton className="inline-flex min-h-11 items-center text-primary hover:text-primary/80">
-            פתיחת הודעת העוגיות
-          </ManageCookiesButton>
-        </p>
+            mention on /privacy) → 44px target. Absent, paragraph and all,
+            while the admin has the consent mechanism switched off. */}
+        {consentAdmin.enabled ? (
+          <p>
+            <ManageCookiesButton enabled className="inline-flex min-h-11 items-center text-primary hover:text-primary/80">
+              פתיחת הודעת העוגיות
+            </ManageCookiesButton>
+          </p>
+        ) : null}
       </LegalSection>
 
       <LegalSection title="8. שינויים במדיניות">

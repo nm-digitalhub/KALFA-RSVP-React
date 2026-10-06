@@ -62,8 +62,8 @@ import {
 // phone), and times read as Hebrew prose instead of input widgets.
 //
 // Detail is fetched on open (location/body/reminder are deliberately absent
-// from the grid listing, which stays lean); on save only the fields the owner
-// touched are sent, so nothing typed in Outlook is ever wiped.
+// from the grid listing, which stays lean); on save the whole form is sent,
+// whereas a drag in the grid sends only the new times.
 
 
 const REMINDER_OPTIONS = SHARED_REMINDERS;
@@ -376,10 +376,8 @@ function Setting({ icon, children }: { icon: React.ReactNode; children: React.Re
  * up. Doing the same here means the dot matches what the owner sees in Outlook
  * rather than what we guessed.
  *
- * This replaces a name-matching table that returned the brand colour for
- * anything starting with "KALFA". That was a fiction: measured 28.07, the
- * mailbox's list contains no KALFA entry at all, so Outlook draws those items
- * UNCOLOURED. Returning null here now tells the truth — an outline dot, meaning
+ * A name that is absent from the mailbox's list is drawn by Outlook UNCOLOURED,
+ * so null is returned for it — the caller shows a neutral tag icon, meaning
  * "this name has no colour in your mailbox" — which is also the signal that
  * registering the category would fix.
  */
@@ -580,11 +578,10 @@ export function EventEditDialog({
               טוען פרטים…
             </div>
           ) : mode === 'view' && detail ? (
-            // Three levels, not one flat list — see the design note above
-            // Section(): WHEN, then CONTENT, then SETTINGS. 20px between the
-            // levels, 16px inside one, 4px between a label and its value. The
-            // previous uniform 12px is what made every fact look equally
-            // important and the whole thing read as cramped.
+            // Three levels, not one flat list: WHEN, then CONTENT, then
+            // SETTINGS. 20px between the levels, 16px inside one, 4px between
+            // a label and its value. A uniform 12px makes every fact look
+            // equally important and the whole thing read as cramped.
             <div className="space-y-5">
               {/* ── Level 1: when ── */}
               {(() => {

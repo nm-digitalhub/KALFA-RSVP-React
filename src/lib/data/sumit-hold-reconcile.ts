@@ -16,9 +16,9 @@ import type { TablesInsert } from '@/lib/supabase/types';
 //
 // Scope, deliberately narrow (see queues.ts's sumitHoldReconcile comment):
 //   - Only campaigns with hold_order_document_id set — authorize.ts started
-//     persisting that id 2026-08-30. Older open holds (verified live that
-//     date: all 4 then-open holds had it null) need a one-time manual
-//     backfill; this job does not attempt to guess a match by amount/date.
+//     persisting that id 2026-08-30. Older open holds have it null and need a
+//     one-time manual backfill; this job does not attempt to guess a match by
+//     amount/date.
 //   - Only the 1 (open) -> 3 (released) transition. Billing_Status 2
 //     (charged) is ignored on purpose: charging always goes through
 //     closeCampaignAndCharge, never discovered after the fact from SUMIT.

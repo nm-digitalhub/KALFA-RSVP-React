@@ -6,7 +6,7 @@ import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import { resolvePage, type PageResult } from '@/lib/data/admin/shared';
 import { validateRecordingUrl } from '@/lib/voximplant/recording-url';
 
-// Admin DAL for the browser call-center's history + recordings (plan stage 8).
+// Admin DAL for the browser call-center's history + recordings.
 // Mirrors voice-ops.ts house style exactly: service-role client under
 // requirePlatformPermission, explicit non-PII column lists, batch name
 // enrichment scoped to the visible page only. console_calls itself carries NO

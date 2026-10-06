@@ -1292,10 +1292,10 @@ function useEventCalendarWeek<TData = unknown>(
 }
 
 /**
- * User view settings (weekends, week numbers, now line, off days, schedule
- * hint) + the effective values after falling back to the root view-config
- * props. Drives the nav submenu; fully controllable from outside via
- * `viewSettings`/`onViewSettingsChange` or api.setViewSettings.
+ * User view settings (weekends, week numbers, now line, off days) + the
+ * effective values after falling back to the root view-config props. Fully
+ * controllable from outside via `viewSettings`/`onViewSettingsChange` or
+ * api.setViewSettings.
  */
 function useEventCalendarViewSettings(): {
   viewSettings: EventCalendarViewSettings
@@ -1459,9 +1459,10 @@ interface EventCalendarViewConfig<TData = unknown> {
    */
   dayClassName?: (day: Date) => string | undefined
   /**
-   * Extra classes for the CURRENT day, appended after the built-in highlight
-   * (primary-tinted background + accent top border) on month cells, time-grid
-   * day columns, and day headers.
+   * Extra classes for the CURRENT day, appended after the built-in today
+   * styling on month cells (primary-tinted background + accent bottom border)
+   * and day headers (primary text). Time-grid day columns have no built-in
+   * today styling, so this is the only way to tint them.
    */
   todayClassName?: string
   /**
@@ -1593,7 +1594,7 @@ interface EventCalendarViewConfig<TData = unknown> {
   dayCountPresets: number[]
   /**
    * Nav tooltips: false disables them all; an object tunes placement and
-   * timings. @default { side: "bottom", delay: 600, closeDelay: 0, timeout: 300 }
+   * timings. @default { side: "top", delay: 600, closeDelay: 0, timeout: 300 }
    */
   navTooltips?:
     | false

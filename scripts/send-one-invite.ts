@@ -2,9 +2,11 @@
 // contact that was silently omitted from the campaign's frozen authorized set
 // (docs/campaign-recipient-freeze-investigation-2026-07-09.md — scenario 1/2a).
 //
-// Reuses the app's real send path (sendOneWhatsApp + buildBodyParams + the
-// event-type-aware template resolution) so the message is IDENTICAL to what the
-// campaign sent — but bypasses listSendableContacts' authorized-set INNER JOIN,
+// Reuses the app's real send function (sendOneWhatsApp) with buildBodyParams and
+// the event-type-aware resolveTemplateForEvent — NOTE: the campaign engine now
+// resolves template + variables through resolveWhatsAppSend
+// (src/lib/data/whatsapp-template-send.ts), not through these helpers. It
+// bypasses listSendableContacts' authorized-set INNER JOIN,
 // so it touches NO billing state (sendOneWhatsApp logs a NON-billable
 // contact_interaction only). Out-of-band, transactional, one guest.
 //

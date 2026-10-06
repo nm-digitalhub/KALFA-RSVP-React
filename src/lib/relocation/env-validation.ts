@@ -51,7 +51,7 @@ export interface EnvKeySpec {
 const httpsOrigin = z
   .string()
   .regex(/^https:\/\/[^/\s]+$/, "must be a bare https origin");
-const url = z.string().url();
+const url = z.url();
 const nonEmpty = z.string().min(1);
 const boolStr = z.enum(["true", "false"]);
 const numeric = z.string().regex(/^\d+$/, "must be numeric");
@@ -87,11 +87,16 @@ export const ENV_KEY_SPECS: readonly EnvKeySpec[] = [
   { key: "RECONCILE_AUTHORIZED_SET_ENABLED", kind: "format", format: boolStr },
   { key: "DEVICE_TELEMETRY_ENABLED", kind: "format", format: boolStr },
   { key: "KALFA_CONSOLE_SECRET", kind: "format", format: z.string().min(16) },
+  // MCP server (src/app/api/mcp): comma-separated lists; empty is a valid,
+  // deliberate state (no OAuth client accepted / Origin not restricted), so
+  // neither gates an install.
+  { key: "KALFA_MCP_OAUTH_CLIENT_IDS", kind: "format", format: z.string(), optional: true },
+  { key: "KALFA_MCP_ALLOWED_ORIGINS", kind: "format", format: z.string(), optional: true },
   // Microsoft Graph
   { key: "MS_GRAPH_TENANT_ID", kind: "probe", format: nonEmpty, probe: "graph-app" },
   { key: "MS_GRAPH_CLIENT_ID", kind: "probe", format: nonEmpty, probe: "graph-app" },
   { key: "MS_GRAPH_CERT_PATH", kind: "probe", format: nonEmpty, probe: "graph-app" },
-  { key: "MS_GRAPH_PRIMARY_MAILBOX", kind: "probe", format: z.string().email(), probe: "graph-mailbox" },
+  { key: "MS_GRAPH_PRIMARY_MAILBOX", kind: "probe", format: z.email(), probe: "graph-mailbox" },
   { key: "MS_GRAPH_INTAKE_FOLDER", kind: "format", format: nonEmpty },
   { key: "MS_GRAPH_WEBHOOK_SECRET", kind: "format", format: hex32 },
   { key: "EXCHANGE_PROVIDER", kind: "format", format: z.enum(["graph", "off"]) },
@@ -108,6 +113,30 @@ export const ENV_KEY_SPECS: readonly EnvKeySpec[] = [
     key: "RESEND_WEBHOOK_SECRET",
     kind: "format",
     format: z.string().min(1),
+    optional: true,
+  },
+  // Workflow delegated OAuth — the deployment's own OAuth CLIENT, not a user's
+  // connected account.
+  //
+  // ⚠️ OPTIONAL BY DESIGN, AND NOT A GAP. A deployment can register the same
+  // client in `integration_provider_configs` instead, where the secret lives in
+  // Vault and an operator gets a kill switch — and a row WINS over these two
+  // whenever it exists (see `provider-availability.ts`). These are the
+  // zero-configuration path, so a relocation that leaves them blank is a
+  // complete relocation.
+  //
+  // Not probeable: verifying an OAuth client means redeeming a code, which needs
+  // a human at a consent screen. A format check is all that can honestly run.
+  {
+    key: "INTEGRATION_OAUTH_MICROSOFT_CLIENT_ID",
+    kind: "format",
+    format: nonEmpty,
+    optional: true,
+  },
+  {
+    key: "INTEGRATION_OAUTH_MICROSOFT_CLIENT_SECRET",
+    kind: "format",
+    format: nonEmpty,
     optional: true,
   },
   // ElevenLabs

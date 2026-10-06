@@ -42,7 +42,11 @@
 מריץ בכל tick את פקודת ה-`verdicts` של ה-fleet CLI (כל הבקשות שנענו-ולא-נצרכו, על פני כל ה-roles, **ללא תלות** בקונפיג `reactive` של role כלשהו). עבור כל verdict:
 
 - אם ל-role יש `auto_ack: true` → `ack` מיידי דרך ה-CLI, ללא spawn (`:293-306`).
-- אחרת → spawn להרצה המלאה של ה-role כדי שיוכל לפעול על ה-verdict, נאכף כנגד מונה **נפרד**: `answer-<dateKey>` (‏`answer_daily_run_cap`, ברירת מחדל 50), עם סמן קבוע `verdict-<id>` שנכתב **לפני** ה-spawn (spawn אחד לכל verdict, לתמיד — `:310-346`).
+- אחרת → spawn להרצה המלאה של ה-role (עם סיבת הפעלה `verdict:<id>` ל-`run-role.sh`) כדי שיוכל לפעול על ה-verdict. הסמן `verdict-<id>` הוא cooldown של 4 דק' (לא חד-פעמי), והגבולות (מ-27.9.2026, `verdict-guard.mjs`):
+  - **לכל verdict:** עד 3 ריצות אמיתיות (`verdict-<id>.starts`, בית אחד לכל ריצה שקיבלה את ה-flock; דחיית lock לא נספרת) ועד 12 spawns כגיבוי. בהגעה לתקרה: שורת `stranded_verdict` ב-index, בקשת fyi אחת לבעלים (`request_key stranded-verdict-<id>`), ואין עוד spawns. הפעלה מחדש: מחיקת `.fleet-logs/locks/verdict-<id>*`.
+  - **לכל תפקיד:** `answer_role_daily_cap` (ברירת מחדל 10, מונה `answer-<role>-<dateKey>`), נבדק לפני התקרה המשותפת ומדלג (`continue`) רק על אותו תפקיד.
+  - **משותף:** `answer-<dateKey>` (`answer_daily_run_cap`), `break` כגיבוי.
+  - spawn אחד לכל תפקיד בכל tick; כל spawn נרשם ב-index כ-`verdict_spawn`.
 
 **למה שני caps נפרדים** (מתועד ב-`:82-92, 313-324`, עם תקרית מתוארכת): שיתוף מונה אחד בין "פתיחת N בקשות" ל-"צריכת N תשובות לאותן בקשות" גובה כפול על יחידת פעילות אחת, ועלול להרעיב תשובה שהבעלים עצמו כבר נתן — נמדד ב-2026-07-30: התראת disk-94% ישבה לא-נצרכת במשך שעות כי spawns שגרתיים מיצו את התקרה המשותפת קודם.
 

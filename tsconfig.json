@@ -47,6 +47,33 @@
   ],
   "exclude": [
     "node_modules",
-    "supabase/functions"
+    "supabase/functions",
+    // VoxEngine's world, which is NOT this application's.
+    //
+    // `typings/voxengine.d.ts` is a 39,000-line ambient declaration file for
+    // Voximplant's cloud runtime. `.d.ts` IS a TypeScript source file for
+    // Program construction, so `**/*.ts` above matched it and every one of its
+    // 612 root-level `declare`s entered the type program of every file in this
+    // app — including `Call`, `Player` and `WebSocket`, which collide with
+    // lib.dom. Nothing reached the bundle (a .d.ts emits no JavaScript), but a
+    // `new WebSocket(...)` in a client component was being checked against a
+    // global that could resolve to Voximplant's class rather than the DOM's.
+    //
+    // It did not break, and the reason it did not is not reassuring:
+    // `skipLibCheck: true` swallows the duplicate-identifier error and lib.dom
+    // happened to win resolution. That is load order, not a decision.
+    //
+    // MEASURED before and after (2026-09-15): `tsc --noEmit --listFilesOnly`
+    // went from one voxengine file in this program to zero, and a probe using
+    // `binaryType` (DOM-only) still resolves.
+    //
+    // ⚠️ THIS DOES NOT AFFECT SCENARIO BUILDS. `voxengine-ci` writes its own
+    // `voxfiles/tsconfig.voxengine.temp.json` with absolute paths to BOTH
+    // typing files and never reads this one — verified by a `--dry-run` build
+    // after the change (`Scenarios [ RSVPAgent ] have been successfully built`).
+    // Do not "restore" these two lines to fix a scenario build; they are
+    // unrelated.
+    "typings/**",
+    "voxfiles/**"
   ]
 }

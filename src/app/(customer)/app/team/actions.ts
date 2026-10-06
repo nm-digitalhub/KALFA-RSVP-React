@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { unstable_rethrow } from 'next/navigation';
@@ -62,7 +63,7 @@ export async function inviteMemberAction(
     role_id: formData.get('role_id'),
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
   let token: string;
   let email: string;
@@ -92,7 +93,7 @@ export async function changeMemberRoleAction(
     role_id: formData.get('role_id'),
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
   try {
     await changeMemberRole(orgId, parsed.data);
@@ -111,7 +112,7 @@ export async function removeMemberAction(
   const { orgId } = await requireActiveOrg();
   const parsed = memberIdSchema.safeParse({ member_id: formData.get('member_id') });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
   try {
     await removeMember(orgId, parsed.data.member_id);
@@ -132,7 +133,7 @@ export async function resendInvitationAction(
     invitation_id: formData.get('invitation_id'),
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
   let token: string;
   try {
@@ -155,7 +156,7 @@ export async function revokeInvitationAction(
     invitation_id: formData.get('invitation_id'),
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
   try {
     await revokeInvitation(orgId, parsed.data.invitation_id);

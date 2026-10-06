@@ -10,7 +10,8 @@ import { PageHeading, EmptyState, formatDateTime } from './_components';
 export const metadata: Metadata = { title: 'סקירה' };
 
 // Admin dashboard: headline counts (each links to its section) plus the most
-// recent activity. All data is fetched server-side under the admin RLS gate.
+// recent activity. All data is fetched server-side, each reader behind its own
+// platform-permission check.
 
 type Card = {
   href: string;

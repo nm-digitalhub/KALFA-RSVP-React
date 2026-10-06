@@ -3,9 +3,8 @@ import 'server-only';
 import type { NextRequest } from 'next/server';
 
 // Shared CSRF origin check for the payment/messaging Route Handlers
-// (campaigns/authorize, campaigns/close-charge,
-// campaigns/whatsapp-send, admin/sumit-test). Extracted verbatim from those
-// five routes, which were verified identical (docs/audit-fix-sweep-2026-07-02-pending-approval.md #2).
+// (campaigns/authorize, campaigns/close-charge, campaigns/purchase,
+// campaigns/whatsapp-send, admin/sumit-test).
 //
 // APP_ORIGIN is a server-only env var — never NEXT_PUBLIC_.
 // localhost:3002 is added ONLY in development — never in production.

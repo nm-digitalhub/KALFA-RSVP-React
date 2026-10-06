@@ -32,9 +32,8 @@ describe('public RSVP page never touches the owner-internal guests.note', () => 
 });
 
 // Latest *_rsvp_note_split.sql migration (timestamped filenames sort
-// lexicographically). Created by a parallel task — when it does not exist yet
-// the SQL assertions below are skipped with an explicit message rather than
-// failing this test file.
+// lexicographically). When it does not exist the SQL assertions below are
+// skipped with an explicit message rather than failing this test file.
 function newestRsvpNoteSplitMigration(): string | null {
   const matches = readdirSync(MIGRATIONS_DIR)
     .filter((name) => name.endsWith('_rsvp_note_split.sql'))
@@ -84,9 +83,8 @@ describe('rsvp_note split migration keeps guests.note out of the RPCs', () => {
   });
 });
 
-// Feature 3 ("who's coming" opt-in, guest-features-natalie-learnings.md)
-// tripwire: get_event_attendees_public exposes ONLY first names of OTHER
-// attending, opted-in guests. It must never select phone / note / rsvp_note /
+// "Who's coming" opt-in tripwire: get_event_attendees_public exposes ONLY first
+// names of OTHER attending, opted-in guests. It must never select phone / note / rsvp_note /
 // meal_pref / contact_id, and must never surface a non-attending guest.
 const WHO_S_COMING_MIGRATION = join(
   MIGRATIONS_DIR,

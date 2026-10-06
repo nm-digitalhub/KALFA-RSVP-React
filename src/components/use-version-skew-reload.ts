@@ -11,9 +11,8 @@ import { CALL_ACTIVE_STATES, getCallSnapshot } from '@/lib/voximplant/web-client
 // unavailable, or a call is active) — the caller keeps its own failure UI
 // for that case.
 //
-// Call gate: a full reload would silently drop a live WebRTC call — deferred
-// from the softphone panel's stage 3 build precisely until call state
-// existed (see web-client.ts's call layer). getCallSnapshot() is always
+// Call gate: a full reload would silently drop a live WebRTC call (see
+// web-client.ts's call layer). getCallSnapshot() is always
 // 'idle' outside the admin console (this hook also backs the customer app's
 // and the root global-error boundary — importing it is safe: web-client.ts's
 // actual SDK import is dynamic/lazy inside connectAndLogin, never at module

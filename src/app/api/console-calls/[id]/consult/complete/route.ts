@@ -36,7 +36,7 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 256;
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.uuid();
 
 function json(body: unknown, status: number) {
   return NextResponse.json(body, { status, headers: NO_STORE });

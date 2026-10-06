@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState, useEffect, useRef } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import {
@@ -13,10 +13,22 @@ import { sendBusinessEvent } from '@/components/consent/send-ga-event';
 import { DateSelectIL } from '@/components/date-select-il';
 import { FormError, FormNotice } from '@/components/forms';
 import { TimeSelect24 } from '@/components/time-select-24';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import type { GaActionEvent } from '@/lib/analytics/ga-event-contracts';
 import type { CampaignStatus } from '@/lib/data/campaigns';
+import { isCampaignCancellable } from '@/lib/data/campaign-status';
+import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
 import { computeChargeAmount } from '@/lib/data/close-charge-amount';
 import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
 import {
@@ -38,13 +50,21 @@ type Campaign = {
   price_per_reached: number | null;
   max_contacts: number | null;
   max_charge_ceiling: number | null;
+  tos_version: string | null;
   final_charge_amount: number | null;
   credit_applied: number | null;
   capture_status: string | null;
   charge_status: string | null;
   base_price: number | null;
   included_reached: number | null;
+  // A fixed-price package campaign is funded by its payment (the ledger), not by a card hold: its price, and the ledger
+  // state the page derived for it (null for the other model, or when the ledger could not be read).
+  package_price: number | null;
+  payment_status: string | null;
 };
+
+// What the stage and the cancel rule need from the campaign about its payment.
+const paymentOf = (c: Pick<Campaign, 'payment_status'>) => (c.payment_status ? { status: c.payment_status } : null);
 
 type Summary = {
   reachedCount: number;
@@ -121,6 +141,8 @@ function SubmitButton({
   variant: 'default' | 'primary' | 'danger';
 }) {
   const { pending } = useFormStatus();
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const appearance =
     variant === 'primary'
@@ -129,22 +151,46 @@ function SubmitButton({
         ? 'border border-destructive/40 bg-background text-destructive hover:bg-destructive/10'
         : 'border border-border bg-background text-foreground hover:bg-accent/50';
 
+  const className = `inline-flex min-h-11 w-full items-center justify-center rounded-lg px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${appearance}`;
+  const text = pending ? 'מבצע פעולה...' : label;
+
+  if (!confirm) {
+    return (
+      <button type="submit" disabled={pending} aria-disabled={pending} className={className}>
+        {text}
+      </button>
+    );
+  }
+
+  // The dialog is portaled outside the form, so its confirm button submits the
+  // trigger's form explicitly — the same action the plain submit runs.
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      aria-disabled={pending}
-      onClick={
-        confirm
-          ? (event) => {
-              if (!window.confirm(confirm)) event.preventDefault();
-            }
-          : undefined
-      }
-      className={`inline-flex min-h-11 w-full items-center justify-center rounded-lg px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${appearance}`}
-    >
-      {pending ? 'מבצע פעולה...' : label}
-    </button>
+    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <AlertDialogTrigger
+        ref={buttonRef}
+        disabled={pending}
+        render={<button type="button" aria-disabled={pending} className={className} />}
+      >
+        {text}
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{confirm}</AlertDialogTitle>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>ביטול</AlertDialogCancel>
+          <AlertDialogAction
+            variant={variant === 'danger' ? 'destructive' : 'default'}
+            onClick={() => {
+              setConfirmOpen(false);
+              buttonRef.current?.form?.requestSubmit();
+            }}
+          >
+            {label}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -240,15 +286,12 @@ function DeliveryBar({
 }
 
 // Status and money in ONE card, because they are one question: what state is
-// this campaign in and what will it cost. They were two cards (מצב הקמפיין and
-// תוכנית החיוב) that repeated the same three figures — reached, accrued,
-// ceiling — in two different visual languages, one as headline metrics and one
-// as a progress bar with tiles.
+// this campaign in and what will it cost.
 //
-// The rows below are a plain list, NOT tiles. Every figure here used to sit in
-// its own rounded box inside a rounded box inside this card; at mobile width
-// that stacked into a column of nested frames with a couple of words in each.
-// A list of label/value pairs says the same thing and reads faster.
+// The rows below are a plain list, NOT tiles: figures each in its own rounded
+// box inside a rounded box would stack, at mobile width, into a column of nested
+// frames with a couple of words in each. A list of label/value pairs says the
+// same thing and reads faster.
 function CampaignStatusAndBilling({
   campaign,
   status,
@@ -268,21 +311,26 @@ function CampaignStatusAndBilling({
   captureStatus: string | null;
   reached: number;
   accrued: number;
-  ceiling: number;
-  balance: number;
+  ceiling: number | null; // null = open-ceiling agreement (v5+): no cap, no balance
+  balance: number | null;
   basePrice: number;
   includedReached: number;
   overageRate: number;
   finalCharge: number | null;
   creditApplied: number | null;
 }) {
-  const stage = campaignStage({ status, capture_status: captureStatus });
+  const stage = campaignStage({
+    status,
+    capture_status: captureStatus,
+    package_price: campaign.package_price,
+    payment: paymentOf(campaign),
+  });
   const primaryChargeLabel = reached === 0 && basePrice > 0 ? 'דמי הפעלה' : 'חיוב נוכחי';
-  const percentage = ceiling > 0 ? Math.min(100, Math.round((accrued / ceiling) * 100)) : 0;
+  const percentage = ceiling !== null && ceiling > 0 ? Math.min(100, Math.round((accrued / ceiling) * 100)) : 0;
   const pricingExplanation =
     basePrice > 0
-      ? `דמי הפעלה קבועים של ${nis(basePrice)}. ${includedReached.toLocaleString('he-IL')} אנשי הקשר הראשונים שהשיבו כלולים בדמי ההפעלה. לאחר מכן נוסף ${nis(overageRate)} לכל איש קשר נוסף שהשיב, עד לתקרה של ${nis(ceiling)}.`
-      : `החיוב הוא ${nis(overageRate)} לכל איש קשר ייחודי שהשיב בפועל, עד לתקרה של ${nis(ceiling)}.`;
+      ? `דמי הפעלה קבועים של ${nis(basePrice)}. ${includedReached.toLocaleString('he-IL')} אנשי הקשר הראשונים שהשיבו כלולים בדמי ההפעלה. לאחר מכן נוסף ${nis(overageRate)} לכל איש קשר נוסף שהשיב${ceiling === null ? '' : `, עד לתקרה של ${nis(ceiling)}`}.`
+      : `החיוב הוא ${nis(overageRate)} לכל איש קשר ייחודי שהשיב בפועל${ceiling === null ? '' : `, עד לתקרה של ${nis(ceiling)}`}.`;
 
   return (
     <section
@@ -336,30 +384,34 @@ function CampaignStatusAndBilling({
       <dl className="grid grid-cols-3 divide-x divide-border p-5 sm:p-6">
         <SummaryMetric label="הושגו" value={reached.toLocaleString('he-IL')} />
         <SummaryMetric label={primaryChargeLabel} value={nis(accrued)} emphasized />
-        <SummaryMetric label="תקרת חיוב" value={nis(ceiling)} />
+        {ceiling !== null && <SummaryMetric label="תקרת חיוב" value={nis(ceiling)} />}
       </dl>
 
-      {/* The bar sits directly on the card. It used to have its own tinted,
-          rounded panel — a frame around a frame, whose only content was a
-          number the metric row above already showed. */}
+      {/* The bar sits directly on the card, with no tinted, rounded panel of its
+          own — that would be a frame around a frame, whose only content is a
+          number the metric row above already shows. */}
       <div className="border-t border-border px-5 pb-5 pt-4 sm:px-6 sm:pb-6">
-        <div
-          role="progressbar"
-          aria-label="ניצול מסגרת החיוב"
-          aria-valuemin={0}
-          aria-valuemax={ceiling}
-          aria-valuenow={Math.min(accrued, ceiling)}
-          className="h-2.5 overflow-hidden rounded-full bg-primary/15"
-        >
-          <div
-            className="h-full rounded-full bg-primary transition-[inline-size]"
-            style={{ inlineSize: `${percentage}%` }}
-          />
-        </div>
-        <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-          <span>{percentage}% מהמסגרת</span>
-          <span>נותרו {nis(balance)}</span>
-        </div>
+        {ceiling !== null && balance !== null && (
+          <>
+            <div
+              role="progressbar"
+              aria-label="ניצול מסגרת החיוב"
+              aria-valuemin={0}
+              aria-valuemax={ceiling}
+              aria-valuenow={Math.min(accrued, ceiling)}
+              className="h-2.5 overflow-hidden rounded-full bg-primary/15"
+            >
+              <div
+                className="h-full rounded-full bg-primary transition-[inline-size]"
+                style={{ inlineSize: `${percentage}%` }}
+              />
+            </div>
+            <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+              <span>{percentage}% מהמסגרת</span>
+              <span>נותרו {nis(balance)}</span>
+            </div>
+          </>
+        )}
 
         <dl className="mt-4 divide-y divide-border">
           <DetailRow label="דמי הפעלה" value={nis(basePrice)} />
@@ -375,7 +427,7 @@ function CampaignStatusAndBilling({
             label="מכסת אנשי קשר"
             value={campaign.max_contacts?.toLocaleString('he-IL') ?? '—'}
           />
-          <DetailRow label="יתרה עד התקרה" value={nis(balance)} />
+          {balance !== null && <DetailRow label="יתרה עד התקרה" value={nis(balance)} />}
         </dl>
 
         <details className="group mt-2 border-t border-border pt-3">
@@ -582,22 +634,30 @@ function ThankyouScheduleForm({
           </label>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            <label className="text-sm">
-              <span className="mb-1.5 block text-muted-foreground">תאריך</span>
+            {/* A group, not a <label>: one label cannot name the several
+                selects inside; each select carries its own labelPrefix name. */}
+            <div role="group" aria-labelledby="send_date-label" className="text-sm">
+              <span id="send_date-label" className="mb-1.5 block text-muted-foreground">
+                תאריך
+              </span>
               <DateSelectIL
                 id="send_date"
                 name="send_date"
+                labelPrefix="תאריך"
                 defaultValue={ilDateInputValue(thankyou.sendAt)}
               />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1.5 block text-muted-foreground">שעה</span>
+            </div>
+            <div role="group" aria-labelledby="send_time-label" className="text-sm">
+              <span id="send_time-label" className="mb-1.5 block text-muted-foreground">
+                שעה
+              </span>
               <TimeSelect24
                 id="send_time"
                 name="send_time"
+                labelPrefix="שעה"
                 defaultValue={ilTimeInputValue(thankyou.sendAt)}
               />
-            </label>
+            </div>
           </div>
 
           <button
@@ -619,11 +679,11 @@ function ThankyouScheduleForm({
 
 // Staff-only: move a live event's date.
 //
-// The date is locked once an event leaves draft, and that lock is a database
-// trigger, not a UI rule — so this control is not "the disabled field, enabled".
-// It posts to a separate action that reaches a separate SECURITY DEFINER
-// function, the only thing permitted to lift the lock. The owner's own form
-// keeps refusing exactly as before.
+// The date is locked once the first message or call has gone out to a guest, and
+// that lock is a database trigger, not a UI rule — so this control is not "the
+// disabled field, enabled". It posts to a separate action that reaches a separate
+// SECURITY DEFINER function, the only thing permitted to lift the lock. The
+// owner's own form can change the date only until that first send.
 //
 // Collapsed by default: this is the rarest thing on the page and the most
 // consequential, and an always-open date picker beside "cancel campaign" invites
@@ -665,16 +725,20 @@ function RescheduleEventForm({
           </p>
         ) : null}
 
-        <label className="block text-sm">
-          <span className="mb-1.5 block text-muted-foreground">מועד חדש</span>
-          <DateSelectIL id="new_event_date" name="new_event_date" />
-        </label>
+        <div role="group" aria-labelledby="new_event_date-label" className="block text-sm">
+          <span id="new_event_date-label" className="mb-1.5 block text-muted-foreground">
+            מועד חדש
+          </span>
+          <DateSelectIL id="new_event_date" name="new_event_date" labelPrefix="מועד חדש" />
+        </div>
         <FieldErrors errors={state?.fieldErrors?.event_date} />
 
-        <label className="block text-sm">
-          <span className="mb-1.5 block text-muted-foreground">שעה</span>
-          <TimeSelect24 id="new_event_time" name="new_event_time" />
-        </label>
+        <div role="group" aria-labelledby="new_event_time-label" className="block text-sm">
+          <span id="new_event_time-label" className="mb-1.5 block text-muted-foreground">
+            שעה
+          </span>
+          <TimeSelect24 id="new_event_time" name="new_event_time" labelPrefix="שעה" />
+        </div>
         <FieldErrors errors={state?.fieldErrors?.event_time} />
 
         <label className="block text-sm">
@@ -714,9 +778,9 @@ function FieldErrors({ errors }: { errors?: string[] }) {
   );
 }
 
-// One actions card, three sections. It was three cards — פעולות הקמפיין,
-// תודה אוטומטית, פעולות מנהל — each a bordered panel holding one to three
-// buttons, stacking on mobile into a column of frames.
+// One actions card, three sections — the owner's campaign actions, תודה אוטומטית,
+// פעולות מנהל — rather than a bordered panel per section, which on mobile would
+// stack into a column of frames.
 //
 // They are kept apart WITHIN the card, by a rule and a heading, because the
 // distinction is real: the admin group ends a campaign's life and settles money.
@@ -933,7 +997,10 @@ export function ManageClient({
 }) {
   const status = campaign.status;
   const reached = summary?.reachedCount ?? 0;
-  const ceiling = Number(campaign.max_charge_ceiling ?? summary?.ceiling ?? 0);
+  // An open-ceiling agreement (v5+) states the price as a formula: no cap, no
+  // "balance up to the ceiling". A v4-and-earlier PDF states a frozen number.
+  const openCeiling = isOpenCeilingAgreementVersion(campaign.tos_version);
+  const ceiling = openCeiling ? null : Number(campaign.max_charge_ceiling ?? summary?.ceiling ?? 0);
   const basePrice = Number(campaign.base_price ?? 0);
   const includedReached = Number(campaign.included_reached ?? 0);
   const overageRate = Number(campaign.price_per_reached ?? 0);
@@ -945,10 +1012,12 @@ export function ManageClient({
     ceiling,
     credits: 0,
   }).amount;
-  const balance = Math.max(0, ceiling - accrued);
+  const balance = ceiling === null ? null : Math.max(0, ceiling - accrued);
 
+  // Funded = a confirmed card hold (pay-per-result) or a payment in full (package, from the ledger).
+  const funded = campaign.capture_status === 'authorized' || (campaign.package_price != null && campaign.payment_status === 'collected');
   const heldOrLive =
-    campaign.capture_status === 'authorized' &&
+    funded &&
     ['approved', 'scheduled', 'active', 'paused'].includes(status);
   const showEmptyState = heldOrLive && authorizedCount === 0 && reached === 0;
   const excluded =
@@ -957,10 +1026,8 @@ export function ManageClient({
       : 0;
 
   const activatableState = ['approved', 'scheduled', 'paused'].includes(status);
-  const canActivate =
-    !isPast && activatableState && campaign.capture_status === 'authorized';
-  const needsPayment =
-    !isPast && status === 'approved' && campaign.capture_status !== 'authorized';
+  const canActivate = !isPast && activatableState && funded;
+  const needsPayment = !isPast && status === 'approved' && !funded;
   const canPause = viewerIsAdmin && status === 'active';
   const canClose =
     viewerIsAdmin &&
@@ -973,9 +1040,10 @@ export function ManageClient({
     status === 'closed' &&
     campaign.capture_status === 'authorized' &&
     !settled;
-  const canCancel =
-    viewerIsAdmin &&
-    ['active', 'paused', 'approved', 'scheduled', 'closed'].includes(status);
+  // Only where the cancel_campaign RPC would accept it (pre-money). A campaign
+  // with a hold, a charge or a billed reach is settled or refunded through the
+  // cancellation-request flow instead.
+  const canCancel = viewerIsAdmin && isCampaignCancellable({ ...campaign, payment: paymentOf(campaign) }, reached);
   const showLifecycleWarning = isPast && activatableState;
   // Split from showThankyou so a failed load only warns where the panel would
   // have appeared anyway — a draft campaign has no schedule to miss.
@@ -1051,10 +1119,10 @@ export function ManageClient({
         </p>
       ) : null}
 
-      {/* Three cards, not six. On mobile they simply stack in reading order —
-          what the campaign is and costs, how it is performing, what you can do
-          about it — so the old `order-*` swap that pushed the action buttons
-          above the numbers is gone. */}
+      {/* Three cards. On mobile they simply stack in reading order — what the
+          campaign is and costs, how it is performing, what you can do about
+          it — with no `order-*` swap pushing the action buttons above the
+          numbers. */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
         <div className="space-y-6">
           {/* The figures below default to 0 when the summary is missing, and a
@@ -1084,7 +1152,7 @@ export function ManageClient({
           )}
         </div>
 
-        <aside className="lg:sticky lg:top-6">
+        <aside className="lg:sticky lg:top-24">
           <ActionsPanel
             campaign={campaign}
             actions={actions}

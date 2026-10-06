@@ -6,8 +6,7 @@ import { FormError, FormNotice } from '@/components/forms';
 import type { FormState } from '@/lib/validation/result';
 import { refreshVoicePlatformAction, runLogExportAction } from '../actions';
 
-// Small client wrappers for the two read-only/internal platform actions. The
-// wiring (SetAccountInfo) action is added in the wiring stage.
+// Small client wrappers for the two read-only/internal platform actions.
 
 export function RefreshButton() {
   const [state, action, pending] = useActionState<FormState>(refreshVoicePlatformAction, null);

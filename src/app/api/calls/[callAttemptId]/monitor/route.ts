@@ -21,10 +21,9 @@ import { pickSessionUrl, postCommandToSession } from '@/lib/voximplant/session-c
 // stream, so a listener who must hear both guest and AI cannot be wired with
 // plain media routing.
 //
-// GATED behind app_settings.monitor_enabled, which stays OFF until the RSVPAgent
-// scenario carries the conference handler AND that change is verified on a live
-// call. Until then this returns 503, NOT a 202 that creates a leg the scenario
-// can never answer — the console must never show "listening" while the human is
+// GATED behind app_settings.monitor_enabled, a kill switch that defaults to OFF.
+// While it is off this returns 503, NOT a 202 that creates a leg the scenario
+// cannot answer — the console must never show "listening" while the human is
 // silently absent. This is the same honesty the whole console layer is built on.
 //
 // Auth mirrors the other live-call routes: requireConsoleAgent (Bearer + staff)
@@ -35,7 +34,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.uuid();
 const TERMINAL: ReadonlySet<string> = new Set(TERMINAL_STATUSES);
 
 function json(body: unknown, status: number) {

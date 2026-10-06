@@ -24,7 +24,7 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({
   requireOrgOwner: vi.fn(),
-  // getOrgContext/getUser are unused by these two functions but orgs.ts
+  // getOrgContext/getUser are unused by the functions under test but orgs.ts
   // imports them too — provide harmless stubs so the module loads.
   getOrgContext: vi.fn(),
   getUser: vi.fn(),
@@ -296,7 +296,7 @@ describe('getOrgRolePermissionMatrix', () => {
     expect(matrix.roles).toHaveLength(2);
     expect(matrix.permissions).toHaveLength(2);
     expect(matrix.granted['r-owner']).toEqual(['p1', 'p2']);
-    // ADMIN DOES NOT hold guests.delete (Fix-1 backfill exclusion) — only p1.
+    // ADMIN DOES NOT hold guests.delete (backfill exclusion) — only p1.
     expect(matrix.granted['r-admin']).toEqual(['p1']);
   });
 

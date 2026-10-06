@@ -6,7 +6,6 @@ import {
   getInfraConfigStatus,
 } from '@/lib/data/admin/settings';
 import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
-import { selectedEmailProvider } from '@/lib/email/sender';
 import {
   getExchangeConnectionMode,
   listMyExchangeConnections,
@@ -21,10 +20,12 @@ export const metadata: Metadata = { title: 'הגדרות' };
 
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 
-// Admin system settings. requirePlatformPermission('manage_settings') is enforced in the data layer (and the
-// /admin layout). Manages the clearing master switch + SUMIT provider keys
-// (edited via the form, masked with reveal), and shows a read-only health view
-// of the infra config that stays in env.
+// Admin system settings. requirePlatformPermission('manage_settings') is enforced in the data layer (the
+// /admin layout only requires platform staff). Manages the operating switches
+// (payments, automations, call centre), the base+overage pricing gate and the
+// Exchange connection, and shows a read-only health view of the infra config
+// that stays in env. Provider credentials (SUMIT, SMS, email) are edited on
+// their own pages under /admin/integrations.
 export default async function AdminSettingsPage() {
   const [settings, infra, baseOveragePricing, exchangeMode, exchangeConnections] =
     await Promise.all([
@@ -41,13 +42,13 @@ export default async function AdminSettingsPage() {
 
       <section className={sectionClass}>
         <div>
-          <h2 className="text-lg font-semibold">סליקה (SUMIT)</h2>
+          <h2 className="text-lg font-semibold">מדיניות והפעלה</h2>
           <p className="text-sm text-muted-foreground">
-            מתג ראשי להפעלת תשלומים, ומפתחות שירות הסליקה. כל ערך ניתן לעריכה
-            בנפרד; המפתחות מוצגים מוסכים עם כפתור חשיפה.
+            מתגי הפעלה בלבד — סליקה וחיוב, אוטומציות ומוקד השיחות. פרטי ההתחברות
+            של הספקים (SUMIT, SMS, דואר) עברו לעמודים שלהם תחת אינטגרציות.
           </p>
         </div>
-        <SettingsForm settings={settings} emailProvider={selectedEmailProvider()} />
+        <SettingsForm settings={settings} />
       </section>
 
       <section className={sectionClass}>

@@ -3,7 +3,7 @@
 // so it can be unit-tested directly; fleet-agent-cli.ts wires these functions to the actual
 // Supabase reads/writes and the .fleet-logs/ file I/O.
 //
-// Four independent safety checks gate the (not-yet-implemented) Meta call, per plan §4.5:
+// Four independent safety checks gate the Meta call, per plan §4.5:
 //   1. validatePublishRequestRow + validatePublishPayload — an OWNER'S approving verdict for
 //      role='social-manager', kind='approval', payload.action='publish_social', AND
 //      payload.platform matching the platform actually being invoked. The platform check is
@@ -20,6 +20,7 @@
 //   4. checkReviewApproved — the batch's REVIEW.md must mechanically show brand-director's
 //      "סטטוס: מוכנה-לאישור".
 
+import type { GraphErrorBody } from '@/lib/whatsapp/graph-error';
 import { createHash } from 'node:crypto';
 import { basename, dirname, extname, join } from 'node:path';
 
@@ -139,14 +140,34 @@ const SUPERLATIVE_WORDS = ['הכי', 'תמיד', 'בטוח'] as const;
 // brand-director's editorial review (see the comment above).
 const HEBREW_LETTER = /[א-ת]/;
 
-function includesHebrewWord(text: string, word: string): boolean {
+// A superlative directly preceded by a standalone negation is the OPPOSITE of
+// a claim: "אישור הגעה זה לא תמיד רק כן או לא" ("an RSVP is not always just
+// yes or no") promises nothing. Measured live 2026-09-27: exactly that line
+// failed publish-social twice (request 62dc162c), reached
+// PUBLISH_RETRY_CEILING, and left an approved verdict the role could not
+// consume — the answer-watcher then re-spawned it ~45 times in one day.
+// Only "לא" as its own word counts, optionally with the conjunction prefixes
+// ו/ש ("ולא", "שלא"), separated by whitespace or a maqaf/hyphen. "הלא תמיד"
+// ("isn't it always") is rhetorical AFFIRMATION and stays a hit, and so does
+// "לא רק הכי" — the word right before "הכי" there is "רק", not "לא".
+const NEGATED_BEFORE = /(?:^|[^א-ת])[וש]?לא[\s\u05BE-]+$/;
+
+function includesHebrewWord(
+  text: string,
+  word: string,
+  options: { skipNegated?: boolean } = {},
+): boolean {
   let from = 0;
   for (;;) {
     const at = text.indexOf(word, from);
     if (at === -1) return false;
     const before = at > 0 ? text[at - 1] : '';
     const after = at + word.length < text.length ? text[at + word.length] : '';
-    if (!HEBREW_LETTER.test(before) && !HEBREW_LETTER.test(after)) return true;
+    if (!HEBREW_LETTER.test(before) && !HEBREW_LETTER.test(after)) {
+      // Keep scanning past a negated hit: "לא תמיד קל, אבל אנחנו תמיד כאן"
+      // must still be caught on its second, un-negated occurrence.
+      if (!(options.skipNegated && NEGATED_BEFORE.test(text.slice(0, at)))) return true;
+    }
     from = at + 1;
   }
 }
@@ -158,8 +179,10 @@ export function scanGroundingClaims(caption: string): string[] {
   for (const word of FREE_WORDS) {
     if (includesHebrewWord(caption, word)) matches.push(`free-claim ("${word}")`);
   }
+  // Negation exemption is for superlatives only, deliberately: "לא חינם" is
+  // left to the free-claim check and to brand-director, not reasoned about here.
   for (const word of SUPERLATIVE_WORDS) {
-    if (includesHebrewWord(caption, word)) matches.push(`superlative ("${word}")`);
+    if (includesHebrewWord(caption, word, { skipNegated: true })) matches.push(`superlative ("${word}")`);
   }
   return matches;
 }
@@ -214,10 +237,10 @@ export function decideExistingRow(status: string): ExistingRowDecision {
   throw new Error(`unexpected fleet_social_posts.status: "${status}"`);
 }
 
-// Pure request-body builders — used to both populate the --dry-run artifact and, in a
-// future stage, the real fetch() call (plan §4.6). No network/credential access here: Meta
-// endpoint host paths are written with the literal env-var-name placeholder, never a real
-// page/account id or token.
+// Pure request-body builders — used to populate the --dry-run artifact; the Instagram plan
+// (buildInstagramPublishPlan) also drives the real Instagram fetch() calls (plan §4.6). No
+// network/credential access here: Meta endpoint host paths are written with the literal
+// env-var-name placeholder, never a real page/account id or token.
 export interface FacebookFeedRequest {
   method: 'POST';
   endpoint: string;
@@ -376,15 +399,9 @@ const RATE_LIMIT_CODES = new Set([4, 17, 32, 80001, 341, 368, 506, 613]);
 // official page as 190.
 const AUTH_ERROR_CODES = new Set([190, 102]);
 
-export interface GraphApiErrorBody {
-  error?: {
-    message?: string;
-    type?: string;
-    code?: number;
-    error_subcode?: number;
-    fbtrace_id?: string;
-  };
-}
+// Graph's error envelope is the same on every Graph API (Pages, Instagram,
+// WhatsApp); the type is the one generated from Meta's spec.
+export type GraphApiErrorBody = GraphErrorBody;
 
 export function classifyGraphApiError(body: GraphApiErrorBody | null): GraphApiErrorKind {
   const code = body?.error?.code;
@@ -445,6 +462,58 @@ export const PUBLISH_RETRY_CEILING = 2;
 
 export function isRetryCeilingReached(attemptCount: number): boolean {
   return attemptCount >= PUBLISH_RETRY_CEILING;
+}
+
+// The ONE legal way out for an approved publish_social verdict that can never
+// be published (measured 2026-09-27, request 62dc162c): publish-social refuses
+// past the ceiling, `ack` is refused by design (the ack-trap), and `complete`
+// would report a success that never happened. Without an exit the verdict
+// stays approved+unconsumed forever and the scheduler keeps re-spawning the
+// role for it. Eligible ONLY when the ledger itself proves the automatic
+// path is exhausted — never on the role's say-so, never before a real
+// attempt: an approved verdict with no ledger row is exactly the ack-trap
+// shape (consumed with nothing ever tried) and stays refused.
+export type AbandonLedgerRow = {
+  id: string;
+  platform: string;
+  status: string;
+  attempt_count: number;
+  error: string | null;
+};
+
+export type AbandonDecision =
+  | { ok: true; platform: Platform; row: AbandonLedgerRow }
+  | { ok: false; reason: string };
+
+export function decideAbandonPublish(payload: unknown, ledgerRows: readonly AbandonLedgerRow[]): AbandonDecision {
+  const record =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : {};
+  if (record.action !== 'publish_social') {
+    return { ok: false, reason: 'not a publish_social request — use the regular verdict flow' };
+  }
+  const platform = typeof record.platform === 'string' ? record.platform : '';
+  if (!isPlatform(platform)) {
+    return { ok: false, reason: `payload.platform "${platform}" is not a supported platform` };
+  }
+  const row = ledgerRows.find((r) => r.platform === platform);
+  if (!row) {
+    return {
+      ok: false,
+      reason: 'no publish attempt is recorded for this request — run publish-social first (abandon is only for an exhausted retry ceiling)',
+    };
+  }
+  if (row.status !== 'failed') {
+    return { ok: false, reason: `ledger status is "${row.status}", not "failed" — nothing to abandon` };
+  }
+  if (!isRetryCeilingReached(row.attempt_count)) {
+    return {
+      ok: false,
+      reason: `attempt_count=${row.attempt_count} is below the ceiling (${PUBLISH_RETRY_CEILING}) — retry publish-social first`,
+    };
+  }
+  return { ok: true, platform, row };
 }
 
 // Critical lesson from a live incident (2026-08-12): a Graph API id field

@@ -34,8 +34,7 @@ function pageFiles(): { route: string; src: string }[] {
 
 // PRESENCE of a metadata field, however its value is produced. The event-type
 // pages set `description: content.description` from the catalogue rather than a
-// string literal, and that is a real description — an earlier version of this
-// file only matched quoted strings and wrongly flagged all four.
+// string literal, and that is a real description.
 function hasField(src: string, name: 'title' | 'description' | 'openGraph'): boolean {
   return new RegExp(`\\n\\s*${name}:`).test(src.split('export default')[0]);
 }
@@ -123,6 +122,19 @@ describe('public site metadata', () => {
     for (const p of pages.filter((x) => x.route !== '/')) {
       expect(p.src, p.route).toContain('pageOpenGraph(');
       expect(p.src, p.route).not.toMatch(/openGraph:\s*\{/);
+    }
+  });
+
+  it('every page, home included, emits og:url through the helper', () => {
+    // No page shipped og:url until an external site audit flagged "Open Graph
+    // tags incomplete" on 2026-09-27; the helper now takes the canonical path.
+    const helper = readFileSync(
+      join(siteDir, '..', '..', '..', 'lib', 'seo', 'open-graph.ts'),
+      'utf8',
+    );
+    expect(helper).toMatch(/url: path/);
+    for (const p of pages) {
+      expect(p.src, p.route).toMatch(/pageOpenGraph\([\s\S]*?,[\s\S]*?,\s*[^)\s]+\s*,?\s*\)/);
     }
   });
 

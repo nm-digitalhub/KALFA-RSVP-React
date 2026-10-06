@@ -51,16 +51,14 @@ authorization, timing, and delivery accounting.
 - **Recipient freeze / authorized set**: `snapshotAuthorizedSet()` freezes the
   contact set into `campaign_authorized_contacts` at J5-hold time; the engine
   seeds `outreach_state` only from that set — a non-set contact is never
-  targeted. **OPEN P0 (VERIFIED-LIVE 2026-07-18): guests added after the freeze
-  are silently omitted — and the fix IS BUILT but DISABLED**: the
-  `reconcile_authorized_set` RPC (migration 20260712104117, fail-closed on
-  funded_cap = min(max_contacts, auth_amount/price)) + audit table + call
-  sites (`reconcileCampaignSetForContact` in single-add and bulk import) all
-  exist, gated by `isReconcileEnabled()` reading env
-  `RECONCILE_AUTHORIZED_SET_ENABLED` — unset ⇒ no-op, no warning to the owner.
-  Surface this on ANY recipient-set work; enabling the flag is a user
-  decision (billing implications: contacts beyond funded_cap still excluded
-  as 'ceiling_full' until the hold is topped up).
+  targeted. **Later guests are admitted automatically**: `reconcile_authorized_set`
+  (called from single-add and both bulk imports via `reconcileCampaignSetForContact`,
+  env `RECONCILE_AUTHORIZED_SET_ENABLED` = true in production since 2026-07-21)
+  adds every eligible contact to the set. **There is no size cap since
+  2026-09-25** (migration 20260925003335 retired the hold-bound funded_cap and the
+  'ceiling_full'/'ceiling_reached' outcomes). Billing is bounded by contacts
+  actually reached; a frozen charge ceiling applies only to v4-and-earlier signed
+  agreements (`isOpenCeilingAgreementVersion`, close-charge.ts).
 - **Send timing**: Option A cursor-first serial sending (M1 schema live,
   migration 20260707150000). Send windows + Israeli quiet hours (08:00–21:00)
   + Shabbat/chag gating via `@hebcal/core` (`jewish-calendar.ts`,

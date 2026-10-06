@@ -24,12 +24,11 @@ function req(body: unknown): Request {
   });
 }
 
-// Full telephony audit, 13.8: linkConsoleCallSession lets this route
-// correlate the session to its console_calls row DIRECTLY (from the token
-// verifyDialToken already resolved, plus session_id the scenario now sends),
-// independent of whether ConsoleDial's own 'started' /event report lands.
-// See console-calls.ts's linkConsoleCallSession header for the full
-// reasoning this closes.
+// linkConsoleCallSession lets this route correlate the session to its
+// console_calls row DIRECTLY (from the token verifyDialToken already
+// resolved, plus the session_id the scenario sends), independent of whether
+// ConsoleDial's own 'started' /event report lands. See console-calls.ts's
+// linkConsoleCallSession header for the full reasoning.
 describe('POST /api/voximplant/console/authorize', () => {
   beforeEach(() => {
     vi.resetAllMocks();

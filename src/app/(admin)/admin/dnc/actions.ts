@@ -23,7 +23,7 @@ export async function addToCallDncAction(
     reason: formData.get('reason') ?? '',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   let result: Awaited<ReturnType<typeof addToCallDnc>>;

@@ -6,19 +6,20 @@
 // already ships — dispatchOutreachCall (src/lib/data/outreach-calls.ts) is the
 // worker's own dispatcher. What was missing is a way to ASK for one on demand.
 // The API route POST /api/events/{id}/outreach-call does exactly that, but it
-// authenticates with a console-agent Bearer JWT and its client — the browser
-// call-centre — was never built, so no human can reach it. Until that client
-// exists this is the only on-demand path, and it is the sibling of
-// bridge-call.ts / meeting-confirm-call.ts, which exist for the same reason.
+// authenticates with a console-agent Bearer JWT, so only a signed-in console
+// agent (e.g. the Android agent console) can reach it. This is the on-demand
+// path for an operator with a shell, and it is the sibling of bridge-call.ts /
+// meeting-confirm-call.ts, which exist for the same reason.
 //
 // IT ADDS NO BYPASS. The route's own body is reproduced here — resolve the ONE
 // active campaign, resolve guest → contact → dialable phone from OUR data (never
 // a phone passed on the command line), run the already-reached preflight — and
-// then hands the identical job to dispatchOutreachCall, which re-checks all
-// twelve gates itself: outreach master switch, credentials, live-calls toggle,
-// consent, DNC, already-reached, campaign-active, event-closed, concurrency,
-// hourly cap, balance reserve, owner-already-on-a-call. A refusal is printed as
-// its typed reason, never swallowed.
+// then hands the identical job to dispatchOutreachCall, which re-checks every
+// gate itself: outreach master switch, credentials, live-calls toggle, dial
+// window, consent, DNC, already-reached, campaign-active, contact-quota seat,
+// event-closed, concurrency, hourly cap, balance reserve,
+// owner-already-on-a-call. A refusal is printed as its typed reason, never
+// swallowed.
 //
 // Unlike the route it dials SYNCHRONOUSLY rather than through pg-boss: an
 // operator running this wants the verdict in the terminal, not a job id to go
@@ -28,9 +29,9 @@
 // SAFETY:
 //   * A REAL outbound call. Voximplant minutes and ElevenLabs credits are spent.
 //     Nothing happens without --confirm.
-//   * There is NO quiet-hours gate on this path. Send windows and the Jewish
-//     calendar are applied by the PLANNER when it schedules a touchpoint; a
-//     manual dial bypasses the planner by definition. It will ring at 03:00.
+//   * Quiet hours still apply: dispatchOutreachCall enforces the admin dial
+//     window (per weekday, plus Shabbat/Yom-Tov), so a manual dial outside it
+//     is refused as outside_dial_window instead of ringing at night.
 //   * An answered call bills as a reached contact, exactly like a scheduled one.
 //   * Never prints a token, a secret, or the dialled number's owner.
 
@@ -132,7 +133,7 @@ async function main(): Promise<void> {
     eventId,
     contactId: guest.contact_id,
     normalizedPhone: contact.normalized_phone,
-    // Inert: three call sites write it, none read it. Kept consistent with the
+    // Inert: several call sites write it, none read it. Kept consistent with the
     // route and the callback sweep rather than inventing a value that means
     // nothing.
     scriptKey: 'rsvp_v1',

@@ -61,9 +61,9 @@ export async function importGuestsAction(
   _prevState: ImportState,
   formData: FormData,
 ): Promise<ImportState> {
-  // Own authorization gate, first. Until 2026-09-08 the only thing standing
+  // Own authorization gate, first. Without it the only thing standing
   // between a browser-supplied eventId and the service-role `guests` read
-  // below was listGroups() throwing a few lines later — an order-dependent
+  // below would be listGroups() throwing a few lines later — an order-dependent
   // guard a refactor could silently remove. 'create': an import WRITES guests,
   // so it carries the same key the import page itself gates on.
   await requireEventAccess(eventId, 'guests', 'create');
@@ -305,13 +305,13 @@ export async function importGuestsAction(
   // the import as failed.
   try {
     const { contactIds } = await buildContactsForEvent(eventId);
-    // Verified gap (30.8): nothing previously reconciled bulk-imported
-    // contacts into an already-operational campaign's authorized set — they
-    // were silently excluded forever. reconcileCampaignSetForContact is
+    // Admit each imported contact into an already-operational campaign's
+    // authorized set — otherwise a bulk-imported contact would be silently
+    // excluded forever. reconcileCampaignSetForContact is
     // itself best-effort/never-throws (a cheap no-op when there is no
     // operational campaign or the contact is already a member), so this loop
-    // cannot fail the import; it only ever helps a contact that is eligible
-    // and within funded_cap get admitted.
+    // cannot fail the import; it only ever helps an eligible contact get
+    // admitted (a campaign with a package quota admits only until it is full).
     for (const contactId of contactIds) {
       await reconcileCampaignSetForContact(eventId, 'add', contactId);
     }

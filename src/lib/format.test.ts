@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCurrency } from './format';
+import { formatAmount, formatCurrency } from './format';
 
 // Intl.NumberFormat('he-IL', ...) surrounds the output with invisible
 // bidi marks (RLM, U+200F) whose exact placement is an ICU implementation
@@ -17,5 +17,18 @@ describe('formatCurrency', () => {
 
   it('formats zero', () => {
     expect(formatCurrency(0)).toMatch(/0\.00.*₪/);
+  });
+});
+
+// The price a customer is shown: whole shekels without agorot, anything else with both digits.
+describe('formatAmount', () => {
+  it('shows a whole-shekel amount without agorot', () => {
+    expect(formatAmount(120)).toMatch(/120/);
+    expect(formatAmount(120)).not.toMatch(/[.,]\d/);
+  });
+
+  it('keeps both agorot digits on a fractional price — a price is never rounded on the way to the customer', () => {
+    expect(formatAmount(149.9)).toContain('149.90');
+    expect(formatAmount(149.9)).not.toContain('150');
   });
 });

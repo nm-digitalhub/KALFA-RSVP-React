@@ -8,8 +8,8 @@ import { PageHeading, EmptyState, Badge, Pagination, parsePageParam } from '../_
 export const metadata = { title: 'משתמשים' };
 
 // Admin user management — list of all platform users (search by name, email,
-// phone or id + pagination). Authorization is enforced by the /admin layout
-// (requireAdmin) and again in listAllUsers.
+// phone or id + pagination). Authorization is enforced by listAllUsers
+// (manage_staff); the /admin layout (requirePlatformStaff) is only an outer gate.
 export default async function AdminUsersPage({
   searchParams,
 }: {
@@ -62,7 +62,7 @@ export default async function AdminUsersPage({
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {u.isPlatformAdmin ? <Badge>מנהל מערכת</Badge> : null}
+                  {u.isPlatformStaff ? <Badge>חבר צוות</Badge> : null}
                   {u.suspended ? <Badge>מושהה</Badge> : null}
                   <Badge>{u.orgCount} ארגונים</Badge>
                 </div>

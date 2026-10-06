@@ -20,7 +20,7 @@ import { signOneTimeKeyForWidget } from '@/lib/data/widget-sdk-auth';
 // authoritatively at call-intent/widget-authorize (evaluateWidgetCallCaps),
 // never here.
 //
-// 503 when the shared identity isn't provisioned yet (WIDGET_VOX_USERNAME/
+// 503 when the shared identity isn't provisioned yet (NEXT_PUBLIC_WIDGET_VOX_USERNAME/
 // WIDGET_VOX_PASSWORD unset) — same fail-closed shape as route-inbound's
 // `if (!expected) return json(REJECT, 503)` for KALFA_CONSOLE_SECRET.
 

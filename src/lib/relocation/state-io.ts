@@ -79,7 +79,7 @@ export function saveState(repoRoot: string, state: RelocationState): RelocationS
   return state;
 }
 
-/** Remove a stale temp file left by a crashed writer (best effort). */
+/** Remove this process's temp file left by an interrupted save (best effort). */
 export function cleanupTempFiles(repoRoot: string): void {
   const tmp = `${statePath(repoRoot)}.tmp-${process.pid}`;
   try {

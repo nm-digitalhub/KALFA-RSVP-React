@@ -27,7 +27,7 @@
   <!-- קָלְפָה — שם המותג. לא "קַלְפָּה", לא "קְלִיפָּה". -->
   <lexeme>
     <grapheme>קלפה</grapheme>
-    <phoneme>kalˈfa</phoneme>
+    <phoneme>ˈkalfa</phoneme>
   </lexeme>
 
   <!-- נִגְבִּים — נלקח תשלום. השיבוש שדווח: "נְגָבִים". -->

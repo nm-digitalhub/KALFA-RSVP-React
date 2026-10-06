@@ -36,6 +36,10 @@ function fd(entries: Record<string, string>): FormData {
 }
 
 const FIELDS = {
+  // Required by appSettingsSchema — the lone non-checkbox field. Without it the
+  // parse fails and the action never reaches updateAppSettings, which is the
+  // deliberate behaviour pinned by the suite below.
+  reasonable_coverage_contacts: '300',
   sumit_company_id: '',
   sumit_api_public_key: '',
   sumit_api_key: '',
@@ -65,6 +69,54 @@ describe('updateSettingsAction — Next.js control-flow signals (requireAdmin)',
     const result = await updateSettingsAction(null, fd(FIELDS));
 
     expect(result).toEqual({ error: 'עדכון ההגדרות נכשל. נסו שוב.' });
+  });
+});
+
+// The hold-sizing cap resizes the credit hold on every signed-but-unheld
+// campaign at once, so a blank or junk value must STOP the save rather than
+// write something. Every other field on this form is a checkbox that fails
+// closed to `false`; there is no equivalent safe default for a number, so the
+// schema refuses instead of inventing one.
+describe('updateSettingsAction — reasonable_coverage_contacts is required, never defaulted', () => {
+  const OMITTED = Object.fromEntries(
+    Object.entries(FIELDS).filter(([k]) => k !== 'reasonable_coverage_contacts'),
+  ) as Record<string, string>;
+
+  it('refuses the whole save when the field is absent, and writes nothing', async () => {
+    const result = await updateSettingsAction(null, fd(OMITTED));
+
+    expect(result?.fieldErrors?.reasonable_coverage_contacts).toBeTruthy();
+    expect(updateAppSettings).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['blank', ''],
+    ['zero', '0'],
+    ['negative', '-5'],
+    ['fractional', '1.5'],
+    ['above the cap', '10001'],
+    ['not a number', 'abc'],
+  ])('refuses %s and writes nothing', async (_label, value) => {
+    const result = await updateSettingsAction(
+      null,
+      fd({ ...FIELDS, reasonable_coverage_contacts: value }),
+    );
+
+    expect(result?.fieldErrors?.reasonable_coverage_contacts).toBeTruthy();
+    expect(updateAppSettings).not.toHaveBeenCalled();
+  });
+
+  it('carries a valid value through to the data layer as a NUMBER', async () => {
+    vi.mocked(updateAppSettings).mockResolvedValue(undefined);
+
+    await updateSettingsAction(
+      null,
+      fd({ ...FIELDS, reasonable_coverage_contacts: '450' }),
+    );
+
+    expect(updateAppSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ reasonable_coverage_contacts: 450 }),
+    );
   });
 });
 

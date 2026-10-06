@@ -334,10 +334,7 @@ describe('enrollConsoleAgent — staff requirement', () => {
   // granted. provisionConsoleAgentVoxUser checks Voximplant config before
   // touching console_agents at all, so a fresh enrolment with no live
   // Voximplant config in this test environment must grant NOTHING locally —
-  // not even a partial row. This also closes the old race the FK backstop
-  // used to guard: the local write no longer happens until Voximplant has
-  // already confirmed the identity, so there is nothing left un-staffed to
-  // race against at this layer.
+  // not even a partial row.
   it('grants nothing locally when Voximplant is not configured, and logs the failure', async () => {
     const { builders } = wireAdminClient({
       tables: {
@@ -587,7 +584,7 @@ describe('assignStaffRole — last-owner reassignment guard', () => {
   });
 });
 
-// GUARDRAIL 4: a newly created role starts with ZERO permissions.
+// GUARDRAIL 6: a newly created role starts with ZERO permissions.
 describe('createPlatformRole — starts with zero permissions', () => {
   it('inserts a non-owner role and never touches the permissions table', async () => {
     const { from, builders } = wireAdminClient({
@@ -632,7 +629,7 @@ describe('createPlatformRole — starts with zero permissions', () => {
   });
 });
 
-// GUARDRAIL 5: every exported data function is gated by requirePlatformOwner().
+// GUARDRAIL 7: every role/permission/staff data function is gated by requirePlatformOwner().
 describe('requirePlatformOwner gate on every data function', () => {
   const cases: Array<[string, () => Promise<unknown>]> = [
     ['listPlatformRoles', () => listPlatformRoles()],

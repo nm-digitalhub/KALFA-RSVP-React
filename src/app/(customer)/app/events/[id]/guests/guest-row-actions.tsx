@@ -5,6 +5,16 @@ import { useState, useTransition } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 
 import { Button, buttonVariants } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { deleteGuestAction } from './guests-actions';
 import { recoverFromVersionSkew } from '@/components/use-version-skew-reload';
 
@@ -14,21 +24,25 @@ import { recoverFromVersionSkew } from '@/components/use-version-skew-reload';
 //
 // `compact` renders icon-only controls for the dense mobile card (labels move
 // to aria-label so the a11y name is preserved); the desktop table keeps the
-// full-text buttons.
+// full-text buttons. `guestName` makes each row's controls distinguishable to
+// a screen reader (otherwise every row reads "עריכה"/"מחיקה").
 export function GuestRowActions({
   eventId,
   guestId,
+  guestName,
   compact = false,
 }: {
   eventId: string;
   guestId: string;
+  guestName?: string;
   compact?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [failed, setFailed] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   function onDelete() {
-    if (!window.confirm('למחוק את המוזמן?')) return;
+    setConfirmOpen(false);
     setFailed(false);
     startTransition(async () => {
       try {
@@ -41,29 +55,50 @@ export function GuestRowActions({
     });
   }
 
+  // Shared by both variants; portaled, so it does not affect either layout.
+  const confirmContent = (
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>למחוק את המוזמן?</AlertDialogTitle>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>ביטול</AlertDialogCancel>
+        <AlertDialogAction variant="destructive" onClick={onDelete}>
+          מחיקה
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  );
+
   if (compact) {
     return (
       <div className="flex shrink-0 items-center gap-0.5">
         <Link
           href={`/app/events/${eventId}/guests/${guestId}`}
-          aria-label="עריכת מוזמן"
+          aria-label={guestName ? `עריכת ${guestName}` : 'עריכת מוזמן'}
           title="עריכה"
           className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
         >
           <Pencil className="size-4" aria-hidden />
         </Link>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          onClick={onDelete}
-          disabled={pending}
-          aria-label="מחיקת מוזמן"
-          title="מחיקה"
-          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-        >
-          <Trash2 className="size-4" aria-hidden />
-        </Button>
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogTrigger
+            disabled={pending}
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={guestName ? `מחיקת ${guestName}` : 'מחיקת מוזמן'}
+                title="מחיקה"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+              />
+            }
+          >
+            <Trash2 className="size-4" aria-hidden />
+          </AlertDialogTrigger>
+          {confirmContent}
+        </AlertDialog>
         {failed ? (
           <span role="alert" className="sr-only">
             מחיקה נכשלה
@@ -79,17 +114,21 @@ export function GuestRowActions({
         href={`/app/events/${eventId}/guests/${guestId}`}
         className={buttonVariants({ variant: 'ghost', size: 'sm' })}
       >
+        {/* Visible text stays a prefix of the accessible name (label-in-name),
+            so voice control still matches "עריכה"/"מחיקה". */}
         עריכה
+        {guestName ? <span className="sr-only"> – {guestName}</span> : null}
       </Link>
-      <Button
-        type="button"
-        variant="destructive"
-        size="sm"
-        onClick={onDelete}
-        disabled={pending}
-      >
-        {pending ? 'מוחק…' : 'מחיקה'}
-      </Button>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogTrigger
+          disabled={pending}
+          render={<Button type="button" variant="destructive" size="sm" />}
+        >
+          {pending ? 'מוחק…' : 'מחיקה'}
+          {guestName ? <span className="sr-only"> – {guestName}</span> : null}
+        </AlertDialogTrigger>
+        {confirmContent}
+      </AlertDialog>
       {failed ? (
         <span role="alert" className="text-xs text-destructive">
           נכשל

@@ -9,7 +9,7 @@ type CalendarView = "month" | "week" | "day" | "days" | "agenda" | "resource"
 interface EventCalendarResource {
   id: string
   title: string
-  /** Token or css color used for subtle row/column accents. */
+  /** Token or css color for consumers (e.g. renderResourceHeader); the built-in views do not apply it. */
   color?: string
   children?: EventCalendarResource[]
 }
@@ -156,11 +156,12 @@ interface EventCalendarSlotDraft {
 }
 
 /**
- * User-adjustable display toggles (the "View settings" submenu). Every field
- * is optional; undefined defers to the matching root view-config prop.
+ * User-adjustable display toggles (controlled via viewSettings /
+ * onViewSettingsChange or api.setViewSettings). Every field is optional;
+ * undefined defers to the matching root view-config prop.
  */
 interface EventCalendarViewSettings {
-  /** Show Saturday/Sunday columns in month, week, and N-day grids. */
+  /** Show weekend columns (the weekendDays setting) in month, week, and N-day grids. */
   weekends?: boolean
   /** Week-number gutter in the month view. */
   weekNumbers?: boolean
@@ -231,7 +232,7 @@ interface EventCalendarSlotInfo {
  * CSS-selector customization.
  */
 interface EventCalendarOffDaysConfig {
-  /** Weekday numbers treated as off (0 = Sunday). Default [0, 6]. */
+  /** Weekday numbers treated as off (0 = Sunday). Default: the calendar's weekendDays ([0, 6] unless configured). */
   weekendDays?: number[]
   /** Additional explicit off dates (compared by day in the display zone). */
   dates?: Date[]
@@ -242,9 +243,9 @@ interface EventCalendarOffDaysConfig {
 }
 
 /**
- * External-data contract. v1 ships the type plus docs recipes (Google
- * events.list / MS Graph calendarView map to CalendarEvent in ~15 lines);
- * OAuth, tokens, and sync loops are application backend territory.
+ * External-data contract. Google events.list / MS Graph calendarView map to
+ * CalendarEvent in ~15 lines; OAuth, tokens, and sync loops are application
+ * backend territory.
  */
 interface EventCalendarDataAdapter<TData = unknown> {
   getEvents(

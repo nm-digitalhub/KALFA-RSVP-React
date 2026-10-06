@@ -17,18 +17,15 @@ import type { ExchangeCalendarProvider, ExchangeResult } from './provider';
 //   EXCHANGE_PROVIDER=graph   Microsoft 365 via Graph (default)
 //   EXCHANGE_PROVIDER=off     every call fails fast, nothing is contacted
 //
-// `ews` is gone. It was kept as a no-deploy rollback after the cutover, and
-// removed once that rollback stopped being worth its cost: `ews-javascript-api`
-// was imported at THIS module's top level, so it and its vulnerable transitive
-// @azure/msal-node loaded into every server start — 435ms and three moderate
-// advisories — for a path no request took. The rollback it bought was already
-// degraded: every stored calendar id is Graph-format, so flipping back would
-// have stranded them exactly as the forward move stranded the EWS ones.
+// `ews` is gone (EXCHANGE_PROVIDER=ews now fails loudly — see ./provider-selection).
+// As a rollback it was already degraded anyway: every stored calendar id is
+// Graph-format, so flipping back would strand them exactly as the forward move
+// stranded the EWS ones.
 //
-// The SELECTION itself lives in ./provider-selection, which pulls in neither
+// The SELECTION itself lives in ./provider-selection, which pulls in no
 // implementation — so a caller that only needs to know which backend is active
-// (mailbox-credential.ts) does not import the entire EWS stack to find out.
-// Re-exported here because this is where every existing caller looks for it.
+// does not import graph-impl and its SDK to find out. Also re-exported here,
+// next to `calendarProvider`.
 export { selectedCalendarProvider, type CalendarProviderName } from './provider-selection';
 
 import { selectedCalendarProvider } from './provider-selection';

@@ -1,10 +1,14 @@
 import Link from 'next/link';
-import { ArrowLeft, CalendarClock, CircleCheck, ListChecks, Sparkles } from 'lucide-react';
+import { ArrowLeft, BookOpen, CalendarClock, CircleCheck, ListChecks, Sparkles } from 'lucide-react';
 
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
+import { getPublicBusinessFacts } from '@/lib/data/public-business-facts';
 import { buildFaqJsonLd, faqJsonLdScript } from '@/lib/faq/json-ld';
-import type { EventTypeContent } from '@/lib/marketing/event-types';
+import { formatOutreachScheduleHe } from '@/lib/faq/tokens';
+import { EVENT_TYPES, type EventTypeContent } from '@/lib/marketing/event-types';
+import { buildBreadcrumbJsonLd, jsonLdScript } from '@/lib/seo/breadcrumb-json-ld';
+import { getAppOrigin } from '@/lib/url';
 
 // Shared layout for the four event-type marketing pages. The four page files
 // (/wedding, /bar-mitzva, /brit, /event) are thin — they pick an entry from
@@ -16,7 +20,7 @@ import type { EventTypeContent } from '@/lib/marketing/event-types';
 // site root would sit ahead of the `[...catchAll]` 404 handler for every
 // unmatched path (Next sorts `[slug]` before `[...catchAll]` — see that
 // file's header), swallowing real 404s. Four explicit routes cost four
-// fifteen-line files and keep the 404 behaviour exactly as it is.
+// small files and keep the 404 behaviour exactly as it is.
 //
 // Header and footer come from the (site) layout — this renders <main> only,
 // same as every other page in the group.
@@ -36,13 +40,38 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
   // Returning visitors go to their dashboard rather than to sign-up. getUser
   // is React-cache()d and the (site) layout's SiteHeader already called it for
   // this request — no extra round trip.
-  const user = await getUser();
+  //
+  // The send cadence is read live from the campaign package — the same
+  // fail-safe reader the /faq page uses — so this page can never promise a
+  // timetable the outreach engine would not run. On a read failure it resolves
+  // to `available: false` and the cadence line simply does not render.
+  const [user, origin, facts] = await Promise.all([
+    getUser(),
+    getAppOrigin(),
+    getPublicBusinessFacts(),
+  ]);
+  const cadence =
+    facts.available && facts.outreach_schedule && facts.outreach_schedule.length > 0
+      ? formatOutreachScheduleHe(facts.outreach_schedule)
+      : '';
   const startHref = user ? '/app/events/new' : '/auth/signup';
   const startLabel = user ? 'אירוע חדש' : 'צרו אירוע חדש';
 
   const jsonLd = buildFaqJsonLd(
     content.faq.map((f) => ({ question: f.q, answer: f.a })),
   );
+  const breadcrumb = buildBreadcrumbJsonLd(origin, content.h1);
+
+  // Cross-links to the sibling pages. Derived from the catalogue so a new event
+  // type is linked from every existing one without touching this file.
+  const related = [
+    ...EVENT_TYPES.filter((e) => e.slug !== content.slug).map((e) => ({
+      href: e.path,
+      label: e.h1,
+    })),
+    { href: '/whatsapp', label: 'אישורי הגעה בוואטסאפ' },
+    { href: '/guest-list-template', label: 'תבנית רשימת מוזמנים להורדה' },
+  ];
 
   return (
     <div className="bg-background">
@@ -53,6 +82,10 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: faqJsonLdScript(jsonLd) }}
       />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(breadcrumb) }}
+      />
 
       <main>
         {/* Hero — py-10 on mobile to match the home page's rhythm under the
@@ -62,12 +95,12 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
             instead of the 640px size jump. */}
         <section className="relative isolate mx-auto max-w-6xl px-6 py-10 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-radial-[at_top_end] before:from-primary/10 before:via-transparent before:to-transparent sm:py-16">
           <div>
-            <Eyebrow className="transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3">{content.eyebrow}</Eyebrow>
-            <h1 className="mt-4 max-w-3xl text-balance text-title font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-100">
+            <Eyebrow className="transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">{content.eyebrow}</Eyebrow>
+            <h1 className="mt-4 max-w-3xl text-balance text-title font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-100">
               {content.h1}
             </h1>
-            <p className="mt-5 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-200">{content.lede}</p>
-            <div className="mt-7 flex flex-wrap gap-3 transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-300">
+            <p className="mt-5 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-200">{content.lede}</p>
+            <div className="mt-7 flex flex-wrap gap-3 transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-300">
               <Link href={startHref} className={siteCta()}>
                 {startLabel}
                 <ArrowLeft className="size-5" aria-hidden />
@@ -96,6 +129,29 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
           </div>
         </section>
 
+        {/* In-depth guide — answer-first paragraphs, the substance the page is
+            for. Plain headings and paragraphs (no accordion) so search and AI
+            answer engines can extract each answer on its own. */}
+        <section className="mx-auto max-w-3xl px-6 py-16">
+          <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary">
+            <BookOpen className="size-4" aria-hidden />
+            מדריך
+          </span>
+          <h2 className="mt-3 text-balance text-display font-bold tracking-tight">
+            {content.guideTitle}
+          </h2>
+          <div className="mt-8 space-y-8">
+            {content.guide.map((g) => (
+              <div key={g.h}>
+                <h3 className="text-xl font-bold">{g.h}</h3>
+                <p className="mt-2 max-w-prose text-base leading-relaxed text-muted-foreground">
+                  {g.p}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
         {/* Timing */}
         <section className="mx-auto max-w-6xl px-6 py-16">
           <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr]">
@@ -110,6 +166,17 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
               <p className="mt-3 text-pretty text-lg text-muted-foreground">
                 המלצה מעשית — לא כלל ברזל. אפשר להתאים לכל אירוע.
               </p>
+              <div className="mt-6 rounded-lg border border-border bg-[#f9fafb] p-4 text-sm leading-relaxed">
+                <p className="font-bold">לוח השליחה של KALFA</p>
+                {cadence ? (
+                  <p className="mt-1 text-muted-foreground">
+                    אחרי הפעלת אישורי ההגעה, הפניות למוזמנים יוצאות אוטומטית לפי תאריך האירוע: {cadence}.
+                  </p>
+                ) : null}
+                <p className="mt-1 text-muted-foreground">
+                  אין פניות בשבת, בחג ובשעות הלילה — פנייה שמועדה נופל בזמן כזה מתוזמנת מחדש אוטומטית.
+                </p>
+              </div>
             </div>
             <ol className="k-reveal-group grid gap-3">
               {content.timing.map((step, i) => (
@@ -159,6 +226,24 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
           </div>
         </section>
 
+        {/* Related pages — internal links between the sibling marketing pages,
+            so no page is reachable only from the footer. */}
+        <nav aria-label="עמודים קשורים" className="mx-auto max-w-6xl px-6 pt-16">
+          <h2 className="text-lg font-bold">עוד באותו נושא</h2>
+          <ul className="mt-4 flex flex-wrap gap-3">
+            {related.map((r) => (
+              <li key={r.href}>
+                <Link
+                  href={r.href}
+                  className="inline-flex min-h-11 items-center rounded-full border border-border px-4 text-sm font-medium hover:border-primary hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                >
+                  {r.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
         {/* Closing CTA */}
         <section className="mx-auto max-w-6xl px-6 py-16">
           <div className="k-reveal k-sheen relative isolate overflow-hidden rounded-3xl bg-primary px-8 py-14 text-center before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-radial-[at_top_start] before:from-white/15 before:to-transparent">
@@ -173,7 +258,7 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
                 {startLabel}
                 <ArrowLeft className="size-5" aria-hidden />
               </Link>
-              <Link href="/" className={siteCta({ variant: 'onPrimary', size: 'xl' })}>
+              <Link href="/#how" className={siteCta({ variant: 'onPrimary', size: 'xl' })}>
                 <CircleCheck className="size-5" aria-hidden />
                 איך המערכת עובדת
               </Link>

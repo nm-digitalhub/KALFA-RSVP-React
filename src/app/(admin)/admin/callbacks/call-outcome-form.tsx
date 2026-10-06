@@ -9,8 +9,8 @@ import { updateCallOutcomeAction } from './actions';
 
 // Records what happened when the owner actually made the call — a dimension
 // fully separate from the request's scheduling status (see
-// validation/admin.ts). Same native <select> + submit pattern as the old
-// single-status form: small surface, no portal/RTL pitfalls.
+// validation/admin.ts). Native <select> + submit: small surface, no
+// portal/RTL pitfalls.
 export function CallOutcomeForm({
   id,
   currentOutcome,

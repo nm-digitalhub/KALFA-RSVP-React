@@ -29,11 +29,10 @@ export const dynamic = 'force-dynamic';
 // Read-only diagnostics page unifying Frontend (ops_errors), Database
 // (ops_job_health / ops_db_health RPCs), and Server Health (the
 // kalfa-ops-agent sidecar) behind a single admin screen. Gated to the
-// PLATFORM OWNER specifically — a narrower bar than the manage_settings
-// permission the other diagnostic pages (webhooks/alerts/fleet) use, because
-// this page surfaces raw server internals (process names, ports, file
-// paths). See the approved plan for the full design and its verified
-// evidence.
+// PLATFORM OWNER specifically — a narrower bar than the platform permissions
+// (view_webhooks / manage_settings) the other diagnostic pages
+// (webhooks/alerts/fleet) use, because this page surfaces raw server
+// internals (process names, ports, file paths).
 //
 // Every data source is awaited via Promise.allSettled and rendered
 // independently — a dead sidecar or a failed query degrades its own panel

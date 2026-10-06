@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-// Parameter parsing for GET /api/agents/call-history, extracted as the pure
-// function the route uses so it can be tested without a request or a network.
+// Parameter parsing for GET /api/agents/call-history, mirrored here as a pure
+// function (the route's own `int` helper) so it can be tested without a request
+// or a network.
 //
 // It exists because of one bug and one JavaScript trap: `Number(null)` is 0 and
 // `Number.isFinite(0)` is true, so an ABSENT parameter read through Number() alone

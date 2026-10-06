@@ -21,8 +21,8 @@ import {
 // which returns a fresh token valid for another 60 days (verified live
 // 2026-08-12 via ctx7 /websites/developers_facebook_instagram-platform — see
 // this file's tests for the exact response shape cited). Without this, the
-// token minted today (~09:40, Instagram Login flow) silently expires in 60
-// days and publish-social (fleet-agent-cli.ts) starts failing every call.
+// token (Instagram Login flow) silently expires after 60 days and
+// publish-social (fleet-agent-cli.ts) starts failing every call.
 //
 // STATE LIVES IN .env.local, NOT app_settings. publish-social's live path
 // reads META_IG_ACCESS_TOKEN from a FRESH process on every invocation
@@ -31,10 +31,9 @@ import {
 // this long-lived worker's own process.env, so rewriting the file is both
 // necessary (the worker's own env is stale the moment it started) and
 // sufficient (every consumer re-reads the file per-invocation). app_settings
-// has no column for this and adding one is a schema change outside this
-// session's DB-write-free scope — .env.local is the only place ALL consumers
+// has no column for this — .env.local is the only place ALL consumers
 // actually read, so splitting expiry tracking into a DB row nothing reads
-// would be worse, not just out of scope. If admin-dashboard visibility of the
+// would be worse. If admin-dashboard visibility of the
 // expiry is later wanted, a migration can add app_settings.meta_ig_token_expires_at
 // and this module's write can be pointed there instead.
 //
@@ -58,7 +57,7 @@ const VERIFY_ENDPOINT = `${IG_LOGIN_GRAPH_API_BASE}/me`;
 const FETCH_TIMEOUT_MS = 10_000;
 
 const DAY_MS = 86_400_000;
-// The "second protection" layer (plan item 2): alert when fewer than this many
+// The "second protection" layer: alert when fewer than this many
 // days remain before expiry no matter WHY (a real credential problem the
 // weekly per-failure alert already covers, silently missed alerts, etc.) — a
 // last-resort net independent of whether any single refresh attempt succeeded.
@@ -71,8 +70,9 @@ const RECOVERY_HINT =
 
 const ENV_LINE_RE = /^([A-Z_][A-Z0-9_]*)=(.*)$/;
 
-// Mirrors worker/main.ts's own loadEnv() quote-stripping so a value written by
-// one and read by the other agree on the same convention.
+// Strips a matching pair of surrounding quotes, as Node's process.loadEnvFile
+// (used by worker/main.ts's loadEnv()) does, so a value written by one and read
+// by the other agree on the same convention.
 function unquote(raw: string): string {
   const v = raw.trim();
   if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) {
@@ -166,9 +166,8 @@ export function parseVerifyResponseId(json: unknown): string | null {
 // live docs (checked via both ctx7 and a direct WebFetch of the
 // refresh_access_token reference page, 2026-08-12 — neither documents the
 // error body for this specific case) and could not be verified against a real
-// call (the token this job manages was minted ~09:40 today, so any real
-// refresh attempt today WOULD hit this path — but a live Graph API call is out
-// of scope for this session). This is therefore a best-effort heuristic, not a
+// call (a live Graph API call was out of scope when this was written). This is
+// therefore a best-effort heuristic, not a
 // verified match: it matches on Meta's own stated numeric threshold ("24
 // hours") appearing in the error message, which is more actual than a
 // specific string is documented as. It is DELIBERATELY conservative — every
@@ -333,7 +332,7 @@ export async function runInstagramTokenRefresh(nowMs: number = Date.now()): Prom
     const body = isErrorBody(refreshResult.json) ? refreshResult.json : null;
     const kind = classifyRefreshFailure(body);
     if (kind === 'too_young') {
-      // Benign, expected on the very first run (token minted ~09:40 today) —
+      // Benign, expected on the first run after the token was minted —
       // log and skip, no alert.
       console.log('[ig-token-refresh] refresh skipped — token is younger than 24h');
     } else {
@@ -399,7 +398,7 @@ export async function runInstagramTokenRefresh(nowMs: number = Date.now()): Prom
     }
   }
 
-  // Second protection, unconditional (plan item 2): whatever happened above,
+  // Second protection, unconditional: whatever happened above,
   // warn when the best-known expiry is under the threshold — catches
   // repeated silent-ish failures that each individually alerted but where
   // nobody acted, BEFORE the token actually dies. Silent when unknown (no

@@ -19,8 +19,29 @@ vi.mock('@/lib/data/interactions', () => ({
 vi.mock('@/lib/data/billing', () => ({ recordReached: vi.fn() }));
 vi.mock('@/lib/data/rsvp', () => ({ submitRsvp: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
+vi.mock('@/lib/owner-agent/delivery', () => ({ recordOwnerAgentDelivery: vi.fn() }));
+vi.mock('@/lib/data/whatsapp-import', () => ({
+  stageWhatsAppImport: vi.fn(async () => false),
+  replyImportPointer: vi.fn(async () => false),
+}));
+// DELIBERATELY PARTIAL: only the reader this module uses. The real module also
+// exports getWhatsAppConfig / getOutreachEnabled / getSendPolicy /
+// getWhatsAppConsentRequired — if a future test drives a path that reaches one,
+// it fails as "undefined is not a function"; add it here rather than debugging.
+vi.mock('@/lib/data/outreach-config', () => ({ getWhatsAppChannel: vi.fn() }));
+vi.mock('@/lib/data/whatsapp-account-processing', () => ({
+  processAccountReviewRow: vi.fn(async () => {}),
+  processAccountUpdateRow: vi.fn(async () => {}),
+  processPhoneNumberQualityRow: vi.fn(async () => {}),
+}));
+vi.mock('@/lib/whatsapp/embedded-signup/connected-numbers', () => ({
+  isEsConnectedPhoneNumber: vi.fn(async () => false),
+}));
 
-import { processWebhookEvent } from '@/lib/data/webhook-processing';
+import {
+  createWebhookBatchContext,
+  processWebhookEvent,
+} from '@/lib/data/webhook-processing';
 import type { WebhookInboxRow } from '@/lib/data/webhooks';
 import {
   getGuestsForContact,
@@ -36,6 +57,38 @@ import {
 import { recordReached } from '@/lib/data/billing';
 import { submitRsvp } from '@/lib/data/rsvp';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { recordOwnerAgentDelivery } from '@/lib/owner-agent/delivery';
+import {
+  replyImportPointer,
+  stageWhatsAppImport,
+} from '@/lib/data/whatsapp-import';
+import {
+  getWhatsAppChannel,
+  type WhatsAppChannel,
+} from '@/lib/data/outreach-config';
+import {
+  processAccountReviewRow,
+  processAccountUpdateRow,
+  processPhoneNumberQualityRow,
+} from '@/lib/data/whatsapp-account-processing';
+import { isEsConnectedPhoneNumber } from '@/lib/whatsapp/embedded-signup/connected-numbers';
+
+// How the channel reads in each of the two states. LEGACY is how this ships —
+// `whatsapp_import_sender` is unassigned on the live WABA.
+const LEGACY: WhatsAppChannel = {
+  phoneNumberId: 'p1',
+  wabaId: null,
+  accessToken: 't',
+  appSecret: null,
+  verifyToken: null,
+  importPhoneNumberId: null,
+  importDisplayNumber: null,
+};
+const SPLIT: WhatsAppChannel = {
+  ...LEGACY,
+  importPhoneNumberId: 'imp-1',
+  importDisplayNumber: '+97233301505',
+};
 
 function messageRow(overrides: Partial<WebhookInboxRow> = {}): WebhookInboxRow {
   return {
@@ -79,6 +132,11 @@ function statusRow(overrides: Partial<WebhookInboxRow> = {}): WebhookInboxRow {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default = how this ships: the import role is unassigned, so every row takes
+  // the RSVP path and the importer is offered every message first.
+  vi.mocked(getWhatsAppChannel).mockResolvedValue(LEGACY);
+  vi.mocked(stageWhatsAppImport).mockResolvedValue(false);
+  vi.mocked(replyImportPointer).mockResolvedValue(false);
   vi.mocked(resolveByContextId).mockResolvedValue({
     eventId: 'e1',
     campaignId: 'c1',
@@ -397,13 +455,12 @@ describe('processWebhookEvent — RSVP from a quick-reply button (C9)', () => {
   });
 });
 
-// Generic Meta fields persisted by the route (account_update,
-// business_username_updates, phone_number_quality_update, …) have no economic
-// meaning: the worker must leave them untouched (no interaction, no billing,
-// no alert) so the caller marks them processed and they stay visible in
-// /admin/webhooks.
+// Generic Meta fields persisted by the route (business_username_updates,
+// user_preferences, messages_other, …) have no economic meaning: the worker must
+// leave them untouched (no interaction, no billing, no alert) so the caller
+// marks them processed and they stay visible in /admin/webhooks.
 describe('processWebhookEvent — generic provider fields', () => {
-  it.each(['business_username_updates', 'account_update', 'messages_other'])(
+  it.each(['business_username_updates', 'user_preferences', 'messages_other'])(
     'resolves %s without any side effect',
     async (kind) => {
       await expect(
@@ -423,6 +480,26 @@ describe('processWebhookEvent — generic provider fields', () => {
       expect(sendSlackAlert).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('processWebhookEvent — account-level WABA fields', () => {
+  it.each([
+    ['account_update', processAccountUpdateRow],
+    ['account_review_update', processAccountReviewRow],
+    ['phone_number_quality_update', processPhoneNumberQualityRow],
+  ] as const)('routes %s to its handler and nothing else', async (kind, handler) => {
+    const row = messageRow({
+      event_kind: kind,
+      dedupe_key: `wa-field:${kind}:waba-1:na:0123456789abcdef`,
+      message_id: null,
+      context_message_id: null,
+      payload: { event: 'SOMETHING' },
+    });
+    await processWebhookEvent(row);
+    expect(handler).toHaveBeenCalledWith(row);
+    expect(insertInteraction).not.toHaveBeenCalled();
+    expect(recordReached).not.toHaveBeenCalled();
+  });
 });
 
 describe('processWebhookEvent — status', () => {
@@ -456,6 +533,34 @@ describe('processWebhookEvent — status', () => {
 
     expect(setDeliveryStatus).toHaveBeenCalledWith('wamid.out', 'failed', '131047');
     expect(setContactOpStatus).not.toHaveBeenCalled();
+  });
+
+  it('hands every status to the owner-agent delivery feed, with the business number and code', async () => {
+    await processWebhookEvent(statusRow());
+    expect(recordOwnerAgentDelivery).toHaveBeenCalledWith('wamid.out', 'p1', 'delivered', null);
+
+    vi.mocked(recordOwnerAgentDelivery).mockClear();
+    await processWebhookEvent(
+      statusRow({
+        dedupe_key: 'wa-status:wamid.out:failed',
+        payload: { status: 'failed', errors: [{ code: 131049 }] },
+      }),
+    );
+    expect(recordOwnerAgentDelivery).toHaveBeenCalledWith('wamid.out', 'p1', 'failed', '131049');
+  });
+
+  it('keeps the guest path intact when the owner-agent feed throws', async () => {
+    vi.mocked(recordOwnerAgentDelivery).mockRejectedValueOnce(new Error('db down'));
+    await expect(
+      processWebhookEvent(
+        statusRow({
+          dedupe_key: 'wa-status:wamid.out:failed',
+          payload: { status: 'failed', errors: [{ code: 131026 }] },
+        }),
+      ),
+    ).resolves.toBeUndefined();
+    expect(setDeliveryStatus).toHaveBeenCalledWith('wamid.out', 'failed', '131026');
+    expect(setContactOpStatus).toHaveBeenCalledWith('k1', 'wrong_number');
   });
 });
 
@@ -553,4 +658,200 @@ describe('email_delivery (Resend)', () => {
       expect(sendSlackAlert).not.toHaveBeenCalled();
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// Routing by the business number that received the message (Phase 1.5).
+//
+// The stakes, MEASURED 2026-09-03: a message sent to the WABA's second number
+// was recorded as a contact_interactions row with billable = true against a
+// CLOSED campaign. The RSVP path is the only one that bills, so these tests are
+// about what may and may not reach it.
+describe('processMessage — inbound routing by phone_number_id', () => {
+  const importRow = () =>
+    messageRow({
+      phone_number_id: 'imp-1',
+      payload: { type: 'document', from: '972501234567', document: { id: 'm1' } },
+    });
+
+  it('SHIPS INERT: with the role unassigned, every number takes today’s path', async () => {
+    // Including a foreign id and a row with no metadata at all. If any of these
+    // ever stops reaching the billing path, the phase stopped being inert.
+    for (const id of ['p1', 'imp-1', '123456123', null]) {
+      vi.clearAllMocks();
+      vi.mocked(getWhatsAppChannel).mockResolvedValue(LEGACY);
+      vi.mocked(stageWhatsAppImport).mockResolvedValue(false);
+      vi.mocked(insertInteraction).mockResolvedValue(true);
+      vi.mocked(recordReached).mockResolvedValue('billed');
+      vi.mocked(resolveByContextId).mockResolvedValue({
+        eventId: 'e1',
+        campaignId: 'c1',
+        contactId: 'k1',
+      });
+
+      await processWebhookEvent(messageRow({ phone_number_id: id }));
+
+      expect(stageWhatsAppImport).toHaveBeenCalledTimes(1);
+      expect(replyImportPointer).not.toHaveBeenCalled();
+      expect(insertInteraction).toHaveBeenCalledTimes(1);
+      expect(sendSlackAlert).not.toHaveBeenCalled();
+    }
+  });
+
+  it('legacy: a staged import short-circuits before any billing (unchanged)', async () => {
+    vi.mocked(stageWhatsAppImport).mockResolvedValue(true);
+    await processWebhookEvent(messageRow());
+    expect(insertInteraction).not.toHaveBeenCalled();
+    expect(recordReached).not.toHaveBeenCalled();
+  });
+
+  it('split: the import number goes ONLY to the importer — no resolve, no bill', async () => {
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(SPLIT);
+    await processWebhookEvent(importRow());
+
+    expect(stageWhatsAppImport).toHaveBeenCalledTimes(1);
+    expect(resolveByContextId).not.toHaveBeenCalled();
+    expect(resolveInboundContact).not.toHaveBeenCalled();
+    expect(insertInteraction).not.toHaveBeenCalled();
+    expect(recordReached).not.toHaveBeenCalled();
+    expect(markContactRemovalRequested).not.toHaveBeenCalled();
+  });
+
+  it('split: free text sent to the import number is dropped, not billed', async () => {
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(SPLIT);
+    await processWebhookEvent(
+      messageRow({
+        phone_number_id: 'imp-1',
+        payload: { type: 'text', from: '972501234567', text: { body: 'הסר' } },
+      }),
+    );
+    expect(insertInteraction).not.toHaveBeenCalled();
+    expect(markContactRemovalRequested).not.toHaveBeenCalled();
+  });
+
+  it('split: the RSVP number still bills, and lists sent there get a pointer', async () => {
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(SPLIT);
+    await processWebhookEvent(messageRow());
+
+    expect(replyImportPointer).toHaveBeenCalledTimes(1);
+    expect(stageWhatsAppImport).not.toHaveBeenCalled(); // hard split
+    expect(insertInteraction).toHaveBeenCalledTimes(1);
+  });
+
+  it('split: a pointer sent means the row is consumed — no billing after it', async () => {
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(SPLIT);
+    vi.mocked(replyImportPointer).mockResolvedValue(true);
+    await processWebhookEvent(
+      messageRow({
+        payload: { type: 'document', from: '972501234567', document: { id: 'm1' } },
+      }),
+    );
+    expect(insertInteraction).not.toHaveBeenCalled();
+    expect(recordReached).not.toHaveBeenCalled();
+  });
+
+  it('split: an unknown business number is ignored and alerted with IDS ONLY', async () => {
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(SPLIT);
+    await processWebhookEvent(
+      messageRow({
+        phone_number_id: '123456123',
+        payload: { type: 'text', from: '972501234567', text: { body: 'הסר' } },
+      }),
+    );
+
+    expect(stageWhatsAppImport).not.toHaveBeenCalled();
+    expect(replyImportPointer).not.toHaveBeenCalled();
+    expect(resolveByContextId).not.toHaveBeenCalled();
+    expect(insertInteraction).not.toHaveBeenCalled();
+    expect(markContactRemovalRequested).not.toHaveBeenCalled();
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1);
+    const alert = vi.mocked(sendSlackAlert).mock.calls[0][0];
+    expect(alert.fields).toMatchObject({ rowId: 'row-1', phoneNumberId: '123456123' });
+    // No guest phone, no message text anywhere in the alert.
+    expect(JSON.stringify(alert)).not.toContain('972501234567');
+    expect(JSON.stringify(alert)).not.toContain('הסר');
+  });
+
+  it('split: a number connected via Embedded Signup is stored silently — no alert, no billing', async () => {
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(SPLIT);
+    vi.mocked(isEsConnectedPhoneNumber).mockResolvedValueOnce(true);
+    await processWebhookEvent(
+      messageRow({
+        phone_number_id: '555000555',
+        payload: { type: 'text', from: '972501234567', text: { body: 'הסר' } },
+      }),
+    );
+    expect(isEsConnectedPhoneNumber).toHaveBeenCalledWith('555000555');
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+    expect(insertInteraction).not.toHaveBeenCalled();
+    expect(markContactRemovalRequested).not.toHaveBeenCalled();
+    expect(submitRsvp).not.toHaveBeenCalled();
+  });
+
+  it('legacy (no import role): an Embedded Signup number still never reaches import, RSVP or billing', async () => {
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(LEGACY);
+    vi.mocked(isEsConnectedPhoneNumber).mockResolvedValueOnce(true);
+    await processWebhookEvent(
+      messageRow({
+        phone_number_id: '555000555',
+        payload: { type: 'text', from: '972501234567', text: { body: 'הסר' } },
+      }),
+    );
+    expect(stageWhatsAppImport).not.toHaveBeenCalled();
+    expect(insertInteraction).not.toHaveBeenCalled();
+    expect(markContactRemovalRequested).not.toHaveBeenCalled();
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('legacy: the configured RSVP number is never looked up as an Embedded Signup number', async () => {
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(LEGACY);
+    await processWebhookEvent(messageRow());
+    expect(isEsConnectedPhoneNumber).not.toHaveBeenCalled();
+    expect(insertInteraction).toHaveBeenCalledTimes(1);
+  });
+
+  it('split: an Embedded Signup lookup failure throws so the row retries', async () => {
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(SPLIT);
+    vi.mocked(isEsConnectedPhoneNumber).mockRejectedValueOnce(new Error('read failed'));
+    await expect(
+      processWebhookEvent(messageRow({ phone_number_id: '555000555' })),
+    ).rejects.toThrow(/read failed/);
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('a read failure is NOT swallowed into "legacy" — it throws so the row retries', async () => {
+    // getWhatsAppChannel uses the strict resolver: a database error must surface
+    // rather than read back as "no import number", which would route import
+    // traffic into the billing path.
+    vi.mocked(getWhatsAppChannel).mockRejectedValue(new Error('connection reset'));
+    await expect(processWebhookEvent(importRow())).rejects.toThrow(/connection reset/);
+    expect(insertInteraction).not.toHaveBeenCalled();
+  });
+});
+
+describe('createWebhookBatchContext', () => {
+  it('resolves the channel ONCE for a whole batch of rows', async () => {
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(LEGACY);
+    const ctx = createWebhookBatchContext();
+    await processWebhookEvent(messageRow({ id: 'r1' }), ctx);
+    await processWebhookEvent(messageRow({ id: 'r2' }), ctx);
+    await processWebhookEvent(messageRow({ id: 'r3' }), ctx);
+    expect(getWhatsAppChannel).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not memoize a failure — the next row asks again', async () => {
+    const ctx = createWebhookBatchContext();
+    vi.mocked(getWhatsAppChannel).mockRejectedValueOnce(new Error('blip'));
+    await expect(processWebhookEvent(messageRow(), ctx)).rejects.toThrow(/blip/);
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(LEGACY);
+    await processWebhookEvent(messageRow(), ctx);
+    expect(getWhatsAppChannel).toHaveBeenCalledTimes(2);
+  });
+
+  it('a fresh context per call is the default — no cross-call caching', async () => {
+    vi.mocked(getWhatsAppChannel).mockResolvedValue(LEGACY);
+    await processWebhookEvent(messageRow());
+    await processWebhookEvent(messageRow());
+    expect(getWhatsAppChannel).toHaveBeenCalledTimes(2);
+  });
 });

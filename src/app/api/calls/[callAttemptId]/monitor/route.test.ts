@@ -156,7 +156,7 @@ describe('POST /api/calls/{id}/monitor', () => {
     expect(env.payload).toEqual({ vox_username: VOX_USER, mode: 'takeover' });
   });
 
-  // The identity is taken from the session; a vox_username in the body is ignored.
+  // The identity is taken from the session, never from the body.
   it('never trusts a vox_username from the body', async () => {
     mockHappy();
     await POST(req({ mode: 'monitor', vox_username: 'agent_someone_else' }), ctx());

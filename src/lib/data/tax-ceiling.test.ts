@@ -11,16 +11,15 @@ import {
   OSEK_PATUR_YEARLY_CEILING_ILS,
 } from '@/lib/data/tax-ceiling';
 
-function mockChargedRows(
-  rows: Array<{ final_charge_amount: number | string | null }>,
-  error: unknown = null,
-) {
-  const gte = vi.fn().mockResolvedValue({ data: error ? null : rows, error });
-  const eq = vi.fn().mockReturnValue({ gte });
-  const select = vi.fn().mockReturnValue({ eq });
-  const from = vi.fn().mockReturnValue({ select });
-  vi.mocked(createAdminClient).mockReturnValue({ from } as never);
-  return { from, select, eq, gte };
+// The yearly turnover comes from owner_agent_billing_sums — the one function that already reads BOTH places money is
+// recorded (the payment ledger and the old campaign columns) without counting a campaign twice, net of returns.
+function mockSums(charged: unknown, error: unknown = null) {
+  const data = error
+    ? null
+    : [{ charged_amount: charged, credit_applied_amount: 0, unvoided_credit_amount: 0, credit_granted_amount: 0 }];
+  const rpc = vi.fn().mockResolvedValue({ data, error });
+  vi.mocked(createAdminClient).mockReturnValue({ rpc } as never);
+  return rpc;
 }
 
 describe('checkOsekPaturCeilingAfterCharge', () => {
@@ -29,25 +28,23 @@ describe('checkOsekPaturCeilingAfterCharge', () => {
   });
 
   it('stays silent below the 80% warning threshold', async () => {
-    mockChargedRows([{ final_charge_amount: 100 }]);
+    mockSums(100);
     await checkOsekPaturCeilingAfterCharge();
     expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 
-  it('sums only charged campaigns from the current calendar year', async () => {
-    const { from, eq, gte } = mockChargedRows([{ final_charge_amount: 1 }]);
+  it('asks for the revenue of the current calendar year, from its 1 January, through the one shared function', async () => {
+    const rpc = mockSums(1);
     await checkOsekPaturCeilingAfterCharge();
-    expect(from).toHaveBeenCalledWith('campaigns');
-    expect(eq).toHaveBeenCalledWith('charge_status', 'charged');
-    expect(gte).toHaveBeenCalledWith(
-      'charged_at',
-      `${new Date().getUTCFullYear()}-01-01T00:00:00Z`,
-    );
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('owner_agent_billing_sums', {
+      _since: `${new Date().getUTCFullYear()}-01-01T00:00:00Z`,
+    });
   });
 
   it('warns at ≥80% of the ceiling with the utilization figures', async () => {
     const total = Math.ceil(OSEK_PATUR_YEARLY_CEILING_ILS * 0.81);
-    mockChargedRows([{ final_charge_amount: total }]);
+    mockSums(total);
     await checkOsekPaturCeilingAfterCharge();
     expect(sendSlackAlert).toHaveBeenCalledTimes(1);
     const input = vi.mocked(sendSlackAlert).mock.calls[0][0];
@@ -60,15 +57,31 @@ describe('checkOsekPaturCeilingAfterCharge', () => {
   });
 
   it('escalates to error at ≥95% of the ceiling', async () => {
-    mockChargedRows([
-      { final_charge_amount: Math.ceil(OSEK_PATUR_YEARLY_CEILING_ILS * 0.96) },
-    ]);
+    mockSums(Math.ceil(OSEK_PATUR_YEARLY_CEILING_ILS * 0.96));
     await checkOsekPaturCeilingAfterCharge();
     expect(vi.mocked(sendSlackAlert).mock.calls[0][0].level).toBe('error');
   });
 
+  it('reads a numeric that arrives as a string', async () => {
+    mockSums(String(Math.ceil(OSEK_PATUR_YEARLY_CEILING_ILS * 0.9)));
+    await checkOsekPaturCeilingAfterCharge();
+    expect(vi.mocked(sendSlackAlert).mock.calls[0][0].level).toBe('warn');
+  });
+
   it('is fail-safe on a DB error (no alert, no throw)', async () => {
-    mockChargedRows([], { message: 'boom' });
+    mockSums(null, { message: 'boom' });
+    await expect(checkOsekPaturCeilingAfterCharge()).resolves.toBeUndefined();
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['no row', []],
+    ['two rows', [{ charged_amount: 1 }, { charged_amount: 1 }]],
+    ['a value that is not a number', [{ charged_amount: 'abc' }]],
+    ['a negative total', [{ charged_amount: -5 }]],
+  ])('an unexpected answer (%s) raises no alert and does not throw', async (_name, data) => {
+    const rpc = vi.fn().mockResolvedValue({ data, error: null });
+    vi.mocked(createAdminClient).mockReturnValue({ rpc } as never);
     await expect(checkOsekPaturCeilingAfterCharge()).resolves.toBeUndefined();
     expect(sendSlackAlert).not.toHaveBeenCalled();
   });

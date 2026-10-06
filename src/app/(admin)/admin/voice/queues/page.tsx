@@ -7,8 +7,7 @@ import { QueuesClient } from './queues-client';
 
 export const metadata = { title: 'מחלקות — מוקד שיחות AI' };
 
-// Admin management surface for department queues (plan §10 extension point:
-// "מחלקות (נקודת הרחבה = ring-order בשרת)"). NOT SmartQueue — a plain
+// Admin management surface for department queues. NOT SmartQueue — a plain
 // admin-managed grouping of console_agents that the inbound ring order
 // consults first (see console-queues.ts / route-inbound's integration).
 

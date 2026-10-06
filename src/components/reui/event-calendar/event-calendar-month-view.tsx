@@ -644,7 +644,7 @@ function EventCalendarMonthCell({
    *  week row. Lets the cell list hidden bars in its overflow popover without
    *  re-listing the bars already visible in the row overlay. */
   hiddenBarKeys: Set<string>
-  /** Last column in the row - drops the right border so the grid's outer edge
+  /** Last column in the row - drops the end border so the grid's outer edge
    *  is owned by the container, not a doubled cell border. Passed explicitly
    *  because the bar overlay renders after the cells, so `:last-child` is
    *  unreliable on rows that have bars. */
@@ -922,7 +922,7 @@ function EventCalendarMonthCell({
           />
         )}
       </div>
-      {/* Day number + add affordance, bottom-right (Notion-style) */}
+      {/* Day number + add affordance, bottom-end (Notion-style) */}
       <div
         className={cn(
           "flex items-center justify-end gap-1 px-2 pb-1.5",
@@ -955,8 +955,6 @@ function EventCalendarMonthCell({
           className={cn(
             "flex size-5 items-center justify-center rounded-full",
             isOutside && "text-muted-foreground",
-            // the filled circle already marks today; keep the number the same
-            // weight/size as the other days so it does not read as larger
             // Same font-size as every other day; a lighter weight cancels the
             // way white digits on the filled circle read bolder/larger than the
             // dark-on-light numbers around them.
@@ -1063,7 +1061,7 @@ interface EventCalendarMoreIndicatorProps {
 }
 
 /**
- * "+N more" trigger opening a popover with the day's full event list.
+ * "+N more" trigger opening a popover with the day's hidden (overflow) events.
  * onMoreClick returning false suppresses the built-in popover.
  */
 function EventCalendarMoreIndicator({
@@ -1079,10 +1077,9 @@ function EventCalendarMoreIndicator({
 
   // Grabbing a chip from this list starts a drag; close the popover so it does
   // not sit over the drop target while the event is carried to another day.
-  // KALFA fix (react-hooks/set-state-in-effect, real fix): instead of
-  // selector-state + a sync setState effect, the effect only REGISTERS a
-  // store subscription and setOpen fires inside the store event callback —
-  // same behavior (close the moment a drag begins), no cascading render.
+  // The effect only REGISTERS a store subscription and setOpen fires inside
+  // the store event callback (react-hooks/set-state-in-effect: no synchronous
+  // setState in the effect), closing the popover the moment a drag begins.
   const moreInstance = useEventCalendar()
   useEffect(
     () =>
@@ -1153,7 +1150,7 @@ function EventCalendarMoreIndicator({
               )
             : undefined
         }
-        // PopoverContent is unlayered (flex-col gap-4 p-4); override with !.
+        // PopoverContent is unlayered (flex-col gap-2.5 p-2.5); override with !.
         // text-xs re-establishes the calendar's base type here because this
         // content is portaled out of the root subtree and cannot inherit it.
         className={cn(
@@ -1180,7 +1177,7 @@ function EventCalendarMoreIndicator({
   )
 }
 
-/** Built-in "+N more" popover body: day header + the day's chips. */
+/** Built-in "+N more" popover body: day header + the hidden (overflow) chips. */
 function EventCalendarMoreDefaultContent({
   day,
   segments,
@@ -1208,7 +1205,7 @@ function EventCalendarMoreDefaultContent({
           { locale: settings.locale }
         )}
       </div>
-      {/* The scroll region breaks out of the popover's right padding (-me-2)
+      {/* The scroll region breaks out of the popover's end padding (-me-2)
             so the scrollbar sits flush in the gutter; the list then pads itself
             back (ps-1 aligns with the header, pe-4 clears the ~10px bar with a
             gap) and adds py-1 so the first/last focus ring is not clipped by

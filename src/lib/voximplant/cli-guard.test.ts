@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 
 import { KNOWN_COMMANDS } from './cli-support';
 
-// Guard tests for the read-only/mutations split (plan stage 1, owner
-// directives 1-4): the CLI must NEVER be able to reach a mutating wrapper.
+// Guard tests for the read-only/mutations split: the CLI must NEVER be able to
+// reach a mutating wrapper.
 
 const repoRoot = join(__dirname, '..', '..', '..');
 const cliEntry = readFileSync(join(repoRoot, 'scripts', 'voximplant', 'cli.ts'), 'utf8');

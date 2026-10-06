@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -19,7 +20,7 @@ import { PROFILE_NAME_MAX } from '@/lib/constants';
 import { todayIL } from '@/lib/data/event-date';
 import { CELEBRANT_FIELD_LABELS } from '@/lib/data/event-labels';
 
-// S2.2 — relative-to-real-time date strings (Israel calendar day), so these
+// Relative-to-real-time date strings (Israel calendar day), so these
 // tests never go stale. Reuses the SAME production helper the refines call
 // (todayIL), not a re-derived date computation.
 function ilDate(offsetDays: number): string {
@@ -63,7 +64,7 @@ describe('resetPasswordSchema (item 5a)', () => {
     });
     expect(r.success).toBe(false);
     if (!r.success) {
-      expect(r.error.flatten().fieldErrors.confirm?.[0]).toBe('הסיסמאות אינן תואמות');
+      expect(z.flattenError(r.error).fieldErrors.confirm?.[0]).toBe('הסיסמאות אינן תואמות');
     }
   });
 });
@@ -300,8 +301,8 @@ describe('createEventSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  // S2.2 — R2: event_date must be at least tomorrow (Israel). Mirrors the new
-  // DB trigger's lower bound; '' (no date yet) stays legal for a draft.
+  // R2: event_date must be at least tomorrow (Israel). Mirrors the DB
+  // trigger's lower bound; '' (no date yet) stays legal for a draft.
   it('rejects an event_date of today, with the error on event_date', () => {
     const result = createEventSchema.safeParse({
       name: 'אירוע',
@@ -310,7 +311,7 @@ describe('createEventSchema', () => {
     });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.flatten().fieldErrors.event_date).toBeDefined();
+      expect(z.flattenError(result.error).fieldErrors.event_date).toBeDefined();
     }
   });
 
@@ -340,7 +341,7 @@ describe('updateEventSchema — rsvp_deadline vs event_date', () => {
     status: 'draft' as const,
   };
 
-  // S2.2 — relative-to-real-time fixtures (ilDate), like the rest of this
+  // Relative-to-real-time fixtures (ilDate), like the rest of this
   // file, so these never go stale as real time passes a hardcoded literal.
   it('accepts a deadline on/before the event date', () => {
     const result = updateEventSchema.safeParse({
@@ -386,7 +387,7 @@ describe('updateEventSchema — rsvp_deadline vs event_date', () => {
     });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.flatten().fieldErrors.rsvp_deadline).toBeDefined();
+      expect(z.flattenError(result.error).fieldErrors.rsvp_deadline).toBeDefined();
     }
   });
 
@@ -398,13 +399,13 @@ describe('updateEventSchema — rsvp_deadline vs event_date', () => {
     });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.flatten().fieldErrors.rsvp_deadline).toBeDefined();
+      expect(z.flattenError(result.error).fieldErrors.rsvp_deadline).toBeDefined();
     }
   });
 
-  // S2.2 — R2: event_date must be at least tomorrow (Israel). Uses a fixed
-  // far-future literal for rsvp_deadline so it never collides with the R2b
-  // lower bound being tested separately below.
+  // R2: event_date must be at least tomorrow (Israel). rsvp_deadline is left
+  // empty so it never collides with the R2b lower bound being tested
+  // separately below.
   it('rejects an event_date of today', () => {
     const result = updateEventSchema.safeParse({
       ...base,
@@ -413,7 +414,7 @@ describe('updateEventSchema — rsvp_deadline vs event_date', () => {
     });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.flatten().fieldErrors.event_date).toBeDefined();
+      expect(z.flattenError(result.error).fieldErrors.event_date).toBeDefined();
     }
   });
 
@@ -426,8 +427,8 @@ describe('updateEventSchema — rsvp_deadline vs event_date', () => {
     expect(result.success).toBe(true);
   });
 
-  // S2.2 — R2b (NEW, found live on ec7c68d1): rsvp_deadline must not already be
-  // in the past. Lower bound is >= TODAY (not tomorrow) — same-day is legal.
+  // R2b: rsvp_deadline must not already be in the past. Lower bound is
+  // >= TODAY (not tomorrow) — same-day is legal.
   it('rejects a deadline of yesterday, with the error on rsvp_deadline', () => {
     const result = updateEventSchema.safeParse({
       ...base,
@@ -436,7 +437,7 @@ describe('updateEventSchema — rsvp_deadline vs event_date', () => {
     });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.flatten().fieldErrors.rsvp_deadline).toBeDefined();
+      expect(z.flattenError(result.error).fieldErrors.rsvp_deadline).toBeDefined();
     }
   });
 
@@ -643,7 +644,7 @@ describe('celebrantsSchemaFor — form validation', () => {
     });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.flatten().fieldErrors.groom).toBeDefined();
+      expect(z.flattenError(result.error).fieldErrors.groom).toBeDefined();
     }
   });
 
@@ -733,7 +734,7 @@ describe('celebrantsCompleteFor — campaign-gate completeness', () => {
   });
 
   it('parents: requires parents + host_composition; child stays optional', () => {
-    // host_composition is now required — it drives the first-person Hebrew
+    // host_composition is required — it drives the first-person Hebrew
     // conjugation (בני/בננו, מתכבדת/מתכבד/מתכבדים), which a free-text parents
     // string cannot carry.
     expect(celebrantsCompleteFor('brit', { parents: 'דנה ויוסי' })).toBe(false);

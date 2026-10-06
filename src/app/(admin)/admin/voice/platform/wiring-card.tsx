@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 
 import {
   AlertDialog,
@@ -21,7 +20,7 @@ import {
   wireAccountCallbackAction,
 } from '../actions';
 
-// B5 wiring controls. Wiring is the ONE mutating Voximplant call — it is gated
+// Wiring controls. Wiring is the ONE mutating Voximplant call — it is gated
 // behind an AlertDialog that shows the exact URL that will be registered. On
 // success the URL (which embeds the one-time raw token) is shown once so the
 // admin can confirm; a rollback restores the previous callback.
@@ -32,7 +31,6 @@ export function WiringControls({
   state: string;
   proposedUrl: string;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -53,9 +51,9 @@ export function WiringControls({
       setNotice(res?.notice ?? null);
       setRegisteredUrl(res?.callbackUrl ?? null);
       setOpen(false);
-      // Re-render the server component so the state badge reflects the new
-      // 'wired' state immediately (not only after a manual reload).
-      router.refresh();
+      // No router.refresh(): the action's revalidatePath('/admin/voice/platform')
+      // already re-renders this page in the same response, so the state badge
+      // reflects the new 'wired' state immediately.
     });
   };
 
@@ -70,7 +68,6 @@ export function WiringControls({
       }
       setNotice(res?.notice ?? null);
       setRegisteredUrl(null);
-      router.refresh();
     });
   };
 

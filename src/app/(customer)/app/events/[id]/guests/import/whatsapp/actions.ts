@@ -44,6 +44,25 @@ async function resolveStaging(
   status: 'confirmed' | 'discarded',
 ): Promise<void> {
   // PII hygiene: parsed rows are wiped the moment the decision lands.
+  //
+  // ⚠️ THIS WIPE WAS REMOVED ON 2026-09-13 AND PUT BACK THE SAME DAY, so the
+  // reasoning is worth stating rather than leaving as a bare line of code.
+  //
+  // It was removed under a flat "don't delete PII" rule, which was the wrong
+  // rule for this spot. THIS TABLE IS A WORK QUEUE, not a record:
+  //
+  //   * On CONFIRM the rows are already in `guests` — the same names, the same
+  //     phones. Keeping them here is a second copy of live data, not a record of
+  //     anything.
+  //   * On DISCARD the owner has just said, explicitly, that these people should
+  //     NOT be in the event. Holding their phone numbers afterwards is the one
+  //     case where minimisation is obviously right.
+  //
+  // What the removal was actually reaching for — "let me see what arrived" — is a
+  // different need, and it is served properly by `workflow_run_steps.output`:
+  // `action.import_guest_list` returns the rows, so a run log says what came in,
+  // when, and what the automation did with it. That is a deliberate audit in one
+  // place, rather than an undeleted work item in another.
   const admin = createAdminClient();
   await admin
     .from('guest_import_staging')
@@ -149,9 +168,8 @@ export async function confirmWhatsappImportAction(
     const imported = inserts.length ? await bulkInsertGuests(eventId, inserts) : 0;
 
     try {
-      // Verified gap (30.8): see import-actions.ts's identical fix — nothing
-      // previously reconciled contacts imported here into an already-
-      // operational campaign's authorized set. reconcileCampaignSetForContact
+      // Admit the imported contacts into an already-operational campaign's
+      // authorized set, as import-actions.ts does. reconcileCampaignSetForContact
       // is itself best-effort/never-throws, so this cannot fail the import.
       const { contactIds } = await buildContactsForEvent(eventId);
       for (const contactId of contactIds) {

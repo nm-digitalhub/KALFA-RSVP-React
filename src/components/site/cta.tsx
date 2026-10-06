@@ -1,11 +1,9 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 
 // Class builder for the marketing-site CTA links (hero, closing banner, header,
-// mobile drawer, event-type / whatsapp / guest-list-template pages).
+// mobile drawer, event-type / whatsapp / guest-list-template / about pages).
 //
-// The same four looks were hand-rolled as ~14 near-identical class strings
-// across six files (design audit, page-design-briefs "Landing-page CTA
-// buttons ×8"). It is a class builder rather than a component ON PURPOSE:
+// siteCta is a class builder rather than a component ON PURPOSE:
 // every call site is a Next.js <Link> or a plain <a> (a download link, an
 // in-page anchor), so wrapping them in a component would only add a layer
 // between the link and its href. It is also NOT `buttonVariants` from
@@ -13,8 +11,9 @@ import { cva, type VariantProps } from 'class-variance-authority';
 // marketing CTA is a 48–52px target that must not shrink on desktop.
 //
 // Colours are the ones already on the pages (brand review: colours out of
-// scope) — only the STRUCTURE is shared: 44px+ touch target and visible
-// keyboard focus (v4 `outline-*`, forced-colors safe — same rule as
+// scope) — only the STRUCTURE is shared: 44px+ touch target (size `sm` is
+// 40px; its one caller, site-header.tsx, raises it with `min-h-11`) and
+// visible keyboard focus (v4 `outline-*`, forced-colors safe — same rule as
 // site-footer.tsx). `hover:opacity-90` is the existing hover; the primary
 // variant adds a static primary-tinted shadow. The hover lift / press classes
 // follow the public-pages motion layer (src/app/motion.css: `ease-k-out`,

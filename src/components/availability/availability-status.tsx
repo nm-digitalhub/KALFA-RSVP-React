@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
+import { useTimeout, useWindowEvent } from '@mantine/hooks';
+import { useCallback, useMemo, useState, useTransition } from 'react';
 import { CalendarClock, Loader2, RefreshCw, X } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -157,19 +158,13 @@ export function AvailabilityMenuSection({
   // whenever the window regains focus after a detour to Outlook — the second
   // half of "two-directional": changes made elsewhere land here without a
   // page reload.
-  useEffect(() => {
-    // Deferred by a macrotask: refreshing straight inside the effect body
-    // would set state synchronously during the same commit (cascading
-    // render). The server-rendered presence already showed correct state, so
-    // a tick of latency here costs nothing.
-    const timer = setTimeout(() => run(() => refreshAvailabilityAction()), 0);
-    const onFocus = () => run(() => refreshAvailabilityAction());
-    window.addEventListener('focus', onFocus);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('focus', onFocus);
-    };
-  }, [run]);
+  //
+  // The mount refresh is deferred by a macrotask: refreshing straight inside
+  // an effect body would set state synchronously during the same commit
+  // (cascading render). The server-rendered presence already showed correct
+  // state, so a tick of latency here costs nothing.
+  useTimeout(() => run(() => refreshAvailabilityAction()), 0, { autoInvoke: true });
+  useWindowEvent('focus', () => run(() => refreshAvailabilityAction()));
 
   // "Upcoming" = blocks that have NOT started yet. Comparing against a
   // mount-time instant was wrong (measured 28.07): a block created seconds

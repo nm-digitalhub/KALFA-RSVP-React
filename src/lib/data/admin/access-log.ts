@@ -6,7 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // customer subject records one row through here, so a data-subject investigation
 // can answer "who looked at my data, when, under what authority, and why".
 //
-// Design (from the Step-2 audit brief, verified against the live table):
+// Design:
 //   * Fail-closed: an unaudited view of one customer's data is worse than a denied
 //     one — the whole justification for routing staff through service_role is that
 //     the access becomes observable. If the audit insert fails, the read fails.

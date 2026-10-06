@@ -188,7 +188,39 @@
   `webhook-processing.ts:47`) ⇒ `op_status='wrong_number'` — שמרני בכוונה, וקוד
   השגיאה הגולמי נשמר תמיד כך שסיווג שגוי ניתן לביקורת ולתיקון.
 
-### 2.4 הצלבה מול מסמכי התכנון
+### 2.4 ניתוב לפי המספר שקיבל (2026-09-13)
+
+`processMessage` (`src/lib/data/webhook-processing.ts`) מסווג כל שורה לפי
+`webhook_inbox.phone_number_id` באמצעות `classifyInboundChannel`
+(`src/lib/whatsapp/channel-routing.ts`), **לפני** כל לוגיקה כלכלית:
+
+| `phone_number_id` בשורה | ערוץ | מה רץ | מה לא רץ |
+|---|---|---|---|
+| = מספר הייבוא | `import` | `stageWhatsAppImport` בלבד; תשובות יוצאות מאותו מספר | סיווג, `resolve*`, `insertInteraction`, `recordReached`, opt-out, RSVP, headcount |
+| = מספר ה-RSVP, או `NULL` | `rsvp` | המסלול הקיים במלואו. כשמספר ייבוא מוגדר — קודם `replyImportPointer` (רשימה מבעלים מאומת מקבלת הפניה אחת ולא נקלטת) | `stageWhatsAppImport` (הפרדה קשיחה) |
+| כל ערך אחר | `unknown` | התראת Slack אחת (`rowId` + `phoneNumberId` בלבד) ו-`processed_at` | הכל |
+
+**מקור מזהה מספר הייבוא:** `resolveNumberForRoleStrict('whatsapp_import_sender')`
+דרך `getWhatsAppChannel()` — **לא** עמודה ב-`app_settings`. כל עוד התפקיד אינו
+משויך, `importPhoneNumberId` הוא `null` ו-`classifyInboundChannel` מחזיר `rsvp`
+לכל שורה: התנהגות זהה למה שהייתה לפני שהניתוב נכתב.
+
+**למה resolver קשיח דווקא כאן.** `resolveNumberForRole` הרגיל מחזיר `null` גם על
+שגיאת שאילתה, וזה נכון למסלול שליחה. במסלול הניתוב `null` פירושו "legacy — הכל
+ל-RSVP", ומסלול ה-RSVP הוא היחיד שמחייב; תקלת קריאה חולפת הייתה מחזירה תנועה של
+מספר הייבוא לחיוב בשקט. הגרסה הקשיחה **זורקת**, השורה מסומנת נכשלת, וה-drain הבא
+מנסה שוב.
+
+**מטמוע:** `processWebhookEvent(row, ctx?)` מקבל `WebhookBatchContext`.
+`handleWebhook` (`worker/main.ts`) יוצר **אחד** לכל drain של עד 50 שורות, כך
+שהחיפוש רץ פעם אחת לאצווה ולא פעם לכל הודעה. ההמטמעה היא על הצלחה בלבד — דחייה
+אינה נזכרת, כדי שהתאוששות אמצע-אצווה תיקלט.
+
+**הפעלה וגלגול לאחור — שניהם בלי פריסה:** שיוך/הסרה של התפקיד
+`whatsapp_import_sender` ב-`/admin/integrations/numbers`. אין restart, כי המטמוע
+חי רק למשך drain אחד.
+
+### 2.5 הצלבה מול מסמכי התכנון
 
 - `docs/webhook-inbox-data-contract.md` — **תואם לקוד** אחד-לאחד (עמודות,
   dedupe, אינדקסים, RLS, שתי שכבות הדדופ הנפרדות).
@@ -322,7 +354,7 @@
 
 | ערוץ | מפתחות | קורא production | טופס אדמין |
 |---|---|---|---|
-| WhatsApp / outreach | `outreach_enabled`, `whatsapp_phone_number_id`, `whatsapp_waba_id`, `whatsapp_access_token`, `whatsapp_app_secret`, `whatsapp_verify_token` | `src/lib/data/outreach-config.ts:21-74` | `/admin/channels` (`src/lib/data/admin/channels.ts:25-76`) |
+| WhatsApp / outreach | `outreach_enabled`, `whatsapp_phone_number_id` (מספר ה-RSVP), `whatsapp_waba_id`, `whatsapp_access_token`, `whatsapp_app_secret`, `whatsapp_verify_token`. **מספר הייבוא הייעודי אינו עמודה כאן** — הוא המספר שמחזיק את התפקיד `whatsapp_import_sender` ב-`provider_number_roles` | `src/lib/data/outreach-config.ts` — `getWhatsAppConfig()` לשליחה, `getWhatsAppChannel()` (מוסיף את מספר הייבוא מהתפקיד) לניתוב הנכנס | `/admin/integrations/meta-whatsapp` (סודות) · `/admin/integrations/numbers` (שיוך תפקידים) |
 | SMS (ExtrA) | `sms_enabled`, `extra_sms_sender`, `extra_sms_token` | `src/lib/sms/sender.ts:80-95` | `/admin/settings` (`src/lib/data/admin/settings.ts:35-119`) |
 | Email (SMTP) | `email_enabled`, `smtp_host`, `smtp_port`, `smtp_secure`, `smtp_user`, `smtp_password`, `smtp_from` | `src/lib/email/sender.ts:40-72` | `/admin/settings` (אותו קובץ) |
 
@@ -334,9 +366,14 @@
   האדמין **ממוסכים עם reveal** (דפוס gateway-plugin), נשלחים רק לעמוד
   `requireAdmin` על HTTPS, ולעולם לא נלוגגים (`channels.ts:6-11`,
   `settings.ts:10-13`).
-- `/admin/channels` כולל בדיקת חיבור read-only — `testWhatsAppConnection`
+- `/admin/integrations/meta-whatsapp` כולל בדיקת חיבור read-only — `testWhatsAppConnection`
   (`channels.ts:83-113`): GET ל-Graph API על שדות התצוגה בלבד, בלי לשלוח הודעה;
-  גרסת ה-Graph נשלטת ב-env `WHATSAPP_GRAPH_VERSION` (ברירת מחדל `v23.0`).
+  גרסת ה-Graph היא הקבוע המשותף `GRAPH_API_VERSION`
+  (`src/lib/whatsapp/graph-version.ts`, כיום `v25.0`) — אותו קבוע שכל שאר
+  קריאות ה-WhatsApp משתמשות בו. הדריסה מ-env `WHATSAPP_GRAPH_VERSION` **בוטלה**
+  (9.9.2026): היא מעולם לא הוגדרה, ודריסה כאן הייתה מאפשרת לבדיקת החיבור לעבור
+  על גרסה שנתיב השליחה אינו משתמש בה. `graph-version.test.ts` סורק את עץ הקוד
+  ומפיל כל גרסה קשיחה חדשה.
 - הקוראים ב-`outreach-config.ts` משתמשים ב-`select('*')` בכוונה — עמידים לעמודות
   שטרם הוגרו (fail-closed ל-off), בעוד שקוראי האדמין בוחרים עמודות מפורשות.
 - שני מפתחות תשתית נשארים ב-env בלבד (מוצגים כ"מוגדר/לא מוגדר" בלבד):

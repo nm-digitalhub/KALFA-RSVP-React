@@ -14,10 +14,10 @@ import type {
 } from './types';
 
 // The isolated provider boundary (plan §2.1, plans/exchange-ews-stage1.md).
-// Code outside src/lib/exchange-ews/ must import ONLY from this module and
-// ./types — never an implementation module or a vendor SDK directly. The
-// boundary has now proved itself: the entire EWS implementation was replaced by
-// Graph and then deleted, and not one caller outside this directory changed.
+// Code outside src/lib/exchange-ews/ must import only this module, ./types,
+// ./calendar-provider (which hands out the active implementation) and the small
+// helpers (./mailbox-credential, ./category-colors) — never an implementation
+// module or a vendor SDK directly.
 //
 // A vendor error (fault text, stack trace, handshake detail) NEVER crosses this
 // boundary as-is — every failure collapses to one of the codes below inside the
@@ -36,11 +36,10 @@ export type ExchangeResult<T> =
 // Business ranking when several blocking windows overlap "now" — OOF
 // outranks Busy outranks WorkingElsewhere outranks Tentative. Mirrors
 // exchange-availability.ts's presenceRank() exactly (that module's inline
-// copy is left as-is rather than refactored onto this one in this pass —
-// it is a live, already-verified admin feature with no regression test
-// today, so the duplication is accepted deliberately rather than risked;
-// see the calendar-presence-sync report). A future cleanup can point both
-// callers at this single copy.
+// copy is left as-is rather than refactored onto this one — it is a live,
+// already-verified admin feature with no regression test today, so the
+// duplication is accepted deliberately rather than risked). A future cleanup
+// can point both callers at this single copy.
 function presenceRank(showAs: AppointmentShowAs): number {
   if (showAs === 'oof') return 3;
   if (showAs === 'busy') return 2;
@@ -105,10 +104,10 @@ export interface ExchangeCalendarProvider {
     cfg: ExchangeConnectionConfig,
     draft: AppointmentDraft,
   ): Promise<ExchangeResult<{ appointmentId: string }>>;
-  // Times (and optionally subject) of one existing appointment. Read the item
-  // fresh, then apply the change — see ./graph-impl for how the active backend
-  // does it. Recurring items are refused at the DAL/UI layer (readOnly), not
-  // here.
+  // Times (and optionally other fields) of one existing appointment. Read the
+  // item fresh, then apply the change — see ./graph-impl for how the active
+  // backend does it. Items belonging to a recurring series are refused with
+  // 'recurring_locked', in addition to the DAL/UI layer's readOnly flag.
   updateAppointment(
     cfg: ExchangeConnectionConfig,
     appointmentId: string,

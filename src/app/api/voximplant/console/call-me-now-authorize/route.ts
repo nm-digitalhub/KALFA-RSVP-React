@@ -20,18 +20,15 @@ import { checkInboundBalanceReserve } from '@/lib/data/voximplant-balance-cache'
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { callMeNowAuthorizeBodySchema } from '@/lib/validation/console-calls';
 
-// POST /api/voximplant/console/call-me-now-authorize   body: { secret, token }
+// POST /api/voximplant/console/call-me-now-authorize   body: { secret, token, session_id? }
 //   → { ok: true, ring_order, call_id } | { ok: false }
 //
-// NOT YET CALLED BY ANY SCENARIO — this is call-me-now's authorize gate
-// (capability A, THIRD design, 12.8), built and unit-testable ahead of the
-// ConsoleCallMeNow scenario that will call it — same sequencing this project
-// already used for route-inbound ahead of gate E and widget-authorize ahead
-// of its own (now-superseded) scenario. The scenario would call this AFTER
-// the visitor leg answers and its disclosure finishes playing (mirroring
-// ConsoleInbound's proceedInbound: record() -> say(disclosure) ->
-// PlaybackFinished -> THEN ring agents) — never before, so the disclosure is
-// never skipped even if this call is refused.
+// Called by ConsoleCallMeNow.voxengine.js — call-me-now's authorize gate
+// (capability A, THIRD design). The scenario calls this AFTER the visitor leg
+// answers and its disclosure finishes playing (mirroring ConsoleInbound's
+// proceedInbound: record() -> say(disclosure) -> PlaybackFinished -> THEN
+// ring agents) — never before, so the disclosure is never skipped even if
+// this call is refused.
 //
 // Re-runs evaluateCallMeNowCaps's inputs fresh — a second, authoritative
 // pass (same reasoning as authorize/route.ts's and widget-authorize's own
@@ -49,9 +46,9 @@ import { callMeNowAuthorizeBodySchema } from '@/lib/validation/console-calls';
 // agent WAS routable a moment ago. This is the narrow RACE case: that agent
 // (or every routable agent) went unready between then and now. An empty
 // result here is NOT refused — it returns `ok:true` with an empty
-// `ring_order`, exactly like today, so the (not yet written) scenario's own
-// ring-exhausted branch runs — which MUST reuse ConsoleInbound's
-// NO_AGENT_LINE_HE/declareNoAgent() verbatim, not fresh wording, so a 04:00
+// `ring_order`, so the scenario's own ring-exhausted branch runs — which
+// MUST reuse ConsoleInbound's NO_AGENT_LINE_HE/declareNoAgent() verbatim, not
+// fresh wording, so a 04:00
 // call that briefly looked answerable is answered with the honest promise
 // and dies recorded, not in silence. That branch reports 'ended' with
 // reason 'no_agent' through the existing /event route, which is what

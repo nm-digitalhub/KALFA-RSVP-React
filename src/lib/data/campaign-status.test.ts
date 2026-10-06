@@ -1,7 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
+  CANCELLABLE_CAMPAIGN_STATUSES,
   hasAnyOperationalCampaign,
+  isCampaignCancellable,
   isOperationalCampaignStatus,
   OPERATIONAL_CAMPAIGN_STATUSES,
   type CampaignStatus,
@@ -98,3 +103,60 @@ describe('hasAnyOperationalCampaign — ∃ over ALL campaigns (matches server +
     expect(hasAnyOperationalCampaign(NON_OPERATIONAL.map(c))).toBe(false);
   });
 });
+
+describe('isCampaignCancellable mirrors the cancel_campaign RPC', () => {
+  const base = { status: 'approved' as CampaignStatus, capture_status: null, charge_status: null };
+
+  it('allows a pre-money campaign in draft / pending_approval / approved', () => {
+    for (const status of ['draft', 'pending_approval', 'approved'] as CampaignStatus[]) {
+      expect(isCampaignCancellable({ ...base, status }, 0)).toBe(true);
+    }
+    // A failed hold left no money behind.
+    expect(isCampaignCancellable({ ...base, capture_status: 'hold_failed' }, 0)).toBe(true);
+  });
+
+  it('refuses every later status, including closed', () => {
+    for (const status of ['scheduled', 'active', 'paused', 'closed', 'cancelled'] as CampaignStatus[]) {
+      expect(isCampaignCancellable({ ...base, status }, 0)).toBe(false);
+    }
+  });
+
+  it('refuses once money is involved', () => {
+    for (const capture_status of ['authorized', 'pending', 'hold_review']) {
+      expect(isCampaignCancellable({ ...base, capture_status }, 0)).toBe(false);
+    }
+    expect(isCampaignCancellable({ ...base, charge_status: 'nothing_to_charge' }, 0)).toBe(false);
+    expect(isCampaignCancellable(base, 1)).toBe(false);
+  });
+
+  it('uses the same status set as the live RPC definition', () => {
+    const sql = readFileSync(
+      join(__dirname, '..', '..', '..', 'supabase', 'migrations', '20260630223635_event_lifecycle_state_model.sql'),
+      'utf8',
+    );
+    const fn = sql.slice(sql.indexOf('function public.cancel_campaign'));
+    expect(fn).toContain("v.status in ('draft','pending_approval','approved')");
+    expect([...CANCELLABLE_CAMPAIGN_STATUSES]).toEqual(['draft', 'pending_approval', 'approved']);
+    for (const s of ['authorized', 'pending', 'hold_review']) {
+      expect(fn).toContain(`v.capture_status is distinct from '${s}'`);
+    }
+    expect(fn).toContain('v.charge_status is null');
+  });
+});
+
+describe('isCampaignCancellable — a paid package is not erased by flipping its status', () => {
+  const approved = { status: 'approved' as CampaignStatus, capture_status: null, charge_status: null };
+
+  it.each(['collected', 'pending', 'review'])('is false while the payment is %s', (status) => {
+    expect(isCampaignCancellable({ ...approved, payment: { status } }, 0)).toBe(false);
+  });
+
+  it.each(['none', 'declined', 'refunded'])('stays as before when the payment is %s', (status) => {
+    expect(isCampaignCancellable({ ...approved, payment: { status } }, 0)).toBe(true);
+  });
+
+  it('is unchanged for a campaign that was not given a payment', () => {
+    expect(isCampaignCancellable(approved, 0)).toBe(true);
+  });
+});
+

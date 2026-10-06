@@ -2,10 +2,11 @@
  * KALFA Relocation Wizard — CLI entry (thin wiring; logic lives in
  * src/lib/relocation/*, same split as scripts/voximplant/cli.ts).
  *
- * Run via `npm run relocate -- …` (tsx). THIS BUILD: read-only preflight +
- * dry-run plan only — every mutating stage refuses to apply
- * (NotImplementedError), so no invocation of this file can change nginx, pm2,
- * env files, DNS, certificates, external services, or the database.
+ * Run via `npm run relocate -- …` (tsx). `--dry-run` is read-only: preflight +
+ * plan only, nothing is changed. Without it the steps execute for real, gate by
+ * gate, behind the RELOCATE_EXECUTE latch (set only around runSteps() by
+ * runWithExecuteLatch); steps left as NotImplementedError are deliberately
+ * owner-gated/manual.
  *
  * Design: docs/relocation-wizard-design-2026-08-23.md (§3 CLI, §2 contract).
  */

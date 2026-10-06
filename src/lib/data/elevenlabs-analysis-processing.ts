@@ -100,9 +100,9 @@ export async function processElevenLabsRsvpAnalysisRow(row: WebhookInboxRow): Pr
 /**
  * Sales persona (/api/elevenlabs/rsvp-sales-call-dispatch/pcw_id).
  *
- * Also the FIFTH and catch-all outcome-write path (see sales-call-attempts.ts's
+ * Also the FOURTH and catch-all outcome-write path (see sales-call-dispatch.ts's
  * file header): a call that connected, talked, and ended without the agent ever
- * calling send_signup_link or log_outcome claims none of the other four, so
+ * calling send_signup_link or log_outcome claims none of the other three, so
  * outcome_recorded_at stays NULL forever and getUnresolvedSalesAttempt then
  * blocks every future dial to that contact. ElevenLabs' own post-call analysis
  * is the authoritative "this conversation is over" signal, so anything still

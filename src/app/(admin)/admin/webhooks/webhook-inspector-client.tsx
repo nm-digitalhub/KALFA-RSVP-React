@@ -1,5 +1,6 @@
 'use client';
 
+import { useClipboard } from '@mantine/hooks';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { JsonView, defaultStyles } from 'react-json-view-lite';
@@ -60,23 +61,16 @@ export function InspectorDrawer({
   );
 }
 
-// Copy a technical value to the clipboard (zero-dep). Mirrors channels-client's
-// CopyRow. Shows a brief check on success.
+// Copy a technical value to the clipboard (@mantine/hooks useClipboard). Shows
+// a brief check on success; a failed copy shows none.
 export function CopyButton({ value, label }: { value: string; label?: string }) {
-  const [copied, setCopied] = useState(false);
+  const clipboard = useClipboard({ timeout: 1500 });
+  const copied = clipboard.copied && !clipboard.error;
   return (
     <button
       type="button"
       aria-label={label ?? 'העתקה'}
-      onClick={() => {
-        navigator.clipboard.writeText(value).then(
-          () => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          },
-          () => setCopied(false),
-        );
-      }}
+      onClick={() => clipboard.copy(value)}
       className="inline-flex size-6 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-muted"
     >
       {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}

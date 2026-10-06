@@ -37,7 +37,7 @@ export const CALL_STATUS_VARIANTS: Record<string, MeterTone> = {
 
 export const callStatusLabel = (s: string): string => CALL_STATUS_LABELS[s] ?? s;
 export const callStatusVariant = (s: string): BadgeVariant => CALL_STATUS_VARIANTS[s] ?? 'neutral';
-// Same lookup, typed for the chart-mark helpers (BalanceMeter/StatusStackedBar)
+// Same lookup, typed for the chart-mark helpers (StackedBarSegment/StatusDonut)
 // which take a MeterTone rather than the full BadgeVariant union.
 export const callStatusTone = (s: string): MeterTone => CALL_STATUS_VARIANTS[s] ?? 'neutral';
 
@@ -83,7 +83,7 @@ export function formatPercent(rate: number | null): string {
   return rate === null ? '—' : `${Math.round(rate * 100)}%`;
 }
 
-// Fill-color classes for chart marks (meters, stacked bars) keyed by the same
+// Fill-color classes for chart marks (meters, legend swatches) keyed by the same
 // tones used for status Badges, so a state's color is identical whether it
 // renders as a badge or as a bar segment. 'neutral' has no dedicated bg-*
 // token (the Badge variant only sets a border+text color), so it falls back

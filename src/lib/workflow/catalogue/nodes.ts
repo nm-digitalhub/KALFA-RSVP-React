@@ -1,0 +1,100 @@
+// The node-type catalogue: which types exist, and which may begin a flow.
+//
+// METADATA ONLY, and SDK-free — this module is read by the pg-boss worker,
+// which must never load @workflowbuilder/sdk. It imports `./types` and every
+// node's SDK-free `nodes/<name>/definition.ts`. The editor's half (property
+// schemas, labels, icons) lives in each node folder's editor files, assembled
+// into the palette by ./schemas.ts.
+//
+// Adding a step type in the one-folder-per-node layout: a `nodes/<name>/`
+// folder (definition, schema, uischema, defaults, palette item, runtime — see
+// plans/node-folders-file-matrix.md), then one entry in each registry, each
+// read from the definition:
+//
+//   * `CATALOGUE` here;
+//   * `NODE_TYPES`, `KalfaNodeConfig`, `NODE_REQUIRED_FIELDS` and
+//     `NODE_DEPLOYMENT_BINDINGS` in ./types.ts — plus
+//     `GUEST_SCOPED_NODE_TYPES`, `NODE_CONDITIONAL_REQUIRED_FIELDS` and
+//     `NODE_NUMBER_RANGES` when the node has such a contract;
+//   * `NODE_ACTIVITY_PROFILES` in ../engine/node-budgets.ts, unless the node
+//     takes the default budget;
+//   * `PALETTE_ITEMS` in ./schemas.ts and `STEP_HANDLERS` in ../steps/index.ts.
+//
+// No adapter changes.
+import * as aiAgentDefinition from '../nodes/action-ai-agent/definition';
+import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
+import * as importGuestListDefinition from '../nodes/action-import-guest-list/definition';
+import * as microsoftSendEmailDefinition from '../nodes/action-microsoft-send-email/definition';
+import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
+import * as sendTemplateDefinition from '../nodes/action-send-template/definition';
+import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definition';
+import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
+import * as startForEachGuestDefinition from '../nodes/action-start-for-each-guest/definition';
+import * as startRsvpAiCallbackDefinition from '../nodes/action-start-rsvp-ai-callback/definition';
+import * as startVoiceCallDefinition from '../nodes/action-start-voice-call/definition';
+import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
+import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
+import * as updateGuestStatusDefinition from '../nodes/action-update-guest-status/definition';
+import * as webhookDefinition from '../nodes/action-webhook/definition';
+import * as conditionDefinition from '../nodes/logic-condition/definition';
+import * as setValueDefinition from '../nodes/logic-set-value/definition';
+import * as switchDefinition from '../nodes/logic-switch/definition';
+import * as waitDefinition from '../nodes/logic-wait/definition';
+import * as scheduleDefinition from '../nodes/trigger-schedule/definition';
+import * as sumitCardTriggerDefinition from '../nodes/trigger-sumit-card/definition';
+import * as webhookTriggerDefinition from '../nodes/trigger-webhook/definition';
+import * as whatsappInboundDefinition from '../nodes/trigger-whatsapp-inbound/definition';
+
+import { NODE_TYPES, type CatalogueEntry, type KalfaNodeType } from './types';
+
+export const CATALOGUE: readonly CatalogueEntry[] = [
+  { type: whatsappInboundDefinition.type, isTrigger: whatsappInboundDefinition.isTrigger },
+  { type: webhookTriggerDefinition.type, isTrigger: webhookTriggerDefinition.isTrigger },
+  { type: scheduleDefinition.type, isTrigger: scheduleDefinition.isTrigger },
+  { type: sumitCardTriggerDefinition.type, isTrigger: sumitCardTriggerDefinition.isTrigger },
+  { type: conditionDefinition.type, isTrigger: conditionDefinition.isTrigger },
+  { type: switchDefinition.type, isTrigger: switchDefinition.isTrigger },
+  { type: updateGuestStatusDefinition.type, isTrigger: updateGuestStatusDefinition.isTrigger },
+  { type: sendWhatsappDefinition.type, isTrigger: sendWhatsappDefinition.isTrigger },
+  { type: microsoftSendEmailDefinition.type, isTrigger: microsoftSendEmailDefinition.isTrigger },
+  { type: startRsvpAiCallbackDefinition.type, isTrigger: startRsvpAiCallbackDefinition.isTrigger },
+  { type: notifyTeamDefinition.type, isTrigger: notifyTeamDefinition.isTrigger },
+  { type: webhookDefinition.type, isTrigger: webhookDefinition.isTrigger },
+  { type: setGuestFieldDefinition.type, isTrigger: setGuestFieldDefinition.isTrigger },
+  { type: callbackRequestDefinition.type, isTrigger: callbackRequestDefinition.isTrigger },
+  { type: importGuestListDefinition.type, isTrigger: importGuestListDefinition.isTrigger },
+  { type: waitDefinition.type, isTrigger: waitDefinition.isTrigger },
+  { type: sendTemplateDefinition.type, isTrigger: sendTemplateDefinition.isTrigger },
+  { type: startForEachGuestDefinition.type, isTrigger: startForEachGuestDefinition.isTrigger },
+  { type: startVoiceCallDefinition.type, isTrigger: startVoiceCallDefinition.isTrigger },
+  { type: setValueDefinition.type, isTrigger: setValueDefinition.isTrigger },
+  { type: sumitCreateDocumentDefinition.type, isTrigger: sumitCreateDocumentDefinition.isTrigger },
+  { type: sumitCreateCustomerDefinition.type, isTrigger: sumitCreateCustomerDefinition.isTrigger },
+  { type: aiAgentDefinition.type, isTrigger: aiAgentDefinition.isTrigger },
+];
+
+// Lookup by the string stored in the diagram. `undefined` is rule 5: an unknown
+// type is a validation error, decided by the caller, not silently defaulted here.
+const BY_TYPE = new Map<string, CatalogueEntry>(CATALOGUE.map((e) => [e.type, e]));
+
+export function findCatalogueEntry(type: string): CatalogueEntry | undefined {
+  return BY_TYPE.get(type);
+}
+
+export function isKnownNodeType(type: string): type is KalfaNodeType {
+  return BY_TYPE.has(type);
+}
+
+/**
+ * RULE 1, as a function. The only question the adapter asks about who may start.
+ * A type absent from the catalogue is not a trigger and not anything else — it
+ * fails validation before this is ever consulted.
+ */
+export function isTriggerType(type: string): boolean {
+  return BY_TYPE.get(type)?.isTrigger === true;
+}
+
+// Guards the two lists against drifting apart: NODE_TYPES is what the rest of
+// the codebase narrows on, CATALOGUE is what the editor and adapter read.
+export const CATALOGUE_COVERS_ALL_TYPES: boolean =
+  NODE_TYPES.every((t) => BY_TYPE.has(t)) && CATALOGUE.length === NODE_TYPES.length;

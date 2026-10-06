@@ -36,22 +36,26 @@ export function DateSelectIL({
   required,
   fromYear,
   toYear,
+  labelPrefix,
 }: {
   id: string;
-  // undefined (edit form after publish) keeps the field out of the POST,
-  // exactly like the old input's conditional `name`.
+  // undefined (edit form while the dates are locked) keeps the field out of
+  // the POST.
   name?: string;
   // ISO 'YYYY-MM-DD' or '' (not set).
   defaultValue?: string;
   disabled?: boolean;
   // Client-side must-pick guard (a native select with required blocks submit
-  // while its value is ''). Mirrors the old `<input type="date" required>` —
-  // the create form promises a date (asterisk) even though the SCHEMA keeps a
-  // date-less draft legal by design (R2).
+  // while its value is ''). The create form promises a date (asterisk) even
+  // though the SCHEMA keeps a date-less draft legal by design (R2).
   required?: boolean;
   fromYear?: number;
   toYear?: number;
+  // The field's visible label; when set, each select is announced as
+  // "<label> – יום" etc., so a screen reader says WHICH date this part is.
+  labelPrefix?: string;
 }) {
+  const partLabel = (part: string) => (labelPrefix ? `${labelPrefix} – ${part}` : part);
   const [initialY, initialM, initialD] = /^\d{4}-\d{2}-\d{2}$/.test(defaultValue)
     ? defaultValue.split('-')
     : ['', '', ''];
@@ -105,7 +109,7 @@ export function DateSelectIL({
     <div dir="ltr" className="flex w-fit items-center gap-1">
       <select
         id={id}
-        aria-label="יום"
+        aria-label={partLabel('יום')}
         value={day}
         disabled={disabled}
         required={required}
@@ -121,7 +125,7 @@ export function DateSelectIL({
       </select>
       <span aria-hidden>/</span>
       <select
-        aria-label="חודש"
+        aria-label={partLabel('חודש')}
         value={month}
         disabled={disabled}
         onChange={(e) => update('month', e.target.value)}
@@ -136,7 +140,7 @@ export function DateSelectIL({
       </select>
       <span aria-hidden>/</span>
       <select
-        aria-label="שנה"
+        aria-label={partLabel('שנה')}
         value={year}
         disabled={disabled}
         onChange={(e) => update('year', e.target.value)}

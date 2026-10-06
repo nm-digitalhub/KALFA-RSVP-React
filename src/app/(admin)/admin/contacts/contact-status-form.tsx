@@ -7,8 +7,8 @@ import { CONTACT_STATUS_LABELS, contactStatusLabel } from '@/lib/data/admin/labe
 import { FieldError, FormError, FormNotice } from '@/components/forms';
 import { updateContactStatusAction } from './actions';
 
-// Per-row status control for contact messages — same closed vocabulary and
-// same native-select pattern as the callbacks page (no portal/RTL pitfalls).
+// Status control for a contact message — a closed vocabulary and the same
+// native-select pattern as CallOutcomeForm (no portal/RTL pitfalls).
 export function ContactStatusForm({
   id,
   currentStatus,

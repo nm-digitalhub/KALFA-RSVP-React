@@ -50,7 +50,7 @@ describe(`buildStepDefinitions (relocation, ${EXPECTED_IDS.length} steps)`, () =
 
   it("no wired apply() mutates without RELOCATE_EXECUTE=1 (every external step is latched first)", async () => {
     expect(process.env.RELOCATE_EXECUTE).toBeUndefined(); // ambient safety
-    // C4: check() always returns 'done' (its verify runs nginx -t via C3) so
+    // C4: check() always returns 'done' (C3's verify already runs nginx -t) so
     // the engine never calls its apply() in a real run — the default step()
     // fallback (NotImplementedError) is the correct no-op.
     const alwaysManual = new Set(["C4"]);
@@ -108,7 +108,6 @@ describe(`buildStepDefinitions (relocation, ${EXPECTED_IDS.length} steps)`, () =
     expect(all).toContain("/subscriptions");
     expect(all).toContain("dataStreams.patch");
     expect(all).toContain("UPDATE app_settings");
-    // the gaps closed 2026-08-24
     expect(all).toContain("POST /{waba}/message_templates");
     expect(all).toContain("meta-approval-override");
     expect(all).toContain("SetAccountInfo");

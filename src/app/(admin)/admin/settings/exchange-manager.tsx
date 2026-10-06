@@ -63,11 +63,11 @@ function ConnectForm({
         <FieldError errors={state?.fieldErrors?.mailboxEmail} />
       </div>
 
-      {/* Shown ONLY when EWS is the active provider, because only NTLM has any
-          use for it. Under Graph the app authenticates with its own certificate
-          and never reads a mailbox password — asking for one made an admin hand
-          over a live secret to create a connection that would not use it, and
-          then stored it encrypted indefinitely. */}
+      {/* Shown ONLY for a provider that needs a mailbox password (NTLM — the
+          removed EWS provider). Under Graph the app authenticates with its own
+          certificate and never reads a mailbox password — asking for one made an
+          admin hand over a live secret to create a connection that would not use
+          it, and then stored it encrypted indefinitely. */}
       {needsPassword ? (
         <div>
           <label htmlFor="exchangePassword" className="mb-1 block text-sm font-medium">
@@ -197,8 +197,8 @@ function ConnectionCard({ connection }: { connection: ExchangeConnectionView }) 
 export function ExchangeManager({
   connections,
   mode,
-  // Resolved on the server (the provider lives in a server-only env var) and
-  // passed down, rather than read here — this is a client component.
+  // Decided by the server page and passed down, rather than read here — this
+  // is a client component.
   needsPassword,
 }: {
   connections: ExchangeConnectionView[];

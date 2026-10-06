@@ -6,8 +6,10 @@ import { Bot, CreditCard, ScrollText, UserSearch, Users, Voicemail } from 'lucid
 
 import { hasPlatformPermission, requirePlatformPermission } from '@/lib/auth/dal';
 import { getEventForStaffView } from '@/lib/data/admin/event-view';
+import { getTestEventStatus } from '@/lib/data/admin/test-events';
 import { formatIsraelDate } from '@/lib/date';
 import { Badge, EmptyState, PageHeading } from '../../_components';
+import { TestEventSection } from './test-event-section';
 
 // THE STAFF ADDRESS FOR ONE CUSTOMER EVENT.
 //
@@ -18,8 +20,7 @@ import { Badge, EmptyState, PageHeading } from '../../_components';
 // /app/events/{id}, which authorizes on ownership alone and 404s for staff.
 // This page is that address; event-exchange-sync now points the calendar here.
 //
-// PERMISSION SEPARATION IS THE POINT OF THIS FILE (owner, 2026-09-07:
-// "אתה חייב להפריד בין ההרשאות"). Two rules hold it:
+// PERMISSION SEPARATION IS THE POINT OF THIS FILE. Two rules hold it:
 //   1. The page itself requires ONLY 'view_events' — the identity of the event
 //      and nothing else. Everything richer lives behind its own key.
 //   2. A section whose key the viewer lacks is ABSENT, never a redirect and
@@ -66,15 +67,29 @@ export default async function AdminEventPage({
   const { id } = await params;
   const event = await getEventCached(id);
 
-  const [canBilling, canVoice, canCustomerData, canStaff, canActivity, canRecordings] =
-    await Promise.all([
-      hasPlatformPermission('manage_billing'),
-      hasPlatformPermission('manage_voice'),
-      hasPlatformPermission('view_customer_data'),
-      hasPlatformPermission('manage_staff'),
-      hasPlatformPermission('view_activity_log'),
-      hasPlatformPermission('view_recordings'),
-    ]);
+  const [
+    canBilling,
+    canVoice,
+    canCustomerData,
+    canStaff,
+    canActivity,
+    canRecordings,
+    canMarkTest,
+    canPurgeTest,
+  ] = await Promise.all([
+    hasPlatformPermission('manage_billing'),
+    hasPlatformPermission('manage_voice'),
+    hasPlatformPermission('view_customer_data'),
+    hasPlatformPermission('manage_staff'),
+    hasPlatformPermission('view_activity_log'),
+    hasPlatformPermission('view_recordings'),
+    hasPlatformPermission('events.mark_test'),
+    hasPlatformPermission('events.purge_test'),
+  ]);
+  // Same rule as the links below: a viewer without either key never sees the
+  // section (absent, not disabled), and never pays for the marker read.
+  const testStatus =
+    canMarkTest || canPurgeTest ? await getTestEventStatus(event.id) : null;
 
   const links: StaffLink[] = [];
   // manage_billing, not view_billing: the campaign board's own reader
@@ -199,6 +214,21 @@ export default async function AdminEventPage({
           </ul>
         )}
       </section>
+
+      {testStatus && (
+        <section className={sectionClass}>
+          <h2 className="text-lg font-semibold">אירוע בדיקה</h2>
+          <TestEventSection
+            eventId={event.id}
+            eventName={event.name}
+            marked={testStatus.marked}
+            markedAt={testStatus.markedAt}
+            purgeBlocked={testStatus.purgeBlocker !== null}
+            canMark={canMarkTest}
+            canPurge={canPurgeTest}
+          />
+        </section>
+      )}
     </div>
   );
 }

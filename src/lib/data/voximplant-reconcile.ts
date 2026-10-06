@@ -5,9 +5,9 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 import { DISPATCH_PRE_TERMINAL as CALLBACK_DISPATCH_PRE_TERMINAL } from '@/lib/data/callback-request-attempts';
 import { DISPATCH_PRE_TERMINAL as SALES_DISPATCH_PRE_TERMINAL } from '@/lib/data/sales-call-attempts';
 
-// H3 — Voximplant stuck-row reconciler (worker/main.ts, every 10m), extended
-// 2026-08-22 to cover all three dispatch surfaces that now share this
-// account's balance/concurrency ceiling (see voximplant-concurrency.ts):
+// Voximplant stuck-row reconciler (worker/main.ts, every 10m) covering all
+// three dispatch surfaces that share this account's balance/concurrency
+// ceiling (see voximplant-concurrency.ts):
 // call_attempts (RSVP campaign dials), callback_request_attempts
 // (meeting-confirm dials) and sales_call_attempts (sales-closing dials).
 // ALERT-ONLY: finds rows still in a pre-terminal status (queued/dialing/

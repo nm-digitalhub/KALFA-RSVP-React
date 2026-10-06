@@ -1,0 +1,439 @@
+{
+  "schemaVersion": "1.0",
+  "skill": "israeli-market-fit",
+  "generated_at": "2026-08-18T19:41:54+00:00",
+  "claims": [
+    {
+      "claim_id": "population-2026",
+      "claim": "Israel's population was 10.244 million on the eve of the 78th Independence Day (April 2026), per CBS.",
+      "source_url": "https://www.cbs.gov.il/he/mediarelease/DocLib/2026/117/11_26_117b.pdf",
+      "raw_snippet": "אוכלוסיית ישראל מונה ‪10.244‬מיליון נפשות",
+      "fetched_at": "2026-08-18T19:30:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ],
+      "verified_via": "pdf",
+      "verified_at": "2026-08-18T19:30:00+00:00"
+    },
+    {
+      "claim_id": "population-split",
+      "claim": "On the eve of the 78th Independence Day: 7.790 million Jews and others (76%), 2.157 million Arabs (21.1%), 296 thousand foreigners (2.9%).",
+      "source_url": "https://www.cbs.gov.il/he/mediarelease/DocLib/2026/117/11_26_117b.pdf",
+      "raw_snippet": "‫‪ 7.790‬מיליון יהודים ואחרים ‪(76%) 2‬",
+      "fetched_at": "2026-08-18T19:30:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ],
+      "verified_via": "pdf",
+      "verified_at": "2026-08-18T19:30:00+00:00"
+    },
+    {
+      "claim_id": "population-growth",
+      "claim": "Israel's population grew by 146 thousand (1.4%) since the previous Independence Day; the Israeli population grew 1.1%.",
+      "source_url": "https://www.cbs.gov.il/he/mediarelease/DocLib/2026/117/11_26_117b.pdf",
+      "raw_snippet": "מיום העצמאות שעבר גדלה אוכלוסיית ישראל ב‪ 146-‬אלף איש",
+      "fetched_at": "2026-08-18T19:30:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ],
+      "verified_via": "pdf",
+      "verified_at": "2026-08-18T19:30:00+00:00"
+    },
+    {
+      "claim_id": "haredi-share-a",
+      "claim": "The Haredi population in Israel numbered 1,452,350 at the end of 2025, per the Israel Democracy Institute Haredi Yearbook 2025.",
+      "source_url": "https://www.idi.org.il/haredi/2025/?chapter=62168",
+      "raw_snippet": "בסוף שנת 2025 האוכלוסייה החרדית בישראל מונה 1,452,350 נפש (לעומת כ־750,000 ב־2009).",
+      "fetched_at": "2026-06-02T00:00:00Z",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "haredi-share-b",
+      "claim": "The Haredi population is 14.3% of Israel's total population in 2025.",
+      "source_url": "https://www.idi.org.il/haredi/2025/?chapter=62168",
+      "raw_snippet": "האוכלוסייה החרדית בישראל מונה בשנת 2025 כ־1,450,000 נפש, שהן 14.3% מכלל האוכלוסייה",
+      "fetched_at": "2026-06-02T00:00:00Z",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "haredi-age",
+      "claim": "57% of the Haredi population is aged 0-19, versus 31% of the general Jewish population.",
+      "source_url": "https://www.idi.org.il/haredi/2025/?chapter=62168",
+      "raw_snippet": "שיעור הצעירים בגילים 19-0 באוכלוסייה החרדית הוא 57%, לעומת 31% באוכלוסייה היהודית הכללית",
+      "fetched_at": "2026-08-18T19:30:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "vat-18",
+      "claim": "Israel's standard VAT rate is 18% (the 2025 increase from 17% to 18% remains in effect in 2026).",
+      "source_url": "https://taxsummaries.pwc.com/israel/corporate/other-taxes",
+      "raw_snippet": "The 2025 current rate of VAT is 18%.",
+      "fetched_at": "2026-06-02T00:00:00Z",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "bit-users",
+      "claim": "Bit is the largest payment app in Israel, with roughly 3 million users, developed by Bank Hapoalim.",
+      "source_url": "https://en.globes.co.il/en/article-hapoalim-reveals-bit-app-charges-from-january-1001494038",
+      "raw_snippet": "the fee is not relevant to 90% of the 3 million people who use the payment app",
+      "fetched_at": "2026-06-02T00:00:00Z",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "paybox-users",
+      "claim": "paybox is the rival payment app to Bit, with about 1.4 million customers and about 10% of transfer volume.",
+      "source_url": "https://en.globes.co.il/en/article-payment-apps-bit-and-paybox-to-charge-fees-from-january-1001483104",
+      "raw_snippet": "Paybox has 1.4 million customers but only 10% of the amount of transfers.",
+      "fetched_at": "2026-06-02T00:00:00Z",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "paybox-discount-bank",
+      "claim": "paybox is owned by Israel Discount Bank, which bought it from Shufersal (it was not launched by the bank).",
+      "source_url": "https://en.globes.co.il/en/article-payment-apps-bit-and-paybox-to-charge-fees-from-january-1001483104",
+      "raw_snippet": "Discount Bank completes buyout of PayBox from Shufersal",
+      "fetched_at": "2026-06-02T00:00:00Z",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "yad2",
+      "claim": "Yad2 is the dominant Israeli horizontal classifieds marketplace covering second-hand goods, cars, real estate, jobs and professionals.",
+      "source_url": "https://en.wikipedia.org/wiki/Yad2",
+      "raw_snippet": "is an Israeli website that publishes ads for buying and selling second-hand products",
+      "fetched_at": "2026-08-18T19:30:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "official-standard",
+      "claim": "An Israeli standard set by the SII is voluntary, but the Minister of Economy and Industry may declare a standard (in whole or part) an official standard (תקן רשמי), making compliance mandatory.",
+      "source_url": "https://www.sii.org.il/he/israelistandards/",
+      "raw_snippet": "שר הכלכלה והתעשייה רשאי, לאחר התייעצות עם נציגי היצרנים והצרכנים, להכריז על תקן מסוים, כולו או חלקו, כ'תקן רשמי'",
+      "fetched_at": "2026-06-02T00:00:00Z",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "hebrew-labeling",
+      "claim": "Every consumer-product package in Israel must include clear labeling in Hebrew, even if the product is imported (per the Consumer Protection (Goods Labeling) Order, 1983).",
+      "source_url": "https://weksler-davidovich.co.il/consumer-protection-labeling/",
+      "raw_snippet": "על פי הצו, כל אריזת מוצר חייבת לכלול סימון ברור בעברית, אף אם מדובר במוצר שמקורו בייבוא.",
+      "fetched_at": "2026-06-02T00:00:00Z",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "amendment-13-date",
+      "claim": "The Knesset plenum approved Amendment 13 to the Privacy Protection Law in second and third reading on 5.8.2024.",
+      "source_url": "https://www.gov.il/he/pages/13_amendment",
+      "raw_snippet": "מליאת הכנסת אישרה היום (5.8.24) בקריאה שניה ושלישית תיקון מקיף בחוק הגנת הפרטיות",
+      "fetched_at": "2026-08-18T20:30:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ],
+      "verified_via": "browser",
+      "verified_at": "2026-08-18T20:30:00+00:00"
+    },
+    {
+      "claim_id": "antispam-consent",
+      "claim": "Israel's anti-spam law forbids sending advertising by fax, automated dialing, email or SMS without the recipient's prior express written consent.",
+      "source_url": "https://he.wikipedia.org/wiki/%D7%97%D7%95%D7%A7_%D7%94%D7%A1%D7%A4%D7%90%D7%9D",
+      "raw_snippet": "בלא קבלת הסכמה מפורשת מראש של הנמען, בכתב",
+      "fetched_at": "2026-08-18T20:15:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "antispam-damages",
+      "claim": "Under Israel's anti-spam law, a court may award the recipient of unlawful spam statutory damages of up to 1,000 NIS per message without proof of damage.",
+      "source_url": "https://he.wikipedia.org/wiki/%D7%97%D7%95%D7%A7_%D7%94%D7%A1%D7%A4%D7%90%D7%9D",
+      "raw_snippet": "פיצוי של עד 1,000 שקלים ללא הוכחת נזק",
+      "fetched_at": "2026-06-02T00:00:00Z",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "consumer-protection-deception",
+      "claim": "Consumer Protection Law s.2(a) forbids a dealer from doing anything liable to mislead a consumer on any material matter in a transaction.",
+      "source_url": "https://www.nevo.co.il/law_html/law00/70305.htm",
+      "raw_snippet": "העלול להטעות צרכן בכל ענין מהותי בעסקה",
+      "fetched_at": "2026-08-18T19:30:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "consumer-protection-price",
+      "claim": "Consumer Protection Law סעיף 17ד: a price advertised or quoted to a consumer may only be the total price and only in Israeli currency.",
+      "source_url": "https://www.nevo.co.il/law_html/law00/70305.htm",
+      "raw_snippet": "ציג את המחיר הכולל הנדרש בעד מתן שירות או עשייתו בהתאם להוראות לפי סעיף 17ג; (41) פרסם או נקב מחיר של נכס או שירות שלא בהתאם להוראות סעיף 17ד; (42) לא כלל במחיר המוצג את שיעור ההגדלה או ההפחתה של מס, אגרה או תשלום חובה בהתאם להוראות סעיף 17ה; (43) קבע מחיר במטבע ישראלי לנכס או לשירות כמפורט בחלק ב' של התוספת הראשונה, שמחירו הוצג, פורסם או ננקב במטבע חוץ, שלא לפי שער החליפין הקבוע בתוספת הראשונה, בניגוד להוראות סעיף 17ז(ב); (43א) לא הציב מכשיר שקילה במקום עסקו, בניגוד להוראות לפי סעיף 17ח; (44) מכר או החזיק למטרת מכירה, טובין של",
+      "fetched_at": "2026-08-18",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ],
+      "verified_via": "cited page fetched and confirmed to contain \"סעיף 17ד\"; snippet replaced with the page's own wording around it",
+      "verified_at": "2026-08-18"
+    },
+    {
+      "claim_id": "average-wage-2026-s1",
+      "claim": "Effective January 2026, the average wage under s.1 of the National Insurance Law is 13,566 NIS. This statutory index is distinct from the CBS economy-wide average wage.",
+      "source_url": "https://www.btl.gov.il/Mediniyut/GeneralData/Pages/%D7%A9%D7%9B%D7%A8%20%D7%9E%D7%9E%D7%95%D7%A6%D7%A2.aspx",
+      "raw_snippet": "לפי סעיף 1 בחוק - קצבאות: 13,566 ש\"ח",
+      "fetched_at": "2026-08-18T20:15:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "average-wage-2026-s2",
+      "claim": "Effective January 2026, the average wage under s.2 of the National Insurance Law is 13,769 NIS.",
+      "source_url": "https://www.btl.gov.il/Mediniyut/GeneralData/Pages/%D7%A9%D7%9B%D7%A8%20%D7%9E%D7%9E%D7%95%D7%A6%D7%A2.aspx",
+      "raw_snippet": "לפי סעיף 2 בחוק - קצבאות: 13,769 ש\"ח",
+      "fetched_at": "2026-08-18T20:15:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "population-arab-share",
+      "claim": "Arab citizens of Israel numbered 2.157 million, 21.1% of the population, on the eve of the 78th Independence Day.",
+      "source_url": "https://www.cbs.gov.il/he/mediarelease/DocLib/2026/117/11_26_117b.pdf",
+      "raw_snippet": "‫‪ 2.157‬מיליון ערבים ‪(21.1%) 3‬",
+      "fetched_at": "2026-08-18T19:30:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md",
+        "references/segments.md"
+      ],
+      "verified_via": "pdf",
+      "verified_at": "2026-08-18T19:30:00+00:00"
+    },
+    {
+      "claim_id": "population-foreigners-share",
+      "claim": "Foreign residents numbered 296 thousand, 2.9% of the population, on the eve of the 78th Independence Day.",
+      "source_url": "https://www.cbs.gov.il/he/mediarelease/DocLib/2026/117/11_26_117b.pdf",
+      "raw_snippet": "‫‪ 296‬אלף זרים ‪(2.9%) 4‬",
+      "fetched_at": "2026-08-18T19:30:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md",
+        "references/segments.md"
+      ],
+      "verified_via": "pdf",
+      "verified_at": "2026-08-18T19:30:00+00:00"
+    },
+    {
+      "claim_id": "haredi-median-age",
+      "claim": "The median age of the Haredi population is 16, versus 36 in the general Jewish population.",
+      "source_url": "https://www.idi.org.il/haredi/2025/?chapter=62168",
+      "raw_snippet": "הגיל החציוני בה הוא 16, לעומת 36 באוכלוסייה היהודית הכללית",
+      "fetched_at": "2026-08-18T19:30:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md",
+        "references/segments.md"
+      ]
+    },
+    {
+      "claim_id": "consumer-protection-total-price-def",
+      "claim": "Consumer Protection Law סעיף 17א defines the total price (המחיר הכולל) as including VAT, fees and every mandatory charge.",
+      "source_url": "https://www.nevo.co.il/law_html/law00/70305.htm",
+      "raw_snippet": "17א. בפרק זה, \" המחיר הכולל \" – מחיר הכולל את סך כל התשלומים בעבור נכס או שירות",
+      "fetched_at": "2026-08-18T19:30:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "consumer-protection-tax-change-window",
+      "claim": "Consumer Protection Law סעיף 17ה lets a dealer keep displaying the pre-change price for seven days after a tax or fee rate changes, if flagged prominently.",
+      "source_url": "https://www.nevo.co.il/law_html/law00/70305.htm",
+      "raw_snippet": "17ה. על אף הוראות סעיפים 17א עד 17ג, רשאי עוסק, במשך שבעה ימים מיום שהוגדל או שהופחת שיעורם של מס",
+      "fetched_at": "2026-08-18T19:30:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "consumer-protection-price-exemptions",
+      "claim": "Consumer Protection Law סעיף 17ז exempts goods intended for sale outside Israel and First Schedule categories from the total-price display chapter.",
+      "source_url": "https://www.nevo.co.il/law_html/law00/70305.htm",
+      "raw_snippet": "17ז. (א) הוראות פרק זה לא יחולו – (1) על נכס המיועד להימכר מחוץ לישראל",
+      "fetched_at": "2026-08-18T19:30:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "personal-import-exemption-75usd",
+      "claim": "The VAT exemption ceiling on personal imports is 75 USD. The Knesset voted 59 to 23 on 01.06.2026 to cancel the order that had raised it to 130 USD, after rejecting an earlier order raising it to 150 USD.",
+      "source_url": "https://www.globes.co.il/news/article.aspx?did=1001544536",
+      "raw_snippet": "חברי הכנסת הצביעו ברוב של 59 אל מול 23 נגד הצו של שר האוצר, שהעלה את תקרת הפטור ממע\"מ על קניות מחו\"ל מ־75 דולר ל־130 דולר",
+      "fetched_at": "2026-08-18T19:50:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md",
+        "references/domain-checklist.md"
+      ]
+    },
+    {
+      "claim_id": "knesset-election-date-2026",
+      "claim": "The election to the 26th Knesset is scheduled for 27 October 2026.",
+      "source_url": "https://en.wikipedia.org/wiki/2026_Israeli_legislative_election",
+      "raw_snippet": "27 October 2026",
+      "fetched_at": "2026-08-18T19:50:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md",
+        "references/domain-checklist.md"
+      ]
+    },
+    {
+      "claim_id": "tiktok-israel-election-ad-rules",
+      "claim": "Ahead of the Knesset elections TikTok published rules for Israel centred on a ban on paid political advertising, restrictions on misleading election information, and mandatory labeling of realistic AI-generated content.",
+      "source_url": "https://www.jpost.com/israel-news/article-904060",
+      "raw_snippet": "At the center of the policy are a ban on paid political advertising, restrictions on the spread of misleading election information, and a requirement to label realistic content created with AI.",
+      "fetched_at": "2026-08-18T19:50:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md",
+        "references/domain-checklist.md"
+      ]
+    },
+    {
+      "claim_id": "ppa-first-fine-2026",
+      "claim": "In July 2026 the Privacy Protection Authority imposed its first administrative fine under Amendment 13, on a health fund that reported a security incident late.",
+      "source_url": "https://www.bizportal.co.il/takdin/news/article/20036573",
+      "raw_snippet": "הרשות להגנת הפרטיות במשרד המשפטים הטילה עיצום כספי בסך 256,000 שקל על קופת חולים מאוחדת",
+      "fetched_at": "2026-08-18T20:15:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md",
+        "references/domain-checklist.md"
+      ]
+    },
+    {
+      "claim_id": "grow-formerly-meshulam",
+      "claim": "The Israeli payment processor formerly branded Meshulam rebranded as Grow Payments in 2023.",
+      "source_url": "https://he.wikipedia.org/wiki/%D7%92%D7%A8%D7%95%D7%90%D7%95_%D7%A4%D7%99%D7%99%D7%9E%D7%A0%D7%98%D7%A1_%D7%91%D7%A2%22%D7%9E",
+      "raw_snippet": "בשנת 2023 עברה החברה מיתוג מחדש תחת השם Grow Payments Ltd",
+      "fetched_at": "2026-08-18T20:15:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "nonresident-vat-registration",
+      "claim": "A non-resident supplying goods or digital services to Israeli consumers has no low-turnover registration threshold and must appoint a local VAT representative; registration may be required from the first taxable supply.",
+      "source_url": "https://www.avalara.com/us/en/vatlive/country-guides/africa-and-middle-east/israel/israel-vat-registration.html",
+      "raw_snippet": "there is no official low-turnover threshold",
+      "fetched_at": "2026-08-18T20:15:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md",
+        "references/domain-checklist.md"
+      ]
+    },
+    {
+      "claim_id": "consumer-cancellation-distance-selling",
+      "claim": "Consumer Protection Law סעיף 14ג(ג) gives a distance-selling cancellation right: fourteen days from receipt for goods, and fourteen days from the transaction for a service.",
+      "source_url": "https://www.nevo.co.il/law_html/law00/70305.htm",
+      "raw_snippet": "בעסקת מכר מרחוק רשאי הצרכן לבטל את העסקה",
+      "fetched_at": "2026-08-18T20:15:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "consumer-cancellation-continuing",
+      "claim": "Consumer Protection Law סעיף 13ד: a continuing-transaction contract ends within three business days of the cancellation notice.",
+      "source_url": "https://www.nevo.co.il/law_html/law00/70305.htm",
+      "raw_snippet": "חוזה בעסקה מתמשכת יסתיים בתוך שלושה ימי עסקים מיום שנמסרה הודעת ביטול",
+      "fetched_at": "2026-08-18T20:15:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ]
+    },
+    {
+      "claim_id": "retail-concentration-chains",
+      "claim": "Shufersal is the largest supermarket chain in Israel, one of the concentrated retail gatekeepers to shelf space alongside Rami Levy and Super-Pharm.",
+      "source_url": "https://en.wikipedia.org/wiki/Shufersal",
+      "raw_snippet": "is the largest supermarket chain in Israel",
+      "fetched_at": "2026-08-18T20:20:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md",
+        "references/domain-checklist.md"
+      ]
+    },
+    {
+      "claim_id": "amendment-13-in-force",
+      "claim": "Amendment 13 to Israel's Privacy Protection Law entered into force on 14 August 2025.",
+      "source_url": "https://www.pearlcohen.com/israel-significant-amendment-to-the-privacy-law-takes-effect/",
+      "raw_snippet": "On August 14, 2025, Amendment 13 to Israel’s Privacy Protection Law, 1981, officially entered into force.",
+      "fetched_at": "2026-08-18T20:30:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md",
+        "references/domain-checklist.md"
+      ]
+    },
+    {
+      "claim_id": "deepfake-election-disclosure-2026",
+      "claim": "Rules published in Reshumot on 26.7.2026 under the 26th-Knesset elections law impose a disclosure duty on election propaganda that is a deep fake, satisfied by stating the content was digitally generated or materially edited, or by carrying the Elections Committee's prescribed logo.",
+      "source_url": "https://www.isoc.org.il/regulation-digital-services/deep-fake-election-law",
+      "raw_snippet": "כללי הבחירות (דרכי תעמולה) (עמידה בחובת הגילוי לגבי תעמולת בחירות שהיא נחזות עמוקה), התשפ\"ו–2026 , שפורסמו ברשומות ביום 26.7.2026",
+      "fetched_at": "2026-08-18T20:35:00+00:00",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md",
+        "references/domain-checklist.md"
+      ]
+    }
+  ]
+}

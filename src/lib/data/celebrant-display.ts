@@ -95,7 +95,7 @@ export function celebrantNamesFor(
 // Per-type heading: "possessive event label" + names, e.g. "החתונה של דנה
 // ויוסי", "בר המצווה של אורי", "יום ההולדת של נועה". Types whose heading
 // works better as label-only (brit/britah — the parents go on the secondary
-// line, 'other' — free text) map to null here.
+// line, 'other' — free text) are omitted here.
 const HEADING_OF: Partial<Record<EventType, string>> = {
   wedding: 'החתונה של',
   henna: 'החינה של',

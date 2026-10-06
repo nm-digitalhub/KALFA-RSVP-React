@@ -19,7 +19,7 @@ import { CONSENT_REVISION } from '@/lib/consent/cookie-consent-config';
 // already-valid stored consent cookie (plan §2.2) — so every REAL
 // availability change must also force re-consent.
 //
-// NO-OP SAFE (found during the owner's live production test, 27.7): a toggle
+// NO-OP SAFE: a toggle
 // submitted with the value it already has must NOT write, NOT bump, and NOT
 // force every visitor to re-consent for nothing. Each toggle function below
 // filters its UPDATE with `.neq(column, value)`, so Postgres only applies

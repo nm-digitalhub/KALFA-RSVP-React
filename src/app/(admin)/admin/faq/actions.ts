@@ -13,7 +13,7 @@ import type { FormState } from '@/lib/validation/result';
 // re-checked there against the DB by row id — not here, and not left to the
 // form simply not rendering the fields. Everything here is ordinary Zod
 // input validation + the thin call-the-DAL-and-report shape every other
-// admin action in this codebase uses (see channels/actions.ts).
+// admin action in this codebase uses.
 
 const categorySchema = z.enum(FAQ_CATEGORIES as [FaqCategory, ...FaqCategory[]]);
 
@@ -38,7 +38,7 @@ export async function createFaqItemAction(
     published: formData.get('published') === 'on',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
   try {
     await createFaqItem(parsed.data);
@@ -75,7 +75,7 @@ export async function updateFaqItemAction(
     published: formData.get('published') === 'on',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
   try {
     await updateFaqItem(parsed.data);
@@ -88,7 +88,7 @@ export async function updateFaqItemAction(
   return { notice: 'השאלה נשמרה' };
 }
 
-// Bound with `id` (see DeleteFaqItemForm). Inline list delete — no redirect
+// Bound with `id` (see DeleteFaqItemButton). Inline list delete — no redirect
 // (unlike /admin/packages/[id], this isn't a detail page that becomes
 // invalid), just revalidate both the admin list and the public page.
 export async function deleteFaqItemAction(

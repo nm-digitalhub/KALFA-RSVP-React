@@ -48,6 +48,9 @@ const RESPONSE_ALLOWED_KEYS = [
   'card_mask',
   'has_auth_number',
   'has_card_token',
+  // Why a call failed — valued (truncated), unlike every identifier above.
+  'user_error_message',
+  'technical_error_details',
 ].sort();
 
 const REQUEST_ALLOWED_KEYS = [
@@ -62,6 +65,14 @@ const REQUEST_ALLOWED_KEYS = [
   'customer_email_present',
   'external_id_present',
   'payment_method_type',
+  // The itemised body added for the receipt breakdown. Product lines only —
+  // operator-entered names/quantities/prices — never card or customer data.
+  'items',
+  'items_total',
+  // Capture-a-J5 run: whether CreditCardAuthNumber / Customer.ID were sent
+  // (presence only — never the values).
+  'credit_card_auth_number_present',
+  'customer_id_present',
 ].sort();
 
 const RESPONSE = {
@@ -103,6 +114,37 @@ const RESPONSE = {
   TechnicalErrorDetails: null,
   SecretFutureTopField: 'UNKNOWN-MUST-NOT-LEAK',
 };
+
+describe('summarizeSumitResponse — the failure reason', () => {
+  // The first live itemised charge returned Status 1 with every other field
+  // null. The screen said "rejected" and could not say why, because neither
+  // error field was read. These are about OUR request, never about the payer.
+  it('surfaces UserErrorMessage and TechnicalErrorDetails', () => {
+    const out = summarizeSumitResponse({
+      Status: 1,
+      UserErrorMessage: 'לא ניתן להפיק מסמך עם שורה בסכום שלילי',
+      TechnicalErrorDetails: 'ItemsValidation.NegativeUnitPrice',
+    });
+    expect(out.status).toBe(1);
+    expect(out.user_error_message).toBe('לא ניתן להפיק מסמך עם שורה בסכום שלילי');
+    expect(out.technical_error_details).toBe('ItemsValidation.NegativeUnitPrice');
+  });
+
+  it('nulls a blank or non-string error rather than coercing it', () => {
+    const out = summarizeSumitResponse({
+      Status: 1,
+      UserErrorMessage: '   ',
+      TechnicalErrorDetails: { code: 7 },
+    });
+    expect(out.user_error_message).toBeNull();
+    expect(out.technical_error_details).toBeNull();
+  });
+
+  it('truncates an over-long provider string instead of letting it dominate', () => {
+    const out = summarizeSumitResponse({ Status: 1, UserErrorMessage: 'x'.repeat(900) });
+    expect((out.user_error_message as string).length).toBe(400);
+  });
+});
 
 describe('summarizeSumitResponse', () => {
   it('emits EXACTLY the allow-listed keys (no unknown/future keys)', () => {

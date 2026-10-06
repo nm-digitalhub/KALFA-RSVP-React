@@ -5,8 +5,9 @@
  * 2026-09-06 as improvement #8).
  *
  * WHY: the nightly export and the weekly maintenance sweep run unattended
- * against a library holding signed agreements and customer PII. Today they
- * authenticate as KALFA-RSVP, which holds Sites.FullControl.All plus
+ * against a library holding signed agreements and customer PII. Without this
+ * identity they fall back to KALFA-RSVP (archiveGraphClient in
+ * src/lib/microsoft/graph-client.ts), which holds Sites.FullControl.All plus
  * Directory.ReadWrite.All, RoleManagement.ReadWrite.Directory and
  * Application.ReadWrite.All — i.e. a compromise of that certificate is a
  * tenant-wide event. This provisions a SEPARATE app whose only Graph

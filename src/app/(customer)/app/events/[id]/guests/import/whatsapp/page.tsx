@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { requireEventAccess } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
 import { findImportMatches, type ImportMatch } from '@/lib/data/guests';
+import { getWhatsAppImportChannel } from '@/lib/data/whatsapp-import-channel';
 import type { StagedRow } from '@/lib/data/whatsapp-import';
 import {
   confirmWhatsappImportAction,
@@ -19,10 +20,15 @@ interface PageProps {
 
 // Review screen for guest lists sent to the business WhatsApp (CSV documents
 // or shared contact cards). Nothing lands in the guest list until confirmed
-// here; reads ride the staging RLS (guests.view/create per phase 3).
+// here; reads ride the staging RLS (guests.view/create).
 export default async function WhatsappImportPage({ params }: PageProps) {
   const { id: eventId } = await params;
   await requireEventAccess(eventId, 'guests', 'create');
+
+  // Which number to tell the owner to send to. Read alongside the list so an
+  // empty screen still answers "where do I send it?" instead of saying
+  // "the business WhatsApp" and leaving them to find the number.
+  const importChannel = await getWhatsAppImportChannel();
 
   const supabase = await createClient();
   const { data: pending } = await supabase
@@ -57,10 +63,34 @@ export default async function WhatsappImportPage({ params }: PageProps) {
       </div>
 
       {pendingList.length === 0 ? (
-        <p className="rounded-lg border border-border p-6 text-sm text-muted-foreground">
-          אין רשימות ממתינות. שלחו קובץ CSV או שתפו אנשי קשר לוואטסאפ העסקי —
-          והרשימה תופיע כאן לאישור.
-        </p>
+        <div className="space-y-3 rounded-lg border border-border p-6 text-sm text-muted-foreground">
+          {importChannel ? (
+            <>
+              <p>
+                אין רשימות ממתינות. שלחו קובץ CSV או שתפו אנשי קשר אל{' '}
+                {/* dir="ltr" on the number only: inside a Hebrew sentence the
+                    '+' would otherwise render at the wrong end. */}
+                <span dir="ltr" className="font-medium text-foreground">
+                  {importChannel.displayNumber}
+                </span>{' '}
+                — והרשימה תופיע כאן לאישור.
+              </p>
+              <a
+                href={importChannel.waMeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block font-medium text-primary hover:underline"
+              >
+                פתיחת וואטסאפ עם המספר
+              </a>
+            </>
+          ) : (
+            <p>
+              אין רשימות ממתינות. שלחו קובץ CSV או שתפו אנשי קשר לוואטסאפ העסקי —
+              והרשימה תופיע כאן לאישור.
+            </p>
+          )}
+        </div>
       ) : null}
 
       {pendingList.map((s) => {
@@ -70,14 +100,14 @@ export default async function WhatsappImportPage({ params }: PageProps) {
         const errorRows = Array.isArray(s.error_rows)
           ? (s.error_rows as Array<{ row: number; message: string }>)
           : [];
+        const listLabel =
+          s.source === 'whatsapp_document'
+            ? `קובץ${s.file_name ? `: ${s.file_name}` : ''}`
+            : 'אנשי קשר ששותפו';
         return (
           <section key={s.id} className="space-y-3 rounded-lg border border-border p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-semibold">
-                {s.source === 'whatsapp_document'
-                  ? `קובץ${s.file_name ? `: ${s.file_name}` : ''}`
-                  : 'אנשי קשר ששותפו'}
-              </h2>
+              <h2 className="font-semibold">{listLabel}</h2>
               <span className="text-xs text-muted-foreground">
                 {s.row_count} שורות תקינות
                 {errorRows.length ? ` · ${errorRows.length} שורות שגויות` : ''}
@@ -144,6 +174,7 @@ export default async function WhatsappImportPage({ params }: PageProps) {
               confirm={confirmWhatsappImportAction.bind(null, eventId, s.id)}
               discard={discardWhatsappImportAction.bind(null, eventId, s.id)}
               matches={matchesByStaging.get(s.id) ?? []}
+              listLabel={listLabel}
             />
           </section>
         );

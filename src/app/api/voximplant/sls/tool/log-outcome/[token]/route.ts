@@ -12,8 +12,7 @@ import type { CallOutcome } from '@/lib/validation/admin';
 // outcome (script draft §3's architectural-fix note: 'completed' and
 // 'no_answer' are server-computed elsewhere, never agent-asserted). Claims
 // sales_call_attempts.outcome_recorded_at atomically before writing, same
-// one-shot guard every one of the 4 legitimate write paths shares (file
-// header of sales-call-attempts.ts).
+// one-shot guard (claimSalesOutcome) every sales outcome-write path shares.
 //
 // 'escalated_to_human' is a real, distinct value the AGENT can pass (the
 // tool schema accepts it), but it is NOT one of callback_requests'

@@ -5,7 +5,7 @@
 // are free-form config the agreement reads live, so coercion is intentionally
 // avoided here) and writes them to the singleton app_settings row.
 //
-// Authorization: requireAdmin() gates the write, and the write goes through the
+// Authorization: requirePlatformPermission('manage_settings') gates the write, and the write goes through the
 // request-scoped cookie session client (createClient) — NOT the service-role
 // client — so the app_settings_admin_all RLS policy still applies. This mirrors
 // updateCompanySettings()/updateAppSettings(), which write the same row the same
@@ -17,7 +17,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createClient } from '@/lib/supabase/server';
 import type { FormState } from '@/lib/validation/result';
 
@@ -38,7 +38,7 @@ const agreementConfigSchema = z.object({
 });
 
 // Re-throw Next.js control-flow signals (redirect/notFound) so they are not
-// swallowed by the catch — same guard used by the other admin actions.
+// swallowed by the catch — same guard as ../company/actions.ts.
 function isNextControlFlow(err: unknown): boolean {
   return (
     !!err &&
@@ -65,11 +65,13 @@ export async function saveAgreementConfigAction(
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   try {
-    await requireAdmin();
+    // `manage_settings`, not `requireAdmin()`. The agreement config decides the
+// terms a customer signs.
+  await requirePlatformPermission('manage_settings');
     const supabase = await createClient();
 
     // The form is prefilled with current values, so every save submits all 7

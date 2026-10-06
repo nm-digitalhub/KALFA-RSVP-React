@@ -1,4 +1,4 @@
-// Stage-1 learning loop for support-drafter: distil the human-review feedback
+// Learning loop for support-drafter: distil the human-review feedback
 // that ALREADY exists in contact_messages — draft_reply (what the drafter
 // wrote) vs sent_reply (what a human actually sent) — into a redacted few-shot
 // corpus the role reads each run, plus a "sent nearly as-is" metric that
@@ -93,7 +93,7 @@ export interface CorrectionMetric {
   corrected: number; // pairs considered
   avgSimilarity: number; // mean draft↔sent similarity, 2dp
   nearVerbatim: number; // count with similarity >= threshold
-  nearPct: number; // % of corrected, 0dp — the stage-3 gate baseline
+  nearPct: number; // % of corrected, 0dp — the baseline for any future autonomy decision
 }
 
 export function summarizeMetric(

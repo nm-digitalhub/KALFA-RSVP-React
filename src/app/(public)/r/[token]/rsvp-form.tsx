@@ -39,10 +39,10 @@ const COUNT_FALLBACK_CAP = 50;
 const FIELD_CLASS =
   'min-h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50';
 
-// 44px stepper buttons (design audit: they were h-9 w-9 = 36px on the most
-// mobile-heavy page in the product). `touch-manipulation` removes the 300ms
-// double-tap-zoom delay on the +/− taps. Motion (press/entrance) is owned by
-// the public-pages motion layer, not here.
+// 44px stepper buttons (touch target size on the most mobile-heavy page in the
+// product). `touch-manipulation` removes the 300ms double-tap-zoom delay on the
+// +/− taps. Motion (press/entrance) is owned by the public-pages motion layer,
+// not here.
 const STEPPER_BUTTON_CLASS =
   'grid size-11 shrink-0 place-items-center rounded-md text-xl leading-none transition-colors outline-none select-none touch-manipulation hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-40 disabled:hover:bg-transparent';
 
@@ -52,12 +52,15 @@ function Stepper({
   value,
   max,
   onChange,
+  describedBy,
 }: {
   label: string;
   name: string;
   value: number;
   max: number;
   onChange: (next: number) => void;
+  // id of a FieldError shared by several steppers (the adults/kids total).
+  describedBy?: string;
 }) {
   return (
     <div>
@@ -67,6 +70,7 @@ function Stepper({
       <div
         role="group"
         aria-labelledby={`${name}-label`}
+        aria-describedby={describedBy}
         className="flex items-center justify-between rounded-md border border-input bg-background p-0.5"
       >
         <button
@@ -113,8 +117,9 @@ export function RsvpForm({
   attendees?: RsvpAttendee[];
   // The shared <AddToCalendar> element, rendered by the PAGE (a Server
   // Component) and shown here only after the guest confirms attendance. It is
-  // a prop, not an import, because that component uses the library's
-  // server-only SSR helper, which must never enter this client bundle.
+  // a prop, not an import, because that component's link generation
+  // (src/lib/calendar) is server-side code that must never enter this client
+  // bundle.
   calendar?: React.ReactNode;
 }) {
   const { guest, event, questions, can_respond: canRespond } = view;
@@ -141,6 +146,11 @@ export function RsvpForm({
   // Combined ceiling: adults + kids must not exceed expected_count (or the
   // sanity cap when uninvited-count). Per-field caps leave the remainder.
   const hardCap = guest.expected_count ?? COUNT_FALLBACK_CAP;
+
+  const statusErrors = state?.fieldErrors?.status;
+  const adultsErrors = state?.fieldErrors?.adults;
+  const mealErrors = state?.fieldErrors?.meal_pref;
+  const noteErrors = state?.fieldErrors?.note;
 
   return (
     <div className="space-y-6">
@@ -209,25 +219,34 @@ export function RsvpForm({
         <form action={formAction} className="@container space-y-5">
           <fieldset>
             <legend className="mb-2 text-sm font-medium">האם תגיעו?</legend>
+            {/* Native radios (one tab stop, arrow keys, `required`), visually
+                replaced by the chip; the chip draws the focus outline via
+                `has-focus-visible:` — same pattern as CallbackTimePreference. */}
             <div className="grid gap-2 @[20rem]:grid-cols-3">
               {RSVP_STATUSES.map((option) => (
-                <button
+                <label
                   key={option}
-                  type="button"
-                  onClick={() => setStatus(option)}
-                  aria-pressed={status === option}
-                  className={`min-h-11 rounded-md border px-3 py-2 text-base font-medium transition duration-200 ease-k-out outline-none select-none touch-manipulation focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring motion-safe:active:scale-95 ${
+                  className={`flex min-h-11 items-center justify-center rounded-md border px-3 py-2 text-center text-base font-medium transition duration-200 ease-k-out outline-none select-none touch-manipulation has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ring motion-safe:active:scale-95 ${
                     status === option
                       ? 'border-primary bg-primary text-primary-foreground'
                       : 'border-input bg-background hover:bg-muted'
                   }`}
                 >
+                  <input
+                    type="radio"
+                    name="status"
+                    value={option}
+                    required
+                    checked={status === option}
+                    onChange={() => setStatus(option)}
+                    aria-describedby={statusErrors?.length ? 'status-err' : undefined}
+                    className="sr-only"
+                  />
                   {STATUS_LABELS[option]}
-                </button>
+                </label>
               ))}
             </div>
-            <input type="hidden" name="status" value={status ?? ''} />
-            <FieldError errors={state?.fieldErrors?.status} />
+            <FieldError id="status-err" errors={statusErrors} />
           </fieldset>
 
           {attending ? (
@@ -239,6 +258,7 @@ export function RsvpForm({
                   value={adults}
                   max={hardCap - kids}
                   onChange={setAdults}
+                  describedBy={adultsErrors?.length ? 'adults-err' : undefined}
                 />
                 <Stepper
                   label="ילדים"
@@ -246,9 +266,10 @@ export function RsvpForm({
                   value={kids}
                   max={hardCap - adults}
                   onChange={setKids}
+                  describedBy={adultsErrors?.length ? 'adults-err' : undefined}
                 />
               </div>
-              <FieldError errors={state?.fieldErrors?.adults} />
+              <FieldError id="adults-err" errors={adultsErrors} />
 
               {/* Owner toggle (events.show_meal_pref). `!== false` so a stale
                   payload missing the key (old DB, new code) fails OPEN — the
@@ -264,9 +285,11 @@ export function RsvpForm({
                     type="text"
                     maxLength={120}
                     defaultValue={guest.meal_pref ?? ''}
+                    aria-invalid={mealErrors?.length ? true : undefined}
+                    aria-describedby={mealErrors?.length ? 'meal_pref-err' : undefined}
                     className={FIELD_CLASS}
                   />
-                  <FieldError errors={state?.fieldErrors?.meal_pref} />
+                  <FieldError id="meal_pref-err" errors={mealErrors} />
                 </div>
               ) : null}
 
@@ -349,33 +372,40 @@ export function RsvpForm({
               rows={3}
               maxLength={500}
               defaultValue={guest.rsvp_note ?? ''}
+              aria-invalid={noteErrors?.length ? true : undefined}
+              aria-describedby={noteErrors?.length ? 'note-err' : undefined}
               className={FIELD_CLASS}
             />
-            <FieldError errors={state?.fieldErrors?.note} />
+            <FieldError id="note-err" errors={noteErrors} />
           </div>
 
           <FormError message={state?.error} />
-          {state?.notice ? (
-            <div
-              role="status"
-              className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-center motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 duration-500 ease-k-out"
-            >
-              <p className="flex items-center justify-center gap-2 font-semibold">
-                <PartyPopper aria-hidden className="size-5 text-primary motion-safe:animate-k-pop k-delay-150" />
-                {state.notice}
-              </p>
-              {attending ? (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  נתראה ב{EVENT_TYPE_LABELS[eventType]} — נרשמו {adults + kids}{' '}
-                  {adults + kids === 1 ? 'משתתף/ת' : 'משתתפים'}.
+          {/* A live region is only announced when its CONTENT changes, so the
+              role="status" wrapper stays mounted and only its child swaps.
+              Empty, it is a zero-height block whose margins collapse — no
+              visible gap. */}
+          <div role="status">
+            {state?.notice ? (
+              <div
+                className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-center motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 duration-500 ease-k-out"
+              >
+                <p className="flex items-center justify-center gap-2 font-semibold">
+                  <PartyPopper aria-hidden className="size-5 text-primary motion-safe:animate-k-pop k-delay-150" />
+                  {state.notice}
                 </p>
-              ) : null}
-              <p className="mt-1 text-xs text-muted-foreground">
-                אפשר לעדכן את התשובה בכל רגע מאותו קישור.
-              </p>
-              {attending && calendar ? <div className="mt-4">{calendar}</div> : null}
-            </div>
-          ) : null}
+                {attending ? (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    נתראה ב{EVENT_TYPE_LABELS[eventType]} — נרשמו {adults + kids}{' '}
+                    {adults + kids === 1 ? 'משתתף/ת' : 'משתתפים'}.
+                  </p>
+                ) : null}
+                <p className="mt-1 text-xs text-muted-foreground">
+                  אפשר לעדכן את התשובה בכל רגע מאותו קישור.
+                </p>
+                {attending && calendar ? <div className="mt-4">{calendar}</div> : null}
+              </div>
+            ) : null}
+          </div>
           <SubmitButton size="lg">שליחת אישור</SubmitButton>
         </form>
       )}

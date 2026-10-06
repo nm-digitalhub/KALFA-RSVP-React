@@ -34,12 +34,11 @@ export async function confirmOtp(formData: FormData): Promise<void> {
   // `type` is narrowed to ConfirmOtpType by isConfirmOtpType above — no cast.
   const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
   if (error) {
-    // Expired / used / invalid link. It used to land on /auth/login, which told
-    // the visitor nothing — they had no way to learn the link had simply aged
-    // out, and (before the email_not_confirmed fix) logging in then answered
-    // "wrong email or password" forever. `type` travels so the page can offer
-    // the RIGHT recovery; it came from the link the visitor already held, so it
-    // discloses nothing about them, and the page itself stays enumeration-safe.
+    // Expired / used / invalid link. /auth/login would tell the visitor nothing —
+    // they would have no way to learn the link had simply aged out. `type`
+    // travels so the page can offer the RIGHT recovery; it came from the link
+    // the visitor already held, so it discloses nothing about them, and the page
+    // itself stays enumeration-safe.
     redirect(`/auth/confirm/expired?type=${encodeURIComponent(type)}`);
   }
 

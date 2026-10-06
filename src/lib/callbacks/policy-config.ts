@@ -11,9 +11,9 @@ import { DEFAULT_CALLBACK_POLICY, type CallbackPolicy, type DayWindow } from '@/
 //
 // WORKER-SAFE ON PURPOSE, matching callback-scheduling.ts's own contract
 // (service-role only, no requireUser/no cookies) — this file must NEVER import
-// requireAdmin/createClient(session)/next-headers, since callback-scheduling.ts
+// requirePlatformPermission/createClient(session)/next-headers, since callback-scheduling.ts
 // (imported by worker/main.ts) imports this module. The admin-form counterpart
-// (session client + requireAdmin) lives in policy-config-admin.ts instead,
+// (session client + requirePlatformPermission) lives in policy-config-admin.ts instead,
 // specifically so the worker bundle never pulls in next/headers transitively —
 // dependency-cruiser's worker-no-request-scoped-next rule enforces this split.
 
@@ -37,9 +37,9 @@ function windowFor(row: PolicyRow, day: (typeof DAYS)[number], prefix: '' | 'dia
 }
 
 // The DB CHECK constraints already reject a malformed single column at write
-// time; this is the read-time guard for the one thing they cannot express — a
-// cross-column relationship (e.g. duration_minutes longer than every open
-// window). Falling back to the full default policy rather than a patched-up
+// time; this is the read-time guard for a row that still arrives unusable — a
+// non-finite value, or a daily cap / attempt budget below 1. Falling back to
+// the full default policy rather than a patched-up
 // partial one avoids serving a policy that searches forever without a slot.
 function toCallbackPolicy(row: PolicyRow | null): CallbackPolicy {
   if (!row) return DEFAULT_CALLBACK_POLICY;

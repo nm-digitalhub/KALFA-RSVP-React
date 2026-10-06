@@ -51,7 +51,7 @@ function stubAdmin(opts: {
         select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: phone ? { normalized_phone: phone } : null }) }) }),
       };
     }
-    // call_attempts — two shapes: the due-list query, the count read, and the claim.
+    // call_attempts — three shapes: the due-list query, the count read, and the claim.
     return {
       select: (cols: string) => {
         if (cols.includes('callback_count') && !cols.includes('campaign_id')) {

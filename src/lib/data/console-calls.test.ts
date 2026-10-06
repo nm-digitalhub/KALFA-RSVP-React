@@ -758,10 +758,9 @@ describe('evaluateInboundCaps (pure — Gate E.2 caps math)', () => {
     // rather than a guess multiplied by a count, and bounds a bad day at
     // 300 x ~$0.0075 = ~$2.25.
     //
-    // What this test now protects is that the spend breaker is still REACHABLE
-    // rather than dead code: at a genuinely higher per-call cost it must still
-    // fire ahead of the count cap. If someone later restores the $5 cap, the
-    // first assertion is what will tell them the ordering flipped back.
+    // What this test protects is that ordering: the count cap binds first. If
+    // someone later restores the $5 cap, the first assertion is what will tell
+    // them the ordering flipped back.
     expect(evaluateInboundCaps({ ...base, answeredToday: 250 })).toEqual({ ok: true });
     expect(evaluateInboundCaps({ ...base, answeredToday: 299 })).toEqual({ ok: true });
     expect(evaluateInboundCaps({ ...base, answeredToday: 300 })).toEqual({ ok: false, reason: 'daily_breaker' });
@@ -837,7 +836,7 @@ describe('evaluateCallMeNowCaps (pure — capability A, third design)', () => {
 describe('dialIntentBodySchema — scenario ג (cold call) has NO admitted shape', () => {
   it('accepts the two decided shapes', () => {
     // Real v4-shaped UUIDs (version nibble '4', variant nibble in {8,9,a,b}) —
-    // Zod 4's z.string().uuid() strictly validates the version marker, not
+    // Zod 4's z.uuid() strictly validates the version marker, not
     // just the hex-with-dashes shape (memory: "Zod 4 z.uuid() strictness").
     expect(dialIntentBodySchema.safeParse({ kind: 'callback', id: '11111111-1111-4111-8111-111111111111' }).success).toBe(true);
     expect(
@@ -856,8 +855,8 @@ describe('dialIntentBodySchema — scenario ג (cold call) has NO admitted shape
 
   it('is a compile-time guarantee too: a cold-call input does not type-check', () => {
     // @ts-expect-error — 'cold' is not a member of the DialTargetInput union;
-    // the TYPE itself has no representation for scenario ג, matching
-    // decide-consent's "no code path exists" requirement.
+    // the TYPE itself has no cold-call variant (a human-typed number is the
+    // separate 'manual' kind).
     const _cold: DialTargetInput = { kind: 'cold', phone: '+972501234567' };
     void _cold;
   });
@@ -999,10 +998,11 @@ describe('resolveDialTarget — kind: guest_service', () => {
 });
 
 // evaluateCallMeNowConsent — capability A, third design (12.8). Proves it
-// routes through the SAME evaluateSharedConsentGates resolveDialTarget's two
-// kinds already use (DNC -> contacts opt-out -> Shabbat/Yom-Tov -> daily
-// window), not a reimplementation — same fixtures/mocks as resolveDialTarget's
-// own suites above, on a bare phone with no event/contact lookup at all.
+// routes through the SAME evaluateSharedConsentGates resolveDialTarget's
+// callback/guest_service kinds already use (DNC -> contacts opt-out ->
+// Shabbat/Yom-Tov -> daily window), not a reimplementation — same
+// fixtures/mocks as resolveDialTarget's own suites above, on a bare phone with
+// no event/contact lookup at all.
 // RULING (12.8): the daily window is skipped for this function; Shabbat/
 // Yom-Tov is NOT — see evaluateCallMeNowConsent's own header in
 // console-calls.ts for the full basis (two separate conclusions, two
@@ -1048,8 +1048,8 @@ describe('evaluateCallMeNowConsent — reuses the shared DNC/opt-out/Shabbat gat
 });
 
 // The paired test the ruling specifically asked for: the SAME off-daily-window
-// timestamp behaves DIFFERENTLY for resolveDialTarget's two existing kinds
-// (still refuse — the ruling never touched them) vs. call-me-now's own gate
+// timestamp behaves DIFFERENTLY for resolveDialTarget's callback/guest_service
+// kinds (still refuse — the ruling never touched them) vs. call-me-now's own gate
 // (no longer refuses) — so a future edit that collapses the two paths back
 // into one hours rule fails here first, loudly, rather than silently.
 describe('daily-window ruling, paired: callback/guest_service keep it, call-me-now does not', () => {
@@ -1165,7 +1165,7 @@ describe('daily-window ruling, paired: callback/guest_service keep it, call-me-n
 
 // offerCallbackForCallMeNow — the intent-time no-agent fallback (owner
 // availability-first design, 12.8). Same idempotency shape as
-// recordNoAgentCallback: an existing open request for the phone blocks a
+// recordMissedCallCallback: an existing open request for the phone blocks a
 // duplicate write. Asserted via from.mock.calls rather than a return value,
 // since the function itself returns void — the observable behavior IS
 // whether a second admin.from('callback_requests') call (the insert) ever
@@ -1358,10 +1358,10 @@ describe('resolveTransferTarget', () => {
     expect(result).toEqual({ ok: false, reason: 'not_ready' });
   });
 
-  // Freshness gate (full telephony audit, 13.8) — resolveTransferTarget used
-  // to accept a bare status='ready' row with no staleness check, unlike
-  // findRoutableAgents' identical <90s AGENT_STATUS_FRESHNESS_MS heartbeat
-  // gate for inbound ring routing. These three cases pin the fix.
+  // Freshness gate — resolveTransferTarget must apply the same <90s
+  // AGENT_STATUS_FRESHNESS_MS heartbeat gate as findRoutableAgents' inbound
+  // ring routing, not accept a bare status='ready' row. These three cases pin
+  // it.
   it('not_ready when status=ready but updated_at is older than the freshness window', async () => {
     wireAdmin({
       console_agents: [{ data: { vox_username: 'agent_target' }, error: null }],
@@ -1580,8 +1580,7 @@ describe('notifyRoutableAgentsOfInboundCall (call-center research, 12.8 — capa
     expect(sendPushToUser).toHaveBeenCalledWith('agent-1', {
       title: 'KALFA — מוקד שירות',
       body: 'שיחה נכנסת ממתינה במוקד',
-      // Deep-links to the specific call (teammate enhancement, 12.8 —
-      // wake-and-answer research) — softphone-panel.tsx reads `call` to
+      // Deep-links to the specific call — softphone-panel.tsx reads `call` to
       // auto-open. Still not PII, see the function's own comment.
       url: '/admin?call=call-42',
       tag: 'console-call-call-42',
@@ -1759,7 +1758,8 @@ describe('routeInboundRetryBodySchema (wake-and-answer research, 12.8)', () => {
 
 // Reported live 14.8: "שיחה נכנסת ממתינה במוקד" notifications piled up on the
 // agent's device, each still claiming a call was waiting long after it hung up.
-// Nothing ever closed them — sw.js only closes on notificationclick.
+// Nothing ever closed them — sw.js only closed on notificationclick (it now
+// also closes same-tag notifications when a replacement push arrives).
 describe('notifyAgentsInboundCallResolved (stale inbound-call notification, 14.8)', () => {
   beforeEach(() => {
     vi.mocked(sendPushToUser).mockResolvedValue({ attempted: 1, sent: 1, failed: 0, revoked: 0 });
@@ -1824,8 +1824,8 @@ describe('notifyAgentsInboundCallResolved (stale inbound-call notification, 14.8
   });
 
   it('stays silent for a call that WAS answered, whatever the reason says', async () => {
-    // The behaviour this function was built for, and the one thing the change
-    // above must not break: an agent who just finished a call is not buzzed again.
+    // The behaviour this function was built for: an agent who just finished a
+    // call is not buzzed again.
     wireAdmin({
       push_delivery_log: [{ data: [{ user_id: 'agent-1' }], error: null }],
       console_call_pii: [{ data: { phone_e164: '+972501234567' }, error: null }],
@@ -1897,8 +1897,8 @@ describe('notifyAgentsInboundCallResolved (stale inbound-call notification, 14.8
 
 // agent_status has an 'in_call' value nothing ever writes, so "busy" is derived
 // from the calls table instead. The TIME BOUND is the part that matters: there
-// is no sweep closing stuck console_calls rows, so an unbounded exclusion would
-// drop an agent from routing permanently over one leaked row.
+// is no sweep closing stuck 'connected' console_calls rows, so an unbounded
+// exclusion would drop an agent from routing permanently over one leaked row.
 describe('findRoutableAgents — busy exclusion (14.8)', () => {
   const AGENT = { user_id: 'agent-1', vox_username: 'agent_agent-1' };
   const freshStatus = [{ agent_id: 'agent-1', status: 'ready', updated_at: new Date().toISOString() }];

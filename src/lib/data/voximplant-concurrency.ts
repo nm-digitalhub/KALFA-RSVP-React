@@ -4,8 +4,8 @@ import { countActiveCalls } from '@/lib/data/call-attempts';
 import { countActiveCallbackDispatches } from '@/lib/data/callback-request-attempts';
 import { countActiveSalesDispatches } from '@/lib/data/sales-call-attempts';
 
-// The combined pre-terminal call count across EVERY Voximplant dispatch
-// surface that shares this account's balance and concurrency ceiling.
+// The combined pre-terminal call count across the three hand-written Voximplant
+// dispatch surfaces that share this account's balance and concurrency ceiling.
 //
 // call_attempts (RSVP campaign dials, outreach-calls.ts),
 // callback_request_attempts (callback_requests-scoped meeting-confirmation
@@ -21,9 +21,8 @@ import { countActiveSalesDispatches } from '@/lib/data/sales-call-attempts';
 // Every dispatcher that enforces a concurrency cap against this account MUST
 // call this function — never countActiveCalls(), countActiveCallbackDispatches()
 // or countActiveSalesDispatches() alone for that purpose. outreach-calls.ts
-// (RSVP campaign dials) was wired to this function on 2026-08-22, closing the
-// gap noted here at this file's introduction — all three dispatchers now
-// share one combined count.
+// (RSVP campaign dials), meeting-confirm-dispatch.ts and sales-call-dispatch.ts
+// all share this one combined count.
 export async function countActiveCallsAllSurfaces(): Promise<number> {
   const [rsvp, meeting, sales] = await Promise.all([
     countActiveCalls(),

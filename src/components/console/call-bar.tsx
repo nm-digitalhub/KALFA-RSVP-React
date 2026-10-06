@@ -32,12 +32,12 @@ import { cn } from '@/lib/utils';
 // project's honest-UI rule.
 //
 // "מחובר למערכת" (not "מחובר") for the connected state is deliberate: on
-// ConsoleDial.voxengine.js BOTH branches answer the operator/browser leg
-// before the far party is confirmed reachable (internal: before the callee
-// even rings; outbound: before the PSTN leg connects and before
+// ConsoleDial.voxengine.js the operator/browser leg is answered before the
+// call with the far party is actually established (internal: before the
+// callee even rings; outbound: when the PSTN leg picks up, before
 // disclosure+bridge). CallEvent.Connected — the only signal this file is
 // allowed to call "connected" — therefore proves only that the browser is
-// connected to the PLATFORM, never that the other party answered. See the
+// connected to the PLATFORM, never that the two parties are talking. See the
 // matching comment in web-client.ts before changing this wording.
 const STATE_LABEL: Partial<Record<ConsoleCallState, string>> = {
   ringing_out: 'מחייג…',
@@ -62,11 +62,12 @@ function formatElapsed(seconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-// Stage 2 (consult-before-transfer + conference). console_calls.kind values
-// that carry a real customer leg — mirrors LIVE_CUSTOMER_CALL_KINDS in
-// src/lib/data/console-calls.ts (`import 'server-only'`, so it cannot be
-// imported into this Client Component — same reasoning ai-handoff-section.tsx
-// documents for its own AI_CALL_TERMINAL_STATUSES duplication). KEEP IN SYNC.
+// Consult-before-transfer + conference. console_calls.kind values that
+// carry a real customer leg — mirrors LIVE_CUSTOMER_CALL_KINDS in
+// src/lib/data/console-calls.ts, minus 'widget' (an unreachable path there).
+// That module is `import 'server-only'`, so it cannot be imported into this
+// Client Component — same reasoning ai-handoff-section.tsx documents for its
+// own AI_CALL_TERMINAL_STATUSES duplication. KEEP IN SYNC.
 const CONSULTABLE_KINDS = new Set(['manual', 'inbound_customer']);
 
 // The console_calls row for the OPERATOR'S OWN currently-bridged customer
@@ -122,7 +123,7 @@ export function CallBar({
     return () => clearInterval(id);
   }, [snap.state]);
 
-  // Stage 2 — the console_calls row behind the operator's own bridged
+  // The console_calls row behind the operator's own bridged
   // customer call. Own effect, deliberately separate from anything else in
   // the panel (softphone-panel.tsx's own activeCall query, own realtime
   // subscription) so a failure here can never touch that query's error
@@ -184,7 +185,7 @@ export function CallBar({
   const [collabBusy, setCollabBusy] = useState(false);
   const [collabError, setCollabError] = useState<string | null>(null);
 
-  // Fires one of the four stage-2 command routes against the CURRENT collab
+  // Fires one of the four consult/conference command routes against the CURRENT collab
   // call. 2xx here means delivered, never "done" — collab (above) is the
   // only truth this component ever renders as consulting/in-conference,
   // exactly like every other honest-UI surface in this console.
@@ -328,7 +329,7 @@ export function CallBar({
             </div>
           ) : null}
 
-          {/* Stage 2 — consult-before-transfer + 3-way conference. Gated on
+          {/* Consult-before-transfer + 3-way conference. Gated on
               the app_settings flag, on collab actually being resolved (the
               customer-facing console_calls row behind THIS SDK call — never
               inferred from `snap` alone), and on its kind carrying a real

@@ -18,6 +18,11 @@ import { join } from "node:path";
 import { connect as tlsConnect } from "node:tls";
 import { promisify } from "node:util";
 
+import type { components as MetaTemplateSchemas } from "@/lib/whatsapp/generated/message-templates";
+import { GRAPH_API_VERSION } from "@/lib/whatsapp/graph-version";
+
+type MessageTemplatesResponse = MetaTemplateSchemas["schemas"]["MessageTemplatesResponse"];
+
 import type { Label } from "./state";
 
 const execFileAsync = promisify(execFile);
@@ -391,10 +396,10 @@ function envFindings(input: PreflightInput): PreflightFinding[] {
       : "does not embed the origin",
   });
   {
-    // Owner insight 2026-08-23: the linked supabase CLI keeps its own
-    // Management token at ~/.supabase/access-token (0600) — the wizard
-    // resolves env first, then that file. Presence + source only; the value
-    // is never read into a finding.
+    // The linked supabase CLI keeps its own Management token at
+    // ~/.supabase/access-token (0600) — the wizard resolves env first, then
+    // that file. Presence + source only; the value is never read into a
+    // finding.
     const source = scan.supabaseTokenPresent
       ? "env"
       : supabaseCliTokenExists()
@@ -423,10 +428,10 @@ interface ToolProbe {
   fix: string;
 }
 
-/** Pure aggregation of tool probes into one finding (owner requirement
- * 2026-08-23: prove the tools exist, never assume). Installation itself is
- * DELIBERATELY not automated for system packages — that is an owner-gated
- * action; the fix text carries the exact command instead. */
+/** Pure aggregation of tool probes into one finding (prove the tools exist,
+ * never assume). The preflight itself never installs anything: system
+ * packages are installed only by install mode (install-steps.ts) behind the
+ * install-prereqs gate; the fix text carries the exact command instead. */
 export function summarizeTooling(tools: ToolProbe[]): PreflightFinding {
   const missing = tools.filter((t) => !t.ok);
   if (missing.length === 0) {
@@ -503,7 +508,7 @@ async function toolingFinding(input: PreflightInput): Promise<PreflightFinding> 
       (p) => ({ ...p, version: p.ok ? "passwordless ok" : undefined }),
     ),
   ]);
-  // Repo dependencies: tsx/@clack/prompts must resolve from node_modules —
+  // Repo dependencies: tsx/@clack/prompts/zod must resolve from node_modules —
   // if the tree is missing this CLI would not even start, but on a FRESH
   // clone this line tells the operator the exact fix.
   const depsOk = ["@clack/prompts", "zod", "tsx"].every((dep) =>
@@ -598,14 +603,20 @@ async function hardcodeFinding(input: PreflightInput): Promise<PreflightFinding>
         "scripts",
         // Console scenarios read the origin from the KALFA_APP_ORIGIN
         // application secret (F6) — a literal here means an un-fixed scenario.
-        "voxfiles/scenarios/src",
+        // The whole applications tree, not one path: voxengine-ci 36 moved
+        // sources to voxfiles/applications/<app>/scenarios/src, and naming the
+        // parent keeps this scanning every application without hardcoding a
+        // name. Pointing at the old voxfiles/scenarios/src silently scanned
+        // NOTHING after the 2026-09-14 migration — grep simply skips a path
+        // that does not exist, so the check passed by finding no files.
+        "voxfiles/applications",
       ],
       { cwd: input.repoRoot, timeout: 30_000, maxBuffer: 8 * 1024 * 1024 },
     );
     // Split BEHAVIORAL hardcodes from comment-only mentions: a domain inside a
     // `//`, `*` or `#` line documents something (often the Meta-resident base
     // URL) and breaks nothing on a move — counting them as one bucket buried
-    // the real signal (owner question, 2026-08-23). Line-start comment
+    // the real signal. Line-start comment
     // detection only; a literal inside real code always counts as code.
     const codeFiles = new Set<string>();
     const commentFiles = new Set<string>();
@@ -657,10 +668,10 @@ async function hardcodeFinding(input: PreflightInput): Promise<PreflightFinding>
   }
 }
 
-/** WhatsApp credentials live in app_settings (DB), NOT env (owner note
- * 2026-08-23). Read them via the Supabase REST endpoint with the service key
- * from env — a plain fetch, no server-only import chain (this file runs under
- * tsx). Returns null when anything is missing; values never printed. */
+/** WhatsApp credentials live in app_settings (DB), NOT env. Read them via
+ * the Supabase REST endpoint with the service key from env — a plain fetch,
+ * no server-only import chain (this file runs under tsx). Returns null when
+ * anything is missing; values never printed. */
 async function fetchWhatsAppSettings(env: Record<string, string>): Promise<{
   wabaId: string;
   accessToken: string;
@@ -717,27 +728,30 @@ async function metaTemplateFinding(input: PreflightInput): Promise<PreflightFind
   if (creds) {
     try {
       const res = await fetch(
-        `https://graph.facebook.com/v21.0/${creds.wabaId}/message_templates?fields=name,status,components&limit=200`,
+        `https://graph.facebook.com/${GRAPH_API_VERSION}/${creds.wabaId}/message_templates?fields=name,status,components&limit=200`,
         {
           headers: { authorization: `Bearer ${creds.accessToken}` },
           signal: AbortSignal.timeout(10_000),
         },
       );
       if (res.ok) {
-        const body = (await res.json()) as {
-          data?: { name: string; status: string; components?: { type?: string; buttons?: { type?: string; url?: string }[] }[] }[];
-        };
-        const templates = (body.data ?? [])
-          .filter((t) => t.status === "APPROVED")
-          .map((t) => ({
-            name: t.name,
-            status: t.status,
-            urls: (t.components ?? [])
-              .filter((c) => c.type === "BUTTONS")
-              .flatMap((c) => c.buttons ?? [])
-              .filter((b) => b.type === "URL" && typeof b.url === "string")
-              .map((b) => b.url as string),
-          }));
+        const body = (await res.json()) as MessageTemplatesResponse;
+        // Approved, named templates only; the narrowing keeps name and status
+        // defined without a cast (Meta's spec makes both optional).
+        const templates = (body.data ?? []).flatMap((t) =>
+          t.status === "APPROVED" && t.name
+            ? [
+                {
+                  name: t.name,
+                  status: t.status,
+                  urls: (t.components ?? [])
+                    .filter((c) => c.type === "BUTTONS")
+                    .flatMap((c) => c.buttons ?? [])
+                    .flatMap((b) => (b.type === "URL" && b.url ? [b.url] : [])),
+                },
+              ]
+            : [],
+        );
         const { affected, neutral, other } = classifyMetaTemplates(templates, currentHost);
         const otherNote = other.length > 0 ? `; NOTE ${other.length} template(s) point elsewhere: ${other.join(", ")}` : "";
         return {
@@ -778,7 +792,6 @@ async function metaTemplateFinding(input: PreflightInput): Promise<PreflightFind
   }
 }
 
-/** Run all Stage A checks (read-only). Order is the render order. */
 /** What answered when we fetched the target origin from here. */
 export interface LiveProbeResult {
   answered: boolean;
@@ -788,7 +801,7 @@ export interface LiveProbeResult {
   reason?: string;
 }
 
-/** Pure classification of the live-site probe (owner requirement 2026-08-23):
+/** Pure classification of the live-site probe:
  * a target that already serves a LIVE system — even on ANOTHER server, where
  * no local vhost exists to conflict — must be surfaced before any move.
  * Pointing DNS at this server takes that site offline; the operator must see
@@ -892,6 +905,7 @@ async function liveSiteFinding(input: PreflightInput): Promise<PreflightFinding>
   });
 }
 
+/** Run all Stage A checks (read-only). Order is the render order. */
 export async function runPreflight(input: PreflightInput): Promise<PreflightFinding[]> {
   const findings: PreflightFinding[] = [];
   findings.push(await toolingFinding(input));

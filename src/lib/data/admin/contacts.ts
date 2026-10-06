@@ -11,9 +11,8 @@ import type { ContactStatus } from '@/lib/validation/admin';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
 // Admin: contact-form + in-app support submissions (the single inquiry entity).
-// `contact_messages` carries no admin-facing RLS policy (deny-by-default —
-// dropped 2026-07-20 when the staff axis moved off customer tables). Access is
-// authorized entirely by requirePlatformPermission('view_customer_data') below,
+// `contact_messages` carries no admin-facing RLS policy (deny-by-default).
+// Access is authorized entirely by requirePlatformPermission('view_customer_data') below,
 // server-side, before createAdminClient() (service-role) ever touches the row.
 
 type ContactMessageRow = Tables<'contact_messages'>;
@@ -142,8 +141,8 @@ export async function getContactMessage(id: string): Promise<ContactMessage | nu
   return data;
 }
 
-// Update a single contact message's status. Same closed vocabulary as
-// callbacks (validated by the caller's Server Action). handled_at is
+// Update a single contact message's status. Closed vocabulary
+// (CONTACT_STATUSES, validated by the caller's Server Action). handled_at is
 // deterministic from the status: terminal (done/cancelled) → stamped now,
 // non-terminal → cleared.
 export async function updateContactStatus(
@@ -286,13 +285,11 @@ export async function sendInquiryReply(id: string, replyText: string): Promise<v
     body: replyText,
   });
 
-  // A reply no longer auto-closes the inquiry. It used to jump straight to
-  // 'done', which meant "done" could mean either "actually resolved" or
-  // "we replied once, who knows if that settled it" — indistinguishable in
-  // the UI. A reply now means "in progress": someone is actively working the
-  // thread, whether or not this is the final word. 'done' is reachable only
-  // by an explicit admin choice (updateContactStatus) or the future silence-
-  // based auto-close sweep — never as a side effect of sending mail.
+  // A reply does not auto-close the inquiry: it means "in progress" — someone
+  // is actively working the thread, whether or not this is the final word.
+  // 'done' is reachable only by an explicit admin choice (updateContactStatus)
+  // or the silence-based auto-close sweep (inquiry-followup.ts) — never as a
+  // side effect of sending mail.
   // handled_at is cleared unconditionally: in_progress is never terminal, and
   // a stale handled_at from a PRIOR done/cancelled round-trip would otherwise
   // keep showing a "handled" timestamp for a thread that is open again.
@@ -383,8 +380,7 @@ export type InquiryUrgency = {
  *
  * Why it matters here specifically: KALFA's customers are private individuals,
  * so an event three days out is somebody's wedding. That question cannot wait
- * in line behind a general pricing enquiry, and nothing in the list currently
- * distinguishes them.
+ * in line behind a general pricing enquiry.
  */
 export async function resolveInquiryUrgency(
   inquiries: Array<{ id: string; phone: string | null }>,

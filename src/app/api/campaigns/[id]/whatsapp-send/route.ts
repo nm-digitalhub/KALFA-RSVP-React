@@ -9,10 +9,10 @@ import { sendCampaignWhatsApp } from '@/lib/data/outreach';
 import { whatsappSendSchema } from '@/lib/validation/campaigns';
 import { isAllowedOrigin } from '@/lib/http/allowed-origin';
 
-// Manual owner-triggered WhatsApp send for a campaign (interim, until the
-// pg-boss scheduler ships). Mirrors the J5 authorize route: CSRF + auth +
-// ownership + fail-closed gate. The orchestrator re-checks every §8.3
-// precondition; this route only gates + dispatches. Never log token/PII.
+// Manual owner-triggered WhatsApp send for a campaign. Mirrors the J5
+// authorize route: CSRF + auth + ownership + fail-closed gate. The
+// orchestrator re-checks every §8.3 precondition; this route only gates +
+// dispatches. Never log token/PII.
 
 function r303(url: URL) {
   return NextResponse.redirect(url, 303);

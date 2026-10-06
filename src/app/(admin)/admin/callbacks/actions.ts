@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 
 import { cancelCallback, rescheduleCallback, updateCallOutcome } from '@/lib/data/admin/callbacks';
@@ -23,7 +24,7 @@ function isNextRedirect(err: unknown): boolean {
 }
 
 // Cancel a request outright. Authorization is enforced inside cancelCallback
-// (requireAdmin) and by RLS. Returns a typed FormState for useActionState.
+// (requirePlatformPermission). Returns a typed FormState for useActionState.
 export async function cancelCallbackAction(
   _prevState: FormState,
   formData: FormData,
@@ -31,14 +32,14 @@ export async function cancelCallbackAction(
   const parsed = cancelCallbackSchema.safeParse({ id: formData.get('id') });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   let outcome;
   try {
     outcome = await cancelCallback(parsed.data.id);
   } catch (err) {
-    // Re-throw Next.js control-flow signals (e.g. redirect from requireAdmin);
+    // Re-throw Next.js control-flow signals (e.g. redirect from requirePlatformPermission);
     // catching them would silently break the redirect.
     if (isNextRedirect(err)) throw err;
     return { error: 'ביטול הבקשה נכשל. נסו שוב.' };
@@ -69,7 +70,7 @@ export async function cancelCallbackAction(
 
 // Records what happened when the owner made the call. Validates the closed
 // outcome vocabulary server-side; authorization is enforced inside
-// updateCallOutcome (requireAdmin) and by RLS.
+// updateCallOutcome (requirePlatformPermission).
 export async function updateCallOutcomeAction(
   _prevState: FormState,
   formData: FormData,
@@ -80,7 +81,7 @@ export async function updateCallOutcomeAction(
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   try {
@@ -97,8 +98,8 @@ export async function updateCallOutcomeAction(
 
 // Reschedules a callback to a new admin-chosen instant — the caller answered
 // and asked for a different time, or asked to be called again later.
-// Authorization is enforced inside rescheduleCallback (requireAdmin) and by
-// RLS, same as updateCallbackStatusAction above.
+// Authorization is enforced inside rescheduleCallback
+// (requirePlatformPermission).
 export async function rescheduleCallbackAction(
   _prevState: FormState,
   formData: FormData,
@@ -109,7 +110,7 @@ export async function rescheduleCallbackAction(
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   let outcome;

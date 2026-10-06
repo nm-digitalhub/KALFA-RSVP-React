@@ -1,204 +1,210 @@
-import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
+import { z } from 'zod';
 
-import { Badge } from '@/components/ui/badge';
 import {
-  listFleetActivity,
-  listFleetRoles,
-  type FleetActivityEntry,
+  getFleetConversation,
+  getFleetGoalById,
+  getFleetRequestRole,
+  parseConversationCursor,
+  readFleetRoles,
 } from '@/lib/data/admin/fleet';
-import { LocalDateTime } from '@/components/local-date-time';
-import { EmptyState, PageHeading, Pagination, parsePageParam, firstParam } from '../_components';
 import {
-  ComposeActivityCard,
-  GOAL_STATUS_LABEL,
-  GOAL_STATUS_VARIANT,
-  KIND_LABEL,
-  KIND_VARIANT,
-  STATUS_LABEL,
-  STATUS_VARIANT,
-} from './fleet-client';
-import { FleetSearchBar } from './fleet-search-bar';
-import { GoalDetailPanel, RequestDetailPanel } from './activity-detail';
-
-export const metadata: Metadata = { title: 'פניות סוכנים' };
+  buildConversationEvents,
+  isWaitingOnOwner,
+  layoutStream,
+} from '@/lib/fleet/conversation';
+import { requestBodyAuthor } from '@/lib/fleet/content-author';
+import { reachability } from '@/lib/fleet/reachability';
+import { firstParam } from '../_components';
+import { ConversationScroller, FocusHeadingOnPhone } from './conversation-scroller';
+import { FleetAgentAvatar } from './fleet-agent-avatar';
+import { ComposerProvider, FleetComposer, PendingBar } from './fleet-composer';
+import { GoalStrip } from './fleet-goals';
+import { FleetStream } from './fleet-stream';
 
 const BASE_PATH = '/admin/fleet';
+const ROLE_RE = /^[a-z0-9][a-z0-9-]*$/;
 
-// Admin: the autonomous-fleet activity feed (/admin/fleet) — a request (one
-// answer, done) and a goal (persistent, the role advances it between runs)
-// used to be four disconnected sections (compose request / pending / goals /
-// history table); redesigned as ONE master-detail inbox in the same idiom as
-// /admin/contacts: one flat filterable list (see listFleetActivity — "needs
-// attention" items sort ahead of everything else rather than living in a
-// separate boxed section) and one detail pane. Desktop shows the list and the
-// selected item side by side; mobile shows one pane at a time, switched by
-// whether `id` is present — same pure CSS/data-attribute split `contacts`
-// already uses. Authorization: the (admin) layout requireAdmin() boundary +
-// manage_settings in the data layer + RLS.
+function conversationHref(role: string, extra: Record<string, string> = {}): string {
+  return `${BASE_PATH}?${new URLSearchParams({ role, ...extra }).toString()}`;
+}
+
+// One conversation (?role=), anchored on a message (?focus=). Old links keep
+// landing on their message:
+//   /admin/fleet/<id>          → [id]/page.tsx → ?focus=<id>
+//   ?id=<id>&type=request      → ?focus=<id>
+//   ?id=<id>&type=goal         → ?role=<goal.role>
+//   ?focus=<id> (no role)      → ?role=<its role>&focus=<id>
+// Authorization: every read below goes through requirePlatformPermission
+// ('manage_settings') in the data layer, plus RLS.
 export default async function AdminFleetPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    page?: string | string[];
-    id?: string | string[];
-    type?: string | string[];
-    role?: string | string[];
-    kind?: string | string[];
-  }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = await searchParams;
-  const page = parsePageParam(sp.page);
-  const selectedId = firstParam(sp.id);
-  const selectedType = firstParam(sp.type) === 'goal' ? 'goal' : 'request';
-  const roleFilter = firstParam(sp.role);
-  const kindFilter = firstParam(sp.kind);
+  const role = firstParam(sp.role);
+  const focus = firstParam(sp.focus);
+  const legacyId = firstParam(sp.id);
 
-  const [activity, roles] = await Promise.all([
-    listFleetActivity({ page, role: roleFilter, kind: kindFilter }),
-    listFleetRoles(),
-  ]);
-
-  // Same split as contacts' filterParams/linkParams: `filterParams` alone
-  // goes to <Pagination> (which computes its OWN target page — folding a
-  // stale page into it would break prev/next), `linkParams` carries the
-  // current page forward on top of that for row/back-link hrefs.
-  const filterParams = { role: roleFilter, kind: kindFilter };
-  const linkParams = { ...filterParams, page: page > 1 ? String(page) : undefined };
-  const hrefWith = (overrides: Record<string, string | undefined>): string => {
-    const qs = new URLSearchParams();
-    for (const [k, v] of Object.entries({ ...linkParams, ...overrides })) {
-      if (v) qs.set(k, v);
+  if (legacyId) {
+    if (firstParam(sp.type) === 'goal') {
+      const goal = z.uuid().safeParse(legacyId).success ? await getFleetGoalById(legacyId) : null;
+      if (goal) redirect(conversationHref(goal.role));
+      return <NoConversation notice="המטרה לא נמצאה — ייתכן שהקישור ישן." />;
     }
-    const s = qs.toString();
-    return s ? `${BASE_PATH}?${s}` : BASE_PATH;
-  };
+    redirect(`${BASE_PATH}?${new URLSearchParams({ focus: legacyId }).toString()}`);
+  }
 
-  const hasSelection = Boolean(selectedId);
+  if (!role) {
+    if (focus) {
+      const owner = await getFleetRequestRole(focus);
+      if (owner) redirect(conversationHref(owner, { focus }));
+      return <NoConversation notice="ההודעה לא נמצאה — ייתכן שהקישור ישן." />;
+    }
+    return <NoConversation />;
+  }
+
+  if (!ROLE_RE.test(role)) return <RoleNotFound />;
+
+  const cursor = parseConversationCursor(firstParam(sp.before), firstParam(sp.after));
+  const [roles, conversation] = await Promise.all([
+    readFleetRoles(),
+    getFleetConversation(role, { cursor, focus }),
+  ]);
+  const roleInfo = roles?.find((r) => r.name === role);
+  if (!roleInfo && conversation.rows.length === 0 && conversation.goals.length === 0) {
+    return <RoleNotFound />;
+  }
+
+  const reach = reachability(roleInfo, 'owner_direct_request');
+  const goalReach = reachability(roleInfo, 'goal_due');
+  const events = buildConversationEvents(conversation.rows, conversation.goals, {
+    rootTitles: new Map(Object.entries(conversation.rootTitles)),
+    handoffsOut: conversation.handoffsOut,
+    windowStart: conversation.windowStart,
+  });
+  const items = layoutStream(events, conversation.generatedAt);
+  const waitingCount = conversation.rows.filter(isWaitingOnOwner).length;
+  const lastOwnerPending =
+    conversation.rows.findLast((r) => r.status === 'pending' && requestBodyAuthor(r.payload) === 'owner') ?? null;
+  const hasClosedExchange = conversation.rows.some((r) => r.status !== 'pending' && r.status !== 'expired');
+  const isEmpty = events.length === 0;
+  const headingId = 'fleet-conversation-heading';
 
   return (
-    <div className="space-y-6">
-      <PageHeading>פניות הסוכנים (Fleet)</PageHeading>
-
-      <ComposeActivityCard roles={roles} />
-
-      <FleetSearchBar basePath={BASE_PATH} roles={roles} role={roleFilter} kind={kindFilter} />
-
-      {activity.items.length === 0 ? (
-        <EmptyState>
-          {roleFilter || kindFilter
-            ? 'לא נמצאה פעילות התואמת לסינון.'
-            : 'אין עדיין פעילות סוכנים — כל הסוכנים מסודרים 🎉'}
-        </EmptyState>
-      ) : (
-        <div
-          className="group/fleet flex flex-col gap-4 md:flex-row md:items-start"
-          data-has-selection={hasSelection}
-        >
-          <div className="group-data-[has-selection=true]/fleet:max-md:hidden w-full shrink-0 md:w-[360px]">
-            <ul className="divide-y divide-border rounded-lg border border-border">
-              {activity.items.map((item) => (
-                <ActivityRow
-                  key={`${item.entryKind}-${item.id}`}
-                  item={item}
-                  href={hrefWith({ id: item.id, type: item.entryKind })}
-                  isSelected={selectedId === item.id}
-                />
-              ))}
-            </ul>
-            <div className="mt-4">
-              <Pagination
-                basePath={BASE_PATH}
-                page={activity.page}
-                pageSize={activity.pageSize}
-                total={activity.total}
-                queryParams={filterParams}
-              />
-            </div>
-          </div>
-
-          <div
-            className="group-data-[has-selection=false]/fleet:max-md:hidden min-w-0 flex-1 rounded-lg border border-border"
+    <ComposerProvider role={role}>
+      <div className="flex h-[calc(100dvh-var(--admin-header-h)-4rem)] flex-col overflow-hidden rounded-xl border border-border bg-background md:h-full">
+        <header className="flex shrink-0 items-center gap-3 border-b border-border px-3 py-2.5">
+          <Link
+            href={BASE_PATH}
+            aria-label="חזרה לרשימת השיחות"
+            className="inline-flex size-11 items-center justify-center rounded-lg outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 md:hidden"
           >
-            {selectedId ? (
-              <>
-                {/* sticky, not a plain block: the detail pane below is long
-                    (timeline/attachments/thread/related) — a non-sticky back
-                    link scrolls out of view within the first screen, and from
-                    then on there is no way back to the list without scrolling
-                    all the way up. That reads as "navigated to a separate
-                    page" even though the URL never left /admin/fleet. Mirrors
-                    /admin/contacts' ContactDetail header, which sticks for the
-                    same reason. */}
-                <p className="sticky top-0 z-10 border-b border-border bg-background p-3 text-sm text-muted-foreground md:hidden">
-                  <Link
-                    href={hrefWith({ id: undefined, type: undefined })}
-                    className="text-primary hover:underline"
-                  >
-                    ← חזרה לרשימה
-                  </Link>
-                </p>
-                {selectedType === 'goal' ? (
-                  <GoalDetailPanel id={selectedId} />
-                ) : (
-                  <RequestDetailPanel id={selectedId} roles={roles} />
-                )}
-              </>
-            ) : (
-              <div className="hidden h-full items-center justify-center p-10 text-center text-muted-foreground md:flex">
-                בחרו פנייה או מטרה מהרשימה כדי לצפות בפרטים
-              </div>
-            )}
+            <ArrowLeft className="size-5 rtl:rotate-180" aria-hidden />
+          </Link>
+          <FleetAgentAvatar role={role} />
+          <div className="min-w-0">
+            <h2 id={headingId} tabIndex={-1} className="font-semibold outline-none">
+              <bdi dir="ltr" className="wrap-anywhere">
+                {role}
+              </bdi>
+            </h2>
+            <p className={reach.tone === 'blocked' ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>
+              {reach.status}
+            </p>
           </div>
-        </div>
-      )}
+        </header>
+        <FocusHeadingOnPhone headingId={headingId} role={role} />
+
+        <GoalStrip goals={conversation.goals} />
+
+        {conversation.focusFound === false ? (
+          <p role="status" className="shrink-0 border-b border-border bg-muted px-4 py-2 text-sm">
+            ההודעה לא נמצאה — ייתכן שהקישור ישן.
+          </p>
+        ) : null}
+
+        <ConversationScroller
+          focusId={conversation.focusFound ? (focus ?? null) : null}
+          edge={cursor.kind === 'after' ? 'top' : 'bottom'}
+          version={`${events.length}:${events.at(-1)?.key ?? ''}`}
+        >
+          {conversation.olderCursor ? (
+            <Link
+              href={conversationHref(role, { before: conversation.olderCursor })}
+              className="mx-auto rounded-4xl border border-border px-3 py-1.5 text-sm text-primary hover:bg-muted"
+            >
+              טען הודעות קודמות
+            </Link>
+          ) : null}
+          {isEmpty ? (
+            <p className="my-auto py-10 text-center text-sm text-muted-foreground">
+              אין עדיין הודעות עם <bdi dir="ltr">{role}</bdi>
+            </p>
+          ) : (
+            <FleetStream
+              items={items}
+              role={role}
+              nowMs={conversation.generatedAt}
+              lastOwnerPendingId={lastOwnerPending?.id ?? null}
+              ownerEta={reach.eta}
+            />
+          )}
+          {conversation.newerCursor ? (
+            <div className="flex flex-wrap justify-center gap-2">
+              <Link
+                href={conversationHref(role, { after: conversation.newerCursor })}
+                className="rounded-4xl border border-border px-3 py-1.5 text-sm text-primary hover:bg-muted"
+              >
+                טען הודעות חדשות
+              </Link>
+              <Link
+                href={conversationHref(role)}
+                className="rounded-4xl border border-border px-3 py-1.5 text-sm text-primary hover:bg-muted"
+              >
+                להודעות האחרונות
+              </Link>
+            </div>
+          ) : null}
+        </ConversationScroller>
+
+        <PendingBar count={waitingCount} />
+        <FleetComposer
+          reach={reach}
+          goalReach={goalReach}
+          hasClosedExchange={hasClosedExchange}
+          autoFocus={isEmpty}
+        />
+      </div>
+    </ComposerProvider>
+  );
+}
+
+function NoConversation({ notice }: { notice?: string }) {
+  return (
+    <div className="flex flex-col gap-3 md:h-full">
+      {notice ? (
+        <p role="status" className="rounded-md bg-muted px-3 py-2 text-sm">
+          {notice}
+        </p>
+      ) : null}
+      <div className="hidden flex-1 items-center justify-center rounded-xl border border-dashed border-border p-10 text-center text-muted-foreground md:flex">
+        בחרו סוכן מהרשימה כדי לפתוח את השיחה איתו
+      </div>
     </div>
   );
 }
 
-function ActivityRow({
-  item,
-  href,
-  isSelected,
-}: {
-  item: FleetActivityEntry;
-  href: string;
-  isSelected: boolean;
-}) {
-  const statusLabel =
-    item.entryKind === 'goal'
-      ? (GOAL_STATUS_LABEL[item.status] ?? item.status)
-      : (STATUS_LABEL[item.status] ?? item.status);
-  const statusVariant =
-    item.entryKind === 'goal'
-      ? (GOAL_STATUS_VARIANT[item.status] ?? 'neutral')
-      : (STATUS_VARIANT[item.status] ?? 'neutral');
-  // For a goal there is no finer-grained "kind" — the badge just says מטרה.
-  // For a request, KIND_LABEL (שאלה/בקשת אישור/עדכון) already communicates
-  // "this is a request" on its own, so one badge does both jobs rather than
-  // stacking a generic "בקשה" label alongside it.
-  const typeLabel = item.entryKind === 'goal' ? 'מטרה' : (KIND_LABEL[item.data.kind] ?? item.data.kind);
-  const typeVariant = item.entryKind === 'goal' ? 'neutral' : (KIND_VARIANT[item.data.kind] ?? 'secondary');
-
+function RoleNotFound() {
   return (
-    <li>
-      <Link
-        href={href}
-        aria-current={isSelected ? 'true' : undefined}
-        className="flex flex-col gap-1.5 px-4 py-3 hover:bg-muted aria-[current=true]:bg-muted"
-      >
-        <div className="flex items-center justify-between gap-2">
-          <p className="min-w-0 truncate font-medium">{item.title}</p>
-          <span className="shrink-0 text-xs text-muted-foreground">
-            <LocalDateTime iso={item.displayAt} />
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant={typeVariant}>{typeLabel}</Badge>
-          <Badge variant={statusVariant}>{statusLabel}</Badge>
-          <span className="truncate text-xs text-muted-foreground">{item.role}</span>
-        </div>
+    <div className="space-y-3 rounded-xl border border-border p-8 text-center">
+      <p className="font-semibold">הסוכן לא נמצא</p>
+      <Link href={BASE_PATH} className="text-sm text-primary hover:underline">
+        חזרה לרשימת השיחות
       </Link>
-    </li>
+    </div>
   );
 }

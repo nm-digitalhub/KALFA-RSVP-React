@@ -29,8 +29,7 @@ export default async function SignupPage({
     <div className="grid min-h-dvh lg:grid-cols-[1fr_minmax(420px,560px)]">
       {/* Branded panel — hidden below `lg` in favor of the compact mobile
           brand mark above the form (mobile-brand below). Panel background is
-          a light, barely-tinted wash toward the primary hue (277°), approved
-          via the design canvas over both a dark panel and no panel. */}
+          a light, barely-tinted wash toward the primary hue (277°). */}
       <div className="relative hidden flex-col overflow-hidden bg-[oklch(0.965_0.014_277)] px-12 py-14 lg:flex">
         <div
           aria-hidden="true"

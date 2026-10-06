@@ -81,7 +81,7 @@ export function intakeResource(mailbox: string, folderId: string): string {
 }
 
 /**
- * Creates the inbox subscription.
+ * Creates the intake-folder subscription.
  *
  * Graph validates the notification URL synchronously during this call: it POSTs
  * a `validationToken` and requires it echoed back within 10 seconds. So the

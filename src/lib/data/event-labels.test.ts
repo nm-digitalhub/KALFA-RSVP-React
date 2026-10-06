@@ -83,3 +83,39 @@ describe('event status labels (audit §2/§3)', () => {
     expect(CAMPAIGN_STATUS_LABELS.pending_approval).toBe('ממתין לחתימה');
   });
 });
+
+describe('campaignStage — a package campaign is funded by its payment, not by a card hold', () => {
+  const approved = { status: 'approved' as const, capture_status: null, package_price: 150 };
+
+  it('approved and paid in full: awaiting activation', () => {
+    expect(campaignStage({ ...approved, payment: { status: 'collected' } })).toBe('awaiting_activation');
+  });
+
+  it.each(['none', 'pending', 'review', 'declined', 'refunded', 'released', 'committed'])(
+    'approved with payment %s: still awaiting payment',
+    (status) => {
+      expect(campaignStage({ ...approved, payment: { status } })).toBe('awaiting_payment');
+    },
+  );
+
+  it('approved package whose payment could not be read (null): awaiting payment — the safe direction', () => {
+    expect(campaignStage({ ...approved, payment: null })).toBe('awaiting_payment');
+  });
+
+  it('a campaign that is not a package ignores any payment it is handed', () => {
+    expect(campaignStage({ status: 'approved', capture_status: null, package_price: null, payment: { status: 'collected' } })).toBe('awaiting_payment');
+  });
+
+  it('the pay-per-result rule is unchanged', () => {
+    expect(campaignStage({ status: 'approved', capture_status: 'authorized' })).toBe('awaiting_activation');
+    expect(campaignStage({ status: 'approved', capture_status: 'pending' })).toBe('awaiting_payment');
+    expect(campaignStage({ status: 'scheduled', capture_status: 'authorized' })).toBe('awaiting_activation');
+  });
+
+  it('statuses past activation do not depend on the payment', () => {
+    for (const status of ['active', 'paused', 'closed'] as const) {
+      expect(campaignStage({ status, capture_status: null, package_price: 150, payment: null })).toBe(campaignStage({ status, capture_status: 'authorized' }));
+    }
+  });
+});
+

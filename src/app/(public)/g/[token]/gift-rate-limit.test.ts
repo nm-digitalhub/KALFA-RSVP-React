@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 // surface in diagnostics. Textual on purpose (page.tsx is a Server Component)
 // so a revert to the raw-token pattern fails loudly. Same shape as
 // r/[token]/rsvp-rate-limit.test.ts (production-readiness audit 21.8, §2
-// finding 5 — this site was one of the ones still on the raw token).
+// finding 5).
 
 describe('public gift page rate-limit key never embeds the raw token', () => {
   const source = readFileSync(join(__dirname, 'page.tsx'), 'utf8');

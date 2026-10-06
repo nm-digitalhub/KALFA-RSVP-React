@@ -15,7 +15,7 @@ describe('goalWakeAtSchema', () => {
   // zod 4.5 tightened z.iso.datetime to RFC 3339, which mandates seconds:
   // '2026-07-29T22:19+03:00' parsed under 4.4 and does not under 4.5
   // (zod #6457). Nothing we emit is affected — both producers go through
-  // toISOString() (fleet-client.tsx's hidden next_wake_at field and the CLI),
+  // toISOString() (fleet-goals.tsx's hidden next_wake_at field and the CLI),
   // which always writes seconds and milliseconds. Pinned so the tightening is
   // a deliberate contract rather than an upgrade nobody noticed.
   it('rejects minute precision even with a valid offset (RFC 3339)', () => {

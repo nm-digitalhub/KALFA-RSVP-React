@@ -11,7 +11,7 @@
  * - `updatedAt` is a heartbeat, touched at least every 30s while phase === 'executing'
  * - `error.message` is a pre-sanitized one-liner — no secrets, no absolute paths
  * - no secret ever enters this file; paths appear only in fields the /admin
- *   view schema strips (backups, externalCalls, error.logPath, reportPath)
+ *   view schema strips (backups, externalCalls, error.logPath, planLines, reportPath)
  */
 import { z } from "zod";
 
@@ -20,7 +20,7 @@ export const RELOCATION_STATE_BACKUP_FILE = ".relocation-state.json.bak";
 export const RELOCATE_DIR = ".relocate";
 export const RELOCATE_LOCK_FILE = ".relocate/lock";
 
-/** Heartbeat cadence the writer promises; readers treat > 2× staleness while
+/** Heartbeat cadence the writer promises; readers treat > 2 min staleness while
  * executing as "wizard process not responding" (design §2 derivation rules). */
 export const HEARTBEAT_INTERVAL_SECONDS = 30;
 export const HEARTBEAT_STALE_AFTER_SECONDS = 120;

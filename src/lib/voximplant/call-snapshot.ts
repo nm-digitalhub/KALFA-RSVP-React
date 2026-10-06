@@ -1,9 +1,9 @@
 /**
- * Pure call-state reducer for the browser softphone (stage: call layer).
+ * Pure call-state reducer for the browser softphone.
  *
  * Isolated from web-client.ts on purpose: this is the ONE place the
- * honest-UI rule ("never show a state without its signal" —
- * docs/voice-agent, restated by the team lead) is mechanically enforced.
+ * honest-UI rule ("never show a state without its signal") is mechanically
+ * enforced.
  * web-client.ts only ever feeds this reducer real SDK signals (a
  * CallManagerEvent.IncomingCall payload, a CallEvent.Connected/Failed/
  * Disconnected payload, a Watchable's new value); nothing in here is

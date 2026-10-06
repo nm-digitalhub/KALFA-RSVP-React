@@ -4,37 +4,23 @@ import { createClient } from '@/lib/supabase/server';
 import { isConfiguredServiceRoleKey } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 
-// Admin: the singleton app/system settings (operational toggle + admin-managed
-// SUMIT clearing config). Authorized by requireAdmin() + the
-// app_settings_admin_all RLS policy via the request-scoped session client.
+// Admin: the singleton app/system settings (operational toggles + admin-managed
+// provider config). Authorized by requirePlatformPermission('manage_settings') +
+// the app_settings_admin_all RLS policy via the request-scoped session client.
 //
-// SECURITY NOTE: getAppSettings() returns the SUMIT keys (including the secret)
-// so the admin form can show them masked with a reveal toggle — the common
+// SECURITY NOTE: the provider readers below (getSumitCredentials,
+// getExtraSmsConfig, getEmailTransportConfig) return the real secrets so the
+// admin form can show them masked with a reveal toggle — the common
 // gateway-plugin pattern. They are sent ONLY to this admin-only page over HTTPS
-// (requireAdmin), masked by default in the UI, and never logged.
+// (requirePlatformPermission), masked by default in the UI, and never logged.
 
 export type AppSettings = {
   payments_enabled: boolean;
   close_charge_enabled: boolean; // master switch for the final close-charge (real money)
-  sumit_company_id: string; // '' when unset (form-friendly)
-  sumit_api_public_key: string; // '' when unset
-  sumit_api_key: string; // '' when unset — shown masked + reveal in the admin form
-  sms_enabled: boolean;
-  extra_sms_sender: string; // '' when unset — verified sender identity in ExtrA
-  extra_sms_token: string; // '' when unset — shown masked + reveal (secret)
-  email_enabled: boolean;
-  smtp_host: string;
-  smtp_port: string; // form-friendly string; coerced to int on save
-  smtp_secure: boolean;
-  smtp_user: string;
-  smtp_password: string; // '' when unset — masked + reveal (secret)
-  smtp_from: string;
   inquiry_followup_enabled: boolean; // reminder → warning → auto-close sweep on quiet inquiries
   agreement_archive_enabled: boolean; // nightly SharePoint archive of signed customer agreements
   signup_reminder_enabled: boolean; // daily one-shot "confirm your email" reminder to unconfirmed signups
   unconfirmed_cleanup_enabled: boolean; // daily deletion of signups still unconfirmed after 30 days
-  // Below: columns the runtime already read but nothing could WRITE — they had
-  // no admin control anywhere, so the only way to flip one was direct SQL.
   campaign_holds_enabled: boolean;
   billing_exposure_gate: boolean;
   monitor_enabled: boolean;
@@ -47,6 +33,20 @@ export type AppSettings = {
   console_call_me_now_enabled: boolean;
   console_consult_conference_enabled: boolean;
   console_dtmf_handoff_enabled: boolean;
+  /**
+   * The only non-boolean setting this form owns. Caps how many contacts count
+   * toward the J5 hold: covered = min(full_unique_contacts, this), so it sets
+   * the hold SIZE without touching what is ultimately charged (the close-charge
+   * is capped independently, by the signed ceiling, and only under a
+   * frozen-figure agreement — v4 and earlier).
+   *
+   * Read LIVE at hold time by getHoldSizingKnobs (data/campaigns.ts) rather than
+   * snapshotted onto the campaign — so an edit here resizes the hold of every
+   * signed campaign that has not yet held, exactly like min_hold_floor and
+   * hold_buffer_pct on the package. Integer, NOT NULL, DB default 300 (verified
+   * against the live schema).
+   */
+  reasonable_coverage_contacts: number;
   updated_at: string;
 };
 
@@ -59,7 +59,7 @@ export async function getAppSettings(): Promise<AppSettings> {
   const { data, error } = await supabase
     .from('app_settings')
     .select(
-      'payments_enabled, close_charge_enabled, sumit_company_id, sumit_api_public_key, sumit_api_key, sms_enabled, extra_sms_sender, extra_sms_token, email_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_from, inquiry_followup_enabled, agreement_archive_enabled, signup_reminder_enabled, unconfirmed_cleanup_enabled, campaign_holds_enabled, billing_exposure_gate, monitor_enabled, inbound_calls_enabled, handoff_enabled, console_softphone_enabled, console_widget_enabled, console_manual_dial_enabled, console_wake_enabled, console_call_me_now_enabled, console_consult_conference_enabled, console_dtmf_handoff_enabled, updated_at',
+      'payments_enabled, close_charge_enabled, inquiry_followup_enabled, agreement_archive_enabled, signup_reminder_enabled, unconfirmed_cleanup_enabled, campaign_holds_enabled, billing_exposure_gate, monitor_enabled, inbound_calls_enabled, handoff_enabled, console_softphone_enabled, console_widget_enabled, console_manual_dial_enabled, console_wake_enabled, console_call_me_now_enabled, console_consult_conference_enabled, console_dtmf_handoff_enabled, reasonable_coverage_contacts, updated_at',
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
@@ -71,19 +71,6 @@ export async function getAppSettings(): Promise<AppSettings> {
   return {
     payments_enabled: data?.payments_enabled ?? false,
     close_charge_enabled: data?.close_charge_enabled ?? false,
-    sumit_company_id: data?.sumit_company_id ?? '',
-    sumit_api_public_key: data?.sumit_api_public_key ?? '',
-    sumit_api_key: data?.sumit_api_key ?? '',
-    sms_enabled: data?.sms_enabled ?? false,
-    extra_sms_sender: data?.extra_sms_sender ?? '',
-    extra_sms_token: data?.extra_sms_token ?? '',
-    email_enabled: data?.email_enabled ?? false,
-    smtp_host: data?.smtp_host ?? '',
-    smtp_port: data?.smtp_port != null ? String(data.smtp_port) : '',
-    smtp_secure: data?.smtp_secure ?? false,
-    smtp_user: data?.smtp_user ?? '',
-    smtp_password: data?.smtp_password ?? '',
-    smtp_from: data?.smtp_from ?? '',
     inquiry_followup_enabled: data?.inquiry_followup_enabled ?? false,
     agreement_archive_enabled: data?.agreement_archive_enabled ?? false,
     signup_reminder_enabled: data?.signup_reminder_enabled ?? false,
@@ -100,6 +87,10 @@ export async function getAppSettings(): Promise<AppSettings> {
     console_call_me_now_enabled: data?.console_call_me_now_enabled ?? false,
     console_consult_conference_enabled: data?.console_consult_conference_enabled ?? false,
     console_dtmf_handoff_enabled: data?.console_dtmf_handoff_enabled ?? false,
+    // Falls back to the column's OWN DB default (300), not 0: the column is
+    // NOT NULL so this is unreachable in practice, and 0 would render an
+    // invalid value into the form that the schema then refuses to save.
+    reasonable_coverage_contacts: data?.reasonable_coverage_contacts ?? 300,
     updated_at: data?.updated_at ?? '',
   };
 }
@@ -107,19 +98,6 @@ export async function getAppSettings(): Promise<AppSettings> {
 export type UpdateAppSettingsInput = {
   payments_enabled: boolean;
   close_charge_enabled: boolean;
-  sumit_company_id: string;
-  sumit_api_public_key: string;
-  sumit_api_key: string;
-  sms_enabled: boolean;
-  extra_sms_sender: string;
-  extra_sms_token: string;
-  email_enabled: boolean;
-  smtp_host: string;
-  smtp_port: string;
-  smtp_secure: boolean;
-  smtp_user: string;
-  smtp_password: string;
-  smtp_from: string;
   inquiry_followup_enabled: boolean;
   agreement_archive_enabled: boolean;
   signup_reminder_enabled: boolean;
@@ -136,6 +114,7 @@ export type UpdateAppSettingsInput = {
   console_call_me_now_enabled: boolean;
   console_consult_conference_enabled: boolean;
   console_dtmf_handoff_enabled: boolean;
+  reasonable_coverage_contacts: number;
 };
 
 export async function updateAppSettings(
@@ -145,26 +124,13 @@ export async function updateAppSettings(
 
   const supabase = await createClient();
 
-  // The form is prefilled with the current values (masked), so every save
-  // submits all fields. Empty → null (intentional unset).
+  // The form is prefilled with the current values, so every save submits all
+  // fields.
   const { error } = await supabase
     .from('app_settings')
     .update({
       payments_enabled: input.payments_enabled,
       close_charge_enabled: input.close_charge_enabled,
-      sumit_company_id: input.sumit_company_id || null,
-      sumit_api_public_key: input.sumit_api_public_key || null,
-      sumit_api_key: input.sumit_api_key || null,
-      sms_enabled: input.sms_enabled,
-      extra_sms_sender: input.extra_sms_sender || null,
-      extra_sms_token: input.extra_sms_token || null,
-      email_enabled: input.email_enabled,
-      smtp_host: input.smtp_host || null,
-      smtp_port: input.smtp_port ? parseInt(input.smtp_port, 10) : null,
-      smtp_secure: input.smtp_secure,
-      smtp_user: input.smtp_user || null,
-      smtp_password: input.smtp_password || null,
-      smtp_from: input.smtp_from || null,
       inquiry_followup_enabled: input.inquiry_followup_enabled,
       agreement_archive_enabled: input.agreement_archive_enabled,
       signup_reminder_enabled: input.signup_reminder_enabled,
@@ -181,6 +147,7 @@ export async function updateAppSettings(
       console_call_me_now_enabled: input.console_call_me_now_enabled,
       console_consult_conference_enabled: input.console_consult_conference_enabled,
       console_dtmf_handoff_enabled: input.console_dtmf_handoff_enabled,
+      reasonable_coverage_contacts: input.reasonable_coverage_contacts,
     })
     .eq('id', SETTINGS_ID);
 
@@ -312,4 +279,181 @@ export async function getInfraConfigStatus(): Promise<InfraConfigItem[]> {
       configured: !!appOrigin,
     },
   ];
+}
+
+// ---------------------------------------------------------------------------
+// Provider credentials — one reader/writer pair per provider
+// ---------------------------------------------------------------------------
+//
+// These left appSettingsSchema and updateAppSettings so each provider gets its own
+// FORM. The property that must hold, and that settings.test.ts pins: each writer
+// touches ONLY its own columns, and updateAppSettings touches NONE of them. Two
+// writers on one column is how a save in one screen silently reverts another.
+//
+// `configured` is derived here rather than by each caller. It is credentials ONLY —
+// never the switch. Conflating them is what made the integrations panel report ExtrA
+// as "not configured" whenever SMS was merely turned off.
+//
+// The masked-field convention (owner ruling 2026-08-24): the reader
+// returns the real secret because the form renders it masked with a reveal toggle,
+// and '' on write is an intentional unset, not an empty string.
+
+export type SumitCredentials = {
+  sumit_company_id: string;
+  sumit_api_public_key: string;
+  sumit_api_key: string;
+  configured: boolean;
+};
+
+export async function getSumitCredentials(): Promise<SumitCredentials> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select('sumit_company_id, sumit_api_public_key, sumit_api_key')
+    .eq('id', SETTINGS_ID)
+    .maybeSingle();
+  if (error) throw new Error('טעינת פרטי SUMIT נכשלה');
+  return {
+    sumit_company_id: data?.sumit_company_id ?? '',
+    sumit_api_public_key: data?.sumit_api_public_key ?? '',
+    sumit_api_key: data?.sumit_api_key ?? '',
+    // The public key is not part of it: a clearing account works without one.
+    configured: Boolean(data?.sumit_company_id && data?.sumit_api_key),
+  };
+}
+
+export async function updateSumitCredentials(input: {
+  sumit_company_id: string;
+  sumit_api_public_key: string;
+  sumit_api_key: string;
+}): Promise<void> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('app_settings')
+    .update({
+      sumit_company_id: input.sumit_company_id || null,
+      sumit_api_public_key: input.sumit_api_public_key || null,
+      sumit_api_key: input.sumit_api_key || null,
+    })
+    .eq('id', SETTINGS_ID);
+  if (error) throw new Error('עדכון פרטי SUMIT נכשל');
+}
+
+export type ExtraSmsConfig = {
+  sms_enabled: boolean;
+  extra_sms_sender: string;
+  extra_sms_token: string;
+  callback_intake_sms_enabled: boolean;
+  callback_intake_sms_daily_cap: number;
+  configured: boolean;
+};
+
+export async function getExtraSmsConfig(): Promise<ExtraSmsConfig> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select(
+      'sms_enabled, extra_sms_sender, extra_sms_token, callback_intake_sms_enabled, callback_intake_sms_daily_cap',
+    )
+    .eq('id', SETTINGS_ID)
+    .maybeSingle();
+  if (error) throw new Error('טעינת הגדרות ה-SMS נכשלה');
+  return {
+    sms_enabled: data?.sms_enabled ?? false,
+    extra_sms_sender: data?.extra_sms_sender ?? '',
+    extra_sms_token: data?.extra_sms_token ?? '',
+    callback_intake_sms_enabled: data?.callback_intake_sms_enabled ?? false,
+    callback_intake_sms_daily_cap: data?.callback_intake_sms_daily_cap ?? 0,
+    // Credentials only — deliberately independent of sms_enabled.
+    configured: Boolean(data?.extra_sms_token && data?.extra_sms_sender),
+  };
+}
+
+export async function updateExtraSmsConfig(input: {
+  sms_enabled: boolean;
+  extra_sms_sender: string;
+  extra_sms_token: string;
+  callback_intake_sms_enabled: boolean;
+  callback_intake_sms_daily_cap: number;
+}): Promise<void> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('app_settings')
+    .update({
+      sms_enabled: input.sms_enabled,
+      extra_sms_sender: input.extra_sms_sender || null,
+      extra_sms_token: input.extra_sms_token || null,
+      callback_intake_sms_enabled: input.callback_intake_sms_enabled,
+      callback_intake_sms_daily_cap: input.callback_intake_sms_daily_cap,
+    })
+    .eq('id', SETTINGS_ID);
+  if (error) throw new Error('עדכון הגדרות ה-SMS נכשל');
+}
+
+export type EmailTransportConfig = {
+  email_enabled: boolean;
+  smtp_host: string;
+  /** Text, because the form field is text; the column is an integer. */
+  smtp_port: string;
+  smtp_secure: boolean;
+  smtp_user: string;
+  smtp_password: string;
+  smtp_from: string;
+  configured: boolean;
+};
+
+export async function getEmailTransportConfig(): Promise<EmailTransportConfig> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select('email_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_from')
+    .eq('id', SETTINGS_ID)
+    .maybeSingle();
+  if (error) throw new Error('טעינת הגדרות הדואר נכשלה');
+  return {
+    email_enabled: data?.email_enabled ?? false,
+    smtp_host: data?.smtp_host ?? '',
+    smtp_port: data?.smtp_port != null ? String(data.smtp_port) : '',
+    smtp_secure: data?.smtp_secure ?? false,
+    smtp_user: data?.smtp_user ?? '',
+    smtp_password: data?.smtp_password ?? '',
+    smtp_from: data?.smtp_from ?? '',
+    // smtp_from is the one field BOTH transports need — Resend sends without a host.
+    // Which transport is active is an env decision (EMAIL_PROVIDER) that belongs to
+    // the page, not to a presence check.
+    configured: Boolean(data?.smtp_from),
+  };
+}
+
+export async function updateEmailTransportConfig(input: {
+  email_enabled: boolean;
+  smtp_host: string;
+  smtp_port: string;
+  smtp_secure: boolean;
+  smtp_user: string;
+  smtp_password: string;
+  smtp_from: string;
+}): Promise<void> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('app_settings')
+    .update({
+      email_enabled: input.email_enabled,
+      smtp_host: input.smtp_host || null,
+      // parseInt: the column is an integer and the form sends text. '' must become
+      // null, never NaN.
+      smtp_port: input.smtp_port ? parseInt(input.smtp_port, 10) : null,
+      smtp_secure: input.smtp_secure,
+      smtp_user: input.smtp_user || null,
+      smtp_password: input.smtp_password || null,
+      smtp_from: input.smtp_from || null,
+    })
+    .eq('id', SETTINGS_ID);
+  if (error) throw new Error('עדכון הגדרות הדואר נכשל');
 }

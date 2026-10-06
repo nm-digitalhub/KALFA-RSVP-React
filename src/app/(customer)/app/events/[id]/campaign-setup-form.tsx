@@ -6,11 +6,10 @@ import { useActionState } from 'react';
 import { FormError, SubmitButton } from '@/components/forms';
 import type { FormState } from '@/lib/validation/result';
 
-// The setup page's single CTA form: a formless Server Action (confirm the event
+// A CTA form of the setup page: a formless Server Action (confirm the event
 // details if still draft, then create-or-continue the event's single campaign).
-// `children` renders ABOVE the button — the R5 lock warning the audit (§2)
-// requires the owner to see BEFORE confirming. useActionState surfaces the
-// server's safe Hebrew error inline; on success the action redirects.
+// `children` renders ABOVE the button. useActionState surfaces the server's safe
+// Hebrew error inline; on success the action redirects.
 export function CampaignSetupForm({
   action,
   label,

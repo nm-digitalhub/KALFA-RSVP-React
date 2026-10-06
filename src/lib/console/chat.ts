@@ -1,5 +1,5 @@
-// Pure helpers for the internal agent-to-agent chat (console_chat_messages —
-// plan "שלב 2"). Extracted out of chat-section.tsx / softphone-panel.tsx so
+// Pure helpers for the internal agent-to-agent chat (console_chat_messages).
+// Extracted out of chat-section.tsx / softphone-panel.tsx so
 // the unread-count and display-name logic has a testable seam independent of
 // React state and Realtime — same discipline as call-snapshot.ts's pure
 // reducer for the softphone's call state.

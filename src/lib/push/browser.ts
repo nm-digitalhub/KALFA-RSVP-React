@@ -1,6 +1,6 @@
 // Client-safe (no 'server-only') — the browser-side half of the VAPID push
 // pipeline. Pulled out of push-notification-manager.tsx so a second
-// subscribe control (console-push-alert-toggle.tsx) doesn't duplicate it.
+// subscribe control (push-alert-toggle.tsx) doesn't duplicate it.
 
 export function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);

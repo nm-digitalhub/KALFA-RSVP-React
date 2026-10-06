@@ -2,13 +2,23 @@ import 'server-only';
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { cache } from 'react';
+import { z } from 'zod';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { createClient } from '@/lib/supabase/server';
 import { requirePlatformPermission } from '@/lib/auth/dal';
+import { requestBodyAuthor } from '@/lib/fleet/content-author';
+import {
+  continuationTitle,
+  summarizeConversations,
+  threadRootOf,
+  type ConversationRequestRow,
+  type ConversationSummary,
+  type HandoffOut,
+} from '@/lib/fleet/conversation';
 import { parseFleetRoleRegistry, type FleetRoleInfo } from '@/lib/fleet/handoff';
 import type { Database, Tables } from '@/lib/supabase/types';
-import { resolvePage, type PageParams, type PageResult } from './shared';
 
 // Admin: the owner<->autonomous-fleet request ledger (public.fleet_requests).
 // Fleet roles file approval/question/fyi requests via the service-role CLI;
@@ -21,132 +31,311 @@ import { resolvePage, type PageParams, type PageResult } from './shared';
 // has no UPDATE grant on the table, and the DB trigger enforces the state
 // machine and field immutability regardless of what this module does.
 
-type FleetRequestRow = Tables<'fleet_requests'>;
-
-export type FleetRequestEntry = Pick<
-  FleetRequestRow,
-  | 'id'
-  | 'role'
-  | 'run_id'
-  | 'kind'
-  | 'tier'
-  | 'title'
-  | 'body'
-  | 'payload'
-  | 'status'
-  | 'answer'
-  | 'created_at'
-  | 'answered_at'
-  | 'expires_at'
->;
-
-const FLEET_REQUEST_COLUMNS =
-  'id, role, run_id, kind, tier, title, body, payload, status, answer, created_at, answered_at, expires_at';
-
-// Single request for the detail page (/admin/fleet/[id]), plus the answering
-// admin's display name when available. Returns null for unknown ids so the
-// page can 404 instead of leaking errors.
-export async function getFleetRequest(id: string): Promise<{
-  request: FleetRequestEntry & { consumed_at: string | null };
-  answeredByName: string | null;
-} | null> {
-  await requirePlatformPermission('manage_settings');
-  const supabase = await createClient();
-
-  const { data, error } = await supabase
-    .from('fleet_requests')
-    .select(`${FLEET_REQUEST_COLUMNS}, consumed_at, answered_by`)
-    .eq('id', id)
-    .maybeSingle();
-
-  if (error) throw new Error('טעינת הפנייה נכשלה');
-  if (!data) return null;
-
-  let answeredByName: string | null = null;
-  if (data.answered_by) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name')
-      .eq('id', data.answered_by)
-      .maybeSingle();
-    answeredByName = profile?.full_name?.trim() || null;
-  }
-
-  const { answered_by: _answeredBy, ...request } = data;
-  return { request, answeredByName };
-}
-
-export type FleetRequestThreadView = {
-  /** Every other message in this same conversation (thread_root match, or the
-   * root itself), chronological oldest-first, UNCAPPED at a small number —
-   * a thread item must never silently fall off this list. */
-  sameThread: FleetRequestEntry[];
-  /** The role's other, unrelated recent activity — newest first, capped, and
-   * guaranteed not to duplicate anything already in `sameThread`. */
-  other: FleetRequestEntry[];
-};
-
-// The same role's other requests: split into "this conversation" (unbounded —
-// see FleetRequestThreadView.sameThread) and "everything else" (capped, most
-// recent first). Previously a single flat newest-first list capped at 10,
-// which meant a still-pending thread reply could silently drop off the page
-// if the role filed 10+ unrelated things since — the exact shape of bug this
-// split exists to rule out.
-export async function listFleetRequestsByRole(
-  role: string,
-  excludeId: string,
-  threadRoot: string,
-  otherLimit = 10,
-): Promise<FleetRequestThreadView> {
-  await requirePlatformPermission('manage_settings');
-  const supabase = await createClient();
-
-  const [threadResult, recentResult] = await Promise.all([
-    supabase
-      .from('fleet_requests')
-      .select(FLEET_REQUEST_COLUMNS)
-      .eq('role', role)
-      .neq('id', excludeId)
-      .or(`id.eq.${threadRoot},payload->>thread_root.eq.${threadRoot}`)
-      .order('created_at', { ascending: true })
-      .limit(200),
-    // A modest buffer over otherLimit, not otherLimit itself: rows that turn
-    // out to belong to the thread get filtered out below, so the DB limit has
-    // to leave enough room for `otherLimit` real "other" rows to survive that.
-    supabase
-      .from('fleet_requests')
-      .select(FLEET_REQUEST_COLUMNS)
-      .eq('role', role)
-      .neq('id', excludeId)
-      .order('created_at', { ascending: false })
-      .limit(otherLimit + 20),
-  ]);
-
-  if (threadResult.error || recentResult.error) throw new Error('טעינת פניות קשורות נכשלה');
-
-  const sameThread = (threadResult.data ?? []) as FleetRequestEntry[];
-  const threadIds = new Set(sameThread.map((r) => r.id));
-  const other = ((recentResult.data ?? []) as FleetRequestEntry[])
-    .filter((r) => !threadIds.has(r.id))
-    .slice(0, otherLimit);
-
-  return { sameThread, other };
-}
-
-// The role registry the compose form offers, read from the same fleet.json the
-// scheduler reloads every tick. Read at request time (not cached): fleet.json
-// is owner-edited and a stale list would offer a role that no longer exists —
-// which the CLI would reject as a dead letter anyway.
-export async function listFleetRoles(): Promise<FleetRoleInfo[]> {
-  await requirePlatformPermission('manage_settings');
+// The role registry, read from the same fleet.json the scheduler reloads
+// every tick. Read at request time (not persisted): fleet.json is owner-edited
+// and a stale list would offer a role that no longer exists. cache() only
+// dedupes the layout's and the page's read within ONE request.
+//
+// null = the file could not be read/parsed. The conversation list shows that
+// as an error state, never as "no agents".
+const loadFleetRoles = cache(async (): Promise<FleetRoleInfo[] | null> => {
   const path = join(process.cwd(), '.claude', 'fleet', 'fleet.json');
   try {
     return parseFleetRoleRegistry(JSON.parse(await readFile(path, 'utf8')));
   } catch {
-    // Fail-closed: an unreadable config means no roles to offer, not a crash.
-    // The form renders its empty state and the owner keeps the rest of the page.
-    return [];
+    return null;
   }
+});
+
+export async function readFleetRoles(): Promise<FleetRoleInfo[] | null> {
+  await requirePlatformPermission('manage_settings');
+  return loadFleetRoles();
+}
+
+// ── Conversations (/admin/fleet as a messaging app) ─────────────────────────
+// One conversation per role (plans/fleet-messaging-redesign-2026-09-27.md
+// §2). The pure model lives in lib/fleet/conversation.ts; this section only
+// fetches — bounded, a fixed number of queries per render, never per role.
+
+const ROLE_RE = /^[a-z0-9][a-z0-9-]*$/;
+const uuid = z.uuid();
+const cursorSchema = z.iso.datetime({ offset: true });
+
+// The list needs no body/attachments — only enough to find each role's last
+// event and its preview. JSON paths instead of the whole payload keep the
+// 300-row window lean.
+const CONVERSATION_LIST_COLUMNS =
+  'id, role, kind, tier, title, status, answer, created_at, answered_at, expires_at, consumed_at, origin:payload->>origin, thread_root:payload->>thread_root, handoff_from:payload->>handoff_from, handoff_from_role:payload->>handoff_from_role';
+
+const CONVERSATION_ROW_COLUMNS =
+  'id, role, kind, tier, title, body, payload, status, answer, created_at, answered_at, expires_at, consumed_at';
+
+export const CONVERSATION_LIST_WINDOW = 300;
+export const CONVERSATION_PAGE_SIZE = 50;
+
+type LeanListRow = {
+  id: string;
+  role: string;
+  kind: string;
+  tier: number;
+  title: string;
+  status: string;
+  answer: string | null;
+  created_at: string;
+  answered_at: string | null;
+  expires_at: string;
+  consumed_at: string | null;
+  origin: string | null;
+  thread_root: string | null;
+  handoff_from: string | null;
+  handoff_from_role: string | null;
+};
+
+function leanToRow(r: LeanListRow): ConversationRequestRow {
+  const payload: Record<string, string> = {};
+  if (r.origin) payload.origin = r.origin;
+  if (r.thread_root) payload.thread_root = r.thread_root;
+  if (r.handoff_from) payload.handoff_from = r.handoff_from;
+  if (r.handoff_from_role) payload.handoff_from_role = r.handoff_from_role;
+  return {
+    id: r.id,
+    role: r.role,
+    kind: r.kind,
+    tier: r.tier,
+    title: r.title,
+    body: '',
+    payload,
+    status: r.status,
+    answer: r.answer,
+    created_at: r.created_at,
+    answered_at: r.answered_at,
+    expires_at: r.expires_at,
+    consumed_at: r.consumed_at,
+  };
+}
+
+export type FleetConversationList = {
+  conversations: ConversationSummary[];
+  /** fleet.json could not be read — an error state, not an empty one. */
+  rolesUnavailable: boolean;
+};
+
+// Three queries total, whatever the number of roles: the recent window
+// (grouped in JS), every pending row (so a waiting item can never fall out of
+// the window), and open goals.
+export async function listFleetConversations(): Promise<FleetConversationList> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+
+  const [roles, recentRes, pendingRes, goalsRes] = await Promise.all([
+    loadFleetRoles(),
+    supabase
+      .from('fleet_requests')
+      .select(CONVERSATION_LIST_COLUMNS)
+      .order('created_at', { ascending: false })
+      .limit(CONVERSATION_LIST_WINDOW),
+    supabase
+      .from('fleet_requests')
+      .select('id, role, status, origin:payload->>origin')
+      .eq('status', 'pending'),
+    supabase.from('fleet_goals').select('role, status').in('status', ['active', 'paused']),
+  ]);
+
+  if (recentRes.error || pendingRes.error || goalsRes.error) {
+    throw new Error('טעינת השיחות נכשלה');
+  }
+
+  const rows = ((recentRes.data ?? []) as LeanListRow[]).map(leanToRow);
+  const pending = (
+    (pendingRes.data ?? []) as { id: string; role: string; status: string; origin: string | null }[]
+  ).map((r) => ({ id: r.id, role: r.role, status: r.status, payload: r.origin ? { origin: r.origin } : {} }));
+
+  return {
+    conversations: summarizeConversations({
+      rows,
+      pending,
+      goals: (goalsRes.data ?? []) as { role: string; status: string }[],
+      roles: roles?.map((r) => ({ name: r.name, enabled: r.enabled })) ?? null,
+      nowMs: Date.now(),
+    }),
+    rolesUnavailable: roles === null,
+  };
+}
+
+export type FleetConversationCursor =
+  | { kind: 'latest' }
+  | { kind: 'before'; at: string }
+  | { kind: 'after'; at: string };
+
+export type FleetConversation = {
+  role: string;
+  /** Window rows + every pending row, oldest first. */
+  rows: ConversationRequestRow[];
+  goals: FleetGoalEntry[];
+  rootTitles: Record<string, string>;
+  handoffsOut: HandoffOut[];
+  /** created_at of the oldest window row when older history exists. */
+  olderCursor: string | null;
+  /** created_at of the newest window row when newer history exists. */
+  newerCursor: string | null;
+  /** null = no focus requested; false = not found in this conversation. */
+  focusFound: boolean | null;
+  /** created_at of the oldest window row (goal events before it are off-screen). */
+  windowStart: string | null;
+  /** Server clock at read time — "now" for expiry countdowns and day labels. */
+  generatedAt: number;
+};
+
+export function parseConversationCursor(before?: string, after?: string): FleetConversationCursor {
+  if (before && cursorSchema.safeParse(before).success) return { kind: 'before', at: before };
+  if (after && cursorSchema.safeParse(after).success) return { kind: 'after', at: after };
+  return { kind: 'latest' };
+}
+
+// The role's latest window (or the page before/after a cursor). A `focus`
+// outside the latest window re-anchors the window at the focused row, so an
+// old Slack link still lands ON its message.
+//
+// Every value concatenated into a filter string (.in()) is re-validated as a
+// uuid here even though it came from our own DB — `.or()`/`.in()` are string
+// grammars, and nothing reaches them unchecked.
+export async function getFleetConversation(
+  role: string,
+  opts: { cursor?: FleetConversationCursor; focus?: string | null } = {},
+): Promise<FleetConversation> {
+  await requirePlatformPermission('manage_settings');
+  if (!ROLE_RE.test(role)) throw new Error('שם סוכן לא תקין');
+  const supabase = await createClient();
+  const n = CONVERSATION_PAGE_SIZE;
+  let cursor = opts.cursor ?? { kind: 'latest' };
+  const focus = opts.focus && uuid.safeParse(opts.focus).success ? opts.focus : null;
+
+  const windowQuery = (c: FleetConversationCursor) => {
+    const q = supabase.from('fleet_requests').select(CONVERSATION_ROW_COLUMNS).eq('role', role);
+    if (c.kind === 'after') return q.gt('created_at', c.at).order('created_at', { ascending: true }).limit(n + 1);
+    const base = c.kind === 'before' ? q.lt('created_at', c.at) : q;
+    return base.order('created_at', { ascending: false }).limit(n + 1);
+  };
+
+  const [windowRes, pendingRes, goalsRes] = await Promise.all([
+    windowQuery(cursor),
+    supabase
+      .from('fleet_requests')
+      .select(CONVERSATION_ROW_COLUMNS)
+      .eq('role', role)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('fleet_goals')
+      .select(FLEET_GOAL_COLUMNS)
+      .eq('role', role)
+      .order('created_at', { ascending: true }),
+  ]);
+  if (windowRes.error || pendingRes.error || goalsRes.error) {
+    throw new Error('טעינת השיחה נכשלה');
+  }
+
+  let windowRows = (windowRes.data ?? []) as ConversationRequestRow[];
+  let focusFound: boolean | null = focus ? windowRows.some((r) => r.id === focus) : null;
+
+  if (focus && !focusFound && cursor.kind === 'latest') {
+    const { data: focused, error } = await supabase
+      .from('fleet_requests')
+      .select('id, role, created_at')
+      .eq('id', focus)
+      .maybeSingle();
+    if (error) throw new Error('טעינת השיחה נכשלה');
+    if (focused && focused.role === role) {
+      // Anchor: the focused row and the page of history right before it.
+      const anchored = await supabase
+        .from('fleet_requests')
+        .select(CONVERSATION_ROW_COLUMNS)
+        .eq('role', role)
+        .lte('created_at', focused.created_at)
+        .order('created_at', { ascending: false })
+        .limit(n + 1);
+      if (anchored.error) throw new Error('טעינת השיחה נכשלה');
+      windowRows = (anchored.data ?? []) as ConversationRequestRow[];
+      cursor = { kind: 'before', at: new Date(Date.parse(focused.created_at) + 1).toISOString() };
+      focusFound = windowRows.some((r) => r.id === focus);
+    } else {
+      focusFound = false;
+    }
+  }
+
+  // n+1 fetched: the extra row only tells us more exists in that direction.
+  const hasMore = windowRows.length > n;
+  if (hasMore) windowRows = windowRows.slice(0, n);
+  if (cursor.kind !== 'after') windowRows = windowRows.reverse();
+  const hasOlder = cursor.kind === 'after' ? true : hasMore;
+  const hasNewer = cursor.kind === 'latest' ? false : cursor.kind === 'after' ? hasMore : true;
+
+  const byId = new Map<string, ConversationRequestRow>();
+  for (const r of windowRows) byId.set(r.id, r);
+  for (const r of (pendingRes.data ?? []) as ConversationRequestRow[]) byId.set(r.id, r);
+  const rows = [...byId.values()].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+
+  const ids = rows.map((r) => r.id).filter((id) => uuid.safeParse(id).success);
+  const missingRoots = [
+    ...new Set(
+      rows
+        .map((r) => threadRootOf(r))
+        .filter((root): root is string => !!root && !byId.has(root) && uuid.safeParse(root).success),
+    ),
+  ];
+
+  const [rootsRes, handoffRes] = await Promise.all([
+    missingRoots.length
+      ? supabase.from('fleet_requests').select('id, title').in('id', missingRoots)
+      : Promise.resolve({ data: [] as { id: string; title: string }[], error: null }),
+    ids.length
+      ? supabase
+          .from('fleet_requests')
+          .select('id, role, created_at, handoff_from:payload->>handoff_from')
+          .in('payload->>handoff_from', ids)
+      : Promise.resolve({
+          data: [] as { id: string; role: string; created_at: string; handoff_from: string | null }[],
+          error: null,
+        }),
+  ]);
+  if (rootsRes.error || handoffRes.error) throw new Error('טעינת השיחה נכשלה');
+
+  const rootTitles: Record<string, string> = {};
+  for (const r of rows) rootTitles[r.id] = r.title;
+  for (const r of (rootsRes.data ?? []) as { id: string; title: string }[]) rootTitles[r.id] = r.title;
+
+  const handoffsOut: HandoffOut[] = (
+    (handoffRes.data ?? []) as { id: string; role: string; created_at: string; handoff_from: string | null }[]
+  )
+    .filter((h) => h.handoff_from)
+    .map((h) => ({ fromId: h.handoff_from as string, toRole: h.role, toId: h.id, at: h.created_at }));
+
+  const oldest = windowRows[0]?.created_at ?? null;
+  const newest = windowRows[windowRows.length - 1]?.created_at ?? null;
+
+  return {
+    role,
+    rows,
+    goals: (goalsRes.data ?? []) as FleetGoalEntry[],
+    rootTitles,
+    handoffsOut,
+    olderCursor: hasOlder ? oldest : null,
+    newerCursor: hasNewer ? newest : null,
+    focusFound,
+    windowStart: hasOlder ? oldest : null,
+    generatedAt: Date.now(),
+  };
+}
+
+// Where an old link (/admin/fleet/<id>, ?id=, ?focus= without role) should
+// land: the role whose conversation holds this request. null = not found.
+export async function getFleetRequestRole(id: string): Promise<string | null> {
+  await requirePlatformPermission('manage_settings');
+  if (!uuid.safeParse(id).success) return null;
+  const supabase = await createClient();
+  const { data, error } = await supabase.from('fleet_requests').select('role').eq('id', id).maybeSingle();
+  if (error) throw new Error('טעינת הפנייה נכשלה');
+  return data?.role ?? null;
 }
 
 export type OwnerRequestKind = 'approval' | 'question' | 'fyi';
@@ -213,6 +402,60 @@ export async function createOwnerFleetRequest(input: {
   return { id: row.id, deduplicated };
 }
 
+// "השב" on a CLOSED message: a new owner message threaded on that message's
+// conversation, so the CLI injects the thread root as context for the agent
+// (scripts/fleet-agent-cli.ts, inbox thread context — root only).
+//
+// The browser sends ONLY the id it is replying to. role, tier, thread root and
+// the title are all derived here from the stored row — never from hidden form
+// fields — so a tampered form can neither retarget another role nor smuggle a
+// value into a filter. The derived title ("המשך: <root title>") also keeps
+// the request_key distinct per thread, so "כן" in two threads on the same day
+// does not collide in the dedup index.
+export async function createOwnerFleetContinuation(input: {
+  continueFrom: string;
+  body: string;
+}): Promise<{ id: string; deduplicated: boolean; role: string }> {
+  await requirePlatformPermission('manage_settings');
+  if (!uuid.safeParse(input.continueFrom).success) throw new Error('מזהה הודעה לא תקין');
+  const supabase = await createClient();
+
+  const { data: source, error } = await supabase
+    .from('fleet_requests')
+    .select('id, role, tier, title, status, payload')
+    .eq('id', input.continueFrom)
+    .maybeSingle();
+  if (error) throw new Error('פתיחת הפנייה נכשלה');
+  if (!source) throw new Error('ההודעה שאליה משיבים לא נמצאה');
+  if (source.status === 'pending' && requestBodyAuthor(source.payload) === 'agent') {
+    // An open agent request is answered, not continued.
+    throw new Error('הפנייה עדיין ממתינה למענה — השב עליה ישירות');
+  }
+
+  const root = threadRootOf(source);
+  const threadRoot = root && uuid.safeParse(root).success ? root : source.id;
+  let rootTitle = source.title;
+  if (threadRoot !== source.id) {
+    const { data: rootRow, error: rootError } = await supabase
+      .from('fleet_requests')
+      .select('title')
+      .eq('id', threadRoot)
+      .maybeSingle();
+    if (rootError) throw new Error('פתיחת הפנייה נכשלה');
+    if (rootRow?.title) rootTitle = rootRow.title;
+  }
+
+  const result = await createOwnerFleetRequest({
+    role: source.role,
+    kind: 'question',
+    tier: source.tier,
+    title: continuationTitle(rootTitle),
+    body: input.body,
+    threadRoot,
+  });
+  return { ...result, role: source.role };
+}
+
 export type FleetVerdict = 'approved' | 'denied' | 'answered';
 
 // Record the owner's verdict via the fleet_answer_request RPC. The function
@@ -227,6 +470,24 @@ export async function answerFleetRequest(input: {
 }): Promise<void> {
   await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
+
+  // One pre-read, used twice: the self-answer guard below and the Slack
+  // follow-up after the RPC.
+  const { data: target, error: readError } = await supabase
+    .from('fleet_requests')
+    .select('role, title, payload')
+    .eq('id', input.id)
+    .maybeSingle();
+  if (readError) throw new Error('שמירת המענה נכשלה');
+  if (!target) throw new Error('הפנייה לא נמצאה');
+  // A request the owner opened (payload.origin='owner') is a task FOR the
+  // agent, not a question to the owner. Answering it flips it to `answered`
+  // and hands the agent a fake verdict (cmdVerdicts does not exclude
+  // owner-origin rows). The RPC does not check origin (owner decision Q1 is
+  // still open), so this app-layer guard is the enforcement for the UI path.
+  if (requestBodyAuthor(target.payload) === 'owner') {
+    throw new Error('לא ניתן להשיב לפנייה ששלחת');
+  }
 
   const { error } = await supabase.rpc('fleet_answer_request', {
     p_id: input.id,
@@ -249,33 +510,25 @@ export async function answerFleetRequest(input: {
 
   // Close the Slack side of the loop: the request-filed alert already went to
   // the channel, so the verdict must land there too or the thread looks
-  // unanswered (real gap caught by the channel bot on the first smoke test).
-  // Posted as a REPLY in the original request's thread when its ts was
+  // unanswered. Posted as a REPLY in the original request's thread when its ts was
   // captured (fleet_request_slack_threads); top-level otherwise. Title +
   // verdict only — the answer text stays out of Slack (non-PII rule).
   // sendSlackAlert is fail-safe; a Slack outage must not fail the answer.
-  const { data: answered } = await supabase
-    .from('fleet_requests')
-    .select('role, title')
-    .eq('id', input.id)
+  const { data: thread } = await supabase
+    .from('fleet_request_slack_threads')
+    .select('thread_ts')
+    .eq('request_id', input.id)
     .maybeSingle();
-  if (answered) {
-    const { data: thread } = await supabase
-      .from('fleet_request_slack_threads')
-      .select('thread_ts')
-      .eq('request_id', input.id)
-      .maybeSingle();
-    const verdictLabel =
-      input.verdict === 'approved' ? 'אושר' : input.verdict === 'denied' ? 'נדחה' : 'נענה';
-    await sendSlackAlert({
-      level: 'info',
-      title: `המענה נרשם (${verdictLabel}): ${answered.title}`,
-      detail: 'הסוכן יקלוט את התשובה בתחילת הריצה הבאה שלו.',
-      source: `fleet:${answered.role}`,
-      category: 'errors',
-      threadTs: thread?.thread_ts ?? undefined,
-    });
-  }
+  const verdictLabel =
+    input.verdict === 'approved' ? 'אושר' : input.verdict === 'denied' ? 'נדחה' : 'נענה';
+  await sendSlackAlert({
+    level: 'info',
+    title: `המענה נרשם (${verdictLabel}): ${target.title}`,
+    detail: 'הסוכן יקלוט את התשובה בתחילת הריצה הבאה שלו.',
+    source: `fleet:${target.role}`,
+    category: 'errors',
+    threadTs: thread?.thread_ts ?? undefined,
+  });
 }
 
 // ── Fleet goals: persistent goal + self-scheduling ──────────────────────────
@@ -305,142 +558,13 @@ export type FleetGoalEntry = Pick<
 
 // One string literal, not a concatenation — supabase-js infers the exact
 // column-literal type from `.select()` only when it sees one, same as
-// FLEET_REQUEST_COLUMNS above. A `+`-joined string loses that and the query
+// CONVERSATION_ROW_COLUMNS above. A `+`-joined string loses that and the query
 // resolves to GenericStringError instead of FleetGoalEntry.
 const FLEET_GOAL_COLUMNS =
   'id, role, title, body, status, state, next_wake_at, step_count, consecutive_failures, last_error, created_at, closed_at';
 
-// A request or a goal, shaped identically enough for one unified list row and
-// one unified detail-pane dispatch (/admin/fleet). `data` keeps the full,
-// type-specific row for whichever renderer needs it; the flat id/role/title/
-// status/displayAt fields exist so the shared list row never has to branch on
-// entryKind just to read them. Two label maps stay separate downstream
-// (fleet-client.tsx) rather than merging into this type — 'completed' takes a
-// different Hebrew grammatical form for a בקשה vs a מטרה, and flattening that
-// away would silently reintroduce the wrong gender agreement.
-export type FleetActivityEntry =
-  | { entryKind: 'request'; id: string; role: string; title: string; status: string; displayAt: string; data: FleetRequestEntry }
-  | { entryKind: 'goal'; id: string; role: string; title: string; status: string; displayAt: string; data: FleetGoalEntry };
-
-function toRequestActivityEntry(r: FleetRequestEntry, displayAt: string): FleetActivityEntry {
-  return { entryKind: 'request', id: r.id, role: r.role, title: r.title, status: r.status, displayAt, data: r };
-}
-
-function toGoalActivityEntry(g: FleetGoalEntry, displayAt: string): FleetActivityEntry {
-  return { entryKind: 'goal', id: g.id, role: g.role, title: g.title, status: g.status, displayAt, data: g };
-}
-
-// Everything the owner must act on or is watching right now: pending requests
-// (blocking a role) ahead of active/paused goals — both already small by
-// nature, so this stays unpaginated. Reuses the two existing list functions
-// rather than a new query; the only new work here is shaping them into one
-// list for /admin/fleet's unified "needs attention" section.
-// `kind` stays a plain string (not the approval|question|fyi union) — it
-// comes straight from an admin-typed ?kind= query param, and an unrecognized
-// value should just match nothing (a plain .eq() against real rows), the same
-// as /admin/contacts' own unvalidated ?status= filter — not get lied to via
-// an `as` cast into a union it might not actually satisfy.
-export type FleetActivityFilters = { role?: string; kind?: string };
-
-// The unified /admin/fleet feed: ONE priority-first, paginated list — no
-// separate "needs attention" section. "Priority" (pending requests +
-// active/paused goals — always small by nature) is fetched in full and always
-// sorts ahead of everything else, so in the common case it simply occupies
-// the top of page 1; only if it ever exceeds a page's worth does it spill
-// onto page 2, still first there too. "Rest" (resolved requests + finished
-// goals) uses the same over-fetch-to-page-depth merge as a real cross-table
-// UNION would give: each source is fetched to the SAME depth (page*pageSize
-// rows, newest first) and merged here. That is exact, not approximate — the
-// true top `page*pageSize` rows are guaranteed to be a subset of what was
-// just fetched, because each source only ever contributes MORE recent rows
-// nearer the top. Cost grows with page depth, not table size — the right
-// trade for an internal ops list rarely paged more than a few pages deep.
-//
-// `kind` excludes goals entirely: kind (question/approval/fyi) is a
-// request-only concept, so filtering by it means "requests of this kind",
-// not "requests of this kind, plus every goal".
-export async function listFleetActivity(
-  params: PageParams & FleetActivityFilters = {},
-): Promise<PageResult<FleetActivityEntry>> {
-  await requirePlatformPermission('manage_settings');
-  const supabase = await createClient();
-  const { page, pageSize } = resolvePage(params.page);
-  const upTo = page * pageSize;
-  const { role, kind } = params;
-
-  let pendingQuery = supabase
-    .from('fleet_requests')
-    .select(FLEET_REQUEST_COLUMNS)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true });
-  if (role) pendingQuery = pendingQuery.eq('role', role);
-  if (kind) pendingQuery = pendingQuery.eq('kind', kind);
-
-  let restReqQuery = supabase
-    .from('fleet_requests')
-    .select(FLEET_REQUEST_COLUMNS, { count: 'exact' })
-    .neq('status', 'pending')
-    .order('created_at', { ascending: false })
-    .range(0, upTo - 1);
-  if (role) restReqQuery = restReqQuery.eq('role', role);
-  if (kind) restReqQuery = restReqQuery.eq('kind', kind);
-
-  let goalsAttnQuery = supabase
-    .from('fleet_goals')
-    .select(FLEET_GOAL_COLUMNS)
-    .in('status', ['active', 'paused']);
-  if (role) goalsAttnQuery = goalsAttnQuery.eq('role', role);
-
-  let restGoalQuery = supabase
-    .from('fleet_goals')
-    .select(FLEET_GOAL_COLUMNS, { count: 'exact' })
-    .not('closed_at', 'is', null)
-    .order('closed_at', { ascending: false })
-    .range(0, upTo - 1);
-  if (role) restGoalQuery = restGoalQuery.eq('role', role);
-
-  const [pendingRes, restReqRes, goalsAttnRes, restGoalRes] = await Promise.all([
-    pendingQuery,
-    restReqQuery,
-    goalsAttnQuery,
-    restGoalQuery,
-  ]);
-
-  if (pendingRes.error || restReqRes.error || goalsAttnRes.error || restGoalRes.error) {
-    throw new Error('טעינת פעילות הסוכנים נכשלה');
-  }
-
-  const pending = (pendingRes.data ?? []) as FleetRequestEntry[];
-  const activeGoals = kind ? [] : ((goalsAttnRes.data ?? []) as FleetGoalEntry[]);
-  const priority = [
-    ...pending.map((r) => toRequestActivityEntry(r, r.created_at)),
-    ...activeGoals.map((g) => toGoalActivityEntry(g, g.created_at)),
-  ].sort((a, b) => (a.displayAt < b.displayAt ? 1 : a.displayAt > b.displayAt ? -1 : 0));
-
-  const restRequests = (restReqRes.data ?? []) as FleetRequestEntry[];
-  const restGoals = kind ? [] : ((restGoalRes.data ?? []) as FleetGoalEntry[]);
-  const rest = [
-    ...restRequests.map((r) => toRequestActivityEntry(r, r.answered_at ?? r.created_at)),
-    ...restGoals.map((g) => toGoalActivityEntry(g, g.closed_at ?? g.created_at)),
-  ].sort((a, b) => (a.displayAt < b.displayAt ? 1 : a.displayAt > b.displayAt ? -1 : 0));
-
-  // Priority unconditionally ranks ahead of rest (not merged into one sort by
-  // date) — that is the whole point: "needs attention" outranks recency.
-  const merged = [...priority, ...rest];
-  const from = (page - 1) * pageSize;
-  const total = priority.length + (restReqRes.count ?? 0) + (kind ? 0 : (restGoalRes.count ?? 0));
-
-  return {
-    items: merged.slice(from, from + pageSize),
-    total,
-    page,
-    pageSize,
-  };
-}
-
-// Single goal for the unified detail pane (/admin/fleet?id=...&type=goal).
-// Returns null for an unknown id — same "let the pane render an empty state,
-// don't crash the page" contract as getFleetRequest above.
+// Single goal — only the legacy ?id=<goal>&type=goal link needs it now, to
+// find which conversation to open. null for an unknown id.
 export async function getFleetGoalById(id: string): Promise<FleetGoalEntry | null> {
   await requirePlatformPermission('manage_settings');
   const supabase = await createClient();

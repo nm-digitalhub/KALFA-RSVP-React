@@ -23,6 +23,7 @@ export const MARKDOWN_NEGOTIABLE_PATHS = new Set<string>([
   '/',
   '/faq',
   '/contact',
+  '/about',
   '/wedding',
   '/bar-mitzva',
   '/brit',

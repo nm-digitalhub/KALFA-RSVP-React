@@ -1,9 +1,10 @@
 // The activity history of one callback request, composed from columns that
 // already exist.
 //
-// There is no event log for the sales tooling: no row is written when the agent
-// calls get_pricing, apply_discount_tier or notify_owner, and there is no
-// timeline table keyed by sales_call_attempt_id. What DOES exist is a set of
+// There is no event log for the sales tooling: no event-log row is written when
+// the agent calls get_pricing, apply_discount_tier or notify_owner (notify_owner
+// only queues a contact_messages inquiry that carries no attempt id), and there
+// is no timeline table keyed by sales_call_attempt_id. What DOES exist is a set of
 // timestamps each written exactly once by a known code path — created_at,
 // wa_status_at, signup_completed_at, outcome_recorded_at, analysis_at — and
 // each of those is a real, dated fact about this lead. This module turns those

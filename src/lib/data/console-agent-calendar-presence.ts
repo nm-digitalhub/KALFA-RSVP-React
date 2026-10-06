@@ -9,15 +9,15 @@ import type { ExchangeConnectionConfig } from '@/lib/exchange-ews/types';
 
 // Per-console-agent calendar-derived presence sync (worker cron only — see
 // worker/main.ts's calendarPresenceSync registration). Writes a THIRD,
-// advisory axis: agent_status stays the sole business truth (project rule,
-// plans/shimmering-snuggling-neumann.md "נוכחות" — "agent_status = אמת
-// עסקית; חיבור SDK = אות טכני"; this module adds a second, independent
-// technical signal alongside the SDK one, never merged into either). No
-// caller in this codebase reads console_agent_calendar_presence to gate
-// routing in this pass — findRoutableAgents/findRoutableAgentVoxUsernames
-// (console-calls.ts) are UNCHANGED; only the pure
-// deprioritizeCalendarBusyAgents() helper exists there, ready to be wired in
-// once inbound routing itself goes live (gate E, still pending).
+// advisory axis: agent_status stays the sole business truth (project rule:
+// "agent_status = אמת עסקית; חיבור SDK = אות טכני"; this module adds a
+// second, independent technical signal alongside the SDK one, never merged
+// into either). No caller in this codebase reads
+// console_agent_calendar_presence to gate routing —
+// findRoutableAgents/findRoutableAgentVoxUsernames (console-calls.ts) do not
+// consult it; only the pure deprioritizeCalendarBusyAgents() helper exists
+// there, ready to be wired in once inbound routing itself goes live (gate E,
+// still pending).
 //
 // REQUEST-FREE by design (service-role only, no requireUser/cookies) so the
 // worker bundle can import it — same reasoning as
@@ -31,17 +31,12 @@ import type { ExchangeConnectionConfig } from '@/lib/exchange-ews/types';
 // (the owner) — the join is written to generalize to N agents regardless,
 // which is the whole point of the feature.
 //
-// NOT a dedicated availability/free-busy service call: it was MEASURED dead on
-// the old IONOS mailbox (HTTP 500 / ErrorInternalServerError 127) back when the
-// backend was EWS. That specific measurement is now history — the mailbox moved
-// to Microsoft 365 — but the shape it forced is still what this uses and still
-// the right one: calendarProvider.getAvailability() derives presence from the
-// calendar itself, the same working path exchange-availability.ts's
-// getMyPresence() uses. Re-measure before reaching for a free-busy API again.
-//
-// The xmlSafe() caveat that used to live here is gone with EWS: Graph speaks
-// JSON, so there is no SOAP body for a string to escape into. Every call below
-// is a read regardless.
+// Presence comes from calendarProvider.getAvailability(): under Graph that is
+// the real free/busy service (calendar/getSchedule — see graph-impl.ts), which
+// counts private and tentative items as busy without exposing their content.
+// exchange-availability.ts's getMyPresence() reads the calendar items instead
+// (listAppointments) because it also reconciles exchange_availability_blocks
+// rows. Every Exchange call below is a read.
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -52,7 +47,7 @@ interface AgentExchangeCandidate {
   authMethod: ExchangeAuthMethod;
   // Nullable since the §B phase-1 migration: under Graph a connection has no
   // mailbox secret to store, and the old NOT NULL forced every row to carry one
-  // that authenticated nothing. resolveMailboxPassword narrows these.
+  // that authenticated nothing.
   credentialCiphertext: string | null;
   credentialIv: string | null;
   credentialAuthTag: string | null;
@@ -94,11 +89,10 @@ async function listAgentsWithVerifiedExchangeConnection(
 
 // Narrow window on purpose: this is an unattended cron (every 10 minutes,
 // see worker/main.ts), not an interactive read with a user waiting, but it
-// is still a remote Graph round trip per agent against a shared mailbox. (That
-// used to be the stronger argument: under EWS each call paid a fresh NTLM/SOAP
-// handshake. Graph holds one module-level credential and MSAL caches the token,
-// so a tick is cheaper now — the cadence stays because calendar times are
-// minute-granular at best, not because the call is expensive.)
+// is still a remote Graph round trip per agent against a shared mailbox.
+// (Graph holds one module-level credential and MSAL caches the token, so a
+// tick is cheap — the cadence reflects that calendar times are minute-granular
+// at best, not the cost of the call.)
 // getMyPresence() reads -24h/+12h because it also needs
 // to RECONCILE exchange_availability_blocks rows; this sync has no such
 // bookkeeping to reconcile, so it only needs enough range to find the
@@ -119,7 +113,7 @@ async function syncOneAgent(
     password = resolveMailboxPassword();
   } catch {
     // Fail closed on the sync bookkeeping ONLY — busy_until/show_as are
-    // deliberately left out of this payload so a decrypt failure can never
+    // deliberately left out of this payload so a credential failure can never
     // clobber a real, previously-known busy window to "free".
     await admin
       .from('console_agent_calendar_presence')

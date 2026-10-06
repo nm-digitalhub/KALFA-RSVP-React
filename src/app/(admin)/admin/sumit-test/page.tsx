@@ -2,16 +2,24 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getSumitPublicConfig } from '@/lib/data/payments';
+import { listChargeableCampaigns } from '@/lib/data/admin/sumit-test';
+import { listTestHolds } from '@/lib/data/admin/sumit-test-transactions';
 
 import { SumitTestForm } from './sumit-test-form';
 
 export const metadata: Metadata = { title: 'בדיקת SUMIT' };
 
 // Admin-only SUMIT POC. Verifies live REST behavior (J5/AuthorizeAmount/token)
-// against an admin-chosen parameter set before we build the production flow.
+// against an admin-chosen parameter set.
 export default async function SumitTestPage() {
   await requirePlatformPermission('manage_billing');
   const config = await getSumitPublicConfig();
+  // Labels + ids only — the saved token stays on the server and is resolved at
+  // charge time (see src/lib/data/admin/sumit-test.ts).
+  const [chargeableCampaigns, testHolds] = await Promise.all([
+    listChargeableCampaigns(),
+    listTestHolds(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -31,13 +39,12 @@ export default async function SumitTestPage() {
         // The route-B (saved-token J4) form lives inside SumitTestForm itself —
         // a second, genuinely separate <form> with no data-og="form" so
         // payments.js never touches it (verified against its live source).
-        // It collects the mandatory expiry + CitizenID that route.ts now
-        // requires; an earlier, separate copy of this form lived here and was
-        // removed for being redundant AND broken (missing those fields, so it
-        // always failed the new mandatory-field check).
+        // It collects the mandatory expiry + CitizenID that route.ts requires.
         <SumitTestForm
           companyId={config.companyId}
           apiPublicKey={config.apiPublicKey}
+          chargeableCampaigns={chargeableCampaigns}
+          testHolds={testHolds}
         />
       ) : (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">

@@ -29,10 +29,9 @@ export async function getPaymentsEnabled(): Promise<boolean> {
 }
 
 // Independent kill-switch for the route-A J5 campaign hold path (separate from
-// the campaign payment switches). Fail-safe AND forward-compatible: the
-// `campaign_holds_enabled` column is added by a pending migration, so until it
-// exists `select('*')` simply omits it and this returns false (fail-closed — the
-// hold form/route stay off). False unless the column exists AND is explicitly on.
+// the campaign payment switches). Fail-safe: reads the row with `select('*')`
+// and returns false (fail-closed — the hold form/route stay off) unless
+// `campaign_holds_enabled` is present AND explicitly on.
 export async function getCampaignHoldsEnabled(): Promise<boolean> {
   try {
     const admin = createAdminClient();
@@ -49,8 +48,8 @@ export async function getCampaignHoldsEnabled(): Promise<boolean> {
 }
 
 // Master switch for the final close-CHARGE (capturing the held card for the
-// accrued reached-contact total). Forward-compatible — false until the migration
-// adds the column. Real money: charge only runs when this AND payments are on.
+// accrued reached-contact total). Fail-closed — false unless `close_charge_enabled`
+// is explicitly on. Real money: charge only runs when this AND payments are on.
 export async function getCloseChargeEnabled(): Promise<boolean> {
   try {
     const admin = createAdminClient();
@@ -66,11 +65,11 @@ export async function getCloseChargeEnabled(): Promise<boolean> {
   }
 }
 
-// Gate for the flat-base + included + overage pricing model (plan S3). FALSE
-// (default) ⇒ new campaigns snapshot base/included = 0 (pure per-reached,
-// unchanged today). Flip to TRUE only after agreement v4 + attorney sign-off —
-// it activates base charging for NEW campaigns. Fail-closed: any read error ⇒
-// false (stay on the legacy per-reached model).
+// Gate for the flat-base + included + overage pricing model. FALSE
+// (default) ⇒ new campaigns snapshot base/included = 0 (pure per-reached).
+// Flip to TRUE only after agreement v4 + attorney sign-off — it activates base
+// charging for NEW campaigns. Fail-closed: any read error ⇒ false (stay on the
+// legacy per-reached model).
 export async function getBaseOveragePricingEnabled(): Promise<boolean> {
   try {
     const admin = createAdminClient();
@@ -86,8 +85,27 @@ export async function getBaseOveragePricingEnabled(): Promise<boolean> {
   }
 }
 
+// Gate for the fixed-price PACKAGE purchase (plan 2026-10-04-package-payment-plan.md, D9): a real charge
+// at purchase, with no hold. FALSE (the column default) ⇒ the purchase route refuses every request.
+// Fail-closed: only an explicit `true` opens it — any read error, absent row or
+// non-boolean value keeps the purchase closed.
+export async function getPackageModelEnabled(): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('app_settings')
+      .select('package_model_enabled')
+      .eq('id', true)
+      .maybeSingle();
+    if (error || !data) return false;
+    return data.package_model_enabled === true;
+  } catch {
+    return false;
+  }
+}
+
 // Non-secret fields the browser legitimately needs for tokenization. Returned
-// to the pay page and passed as props to the client PaymentForm.
+// to the pay page and passed as props to its client card form.
 export async function getSumitPublicConfig(): Promise<SumitPublicConfig | null> {
   try {
     const admin = createAdminClient();
@@ -107,8 +125,8 @@ export async function getSumitPublicConfig(): Promise<SumitPublicConfig | null> 
   }
 }
 
-// Secret server config for charging. Read only in the Route Handler, on the
-// server, immediately before calling SUMIT. The api key never leaves the server.
+// Secret server config for charging. Read only on the server, immediately
+// before calling SUMIT. The api key never leaves the server.
 export async function getSumitServerConfig(): Promise<SumitServerConfig | null> {
   try {
     const admin = createAdminClient();

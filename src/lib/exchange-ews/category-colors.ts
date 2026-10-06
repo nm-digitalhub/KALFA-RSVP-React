@@ -3,7 +3,7 @@
 // TWO CLAIMS OF DIFFERENT STRENGTH LIVE HERE — do not conflate them.
 //
 // 1. INDEX → NAME is authoritative. The mailbox's master category list stores
-//    `color="N"`, and N is `OlCategoryColor` minus one. Confirmed two ways on
+//    `color="N"` (Graph: `presetN`), and N is `OlCategoryColor` minus one. Confirmed two ways on
 //    28.07.2026: the enumeration published by Microsoft (Red=1, Orange=2,
 //    Peach=3, Yellow=4, Green=5, Teal=6, Olive=7, Blue=8, Purple=9 …), and the
 //    live list read out of this mailbox, which carries exactly
@@ -14,7 +14,8 @@
 //    RGB values for these categories; its own documentation calls the constants
 //    "approximations of the actual colors" and directs callers to read
 //    CategoryBorderColor / CategoryGradientTopColor at runtime — properties of
-//    the Outlook COM object model, which EWS does not expose. So the swatch
+//    the Outlook COM object model, which neither EWS nor Graph exposes (Graph
+//    returns only `presetN`). So the swatch
 //    shown to the owner is the colour FAMILY Outlook named, not a pixel match
 //    to what Outlook draws. Anyone tempted to "fix" a shade here should know
 //    there is no authoritative value to fix it to.

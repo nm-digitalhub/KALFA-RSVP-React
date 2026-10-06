@@ -4,10 +4,7 @@ import { PgBoss } from 'pg-boss';
 
 // The web tier's SEND-ONLY pg-boss connection.
 //
-// Extracted 2026-09-01 from the outreach-call route, which held the only copy,
-// when a second caller (the admin calendar actions) needed to enqueue too.
-// Everything below is that original, with its reasoning intact — the point of
-// the move is that a second hand-written copy of a connection whose flags are
+// One shared copy: a second hand-written copy of a connection whose flags are
 // this load-bearing is exactly the kind of thing that drifts.
 //
 // Same connection as the worker (worker/main.ts) but with supervise + schedule

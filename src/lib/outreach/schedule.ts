@@ -94,7 +94,7 @@ function uuidv5(name: string): string {
 // same inputs → same id (pg-boss ON CONFLICT DO NOTHING = at-most-once enqueue).
 // The planRev fold means a plan-affecting edit yields a NEW id → a fresh job at
 // the new slot, while the stale-plan job (if any) is neutralised by the worker's
-// pre-flight stale check + claimStep.
+// pre-flight stale check + the reserve_outreach_step compare-and-set.
 export function detId(
   campaignId: string,
   contactId: string,

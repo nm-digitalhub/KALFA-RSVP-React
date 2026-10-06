@@ -2,20 +2,26 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
+import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
 import { getCampaign, previewCampaignHoldSizing } from '@/lib/data/campaigns';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
 import {
   getPaymentsEnabled,
   getCampaignHoldsEnabled,
+  getPackageModelEnabled,
   getSumitPublicConfig,
 } from '@/lib/data/payments';
 import { getProfile } from '@/lib/data/profiles';
+import { packagePaymentScreen } from '@/lib/payments/package-payment-screen';
+import { getPackagePaymentState } from '@/lib/payments/package-purchase';
+import { purchaseErrorMessage } from '@/lib/payments/package-purchase-errors';
 import { buttonVariants } from '@/components/ui/button';
 import { activateCampaignAction } from '../../campaign-actions';
 import { CampaignHoldForm } from './hold-form';
 import { ActivateNowForm } from './activate-now-form';
 import { HeldAnalytics } from './_held-analytics';
+import { PackagePaymentView } from './package-payment-view';
 
 export const metadata: Metadata = { title: 'תשלום קמפיין' };
 
@@ -24,6 +30,9 @@ export const metadata: Metadata = { title: 'תשלום קמפיין' };
 // card form is rendered ONLY when payments + campaign holds are enabled AND the
 // provider config is present (fail-closed). Otherwise the step is informational
 // and makes no SUMIT call.
+//
+// A fixed-price PACKAGE campaign (package_price set) takes a different path, returned first below: one purchase,
+// decided from the payment ledger. It never reaches any of the hold code.
 
 function ils(n: number | null): string {
   if (n == null) return '—';
@@ -65,7 +74,7 @@ export default async function CampaignPaymentPage({
 
   // The agreement must be signed (campaign approved) before the payment step.
   if (campaign.status === 'pending_approval') {
-    redirect(`/app/events/${id}/campaign/${campaignId}/approve`);
+    redirect(`/app/events/${id}/setup`);
   }
 
   const backLink = (
@@ -84,6 +93,50 @@ export default async function CampaignPaymentPage({
       {backLink}
     </div>
   );
+
+  // A fixed-price package campaign is paid by ONE purchase, and what the page shows is decided from the payment
+  // LEDGER — not from `?paid=1` (stale on reload) and not from the old hold columns. It never gets the hold form,
+  // the hold summary ("תפיסה בלבד") or the held-campaign "activate now": a hold submitted for it would reserve money
+  // on the card and start outreach with no payment recorded. An unreadable ledger is shown as unavailable, never as an
+  // empty form.
+  if (campaign.package_price != null) {
+    const [paymentsEnabled, packageEnabled, publicConfig, profile, payment] = await Promise.all([
+      getPaymentsEnabled(),
+      getPackageModelEnabled(),
+      getSumitPublicConfig(),
+      getProfile(),
+      getPackagePaymentState(campaignId).catch((err: unknown) => {
+        console.error('[payment] package payment state could not be read', {
+          campaignId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+      }),
+    ]);
+    const screen = packagePaymentScreen({
+      price: Number(campaign.package_price),
+      payment,
+      campaignStatus: campaign.status,
+      eventPast: isPast,
+      eventActive: event.status === 'active',
+      gatesOpen: paymentsEnabled && packageEnabled && publicConfig !== null,
+    });
+    return (
+      <div className="mx-auto max-w-2xl space-y-6">
+        {header}
+        <PackagePaymentView
+          screen={screen}
+          errorMessage={purchaseErrorMessage(error)}
+          eventId={id}
+          campaignId={campaignId}
+          formConfig={publicConfig}
+          signerName={profile?.full_name?.trim() || 'לקוח KALFA'}
+          activateAction={activateCampaignAction.bind(null, id, campaignId)}
+          activateReason={activate === 'no_contacts' ? 'no_contacts' : activate === 'failed' ? 'failed' : null}
+        />
+      </div>
+    );
+  }
 
   // L1: a past event can no longer take a card hold (the J5 route rejects it too).
   // An already-placed hold (handled below) is left intact so it can be settled.
@@ -119,6 +172,11 @@ export default async function CampaignPaymentPage({
   //    activate HERE, in place; never send the owner back to the event page.
   // HeldAnalytics fires payment_authorized once when arriving via ?held=1 and
   // strips only that param (activate=failed survives for this render).
+  // The payment page is reached after signing, so tos_version is the version the
+  // customer signed: v5+ states a formula (no "up to X"), v4-and-earlier a number.
+  const openCeiling = isOpenCeilingAgreementVersion(campaign.tos_version);
+  const upToCeiling = openCeiling ? '' : ` ולכל היותר עד ${ils(campaign.max_charge_ceiling)}`;
+
   if (campaign.capture_status === 'authorized') {
     // Verified gap (30.8): auth_amount (the REAL J5 hold, sized to `covered` =
     // min(max_contacts, reasonable_coverage_contacts)) can be LESS than
@@ -136,8 +194,7 @@ export default async function CampaignPaymentPage({
             <p className="text-2xl font-bold text-success">הקמפיין פעיל</p>
             <p className="text-sm">
               נתפסה מסגרת אשראי בסך {ils(heldAmount)}. הפניות לאורחים יישלחו לפי לוח
-              הזמנים; החיוב בפועל ייעשה לאחר האירוע, לפי התוצאות, ולכל היותר עד{' '}
-              {ils(campaign.max_charge_ceiling)}.
+              הזמנים; החיוב בפועל ייעשה לאחר האירוע, לפי התוצאות{upToCeiling}.
             </p>
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
               <Link href={`/app/events/${id}/guests`} className={buttonVariants()}>
@@ -163,7 +220,7 @@ export default async function CampaignPaymentPage({
         {header}
         <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
           ✓ נתפסה מסגרת אשראי בסך {ils(heldAmount)}. החיוב בפועל ייעשה לאחר האירוע,
-          לפי התוצאות, ולכל היותר עד {ils(campaign.max_charge_ceiling)}.
+          לפי התוצאות{upToCeiling}.
         </p>
         {activate === 'failed' ? (
           <p
@@ -225,8 +282,8 @@ export default async function CampaignPaymentPage({
   // a hardcoded price. The preview is best-effort: if it fails, the page still
   // renders with the snapshot ceiling and no "current hold" line, and the
   // authorize route recomputes authoritatively on submit anyway. The base-fee
-  // line keeps the 30.8 fix: the base is owed even at 0 reached, said plainly on
-  // the exact page where the customer commits a card.
+  // line says plainly that the base is owed even at 0 reached, on the exact page
+  // where the customer commits a card.
   let sizing: Awaited<ReturnType<typeof previewCampaignHoldSizing>> | null = null;
   if (canHold) {
     try {
@@ -276,12 +333,16 @@ export default async function CampaignPaymentPage({
         <dd>
           <strong>{ils(holdAmount)}</strong> — תפיסה בלבד, לא חיוב
         </dd>
-        <dt className="text-muted-foreground">תקרת החיוב</dt>
-        <dd>{ils(ceiling)}</dd>
+        {openCeiling ? null : (
+          <>
+            <dt className="text-muted-foreground">תקרת החיוב</dt>
+            <dd>{ils(ceiling)}</dd>
+          </>
+        )}
         <dt className="text-muted-foreground">מתי מתבצע החיוב</dt>
         <dd>
-          לאחר האירוע, עם סגירת הקמפיין וגמר החשבון — לפי התוצאות בפועל ולכל היותר עד
-          התקרה
+          לאחר האירוע, עם סגירת הקמפיין וגמר החשבון — לפי התוצאות בפועל
+          {openCeiling ? '' : ' ולכל היותר עד התקרה'}
         </dd>
         <dt className="text-muted-foreground">אם אף איש קשר לא משיב</dt>
         <dd>
@@ -290,7 +351,7 @@ export default async function CampaignPaymentPage({
       </dl>
       {sizing && sizing.full === 0 ? (
         <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
-          הרשימה ריקה כעת. תקרת החיוב ומסגרת האשראי נקבעות לפי המוזמנים שברשימה ברגע
+          הרשימה ריקה כעת. {openCeiling ? 'מסגרת האשראי נקבעת' : 'תקרת החיוב ומסגרת האשראי נקבעות'} לפי המוזמנים שברשימה ברגע
           התפיסה
           {included > 0
             ? ` — אחרי ההפעלה תוכלו להוסיף עד ${included.toLocaleString('he-IL')} אנשי קשר במסגרת דמי ההפעלה.`
@@ -328,7 +389,7 @@ export default async function CampaignPaymentPage({
             campaignId={campaignId}
             companyId={publicConfig.companyId}
             apiPublicKey={publicConfig.apiPublicKey}
-            holdAmount={holdAmount ?? campaign.max_charge_ceiling}
+            amount={holdAmount ?? campaign.max_charge_ceiling}
             signerName={profile?.full_name?.trim() || 'לקוח KALFA'}
           />
         </section>

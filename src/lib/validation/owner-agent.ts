@@ -1,0 +1,173 @@
+import { z } from 'zod';
+
+import { normalizePhone } from '@/lib/phone';
+import { e164Schema } from '@/lib/validation/provider-numbers';
+import { phoneNumberIdSchema } from '@/lib/validation/whatsapp-numbers';
+
+// Input shapes for /admin/integrations/owner-agent (plan: owner-whatsapp-agent-plan.md
+// §3.3). Every bound below mirrors a CHECK in 20260924034054_owner_agent_whatsapp.sql
+// or 20260927003348_owner_agent_allowlist_manual_approval.sql, so a value that passes
+// here cannot be refused by the database with a constraint error the form has no
+// field to attach to.
+
+/**
+ * Every message the owner-agent DAL throws on purpose. Written for the owner, and the
+ * ONLY messages an action lets through to the screen: anything else — a ZodError
+ * (whose message is JSON and may well contain these Hebrew strings), a driver error —
+ * is replaced by the action's generic sentence. Kept here rather than in the DAL so
+ * the actions can read it without importing a server module into their tests' mocks.
+ */
+export const OWNER_AGENT_ERRORS = {
+  settingsReadFailed: 'טעינת הגדרות הסוכן נכשלה',
+  numbersReadFailed: 'טעינת מספרי WhatsApp נכשלה',
+  staffReadFailed: 'טעינת רשימת הצוות נכשלה',
+  allowlistReadFailed: 'טעינת רשימת ההיתר נכשלה',
+  auditReadFailed: 'טעינת יומן הסוכן נכשלה',
+  switchFailed: 'עדכון מתג הסוכן נכשל',
+  numberSaveFailed: 'שמירת המספר נכשלה',
+  numberNotOnWaba: 'המספר שנבחר אינו מספר WhatsApp מחובר',
+  numberInactive: 'המספר שנבחר לא פעיל. יש לבחור מספר פעיל או "ללא"',
+  dailyCapSaveFailed: 'שמירת התקרה היומית נכשלה',
+  addFailed: 'הוספת המספר נכשלה',
+  notStaff: 'רק איש צוות פלטפורמה יכול להופיע ברשימת ההיתר',
+  duplicate: 'המספר הזה כבר ברשימת ההיתר',
+  invalidE164: 'מספר לא תקין — נדרש פורמט E.164',
+  entryUpdateFailed: 'עדכון הרשומה נכשל',
+  entryNotFound: 'הרשומה לא נמצאה',
+  relabelFailed: 'עדכון התווית נכשל',
+  removeFailed: 'הסרת המספר נכשלה',
+  approveFailed: 'האישור הידני נכשל',
+  approveNotApplicable: 'אפשר לאשר ידנית רק איש צוות שהטלפון שלו לא מאומת',
+  revokeFailed: 'ביטול האישור הידני נכשל',
+  revokeNotApplicable: 'לרשומה הזו אין אישור ידני לבטל',
+  externalAddFailed: 'הוספת האדם החיצוני נכשלה',
+} as const;
+
+const KNOWN_ERRORS: ReadonlySet<string> = new Set(Object.values(OWNER_AGENT_ERRORS));
+
+/** True only for a message the DAL wrote for the owner — an exact match, not "has Hebrew". */
+export function isOwnerAgentUserError(message: string): boolean {
+  return KNOWN_ERRORS.has(message);
+}
+
+/**
+ * app_settings_owner_agent_daily_cap_check: 0..10000.
+ *
+ * ⚠️ NOT z.coerce.number(). Coercion turns an empty field into 0, and 0 is a real
+ * value here — "no runs at all". A cleared input would silently switch the agent off
+ * for everyone with no error shown, so emptiness is refused before the number is read.
+ */
+export const dailyCapSchema = z
+  .string()
+  .trim()
+  .min(1, 'יש להזין מספר')
+  .regex(/^\d{1,5}$/, 'יש להזין מספר שלם בין 0 ל-10000')
+  .transform((raw) => Number(raw))
+  .pipe(
+    z
+      .number()
+      .int()
+      .min(0, 'יש להזין מספר שלם בין 0 ל-10000')
+      .max(10000, 'יש להזין מספר שלם בין 0 ל-10000'),
+  );
+
+/**
+ * The number the agent answers on: Meta's phone_number_id (provider_numbers.provider_ref),
+ * or '' for "none". Only the SHAPE is checked here — that it is one of OUR WABA numbers
+ * is a database question and is answered in the DAL, against provider_numbers.
+ */
+export const agentNumberSchema = z
+  .string()
+  .trim()
+  .transform((raw) => (raw === '' ? null : raw))
+  .pipe(phoneNumberIdSchema.nullable());
+
+/**
+ * The allow-listed phone, normalised to E.164 and then held to the table's own check
+ * (owner_agent_allowlist_e164_chk, the same pattern as provider_numbers_e164_chk).
+ *
+ * ⚠️ ONLY '+…' OR A LOCAL '0…' NUMBER IS ACCEPTED. normalizePhone() reads a number
+ * with no country code as Israeli, so bare foreign digits become a DIFFERENT, valid
+ * Israeli number — measured: '15417543010' (US) parses to '+97215417543010'. On this
+ * list that would grant agent access to a stranger's phone, so the ambiguous form is
+ * refused rather than guessed at: a number with a '+' is read against its own country,
+ * and one starting with '0' is Israeli by the way it was written.
+ */
+export const allowlistPhoneSchema = z
+  .string()
+  .trim()
+  .min(1, 'יש להזין מספר טלפון')
+  .refine((raw) => raw.startsWith('+') || raw.startsWith('0'), {
+    error: 'יש להזין מספר עם קידומת מדינה (+972…) או מספר ישראלי שמתחיל ב-0',
+  })
+  .transform((raw, ctx) => {
+    const e164 = normalizePhone(raw);
+    if (!e164) {
+      ctx.addIssue({ code: 'custom', message: 'מספר טלפון לא תקין' });
+      return z.NEVER;
+    }
+    return e164;
+  })
+  .pipe(e164Schema);
+
+/** owner_agent_allowlist_label_len: at most 120 characters; '' means no label. */
+export const allowlistLabelSchema = z
+  .string()
+  .trim()
+  .max(120, 'התווית ארוכה מדי (עד 120 תווים)')
+  .transform((raw) => (raw === '' ? null : raw));
+
+export const allowlistEntryIdSchema = z.uuid({ error: 'מזהה רשומה לא תקין' });
+
+export const addAllowlistEntrySchema = z.object({
+  e164: allowlistPhoneSchema,
+  staffUserId: z.uuid({ error: 'יש לבחור איש צוות' }),
+  label: allowlistLabelSchema,
+});
+
+export type AddAllowlistEntryInput = z.input<typeof addAllowlistEntrySchema>;
+
+export const setAllowlistEnabledSchema = z.object({
+  id: allowlistEntryIdSchema,
+  enabled: z.boolean(),
+});
+
+export const relabelAllowlistEntrySchema = z.object({
+  id: allowlistEntryIdSchema,
+  label: allowlistLabelSchema,
+});
+
+/**
+ * owner_agent_allowlist_approval_note_len: 1..500 after trimming. Required on every
+ * manual approval — the owner writes why (plans/owner-agent-allowlist-override-plan.md).
+ */
+export const approvalNoteSchema = z
+  .string()
+  .trim()
+  .min(1, 'יש לכתוב את סיבת האישור')
+  .max(500, 'הסיבה ארוכה מדי (עד 500 תווים)');
+
+/** Approve, by hand, a staff row whose phone is not the staff member's verified phone. */
+export const approveUnverifiedStaffSchema = z.object({
+  id: allowlistEntryIdSchema,
+  note: approvalNoteSchema,
+});
+
+/**
+ * owner_agent_allowlist_external_label_chk: an external person is shown by name, so the
+ * label is required (1..120).
+ */
+export const externalNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'יש להזין שם')
+  .max(120, 'השם ארוך מדי (עד 120 תווים)');
+
+/** Add a person who is not platform staff, approved by hand with a reason. */
+export const addExternalAllowlistEntrySchema = z.object({
+  e164: allowlistPhoneSchema,
+  name: externalNameSchema,
+  note: approvalNoteSchema,
+});
+
+export type AddExternalAllowlistEntryInput = z.input<typeof addExternalAllowlistEntrySchema>;

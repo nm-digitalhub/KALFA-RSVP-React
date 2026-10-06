@@ -5,9 +5,8 @@ import { MailQuestionMark } from 'lucide-react';
 import { BackLink } from './not-found-back-link';
 
 // Root not-found for unknown public routes. Deliberately on-brand rather than
-// a generic error page (owner spec 2026-08-25): "לא ברשימת המוזמנים" turns a
-// dead link into a small moment that reads like the rest of an RSVP product,
-// not a framework default.
+// a generic error page: "לא ברשימת המוזמנים" turns a dead link into a small
+// moment that reads like the rest of an RSVP product, not a framework default.
 export default function NotFound() {
   return (
     <main className="flex min-h-dvh flex-col items-center bg-background px-6 pb-16 pt-10 text-center">
@@ -17,19 +16,17 @@ export default function NotFound() {
       </Link>
 
       {/* Giant pale "404", deliberately overlapped by the card below — NOT
-          via position:absolute (an earlier version did that with a `top`
-          offset disconnected from the card's actual height, which hid all
-          but a sliver at the very top; caught live 2026-08-25, screenshot
-          showed unrecognizable fragments instead of "404"). Plain normal-flow
-          CSS instead: a negative bottom margin pulls the card up over the
-          watermark's lower third. No z-index needed — a later sibling
-          already paints over an earlier one where negative margins make them
-          overlap.
+          via position:absolute (a `top` offset disconnected from the card's
+          actual height hides all but a sliver of the watermark at the very
+          top, leaving unrecognizable fragments instead of "404"). Plain
+          normal-flow CSS instead: a negative bottom margin pulls the card up
+          over the watermark's lower third. No z-index needed — a later
+          sibling already paints over an earlier one where negative margins
+          make them overlap.
 
-          The mask-image gradient (owner request 2026-08-25: "should the
-          hidden part fade instead of being cut off?") fades the watermark's
-          OWN opacity to zero right where the card covers it, so the edge
-          reads as a dissolve instead of a hard line — deliberately NOT card
+          The mask-image gradient fades the watermark's OWN opacity to zero
+          right where the card covers it, so the edge reads as a dissolve
+          instead of a hard line — deliberately NOT card
           transparency, which would let "404" show through behind the card's
           real text/buttons and risk contrast (WCAG 1.4.3). This only touches
           the decorative element, never the card's content.
@@ -66,16 +63,16 @@ export default function NotFound() {
         </Link>
       </div>
 
-      <nav className="mt-8 flex items-center gap-4 text-sm text-muted-foreground">
-        <Link href="/faq" className="hover:underline">
+      <nav aria-label="קישורים שימושיים" className="mt-8 flex items-center gap-4 text-sm text-muted-foreground">
+        <Link href="/faq" className="inline-flex min-h-11 items-center hover:underline">
           שאלות נפוצות
         </Link>
         <span aria-hidden="true">·</span>
-        <Link href="/contact" className="hover:underline">
+        <Link href="/contact" className="inline-flex min-h-11 items-center hover:underline">
           יצירת קשר
         </Link>
         <span aria-hidden="true">·</span>
-        <Link href="/privacy" className="hover:underline">
+        <Link href="/privacy" className="inline-flex min-h-11 items-center hover:underline">
           פרטיות
         </Link>
       </nav>

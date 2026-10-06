@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, type CSSProperties } from "react" // KALFA lint fix: useState was imported upstream but never used
+import { useEffect, useMemo, useRef, type CSSProperties } from "react"
 import {
   EventCalendarViewContext,
   useEventCalendar,
@@ -657,7 +657,7 @@ function EventCalendarResourceColumn({
             key={segment.occurrence.key}
             // min-h keeps 15-min chips readable (Google-style: the block may
             // slightly outgrow its true window); hover raises a squeezed
-            // cascade chip above its overlapping neighbors
+            // chip above its overlapping neighbors
             className="absolute z-(--ec-z) min-h-(--ec-event-min-h,1.5rem) px-0.5 hover:z-40"
             style={
               {

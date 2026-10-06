@@ -1,6 +1,8 @@
 // Fleet agent CLI — the write path autonomous fleet roles have into the
 // owner<->fleet ledger (public.fleet_requests), the notification fan-out, and
-// the ONE narrow customer-facing write below (`draft-reply`).
+// a few other narrow, individually guarded writes (`draft-reply`,
+// `triage-finish`, `goal-progress`/`goal-close`, `publish-social`,
+// `housekeeping-pr`, ...) — each is described under its subcommand below.
 //
 // Runs as service_role via createAdminClient() (env from .env.local through
 // `node --env-file`, same pattern as sync-voximplant-sa). Fleet roles invoke
@@ -8,7 +10,7 @@
 // DB credentials themselves (.env* reads are denied in the fleet tiers).
 //
 // Free-text flags (--body, --note, --summary, --state, --query, --reason,
-// --error, --evidence) can each be supplied instead as --X-file PATH — read
+// --error, --evidence, --html) can each be supplied instead as --X-file PATH — read
 // via readFileFlag() below. Use this whenever the content might contain a
 // word the guard.sh/guard-tier2.sh hooks scan for (billing-provider names,
 // "supabase"/"psql"/"curl" surrounded by spaces, etc. — the hooks see the
@@ -67,7 +69,8 @@
 //     web push to every admin + a reply in the request's Slack thread. This is
 //     the closure signal the owner sees on their phone.
 //   poll --role R
-//     Prints the role's unconsumed verdicts + its still-open requests.
+//     Prints the role's inbox (owner-initiated pending requests, with body and
+//     thread context), its unconsumed verdicts, and its still-open requests.
 //   verdicts
 //     All answered-but-unconsumed verdicts across every role — the scheduler's
 //     answer-watcher reads this to decide per role whether to auto-ack
@@ -76,7 +79,7 @@
 //     Active goals for R whose next_wake_at has arrived. The owner creates a
 //     goal; the role reads state, decides the next step, and reports back via
 //     goal-progress/goal-close. Mirrors cmdPoll's no-op-is-not-an-error stance
-//     (this runs unconditionally in run-context.sh every tick).
+//     (this runs unconditionally in run-context.sh on every role run).
 //   goal-progress --id UUID --step N [--state JSON] [--next-wake-at ISO] [--error TEXT]
 //     Single CAS write: --step must be the step_count read from goal-poll.
 //     --next-wake-at must carry an explicit UTC offset (Z or +03:00) — the
@@ -114,17 +117,20 @@
 //   digest --title T --body B [--level info|warn|error]
 //     Posts the daily fleet digest to Slack via the existing alerting stack.
 //   sql --query SQL
-//     Read-only SQL for the data-reading roles (event-health, business-ops,
-//     support). Runs inside `BEGIN TRANSACTION READ ONLY` (the authoritative
+//     Read-only SQL for the data-reading roles (e.g. event-health-watcher,
+//     business-ops, support-drafter). Runs inside `BEGIN TRANSACTION READ ONLY` (the authoritative
 //     safety layer) behind a pre-flight text guard (single SELECT/WITH…SELECT,
 //     no stacked statements, no write keyword), with a 200-row cap and a 15s
 //     statement timeout.
 //   draft-reply --id UUID --body TEXT
 //     support-drafter's ONLY write: sets contact_messages.draft_reply +
-//     draft_created_at for a still-'new', not-yet-drafted inquiry. NEVER sends
+//     draft_created_at for ONE inquiry that is still 'new' and not yet drafted,
+//     or 'reopened' with a customer reply newer than its last draft, and keeps
+//     that inquiry's single 'draft' row in inquiry_messages in step. NEVER sends
 //     to the customer (a human reviews the draft in /admin/contacts and sends).
-//     Idempotent + scope-limited: touches exactly 2 columns, 1 row, only when
-//     `status='new' AND draft_reply IS NULL` (the guard is the loop-breaker).
+//     Idempotent + scope-limited: one inquiry, only when eligible (`status='new'
+//     AND draft_reply IS NULL`, or `status='reopened'` with reply_needed_at later
+//     than draft_created_at) — the eligibility check is the loop-breaker.
 //   distill-corrections [--limit N]
 //     Stage-1 learning loop (maintenance/curation — NOT run by the drafter
 //     role). Distils the draft_reply<->sent_reply feedback ALREADY in
@@ -234,6 +240,21 @@
 //     mismatch/grounding failed/REVIEW.md not ready/retry ceiling
 //     reached/missing credential/Meta API error/post-publish ledger-write
 //     failure).
+//   abandon-publish --id UUID --role social-manager --reason TEXT|--reason-file PATH
+//     The one legal exit for an APPROVED publish_social verdict that can never
+//     be published. Allowed only when fleet_social_posts shows the request's
+//     platform row at status='failed' with attempt_count >= PUBLISH_RETRY_CEILING
+//     (decideAbandonPublish) — an approved verdict with no attempt is the
+//     ack-trap and stays refused. Files an owner-facing question FIRST
+//     (request_key abandon-<original request_key>, idempotent) as the audit
+//     record, then consumes the verdict via fleet_consume_request
+//     (approved->consumed is already a legal DB edge — no migration). exit 0 =
+//     consumed; exit 2 = already consumed by someone else; exit 1 = refused.
+//   run-stats [--range 1d|7d|30d] [--max-per-day N]
+//     Read-only per-role/per-day counts from .fleet-logs/runs/index.ndjson
+//     (started, lock-skips, verdict-triggered starts, stranded verdicts) plus
+//     the role-days over --max-per-day (default 10) or with any stranded
+//     verdict. fleet-maintainer / chief-of-staff input for runaway detection.
 //   render-image --html TEXT --out PATH [--width N] [--height N]
 //     social-manager's actual image-production path: it authors a small
 //     HTML+CSS mockup itself (--html, or --html-file for a large one — see
@@ -305,6 +326,7 @@ import {
 import { buildCompletionAnswer, isCompletableStatus } from '@/lib/fleet/complete';
 import { validateWithdrawOwnership } from '@/lib/fleet/withdraw';
 import { runFleetExpireSweep } from '@/lib/fleet/expire';
+import { aggregateRunIndex, findRunaways, rangeStartDate } from '@/lib/fleet/run-stats';
 import {
   renderExamplesMarkdown,
   summarizeMetric,
@@ -329,6 +351,7 @@ import {
   buildDryRunArtifact,
   buildInstagramPublishPlan,
   checkReviewApproved,
+  decideAbandonPublish,
   decideContainerPoll,
   decideExistingRow,
   deriveDryRunArtifactPath,
@@ -464,10 +487,11 @@ async function notifyAdmins(row: FleetRequestRow): Promise<{
   slackThreadTs: string | null;
 }> {
   const admin = createAdminClient();
+  // platform_staff, not user_roles: staff membership is the one definition of
+  // "our people", and this is who a fleet push should reach.
   const { data: admins, error } = await admin
-    .from('user_roles')
-    .select('user_id')
-    .eq('role', 'admin');
+    .from('platform_staff')
+    .select('user_id');
   if (error) {
     console.error('[fleet-agent] admin lookup for push failed:', error.message);
     return { pushAttempted: 0, pushSent: 0, pushFailed: 0, slackThreadTs: null };
@@ -790,7 +814,7 @@ async function cmdComplete(args: Record<string, string | undefined>): Promise<vo
   // Push to every admin (same pipeline as new-request pushes) + Slack thread
   // reply. Best-effort: the ledger transition above is the source of truth.
   let pushSent = 0;
-  const { data: admins } = await admin.from('user_roles').select('user_id').eq('role', 'admin');
+  const { data: admins } = await admin.from('platform_staff').select('user_id');
   for (const { user_id } of admins ?? []) {
     try {
       const s = await sendPushToUser(user_id, {
@@ -956,7 +980,8 @@ async function assertNotPublishSocialVerdict(
   if (action === 'publish_social') {
     fail(
       `ack refused: this is an APPROVED publish_social verdict — acking it consumes it ` +
-        `WITHOUT publishing (the 2026-08-23/2026-08-30 ack-trap). Run publish-social instead.`,
+        `WITHOUT publishing (the 2026-08-23/2026-08-30 ack-trap). Run publish-social instead; ` +
+        `if it already answered retry_ceiling_reached, use abandon-publish (never ack).`,
     );
   }
 }
@@ -992,6 +1017,105 @@ async function cmdAck(args: Record<string, string | undefined>): Promise<void> {
     ),
   );
   if (!claimed) process.exitCode = 2;
+}
+
+// See the header doc and decideAbandonPublish's own comment. Order matters:
+// the audit question is filed BEFORE the consume, so a crash in between
+// leaves an extra note and a still-approved verdict (safe to re-run — the
+// question's request_key dedups), never a consumed verdict with no record of
+// why. The consumed row itself cannot carry the reason: fleet_requests_guard
+// freezes `answer` on approved->consumed.
+async function cmdAbandonPublish(args: Record<string, string | undefined>): Promise<void> {
+  const id = requireOption(args.id, 'id');
+  const role = requireOption(args.role, 'role');
+  const reason = requireOption(args.reason, 'reason');
+  const admin = createAdminClient();
+
+  const { data: request, error: requestError } = await admin
+    .from('fleet_requests')
+    .select('id, role, kind, status, title, request_key, payload')
+    .eq('id', id)
+    .maybeSingle();
+  if (requestError) fail(`abandon-publish lookup failed: ${requestError.message}`);
+  const rowError = validatePublishRequestRow(request);
+  if (rowError || !request) return fail(`abandon-publish: ${rowError ?? 'request-id not found'}`);
+  if (request.role !== role) fail(`abandon-publish: request belongs to "${request.role}", not "${role}"`);
+
+  const { data: ledgerRows, error: ledgerError } = await admin
+    .from('fleet_social_posts')
+    .select('id, platform, status, attempt_count, error')
+    .eq('request_id', id);
+  if (ledgerError) fail(`abandon-publish: ledger lookup failed: ${ledgerError.message}`);
+
+  const decision = decideAbandonPublish(request.payload, ledgerRows ?? []);
+  if (!decision.ok) return fail(`abandon-publish refused: ${decision.reason}`);
+
+  const payloadRecord =
+    request.payload && typeof request.payload === 'object' && !Array.isArray(request.payload)
+      ? (request.payload as Record<string, Json | undefined>)
+      : {};
+  const threadRoot = typeof payloadRecord.thread_root === 'string' ? payloadRecord.thread_root : id;
+  const audit = await insertAndNotify({
+    requestKey: `abandon-${request.request_key}`,
+    role,
+    runId: null,
+    kind: 'question',
+    tier: 0,
+    title: `פרסום נעצר סופית: ${decision.platform} — ${request.title.replace(/^🔴 פרסום בפועל:\s*/, '')}`.slice(0, 200),
+    body:
+      `הבקשה המאושרת ${id} לא פורסמה אחרי ${decision.row.attempt_count} ניסיונות, ` +
+      `והמערכת לא תנסה שוב אוטומטית. היא נסגרה (consumed) כדי שהסוכן לא יופעל עליה שוב.\n\n` +
+      `שגיאה אחרונה: ${decision.row.error ?? '(לא נרשמה)'}\n\nסיבת הסוכן: ${reason}\n\n` +
+      `כדי לפרסם בכל זאת: אשר בקשת פרסום חדשה (מפתח חדש) אחרי תיקון הכיתוב או עם facts_source.`,
+    payload: {
+      action: 'abandon_publish',
+      abandoned_request_id: id,
+      ledger_row_id: decision.row.id,
+      platform: decision.platform,
+      attempt_count: decision.row.attempt_count,
+      thread_root: threadRoot,
+    },
+  });
+
+  const { data: consumed, error: consumeError } = await admin.rpc('fleet_consume_request', { p_id: id });
+  if (consumeError) fail(`abandon-publish: consume failed: ${consumeError.message}`);
+  const claimed = Array.isArray(consumed) && consumed.length > 0 ? consumed[0] : null;
+  if (claimed) {
+    await sendSlackAlert({
+      level: 'warn',
+      title: `פרסום נעצר סופית: ${claimed.title}`,
+      detail: `${decision.row.attempt_count} ניסיונות נכשלו. נפתחה שאלה לבעלים.`,
+      source: `fleet:${role}`,
+      category: 'errors',
+      threadTs: (await threadTsFor(id)) ?? undefined,
+    });
+  }
+  console.log(
+    JSON.stringify(
+      { abandoned: !!claimed, request_id: id, audit_request_id: audit.request?.id ?? null },
+      null,
+      2,
+    ),
+  );
+  if (!claimed) process.exitCode = 2;
+}
+
+async function cmdRunStats(args: Record<string, string | undefined>): Promise<void> {
+  const range = args.range ?? '7d';
+  const maxPerDay = args['max-per-day'] ? Number(args['max-per-day']) : 10;
+  if (!Number.isInteger(maxPerDay) || maxPerDay < 1) fail('--max-per-day must be a positive integer');
+  const since = rangeStartDate(range, new Date());
+  if (!since) return fail('--range must be one of: 1d, 7d, 30d');
+  let raw: string;
+  try {
+    raw = readFileSync(join(process.cwd(), '.fleet-logs', 'runs', 'index.ndjson'), 'utf8');
+  } catch {
+    return fail('run-stats: .fleet-logs/runs/index.ndjson not found');
+  }
+  const stats = aggregateRunIndex(raw.split('\n'), since);
+  console.log(
+    JSON.stringify({ since, maxPerDay, runaways: findRunaways(stats, maxPerDay), stats }, null, 2),
+  );
 }
 
 // Retire one still-pending request THE CALLING ROLE FILED (superseded / no
@@ -1051,8 +1175,8 @@ async function cmdExpire(): Promise<void> {
   }
 }
 
-// Read-only SQL for the data-reading roles (event-health, business-ops,
-// support). Two independent safety layers, strongest first:
+// Read-only SQL for the data-reading roles (e.g. event-health-watcher,
+// business-ops, support-drafter). Two independent safety layers, strongest first:
 //   1. Every query runs inside `BEGIN TRANSACTION READ ONLY` — standard
 //      Postgres transaction semantics, issued through the client exactly as
 //      node-postgres documents (pg provides no higher-level transaction API;
@@ -1172,14 +1296,16 @@ async function cmdDigest(args: Record<string, string | undefined>): Promise<void
 }
 
 // support-drafter's narrow write. Sets draft_reply + draft_created_at on a
-// contact_messages row ONLY when it is still 'new' and has no draft yet. The
-// `status='new' AND draft_reply IS NULL` predicate is enforced in the query
-// itself, so:
-//   - it never overwrites an existing draft or a human's sent reply,
+// contact_messages row ONLY when it is eligible: still 'new' with no draft yet,
+// or 'reopened' with a customer reply newer than the last draft (see the
+// eligibility check below). The update is also conditioned on the status that
+// check read, so:
+//   - it never overwrites a draft that is still current, or a human's sent
+//     reply,
 //   - it is idempotent (a drafted row drops out of the role's next read set,
 //     breaking any re-draft loop),
-//   - 0 rows updated is a no-op BY DESIGN (already drafted / not new / unknown
-//     id), reported as written:false, not an error.
+//   - 0 rows updated is a no-op BY DESIGN (already drafted / not new or
+//     reopened / unknown id), reported as written:false, not an error.
 // It NEVER emails the customer — sending stays a human action in /admin/contacts.
 const DRAFT_REPLY_MAX = 4000;
 
@@ -1211,8 +1337,7 @@ async function cmdDraftReply(args: Record<string, string | undefined>): Promise<
   //              null check would refuse forever and the reply would sit
   //              unanswered with nothing reporting it. Comparing TIMES instead
   //              keeps the row eligible until a draft is written AFTER the
-  //              customer's message, which is exactly what the fleet trigger
-  //              (scheduler.mjs) matches on.
+  //              customer's message.
   const eligible =
     current != null &&
     ((current.status === 'new' && current.draft_reply == null) ||
@@ -1478,8 +1603,8 @@ const EXAMPLES_MAX = 30;
 const EXAMPLE_FIELD_MAX = 1200;
 const NEAR_THRESHOLD = 0.85;
 // dist/ (esbuild bundle) -> repo root -> role dir. The corpus is git-ignored
-// like every .claude/fleet/roles file — which is also correct: a redacted
-// derivative of customer replies must never be committed.
+// by its own .gitignore entry (unlike the other role files) — which is also
+// correct: a redacted derivative of customer replies must never be committed.
 const EXAMPLES_PATH = join(
   dirname(__filename),
   '..',
@@ -1549,7 +1674,7 @@ async function cmdDistillCorrections(args: Record<string, string | undefined>): 
   );
 }
 
-// Stage-2 grounding (plan S5): the read-only, PII/secret-free business facts the
+// Stage-2 grounding: the read-only, PII/secret-free business facts the
 // support-drafter quotes for a pricing inquiry — so it writes the REAL price
 // instead of a `[מחירים]` placeholder. Reads the canonical active campaign
 // package + the live base+overage gate, and surfaces the EFFECTIVE model (pure
@@ -1567,7 +1692,7 @@ async function loadBusinessFacts(): Promise<BusinessFacts> {
   // (active, campaign-enabled, lowest sort_order).
   const { data, error } = await admin
     .from('packages')
-    .select('name, price_per_reached, base_price, included_reached, channels')
+    .select('name, price_per_reached, base_price, included_reached, channels, outreach_schedule')
     .eq('active', true)
     .not('price_per_reached', 'is', null)
     .order('sort_order', { ascending: true })
@@ -1582,6 +1707,14 @@ async function loadBusinessFacts(): Promise<BusinessFacts> {
         base_price: Number(data.base_price ?? 0),
         included_reached: Number(data.included_reached ?? 0),
         channels: (data.channels ?? []) as string[],
+        // Same narrowing as getPublicBusinessFacts — the two readers must
+        // produce identical facts or the FAQ and the drafter can disagree.
+        outreach_schedule: Array.isArray(data.outreach_schedule)
+          ? (data.outreach_schedule as unknown as {
+              days_before: number;
+              channel: string;
+            }[]).map((tp) => ({ days_before: tp.days_before, channel: tp.channel }))
+          : [],
       }
     : null;
   return buildBusinessFacts(gateOn, pkg);
@@ -1602,9 +1735,10 @@ async function cmdBusinessFacts(): Promise<void> {
 //   - two answers are code-owned and are not rows at all — the price card, and
 //     the guest/contact/reached explainer that is the single highest-value
 //     correction this system has made;
-//   - `pricing_no_response` has an intentionally EMPTY answer column, its
-//     mandatory §2 sentence being composed from live facts, so a raw select
-//     returns nothing for the most compliance-sensitive question we publish;
+//   - `pricing_no_response` keeps only an optional supplementary note in its
+//     answer column, its mandatory §2 sentence being composed from live facts,
+//     so a raw select returns none of it for the most compliance-sensitive
+//     question we publish;
 //   - answers carry {{token}} placeholders. MEASURED: two published rows do,
 //     and handing those over raw would put `ב־{{channels_list}}` verbatim into
 //     a customer's inbox.
@@ -2201,7 +2335,7 @@ async function cmdPublishSocial(
     // 'failed' with attempt_count already at the ceiling would otherwise fall
     // into 'retry' below and re-claim indefinitely on every weekly poll.
     if (decision === 'retry' && isRetryCeilingReached(existing.attempt_count)) {
-      const reason = `retry ceiling reached (attempt_count=${existing.attempt_count} >= ${PUBLISH_RETRY_CEILING}) — publish-social will not retry automatically; escalate via --kind question, do not retry`;
+      const reason = `retry ceiling reached (attempt_count=${existing.attempt_count} >= ${PUBLISH_RETRY_CEILING}) — publish-social will not retry automatically; run abandon-publish (it files the owner question itself) — do not retry, do not ack, do not open your own question`;
       console.log(
         JSON.stringify(
           {
@@ -2504,8 +2638,7 @@ async function cmdRenderImage(args: Record<string, string | undefined>): Promise
 // The autonomy loop: goal-poll (mirrors cmdPoll — runs unconditionally, "0
 // due" is a normal outcome, no exitCode games) and goal-progress/goal-close
 // (mirror cmdTriageFinish — single CAS write, exitCode 2 on anything but the
-// success outcome). See plan §3.2 for why each verb takes its template from a
-// different existing command.
+// success outcome).
 
 async function cmdGoalPoll(args: Record<string, string | undefined>): Promise<void> {
   const role = requireOption(args.role, 'role');
@@ -2516,8 +2649,9 @@ async function cmdGoalPoll(args: Record<string, string | undefined>): Promise<vo
   // goal it wasn't woken up for.
   //
   // No validateRequestRole — deliberately, like cmdPoll itself. The name was
-  // already validated twice before we got here: ROLE_NAME_RE in run-role.sh,
-  // and membership in fleet.json before the role was even spawned.
+  // already validated before we got here: membership in fleet.json (the
+  // scheduler spawns only listed roles; run-role.sh refuses unlisted/disabled
+  // ones), and ROLE_NAME_RE in scheduler.mjs wherever the name is interpolated.
   const { data, error } = await admin
     .from('fleet_goals')
     .select('id, title, body, state, step_count, consecutive_failures')
@@ -2557,7 +2691,7 @@ async function cmdGoalProgress(args: Record<string, string | undefined>): Promis
   }
 
   // Shape check only, not range: the (now, now+30d] range is enforced by the
-  // RPC, not duplicated here. Same schema as the owner's UI (§2.2), not a copy.
+  // RPC, not duplicated here. Same schema as the owner's UI, not a copy.
   let nextWakeAt: string | null = null;
   if (args['next-wake-at']) {
     const parsed = goalWakeAtSchema.safeParse(args['next-wake-at']);
@@ -2580,7 +2714,7 @@ async function cmdGoalProgress(args: Record<string, string | undefined>): Promis
   const outcome = data as GoalProgressOutcome;
   console.log(JSON.stringify({ outcome, id, step }, null, 2));
   // Only 'advanced' is a normal continuation. Everything else means stop —
-  // see the outcome table in run-context.sh §3.3.
+  // see the outcome table in run-context.sh.
   if (isGoalProgressStuck(outcome)) process.exitCode = 2;
 }
 
@@ -2763,6 +2897,7 @@ async function main(): Promise<void> {
       'evidence-file': { type: 'string' },
       'html-file': { type: 'string' },
       'landing-pages': { type: 'boolean' },
+      'max-per-day': { type: 'string' },
     },
   });
 
@@ -2825,9 +2960,13 @@ async function main(): Promise<void> {
       return cmdPublishSocial(scalarValues, !!dryRun);
     case 'render-image':
       return cmdRenderImage(scalarValues);
+    case 'abandon-publish':
+      return cmdAbandonPublish(scalarValues);
+    case 'run-stats':
+      return cmdRunStats(scalarValues);
     default:
       fail(
-        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts|faq|style|triage-claim|triage-finish|goal-poll|goal-progress|goal-close|analytics-summary|housekeeping-pr|publish-social|render-image> [options]',
+        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts|faq|style|triage-claim|triage-finish|goal-poll|goal-progress|goal-close|analytics-summary|housekeeping-pr|publish-social|render-image|abandon-publish|run-stats> [options]',
       );
   }
 }

@@ -1,8 +1,10 @@
 import 'server-only';
 
+import type { GraphErrorBody } from '@/lib/whatsapp/graph-error';
+
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 import { WhatsAppAPI } from 'whatsapp-api-js';
-import { DEFAULT_API_VERSION } from 'whatsapp-api-js/types';
 import {
   Text,
   Template,
@@ -30,12 +32,16 @@ export class WhatsAppSendError extends Error {
 // The PII-free delivery classification the serial-flow worker resolves on (§F.5
 // / §12.8.5). Exactly three outcomes:
 //   accepted            — the provider returned a message id (queued/sent).
-//   definitely_not_sent — a VERIFIED synchronous provider rejection (invalid
-//                         recipient/template/params, closed 24h window). KNOWN
-//                         not delivered → the worker may release + retry.
-//   unknown             — timeout / network / 5xx / throttle / unmapped code /
-//                         missing id. Delivery UNCERTAIN → the worker NEVER
-//                         resends (advances at-most-once).
+//   definitely_not_sent — our LABEL for a send Meta answered with an error code
+//                         and no message id, not marked temporary (see below; a
+//                         project rule, not Meta's guarantee). It says nothing
+//                         about whether a resend would help — callers must not
+//                         retry on it alone.
+//   unknown             — timeout / network / a thrown send / a body with no id /
+//                         an error Meta marked temporary. Nothing is assumed about
+//                         delivery → the worker NEVER resends (advances
+//                         at-most-once).
+// Both non-accepted outcomes keep Meta's code when there is one.
 // Carries only status/code numbers — never phone, name, or body.
 export type DeliveryOutcome =
   | { kind: 'accepted'; providerId: string }
@@ -45,53 +51,61 @@ export type DeliveryOutcome =
       providerStatus?: number;
       providerCode?: string;
     }
-  | { kind: 'unknown'; reason: string; providerStatus?: number; providerCode?: string };
+  | {
+      kind: 'unknown';
+      reason: string;
+      providerStatus?: number;
+      providerCode?: string;
+      /** Meta answered with an error marked `is_transient: true` — "the request should be retried". */
+      retryable?: true;
+    };
 
-// Meta Cloud API error codes that are SYNCHRONOUS pre-queue rejections — the
-// message was KNOWN not delivered. ONLY these map to definitely_not_sent (safe
-// to retry). Everything else — 5xx, network, timeout, throttling, account state,
-// unmapped codes — classifies as unknown (never resends). Conservative by
-// design: an unmapped code costs one advance-skip (the multi-touchpoint schedule
-// self-covers); a wrong 'definite' would cost a resend.
-// https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes
-const DEFINITELY_NOT_SENT_CODES = new Set<number>([
-  100, // invalid parameter / unsupported field
-  131008, // required parameter is missing
-  131009, // parameter value is not valid
-  131026, // message undeliverable (recipient cannot receive / not on WhatsApp)
-  131047, // re-engagement required (outside the 24h customer-service window)
-  131051, // unsupported message type
-  132000, // template param count mismatch
-  132001, // template does not exist / not approved for the language
-  132005, // template hydrated text too long
-  132007, // template content violates policy
-  132012, // template parameter format mismatch
-  132015, // template is paused
-  132016, // template is disabled
-  // 131055 (MM Lite: WABA not eligible for /marketing_messages, or ad-sync
-  // still in progress) is DELIBERATELY NOT here — it classifies as `unknown`,
-  // not `definitely_not_sent`. `product_policy: 'CLOUD_API_FALLBACK'` should
-  // already prevent it from ever reaching the caller as a hard rejection, and
-  // a false 'definite' here would cost a real resend; the conservative
-  // `unknown` (one advance-skip) is the safe default per the file-header policy.
-]);
+// How an error response is labelled. THIS IS A PROJECT RULE, not a Meta
+// guarantee — Meta documents no rule that turns a send error into a delivery
+// verdict. What the docs do say (read in full 2026-09-28):
+//   - the send response only acknowledges the request; delivery is reported by
+//     the status webhooks (sent / delivered / read / failed) — send-messages,
+//     messages status webhook reference;
+//   - an error can come back synchronously, asynchronously through a webhook,
+//     or both, and handling should be built on `code` and `details` —
+//     support/error-codes;
+//   - a failed request "returns an error response instead of a message ID" —
+//     image messages → Error handling;
+//   - the Graph Error object has `is_transient`, "Indicates whether this error
+//     is temporary and the request should be retried" — API reference → Error.
+//     The docs do not say that its absence means `false`.
+// On that basis we CHOOSE to label a send answered with an error code and no
+// message id as `definitely_not_sent` ("Meta refused this request"), unless
+// Meta set `is_transient: true`, which we label `unknown`. An absent field is
+// treated like `false` — our choice, not documented. The label is not a delivery
+// status and proves nothing about delivery either way; what reached the phone
+// is only known from the status webhooks. Meta's code is kept in both labels.
+//
+// Neither label by itself means "send it again". The one documented retry — an
+// error Meta marks `is_transient` — happens inside the send call, through
+// sendWithMetaRetry below, when the caller gives it a time budget. After that,
+// the outreach step advance-skips both labels (outreach/enqueue.ts).
+
+/** The project's label rule (see above): an error not marked `is_transient: true` is labelled a refusal. Not a delivery verdict. */
+export function isDefinitelyNotSentError(error: { code: number; isTransient?: unknown }): boolean {
+  return error.isTransient !== true;
+}
 
 // Classify a RESOLVED sendMessage body. whatsapp-api-js returns the parsed JSON
 // (it does NOT throw on an HTTP 4xx/5xx — a Meta error arrives as { error: {…} }
-// in the body). A message id ⇒ accepted; a mapped error code ⇒ definitely_not_sent;
-// anything else ⇒ unknown.
+// in the body). A message id ⇒ accepted; an error code not marked temporary ⇒
+// definitely_not_sent; anything else ⇒ unknown. The code is kept either way.
 function classifyResponse(res: unknown): DeliveryOutcome {
   const r = res as {
     messages?: Array<{ id?: string | null } | null> | null;
-    error?: { code?: number } | null;
-  } | null;
+  } & GraphErrorBody | null;
   const providerId = r?.messages?.[0]?.id;
   if (providerId) return { kind: 'accepted', providerId };
   const code = r?.error?.code;
   if (typeof code === 'number') {
-    return DEFINITELY_NOT_SENT_CODES.has(code)
+    return isDefinitelyNotSentError({ code, isTransient: r?.error?.is_transient })
       ? { kind: 'definitely_not_sent', reason: 'provider_rejected', providerCode: String(code) }
-      : { kind: 'unknown', reason: 'provider_error', providerCode: String(code) };
+      : { kind: 'unknown', reason: 'provider_error', providerCode: String(code), retryable: true };
   }
   // No id and no recognizable error code → the send cannot be confirmed.
   return { kind: 'unknown', reason: 'missing_message_id' };
@@ -110,12 +124,57 @@ function classifyThrow(e: unknown): DeliveryOutcome {
   };
 }
 
+// Retrying a send, the way Meta documents it:
+//   - the Graph Error field `is_transient`: "Indicates whether this error is
+//     temporary and the request should be retried" (API reference → Error);
+//   - "if a send request fails, retry after 4^X seconds (starting with X=0 and
+//     increasing X by 1 after each failure) until successful" (About the
+//     platform → Rate limits).
+// So only an outcome Meta marked retryable is sent again, after 1s, 4s, 16s, …
+//
+// What is NOT retried, also from Meta's docs: a send with no answer at all (a
+// timeout, a network failure, a thrown send). Meta's reliability FAQ says such a
+// failure shows up "as either error or missed success" (Support → Reliability)
+// — the request may have gone through, so a resend could deliver it twice.
+//
+// "Until successful" is bounded here by the caller's time budget: the loop never
+// starts a wait that would end past `budgetMs` from the first attempt. A budget
+// of 0 means one attempt, no retry — for request/response contexts (a live voice
+// tool call) that cannot wait. The last outcome is returned as is.
+export const META_RETRY_BASE_MS = 1_000;
+/** A background job's retry budget: room for Meta's first three waits (1s + 4s + 16s). */
+export const BACKGROUND_SEND_RETRY_BUDGET_MS = 21_000;
+
+export interface MetaRetryOptions {
+  /** Total time the retries may take, from the first attempt. 0 = no retry. */
+  budgetMs: number;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+}
+
+export async function sendWithMetaRetry(
+  send: () => Promise<DeliveryOutcome>,
+  opts: MetaRetryOptions,
+): Promise<DeliveryOutcome> {
+  const now = opts.now ?? Date.now;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const start = now();
+  let outcome = await send();
+  for (let x = 0; outcome.kind === 'unknown' && outcome.retryable === true; x += 1) {
+    const wait = META_RETRY_BASE_MS * 4 ** x;
+    if (now() - start + wait > opts.budgetMs) break;
+    await sleep(wait);
+    outcome = await send();
+  }
+  return outcome;
+}
+
 // Fail-safe ops alert for a THROWN send (transport/network/timeout/5xx — an
 // infra failure of the provider API call itself). Deliberately NOT fired for
 // classifyResponse outcomes: a Meta error CODE (e.g. 131049/131026) is a
 // per-recipient business result, not a provider outage. NO PII: only the safe
 // reason + optional HTTP status. Fire-and-forget (sendSlackAlert never throws).
-function alertWhatsAppThrow(outcome: DeliveryOutcome): void {
+export function alertWhatsAppThrow(outcome: DeliveryOutcome): void {
   const status = outcome.kind === 'unknown' ? outcome.providerStatus : undefined;
   void sendSlackAlert({
     level: 'warn',
@@ -202,9 +261,15 @@ function buildTemplateMessage(params: TemplateMessageParams): Template {
     : new Template(params.templateName, new Language(params.language));
 }
 
+/** Per-call send options. `retryBudgetMs` > 0 turns on Meta's documented retry (sendWithMetaRetry). */
+export interface SendOptions {
+  retryBudgetMs?: number;
+}
+
 export async function sendWhatsAppTemplate(
   cfg: { phoneNumberId: string; accessToken: string; appSecret: string | null },
   params: TemplateMessageParams & { to: string },
+  opts: SendOptions = {},
 ): Promise<DeliveryOutcome> {
   // Fail-closed: a URL button and RSVP quick-reply payloads share the SAME
   // button-index space, so injecting both would misalign the indices and Meta
@@ -214,20 +279,22 @@ export async function sendWhatsAppTemplate(
     return { kind: 'unknown', reason: 'url_and_rsvp_buttons_conflict' };
   }
   // secure:false avoids requiring the appSecret for SENDING (the secret is only
-  // needed to verify INBOUND webhooks, handled in B2). v pinned explicitly —
+  // needed to verify INBOUND webhooks, in api/webhooks/whatsapp/route.ts). v pinned explicitly —
   // same reasoning as sendWhatsAppMarketingTemplate below (never ride the
   // library's own default silently).
-  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: DEFAULT_API_VERSION });
+  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: GRAPH_API_VERSION });
   const message = buildTemplateMessage(params);
 
-  try {
-    const res = await api.sendMessage(cfg.phoneNumberId, params.to, message);
-    return classifyResponse(res);
-  } catch (e) {
-    const outcome = classifyThrow(e);
-    alertWhatsAppThrow(outcome);
-    return outcome;
-  }
+  return sendWithMetaRetry(async () => {
+    try {
+      const res = await api.sendMessage(cfg.phoneNumberId, params.to, message);
+      return classifyResponse(res);
+    } catch (e) {
+      const outcome = classifyThrow(e);
+      alertWhatsAppThrow(outcome);
+      return outcome;
+    }
+  }, { budgetMs: opts.retryBudgetMs ?? 0 });
 }
 
 // MM Lite — MARKETING-category templates only (message_key ∈
@@ -245,6 +312,7 @@ export async function sendWhatsAppTemplate(
 export async function sendWhatsAppMarketingTemplate(
   cfg: { phoneNumberId: string; accessToken: string; appSecret: string | null },
   params: TemplateMessageParams & { to: string },
+  opts: SendOptions = {},
 ): Promise<DeliveryOutcome> {
   // Same fail-closed button-index guard as sendWhatsAppTemplate.
   if (params.urlButtonParam && params.rsvpButtonPayloads) {
@@ -253,7 +321,7 @@ export async function sendWhatsAppMarketingTemplate(
   // `v` is a private field on WhatsAppAPI (unlike sendMessage, we build the
   // URL ourselves) — pin the SAME version explicitly here, both for the
   // constructor and the URL, rather than reading a private property.
-  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: DEFAULT_API_VERSION });
+  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: GRAPH_API_VERSION });
   const message = buildTemplateMessage(params);
   // Same request shape as `/messages` (messaging_product/recipient_type/to/
   // type/[type]) plus `product_policy` — verified against Meta's Marketing
@@ -269,23 +337,25 @@ export async function sendWhatsAppMarketingTemplate(
     [message._type]: message,
     product_policy: 'CLOUD_API_FALLBACK',
   };
-  try {
-    const res = await api.$$apiFetch$$(
-      `https://graph.facebook.com/${DEFAULT_API_VERSION}/${cfg.phoneNumberId}/marketing_messages`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      },
-    );
-    // $$apiFetch$$ returns the RAW fetch Response (unlike sendMessage, which
-    // resolves the parsed body) — parse it ourselves before classifying.
-    return classifyResponse(await res.json());
-  } catch (e) {
-    const outcome = classifyThrow(e);
-    alertWhatsAppThrow(outcome);
-    return outcome;
-  }
+  return sendWithMetaRetry(async () => {
+    try {
+      const res = await api.$$apiFetch$$(
+        `https://graph.facebook.com/${GRAPH_API_VERSION}/${cfg.phoneNumberId}/marketing_messages`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+      );
+      // $$apiFetch$$ returns the RAW fetch Response (unlike sendMessage, which
+      // resolves the parsed body) — parse it ourselves before classifying.
+      return classifyResponse(await res.json());
+    } catch (e) {
+      const outcome = classifyThrow(e);
+      alertWhatsAppThrow(outcome);
+      return outcome;
+    }
+  }, { budgetMs: opts.retryBudgetMs ?? 0 });
 }
 
 // Free-form session message — allowed ONLY inside the 24h customer-service
@@ -295,14 +365,17 @@ export async function sendWhatsAppMarketingTemplate(
 export async function sendWhatsAppText(
   cfg: { phoneNumberId: string; accessToken: string; appSecret: string | null },
   params: { to: string; body: string },
+  opts: SendOptions = {},
 ): Promise<DeliveryOutcome> {
-  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: DEFAULT_API_VERSION });
-  try {
-    const res = await api.sendMessage(cfg.phoneNumberId, params.to, new Text(params.body));
-    return classifyResponse(res);
-  } catch (e) {
-    const outcome = classifyThrow(e);
-    alertWhatsAppThrow(outcome);
-    return outcome;
-  }
+  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: GRAPH_API_VERSION });
+  return sendWithMetaRetry(async () => {
+    try {
+      const res = await api.sendMessage(cfg.phoneNumberId, params.to, new Text(params.body));
+      return classifyResponse(res);
+    } catch (e) {
+      const outcome = classifyThrow(e);
+      alertWhatsAppThrow(outcome);
+      return outcome;
+    }
+  }, { budgetMs: opts.retryBudgetMs ?? 0 });
 }

@@ -56,7 +56,7 @@ export interface DeliveryResult {
 }
 
 // The minimal wire shape every scenario's AppEvents.HttpRequest dispatcher
-// actually parses (RSVPAgent :701, ConsoleDial/ConsoleInbound's identical
+// actually parses (RSVPAgent's handler, ConsoleDial/ConsoleInbound's identical
 // `{command, request_id, payload}` handler). `call_attempt_id` is optional
 // here (unlike validation/agent-console.ts's CommandEnvelope, which requires
 // it): it is an RSVPAgent-only concept no scenario here actually reads off

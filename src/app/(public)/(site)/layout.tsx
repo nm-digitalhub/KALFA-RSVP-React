@@ -13,10 +13,9 @@ import { getCallMeNowWidgetEnabled } from '@/lib/data/call-me-now-public-config'
 //
 // A floating "call me now" widget (src/components/site/call-me-now-widget-lazy.tsx
 // -> call-me-now-widget.tsx — call-center research, 12.8, capability A,
-// THIRD design) is built and verified, but deliberately NOT mounted here
-// yet. This is the design that REPLACED the earlier WebRTC browser widget
-// (call-widget-lazy.tsx/call-widget.tsx, left in place as dead code pending
-// an explicit cleanup decision — see console-calls.ts's
+// THIRD design) is mounted below, config-gated (see the end of this comment).
+// This is the design that REPLACED the earlier WebRTC browser widget
+// (since deleted — see console-calls.ts's
 // evaluateWidgetCallCaps header for why that design was accepted as
 // blocked: an unauthenticated endpoint minting telephony credentials is a
 // real attack surface even on a shared identity). This design has NO
@@ -28,15 +27,15 @@ import { getCallMeNowWidgetEnabled } from '@/lib/data/call-me-now-public-config'
 // console-calls.ts's evaluateCallMeNowCaps header for the full research
 // trail and cost math.
 //
-// It is now mounted, but CONFIG-GATED rather than unconditionally (13.8, once
-// the chain became real: scenario ConsoleCallMeNow #919514 deployed and
+// It is mounted CONFIG-GATED rather than unconditionally (13.8, once
+// the chain became real: the ConsoleCallMeNow scenario deployed and
 // verified byte-identical, routing rule 1523124 `cn[0-9a-f]+` created and
 // ordered ahead of the two `.*` rules). getCallMeNowWidgetEnabled requires
-// BOTH the flag AND a bound numeric rule id, so the earlier objection to
-// mounting — "every visitor sees a phone/OTP form that always refuses once
-// submitted" — cannot happen: with either piece of config missing the widget
-// simply is not rendered. That also means enabling the feature is a pure
-// config change with no redeploy, and disabling it again is the same.
+// BOTH the flag AND a bound numeric rule id, so a visitor can never see a
+// phone/OTP form that always refuses once submitted: with either piece of
+// config missing the widget simply is not rendered. That also means enabling
+// the feature is a pure config change with no redeploy, and disabling it
+// again is the same.
 export default async function SiteLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -51,13 +50,12 @@ export default async function SiteLayout({
   ]);
   return (
     <>
-      {/* Shared header for every (site) page (owner report 24.8: the menu
-          existed only on the homepage). Reads the user once per request. */}
+      {/* Shared header for every (site) page. Reads the user once per request. */}
       <SiteHeader />
       {children}
-      {/* Shared footer for every (site) page (footer review 24.8): the legal
+      {/* Shared footer for every (site) page: the legal
           links + cookie management must be reachable from each marketing
-          page, not only the homepage. Pages own their own header. */}
+          page, not only the homepage. */}
       <SiteFooter widgetClearance={callMeNowEnabled} />
       <GoogleAnalyticsGated mechanismEnabled={cookieConsentAdminConfig.enabled} />
       {callMeNowEnabled ? <CallMeNowWidgetLazy /> : null}

@@ -5,17 +5,16 @@
 //
 // Why this exists: scheduler.mjs, run-context.sh, and main-inbox.sh all read
 // dist/fleet-agent-cli.cjs directly off disk, with no build step of their
-// own — `npm run fleet:agent` (build+run in one) is only ever invoked
-// interactively. `npm run deploy` did not rebuild this artifact at all until
-// this change; before that, the compiled file only ever advanced as a
-// side-effect of someone running `npm run fleet:agent` by hand. Nothing else
+// own — `npm run deploy` rebuilds it via `npm run fleet-agent:build`, and
+// `npm run fleet:agent` (build+run in one) is only ever invoked
+// interactively. Nothing else
 // catches a broken bundle: `tsc --noEmit` is happy (the TypeScript is
 // valid), ESLint is happy, the test suite never loads dist/*.cjs, and no gate
 // in the deploy chain asks whether the artifact it just wrote can actually be
 // loaded.
 //
 // fleet-agent-cli.ts does not use `import.meta` today — it uses
-// `createRequire(__filename)` (see fleet-agent-cli.ts:127) for the same
+// `createRequire(__filename)` (see the PgClient load in fleet-agent-cli.ts) for the same
 // reason worker/main.ts had to be fixed to. This check exists so a FUTURE
 // change that reintroduces it fails loudly at build time, not silently in a
 // headless fleet run at 3am.

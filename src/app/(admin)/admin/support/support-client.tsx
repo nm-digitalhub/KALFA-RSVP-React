@@ -26,8 +26,8 @@ const inputClass =
 const sectionClass = 'space-y-3 rounded-lg border border-border bg-card p-5';
 
 // Read-only support surface. Two steps, both client-driven via useTransition +
-// the ActionResult<T> server actions (mirrors the roles-client staff-role
-// selector pattern already in this codebase):
+// the ActionResult<T> server actions (the same useTransition pattern as the
+// staff-role selector in ../users/[id]/user-actions.tsx):
 //   1. Find candidate event(s) by event id OR the owner's phone/email.
 //   2. Pick one and view it — REQUIRES a break-glass reason; the server action
 //      (via getEventForSupportView) writes the audit row before returning data.

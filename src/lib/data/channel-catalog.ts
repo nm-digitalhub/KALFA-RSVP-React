@@ -4,8 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 
 // Admin-managed catalog of outreach channels (public.channels — Stage 1 of
 // plans/channels-data-driven-plan.md). This is the source of truth for the
-// package form's channel LIST + display labels + order, replacing the old
-// hardcoded ['whatsapp','call'] + CHANNEL_LABELS literals.
+// package form's channel LIST + display labels + order.
 //
 // `key` MIRRORS the campaign_channel enum labels; the enum + validation remain
 // the storable-value guard, so the form field type is a plain `string` here

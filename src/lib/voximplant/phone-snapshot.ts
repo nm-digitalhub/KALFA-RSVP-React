@@ -56,7 +56,7 @@
  * project has never observed it live), so the watchdog gives that a full,
  * generous window before giving up rather than guessing.
  *
- * FOLLOW-UP FINDING (team-lead review, same day): the FIRST version of this
+ * FOLLOW-UP FINDING: the FIRST version of this
  * fix only special-cased sdkState RECONNECTING and DISCONNECTED while
  * business state was logged_in/reconnecting, falling through to "keep
  * logged_in" for everything else — including a bare ClientState.CONNECTED
@@ -113,7 +113,7 @@ export interface ConsolePhoneSnapshot {
  * How long a snapshot may sit at 'reconnecting' before this module stops
  * trusting that the SDK's own autoReconnect is still going to restore
  * LOGGED_IN on its own. Generous relative to AGENT_STATUS_FRESHNESS_MS
- * (90s, console-calls.ts) on purpose: a false demotion just costs one extra
+ * (90s, console/presence.ts) on purpose: a false demotion just costs one extra
  * manual click, while a demotion so early it fires during a normal brief
  * network blip would be its own honesty violation in the other direction.
  */
@@ -142,9 +142,8 @@ export function reducePhoneSnapshot(
         // ONLY DISCONNECTED means the SDK gave up entirely. EVERY other
         // ClientState — RECONNECTING, CONNECTED, CONNECTING, LOGGING_IN,
         // DISCONNECTING, or any value this reducer doesn't yet know about —
-        // maps to 'reconnecting'. This was a real production hole (found by
-        // team-lead review, 12.8): the previous version special-cased only
-        // RECONNECTING/DISCONNECTED and fell through to "keep logged_in" for
+        // maps to 'reconnecting'. This was a real production hole: the previous
+        // version special-cased only RECONNECTING/DISCONNECTED and fell through to "keep logged_in" for
         // everything else, including CONNECTED — a state the SDK's own
         // ClientState enum documents as distinct from LOGGED_IN. Nothing in
         // the SDK's types or docs guarantees RECONNECTING always precedes

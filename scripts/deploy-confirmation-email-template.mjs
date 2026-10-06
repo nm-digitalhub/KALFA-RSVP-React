@@ -10,7 +10,7 @@
 // Why a script (not config.toml `config push`): the repo's supabase/config.toml
 // is the LOCAL-dev config (site_url = http://127.0.0.1:3000). `config push` would
 // clobber the remote site_url + redirect URLs. This script PATCHes ONLY the two
-// recovery fields and never touches site_url / redirect / any other setting.
+// confirmation fields and never touches site_url / redirect / any other setting.
 //
 // Safety model:
 //   • Dry-run by DEFAULT — prints the remote-vs-file diff and exits.
@@ -51,7 +51,7 @@ const activeHtml = html.replace(/<!--[\s\S]*?-->/g, '');
 if (activeHtml.includes('{{ .SiteURL }}')) {
   fail('Template link uses {{ .SiteURL }} — the contract requires {{ .RedirectTo }}. Aborting.');
 }
-// The recovery link must match the EXACT contract — the host comes from
+// The confirmation link must match the EXACT contract — the host comes from
 // {{ .RedirectTo }} (never a hardcoded origin), with exact params. Extract the
 // <a href> carrying token_hash and compare after decoding &amp; (so both the
 // `&` and `&amp;` encodings are accepted, but nothing else is).
@@ -93,7 +93,7 @@ console.log(`Project:  ${ref}`);
 console.log(`Template: ${TEMPLATE_PATH} (${html.length} bytes)`);
 console.log(`Mode:     ${apply ? 'APPLY' : 'DRY-RUN (no changes)'}\n`);
 
-// 1. Read the remote config FIRST and show the diff.
+// 3. Read the remote config FIRST and show the diff.
 const getRes = await fetch(API, { headers: authHeaders });
 if (!getRes.ok) {
   fail(`GET config/auth failed: ${getRes.status} ${getRes.statusText}`);

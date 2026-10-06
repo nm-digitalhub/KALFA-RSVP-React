@@ -1,8 +1,9 @@
 import { z } from 'zod';
 
-// Payload shapes for the 4 WhatsApp template-health webhook fields
+// Payload shapes for the 5 WhatsApp template-health webhook fields
 // (message_template_status_update / template_category_update /
-// template_correct_category_detection / message_template_quality_update).
+// template_correct_category_detection / message_template_quality_update /
+// message_template_components_update).
 // whatsapp-api-js does not type these (it only models "messages"/"calls"), so
 // they're validated here against the live-doc-verified Meta shapes
 // (developers.facebook.com/documentation/business-messaging/whatsapp/webhooks,
@@ -56,3 +57,14 @@ export const templateQualityUpdateSchema = z.object({
   new_quality_score: z.string(),
 });
 export type TemplateQualityUpdatePayload = z.infer<typeof templateQualityUpdateSchema>;
+
+// message_template_components_update — a template was edited on Meta's side.
+// The payload flattens the new components (body text, header title, buttons);
+// only the keys needed to find the template are read here — its full
+// components are re-read from Graph, not rebuilt from this flattened copy.
+export const templateComponentsUpdateSchema = z.object({
+  message_template_id: templateIdField,
+  message_template_name: z.string(),
+  message_template_language: z.string(),
+});
+export type TemplateComponentsUpdatePayload = z.infer<typeof templateComponentsUpdateSchema>;

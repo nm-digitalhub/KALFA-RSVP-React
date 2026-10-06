@@ -9,16 +9,16 @@ import type { Tables, TablesInsert } from '@/lib/supabase/types';
 // scoped to callback_requests (meeting-confirmation/reschedule calls; see
 // that table's own migration comment for why call_attempts itself is not
 // reusable — no campaign/event/guest concept exists for this flow). Consumed
-// today only by meeting-confirm-dispatch.ts; the ctx/cb route handlers that
-// will read access_token are a separate, security-reviewed piece of work
-// (public-rsvp-sentinel), not built yet — so this file never surfaces
-// access_token to anything, only writes it.
+// by meeting-confirm-dispatch.ts (dispatch side) and by the mtg/ctx|cb route
+// handlers and mtg/tool/* processing (the token-lookup functions below) —
+// those lookups never select access_token back: it is written once and used
+// only as a lookup key.
 //
 // Never logs access_token. dispatch_status is a SEPARATE axis from
-// confirmation_call_status (the call's semantic result, written later by
-// whatever calls the not-yet-built mtg/cb route) — see the dispatch-lifecycle
-// migration's own comment for the full reasoning; this file only ever touches
-// dispatch_status.
+// confirmation_call_status (the call's semantic result, written during the
+// call by claimCallbackVoiceOutcome via the mtg/tool/* routes) — see the
+// dispatch-lifecycle migration's own comment for the full reasoning; the
+// dispatch-side writers here only ever touch dispatch_status.
 
 type AttemptRow = Tables<'callback_request_attempts'>;
 type AttemptInsert = TablesInsert<'callback_request_attempts'>;
@@ -37,8 +37,9 @@ export type CreateCallbackDispatchAttemptInput = {
 
 // Atomic dispatch-side create (plan SS11a).
 //
-// callback_request_attempts_dispatch_slot_uidx is a PARTIAL unique index —
-// `(callback_request_id, scheduled_at_snapshot) WHERE issued_via='dispatch'`.
+// callback_request_attempts_dispatch_slot_inflight_uidx is a PARTIAL unique
+// index — `(callback_request_id, scheduled_at_snapshot) WHERE
+// issued_via='dispatch' AND dispatch_status IN (queued, dialing, in_progress)`.
 // call_attempts' own createCallAttempt targets its (non-partial) unique
 // constraint via `.upsert(row, {onConflict, ignoreDuplicates:true})`, but that
 // idiom cannot be reused here: PostgREST's `on_conflict` parameter only ever
@@ -87,7 +88,7 @@ export async function createCallbackDispatchAttempt(
 // guards, scoped to issued_via='dispatch' so an inbound_identification row
 // for the same request (a different logical attempt, minted by the
 // inbound-answering agent) can never be mistaken for a dispatch attempt.
-// A LIST since 2026-08-23: the in-flight-only unique index
+// A LIST: the in-flight-only unique index
 // (callback_request_attempts_dispatch_slot_inflight_uidx) allows multiple
 // TERMINAL attempts per slot — a call that concluded without any semantic
 // outcome (confirmation_call_status='not_sent') no longer occupies the slot
@@ -112,9 +113,9 @@ export async function listCallbackDispatchAttemptsBySlot(
 // Record a CONFIRMED StartScenarios start (result===1 && call_session_history_id).
 // Does NOT change dispatch_status — mirrors recordDialConfirmed's own
 // reasoning in call-attempts.ts: the row stays pre-terminal until a real
-// terminal signal arrives. Today nothing writes that signal yet (the mtg/cb
-// route is separate, not-yet-built, security-reviewed work) — this dispatcher
-// only ever gets the row as far as "confirmed dialing", never "concluded".
+// terminal signal arrives (recordCallbackDispatchConcluded, from the mtg/cb
+// route) — this dispatcher only ever gets the row as far as "confirmed
+// dialing", never "concluded".
 // Guarded so an already-past-pre-terminal row can never be clobbered.
 export async function recordCallbackDialConfirmed(
   id: string,
@@ -159,8 +160,8 @@ async function recordDispatchOutcome(
 // Definite provider rejection (VoximplantApiError). Non-retryable — mirrors
 // markFailedToStart's reasoning in call-attempts.ts exactly: StartScenarios
 // is never blind-retried (core.ts), so this is terminal for THIS attempt.
-// A row a crashed process left stuck at 'dialing' forever is now covered:
-// runCallbackDispatchReconcile (voximplant-reconcile.ts, extended 2026-08-22)
+// A row a crashed process left stuck at 'dialing' forever is flagged by
+// runCallbackDispatchReconcile (voximplant-reconcile.ts), which
 // Slack-alerts on any pre-terminal row here older than 15m — ALERT-ONLY, it
 // never mutates this table or re-issues StartScenarios, so a stuck row still
 // silently consumes one concurrency-cap slot (voximplant-concurrency.ts)
@@ -255,7 +256,7 @@ export async function countActiveCallbackDispatches(): Promise<number> {
 // visible to it.
 //
 // cap/window are admin-editable (CallbackPolicy.maxAttempts/attemptWindowMs,
-// /admin/callbacks/policy as of 31.8) — the caller fetches the policy once
+// /admin/callbacks/policy) — the caller fetches the policy once
 // and passes it in, rather than this function re-fetching it per call.
 //
 // CONFIRMED (team-lead, 2026-08-22): the admin's tel: link on
@@ -313,9 +314,8 @@ export async function recordCallbackDialAudit(callbackRequestId: string): Promis
 
 // --- mtg/ctx|cb voice-token surface (public-rsvp-sentinel-reviewed 2026-08-22) ---
 //
-// The functions below are what the ctx/[token] and cb/[token] route handlers
-// use — the piece this file's original header comment named as "a separate,
-// security-reviewed piece of work, not built yet". Now reviewed and built.
+// The functions below are what the mtg ctx/[token] and cb/[token] route
+// handlers and the mtg/tool/* processing use.
 
 export type CallbackVoiceContext = {
   attempt: Pick<
@@ -386,7 +386,7 @@ export async function getCallbackAttemptByAccessToken(
 }
 
 // Resolve the parent callback_requests row's contact fields for a tool-call
-// processing function (mtg/cb/*/[token]) — those need full_name/phone/topic,
+// processing function (mtg/tool/*/[token]) — those need full_name/phone/topic,
 // which the ctx/cb-oriented lookups above deliberately don't carry. Two
 // sequential queries, same established convention as
 // getCallbackVoiceContextByAccessToken (not a stylistic choice — see that

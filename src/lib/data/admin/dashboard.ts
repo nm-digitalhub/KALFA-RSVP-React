@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { hasPlatformPermission, requireAdmin } from '@/lib/auth/dal';
+import { hasPlatformPermission, requirePlatformStaff } from '@/lib/auth/dal';
 import { countNewCallbacks, countNewContacts } from './nav-counts';
 
 // Admin dashboard: headline counts. Each is a count-only query (head: true,
@@ -14,8 +14,9 @@ import { countNewCallbacks, countNewContacts } from './nav-counts';
 // `null`, and the page omits its card. Reads run via service_role; the permission
 // check is the authorization, exactly as every other admin reader.
 //
-// contacts/callbacks count status='new' (via nav-counts.ts's shared counters),
-// NOT total row volume — this is the same "needs handling" predicate the
+// contacts count status 'new' or 'reopened', callbacks count status 'new' (via
+// nav-counts.ts's shared counters), NOT total row volume — this is the same
+// "needs handling" predicate the
 // admin-sidebar badge uses (see nav-counts.ts), so the overview card and the
 // sidebar badge always agree on one number instead of showing two different
 // counts for the same domain. packages has no status workflow, so it stays a
@@ -45,7 +46,7 @@ async function countTable(
 }
 
 export async function getDashboardCounts(): Promise<DashboardCounts> {
-  await requireAdmin();
+  await requirePlatformStaff();
   const supabase = createAdminClient();
 
   // Resolve permissions once (cache()-memoized) and only run a count the caller

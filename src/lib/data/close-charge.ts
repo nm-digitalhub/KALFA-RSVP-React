@@ -17,14 +17,23 @@ import {
   getCampaignCreditTotal,
 } from '@/lib/data/billing';
 import { computeChargeAmount } from '@/lib/data/close-charge-amount';
+import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
 import { getSignedAgreementVersion } from '@/lib/data/agreements';
-import { isBaseFeeAgreementVersion } from '@/lib/agreements/template';
+import {
+  isBaseFeeAgreementVersion,
+  isPackageAgreementVersion,
+} from '@/lib/agreements/template';
 import { checkOsekPaturCeilingAfterCharge } from '@/lib/data/tax-ceiling';
-import { captureHeldCardSumit } from '@/lib/sumit/capture';
+import {
+  captureAuthorizationSumit,
+  captureHeldCardSumit,
+  type SumitCaptureParams,
+  type SumitCaptureResult,
+} from '@/lib/sumit/capture';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 
 export type CloseChargeOutcome = {
@@ -34,7 +43,11 @@ export type CloseChargeOutcome = {
     | 'declined'
     | 'review'
     | 'disabled'
-    | 'bad_state';
+    | 'bad_state'
+    // A fixed-price package campaign: its money was taken at purchase and lives in the payment
+    // ledger. There is nothing to settle here, and the pay-per-result formula below must never
+    // run against it.
+    | 'not_applicable';
   amount: number;
   // Present only on 'charged': the provider's per-charge payment id — the
   // analytics transaction_id (never the campaign id). null when the provider
@@ -43,6 +56,11 @@ export type CloseChargeOutcome = {
   // Present only on 'charged': the billing model actually applied AFTER the
   // D5 guard — a coarse analytics label, never an amount.
   billingModel?: 'base_overage' | 'per_reached';
+  // Present only on 'charged': how SUMIT was charged — 'auth_capture' = the J5
+  // hold itself was captured by its AuthNumber (the hold is consumed);
+  // 'token_charge' = a new charge on the saved card token (the hold stays open
+  // until released in SUMIT).
+  chargeMethod?: ChargeMethod;
   // Present only on 'nothing_to_charge': how many contacts were actually
   // reached and how much credit covered them. amount===0 alone does NOT mean
   // nobody was reached — it also fires when credits fully cover a nonzero
@@ -58,15 +76,22 @@ export type CloseChargeOutcome = {
   documentUrl?: string | null;
 };
 
+export type ChargeMethod = 'auth_capture' | 'token_charge';
+
 const CLOSEABLE = ['active', 'paused', 'approved', 'scheduled'];
+
+function agorot(n: number): number {
+  return Math.round(n * 100);
+}
 
 // Final settlement closes the event too, not just the campaign: once billing
 // is final there is no reason for the public RSVP link to keep accepting
 // responses (get_rsvp_by_token/submit_rsvp both gate on events.status =
-// 'active'). The campaign is already closed by this point (CLOSEABLE branch
-// above, or already 'closed' on retry), so the R7 trigger's operational-
-// campaign guard never blocks this. Best-effort by design — never throws —
-// because the charge/no-charge outcome above is already final and recorded;
+// 'active'). The campaign is already closed by this point (the CLOSEABLE
+// branch in closeCampaignAndCharge, or already 'closed' on retry), so the R7
+// trigger's operational-campaign guard never blocks this. Best-effort by
+// design — never throws — because the charge/no-charge outcome is already
+// final and recorded;
 // a failure here must not read back to the admin as a failed settlement.
 // Re-checks the LIVE status first (mirrors event-cancellation.ts's
 // adminCloseEvent) so a campaign settled AFTER the owner already closed the
@@ -100,20 +125,26 @@ async function closeEventAfterSettlement(eventId: string): Promise<void> {
 
 // Close a campaign and charge the held card for the flat-base + included +
 // overage total. Fail-closed; server-derives amount = base + max(0, reached −
-// included) × overage, capped at the signed ceiling, minus credits (see
-// computeChargeAmount; base/included = 0 ⇒ pure per-reached, unchanged for
+// included) × overage, minus credits, capped at the signed ceiling ONLY for a
+// v4-and-earlier agreement (a frozen number in the PDF); v5+ states a formula
+// and is not capped (see computeChargeAmount; base/included = 0 ⇒ pure per-reached, unchanged for
 // pre-model campaigns); charges at most once (atomic guard); retry-tolerant
 // (an already-closed campaign in a retryable charge state proceeds to charge).
 // Authorization: platform-admin only (billing operation).
 // opts.overrideAmount (cancellation-resolve flow only): replaces the computed
-// total with an admin-confirmed amount, still capped at the ceiling — every
+// total with an admin-confirmed amount, capped the same way — every
 // other safety property (lock, terminal-state guard, receipt, D5 guard) is
-// unchanged. Every existing caller omits opts and gets byte-identical behavior.
+// unchanged. Every other caller omits opts and gets the computed total.
 export async function closeCampaignAndCharge(
   campaignId: string,
   opts?: { overrideAmount?: number; overrideReason?: string },
 ): Promise<CloseChargeOutcome> {
-  await requireAdmin();
+  // `manage_billing`, not `requireAdmin()`. This function CLOSES A CAMPAIGN AND
+// CHARGES THE SAVED CARD. `requireAdmin()` is the coarse `has_role('admin')`
+// flag, which `support_agent` and `auditor` also hold — neither of which is
+// meant to move money. `events.ts` and `packages.ts` already pin the same key
+// for far less than a charge.
+  await requirePlatformPermission('manage_billing');
   const [paymentsOn, closeOn, sumit] = await Promise.all([
     getPaymentsEnabled(),
     getCloseChargeEnabled(),
@@ -125,6 +156,9 @@ export async function closeCampaignAndCharge(
 
   const campaign = await getCampaignForCharge(campaignId);
   if (!campaign) return { outcome: 'bad_state', amount: 0 };
+
+  // MODEL GUARD 1 of 2 — the campaign's own price snapshot. Checked before ANY state change.
+  if (campaign.package_price != null) return { outcome: 'not_applicable', amount: 0 };
 
   // Terminal charge outcomes are final: a charged (or credit-settled) campaign
   // can never be re-charged NOR re-marked nothing_to_charge (which would zero
@@ -168,40 +202,58 @@ export async function closeCampaignAndCharge(
     return { outcome: 'review', amount: 0 };
   }
 
+  // The signed agreement version drives two decisions below: whether the base
+  // fee may be billed (D5) and whether a frozen ceiling caps the total. A DB
+  // error reading the signature must NOT terminally settle a wrong amount →
+  // review, exactly like the summary/credit reads above.
+  let signedVersion: string | null;
+  try {
+    signedVersion = await getSignedAgreementVersion(campaignId);
+  } catch {
+    await markCampaignChargeOutcome(campaignId, 'charge_review');
+    return { outcome: 'review', amount: 0 };
+  }
+
+  // MODEL GUARD 2 of 2 — the SIGNED agreement version (D5 pattern: the money follows the
+  // immutable signature, not a flag or a snapshot that could be missing). A package signature
+  // never settles under the old formula, whatever the campaign row says.
+  if (isPackageAgreementVersion(signedVersion)) {
+    return { outcome: 'not_applicable', amount: 0 };
+  }
+
   // Flat-base + included + overage. base/included from the campaign SNAPSHOT
-  // (S3 at authorize); NULL ⇒ 0 = pre-model / pre-S3 campaign ⇒ reduces to pure
+  // (taken at campaign creation); NULL ⇒ 0 = pre-model campaign ⇒ reduces to pure
   // per-reached (Σ reached × price_per_reached), verified behaviour-neutral for
-  // the live campaigns. price_per_reached is the per-reached (overage) rate. The
-  // ceiling fallback preserves the prior truthiness (0/NULL → summary ceiling).
-  const ceiling = campaign.max_charge_ceiling
-    ? campaign.max_charge_ceiling
-    : (summary?.ceiling ?? 0);
+  // the live campaigns. price_per_reached is the per-reached (overage) rate.
+  //
+  // Ceiling: an open-ceiling agreement (v5+) states the price as a formula of
+  // the list, so nothing caps the total (the funded recipient cap was retired
+  // 2026-09-25; `reached` may exceed what the hold covered, and every reached
+  // contact is billed). A v4-and-earlier PDF states a frozen number the customer
+  // relied on, so that number still caps. The 0/NULL → summary fallback keeps
+  // the prior truthiness for those.
+  const ceiling: number | null = isOpenCeilingAgreementVersion(signedVersion)
+    ? null
+    : campaign.max_charge_ceiling
+      ? campaign.max_charge_ceiling
+      : (summary?.ceiling ?? 0);
 
   // D5 GUARD — bind the base-fee to the SIGNED contract. The campaign may carry a
-  // snapshotted base (the gate was on at authorize), but the ₪200 activation fee
+  // snapshotted base (the gate was on at campaign creation), but the activation fee
   // may be billed ONLY if the customer actually signed a base-fee agreement
   // version. Otherwise suppress base+included → pure per-reached, so a v3-signer
   // (whose contract says "0 → no charge") is NEVER charged the base regardless of
   // the global gate's state or timing.
   //   NOTE: suppression does NOT merely lower the amount — zeroing `included`
   //   removes the free tier, so per-reached gross can exceed the base+overage
-  //   gross. The overcharge guarantee is NOT "always lower"; it is the hard cap:
-  //   computeChargeAmount caps at `ceiling` = the exact number in the signed PDF
-  //   (agreements.ts passes campaign.max_charge_ceiling), so charge ≤ signed
-  //   ceiling in every branch. Billing every reached contact with no free tier is
-  //   precisely what a v3 signer's contract states (template §3).
+  //   gross. The overcharge guarantee for those (v3 and earlier) signers is the
+  //   hard cap: their PDF states a frozen ceiling and `ceiling` above is that
+  //   number, so charge ≤ signed ceiling in every branch. Billing every reached
+  //   contact with no free tier is precisely what a v3 signer's contract states
+  //   (template §3).
   let effectiveBase = campaign.base_price ?? 0;
   let effectiveIncluded = campaign.included_reached ?? 0;
   if (effectiveBase > 0 || effectiveIncluded > 0) {
-    let signedVersion: string | null;
-    try {
-      signedVersion = await getSignedAgreementVersion(campaignId);
-    } catch {
-      // A real DB error reading the signature must NOT terminally settle a wrong
-      // amount — route to review, exactly like the summary/credit reads above.
-      await markCampaignChargeOutcome(campaignId, 'charge_review');
-      return { outcome: 'review', amount: 0 };
-    }
     if (!isBaseFeeAgreementVersion(signedVersion)) {
       effectiveBase = 0;
       effectiveIncluded = 0;
@@ -222,8 +274,8 @@ export async function closeCampaignAndCharge(
     }
   }
 
-  // final = max(0, min(base + max(0, reached − included) × overage, ceiling) −
-  // credits), rounded to agorot (§14/D5/G4).
+  // final = max(0, base + max(0, reached − included) × overage − credits),
+  // capped at `ceiling` only when it is a number.
   const computed = computeChargeAmount({
     base: effectiveBase,
     included: effectiveIncluded,
@@ -238,11 +290,13 @@ export async function closeCampaignAndCharge(
   // below (idempotency lock, terminal-state guard, receipt generation,
   // Slack alert, D5 guard already applied above) still applies identically —
   // overrideAmount only swaps WHAT gets charged, never HOW it gets charged.
-  // Never allow it to exceed the signed ceiling, regardless of the caller's
-  // request.
+  // Never allow it to exceed a frozen signed ceiling, regardless of the caller's
+  // request (an open-ceiling agreement has none).
   const amount =
     opts?.overrideAmount !== undefined
-      ? Math.min(Math.max(0, opts.overrideAmount), ceiling)
+      ? ceiling === null
+        ? Math.max(0, opts.overrideAmount)
+        : Math.min(Math.max(0, opts.overrideAmount), ceiling)
       : computed.amount;
   const creditApplied = opts?.overrideAmount !== undefined ? 0 : computed.creditApplied;
 
@@ -258,6 +312,47 @@ export async function closeCampaignAndCharge(
       creditApplied,
     };
   }
+
+  // Receipt breakdown — the SAME numbers the amount above was computed from, so
+  // the customer's receipt shows where the total came from instead of one opaque
+  // "חיוב קמפיין" line. Built ONLY for the computed path: an admin override
+  // replaces the total outright, so there is no breakdown that honestly
+  // describes it.
+  //
+  // This is presentation, never arithmetic: captureHeldCardSumit re-checks that
+  // the rows sum to `amount` and silently falls back to the single line if they
+  // do not (e.g. a frozen ceiling bound and the gross no longer matches). So a
+  // mistake here costs receipt detail, never a wrong charge.
+  const overageCount =
+    opts?.overrideAmount !== undefined
+      ? 0
+      : Math.max(0, (summary?.reachedCount ?? 0) - effectiveIncluded);
+  const overageRate = campaign.price_per_reached ?? 0;
+  const receiptLines =
+    opts?.overrideAmount !== undefined
+      ? undefined
+      : [
+          ...(effectiveBase > 0
+            ? [{ name: 'דמי הפעלה', quantity: 1, unitPrice: effectiveBase }]
+            : []),
+          ...(overageCount > 0 && overageRate > 0
+            ? [
+                {
+                  name:
+                    effectiveIncluded > 0
+                      ? 'אנשי קשר שנענו מעבר לכמות הכלולה'
+                      : 'אנשי קשר שנענו',
+                  quantity: overageCount,
+                  unitPrice: overageRate,
+                },
+              ]
+            : []),
+          // The credit as its own negative row (SUMIT support, 2026-09-22).
+          // Only ever one, which is what linesReconcile allows.
+          ...(creditApplied > 0
+            ? [{ name: 'קרדיט', quantity: 1, unitPrice: -creditApplied }]
+            : []),
+        ];
 
   // Idempotency: only the caller that wins the atomic guard charges.
   const locked = await lockCampaignForCharge(campaignId);
@@ -287,20 +382,68 @@ export async function closeCampaignAndCharge(
     ownerName = (prof?.full_name ?? '').trim() || ownerEmail;
   }
 
+  // How the final charge reaches SUMIT. Capturing the J5 hold itself (J4 on
+  // the hold's AuthNumber — SUMIT support 2026-09-29) consumes the hold, so
+  // nothing is left blocked on the customer's card. It is possible only while
+  // the hold is intact (not released), for an amount no higher than the hold,
+  // under the hold's own SUMIT customer. Otherwise: a new charge on the saved
+  // token — and the hold stays open until released in SUMIT.
+  const holdCapture =
+    campaign.auth_number &&
+    campaign.auth_amount != null &&
+    campaign.release_status == null &&
+    campaign.sumit_customer_id != null &&
+    agorot(amount) <= agorot(campaign.auth_amount)
+      ? {
+          authNumber: campaign.auth_number, // exactly as stored
+          customerId: campaign.sumit_customer_id,
+        }
+      : null;
+  // charge_status as read BEFORE the lock overwrote it with 'pending'. A
+  // 'charge_review' retry means an earlier attempt's outcome is unknown: if it
+  // was a capture that went through, the hold is already consumed, and
+  // capturing again is declined with the SAME 004 a card refusal returns
+  // (verified live 2026-09-29). So on such a retry a capture decline is NOT
+  // proof that no money moved, and it must never fall through to a token
+  // charge (a possible double charge) — it stays in review.
+  const retryingUnknownOutcome = campaign.charge_status === 'charge_review';
+
+  const chargeParams: SumitCaptureParams = {
+    companyId: sumit.companyId,
+    apiKey: sumit.apiKey,
+    cardToken: campaign.card_token_ref,
+    expMonth: campaign.card_exp_month,
+    expYear: campaign.card_exp_year,
+    citizenId: campaign.card_citizen_id,
+    externalRef: campaign.auth_external_ref ?? '',
+    amount: amount.toString(),
+    customerEmail: ownerEmail, // non-empty → SendDocumentByEmail:true (receipt)
+    customerName: ownerName,
+    customerId: campaign.sumit_customer_id,
+    lines: receiptLines,
+  };
+
+  let chargeMethod: ChargeMethod = holdCapture ? 'auth_capture' : 'token_charge';
+  // Set when the hold capture was definitively declined and the token charge
+  // ran instead — surfaced in the alert so an admin knows the hold is open.
+  let captureDeclinedFellBack = false;
   try {
-    const result = await captureHeldCardSumit({
-      companyId: sumit.companyId,
-      apiKey: sumit.apiKey,
-      cardToken: campaign.card_token_ref,
-      expMonth: campaign.card_exp_month,
-      expYear: campaign.card_exp_year,
-      citizenId: campaign.card_citizen_id,
-      externalRef: campaign.auth_external_ref ?? '',
-      amount: amount.toString(),
-      customerEmail: ownerEmail, // non-empty → SendDocumentByEmail:true (receipt)
-      customerName: ownerName,
-      customerId: campaign.sumit_customer_id,
-    });
+    let result: SumitCaptureResult;
+    if (holdCapture) {
+      try {
+        result = await captureAuthorizationSumit({ ...chargeParams, ...holdCapture });
+      } catch (e) {
+        if (!(e instanceof SumitDeclinedError) || retryingUnknownOutcome) throw e;
+        // A definitive decline on a first (or post-decline) attempt: no money
+        // moved. The hold may simply be past the issuer's J5 window — fall
+        // back to the plain token charge.
+        captureDeclinedFellBack = true;
+        chargeMethod = 'token_charge';
+        result = await captureHeldCardSumit(chargeParams);
+      }
+    } else {
+      result = await captureHeldCardSumit(chargeParams);
+    }
     await recordCampaignCharge(campaignId, {
       amount,
       creditApplied,
@@ -322,6 +465,8 @@ export async function closeCampaignAndCharge(
         amount,
         credit_applied: creditApplied,
         document_id: result.documentId,
+        charge_method: chargeMethod,
+        ...(captureDeclinedFellBack ? { hold_capture_declined: 'true' } : {}),
         ...(opts?.overrideReason ? { override_reason: opts.overrideReason } : {}),
       },
     });
@@ -339,8 +484,26 @@ export async function closeCampaignAndCharge(
         effectiveBase > 0 || effectiveIncluded > 0 ? 'base_overage' : 'per_reached',
       documentId: result.documentId ?? null,
       documentUrl: result.documentUrl ?? null,
+      chargeMethod,
     };
   } catch (e) {
+    // A capture declined while retrying an unknown outcome: the earlier attempt
+    // may already have consumed the hold → review, never charge_failed.
+    if (
+      e instanceof SumitDeclinedError &&
+      chargeMethod === 'auth_capture' &&
+      retryingUnknownOutcome
+    ) {
+      await markCampaignChargeOutcome(campaignId, 'charge_review');
+      void sendSlackAlert({
+        level: 'warn',
+        category: 'campaign_billing',
+        source: 'close-charge',
+        title: 'מימוש המסגרת נדחה בניסיון חוזר — ייתכן שהחיוב הקודם כבר בוצע; לבדוק ב-SUMIT',
+        fields: { campaign_id: campaignId, event_id: campaign.event_id, amount },
+      });
+      return { outcome: 'review', amount };
+    }
     if (e instanceof SumitDeclinedError) {
       await markCampaignChargeOutcome(campaignId, 'charge_failed');
       // Additive ops alert (fire-and-forget, fail-safe): does not change the
@@ -351,7 +514,13 @@ export async function closeCampaignAndCharge(
         category: 'campaign_billing',
         source: 'close-charge',
         title: 'החיוב הסופי נדחה על ידי חברת האשראי',
-        fields: { campaign_id: campaignId, event_id: campaign.event_id, amount },
+        fields: {
+          campaign_id: campaignId,
+          event_id: campaign.event_id,
+          amount,
+          charge_method: chargeMethod,
+          ...(captureDeclinedFellBack ? { hold_capture_declined: 'true' } : {}),
+        },
       });
       return { outcome: 'declined', amount };
     }

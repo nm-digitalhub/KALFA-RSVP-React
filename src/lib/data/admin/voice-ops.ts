@@ -3,7 +3,11 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { recordStaffAccess } from '@/lib/data/admin/access-log';
-import { countActiveCalls } from '@/lib/data/call-attempts';
+import {
+  computeAnswerRate,
+  countCallAttemptsSince,
+  getVoiceCallsSummary,
+} from '@/lib/owner-agent/cores/voice-calls';
 import { resolvePage, type PageResult } from '@/lib/data/admin/shared';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { getCachedAccountInfo } from '@/lib/data/admin/voice-balance-cache';
@@ -23,20 +27,18 @@ import {
 
 // Admin voice-ops dashboard DAL. Admins supervise calls across events they do
 // NOT own, so — exactly like admin/campaigns.ts — every reader uses the
-// service-role client (bypassing RLS) UNDER requireAdmin(). No new dashboard
-// RLS is introduced.
+// service-role client (bypassing RLS) UNDER requirePlatformPermission(). No new
+// dashboard RLS is introduced.
 //
 // PII discipline: the per-event/attempt readers select an EXPLICIT column list
-// that EXCLUDES access_token, transcript, and recording_url. Content-bearing
-// provider fields never reach here.
+// that EXCLUDES access_token. transcript and recording_url are selected only
+// where a presence flag needs them (listCallAttemptsForEvent) and are never
+// returned as values; the one surface that returns recording_url is
+// listCallRecordings, below. Content-bearing provider fields never reach here.
 //
 // Aggregation is JS-first over a bounded window — EXPLAIN ANALYZE on the live
 // GROUP BY showed a 0.2ms HashAggregate (no RPC warranted, owner directive #13).
 
-// The answer-rate denominator (plan §4, binding): terminal outcomes only;
-// cancelled is excluded (the attempt never reached the callee), and the
-// non-terminal failed_to_start/start_unknown markers are excluded too.
-const ANSWER_RATE_DENOM = ['completed', 'no_answer', 'no_response', 'failed'] as const;
 const ACTIVITY_WINDOW_DAYS = 90; // events with call activity within this window
 const AGG_ROW_CAP = 5000; // JS-aggregation safety cap; logged if hit
 
@@ -50,11 +52,11 @@ export interface VoiceDashboardSummary {
 }
 
 // Answer-rate formula (plan §4, binding): completed / (completed + no_answer +
-// no_response + failed). '—' (null) when the denominator is 0. Pure + exported
-// so the definition is pinned by a test.
-export function computeAnswerRate(completed: number, denominator: number): number | null {
-  return denominator > 0 ? completed / denominator : null;
-}
+// no_response + failed). '—' (null) when the denominator is 0. It and its
+// denominator (ANSWER_RATE_DENOM) live in the request-free owner-agent voice
+// core, which the summary below calls; re-exported here so the definition stays
+// pinned by this module's test.
+export { computeAnswerRate };
 
 // Group a bounded set of attempt rows by event, JS-side (the aggregation the
 // dashboard's event list is built on). Pure + exported for direct testing.
@@ -66,10 +68,7 @@ export interface EventActivityAgg {
   failed: number;
   // RSVP answers captured on calls, split by answer. Two capture paths feed
   // these: the DTMF digit ('1'/'2') and the agent bridge's rsvp_outcome
-  // (attending/declined/maybe, written by save_rsvp). Until 2026-09-07 only
-  // the digit was counted — production agent calls showed 0 here while the
-  // guest list showed the RSVPs — and '2' (declined) was even counted under
-  // the "אישרו" column.
+  // (attending/declined/maybe, written by save_rsvp).
   confirmedFromCall: number;
   declinedFromCall: number;
   maybeFromCall: number;
@@ -134,50 +133,30 @@ export async function getVoiceDashboardSummary(
 ): Promise<VoiceDashboardSummary> {
   await requirePlatformPermission('manage_voice');
   const admin = createAdminClient();
+  // ⚠️ "today" here is UTC midnight (02:00/03:00 Israel), NOT Israel midnight.
+  // Kept as UTC midnight on purpose: moving it would shift the number on the page.
+  // The owner agent's 'today' is Israel midnight (owner-agent/range.ts), so the
+  // two "today" figures can differ by the calls placed between 00:00 Israel
+  // and 00:00 UTC. The 7-day figures are identical by construction.
   const startToday = new Date(nowMs);
   startToday.setUTCHours(0, 0, 0, 0);
-  const iso7d = new Date(nowMs - 7 * 24 * 3600 * 1000).toISOString();
 
-  // Explicit head-counts, one complete chain each — the same shape the
-  // request-free DAL uses (call-attempts.ts countActiveCalls /
-  // countCampaignCallsSince). No builder indirection: the query reads as the
-  // query it runs, and the generated types check every filter.
-  const [activeNow, today, last7d, completed7d, denom7d] = await Promise.all([
-    countActiveCalls(),
-    admin
-      .from('call_attempts')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', startToday.toISOString()),
-    admin
-      .from('call_attempts')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', iso7d),
-    admin
-      .from('call_attempts')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', iso7d)
-      .eq('status', 'completed'),
-    admin
-      .from('call_attempts')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', iso7d)
-      .in('status', [...ANSWER_RATE_DENOM]),
+  // The 7-day numbers come from the request-free voice core — the same call the
+  // owner agent makes for '7d' (rolling 7 × 24h ending nowMs) — so this page
+  // and the agent cannot disagree. 5 head-counts in total: the
+  // core's 4 (active, attempts, completed, answer-rate denominator) + today.
+  // Both throw on a DB error rather than degrading to a confident 0.
+  const [week, today] = await Promise.all([
+    getVoiceCallsSummary(admin, '7d', nowMs),
+    countCallAttemptsSince(admin, startToday.toISOString()),
   ]);
 
-  // Fail loudly: without these a DB error silently reads as count 0 and the
-  // dashboard shows a confident wrong number (same contract as the DAL's
-  // count helpers, which throw rather than degrade).
-  if (today.error) throw new Error('count_today_failed');
-  if (last7d.error) throw new Error('count_last_7d_failed');
-  if (completed7d.error) throw new Error('count_completed_7d_failed');
-  if (denom7d.error) throw new Error('count_answer_denom_failed');
-
   return {
-    activeNow,
-    today: today.count ?? 0,
-    last7d: last7d.count ?? 0,
-    completed7d: completed7d.count ?? 0,
-    answerRate7d: computeAnswerRate(completed7d.count ?? 0, denom7d.count ?? 0),
+    activeNow: week.activeNow,
+    today,
+    last7d: week.attempts,
+    completed7d: week.completed,
+    answerRate7d: week.answerRate,
   };
 }
 
@@ -270,9 +249,9 @@ export async function listEventsWithCallActivity(
   return { items, total, page, pageSize, truncated };
 }
 
-// Per-attempt supervision rows for one event. EXPLICIT non-PII column list:
-// access_token / transcript / recording_url are NEVER selected. `hasRecording`
-// / `hasTranscript` are boolean presence flags computed without reading content.
+// Per-attempt supervision rows for one event. EXPLICIT column list: access_token
+// is NEVER selected. recording_url / transcript are fetched only to compute the
+// `hasRecording` / `hasTranscript` boolean presence flags and are never returned.
 export interface EventCallAttemptRow {
   id: string;
   status: string;
@@ -413,9 +392,10 @@ export interface VoicePlatformView {
 // AND on every background RSC prefetch of /admin/voice from the sidebar link
 // present on every other admin page, so an uncached live call here was an
 // unbounded-latency external dependency in a very hot render path. This
-// function does NOT self-gate (unlike its siblings in this file) — both
-// callers (VoiceOverviewPage and getVoicePlatformView, below) already run
-// requirePlatformPermission('manage_voice') before reaching it.
+// function does NOT self-gate (unlike its siblings in this file) — all three
+// callers (VoiceOverviewPage, getVoicePlatformView below, and the Voximplant
+// integrations page) already run requirePlatformPermission('manage_voice') before
+// reaching it.
 export async function getVoiceBalanceTile(): Promise<VoiceBalanceSection> {
   const cfg = await getVoximplantConfig();
   if (!cfg) {
@@ -476,14 +456,48 @@ export async function getLogExportStatus(): Promise<LogExportStatus> {
   };
 }
 
+// The account-callback wiring state — never returns the token or its hash,
+// only whether one is set. Extracted out of getVoicePlatformView so
+// /admin/integrations/voximplant can show it WITHOUT paying for that function's
+// three live Voximplant round-trips (call lists, audit log, media resources): this
+// is one indexed single-row read, and the integrations page renders on every visit.
+// Same no-self-gate convention as getVoiceBalanceTile above, for the same reason —
+// both callers (getVoicePlatformView below, and the Voximplant integrations page)
+// run requirePlatformPermission('manage_voice') before reaching it. Never call it
+// from a surface that does not.
+export async function getVoximplantWiringTile(): Promise<VoiceWiringSection> {
+  const admin = createAdminClient();
+  try {
+    const { data } = await admin
+      .from('app_settings')
+      .select(
+        'voximplant_account_callback_state, voximplant_account_callback_token_hash, voximplant_account_callback_wired_at, voximplant_balance_callback_at',
+      )
+      .eq('id', true)
+      .maybeSingle();
+    const row = (data ?? {}) as Record<string, unknown>;
+    return {
+      state: typeof row.voximplant_account_callback_state === 'string'
+        ? row.voximplant_account_callback_state
+        : 'unwired',
+      tokenSet: typeof row.voximplant_account_callback_token_hash === 'string'
+        && (row.voximplant_account_callback_token_hash as string).length > 0,
+      wiredAt: (row.voximplant_account_callback_wired_at as string | null) ?? null,
+      lastCallbackAt: (row.voximplant_balance_callback_at as string | null) ?? null,
+    };
+  } catch {
+    // Fail SAFE: an unreadable row reads as "not wired", never as wired.
+    return { state: 'unwired', tokenSet: false, wiredAt: null, lastCallbackAt: null };
+  }
+}
+
 export async function getVoicePlatformView(nowMs: number = Date.now()): Promise<VoicePlatformView> {
   await requirePlatformPermission('manage_voice');
-  const admin = createAdminClient();
   const cfg = await getVoximplantConfig();
 
   const balance = await getVoiceBalanceTile();
 
-  // --- call lists (A1) ---
+  // --- call lists ---
   let callLists: VoiceCallListsSection;
   if (!cfg) {
     callLists = { status: 'unconfigured', lists: [] };
@@ -501,7 +515,7 @@ export async function getVoicePlatformView(nowMs: number = Date.now()): Promise<
     }
   }
 
-  // --- audit (A3) — 104/403 = forbidden (Owner-only), never a hard fail ---
+  // --- audit — Owner-role-only: an API error (e.g. 104 FORBIDDEN_COMMAND) reads as forbidden, never a hard fail ---
   let audit: VoiceAuditSection;
   if (!cfg) {
     audit = { status: 'unconfigured', entries: [] };
@@ -522,7 +536,7 @@ export async function getVoicePlatformView(nowMs: number = Date.now()): Promise<
     }
   }
 
-  // --- allowlist (A2) — public endpoint, independent of cfg ---
+  // --- allowlist — public endpoint, independent of cfg ---
   let allowlist: VoiceAllowlistSection;
   try {
     allowlist = { status: 'ok', ips: extractIpStrings(await getMediaResources({ with_jsservers: true })) };
@@ -530,40 +544,13 @@ export async function getVoicePlatformView(nowMs: number = Date.now()): Promise<
     allowlist = { status: 'unavailable', ips: [] };
   }
 
-  // --- wiring status (B5) — never returns the token/hash, only its presence ---
-  let wiring: VoiceWiringSection = {
-    state: 'unwired',
-    tokenSet: false,
-    wiredAt: null,
-    lastCallbackAt: null,
-  };
-  try {
-    const { data } = await admin
-      .from('app_settings')
-      .select(
-        'voximplant_account_callback_state, voximplant_account_callback_token_hash, voximplant_account_callback_wired_at, voximplant_balance_callback_at',
-      )
-      .eq('id', true)
-      .maybeSingle();
-    const row = (data ?? {}) as Record<string, unknown>;
-    wiring = {
-      state: typeof row.voximplant_account_callback_state === 'string'
-        ? row.voximplant_account_callback_state
-        : 'unwired',
-      tokenSet: typeof row.voximplant_account_callback_token_hash === 'string'
-        && (row.voximplant_account_callback_token_hash as string).length > 0,
-      wiredAt: (row.voximplant_account_callback_wired_at as string | null) ?? null,
-      lastCallbackAt: (row.voximplant_balance_callback_at as string | null) ?? null,
-    };
-  } catch {
-    /* keep the safe default */
-  }
+  const wiring = await getVoximplantWiringTile();
 
   return { balance, callLists, audit, allowlist, wiring };
 }
 
-// Admin recordings list (/admin/recordings). Extracted from the page so it lives
-// behind a tested, service-role seam like every other admin call_attempts read —
+// Admin recordings list (/admin/recordings). It lives behind a tested,
+// service-role seam like every other admin call_attempts read —
 // this is the one surface that intentionally exposes recording_url (guest voice),
 // gated on the most restrictive permission (view_recordings, owner-only). The
 // column list is fixed and explicit so a future `select('*')` can never leak
