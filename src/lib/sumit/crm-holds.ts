@@ -3,16 +3,16 @@ import 'server-only';
 import { SUMIT_HOLDS_FOLDER_ID } from './hold-status';
 
 // Read-only SUMIT CRM access to the "תפיסות מסגרת" (frame holds) folder.
-// SUMIT exposes no API to release a hold or to be notified when one is
-// released — release only ever happens manually in their dashboard. This is
-// the read side that lets our own reconciler (src/lib/data/
-// sumit-hold-reconcile.ts) discover a manual release after the fact.
+// SUMIT exposes no API to release a hold — release only ever happens manually
+// in their dashboard. This is the read side that lets our own reconciler
+// (src/lib/data/sumit-hold-reconcile.ts) discover a manual release after the
+// fact.
 //
 // Endpoint + shape verified live 2026-08-30 (scripts/sumit-crm-list-holds.ts):
 // crm/data/listentities on folder 1076735289, ordered by Billing_Date desc.
-// Billing_Status was confirmed empirically, not just from an old comment: a
-// hold this session manually released in the dashboard came back as 3 with a
-// Billing_Date matching that campaign's authorized_at to the second.
+// Billing_Status was confirmed empirically: a hold manually released in the
+// dashboard came back as 3 with a Billing_Date matching that campaign's
+// authorized_at to the second.
 const SUMIT_CRM_LIST_URL = 'https://api.sumit.co.il/crm/data/listentities/';
 const HOLDS_FOLDER_ID = String(SUMIT_HOLDS_FOLDER_ID);
 

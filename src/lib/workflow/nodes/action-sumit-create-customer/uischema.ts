@@ -71,9 +71,9 @@ export const sumitCreateCustomerUiSchema: UISchema = {
         },
       ],
     },
-    // status and errorPolicy stay FLAT: accordion-classification.test.ts
-    // refuses to let a node-level switch be folded away, and `status` is
-    // what decides whether the step runs at all.
+    // `status` stays FLAT: accordion-classification.test.ts refuses to let a
+    // node-level switch be folded away, and `status` is what decides whether
+    // the step runs at all. `errorPolicy` stays flat beside it.
     statusControl(sumitCreateCustomerScope('properties.status')),
     {
       type: 'Select',

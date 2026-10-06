@@ -9,14 +9,15 @@ vi.mock('server-only', () => ({}));
 import { resolveTestDb } from '@/lib/outreach/test-db-guard';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §12 FINAL — serial-flow RPC integration (§8/§11.11). Exercises the FOUR applied
-// SECURITY-INVOKER RPCs against the LIVE public schema, but with ZERO persistent
-// footprint: every logic test runs inside a transaction that is ALWAYS ROLLED
-// BACK, with `session_replication_role=replica` so FK/triggers are skipped and a
-// single synthetic outreach_state row (random UUIDs) suffices. One additional
-// case makes the literal `createAdminClient().rpc('record_step_plan')` PostgREST
-// call to prove the service_role EXECUTE grant + INVOKER end-to-end — it targets
-// a non-existent row (→ 'missing'), so it writes nothing and needs no cleanup.
+// §12 FINAL — serial-flow RPC integration (§8/§11.11). Exercises the applied
+// SECURITY-INVOKER RPCs against the public schema of a test/local DB, but with
+// ZERO persistent footprint: every logic test runs inside a transaction that is
+// ALWAYS ROLLED BACK, with `session_replication_role=replica` so FK/triggers are
+// skipped and a single synthetic outreach_state row (random UUIDs) suffices. One
+// additional case makes the literal PostgREST `rpc('record_step_plan')` call with
+// a service_role client to prove the service_role EXECUTE grant + INVOKER
+// end-to-end — it targets a non-existent row (→ 'missing'), so it writes nothing
+// and needs no cleanup.
 //
 // GATED: requires a TEST-ONLY trio (OUTREACH_TEST_DB_URL / OUTREACH_TEST_SUPABASE_URL
 // / OUTREACH_TEST_SERVICE_ROLE_KEY) via test-db-guard, which HARD-FAILS if pointed

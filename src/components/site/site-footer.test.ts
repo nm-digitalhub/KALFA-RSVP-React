@@ -14,8 +14,9 @@ import { EVENT_TYPES } from '@/lib/marketing/event-types';
 import { FOOTER_LINKS, FOOTER_PAGE_LINKS } from './site-footer';
 
 // Source-level guards for the shared marketing footer (footer review
-// 2026-08-24). Component tests run in a Node environment (vitest.config), so
-// these pin the structure through the files rather than a DOM render.
+// 2026-08-24). Component tests default to a Node environment (vitest.config;
+// a DOM test opts in per file), so these pin the structure through the files
+// rather than a DOM render.
 
 const repoRoot = join(__dirname, '..', '..', '..');
 const footerSrc = readFileSync(join(__dirname, 'site-footer.tsx'), 'utf8');

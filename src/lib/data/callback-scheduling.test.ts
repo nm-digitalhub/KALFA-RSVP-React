@@ -285,8 +285,8 @@ describe('countStrandedCallbacks', () => {
 
     expect(builder.not).toHaveBeenCalledWith('calendar_item_id', 'is', null);
     // Redesigned 2026-08-19/20 (see validation/admin.ts): 'done'/'in_progress'
-    // no longer exist on this column at all — excluding the one terminal
-    // value ('cancelled') instead of enumerating a closed list.
+    // no longer exist on this column at all — excluding only 'cancelled'
+    // instead of enumerating a closed list.
     expect(builder.not).toHaveBeenCalledWith('status', 'eq', 'cancelled');
     expect(builder.lt).toHaveBeenCalledWith(
       'scheduled_at',
@@ -495,10 +495,9 @@ describe('reconcileCallbacksWithCalendar — moved (not deleted) appointments', 
   });
 });
 
-// Redesigned 2026-08-20: closing a request used to DELETE the appointment
-// outright, erasing any trace it was ever scheduled or how it ended. It now
-// MUTES the appointment in place instead — cancels the reminder, frees the
-// slot, marks the subject/category — and never deletes it again.
+// Closing a request MUTES the appointment in place — cancels the reminder,
+// frees the slot, marks the subject/category — rather than DELETING it, which
+// would erase any trace it was ever scheduled or how it ended.
 describe('closeCallbackAppointment', () => {
   it('archives the appointment in place (never deletes) and clears the link', async () => {
     mockAdmin(
@@ -618,7 +617,7 @@ describe('rescheduleCallbackRequest', () => {
 
     await expect(rescheduleCallbackRequest('req-1', NEW_ISO)).resolves.toEqual({ ok: true });
     // Distinct from 'new': the admin list needs to tell "never touched" apart
-    // from "was scheduled, now needs a fresh time" (2026-08-19/20 redesign).
+    // from "was scheduled, now needs a fresh time".
     expect(builder.update).toHaveBeenLastCalledWith(
       expect.objectContaining({
         status: 'needs_reschedule',
@@ -664,14 +663,13 @@ describe('rescheduleCallbackRequest', () => {
   });
 });
 
-// Design settled 2026-08-20 (owner + friend's CRM-informed review, and the
-// atomicity correction that followed it): recording a call outcome archives
-// the attempt's appointment, decides whether the REQUEST itself closes or
-// re-enters scheduling, and — for the third consecutive no_answer — closes
-// the request as no_contact and sends a one-time SMS. Everything is claimed
-// in ONE update statement, guarded on calendar_item_id still matching what
-// was just read, so a duplicate submission for the SAME attempt (double
-// click, two tabs, a retried request) can never double-process.
+// Recording a call outcome archives the attempt's appointment, decides
+// whether the REQUEST itself closes or re-enters scheduling, and — for the
+// third consecutive no_answer — closes the request as no_contact and sends a
+// one-time SMS. Everything is claimed in ONE update statement, guarded on
+// calendar_item_id still matching what was just read, so a duplicate
+// submission for the SAME attempt (double click, two tabs, a retried
+// request) can never double-process.
 describe('applyCallOutcome', () => {
   function outcomeRow(overrides: Partial<Row> = {}): Row {
     return {

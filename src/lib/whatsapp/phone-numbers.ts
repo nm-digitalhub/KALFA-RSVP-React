@@ -70,8 +70,7 @@ export interface WabaCredentials {
   accessToken: string;
   /**
    * When given, every page is signed with appsecret_proof (./appsecret-proof.ts).
-   * Optional so the existing callers are byte-for-byte unchanged; the Embedded
-   * Signup flow passes it.
+   * Optional: the number sync does not pass it; the Embedded Signup flow does.
    */
   appSecret?: string;
 }
@@ -102,9 +101,8 @@ async function getPage(
 /**
  * Every page of the WABA's numbers.
  *
- * This followed `paging.next` for the first time on 2026-09-13. Before that it read
- * `body.data` from one `limit=50` request and stopped — fine while the list is
- * short, and the reason the sync could not safely act on a number's absence: on a
+ * It follows `paging.next` rather than reading `body.data` from one `limit=50`
+ * request: the sync acts on a number's absence, and over a first page alone, on a
  * WABA with 51 numbers, number 51 is indistinguishable from a deleted one.
  *
  * `paging.next` is a fully-formed URL from Meta and already carries the fields and
@@ -150,18 +148,16 @@ export async function listWabaPhoneNumbers(
 // Everything below CHANGES STATE AT META, and all of it DELEGATES to
 // @kapso/whatsapp-cloud-api through createWhatsAppManagementClient.
 //
-// A hand-rolled `postGraph` stood here first, and writing it was the mistake. The
-// package already models this exact lifecycle (`client.phoneNumbers.requestCode /
-// verifyCode / register / deregister`), converts camelCase to Meta's snake_case, and
-// raises a GraphApiError carrying `code`, `errorSubcode`, `category` and a retry hint
-// — strictly more than the two fields the local version captured.
+// Do not hand-roll a `postGraph` here. The package already models this exact
+// lifecycle (`client.phoneNumbers.requestCode / verifyCode / register / deregister`),
+// converts camelCase to Meta's snake_case, and raises a GraphApiError carrying
+// `code`, `errorSubcode`, `category` and a retry hint.
 //
-// It also settled a question guesswork could not. Meta's docs show request_code as
-// QUERY parameters (`?code_method=SMS&language=en_US`), which read as a contradiction
-// of the local JSON body; a "fix" switching those two calls to form encoding was
-// written and then reverted, because the package — maintained against this API —
-// sends a JSON body for all four. A speculative transport change dressed as a fix is
-// worse than the bug it guesses at.
+// It also settles a question guesswork cannot. Meta's docs show request_code as
+// QUERY parameters (`?code_method=SMS&language=en_US`), which reads as a contradiction
+// of a JSON body; the package — maintained against this API — sends a JSON body for
+// all four calls, so do not switch them to form encoding on the strength of the docs.
+// A speculative transport change dressed as a fix is worse than the bug it guesses at.
 //
 // ADDING A NUMBER IS STILL NOT HERE. `addWabaPhoneNumber` lives in
 // ./add-waba-phone-number.ts, typed against Meta's OpenAPI spec.

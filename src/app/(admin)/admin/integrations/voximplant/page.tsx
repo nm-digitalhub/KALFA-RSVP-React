@@ -45,9 +45,9 @@ export const metadata: Metadata = { title: 'Voximplant — אינטגרציות'
 // as null rather than false — see voximplant-status-card.tsx for why the distinction
 // is load-bearing.
 //
-// The plan (§Task 0.4, line 523) puts the same OutreachMasterSwitch at the head of both
-// provider pages. That still holds for whoever may operate it; the null branch is the
-// part the plan did not anticipate, and follows from its own §583 reasoning.
+// The plan (docs/admin-integrations-consolidation-plan-2026-09-08.md §3.3) puts the same
+// OutreachMasterSwitch at the head of both provider pages. That still holds for whoever
+// may operate it; the null branch is the part the plan did not anticipate.
 //
 // It also deviates on the status tile: the plan says getVoicePlatformView().balance/
 // wiring, but that function makes three LIVE Voximplant round-trips (call lists, audit
@@ -55,11 +55,6 @@ export const metadata: Metadata = { title: 'Voximplant — אינטגרציות'
 // uncached live call here "an unbounded-latency external dependency in a very hot render
 // path". So it uses the cached balance tile plus the wiring row directly — one DB read,
 // same data, and /admin/voice/platform still owns the full view.
-//
-// The Voximplant controls below were LIFTED out of the old /admin/channels tab into
-// their own files rather than copied, so that page and this one rendered from one
-// definition and could not drift while both existed. /admin/channels was deleted in
-// Task 0.6 Step 4b; this is now the only surface, and the files stay where they are.
 
 const sectionClass = 'space-y-3';
 

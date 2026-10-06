@@ -19,9 +19,9 @@ const CRLF = '\r\n';
 export const TEMPLATE_DOWNLOAD_FILENAME = 'תבנית-מוזמנים.csv';
 
 // One row = one invitation (a household), not one person: `כמות` is how many
-// people the invitation covers, and a family shares one phone. Several rows
-// may even share the same phone — each still gets its own personal RSVP link,
-// while billing counts the unique phone once.
+// people the invitation covers, and a family shares one phone. A phone may
+// appear only once per event (unique index guests_event_phone_key) — the
+// importer rejects a repeated phone as a row error.
 export const TEMPLATE_HEADER = ['שם מלא', 'טלפון', 'כמות', 'קבוצה'];
 export const TEMPLATE_SAMPLE_ROWS = [
   ['משפחת כהן', '0501234567', '4', 'משפחה'],

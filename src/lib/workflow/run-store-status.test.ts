@@ -3,11 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // The two "still owed a wake-up" columns on workflow_runs, and the one rule that
 // makes both of them safe: WRITTEN ON 'waiting', CLEARED ON EVERYTHING ELSE.
 //
-// ⚠️ WHY THIS NEEDED A TEST. `resume_at` has carried that rule since it was
-// added and nothing pinned it — the recovery sweep reads
+// ⚠️ WHY THIS NEEDS A TEST. The recovery sweep reads
 // `resume_at where status = 'waiting'`, so a finished run that kept a stale
 // deadline would be re-delivered for ever by a sweep that believed it was still
-// parked. `resume_correlation_id` (0ב-1) has exactly the same failure shape and
+// parked. `resume_correlation_id` has exactly the same failure shape and
 // a worse consequence: a run that parked AGAIN for an unrelated reason while
 // holding an old correlation could be woken by an event that has nothing to do
 // with its current wait.

@@ -89,9 +89,8 @@ async function render({ manageSettings = true }: { manageSettings?: boolean } = 
     // in for "a value that must not reach the tree by any route".
     serviceAccountConfigured: true,
     // 1520915 = the `OutCallAgent` rule (the RSVPAgent AI bridge), which is what
-    // app_settings actually holds. The fixture used to say 1494311 — the DTMF
-    // `OutCall` rule CLAUDE.md forbids the bridge from using — which made the
-    // wrong id look like the canonical example.
+    // app_settings actually holds. Never use 1494311 here — it is the DTMF
+    // `OutCall` rule CLAUDE.md forbids the bridge from using.
     voximplant_rule_id: '1520915',
     voximplant_caller_id: '+97237219347',
     voximplant_callback_secret: 'CALLBACK-SECRET',

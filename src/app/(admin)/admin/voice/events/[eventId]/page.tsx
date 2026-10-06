@@ -47,7 +47,7 @@ import { StatusDonut } from '../../_donut';
 // Per-request memoization of the event fetch, so generateMetadata and the page
 // body share ONE query. Supabase reads are not `fetch`, so Next's automatic
 // request memoization does not apply — the generate-metadata docs prescribe
-// React `cache` for exactly this case. (requireAdmin inside is already cached.)
+// React `cache` for exactly this case. (The permission check inside is already cached.)
 // 'view_events', NOT the campaign board's getEventForAdminView: that reader
 // demands manage_billing, so this page — gated on manage_voice — redirected
 // any viewer holding voice but not billing straight off a page they are
@@ -118,13 +118,10 @@ export default async function EventVoicePage({
   ]);
 
   // Aggregate the page's rows for the stat tiles (full-history counts would need
-  // a separate query; the visible page's tallies are shown as "בעמוד זה").
+  // a separate query; the visible page's tallies are labeled "(בעמוד)").
   //
   // TWO tile groups, deliberately: telephony outcomes (did the call connect)
-  // and RSVP answers (what the guest said). They used to share one row, and an
-  // answer was counted ONLY off the DTMF digit — so a completed agent call
-  // that saved a real RSVP via save_rsvp showed "אישרו 0" right next to
-  // "הושלמו 2" with nothing explaining the gap. callRsvpAnswer merges both
+  // and RSVP answers (what the guest said). callRsvpAnswer merges both
   // capture paths, and "הושלמו ללא רישום" makes the remaining gap EXPLICIT:
   // a completed conversation whose answer never landed (the exact class the
   // 2026-09-06 lost-RSVP call belonged to) is now a number, not a mystery.

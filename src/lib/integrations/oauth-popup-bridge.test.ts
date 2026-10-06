@@ -89,10 +89,11 @@ describe('the bridge document', () => {
   });
 
   it('⚠️ escapes U+2028 / U+2029, which terminate a line in JavaScript', () => {
-    // They are legal inside a JSON string but NOT inside a JavaScript string
-    // literal, so an unescaped one turns the rest of the statement into a
-    // syntax error and the popup reports nothing at all. This module broke on
-    // exactly that character while it was being written.
+    // They are legal inside a JSON string, but a JavaScript parser treats them
+    // as line terminators (a string literal accepts them only from ES2019 on, a
+    // regex literal never does), so an unescaped one can turn the rest of the
+    // statement into a syntax error and the popup reports nothing at all. This
+    // module broke on exactly that character while it was being written.
     const html = oauthPopupBridgeHtml({ ok: false, reason: 'a b c' }, origin);
     expect(html).not.toContain(' ');
     expect(html).not.toContain(' ');

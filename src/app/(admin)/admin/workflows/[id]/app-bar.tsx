@@ -1,6 +1,7 @@
 'use client';
 
-// The two controls the SDK's own app bar does not have, and the two it hides.
+// The four controls the SDK's own app bar does not have, and the vendor items it
+// hides or replaces (the language switcher, the stock Export).
 //
 // `<WorkflowBuilder.TopBar />` ships: the logo, the Save button (with its save
 // status and, crucially, the SDK's auto-save), the workflow name with a kebab

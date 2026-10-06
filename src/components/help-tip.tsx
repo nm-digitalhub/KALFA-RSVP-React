@@ -3,7 +3,7 @@
 // Shared (?) help icon that opens a detailed explanation bubble on CLICK / TAP /
 // keyboard (Enter/Space) — works on desktop, touch (mobile/tablet) AND keyboard,
 // unlike a hover-only tooltip. Uses Base UI Popover; RTL-correct via the
-// admin-shell DirectionProvider. `type="button"` is required because the icon
+// root layout's DirectionProvider. `type="button"` is required because the icon
 // lives inside <form> elements — without it a click would submit the form.
 
 import { Popover } from '@base-ui/react/popover';

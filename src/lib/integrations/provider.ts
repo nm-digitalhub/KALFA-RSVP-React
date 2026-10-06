@@ -4,12 +4,13 @@ import type { ServerMetadata } from 'openid-client';
 
 // The contract a provider adapter implements, and the registry it lands in.
 //
-// ⚠️ NO PROVIDER IS IMPLEMENTED IN THIS DIRECTORY, AND THAT IS THE TEST.
+// ⚠️ NO PROVIDER IS IMPLEMENTED IN THIS LAYER — ADAPTERS LIVE UNDER
+// `providers/` — AND THAT IS THE TEST.
 // The credential store, the OAuth routes, the accessor and the refresh cycle
 // are finished when a second provider can join by adding a `ProviderDefinition`
-// and nothing else. If adding one requires editing a table, an RPC, the
-// callback or `credentials.ts`, this layer is not generic yet and the fix
-// belongs there rather than in a special case here.
+// and nothing else. If adding one requires editing a table, an RPC or the
+// callback, this layer is not generic yet and the fix belongs there rather
+// than in a special case here.
 //
 // That is also why `provider` is `text` in the database and not an enum: a new
 // provider must never be a migration. `ProviderId` is a plain string for the
@@ -28,8 +29,8 @@ export type ProviderId = string;
  *   server metadata     which endpoints the provider publishes (e.g. revocation)
  *   presentation        how the credential is attached to an API request
  *
- * `'oauth2'` was the first draft and carried all four. It broke on the first
- * honest example: an API key presented as `Authorization: Bearer <key>` has the
+ * A single `'oauth2'` kind carrying all four breaks on the first honest
+ * example: an API key presented as `Authorization: Bearer <key>` has the
  * same PRESENTATION as an OAuth2 token and a completely different ACQUISITION,
  * while the same key at another provider arrives as `X-Api-Key` — same
  * acquisition, different presentation. One column carrying both axes needs
@@ -54,8 +55,8 @@ export type CredentialKind =
  * ⚠️ DECLARATIVE, NOT A CALLBACK, AND THAT IS A SECURITY PROPERTY. An adapter
  * that attached the credential itself would have to RECEIVE it, making every
  * adapter a place secret material can be logged or leaked. Declared this way,
- * only the accessor ever holds it — the same reason `providerFetch` returns a
- * `Response` and never a token.
+ * only the accessor ever holds it — the same reason
+ * `createAuthenticatedIntegrationRequest` returns a `Response` and never a token.
  */
 export type CredentialPresentation =
   | { type: 'bearer' }
@@ -226,9 +227,10 @@ type ProviderDefinitionBase = {
   endpoint(capability: Capability, input: unknown): ProviderRequest;
 
   /**
-   * Optional. Called once after a connection is established, with the provider's
-   * own account response, so a connection can be labelled with something an
-   * operator recognises instead of a uuid.
+   * Optional. Meant to label a connection from the provider's own account
+   * response, so it reads as something an operator recognises instead of a uuid.
+   * Nothing calls it today: the callback labels a connection from the ID token's
+   * verified claims (`account-identity.ts`) and falls back to `displayName`.
    */
   describeAccount?(response: Response): Promise<{ label: string; metadata?: unknown }>;
 };

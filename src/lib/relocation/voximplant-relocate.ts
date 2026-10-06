@@ -7,7 +7,7 @@
  * (VoxEngine.getSecretValue — the same mechanism KALFA_CONSOLE_SECRET already
  * uses), so a domain move is a secret rotation, not a redeploy:
  *
- *   F6  ensureAppOriginSecret  — AddSecret / SetSecretInfo (live-doc verified
+ *   F6  ensureAppSecret        — AddSecret / SetSecretInfo (live-doc verified
  *       2026-08-24: Secrets = AddSecret, GetSecrets, GetSecretValue,
  *       SetSecretInfo{application_id, secret_id, secret_value}, DelSecret)
  *   F6b uploadConsoleScenarios — ONLY when the DEPLOYED text still carries the
@@ -18,7 +18,7 @@
  *   F5  rearmAccountCallback   — GetAccountInfo echoes the current
  *       callback_url (which embeds the raw token); re-registering the same
  *       token on the new origin via the restricted SetAccountInfo keeps the
- *       stored hash valid, so no DB write is needed. Previous URL/salt are
+ *       stored hash valid, so no DB write is needed. The previous URL is
  *       returned as the rollback inverse.
  *
  * The voximplant CLI's mutations guard (cli-guard.test.ts) pins

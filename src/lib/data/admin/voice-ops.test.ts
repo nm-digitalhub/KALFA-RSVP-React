@@ -38,8 +38,8 @@ describe('aggregateEventActivity (JS-first grouping)', () => {
       { event_id: 'e1', status: 'no_answer', rsvp_digit: null, rsvp_outcome: null, created_at: '2026-07-11T10:00:00Z' },
       { event_id: 'e2', status: 'failed', rsvp_digit: null, rsvp_outcome: null, created_at: '2026-07-19T09:00:00Z' },
       { event_id: 'e1', status: 'completed', rsvp_digit: '2', rsvp_outcome: null, created_at: '2026-07-09T10:00:00Z' },
-      // The agent bridge writes rsvp_outcome and NO digit — the exact class of
-      // production call the counters were blind to until 2026-09-07.
+      // The agent bridge writes rsvp_outcome and NO digit — a digit-only count
+      // would miss this class of production call.
       { event_id: 'e1', status: 'completed', rsvp_digit: null, rsvp_outcome: 'attending', created_at: '2026-07-12T10:00:00Z' },
       { event_id: 'e1', status: 'completed', rsvp_digit: null, rsvp_outcome: 'maybe', created_at: '2026-07-12T11:00:00Z' },
     ]);
@@ -51,8 +51,8 @@ describe('aggregateEventActivity (JS-first grouping)', () => {
       completed: 4,
       noAnswer: 1,
       failed: 0,
-      // digit '1' + agent 'attending' → 2 confirmations; digit '2' is DECLINED
-      // (the old rsvpFromCall lumped it under "אישרו"); agent 'maybe' separate.
+      // digit '1' + agent 'attending' → 2 confirmations; digit '2' is DECLINED,
+      // not a confirmation; agent 'maybe' separate.
       confirmedFromCall: 2,
       declinedFromCall: 1,
       maybeFromCall: 1,
@@ -182,7 +182,7 @@ describe('listCallRecordings — gate-before-query + service_role + column guard
     const rows = await listCallRecordings();
 
     // Service-role client used (not the cookie client) — locks the flip against a
-    // silent revert once the call_attempts_admin_read RLS policy is dropped.
+    // silent revert now that the call_attempts_admin_read RLS policy is dropped.
     expect(createAdminClient).toHaveBeenCalled();
     expect(fromSpy).toHaveBeenCalledWith('call_attempts');
     // recording_url is intentionally selected (this is the surface that exposes it)…

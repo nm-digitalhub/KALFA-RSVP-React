@@ -1,11 +1,11 @@
 import 'server-only';
 
 // POC/diagnostic charge against the SUMIT REST API. Unlike the production
-// chargeSumit (which returns only DocumentID and maps outcomes), this returns
-// the FULL raw response so we can verify, against live behavior, what SUMIT
-// actually returns for J5 (AutoCapture:false) — Payment.AuthNumber, a saved
-// card token, capture requirements, validity window — before building the
-// production route-B / J5 flow. Admin-only. Never log the raw response: it can
+// chargeSumit (which projects a fixed set of fields and maps outcomes to typed
+// errors), this returns the FULL raw response so we can verify, against live
+// behavior, what SUMIT actually returns for J5 (AutoCapture:false) —
+// Payment.AuthNumber, a saved card token, capture requirements, validity
+// window. Admin-only. Never log the raw response: it can
 // contain AuthNumber / last-4 / saved token.
 
 const SUMIT_CHARGE_URL = 'https://api.sumit.co.il/billing/payments/charge/';
@@ -47,8 +47,8 @@ export interface SumitRawChargeParams {
   externalId: string; // Customer.ExternalIdentifier (reconciliation anchor)
   // Accounting_Typed_Customer.ID ("SUMIT identifier... leave empty to create a
   // new entity"). Set this to charge under an EXISTING SUMIT customer record
-  // instead of creating a new one — omitting it (the previous, only, behavior)
-  // silently creates a fresh customer even when reusing the same card token.
+  // instead of creating a new one — omitting it silently creates a fresh
+  // customer even when reusing the same card token.
   customerId?: number;
   /**
    * OPTIONAL itemised Items rows, replacing the single POC line. This is how
@@ -127,8 +127,7 @@ export async function chargeRaw(p: SumitRawChargeParams): Promise<SumitRawResult
       CreditCard_ExpirationYear: p.savedCardExpYear,
       CreditCard_CitizenID: p.savedCardCitizenId,
       // Omitted entirely when absent — an explicit null is a DIFFERENT body to
-      // the one production sends, which is the exact trap the VATRate field
-      // fell into here.
+      // the one production sends.
       ...(p.savedCardCvv ? { CreditCard_CVV: p.savedCardCvv } : {}),
       Type: 1,
     };
@@ -137,11 +136,9 @@ export async function chargeRaw(p: SumitRawChargeParams): Promise<SumitRawResult
   }
   // No VATIncluded, as in production. VATRate is sent ONLY when the operator
   // typed one. The business is an עוסק פטור: production (authorize.ts / capture.ts) sends no VAT fields at all and
-  // lets the company default balance the document. This module used to send an
-  // explicit rate on the new-card path (defaulted to 18 in the form) and an
-  // explicit `null` on the saved-token path — neither matched what production
-  // puts on the wire, so a POC result did not predict production behaviour. An
-  // absent field is now absent, exactly as in production.
+  // lets the company default balance the document. An absent field stays
+  // absent, exactly as in production — otherwise a POC result does not predict
+  // production behaviour.
   if (p.vatRate && p.vatRate.trim() !== '') {
     const rate = parseFloat(p.vatRate);
     if (Number.isFinite(rate)) body.VATRate = rate;

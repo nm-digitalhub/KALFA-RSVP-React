@@ -29,18 +29,18 @@ import type { GuestField, HttpHeader, HttpMethod, NotifyLevel } from '../catalog
  *   exist yet.
  *
  * A `running` row means one of two things, and THE ROW ALONE CANNOT TELL THEM
- * APART: another attempt is working on it, or an attempt died holding it. Two
- * mechanisms separate them, and the implementation needs both:
+ * APART: another attempt is working on it, or an attempt died holding it. A
+ * staleness lease on `started_at` is what separates them, so a genuinely
+ * abandoned row is reclaimable rather than poisoning the run forever.
  *
- *   1. `singletonKey: runId` on the pg-boss send, so the same run is never
- *      delivered concurrently. (Same idiom as QUEUES.logExport.) With it, a
- *      `running` row found by a RETRY is necessarily abandoned, not contended.
- *   2. A staleness lease on `started_at`, so a genuinely abandoned row is
- *      reclaimable rather than poisoning the run forever.
+ * `singletonKey: runId` on the pg-boss send does NOT separate them: it
+ * constrains nothing on this (`standard`) queue, so two deliveries of one run
+ * can overlap and a `running` row found by a retry may be live. See
+ * `enqueueWorkflowRun`.
  *
  * Without the lease, ANY crash makes a run permanently unrecoverable: the retry
  * meets the dead attempt's own `running` row on the very first node, reports
- * `in_flight`, and fails. Safe, but never durable.
+ * `in_flight`, and the run stalls. Safe, but never durable.
  *
  * THE COST OF THE LEASE, stated plainly. Reclaiming reopens exactly one window:
  * a node whose side effect completed but whose `completeStep` never landed will
@@ -48,8 +48,8 @@ import type { GuestField, HttpHeader, HttpMethod, NotifyLevel } from '../catalog
  * because the operation is naturally idempotent (`submit_rsvp` setting the same
  * status again is the same row) or because it carries its own deterministic
  * dedup key (the `detId` / `deferId` idiom in src/lib/outreach). `send_whatsapp`
- * will need the second kind. This is a rule about which actions may exist, not
- * an implementation detail of this file.
+ * needs the second kind and does not carry one yet. This is a rule about which
+ * actions may exist, not an implementation detail of this file.
  */
 export type StepClaim =
   | {
@@ -77,7 +77,7 @@ export interface StepLedgerPort {
    *
    * A `running` row older than `STEP_LEASE_MS` is RECLAIMED (returns `claimed`,
    * with `started_at` reset). Younger than that, it is `in_flight`. See the
-   * StepClaim comment for why both halves are required.
+   * StepClaim comment for why the lease is required.
    */
   claimStep(args: {
     runId: string;
@@ -133,13 +133,10 @@ export interface StepLedgerPort {
      * The external event the park is waiting for, when the node named one.
      *
      * The STORE does not persist this — the step row is parked by deadline and
-     * that is all it needs. It travels here because this call is the only place
-     * that sees a park with the ORIGINAL error object still in hand: the vendored
-     * runner flattens a throw to `{message, code, attempt}` before emitting
-     * `node_failed`, so anything else on the error is gone by the time the event
-     * is observed. `run-workflow` wraps this method to capture the park, which
-     * is what lets the run row record the correlation without parsing it back
-     * out of an error message.
+     * that is all it needs. The run row's correlation does not come from here:
+     * the vendored runner flattens a throw to `{message, code, attempt}` before
+     * emitting `node_failed`, so the activity runner hands the whole park to
+     * `run-workflow` through `onWait`, while the original error is still in hand.
      */
     correlationId?: string;
   }): Promise<void>;
@@ -149,8 +146,9 @@ export interface StepLedgerPort {
 // Run status
 // ---------------------------------------------------------------------------
 
-// Mirrors the workflow_runs.status check constraint, which in turn mirrors
-// ExecutionStatus in the vendored runner. Three lists, one vocabulary.
+// Mirrors the workflow_runs.status check constraint, which in turn extends
+// ExecutionStatus in the vendored runner with 'waiting'. Three lists, one
+// vocabulary.
 export type RunStatus =
   | 'pending'
   | 'running'
@@ -189,9 +187,8 @@ export const STEP_LEASE_MS = 15 * 60 * 1000;
  * `execution_failed`, no terminal status — the run is left exactly as it is and
  * the job is retried.
  *
- * Exported so the raiser and the interceptor share one string. It used to be a
- * literal in `activity-runner`, read by nobody, and a rename would have silently
- * turned every contention back into a failed run.
+ * Exported so the raiser and the interceptor share one string: a rename on one
+ * side would silently turn every contention back into a failed run.
  */
 export const STEP_IN_FLIGHT_CODE = 'step_in_flight';
 
@@ -364,11 +361,6 @@ export interface GuestActionsPort {
   >;
 
   /**
-   * Start the existing production RSVP voice agent for the contact that owns
-   * this workflow run. Optional only so recording/test ports that predate the
-   * node fail closed rather than gaining any network capability implicitly.
-   */
-  /**
    * Dial this run's contact with whichever configured voice agent the step
    * names.
    *
@@ -446,6 +438,11 @@ export interface GuestActionsPort {
     callDurationSec: number | null;
   } | null>;
 
+  /**
+   * Start the existing production RSVP voice agent for the contact that owns
+   * this workflow run. Optional only so recording/test ports that predate the
+   * node fail closed rather than gaining any network capability implicitly.
+   */
   startRsvpAiCallback?(input: {
     runId: string;
     nodeId: string;
@@ -518,23 +515,25 @@ export interface GuestActionsPort {
   }): Promise<{ ok: boolean; created: boolean; reason?: string }>;
 
   /**
-   * Reply to the guest who started this run, over WhatsApp.
+   * Reply to this run's guest, over WhatsApp.
    *
    * A FREE-TEXT session message, and that is only legal inside the 24-hour
-   * customer-service window a guest opens by writing to us. Every workflow that
-   * can reach this handler was started BY an inbound message, so the window is
-   * open by construction — the guest wrote a moment ago. `sendWhatsAppText`'s
+   * customer-service window a guest opens by writing to us. `sendWhatsAppText`'s
    * own comment states the rule: "allowed ONLY inside the 24h customer-service
    * window a guest opened by replying … No template, no marketing cap."
    *
-   * That also settles the compliance question: this is a session reply to a
-   * conversation the guest started, not a marketing send, so the 131049
-   * per-user marketing cap does not apply and no separate consent is required
-   * beyond the message they just sent us.
+   * For a workflow started by the guest's own inbound message the window is open
+   * by construction — the guest wrote a moment ago. That also settles the
+   * compliance question: this is a session reply to a conversation the guest
+   * started, not a marketing send, so the 131049 per-user marketing cap does not
+   * apply and no separate consent is required beyond the message they just sent
+   * us.
    *
-   * The moment a scheduled trigger or a delay node exists, that reasoning stops
-   * holding — a send hours later can fall outside the window and Meta answers
-   * 131047. The outcome below is what makes that visible rather than silent.
+   * That reasoning is tied to the trigger, not to this method. A workflow
+   * started by a schedule, or one that has passed a `logic.wait`, can send hours
+   * later, outside the window, and Meta answers 131047. The outcome below is
+   * what makes that visible rather than silent; `sendWhatsAppTemplate` is the
+   * method for those flows.
    */
   sendWhatsAppReply(
     contactId: string,
@@ -635,7 +634,7 @@ export interface OutboundWebhookPort {
  * The execution event log — append-only, ordered, one row per emitted event.
  *
  * The vendored `runGraph` already emits exactly the events a live canvas replay
- * needs; until now we discarded them. This port is where they land.
+ * needs. This port is where they land.
  *
  * NOT the same thing as the step ledger, and the difference matters: the ledger
  * is a SET (one row per node, unique, claimed before the side effect) and this
@@ -728,35 +727,13 @@ export interface AccountingPort {
   }): Promise<{ customerId: number; customerHistoryUrl: string | null }>;
 }
 
-/**
- * One headless Claude run, for `action.ai_agent`.
- *
- * ⚠️ THIS IS NOT A NEW AI PROVIDER, AND DELIBERATELY SO. The repo already runs
- * Claude headless for the fleet — `.claude/fleet/bin/run-role.sh` shells
- * `claude -p … --settings <tier file> --output-format json`, authenticating with
- * `CLAUDE_CODE_OAUTH_TOKEN` rather than an API key. MEASURED 2026-09-23: there
- * is no AI provider key anywhere in the environment, and `ai` / `@ai-sdk/openai`
- * are installed with ZERO imports in the entire codebase. Adding a second way to
- * reach a model would mean a second credential, a second permission model and a
- * second place to audit.
- *
- * ⚠️ WHICH TOOLS THE MODEL MAY USE IS A FILE, NOT AN ARGUMENT. The settings file
- * this port passes is the gate: `dontAsk` makes it fail-closed, `deny` always
- * beats `allow`, and a `PreToolUse` hook blocks before permission evaluation so
- * an allow rule cannot override it. That is three walls the fleet already
- * relies on, reused rather than reinvented.
- *
- * The port takes a PROMPT and returns TEXT. It does not know what a workflow is,
- * and the handler does not know how a model is reached — the same split every
- * other port here keeps.
- */
 export interface AiAgentPort {
   run(input: {
     /** The system prompt, already `{{…}}`-resolved by the engine. */
     prompt: string;
     /** Model alias as the CLI spells it: `haiku`, `sonnet`. */
     model: string;
-    /** Tool names this node declared. The settings file is what enforces them. */
+    /** Tool names this node declared. Not enforced by anything yet — the live port drops them. */
     tools: readonly string[];
     /** Hard ceiling on agent turns, so a loop cannot run the clock out. */
     maxTurns: number;
@@ -786,9 +763,7 @@ export interface AiAgentPort {
  * pretending. The node collects tool NAMES from the diagram; the live port drops
  * them, because the thing that would make them mean something — an MCP server
  * exposing KALFA capabilities, plus a settings file permitting exactly those —
- * does not exist yet. An earlier version of this port demanded such a file by an
- * env var that was never created anywhere, which made the node armable and
- * unrunnable. What the node does today is ask a model and return text.
+ * does not exist yet. What the node does today is ask a model and return text.
  *
  * ⚠️ AND THAT IS WHY `action.ai_agent` IS ABSENT FROM `SECRET_BEARING_NODE_TYPES`.
  * A `{{secrets.…}}` reference only means something in a node whose PORT performs
@@ -806,7 +781,7 @@ export interface AiAgentPort {
     prompt: string;
     /** Model alias as the CLI spells it: `haiku`, `sonnet`. */
     model: string;
-    /** Tool names the node declared. The settings file is what enforces them. */
+    /** Tool names the node declared. Not enforced by anything yet — the live port drops them. */
     tools: readonly string[];
     /** Hard ceiling on agent turns, so a loop cannot run the clock out. */
     maxTurns: number;

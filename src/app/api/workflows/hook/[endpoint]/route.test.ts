@@ -75,10 +75,9 @@ describe('a browser opening the webhook address', () => {
     // thing POST avoids by answering the same 404 to a wrong secret and a
     // disarmed workflow.
     //
-    // The old form of this test asserted `GET.length === 0`: the handler took no
-    // arguments, so it could not branch. It takes them now, because a GET may be
-    // a real webhook verb — so the property is asserted DIRECTLY instead, across
-    // two different paths.
+    // The handler takes arguments, because a GET may be a real webhook verb, so
+    // it could branch on them — the property is therefore asserted DIRECTLY,
+    // across two different paths.
     const visit = (endpoint: string) =>
       GET(
         { headers: new Headers(), url: `https://x.test/api/workflows/hook/${endpoint}` } as never,
@@ -134,9 +133,9 @@ describe('⚠️ GET is two things, split on the secret header', () => {
   });
 
   it('a request WITH a secret header is resolved instead of hinted', async () => {
-    // It will not find anything here — no armed workflow is mocked — but it must
-    // take the resolution path, whose answer is a JSON 404 rather than the
-    // 405 text. The distinction IS the feature.
+    // The stubbed request has no `text()`, so the handler stops at its JSON 400
+    // (`unreadable_body`) before any lookup — but it must take the handling path,
+    // whose answer is JSON, rather than the 405 text. The distinction IS the feature.
     const response = await GET(req({ 'x-kalfa-webhook-secret': 'whatever' }), ctx);
     expect(response.status).not.toBe(405);
   });

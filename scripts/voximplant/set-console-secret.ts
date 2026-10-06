@@ -1,12 +1,11 @@
 // Provision the KALFA_CONSOLE_SECRET application Secret on kalfa-rsvp.
 //
-// The console scenarios (ConsoleDial/ConsoleInbound) read it via
-// VoxEngine.getSecretValue and send it IN THE POST BODY to the three
+// The console scenarios (ConsoleDial/ConsoleInbound/ConsoleCallMeNow) read it
+// via VoxEngine.getSecretValue and send it IN THE POST BODY to the
 // /api/voximplant/console/* gate endpoints, which compare it against
 // process.env.KALFA_CONSOLE_SECRET — so the SAME value must live in BOTH
 // places. Flow: the owner first appends the value to .env.local, then runs
-// this to push it platform-side. Searched first (2026-08-12): consumers exist,
-// no provisioner did — this is it, built on copy-el-secret's exact blocks.
+// this to push it platform-side.
 //
 // Idempotent: if the secret name already exists on the app, reports and exits
 // without writing (AddSecret has no upsert; rotation = delete in the panel,

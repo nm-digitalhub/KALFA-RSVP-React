@@ -4,9 +4,9 @@
  * session (Bearer). The password never reaches the browser — the server
  * signs the hash; this only relays the caller's session token to it.
  *
- * BROWSER ONLY (uses the browser Supabase client). Shared by the stage-2 dev
- * login page (admin/voice/console/_console-client.tsx) and the stage-3
- * softphone panel — extracted here so the two never drift on this contract.
+ * BROWSER ONLY (uses the browser Supabase client). Shared by the dev login
+ * page (admin/voice/console/_console-client.tsx) and the softphone panel —
+ * extracted here so the two never drift on this contract.
  */
 
 import { createClient } from '@/lib/supabase/client';

@@ -23,8 +23,8 @@ import type { SoftphoneGateInfo } from '@/components/console/softphone-panel';
 // Admin area layout. requirePlatformStaff() enforces authentication AND
 // platform-staff membership server-side, redirecting anyone else to /app.
 //
-// ⚠️ THIS IS NOT THE AUTHORIZATION BOUNDARY, and it used to claim it was.
-// Next's own guidance is explicit: "A layout does not control whether the rest
+// ⚠️ THIS IS NOT THE AUTHORIZATION BOUNDARY.
+// Next's own guidance is explicit: "A layout also does not control whether the rest
 // of the route renders… Instead, you should do the checks close to your data
 // source" (node_modules/next/dist/docs/01-app/02-guides/authentication.md,
 // "Layouts and auth checks"). Route segments below still render, and still emit
@@ -33,10 +33,9 @@ import type { SoftphoneGateInfo } from '@/components/console/softphone-panel';
 // src/lib/data/admin/*, every module of which is pinned to a permission by
 // admin-data-layer-coverage.test.ts. Treat this as defense in depth.
 //
-// It reads platform_staff, not user_roles. Before 2026-09-10 it asked the other
-// axis, which meant a `billing_clerk` added through /admin/roles was bounced
-// from the panel they had just been given a role in. See the note in
-// src/lib/auth/dal.ts.
+// It reads platform_staff, not user_roles: asking the other axis would bounce a
+// `billing_clerk` added through /admin/roles from the panel they had just been
+// given a role in. See the note in src/lib/auth/dal.ts.
 export default async function AdminLayout({
   children,
 }: {
@@ -80,7 +79,7 @@ export default async function AdminLayout({
     hasExchangeConnection = false;
   }
 
-  // Browser call-center softphone gate (call-center stage 3): is this admin
+  // Browser call-center softphone gate: is this admin
   // an enrolled console agent (console_me self-scopes to auth.uid()), AND is
   // the feature flag on. Read here — once, at the shell level — so the panel
   // mounts once and survives navigation instead of being re-derived per page.
@@ -105,26 +104,20 @@ export default async function AdminLayout({
       queueMemberships,
       consultConferenceEnabled,
       wakeEnabled,
-      // Own-row read of the "on shift" intent (wake-and-answer research,
-      // 12.8) — same cookie-session client + RLS (console_agent_shift_select
-      // via is_console_agent()) as console_me above, not a service-role
-      // fetch: this is self-scoped, an agent's own toggle. Migration
-      // 20260812200243_callcenter_wake_shift_and_flag.sql was pushed and
-      // types.ts regenerated — verified live against the linked project
-      // (console audit 12.8) — so the former `as unknown as` cast is gone;
-      // see console-calls.ts's consoleWakeEnabled for the identical fix.
+      // Own-row read of the "on shift" intent — same cookie-session client + RLS
+      // (console_agent_shift_select via is_console_agent()) as console_me above,
+      // not a service-role fetch: this is self-scoped, an agent's own toggle.
       { data: shiftRow },
     ] = await Promise.all([
       supabase.from('console_me').select('vox_username, display_name').maybeSingle(),
       consoleSoftphoneEnabled(),
       consoleHandoffEnabled(),
-      // Read-only, next to presence (plan §10 extension point — department
-      // queues). Server-side, service-role read (see console-queues.ts's
-      // getAgentQueueMemberships doc) — not a browser RLS fetch. Fails soft
-      // like everything else in this block: a lookup error just shows no
-      // memberships, never a broken admin area.
+      // Read-only, next to presence (department queues). Server-side, service-role
+      // read (see console-queues.ts's getAgentQueueMemberships doc) — not a browser
+      // RLS fetch. Fails soft like everything else in this block: a lookup error just
+      // shows no memberships, never a broken admin area.
       getAgentQueueMemberships(user.id).catch(() => []),
-      // Stage 2 (consult/conference) — same fail-soft, gate-at-the-shell
+      // Consult/conference — same fail-soft, gate-at-the-shell
       // discipline as handoffEnabled above.
       consoleConsultConferenceEnabled(),
       consoleWakeEnabled(),

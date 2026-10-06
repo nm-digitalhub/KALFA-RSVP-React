@@ -5,9 +5,9 @@ import { describe, expect, it } from 'vitest';
 
 import { EVENT_TYPES, getEventType, type EventTypeSlug } from './event-types';
 
-// Source-level guards for the public marketing pages added 2026-09-06. Vitest
-// runs in a Node environment (vitest.config), so these pin structure through
-// the files rather than a DOM render — same approach as site-footer.test.ts.
+// Source-level guards for the public marketing pages. Vitest runs in a Node
+// environment (vitest.config), so these pin structure through the files rather
+// than a DOM render — same approach as site-footer.test.ts.
 
 const repoRoot = join(__dirname, '..', '..', '..');
 const siteDir = join(repoRoot, 'src', 'app', '(public)', '(site)');

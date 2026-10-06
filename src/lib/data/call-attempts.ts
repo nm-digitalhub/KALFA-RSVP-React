@@ -10,8 +10,8 @@ import type { Enums, Json, Tables, TablesInsert, TablesUpdate } from '@/lib/supa
 type EventType = Enums<'event_type'>;
 
 // Request-FREE service-role DAL for the Voximplant AI-call `call_attempts` table.
-// Imported by the ctx/cb route handlers + the call-result processor (and, later,
-// the outbound trigger). Never logs the access_token, recording_url, or
+// Imported by the ctx/cb route handlers, the call-result processor and the
+// outbound trigger. Never logs the access_token, recording_url, or
 // transcript (all sensitive). Identity ALWAYS comes from a server-side lookup —
 // the attempt id, or (Branch B) the row's opaque access_token — never from
 // client-supplied ids in a callback body.
@@ -21,23 +21,21 @@ type CallAttemptInsert = TablesInsert<'call_attempts'>;
 
 // Terminal call outcomes — an older/out-of-order callback must never downgrade a
 // row that already reached one of these (requirement D). Exported so the log
-// export job (plan A4) reuses the SAME set instead of redeclaring it.
+// export job reuses the SAME set instead of redeclaring it.
 //
-// 'handed_off' (Stage 6): a KALFA console agent took over the call and
+// 'handed_off': a KALFA console agent took over the call and
 // RSVPAgent.voxengine.js's terminalStatus() reported it as such — billed like
-// 'completed' (call-result-processing.ts). Added to TERMINAL_STATUSES so
+// 'completed' (call-result-processing.ts). Being in TERMINAL_STATUSES,
 // recordCallOutcome's CAS below protects a handed-off row from being
 // downgraded by a stray late callback, exactly like every other terminal
-// status. Every OTHER consumer of this set/TERMINAL_SET is either correct
-// unchanged or gains the intended protection, not a regression:
+// status. Other consumers of this set/TERMINAL_SET:
 //   - /api/calls/{id}/{end,monitor,agent-command} routes: each refuses to act
 //     (409 "השיחה אינה פעילה") once attempt.status is terminal. A row only
 //     ever reaches 'handed_off' at call teardown (postFinalCallbackOnce), so
-//     these routes correctly start refusing a handoff call the instant it
-//     actually ends — the exact behavior they already give 'completed'.
-//   - vox-log-export.ts's enqueuePending: a handed-off attempt now becomes
-//     eligible for session-log export, same as any other concluded call —
-//     desired, not a change in kind.
+//     these routes refuse a handoff call the instant it actually ends — the
+//     exact behavior they give 'completed'.
+//   - vox-log-export.ts's enqueuePending: a handed-off attempt is eligible
+//     for session-log export, same as any other concluded call.
 export const TERMINAL_STATUSES = [
   'completed',
   'failed',
@@ -101,7 +99,7 @@ export async function nextManualTouchpoint(
   return data;
 }
 
-// Insert a fresh attempt row (used by the future outbound trigger). Returns
+// Insert a fresh attempt row (used by the outbound trigger). Returns
 // { id } on success, or null if a row already exists for this (campaign, contact,
 // touchpoint) — the unique constraint is the idempotency guard.
 export async function createCallAttempt(
@@ -323,10 +321,6 @@ export type CallOutcomePatch = {
   recording_started_at?: string | null;
 };
 
-// Atomically record a callback outcome with a compare-and-set guard so a stale or
-// out-of-order callback cannot downgrade a row that already reached a terminal
-// state. Returns { applied } — false means the write was a safe no-op (already
-// terminal / not in a valid prior state). No read-then-write.
 // Stamp what THIS call's save_rsvp concluded (attending/declined/maybe) on the
 // attempt row — display/audit only, deliberately OUTSIDE recordCallOutcome's
 // CAS: the answer arrives mid-call (before any terminal status) and a mid-call
@@ -344,6 +338,10 @@ export async function setCallAttemptRsvpOutcome(
   if (error) throw new Error('עדכון תוצאת ה-RSVP על ניסיון השיחה נכשל');
 }
 
+// Atomically record a callback outcome with a compare-and-set guard so a stale or
+// out-of-order callback cannot downgrade a row that already reached a terminal
+// state. Returns { applied } — false means the write was a safe no-op (already
+// terminal / not in a valid prior state). No read-then-write.
 export async function recordCallOutcome(
   id: string,
   patch: CallOutcomePatch,
@@ -587,13 +585,6 @@ export async function setElConversationId(
   return { applied: data !== null };
 }
 
-// schedule_callback (combination feature): persist a guest's request to be called
-// back later. Identity is the token-resolved attempt id (never the body). Works
-// TODAY via a durable, event-scoped activity_log row; ADDITIONALLY writes the
-// requested time onto the attempt for the future re-dispatch — those columns land
-// via a SEPARATE migration (handed to schema/RLS), so the write is
-// forward-compatible (`as never`, like setElConversationId) and its failure is a
-// caught no-op. Re-enqueuing the actual call is a KALFA dispatcher follow-up.
 /**
  * Record the outcome of an operator-initiated dial on the event's activity log.
  *
@@ -641,6 +632,10 @@ export async function recordManualDialOutcome(args: {
   }
 }
 
+// schedule_callback: persist a guest's request to be called back later. Identity
+// is the token-resolved attempt id (never the body). Writes a durable,
+// event-scoped activity_log row and stamps the requested time on the attempt,
+// which the callback re-dial sweep (call-callbacks.ts) acts on.
 export async function recordCallbackRequest(
   id: string,
   whenText: string,
@@ -650,7 +645,7 @@ export async function recordCallbackRequest(
   const attempt = await getCallAttemptById(id);
   if (!attempt) return { applied: false };
 
-  // Durable record that works before the migration lands (activity_log exists).
+  // Durable, event-scoped record (activity_log).
   type ActivityLogInsert = TablesInsert<'activity_log'>;
   const meta = { call_attempt_id: id, when_text: whenText, callback_iso: callbackIso };
   const logRow: ActivityLogInsert = {
@@ -661,10 +656,10 @@ export async function recordCallbackRequest(
   };
   await admin.from('activity_log').insert(logRow);
 
-  // Stamp the requested time on the attempt for the future re-dispatch.
+  // Stamp the requested time on the attempt for the callback re-dial sweep.
   // callback_iso is timestamptz, so only write a PARSEABLE value (else null) — a
   // malformed ISO from the agent must never fail the whole update. Best-effort;
-  // the activity_log row above is the authoritative record.
+  // the activity_log row above is the durable record.
   const iso = callbackIso && !Number.isNaN(Date.parse(callbackIso)) ? callbackIso : null;
   await admin
     .from('call_attempts')

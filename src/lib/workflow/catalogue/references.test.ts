@@ -1,13 +1,11 @@
 // The four reference namespaces, end to end through the real runner.
 //
-// Written because the execution layer was believed to be incomplete long after
-// it was working — a stale comment in run-workflow.ts claimed the resolver was
-// "deliberately not vendored" while `resolve-template.ts` sat two directories
-// away, imported and running on every node. A comment cannot be trusted to say
-// whether a feature is wired. These can.
+// A comment cannot be trusted to say whether a feature is wired. These can:
+// `resolve-template.ts` is vendored, imported by `activity-runner.ts`, and runs
+// over every node's config.
 //
-// `variables` gets the most attention here because it is the namespace that was
-// genuinely empty, and because it is the only one an owner cannot forge.
+// `variables` gets the most attention here because it is the only namespace an
+// owner cannot forge.
 import { describe, expect, it } from 'vitest';
 
 import { dryRunWorkflow } from '../engine/dry-run';
@@ -49,10 +47,8 @@ function quoting(
 /**
  * One entry of the editor's variables panel, in the shape it actually persists.
  *
- * Spelled out rather than abbreviated because the first version of this test
- * passed `{ name, value }` and the diagram failed to parse — `editorDiagramSchema`
- * requires all five fields, and the value an owner types lands in
- * `defaultValue`, not `value`.
+ * Spelled out rather than abbreviated because `editorDiagramSchema` requires all
+ * five fields, and the value an owner types lands in `defaultValue`, not `value`.
  */
 function globalVar(id: string, name: string, defaultValue: string) {
   return { [id]: { id, name, type: 'string', defaultValue, description: '' } };
@@ -109,8 +105,8 @@ describe('every namespace resolves against real runtime data', () => {
   });
 
   it('variables — the server-injected bag, which used to be empty', async () => {
-    // The finding that prompted this file: `variables` was hard-coded to `{}`,
-    // so the one namespace an owner CANNOT forge carried nothing.
+    // The one namespace an owner CANNOT forge: the dry run injects `app_url`,
+    // as `enqueue.ts` does on the live path.
     const result = await run(quoting('אשרו כאן: {{variables.app_url}}/r'));
     expect(sentBody(result.effects)).toBe('אשרו כאן: https://dry-run.example/r');
   });

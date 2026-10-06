@@ -3,9 +3,9 @@ module.exports = {
     {
       // ⚠️ THE RULE A PRODUCTION OUTAGE BOUGHT (2026-09-14).
       //
-      // `src/lib/workflow/catalogue/schemas.ts` imports runtime values from
-      // `@workflowbuilder/sdk` and is reached from a `'use client'` editor, so
-      // Next compiles it into the CLIENT module graph. A server module that
+      // `src/lib/workflow/catalogue/schemas.ts` is `'use client'` and loads
+      // `@workflowbuilder/sdk` runtime values via the node palette files it imports,
+      // so Next compiles it into the CLIENT module graph. A server module that
       // imports it does not receive the values — it receives a client REFERENCE,
       // and every property access on it throws at request time:
       //
@@ -67,7 +67,7 @@ module.exports = {
     //
     // FROM: `steps/` and every node-folder file except the four editor-side ones
     // (schema, uischema, defaults, and the palette file named after its folder —
-    // `\\1` is the folder name), which `server-code-must-not-reach-the-editor-sdk`
+    // `\\3` is the folder name), which `server-code-must-not-reach-the-editor-sdk`
     // already fences off from the server.
     name: 'step-layer-reaches-only-pure-modules',
     comment:

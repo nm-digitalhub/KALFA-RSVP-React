@@ -5,10 +5,9 @@ import { describe, expect, it } from 'vitest';
 
 import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 
-// Guard for gap G5. The version had drifted across SIX call sites (v21 twice,
-// v23 four times, plus the SDK's own default) before it was unified, and
-// nothing in lint, tsc or the test suite could see it happening: every one of
-// those literals was perfectly valid code. This test is the thing that sees it.
+// Guard against Graph version drift. A hard-coded version is perfectly valid
+// code, so nothing in lint, tsc or the rest of the test suite can see it
+// happening. This test is the thing that sees it.
 //
 // It scans the real source tree rather than asserting on a list of files, so a
 // NEW module that hard-codes a version fails here on the day it is written
@@ -60,7 +59,7 @@ describe('GRAPH_API_VERSION is the only Graph version in the source', () => {
     // pg-boss worker bundles it through esbuild. A stray import here would
     // break one of them at runtime, not at build time.
     // Matches real statements only, not the words inside the file's own doc
-    // comment — the first version of this assertion failed on its own prose.
+    // comment.
     const source = readFileSync(join(SRC, 'lib/whatsapp/graph-version.ts'), 'utf8');
     const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     expect(code).not.toMatch(/^\s*import\s/m);

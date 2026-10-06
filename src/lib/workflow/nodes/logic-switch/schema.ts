@@ -7,13 +7,9 @@ import { identityProperties, statusProperty } from '../../catalogue/editor-share
 
 import { requiredFields } from './definition';
 
-// N OWNER-DEFINED BRANCHES, on the SDK's own `DecisionBranches` control.
-//
-// REBUILT 2026-09-13, replacing a fixed `case1/case2/case3`. The old note here
-// said the branches were "NOT exposed in the uischema" because the worker named
-// the ports from `SWITCH_CASE_HANDLES` without reading the diagram. That was a
-// self-imposed ceiling: the handler now reads the branch the conditions selected,
-// so the port list may be anything the owner builds.
+// N OWNER-DEFINED BRANCHES, on the SDK's own `DecisionBranches` control. The
+// handler reads the branch the conditions selected, so the port list may be
+// anything the owner builds.
 //
 // `conditions` is a NESTED array inside each branch — `FieldSchema` admits an
 // `ArrayFieldSchema`, so this type-checks — and it must be declared, or the

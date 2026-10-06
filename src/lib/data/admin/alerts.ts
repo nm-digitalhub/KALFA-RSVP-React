@@ -6,9 +6,9 @@ import type { Tables, TablesUpdate } from '@/lib/supabase/types';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
 // Admin: read/write the Slack ops-alerting config (app_settings singleton) and
-// read the append-only ops_alerts audit trail. Authorized by requireAdmin() plus
-// the request-scoped session client under RLS (app_settings_admin_all /
-// ops_alerts_admin_select).
+// read the append-only ops_alerts audit trail. Authorized by
+// requirePlatformPermission('manage_settings') plus the request-scoped session
+// client under RLS (app_settings_admin_all / ops_alerts_admin_select).
 //
 // SECURITY: the Slack BOT TOKEN is a secret. It is NEVER returned from this
 // module — reads derive only a boolean (`hasToken`) and discard the value. The

@@ -161,9 +161,9 @@ export const startVoiceCall: StepHandler = async (config, ctx) => {
     //
     // A downstream `{{nodes.<id>.outcome}}` is STRICT — `resolve-template` throws
     // `Unresolved template reference` rather than resolving to '' — so a diagram
-    // that branches on the call's result used to fail outright the first time a
+    // that branches on the call's result would fail outright the first time a
     // dial was refused for DNC, Shabbat or balance. Those are the cases where the
-    // rules worked correctly, and they mapped to no value at all.
+    // rules worked correctly, and without `outcome` they map to no value at all.
     //
     // A refusal is 'failed' for the same reason the dispatcher's own `failed` is:
     // no call was placed, so nothing can ever report on it.

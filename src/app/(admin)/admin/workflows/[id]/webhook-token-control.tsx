@@ -34,10 +34,10 @@ import { registerSumitTriggerAction } from '../actions';
 //
 // ⚠️ WHY THEY WERE SPLIT, and it was not a preference. The token used to be the
 // path segment (`/api/workflows/hook/<token>`), so the address WAS the
-// credential. Two things followed, and the owner hit both on 2026-09-22:
+// credential. Two things followed:
 //
-//   1. "אין לי אפשרות לדעת מה כתובת ה-webhook?" — correct, and unfixable in that
-//      shape: showing the address a second time would be showing the secret a
+//   1. The panel could not show the address again, and that was unfixable in
+//      that shape: showing the address a second time would be showing the secret a
 //      second time. Worse, "יצירת טוקן חדש" looked like a way to RECOVER a lost
 //      address and was actually a way to BREAK it, silently, on someone else's
 //      machine.
@@ -45,12 +45,15 @@ import { registerSumitTriggerAction } from '../actions';
 //      history entry and Referer header that stores a path. Hashing it in the
 //      diagram protected the export and left that wide open.
 //
-// So the address is a PUBLIC id the panel shows forever, and the secret travels
-// in `x-kalfa-webhook-secret`. Rotating the secret no longer touches the
-// address. See plans/webhook-address-vs-secret.md.
+// So, in `header` mode (the default), the address is a PUBLIC id the panel shows
+// forever, and the secret travels in `x-kalfa-webhook-secret`. Rotating the
+// secret no longer touches the address. `address` mode — for a caller that can
+// be given a URL and nothing else, as with SUMIT — keeps the address as the
+// credential; the notes below say where the two differ. See
+// plans/webhook-address-vs-secret.md.
 //
-// ⚠️ ONE CONTROL FOR BOTH, because they are minted together and a node carrying
-// one without the other cannot be armed. It binds to `tokenHash` (that is the
+// ⚠️ ONE CONTROL FOR BOTH, because in `header` mode they are minted together and
+// a node carrying one without the other cannot be armed. It binds to `tokenHash` (that is the
 // field JsonForms hands it) and writes its sibling `endpointId` through the same
 // `handleChange`.
 
@@ -217,10 +220,11 @@ function WebhookTokenControl({ data, handleChange, path, enabled, readonly }: Co
       </div>
 
       {confirmingReplace && (
-        // ⚠️ NARROWER THAN THE OLD WARNING, AND TRUER. Rotating no longer breaks
-        // the ADDRESS — only the secret already deployed stops being accepted.
-        // Saying "the address will stop working" here would now be false, and a
-        // false warning is one people learn to click through.
+        // ⚠️ THE WARNING DIFFERS BY MODE, AND EACH HALF MUST BE TRUE. In `header`
+        // mode rotating does not break the ADDRESS — only the secret already
+        // deployed stops being accepted. Saying "the address will stop working"
+        // there would be false, and a false warning is one people learn to click
+        // through.
         <div className="flex flex-col gap-2 rounded-md border p-2">
           <p className="text-sm">
             {addressIsSecret ? (

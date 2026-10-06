@@ -62,10 +62,6 @@ export function worseSeverity(a: Severity, b: Severity): Severity {
   return SEVERITY_RANK[a] >= SEVERITY_RANK[b] ? a : b;
 }
 
-// Plain (non-component) helper — safe to call Date.now() here. Shared by the
-// summary rollup below AND by the Jobs panel's per-row badge (_panels.tsx),
-// which must NOT call Date.now() directly inside a component body (React's
-// purity rule flags that as an impure render).
 /**
  * When would this cron FIRST have fired after the schedule was registered?
  *
@@ -91,6 +87,10 @@ function firstFireAfterRegistration(row: JobHealthRow): Date | null {
   }
 }
 
+// Plain (non-component) helper — safe to call Date.now() here. Shared by the
+// summary rollup below AND by the Jobs panel's per-row badge (_panels.tsx),
+// which must NOT call Date.now() directly inside a component body (React's
+// purity rule flags that as an impure render).
 export function isQueueStale(row: JobHealthRow, expectedMaxMinutes: number | undefined): boolean {
   if (expectedMaxMinutes == null) return false; // not on the known-schedule catalog — never flagged
 

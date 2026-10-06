@@ -10,11 +10,11 @@ import type { PgBoss } from 'pg-boss';
 
 // The callback re-dial sweep.
 //
-// The agent's schedule_callback tool has always persisted the guest's request
-// (callback_requested_at / callback_when_text / callback_iso) and stopped there
-// — recordCallbackRequest's own comment said "Re-enqueuing the actual call is a
-// KALFA dispatcher follow-up". So the agent promised a guest a callback, the
-// promise was written to a column, and nothing ever called. This closes that.
+// The agent's schedule_callback tool persists the guest's request
+// (callback_requested_at / callback_when_text / callback_iso) through
+// recordCallbackRequest and stops there. This sweep is what actually calls the
+// guest back; without it the promise would sit in a column and nothing would
+// ever ring.
 //
 // Same idiom as the auto-thankyou sweep and the outreach arm: a pg-boss
 // cron tick that reads FRESH DB state every time, with nothing registered or
@@ -50,8 +50,8 @@ export type DueCallback = {
  * Only rows with a parsed `callback_iso` are actionable: `callback_when_text`
  * alone ("מחר בערב") is the guest's words, not a schedule, and guessing an
  * absolute time from it would ring someone's phone at an hour nobody chose.
- * Those rows are reported separately by the sweep so the promise surfaces to a
- * human instead of dying quietly — see runCallbackSweep.
+ * Those rows are not dialled here; listUnschedulableCallbacks returns them so
+ * the promise can surface to a human instead of dying quietly.
  */
 export async function listDueCallbacks(
   admin: AdminClient,
@@ -131,13 +131,13 @@ async function currentCallbackCount(
  * dispatchOutreachCall: the master outreach switch, the live-call toggle,
  * consent, DNC, the event-closed gate, concurrency and balance are all re-read
  * at dial time. This sweep deliberately duplicates none of them — a second copy
- * of a gate is how the two dial paths diverged in the first place. The one gate
- * the job carries an exemption for is already-reached (see
- * OutreachCallRequest.isCallback).
+ * of a gate is how the two dial paths diverged in the first place. The gates
+ * the job carries an exemption for are already-reached and the contact-quota
+ * seat (see OutreachCallRequest.isCallback and dispatchOutreachCall).
  */
 export async function runCallbackSweep(boss: PgBoss): Promise<{ enqueued: number }> {
   // Dial-hours deferral — checked BEFORE claiming, and that ordering is the
-  // whole point. dispatchOutreachCall now carries the actual dial-hours gate
+  // whole point. dispatchOutreachCall carries the actual dial-hours gate
   // (gate 3b, same admin policy), but claims here are deliberately never
   // released ("re-ringing a guest is worse than not ringing" — claimCallback's
   // contract), so a row claimed at 23:00 and then refused by the dispatcher
@@ -204,8 +204,8 @@ export async function runCallbackSweep(boss: PgBoss): Promise<{ enqueued: number
  * not resolve their words into an absolute time.
  *
  * These are NOT dispatched — ringing someone at a guessed hour is worse than
- * not ringing them. They are surfaced instead, so a person can decide. Without
- * this the request would be indistinguishable from one that was handled.
+ * not ringing them. They are listed here instead, so a person can decide.
+ * Without this the request would be indistinguishable from one that was handled.
  */
 export async function listUnschedulableCallbacks(
   admin: AdminClient,

@@ -230,11 +230,8 @@ export async function addNumberAction(
   } catch (err) {
     unstable_rethrow(err);
     const message = err instanceof Error ? err.message : '';
-    // The DAL now maps every Meta failure to Hebrew AND appends the numeric code, so
-    // passing it through is what makes "it failed" into something diagnosable. Before
-    // this the test was `startsWith('חסרים')`, which matched only the missing-token
-    // case and flattened every other failure — including the one the owner hit — into
-    // a sentence with no information in it.
+    // The DAL maps every Meta failure to Hebrew AND appends the numeric code, so
+    // passing it through is what makes "it failed" into something diagnosable.
     return {
       error: isUserFacing(message) ? message : 'הוספת המספר נכשלה',
       verifiedName,

@@ -19,9 +19,6 @@ export const sendWhatsappUiSchema: UISchema = {
       // this shape. Typing `{{` opens the variable picker; the picker writes
       // `{{nodes.<id>.<field>}}`; `activity-runner.ts` resolves it against the
       // live execution context before this handler ever sees the string.
-      //
-      // It was `TextArea` until the resolver was vendored, because the picker
-      // would have written a reference the adapter then refused to run.
       type: 'VariableTextArea',
       scope: sendWhatsappScope('properties.body'),
       label: 'ההודעה שתישלח',

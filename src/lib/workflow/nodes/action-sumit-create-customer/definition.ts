@@ -41,7 +41,7 @@ export type SumitCreateCustomerConfig = {
  * Mutable (`string[]`), because that is the type `NODE_REQUIRED_FIELDS` declares.
  *
  * A customer name is the minimum SUMIT itself requires (`Customer.Name`
- * "Required for creating a new customer").
+ * "Required for creating new customer").
  */
 export const requiredFields: string[] = ['label', 'description', 'customerName'];
 

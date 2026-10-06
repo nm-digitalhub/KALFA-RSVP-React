@@ -1,11 +1,9 @@
 // The regression this file exists for is a SILENT DELETION, not a broken render.
 //
-// This branch has already lost a component in a move once — b09240b, "restore the
-// auto-save that replacing the TopBar silently removed" — and the consolidation plan's
-// own readiness review found that the WhatsApp consent toggle (added 2026-09-08, after
-// the plan was written) fell outside every copy range in this task and would have
-// vanished with it. That toggle is a §30א legal exposure surface. A test is the
-// difference between a move and a deletion.
+// A component dropped in a move or swap leaves every other one rendering — b09240b,
+// "restore the auto-save that replacing the TopBar silently removed", is the
+// precedent. The WhatsApp consent toggle is a §30א legal exposure surface, which is
+// why its presence is pinned. A test is the difference between a move and a deletion.
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
@@ -114,7 +112,7 @@ describe('/admin/integrations/meta-whatsapp', () => {
   it('renders all THREE moved components — none silently dropped', async () => {
     const names = componentNames(await render());
     expect(names).toContain('WhatsAppCredentialsForm');
-    // The one the plan's copy ranges missed. A §30א gate.
+    // A §30א gate.
     expect(names).toContain('WhatsAppConsentToggle');
     expect(names).toContain('WhatsAppConnectionTest');
   });
@@ -134,9 +132,8 @@ describe('/admin/integrations/meta-whatsapp', () => {
 
   it('renders the master switch the credentials form points at', async () => {
     // WhatsAppCredentialsForm's status line reads "הפעלה/כיבוי דרך מתג הפנייה הראשי
-    // שמעל". Until 2026-09-10 there was nothing above it on this page and the sentence
-    // referred to nothing — a silent-reference defect. Dropping the switch again would
-    // reintroduce it without breaking any render, so it is pinned here.
+    // שמעל". Without the switch that sentence refers to nothing — a
+    // silent-reference defect that breaks no render, so it is pinned here.
     expect(componentNames(await render())).toContain('OutreachMasterSwitch');
   });
 
@@ -167,7 +164,7 @@ describe('/admin/integrations/meta-whatsapp', () => {
 
   it('never puts a credential in the page tree as plain text', async () => {
     // The values reach SecretField as defaultValue, which renders them masked with a
-    // reveal toggle (owner ruling 2026-08-24). What must never happen is a token
+    // reveal toggle. What must never happen is a token
     // landing in a text node.
     const strings = collect(await render())
       .map((p) => (typeof p.children === 'string' ? p.children : ''))

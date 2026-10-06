@@ -8,7 +8,8 @@
  * ends of one protocol would end up with two hand-copied sets of strings that
  * drift silently the first time either is renamed.
  *
- * Nothing here is a secret. These are a channel name and two query values.
+ * Nothing here is a secret. These are a channel name, a message tag and a query
+ * parameter.
  */
 export const OAUTH_POPUP_CHANNEL = 'kalfa-oauth-callback';
 export const OAUTH_POPUP_TAG = 'kalfa-oauth';

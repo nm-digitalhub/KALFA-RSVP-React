@@ -16,8 +16,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // request-FREE public/webhook RSVP functions in rsvp.ts (getRsvpByToken,
 // getEventAttendeesPublic, submitRsvp — reached by the pg-boss worker via
 // webhook-processing) never drag events.ts → auth/dal → next/headers|navigation
-// into the worker bundle (enforced by .dependency-cruiser.cjs). Behavior is
-// byte-identical to before the split; only the file location changed.
+// into the worker bundle (enforced by .dependency-cruiser.cjs).
 // ---------------------------------------------------------------------------
 
 export interface RsvpLinkInfo {

@@ -87,12 +87,10 @@ export const outputFields = {
   fileName: { type: 'string', label: 'שם הקובץ', description: 'ריק כשנשלחו אנשי קשר' },
   reviewUrl: { type: 'string', label: 'קישור לסקירה ואישור' },
   created: { type: 'boolean', label: 'נקלט עכשיו', description: 'שקר אם הרשימה כבר נקלטה קודם' },
-  // ⚠️ THE FAILURE BRANCH, PRODUCED SINCE DAY ONE AND NEVER DECLARED. The
-  // handler returns TWO shapes: `{ staged: true, rows, … }` on success and
-  // `{ staged: false, reason, message }` down the error port. Only the
-  // first was published, so the picker never offered the other — and the
-  // guest-import starter had to hard-code `{{…reason?}}` and
-  // `{{…message?}}` from knowledge of the source file.
+  // ⚠️ THE FAILURE BRANCH IS DECLARED TOO. The handler returns TWO shapes:
+  // `{ staged: true, rows, … }` on success and
+  // `{ staged: false, reason, message }` down the error port, so the picker
+  // offers the fields of both.
   //
   // Declared on the SAME schema rather than through the SDK's `variant`
   // output form. That form exists — `OutputVariant`, keyed on a

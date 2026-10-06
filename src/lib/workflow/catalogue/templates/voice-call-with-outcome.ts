@@ -1,8 +1,7 @@
 'use client';
 
 // Starter template 9 of 13 — its diagram and its selector entry. Editor
-// side; `./index.ts` places it in `DIAGRAM_TEMPLATES` at the position the
-// inline entry held.
+// side; `./index.ts` places it in `DIAGRAM_TEMPLATES`.
 import type { DiagramModel, TemplateModel } from '@workflowbuilder/sdk';
 
 import {
@@ -72,8 +71,7 @@ const voiceCallWithOutcome: DiagramModel = {
             // error branch declared below only EXISTS under this policy.
             // `graph-runner` fires an error edge when `nextPort` is the reserved
             // error handle, which only happens under 'errorRoute'; under
-            // 'continue' every error edge is pruned, so this node used to declare
-            // a branch that could never fire.
+            // 'continue' every error edge is pruned.
             //
             // A refused dial is still not an error — it returns a completed step
             // carrying `outcome: 'failed'`, and flows to the switch like any
@@ -103,7 +101,7 @@ const voiceCallWithOutcome: DiagramModel = {
             // flow reporting a problem and this flow DYING of one.
             //
             // `resolve-template` throws `Unresolved template reference` on a
-            // missing path rather than resolving to '' (resolve-template.ts:127),
+            // missing path rather than resolving to '' (resolve-template.ts),
             // and `resolveConfigTemplates` walks EVERY string in a node's config
             // — `left` and each branch's `x` alike — so one missing value fails
             // the whole step, permanently.

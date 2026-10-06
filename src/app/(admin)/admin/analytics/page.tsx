@@ -40,7 +40,7 @@ import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 import { CONSENT_REVISION } from '@/lib/consent/cookie-consent-config';
 
 // Admin GA4 dashboard. Server component end-to-end except the trend chart and
-// the refresh timer; every GA4 call happens in the DAL behind requireAdmin +
+// the refresh timer; every GA4 call happens in the DAL behind requirePlatformStaff +
 // hasPlatformPermission('view_customer_data') + the safe-config gate.
 export const dynamic = 'force-dynamic';
 
@@ -116,7 +116,7 @@ export default async function AdminAnalyticsPage({
 
       {quotaHit ? <QuotaBanner quota={dash.coreQuota} /> : null}
 
-      {/* v4: the collection-context strip — the numbers below only accrue
+      {/* The collection-context strip — the numbers below only accrue
           while the consent mechanism is on and categories are offered. */}
       {!consent.enabled ? (
         <Alert variant="destructive">

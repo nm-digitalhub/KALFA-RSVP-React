@@ -130,7 +130,7 @@ describe('wrapper ↔ core parity (same data, same number)', () => {
   it('the /admin/analytics overview and the core report the same KPIs, from one shared cache slot', async () => {
     const { core, admin, batchRunReports } = await load();
     const page = await admin.getAnalyticsDashboard('7d');
-    expect(batchRunReports).toHaveBeenCalledTimes(4); // A + B + C + D, as before
+    expect(batchRunReports).toHaveBeenCalledTimes(4); // A + B + C + D
     const s = await core.getWebTrafficSummary('7d');
     // Batch A for 7d was already cached by the page render: no new API call.
     expect(batchRunReports).toHaveBeenCalledTimes(4);

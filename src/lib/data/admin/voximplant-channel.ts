@@ -20,7 +20,7 @@ import { getAppUrl } from '@/lib/url';
 // RLS). Same masked-secret pattern as WhatsApp/SUMIT/SMTP. The service-account
 // JSON is a multi-KB RSA private key: it is NEVER round-tripped to the client —
 // only its presence is reported. The dial secret (callback_secret) IS returned
-// to this requireAdmin HTTPS form, shown masked with a reveal toggle, never
+// to this manage_voice-gated HTTPS form, shown masked with a reveal toggle, never
 // logged. `outreach_enabled` is the shared master switch
 // (same column WhatsApp uses) and is written ONLY by the hoisted master action,
 // never by this channel DAL.
@@ -34,14 +34,13 @@ export type VoximplantChannelConfig = {
   voximplant_min_call_reserve: string;
   voximplant_max_concurrent_calls: string;
   voximplant_max_calls_per_campaign_hour: string;
-  // Two columns that existed in app_settings with NO admin surface at all until
-  // 2026-09-14 — a DB row an operator could neither read nor change, which the
-  // owner has ruled is not "done" (a column alone is not a control).
+  // Two columns an operator must be able to read and change in this UI — a
+  // column alone is not a control.
   //   call_me_now_rule_id — the ConsoleCallMeNow rule /api/call-me-now/verify
-  //     starts. Its on/off switch lives in /admin/settings, so the feature could
-  //     be toggled while the rule it dials stayed invisible.
+  //     starts. Its on/off switch lives in /admin/settings; the rule it dials is
+  //     set here.
   //   application_id — which Voximplant application is production. Read by
-  //     console-agent provisioning; previously set by hand, directly in the DB.
+  //     console-agent provisioning.
   voximplant_call_me_now_rule_id: string;
   voximplant_application_id: string;
   configured: boolean; // derived: SA json + rule_id + caller_id present (matches getVoximplantConfig !== null)
@@ -49,7 +48,7 @@ export type VoximplantChannelConfig = {
   liveCalls: boolean; // raw app_settings.voximplant_live_calls (the admin toggle's value)
   liveEnabled: boolean; // EFFECTIVE live gate: the DB toggle AND the env not force-off
   callConsentRequired: boolean; // app_settings.call_consent_required — when false, AI dials skip the prior-consent check (opt-out + DNC still apply)
-  // Per-persona kill switches (2026-08-22) — meeting-confirm and sales-closing
+  // Per-persona kill switches — meeting-confirm and sales-closing
   // share this SAME service account / caller_id / callback_secret (one
   // Voximplant account), but each dials its OWN rule_id and has its OWN
   // enabled toggle, independent of voximplant_live_calls and of each other.
@@ -69,10 +68,9 @@ function s(v: unknown): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v);
 }
 
-// select('*') rather than an explicit column list for the two new persona
-// columns — same forward-compatible reasoning as outreach-config.ts /
-// voximplant-config.ts: until their migration is applied, they are simply
-// absent from the row and read as '' / false (fail-closed), never an error.
+// select('*') rather than an explicit column list — same forward-compatible
+// reasoning as outreach-config.ts / voximplant-config.ts: a column absent from
+// the row simply reads as '' / false (fail-closed), never an error.
 export async function getVoximplantChannelConfig(): Promise<VoximplantChannelConfig> {
   await requirePlatformPermission('manage_voice');
   const supabase = await createClient();
@@ -124,7 +122,7 @@ export async function getVoximplantChannelConfig(): Promise<VoximplantChannelCon
 
 export type UpdateVoximplantChannelInput = {
   // NOTE: no `outreach_enabled` here — the global master switch is written ONLY
-  // by the hoisted master action (§1.0), never by a channel form.
+  // by the hoisted master action, never by a channel form.
   // '' = keep the existing stored value (write-only secret); a non-empty value
   // replaces it.
   voximplant_service_account_json: string;
@@ -192,7 +190,7 @@ export async function updateVoximplantChannelConfig(
 
 // Admin toggle for the live-dial gate (app_settings.voximplant_live_calls). This
 // PERMITS real outbound calls — enabling it still leaves consent/DNC/balance and
-// the env kill switch in force. Admin-only (RLS + requireAdmin). The action layer
+// the env kill switch in force. Admin-only (RLS + manage_voice). The action layer
 // is fail-closed (refuses to enable without a complete config) and audit-logs.
 export async function updateVoximplantLiveCalls(enabled: boolean): Promise<void> {
   await requirePlatformPermission('manage_voice');
@@ -204,7 +202,7 @@ export async function updateVoximplantLiveCalls(enabled: boolean): Promise<void>
   if (error) throw new Error('עדכון מתג השיחות החיות נכשל');
 }
 
-// Per-persona kill switches (2026-08-22) — one combined rule_id+enabled write
+// Per-persona kill switches — one combined rule_id+enabled write
 // per persona, unlike the base config's split between the big credentials
 // form and the separate live-calls toggle: rule_id is the ONLY persona-
 // specific field here (SA/caller/secret stay shared with the base config), so
@@ -265,10 +263,10 @@ export async function updateCallConsentRequired(required: boolean): Promise<void
 }
 
 // ---------------------------------------------------------------------------
-// B5 — account-callback wiring state machine.
+// Account-callback wiring state machine.
 // ---------------------------------------------------------------------------
-// The ONLY mutating Voximplant call in the product besides the dial: a
-// restricted SetAccountInfo(callback_url, callback_salt). State machine:
+// Registers the callback through a restricted
+// SetAccountInfo(callback_url, callback_salt). State machine:
 //   unwired → pending → wired | failed → rollback_pending → rolled_back
 // Persist-then-mutate: we store the token HASH + salt + a snapshot of the
 // PREVIOUS callback_url/salt BEFORE calling SetAccountInfo, so the provider can
@@ -397,7 +395,7 @@ export type ConnectionTestResult = { ok: boolean; message: string };
 
 // Read-only credential check: parse the stored SA-JSON via getVoximplantConfig()
 // and call GetAccountInfo. Validates the JWT auth WITHOUT placing a call. Never
-// logs or returns the key; surfaces balance so the admin can gate go-live (B5).
+// logs or returns the key; surfaces balance so the admin can gate go-live.
 export async function testVoximplantConnection(): Promise<ConnectionTestResult> {
   await requirePlatformPermission('manage_voice');
   const cfg = await getVoximplantConfig();
@@ -422,8 +420,9 @@ export async function testVoximplantConnection(): Promise<ConnectionTestResult> 
 // Every routing rule on the account, so an operator can PICK one instead of
 // typing an id from memory.
 //
-// WHY THIS EXISTS. Four admin fields take a raw Voximplant rule id, and a wrong
-// number there is silent: the call still dials, it just runs a different
+// WHY THIS EXISTS. Admin fields take a raw Voximplant rule id (four in
+// app_settings, plus a custom voice purpose's), and a wrong number there is
+// silent: the call still dials, it just runs a different
 // scenario. The failure mode is real — a stale comment in this repo described
 // rule 1494311 (`OutCall`, the legacy DTMF flow) as "RSVPAgent's rule", and the
 // base field's placeholder offered that very id as its example, while the live

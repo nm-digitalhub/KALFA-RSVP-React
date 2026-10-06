@@ -1,7 +1,7 @@
 // The "תפיסות מסגרת" (frame holds) folder in KALFA's SUMIT account, and what its
 // `Billing_Status` and `Billing_Currency` codes mean. PURE — no fetch, no `server-only` — so both the
 // CRM reader (`crm-holds.ts`, worker/server) and the workflow step that labels a
-// SUMIT webhook (`steps/index.ts`) read ONE definition.
+// SUMIT webhook (`workflow/nodes/trigger-sumit-card/runtime.ts`) read ONE definition.
 //
 // ⚠️ SUMIT SENDS THE CODE, NEVER ITS NAME. `Billing_Status` is an enum property:
 // the webhook and `listentities` both carry `[3]`, and `/crm/schema/getfolder/`

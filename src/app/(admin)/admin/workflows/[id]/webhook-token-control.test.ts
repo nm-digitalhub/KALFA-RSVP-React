@@ -21,7 +21,7 @@ import { webhookTokenRenderer } from './webhook-token-control';
 // The webhook trigger's credential, tested at the seam that actually breaks.
 //
 // ⚠️ THE DIGEST IS A WIRE CONTRACT, NOT AN IMPLEMENTATION DETAIL. The editor
-// hashes in the browser and `/api/workflows/hook/<token>` hashes in Node; if the
+// hashes in the browser and `/api/workflows/hook/<endpoint>` hashes in Node; if the
 // two ever stop agreeing, every existing webhook silently stops answering and
 // nothing says why. Pinned below against a published SHA-256 vector rather than
 // against itself, because a test that hashes twice agrees with any mistake.

@@ -1,9 +1,9 @@
 'use client';
 
 // `action.microsoft_send_email` — its palette entry. Editor side;
-// `catalogue/schemas.ts` places it in `PALETTE_ITEMS` at the index the inline
-// entry held, and `buildPaletteItems` swaps in `microsoftSendEmailSchemaFor`
-// with the installation's live connections.
+// `catalogue/schemas.ts` places it in `PALETTE_ITEMS`, and `buildPaletteItems`
+// swaps in `microsoftSendEmailSchemaFor` with the installation's live
+// connections.
 //
 // The output fields come from the definition, so the variable picker reads one
 // declaration of what this node returns.

@@ -18,10 +18,9 @@ export const notifyTeamUiSchema: UISchema = {
       // VariableText, matching `detail` below rather than differing from it.
       //
       // The runtime resolves `{{…}}` in EVERY config field — `resolveConfigTemplates`
-      // walks the whole object — so this field already accepted references; what it
-      // did not do was offer the picker. An owner typing `{{` here got no
-      // suggestions on a field that would have resolved them, which reads as
-      // "references do not work here" and is the opposite of the truth.
+      // walks the whole object — so this field accepts references, and offering
+      // the picker is what keeps an owner typing `{{` here from reading "references
+      // do not work here", which is the opposite of the truth.
       //
       // ⚠️ NOT extended to `action.webhook`'s url. That one is plain Text
       // deliberately — see the note there: a destination assembled at run time is

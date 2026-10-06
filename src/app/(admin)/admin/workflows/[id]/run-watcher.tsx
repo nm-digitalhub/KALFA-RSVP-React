@@ -1,13 +1,9 @@
 'use client';
 
-// The client the live-execution stream never had.
-//
-// `execution-stream-adapter.ts` and the SSE route
-// `/api/admin/workflows/runs/[runId]/stream` were both shipped in 31ba24f, whose
-// message advertises "a live execution replay" — but nothing imported the
-// adapter and `setExecutionStarted` was never called, so the server streamed to
-// nobody. This is the missing half: a control on each row of "הרצות אחרונות"
-// that points the canvas, the node markers and the log at that run.
+// The client of the live-execution stream: a control on each row of "הרצות
+// אחרונות" that points the canvas, the node markers and the log at that run,
+// over `execution-stream-adapter.ts` and the SSE route
+// `/api/admin/workflows/runs/[runId]/stream`.
 //
 // One stream at a time, deliberately. The execution store is a single global
 // (the canvas can only show one run), so a second subscription would interleave

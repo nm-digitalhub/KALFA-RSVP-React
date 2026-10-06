@@ -32,7 +32,8 @@ import {
 // role; the owner rejected the assumption that connecting replaces the current
 // sender. The only durable output is one integration_connections row (token in
 // Vault) — every other reader of that table filters on its own provider, so the
-// row appears nowhere else.
+// row appears in no other list or picker (only the webhook worker looks it up, by
+// phone_number_id — see isEsConnectedPhoneNumber).
 //
 // ⚠️ THE POPUP'S IDS ARE NOT TRUSTED. The WABA comes from the exchanged token
 // itself (debug_token granular_scopes), and the number from that WABA's listing.

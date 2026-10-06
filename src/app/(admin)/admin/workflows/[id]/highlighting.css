@@ -18,12 +18,11 @@
  * "light">` inside a useLayoutEffect on mount — before the first paint. So on
  * this page all 1031 tokens resolve, and they resolve without a flash.
  *
- * TWO EARLIER VERSIONS OF THIS COMMENT WERE WRONG, both in the same direction:
- * they read the stylesheet, saw no `data-theme` anywhere in src/, and concluded
- * the tokens were undefined and the highlighting "silently dead". It was not.
- * Reading static CSS cannot see an attribute a layout effect writes; the SDK
- * bundle had to be read to settle it. Recorded here because the same mistake is
- * easy to repeat on any token that looks orphaned.
+ * Reading static CSS cannot see an attribute a layout effect writes: nothing in
+ * src/ sets `data-theme`, yet the tokens are defined and the
+ * highlighting is not "silently dead". The SDK bundle has to be read to settle
+ * such a question — the same mistake is easy to repeat on any token that looks
+ * orphaned.
  *
  * Given that, defining our own tokens at :root is not a bug fix — it is a
  * narrowing of the dependency. These four values are ours, they are not

@@ -6,9 +6,9 @@ import { readString, type StepHandler } from '../../steps/shared';
 
 import { HTTP_METHODS, type HttpHeader, type WebhookConfig } from './definition';
 
-// POST to a system that is not ours.
+// An HTTP call to a system that is not ours.
 //
-// The handler is deliberately thin: it reads two fields, builds the dedup key,
+// The handler is deliberately thin: it reads the config, builds the dedup key,
 // and hands everything to the port. Every security decision — https, no private
 // space, no redirect following, the timeout, the capped response — lives in the
 // implementation behind that port, so there is no path from here to a socket

@@ -18,8 +18,9 @@ import { scrubForExport, type RemovedBinding } from '@/lib/workflow/portability'
 // `getStoreDataForIntegration()` returns node `properties` exactly as stored, so
 // that copyable text box currently contains, for anyone who opens the menu:
 //
-//   trigger.webhook.token            the trigger's whole credential — the field's
-//                                    own label calls it a password
+//   trigger.webhook.endpointId       the address of an endpoint that exists only on
+//   / tokenHash                      this installation — the diagram stores a hash
+//                                    of the token, never the token itself
 //   action.webhook.url / headers     a webhook URL and headers, which may hold a
 //                                    key an owner typed literally
 //   action.microsoft_send_email.connectionId, and the four voice-call ids

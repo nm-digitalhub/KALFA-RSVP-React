@@ -115,8 +115,8 @@ describe('findArmBlockers', () => {
   });
 
   it('⚠️ a step left in DRAFT blocks arming — the rule NODE_STATUSES states', () => {
-    // Until now this was documented and not implemented: a half-written step
-    // armed silently and was skipped at run time with nobody told.
+    // Without this rule a half-written step would arm silently and be skipped at
+    // run time with nobody told.
     const blockers = findArmBlockers(
       wrap([
         node('half', 'action.send_template', {
@@ -268,19 +268,12 @@ describe('the starter templates against this gate', () => {
     const blocked = results.filter((r) => r.blockers.length > 0);
     expect(blocked.map((b) => b.name)).toEqual([
       'תזכורת שבועית למי שטרם ענה',
-      // ⚠️ ADDED BY THE GUEST-CONTEXT RULE, AND IT IS NOT A BLANK — it is the
+      // ⚠️ BLOCKED BY THE GUEST-CONTEXT RULE, AND IT IS NOT A BLANK — it is the
       // template that must never be armed. Its trigger node is labelled
       // "מופעל מתהליך אחר" / "לא להפעיל": it is a fan-out CHILD, started by
-      // `startRunsForGuests`, which supplies the contact its steps need.
-      //
-      // Its own comment claimed arming was already impossible ("a workflow
-      // cannot be armed without a token") — measured, and that was not true:
-      // `token` was not in NODE_REQUIRED_FIELDS['trigger.webhook'], and nothing
-      // in `setWorkflowActive` looked at it. So the template could be armed, on
-      // a webhook route that would then fail every guest step. The guest rule is
-      // what first enforced the intent the template already declared; `token`
-      // has since joined NODE_REQUIRED_FIELDS, so the template's own claim is
-      // now true as well and this template reports BOTH — see below.
+      // `startRunsForGuests`, which supplies the contact its steps need. Its
+      // trigger's blank `tokenHash` is a blocker too, so this template reports
+      // BOTH — see below.
       'תזכורת לאורח אחד (תהליך-בן)',
       'שיחה קולית עם המתנה לתוצאה',
       'שיחת ייעוד — עם בחירת סוכן ומספר',
@@ -307,10 +300,9 @@ describe('the starter templates against this gate', () => {
     // workflow it must point at does not exist yet — and cannot act on
     // "purposeKey is empty" either, because the dropdown they would reach for is
     // legitimately EMPTY until a non-builtin purpose is created.
-    // ⚠️ LOOKED UP BY NAME, NOT BY POSITION. These were `blocked[0]`,
-    // `blocked[1]`, `blocked[2]` until a fourth template joined the list and
-    // shifted every one of them — three assertions failed at once for a reason
-    // that had nothing to do with what they were testing.
+    // ⚠️ LOOKED UP BY NAME, NOT BY POSITION, so that a template joining the
+    // list does not shift the assertions below for a reason that has nothing to
+    // do with what they test.
     const blockersOf = (name: string) =>
       blocked.find((b) => b.name === name)?.blockers ?? [`NO SUCH BLOCKED TEMPLATE: ${name}`];
 
@@ -328,18 +320,19 @@ describe('the starter templates against this gate', () => {
     ]);
     // The fan-out child: blocked for its SHAPE, not for a blank. Its steps need
     // a guest and its own trigger cannot supply one — which is the same thing
-    // its trigger label already says out loud ("לא להפעיל").
+    // its trigger already says out loud ("לא להפעיל").
     //
     // ⚠️ AND IT REPORTS TWO, which is the point of reporting the guest rule
     // ALONGSIDE the field checks rather than instead of them. The trigger's
-    // `token` is blank — deliberately, because this template is never meant to
-    // be armed — and that is now a blocker in its own right. An owner who fixed
+    // `tokenHash` is blank — deliberately, because this template is never meant
+    // to be armed — and that is a blocker in its own right. An owner who fixed
     // only one would press arm again and meet the other.
     expect(blockersOf('תזכורת לאורח אחד (תהליך-בן)')).toEqual([
       'הצעד "מופעל מתהליך אחר": לא נוצר סוד, ולכן אין עדיין כתובת. לחצו על יצירת סוד — הכתובת תיווצר יחד איתו ותישאר גלויה, והסוד יוצג פעם אחת בלבד.',
       'הצעד "שליחת תבנית תזכורת": הצעד פועל על אורח, והטריגר של התהליך אינו מתחיל מאורח. החליפו לטריגר "הודעת וואטסאפ נכנסת" שמסומן בו לפחות סוג הודעה שאורח שולח, הסירו את הצעד, או השאירו את התהליך לא מחומש והפעילו אותו מתהליך אחר עם "הרצה לכל אורח".',
     ]);
-    // ⚠️ THE THIRD DELIBERATE BLANK, AND IT IS BLOCKED ON `purposeKey` ALONE.
+    // ⚠️ A DELIBERATE BLANK, AND AMONG ITS FIELD CHECKS IT IS BLOCKED ON
+    // `purposeKey` ALONE.
     //
     // That is the assertion worth having: this template also ships `callerId`,
     // `ruleId`, `agentId` and `toOverride` empty, and NONE of them appears here.
@@ -486,8 +479,8 @@ describe('a trigger that can never fire', () => {
   });
 
   it('⚠️ a webhook trigger with no token has no address', () => {
-    // `findWorkflowForToken` skips every workflow whose configured hash is
-    // blank, so the route `/api/workflows/hook/<token>` resolves to nothing.
+    // `findWorkflowForEndpoint` skips every workflow whose configured hash is
+    // blank, so the route `/api/workflows/hook/<endpoint>` resolves to nothing.
     // Arming one produced an endpoint that existed nowhere, silently.
     expect(
       findArmBlockers(wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', endpointId: 'ep', tokenHash: '' })])),
@@ -549,8 +542,8 @@ describe('findArmBlockersByNode', () => {
   });
 
   it('⚠️ every starter template agrees across the two entry points', () => {
-    // The templates are the widest fixtures there are — four of them block, for
-    // four different reasons. If the mapping ever drops or reorders a blocker,
+    // The templates are the widest fixtures there are — several of them block,
+    // for different reasons. If the mapping ever drops or reorders a blocker,
     // this is where it shows.
     for (const template of DIAGRAM_TEMPLATES) {
       const diagram = {
@@ -569,11 +562,9 @@ describe('findArmBlockersByNode', () => {
 // ---------------------------------------------------------------------------
 
 describe('⚠️ the error PORT and the error POLICY must agree', () => {
-  // NOTHING COMPARED THEM UNTIL 2026-09-22 — `arm-check.ts` held zero references
-  // to `errorPolicy`. Both mismatches below are silent at run time, which is the
-  // whole reason they are arm blockers: one builds a recovery path that can
-  // never run, the other tells a node to route errors somewhere that does not
-  // exist.
+  // Both mismatches below are silent at run time, which is the whole reason they
+  // are arm blockers: one builds a recovery path that can never run, the other
+  // tells a node to route errors somewhere that does not exist.
   const ERROR_HANDLE = 'source:inner:error';
 
   const graph = (errorPolicy: string, wired: boolean) => ({
@@ -616,7 +607,7 @@ describe('⚠️ the error PORT and the error POLICY must agree', () => {
   });
 
   it('⚠️ no starter template trips it — measured, not assumed', async () => {
-    // The rule is only worth shipping if the twelve diagrams we hand people are
+    // The rule is only worth shipping if the starter diagrams we hand people are
     // already consistent. If one is not, that is a defect in the template, not a
     // reason to soften the rule.
     const { DIAGRAM_TEMPLATES } = await import('./templates');
@@ -632,7 +623,7 @@ describe("trigger.webhook auth: 'address' — the address is the credential", ()
     wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', ...properties })]);
 
   it('⚠️ a node with nothing generated is BLOCKED, and the sentence names the right button', () => {
-    // Without the conditional table this would have armed with zero blockers:
+    // Without `tokenHash` in the required list this would arm with zero blockers:
     // `endpointId` moved out of NODE_REQUIRED_FIELDS so `address` mode could
     // exist, and `tokenHash` is the only thing left holding the gate shut.
     expect(findArmBlockers(hook({ auth: 'address', tokenHash: '' }))).toEqual([

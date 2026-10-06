@@ -8,8 +8,8 @@ import { Switch } from '@/components/ui/switch';
 
 // Unlike admin/analytics/_auto-refresh.tsx (always-on, 60s), this page's
 // refresh defaults OFF: each cycle costs two RPCs + up to four sidecar HTTP
-// calls, and the DB already runs 25/60 connections in normal operation (see
-// plan §8). The admin opts in explicitly, and the interval floor is 30s.
+// calls, and the DB already runs 25/60 connections in normal operation. The
+// admin opts in explicitly, and the interval floor is 30s.
 const REFRESH_MS = 30_000;
 // localStorage, not a cookie/DB setting — this is a per-browser UI
 // preference with no server-side meaning. Mantine's useLocalStorage renders the

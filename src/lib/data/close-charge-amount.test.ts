@@ -4,7 +4,7 @@ import { computeChargeAmount } from './close-charge-amount';
 
 const NEW = { base: 200, included: 200, overage: 4, credits: 0 };
 const OLD_UNCAPPED = { base: 0, included: 0, overage: 4, credits: 0 };
-// New-model ceiling for a funded set of 300: 200 + max(0, 300-200)*4 = 600.
+// New-model ceiling for 300 unique contacts: 200 + max(0, 300-200)*4 = 600.
 const NEW_CEILING = 600;
 
 describe('computeChargeAmount — pre-model / pre-S3 campaign (base=0, included=0)', () => {

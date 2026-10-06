@@ -52,8 +52,8 @@ export const webhookTriggerSchema = {
     //
     // Named `tokenHash` rather than `secretHash` deliberately: it is accurate
     // either way, and renaming it would migrate a stored field without adding a
-    // bit of clarity. What CHANGED is where the secret travels — a header, not
-    // the path.
+    // bit of clarity. In `header` mode the secret travels in a header, not the
+    // path.
     tokenHash: requiredText,
   },
 } satisfies NodeSchema;

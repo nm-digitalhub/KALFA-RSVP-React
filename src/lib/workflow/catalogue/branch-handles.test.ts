@@ -74,8 +74,7 @@ describe('action branch handles', () => {
 });
 
 describe('switch branch handles', () => {
-  // REWRITTEN 2026-09-13. `SWITCH_CASE_HANDLES` was a fixed tuple of three; the
-  // switch now carries N owner-defined branches, so what has to be pinned is the
+  // The switch carries N owner-defined branches, so what has to be pinned is the
   // FORMATTER, not a list of literals.
   it('switchBranchHandle is exactly what the SDK mints for that innerId', () => {
     // The same pin as the condition's, for the same failure: the handler returns

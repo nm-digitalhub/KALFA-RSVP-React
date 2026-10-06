@@ -14,17 +14,20 @@ import {
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { dialIntentBodySchema } from '@/lib/validation/console-calls';
 
-// POST /api/console-calls/dial-intent   Bearer   body: the two-variant
-// consent-matrix union ONLY — {kind:'callback', id} | {kind:'guest_service',
-// eventId, contactId}. Never a phone number: the browser can only ever name a
-// SERVER-VERIFIED provenance for the dial, matching decide-consent's GO/NO-GO
-// table and CLAUDE.md's "never trust submitted identifiers as authorization".
+// POST /api/console-calls/dial-intent   Bearer   body: dialIntentBodySchema, a
+// union on `kind` — {kind:'callback', id} | {kind:'guest_service', eventId,
+// contactId} | {kind:'returned_call', sessionId} | {kind:'manual', phone}. The
+// first three name a SERVER-VERIFIED provenance and the server resolves the
+// number itself; 'manual' is a number the agent typed, which the server
+// normalizes and gates. Each shape has its own gate row in DIAL_GATE_POLICY,
+// matching CLAUDE.md's "never trust submitted identifiers as authorization".
 //
-// Returns { dial: 'ct<token>' } — a one-time, 60s dial token the operator's
-// SDK client dials as the destination (rule ConsoleOut → ConsoleDial.voxengine.js,
-// outbound branch). The resolved phone NEVER reaches the browser.
+// Returns { dial: 'ct<token>', console_call_id, target_phone, call_kind } —
+// `dial` is a one-time, 60s dial token the operator's SDK client dials as the
+// destination (rule ConsoleOut → ConsoleDial.voxengine.js, outbound branch);
+// `target_phone` is the number that call will ring, for display only.
 //
-// Gate order mirrors decide-consent's route-implementation note exactly:
+// Gate order:
 //   1. requireConsoleAgent + manage_voice
 //   2. body shape (union only)
 //   3-6. resolveDialTarget: fresh DB load → DNC → opt-out → quiet-hours/Shabbat
@@ -162,13 +165,12 @@ export async function POST(request: Request) {
 
   // THE TARGET, stated by the side that decided it.
   //
-  // The response used to be the token alone, so the app had to source the number
-  // it displayed from somewhere else — the history row it was tapped from, or the
-  // digits the agent typed. That is two sources of truth for one call: the server
-  // decides which number to RING, the device decided which number to SHOW, and a
-  // stale row or a resolution the server did differently means an agent watches
-  // one number while another is dialled. On a call to a customer that is not a
-  // cosmetic defect.
+  // The app must not source the number it displays from anywhere else — the
+  // history row it was tapped from, or the digits the agent typed. That would be
+  // two sources of truth for one call: the server decides which number to RING,
+  // the device would decide which number to SHOW, and a stale row or a resolution
+  // the server did differently means an agent watches one number while another is
+  // dialled. On a call to a customer that is not a cosmetic defect.
   //
   // `target_phone` is the number this call WILL ring — the same value the token
   // authorises, taken from the resolution rather than from the request. The app
@@ -176,8 +178,8 @@ export async function POST(request: Request) {
   //
   // It is safe to return: it is the number the agent just asked to call, on a
   // staff-gated route that has already run the full consent chain. What the
-  // device still cannot do is CHOOSE it — dial-intent has no shape that accepts a
-  // number to ring, and this field is an answer, never an input.
+  // device cannot do is dial a different number — it dials the token, which
+  // authorises exactly this one — and this field is an answer, never an input.
   return json(
     {
       dial: token,

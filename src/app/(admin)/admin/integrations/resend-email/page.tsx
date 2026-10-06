@@ -26,7 +26,7 @@ const sectionClass = 'space-y-3';
 //
 // One live probe per render, same exception and same reasoning as the ExtrA page: a
 // single ~0.7s call on a page reached by clicking its card, versus printing a
-// deliverability verdict read from nothing, since the daily queue's result is not
+// deliverability verdict read from nothing, since the hourly queue's result is not
 // persisted. probeEmailHealth() is the scheduled job's own probe with the ALERTING
 // left out — one definition of "is the mail working", so the page and Slack cannot
 // disagree, and a page render never fires an alert.

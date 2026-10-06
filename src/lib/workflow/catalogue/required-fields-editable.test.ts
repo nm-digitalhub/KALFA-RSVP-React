@@ -50,12 +50,17 @@ const EXEMPT: Partial<Record<KalfaNodeType, readonly string[]>> = {
   // here and this entry must not rest on it.
   //
   // What is true instead: the field is reachable, just not by its own scope. The
-  // address and the secret are minted TOGETHER by one control, because a node
-  // carrying one without the other cannot be armed and there is no sequence in
-  // which an owner would want to type either by hand. That control is scoped to
-  // `tokenHash` and writes `endpointId` as its sibling, so the panel does offer
-  // the only action that fills it — the generate button — and `collectScopes`
-  // simply cannot see that.
+  // address and the secret are minted TOGETHER by one control, because in
+  // `header` mode a node carrying one without the other cannot be armed and
+  // there is no sequence in which an owner would want to type either by hand.
+  // That control is scoped to `tokenHash` and writes `endpointId` as its
+  // sibling, so the panel does offer the only action that fills it — the
+  // generate button — and `collectScopes` simply cannot see that.
+  //
+  // ⚠️ `endpointId` is no longer in this node's `requiredFields`: it is required
+  // only in `header` mode, through `conditionalRequirements` in its
+  // `definition.ts`. So this entry currently filters nothing from the check
+  // above; the test below is what still matters.
   //
   // The claim is CHECKED rather than asserted: the test below scans the control
   // and fails if it stops writing the field. An exemption nobody verifies is the
@@ -83,7 +88,7 @@ describe('every arm-blocking field is editable in the panel', () => {
     // Source-scanned rather than mocked, for the same reason
     // sdk-integration-invariants.test.ts scans: the guarantee is about what one
     // file DOES, and only that file can answer. If the write is ever removed,
-    // `endpointId` becomes a required field with no way at all to fill it — the
+    // `endpointId` (required in `header` mode) has no way at all to be filled — the
     // exact defect (`description`, 18 types, 0 controls) this file was written
     // for, reintroduced through its own exemption list.
     const control = readFileSync(
@@ -103,9 +108,7 @@ describe('every arm-blocking field is editable in the panel', () => {
 
     expect(without).toEqual([]);
     // Anti-no-op: the assertion above passes vacuously on an empty palette, so
-    // the count is pinned. 22 since the two SUMIT accounting nodes joined on
-    // 2026-09-22 and the AI node after them; 23 since `trigger.sumit_card`
-    // joined on 2026-09-23.
+    // the count is pinned.
     expect(PALETTE_ITEMS.length).toBe(23);
   });
 });
@@ -136,8 +139,8 @@ describe('every required string field rejects the empty string', () => {
     });
   }
 
-  // The factory rewrites two schemas at run time from live data (numbers,
-  // voice purposes). Those rebuilt objects are what the editor actually loads,
+  // The factory rewrites three schemas at run time from live data (numbers,
+  // voice lists, Microsoft connections). Those rebuilt objects are what the editor actually loads,
   // so the guard has to survive the rewrite, not just the literal above it.
   it('survives the run-time rebuild of the two data-driven schemas', () => {
     for (const item of buildPaletteItems([], [], [], [], [])) {

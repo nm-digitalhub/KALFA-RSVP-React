@@ -20,7 +20,7 @@ import {
   wireAccountCallbackAction,
 } from '../actions';
 
-// B5 wiring controls. Wiring is the ONE mutating Voximplant call — it is gated
+// Wiring controls. Wiring is the ONE mutating Voximplant call — it is gated
 // behind an AlertDialog that shows the exact URL that will be registered. On
 // success the URL (which embeds the one-time raw token) is shown once so the
 // admin can confirm; a rollback restores the previous callback.

@@ -22,7 +22,7 @@ import { applyDryRunTrace, resetExecution } from './use-execution-store';
 // A workflow fires on a guest's message and changes their RSVP. "Arm it and see"
 // is not an acceptable way to find out whether the graph is right, so this runs
 // the SAVED definition through the same adapter, the same runGraph and the same
-// step handlers, with only the three ports swapped — and reports what it WOULD
+// step handlers, with only the ports swapped — and reports what it WOULD
 // have done instead of doing it.
 
 const GUEST_CASE_LABEL: Record<DryRunGuestCase, string> = {

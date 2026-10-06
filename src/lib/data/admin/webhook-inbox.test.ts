@@ -48,7 +48,7 @@ describe('label helpers (free-text → map + fallback)', () => {
     expect(deliveryStatusVariant(null)).toBe('neutral');
   });
   it('kind label falls back to the raw value', () => {
-    // 'הודעה נכנסת', not 'הודעה': four integrations now share this table, so an
+    // 'הודעה נכנסת', not 'הודעה': five integrations share this table, so an
     // inbound WhatsApp message has to be distinguishable from a delivery status
     // and from inbound mail at a glance.
     expect(webhookKindLabel('message')).toBe('הודעה נכנסת');
@@ -58,7 +58,8 @@ describe('label helpers (free-text → map + fallback)', () => {
   // Regression guard for the actual defect: seven of the nine endpoints had no
   // Hebrew label, so their badge rendered the raw English slug (graph_mail,
   // call_owner_note) inside an RTL Hebrew admin. Every kind that any route can
-  // write MUST be named here — a new endpoint without a label fails this test.
+  // write MUST be named here — add a new endpoint's kind to ALL_KINDS so a
+  // missing label fails this test.
   it('names EVERY event_kind a route can write, in Hebrew', () => {
     const ALL_KINDS = [
       'message',
@@ -132,9 +133,8 @@ describe('listWebhookInbox', () => {
     expect(res.items).toHaveLength(1);
   });
 
-  // The provider filter. Four integrations share webhook_inbox, so without this
-  // one integration's traffic could not be isolated at all — the column was
-  // selected and displayed but never filterable.
+  // The provider filter. Five integrations share webhook_inbox, so without this
+  // one integration's traffic could not be isolated at all.
   it('filters by provider, in the DB and not in the browser', async () => {
     const { builder } = mock([{ id: 'a1' }], 1);
     await listWebhookInbox({ provider: 'resend' });

@@ -1,7 +1,7 @@
 'use client';
 
 // `action.webhook` — its palette entry. Editor side; `catalogue/schemas.ts`
-// places it in `PALETTE_ITEMS` at the index the inline entry held.
+// places it in `PALETTE_ITEMS`.
 //
 // The output fields come from the definition, so the variable picker reads one
 // declaration of what this node returns.
@@ -16,7 +16,7 @@ import { webhookUiSchema } from './uischema';
 export const webhookPaletteItem = {
   type: webhookDefinition.type,
   // Decision node so the failure branch has a handle to leave from — the same
-  // reason every other action node uses this renderer.
+  // reason most other action nodes use this renderer.
   templateType: NodeType.DecisionNode,
   label: 'קריאת HTTP',
   description: 'קורא למערכת חיצונית — עם אימות, אם צריך',

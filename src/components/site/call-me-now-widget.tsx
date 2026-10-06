@@ -8,8 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PhoneInput } from '@/components/ui/phone-input';
 
-// Floating call-center widget — capability A, THIRD design (owner-directed
-// pivot, 12.8, follow-on to the widget's OWN pivot): OTP-verified,
+// Floating call-center widget — capability A, THIRD design: OTP-verified,
 // PSTN-out, no browser Voximplant identity at all. Replaces
 // call-widget.tsx/call-widget-lazy.tsx (kept in place as dead code pending
 // an explicit cleanup decision — see console-calls.ts's
@@ -17,22 +16,19 @@ import { PhoneInput } from '@/components/ui/phone-input';
 // blocked). See evaluateCallMeNowCaps's header in console-calls.ts for the
 // full research trail (OTP reuse, StartScenarios reuse, consent reasoning).
 //
-// DELIBERATELY NOT MOUNTED anywhere yet — app_settings.console_call_me_now_enabled
-// defaults FALSE, no Voximplant rule/scenario (ConsoleCallMeNow) exists yet
-// to route the call, so mounting this today would show every site visitor a
-// form that always refuses after they already gave up a phone number and
-// received an SMS. Mounting is the LAST step of the single approval gate in
-// the report, once the whole chain (rule+scenario created and approved,
-// flag flipped) actually works end-to-end — same discipline
-// console_softphone_enabled/console_widget_enabled both already follow.
+// Mounted CONFIG-GATED in (public)/(site)/layout.tsx: getCallMeNowWidgetEnabled
+// requires BOTH app_settings.console_call_me_now_enabled AND a bound
+// ConsoleCallMeNow routing rule id, so a visitor never sees a form that
+// always refuses after they already gave up a phone number and received an
+// SMS.
 //
 // TEXT disclosure BEFORE the phone step, not spoken over the call itself
-// (that disclosure is the scenario's own DISCLOSURE_LINE_HE, played on the
-// visitor's leg before bridging — see call-me-now-authorize/route.ts's
-// header) — matches the project-wide "honest UI" principle: no state may be
-// implied before a real signal, and the visitor must know a call is about
-// to be recorded BEFORE they hand over a phone number, not only once the
-// phone rings.
+// (that disclosure is the scenario's own DISCLOSURE_LINE_CALL_ME_NOW_HE,
+// played on the visitor's leg before bridging — see
+// call-me-now-authorize/route.ts's header) — matches the project-wide
+// "honest UI" principle: no state may be implied before a real signal, and
+// the visitor must know a call is about to be recorded BEFORE they hand over
+// a phone number, not only once the phone rings.
 
 type Step = 'phone' | 'code' | 'calling' | 'done' | 'callback_offered' | 'error';
 
@@ -55,20 +51,18 @@ const REFUSAL_MESSAGE: Record<string, string> = {
   daily_breaker: 'הגענו למכסת השיחות היומית. נסו שוב מחר.',
   dnc: 'לא ניתן להתקשר למספר זה.',
   opted_out: 'לא ניתן להתקשר למספר זה.',
-  // Shabbat/Yom-Tov only — the daily 08:00-19:00/Fri-13:00 window was
-  // removed for this flow (compliance ruling, 12.8: availability gates the
-  // dial, not the clock — see console-calls.ts's evaluateCallMeNowConsent).
-  // This reason can therefore still surface, just far more rarely than
-  // before, and only for that one remaining basis.
+  // Shabbat/Yom-Tov only — this flow skips the daily call window
+  // (availability gates the dial, not the clock — see console-calls.ts's
+  // evaluateCallMeNowConsent), so this reason surfaces only for that one
+  // basis.
   quiet_hours: 'לא ניתן לבצע שיחה בשבת ובחג. נסו שוב לאחר צאת החג.',
   otp: 'קוד האימות שגוי או שפג תוקפו.',
 };
 
 // Same wording NO_AGENT_LINE_HE uses in ConsoleInbound.voxengine.js — reused
 // verbatim, not paraphrased, so the promise reads identically whether it is
-// made here (the common case now, checked BEFORE any call is placed — owner
-// availability-first decision, 12.8) or by the scenario's own ring-exhausted
-// branch for the narrow race case.
+// made here (the common case, checked BEFORE any call is placed) or by the
+// scenario's own ring-exhausted branch for the narrow race case.
 const NO_AGENT_MESSAGE = 'אין נציג זמין כרגע. נחזור אליכם בהקדם.';
 
 export function CallMeNowWidget() {

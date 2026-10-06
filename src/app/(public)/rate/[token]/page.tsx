@@ -44,7 +44,8 @@ export default async function RatingPage({
   const requestHeaders = await headers();
   const ip = getClientIp(requestHeaders.get.bind(requestHeaders));
   // Bucket key uses a token FINGERPRINT, never the raw bearer token — same
-  // pattern as every other public token surface (r/g/[token]/page.tsx).
+  // pattern as every other public token surface (r/[token]/page.tsx,
+  // g/[token]/page.tsx).
   const fp = tokenFingerprint(token);
   const gate = rateLimit(`rating:view:${fp}:${ip}`, RATING_VIEW_RATE);
   if (!gate.allowed) {

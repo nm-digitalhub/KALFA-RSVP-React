@@ -12,8 +12,7 @@ import { computeOneTimeKeyHash } from '@/lib/data/console-sdk-auth';
 // sign for themselves). A widget visitor has no session — there is exactly
 // ONE identity this can ever sign for, fixed by two env vars the owner sets
 // once the shared Voximplant user is provisioned (AddUser — an
-// account-changing Management API operation, not done by this module or by
-// this delegation; see the report for the exact remaining step). Reuses
+// account-changing Management API operation, not done by this module). Reuses
 // computeOneTimeKeyHash UNCHANGED — same MD5-per-protocol function, already
 // pinned against a known vector; nothing about the login protocol itself
 // differs for a shared identity vs. a per-agent one.
@@ -21,8 +20,8 @@ import { computeOneTimeKeyHash } from '@/lib/data/console-sdk-auth';
 // Mirrors KALFA_CONSOLE_SECRET's existing env-var-over-DB-table choice
 // (route-inbound.ts, authorize/route.ts): a single static shared secret, not
 // per-row state, so a new table would be pure overhead. Absent env vars ⇒
-// `not_provisioned`, which the route below turns into the same 503 shape
-// route-inbound already uses for "the secret we need isn't configured yet."
+// `not_provisioned`, which src/app/api/widget/sdk-auth/route.ts turns into the
+// same 503 shape route-inbound already uses for "the secret we need isn't configured yet."
 //
 // USERNAME IS PUBLIC, PASSWORD IS NOT — deliberately two different env-var
 // shapes. The login protocol requires requestOneTimeKey (called by the

@@ -203,9 +203,9 @@ describe('getIntegrationsStatus', () => {
   });
 
   it('covers every provider the panel expects, plus the two the plan adds', async () => {
-    // `microsoft` joined 2026-09-10. It was absent while the only candidate source
-    // was exchange_connections, whose readers are either caller-scoped or
-    // owner-gated; Graph answers for the tenant, so the row can finally be honest.
+    // `microsoft` is here because its source is Graph, not exchange_connections,
+    // whose readers are either caller-scoped or owner-gated; Graph answers for the
+    // tenant, so the row can be honest.
     const items = await byKey();
     expect(Object.keys(items).sort()).toEqual(
       [

@@ -14,8 +14,8 @@ import {
 } from '@/lib/data/console-calls';
 import { consoleEventBodySchema } from '@/lib/validation/console-calls';
 
-// POST /api/voximplant/console/event   called BY both scenarios' reportEvent()
-// (ConsoleDial.voxengine.js:153-178, ConsoleInbound.voxengine.js:125-150).
+// POST /api/voximplant/console/event   called BY the console scenarios'
+// reportEvent() (ConsoleDial, ConsoleInbound and ConsoleCallMeNow .voxengine.js).
 // Best-effort, fire-and-forget from the scenario's side (there is no HTTP
 // reply channel inside a live VoxEngine session — AppEvents.HttpRequest has
 // none — so the scenario never blocks or branches on this response). This
@@ -174,15 +174,14 @@ export async function POST(request: Request) {
           recordingUrl: body.recording_url,
           endedNow: true,
         });
-        // Called for EVERY ended inbound call; recordMissedCallCallback itself
-        // decides, from answered_at, whether anyone actually picked up. Widened
-        // from `reason === 'no_agent'` on 17.8 — a caller who gave up after five
-        // seconds of ringing is commercially identical to the ring exhausting, and
-        // that path used to record nothing at all.
+        // Called for EVERY ended call; recordMissedCallCallback itself decides,
+        // from the row's direction and answered_at, whether an inbound call was
+        // picked up by anyone. A caller who gave up after five seconds of ringing
+        // is commercially identical to the ring exhausting.
         //
-        // Reason is deliberately NOT the discriminator any more. 'caller_hangup'
+        // Reason is deliberately NOT the discriminator. 'caller_hangup'
         // covers both "gave up while ringing" and "ended a ten-minute conversation",
-        // and only the row knows which. Hour-agnostic, as before: a call is missed at
+        // and only the row knows which. Hour-agnostic: a call is missed at
         // 03:00 because nobody is awake and at 14:00 because everyone is busy.
         await recordMissedCallCallback({ consoleCallId: callId });
         // The "שיחה נכנסת ממתינה במוקד" push is still on the agent's device

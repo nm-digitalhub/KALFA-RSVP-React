@@ -4,8 +4,9 @@ import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { getAccountInfo } from '@/lib/voximplant/core';
 
 // A per-process, short-TTL balance cache for the inbound gate-before-answer
-// endpoint ONLY. Exists because that endpoint sits on the call-answer hot
-// path (the caller is waiting on the response), so it must never await the
+// endpoints (console inbound, widget, call-me-now) ONLY. Exists because those
+// endpoints sit on the call-answer hot
+// path (the caller is waiting on the response), so they must never await the
 // Voximplant Management API inline and unbounded — but the account also has
 // no PERSISTED balance column anywhere (voximplant-balance.ts's 30-minute
 // runBalanceCheck() only Slack-alerts; it never writes a number to the DB),
@@ -20,8 +21,8 @@ import { getAccountInfo } from '@/lib/voximplant/core';
 // "balance unknown" — fail-closed, refuse — consistent with the plan-wide
 // rule that an unknown gate condition blocks rather than passes.
 //
-// Known limitation (flagged, not fixed here — would need a migration, out of
-// scope for this delegation): a real persisted balance value (written by the
+// Known limitation (flagged, not fixed here — would need a migration): a real
+// persisted balance value (written by the
 // existing 30-minute job or the B5 verified-pull) would let this become a
 // pure DB read with zero inline Management-API risk. Left as an open item.
 

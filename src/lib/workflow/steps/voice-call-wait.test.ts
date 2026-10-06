@@ -5,15 +5,14 @@ import { readWaitSignal } from '@/lib/workflow/steps';
 
 import { STEP_HANDLERS, type StepContext } from './index';
 
-// `action.start_voice_call` waiting for the call to END — the half the engine
-// could not express until now (0ב).
+// `action.start_voice_call` waiting for the call to END.
 //
-// ⚠️ THE OLD SHAPE WAS "DIAL AND CARRY ON". A graph that wanted to branch on
-// whether the guest actually answered had to follow the call with `logic.wait`
-// and a guessed duration: a seven-minute call checked at minute five, and a call
-// that failed on dial still burning the whole wait. The node now parks on the
-// CALL rather than on a clock, and the callback wakes it the moment the call
-// reports.
+// ⚠️ THE DEFAULT SHAPE IS "DIAL AND CARRY ON". A graph that wants to branch on
+// whether the guest actually answered would otherwise have to follow the call
+// with `logic.wait` and a guessed duration: a seven-minute call checked at
+// minute five, and a call that failed on dial still burning the whole wait. With
+// the wait ticked, the node parks on the CALL rather than on a clock, and the
+// callback wakes it the moment the call reports.
 //
 // Three properties are what make that safe, and each has a test below:
 //
@@ -255,13 +254,13 @@ describe('action.start_voice_call — resuming', () => {
   });
 });
 
-// ⚠️ THE STATUS THE TWO LISTS USED TO DISAGREE ABOUT.
+// ⚠️ THE STATUS THE TWO LISTS MUST AGREE ABOUT.
 //
-// `PURPOSE_SETTLED` omits `unknown` because a report may still arrive, but
-// `PURPOSE_PRE_TERMINAL` also omitted it — so the callback's UPDATE matched zero
-// rows, the status stayed `unknown`, and a waiting workflow read `concluded:
-// false` for a call that had completed and reported. This pins the engine half:
-// `unknown` parks and waits rather than settling.
+// `PURPOSE_SETTLED` omits `unknown` because a report may still arrive, so
+// `PURPOSE_PRE_TERMINAL` must include it — otherwise the callback's UPDATE
+// matches zero rows, the status stays `unknown`, and a waiting workflow reads
+// `concluded: false` for a call that completed and reported. This pins the
+// engine half: `unknown` parks and waits rather than settling.
 describe('an ambiguous start is not an outcome', () => {
   it('parks on unknown, and reports it honestly if nothing ever comes', async () => {
     const r = await park({ purposeKey: 'feedback', waitForOutcome: true }, {
@@ -327,11 +326,6 @@ describe('the wait verifier', () => {
   });
 
   it('answers TRUE only once the call has SETTLED', async () => {
-    // ⚠️ REWRITTEN. The first version parked with one status and then parked a
-    // SECOND time with the status under test, asking that park's verifier — so
-    // for 'concluded'/'failed' no park happened at all and the test returned a
-    // hardcoded `true` rather than asking anything. It asserted its own fixture.
-    //
     // The verifier reads the attempt AT CALL TIME, so the honest way to test it
     // is one park whose port answer CHANGES underneath it — exactly what happens
     // in production when the callback lands during the window.

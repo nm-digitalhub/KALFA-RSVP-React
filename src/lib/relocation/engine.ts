@@ -7,7 +7,7 @@
  *
  * Loop per step: check → (dry-run: collect plan and continue) → gate →
  * backup → persist running → apply → verify → persist done. A failed verify
- * HALTS the run — there is deliberately no "continue anyway" (plan §5 S6).
+ * HALTS the run — there is deliberately no "continue anyway" (design §3 S6).
  * Rollback walks done/failed steps in reverse. `repair` is the explicit human
  * override when the ledger and reality disagree (Supabase `migration repair`
  * convention) — never hand-edit the state file.
@@ -52,8 +52,8 @@ export interface VerifyCheck {
 }
 
 /**
- * The engine unit ("Step" is the persisted STATE record in ./state.ts; this is
- * the executable definition — verifier fix #5).
+ * The engine unit (StepState is the persisted STATE record in ./state.ts; this
+ * is the executable definition).
  */
 export interface StepDefinition<Ctx = WizardContext> {
   id: string;

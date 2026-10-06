@@ -2,7 +2,7 @@
 // .fleet-logs/drafts/, served through the admin-gated /api/admin/fleet-file
 // route (realpath-allowlisted there; a bad/outside path simply 404s). Audio,
 // images and video play inline so the owner can check a draft straight from
-// the bubble. Moved as-is from the old detail pane (activity-detail.tsx).
+// the bubble.
 
 type RequestAttachment = { path: string; label?: string; mime?: string };
 

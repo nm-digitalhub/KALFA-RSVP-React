@@ -88,9 +88,8 @@ describe('/admin/integrations/slack', () => {
   });
 
   it('paginates to ITSELF, not to the page being retired', async () => {
-    // The lifted table came from alerts/page.tsx with basePath hardcoded to
-    // '/admin/alerts'. Copied unchanged, a reader on page 2 here would be thrown
-    // onto the legacy page. Asserting rendered text would not catch an href.
+    // A reader on page 2 must stay on this page. Asserting rendered text would not
+    // catch an href.
     const history = collect(await render()).find(
       (p) => (p.__type as { name?: string } | undefined)?.name === 'AlertsHistory',
     );

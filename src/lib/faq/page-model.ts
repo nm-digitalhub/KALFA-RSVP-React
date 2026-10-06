@@ -3,8 +3,8 @@
 // plus the live BusinessFacts (src/lib/fleet/business-facts.ts) and produces
 // ONE ordered model that both the page JSX and the FAQPage JSON-LD render
 // from — so the two can never drift into two different question sets (the
-// FAQ spec's requirement 7: JSON-LD generated from the SAME data that
-// renders the visible page, never a second hardcoded copy).
+// JSON-LD is generated from the SAME data that renders the visible page,
+// never a second hardcoded copy).
 //
 // Of the platform's 14 FAQ questions, 2 are fully code-owned and never
 // become `faq_items` rows at all:
@@ -36,8 +36,9 @@ export const FAQ_CATEGORY_TITLES: Record<FaqCategory, string> = {
   legal_support: 'ביטול, פרטיות ותמיכה',
 };
 
-// The one row whose lifecycle is restricted (see actions.ts): can be edited
-// (only its optional supplement), never unpublished, never deleted.
+// The one row with the Tier-1 lifecycle lockout (see updateFaqItem in
+// src/lib/data/admin/faq.ts): can be edited (only its optional supplement),
+// never unpublished, never deleted.
 export const PROTECTED_FAQ_ITEM_KEY = 'pricing_no_response';
 
 export type FaqItemRow = {
@@ -135,7 +136,7 @@ export function buildFaqPageModel(items: FaqItemRow[], facts: BusinessFacts): Fa
     { category: 'how_it_works', title: FAQ_CATEGORY_TITLES.how_it_works, entries: howEntries },
     { category: 'legal_support', title: FAQ_CATEGORY_TITLES.legal_support, entries: legalEntries },
   ];
-  // Empty categories (spec §7) are dropped here, once, so the page and the
+  // Empty categories are dropped here, once, so the page and the
   // JSON-LD both simply never see them rather than each needing its own
   // "is this section empty?" check.
   const sections = allSections.filter((section) => section.entries.length > 0);

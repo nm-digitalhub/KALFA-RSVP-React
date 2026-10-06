@@ -19,7 +19,7 @@ import { CHECKBOX_LIST_FORMAT } from '@/lib/workflow/catalogue/ui-formats';
 // WHY IT IS CUSTOM. The SDK's `UISchemaControlElement` union ships eleven
 // controls, and its only multi-value ones (`DecisionBranches`, `AiTools`) are
 // each bound to a fixed item shape. There is no "pick several from a list", so
-// this is the second renderer registered through `jsonForm` — the same extension
+// this is another renderer registered through `jsonForm` — the same extension
 // point, the same `optionIs('format', …)` binding, as header-rows-control.
 //
 // ⚠️ THE STORED SHAPE IS AN OPEN LIST, NOT AN ENUM, and that is the point.
@@ -93,8 +93,7 @@ function CheckboxListControl({
   };
 
   return (
-    // ⚠️ THE SDK'S WRAPPER, not a hand-rolled <span>. This used to render the
-    // label itself, which looked close enough and was not: `FormControlWithLabel`
+    // ⚠️ THE SDK'S WRAPPER, not a hand-rolled <span>. `FormControlWithLabel`
     // also draws the `*` for a required field and owns the label/control spacing
     // every built-in control uses. A custom renderer that approximates it drifts
     // the moment the editor's form styling changes, and silently omits the

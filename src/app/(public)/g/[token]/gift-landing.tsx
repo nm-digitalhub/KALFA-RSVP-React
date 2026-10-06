@@ -21,7 +21,8 @@ import type { GiftView } from '@/lib/data/gift';
 //
 // Presentation (motion spec §9): a two-faced card. FRONT = the invitation image
 // + greeting + the essentials (date, venue); BACK = the extras (Waze, calendar).
-// The FlipCard island flips to the back by itself after ~1.4s and offers a
+// The FlipCard island flips to the back by itself after ~1.4s (with an
+// invitation image: once it has loaded, plus a 2.5s dwell) and offers a
 // toggle both ways. Two things are deliberately OUTSIDE the card (security
 // review 2026-09-08): the page's h1 heading (visually hidden, so it is exposed to
 // assistive tech from the first paint regardless of which face shows) and the

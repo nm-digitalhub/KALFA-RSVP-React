@@ -19,14 +19,11 @@ const puppeteer = createRequire(__filename)('puppeteer') as typeof import('puppe
 // already a real project dependency, already proven on this server (Chromium
 // installed once, long-lived pm2 process).
 //
-// Why this exists (history, verified 2026-08-30 by reading the actual
-// interactive-session transcript from 2026-08-23): the real mechanism social-
-// manager's past image posts were produced with was an owner/interactive
-// session authoring a small HTML+CSS mockup and rendering it to PNG — NOT any
-// AI image-generation API. An ElevenLabs Flows (`/v1/flows/image`) attempt
-// was tried first and rejected live with "requires a Pro plan or above" (the
+// Why a local render and not an image-generation API: social-manager's image
+// posts are a small HTML+CSS mockup rendered to PNG. An ElevenLabs Flows
+// (`/v1/flows/image`) call is rejected with "requires a Pro plan or above" (the
 // project's ElevenLabs account is Creator tier, confirmed via
-// GET /v1/user/subscription). This module replaces that attempt: no external
+// GET /v1/user/subscription). So: no external
 // API, no billing tier, no account dependency — just a local headless-browser
 // screenshot of HTML the role already wrote, matching the earlier
 // (`hyperframes`-scaffolded, Puppeteer-rendered) precedent's actual output

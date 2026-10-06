@@ -52,8 +52,7 @@ describe('israelSlot — the key everything deduplicates on', () => {
   it('⚠️ survives the SPRING transition', () => {
     // Israel springs forward on the Friday before the last Sunday of March —
     // 2026: 27 March at 02:00 local, which IS 00:00 UTC because the offset is
-    // still +2 at that moment. The fixture below was wrong on the first attempt
-    // for exactly that reason: 00:30 UTC is already PAST the change.
+    // still +2 at that moment. So 00:30 UTC is already PAST the change.
     expect(israelSlot(at('2026-03-26T23:30:00Z'))).toBe('2026-03-27T01:30'); // still +2
     expect(israelSlot(at('2026-03-27T00:30:00Z'))).toBe('2026-03-27T03:30'); // now +3
 
@@ -174,7 +173,8 @@ describe('planScheduledRuns', () => {
 
   it('⚠️ carries NO contact — a scheduled run is not about a person', () => {
     // The property every guest-touching node relies on: `requireGuestContext`
-    // refuses inside this run, which is correct until a step goes and finds guests.
+    // refuses inside this run, which is correct: `action.start_for_each_guest`
+    // finds the guests, and the child runs it starts are the ones with a contact.
     const [run] = planScheduledRuns([armed({ time: '09:00' })], NINE);
     expect(run!.triggerPayload.contactId).toBeUndefined();
     expect(run!.eventId).toBeNull();

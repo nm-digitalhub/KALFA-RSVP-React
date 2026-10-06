@@ -306,8 +306,9 @@ const TOKEN_ENDPOINT_ERRORS: Record<
   unsupported_grant_type: { status: 'failed', permanent: true },
   invalid_request: { status: 'failed', permanent: true },
 
-  // §4.1.2.1 codes some servers also return from the token endpoint. They say
-  // "later", not "no" — leave the status alone and let the next attempt try.
+  // §4.1.2.1 codes some servers also return from the token endpoint (`slow_down`
+  // is RFC 8628's). They say "later", not "no" — leave the status alone and let
+  // the next attempt try.
   temporarily_unavailable: { status: undefined, permanent: false },
   server_error: { status: undefined, permanent: false },
   slow_down: { status: undefined, permanent: false },

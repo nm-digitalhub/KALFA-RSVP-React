@@ -16,9 +16,9 @@ import {
 
 // ⚠️ TEMPORARY MIGRATION SCAFFOLD — DELETE AT STEP 7 (cutover), together with the
 // code builders it compares against and PARAM_CONTRACT_PATHS. It guards ONLY the
-// window where the old builders still send live messages; it does not constrain
-// templates, which become data (whatsapp_template_parameters) editable from the
-// admin screen.
+// window where the old builders still exist (sends already bind through
+// resolveWhatsAppSend); it does not constrain templates, which are data
+// (whatsapp_template_parameters) editable from the admin screen.
 //
 // Step-4/6 gate (docs/superpowers/plans/2026-09-30-whatsapp-templates-meta-mirror.md):
 // every approved layout expressed as DATA (PARAM_CONTRACT_PATHS over one send

@@ -15,24 +15,18 @@ import { updateVoximplantChannelAction } from '@/app/(admin)/admin/integrations/
 import { CopyRow, Field, SecretField } from '../_components/form-fields';
 import { VoximplantRuleField } from './voximplant-rule-field';
 
-// Account, dial config, budget limits and the scenario base URLs — lifted out of
-// channels-client.tsx so the provider page and the old channels tab render one
-// definition while both exist. The old page is deleted in Task 0.6, separately.
+// Account, dial config, budget limits and the scenario base URLs.
 //
-// The three accordion items stay in ONE group, as they are today. The plan (§Task 0.4
-// Step 1) split "כתובות התרחיש" into its own file; splitting it would put a save button
-// between two halves of one accordion on both surfaces, for no gain — the URLs carry no
-// input and being inside the form is harmless.
+// The three accordion items stay in ONE group. The plan (§Task 0.4 Step 1) split
+// "כתובות התרחיש" into its own file; splitting it would put a save button between two
+// halves of one accordion, for no gain — the URLs carry no input and being inside the
+// form is harmless.
 //
 // ⚠️ THE SERVICE-ACCOUNT JSON IS NEVER ROUND-TRIPPED. It is a multi-KB RSA private key;
 // the DAL returns only `serviceAccountConfigured`, and the textarea below is always
 // empty — blank means "keep what is stored". The callback secret IS returned, masked
 // with a reveal toggle (owner ruling 2026-08-24). Those two are deliberately different,
 // and the page test asserts both.
-//
-// The action is imported from its ORIGINAL location on purpose: moving the actions is
-// Task 0.3 Step 1's own job, and touching them here would mean two passes over the same
-// file. The wiring is identical either way.
 
 const inputClass =
   'w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15';

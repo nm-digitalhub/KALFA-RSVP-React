@@ -7,8 +7,8 @@ import type { BadgeVariant } from '@/components/ui/badge';
 // here rather than a silently-missing label.
 //
 // Pure label/variant maps — NO `server-only` here: this module is imported by
-// the (server) guest list page AND by client components (e.g. the WhatsApp
-// timeline), so it must stay isomorphic. `BadgeVariant` is a type-only import.
+// the (server) guest list page AND by client components (e.g. the campaign
+// manage screen), so it must stay isomorphic. `BadgeVariant` is a type-only import.
 
 type GuestStatus = Enums<'guest_status'>;
 type ContactStatus = Enums<'contact_status'>;
@@ -35,8 +35,8 @@ export const CONTACT_STATUS_LABELS: Record<ContactStatus, string> = {
 // Webhook-driven state (Meta WhatsApp): the outreach `op_status`, per-message
 // `delivery_status`, and the opt-out flag. These are SEPARATE from the CRM
 // `contact_status` above — they reflect what Meta streamed through the webhook,
-// not what the owner typed. Shared by the guest list badges (B6), the guest
-// WhatsApp timeline (B7), and the campaign breakdown (B8).
+// not what the owner typed. Shared by the guest list badges, the guest
+// WhatsApp timeline, and the campaign breakdown.
 // ---------------------------------------------------------------------------
 
 // contacts.op_status — the outreach-engine state of a contact. EXHAUSTIVE

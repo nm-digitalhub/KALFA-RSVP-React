@@ -39,16 +39,15 @@ export function DateSelectIL({
   labelPrefix,
 }: {
   id: string;
-  // undefined (edit form after publish) keeps the field out of the POST,
-  // exactly like the old input's conditional `name`.
+  // undefined (edit form while the dates are locked) keeps the field out of
+  // the POST.
   name?: string;
   // ISO 'YYYY-MM-DD' or '' (not set).
   defaultValue?: string;
   disabled?: boolean;
   // Client-side must-pick guard (a native select with required blocks submit
-  // while its value is ''). Mirrors the old `<input type="date" required>` —
-  // the create form promises a date (asterisk) even though the SCHEMA keeps a
-  // date-less draft legal by design (R2).
+  // while its value is ''). The create form promises a date (asterisk) even
+  // though the SCHEMA keeps a date-less draft legal by design (R2).
   required?: boolean;
   fromYear?: number;
   toYear?: number;

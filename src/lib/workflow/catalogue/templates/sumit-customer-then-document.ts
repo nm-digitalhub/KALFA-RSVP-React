@@ -1,8 +1,7 @@
 'use client';
 
 // Starter template 12 of 13 — its diagram and its selector entry. Editor
-// side; `./index.ts` places it in `DIAGRAM_TEMPLATES` at the position the
-// inline entry held.
+// side; `./index.ts` places it in `DIAGRAM_TEMPLATES`.
 import type { DiagramModel, TemplateModel } from '@workflowbuilder/sdk';
 
 import { ACTION_BRANCH_HANDLES } from '../types';
@@ -16,7 +15,7 @@ const CUSTDOC_DOCUMENT_ID = 'tmpl-custdoc-document';
  * Create the customer, then issue the document TO THAT CUSTOMER.
  *
  * WHAT THIS TEMPLATE IS FOR, and why it is not the same starter as the receipt
- * one: it is the only place the editor shows an owner that a node's OUTPUT is
+ * one: it is the starter that exists to show an owner that a node's OUTPUT is
  * addressable. The document's customer field holds
  * `{{nodes.<customer node id>.customerId}}` — `customerId` is on the create-customer
  * node's `outputSchema`, so the variable picker offers it by name, and

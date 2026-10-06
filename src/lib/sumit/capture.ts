@@ -22,9 +22,8 @@ export interface SumitCaptureParams {
   // Receipt "לכבוד" line — without it SUMIT prints "כרטיס ללא שם"
   // (observed on the live doc-check receipt 40106).
   customerName?: string;
-  // The hold's SUMIT customer number (campaigns.sumit_customer_id today; the
-  // payment method's provider_customer_id once payments move to their own
-  // tables), when known. Belt-and-braces ONLY: a charge on the saved token
+  // The hold's SUMIT customer number (campaigns.sumit_customer_id), when
+  // known. Belt-and-braces ONLY: a charge on the saved token
   // lands on the customer the token was saved under at hold time — SUMIT's
   // documentation says so and it was verified live 2026-06-29 (₪4 hold + ₪1
   // capture, receipt on the hold's customer; settled 2026-08-27, see
@@ -35,7 +34,7 @@ export interface SumitCaptureParams {
   customerId?: number | null;
   /**
    * OPTIONAL receipt breakdown — one Items row per component ("דמי הפעלה",
-   * "אנשי קשר נוספים…") instead of a single opaque "חיוב קמפיין" line, so the
+   * "אנשי קשר שנענו…") instead of a single opaque "חיוב קמפיין" line, so the
    * customer can see where the total came from.
    *
    * SUMIT derives the charged total from the Items rows, NOT from `amount` — so

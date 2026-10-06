@@ -7,7 +7,7 @@ import nextConfig from '../../next.config';
 
 // THE GUARD FOR RETIRING A PAGE.
 //
-// Task 0.6 deleted /admin/channels and /admin/alerts and left a redirect behind.
+// A retired page (e.g. /admin/channels, /admin/alerts) leaves a redirect behind.
 // Two ways that goes wrong, and neither shows up in a build:
 //
 //   1. The redirect is removed (or never added) while the page is gone — every
@@ -69,8 +69,8 @@ describe('retired routes keep a redirect, and it points somewhere real', () => {
     const bySource = Object.fromEntries(
       (await nextConfig.redirects!()).map((r) => [r.source, r]),
     );
-    // /admin/channels goes to the INDEX, not to one provider: Step 4b moved the
-    // channel catalog there, so the index is the only page that carries
+    // /admin/channels goes to the INDEX, not to one provider: the channel
+    // catalog lives there, so the index is the only page that carries
     // everything the old one did.
     expect(bySource['/admin/channels']?.destination).toBe('/admin/integrations');
     expect(bySource['/admin/alerts']?.destination).toBe('/admin/integrations/slack');

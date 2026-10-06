@@ -39,7 +39,7 @@ export default async function ContactPage({
 
   return (
     <div className="bg-background">
-      {/* Header: the shared SiteHeader from the (site) layout (24.8). */}
+      {/* Header: the shared SiteHeader from the (site) layout. */}
       <main className="mx-auto max-w-3xl space-y-10 px-4 py-10 sm:px-6 sm:py-12">
         <div>
           <h1 className="text-balance text-display font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">יצירת קשר ותמיכה</h1>

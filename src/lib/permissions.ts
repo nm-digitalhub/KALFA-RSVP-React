@@ -11,7 +11,7 @@ import { getUser } from '@/lib/auth/dal';
 // org's rows). The VERB ("may this member edit guests / manage members?") is
 // enforced here, in the server layer, against the single DB source of truth:
 //   public.has_org_permission(_org_id, _resource, _action)
-// which joins organization_members -> role_permissions -> permission_definitions.
+// which joins organization_members -> organization_role_permissions -> permission_definitions.
 //
 // `resource` and `action` are plain strings validated at the DB against the
 // seeded permission catalog — there is deliberately NO hardcoded union of

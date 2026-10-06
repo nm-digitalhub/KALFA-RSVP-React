@@ -15,13 +15,13 @@ import {
 import { cn } from '@/lib/utils';
 
 // "שיחות AI חיות" — the browser console's view onto live AI (RSVPAgent) calls,
-// with claim + monitor/takeover + close_agent. Plan stage 6-UI. Deliberately a
+// with claim + monitor/takeover + close_agent. Deliberately a
 // separate component from softphone-panel.tsx: this section watches a DIFFERENT
 // table pair (console_call_feed / human_agent_call_legs) than the panel's own
 // console_calls-based manual/inbound flow, and keeps softphone-panel.tsx from
 // growing a second unrelated data layer inline.
 //
-// Honest-UI discipline throughout (save_rsvp precedent, restated in the plan):
+// Honest-UI discipline throughout (save_rsvp precedent):
 // a POST's 202 means "delivered", never "connected"/"closed". Every visible
 // "I'm listening" / "I'm live" / "AI closed" state comes ONLY from a realtime
 // row (human_agent_call_legs for the human leg; console_call_feed itself is
@@ -31,9 +31,8 @@ import { cn } from '@/lib/utils';
 // is `import 'server-only'`, so it cannot be imported here. console_call_feed
 // mirrors call_attempts.status 1:1 (sync_console_call_feed trigger), so this is
 // a deliberate, documented duplication of that same vocabulary, not a guess.
-// KEEP IN SYNC with call-attempts.ts's TERMINAL_STATUSES (currently includes
-// 'handed_off', landed by the concurrent AI-handoff stage in this same
-// change-set) — a stale copy here leaves a handed-off call stuck on this
+// KEEP IN SYNC with call-attempts.ts's TERMINAL_STATUSES (including
+// 'handed_off') — a stale copy here leaves a handed-off call stuck on this
 // board forever, looking claimable when it is long over.
 const AI_CALL_TERMINAL_STATUSES = ['completed', 'failed', 'no_answer', 'no_response', 'cancelled', 'handed_off'];
 

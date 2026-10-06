@@ -16,8 +16,9 @@ import type { TeamAlertsPort } from './engine/ports';
 export function createTeamAlerts(): TeamAlertsPort {
   return {
     async notifyTeam({ level, title, detail }) {
-      // `source: 'workflow'` is what separates these in the channel from the
-      // engine's own `workflow run failed` alerts: this one was ASKED for by an
+      // `source: 'workflow'` is the same tag the engine's own `workflow run
+      // failed` alerts carry; what tells them apart in the channel is the title,
+      // an owner's own here and a fixed one there. This one was ASKED for by an
       // owner's diagram, the other is the platform reporting a fault.
       //
       // `category: 'errors'` is the category an operator already keeps on. A

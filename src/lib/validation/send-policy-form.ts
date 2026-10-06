@@ -3,8 +3,7 @@ import { z } from 'zod';
 import { parseSendPolicy, type SendPolicy } from '@/lib/outreach/send-policy';
 
 // The HTML form ⇄ SendPolicy boundary, kept OUT of the Server Action so it can be
-// tested as a pure function. Closes the writer half of gap G9: the column exists,
-// is populated, and until now could only be edited with SQL.
+// tested as a pure function.
 //
 // WHY A SEPARATE LAYER AT ALL. `parseSendPolicy` already validates — it is the
 // single definition of the safety ceilings and stays that way. What it cannot do
@@ -66,8 +65,8 @@ function add(
  * (`preferred.<i>.days` + `preferred.<i>.time`); a row with both blank is the
  * empty "add another" row and is skipped.
  *
- * WHY ROWS AND NOT THREE FIXED FIELDS. The plan sketched three (7/3/1 days), which
- * are the keys the live value happens to carry today. Rendering exactly three
+ * WHY ROWS AND NOT THREE FIXED FIELDS. Three fixed fields (7/3/1 days) would be
+ * the keys the stored value happens to carry today. Rendering exactly three
  * would mean a policy holding a fourth key silently LOSES it on the next save —
  * the schedule is per-event and a touchpoint may sit at any days_before, so that
  * is not a hypothetical. Rows preserve whatever is stored and let an admin add

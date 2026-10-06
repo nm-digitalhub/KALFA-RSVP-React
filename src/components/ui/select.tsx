@@ -6,7 +6,7 @@ import { CheckIcon, ChevronDownIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Base UI Select. Portals via Portal/Positioner → must render under the app's
-// DirectionProvider (app-shell) so the popup flips correctly in RTL.
+// DirectionProvider (root layout) so the popup flips correctly in RTL.
 function Select<Value, Multiple extends boolean | undefined = false>(
   props: SelectPrimitive.Root.Props<Value, Multiple>,
 ) {

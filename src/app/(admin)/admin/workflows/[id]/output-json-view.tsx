@@ -11,7 +11,7 @@ import { outputPaths, referenceFor } from './output-paths';
 // A step's output, shown as a tree — and a way to take a field from it into the
 // workflow.
 //
-// THE SPLIT (owner, 25.9):
+// THE SPLIT:
 //   - `flat` turns the output into paths and values (`output-paths.ts`) — the
 //     same `.0` paths `resolveTemplate` walks and the variable picker offers;
 //   - `@uiw/react-json-view` draws them: names, values, objects, arrays;
@@ -29,7 +29,7 @@ import { outputPaths, referenceFor } from './output-paths';
 // template can print.
 //
 // `dir="ltr"`: keys, braces and quotes must not be mirrored by the RTL panel
-// around it (the phone screenshot of 25.9). Hebrew VALUES still read correctly —
+// around it. Hebrew VALUES still read correctly —
 // the browser's bidi algorithm handles a Hebrew run inside LTR text.
 
 function subscribeTheme(onChange: () => void): () => void {

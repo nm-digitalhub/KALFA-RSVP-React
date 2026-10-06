@@ -30,8 +30,7 @@ export function ExecutionNodeMarkers({ props }: Props) {
     nodeState.status === 'completed' ||
     nodeState.status === 'failed' ||
     nodeState.status === 'skipped' ||
-    // Clickable too, and this is the badge where it matters most: the log line
-    // is the only place that says WHEN it wakes.
+    // Clickable too: the log line spells the wait out in full.
     nodeState.status === 'waiting';
 
   // ⚠️ THE SAME DATE MEANS TWO THINGS, so the sentence follows the KIND.
@@ -105,12 +104,13 @@ export function ExecutionNodeMarkers({ props }: Props) {
 // ⚠️ NOT DONE HERE, ON PURPOSE. Upstream's own execution-visualisation guidance
 // asks a node badge for six things; this shows two of them — state, and what a
 // waiting node waits on. The two still missing are UX follow-ups rather than
-// contract gaps, and both were left out of the `node_waiting` fix deliberately
-// so it stayed one change:
+// contract gaps:
 //
 //   Time elapsed  — needs no engine work. Every event already carries a
 //                   `timestamp`, and the store keeps them all, so
 //                   node_started → node_completed is a client-side subtraction.
+//                   `nodeAttempts` already does it for the step's panel; only
+//                   this badge does not show it.
 //   Retry count   — partial. The vendored runner flattens a throw to
 //                   `{ message, code, attempt }`, so `error.attempt` reaches us
 //                   on `node_failed`. A run redelivered by pg-boss emits no node

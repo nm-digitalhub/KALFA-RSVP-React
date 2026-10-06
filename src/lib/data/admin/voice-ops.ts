@@ -27,12 +27,14 @@ import {
 
 // Admin voice-ops dashboard DAL. Admins supervise calls across events they do
 // NOT own, so — exactly like admin/campaigns.ts — every reader uses the
-// service-role client (bypassing RLS) UNDER requireAdmin(). No new dashboard
-// RLS is introduced.
+// service-role client (bypassing RLS) UNDER requirePlatformPermission(). No new
+// dashboard RLS is introduced.
 //
 // PII discipline: the per-event/attempt readers select an EXPLICIT column list
-// that EXCLUDES access_token, transcript, and recording_url. Content-bearing
-// provider fields never reach here.
+// that EXCLUDES access_token. transcript and recording_url are selected only
+// where a presence flag needs them (listCallAttemptsForEvent) and are never
+// returned as values; the one surface that returns recording_url is
+// listCallRecordings, below. Content-bearing provider fields never reach here.
 //
 // Aggregation is JS-first over a bounded window — EXPLAIN ANALYZE on the live
 // GROUP BY showed a 0.2ms HashAggregate (no RPC warranted, owner directive #13).
@@ -66,10 +68,7 @@ export interface EventActivityAgg {
   failed: number;
   // RSVP answers captured on calls, split by answer. Two capture paths feed
   // these: the DTMF digit ('1'/'2') and the agent bridge's rsvp_outcome
-  // (attending/declined/maybe, written by save_rsvp). Until 2026-09-07 only
-  // the digit was counted — production agent calls showed 0 here while the
-  // guest list showed the RSVPs — and '2' (declined) was even counted under
-  // the "אישרו" column.
+  // (attending/declined/maybe, written by save_rsvp).
   confirmedFromCall: number;
   declinedFromCall: number;
   maybeFromCall: number;
@@ -135,7 +134,7 @@ export async function getVoiceDashboardSummary(
   await requirePlatformPermission('manage_voice');
   const admin = createAdminClient();
   // ⚠️ "today" here is UTC midnight (02:00/03:00 Israel), NOT Israel midnight.
-  // Kept as-is on purpose: this refactor must not move a number on the page.
+  // Kept as UTC midnight on purpose: moving it would shift the number on the page.
   // The owner agent's 'today' is Israel midnight (owner-agent/range.ts), so the
   // two "today" figures can differ by the calls placed between 00:00 Israel
   // and 00:00 UTC. The 7-day figures are identical by construction.
@@ -144,7 +143,7 @@ export async function getVoiceDashboardSummary(
 
   // The 7-day numbers come from the request-free voice core — the same call the
   // owner agent makes for '7d' (rolling 7 × 24h ending nowMs) — so this page
-  // and the agent cannot disagree. 5 head-counts in total, as before: the
+  // and the agent cannot disagree. 5 head-counts in total: the
   // core's 4 (active, attempts, completed, answer-rate denominator) + today.
   // Both throw on a DB error rather than degrading to a confident 0.
   const [week, today] = await Promise.all([
@@ -250,9 +249,9 @@ export async function listEventsWithCallActivity(
   return { items, total, page, pageSize, truncated };
 }
 
-// Per-attempt supervision rows for one event. EXPLICIT non-PII column list:
-// access_token / transcript / recording_url are NEVER selected. `hasRecording`
-// / `hasTranscript` are boolean presence flags computed without reading content.
+// Per-attempt supervision rows for one event. EXPLICIT column list: access_token
+// is NEVER selected. recording_url / transcript are fetched only to compute the
+// `hasRecording` / `hasTranscript` boolean presence flags and are never returned.
 export interface EventCallAttemptRow {
   id: string;
   status: string;
@@ -457,7 +456,7 @@ export async function getLogExportStatus(): Promise<LogExportStatus> {
   };
 }
 
-// The account-callback wiring state (B5) — never returns the token or its hash,
+// The account-callback wiring state — never returns the token or its hash,
 // only whether one is set. Extracted out of getVoicePlatformView so
 // /admin/integrations/voximplant can show it WITHOUT paying for that function's
 // three live Voximplant round-trips (call lists, audit log, media resources): this
@@ -498,7 +497,7 @@ export async function getVoicePlatformView(nowMs: number = Date.now()): Promise<
 
   const balance = await getVoiceBalanceTile();
 
-  // --- call lists (A1) ---
+  // --- call lists ---
   let callLists: VoiceCallListsSection;
   if (!cfg) {
     callLists = { status: 'unconfigured', lists: [] };
@@ -516,7 +515,7 @@ export async function getVoicePlatformView(nowMs: number = Date.now()): Promise<
     }
   }
 
-  // --- audit (A3) — 104/403 = forbidden (Owner-only), never a hard fail ---
+  // --- audit — Owner-role-only: an API error (e.g. 104 FORBIDDEN_COMMAND) reads as forbidden, never a hard fail ---
   let audit: VoiceAuditSection;
   if (!cfg) {
     audit = { status: 'unconfigured', entries: [] };
@@ -537,7 +536,7 @@ export async function getVoicePlatformView(nowMs: number = Date.now()): Promise<
     }
   }
 
-  // --- allowlist (A2) — public endpoint, independent of cfg ---
+  // --- allowlist — public endpoint, independent of cfg ---
   let allowlist: VoiceAllowlistSection;
   try {
     allowlist = { status: 'ok', ips: extractIpStrings(await getMediaResources({ with_jsservers: true })) };
@@ -550,8 +549,8 @@ export async function getVoicePlatformView(nowMs: number = Date.now()): Promise<
   return { balance, callLists, audit, allowlist, wiring };
 }
 
-// Admin recordings list (/admin/recordings). Extracted from the page so it lives
-// behind a tested, service-role seam like every other admin call_attempts read —
+// Admin recordings list (/admin/recordings). It lives behind a tested,
+// service-role seam like every other admin call_attempts read —
 // this is the one surface that intentionally exposes recording_url (guest voice),
 // gated on the most restrictive permission (view_recordings, owner-only). The
 // column list is fixed and explicit so a future `select('*')` can never leak

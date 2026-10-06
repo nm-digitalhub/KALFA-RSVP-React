@@ -7,11 +7,11 @@ import { Button } from '@/components/ui/button';
 
 // The one value an operator must carry OUT of this screen and INTO Microsoft.
 //
-// ⚠️ IT WAS NOWHERE IN THE PRODUCT. Registering the app in Entra requires a
-// Redirect URI that matches ours EXACTLY — Microsoft's protocol reference says
-// it "must exactly match one of the redirect URIs you registered", and a
-// mismatch fails with AADSTS50011 before any of our code runs. Until now the
-// only way to learn the value was to read `oauth-flow.ts` and combine
+// ⚠️ IT CANNOT BE LEFT FOR THE OPERATOR TO RECONSTRUCT. Registering the app in Entra
+// requires a Redirect URI that matches ours EXACTLY — Microsoft's protocol reference
+// says it "must exactly match one of the redirect URIs you registered", and a
+// mismatch fails with AADSTS50011 before any of our code runs. Without this field the
+// only way to learn the value is to read `oauth-flow.ts` and combine
 // `INTEGRATION_OAUTH_CALLBACK_PATH` with `APP_ORIGIN` by hand.
 //
 // n8n shows the same field in its credential modal (`CopyInput` for

@@ -16,11 +16,11 @@ export const APP_ROLE_LABELS: Record<AppRole, string> = {
   user: 'משתמש',
 };
 
-// callback_requests.status — SCHEDULING status, redesigned 2026-08-19/20 (see
-// the vocabulary's own comment in validation/admin.ts for the full reasoning:
-// this describes what the scheduler did, never what the owner did with the
-// call). Free text in the DB → known tokens get a label, unknown values fall
-// back to the raw string at the call site (`LABELS[s] ?? s`).
+// callback_requests.status — SCHEDULING status (see the vocabulary's own
+// comment in validation/admin.ts for the full reasoning: this describes what
+// the scheduler did, never what the owner did with the call). Free text in the
+// DB → known tokens get a label, unknown values fall back to the raw string at
+// the call site (`LABELS[s] ?? s`).
 export const CALLBACK_STATUS_LABELS: Record<CallbackStatus, string> = {
   new: 'חדש',
   pending_schedule: 'ממתינה לשיבוץ',
@@ -98,9 +98,8 @@ export function schedulingFailureLabel(reason: string): string {
 }
 
 // contact_messages.status — its own independent vocabulary (see
-// validation/admin.ts: this used to reuse the callback vocabulary directly,
-// before that vocabulary was redesigned into scheduling-specific states that
-// have no meaning for a contact-form message). `reopened` is a fifth value
+// validation/admin.ts: the callback vocabulary is made of scheduling-specific
+// states that have no meaning for a contact-form message). `reopened` is a fifth value
 // contact_messages can carry — a customer wrote back on an already-answered
 // thread — but is system-set only, never offered as a pickable option, so it
 // stays a separate fallback layer rather than a sixth CONTACT_STATUS_LABELS
@@ -184,10 +183,10 @@ export const WEBHOOK_PROCESS_VARIANTS: Record<WebhookState, BadgeVariant> = {
   error: 'destructive',
 };
 
-// webhook_inbox rows come from FOUR integrations across NINE routes. VERIFIED
-// 2026-08-26 by enumerating every insertWebhookEvents call site — the labels
+// webhook_inbox rows come from FIVE integrations (whatsapp, graph, voximplant,
+// resend, elevenlabs), across every insertWebhookEvents call site — the labels
 // below cover all of them, so no badge falls back to a raw English slug in a
-// Hebrew RTL admin (7 of the 9 previously did).
+// Hebrew RTL admin.
 export const WEBHOOK_PROVIDER_LABELS: Record<string, string> = {
   whatsapp: 'וואטסאפ',
   graph: 'דואר Microsoft',
@@ -201,7 +200,7 @@ export function webhookProviderLabel(provider: string): string {
 }
 
 // event_kind identifies the individual route (1:1, except /api/webhooks/whatsapp
-// which emits both 'message' and 'status').
+// which emits 'message', 'status' and the Meta field kinds below).
 export const WEBHOOK_KIND_LABELS: Record<string, string> = {
   message: 'הודעה נכנסת',
   status: 'סטטוס מסירה',
@@ -305,7 +304,7 @@ export function salesDispatchStatusLabel(value: string): string {
 // or its free-text error_reason when the scenario reports one). A different
 // thing from call_analysis.termination_reason, which is ElevenLabs' English
 // sentence about why the CONVERSATION ended and only arrives with the post-call
-// analysis — the screen falls back from that to this (see mapSalesCall), so
+// analysis — the screen falls back from that to this (see mapAiCall), so
 // this map must pass an unrecognised value through unchanged: an ElevenLabs
 // sentence is exactly what arrives here on the other branch.
 //
@@ -323,8 +322,6 @@ export function salesFinishReasonLabel(value: string): string {
   return SALES_FINISH_REASON_LABELS[value] ?? value;
 }
 
-// call_analysis.sentiment_label — ElevenLabs' read of how the CALLER sounded,
-// constrained to this closed set by the column's own CHECK.
 // Which persona placed an AI call. Shown per card because the same screen now
 // lists both, and "the AI called" means something different in each.
 export const AI_CALL_SOURCE_LABELS: Record<string, string> = {
@@ -350,6 +347,8 @@ export function confirmationCallStatusLabel(value: string): string {
   return CONFIRMATION_CALL_STATUS_LABELS[value] ?? value;
 }
 
+// call_analysis.sentiment_label — ElevenLabs' read of how the CALLER sounded,
+// constrained to this closed set by the column's own CHECK.
 export const SENTIMENT_LABELS: Record<string, string> = {
   positive: 'הלקוח נשמע חיובי',
   neutral: 'הלקוח נשמע ניטרלי',

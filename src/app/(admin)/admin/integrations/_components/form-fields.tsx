@@ -6,14 +6,12 @@ import { Check, Copy, Eye, EyeOff } from 'lucide-react';
 import { FieldError } from '@/components/forms';
 import { HelpTip } from '@/components/help-tip';
 
-// The four field primitives every provider page needs, lifted verbatim out of the
-// old channels-client.tsx so every /admin/integrations/<provider> page renders from
-// ONE definition. That file is gone (Task 0.6 Step 4b); these are its survivors.
+// The four field primitives every provider page needs, so every
+// /admin/integrations/<provider> page renders from ONE definition.
 //
-// Lifted, not rewritten: SecretField carries the masked+reveal convention the owner
-// ruled on (2026-08-24 — masked + reveal stays, do not re-propose a DTO or a taint
-// wrapper), and CopyRow's fallback path exists because navigator.clipboard is absent
-// on plain HTTP. Retyping either would quietly drop a decision.
+// SecretField carries the masked+reveal convention the owner ruled on
+// (2026-08-24 — masked + reveal stays, do not re-propose a DTO or a taint
+// wrapper).
 
 const inputClass =
   'w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15';

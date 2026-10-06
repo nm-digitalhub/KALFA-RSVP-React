@@ -74,7 +74,7 @@ describe('action.create_callback_request — which agent ends up calling', () =>
 
   it('⚠️ an empty topic falls back to an offered value, not an internal label', async () => {
     // The team reads this column in the callback queue, and the agent is handed
-    // it as `{{topic_he}}`. It used to default to 'פנייה מתהליך אוטומטי'.
+    // it as `{{topic_he}}`.
     const create = vi.fn<NonNullable<GuestActionsPort['createCallbackRequest']>>(async () => ({
       ok: true as const,
       created: true,

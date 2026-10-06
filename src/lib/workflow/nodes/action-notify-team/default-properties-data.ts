@@ -5,8 +5,8 @@
 // Annotated with `NodeDataProperties`, not the vendor starter's
 // `Required<NodeDataProperties<…>>`: `armNotice` is in the schema and is
 // deliberately never seeded (see `identityProperties`). The annotation on a
-// fresh literal keeps the excess-property check the inline entry had, so an
-// undeclared key here is still a compile error.
+// fresh literal keeps the excess-property check, so an undeclared key here is
+// a compile error.
 import type { NodeDataProperties } from '@workflowbuilder/sdk';
 
 import { actionBranches, errorPolicyOptions, nodeStatusOptions } from '../../catalogue/editor-shared';

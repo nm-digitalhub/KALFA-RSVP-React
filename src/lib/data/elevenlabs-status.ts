@@ -6,13 +6,14 @@ import { join } from 'node:path';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 // ElevenLabs read-only status for the voice-ops dashboard "agent fleet" panel.
-// Everything is READ-ONLY — agent editing stays in the IaC/CLI flow (agents.json
-// + agent_configs/). Fail-safe: a missing key or any API error degrades to an
-// 'unavailable'/'unconfigured' section, never throws, never logs the key.
+// Everything against the ElevenLabs API is READ-ONLY — agent editing stays in
+// the IaC/CLI flow (agents.json + agent_configs/). Fail-safe: a missing key or
+// any API error degrades to an 'unavailable'/'unconfigured' section, never
+// throws, never logs the key.
 //
 // Endpoints (base https://api.elevenlabs.io, header `xi-api-key`):
 //   GET /v1/convai/agents/{id}          — agent details (DOCUMENTED: docs/voice-agent/elevenlabs-json-reference.md)
-//   GET /v1/user/subscription           — usage/quota (VERIFY-LIVE: not in the local ref)
+//   GET /v1/user/subscription           — usage/quota (VERIFIED LIVE 2026-08-26 against the published OpenAPI spec; not in the local ref)
 //   GET /v1/convai/conversations?agent_id=… — recent conversations (VERIFY-LIVE)
 
 const API_BASE = 'https://api.elevenlabs.io';
@@ -97,7 +98,7 @@ export function readAgentFleet(cwd: string = process.cwd()): FleetAgent[] {
  * malformed body alike, and the one consumer that alerts on it (the quota cron)
  * had no choice but to guess a cause. It guessed "the API key is missing the
  * user_read permission" and told an operator to go re-issue a perfectly good key.
- * Callers that genuinely don't care still get `null` via elevenFetchOrNull below;
+ * Callers that genuinely don't care still get `null` via elevenFetch below;
  * callers that REPORT a failure to a human get the real reason.
  */
 export type ElevenFailure =
@@ -336,7 +337,7 @@ export async function getElevenLabsFleetStatus(): Promise<ElevenLabsFleetStatus>
     }),
   );
 
-  // Quota (VERIFY-LIVE endpoint). Best-effort — null when unavailable.
+  // Quota. Best-effort — null when unavailable.
   const quota = await getElevenLabsQuota(key);
 
   return { configured: true, keySource: source, agents, quota };

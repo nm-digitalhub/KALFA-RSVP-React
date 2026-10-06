@@ -20,7 +20,7 @@ import { getAppOrigin } from '@/lib/url';
 // site root would sit ahead of the `[...catchAll]` 404 handler for every
 // unmatched path (Next sorts `[slug]` before `[...catchAll]` — see that
 // file's header), swallowing real 404s. Four explicit routes cost four
-// fifteen-line files and keep the 404 behaviour exactly as it is.
+// small files and keep the 404 behaviour exactly as it is.
 //
 // Header and footer come from the (site) layout — this renders <main> only,
 // same as every other page in the group.

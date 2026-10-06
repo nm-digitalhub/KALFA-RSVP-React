@@ -9,8 +9,9 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 // admin-configured reserve (calls blocked) or low-balance threshold (warning).
 //
 // Fail-safe by construction, exactly like the auto-thankyou sweep idiom:
-//   - dark-safe: no polling at all while VOXIMPLANT_LIVE_CALLS is off, and a
-//     no-op when the channel is not yet configured (getVoximplantConfig null);
+//   - dark-safe: no polling at all while live calls are disabled (the admin
+//     toggle or the VOXIMPLANT_LIVE_CALLS env override), and a no-op when the
+//     channel is not yet configured (getVoximplantConfig null);
 //   - NEVER throws — a transient GetAccountInfo transport failure is swallowed
 //     (the next 30-minute tick retries); throwing here would fail the pg-boss
 //     job and trigger guardedWorker's error alert for a benign blip;

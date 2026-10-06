@@ -17,12 +17,10 @@ type UiElement = {
 /**
  * Find a control by the property it is bound to, ANYWHERE in the layout tree.
  *
- * Deliberately recursive. The first version of this test read `uischema.elements`
- * as a flat list, which was true right up until the panel grew a `Group` around
- * the account picker (2026-09-17) — and then it failed while the control it was
- * guarding was present and correct. What this test exists to protect is that
- * `connectionId` reaches OUR renderer, not where in the layout it sits, so the
- * lookup should not care which of the two changed.
+ * Deliberately recursive: the optional mail fields sit inside Accordions, and
+ * what the `connectionId` test exists to protect is that it reaches OUR
+ * renderer, not where in the layout it sits — so the lookup should not care how
+ * deep a control is nested.
  */
 function controlFor(uischema: unknown, property: string): UiElement | undefined {
   const element = uischema as UiElement;
@@ -106,11 +104,11 @@ describe('action.microsoft_send_email — live connection schema', () => {
     for (const item of built.filter((candidate) => !rebuiltTypes.has(candidate.type))) {
       const base = PALETTE_ITEMS.find((candidate) => candidate.type === item.type)!;
 
-      // ⚠️ THE SCHEMA, NOT THE ITEM. Every entry is a fresh object now, because
+      // ⚠️ THE SCHEMA, NOT THE ITEM. Every entry is a fresh object, because
       // `buildPaletteItems` also puts the run report on each one's uischema
-      // (see `withNodeRunControl`). What this test exists to state is narrower
-      // and still true: no entry but Microsoft's gets its SCHEMA rebuilt, and
-      // the module-level array is never mutated in place.
+      // (see `withNodeRunControl`). What this test exists to state is narrower:
+      // no entry outside `rebuiltTypes` gets its SCHEMA rebuilt, and the
+      // module-level array is never mutated in place.
       expect(item.schema, item.type).toBe(base.schema);
       expect(item.defaultPropertiesData, item.type).toBe(base.defaultPropertiesData);
       expect(base.uischema, `${item.type}: PALETTE_ITEMS was mutated`).not.toBe(item.uischema);

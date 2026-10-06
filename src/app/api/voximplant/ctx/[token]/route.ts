@@ -42,12 +42,11 @@ const notFound = () => new NextResponse(null, { status: 404, headers: NO_STORE }
 const celebrantsSpeechForm = (text: string | null): string =>
   text ? text.split('—')[0].trim() : '';
 
-// Speech form of a free-text name (events.name). The celebrants fix above was
-// never extended to its neighbour, so the owner's raw event title went to TTS
-// untouched — and it is the string the agent repeats most, once per turn while
-// establishing context.
+// Speech form of a free-text name (events.name) — the owner's raw event title
+// is the string the agent repeats most, once per turn while establishing
+// context.
 //
-// Same failure mode, different remedy. Truncating at the dash is right for
+// Same failure mode as celebrantsSpeechForm, different remedy. Truncating at the dash is right for
 // celebrants (the part after it is a page-title artifact) and wrong here: an
 // owner writing "החתונה של דנה ויוסי — אולם הגן" means all of it. So structural
 // punctuation becomes a comma, which TTS reads as the pause the punctuation was
@@ -72,7 +71,7 @@ const nameSpeechForm = (text: string | null): string =>
 // Speech form of the event TYPE — the single word that tells the guest what the
 // call is about ("חתונה", "ברית", "בר מצווה").
 //
-// It was never sent. A live call (conv_3001m1xxjh80f938yh3jenrpb3xc, 2026-09-07)
+// Before it was sent, a live call (conv_3001m1xxjh80f938yh3jenrpb3xc, 2026-09-07)
 // opened with only `event_name`, which is the owner's free-text title — for that
 // event, "שלומית קאקון ואייל מלכה". Two names and no noun: the guest asked what
 // the call was about four separate times and 42 of the call's 123 seconds went
@@ -102,7 +101,8 @@ const eventKindSpeechForm = (
 // The proper nouns are the point: a live call heard "נכון" as "רכון" and lost a
 // guest's own name, and names are exactly what a general Hebrew model has no
 // prior for. Order matters only for the 50-cap — names first, then the closed
-// RSVP vocabulary, so a long celebrant list can never push out "כן"/"לא".
+// RSVP vocabulary, so if a very long list ever hits the cap it is the
+// vocabulary's tail that is dropped, not a name.
 const ASR_BASE_KEYWORDS = [
   'כן', 'לא', 'מגיעים', 'לא מגיעים', 'נגיע', 'לא נגיע', 'מאשר', 'מאשרת',
   'אישור', 'כמה', 'אחד', 'שניים', 'שלושה', 'ארבעה', 'חמישה', 'שישה',
@@ -172,8 +172,8 @@ export async function GET(
 
   // The FULL name, whitespace-normalized.
   //
-  // This was the first token until 2026-09-07 ("first name only for the
-  // greeting"), which silently assumed given-name-first ordering. `guests` stores
+  // Never the first token ("first name only for the greeting"), which silently
+  // assumes given-name-first ordering. `guests` stores
   // one free-text `full_name` and nothing else, so a row entered surname-first
   // made the agent greet a real guest by their family name on a live call
   // ("קלפה נתנאל" -> "מדבר עם קלפה?"). 35 of 47 guest rows are multi-token and
@@ -191,8 +191,8 @@ export async function GET(
       event_kind: eventKindSpeechForm(ctx.event.event_type),
       event_date: formatIsraelSpokenDate(ctx.event.event_date ?? ''),
       // Wall-clock start time ('17:30'). events.event_date is timestamptz, so the
-      // time was always there — it was simply dropped by the date-only formatter,
-      // leaving the agent unable to answer "באיזו שעה?" (the single most common
+      // time is already there — the date-only formatter drops it, which would
+      // leave the agent unable to answer "באיזו שעה?" (the single most common
       // RSVP question) and forced to deflect to notify_owner.
       event_time: formatIsraelTime(ctx.event.event_date ?? ''),
       event_venue: ctx.event.venue_name ?? '',
@@ -207,9 +207,9 @@ export async function GET(
       event_rsvp_deadline: ctx.event.rsvp_deadline
         ? formatIsraelSpokenDate(ctx.event.rsvp_deadline)
         : '',
-      // ADDITIVE (item-2 link vector): the row's NON-authorizing correlation nonce.
-      // The ElevenLabs-bridge scenario (VoiceAgentTest, kalfatest) injects this as
-      // the `kalfa_attempt_token` dynamic variable so the post-call webhook can map
+      // The row's NON-authorizing correlation nonce.
+      // The ElevenLabs-bridge scenario (RSVPAgent) injects this as
+      // the `kalfa_correlation_id` dynamic variable so the post-call webhook can map
       // the conversation back to this call_attempt. '' when the row has no nonce
       // (every non-bridge call, incl. all of Branch B — which ignores this field).
       // Non-authorizing by design, so serving it here leaks no capability.
@@ -236,7 +236,7 @@ export async function GET(
       //   1. every PRODUCER sends `kalfa_correlation_id`
       //      (the four ctx routes — done; the three scenarios — on deploy)
       //   2. every CONSUMER reads it FIRST
-      //      (exactly one exists: elevenlabs-payloads.ts:~240 — done)
+      //      (exactly one exists: elevenlabs-payloads.ts, correlationToken — done)
       //   3. no in-flight conversation predating the change can still arrive
       //      (a webhook for a call placed before the scenario deploy carries
       //      only the old name)

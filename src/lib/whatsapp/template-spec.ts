@@ -1,8 +1,8 @@
-// Send-time parameter binding for the approved WhatsApp templates — the module
-// promised by migration 202606300037 (message_templates.components). PURE
+// Send-time parameter binding for the approved WhatsApp templates. PURE
 // functions only (no I/O, no `server-only`) so the full contract is unit-
-// testable; the outreach engine / manual send path supply the event row and
-// guest name and pass the result to the client's body components.
+// testable. The live send binds through buildSendContext below (via
+// resolveWhatsAppSend); the per-layout builders are still called by the
+// engine's executeStep and the send scripts until the step-7 cutover.
 //
 // The positional contract ({{1}}..{{7}}) is FIXED — it is what was submitted
 // to and approved by Meta (docs/whatsapp-templates-meta-submission.md):
@@ -13,7 +13,7 @@
 //   | 2 | EVENT_TYPE_LABELS[event_type]    | groom full name                  |
 //   | 3 | celebrant names text             | bride full name                  |
 //   | 4 | weekday (Hebrew, Asia/Jerusalem) | same                             |
-//   | 5 | date (dd.MM.yyyy)                | same                             |
+//   | 5 | Hebrew date + (dd.MM.yyyy)       | same                             |
 //   | 6 | time (HH:mm)                     | same                             |
 //   | 7 | venue_name + ", " + venue_address| same                             |
 //
@@ -46,7 +46,7 @@ type EventType = Enums<'event_type'>;
 export type TemplateFamily = 'generic' | 'wedding';
 
 // Exactly the event columns the builder needs — matches what the engine's
-// getCampaignContext select is being widened to. `name` rides along for the
+// getCampaignContext selects. `name` rides along for the
 // callers' context type even though no position renders it (the celebrant
 // names, not the free-text event name, are the approved {{2}}/{{3}} sources).
 export type TemplateParamsContext = {
@@ -81,11 +81,11 @@ export type TemplateParamsResult = { params: TemplateParams } | { missing: Missi
 
 // {{1}} fallback when the contact has no linked guest name, or when the guest
 // row is a household ("משפחת כהן") whose first token would greet awkwardly.
-// Wording is the owner's decision (2026-07-05): a warm generic greeting beats
+// Wording is the owner's decision: a warm generic greeting beats
 // a wrong personal one.
 export const GUEST_FIRST_NAME_FALLBACK = 'משפחה וחברים יקרים';
 
-// Shared {{1}} derivation for BOTH send paths (manual + worker engine): the
+// Shared {{1}} derivation for every send path (manual, worker engine, workflow): the
 // first whitespace token of the linked guest's full name, except household
 // rows ("משפחת כהן") whose bare first token would greet "שלום משפחת," — those
 // return null so buildTemplateParams falls back to the generic greeting.
@@ -168,9 +168,7 @@ function genericCelebrantsText(eventType: EventType, celebrants: Json | null): s
 // The template also carries a URL button whose variable is the event's
 // gift_link_token (appended to https://beta.kalfa.me/g/…) — passed to the
 // client separately as urlButtonParam, NOT part of the body tuple.
-// Structural event type on purpose: the gift columns land with a pending
-// migration, so this stays decoupled from the generated Row type (same
-// forward-compat stance as getCampaignHoldsEnabled).
+// Structural event type: just the columns the gift layout reads.
 export type GiftParamsContext = {
   event: {
     event_type: EventType;
@@ -224,14 +222,14 @@ export const POST_EVENT_MESSAGE_KEYS = new Set(['thankyou']);
 // endpoint (sendWhatsAppMarketingTemplate) instead of `/messages` — same
 // mild-optimization stance as the plan (docs/plans not duplicated here):
 // MM Lite optimizes delivery WITHIN the 131049 marketing-frequency cap, it
-// does not lift the cap. No `category` column exists on message_templates, so
-// (like POST_EVENT_MESSAGE_KEYS) routing is by message_key, not DB data.
+// does not lift the cap. Routing is by message_key (like
+// POST_EVENT_MESSAGE_KEYS), not by message_templates.category.
 // 'sales_signup_link' (sales-closing agent's send_signup_link tool,
 // src/app/api/voximplant/sls/tool/signup-link) is unavoidably MARKETING — a
 // cold send to a non-customer with no existing WhatsApp session (sales-
-// closing-agent-script-draft.md §5). No template with this key has been
-// submitted to/approved by Meta yet; listed here so the classification is
-// correct the moment one is.
+// closing-agent-script-draft.md §5). Its template (kalfa_sales_signup_link_v1)
+// was submitted to Meta as MARKETING; listed here so the classification is
+// correct from its first send.
 export const MARKETING_MESSAGE_KEYS = new Set(['thankyou', 'sales_signup_link']);
 
 // Post-event thank-you (message_key 'thankyou'). Deliberately NO venue/date —
@@ -344,7 +342,8 @@ export function buildTemplateParams(
 type BritPhrasing = {
   // First-person opening (NO name — the host signs at the end); conjugation per
   // composition. The closing carries the host SIGNATURE (בעלת/בעל השמחה) on its
-  // own line, owner-approved: "<opening> … <closing>\n<host name>".
+  // same line (Meta rejects a newline in a body parameter, error 132018),
+  // owner-approved: "<opening> … <closing> <host name>".
   invite: string;
   reminder: string;
   closing: (host: string) => string;
@@ -419,7 +418,7 @@ function britDateVenueParts(
   return { parts: [weekday, hebrew, gregorian, time, venue] };
 }
 
-// kalfa_brit_invite_trad_v4 / _media_v4 — 7 slots: {{1}} first-person opening,
+// kalfa_brit_invite_trad_v4 / _trad_media_v4 — 7 slots: {{1}} first-person opening,
 // {{2}} weekday, {{3}} Hebrew date, {{4}} Gregorian date, {{5}} time,
 // {{6}} venue, {{7}} first-person closing.
 export function buildBritTradInviteParams(ctx: TemplateParamsContext): BritParamsResult {
@@ -439,7 +438,7 @@ export function buildBritTradInviteParams(ctx: TemplateParamsContext): BritParam
   };
 }
 
-// kalfa_brit_reminder_trad_v1 / _media_v1 — 6 slots: {{1}} first-person reminder
+// kalfa_brit_reminder_trad_v1 / _trad_media_v1 — 6 slots: {{1}} first-person reminder
 // line, {{2}}–{{6}} weekday / Hebrew date / Gregorian date / time / venue.
 export function buildBritTradReminderParams(ctx: TemplateParamsContext): BritParamsResult {
   const phrasing = britPhrasingFor(ctx.event.celebrants);
@@ -453,10 +452,11 @@ export function buildBritTradReminderParams(ctx: TemplateParamsContext): BritPar
   return { params: [phrasing.reminder, ...dv.parts] };
 }
 
-// kalfa_brit_thankyou_trad_v1 — 2 slots: {{1}} first-person thanks line, {{2}}
+// kalfa_brit_thankyou_trad_v2 — 2 slots: {{1}} first-person thanks line, {{2}}
 // family signature ("משפחת <surname>", surname = last token of the parents
-// field). POST-EVENT: the SEND path is deferred (the drip engine rejects
-// post-event touchpoints); this builder is ready for a future post-event trigger.
+// field). POST-EVENT: the drip engine rejects post-event touchpoints; the
+// thank-you is sent by the manual sendThankyouAction or the auto-thankyou
+// sweep instead.
 export function buildBritTradThankyouParams(ctx: TemplateParamsContext): BritParamsResult {
   const phrasing = britPhrasingFor(ctx.event.celebrants);
   const parents = readCelebrantField(ctx.event.celebrants, 'parents');
@@ -465,13 +465,11 @@ export function buildBritTradThankyouParams(ctx: TemplateParamsContext): BritPar
   return { params: [phrasing.thanks, `משפחת ${surname}`] };
 }
 
-// The SINGLE body-parameter dispatch point for all three send sites (manual
-// batch + the two worker paths). Routing is DATA-DRIVEN by the resolved
-// template's paramContract (message_templates.components.param_contract): a
-// recognized contract binds the matching personal builder, everything else
-// falls back to the frozen generic/wedding 7-tuple. Collapses what used to be a
-// `name.startsWith('kalfa_wedding_')` branch duplicated across the three sites,
-// so a new contract is taught here once.
+// The body-parameter dispatch point for the code builders. Routing is
+// DATA-DRIVEN by the resolved template's paramContract
+// (message_templates.components.param_contract): a recognized contract binds the
+// matching personal builder, everything else falls back to the frozen
+// generic/wedding 7-tuple. A new contract is taught here once.
 export function buildBodyParams(args: {
   paramContract: string | null | undefined;
   family: TemplateFamily;
@@ -494,13 +492,14 @@ export function buildBodyParams(args: {
 }
 
 // --- Send context: every value a template can print, computed once ----------
-// Step 4 of docs/superpowers/plans/2026-09-30-whatsapp-templates-meta-mirror.md.
+// See docs/superpowers/plans/2026-09-30-whatsapp-templates-meta-mirror.md.
 //
 // ONE object with every value a WhatsApp template variable can be bound to,
-// computed by the SAME formatting rules the builders above always used. Each
-// builder is now a list of paths into it (PARAM_CONTRACT_PATHS) — exactly the
-// data the per-template parameter mapping (whatsapp_template_parameters) will
-// hold — and the admin variable picker lists this object's paths, so a new
+// computed by the SAME formatting rules the builders above use. Each
+// builder is expressed as a list of paths into it (PARAM_CONTRACT_PATHS) —
+// exactly the data the per-template parameter mapping
+// (whatsapp_template_parameters) holds — and the admin variable picker lists
+// this object's paths, so a new
 // value added here is offered there without another code change.
 //
 // A null value means "not available"; binding a template position to it fails
@@ -653,7 +652,7 @@ export function resolveParams<const P extends readonly SendContextPath[]>(
 }
 
 // Each approved layout as data: position i ↔ {{i+1}}. These arrays are what the
-// step-5 backfill writes into whatsapp_template_parameters. ⚠️ TEMPORARY: once
+// step-5 backfill wrote into whatsapp_template_parameters. ⚠️ TEMPORARY: once
 // the backfill ran, the table is the source of truth; this constant, the code
 // builders and send-context.test.ts are deleted at step 7 (cutover).
 export const PARAM_CONTRACT_PATHS = {

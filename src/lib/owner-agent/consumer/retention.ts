@@ -14,8 +14,8 @@ import type { ReplyStore } from './store';
 // agent's conversation history — the CLI's own session files — 14 days. Audit
 // rows stay (ids and codes; intake_id is ON DELETE SET NULL).
 //
-// ⚠️ WHERE THE CLI KEEPS A SESSION — MEASURED in the installed 2.1.281 binary,
-// not guessed:
+// ⚠️ WHERE THE CLI KEEPS A SESSION — MEASURED in the 2.1.281 binary, not
+// guessed:
 //   transcript = join(projectsDir, projectDirName(originalCwd), `${sessionId}.jsonl`)
 //   projectsDir = join(CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'projects')
 //   projectDirName(cwd) = cwd.replace(/[^a-zA-Z0-9]/g, '-')  (`function k`), and
@@ -40,7 +40,7 @@ import type { ReplyStore } from './store';
 //     anything else — `memory/`, a stray file — is left alone;
 //   - a session goes as a unit, when its NEWEST part is older than 14 days.
 //
-// ⚠️ A CHANGED PATH MUST NOT FAIL SILENTLY (review 2026-09-24). If a CLI
+// ⚠️ A CHANGED PATH MUST NOT FAIL SILENTLY. If a CLI
 // upgrade moved the sessions, this directory would simply be empty: nothing to
 // delete, and every remembered session "gone". So before the state file is
 // touched, each session it remembers is checked: one that is neither in the

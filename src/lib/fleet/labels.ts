@@ -3,11 +3,11 @@ import type { BadgeVariant } from '@/components/ui/badge';
 // Hebrew labels + badge tones for fleet requests and goals.
 //
 // Deliberately NO 'use client' directive: these maps are read by Server
-// Components (the /admin/fleet pages) AND by client components. They used to
-// live in fleet-client.tsx ('use client'), and a Server Component that imports
-// a value from a client module receives a client *reference*, not the object
+// Components (the /admin/fleet pages) AND by client components. A Server
+// Component that imports a value from a client module receives a client
+// *reference*, not the object
 // (node_modules/next/dist/docs/01-app/02-guides/server-and-client-boundary.md)
-// — every server-side lookup silently fell back to the raw English value.
+// — every server-side lookup would silently fall back to the raw English value.
 //
 // The keys mirror the DB CHECK constraints exactly (fleet_requests_kind_check,
 // fleet_requests_status_check, fleet_goals_status_check); labels.test.ts pins

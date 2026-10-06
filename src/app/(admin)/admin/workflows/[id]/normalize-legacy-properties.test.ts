@@ -223,10 +223,11 @@ describe('normalizeLegacyProperties', () => {
   });
 
   it('⚠️ shows what the runtime already does, and nothing more', () => {
-    // Each backfilled value is the fallback `steps/index.ts` applies when the
-    // field is absent, so this changes what the panel SHOWS and never what the
-    // run DOES. If the handler's defaults ever change, these must change with
-    // them or the panel starts lying again — in the other direction.
+    // Each backfilled value is the fallback the Microsoft mail handler
+    // (`nodes/action-microsoft-send-email/runtime.ts`) and its transport apply
+    // when the field is absent, so this changes what the panel SHOWS and never
+    // what the run DOES. If the handler's defaults ever change, these must
+    // change with them or the panel starts lying again — in the other direction.
     const [out] = normalizeLegacyProperties(
       [node('action.microsoft_send_email', { connectionId: 'c1', to: 'a@x.com', subject: 's', body: 'b' })],
       PALETTE_ITEMS,

@@ -25,7 +25,8 @@ import {
 } from './planner';
 import type { ReportAuditInput, ReportEntryRow, ReportRunRow, ReportStore, ReportSubscriptionRow } from './store';
 
-// One job of QUEUES.ownerAgentReport: send ONE planned report run
+// One job of QUEUES.ownerAgentReport (or, for a report with instructions, of
+// QUEUES.ownerAgentReply — see ONE MODEL RUN below): send ONE planned report run
 // (plans/owner-agent-chat-sdk-capabilities-plan.md §4.8) — the report twin of
 // consumer/reply.ts, with the same three rules:
 //
@@ -363,7 +364,7 @@ async function handleRun(run: ReportRunRow, deps: ReportDeps): Promise<ReportOut
   const from: WhatsAppSender = { ...sender, phoneNumberId: gate.phoneNumberId };
   const to = gate.entry.e164;
   let result: DeliveryResult;
-  // One Meta-retry window for the whole report (budgets.ts), shared by its parts.
+  // One Meta-retry window for the whole report (consumer/budgets.ts), shared by its parts.
   const retryUntil = deps.now() + OWNER_AGENT_SEND_RETRY_MS;
   if (inWindow) result = await deliverText(from, to, content, template, deps, retryUntil);
   else if (template) result = await deliverTemplate(from, to, content, template, deps, retryUntil);

@@ -1,10 +1,11 @@
 import 'server-only';
 
 /**
- * The page the OAuth callback renders when the flow was started from a popup.
+ * The page the OAuth callback renders when the flow was started from a popup,
+ * and when completing the flow failed, where the server cannot tell whether it was.
  *
- * ⚠️ WHY A PAGE AND NOT A REDIRECT. The ordinary callback answers with a 302 to
- * `/admin/workflows/<id>`, which is correct when the flow owns the whole tab:
+ * ⚠️ WHY A PAGE AND NOT A REDIRECT. The ordinary callback answers with a 307
+ * redirect to `/admin/workflows/<id>`, which is correct when the flow owns the whole tab:
  * the editor reloads and reads the new connection out of the fresh server
  * render. It is wrong when the flow runs in a popup, because there is no editor
  * in that window to return to — the editor is the OPENER, still mounted, still

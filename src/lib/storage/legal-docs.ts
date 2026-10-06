@@ -2,10 +2,10 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 
-// Private legal-document storage (signed agreement PDF, signature image, ID
-// photo). The bucket has NO RLS policies → only the service-role client may
-// touch it. Never build public URLs; admin review uses short-lived signed URLs
-// generated here. Never log the bytes or the signed URL.
+// Private legal-document storage (signed agreement PDF, signature image). The
+// bucket has NO RLS policies → only the service-role client may touch it. Never
+// build public URLs; any viewer link must be a short-lived signed URL generated
+// here. Never log the bytes or the signed URL.
 const BUCKET = 'id-documents';
 
 export async function uploadLegalDoc(

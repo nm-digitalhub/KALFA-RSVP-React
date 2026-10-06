@@ -39,11 +39,12 @@ function mockUser(): User {
   return { id: USER_ID } as unknown as User;
 }
 
-// requireOwnedEvent (in events.ts) calls requireUser + a maybeSingle() that
-// must resolve to the owned event row, otherwise it triggers notFound(). The
-// shared mock returns one result for the whole chain, but the ownership gate
-// reads via `.maybeSingle()`, so we override that spy to always yield the owned
-// event — the gate passes and the operation's own awaited result stands.
+// requireEventAccess (in events.ts) calls requireUser + a maybeSingle() that
+// must resolve to the event row, then the can_access_event RPC; otherwise it
+// triggers notFound(). The shared mock returns one result for the whole chain,
+// but the access gate reads via `.maybeSingle()`, so we override that spy to
+// always yield the owned event — the gate passes and the operation's own
+// awaited result stands.
 const OWNED_EVENT = {
   id: EVENT_ID,
   name: 'Wedding',
@@ -142,7 +143,7 @@ describe('listGuests', () => {
     expect(result.pageSize).toBeGreaterThan(0);
   });
 
-  // B6: op_status/removal flatten from the embed; delivery_status is the LATEST
+  // op_status/removal flatten from the embed; delivery_status is the LATEST
   // per-CONTACT outbound state, fetched in ONE batched query (no N+1). Two guests
   // sharing a contact get the same delivery; a contactless guest gets null.
   it('merges the latest delivery status per contact in a single batched query', async () => {
@@ -448,10 +449,9 @@ describe('updateGuest', () => {
   });
 });
 
-// D4 (org-RBAC): deleteGuest moved from requireOwnedEvent (owner-only) to
-// requireEventAccess(eventId,'guests','delete') — owner OR an org member
-// whose role holds guests.delete via can_access_event(). Per the Fix-1
-// backfill exclusion (supabase/migrations/20260713203826_org_role_permissions_per_role.sql),
+// deleteGuest is gated by requireEventAccess(eventId,'guests','delete') —
+// owner OR an org member whose role holds guests.delete via can_access_event().
+// Per the Fix-1 backfill exclusion (supabase/migrations/20260713203826_org_role_permissions_per_role.sql),
 // `admin` does NOT hold guests.delete by default — this must regress-test
 // explicitly, since `admin` is the role most likely to silently reacquire it.
 describe('deleteGuest', () => {
@@ -477,7 +477,7 @@ describe('deleteGuest', () => {
   // non-owner role") — the backfill deliberately withheld guests.delete from
   // every non-owner role, including admin, even though admin held it in the
   // frozen global template. can_access_event() returning false for admin here
-  // is exactly the behavior this whole phase exists to preserve.
+  // is exactly the behavior this test pins.
   it('admin is rejected by default (Fix-1: guests.delete withheld from admin)', async () => {
     const { client, builder } = createMockSupabase({ data: null, error: null });
     vi.mocked(createClient).mockResolvedValue(
@@ -715,8 +715,8 @@ describe('updateGroup', () => {
   });
 });
 
-// D4 (org-RBAC): same gate swap as deleteGuest — requireEventAccess(eventId,
-// 'guests','delete') instead of requireOwnedEvent.
+// deleteGroup is gated like deleteGuest — requireEventAccess(eventId,
+// 'guests','delete').
 describe('deleteGroup', () => {
   it('owner may delete (can_access_event allows guests.delete)', async () => {
     const { client, builder } = createMockSupabase({ data: null, error: null });
@@ -792,12 +792,12 @@ describe('deleteGroup', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Ownership gate: when requireOwnedEvent triggers notFound() (mocked here as a
-// thrown NEXT_NOT_FOUND), the guest query must NOT run.
+// Access gate: when requireEventAccess triggers notFound() (which throws), the
+// guest query must NOT run.
 // ---------------------------------------------------------------------------
 describe('ownership gate', () => {
   it('does not query guests when the event is not owned', async () => {
-    // The owned-event lookup returns null -> requireOwnedEvent calls notFound().
+    // The event lookup returns null -> requireEventAccess calls notFound().
     const { client } = createMockSupabase({ data: null, error: null });
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
@@ -805,7 +805,7 @@ describe('ownership gate', () => {
     client.rpc.mockResolvedValue({ data: true, error: null });
 
     await expect(listGuests(EVENT_ID, {})).rejects.toThrow();
-    // `from` was called for the events ownership check, but never for guests.
+    // `from` was called for the events access check, but never for guests.
     expect(client.from).toHaveBeenCalledWith('events');
     expect(client.from).not.toHaveBeenCalledWith('guests');
   });

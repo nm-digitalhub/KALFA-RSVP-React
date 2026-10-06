@@ -75,7 +75,7 @@ export type SlotResult =
   | { decision: 'send'; at: number }
   | { decision: 'skip'; reason: 'expired' | 'no_window_before_expiry' };
 
-// Convenience for the worker: the send slot for one touchpoint. The planned
+// The send slot for one touchpoint. The planned
 // time is deterministic (event Israel date − daysBefore days, at the preferred
 // hour), so a future touchpoint's slot is stable across re-enqueues (now is
 // only a floor). The expiry is the END of the event's Israel day — a reminder

@@ -4,7 +4,7 @@ import { useVersionSkewReload } from '@/components/use-version-skew-reload';
 import { isVersionSkewError } from '@/lib/version-skew';
 
 // Error boundary for every unauthenticated token surface (/r, /g, /ty, /rate,
-// /join) that has no more specific boundary of its own. No session exists
+// /join, /cb) that has no more specific boundary of its own. No session exists
 // here, so there is nothing to sign back into and nowhere on the site the
 // guest was "navigating" from — a single retry action is the whole recovery
 // surface. (public)/(site) overrides this with its own error.tsx (site

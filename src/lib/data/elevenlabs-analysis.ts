@@ -25,8 +25,7 @@ export function buildCallAnalysisInsert(
   // attempt tables can never fill `call_attempt_id` — it is a FK to
   // `call_attempts` — so keying "is this linked" off that column alone would
   // report every Meeting-Confirm, Sales-Close, customer-service and
-  // voice-purpose call as an orphan for ever, which is exactly the state this
-  // change exists to end.
+  // voice-purpose call as an orphan for ever.
   const attemptId = link.attemptId ?? callAttemptId;
   return {
     provider: 'elevenlabs',
@@ -45,8 +44,8 @@ export function buildCallAnalysisInsert(
     event_id: link.eventId ?? null,
     linked_at: attemptId ? new Date().toISOString() : null,
     // QA (bounded / PII-minimized): numeric score, criterion→pass/fail map, and
-    // configured data-collection scalar values. Rationale, transcript, summary,
-    // audio, and raw dynamic variables never reach this layer.
+    // configured data-collection scalar values. Rationale, transcript, audio,
+    // and raw dynamic variables never reach this layer.
     el_call_score: a.callSuccessScore,
     el_eval: a.evaluation,
     el_data: a.dataCollection as CallAnalysisInsert['el_data'],
@@ -76,12 +75,6 @@ async function upsertCallAnalysis(row: CallAnalysisInsert): Promise<'stored' | '
   return error ? 'error' : 'stored';
 }
 
-// Persist a metadata-only ElevenLabs call-analysis signal (QA + billing). Written
-// by the HMAC-authed webhook route via the service-role client (the request is
-// signature-authed, not session-authed). IDEMPOTENT: upsert on the unique
-// (provider, conversation_id) with ignoreDuplicates, so a replayed webhook is a
-// DB no-op. NEVER stores transcript / summary / guest data — the normalizer
-// already dropped all of it; only the typed metadata fields reach here.
 /**
  * Where each voice agent records its dial attempts.
  *
@@ -133,17 +126,17 @@ async function resolveAttempt(
     // stronger signal, so it is tried first — but only `call_attempts` has it.
     // The correlation value arrives on the ElevenLabs post-call webhook, which
     // is a DIFFERENT sender from the VoxEngine scenario's closing `cb` — so it
-    // survives a cb that never lands. Until now only `call_attempts` could use
-    // it, because only it has a nonce column; for the other four the token was
-    // received and then ignored, leaving `el_conversation_id` (written by that
-    // same fragile cb) as the single way in.
+    // survives a cb that never lands. Only `call_attempts` has a nonce column;
+    // the other four are matched on the attempt's own PRIMARY KEY (below), so
+    // `el_conversation_id` (written by that same fragile cb) is not the single
+    // way in.
     //
-    // The other four ctx routes send the attempt's own PRIMARY KEY as the
-    // token, so matching it against `id` costs one indexed lookup and needs no
-    // schema change. `sales_call_attempts` already did exactly this by hand
-    // (getSalesAttemptIdByConversationId, "Voximplant misses the terminal cb");
-    // this generalises that one-off to every table, `voice_purpose_attempts`
-    // included.
+    // The sales, meeting-confirm and voice-purpose ctx routes send the attempt's
+    // own PRIMARY KEY as the token, so matching it against `id` costs one
+    // indexed lookup and needs no schema change. `sales_call_attempts` already
+    // did exactly this by hand (getSalesAttemptIdByConversationId, "Voximplant
+    // misses the terminal cb"); this generalises that one-off to every table,
+    // `voice_purpose_attempts` included.
     //
     // The UUID guard is not cosmetic: `.eq('id', <non-uuid>)` raises 22P02, and
     // `call_attempts` sends a nonce here, not a key.
@@ -180,15 +173,23 @@ async function resolveAttempt(
   return null;
 }
 
+// Persist an ElevenLabs call-analysis signal (QA + billing) via the service-role
+// client — the caller is the webhook-inbox worker, since the delivery was
+// signature-authed at the route and there is no session. IDEMPOTENT: upsert on
+// the unique (provider, conversation_id) with ignoreDuplicates, so a replayed
+// webhook is a DB no-op. NEVER stores transcript / guest data — the normalizer
+// already dropped it; only the typed fields (plus ElevenLabs' own written
+// summary) reach here.
 export async function storeCallAnalysis(a: NormalizedCallAnalysis): Promise<'stored' | 'error'> {
   try {
     const admin = createAdminClient();
 
-    // Resolve the owning call attempt via EITHER link vector (best-effort): the
-    // correlation token (el_correlation_nonce, injected at conversation start)
-    // first, then the ElevenLabs conversation_id (el_conversation_id, reported by
-    // the bridge scenario via cb). A miss/failure leaves an orphan (call_attempt_id
-    // NULL) a linker can backfill later. event_id is copied so owner RLS scopes it.
+    // Resolve the owning attempt (any of the five attempt tables) via EITHER link
+    // vector (best-effort): the correlation token (injected at conversation
+    // start) first, then the ElevenLabs conversation_id (el_conversation_id,
+    // reported by the bridge scenario via cb). A miss/failure leaves an orphan
+    // (attempt_id NULL) a linker can backfill later. event_id is copied so owner
+    // RLS scopes it.
     let callAttemptId: string | null = null;
     let attemptTable: AttemptTable | null = null;
     let attemptRowId: string | null = null;
@@ -266,8 +267,8 @@ export async function storeCallAnalysis(a: NormalizedCallAnalysis): Promise<'sto
 // ⚠️ MEASURED 2026-09-15 on the live table: 22 of 42 `call_analysis` rows had
 // `attempt_id` NULL, and SIX of them arrived after the 2026-09-14 change that
 // widened `resolveAttempt` to all five attempt tables. The widening worked; it
-// was simply unreachable. `resolveAttempt` is called from `storeCallAnalysis`
-// alone, and a meeting-confirm conversation never gets there:
+// was simply unreachable. `resolveAttempt` was called from `storeCallAnalysis`
+// alone, and a meeting-confirm conversation never got there:
 // `isRsvpConversation` consults `call_attempts` only, so it routes to this
 // function, which passed `{}` as the link and wrote NULL.
 //

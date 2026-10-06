@@ -168,9 +168,8 @@ export async function confirmWhatsappImportAction(
     const imported = inserts.length ? await bulkInsertGuests(eventId, inserts) : 0;
 
     try {
-      // Verified gap (30.8): see import-actions.ts's identical fix — nothing
-      // previously reconciled contacts imported here into an already-
-      // operational campaign's authorized set. reconcileCampaignSetForContact
+      // Admit the imported contacts into an already-operational campaign's
+      // authorized set, as import-actions.ts does. reconcileCampaignSetForContact
       // is itself best-effort/never-throws, so this cannot fail the import.
       const { contactIds } = await buildContactsForEvent(eventId);
       for (const contactId of contactIds) {

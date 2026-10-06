@@ -8,7 +8,8 @@ export { INVITE_IMAGE_MAX_BYTES };
 // PRIVATE event-media storage (invitation images). Same discipline as
 // id-documents (legal-docs.ts): no storage RLS policies — only the
 // service-role client touches the bucket, and callers MUST verify event
-// authorization first. Guests never see a storage URL; Meta receives a
+// authorization first. Guests never see a permanent storage URL — the public
+// pages sign a 10-minute one only after the token resolved; Meta receives a
 // short-lived signed URL per send batch.
 const BUCKET = 'event-media';
 
@@ -54,8 +55,9 @@ export async function removeInviteImage(path: string): Promise<void> {
   }
 }
 
-// Short-lived signed URL for SEND time only (Meta fetches the header image
-// once per message). One hour comfortably covers a full send batch.
+// Short-lived signed URL. At send time Meta fetches the header image once per
+// message, and the one-hour default comfortably covers a full send batch; the
+// pages that render the image pass a shorter TTL.
 export async function signedInviteImageUrl(
   path: string,
   expiresInSeconds = 3600,

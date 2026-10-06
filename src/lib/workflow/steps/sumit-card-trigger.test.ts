@@ -142,7 +142,7 @@ describe('the starter template, end to end through the real pipeline', () => {
   });
 
   it('⚠️ on an EMPTY body: still completes — nothing in the alert throws', async () => {
-    // `?` on the status and `null` from the handler for the rest. A run that
+    // `?` on the amount and `null` from the handler for the rest. A run that
     // failed here would mean a malformed call from SUMIT (or anyone) produced no
     // alert at all, which is the one thing this template exists to prevent.
     const result = await run();

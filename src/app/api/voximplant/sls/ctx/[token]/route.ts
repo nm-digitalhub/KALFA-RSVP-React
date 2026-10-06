@@ -64,7 +64,7 @@ export async function GET(
     return notFound();
   }
 
-  // First name only — same privacy discipline as every other ctx surface.
+  // First name only — same privacy discipline as mtg/ctx.
   const prospectName = ctx.request.full_name.trim().split(/\s+/)[0] || '';
 
   let companyName = '';

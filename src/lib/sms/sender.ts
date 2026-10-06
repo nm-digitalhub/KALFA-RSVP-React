@@ -94,8 +94,9 @@ export function createExtraSmsSender(config: {
         // routine per-destination business outcome — common for OTP — NOT a
         // transport/config/outage failure, so it is deliberately NOT alerted
         // (symmetric with whatsapp's 131049/131026 and sumit's declined cases).
-        // ExtrA exposes no code here that separates a config/auth failure from a
-        // bad destination, so no alert is emitted. Control flow is unchanged.
+        // ExtrA's error codes do separate config faults (9404/1214/1215/7521) from
+        // bad destinations, but this path does not classify them, so no alert is
+        // emitted.
         const detail = json.errors ? ` (${JSON.stringify(json.errors)})` : '';
         throw new SmsSendError(`שליחת ההודעה נדחתה${detail}`);
       }

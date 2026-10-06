@@ -15,8 +15,8 @@ import * as setValueDefinition from '../nodes/logic-set-value/definition';
 import * as switchDefinition from '../nodes/logic-switch/definition';
 import * as waitDefinition from '../nodes/logic-wait/definition';
 
-// How long ONE execution of a node may take — the missing half of the wait work,
-// adopted from the engine this project vendored its graph runner from.
+// How long ONE execution of a node may take — adopted from the engine this
+// project vendored its graph runner from.
 //
 // ⚠️ WHY IT WAS MISSING. Upstream runs `runGraph` on Temporal, where every node
 // is an ACTIVITY and every activity carries its own `startToCloseTimeout`. Their
@@ -24,9 +24,9 @@ import * as waitDefinition from '../nodes/logic-wait/definition';
 // `DEFAULT_NODE_ACTIVITY_PROFILE = { startToCloseTimeout: '10m' }` and a
 // `NodeActivityProfiles` map keyed by `node.type`, so an AI node gets 30m and a
 // decision gets 30s. We run the same `runGraph` on pg-boss, which has no notion
-// of an activity: ONE job covers the WHOLE graph, so until now a single node
-// could hold a run open indefinitely and nothing bounded it but the queue's
-// `expireInSeconds` — which is not a node budget and was never set for it.
+// of an activity: ONE job covers the WHOLE graph, so without a node budget a
+// single node could hold a run open indefinitely, bounded only by the queue's
+// `expireInSeconds` — which is not a node budget.
 //
 // This is that budget, enforced where we can enforce it: around the handler call
 // in `activity-runner`.
@@ -49,11 +49,10 @@ export type NodeActivityProfile = {
 /**
  * What a node gets when its type has no entry.
  *
- * EXPLICIT, and that is the point. The alternative is no bound at all, which is
- * what we had: a handler that never settles holds its step row 'running' until
- * the 15-minute lease, and holds the pg-boss job until the queue expires it —
- * two timers that were never chosen for this and, before this change, happened
- * to be the same number.
+ * EXPLICIT, and that is the point. The alternative is no bound at all: a
+ * handler that never settles holds its step row 'running' until the 15-minute
+ * lease, and holds the pg-boss job until the queue expires it — two timers that
+ * were never chosen for this.
  */
 export const DEFAULT_NODE_ACTIVITY_PROFILE: NodeActivityProfile = { timeoutMs: 120_000 };
 

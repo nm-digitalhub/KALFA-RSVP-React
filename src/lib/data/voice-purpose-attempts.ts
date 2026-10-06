@@ -39,7 +39,7 @@ export const PURPOSE_PRE_TERMINAL = ['pending', 'confirmed', 'unknown'] as const
 /**
  * Resolve an attempt by its opaque per-call token. Shaped for
  * `guardTokenGatedToolRequest`, which needs `id` and `token_expires_at`;
- * `run_id` and `node_id` come along because the workflow wake-up (0ב) reads
+ * `run_id` and `node_id` come along because the workflow wake-up reads
  * them from the same row the guard already fetched.
  */
 export async function getVoicePurposeAttemptByAccessToken(
@@ -74,10 +74,8 @@ export async function recordVoicePurposeConcluded(
    * The failure detail alone — NOT the verdict, and nullable because a call that
    * simply went well has no reason to give.
    *
-   * Widened from `string` when this stopped receiving
-   * `error_reason ?? call_status`. The RSVP surface has always written its
-   * equivalent as `body.error_reason ?? null` (call-result-processing.ts); this
-   * table's column has always been nullable; only this signature disagreed.
+   * The RSVP surface writes its equivalent as `body.error_reason ?? null`
+   * (call-result-processing.ts), and this table's column is nullable too.
    */
   finishReason: string | null,
   callDurationSec: number | null,

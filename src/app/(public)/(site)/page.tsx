@@ -114,8 +114,8 @@ const TRUST: { icon: LucideIcon; t: string; d: string }[] = [
 // already scans for their own kind of event. The two without one have no page
 // of their own yet — they stay plain, never a link to a near-duplicate page
 // (the reason the old footer's placeholder columns were removed).
-// 'ברית' replaced the vaguer 'אירועים פרטיים' here: it is a real, distinct
-// event type with its own page and its own search demand.
+// 'ברית' is a real, distinct event type with its own page and its own search
+// demand.
 const AUDIENCES: { icon: LucideIcon; t: string; href?: string }[] = [
   { icon: Heart, t: 'חתונות', href: '/wedding' },
   { icon: Star, t: 'בר/בת מצווה', href: '/bar-mitzva' },
@@ -260,7 +260,7 @@ export default async function HomePage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
       />
       {/* Header: shared SiteHeader, mounted by the (site) layout for every
-          marketing page (owner report 24.8 — the menu was homepage-only). */}
+          marketing page. */}
       <main>
         {/* Hero */}
         {/* py-10 on mobile (not the sections' py-16): the hero sits directly
@@ -557,8 +557,8 @@ export default async function HomePage() {
                 מאירוע משפחתי אינטימי ועד כנס חברה גדול — KALFA מתאימה את עצמה לגודל ולסגנון שלכם.
               </p>
             </div>
-            {/* Tiles that are links get the shared focus outline (they had
-                none) and `min-h-11`; the two non-link tiles keep the same box
+            {/* Tiles that are links get the shared focus outline and
+                `min-h-11`; the two non-link tiles keep the same box
                 so the grid stays even, but without the hover border/shadow —
                 a tile that reacts like a link and goes nowhere is a false cue. */}
             <div className="k-reveal-group grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -619,8 +619,7 @@ export default async function HomePage() {
         </section>
       </main>
       {/* Footer: shared SiteFooter, mounted by the (site) layout for every
-          marketing page (footer review 24.8 — the old 3-column placeholder
-          block and the duplicated slogan were removed). */}
+          marketing page. */}
     </div>
   );
 }

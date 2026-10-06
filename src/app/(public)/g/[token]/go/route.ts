@@ -5,8 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 
 // The actual gift redirect, reached from the "send a gift" button on the
-// `/g/[token]` landing page (and directly from the WhatsApp URL button for
-// backward compatibility). PII-free by construction — the opaque token maps to
+// `/g/[token]` landing page. PII-free by construction — the opaque token maps to
 // ONE event's owner-provided PayBox/Bit URL and nothing else is readable here.
 // Every failure mode (unknown token, unpublished event, no link) is the same
 // generic 404, privacy-safe like the public RSVP routes. Route Handlers are not

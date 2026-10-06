@@ -20,7 +20,7 @@ interface PageProps {
 
 // Review screen for guest lists sent to the business WhatsApp (CSV documents
 // or shared contact cards). Nothing lands in the guest list until confirmed
-// here; reads ride the staging RLS (guests.view/create per phase 3).
+// here; reads ride the staging RLS (guests.view/create).
 export default async function WhatsappImportPage({ params }: PageProps) {
   const { id: eventId } = await params;
   await requireEventAccess(eventId, 'guests', 'create');

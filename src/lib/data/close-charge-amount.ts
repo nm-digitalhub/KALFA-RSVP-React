@@ -1,5 +1,5 @@
-// Pure close-charge amount for the flat-base + included + overage pricing model
-// (plan S2). Kept dependency-free so it is unit-testable in isolation from the
+// Pure close-charge amount for the flat-base + included + overage pricing model.
+// Kept dependency-free so it is unit-testable in isolation from the
 // SUMIT/DB machinery in close-charge.ts.
 //
 //   charge = base + max(0, reached − included) × overage,
@@ -8,9 +8,9 @@
 //            earlier), capped at that number. `ceiling: null` = no cap.
 //
 // `overage` is the per-reached rate (campaign.price_per_reached). base/included
-// come from the campaign SNAPSHOT (populated at authorize by S3). For a
-// pre-model / pre-S3 campaign both are 0 (the S1 backfill / a NULL coalesced to
-// 0 upstream), which reduces the formula to pure per-reached
+// come from the campaign SNAPSHOT (taken when the campaign is created). For a
+// pre-model campaign (or one created with the base+overage gate off) both are 0
+// (the backfill / a NULL coalesced to 0 upstream), which reduces the formula to pure per-reached
 // (reached × price_per_reached) — VERIFIED behaviour-neutral against the live
 // campaigns 2026-07-26 (reached × rate == Σ locked_price for every campaign).
 //

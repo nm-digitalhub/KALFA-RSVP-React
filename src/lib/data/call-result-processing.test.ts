@@ -219,8 +219,8 @@ describe('processCallResult', () => {
     expect(recordCallOutcome).toHaveBeenCalledWith(AID, expect.objectContaining({ recording_url: null }));
   });
 
-  // Stage 6 — AI→human handoff billing (owner-authorized decision: handed_off
-  // bills exactly like completed, ONE writeReach call site, distinct evidence).
+  // AI→human handoff billing: handed_off bills exactly like completed, ONE
+  // writeReach call site, distinct evidence.
   describe('handed_off (AI→human handoff)', () => {
     it('bills via the SAME writeReach site as completed, with distinct evidence + interaction kind', async () => {
       await processCallResult(row({ call_status: 'handed_off', call_duration: 400 }));
@@ -336,8 +336,8 @@ describe('processCallRsvp (Tier 2 save_rsvp)', () => {
     // The RPC's refusal reason must survive to the caller — dropping it is what
     // let a permanently-rejected RSVP be reported to the guest as "queued".
     expect(r).toEqual({ status: 'rejected', reason: 'closed' });
-    // The refusal must reach the owner-visible activity feed. Previously it was
-    // discarded, the queue row was marked processed, and the guest was told "נרשם".
+    // The refusal must reach the owner-visible activity feed; otherwise it is
+    // discarded, the queue row is marked processed, and the guest is told "נרשם".
     expect(recordRsvpCallRejected).toHaveBeenCalledWith(
       'ev1',
       'g1',

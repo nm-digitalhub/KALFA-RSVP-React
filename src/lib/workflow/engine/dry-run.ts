@@ -7,9 +7,9 @@
 //
 // The trick is that a dry run is NOT a second implementation. It calls the same
 // `runWorkflow`, which drives the same vendored `runGraph`, through the same
-// adapter and the same step handlers. Only the three ports are swapped: the
-// ledger is a Map, the run store is a variable, and the guest actions RECORD
-// what they were asked to do instead of doing it. So what the owner sees is what
+// adapter and the same step handlers. Only the ports are swapped: the
+// ledger is a Map, the run store is a variable, and every other port RECORDS
+// what it was asked to do instead of doing it. So what the owner sees is what
 // the graph will actually do — not a model of it that can drift.
 import type { WorkflowTriggerPayload } from '../steps';
 
@@ -283,7 +283,7 @@ function createRecordingPorts(scenario: DryRunScenario) {
    * touched. It records what WOULD have happened and returns plausible ids so
    * the graph keeps routing exactly as it will in production.
    *
-   * Owner decision 2026-09-22, asked explicitly: a test run must say "הייתי
+   * Owner decision: a test run must say "הייתי
    * מחייב" and do nothing. Without this stub a handler would reach the live
    * provider from the editor's own "הרצת בדיקה" button, whose panel promises
    * the opposite.
@@ -382,9 +382,9 @@ export async function dryRunWorkflow(args: {
   const recording = createRecordingPorts(scenario);
 
   const trigger: WorkflowTriggerPayload = {
-    // Placeholders. Nothing reads them except the synthetic guest lookup above,
-    // and giving them recognisable values keeps a stray real id from appearing
-    // in a trace and being mistaken for one.
+    // Placeholders. Nodes do read them (most through `requireGuestContext`) and
+    // the recording ports ignore them; giving them recognisable values keeps a
+    // stray real id from appearing in a trace and being mistaken for one.
     eventId: 'dry-run-event',
     contactId: 'dry-run-contact',
     message_text: scenario.messageText,
@@ -406,7 +406,7 @@ export async function dryRunWorkflow(args: {
   };
 
   const outcome = await runWorkflow({
-    // The run id is only ever a Map key here — no row exists and none is written.
+    // The run id is only a label here — no row exists and none is written.
     runId: 'dry-run',
     workflowId,
     storedDefinition,

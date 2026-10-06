@@ -50,7 +50,10 @@ const UNTRANSLATED_BY_DESIGN = [
   'node.trigger.description',
   'node.aiAgent.label',
   'node.aiAgent.description',
-  // The AI-agent tool picker, likewise zero call sites in the bundle.
+  // The AI-agent tool picker. Unlike `node.*`, the SDK does render this family:
+  // it reads `aiTools.*` through `keyPrefix: 'aiTools'` and
+  // `t('aiTools.modalTitle')`, and the ai_agent node's uischema carries the
+  // `AiTools` control. It is currently left in English.
   'aiTools.title',
   'aiTools.addTool',
   'aiTools.addToolSlot',

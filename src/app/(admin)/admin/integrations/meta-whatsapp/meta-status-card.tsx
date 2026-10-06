@@ -1,20 +1,19 @@
 import { Badge } from '@/components/ui/badge';
 import { LocalDateTime } from '@/components/local-date-time';
 // TYPE-ONLY. meta-status.ts is `server-only`, and importing a VALUE from it
-// (the REQUIRED_SCOPES array, which an earlier draft used just to print a count)
-// drags that guard into this module — harmless while the card renders inside a
-// Server Component, and an immediate crash the day anyone adds 'use client'.
+// (such as the REQUIRED_SCOPES array) drags that guard into this module —
+// harmless while the card renders inside a Server Component, and an immediate
+// crash the day anyone adds 'use client'.
 // Everything this card needs is already in the status object.
 import type { MetaStatus } from '@/lib/data/admin/integrations/meta-status';
 
 // What META says about our connection, next to what OUR columns say.
 //
-// The two are different questions and the panel used to answer only the second.
-// "מוגדר" means a value was typed into app_settings; it stays true forever. A
-// System User token whose data-access window lapses keeps its shape, so the
+// The two are different questions, and our own columns can answer only the
+// second. "מוגדר" means a value was typed into app_settings; it stays true
+// forever. A System User token whose data-access window lapses keeps its shape, so the
 // panel would go on reporting a healthy channel while every send failed with a
-// provider error nobody was watching for. This card is the first thing in the
-// product that asks Meta.
+// provider error nobody was watching for. This card is what asks Meta.
 //
 // Three states, deliberately distinct — collapsing the last two is the defect
 // this shape exists to avoid:

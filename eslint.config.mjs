@@ -18,15 +18,15 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // The bundled pg-boss worker artifact (esbuild output, not source).
+    // The esbuild bundles (pg-boss worker, owner agent, operator CLIs) — output, not source.
     "dist/**",
     // Supabase schema types — generator output (`npm run gen:types`), never
     // hand-edited; `npm run types:check` guards it against the live DB instead.
     "src/lib/supabase/types.generated.ts",
     // Harness session data (not application source).
     ".remember/**",
-    // Local agent/skill config — subagent defs, references, and VoxEngine template
-    // scaffolds (which use require(Modules.X)). Gitignored, not application source.
+    // Agent/skill config — subagent defs, references, and VoxEngine template
+    // scaffolds (which use require(Modules.X)). Not application source.
     ".claude/**",
     // Cross-agent installed skills (skills-cli universal dir; .claude/skills
     // symlinks into it). Third-party skill scripts, not application source.
@@ -102,10 +102,11 @@ const eslintConfig = defineConfig([
   // them (rather than ignore them), but teach ESLint the runtime: `require(
   // Modules.X)` is a VoxEngine platform-global call — declared in the vendored
   // typings as `declare function require(module: Modules): void` — NOT a Node/
-  // CommonJS import. `no-undef` is already off via typescript-eslint's
-  // eslint-recommended layer, so the globals below are documentary / future-
-  // proofing and list the globals actually referenced by the scenarios. Placed
-  // last so it wins for the matched files.
+  // CommonJS import. `no-undef` is not enabled for these .js files at all
+  // (typescript-eslint's eslint-recommended layer turns it off only for TS
+  // files), so the globals below are documentary / future-proofing: the
+  // platform globals the scenarios reference, plus the timer functions VoxEngine
+  // declares. Placed after the Next configs so it wins for the matched files.
   {
     files: ["voxfiles/applications/*/scenarios/src/**/*.js"],
     languageOptions: {

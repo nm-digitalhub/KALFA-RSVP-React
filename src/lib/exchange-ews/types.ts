@@ -2,10 +2,7 @@ import 'server-only';
 
 // Plain data-shape contracts for the calendar integration. These are pure
 // shapes: no provider SDK is imported here, so a caller can describe a
-// connection without pulling in an implementation. (Until the Graph cutover the
-// rule here named ./ews-impl.ts as the one file allowed to touch
-// `ews-javascript-api` / `@ewsjs/xhr`; both that file and both packages are
-// gone, so the rule now has nothing left to constrain.)
+// connection without pulling in an implementation.
 
 // 'certificate' is how the ACTIVE backend authenticates: Graph signs in once as
 // the application with the app certificate, so there is no per-mailbox method
@@ -17,10 +14,11 @@ import 'server-only';
 // backend left. Do not read a value here as evidence that EWS still works.
 export type ExchangeAuthMethod = 'ntlm' | 'basic' | 'certificate';
 
-// Decrypted, ready-to-use connection config for a single EWS call. Built by
-// the DAL (src/lib/data/exchange-connections.ts) from a decrypted
-// `exchange_connections` row. Carries a plaintext password — never persisted,
-// logged, or held longer than one call.
+// Ready-to-use connection config for a single calendar call. Built by the DAL
+// (src/lib/data/exchange-connections.ts) from an `exchange_connections` row.
+// `password` is always the empty string under Graph (see
+// mailbox-credential.ts) — never persisted, logged, or held longer than one
+// call.
 export type ExchangeConnectionConfig = {
   mailboxEmail: string;
   password: string;
@@ -29,25 +27,23 @@ export type ExchangeConnectionConfig = {
 
 export type MailboxInfo = {
   emailAddress: string;
-  // Stage 1 does not resolve a human display name (no ResolveName call in
-  // scope — plan §2.1 lists testConnection returning MailboxInfo built from
-  // the Bind result only). null until a later stage adds that lookup.
+  // The calendar owner's display name as Graph reports it; null when absent.
   displayName: string | null;
 };
 
 export type CalendarSummary = {
-  id: string; // FolderId.UniqueId — opaque, stable per folder
+  id: string; // Graph calendar id — opaque
   displayName: string;
   totalCount: number;
 };
 
 // How the appointment affects the mailbox owner's free/busy — the value the
-// availability service reads. Mirrors the installed LegacyFreeBusyStatus enum
-// (Free/Tentative/Busy/OOF/WorkingElsewhere), named in our own vocabulary so
-// the library enum never leaks past the provider boundary.
+// availability service reads. Mirrors Graph's `showAs` values
+// (free/tentative/busy/oof/workingElsewhere), named in our own vocabulary so
+// the vendor's naming never leaks past the provider boundary.
 export type AppointmentShowAs = 'free' | 'tentative' | 'busy' | 'oof' | 'working_elsewhere';
 
-/** Outlook's Sensitivity ladder (Item.Sensitivity). */
+/** Outlook's sensitivity ladder (Graph `sensitivity`). */
 export type AppointmentSensitivity = 'normal' | 'personal' | 'private' | 'confidential';
 
 /** One invitee. Attendees receive REAL meeting invitations by email. */
@@ -60,7 +56,7 @@ export type AppointmentAttendee = {
 
 // Recurrence, in the four shapes Outlook's own dialog offers. `interval` is
 // "every N days/weeks/months/years"; weekly patterns also carry the weekdays
-// (0=Sunday, matching JS getDay() and the library's DayOfTheWeek enum).
+// (0=Sunday, matching JS getDay()).
 export type AppointmentRecurrence = {
   frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
   interval: number;
@@ -83,11 +79,9 @@ export type AppointmentDraft = {
   /**
    * Whether `body` is HTML. Default false = plain text.
    *
-   * Exists because the underlying library defaults to HTML when the type is
-   * left unsaid, which turns "\n" into nothing and "+" into "&#43;". Anything
-   * hand-typed by the owner is plain; only bodies WE compose (the callback
-   * item, so its phone number is a real tel: link) opt into HTML — and those
-   * must escape every value they interpolate.
+   * Anything hand-typed by the owner is plain; only bodies WE compose (the
+   * callback item, so its phone number is a real tel: link) opt into HTML —
+   * and those must escape every value they interpolate.
    */
   bodyIsHtml?: boolean;
   // True for a day-granular event; start/end must then be display-zone
@@ -96,14 +90,14 @@ export type AppointmentDraft = {
   // Free/busy effect. Omitted = the server default (Busy for timed items).
   // Informational all-day items MUST pass 'free' or they black out the day.
   showAs?: AppointmentShowAs;
-  // Marks the item Private (Item.Sensitivity) — content hidden from anyone
+  // Marks the item Private (`sensitivity`) — content hidden from anyone
   // the mailbox is ever shared with/delegated to. Used for items that carry
   // customer names.
   private?: boolean;
   // Outlook category, e.g. "KALFA — סטטוס" — lets everything this app writes
   // be recognised and filtered in Outlook.
   category?: string;
-  // Where it happens. Written to Appointment.Location, which is what makes an
+  // Where it happens. Written to the event's location, which is what makes an
   // address tappable-for-navigation on the phone.
   location?: string;
   /** Minutes before start; 0 = no reminder. */
@@ -114,22 +108,18 @@ export type AppointmentDraft = {
   recurrence?: AppointmentRecurrence;
 };
 
-// One calendar item as read back from Exchange (FindAppointments). This is
+// One calendar item as read back from Exchange (calendarView). This is
 // the provider's own shape — the DAL maps it onto the thin client DTO; the
-// raw library Appointment object never crosses the provider boundary.
+// raw Graph event object never crosses the provider boundary.
 export type ExchangeAppointment = {
-  id: string; // ItemId.UniqueId — opaque, stable, required for update/delete
+  id: string; // Graph immutable event id — opaque, stable, required for update/delete
   subject: string;
   start: Date;
   end: Date;
   allDay: boolean;
-  // The item's own free/busy effect. Populated from LegacyFreeBusyStatus so
-  // presence can be derived from the calendar itself — the availability
-  // SERVICE is unavailable on this hosting (measured: HTTP 500 /
-  // ErrorInternalServerError 127 from IONOS), while reading the calendar
-  // works, so the calendar is the reliable source.
+  // The item's own free/busy effect (Graph `showAs`).
   showAs: AppointmentShowAs;
-  // AppointmentType !== Single: an Occurrence, Exception, or RecurringMaster
+  // Graph type !== singleInstance: an occurrence, exception, or seriesMaster
   // of a series (not necessarily "recurring" in the naive sense — hence the
   // name). Stage-1 calendar UI maps this to readOnly — editing series-linked
   // items has exception semantics that are deliberately out of scope for now
@@ -170,7 +160,7 @@ export type AppointmentUpdate = {
   attendees?: AppointmentAttendee[];
 };
 
-/** @deprecated Use AppointmentUpdate — kept as an alias for older callers. */
+/** @deprecated Use AppointmentUpdate. */
 export type AppointmentTimesUpdate = AppointmentUpdate;
 
 // The full item as the edit dialog needs it (a superset of what the calendar

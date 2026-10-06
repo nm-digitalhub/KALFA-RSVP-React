@@ -107,11 +107,11 @@ function traceCas(calls: string[], result = true) {
 
 describe('the wait handshake', () => {
   it('⚠️ REGISTERS the fallback wake-up BEFORE it asks whether the event happened', async () => {
-    // ⚠️ ONE ORDERED LOG, not two arrays. An earlier version of this test asserted
-    // `calls[0] === 'enqueue'` and `seen === ['verify']` separately — which both
-    // pass just as happily when the order is REVERSED, because there is only one
-    // queue call either way. The ordering is the entire claim of this change, so
-    // it has to be a single sequence.
+    // ⚠️ ONE ORDERED LOG, not two arrays. Asserting `calls[0] === 'enqueue'` and
+    // `seen === ['verify']` separately would both pass just as happily when the
+    // order is REVERSED, because there is only one queue call either way. The
+    // ordering is the entire claim of this handshake, so it has to be a single
+    // sequence.
     const { boss, calls } = bossFake();
     parksWith(async () => {
       calls.push('verify');
@@ -215,12 +215,12 @@ describe('pullWorkflowRunForward', () => {
   });
 });
 
-// THE WINDOW THE 0ב REVIEW ASKED ABOUT, driven explicitly.
+// THE WINDOW BETWEEN PUBLISH AND REGISTER, driven explicitly.
 //
 // The run is already published as `waiting` with its correlation, and the
 // fallback job does NOT exist yet. A callback lands right there: its CAS
-// succeeds, it has no job to pull forward, and it answers 200. The review's
-// worry was that the handshake's own CAS would then return false — "the callback
+// succeeds, it has no job to pull forward, and it answers 200. The worry is
+// that the handshake's own CAS would then return false — "the callback
 // already won" — leaving the job at the ceiling and the early wake lost.
 //
 // ⚠️ IT DOES NOT, AND THE REASON IS THE CAS'S IDEMPOTENCE. The RPC predicates on

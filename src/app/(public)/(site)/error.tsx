@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { useVersionSkewReload } from '@/components/use-version-skew-reload';
 import { isVersionSkewError } from '@/lib/version-skew';
 
-// Error boundary for the marketing site (home, faq, terms, privacy, contact,
-// cookies) — overrides the broader (public)/error.tsx for this segment only.
+// Error boundary for the marketing site (every page under (public)/(site)) —
+// overrides the broader (public)/error.tsx for this segment only.
 // Unlike the token routes (/r, /g, /ty…) a site visitor is browsing between
 // pages, so a way back to the homepage is worth offering alongside retry.
 // Same generic, privacy-safe message and version-skew handling as the other

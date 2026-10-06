@@ -4,8 +4,6 @@ import { sumitStatus } from './status';
 
 // Passive health check for the SUMIT (OfficeGuy) connection.
 //
-// The integrations card said "אין בדיקת בריאות זמינה — בדיקה ידנית ב-/admin/sumit-test",
-// which was the third time this branch found that sentence meaning "nobody looked".
 // SUMIT's own OpenAPI document (openapi/sumit.openapi.json) lists 84 operations; `website/companies/getdetails/`
 // takes NOTHING but the credentials and returns the company they belong to.
 //

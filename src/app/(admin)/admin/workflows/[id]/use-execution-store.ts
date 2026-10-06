@@ -49,8 +49,7 @@ export type NodeExecutionState = {
    * source declares `NodeWaitingPayload = { waitingForNodeIds?: string[] }` — a
    * JOIN node waiting for its predecessors. KALFA overloads the same event for a
    * `logic.wait` parked on a deadline, and `run-workflow.ts` attaches `resumeAt`
-   * with the note that "waiting without until-when is not useful". It was right,
-   * and until now nothing read it.
+   * with the note that "waiting without until-when is not useful".
    */
   resumeAt?: string;
   /**
@@ -260,9 +259,9 @@ function buildDryRunEvents(args: {
         payload: { error: { message: args.outcome.message } },
       });
       break;
-    // ⚠️ THE TWO NON-TERMINAL OUTCOMES, which this switch used to fall through
-    // silently. `DryRunOutcome` has five members; three were handled, so a trace
-    // that parked produced NO final line and the log just stopped — the reader
+    // ⚠️ THE TWO NON-TERMINAL OUTCOMES. `DryRunOutcome` has five members and
+    // three are terminal; without a case for these two, a trace that parked
+    // would produce NO final line and the log would just stop — the reader
     // could not tell a parked run from a truncated one.
     //
     // Neither is a terminal event type, which is correct: nothing finished.
@@ -356,8 +355,8 @@ function eventToExecutionStatus(event: StreamEvent): string | undefined {
     // ⚠️ A NODE EVENT THAT MOVES THE RUN'S STATUS, and it is the only one.
     //
     // There is no `execution_waiting`: the engine suppresses `execution_failed`
-    // while parking (`run-workflow.ts` — "a run that parks has not failed") and
-    // writes `waiting` straight to the row through `updateStatus`. So over a
+    // while parking (`run-workflow.ts` — "the run has not failed") and
+    // writes `waiting` straight to the row through `setRunStatus`. So over a
     // LIVE stream `node_waiting` is the sole signal that the run parked, and
     // without this the header kept saying "רץ" until a reconnect brought a
     // snapshot. The snapshot path already reported it correctly, which is what

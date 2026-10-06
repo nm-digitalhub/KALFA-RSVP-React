@@ -5,11 +5,11 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { PROTECTED_FAQ_ITEM_KEY, type FaqCategory } from '@/lib/faq/page-model';
 
-// Admin editor DAL for /admin/faq (scope-change 16.8.2026 — FAQ copy is
+// Admin editor DAL for /admin/faq (FAQ copy is
 // admin-managed DATA, not hardcoded strings in a page component, the same
 // rule the project already applies to business facts). Modeled on
 // src/lib/data/admin/channel-catalog.ts: manage_settings gate here, plus the
-// admin-only RLS policy (faq_items_admin_all, has_role admin) as the second
+// staff-only RLS policy (faq_items_admin_all, is_platform_staff()) as the second
 // layer. Uses the normal cookie-authenticated client (not service-role), so
 // every write is attributable to and re-checked against the signed-in
 // admin's own session, not a service-role bypass.
@@ -87,7 +87,7 @@ export type UpdateFaqItemInput = {
 
 // Guards re-read the row's protection flags from the DB by `id` FIRST —
 // never trusts a client-submitted item_key/is_structural/published. For the
-// Tier-1 protected row (pricing_no_response — the ₪200-unconditional
+// Tier-1 protected row (pricing_no_response — the live pricing
 // disclosure), `question`/`published` are silently kept at their existing
 // values regardless of what was posted; only `answer` (the optional
 // supplement) and `sort_order` are ever actually applied. `category` is

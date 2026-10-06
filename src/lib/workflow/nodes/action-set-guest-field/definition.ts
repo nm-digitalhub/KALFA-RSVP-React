@@ -57,7 +57,7 @@ export type GuestField = (typeof GUEST_FIELDS)[number];
  */
 export type SetGuestFieldConfig = {
   field: GuestField;
-  /** Free text, template-resolved — so it can carry `{{trigger.message.text}}`. */
+  /** Free text, template-resolved — so it can carry `{{trigger.message_text}}`. */
   value: string;
 };
 

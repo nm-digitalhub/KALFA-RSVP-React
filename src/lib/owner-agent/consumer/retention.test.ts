@@ -232,8 +232,8 @@ describe('runOwnerAgentRetention', () => {
     expect(alerts).toEqual([]);
   });
 
-  // Review 2026-09-24 (C): a CLI that moved its sessions must not look like
-  // "nothing to delete, every session gone".
+  // A CLI that moved its sessions must not look like "nothing to delete, every
+  // session gone".
   describe('the measured path stops holding', () => {
     const STAFF_3 = '33333333-3333-4333-8333-333333333333';
     const MOVED = '99999999-9999-4999-8999-999999999999';

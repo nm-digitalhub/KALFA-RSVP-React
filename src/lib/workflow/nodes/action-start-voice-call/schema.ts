@@ -26,10 +26,11 @@ export type VoicePurposeOption = { key: string; displayName: string };
 /**
  * One dial parameter that is read from the platform rather than typed.
  *
- * Both lists behind this shape are LIVE: `provider_numbers` rows for the caller
- * id, and Voximplant's own `GetRules` for the rule. Neither is a constant here,
- * for the same reason the purpose dropdown is not — a number bought today or a
- * rule rebound this morning has to appear without a deploy.
+ * The lists behind this shape are LIVE: `provider_numbers` rows for the caller
+ * id, Voximplant's own `GetRules` for the rule, and the ElevenLabs agent list for
+ * the agent. None is a constant here, for the same reason the purpose dropdown
+ * is not — a number bought today or a rule rebound this morning has to appear
+ * without a deploy.
  */
 export type VoiceDialOption = { value: string; label: string };
 
@@ -52,18 +53,17 @@ export type VoiceDialOption = { value: string; label: string };
  *     reference lists exactly eight parameters: user_id, user_name,
  *     application_id, application_name, rule_id, script_custom_data,
  *     reference_ip, server_location).
- *   • `callerId` → `script_custom_data.from`, which all three deployed agent
- *     scenarios read as `state.from = customData.from` and hand straight to
+ *   • `callerId` → `script_custom_data.from`, which every deployed agent
+ *     scenario reads as `state.from = customData.from` and hands straight to
  *     `VoxEngine.callPSTN(state.to, state.from)`.
  *   • `toOverride` → `script_custom_data.to`, the first argument of that same
  *     call.
  * No scenario deploy is needed for any of them.
  *
- * The agent id is NOT here, and its absence is the same kind of fact: every
- * scenario hardcodes `var AGENT_ID = 'agent_…'`, and the generic ctx route
- * returns no agent. A picker for it would be a control that changes nothing
- * until that ships, so it waits for the scenario change rather than shipping
- * as furniture.
+ * The agent id reaches the call a different way: `agentId` → the ctx response's
+ * `agent_id`, which `PurposeAgent.voxengine.js` opens its ElevenLabs client on.
+ * The persona scenarios (RSVPAgent, MeetingConfirmAgent, SalesCloseAgent)
+ * hardcode `var AGENT_ID = 'agent_…'`, so there the field changes nothing.
  */
 export const voiceCallSchemaFor = (
   purposes: readonly VoicePurposeOption[],
@@ -100,18 +100,13 @@ export const voiceCallSchemaFor = (
       // one dial parameter that legitimately comes from an earlier step
       // (`{{nodes.<id>.phone}}`), and only that control offers the picker.
       toOverride: { type: 'string' },
-      // ⚠️ THE ONE FIELD WHOSE OTHER HALF IS NOT LIVE YET. The value is carried
-      // end-to-end on the server — node → attempt row → ctx response — but every
-      // deployed scenario still opens `ElevenLabs.createAgentsClient({ agentId:
-      // AGENT_ID })` against a hardcoded constant. Until a scenario that reads
-      // `ctx.agent_id` is deployed, setting this changes which agent the SERVER
-      // says to use and not which one answers.
-      //
-      // It ships anyway, and the reason is the whole point of this node: the
-      // alternative is a generic call primitive that cannot name its own agent,
-      // which just moves the hardcoding from the scenario into the product. The
-      // arm gate refuses a node whose agent is unreachable rather than letting
-      // the mismatch dial.
+      // ⚠️ ONLY A RULE THAT RUNS `PurposeAgent` HONOURS THIS. The value is carried
+      // end-to-end on the server — node → attempt row → ctx response — and
+      // `PurposeAgent.voxengine.js` opens `ElevenLabs.createAgentsClient` on
+      // `ctx.agent_id`. The persona scenarios still open it against a hardcoded
+      // `AGENT_ID`, so on a rule that runs one of them setting this changes
+      // nothing about which agent answers. Arming does not look at it:
+      // `voice-node-arm-check.ts` checks the purpose and its rule, never the agent.
       agentId: {
         type: 'string',
         options: [{ label: 'הסוכן המוגדר בתרחיש', value: '' }, ...agents],

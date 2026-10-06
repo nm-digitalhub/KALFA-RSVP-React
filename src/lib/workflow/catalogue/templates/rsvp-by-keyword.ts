@@ -1,8 +1,7 @@
 'use client';
 
 // Starter template 1 of 13 — its diagram and its selector entry. Editor
-// side; `./index.ts` places it in `DIAGRAM_TEMPLATES` at the position the
-// inline entry held.
+// side; `./index.ts` places it in `DIAGRAM_TEMPLATES`.
 import type { DiagramModel, TemplateModel } from '@workflowbuilder/sdk';
 
 import { CONDITION_BRANCH_HANDLES } from '../types';

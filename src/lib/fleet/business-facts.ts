@@ -1,4 +1,4 @@
-// Stage-2 grounding for the support-drafter (plan S5): the pure shaping of the
+// Grounding for the support-drafter: the pure shaping of the
 // business facts the drafter is allowed to quote when answering a pricing
 // inquiry — so it writes the REAL price instead of a `[מחירים]` placeholder.
 //

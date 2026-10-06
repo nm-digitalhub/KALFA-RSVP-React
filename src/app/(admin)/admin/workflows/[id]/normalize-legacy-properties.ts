@@ -102,10 +102,11 @@ function normalizeEntries(value: unknown): unknown {
 /**
  * Fill in the Microsoft mail options a diagram saved before they existed.
  *
- * ⚠️ THE ONLY BRANCH IN THIS FILE KEYED ON A NODE TYPE, AND THAT IS DELIBERATE.
- * Everything else here is derived from the palette schema, precisely so the next
- * field of a known KIND is covered without anyone editing this file. This one
- * cannot be, and the reason is worth stating rather than inferring.
+ * ⚠️ ONE OF TWO BRANCHES IN THIS FILE KEYED ON A NODE TYPE (THE OTHER IS THE
+ * RSVP `status` REPAIR), AND THAT IS DELIBERATE. Everything else here is derived
+ * from the palette schema, precisely so the next field of a known KIND is
+ * covered without anyone editing this file. This one cannot be, and the reason
+ * is worth stating rather than inferring.
  *
  * WHAT THE SDK DOES NOT DO, measured in 2.3.0 rather than assumed:
  *

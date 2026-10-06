@@ -17,8 +17,9 @@ import { join } from 'node:path';
 // security_invoker) a write through an auto-updatable one is rewritten onto the
 // base table with RLS bypassed entirely.
 //
-// This has now happened TWICE. Migration 20260720193844 was written specifically
-// to close it across six views; one day later 20260721163850 created the seventh
+// This has now happened THREE times (the third, the agent roster, is noted at
+// EXPECTED_VIEWS below). Migration 20260720193844 was written specifically
+// to close it across six views; one day later 20260721133850 created the seventh
 // with the same two-line pattern and reopened it. It was caught only because the
 // grants were read back from the live database by hand. The class of mistake is
 // invisible to tsc, eslint and every behavioral test — none of them read SQL.
@@ -157,7 +158,7 @@ describe('console_* view bodies — latest definition invariants', () => {
     expect([...latest.keys()].sort()).toEqual([...EXPECTED_VIEWS]);
   });
 
-  // Staff-model authorization (user correction, 2026-07-22): the console is a
+  // Staff-model authorization: the console is a
   // staff-wide surface. Every console view must be gated by is_console_agent()
   // — which itself requires is_staff() (20260720234500) — EXCEPT console_me,
   // whose gate is the self-row predicate `ca.user_id = auth.uid()` (a different

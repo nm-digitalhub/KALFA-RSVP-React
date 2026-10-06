@@ -161,9 +161,8 @@ describe('substituteSecrets', () => {
   });
 
   it('a lower-case name IS a reference — the case rule was dropped', () => {
-    // It was upper-snake-only until 2026-09-13, which refused
-    // `{{secrets.acme_key}}` for no defensible reason: the security property is
-    // the env prefix, not the shape of what follows it.
+    // `{{secrets.acme_key}}` is accepted: the security property is the env
+    // prefix, not the shape of what follows it.
     expect(substituteSecrets('{{secrets.acme}}', (n) => (n === 'acme' ? 'v' : undefined))).toEqual({
       ok: true,
       value: 'v',

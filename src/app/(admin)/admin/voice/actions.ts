@@ -17,7 +17,8 @@ import type { FormState } from '@/lib/validation/result';
 // FormState variant that also carries the one-time raw callback URL to display.
 export type WireFormState = FormState & { callbackUrl?: string };
 
-// Refresh the platform view: bust the page's cached provider reads. Read-only.
+// Refresh the platform view: revalidate its pages so the provider reads re-run
+// (the balance tile still honors its short in-process cache). Read-only.
 export async function refreshVoicePlatformAction(): Promise<FormState> {
   await requirePlatformPermission('manage_voice');
   revalidatePath('/admin/voice/platform');
@@ -44,7 +45,7 @@ export async function runLogExportAction(): Promise<FormState> {
   }
 }
 
-// B5 — wire the account-callback (the one-time SetAccountInfo mutation). Guarded
+// Wire the account-callback (the one-time SetAccountInfo mutation). Guarded
 // by an AlertDialog in the UI. On success we surface the registered URL so the
 // admin can confirm it; the raw token is embedded in that URL and shown ONCE.
 export async function wireAccountCallbackAction(): Promise<WireFormState> {

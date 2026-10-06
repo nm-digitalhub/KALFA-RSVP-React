@@ -11,13 +11,10 @@ import type { PageResult } from '@/lib/data/admin/shared';
 
 import { EmptyState, Pagination, formatDateTime } from '../../_components';
 
-// The alert log, lifted out of alerts/page.tsx so both surfaces render ONE
-// definition while both exist (the Task 0.3/0.4 pattern).
+// The alert log of the Slack integration page.
 //
-// `basePath` is a prop rather than a constant for the reason the lift exists:
-// the page it came from hardcoded '/admin/alerts' in Pagination, so copying it
-// unchanged would have sent a reader on page 2 of the NEW page back to the page
-// being retired. A render test that asserts text does not catch an href.
+// `basePath` is a prop rather than a constant so Pagination links back to the page
+// that renders the log. A render test that asserts text does not catch an href.
 
 const LEVEL_LABEL: Record<string, string> = {
   error: 'שגיאה',

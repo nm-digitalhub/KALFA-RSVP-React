@@ -57,13 +57,15 @@ import type { AuditInput, IntakeRow, ReplyStore } from './store';
 //     → the follow-up buttons/list → answered | failed, and one audit row.
 //
 // ⚠️ SILENCE IS THE DEFAULT (decision 9.6). Every gate failure — at the start
-// or at send time — ends with an audit row and NO message: no reply, no model
-// run, no "you are not allowed", and NO Graph call of any kind (no "read", no
-// "typing", no media download): the turn is built from the database alone,
-// and only a turn that will be answered reaches the first Graph call. The
-// messages a staff member can get that are not an answer are fixed texts —
-// OWNER_AGENT_FAILURE_REPLY for a run that failed, the voice-note reply, the
-// unreadable-file reply — and each goes through the same send-time gate.
+// or at send time — ends with an audit row and NO message: no reply and no
+// "you are not allowed". A failure at the start also means no model run and NO
+// Graph call of any kind (no "read", no "typing", no media download): the turn
+// is built from the database alone, and only a turn that passed the start gate
+// reaches the first Graph call (one the send gate then stops has been "read",
+// see M4 below). The messages a staff member can get that are not an answer
+// are fixed texts — OWNER_AGENT_FAILURE_REPLY for a run that failed, the
+// voice-note reply, the unreadable-file reply — and each goes through the same
+// send-time gate.
 //
 // ⚠️ NEVER TWICE. A message is sent only after this delivery moved the row
 // processing → sending (a CAS in store.ts). A delivery that finds the row in
@@ -123,8 +125,7 @@ const DOCUMENT_MIME = ['application/pdf', 'text/plain', ...CSV_MIME] as const;
 export const OWNER_AGENT_MEDIA_ALLOWED_MIME: readonly string[] = [...IMAGE_MIME, ...DOCUMENT_MIME];
 // Same cap as a document: `claude -p` resizes large images itself (up to 8000px
 // on the longest edge) and the runner caps the whole turn at 32MB of base64
-// (runner.ts MAX_ATTACHMENT_BASE64_TOTAL). The old 5MB was our own choice, not
-// a Claude limit.
+// (runner.ts MAX_ATTACHMENT_BASE64_TOTAL).
 export const OWNER_AGENT_IMAGE_MAX_BYTES = 16 * 1024 * 1024;
 export const OWNER_AGENT_DOCUMENT_MAX_BYTES = 16 * 1024 * 1024;
 
@@ -176,8 +177,8 @@ export interface ReplyDeps {
   alert: (input: SlackAlertInput) => Promise<unknown>;
   log: (line: string) => void;
   now: () => number;
-  // Capabilities (§4.1–4.4). Optional so a consumer wired before them keeps
-  // today's behaviour: no "read"/"typing", files unreadable, no buttons.
+  // Capabilities (§4.1–4.4). Optional: without them there is no "read"/"typing",
+  // files are unreadable and no buttons are offered.
   /** "Read" + "typing…" on one inbound wamid. Its result is never relied on. */
   markRead?: (sender: WhatsAppSender, wamid: string, timeoutMs: number) => Promise<unknown>;
   /** Scoped lookup + hardened download (whatsapp/media.ts). Never throws. */

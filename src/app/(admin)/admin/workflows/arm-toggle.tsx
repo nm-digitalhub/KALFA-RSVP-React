@@ -28,9 +28,10 @@ export function ArmToggle({ id, isActive }: { id: string; isActive: boolean }) {
       formData.set('isActive', String(!isActive));
       const result = await setWorkflowActiveAction(formData);
       if (!result.ok) setErrors(result.errors);
-      // Arming can do one thing BESIDES arming — claim the guest-list role for
-      // the number the trigger names — and that changes how every inbound
-      // message routes. It must not pass without a word.
+      // Arming can do things BESIDES arming — claim the guest-list role for the
+      // number the trigger names, which changes how every inbound message
+      // routes, and register or withdraw SUMIT triggers, which can fail. None of
+      // it may pass without a word.
       else if (result.notice) setNotice(result.notice);
     });
   };

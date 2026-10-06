@@ -3,10 +3,10 @@
 //
 // ⚠️ WHY THIS EXISTS. Several tests guard what a step handler IMPORTS — no
 // SUMIT client, no child process, a `requireGuestContext` call per guest node —
-// and they used to read `steps/index.ts` by path. Once handlers move to
-// `nodes/<name>/runtime.ts`, such a test keeps passing while guarding a file the
-// handlers no longer live in; its only anti-no-op was "the file is longer than
-// 1000 characters", which a shrunken registry still is. These helpers read
+// and they used to read `steps/index.ts` by path. Handlers live in
+// `nodes/<name>/runtime.ts`, so such a test would keep passing while guarding a
+// file the handlers no longer live in; its only anti-no-op was "the file is
+// longer than 1000 characters", which a shrunken registry still is. These helpers read
 // EVERY server-side node file, and `assertCoversEveryNodeFolder` fails the
 // moment a node folder exists that the scan did not include.
 //
@@ -24,7 +24,7 @@ function read(path: string): SourceFile {
   return { path: path.slice(process.cwd().length + 1), source: readFileSync(path, 'utf8') };
 }
 
-/** Every folder under `nodes/`. Empty before the first node moves. */
+/** Every folder under `nodes/`. Empty when the directory is absent. */
 export function nodeFolders(): string[] {
   if (!existsSync(NODES_DIR)) return [];
   return readdirSync(NODES_DIR, { withFileTypes: true })
@@ -50,7 +50,7 @@ function codeFilesUnder(dir: string): string[] {
  * recursively.
  *
  * ⚠️ ALL OF THE FOLDER, NOT A LIST OF NAMES. A fixed list (`definition.ts`,
- * `runtime.ts`, `match.ts`) let a helper next to them — `outcome.ts`, a future
+ * `runtime.ts`, `match.ts`) let a helper next to them — a later `outcome.ts` or
  * `helper.ts` — import a SUMIT client or spawn a process unseen. The editor
  * files are read too; the scans look for things no editor file has reason to
  * contain, so including them costs nothing and closes the gap.

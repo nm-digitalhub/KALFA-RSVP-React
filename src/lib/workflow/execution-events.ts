@@ -26,9 +26,8 @@ export type StreamSnapshot = {
 export type { ExecutionStatus };
 
 // The four the vendored TERMINAL_EXECUTION_STATUSES tuple declares. Duplicated
-// as a plain set rather than imported, for the bundle reason above; the
-// migration's check constraint is the third copy and the comment in each names
-// the others.
+// as a plain set rather than imported, for the bundle reason above;
+// `TERMINAL_RUN_STATUSES` in engine/ports.ts is a third copy of the same four.
 const TERMINAL_STATUSES = new Set(['completed', 'incomplete', 'failed', 'cancelled']);
 
 export function isTerminalStatus(status: string): boolean {

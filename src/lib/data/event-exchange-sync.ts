@@ -1,7 +1,7 @@
 import 'server-only';
 
 // Layer 2 — one-way sync of a KALFA event into the business's connected
-// Exchange calendar (IONOS EWS). Layer 1 (a unified internal ops calendar
+// Exchange calendar (Microsoft 365 via Graph). Layer 1 (a unified internal ops calendar
 // UI) is separate, later work and is NOT built here.
 //
 // FAIL-SOFT BY DESIGN: every exported function here catches its own errors
@@ -253,11 +253,10 @@ export async function syncEventToExchange(eventId: string): Promise<void> {
  * date.
  *
  * syncEventToExchange above CREATES and nothing else — it returns at
- * `already_synced` the moment a link row exists. That was correct while an
- * event's date was immutable after publication; now that platform staff can
- * reschedule a live event (admin_reschedule_event, migration 20260906203901),
- * calling it after a move is a silent no-op and the calendar keeps showing the
- * old date. This is the update half.
+ * `already_synced` the moment a link row exists. A live event's date can move
+ * (platform staff via admin_reschedule_event, migration 20260906203901, or the
+ * owner until the first send), and calling it after a move is a silent no-op
+ * and the calendar keeps showing the old date. This is the update half.
  *
  * PATCHes rather than delete-and-recreate: the appointment id is the identity
  * the owner's calendar (and any attendee) holds, and recreating it would read

@@ -6,10 +6,10 @@ import { callbackStatusLabel } from '@/lib/data/admin/labels';
 import type { Tables } from '@/lib/supabase/types';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
-// Admin: read the audit trail (activity_log). Authorized by the request-scoped
-// session under the `al_admin_all` RLS policy plus a server-side requireAdmin()
-// gate. The writer lives in `@/lib/data/activity`; this is the read side for
-// the admin journal.
+// Admin: read the audit trail (activity_log). Reads go through the service-role
+// client, gated server-side by requirePlatformPermission('view_activity_log').
+// The writer lives in `@/lib/data/activity`; this is the read side for the
+// admin journal.
 //
 // PRIVACY: `meta` is contractually free of raw PII. We surface structured
 // summaries, ids, and timestamps, and render the raw JSON only as a fallback

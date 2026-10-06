@@ -9,10 +9,11 @@ import { voxSalesEscalateSchema } from '@/lib/validation/voximplant';
 // The sales-closing agent's `escalate_to_human` tool (script draft §3):
 // checks/transfers to a live rep if one is reachable, and is HONEST when
 // none is — `transferred` is only ever true for a REAL bridged leg (same
-// discipline as save_rsvp's "queued" false-promise fix; see the memory
-// note). v1 has no live-transfer mechanism wired for this token surface
-// (same non-goal as the meeting-booking plan's escalate_to_queue), so this
-// always returns `transferred: false` and instead raises the SAME
+// discipline as save_rsvp's "queued" false-promise fix; see
+// docs/voice-agent/production-wiring-audit-2026-07-20.md). v1 has no
+// live-transfer mechanism wired for this token surface (same non-goal as the
+// meeting-booking plan's escalate_to_queue), so this always returns
+// `transferred: false` and instead raises the SAME
 // contact_messages/Slack queue notify_owner uses — never silently
 // pretending a handoff happened.
 

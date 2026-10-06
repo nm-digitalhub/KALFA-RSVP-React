@@ -4,7 +4,8 @@
 // layoutDirection, globalVariables }`, and nothing in it is scoped to an event
 // (`workflows.event_id` is null on all 20 rows, measured 2026-09-16). What is
 // not portable is what some nodes STORE: a connection uuid, another workflow's
-// id, a webhook token that is the trigger's whole credential.
+// id, the webhook trigger's endpoint id and token hash (which authenticate to
+// this installation only).
 //
 // PURE. No database, no clock, no Supabase. The one fact it cannot know on its
 // own — whether a catalogue key exists at the destination — arrives as a

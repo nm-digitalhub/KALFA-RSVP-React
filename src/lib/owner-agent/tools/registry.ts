@@ -42,13 +42,13 @@ import {
 // set>), and the runner allows only those ids. No tool takes a user or
 // permission parameter.
 //
-// billing_summary and rsvp_totals were withheld until their sums could be read
-// without loading rows: public.owner_agent_billing_sums(_since) and
+// billing_summary and rsvp_totals read their sums without loading rows:
+// public.owner_agent_billing_sums(_since, _until) and
 // public.owner_agent_rsvp_people_totals() (supabase/migrations/
-// 20260924061630_owner_agent_read_aggregates.sql) are applied and typed, so
-// both are offered like the other seven. Adding a tool here also means adding
-// its id to .claude/fleet/settings/owner-agent.settings.json, which
-// src/lib/owner-agent/owner-agent-settings.test.ts pins to this list.
+// 20260924061630_owner_agent_read_aggregates.sql; the first was recreated with
+// _until in 20260927011338_owner_agent_capabilities.sql). Adding a tool here
+// also means adding its id to .claude/fleet/settings/owner-agent.settings.json,
+// which src/lib/owner-agent/owner-agent-settings.test.ts pins to this list.
 export const OWNER_AGENT_TOOLS = [
   { tool: inquiriesSummaryTool, permission: INQUIRIES_SUMMARY_PERMISSION },
   { tool: campaignsStatusSummaryTool, permission: CAMPAIGNS_STATUS_SUMMARY_PERMISSION },

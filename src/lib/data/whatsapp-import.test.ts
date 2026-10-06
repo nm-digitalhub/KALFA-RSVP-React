@@ -684,9 +684,8 @@ describe('contactsToStagedRows — the phone on a shared contact card', () => {
   //
   // The old code read `phone` and ran the ISRAEL-ONLY repair over it, which
   // returned null for a foreign number, so the raw display string was staged
-  // verbatim — spaces and all. `guests_event_phone_key` is a unique index on the
-  // stored value, so that guest would be created a SECOND time on the next
-  // import, and `findImportMatches` would not have offered the merge either.
+  // verbatim — spaces and all, and the confirm step writes the staged value to
+  // `guests.phone` unchanged.
 
   const card = (phones: unknown, name = 'דנה לוי') => ({
     contacts: [{ name: { formatted_name: name }, phones }],
@@ -701,10 +700,8 @@ describe('contactsToStagedRows — the phone on a shared contact card', () => {
   });
 
   it('⚠️ an ISRAELI number comes back in the house format, not E.164', () => {
-    // MEASURED 2026-09-13: 41 of 44 stored guest phones are the local `0…` form.
-    // Emitting `+972…` here would make every contact card miss those rows and
-    // create the same person twice — the duplicate this whole function prevents,
-    // arriving from the other direction.
+    // MEASURED 2026-09-13: 41 of 44 stored guest phones are the local `0…` form,
+    // so an Israeli card is staged in that form rather than as `+972…`.
     const [row] = contactsToStagedRows(card([{ wa_id: '972501234567' }]));
     expect(row!.phone).toBe('0501234567');
   });

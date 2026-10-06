@@ -11,9 +11,8 @@ import { createClient } from '@/lib/supabase/server';
 import type { TablesUpdate } from '@/lib/supabase/types';
 
 // Read/write for app_settings.whatsapp_send_policy — the send-timing policy every
-// campaign send is scheduled against. Closes gap G9: the column was populated and
-// load-bearing, and the only way to change it was SQL. The owner's standing rule
-// is that a switch living in the database without an admin control is not done.
+// campaign send is scheduled against. The owner's standing rule is that a switch
+// living in the database without an admin control is not done.
 //
 // THE CEILINGS ARE NOT REDEFINED HERE. parseSendPolicy owns them (09:00 floor,
 // 20:30 weekday / 12:00 Friday ceiling, 21:00 hard cap, Saturday null, motzash

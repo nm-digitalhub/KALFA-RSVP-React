@@ -35,9 +35,9 @@ export async function updateCookieConsentEnabledAction(
     return { error: 'עדכון מתג ההסכמה נכשל. נסו שוב.' };
   }
   if (!outcome.changed) {
-    // Found in the owner's live test (27.7): submitting a value the switch
-    // already has must not write, bump, or force everyone to re-consent for
-    // nothing — and must not log/alert as if something happened.
+    // Submitting a value the switch already has must not write, bump, or
+    // force everyone to re-consent for nothing — and must not log/alert as if
+    // something happened.
     return { notice: 'לא בוצע שינוי — המתג כבר במצב זה' };
   }
   void sendSlackAlert({

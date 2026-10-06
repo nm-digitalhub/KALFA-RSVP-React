@@ -29,8 +29,7 @@ export type CallbackPolicy = {
    * when a call may actually be PLACED (console-calls.ts's
    * evaluateSharedConsentGates) — a separate concern from `weekday` above,
    * which only governs when a NEW callback may be scheduled onto the
-   * calendar. The two happened to share the same hours before 31.8, when
-   * this became independently admin-editable.
+   * calendar. Admin-editable independently of `weekday`.
    */
   readonly dialWeekday: readonly DayWindow[];
   /** Nothing may be booked sooner than this from now. */
@@ -66,7 +65,6 @@ export const DEFAULT_CALLBACK_POLICY: CallbackPolicy = {
     { startMin: H(9), endMin: H(13) }, // Friday
     null, // Saturday
   ],
-  // Matches console-calls.ts's former HUMAN_CALL_WINDOW constant verbatim.
   dialWeekday: [
     { startMin: H(8), endMin: H(19) }, // Sunday
     { startMin: H(8), endMin: H(19) },
@@ -183,14 +181,6 @@ const BAND_LAST_ENTRY: Record<Exclude<CallbackPreference, 'asap' | 'exact'>, num
 };
 
 /**
- * Turns the form choice into the instant stored in callback_requests.requested_at.
- *
- * The result is a PREFERENCE, not a booking: it is where the search starts.
- * findCallbackSlot still applies business hours, Shabbat and real calendar
- * conflicts on top, so an unreachable preference degrades to the next workable
- * slot instead of failing.
- */
-/**
  * The two columns a caller's part-of-day choice actually becomes.
  *
  * `requested_at` is the instant the scheduler starts searching from, and
@@ -216,6 +206,14 @@ export function preferenceToRequestFields(
   };
 }
 
+/**
+ * Turns the form choice into the instant stored in callback_requests.requested_at.
+ *
+ * The result is a PREFERENCE, not a booking: it is where the search starts.
+ * findCallbackSlot still applies business hours, Shabbat and real calendar
+ * conflicts on top, so an unreachable preference degrades to the next workable
+ * slot instead of failing.
+ */
 export function preferenceToInstant(
   preference: CallbackPreference,
   nowMs: number,
@@ -287,7 +285,7 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 /**
  * Whether a set of constraints is structurally usable.
  *
- * Checked rather than trusted because from stage 3 these arrive from an
+ * Checked rather than trusted because these arrive from an
  * extraction step, and a malformed constraint must fail LOUDLY. The date format
  * is the one that matters most: an out-of-range minute at least produces a
  * visibly empty window, whereas '28/07/2026' simply never matches an Israel
@@ -318,8 +316,7 @@ export function validateConstraints(constraints: CallerConstraints): boolean {
 }
 
 /**
- * Where inside the allowed set to aim — the third layer, and the one this
- * engine was missing.
+ * Where inside the allowed set to aim — the third layer.
  *
  * Scheduling literature splits the problem in two: hard constraints PRUNE the
  * invalid, weighted soft preferences RANK what survives. Everything here used
@@ -372,7 +369,7 @@ export type SlotSearchInput = {
  *   no_slot_within_constraints — the calendar has room, the caller's window does not
  *   no_slot_within_horizon     — nothing free, constraints or not
  *
- * The distinction is not cosmetic. From stage 3 these constraints come from an
+ * The distinction is not cosmetic. These constraints come from an
  * extraction step, and "the model produced an impossible window" is a signal
  * about the MODEL, while "the fortnight is full" is a signal about CAPACITY.
  * Reporting both as one reason would feed the improvement loop a mixture of the

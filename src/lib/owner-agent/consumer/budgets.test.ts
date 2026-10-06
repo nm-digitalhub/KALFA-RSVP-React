@@ -114,7 +114,7 @@ describe('the capability budgets (capabilities plan §4.1–4.2)', () => {
   });
 });
 
-// Review 2026-09-24 (A): the consumer's first start must be impossible through
+// The consumer's first start must be impossible through
 // a GENERIC start — the clean-restart recipe and the relocation wizard's I7
 // both run `pm2 start ecosystem.config.cjs` with no --only.
 describe('no generic pm2 start can start kalfa-owner-agent', () => {
@@ -138,7 +138,7 @@ describe('no generic pm2 start can start kalfa-owner-agent', () => {
   });
 });
 
-// Review 2026-09-24 (B): the role's ~15 session-mode slots are shared. The
+// The role's ~15 session-mode slots are shared. The
 // other pools are read from their own files, so a change there re-runs this.
 describe('session-mode connection slots', () => {
   const poolMax = (file: string, pattern: RegExp) => {

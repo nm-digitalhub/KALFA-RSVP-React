@@ -1,8 +1,7 @@
 'use client';
 
 // `action.start_rsvp_ai_callback` — its palette entry. Editor side;
-// `catalogue/schemas.ts` places it in `PALETTE_ITEMS` at the index the inline
-// entry held.
+// `catalogue/schemas.ts` places it in `PALETTE_ITEMS`.
 //
 // The output fields come from the definition, so the variable picker reads one
 // declaration of what this node returns.

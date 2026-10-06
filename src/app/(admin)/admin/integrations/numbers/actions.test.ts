@@ -420,8 +420,7 @@ describe('deregisterNumberAction', () => {
 describe('a failed add is diagnosable, and does not eat the form', () => {
   it('passes Meta\'s mapped reason through instead of flattening it', async () => {
     // This is the bug the owner hit live: every failure arrived as the same four
-    // words. The old test was `startsWith('חסרים')`, which matched only the
-    // missing-token case.
+    // words.
     addMock.mockRejectedValue(
       new Error('Meta דחתה את הבקשה כלא תקינה — בדרך כלל מספר שכבר רשום (קוד Meta 100)'),
     );

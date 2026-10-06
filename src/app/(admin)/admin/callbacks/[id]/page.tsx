@@ -224,7 +224,7 @@ function SalesCallCard({ salesCall, index }: { salesCall: SalesCall; index: numb
         <div className="sm:col-span-3">
           <dt className="text-xs font-medium text-muted-foreground">סיבת סיום</dt>
           {/* Falls back to the telephony's own finish_reason while the
-              ElevenLabs analysis is still outstanding — see mapSalesCall. */}
+              ElevenLabs analysis is still outstanding — see mapAiCall. */}
           <dd className="wrap-anywhere">
             {salesCall.terminationReason ? salesFinishReasonLabel(salesCall.terminationReason) : '—'}
           </dd>
@@ -250,11 +250,10 @@ function SalesCallCard({ salesCall, index }: { salesCall: SalesCall; index: numb
               <dt className="text-xs font-medium text-muted-foreground">תוצאה נרשמה</dt>
               <dd>{formatNullableDateTime(salesCall.outcomeRecordedAt)}</dd>
             </div>
-            {/* Was "הרשמה הושלמה", printing signupCompletedAt as a date. The
-                label was actively wrong — that column is stamped at AGREEMENT
+            {/* The stage the lead has actually reached, not signupCompletedAt
+                printed as a date: that column is stamped at AGREEMENT
                 SIGNING, not at account creation, so a lead who had just opened
-                an account read as not-registered. Same row, same place; the
-                value is now the stage the lead has actually reached. */}
+                an account would read as not-registered. */}
             <div>
               <dt className="text-xs font-medium text-muted-foreground">שלב הליד</dt>
               <dd>{leadStageLabel(salesCall)}</dd>
@@ -266,8 +265,7 @@ function SalesCallCard({ salesCall, index }: { salesCall: SalesCall; index: numb
       {/* Identifiers, not readings — kept together, in small type, below the
           facts a person actually acts on. They are the handles for pulling the
           call's own logs from each provider, so they stay LTR and stay
-          verbatim, but they no longer sit in the middle of the grid where a
-          missing analysis printed three empty English-labelled rows. */}
+          verbatim. */}
       <dl className="grid gap-2 border-t border-border pt-3 text-xs text-muted-foreground sm:grid-cols-3">
         <div>
           <dt>מועד קבלת הניתוח</dt>
@@ -498,10 +496,8 @@ export default async function CallbackDetailPage({
       <section className="space-y-3 border-t border-border pt-4">
         <div>
           <h2 className="font-semibold">שיחות AI</h2>
-          {/* Was "metadata-only, בלי transcript או audio" until the summary was
-              added (2026-09-01). The audio and the spoken turns are still never
-              stored — but a written summary is not metadata, and the line has to
-              say what is actually kept. */}
+          {/* The audio and the spoken turns are never stored — but a written
+              summary is, and the line has to say what is actually kept. */}
           <p className="text-sm text-muted-foreground">
             מ-ElevenLabs נשמרים נתוני ניתוח וסיכום כתוב של השיחה. הקלטת השיחה והתמליל המלא אינם
             נשמרים.

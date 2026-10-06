@@ -89,8 +89,8 @@ describe('allowedOverrides — A-13 as a system rule', () => {
   });
 
   it('drops the override when no agent can be named', async () => {
-    // The state every deployed scenario is in today: each hardcodes its own
-    // AGENT_ID, so this server cannot say which agent will answer — and an
+    // The state the RSVP, meeting and sales scenarios are in: each hardcodes its
+    // own AGENT_ID, so this server cannot say which agent will answer — and an
     // override cannot be checked against an agent it cannot name.
     const f = vi.fn();
     vi.stubGlobal('fetch', f);

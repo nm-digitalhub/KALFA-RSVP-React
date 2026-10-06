@@ -261,9 +261,8 @@ describe('deduplication is opt-in', () => {
 });
 
 describe('⚠️ which HTTP methods open the address', () => {
-  // THE GAP THIS CLOSES, raised by the owner from n8n's own Webhook node: a
-  // caller that can only send GET or PUT could not be integrated at all, because
-  // every non-POST call was refused before it reached resolution.
+  // A caller that can only send GET or PUT could not be integrated at all if
+  // every non-POST call were refused before it reached resolution.
   const withMethods = (methods: unknown) => {
     const w = workflow(TOKEN_HASH);
     (w.definition.nodes[0]!.data.properties as Record<string, unknown>).methods = methods;
@@ -441,12 +440,12 @@ describe("auth: 'address' — for a caller that cannot send a header", () => {
 
 describe('⚠️ the modes do not leak into each other', () => {
   it('a HEADER-mode node with the right path and NO header is still refused', async () => {
-    // THE REGRESSION THIS WHOLE FILE EXISTS FOR. `findWorkflowForEndpoint` used
-    // to refuse an empty secret before looking at any node; that early bail had
-    // to go so `address` mode could work at all. If the per-node header check
-    // were ever dropped with it, every public endpoint id in every saved diagram
-    // — values that have been displayed and copied since 2026-09-22 — would
-    // become a working credential.
+    // THE REGRESSION THIS WHOLE FILE EXISTS FOR. `findWorkflowForEndpoint` does
+    // not refuse an empty secret before looking at any node, because `address`
+    // mode could not work if it did; the per-node header check carries that
+    // refusal. If that check were ever dropped, every public endpoint id in every
+    // saved diagram — values that have been displayed and copied since
+    // 2026-09-22 — would become a working credential.
     armedMock.mockResolvedValue([workflow(TOKEN_HASH)]);
     expect(
       await startRunFromWebhook({ method: 'POST', endpointId: ENDPOINT, secret: '', rawBody: '{}' }),

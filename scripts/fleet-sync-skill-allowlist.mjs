@@ -18,8 +18,7 @@ const ROOT = new URL('..', import.meta.url).pathname;
 const SKILLS_DIR = join(ROOT, '.claude/skills');
 const TIERS = ['tier0', 'tier0-design', 'tier1', 'tier2'];
 
-// Skills with `allowed-tools` that the owner has approved for the fleet
-// (owner, 28.9.2026: all 28 that were installed at the time).
+// Skills with `allowed-tools` that the owner has approved for the fleet.
 const APPROVED_WITH_TOOLS = new Set([
   'design-md',
   'elevenlabs-skills',

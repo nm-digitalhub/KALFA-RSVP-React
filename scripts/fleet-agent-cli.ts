@@ -1,6 +1,8 @@
 // Fleet agent CLI — the write path autonomous fleet roles have into the
 // owner<->fleet ledger (public.fleet_requests), the notification fan-out, and
-// the ONE narrow customer-facing write below (`draft-reply`).
+// a few other narrow, individually guarded writes (`draft-reply`,
+// `triage-finish`, `goal-progress`/`goal-close`, `publish-social`,
+// `housekeeping-pr`, ...) — each is described under its subcommand below.
 //
 // Runs as service_role via createAdminClient() (env from .env.local through
 // `node --env-file`, same pattern as sync-voximplant-sa). Fleet roles invoke
@@ -8,7 +10,7 @@
 // DB credentials themselves (.env* reads are denied in the fleet tiers).
 //
 // Free-text flags (--body, --note, --summary, --state, --query, --reason,
-// --error, --evidence) can each be supplied instead as --X-file PATH — read
+// --error, --evidence, --html) can each be supplied instead as --X-file PATH — read
 // via readFileFlag() below. Use this whenever the content might contain a
 // word the guard.sh/guard-tier2.sh hooks scan for (billing-provider names,
 // "supabase"/"psql"/"curl" surrounded by spaces, etc. — the hooks see the
@@ -67,7 +69,8 @@
 //     web push to every admin + a reply in the request's Slack thread. This is
 //     the closure signal the owner sees on their phone.
 //   poll --role R
-//     Prints the role's unconsumed verdicts + its still-open requests.
+//     Prints the role's inbox (owner-initiated pending requests, with body and
+//     thread context), its unconsumed verdicts, and its still-open requests.
 //   verdicts
 //     All answered-but-unconsumed verdicts across every role — the scheduler's
 //     answer-watcher reads this to decide per role whether to auto-ack
@@ -76,7 +79,7 @@
 //     Active goals for R whose next_wake_at has arrived. The owner creates a
 //     goal; the role reads state, decides the next step, and reports back via
 //     goal-progress/goal-close. Mirrors cmdPoll's no-op-is-not-an-error stance
-//     (this runs unconditionally in run-context.sh every tick).
+//     (this runs unconditionally in run-context.sh on every role run).
 //   goal-progress --id UUID --step N [--state JSON] [--next-wake-at ISO] [--error TEXT]
 //     Single CAS write: --step must be the step_count read from goal-poll.
 //     --next-wake-at must carry an explicit UTC offset (Z or +03:00) — the
@@ -114,17 +117,20 @@
 //   digest --title T --body B [--level info|warn|error]
 //     Posts the daily fleet digest to Slack via the existing alerting stack.
 //   sql --query SQL
-//     Read-only SQL for the data-reading roles (event-health, business-ops,
-//     support). Runs inside `BEGIN TRANSACTION READ ONLY` (the authoritative
+//     Read-only SQL for the data-reading roles (e.g. event-health-watcher,
+//     business-ops, support-drafter). Runs inside `BEGIN TRANSACTION READ ONLY` (the authoritative
 //     safety layer) behind a pre-flight text guard (single SELECT/WITH…SELECT,
 //     no stacked statements, no write keyword), with a 200-row cap and a 15s
 //     statement timeout.
 //   draft-reply --id UUID --body TEXT
 //     support-drafter's ONLY write: sets contact_messages.draft_reply +
-//     draft_created_at for a still-'new', not-yet-drafted inquiry. NEVER sends
+//     draft_created_at for ONE inquiry that is still 'new' and not yet drafted,
+//     or 'reopened' with a customer reply newer than its last draft, and keeps
+//     that inquiry's single 'draft' row in inquiry_messages in step. NEVER sends
 //     to the customer (a human reviews the draft in /admin/contacts and sends).
-//     Idempotent + scope-limited: touches exactly 2 columns, 1 row, only when
-//     `status='new' AND draft_reply IS NULL` (the guard is the loop-breaker).
+//     Idempotent + scope-limited: one inquiry, only when eligible (`status='new'
+//     AND draft_reply IS NULL`, or `status='reopened'` with reply_needed_at later
+//     than draft_created_at) — the eligibility check is the loop-breaker.
 //   distill-corrections [--limit N]
 //     Stage-1 learning loop (maintenance/curation — NOT run by the drafter
 //     role). Distils the draft_reply<->sent_reply feedback ALREADY in
@@ -481,8 +487,8 @@ async function notifyAdmins(row: FleetRequestRow): Promise<{
   slackThreadTs: string | null;
 }> {
   const admin = createAdminClient();
-  // platform_staff, not user_roles: since 2026-09-10 staff membership is the one
-  // definition of "our people", and this is who a fleet push should reach.
+  // platform_staff, not user_roles: staff membership is the one definition of
+  // "our people", and this is who a fleet push should reach.
   const { data: admins, error } = await admin
     .from('platform_staff')
     .select('user_id');
@@ -1169,8 +1175,8 @@ async function cmdExpire(): Promise<void> {
   }
 }
 
-// Read-only SQL for the data-reading roles (event-health, business-ops,
-// support). Two independent safety layers, strongest first:
+// Read-only SQL for the data-reading roles (e.g. event-health-watcher,
+// business-ops, support-drafter). Two independent safety layers, strongest first:
 //   1. Every query runs inside `BEGIN TRANSACTION READ ONLY` — standard
 //      Postgres transaction semantics, issued through the client exactly as
 //      node-postgres documents (pg provides no higher-level transaction API;
@@ -1290,14 +1296,16 @@ async function cmdDigest(args: Record<string, string | undefined>): Promise<void
 }
 
 // support-drafter's narrow write. Sets draft_reply + draft_created_at on a
-// contact_messages row ONLY when it is still 'new' and has no draft yet. The
-// `status='new' AND draft_reply IS NULL` predicate is enforced in the query
-// itself, so:
-//   - it never overwrites an existing draft or a human's sent reply,
+// contact_messages row ONLY when it is eligible: still 'new' with no draft yet,
+// or 'reopened' with a customer reply newer than the last draft (see the
+// eligibility check below). The update is also conditioned on the status that
+// check read, so:
+//   - it never overwrites a draft that is still current, or a human's sent
+//     reply,
 //   - it is idempotent (a drafted row drops out of the role's next read set,
 //     breaking any re-draft loop),
-//   - 0 rows updated is a no-op BY DESIGN (already drafted / not new / unknown
-//     id), reported as written:false, not an error.
+//   - 0 rows updated is a no-op BY DESIGN (already drafted / not new or
+//     reopened / unknown id), reported as written:false, not an error.
 // It NEVER emails the customer — sending stays a human action in /admin/contacts.
 const DRAFT_REPLY_MAX = 4000;
 
@@ -1329,8 +1337,7 @@ async function cmdDraftReply(args: Record<string, string | undefined>): Promise<
   //              null check would refuse forever and the reply would sit
   //              unanswered with nothing reporting it. Comparing TIMES instead
   //              keeps the row eligible until a draft is written AFTER the
-  //              customer's message, which is exactly what the fleet trigger
-  //              (scheduler.mjs) matches on.
+  //              customer's message.
   const eligible =
     current != null &&
     ((current.status === 'new' && current.draft_reply == null) ||
@@ -1596,8 +1603,8 @@ const EXAMPLES_MAX = 30;
 const EXAMPLE_FIELD_MAX = 1200;
 const NEAR_THRESHOLD = 0.85;
 // dist/ (esbuild bundle) -> repo root -> role dir. The corpus is git-ignored
-// like every .claude/fleet/roles file — which is also correct: a redacted
-// derivative of customer replies must never be committed.
+// by its own .gitignore entry (unlike the other role files) — which is also
+// correct: a redacted derivative of customer replies must never be committed.
 const EXAMPLES_PATH = join(
   dirname(__filename),
   '..',
@@ -1667,7 +1674,7 @@ async function cmdDistillCorrections(args: Record<string, string | undefined>): 
   );
 }
 
-// Stage-2 grounding (plan S5): the read-only, PII/secret-free business facts the
+// Stage-2 grounding: the read-only, PII/secret-free business facts the
 // support-drafter quotes for a pricing inquiry — so it writes the REAL price
 // instead of a `[מחירים]` placeholder. Reads the canonical active campaign
 // package + the live base+overage gate, and surfaces the EFFECTIVE model (pure
@@ -1728,9 +1735,10 @@ async function cmdBusinessFacts(): Promise<void> {
 //   - two answers are code-owned and are not rows at all — the price card, and
 //     the guest/contact/reached explainer that is the single highest-value
 //     correction this system has made;
-//   - `pricing_no_response` has an intentionally EMPTY answer column, its
-//     mandatory §2 sentence being composed from live facts, so a raw select
-//     returns nothing for the most compliance-sensitive question we publish;
+//   - `pricing_no_response` keeps only an optional supplementary note in its
+//     answer column, its mandatory §2 sentence being composed from live facts,
+//     so a raw select returns none of it for the most compliance-sensitive
+//     question we publish;
 //   - answers carry {{token}} placeholders. MEASURED: two published rows do,
 //     and handing those over raw would put `ב־{{channels_list}}` verbatim into
 //     a customer's inbox.
@@ -2630,8 +2638,7 @@ async function cmdRenderImage(args: Record<string, string | undefined>): Promise
 // The autonomy loop: goal-poll (mirrors cmdPoll — runs unconditionally, "0
 // due" is a normal outcome, no exitCode games) and goal-progress/goal-close
 // (mirror cmdTriageFinish — single CAS write, exitCode 2 on anything but the
-// success outcome). See plan §3.2 for why each verb takes its template from a
-// different existing command.
+// success outcome).
 
 async function cmdGoalPoll(args: Record<string, string | undefined>): Promise<void> {
   const role = requireOption(args.role, 'role');
@@ -2642,8 +2649,9 @@ async function cmdGoalPoll(args: Record<string, string | undefined>): Promise<vo
   // goal it wasn't woken up for.
   //
   // No validateRequestRole — deliberately, like cmdPoll itself. The name was
-  // already validated twice before we got here: ROLE_NAME_RE in run-role.sh,
-  // and membership in fleet.json before the role was even spawned.
+  // already validated before we got here: membership in fleet.json (the
+  // scheduler spawns only listed roles; run-role.sh refuses unlisted/disabled
+  // ones), and ROLE_NAME_RE in scheduler.mjs wherever the name is interpolated.
   const { data, error } = await admin
     .from('fleet_goals')
     .select('id, title, body, state, step_count, consecutive_failures')
@@ -2683,7 +2691,7 @@ async function cmdGoalProgress(args: Record<string, string | undefined>): Promis
   }
 
   // Shape check only, not range: the (now, now+30d] range is enforced by the
-  // RPC, not duplicated here. Same schema as the owner's UI (§2.2), not a copy.
+  // RPC, not duplicated here. Same schema as the owner's UI, not a copy.
   let nextWakeAt: string | null = null;
   if (args['next-wake-at']) {
     const parsed = goalWakeAtSchema.safeParse(args['next-wake-at']);
@@ -2706,7 +2714,7 @@ async function cmdGoalProgress(args: Record<string, string | undefined>): Promis
   const outcome = data as GoalProgressOutcome;
   console.log(JSON.stringify({ outcome, id, step }, null, 2));
   // Only 'advanced' is a normal continuation. Everything else means stop —
-  // see the outcome table in run-context.sh §3.3.
+  // see the outcome table in run-context.sh.
   if (isGoalProgressStuck(outcome)) process.exitCode = 2;
 }
 

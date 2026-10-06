@@ -11,9 +11,12 @@ import { createRunIfNew } from './store';
 
 // GuestActionsPort over the functions that already exist.
 //
-// Every operation here is a call into an existing module, never a new query. The
-// RSVP write in particular goes through `submitRsvp` — the same atomic
-// `submit_rsvp` RPC the public form and the inbound webhook use — so token
+// Most operations here are a call into an existing module rather than a new
+// query; the exceptions go through the admin client (`startRunsForGuests`,
+// `setGuestField`, `createCallbackRequest`, and the contact lookup in
+// `sendWhatsAppReply`). The RSVP write in particular goes through `submitRsvp`
+// — the same atomic `submit_rsvp` RPC the public form and the inbound webhook
+// use — so token
 // validity, event status and revocation are enforced by the one gate rather than
 // re-implemented for automation. A workflow can do nothing to a guest that a
 // person could not already do through a supported path.
@@ -31,9 +34,10 @@ import { dispatchWorkflowRsvpAiCallback } from './voice-agent-actions';
 /**
  * How long an OPEN callback request suppresses a new one for the same phone.
  *
- * Two hours, matching the intent of the console-calls guard: long enough that a
- * guest exchanging several messages produces one callback, short enough that a
- * request from this morning does not swallow a genuinely new one this evening.
+ * Two hours. The same guard as console-calls.ts's `recordMissedCallCallback`
+ * (which uses six), with a shorter window: long enough that a guest exchanging
+ * several messages produces one callback, short enough that a request from this
+ * morning does not swallow a genuinely new one this evening.
  */
 const CALLBACK_DEDUPE_WINDOW_MS = 2 * 60 * 60 * 1000;
 
@@ -59,13 +63,14 @@ export function createGuestActions(): GuestActionsPort {
      * FAN_OUT_HARD_CAP) + 1` rows. The `+ 1` is what lets `capped` be honest:
      * without it, "exactly the cap" and "more than the cap" look identical.
      *
-     * SELF-FAN-OUT IS REFUSED, not capped. A workflow starting itself per guest
-     * — each child fanning out again — is an exponential, and a ceiling on each
-     * generation does not stop it.
+     * SELF-FAN-OUT IS REFUSED, not capped — by the handler and at arm time, since
+     * this port never sees the parent workflow's id. A workflow starting itself
+     * per guest — each child fanning out again — is an exponential, and a ceiling
+     * on each generation does not stop it.
      *
      * CREATES ROWS; DOES NOT ENQUEUE. A step handler has no queue handle by
-     * design, so the children land as `pending` and `workflow-pending-sweep`
-     * picks them up within the minute. That indirection also fixes an older
+     * design, so the children land as `pending` and the `workflow-schedule-sweep`
+     * tick picks them up (`listUndeliveredRuns`). That indirection also fixes an older
      * class of bug: a run whose enqueue failed after its row was written used to
      * sit `pending` for ever with nothing coming for it.
      */
@@ -161,8 +166,8 @@ export function createGuestActions(): GuestActionsPort {
     /**
      * Stage the guest list this run started from.
      *
-     * A thin delegation to `stageGuestListFromInbox`, which is the SAME code the
-     * hard-coded import path's staging half uses — including its
+     * A thin delegation to `stageGuestListFromInbox`, which does the same staging
+     * work as the hard-coded import path (`stageWhatsAppImport`) — including its
      * `source_message_id` idempotency, which is what keeps the two from
      * double-staging while both still run.
      *
@@ -313,7 +318,7 @@ export function createGuestActions(): GuestActionsPort {
         phone,
         topic,
         // NULL = "no stated time" — the scheduler resolves ASAP against the
-        // clock when it runs. Same convention as inquiries.ts and console-calls.
+        // clock when it runs. Same convention as inquiry-intake.ts and console-calls.
         requested_at: null,
         requested_rank: 'earliest',
         note,

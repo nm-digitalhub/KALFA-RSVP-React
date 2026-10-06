@@ -33,7 +33,7 @@ describe('catch-all 404 route', () => {
     expect(body).toContain('href="/faq"');
     expect(body).toContain('href="/privacy"');
     // No live network dependency for the font — see the function's header
-    // comment (a prior version added a fonts.googleapis.com <link>, removed).
+    // comment.
     expect(body).not.toContain('fonts.googleapis.com');
   });
 

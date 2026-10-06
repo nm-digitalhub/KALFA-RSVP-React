@@ -28,9 +28,7 @@ const ROOT = join(__dirname, '..', '..');
 const ITEMS = NAV_GROUPS.flatMap((group) => group.items);
 
 describe('every sidebar link is classified', () => {
-  // The two deliberate exceptions, named rather than inferred. Both are
-  // COARSE_GATE_ALLOWED read-only surfaces whose data layer gates on the staff
-  // floor and for which the catalogue has no key to name — so every staff member
+  // The deliberate exceptions, named rather than inferred. Every staff member
   // sees them, which is exactly what their own gate allows.
   // /admin and /admin/analytics: COARSE_GATE_ALLOWED read-only surfaces with no key in
   // the catalogue. /admin/integrations: navigation + read-only status on the staff

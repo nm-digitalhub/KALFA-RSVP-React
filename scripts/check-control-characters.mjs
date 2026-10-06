@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Fails the build if a source file carries a LITERAL control character.
+// Fails `npm test` (via its `pretest` hook) if a source file carries a LITERAL
+// control character.
 //
 // Why this exists: a control byte written straight into a string literal works
 // at run time, so tests pass and nothing complains — but the source file now

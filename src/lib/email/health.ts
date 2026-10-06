@@ -6,21 +6,18 @@ import { Resend } from 'resend';
 // Passive health check for OUTGOING MAIL: does the transport actually work, asked
 // WITHOUT sending a message to anyone.
 //
-// The integrations panel said "אין בדיקת בריאות זמינה" for this card. That was never
-// true — it only reflected that nobody had looked. Resend exposes the domain registry
-// read-only, and reading it exercises the API key AND the DNS state of the domain the
-// From header actually uses. The SMTP fallback has nodemailer's verify(), which
-// connects and authenticates without sending.
+// Resend exposes the domain registry read-only, and reading it exercises the API key
+// AND the DNS state of the domain the From header actually uses. The SMTP fallback has
+// nodemailer's verify(), which connects and authenticates without sending.
 //
-// ⚠️ WHY THIS CHECK EARNS ITS KEEP — corrected 2026-09-10 after checking the docs.
+// ⚠️ WHY THIS CHECK EARNS ITS KEEP.
 //
-// The first version of this comment claimed outgoing mail "dies silently: a send keeps
-// returning 200 while SPF or DKIM is broken". Half of that is wrong. Resend REFUSES a
-// send whose From domain is not verified, or does not match a verified one, with a 403
-// (resend.com/docs/knowledge-base/403-error-domain-mismatch) — and resendSender turns
-// that into a logged, thrown EmailSendError. That path is loud.
+// Resend REFUSES a send whose From domain is not verified, or does not match a
+// verified one, with a 403 (resend.com/docs/knowledge-base/403-error-domain-mismatch)
+// — and resendSender turns that into a logged, thrown EmailSendError. That path is
+// loud.
 //
-// Two real reasons remain, and they are enough:
+// Two real reasons justify the check regardless, and they are enough:
 //
 //  1. LOUD BUT LATE. This transport carries agreements and invoices — event-driven, low
 //     volume. A 403 surfaces the next time a customer signs something, which may be days
@@ -39,7 +36,7 @@ import { Resend } from 'resend';
 // window before Resend notices is silent either way.
 //
 // ⚠️ THE DOMAIN STATUS IS TREATED AS A STRING, DELIBERATELY. Measured against the
-// installed SDK (resend 6.26.0, 2026-09-10):
+// SDK (resend 6.26.0, 2026-09-10; unchanged in the installed 6.28.1):
 //
 //   DomainRecordStatus = 'pending' | 'verified' | 'failed' | 'temporary_failure' | 'not_started'
 //   DomainStatus       = 'pending' | 'verified' | 'failed' | 'not_started'

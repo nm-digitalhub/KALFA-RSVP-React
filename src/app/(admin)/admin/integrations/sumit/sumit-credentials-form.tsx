@@ -7,10 +7,6 @@ import { EditableField } from '@/app/(admin)/admin/_form-fields';
 
 import { updateSumitCredentialsAction } from './actions';
 
-// The last of the three restorations: Task 0.2 built this DAL pair and removed the
-// settings tab that held the fields, leaving the SUMIT credentials un-editable from the
-// panel. ExtrA and the mail transport were the other two.
-
 export type SumitCredentialsValues = {
   sumit_company_id: string;
   sumit_api_public_key: string;

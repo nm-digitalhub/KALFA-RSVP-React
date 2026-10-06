@@ -1,6 +1,6 @@
 import type { FleetRoleInfo } from './handoff';
 
-// When will a role actually SEE an owner write? Three different answers hide
+// When will a role actually SEE an owner write? Four different answers hide
 // behind the same `pending`/`active` status, and the owner needs to know which
 // one applies BEFORE they wait on a reply:
 //   - reactive on the fast trigger -> the scheduler spawns it within a tick
@@ -14,7 +14,7 @@ import type { FleetRoleInfo } from './handoff';
 // hence .includes(), not ===.
 //
 // Pure and directive-free: the conversation header (server) and the composer
-// (client) both read it. Moved here from fleet-client.tsx ('use client').
+// (client) both read it.
 
 export type Reachability = {
   tone: 'ok' | 'warn' | 'blocked';

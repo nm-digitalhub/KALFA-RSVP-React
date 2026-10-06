@@ -48,6 +48,8 @@ const definition = {
   ],
 };
 
+const beginWaitCalls: { nodeId: string; waitUntil: string; correlationId?: string }[] = [];
+
 /**
  * A ledger that behaves like the real one across a park/resume cycle.
  *
@@ -55,8 +57,6 @@ const definition = {
  * the second call is a REPLAY, and what it sees in the ledger is what decides
  * whether anything runs twice.
  */
-const beginWaitCalls: { nodeId: string; waitUntil: string; correlationId?: string }[] = [];
-
 function ledgerFake() {
   const rows = new Map<string, { status: string; result?: unknown; waitUntil?: string }>();
   const claims: string[] = [];
@@ -96,10 +96,9 @@ function ledgerFake() {
       correlationId?: string;
     }) {
       // RECORDED, not stored on the row — the real store does the same. A parked
-      // step is identified by its deadline; the correlation only travels through
-      // this call so `run-workflow` can capture it while the park is still
-      // structured (see the beginWait wrapper there). Recording it lets a test
-      // assert what actually crossed the seam.
+      // step is identified by its deadline; `run-workflow` gets the correlation
+      // from the activity runner's `onWait`, not from this call. Recording it
+      // lets a test assert what actually crossed the seam.
       beginWaitCalls.push({ nodeId, waitUntil, ...(correlationId ? { correlationId } : {}) });
       rows.set(nodeId, { status: 'waiting', waitUntil });
     },
@@ -322,19 +321,17 @@ describe('a ledger that cannot park fails CLOSED', () => {
   });
 });
 
-// The wait's OTHER half, added with the event-driven wake (0ב).
+// The wait's OTHER half: the event-driven wake.
 //
 // `logic.wait` waits on a clock and names no event; these pin that it stays that
 // way — a timed park must not pick up a correlation by accident, and the run row
-// must not record one. They also cover the REGRESSION that mattered most in this
-// change: the deadline used to be recovered with a regex over the error message
-// and now comes from the `beginWait` capture, so "the park still reports the
-// right instant" is the assertion that proves the swap.
+// must not record one. They also pin that the deadline comes from the park
+// captured at the activity runner's `onWait`, not from parsing the error
+// message, so "the park still reports the right instant" is the assertion that
+// proves it.
 //
-// The correlated direction cannot be driven end to end yet: no node emits a
-// correlation until the voice step does, and STEP_HANDLERS is imported directly
-// so a handler cannot be injected here. Its transport is covered where it is
-// pure, in wait-signal.test.ts.
+// The correlated direction is driven end to end further down ('a CORRELATED
+// park'); its step-level half is covered in steps/voice-call-wait.test.ts.
 describe('a timed wait carries no correlation', () => {
   it('beginWait receives the deadline and nothing else', async () => {
     const ledger = ledgerFake();
@@ -363,8 +360,7 @@ describe('a timed wait carries no correlation', () => {
 // the run resumes. For a wait that is correlated to something outside the run —
 // a call outcome, a webhook — it is when the run GIVES UP; the callback may land
 // long before it, or never. `run-workflow` maps that difference onto
-// `waitKind`, the canvas renders a different sentence for each, and until this
-// test existed only the `'timer'` half was ever executed by the suite.
+// `waitKind`, and the canvas renders a different sentence for each.
 //
 // Driven through the real engine and the real handler rather than by calling the
 // mapping directly: the input is `wait.correlationId`, which

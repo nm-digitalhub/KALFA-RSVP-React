@@ -1,6 +1,5 @@
 // Move every Shared-folder scenario into the kalfa-rsvp application, so that
-// voxengine-ci 36 can see it — the one thing standing between us and the
-// upgrade.
+// voxengine-ci 36 can see it.
 //
 // WHY THIS IS HAND-WRITTEN. Per the standing rule, a built-in flow was looked
 // for first and does not exist. MEASURED live 2026-09-14 by

@@ -11,9 +11,8 @@ import {
 } from '@/lib/data/agreement-archive';
 
 // Weekly maintenance of the SharePoint contracts archive
-// (docs/sharepoint-contracts-archive-plan-2026-09-06.md §7–§8, automated
-// 2026-09-06 at the owner's request). One pg-boss tick (worker/main.ts,
-// Sunday 04:10 Asia/Jerusalem) walks the Contracts and Customer-Agreements
+// (docs/sharepoint-contracts-archive-plan-2026-09-06.md §7–§8).
+// One pg-boss tick (worker/main.ts, Sunday 04:10 Asia/Jerusalem) walks the Contracts and Customer-Agreements
 // libraries through Graph and:
 //
 //   1. fixity — recomputes SHA-256 of every file that has a recorded hash and

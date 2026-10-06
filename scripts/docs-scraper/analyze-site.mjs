@@ -100,10 +100,10 @@ export function createEmptyProfile(startUrl) {
 // נמחקים לפי רשימה סגורה. query אמיתי (version=2, lang=he) נשאר, כי הוא משנה
 // עמוד.
 // נמחקים רק פרמטרים שהסמנטיקה שלהם היא tracking באופן חד-משמעי, כלומר משפחת
-// utm_*. `ref` ו-`source` הוסרו מהרשימה בכוונה: באתרי תיעוד הם לרוב פרמטרים
+// utm_*. `ref` ו-`source` אינם ברשימה בכוונה: באתרי תיעוד הם לרוב פרמטרים
 // עסקיים אמיתיים - /api?ref=v1 מול /api?ref=v2, או
-// /docs/reference?source=node מול ?source=browser - ומחיקתם מיזגה שני עמודים
-// שונים לכתובת אחת, כלומר איבדה אחד מהם בלי להשאיר עקבות.
+// /docs/reference?source=node מול ?source=browser - ומחיקתם הייתה ממזגת שני
+// עמודים שונים לכתובת אחת, כלומר מאבדת אחד מהם בלי להשאיר עקבות.
 export function normalizeUrl(rawUrl) {
     const url = new URL(rawUrl);
     url.hash = '';
@@ -206,11 +206,11 @@ export function inferCrawlBoundary(startUrl, candidates) {
     };
 }
 
-// ה-glob נבדק דרך Crawlee עצמה ולא במתאים משלנו, ובמכוון. minimatch שיושב
-// בשורש הוא 3.1.5, בעוד ש-@crawlee/core מביא 9.0.9 משלו - ייבוא ישיר של
-// 'minimatch' היה נותן מתאים אחר מזה שמסנן בפועל בזמן ההזחילה, כלומר בדיוק
-// אי-ההסכמה בין האימות לסריקה שהתיקון הזה בא למחוק. constructGlobObjectsFromGlobs
-// ו-filterRequestsByPatterns הם אותו קוד שה-enqueueLinks מריץ.
+// ה-glob נבדק דרך Crawlee עצמה ולא במתאים משלנו, ובמכוון. ייבוא ישיר של
+// 'minimatch' עלול לתת מתאים אחר מזה ש-@crawlee/core מסנן איתו בפועל בזמן
+// ההזחילה (גרסאות שונות של minimatch מותקנות בעץ התלויות), כלומר אי-הסכמה בין
+// האימות לסריקה. constructGlobObjectsFromGlobs ו-filterRequestsByPatterns הם
+// אותו קוד שה-enqueueLinks מריץ.
 function matchesGlob(url, glob) {
     if (!glob) return true;
     return filterRequestsByPatterns([{ url }], constructGlobObjectsFromGlobs([glob])).length > 0;
@@ -250,8 +250,8 @@ export function shouldAcceptUrl(rawUrl, profile) {
     return true;
 }
 
-// עמוד ההתחלה, אחד מהשליש הראשון, ואחד מהשליש האחרון. שלושה עמודים מקצוות
-// שונים של עץ הניווט חושפים מבנה שונה; שלושה עמודים סמוכים לא.
+// עמוד ההתחלה, אחד מנקודת השליש של הרשימה, ואחד מנקודת שני השלישים. שלושה
+// עמודים מקצוות שונים של עץ הניווט חושפים מבנה שונה; שלושה עמודים סמוכים לא.
 export function pickSampleUrls(startUrl, candidates) {
     const unique = [normalizeUrl(startUrl), ...candidates.map(normalizeUrl)];
     const deduped = [...new Set(unique)];
@@ -286,8 +286,8 @@ export async function analyzeSite({ startUrl, globOverride = null, onlyMode = fa
         }
 
         // הפניות. meta refresh לא רק נרשם אלא גם נעקב: עמוד-קש הוא לא אתר בלי
-        // תוכן, הוא אתר שהתוכן שלו נמצא צעד אחד משם. v1 דילג עליו והמשיך
-        // לזחול, וכאן אין "להמשיך" - בלי לעקוב, ה-analysis ייכשל.
+        // תוכן, הוא אתר שהתוכן שלו נמצא צעד אחד משם. בלי לעקוב אחריו, ה-analysis
+        // ייכשל.
         let currentUrl = normalizeUrl(startUrl);
         for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
             const response = await page.goto(currentUrl, {

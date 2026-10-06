@@ -64,11 +64,10 @@ import {
  * One refusal, and the node it belongs to.
  *
  * ⚠️ THE `nodeId` EXISTS FOR THE EDITOR, NOT FOR ARMING. `setWorkflowActive`
- * only ever renders the sentences, which is why this function returned bare
- * strings for its whole life. But the SDK marks a node invalid from
- * `data.properties.customErrors` — per node, never per diagram — so surfacing
- * any of these in the panel needs the attribution the messages were throwing
- * away.
+ * only ever renders the sentences (`findArmBlockers`). But the SDK marks a node
+ * invalid from `data.properties.customErrors` — per node, never per diagram — so
+ * surfacing any of these in the panel needs the attribution that bare strings
+ * throw away.
  */
 export type ArmBlocker = {
   readonly nodeId: string;
@@ -92,12 +91,13 @@ export type ArmBlocker = {
   readonly source: 'schema' | 'arm-only';
   /**
    * The property this refusal is about, in AJV's `instancePath` form
-   * (`/purposeKey`), or `''` when it is about the node as a whole.
+   * (`/purposeKey`), or `ARM_NOTICE_PATH` when it is about the node as a whole.
    *
-   * ⚠️ `''` IS A REAL ANSWER, NOT A MISSING ONE. The guest-context rule is about
-   * the trigger at the other end of the graph; the keyword rule is a
+   * ⚠️ `ARM_NOTICE_PATH` IS A REAL ANSWER, NOT A MISSING ONE. The guest-context
+   * rule is about the trigger at the other end of the graph; the keyword rule is a
    * CONTRADICTION BETWEEN TWO fields, not a fault in either. Attaching either to
-   * one field would point the owner at the wrong half.
+   * one field would point the owner at the wrong half, and an empty path would
+   * mark the node and land next to nothing.
    */
   readonly instancePath: string;
 };
@@ -105,9 +105,9 @@ export type ArmBlocker = {
 /**
  * Every refusal, attributed to the node that caused it.
  *
- * The real implementation; `findArmBlockers` is this with the ids dropped. Kept
- * as the primary so the two can never disagree about what blocks arming — the
- * failure mode would be an editor that marks a node clean and an arm button
+ * `findArmBlockers` is this with the ids dropped, and both read the same
+ * `collectArmBlockers`, so the two can never disagree about what blocks arming —
+ * the failure mode would be an editor that marks a node clean and an arm button
  * that refuses it, which is the exact confusion this module was built to end.
  */
 export function findArmBlockersByNode(
@@ -117,7 +117,7 @@ export function findArmBlockersByNode(
   return collectArmBlockers(storedDefinition, workflowId);
 }
 
-/** A required field that is absent, blank, or outside its declared range. */
+/** Every refusal as a bare sentence — the messages of `findArmBlockersByNode`. */
 export function findArmBlockers(
   storedDefinition: unknown,
   workflowId?: string,
@@ -154,10 +154,9 @@ function collectArmBlockers(
   // Seven action types call `requireGuestContext` and throw without a contact.
   // Whether the run HAS one is decided by the trigger at the other end of the
   // diagram, so no per-node check can see it: a JSON Schema validates one node's
-  // properties, and a JsonForms rule reads one node's data. Until now nothing
-  // looked, and `לפי שעון → שליחת וואטסאפ` armed cleanly and failed on its first
-  // fire — with two sentences of prose in the trigger's panel as the only
-  // warning.
+  // properties, and a JsonForms rule reads one node's data. Without a check over
+  // the whole graph, `לפי שעון → שליחת וואטסאפ` would arm cleanly and fail on its
+  // first fire.
   //
   // The conversion contract already guarantees exactly one start node, so this
   // is `some` over a list of one in practice; written as `some` because the
@@ -178,7 +177,7 @@ function collectArmBlockers(
   // node's own field errors. Measured: it swallowed four existing assertions,
   // each of which was checking a blank field on a trigger-less fixture.
   //
-  // Same reasoning as the unknown-type case above: not ours to report.
+  // Same reasoning as the unknown-type case below: not ours to report.
   const guestRuleApplies = triggers.length > 0 && !suppliesGuest;
 
   for (const node of parsed.data.nodes) {
@@ -195,9 +194,9 @@ function collectArmBlockers(
     // thing guaranteed to exist, and a message with no subject is unusable.
     const where = `הצעד "${typeof properties.label === 'string' && properties.label.trim() !== '' ? properties.label : node.id}"`;
 
-    // ⚠️ A STEP LEFT IN DRAFT BLOCKS ARMING — the rule `NODE_STATUSES` states and
-    // nothing implemented until now, so a half-written step armed silently and
-    // was skipped at run time with no one told.
+    // ⚠️ A STEP LEFT IN DRAFT BLOCKS ARMING — the rule `NODE_STATUSES` states.
+    // Without it a half-written step would arm silently and be skipped at run
+    // time with no one told.
     //
     // `disabled` deliberately does NOT block. The two skip identically at run
     // time, and the difference is entirely intent: "I have not finished this" is
@@ -212,14 +211,12 @@ function collectArmBlockers(
       continue;
     }
 
-    // ⚠️ THE ERROR PORT AND THE ERROR POLICY, WHICH NOTHING COMPARED.
+    // ⚠️ THE ERROR PORT AND THE ERROR POLICY, WHICH ONLY THIS CHECK COMPARES.
     //
     // An action node draws BOTH branch handles whatever its policy is — the
     // palette seeds `decisionBranches` with `ok` and `error` unconditionally —
     // while `errorPolicy` alone decides whether the error one ever fires. So the
-    // two can disagree in either direction, and until now neither was checked:
-    // `arm-check.ts` contained ZERO references to `errorPolicy` (measured
-    // 2026-09-22).
+    // two can disagree in either direction.
     //
     // Both failures are SILENT AT RUN TIME, which is why they belong here:
     //
@@ -275,7 +272,7 @@ function collectArmBlockers(
     // trigger — `startRunsForGuests` creates each child run with
     // `triggerSource: 'fanout'` and a contactId, and its own comment says
     // "arming is not required; existing is". The starter template "תזכורת
-    // לאורח אחד (תהליך-בן)" is exactly that: a `trigger.webhook` node labelled
+    // לאורח אחד (תהליך-בן)" is exactly that: a `trigger.webhook` node described
     // "לא להפעיל", meant to be started by another workflow.
     //
     // Blocking it at ARMING is still right, and the distinction is the whole
@@ -397,12 +394,12 @@ function collectArmBlockers(
 
     // ⚠️ THE CONDITIONAL CONTRACT, APPLIED A SECOND TIME — NOT A MISSING HALF.
     //
-    // An earlier version of this comment claimed the schema could not catch an
-    // ABSENT body, because `ConditionalSchema` is typed `{ properties: … }` with
-    // no root `required`. That was wrong, and `schemas.ts` now shows why: the
-    // TYPE is that narrow, but a function return is compared structurally rather
-    // than as a fresh literal, so `then` carries `required` alongside
-    // `properties` with no cast — and the bundled validator honours it.
+    // The schema catches an ABSENT body too, even though `ConditionalSchema` is
+    // typed `{ properties: … }` with no root `required`: the TYPE is that narrow,
+    // but `conditionalRules` (editor-shared.ts) is a function, so its return is
+    // compared structurally rather than as a fresh literal, and `then` carries
+    // `required` alongside `properties` with no cast — and the bundled validator
+    // honours it.
     //
     // Workflow Builder's own `data-schema` page endorses the pattern using THIS
     // EXACT CASE: "For conditional shape changes (e.g. if `method === 'POST'`,
@@ -492,19 +489,16 @@ function collectArmBlockers(
       // Only fields that DECLARE a bound are range-checked. Everything else is
       // satisfied by being present and non-blank.
       //
-      // ⚠️ `schema`, BECAUSE THE SCHEMA ALREADY CARRIES THESE BOUNDS. An earlier
-      // version of this comment said the opposite — that `schemas.ts` declared
-      // no `minimum`/`maximum` and `maxGuests: 0` was therefore schema-valid.
-      // That was a grep talking: both fields SPREAD the bound rather than
-      // writing the literal —
+      // ⚠️ `schema`, BECAUSE THE SCHEMA ALREADY CARRIES THESE BOUNDS. No property
+      // in the nodes' `schema.ts` files writes a `minimum`/`maximum` literal,
+      // which reads as "no bound" — but both fields SPREAD the bound instead —
       //
       //     maxGuests: { type: 'number', ...numberRanges.maxGuests }
       //
       // (`nodes/action-start-for-each-guest/schema.ts`, reading the same object
       // `NODE_NUMBER_RANGES` holds)
-      // so searching for the keyword found nothing while the built schema
-      // carried `{ minimum: 1, maximum: 500 }`. Measured against the exported
-      // object: 0 and 501 are both refused.
+      // so the built schema carries `{ minimum: 1, maximum: 500 }`. Measured
+      // against the exported object: 0 and 501 are both refused.
       //
       // ⚠️ THE REAL DIVERGENCE RUNS THE OTHER WAY, and it is why the numeric
       // read below coerces. `type: 'number'` refuses the STRING '25'; the
@@ -558,13 +552,14 @@ function blankMessage(
   if (nodeType === startVoiceCallDefinition.type && key === 'purposeKey') {
     return 'לא נבחר ייעוד לשיחה. בחרו ייעוד מהרשימה, ואם היא ריקה — צרו ייעוד חדש ב-/admin/integrations/voximplant וקשרו לו rule.';
   }
-  // And again: a webhook trigger that was never generated has no ADDRESS — the
-  // route is `/api/workflows/hook/<endpointId>` with the secret in a header, and
-  // `findWorkflowForEndpoint` requires BOTH, so arming one produces an endpoint
-  // that answers nobody. "The field is empty" does not say that.
+  // And again: a webhook trigger that was never generated has no ADDRESS — in
+  // `header` mode the route is `/api/workflows/hook/<endpointId>` with the secret
+  // in a header, and `findWorkflowForEndpoint` requires BOTH, so arming one
+  // produces an endpoint that answers nobody. "The field is empty" does not say
+  // that.
   //
-  // ⚠️ ONE SENTENCE FOR BOTH HALVES, because one press fixes both. They are
-  // minted together by webhook-token-control.tsx, so reporting `endpointId` and
+  // ⚠️ ONE SENTENCE FOR BOTH HALVES, because one press fixes both. In `header`
+  // mode they are minted together by webhook-token-control.tsx, so reporting `endpointId` and
   // `tokenHash` separately would put two lines in front of the owner for a
   // single action — and the generic "חסר ערך בשדה endpointId" would be the
   // louder of the two while naming a field nobody types.

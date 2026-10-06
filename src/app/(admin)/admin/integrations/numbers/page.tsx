@@ -45,9 +45,10 @@ export default async function NumbersPage() {
   const [numbers, flags, owner] = await Promise.all([
     listProviderNumbers(),
     getIntegrationsConfiguredFlags(),
-    // Decides whether the LAST step of the wizard is drawn. It is not the gate —
-    // registerNumberAction calls requirePlatformOwner itself, because a Server Action
-    // is reachable without ever rendering the component that submits to it.
+    // Decides whether the LAST step of the wizard and the deregister section are
+    // drawn. It is not the gate — the DAL functions behind registerNumberAction and
+    // deregisterNumberAction run requirePlatformOwner themselves, because a Server
+    // Action is reachable without ever rendering the component that submits to it.
     isPlatformOwner(),
   ]);
 

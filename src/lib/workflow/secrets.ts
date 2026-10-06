@@ -15,7 +15,7 @@ import { SECRET_NAME_REGEX, SECRET_REFERENCE_REGEX } from './catalogue/types';
 //   the outbound socket      the value
 //
 // That holds because `resolveTemplate` is taught to skip this namespace (see its
-// `secrets` case), so the token survives config resolution intact and is
+// `deferSecrets` option), so the token survives config resolution intact and is
 // substituted here instead — inside the outbound port, after the audit row is
 // written and after the event is emitted.
 //

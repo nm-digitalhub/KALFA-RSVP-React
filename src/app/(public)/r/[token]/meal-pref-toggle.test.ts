@@ -9,7 +9,7 @@ import { join } from 'node:path';
 //   * UI  — rsvp-form must gate the field on event.show_meal_pref;
 //   * DB  — submit_rsvp must ignore _meal when the toggle is off (a stale or
 //           forged client must not write a preference the owner disabled).
-// Because this migration REDEFINES both RPCs (newest definition wins over the
+// Because this migration REDEFINES both RPCs (a later definition than the
 // rsvp_note_split one), it also re-asserts the note-privacy invariants from
 // rsvp-privacy.test.ts against this newer copy.
 
@@ -85,8 +85,8 @@ describe('show_meal_pref migration — DB side', () => {
     expect(chunk).not.toContain("_meal_n := nullif(btrim(_meal), '');");
   });
 
-  // This migration now holds the NEWEST definitions of both RPCs — re-assert
-  // the guests.note privacy invariants (finding B-2) against it.
+  // This migration redefines both RPCs after rsvp_note_split — re-assert the
+  // guests.note privacy invariants (finding B-2) against it.
   it('the redefined RPCs still keep the owner-internal guests.note private', () => {
     const getChunk = functionChunk(sql, 'get_rsvp_by_token');
     const submitChunk = functionChunk(sql, 'submit_rsvp');

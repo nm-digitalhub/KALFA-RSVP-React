@@ -19,8 +19,8 @@ import type {
  * there. `dal` pulls in `next/navigation` and `next/headers`, which do not
  * exist outside a request — so anything importable by the pg-boss worker
  * cannot live in this file. That is enforced, not remembered:
- * `.dependency-cruiser.cjs` fails the build if `worker/**` can reach those
- * APIs, and it is what caught the original mixing.
+ * `.dependency-cruiser.cjs` fails `worker:deps` (run on every `pretest`) if
+ * `worker/**` can reach those APIs, and it is what caught the original mixing.
  *
  * If you add an export here, ask whether the worker could ever want it. If it
  * could, it belongs in `push-delivery` with the user passed in explicitly.

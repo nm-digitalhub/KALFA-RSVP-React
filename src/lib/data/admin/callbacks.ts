@@ -17,13 +17,13 @@ import {
 } from '@/lib/validation/admin';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
-// Admin: callback (call-me-back) requests. Authorized by the request-scoped
-// session under the `cb_admin_all` RLS policy, plus a server-side requireAdmin()
-// gate. `status` and `call_outcome` are free text in the DB; the UI constrains
-// writes to the closed vocabularies in validation/admin.ts and renders
-// unknown stored values via fallback.
+// Admin: callback (call-me-back) requests. Every read and write goes through
+// the service-role client (createAdminClient), gated server-side by
+// requirePlatformPermission('view_customer_data'). `status` and `call_outcome`
+// are free text in the DB; the UI constrains writes to the closed vocabularies
+// in validation/admin.ts and renders unknown stored values via fallback.
 //
-// Two independent dimensions since the 2026-08-19/20 redesign (see
+// Two independent dimensions (see
 // validation/admin.ts for the full reasoning): `status` is the SCHEDULER's
 // state (system-driven, admin only ever sets 'cancelled' — see
 // cancelCallback), `call_outcome` is what the OWNER recorded after making the
@@ -159,7 +159,7 @@ export type SalesCallCrmSummary = {
   dispatchStatus: string;
   attemptCreatedAt: string;
   attemptUpdatedAt: string;
-  /** Nullable since 2026-09-01: the union covers two attempt tables. */
+  /** Nullable: the union covers two attempt tables. */
   scheduledAtSnapshot: string | null;
   finishReason: string | null;
   voxCallSessionHistoryId: string | null;
@@ -441,7 +441,7 @@ function mapAiCall(
 //
 // Why a computed relationship and not a foreign key: the attempt row is
 // written when the call ENDS, and its analysis arrives later on a webhook
-// (seconds, or never — nine were lost to a bad secret this week). A FK from
+// (seconds, or never — nine were lost to a bad secret once). A FK from
 // attempt to analysis would reject that write outright. It is impossible for a
 // second reason too: the el_conversation_id unique indexes are PARTIAL, and
 // Postgres cannot reference a partial unique index.
@@ -516,8 +516,8 @@ async function loadAiCallsForCallbacks(
       ),
     ];
 
-    // Newest first, across BOTH personas — the previous per-table ordering
-    // could not interleave them, and interleaving is the whole point.
+    // Newest first, across BOTH personas — ordering per table could not
+    // interleave them, and interleaving is the whole point.
     calls.sort((a, b) => Date.parse(b.attemptCreatedAt) - Date.parse(a.attemptCreatedAt));
     byCallback.set(callbackId, calls);
   }
@@ -776,10 +776,8 @@ export async function listCallbackRequests(
 // Cancel a request outright — the ONE scheduling-status transition an admin
 // makes directly (every other `status` value is system-driven; see
 // validation/admin.ts). The `updated_at` column is maintained by a DB
-// trigger; we don't set it explicitly here, unlike the pre-redesign version
-// of this function — cb_set_updated_at (migration
-// 20260819212112_callback_status_outcome_split.sql) handles it on every
-// UPDATE now, so a second explicit write would just be redundant.
+// trigger (cb_set_updated_at) on every UPDATE; we don't set it explicitly
+// here, so a second explicit write would just be redundant.
 export type CancelCallbackResult =
   | { ok: true }
   | { ok: false; reason: 'not_found' | 'already_cancelled' | 'already_closed' };

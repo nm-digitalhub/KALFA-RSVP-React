@@ -11,8 +11,9 @@
 // this reads the rendered page, which is the only place that class of bug is
 // visible.
 //
-// It runs LAST in `npm run deploy`, after the site is already live — a crawler
-// needs something to crawl. That ordering is deliberate and has a consequence:
+// It runs at the END of `npm run deploy` (just before seo-indexnow), after the
+// site is already live — a crawler needs something to crawl. That ordering is
+// deliberate and has a consequence:
 // a failure here does NOT roll anything back. It makes the deploy command exit
 // non-zero so the operator sees the regression immediately instead of learning
 // about it from a traffic chart weeks later. An SEO regression is loud, not

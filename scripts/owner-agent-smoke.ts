@@ -29,11 +29,12 @@ import { OWNER_AGENT_SYSTEM_PROMPT, buildOwnerPrompt } from '@/lib/owner-agent/c
 import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-agent/tools/shared';
 import { OwnerAgentRunError, runOwnerAgent } from '@/lib/owner-agent/runner';
 
-// Exactly what the consumer sends (consumer/reply.ts runAnswer): the same
-// system prompt, the same prompt wrapper (Israel date and time first), model,
-// turns and timeout — so a smoke answer is the answer the WhatsApp side would
-// give. Only the permission set and the optional session to resume come from
-// here.
+// What the consumer sends (consumer/reply.ts runAnswer): the same system
+// prompt, the same prompt wrapper (Israel date and time first), model, turns
+// and timeout — so a smoke answer is close to the answer the WhatsApp side
+// would give. Not mirrored: the structured-answer mode (follow-up suggestions)
+// and attachments, which the consumer adds. Only the permission set and the
+// optional session to resume come from here.
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function usage(message: string): never {

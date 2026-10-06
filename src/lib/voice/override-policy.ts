@@ -113,8 +113,9 @@ async function readAllowedOverrides(agentId: string): Promise<Set<OverrideField>
  * permitted. An empty result is a normal outcome, not an error — the caller
  * spreads it and the agent uses its own configuration.
  *
- * ⚠️ `agentId` EMPTY MEANS THE SCENARIO PICKS THE AGENT, which is the state
- * every deployed scenario is in today (each hardcodes its own `AGENT_ID`). The
+ * ⚠️ `agentId` EMPTY MEANS THE SCENARIO PICKS THE AGENT, which is the state the
+ * RSVP, meeting and sales scenarios are in (each hardcodes its own `AGENT_ID`;
+ * only the purpose scenario reads `agent_id` from ctx). The
  * override cannot be checked against an agent this server cannot name, so it is
  * dropped — the same fail-closed rule, applied to the same missing proof.
  */

@@ -12,7 +12,7 @@ import {
   payloadMeta,
 } from './vox-payloads';
 
-// Every normalizer: valid / partial / garbage / empty (plan §4).
+// Every normalizer: valid / partial / garbage / empty.
 
 describe('payloadMeta (metadata-only view of content fields)', () => {
   it('reports presence + byte size without exposing content', () => {

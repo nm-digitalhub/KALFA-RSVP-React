@@ -14,7 +14,7 @@ import {
 // present in this installation's saved workflows — 21 nodes — and missed
 // `trigger.webhook.token` and `action.start_for_each_guest.targetWorkflowId`
 // outright, because neither node type had ever been used here. One of those two
-// is the webhook trigger's entire credential.
+// was the webhook trigger's entire credential.
 //
 // So classification cannot be a list somebody remembers to update. Every
 // property of every node type must be either bound (and therefore scrubbed on

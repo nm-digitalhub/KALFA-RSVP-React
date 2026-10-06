@@ -2,8 +2,9 @@
 // Same policy as vox-payloads.ts: loose parse + a normalizer that reduces the
 // UNTRUSTED provider payload to METADATA ONLY. This is a security boundary — the
 // raw payload embeds guest PII (transcript turns, guest_name in
-// dynamic_variables, and a name-bearing transcript_summary), and NONE of it may
-// cross this function. Only non-PII QA/billing signal fields survive.
+// dynamic_variables), and NONE of it may cross this function. Only non-PII
+// QA/billing signal fields survive, plus ElevenLabs' own written summary (see
+// NormalizedCallAnalysis).
 
 function asString(v: unknown): string | null {
   return typeof v === 'string' && v.length > 0 ? v : null;
@@ -25,8 +26,8 @@ export type DataCollection = Record<string, DataCollectionValue>;
 // The shape that is safe to persist. NO transcript turns, NO guest
 // dynamic_variables, NO free-text rationales.
 //
-// It DOES now carry ElevenLabs' own written summary (owner-approved 2026-09-01,
-// for both personas). A summary is not a transcript — no turns, no quoted
+// It DOES carry ElevenLabs' own written summary (owner-approved, for both
+// personas). A summary is not a transcript — no turns, no quoted
 // speech — but it does describe the people on the call, so it is the one field
 // here that is not pure metadata. Everything else stays scalar.
 export interface NormalizedCallAnalysis {
@@ -39,10 +40,11 @@ export interface NormalizedCallAnalysis {
   costCredits: number | null;
   terminationReason: string | null;
   analysisAt: string | null; // ISO
-  // OUR injected, NON-authorizing correlation token (link vector for item 2's
-  // bridge). It is the ONLY dynamic_variable we read back — every guest-bearing
-  // var (guest_name, …) stays dropped. Never persisted as-is: the linker
-  // resolves it to a call_attempts FK. Null when absent (e.g. preview sessions).
+  // OUR injected, NON-authorizing correlation token (link vector for the
+  // ElevenLabs bridge scenario). It is the ONLY dynamic_variable we read back —
+  // every guest-bearing var (guest_name, …) stays dropped. Never persisted as-is:
+  // the linker resolves it to the owning attempt row (any of the five attempt
+  // tables). Null when absent (e.g. preview sessions).
   correlationToken: string | null;
   // QA analysis — populated once the agent has evaluation/data-collection enabled.
   // Keep only criterion→pass/fail and configured data-collection VALUES. Drop
@@ -70,9 +72,10 @@ export interface NormalizedCallAnalysis {
   // The provider's OWN voicemail verdict, from metadata.features_usage. Two
   // distinct facts, so it cannot be a single boolean: the detector may not have
   // run at all (enabled=false → null here), which is not the same as "no
-  // voicemail". Only `enabled && !used` is a real negative. Replaces the
-  // turn-count inference in data/admin/callbacks.ts, which reads a person who
-  // answered and stayed silent exactly like an answering machine.
+  // voicemail". Only `enabled && !used` is a real negative. Takes precedence over
+  // the turn-count inference in data/admin/callbacks.ts (still the fallback when
+  // this is null), which reads a person who answered and stayed silent exactly
+  // like an answering machine.
   voicemailDetected: boolean | null;
   // sentiment_analysis. Absent on short calls, hence nullable throughout.
   sentimentLabel: string | null;
@@ -178,10 +181,6 @@ function extractDataCollection(analysis: Record<string, unknown>): DataCollectio
   return Object.keys(out).length > 0 ? out : null;
 }
 
-// Count turns per role WITHOUT retaining a single character of what was said.
-// The transcript is the payload's heaviest PII (guest speech verbatim); this
-// reduces it to two integers on the way past. Anything that is not an array of
-// objects yields 0/0, keeping the normalizer total.
 // features_usage.voicemail_detection: {enabled, used}. `used` alone is
 // meaningless — false means "no voicemail" only when the detector was actually
 // on. A disabled detector yields null so the caller falls back to inference
@@ -207,6 +206,10 @@ function clamp01(value: number | null): number | null {
   return Math.min(1, Math.max(0, value));
 }
 
+// Count turns per role WITHOUT retaining a single character of what was said.
+// The transcript is the payload's heaviest PII (guest speech verbatim); this
+// reduces it to two integers on the way past. Anything that is not an array of
+// objects yields 0/0, keeping the normalizer total.
 function countTurns(raw: unknown): { agentTurns: number; userTurns: number } {
   if (!Array.isArray(raw)) return { agentTurns: 0, userTurns: 0 };
   let agentTurns = 0;

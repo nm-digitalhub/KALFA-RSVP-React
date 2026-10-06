@@ -5,7 +5,7 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 import { DAYS, readPolicyRow } from '@/lib/callbacks/policy-config';
 
 // Admin-form half of policy-config.ts, deliberately split into its own file —
-// see that module's own comment for why: it imports requireAdmin/createClient
+// see that module's own comment for why: it imports requirePlatformPermission/createClient
 // (session-scoped, next/headers), which must never reach the worker bundle via
 // callback-scheduling.ts's import of getCallbackPolicy(). This file is safe to
 // import ONLY from admin-page (request-scoped) code.

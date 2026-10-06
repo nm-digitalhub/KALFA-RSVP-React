@@ -35,10 +35,11 @@ import {
 // Creating a row IS the grant; `enabled` is for a temporary suspension.
 //
 // Each row says whether its number equals that staff member's VERIFIED phone. The
-// agent's gate refuses a row without that match (plan §3.1, phone_unverified), so a
-// mismatch here is shown as the reason the agent will stay silent — not left for the
-// owner to discover from a missing reply. Numbers arrive masked; the full number is
-// never sent to the browser, and the match itself was computed on the server.
+// agent's gate refuses a verified_staff row without that match (plan §3.1,
+// phone_unverified), so a mismatch here is shown as the reason the agent will stay
+// silent — not left for the owner to discover from a missing reply. Numbers arrive
+// masked; the full number is never sent to the browser, and the match itself was
+// computed on the server.
 //
 // Manual approval (plans/owner-agent-allowlist-override-plan.md): the owner may let
 // through, with a written reason, a staff member whose phone is not verified ("אשר

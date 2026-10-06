@@ -1,15 +1,14 @@
 'use client';
 
 // Starter template 5 of 13 — its diagram and its selector entry. Editor
-// side; `./index.ts` places it in `DIAGRAM_TEMPLATES` at the position the
-// inline entry held.
+// side; `./index.ts` places it in `DIAGRAM_TEMPLATES`.
 import type { DiagramModel, TemplateModel } from '@workflowbuilder/sdk';
 
 import { ACTION_BRANCH_HANDLES } from '../types';
 import { SOURCE, TARGET } from './shared';
 
 // ---------------------------------------------------------------------------
-// Guest import from WhatsApp — the flow that used to be hard-coded
+// Guest import from WhatsApp — the hard-coded flow, drawn as a workflow
 // ---------------------------------------------------------------------------
 
 const IMPORT_TRIGGER_ID = 'tmpl-import-trigger';
@@ -20,8 +19,8 @@ const IMPORT_FAILED_ID = 'tmpl-import-failed';
 /**
  * An owner sends a guest list; it is staged for review and the team is told.
  *
- * ⚠️ WHAT IS DIFFERENT ABOUT THIS TEMPLATE. Every other one starts from a guest
- * answering. This starts from the OWNER sending us something — a CSV or a batch
+ * ⚠️ WHAT IS DIFFERENT ABOUT THIS TEMPLATE. The other WhatsApp templates start
+ * from a guest answering. This starts from the OWNER sending us something — a CSV or a batch
  * of contact cards — which no workflow could see at all until `messageKinds`
  * existed: those messages are not billable, and the billing classifier was the
  * automation gate.
@@ -33,7 +32,7 @@ const IMPORT_FAILED_ID = 'tmpl-import-failed';
  * NO GUEST NODES ANYWHERE IN IT, and none would work: the sender is the owner,
  * so the run carries no contact and `update_guest_status`, `send_whatsapp`,
  * `set_guest_field` and the rest all refuse inside it by design. `notify_team`
- * and `webhook` are the actions available here.
+ * and `webhook` are two of the actions that do work here.
  *
  * IT DOES NOT REPLACE THE HARD-CODED IMPORT — both run, and they share one
  * idempotency key, so whichever stages first wins and the other reports

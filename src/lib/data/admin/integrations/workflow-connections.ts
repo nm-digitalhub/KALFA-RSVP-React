@@ -99,9 +99,8 @@ export async function listMicrosoftWorkflowConnectionsForAdmin(): Promise<
     mailSendReady:
       row.status === 'active' &&
       grantSatisfies(
-        // `?? []` because a row with no scopes must be EXCLUDED, never a
-        // crash. The filter moved out of SQL, where a null array simply failed
-        // to match; in JS it reaches `.map` and takes the caller down.
+        // `?? []` because a row with no scopes must read as not ready, never
+        // crash grantSatisfies (it calls `.map` on the grant).
         row.scopes ?? [],
         microsoftProvider.capabilities[MICROSOFT_MAIL_CAPABILITY],
         microsoftProvider.oauth.scopeResources ?? [],

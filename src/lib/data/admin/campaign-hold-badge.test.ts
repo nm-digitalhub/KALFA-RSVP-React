@@ -10,7 +10,7 @@ import {
 // Every state of an authorized hold, by the three columns that together say
 // what became of the money. Written against the live rows of 2026-09-24
 // (three "authorized" campaigns: one released and synced, two closed with
-// nothing_to_charge and not yet synced) plus the charge path in campaigns.ts
+// nothing_to_charge and not yet synced) plus the charge path in data/campaigns.ts
 // (recordCampaignCharge writes charge_status='charged' and touches neither
 // capture_status nor release_status).
 const authorized = (over: Partial<Parameters<typeof holdBadge>[0]>) =>

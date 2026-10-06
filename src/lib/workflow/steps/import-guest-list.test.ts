@@ -85,11 +85,9 @@ describe('action.import_guest_list', () => {
   });
 
   it('⚠️ the output carries THE ROWS — the run log is the record of what arrived', async () => {
-    // OWNER RULING 2026-09-13. They were withheld at first, on the argument that
-    // a node output is a second copy. It is not a second copy that outlives the
-    // first: `guest_import_staging` is a WORK QUEUE and is wiped the moment the
-    // owner confirms or discards, so without this nothing anywhere would say
-    // what a list contained. A later step can also act on it —
+    // `guest_import_staging` is a WORK QUEUE and is wiped the moment the owner
+    // confirms or discards, so without this nothing anywhere would say what a
+    // list contained. A later step can also act on it —
     // `{{nodes.<id>.rows}}` — which is what makes the import a flow rather than
     // a black box that reports a number.
     const r = await handler({}, ownerCtx({ importGuestList: async () => OK }));

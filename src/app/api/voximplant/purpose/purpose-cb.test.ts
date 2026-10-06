@@ -2,12 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The registry-driven voice surface's terminal report.
 //
-// ⚠️ WHY THIS ROUTE IS WORTH ITS OWN TEST. It is the FIRST way a voice-purpose
-// call can report an outcome at all — `purpose/<key>/` shipped with `ctx` and no
-// `cb`, so `finish_reason` was only ever written by the dispatcher's own error
-// paths and a row stayed at 'confirmed' forever. Everything downstream (a
-// workflow step waiting on a call, any report of what purpose calls achieved)
-// reads what this route writes.
+// ⚠️ WHY THIS ROUTE IS WORTH ITS OWN TEST. It is the only way a voice-purpose
+// call can report an outcome at all — without it `finish_reason` is written only
+// by the dispatcher's own error paths and a row stays at 'confirmed' forever.
+// Everything downstream (a workflow step waiting on a call, any report of what
+// purpose calls achieved) reads what this route writes.
 //
 // Same mocking convention as voximplant-routes.test.ts: agent-tool-guard begins
 // with `import 'server-only'`, and the token→row lookup is mocked directly.
@@ -74,19 +73,15 @@ describe('POST /api/voximplant/purpose/{purpose}/cb/{token}', () => {
   });
 
   it('⚠️ the reason column carries the ERROR ALONE, and the verdict its own column', async () => {
-    // The first half is unchanged and still right: `finish_reason` should carry
-    // the specific string, because 'sip_486_busy' tells a debugger something
-    // 'failed' does not.
+    // `finish_reason` should carry the specific string, because 'sip_486_busy'
+    // tells a debugger something 'failed' does not.
     //
-    // ⚠️ THE SECOND HALF IS THE FIX, AND THIS TEST DID NOT COVER IT. Passing
-    // only the collapsed `error_reason ?? call_status` meant the normalized
-    // verdict was DISCARDED whenever both arrived — which is every failure path
-    // the scenarios have. `toBusinessOutcome` then read a concluded attempt with
-    // an unmapped reason and fell to its `default: 'completed'`, so a call that
-    // failed before reaching anyone was reported to the diagram as a success.
-    //
-    // Nothing about the old assertion was wrong; it was incomplete, and what it
-    // did not assert was the part that was broken.
+    // ⚠️ AND THE VERDICT GOES IN ITS OWN COLUMN. Passing only the collapsed
+    // `error_reason ?? call_status` would DISCARD the normalized verdict whenever
+    // both arrive — which is every failure path the scenarios have.
+    // `toBusinessOutcome` would then read a concluded attempt with an unmapped
+    // reason and fall to its `default: 'completed'`, so a call that failed
+    // before reaching anyone would be reported to the diagram as a success.
     liveAttempt();
     await call(JSON.stringify({ call_status: 'failed', error_reason: 'sip_486_busy' }));
     expect(recordVoicePurposeConcluded).toHaveBeenCalledWith(AID, 'sip_486_busy', null, 'failed');
@@ -143,7 +138,7 @@ describe('POST /api/voximplant/purpose/{purpose}/cb/{token}', () => {
   });
 });
 
-// Waking the workflow run this call belongs to (0ב-6).
+// Waking the workflow run this call belongs to.
 //
 // ⚠️ THIS IS THE ONLY THING THAT ENDS THE WAIT EARLY. A run parked on a voice
 // step holds `resume_at` as a TIMEOUT CEILING — the token's own expiry — and
@@ -188,12 +183,6 @@ describe('POST cb — waking the parked run', () => {
     expect(wakeParkedRun).toHaveBeenCalled();
   });
 
-  // A wake that THROWS is now a 500 — see the P0 block at the end of this file.
-  // This case used to assert the opposite, on the reasoning that the outcome was
-  // already recorded so the ceiling would cover it. The 0ב review showed why
-  // that is wrong: swallowing the throw retires the callback retry, which is the
-  // only thing that would have woken the run at all.
-
   it('⚠️ never wakes before the outcome is recorded', async () => {
     // Order is the whole contract: the wake makes the step readable, and a run
     // delivered before the row says 'concluded' would read the call as still
@@ -205,7 +194,6 @@ describe('POST cb — waking the parked run', () => {
   });
 });
 
-// The two P0s the 0ב review found.
 describe('POST cb — the review\'s P0 fixes', () => {
   beforeEach(() => {
     vi.mocked(recordVoicePurposeConcluded).mockResolvedValue({ applied: true });
@@ -213,10 +201,10 @@ describe('POST cb — the review\'s P0 fixes', () => {
   });
 
   it('⚠️ a wake that THROWS is a 500, so the scenario retries', async () => {
-    // It used to be swallowed into a 200. `woke: false` is an ANSWER — the run
-    // is not waiting on this event — and stays 200. A throw is a failure to find
-    // out, and answering 200 to that leaves the run asleep with no second
-    // delivery coming, which is precisely the case the callback retry exists for.
+    // `woke: false` is an ANSWER — the run is not waiting on this event — and
+    // stays 200. A throw is a failure to find out, and answering 200 to that
+    // leaves the run asleep with no second delivery coming, which is precisely
+    // the case the callback retry exists for.
     liveAttempt(RUN, 'node-1');
     vi.mocked(wakeParkedRun).mockRejectedValue(new Error('pooler timeout'));
     expect((await call(OK_BODY)).status).toBe(500);

@@ -47,17 +47,15 @@ export interface SumitAuthorizeResult {
   // Data.CustomerID (top-level — NOT Data.Payment.CustomerID, which is 0 on a
   // hold, verified live 2026-08-30). Pass back as Customer.ID at close-charge
   // so the final charge reuses THIS SUMIT customer instead of creating a new
-  // one — a real bug reproduced today: a saved-token charge without it created
+  // one — a real bug reproduced live: a saved-token charge without it created
   // a brand-new customer despite reusing the same card token.
   sumitCustomerId: number | null;
 }
 
-// J5 authorization HOLD (no capture, no document). Mirrors charge.ts error
+// J5 authorization HOLD (no capture, no receipt). Mirrors charge.ts error
 // semantics: only a definitive decline (Status===1 / {IsError:true} in a 2xx
 // body) is a SumitDeclinedError; anything else ambiguous → SumitNetworkError, so
 // the caller marks hold_review rather than silently treating it as authorized.
-// NB: the exact live success/error discriminator must be confirmed against the
-// admin POC before go-live (see the plan's Task 8).
 export async function authorizeHoldSumit(
   p: SumitAuthorizeParams,
 ): Promise<SumitAuthorizeResult> {

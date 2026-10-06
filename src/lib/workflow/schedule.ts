@@ -154,8 +154,9 @@ export function planScheduledRuns(armed: readonly ArmedWorkflow[], now: Date): P
       triggerPayload: {
         // No eventId and no contactId on the payload, deliberately — the run is
         // about a moment in time, not a person. `requireGuestContext` refuses
-        // every guest-touching node inside it, which is the correct answer until
-        // a step goes and finds guests.
+        // every guest-touching node inside it, which is the correct answer:
+        // `action.start_for_each_guest` is the step that finds guests, and the
+        // child runs it starts are the ones that carry a contact.
         message_text: '',
         button_payload: '',
         body: { firedAt: slot },

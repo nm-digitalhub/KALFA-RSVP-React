@@ -9,11 +9,9 @@ import { FieldError } from '@/components/forms';
 // secrets (owner ruling 2026-08-24: masked + reveal stays; do not re-propose a DTO or
 // a taint wrapper).
 //
-// It lived inside settings-form.tsx until Task 0.2 split the provider credentials out
-// of that form. Moved here rather than deleted: the per-provider forms of Task 0.5 are
-// its next callers, and it is a CLIENT component (useState for the reveal), so it must
-// not sit in _components.tsx — that module is imported by Server Components and
-// putting a client component in it would drag the whole file across the boundary.
+// It is a CLIENT component (useState for the reveal), so it must not sit in
+// _components.tsx — that module is imported by Server Components and putting a
+// client component in it would drag the whole file across the boundary.
 
 const inputClass =
   'w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 read-only:bg-muted read-only:text-muted-foreground';

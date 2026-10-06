@@ -8,9 +8,9 @@ import { describe, expect, it } from 'vitest';
 //
 // The page already branched to getEventForAdminView for the EVENT, but then
 // read the campaign through the owner path. `campaigns` has exactly one SELECT
-// policy — can_access_event(...), which resolves to events.owner_id =
-// auth.uid() — so RLS returned zero rows for staff and getCampaign() called
-// notFound(). A bare 404 with nothing explaining why.
+// policy — can_access_event(...), which admits only the event's owner or an org
+// member holding campaigns:view — so RLS returned zero rows for staff and
+// getCampaign() called notFound(). A bare 404 with nothing explaining why.
 //
 // Half a fix is the failure mode here, and the first pass proved it: reaching
 // the page fixed nothing for the DELIVERY and THANK-YOU reads, which kept using
@@ -182,9 +182,9 @@ describe('thank-you schedule — form only where the write can succeed', () => {
   });
 });
 
-// The page was six stacked cards with about a dozen more bordered boxes nested
-// inside them; on a phone that read as a column of frames. Three cards now, and
-// the tile/box components that produced the nesting are gone rather than unused.
+// The page is three cards with no bordered boxes nested inside them (on a phone
+// nested frames read as a column of frames), and the tile/box components that
+// produced the nesting are gone rather than left unused.
 describe('page structure — three cards, no nesting', () => {
   const manage = readFileSync(join(__dirname, 'manage-client.tsx'), 'utf8');
 

@@ -18,7 +18,7 @@ import {
 // Admin-only SUMIT POC: tokenize a card (payments.js, client) → POST a charge
 // with admin-chosen params (J4/J5, AuthorizeAmount, CardTokenNotNeeded) → render
 // a REDACTED safe preview of the request/response (allow-list projection via
-// safe-preview.ts) so we can verify live behavior before building the production
+// safe-preview.ts) so we can verify live behavior against the production
 // J5 / saved-token flow. The raw gateway body (token/CitizenID/AuthNumber) never
 // reaches the browser DOM and is never logged.
 
@@ -302,7 +302,8 @@ export async function POST(request: NextRequest) {
 
   // Token PICKER path: the browser posts only a campaign id and the card is
   // resolved here. The token is never rendered, so it cannot be screenshotted,
-  // copied out of the DOM or left in browser history — see the module header.
+  // copied out of the DOM or left in browser history — see the header of
+  // lib/data/admin/sumit-test.ts.
   // The read is audited (fail-closed) inside resolveSavedCardForCampaign.
   if (String(form.get('token_source') ?? '') === 'campaign') {
     const campaignId = String(form.get('campaign_id') ?? '').trim();

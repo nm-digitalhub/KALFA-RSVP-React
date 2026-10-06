@@ -90,7 +90,7 @@ export async function GET(
     companyName = '';
   }
 
-  // First name only — the same mitigation the other two ctx routes apply. A
+  // First name only — the same mitigation mtg/ctx and sls/ctx apply. A
   // household name ("משפחת כהן") yields its first token, which is correct to
   // say aloud and reveals nothing the greeting did not already need.
   const guestName = (guest?.full_name ?? '').trim().split(/\s+/)[0] ?? '';
@@ -117,15 +117,13 @@ export async function GET(
       // INSTRUCTION rather than a variable. Everything above is substituted into
       // a prompt; this decides which prompt exists at all.
       //
-      // ⚠️ AND NOTHING READS IT YET. Every deployed scenario opens
-      // `ElevenLabs.createAgentsClient({ agentId: AGENT_ID })` against a
-      // hardcoded constant. It is emitted now so the server half is complete and
-      // one scenario deploy — not a coordinated pair of changes — turns the
-      // node's agent picker live.
+      // ⚠️ PurposeAgent READS IT and opens `ElevenLabs.createAgentsClient` on it,
+      // rather than on a hardcoded constant — that is what lets the node's agent
+      // picker take effect without a scenario change.
       //
-      // Omitted rather than sent empty when no agent was chosen: a scenario that
-      // reads it should fall back to its own default, and `''` would be a value
-      // that means "no agent", which is not a thing that can answer a phone.
+      // Omitted rather than sent empty when no agent was chosen: `''` would be a
+      // value that means "no agent", which is not a thing that can answer a
+      // phone. PurposeAgent refuses to dial a ctx that names none.
       ...(attempt.agent_id ? { agent_id: attempt.agent_id } : {}),
     },
     { headers: NO_STORE },

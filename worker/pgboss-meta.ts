@@ -4,7 +4,7 @@
 // NOT createAdminClient. Used by the call-request path to tell the LAST permitted
 // delivery of a transient pre-dial failure (retry_count = retry_limit) so the
 // dispatch row is settled before the final rethrow (worker/main.ts). The outreach
-// step path no longer reads it: a definite rejection advance-skips at once.
+// step path does not read it: a definite rejection advance-skips at once.
 //
 // Never imported by the Next app: it lives under worker/ and pulls in `pg`, kept
 // out of the browser/server bundle. Bundled into dist/worker.cjs by esbuild.

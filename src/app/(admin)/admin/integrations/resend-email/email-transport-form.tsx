@@ -7,9 +7,7 @@ import { EditableField } from '@/app/(admin)/admin/_form-fields';
 
 import { updateEmailTransportAction } from './actions';
 
-// Credentials for outgoing mail — a restoration, like the ExtrA form beside it: Task
-// 0.2 built the DAL pair and removed the "הודעות" tab, and nothing replaced the UI, so
-// these fields have not been editable from the panel since.
+// Credentials for outgoing mail.
 //
 // ⚠️ THE SMTP FIELDS ARE SHOWN EVEN WHILE RESEND IS THE ACTIVE TRANSPORT, and that is
 // the point of keeping them: EMAIL_PROVIDER is an env switch precisely so a rollback

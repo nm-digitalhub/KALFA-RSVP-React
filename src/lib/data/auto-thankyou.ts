@@ -4,8 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { sendCampaignWhatsApp } from '@/lib/data/outreach';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 
-// The auto-thankyou periodic sweep (docs/plans auto-thankyou-post-event,
-// decisions confirmed 2026-07-12): a pg-boss cron job (worker/main.ts) calls
+// The auto-thankyou periodic sweep (docs/auto-thankyou-implementation-log-2026-07-12.md):
+// a pg-boss cron job (worker/main.ts) calls
 // runThankyouSweep() every 5 minutes — the SAME idiom as the existing
 // arm/sweeper (§handleArm), not a per-campaign delayed job. That means an
 // owner toggling thankyou_auto_enabled or editing thankyou_send_at is just a
@@ -15,7 +15,7 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 //
 // campaigns.thankyou_auto_enabled / thankyou_send_at / thankyou_sent_at and
 // contact_interactions.message_key come from migration
-// 20260712205030_auto_thankyou_schema.sql (applied + gen-typed). The read below
+// 20260712205030_auto_thankyou_schema.sql. The read below
 // keeps select('*') + runtime narrowing as a fail-closed guard — a malformed or
 // missing value skips the campaign rather than sending; the write is typed.
 
@@ -78,7 +78,7 @@ async function markThankyouProcessed(admin: AdminClient, campaignId: string): Pr
 // The sweep's entry point (called by worker/main.ts on its own schedule).
 // Each due campaign is independent — one failing must not block the rest.
 //
-// Bug fix (thankyou-review, high): sendCampaignWhatsApp does NOT throw for a
+// sendCampaignWhatsApp does NOT throw for a
 // transient config/state gate (outreach kill-switch off, WhatsApp not
 // configured, template not yet approved, campaign/event not active) — it
 // returns `{sent:0, skipped:0, blocked:true}` instead. Marking

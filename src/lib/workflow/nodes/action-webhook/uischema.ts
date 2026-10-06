@@ -33,11 +33,12 @@ export const webhookUiSchema: UISchema = {
       label: 'גוף הבקשה',
       placeholder: '{"name":"{{trigger.guest_name}}","text":"{{trigger.message_text}}"}',
       minRows: 3,
-      // ⚠️ THE RUNTIME ALREADY DROPS IT, SILENTLY. `sendOutboundWebhook` attaches
-      // the body only when the verb is in `HTTP_METHODS_WITH_BODY`; on GET or
-      // DELETE it is built, resolved, secret-checked — and then not sent. So the
-      // panel offered a three-row editor for a field that went nowhere, with no
-      // error and no run-log entry to learn from.
+      // ⚠️ THE RUNTIME DROPS IT, SILENTLY. The outbound port
+      // (`outbound-webhook.ts`) attaches the body only when the verb is in
+      // `HTTP_METHODS_WITH_BODY`; on GET or DELETE it is built, resolved,
+      // secret-checked — and then not sent. Without this rule the panel would
+      // offer a three-row editor for a field that goes nowhere, with no error and
+      // no run-log entry to learn from.
       //
       // ⚠️ SHOW ON THE WITH-BODY LIST, NOT HIDE ON ITS COMPLEMENT, and the two
       // are not equivalent here. `enum` is derived from the SAME constant
@@ -58,16 +59,14 @@ export const webhookUiSchema: UISchema = {
         },
       },
     },
-    // ⚠️ THIS COMMENT USED TO BE WRONG TWICE, and both halves are worth keeping
-    // as a record. It said "collapsed by default" — the renderer opens it, see
-    // the trigger's message-kinds accordion for the measurement — and it said
-    // the alternative was "an always-open list of empty rows to scroll past",
-    // when `defaultPropertiesData` sets `headers: []` with its own comment
-    // saying no empty row is seeded. The stated harm could not occur.
+    // ⚠️ NOT COLLAPSED BY DEFAULT — the renderer opens it, see the trigger's
+    // message-kinds accordion for the measurement. Nor is there a list of empty
+    // rows to scroll past: `defaultPropertiesData` sets `headers: []` and seeds no
+    // empty row.
     //
-    // The container survives its own justification: headers and secrets are a
-    // genuinely advanced concern that most calls never touch, which is the case
-    // an Accordion is for. It groups and it folds; it does not hide.
+    // Headers and secrets are a genuinely advanced concern that most calls never
+    // touch, which is the case an Accordion is for. It groups and it folds; it
+    // does not hide.
     {
       type: 'Accordion',
       label: 'כותרות ואימות',
@@ -94,8 +93,8 @@ export const webhookUiSchema: UISchema = {
         },
         {
           // The instruction that makes the whole secrets design usable. Without
-          // it an owner types the key itself, which is exactly what this node
-          // spent a release refusing to allow.
+          // it an owner types the key itself, which is exactly what the secrets
+          // design exists to prevent.
           type: 'Label',
           text: 'לעולם אל תקלידו מפתח API כאן. כתבו {{secrets.SHEM_HASOD}} — הערך עצמו נשמר בשרת ואינו נשמר בתרשים, אינו מוצג בדפדפן ואינו נרשם ביומן ההרצה.',
         },

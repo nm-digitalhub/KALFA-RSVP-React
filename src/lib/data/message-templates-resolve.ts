@@ -6,7 +6,7 @@ import type { Enums, Json, Tables } from '@/lib/supabase/types';
 // internal template readers (service-role, read-only, active-only). It lives in
 // its OWN module (not message-templates.ts) so the worker send path can import it
 // WITHOUT pulling message-templates.ts's admin wrappers (listMessageTemplates /
-// updateMessageTemplate → requireAdmin from @/lib/auth/dal + the request-scoped
+// updateMessageTemplate → requirePlatformPermission from @/lib/auth/dal + the request-scoped
 // @/lib/supabase/server createClient → next/headers|navigation) into the worker
 // bundle. The worker (auto-thankyou sweep + drip engine) runs in a long-lived
 // process where next/headers is a no-op stub, so it must stay request-free
@@ -27,9 +27,10 @@ export type ResolvedTemplate = Pick<MessageTemplateRow, 'name' | 'language' | 'c
   rsvpQuickReply?: boolean;
   // Which positional-parameter contract the send path binds for THIS event type
   // (components.param_contract[eventType], admin data). Absent → the standard
-  // generic/wedding 7-tuple; 'brit_trad_invite' / 'brit_trad_reminder' select
-  // the personal first-person builders. Data-driven so a new layout is one jsonb
-  // entry, not another code-side name test.
+  // generic/wedding 7-tuple; a recognized value selects its dedicated builder
+  // (buildBodyParams in template-spec.ts, e.g. 'brit_trad_invite' /
+  // 'brit_trad_reminder' → the personal first-person builders). Data-driven so a
+  // new layout is one jsonb entry, not another code-side name test.
   paramContract?: string | null;
 };
 
@@ -99,15 +100,16 @@ function mediaVariantNameFor(
 // back as button.payload = the Hebrew LABEL ("מגיע/ה"), RSVP_BUTTON_MAP misses
 // it, and the guest stays "pending" while believing they answered.
 //
-// The layout gate is now MEASURED, not assumed. Verified against Meta 2026-09-08
+// The layout gate is MEASURED, not assumed. Verified against Meta 2026-09-08
 // (GET /{waba}/message_templates?fields=components) — every one of these carries
 // the SAME 3 QUICK_REPLY buttons in the SAME order as RSVP_QUICK_REPLY
 // (מגיע/ה · לא מגיע/ה · אולי), all APPROVED: kalfa_event_invite_v2,
 // kalfa_event_invite_media_v1, kalfa_event_reminder_v1, kalfa_event_reminder2_v1,
-// kalfa_event_final_v1, kalfa_brit_invite_trad_v4. So there is no longer a
-// layout reason to withhold the flag from the non-brit event types; what gates
-// them is the admin jsonb, which still reads {"brit": true} on all four
-// button-bearing rows (invite, reminder_1, reminder_2, final).
+// kalfa_event_final_v1, kalfa_brit_invite_trad_v4. So there is no layout
+// reason to withhold the flag from the non-brit event types; what gates them
+// is the admin jsonb, which migration 20260908194853 set to true for every
+// event type on all four button-bearing rows (invite, reminder_1, reminder_2,
+// final).
 //
 // Defensive walk like variantNameFor — anything malformed/absent means "off".
 function rsvpQuickReplyFlag(components: Json | null, eventType: EventType): boolean {

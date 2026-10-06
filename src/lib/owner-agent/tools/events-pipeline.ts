@@ -15,9 +15,9 @@ import {
   type OwnerAgentPermission,
 } from '@/lib/owner-agent/tools/shared';
 
-// Tool 5 (plan §5). Decision 9.7 (recommended default, assumed): answers
-// contain NO event names — counts only; the core never selects a name. Date
-// boundaries are Israel midnights from the event-date helpers (see the core).
+// Tool 5 (plan §5). Counts only, NO event names: the core never selects a
+// name. Date boundaries are Israel midnights from the event-date helpers (see
+// the core).
 export const EVENTS_PIPELINE_ID = 'events_pipeline';
 export const EVENTS_PIPELINE_PERMISSION = 'view_events' satisfies OwnerAgentPermission;
 

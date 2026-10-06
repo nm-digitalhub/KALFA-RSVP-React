@@ -11,16 +11,15 @@ import { chatAuthorDisplayName, type ChatMessageRow } from '@/lib/console/chat';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 
-// Internal agent-to-agent chat (plan "שלב 2"). Presentational + composer
+// Internal agent-to-agent chat. Presentational + composer
 // only — the message list, load, and Realtime subscription are owned by
 // softphone-panel.tsx (state lifted there specifically so the unread count
 // keeps counting while the panel is COLLAPSED, i.e. while this component
 // isn't even mounted; see that file's chat-state effect for why).
 //
-// No relative-time helper exists in src/lib/date.ts (checked before writing
-// this) — formatIsraelTime (absolute HH:MM, Israel wall clock) is the
-// existing helper and is used as-is rather than hand-rolling a "5 דקות
-// לפני"-style formatter.
+// src/lib/date.ts has no past-time relative formatter — formatIsraelTime
+// (absolute HH:MM, Israel wall clock) is the existing helper and is used
+// as-is rather than hand-rolling a "5 דקות לפני"-style formatter.
 //
 // Honest-UI discipline (save_rsvp / AiHandoffSection precedent): sending
 // never optimistically appends to the list. The DB CHECK constraint is the

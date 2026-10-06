@@ -15,8 +15,9 @@ import { FleetAgentAvatar } from './fleet-agent-avatar';
 // not re-render on navigation (layout.md: "Layouts do not rerender on
 // navigation, so they cannot access search params"). Everything that depends
 // on the URL — the selected row, the phone list↔conversation split — reads
-// useSearchParams here. Filtering is client-side over 14–20 rows; no Base UI
-// Tabs (keepMounted hazard), just three toggle buttons.
+// useSearchParams here. Filtering is client-side over one row per agent (a few
+// dozen at most); no Base UI Tabs (keepMounted hazard), just three toggle
+// buttons.
 
 type Filter = 'all' | 'you' | 'agent';
 

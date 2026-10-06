@@ -113,7 +113,7 @@ describe('findCallbackSlot', () => {
 
   it('lets a call run past closing time — you finish with the customer', () => {
     // Friday closes at 13:00. Starting at 12:50 means hanging up at 13:05, which
-    // is a call you finished, not a policy breach (owner correction 28.07).
+    // is a call you finished, not a policy breach.
     const got = findCallbackSlot({
       ...base,
       preferredMs: at(FRI, '12:50'),
@@ -294,7 +294,8 @@ describe('findCallbackSlot with caller constraints', () => {
     // Reachable only 20:00–22:00 — outside the business day every day of the
     // horizon. The calendar here is completely empty, so reporting
     // "no_slot_within_horizon" would blame capacity for what is really an
-    // unusable window. From stage 3 that difference is the whole quality signal.
+    // unusable window. For the extraction step that difference is the whole
+    // quality signal.
     const got = findCallbackSlot({
       ...base,
       preferredMs: at(TUE, '09:00'),
@@ -355,7 +356,7 @@ describe('findCallbackSlot with caller constraints', () => {
 });
 
 // The decision behind notAfterMin, pinned so nobody "simplifies" it back into
-// the business-hours rule. Owner decision 28.07: a caller reachable "until
+// the business-hours rule. A caller reachable "until
 // 13:00" gets a call that ENDS by 13:00 — 13:00 is a fact about them, not a
 // closing time we may generously overrun. A live call that runs long is
 // ordinary and untouched by any of this; only PLACEMENT is constrained.
@@ -525,9 +526,9 @@ describe('constraint boundaries', () => {
   });
 });
 
-// Structural checks on the constraints themselves. These matter most from
-// stage 3, where the values arrive from an extraction step rather than from a
-// form — garbage must be REJECTED, not reinterpreted as an empty window.
+// Structural checks on the constraints themselves. These matter most because
+// the values arrive from an extraction step rather than from a form — garbage
+// must be REJECTED, not reinterpreted as an empty window.
 describe('validateConstraints', () => {
   it('accepts a well-formed set, and an empty one', () => {
     expect(validateConstraints({})).toBe(true);
@@ -574,11 +575,10 @@ describe('validateConstraints', () => {
   });
 });
 
-// The ranking layer. Added 28.07.2026 after a live request exposed that the
-// engine had only two of the three layers the scheduling literature describes:
-// hard constraints PRUNE, soft preferences RANK. With no rank, the form's
-// time-of-day band was smuggled in as the search's starting instant, where it
-// collided with the window the caller had written in free text.
+// The ranking layer: hard constraints PRUNE, soft preferences RANK. With no
+// rank, the form's time-of-day band was smuggled in as the search's starting
+// instant, where it collided with the window the caller had written in free
+// text.
 describe('rank — where inside the allowed set to aim', () => {
   const base = { busy: [] as BusyWindow[], bookedPerDay: {} as Record<string, number> };
 

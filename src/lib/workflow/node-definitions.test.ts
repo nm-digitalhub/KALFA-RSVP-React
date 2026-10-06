@@ -4,7 +4,7 @@
 // `nodes/<name>/` without one of these facts would still compile — the
 // registries would simply keep a literal of their own, and the folder would be a
 // second source of truth instead of the only one. This walks EVERY folder on
-// disk, so the 2nd…23rd node are checked the moment they land, with no edit here.
+// disk, so a node is checked the moment its folder lands, with no edit here.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -44,7 +44,7 @@ const folders = nodeFolders();
 
 describe('node definitions', () => {
   it('the scan found the node folders — not an empty directory', () => {
-    // At least the nodes moved so far. Raise as nodes move; never lower.
+    // At least the nodes that exist. Raise as nodes are added; never lower.
     expect(folders.length).toBeGreaterThanOrEqual(23);
   });
 

@@ -151,7 +151,7 @@ export function buildCoreBatchB(
       limit: EVENTS_ROW_LIMIT,
     },
     {
-      // v3 funnel: exact counts for the phase-1 journey events only.
+      // Funnel: exact counts for the phase-1 journey events only.
       dateRanges,
       dimensions: [{ name: 'eventName' }],
       metrics: [{ name: 'eventCount' }],
@@ -163,7 +163,7 @@ export function buildCoreBatchB(
       }),
     },
     {
-      // v3 404 detector: page views whose title marks a not-found render.
+      // 404 detector: page views whose title marks a not-found render.
       dateRanges,
       dimensions: [{ name: 'pagePath' }],
       metrics: [{ name: 'screenPageViews' }],
@@ -226,9 +226,9 @@ export function buildCoreBatchC(
 
 // Single-report request for landingPage — deliberately NOT the whole of
 // buildCoreBatchC (which bundles 3 demographic reports ahead of this one):
-// the fleet CLI's analytics-summary verb wants only this report, and paying
-// for 3 discarded demographic calls on every invocation (content-seo-strategist
-// runs it every week, not just once) would be pure waste. Same dimension/
+// the fleet CLI's analytics-summary --landing-pages call wants only this
+// report, and paying for 3 discarded demographic calls on every such invocation
+// (content-seo-strategist's quarterly review) would be pure waste. Same dimension/
 // metric/filter/limit shape as buildCoreBatchC's own landingPage entry —
 // kept in sync by hand since GA4 has no shared sub-request type to extract.
 export function buildLandingPagesRequest(
@@ -247,14 +247,14 @@ export function buildLandingPagesRequest(
   ];
 }
 
-// Batch D order (v5): [leadSources, billingModels, campaigns, campaignLeads,
+// Batch D order: [leadSources, billingModels, campaigns, campaignLeads,
 // kalfaChannels?] — the two custom-dimension breakdowns (live-verified 27.7:
 // `customEvent:<param>` is the documented Data API syntax and accepted by the
-// property), the campaign-performance pair (v5 — owner-run paid campaigns,
+// property), the campaign-performance pair (owner-run paid campaigns,
 // e.g. Instagram UTM tests: `campaigns` carries sessions/users/engagement per
 // sessionCampaignName+source+medium; `campaignLeads` is a SEPARATE
-// eventName='generate_lead'-filtered report over the same campaignName
-// dimension, joined client-side by mapCampaigns — a single report can't mix
+// eventName='generate_lead'-filtered report over the same
+// campaignName+source+medium triple, joined client-side by mapCampaigns — a single report can't mix
 // an eventName restriction with unfiltered session metrics), plus, ONLY when
 // a channel-group id is configured, traffic by the custom "ערוצי KALFA" group
 // (`sessionCustomChannelGroup:<id>` — syntax live-verified as well). 5 reports

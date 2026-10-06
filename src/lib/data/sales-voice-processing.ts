@@ -15,14 +15,15 @@ import type {
 // Processing functions for the sales-closing agent's 3 REUSED tools
 // (mark_dnc / notify_owner / schedule_callback — sales-closing-agent-script-
 // draft.md §3: "reused unchanged from RSVPAgent's existing registered
-// tools"). Same isolation discipline as callback-voice-processing.ts (which
+// tools") plus escalate_to_human, which shares notify_owner's mechanism.
+// Same isolation discipline as callback-voice-processing.ts (which
 // this mirrors): every identity resolution goes through
 // getSalesRequestForAttempt, never call_attempts — a bug here structurally
 // cannot reach RSVP/billing state.
 //
-// get_pricing / apply_discount_tier / send_signup_link / escalate_to_human /
-// log_outcome (the 5 genuinely NEW tools) live in their own route files —
-// each is a single small operation, not worth a shared processing module.
+// get_pricing / apply_discount_tier / send_signup_link / log_outcome (the
+// genuinely NEW tools) live in their own route files — each is a single small
+// operation, not worth a shared processing module.
 
 // `mark_dnc`: upserts into call_dnc_list — the SAME table/key
 // processCallDnc (RSVP) and processMeetingOptOut (meeting-confirm) already

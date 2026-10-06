@@ -20,7 +20,7 @@ export type ProfileDTO = Pick<
  *
  * A comparison, not a stored flag: editing `phone` un-verifies it by
  * construction, so there is no flag to forget to clear. Both sides go through
- * the same normalizer, so 052-374-3588 and +972532743588 compare equal.
+ * the same normalizer, so 052-374-3588 and +972523743588 compare equal.
  */
 export function isProfilePhoneVerified(profile: ProfileDTO | null): boolean {
   const e164 = profile?.phone_verified_e164;

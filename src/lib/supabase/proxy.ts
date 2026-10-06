@@ -57,7 +57,7 @@ export async function updateSession(request: NextRequest) {
 
   // IMPORTANT: do NOT run code between createServerClient and getClaims(), and do
   // NOT remove getClaims() — a mistake here can make users appear randomly logged
-  // out. Per the installed auth-js (2.108.2), getClaims() decodes the session JWT
+  // out. Per the installed auth-js (2.117.0), getClaims() decodes the session JWT
   // and verifies it one of two ways: an ASYMMETRIC token (alg not "HS*", with a
   // kid + WebCrypto) is verified LOCALLY against the fetched JWK (no per-request
   // round-trip); a SYMMETRIC "HS*" token (or missing kid) falls back to

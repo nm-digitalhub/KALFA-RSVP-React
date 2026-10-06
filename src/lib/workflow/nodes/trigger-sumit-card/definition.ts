@@ -72,7 +72,7 @@ export const requiredFields: string[] = ['label', 'description', 'tokenHash'];
 
 /**
  * The budget for one call of the handler: the 120s default, stated explicitly.
- * `NODE_ACTIVITY_PROFILES` has no entry for this node and never had one.
+ * `NODE_ACTIVITY_PROFILES` has no entry for this node.
  */
 export const activityProfile = 'default' as const;
 
@@ -105,9 +105,9 @@ export const deploymentBindings: Readonly<Record<string, 'identifier' | 'secret'
 // `server-code-must-not-reach-the-editor-schemas`) does, and was red.
 //
 // So they are declared here, in a file that imports NOTHING. The editor (this
-// folder's palette entry, and `schemas.ts`, which re-exports them) and the
-// server (`catalogue/sumit-sample-output.ts`, `data/admin/workflows.ts`) all
-// read them from here.
+// folder's palette entry; `schemas.ts` re-exports only the types) and the
+// server (`catalogue/sumit-sample-output.ts`, which `data/admin/workflows.ts`
+// calls) all read them from here.
 
 /** One entry of the SUMIT trigger's output — the SDK's `OutputProperty` shape. */
 export type SumitCardOutputField = {

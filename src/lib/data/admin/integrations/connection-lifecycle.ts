@@ -92,10 +92,10 @@ export async function renameIntegrationConnection(
  * definition names this uuid — armed or draft — because a draft someone is
  * still writing is not a free row to reclaim.
  *
- * Exposed for completeness; the node UI offers disconnect, not delete. Ending a
- * connection is the operation a workflow author needs, and it is the one that
- * destroys the token. Deleting is housekeeping for a screen that lists
- * connections, once one exists.
+ * Exposed for completeness; no UI calls it yet. Ending a connection is the
+ * operation a workflow author needs, and it is the one that destroys the token.
+ * Deleting is housekeeping for a screen that lists connections and offers to
+ * remove them.
  */
 export async function deleteIntegrationConnection(
   connectionId: string,

@@ -13,9 +13,9 @@
 //   v2-oauth2-on-behalf-of-flow   "scope": "https://graph.microsoft.com/user.read"
 //   howto-call-a-web-api-with-curl "scope": "api://{client_id}/Forecast.Read"
 //
-// So `['Mail.Send'].filter((s) => !granted.includes(s))` — which is what this
-// replaced — can only ever report the scope as missing, and every send fails
-// permanently with `integration_scope_missing`.
+// So `['Mail.Send'].filter((s) => !granted.includes(s))` can only ever report
+// the scope as missing, and every send fails permanently with
+// `integration_scope_missing`.
 //
 // ⚠️ AND IT FAILED INTERMITTENTLY, WHICH IS WORSE THAN ALWAYS. That same
 // reference calls the response's `scope` "Optional. This parameter is

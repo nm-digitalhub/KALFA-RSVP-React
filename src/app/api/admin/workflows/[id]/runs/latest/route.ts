@@ -8,7 +8,7 @@ import { workflowRunsFingerprint } from '@/lib/data/admin/workflows';
 // creates a run with no browser involved: an inbound WhatsApp message produced
 // one at 18:55:53 and finished it at 18:55:57 while the editor sat open and
 // visible, and the table went on showing the previous day's runs until someone
-// reloaded. `runs-auto-refresh.tsx` now polls this instead of going quiet, and
+// reloaded. `runs-auto-refresh.tsx` polls this and
 // calls `router.refresh()` only when the answer differs — so an idle page costs
 // ONE query per tick rather than the seven a full refresh re-runs.
 //

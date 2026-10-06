@@ -242,10 +242,9 @@ export async function addNumber(input: AddNumberInput): Promise<string> {
     });
     return id;
   } catch (err) {
-    // THIS USED TO PROPAGATE UNMAPPED, and the action turned every failure into one
-    // generic sentence. Worse, nothing was recorded: a failed add left no trace on the
-    // server at all, so "it said it failed" was the entire diagnostic surface.
-    // The code is safe to alert on; the body is not, and never leaves the client.
+    // The failure is recorded here, not only shown: otherwise a failed add leaves no
+    // trace on the server at all. The code is safe to alert on; the body is not, and
+    // never leaves the client.
     void sendSlackAlert({
       level: 'warn',
       category: 'security',

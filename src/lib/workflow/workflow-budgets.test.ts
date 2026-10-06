@@ -50,7 +50,7 @@ describe('the budget chain', () => {
   });
 
   it('⚠️ the two that used to collide are no longer equal', async () => {
-    // The regression this whole change exists for. If these are ever the same
+    // The regression this test exists for. If these are ever the same
     // number again, a retry reclaims a live step in the same second the previous
     // attempt was given up on.
     expect(EXPIRE_MS).not.toBe(STEP_LEASE_MS);

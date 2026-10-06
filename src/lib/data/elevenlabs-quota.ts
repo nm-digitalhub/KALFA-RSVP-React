@@ -18,10 +18,11 @@ import {
 // Fail-safe by construction:
 //   - dark-safe: no key configured → no-op (no alert), so it is inert until an
 //     admin sets the ElevenLabs key;
-//   - NEVER throws — a transient subscription-fetch failure is swallowed (the
-//     next 6-hourly tick retries); throwing would fail the pg-boss job and fire
-//     guardedWorker's error alert for a benign blip;
-//   - PII-free Slack payloads: character counts + tier + key source only.
+//   - NEVER throws — a failed subscription fetch is reported as a warn alert
+//     (the next 6-hourly tick retries); throwing would fail the pg-boss job and
+//     fire guardedWorker's error alert for a benign blip;
+//   - PII-free Slack payloads: character counts, failure reason and key source
+//     only.
 
 // Pure threshold decision, shared with nothing else — the single source of truth
 // for what counts as a quota alert. A failed read from a CONFIGURED key is
@@ -165,9 +166,9 @@ export async function runElevenLabsQuotaCheck(): Promise<void> {
 
   // getElevenLabsQuotaResult reports transport failures as data rather than
   // throwing, so there is nothing routine left to swallow here. The catch stays
-  // only for a genuinely unexpected bug in our own code — and it now REPORTS
+  // only for a genuinely unexpected bug in our own code — and it REPORTS
   // that instead of returning silently, which is how a broken quota monitor
-  // could previously look identical to a healthy one.
+  // could look identical to a healthy one.
   let result: ElevenResult<ElevenLabsQuota>;
   try {
     result = await getElevenLabsQuotaResult(key);

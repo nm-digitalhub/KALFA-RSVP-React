@@ -106,8 +106,8 @@ export default async function AdminWorkflowPage({
   const nodes = parsed.success ? parsed.data.nodes : [];
   const edges = parsed.success ? parsed.data.edges : [];
 
-  // Only a workflow with a SUMIT trigger pays for the read — and it is keys and
-  // types, never values (see getSumitCardSampleOutput).
+  // Only a workflow with a SUMIT trigger pays for the read — keys, types and one
+  // example value per field (see getSumitCardSampleOutput).
   const hasSumitTrigger = nodes.some(
     (n) => (n.data as { type?: string } | undefined)?.type === sumitCardTriggerDefinition.type,
   );
@@ -164,9 +164,10 @@ export default async function AdminWorkflowPage({
 
       <section className="space-y-2">
         {/*
-          Renders nothing; it only re-runs this page while a run is moving, so
-          the status column stops needing a manual reload. The statuses are the
-          ones already fetched above — no extra query, and no client-side copy of
+          Renders nothing; it re-runs this page when the runs below have changed
+          (a cheap fingerprint poll), so the status column stops needing a manual
+          reload. The statuses, which set the poll rate, are the ones already
+          fetched above — no extra query for them, and no client-side copy of
           the table to keep in sync. See runs-auto-refresh.tsx for why this is a
           refresh rather than the SSE stream the canvas uses.
 

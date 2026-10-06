@@ -129,7 +129,7 @@ describe('runCallReconcile', () => {
   });
 });
 
-// The other two reconcilers (2026-08-22 extension) share makeStuckAlerter's
+// The other two reconcilers share makeStuckAlerter's
 // dedup/cadence logic verbatim with runCallReconcile above — that logic is
 // already exercised in full detail there. These two blocks only need to
 // confirm (a) each one's own edge-triggered dedup state is genuinely

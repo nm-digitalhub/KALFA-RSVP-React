@@ -1,7 +1,7 @@
 'use client';
 
 // `trigger.sumit_card` — its palette entry. Editor side; `catalogue/schemas.ts`
-// places it in `PALETTE_ITEMS` at the index the inline entry held.
+// places it in `PALETTE_ITEMS`.
 //
 // The output fields come from the definition, so the variable picker reads one
 // declaration of what this node returns. For a workflow SUMIT has already

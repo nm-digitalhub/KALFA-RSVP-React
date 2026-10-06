@@ -56,8 +56,8 @@ export class SetupFormClosedError extends Error {
 }
 
 export interface SetupFormResult {
-  /** keys the operator explicitly skipped («דלג — אאמת ידנית») — the caller
-   * records them as openItems so /admin shows what was accepted unverified. */
+  /** keys the operator explicitly skipped («דלג — אאמת ידנית») — accepted
+   * unverified; the caller persists them via savePrevValue. */
   skippedKeys: string[];
 }
 
@@ -127,7 +127,7 @@ const PROBE_MEMBERS: ReadonlyMap<ProbeId, readonly string[]> = (() => {
 })();
 
 /** Probes actually implemented today; a null runner means the group passes on
- * format alone (graph/voximplant/ga4 runners land with the mutation phase). */
+ * format alone (graph/voximplant/ga4 have no runner yet). */
 function runnerFor(id: ProbeId): ((env: Record<string, string>) => Promise<ProbeOutcome>) | null {
   if (id === "vapid-local") return probeVapidLocal;
   if (id === "supabase-db") return probeSupabaseDb;

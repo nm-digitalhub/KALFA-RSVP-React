@@ -8,12 +8,13 @@
  *      WCAG AA against white text), web title "KALFA", header Compact/Strong,
  *      horizontal navigation.
  *   2. Page SitePages/Portal.aspx: strong-emphasis intro band (the Hero web part
- *      and full-width sections exist only on Communication sites), two Quick
- *      Links web parts (systems / archive), procedures + operational calendar
- *      in a one-third layout. Quick Links are verified after create and fall
- *      back to text link lists if they did not land.
+ *      and full-width sections exist only on Communication sites), three Quick
+ *      Links web parts (systems / archive / docs), procedures + operational
+ *      calendar in a one-third layout. Quick Links are verified after create and
+ *      fall back to text link lists if they did not land.
  *   3. Welcome page = Portal.aspx; navigation nodes; the portal pinned as a
- *      "SharePoint pages" tab in the KALFA RSVP team's General channel.
+ *      "SharePoint pages" tab, plus the Contracts and Customer-Agreements
+ *      libraries as Files tabs, in the KALFA RSVP team's General channel.
  *
  * Shared mechanics (auth, theme, logo, page building, gotchas) live in
  * scripts/lib/sharepoint.cjs. Idempotent; nothing is deleted except the page

@@ -38,7 +38,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
  * happened. 'פנייה בדואר' describes the CHANNEL — and the channel already has
  * its own column, `source`. So it duplicated a fact we already stored while
  * answering the wrong question, and produced a value matching no
- * `console_queues` row, which is what routing will key on (§E).
+ * `TOPIC_TO_QUEUE_KEY` entry (inquiry-intake.ts), which is what routing keys on.
  *
  * NULL is the honest value: "not yet classified" is real information, and a
  * wrong label is worse than an absent one. `source='outlook'` already says
@@ -281,9 +281,9 @@ export async function intakeMailAsInquiry(graphMessageId: string): Promise<MailI
 
   // Same contract as the web form: only the row id reaches Slack — never the
   // sender, subject or body. `topic` is deliberately NOT sent: it is null for
-  // mail intake now, `fields` is typed Record<string, string | number> so null
+  // mail intake, `fields` is typed Record<string, string | number> so null
   // would not even compile, and `source: 'outlook'` above already carries the
-  // one thing the old topic field was really saying.
+  // channel.
   void sendSlackAlert(
     looksUnmatched
       ? {
@@ -356,9 +356,10 @@ export async function runGraphIntakeSubscriptionSweep(): Promise<void> {
  * The fleet trigger is `status = 'new' AND draft_reply IS NULL`; on an inquiry
  * that was already answered `draft_reply` is populated, so setting `new` would
  * leave the row looking handled and the drafter would never wake — the reply
- * would sit unanswered with nothing reporting it. `reopened` is paired with a
- * trigger clause that compares reply_needed_at against draft_created_at, so the
- * row stays eligible until a draft is written AFTER the customer's message.
+ * would sit unanswered with nothing reporting it. `reopened` is paired with an
+ * eligibility clause (draft-reply in scripts/fleet-agent-cli.ts) that compares
+ * reply_needed_at against draft_created_at, so the row stays eligible until a
+ * draft is written AFTER the customer's message.
  *
  * `handled_at` is cleared for the same reason: the inquiry is open again.
  */
@@ -395,12 +396,11 @@ async function attachReplyToInquiry(
     throw new Error('שמירת תגובת הלקוח נכשלה', { cause: threadError });
   }
 
-  // Backfill thread_id, write-once — fixes a gap found during independent
-  // adversarial verification 2026-08-25: a web-form-originated row starts with
+  // Backfill thread_id, write-once: a web-form-originated row starts with
   // thread_id NULL (only mail intake's own new-inquiry branch ever sets it),
-  // so a tier-1 (ref_code) match never gave a LATER reply — one whose ref_code
-  // gets stripped or mangled in transit — a tier-2 (conversationId) fallback to
-  // land on. Runs even for a cancelled row: the thread link is a fact about the
+  // so without this a tier-1 (ref_code) match would never give a LATER reply —
+  // one whose ref_code gets stripped or mangled in transit — a tier-2
+  // (conversationId) fallback to land on. Runs even for a cancelled row: the thread link is a fact about the
   // conversation, not a verdict on it — the cancelled-guard below only skips
   // the status/cascade mutation. Never overwrites an existing thread_id: a
   // tier-2 match's row already carries this exact value by construction (its

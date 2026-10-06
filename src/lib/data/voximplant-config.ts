@@ -4,11 +4,10 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import type { VoximplantConfig } from '@/lib/voximplant/client';
 
 // Server-side reader of the admin-managed Voximplant config (app_settings, a
-// singleton with ADMIN-ONLY RLS). Fail-safe AND forward-compatible: the columns
-// are added by a pending migration, so until they exist `select('*')` simply
-// omits them and this resolves to null (fail-closed — the AI-call channel stays
-// off). Mirrors getWhatsAppConfig / getSumitServerConfig. Secrets never leave the
-// server and are never logged.
+// singleton with ADMIN-ONLY RLS). Fail-safe: `select('*')` simply omits any
+// column that does not exist, and this resolves to null (fail-closed — the
+// AI-call channel stays off). Mirrors getWhatsAppConfig / getSumitServerConfig.
+// Secrets never leave the server and are never logged.
 
 export type VoximplantServerConfig = {
   // Management API JWT auth (parsed from the stored service-account JSON) —
@@ -18,9 +17,7 @@ export type VoximplantServerConfig = {
   // the `OutCallAgent` rule, which runs the `RSVPAgent` AI bridge.
   // NOT 1494311: that is `OutCall`, the legacy DTMF `RSVP` scenario, and
   // CLAUDE.md forbids pointing the bridge at it. Verified against app_settings
-  // and the live rule table 2026-09-14; earlier comments here had the two
-  // swapped, which mattered because this field's admin placeholder offered the
-  // forbidden id as its example.
+  // and the live rule table 2026-09-14.
   ruleId: string;
   // ConsoleCallMeNow rule id, targeted by StartScenarios from
   // /api/call-me-now/verify. EMPTY STRING when no rule is bound yet — that
@@ -124,8 +121,8 @@ export async function getVoximplantCallbackSecret(): Promise<string | null> {
 // and sales-call-dispatch.ts's SalesCallDispatchConfig (minus appOrigin, which
 // the caller resolves separately via getAppOrigin()) — those files take this
 // as a plain parameter rather than reading app_settings themselves (see their
-// own doc comments), so this is the resolver whoever builds the confirmation-
-// dispatch / sales-dispatch sweep should call.
+// own doc comments), so this is the resolver the worker's meeting-confirm and
+// sales-call dispatch job handlers call.
 export type PersonaDispatchConfig = {
   auth: VoximplantConfig;
   ruleId: string;
@@ -136,7 +133,7 @@ export type PersonaDispatchConfig = {
   callsEnabled: boolean;
 };
 
-// Shared resolver for both new personas: same service-account/caller/balance
+// Shared resolver for both personas: same service-account/caller/balance
 // thresholds as the base RSVP config (one Voximplant account), but each
 // persona has its OWN enabled toggle and rule_id — NOT the base config's
 // voximplant_live_calls/voximplant_rule_id (the RSVPAgent bridge rule,
@@ -198,7 +195,7 @@ export async function getSalesCallDispatchConfig(): Promise<PersonaDispatchConfi
   );
 }
 
-// Narrow config for the account-callback verified balance pull (B5): the
+// Narrow config for the account-callback verified balance pull: the
 // service-account auth + the two thresholds ONLY. Deliberately does NOT require
 // rule_id/caller_id — a balance alert must work whether or not dialing is
 // configured (number-rent decay matters while calls are off), and the callback's

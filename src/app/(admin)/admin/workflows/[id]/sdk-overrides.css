@@ -44,7 +44,7 @@ code, kbd, samp, pre {
    The SDK's own app bar, mounted in our header.
 
    `<WorkflowBuilder.TopBar />` is the un-Suspended `AppBarContainer` (verified
-   in dist/index.js: the export resolves to `Lb`, not the lazy wrapper the
+   in dist/index-*.js: the export resolves to `Lb`, not the lazy wrapper the
    DefaultLayout uses), so its root `<div>` is the DIRECT child of our header —
    which is what makes `> div` a precise, hash-free handle on it.
    ------------------------------------------------------------------------ */
@@ -143,7 +143,7 @@ code, kbd, samp, pre {
    RTL REPAIRS FOR THE PROPERTIES PANEL.
 
    ⚠️ THE SDK HAS NO RTL SUPPORT AT ALL, and that is measured rather than
-   assumed. `dist/style.css` (416 KB) contains ZERO `[dir=rtl]` selectors and
+   assumed. `dist/style.css` contains ZERO `[dir=rtl]` selectors and
    ZERO logical properties — no `margin-inline-*`, no `padding-inline-*`, no
    `inset-inline-*` — against 78 physical `left`/`right`/`margin-left`
    declarations. Their own theming guide says nothing about direction either.
@@ -257,7 +257,7 @@ code, kbd, samp, pre {
      which the SDK has no equivalent of, have to say it out loud.
 
      LOGICAL properties, and that part is NOT copied from them: their sheet
-     carries 99 physical `left`/`right`/`margin-left` declarations and zero
+     carries 78 physical `left`/`right`/`margin-left` declarations and zero
      logical ones, and neither the stylesheet nor a single page of their
      documentation mentions RTL. Writing `right: 0` here would put the palette on
      the correct side in their world and the wrong one in ours. */

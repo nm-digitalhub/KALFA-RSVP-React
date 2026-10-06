@@ -16,12 +16,10 @@ import {
 /**
  * Compare two already-resolved strings.
  *
- * Takes the LEFT-HAND VALUE, not a field name. That is the whole opening: the
- * left side used to be an index into the trigger payload, so a condition could
- * only ever ask about the inbound message. Now `resolveConfigTemplates` has
- * already turned `{{nodes.<id>.value}}` — or any other reference — into text by
- * the time this runs, and this function no longer knows or cares where the
- * string came from.
+ * Takes the LEFT-HAND VALUE, not a field name. That is the whole opening: by
+ * the time this runs, `resolveConfigTemplates` has already turned
+ * `{{nodes.<id>.value}}` — or any other reference — into text, and this
+ * function does not know or care where the string came from.
  */
 export function compareValues(
   actual: string,
@@ -59,8 +57,8 @@ export function compareValues(
  * @deprecated NOTHING CALLS THIS ANY MORE. It is the shape the pre-`left`
  * diagrams evaluate under — read a field off the trigger payload and defer to
  * {@link compareValues} — but the handler below does that read inline, and
- * neither `dry-run`'s trace nor any test names it now. Deleting it is a separate
- * decision from the node-folder move, which promised no behaviour change.
+ * neither `dry-run`'s trace nor any test names it now. It can be deleted
+ * without a behaviour change.
  */
 export function evaluateCondition(
   field: ConditionField,
@@ -75,21 +73,14 @@ export function evaluateCondition(
 // whose `sourceHandle` matches — by `===`, with no normalisation on either side —
 // and prunes the rest.
 //
-// CORRECTED 2026-09-09. This returned 'true' / 'false', and the comment here
-// asserted that "the editor's two branches must be drawn with handles 'true' and
-// 'false'" as though that were arrangeable. It was not: those strings are not
-// handle ids and the editor could never emit one. A node drawn from the palette
-// carried a single source handle spelled 'source', so BOTH outgoing edges
-// matched neither port, every condition pruned both branches, and the run ended
-// `execution_incomplete` with a DeadEnd. The unit tests hand-built their edges
-// with `sourceHandle: 'true'` and so agreed with the comment rather than with
-// the editor — which is why tsc, eslint, the suite and the build all passed over
-// a node type that could not work.
+// The ports are `CONDITION_BRANCH_HANDLES`, the same ids the palette seeds into
+// `decisionBranches` and the SDK's decision renderer puts on the handles. They
+// are handle ids, not the bare strings 'true' / 'false': the editor can never
+// emit those, so a port named that way would match neither outgoing edge, both
+// branches would be pruned, and the run would end `execution_incomplete` with a
+// DeadEnd.
 //
-// The ports are now `CONDITION_BRANCH_HANDLES`, the same ids the palette seeds
-// into `decisionBranches` and the SDK's decision renderer puts on the handles.
-//
-// Naming a port is still a promise of a live route: if no edge carries that
+// Naming a port is a promise of a live route: if no edge carries that
 // handle the run ends `incomplete` with a DeadEnd naming this node. That is the
 // intended reading — a condition wired to only one branch genuinely has a dead
 // end on the other — and it surfaces to the owner instead of passing silently.

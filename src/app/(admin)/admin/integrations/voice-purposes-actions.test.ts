@@ -55,7 +55,7 @@ beforeEach(() => {
   });
 });
 
-// The tests above stub an empty account so each one exercises its own subject.
+// The tests below stub an empty account so each one exercises its own subject.
 // These two prove the guard is actually WIRED INTO both actions — without them a
 // refactor could drop the readRuleIdClaims call and every other test would still
 // pass, while the panel happily pointed two purposes at one rule.

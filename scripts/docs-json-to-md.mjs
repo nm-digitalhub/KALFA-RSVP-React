@@ -26,10 +26,10 @@ const pages = JSON.parse(readFileSync(INPUT, 'utf-8'));
 // it. Without this, /docs/nodes/ lands as `nodes.md` sitting BESIDE a `nodes/`
 // directory — legal on disk, and misleading to anyone reading the tree.
 function makePathFor(allUrls) {
-  // The path prefix to strip is DERIVED, not assumed. This used to be a
-  // hardcoded /docs/, which silently produced a wrong tree for any site that
-  // does not serve its documentation under that path — every page landed at
-  // the repo root instead of under its section.
+  // The path prefix to strip is DERIVED, not assumed. A hardcoded /docs/ would
+  // silently produce a wrong tree for any site that does not serve its
+  // documentation under that path — every page would land at the repo root
+  // instead of under its section.
   const paths = allUrls.map((u) => new URL(u).pathname);
   const firstSegments = new Set(paths.map((p) => p.split('/').filter(Boolean)[0]));
   const BASE = firstSegments.size === 1 ? `/${[...firstSegments][0]}` : '';
@@ -81,10 +81,9 @@ function render(page) {
   }
 
   // Links that leave the documentation site itself. The origin is taken from
-  // the page being rendered rather than hardcoded — the previous literal
-  // ('https://www.workflowbuilder.io/docs/') meant that on any other site NO
-  // link matched, so the whole navigation sidebar was written out as
-  // "external" on every page.
+  // the page being rendered rather than hardcoded — a fixed site URL would match
+  // NO link on any other site, so the whole navigation sidebar would be written
+  // out as "external" on every page.
   const { origin } = new URL(page.url);
   const external = page.hyperlinks
     .filter((l) => l.url.startsWith('http'))

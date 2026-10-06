@@ -1,8 +1,8 @@
 'use client';
 
 // `trigger.whatsapp_inbound` — its palette entry. Editor side; `catalogue/schemas.ts`
-// places it in `PALETTE_ITEMS` at the index the inline entry held, and
-// `buildPaletteItems` swaps its schema for one carrying the live numbers.
+// places it in `PALETTE_ITEMS`, and `buildPaletteItems` swaps its schema for one
+// carrying the live numbers.
 //
 // The output fields come from the definition, so the variable picker reads one
 // declaration of what this node returns.

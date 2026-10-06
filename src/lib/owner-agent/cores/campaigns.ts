@@ -37,9 +37,10 @@ export const WINDDOWN_STATUSES: readonly CampaignStatus[] = [
 ];
 
 // A campaign whose hold never went through never leaves status='approved'
-// (activateCampaign requires capture_status='authorized' — campaigns.ts:889),
-// so on its own it would never satisfy WINDDOWN_STATUSES above and would stay
-// permanently invisible on the admin screen. These are exactly the states an
+// (activateCampaign requires capture_status='authorized' for a pay-per-result
+// campaign — transitionCampaignStatus in data/campaigns.ts), so on its own it
+// would never satisfy WINDDOWN_STATUSES above and would stay permanently
+// invisible on the admin screen. These are exactly the states an
 // admin needs to see: a stuck lock (pending, e.g. a crash between the hold
 // request and its outcome), a declined hold, or an ambiguous/needs-manual-
 // reconciliation outcome. Matches the same three values markCampaignHoldFailed/

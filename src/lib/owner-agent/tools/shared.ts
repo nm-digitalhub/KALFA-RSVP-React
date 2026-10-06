@@ -4,14 +4,15 @@ import { z } from 'zod';
 import { OWNER_AGENT_RANGES } from '@/lib/owner-agent/range';
 
 // Shared pieces of the owner agent's nine read-only Mastra tools (plan §5,
-// stage 5). Nothing here runs a model or is wired to anything that runs: stage
-// 6 builds the Agent and hands it toolsForPermissions() (./registry.ts).
+// stage 5). Nothing here runs a model: the MCP servers (../mcp/server.ts for
+// the `claude -p` run, src/app/api/mcp for the HTTP endpoint) serve
+// toolsForPermissions() (./registry.ts).
 
 // The six platform permission keys the §5 table assigns to the tools. All six
 // exist in public.platform_permission_definitions (measured 2026-09-24, keys
-// only). A later stage resolves the staff member's grants server-side
-// (has_platform_permission_for_user, plan §3.2) and offers only the tools whose
-// key is granted. The model never sees or chooses a permission.
+// only). The caller resolves the staff member's grants server-side
+// (has_platform_permission_for_user, plan §3.2) and only the tools whose key is
+// granted are offered. The model never sees or chooses a permission.
 export const OWNER_AGENT_PERMISSIONS = [
   'view_customer_data',
   'manage_billing',
@@ -52,15 +53,6 @@ export function countsByKey<const K extends string>(keys: readonly K[]) {
   return z.object(shape);
 }
 
-// Validate a core's result against the tool's output schema BEFORE it leaves
-// execute(). Two reasons:
-//   - zod's default object mode STRIPS unknown keys, so a field a core adds
-//     later (say, a name) is dropped here instead of reaching the model;
-//   - a mismatch throws a bare code. Mastra's own output validation would
-//     instead return "Tool output validation failed … Returned output: <the
-//     output>" to the model, i.e. echo the values. Our parse runs first, so a
-//     value never travels inside an error message.
-// Output schemas are therefore never .strict(): strip is the safe mode here.
 // MCP tool annotations (spec 2025-03-26 "Tool annotations"), the same on all
 // nine tools: each only reads (head counts and aggregate RPCs), changes
 // nothing, and returns the same thing for the same arguments at one instant.
@@ -77,6 +69,15 @@ export const READ_ONLY_TOOL_MCP = {
   },
 } as const satisfies MCPToolProperties;
 
+// Validate a core's result against the tool's output schema BEFORE it leaves
+// execute(). Two reasons:
+//   - zod's default object mode STRIPS unknown keys, so a field a core adds
+//     later (say, a name) is dropped here instead of reaching the model;
+//   - a mismatch throws a bare code. Mastra's own output validation would
+//     instead return "Tool output validation failed … Returned output: <the
+//     output>" to the model, i.e. echo the values. Our parse runs first, so a
+//     value never travels inside an error message.
+// Output schemas are therefore never .strict(): strip is the safe mode here.
 export function parseToolOutput<S extends z.ZodType>(
   schema: S,
   value: unknown,

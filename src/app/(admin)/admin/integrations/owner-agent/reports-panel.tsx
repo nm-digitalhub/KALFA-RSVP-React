@@ -37,8 +37,8 @@ import {
 // The proactive report (plans/owner-agent-chat-sdk-capabilities-plan.md §4.8): the
 // reports switch, the two templates used outside the 24h window (the numeric report's
 // and the instructions report's), per allow-list row the
-// opt-in and the daily hours, and the recent runs. Owner decision 27.9: the schedule is
-// set here and only here.
+// opt-in and the daily hours, and the recent runs. The schedule is set here and only
+// here.
 //
 // What the screen can promise and what it cannot: the report still passes every gate
 // at send time (the agent switch, this switch, the number, the row, the identity, the
@@ -310,8 +310,8 @@ const slotRow = (time: string, instructions: string | null = null) => ({
 
 function ScheduleForm({ entry, schedule }: { entry: OwnerAgentAllowlistEntry; schedule: OwnerAgentReportSchedule }) {
   const [state, action] = useActionState(setOwnerAgentReportScheduleAction, null);
-  // Any whole-minute time (owner decision 27.9). A row that never had a schedule is
-  // offered the owner's own request (08:00, 00:00); nothing is saved until "שמירה".
+  // Any whole-minute time. A row that never had a schedule is offered the owner's own
+  // request (08:00, 00:00); nothing is saved until "שמירה".
   const [slots, setSlots] = useState(() =>
     schedule.configured
       ? schedule.slots.map((s) => slotRow(s.time, s.instructions))

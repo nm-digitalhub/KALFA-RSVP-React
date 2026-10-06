@@ -16,12 +16,13 @@ import type { TablesUpdate } from '@/lib/supabase/types';
 // human_agent_call_legs is the accountable record of the attach: who, which
 // call, which mode, and — filled later by the scenario's callbacks — when the
 // leg connected and disconnected. The route creates the 'requested' row; the
-// scenario advances it. That table is closed to every client role, written only
+// scenario advances it. Clients cannot insert legs and may only update their own
+// device columns (vox_sdk_call_id, device_id); the leg itself is written only
 // through the service-role client here.
 
 export type AttachMode = 'monitor' | 'takeover';
 
-/** OFF until the conference scenario is deployed and verified on a live call. */
+/** The kill switch: app_settings.monitor_enabled, which defaults to false. */
 export async function monitorEnabled(): Promise<boolean> {
   const admin = createAdminClient();
   const { data } = await admin

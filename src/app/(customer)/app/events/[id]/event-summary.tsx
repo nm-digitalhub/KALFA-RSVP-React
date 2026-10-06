@@ -333,8 +333,8 @@ export function EventSummary({
       {/* No "create another event" affordance here, by owner ruling: a private
           customer who just finished their wedding is not looking to start
           another one, and offering it is the event-producer framing this whole
-          screen exists to remove. The sidebar already reaches /app/events/new
-          for the rare second event. */}
+          screen exists to remove. A customer account holds one event anyway
+          (canCreateEvent). */}
     </div>
   );
 }

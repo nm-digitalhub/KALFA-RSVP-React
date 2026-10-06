@@ -32,7 +32,7 @@ import {
 
 // Goals inside a conversation (plan D7): a pinned strip at the top of the
 // conversation ONLY while a goal is active or paused, a Sheet from the
-// composer's "+" to start one, and system lines in the stream when a goal
+// composer's goal button to start one, and system lines in the stream when a goal
 // opens or closes (rendered by the stream, not here).
 
 // ── Pinned strip ─────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ function GoalStripItem({ goal }: { goal: FleetGoalEntry }) {
   );
 }
 
-// ── New goal (from the composer's "+") ───────────────────────────────────────
+// ── New goal (from the composer's goal button) ───────────────────────────────
 // `side` is physical in sheet.tsx: "left" is the inline END in RTL on desktop;
 // a bottom sheet on phones. Portaled content takes its direction from the
 // root DirectionProvider — not re-wrapped here.
@@ -302,11 +302,10 @@ function AbandonGoalForm({ goalId }: { goalId: string }) {
 }
 
 // goal.last_error is an overloaded column: fleet_goal_close writes its closing
-// note there via p_note REGARDLESS of status (§1.7), so a goal that finished
+// note there via p_note REGARDLESS of status, so a goal that finished
 // successfully carries its summary in the same field a real failure would.
-// Labeling and coloring it as "error" unconditionally made every completed
-// goal read as if something had broken — the tone now follows the goal's own
-// status instead of assuming the worst.
+// The label and tone therefore follow the goal's own status instead of
+// assuming an error.
 const GOAL_NOTE_LABEL: Record<string, string> = {
   active: 'שגיאה אחרונה (הסוכן ממשיך):',
   paused: 'שגיאה שהובילה להשהיה:',
@@ -329,12 +328,10 @@ const GOAL_NOTE_LABEL_TONE: Record<string, string> = {
 };
 
 // A card, not a table row: a goal can show up to two forms at once
-// (pause/resume + close, the latter with a text field) — the same shape
-// PendingRequestCard already solves. The read-only history table has no forms
-// and is not the right template here.
+// (pause/resume + close, the latter with a text field).
 function GoalCard({ goal }: { goal: FleetGoalEntry }) {
-  // Same pattern as preparedCommand in PendingRequestCard above: typeof/
-  // Array.isArray before reading a field out of Json, not an assumed shape.
+  // typeof/Array.isArray before reading a field out of Json, not an assumed
+  // shape.
   const nextAction =
     goal.state &&
     typeof goal.state === 'object' &&
@@ -387,11 +384,10 @@ function GoalCard({ goal }: { goal: FleetGoalEntry }) {
         ) : null}
 
         {/* Boxed and tone-matched to the goal's actual status (see the three
-            GOAL_NOTE_* maps above) — this is where "completed" used to render
-            identically to "failed", both in alarming red. Label and body sit
-            on separate lines with relaxed leading: agent-written reports are
-            often one long unbroken paragraph of stats, and that reads as
-            cramped at the previous tight line-height with no room around it. */}
+            GOAL_NOTE_* maps above), so "completed" does not read like "failed".
+            Label and body sit on separate lines with relaxed leading:
+            agent-written reports are often one long unbroken paragraph of
+            stats, which reads as cramped at a tight line-height. */}
         {goal.last_error ? (
           <div
             className={`rounded-md border p-4 ${

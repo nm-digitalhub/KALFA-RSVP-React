@@ -12,10 +12,8 @@ import { STEP_HANDLERS, evaluateSwitchBranch, type StepContext } from './index';
 
 // `logic.switch` — N owner-defined branches, each with its own condition rows.
 //
-// REWRITTEN 2026-09-13 off a fixed `case1/case2/case3` API. The old suite tested
-// three string fields; the node now carries the SDK's `DecisionBranches` shape,
-// so the branches, their labels, their ports and their conditions all come from
-// the diagram.
+// The node carries the SDK's `DecisionBranches` shape, so the branches, their
+// labels, their ports and their conditions all come from the diagram.
 //
 // The port a handler names is the whole behaviour: `isEdgeLive` fires the
 // outgoing edge whose sourceHandle matches by `===` and prunes the rest, so a
@@ -243,8 +241,8 @@ describe('logic.switch — the AND/OR join is ONE per branch, read off row 0', (
   // MEASURED in the shipped control: the picker renders with
   // `shouldShowOperator: index === 0 && lastIndex !== 0` and writes to that row
   // alone; every row the owner adds carries the module default 'AND' forever.
-  // An earlier version of the handler folded over each row's own field, which
-  // read 'AND' off row 2 and quietly ANDed a branch the owner set to OR.
+  // A handler that folded over each row's own field would read 'AND' off row 2
+  // and quietly AND a branch the owner set to OR.
   //
   // Each fixture below therefore sets OR on row 0 and leaves 'AND' on row 1 —
   // exactly what the control persists — and asserts the OR is honoured.
@@ -283,9 +281,9 @@ describe('logic.switch — the AND/OR join is ONE per branch, read off row 0', (
   });
 
   it("row 1's operator is IGNORED — it is inert in the control", async () => {
-    // The proof that the fold is gone. Under the old code this pair read OR off
-    // row 1 and matched; under the control's real semantics the branch is AND
-    // (row 0 says so) and must NOT match.
+    // The proof that there is no per-row fold. A fold would read OR off row 1
+    // and match; under the control's real semantics the branch is AND (row 0
+    // says so) and must NOT match.
     expect(evaluateSwitchBranch([TRUE, { ...FALSE, logicalOperator: 'OR' }])).toBe(false);
   });
 

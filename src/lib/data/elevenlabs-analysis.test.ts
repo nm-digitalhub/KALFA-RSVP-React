@@ -9,10 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // captures the upsert row so we can assert what is (and isn't) persisted.
 vi.mock('server-only', () => ({}));
 // `otherAttemptMock` covers the four NON-call_attempts tables the resolver also
-// walks. Before 2026-09-15 only `call_attempts` was ever reached from here, so
-// one mock was enough; now the sales/meeting/purpose path resolves too, and a
-// table with no stub would throw inside the resolver and be swallowed as an
-// orphan — hiding the very behaviour these tests check.
+// walks. A table with no stub would throw inside the resolver and be swallowed
+// as an orphan — hiding the very behaviour these tests check.
 const { attemptMock, otherAttemptMock, guestMock, upsertMock } = vi.hoisted(() => ({
   attemptMock: vi.fn(),
   otherAttemptMock: vi.fn(),

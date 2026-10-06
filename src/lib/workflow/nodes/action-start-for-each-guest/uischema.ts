@@ -19,8 +19,8 @@ export const forEachGuestUiSchema: UISchema = {
     {
       // ⚠️ THE WARNING BELONGS WHERE THE DAMAGE IS CONFIGURED. This node starts
       // one run per matching guest — a single press reaches hundreds of real
-      // people — and until now the only thing saying so was the node's
-      // `description`, which is a subtitle on a card and is read once.
+      // people — and the node's `description` is only a subtitle on a card,
+      // read once.
       //
       // `RichText` renders Markdown, so the number an owner is about to choose
       // can be emphasised in the sentence that explains it. It binds to no
@@ -40,8 +40,7 @@ export const forEachGuestUiSchema: UISchema = {
       // Label beside the field rather than above it, with the `*` on the LABEL —
       // the shape the SDK's own Delay node uses for its required numeric field,
       // paired with `errorIndicatorEnabled: false` so one problem draws one
-      // marker. The wait node's amount/unit row already reads this way; this
-      // field did not, and it is the one with the largest blast radius.
+      // marker. This is the field with the largest blast radius.
       type: 'HorizontalLayout',
       layoutColumns: '1fr 1fr',
       elements: [

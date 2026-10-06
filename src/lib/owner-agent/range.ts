@@ -19,8 +19,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 //   30d   — rolling 30 × 24h ending now.
 //
 // The rolling definition for 7d/30d is deliberate: it is the definition the
-// /admin/voice page already uses for its "7 ימים" tiles (voice-ops.ts,
-// `nowMs - 7 * 24h`), so the agent and that page agree on the same number.
+// /admin/voice page uses for its "7 ימים" tiles (voice-ops.ts calls the same
+// voice core with '7d'), so the agent and that page agree on the same number.
 //
 // Known edge: ilWallTimeToIso() probes the UTC offset at NOON of the given day,
 // so on the two DST-switch days a year the computed Israel midnight is off by

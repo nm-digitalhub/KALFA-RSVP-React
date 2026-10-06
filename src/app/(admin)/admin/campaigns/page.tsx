@@ -75,8 +75,8 @@ function HoldCell(c: {
 // Admin campaign wind-down list. The four lifecycle controls (close/pause/
 // settle/cancel) are platform-admin-only, so this surface lets an admin REACH
 // campaigns of events they do not own and click through to manage them.
-// Authorization is enforced by the /admin layout (requireAdmin) and again in
-// listCampaignsForAdmin.
+// Authorization is enforced by the /admin layout (requirePlatformStaff) and
+// again in listCampaignsForAdmin (requirePlatformPermission).
 export default async function AdminCampaignsPage() {
   // Optimistic gate: redirect early instead of rendering an empty page. The
   // real enforcement is per-function in the DAL.

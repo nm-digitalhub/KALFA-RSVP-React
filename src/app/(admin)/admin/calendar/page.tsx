@@ -8,8 +8,8 @@ import { AdminExchangeCalendar } from './calendar-client';
 
 export const metadata: Metadata = { title: 'יומן Exchange' };
 
-// Admin-only Exchange calendar (owner ruling 27.07: business-management
-// feature, never customer-facing). Authorization is enforced in the data
+// Admin-only Exchange calendar (a business-management feature, never
+// customer-facing). Authorization is enforced in the data
 // layer — every DAL call requires requirePlatformPermission('manage_settings')
 // — on top of the /admin layout's admin gate.
 export default async function AdminCalendarPage() {

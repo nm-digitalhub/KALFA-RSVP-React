@@ -110,11 +110,11 @@ export const errorPolicyOptions = {
  * the list is written twice: once here in a shape the SDK owns, once there in a
  * shape the server can hold.
  *
- * Nothing guarded the two against each other. The values are not decorative —
- * the vendored runner compares `node.errorPolicy` against exactly these strings
- * (graph-runner.ts `resolveErrorPolicy`), so an SDK release that renames or adds
- * one would leave every node carrying a policy the runner no longer understands,
- * with a green build and a green test suite.
+ * Without the check below, nothing would guard the two against each other. The
+ * values are not decorative — the vendored runner compares `node.errorPolicy`
+ * against exactly these strings (graph-runner.ts `resolveErrorPolicy`), so an SDK
+ * release that renames or adds one would leave every node carrying a policy the
+ * runner no longer understands, with a green build and a green test suite.
  *
  * `errorPolicyProperty` is the SDK's own declaration of that union. Assigning
  * across it in both directions is a compile-time check that costs nothing at run
@@ -130,9 +130,7 @@ void _errorPoliciesMatchTheSdk;
 
 // Per-step Active / Draft / Disabled.
 //
-// `NODE_STATUSES` was declared early and then wired to nothing — the field
-// existed in the vocabulary, appeared in no form, and was read by no runner.
-// Every built-in node in the vendor's library carries it (`nodes/decision.md`,
+// Every built-in node in the vendor's library carries this field (`nodes/decision.md`,
 // `nodes/delay.md`: "Status  Dropdown  Active / Draft / Disabled"), and the SDK
 // exports the canonical option set WITH its status icons, which is why the
 // `value` and `icon` here are taken from `statusOptions` rather than retyped.
@@ -268,8 +266,8 @@ export const triggerSwitchElement = {
   options: { format: TRIGGER_SWITCH_FORMAT },
 } as const;
 
-// The one control, spelled once. Every node's uischema ends with it, so the
-// switch sits in the same place on every panel.
+// The one control, spelled once. Every node's uischema carries it near the end, so
+// the switch sits in the same place on every panel.
 export function statusControl(scope: string): UISchema {
   return { type: 'Select', scope, label: 'מצב הצעד' };
 }
@@ -278,8 +276,8 @@ export function statusControl(scope: string): UISchema {
  * The two fields every node carries and the owner may edit: what the step is
  * called, and the line under it.
  *
- * ⚠️ `description` WAS REQUIRED ON ALL EIGHTEEN NODE TYPES AND EDITABLE ON NONE,
- * and every part of that sentence was measured before this control was added.
+ * ⚠️ `description` IS REQUIRED ON EVERY NODE TYPE, SO EVERY NODE TYPE MUST OFFER A
+ * CONTROL FOR IT. The measurements below date from when this control was added.
  *
  *   • REQUIRED: it appears in every entry of `NODE_REQUIRED_FIELDS`, so
  *     `arm-check.ts` refuses to arm a workflow whose node has it blank.
@@ -288,18 +286,18 @@ export function statusControl(scope: string): UISchema {
  *     `<span class="subtitle">{description}</span>`, and all four node templates
  *     — default, decision, start and collapsible — call it. It is the second
  *     line on every card on the canvas.
- *   • NOT DEFAULT TEXT: the live database holds ELEVEN distinct descriptions
+ *   • NOT DEFAULT TEXT: the live database held ELEVEN distinct descriptions
  *     across 22 stored nodes — "מחפש את המילה כן בגוף ההודעה" on a condition,
  *     five different ones across five `notify_team` nodes. They are real,
  *     per-node sentences.
- *   • AND WRITTEN ONLY BY US: every one of those strings is authored in
- *     `catalogue/templates/` or in a palette `defaultPropertiesData`. The owner could
- *     read the subtitle on the card and had no way to change it, because no
- *     uischema declared a control for it — measured: 0 of 18.
+ *   • AND SEEDED ONLY BY US: every one of those strings is authored in
+ *     `catalogue/templates/` or in a palette `defaultPropertiesData`. The owner
+ *     reads the subtitle on the card, so a control in the panel is the only way
+ *     for them to change it.
  *
- * So the model said "the owner supplies this", the canvas showed it to them,
- * the arm gate refused a blank one, and the panel offered no way to type it.
- * This closes that, in our own layout rather than through the SDK's
+ * So the model says "the owner supplies this", the canvas shows it to them, and
+ * the arm gate refuses a blank one — which is why the panel has to let them type
+ * it. That is done in our own layout rather than through the SDK's
  * `generalInformation` fragment — that one ships an English label inside the
  * schema and folds title/status/description into an Accordion, which is a
  * different panel shape on every node and a change nobody asked for.
@@ -326,9 +324,8 @@ export function identityControls(labelScope: string, descriptionScope: string): 
       // note about its label; putting it under the fields would make the owner
       // scroll past the thing they are being told is wrong.
       //
-      // The scope is derived rather than passed so that adding this cost no call
-      // site a change — every uischema already spreads `identityControls`, and
-      // the alternative was editing twenty-two of them by hand.
+      // The scope is derived rather than passed so that no call site has to name
+      // it — every uischema already spreads `identityControls`.
       type: 'MessageOnError',
       scope: labelScope.replace(/label$/, ARM_NOTICE_PATH.slice(1)),
     },

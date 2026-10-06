@@ -64,9 +64,9 @@ describe('findVoiceDialBlockers', () => {
   });
 
   it('PASSES a rule-less purpose when the node supplies the rule itself', async () => {
-    // ⚠️ THE INVERSION THIS GATE MUST NOT MAKE. Before the node carried dial
-    // parameters, a purpose with no rule was undialable full stop. Checking only
-    // the purpose here would refuse to arm a workflow that dials correctly.
+    // ⚠️ THE INVERSION THIS GATE MUST NOT MAKE. A purpose with no rule is still
+    // dialable when the node supplies one. Checking only the purpose here would
+    // refuse to arm a workflow that dials correctly.
     purposesMock.mockResolvedValue([{ ...PURPOSE, ruleId: null }]);
     await expect(findVoiceDialBlockers(diagram({ ruleId: '1520915' }))).resolves.toEqual([]);
   });

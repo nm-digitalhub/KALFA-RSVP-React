@@ -20,9 +20,9 @@ const sectionClass = 'space-y-3';
 // channel is actually used for, the key's remaining life, and a test send.
 //
 // ⚠️ ONE LIVE CALL PER RENDER, AND THAT IS A DELIBERATE EXCEPTION. The status card
-// asks ExtrA GET /auth/key/ on every page load. That is the same shape of thing this
-// branch refused to do for /admin/integrations/voximplant — but the situations differ
-// in the way that matters: getVoicePlatformView() made THREE calls on a page that is
+// asks ExtrA GET /auth/key/ on every page load. That is the same shape of thing
+// /admin/integrations/voximplant refuses to do — but the situations differ
+// in the way that matters: getVoicePlatformView() would make THREE calls on a page that is
 // RSC-prefetched from the sidebar of every other admin page, while this page is
 // reached only by clicking its card and makes one ~0.7s call. The alternative is
 // showing an expiry date read from nothing, since the daily queue's result is not

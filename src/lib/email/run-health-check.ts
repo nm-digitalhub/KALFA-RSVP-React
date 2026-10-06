@@ -37,7 +37,7 @@ const NOT_A_FAULT = new Set(['key_restricted', 'rate_limited']);
 /**
  * Read the settings, pick the transport, run the probe. NO alerting.
  *
- * Split out of runEmailHealthCheck so /admin/integrations/outgoing-email can show the
+ * Split out of runEmailHealthCheck so /admin/integrations/resend-email can show the
  * same verdict without a page render firing Slack. One definition of "which transport
  * is live and is it healthy" — the scheduled job below adds the alerting policy on top
  * rather than re-deriving the answer.

@@ -7,8 +7,8 @@ import { normalizePhone } from '@/lib/phone';
 // Admin: Do-Not-Call list for the Voximplant AI-call channel. A phone on this
 // list is skipped by the dispatcher's DNC gate (isDncListed,
 // outreach-engine.ts) which matches on the SAME canonical form. The list is
-// governed by the admin-only RLS policy `call_dnc_list_admin_all` (has_role
-// admin), so writes go through the cookie-based server client (not
+// governed by the admin-only RLS policy `call_dnc_list_admin_all`
+// (is_platform_staff()), so writes go through the cookie-based server client (not
 // service-role). The stored key MUST be the normalizePhone() E.164 form so the
 // runtime gate finds it. Columns: normalized_phone (PK) / reason / added_by /
 // created_at (added_by + created_at default at the DB — never client-supplied).
@@ -21,7 +21,7 @@ export async function addToCallDnc({
   phone,
   reason,
 }: AddToCallDncInput): Promise<AddToCallDncResult> {
-  // requireAdmin returns the authenticated admin — recorded as `added_by` for
+  // requirePlatformPermission returns the authenticated admin — recorded as `added_by` for
   // auditability (who blocked this number), per CLAUDE.md's admin-action audit
   // requirement. On re-add of an existing number the upsert refreshes added_by.
   const admin = await requirePlatformPermission('manage_voice');
@@ -51,8 +51,8 @@ export type CallDncEntry = {
   created_at: string;
 };
 
-// Read-only list for the admin surface (newest first, capped). requireAdmin +
-// the admin-only RLS policy both gate the read.
+// Read-only list for the admin surface (newest first, capped).
+// requirePlatformPermission + the admin-only RLS policy both gate the read.
 export async function listCallDnc(): Promise<CallDncEntry[]> {
   await requirePlatformPermission('manage_voice');
   const supabase = await createClient();

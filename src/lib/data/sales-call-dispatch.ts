@@ -36,7 +36,7 @@ import {
 import { startScenarios } from '@/lib/voximplant/mutations';
 
 // The outbound dispatcher for the sales-closing agent's call on a
-// callback_requests row (topic = 'מכירות'; sales-closing plan §5.2/§11a) —
+// callback_requests row (topic = 'מכירות'; sales-closing plan §5.2) —
 // NOT dispatchOutreachCall, structurally incompatible with a row that has no
 // campaign/event/guest (confirmed independently by both this repo's plans and
 // by reading dispatchOutreachCall in full). Same proven pattern as
@@ -48,72 +48,58 @@ import { startScenarios } from '@/lib/voximplant/mutations';
 // only — whether StartScenarios itself succeeded (dialed / failed_to_start /
 // start_unknown). It NEVER calls applyCallOutcome and NEVER WRITES
 // callback_requests.call_outcome or sales_call_attempts.outcome_recorded_at.
-// It DOES now read outcome_recorded_at once, read-only, purely to decide
+// It reads outcome_recorded_at once, read-only, purely to decide
 // whether to dial again — see getUnresolvedSalesAttempt's own doc comment
 // and gate 2b below.
 //
-// The full outcome-write picture (auth-authz-guardian's review 2026-08-22,
-// corrected by whatsapp-sales-link-real-build 2026-08-22) is FOUR separate
-// write paths sharing ONE outcome_recorded_at claim on sales_call_attempts,
-// split by trust level (the same split RSVPAgent already establishes between
-// its telephony-truth cb callback and its guest-asserted agent-tool routes):
-//   1. no_answer  — owned by the SCENARIO'S TERMINAL CALLBACK route (not yet
-//      built; mirrors RSVPAgent's postFinalCallbackOnce/terminalStatus()),
+// The full outcome-write picture is FOUR separate write paths sharing ONE
+// outcome_recorded_at claim on sales_call_attempts, split by trust level (the
+// same split RSVPAgent already establishes between its telephony-truth cb
+// callback and its guest-asserted agent-tool routes):
+//   1. no_answer  — owned by the SCENARIO'S TERMINAL CALLBACK route
+//      (sls/cb; mirrors RSVPAgent's postFinalCallbackOnce/terminalStatus()),
 //      the moment Voximplant reports the call never carried a real
 //      conversation. NOT this file, and NOT this file's own
 //      failed_to_start/start_unknown — see the note below on why those two
 //      are a genuinely different, non-telephony failure class.
-//   2. completed (WhatsApp path)  — an async WhatsApp delivery-status
-//      webhook, owned by whatsapp-sales-link-real-build.
-//   3. completed (SMS-fallback-accept path)  — a separate async path, same
-//      owner: fires when send_signup_link's synchronous WhatsApp attempt
-//      failed and the SMS fallback is later confirmed accepted.
-//   4. needs_followup (both-channels-failed path)  — written by
-//      whatsapp-sales-link-real-build's own timeout sweep when neither
-//      channel confirms within its window, PLUS the normal
-//      needs_followup / closed (+ escalated_to_human if it ships) case,
-//      the only one that is a live ElevenLabs-tool-call route (log_outcome),
-//      legitimately the agent's own judgment call, lowest blast radius.
-// All four, wherever they end up living, must claim
-// sales_call_attempts.outcome_recorded_at (UPDATE ... WHERE
-// outcome_recorded_at IS NULL RETURNING id) in the SAME statement
+//   2. completed  — sls/tool/signup-link, written the moment send_signup_link's
+//      WhatsApp or SMS-fallback send is synchronously accepted by the
+//      provider (not a delivery/read confirmation).
+//   3. needs_followup / closed (escalated_to_human is mapped to
+//      needs_followup)  — sls/tool/log-outcome, a live ElevenLabs-tool-call
+//      route, legitimately the agent's own judgment call, lowest blast radius.
+//   4. needs_followup catch-all  — the ElevenLabs post-call analysis, for a
+//      conversation that ended without the agent calling either tool above.
+// All four must claim sales_call_attempts.outcome_recorded_at (UPDATE ...
+// WHERE outcome_recorded_at IS NULL RETURNING id) in the SAME statement
 // immediately before calling applyCallOutcome — and ONLY there. This
 // dispatch-initiation function must NEVER claim it: it runs before any call
 // happens, and a claim here with no applyCallOutcome behind it would burn
 // the one-shot guard for the whole attempt before the real outcome (from
 // path 1, 2, 3, or 4 above) ever arrives.
 //
-// DELIBERATELY NOT DECIDED HERE, flagged to team-lead: whether a
-// failed_to_start/start_unknown row (StartScenarios itself never placed the
-// call — balance, config, provider rejection) should ALSO ever resolve to
-// callback_requests.call_outcome='no_answer'. Concrete harm if it did:
+// failed_to_start/start_unknown (StartScenarios itself never placed the
+// call — balance, config, provider rejection) deliberately do NOT resolve to
+// callback_requests.call_outcome='no_answer'. Concrete harm if they did:
 // applyCallOutcome('no_answer') increments consecutive_no_answer_count, and
 // at 3 auto-closes the row (status='closed', call_outcome='no_contact') and
 // sends the customer a "we tried three times and couldn't reach you" SMS —
 // three balance/config failures could close a live lead and send that
-// message having never actually dialed once. Recommendation: dispatch-level
-// failures (this file) alert only and leave callback_requests untouched;
-// only a REAL telephony no-connect, reported by the scenario's cb route,
-// should ever write 'no_answer'. Not implemented either way yet — the cb
-// route itself doesn't exist.
+// message having never actually dialed once. Dispatch-level failures (this
+// file) are recorded on sales_call_attempts only and leave callback_requests
+// untouched; only a REAL telephony no-connect, reported by the scenario's cb
+// route, writes 'no_answer'.
 //
-// SCHEDULING-SWEEP HAZARD, raised by whatsapp-sales-link-real-build,
-// resolved 2026-08-22: their framing (runCallbackSchedulingSweep's candidate
-// query re-picking-up a pending-confirmation row because calendar_item_id
-// sits NULL) does not hold — verified against callback-scheduling.ts: while
-// this row stays status='scheduled' with calendar_item_id set (true for the
-// entire async-confirmation window; nothing in this file or the not-yet-
-// built outcome-write paths touches either column), the sweep's own
-// `.is('calendar_item_id', null)` AND `status NOT IN (...scheduled...)`
-// filters already exclude it, twice over. The REAL adjacent hazard is
-// different and does live in this file: rescheduleCallbackRequest()
-// (callback-scheduling.ts, admin-triggered, not a sweep) can move this SAME
+// SCHEDULING HAZARD, closed here: rescheduleCallbackRequest()
+// (callback-scheduling.ts, admin- or agent-tool-triggered, not a sweep) can move this SAME
 // row from 'scheduled' to 'needs_reschedule' and back to 'scheduled' with a
-// NEW scheduled_at at any time, including mid-confirmation — producing a new
-// sales_call_attempts_request_slot_uidx key the unique index cannot catch.
-// Closed here via gate 2b / getUnresolvedSalesAttempt, not via any change to
-// callback-scheduling.ts (wrong file, wrong blast radius — that sweep has no
-// reachable path into the state their framing worried about).
+// NEW scheduled_at at any time, including while an earlier call's outcome is
+// still unresolved — producing a new sales_call_attempts_request_slot_uidx
+// key the unique index cannot catch. Closed via gate 2b /
+// getUnresolvedSalesAttempt, not via any change to callback-scheduling.ts:
+// runCallbackSchedulingSweep itself never re-picks up a still-'scheduled'
+// row (its candidate query requires calendar_item_id IS NULL and excludes
+// status 'scheduled').
 
 const SALES_TOKEN_TTL_SEC = 2 * 60 * 60; // 2h — see meeting-confirm-dispatch.ts's identical constant for why this value is only valid because mint and dial happen in the same tick.
 const BALANCE_TIMEOUT_MS = 10_000;
@@ -127,9 +113,10 @@ export type SalesCallDispatchConfig = {
   lowBalanceThreshold: number;
   maxConcurrentCalls: number;
   // The AI-calling-specific kill switch for this persona, resolved by the
-  // caller — see meeting-confirm-dispatch.ts's identical field for why this
-  // is a plain parameter rather than read from app_settings here (the column
-  // does not exist yet).
+  // caller (getSalesCallDispatchConfig, from
+  // app_settings.voximplant_sales_calls_enabled) — see
+  // meeting-confirm-dispatch.ts's identical field for why this is a plain
+  // parameter rather than read from app_settings here.
   callsEnabled: boolean;
 };
 
@@ -181,11 +168,10 @@ export type SalesCallDispatchJob = { callbackRequestId: string };
 // target, there is no separate clampIntoCallbackWindow step here.
 const SALES_DISPATCH_MIN_DELAY_MS = 60 * 1000;
 
-// THE dispatch trigger for dispatchSalesCall above — without this,
-// dispatchSalesCall is unreachable code (verified 2026-08-22: no boss.send
-// call site existed anywhere in the codebase). Mirrors
+// THE dispatch trigger for dispatchSalesCall below — without this,
+// dispatchSalesCall is unreachable code. Mirrors
 // enqueueMeetingConfirmDispatch's shape exactly but fires AT scheduled_at,
-// not 24h before it (dispatchSalesCall's own file-header comment: "exactly
+// not 24h before it (dispatchSalesCall's own comment: "exactly
 // replacing what a human rep does today at that slot"). Call this from the
 // SAME place enqueueMeetingConfirmDispatch is called (runCallbackSchedulingSweep,
 // right after a slot is booked) — the two are mutually exclusive by topic,
@@ -213,9 +199,7 @@ export async function enqueueSalesCallDispatch(
   // is a strict uuid column (verified live: information_schema + pg-boss's
   // own DDL in node_modules/pg-boss/dist/plans.js — "id uuid NOT NULL
   // DEFAULT gen_random_uuid()") — hash the composite key through
-  // deterministicJobId, never pass it raw (throws 22P02 at insert time;
-  // this exact bug was live in enqueueMeetingConfirmDispatch, caught via
-  // the worker's own error log 2026-08-22, before this call ever shipped).
+  // deterministicJobId, never pass it raw (throws 22P02 at insert time).
   const id = salesCallDispatchJobId(request.id, scheduledMs);
   const job: SalesCallDispatchJob = { callbackRequestId: request.id };
   await boss.send(QUEUES.salesCallDispatch, job, { id, startAfter: new Date(targetMs), ...CALL_RETRY });

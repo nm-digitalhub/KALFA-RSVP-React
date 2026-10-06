@@ -40,8 +40,8 @@ export type WhatsappInboundConfig = {
    * RSVP sender and the import line. `startWorkflowRuns` runs beside
    * `processWebhookEvent` rather than behind it (worker/main.ts), so the inbound
    * ROUTER's decision — which sends import-line traffic to stageWhatsAppImport
-   * and returns — never reached workflows. Every armed workflow has therefore
-   * been firing on messages to BOTH numbers with no way to tell them apart.
+   * and returns — never reaches workflows. Without this field every armed
+   * workflow fires on messages to BOTH numbers, with no way to tell them apart.
    * This is the field that tells them apart.
    */
   phoneNumberId?: string;
@@ -54,13 +54,11 @@ export type WhatsappInboundConfig = {
    * interactive reply, a reaction.
    *
    * WHY IT EXISTS. Guest import from WhatsApp — an owner sending a CSV or a
-   * batch of contact cards — was a mechanism entirely outside workflows, and
-   * unreachable from one: those messages are not "billable" (they are not a
-   * guest being reached), and `createRunsForInboundMessage` used the BILLING
-   * classifier as its automation gate, so a file or a contact card never created
-   * a run at all. A billing concept was deciding what an owner may automate.
+   * batch of contact cards — is not a "billable" reach (no guest is being
+   * reached), so the BILLING classifier cannot be what decides what an owner may
+   * automate: a file or a contact card would never create a run.
    *
-   * The two are separated now. Billing still counts exactly what it counted;
+   * The two are separate. Billing still counts exactly what it counted;
    * which messages start a flow is a property of the TRIGGER, chosen per
    * workflow, and the owner opts in.
    *
@@ -99,7 +97,8 @@ export const WHATSAPP_MESSAGE_KINDS = [
  *
  * EXACTLY today's `BILLABLE_MESSAGE_TYPES`, and that is the point: it is the
  * behaviour every saved diagram already has, preserved by construction rather
- * than by a migration. `inbound.test.ts` pins the two lists against each other.
+ * than by a migration. `trigger.test.ts` and `whatsapp/inbound.test.ts` pin both
+ * lists to the same four kinds.
  */
 export const DEFAULT_WHATSAPP_MESSAGE_KINDS: readonly string[] = [
   'text',

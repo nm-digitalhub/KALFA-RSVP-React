@@ -16,9 +16,10 @@ const WITHDRAW_MARKER = '[withdraw]';
 // PostgREST `.or()` filter for "the agent filed this row" — the DB-side twin
 // of requestBodyAuthor(...) === 'agent'. Agent rows carry NO payload.origin,
 // so `payload->>origin` is NULL for them: a bare `neq.owner` would drop every
-// one of them (NULL <> 'owner' is NULL, not true). Used by every "waiting for
-// the owner" count so the nav badge, the conversation list and the priority
-// sort agree on one predicate.
+// one of them (NULL <> 'owner' is NULL, not true). Used by the nav-badge count
+// (nav-counts.ts); the conversation list and the priority sort use the
+// in-memory twin isWaitingOnOwner (conversation.ts), so all three agree on one
+// predicate.
 export const AGENT_ORIGIN_OR_FILTER = 'payload->>origin.is.null,payload->>origin.neq.owner';
 
 export function requestBodyAuthor(payload: unknown): ContentAuthor {
@@ -41,7 +42,7 @@ const COMPLETE_SEPARATOR = `\n\n${COMPLETE_MARKER} `;
 //
 // `status`, when given, gates the withdraw reading: `withdraw` moves a
 // pending row to `expired`, so "[withdraw]" on any other status is not the
-// agent's withdrawal. Omitted = legacy callers, no gate.
+// agent's withdrawal. Omitted = no gate.
 export function splitRequestAnswer(answer: string | null | undefined, status?: string): AnswerPart[] {
   const raw = (answer ?? '').trim();
   if (!raw) return [];

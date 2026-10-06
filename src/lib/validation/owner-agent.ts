@@ -5,9 +5,10 @@ import { e164Schema } from '@/lib/validation/provider-numbers';
 import { phoneNumberIdSchema } from '@/lib/validation/whatsapp-numbers';
 
 // Input shapes for /admin/integrations/owner-agent (plan: owner-whatsapp-agent-plan.md
-// §3.3). Every bound below mirrors a CHECK in 20260924034054_owner_agent_whatsapp.sql,
-// so a value that passes here cannot be refused by the database with a constraint
-// error the form has no field to attach to.
+// §3.3). Every bound below mirrors a CHECK in 20260924034054_owner_agent_whatsapp.sql
+// or 20260927003348_owner_agent_allowlist_manual_approval.sql, so a value that passes
+// here cannot be refused by the database with a constraint error the form has no
+// field to attach to.
 
 /**
  * Every message the owner-agent DAL throws on purpose. Written for the owner, and the

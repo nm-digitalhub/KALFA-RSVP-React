@@ -9,7 +9,7 @@
  * distributions, pm2.keymetrics.io, nginx.org, certbot.eff.org,
  * docs.npmjs.com) — see plan doc §5b for the source list.
  *
- * Wired 2026-08-23: I0/I1/I2/I5/I6/I7/I8/I9/I10/I11 have real apply/verify,
+ * I0/I1/I2/I5/I6/I7/I8/I9/I10/I11 have real apply/verify,
  * sharing the C2/C3/C4/E1 logic with steps.ts via wiring-helpers.ts. I3
  * (clone source unknown) and I12 (owner-driven via /admin/settings) stay
  * intentional NotImplementedError. I4's setup-form apply is real.

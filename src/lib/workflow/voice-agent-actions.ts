@@ -138,8 +138,9 @@ export async function dispatchWorkflowRsvpAiCallback(input: {
     touchpointIndex: 0,
     isManual: true,
     // This action represents a guest-initiated callback from an inbound
-    // workflow. It only exempts the stop-on-reach gate; consent, DNC, dial
-    // hours, event state and all other gates remain enforced in the dispatcher.
+    // workflow. It only exempts the stop-on-reach and contact-quota seat gates;
+    // consent, DNC, dial hours, event state and all other gates remain enforced
+    // in the dispatcher.
     isCallback: true,
     dispatchId,
   });

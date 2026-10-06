@@ -13,7 +13,6 @@ vi.mock('@/lib/data/admin/channels', () => ({
 }));
 // `./actions` imports this DAL, and it is `server-only` — an unstubbed
 // server-only import fails the whole FILE at import time, not one test.
-// Same gotcha the channel-catalog DAL caused here in July.
 vi.mock('@/lib/data/admin/voice-purposes', () => ({
   createVoicePurpose: vi.fn(),
   updateVoicePurpose: vi.fn(),

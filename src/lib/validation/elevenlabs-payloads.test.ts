@@ -81,7 +81,7 @@ describe('normalizeCallAnalysisWebhook', () => {
       // sample has exactly one user turn and no agent turn.
       agentTurns: 0,
       userTurns: 1,
-      // KEPT since 2026-09-01 (owner decision, both personas): a written
+      // KEPT (owner decision, both personas): a written
       // account of the call, which is what a CRM screen actually needs. Not a
       // transcript — the spoken turns above are still counted and discarded.
       transcriptSummary: 'ANGELO_SUMMARY_SECRET confirmed he will attend with a guest',
@@ -215,10 +215,9 @@ describe('normalizeCallAnalysisWebhook', () => {
     }
   });
 
-  // The summary was on this list until 2026-09-01 and is now deliberately kept
-  // (owner decision). Everything else still goes: spoken turns, the guest-name
-  // dynamic variable, the free-text rationale attached to each criterion, and
-  // the raw collected values.
+  // The summary is deliberately kept (owner decision). Everything else still
+  // goes: spoken turns, the guest-name dynamic variable, the free-text rationale
+  // attached to each criterion, and the raw collected values.
   it('still drops every OTHER PII-bearing field (transcript, dynamic_variables, rationales)', () => {
     const result = normalizeCallAnalysisWebhook(sample);
     const serialized = JSON.stringify(result);
@@ -270,8 +269,8 @@ describe('normalizeCallAnalysisWebhook', () => {
     expect(read({ kalfa_correlation_id: 'new' })).toBe('new');
     expect(read({ kalfa_attempt_token: 'old-token' })).toBe('old-token');
     expect(read({ kalfa_attempt_id: 'old-id' })).toBe('old-id');
-    // All three present: the unified one wins, so a scenario mid-migration that
-    // sends both cannot resolve to the stale spelling.
+    // Unified and legacy both present: the unified one wins, so a scenario
+    // mid-migration that sends both cannot resolve to the stale spelling.
     expect(read({ kalfa_correlation_id: 'new', kalfa_attempt_token: 'old-token' })).toBe('new');
   });
 

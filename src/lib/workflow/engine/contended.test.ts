@@ -14,14 +14,15 @@ import { runWorkflow } from './run-workflow';
 //
 // It is not a rare shape either, and that is why it is worth a test rather than
 // a comment. `singletonKey` enforces nothing on a `standard` queue (pg-boss
-// 12.30.0: every unique index over `singleton_key` is policy-conditioned), and
+// 12.33.5: every unique index over `singleton_key` is policy-conditioned, bar
+// `job_i4`, which needs a throttle `singleton_on`), and
 // `failJobsByTimeout` re-queues a job whose handler outlived `expireInSeconds`
 // while that handler is still running. Two deliveries for one run is something
 // the queue permits by design.
 //
 // What this pins:
 //   1. the outcome is `contended`, never `failed`;
-//   2. NOTHING is written to the run row — not even 'running';
+//   2. no TERMINAL status is written to the run row;
 //   3. the owner's log shows no failure for it.
 
 type Event = { type: string; nodeId?: string; payload?: unknown };

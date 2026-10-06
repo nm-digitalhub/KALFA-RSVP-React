@@ -23,18 +23,17 @@ import type { JobHealthRow } from './db-health';
 // in process memory for no reason. `integrations_configured_flags()` answers the same
 // question in SQL and returns booleans only.
 //
-// Microsoft IS here now, and the reason it was not is worth keeping. The candidate
-// source used to be exchange_connections, whose two readers are both wrong for a
-// status row: listMyExchangeConnections() returns only the CALLER's connections, and
-// the org-wide reader is gated on requirePlatformOwner(), which REDIRECTS. A row
-// built on either could never be more than the weaker of the two.
+// The Microsoft row does not read exchange_connections, whose two readers are both
+// wrong for a status row: listMyExchangeConnections() returns only the CALLER's
+// connections (in per_user mode, the default), and the org-wide reader is gated on
+// requirePlatformOwner(), which REDIRECTS. A row built on either could never be more
+// than the weaker of the two.
 //
-// Graph replaced that source (2026-09-10). The app authenticates as ITSELF with a
-// certificate, so `graphConfigured()` is an env-only, credential-free, network-free
-// answer about the deployment rather than about whoever is looking — the same shape
-// as the GA4 row below. The DEEP check (tenant, mailbox, certificate expiry) lives in
-// src/lib/microsoft/health.ts and runs on its own page, not here: this file makes no
-// live third-party call, and that rule did not change.
+// The app authenticates as ITSELF with a certificate, so `graphConfigured()` is an
+// env-only, credential-free, network-free answer about the deployment rather than
+// about whoever is looking — the same shape as the GA4 row below. The DEEP check
+// (tenant, mailbox, certificate expiry) lives in src/lib/microsoft/health.ts and
+// runs on its own page, not here: this file makes no live third-party call.
 
 export interface IntegrationStatus {
   key: string;
@@ -167,11 +166,10 @@ export async function getIntegrationsStatus(jobHealth: JobHealthRow[]): Promise<
       // The GLOBAL outreach master switch, not a WhatsApp-only one — the same column
       // that gates every outbound channel.
       enabled: flags.whatsapp_enabled,
-      // Was `false` with the note "אין בדיקת בריאות זמינה — send-only" until
-      // 2026-09-10. "Send-only" described how we MESSAGE GUESTS, and was mistaken for
-      // a statement about whether the integration can be examined at all: Meta exposes
-      // the phone-number node and the WABA's number list, and reading both exercises
-      // the exact token and ids the send path needs. No message is sent.
+      // "Send-only" describes how we MESSAGE GUESTS, not whether the integration can
+      // be examined: Meta exposes the phone-number node and the WABA's number list,
+      // and reading both exercises the exact token and ids the send path needs. No
+      // message is sent.
       lastCheckedAt: lastCompletedFor(jobHealth, 'whatsapp-health-check'),
       healthCheckAvailable: true,
     },
@@ -180,10 +178,8 @@ export async function getIntegrationsStatus(jobHealth: JobHealthRow[]): Promise<
       label: 'SUMIT / OfficeGuy',
       configured: flags.sumit_configured,
       enabled: flags.sumit_enabled,
-      // Was `false` with the note "אין בדיקת בריאות זמינה" until 2026-09-10 — the
-      // third provider where that sentence meant "nobody looked". SUMIT's OpenAPI
-      // lists 84 operations; website/companies/getdetails/ takes nothing but the
-      // credentials and answers with the company they resolve to.
+      // SUMIT's OpenAPI lists 84 operations; website/companies/getdetails/ takes
+      // nothing but the credentials and answers with the company they resolve to.
       lastCheckedAt: lastCompletedFor(jobHealth, 'sumit-health-check'),
       healthCheckAvailable: true,
     },
@@ -192,12 +188,10 @@ export async function getIntegrationsStatus(jobHealth: JobHealthRow[]): Promise<
       label: 'ExtrA SMS',
       configured: flags.extra_sms_configured,
       enabled: flags.extra_sms_enabled,
-      // Was `false` with the note "send-only" until 2026-09-10 — the same claim that
-      // was wrong for WhatsApp, for the same reason. ExtrA's own OpenAPI document
-      // (docs/extra/openapi-extra-v1.json) offers GET /auth/key/ and describes it as
-      // exactly this: "verify that your Bearer token is valid and see what it may
-      // do". What it mostly answers here is FOR HOW MUCH LONGER — the live key
-      // expires 2027-10-27 and nothing else watches that date.
+      // ExtrA's own OpenAPI document (docs/extra/openapi-extra-v1.json) offers
+      // GET /auth/key/ and describes it as: "verify that your Bearer token is valid
+      // and see what it may do". What it mostly answers here is FOR HOW MUCH LONGER —
+      // the live key expires 2027-10-27 and nothing else watches that date.
       lastCheckedAt: lastCompletedFor(jobHealth, 'extra-key-check'),
       healthCheckAvailable: true,
     },
@@ -209,8 +203,7 @@ export async function getIntegrationsStatus(jobHealth: JobHealthRow[]): Promise<
       // a presence check.
       configured: flags.email_configured,
       enabled: flags.email_enabled,
-      // Was `false` with the note "אין בדיקת בריאות זמינה" until 2026-09-10. Nobody had
-      // looked: Resend exposes its domain registry read-only, and reading it exercises
+      // Resend exposes its domain registry read-only, and reading it exercises
       // the API key AND the DNS state of the domain the From header actually uses. The
       // SMTP fallback has nodemailer's verify() — connect + AUTH, no message composed.
       // Worth it not because the failure is silent — Resend 403s a send from an
@@ -231,9 +224,9 @@ export async function getIntegrationsStatus(jobHealth: JobHealthRow[]): Promise<
       enabled: graphConfigured(),
       lastCheckedAt: null,
       // `false`, and the two fields have to agree — the Slack lesson. There is no
-      // cron queue for Microsoft (queue-schedule.ts lists six, none of them this),
-      // so `true` would print "נבדק לאחרונה: טרם רץ" and claim a scheduled job that
-      // has never fired. The real check runs when someone opens the provider page.
+      // health-check cron queue for Microsoft (none in queue-schedule.ts), so `true`
+      // would print "נבדק לאחרונה: טרם רץ" and claim a scheduled job that has never
+      // fired. The real check runs when someone opens the provider page.
       healthCheckAvailable: false,
       note: 'בדיקה מלאה בעמוד הספק — תוקף התעודה, התיבה והדומיינים',
     },

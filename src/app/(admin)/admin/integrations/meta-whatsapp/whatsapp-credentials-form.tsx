@@ -13,15 +13,7 @@ import { updateWhatsAppChannelAction } from '@/app/(admin)/admin/integrations/ac
 
 import { CopyRow, Field, SecretField, StatusBadge } from '../_components/form-fields';
 
-// Credentials + webhook wiring for the WhatsApp channel, lifted out of
-// channels-client.tsx so the provider page and the old channels tab render the SAME
-// markup from one definition while both exist (the old page is deleted in Task 0.6,
-// separately, after a clean deploy — that separation is what makes Phase 0 reversible
-// at zero cost).
-//
-// The action is imported from its ORIGINAL location on purpose. Moving the actions is
-// Task 0.3 Step 1's own job and touching them here would mean two moves through the
-// same file; the wiring is identical either way.
+// Credentials + webhook wiring for the WhatsApp channel.
 
 export type WhatsAppCredentials = {
   whatsapp_phone_number_id: string;

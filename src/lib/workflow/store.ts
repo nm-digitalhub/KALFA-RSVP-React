@@ -158,7 +158,7 @@ export function createStepLedger(): StepLedgerPort {
   };
 }
 
-// The fields a takeover writes. Identical for both cases below; only the
+// The fields a takeover writes. Identical for every case below; only the
 // predicate differs.
 function takeoverPatch(nodeType: string) {
   return {
@@ -205,9 +205,9 @@ async function takeOverFailedRow(
  * one winner, and a row whose deadline was EXTENDED between the read and the
  * write must not be dragged out of its wait.
  *
- * `wait_until` is cleared by `takeoverPatch` leaving it alone — it is not reset
- * here on purpose, so a row that is woken and then parks again overwrites it
- * with its new deadline rather than carrying a stale one.
+ * `takeoverPatch` leaves `wait_until` alone — it is not reset here on purpose,
+ * so a row that is woken and then parks again overwrites it with its new
+ * deadline rather than carrying a stale one.
  */
 async function takeOverWaitingRow(
   supabase: ReturnType<typeof createAdminClient>,
@@ -289,12 +289,9 @@ export function createRunStore(): RunStorePort {
           // sweep that believed it was still owed a wake-up.
           resume_at: status === 'waiting' ? (resumeAt ?? null) : null,
           // CLEARED ON EVERY NON-WAITING STATUS, for the same reason as
-          // `resume_at` above and unconditionally like it. Nothing WRITES this
-          // yet — the wait signal starts carrying a correlation in 0ב-2 — but
-          // the clearing ships with the column so it can never be stale before
-          // it is ever meaningful. A leftover id on a run that parked again for
-          // an unrelated reason would be matched by an event that has nothing to
-          // do with this wait, and woken early on it.
+          // `resume_at` above and unconditionally like it. A leftover id on a
+          // run that parked again for an unrelated reason would be matched by an
+          // event that has nothing to do with this wait, and woken early on it.
           resume_correlation_id: status === 'waiting' ? (resumeCorrelationId ?? null) : null,
         })
         .eq('id', runId)
@@ -302,8 +299,8 @@ export function createRunStore(): RunStorePort {
         // later write — the first terminal status wins and its finished_at
         // stands.
         //
-        // Added 2026-09-09, and not defensively: the race is documented
-        // upstream. `packages/temporal/.../cancellation-handling.decision-log.md`
+        // Not defensive: the race is documented upstream.
+        // `packages/temporal/.../cancellation-handling.decision-log.md`
         // lists it as a known con — "if runGraph has already emitted
         // execution_failed and is mid-updateStatus('failed') when the cancel
         // arrives … updateExecutionStatus overwrites 'failed' -> 'cancelled'" —
@@ -377,24 +374,6 @@ export function createExecutionLog(): ExecutionLogPort {
 // ---------------------------------------------------------------------------
 
 /**
- * Runs that exist but have never been delivered.
- *
- * ⚠️ THIS CLOSES A GAP THAT PREDATES THE FAN-OUT. `createRunIfNew` and
- * `enqueueWorkflowRun` are two statements: every path that creates a run then
- * enqueues it, and a failure between the two has always left a row `pending`
- * with nothing coming for it — visible in /admin, invisible to the system,
- * recoverable only by hand.
- *
- * `action.start_for_each_guest` made it structural rather than rare: a step
- * handler has no queue handle by design, so its children are ALWAYS created
- * without one and this sweep is how they start.
- *
- * The window is the point. A row younger than `minAgeSeconds` may simply be
- * mid-enqueue on the path that created it, and picking it up would race that
- * path for the same job id — harmless (the id is deterministic) but pointless.
- * Anything older than that had its chance.
- */
-/**
  * Parked runs whose deadline has passed and which nothing woke.
  *
  * ⚠️ THE HOLE THIS CLOSES. A `logic.wait` parks the run and relies on ONE
@@ -403,8 +382,8 @@ export function createExecutionLog(): ExecutionLogPort {
  * not touch runs in flight. Lose the job — a queue purge, a failed insert, a
  * maintenance window — and the run sleeps for ever with nobody told.
  *
- * `listUndeliveredRuns` below covers the same class of loss for `pending` and
- * was written before `waiting` existed. This is its other half.
+ * `listUndeliveredRuns` below covers the same class of loss for `pending`.
+ * This is its other half.
  *
  * `graceSeconds` keeps the sweep off the ordinary case: pg-boss fires a wake-up
  * within seconds of the deadline, so anything still parked minutes later is a
@@ -483,6 +462,24 @@ export async function listOrphanedWaitingSteps(
     .map((r) => ({ runId: r.run_id, resumeAt: r.wait_until as string }));
 }
 
+/**
+ * Runs that exist but have never been delivered.
+ *
+ * ⚠️ THIS CLOSES A GAP THAT PREDATES THE FAN-OUT. `createRunIfNew` and
+ * `enqueueWorkflowRun` are two statements: every path that creates a run then
+ * enqueues it, and a failure between the two has always left a row `pending`
+ * with nothing coming for it — visible in /admin, invisible to the system,
+ * recoverable only by hand.
+ *
+ * `action.start_for_each_guest` made it structural rather than rare: a step
+ * handler has no queue handle by design, so its children are ALWAYS created
+ * without one and this sweep is how they start.
+ *
+ * The window is the point. A row younger than `minAgeSeconds` may simply be
+ * mid-enqueue on the path that created it, and picking it up would race that
+ * path for the same job id — harmless (the id is deterministic) but pointless.
+ * Anything older than that had its chance.
+ */
 export async function listUndeliveredRuns(
   minAgeSeconds = 30,
   limit = 200,
@@ -563,10 +560,9 @@ export async function createRunIfNew(planned: PlannedRun): Promise<string | unde
     .insert({
       workflow_id: planned.workflowId,
       event_id: planned.eventId,
-      // From the PLAN, not a literal. This used to read 'whatsapp_inbound',
-      // which made the store the one file every new way of starting a workflow
-      // had to edit — for a column whose own comment says the set is meant to
-      // grow. See `PlannedRun.triggerSource`.
+      // From the PLAN, not a literal, so the store is not the one file every new
+      // way of starting a workflow has to edit — the column's own comment says
+      // the set is meant to grow. See `PlannedRun.triggerSource`.
       trigger_source: planned.triggerSource,
       trigger_payload: planned.triggerPayload as unknown as Json,
       dedupe_key: planned.dedupeKey,

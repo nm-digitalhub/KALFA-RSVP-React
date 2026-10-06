@@ -21,12 +21,11 @@ import {
 
 export const metadata = { title: 'היסטוריית מוקד' };
 
-// Plan stage 8 — admin history for the browser call-center (console_calls):
+// Admin history for the browser call-center (console_calls):
 // manual outbound, inbound-customer, and linked ai_handoff rows. Distinct from
 // /admin/recordings (which lists call_attempts — the AI outreach ledger) and
 // from /admin/voice/events/[eventId] (per-event AI call supervision): this is
-// the console's OWN call log, gated on manage_voice like every other console
-// route. Recording links render ONLY for a viewer who also holds
+// the console's OWN call log, gated on manage_voice. Recording links render ONLY for a viewer who also holds
 // view_recordings — the same owner-only gate the AI recordings page enforces,
 // re-applied here because these calls carry live guest voice too.
 
@@ -53,12 +52,11 @@ const STATUS_LABEL: Record<string, string> = {
 /**
  * Why a call ended, in Hebrew.
  *
- * ended_reason has been read from the database by this page's loader all along and
- * never rendered — so the column that says WHICH kind of failure this was existed
- * and was invisible. It matters more since 17.8, when the scenario started folding
- * the platform's own SIP code into it (486 busy, 480 unavailable, 404 invalid
- * number, 603 rejected, 408 no answer, 402 no funds), because the status badge
- * cannot express those: 'failed' is one word for six different events.
+ * ended_reason says WHICH kind of failure a call was. It matters most since 17.8,
+ * when the scenario started folding the platform's own SIP code into it (486 busy,
+ * 480 unavailable, 404 invalid number, 603 rejected, 408 no answer, 402 no funds),
+ * because the status badge cannot express those: 'failed' is one word for six
+ * different events.
  *
  * The stored value is `reason` or `reason:detail`. The DETAIL is looked up first —
  * it is the network's own account of what happened, and "תפוס" tells an operator
@@ -130,8 +128,8 @@ export default async function ConsoleHistoryPage({
     hasPlatformPermission('view_recordings'),
   ]);
 
-  // Recording URLs are fetched (and each fetch audited — getConsoleCallRecording
-  // itself calls recordStaffAccess) ONLY for this page's rows, and only when the
+  // Recording URLs are fetched (and audited when the call has an identifiable
+  // owner — getConsoleCallRecording itself calls recordStaffAccess) ONLY for this page's rows, and only when the
   // viewer holds view_recordings — never pre-fetched for a viewer who cannot see
   // them. recordStaffAccess fails CLOSED by throwing (by design — an unaudited
   // read must not proceed), so each row is caught individually: one row's audit

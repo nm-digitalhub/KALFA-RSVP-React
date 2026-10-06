@@ -23,9 +23,9 @@ export const isTrigger = false;
  *
  * Written from what the node actually carries: the fields its schema declares
  * (`voiceCallSchemaFor` in ./schema.ts) and the ones its handler reads
- * (`startVoiceCall` in ./runtime.ts). It was the one type with no member in
- * `KalfaNodeConfig`, and nothing noticed — `_KALFA_NODE_CONFIG_COVERS_ALL_TYPES`
- * in catalogue/types.ts is what notices now.
+ * (`startVoiceCall` in ./runtime.ts). `_KALFA_NODE_CONFIG_COVERS_ALL_TYPES` in
+ * catalogue/types.ts fails the type check for a type with no member in
+ * `KalfaNodeConfig`.
  *
  * The four dial parameters are optional and EMPTY MEANS "NOT SET": the handler
  * trims each and drops an empty one rather than sending it, so the purpose and
@@ -40,7 +40,7 @@ export type StartVoiceCallConfig = {
   ruleId?: string;
   /** The number to dial instead of the guest's; may be a `{{…}}` reference. */
   toOverride?: string;
-  /** ElevenLabs agent id. Empty: the scenario's own agent. */
+  /** ElevenLabs agent id. Empty: the scenario's own agent (`PurposeAgent` has none and does not dial). */
   agentId?: string;
   /** Park the run until the call reports. Absent means false — dial and carry on. */
   waitForOutcome?: boolean;

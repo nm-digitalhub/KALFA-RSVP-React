@@ -5,9 +5,6 @@ import { readString, requireGuestContext, type StepHandler } from '../../steps/s
 
 import * as sendWhatsappDefinition from './definition';
 
-// The first step that speaks to a guest, and the first whose failure is visible
-// to someone outside this system.
-//
 // THE RECIPIENT IS NOT CONFIGURABLE. It is `ctx.trigger.contactId` — the
 // contact whose message started this run. There is no "to" field on the node
 // and there is deliberately no way to add one: an automation that could name
@@ -16,20 +13,20 @@ import * as sendWhatsappDefinition from './definition';
 //
 // WHY A FREE-TEXT SEND IS LEGAL HERE. Meta allows a non-template message only
 // inside the 24-hour customer-service window a guest opens by writing to us.
-// Every path into this handler begins at `trigger.whatsapp_inbound`, so the
-// guest wrote moments ago and the window is open by construction. That is also
-// why 131049 — the per-user MARKETING cap — does not apply: this is a session
-// reply inside a conversation the guest started.
+// Every armed path into this handler begins at `trigger.whatsapp_inbound`, so
+// the guest wrote moments ago and the window is open by construction. That is
+// also why 131049 — the per-user MARKETING cap — does not apply: this is a
+// session reply inside a conversation the guest started.
 //
 // The reasoning is load-bearing and it is tied to the trigger, not to this
 // node. A scheduled trigger or a delay step would break it, and the send would
-// come back 131047 ("re-engagement required"). When either lands, this handler
-// needs a template fallback — not a comment.
+// come back 131047 ("re-engagement required"). Both exist now, and so does a
+// fan-out child, which carries a guest who has not written. This handler has no
+// template fallback: those flows need `action.send_template`.
 //
 // A refusal is a COMPLETED step with `skipped: true`, matching
 // `action.update_guest_status`: nothing went wrong in the graph, the message
-// simply had nowhere to go, and the run log says which of the three reasons it
-// was.
+// simply had nowhere to go, and the run log says which reason it was.
 export const sendWhatsapp: StepHandler = async (config, ctx) => {
   // The key is checked against SendWhatsappConfig at compile time; the value is
   // still read defensively, because the config is an unvalidated jsonb row.

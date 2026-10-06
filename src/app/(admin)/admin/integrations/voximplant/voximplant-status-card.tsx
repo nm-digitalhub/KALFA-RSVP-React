@@ -6,8 +6,7 @@ import {
   statusBadgeNeutralTone,
 } from '../_components/form-fields';
 
-// The Voximplant channel's status line. Lifted out of channels-client.tsx, with ONE
-// addition the move forced: `outreachEnabled` may now be null.
+// The Voximplant channel's status line. `outreachEnabled` may be null.
 //
 // WHY NULL EXISTS. The master switch is `manage_settings`; this page is
 // `manage_voice`. Those are different keys, and a staff member may hold the second

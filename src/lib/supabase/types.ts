@@ -14,7 +14,7 @@
 //
 // Postgres cannot declare a function argument NOT NULL, so `supabase gen types`
 // types every argument WITHOUT a default as required non-null `string`. The
-// three RPCs below deliberately accept NULL for specific arguments (their
+// RPCs below deliberately accept NULL for specific arguments (their
 // bodies branch on `is null` / `IS NOT DISTINCT FROM` / `coalesce`), and the
 // callers pass null on purpose. Before this layer each call site carried an
 // `as string` cast that silenced the compiler — the override restores the true

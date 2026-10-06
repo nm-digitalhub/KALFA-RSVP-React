@@ -28,13 +28,14 @@ import {
 type WebhookInboxRow = Tables<'webhook_inbox'>;
 
 // Process ONE persisted Voximplant call-result callback (event_kind==='call_result').
-// Called by processWebhookEvent (the existing webhook drain) AND, best-effort,
-// synchronously by the cb route right after persist. Fully IDEMPOTENT: the
-// contact_interactions UNIQUE(channel,provider_id) gate makes billing+RSVP fire
-// at most once, and recordCallOutcome's compare-and-set prevents an out-of-order
-// callback from downgrading a terminal outcome. Identity comes ONLY from
-// row.message_id (= the token-verified call_attempt_id), NEVER from the payload's
-// invitation_id.
+// Called by processWebhookEvent (the webhook drain; the cb route's persist wakes
+// it, with a cron as the fallback). Fully IDEMPOTENT: every side effect below is
+// itself idempotent (billed_results UNIQUE(event_id,contact_id) for billing,
+// submit_rsvp's unchanged:true for the RSVP), so a retry safely re-runs whatever
+// did not complete, and recordCallOutcome's compare-and-set prevents an
+// out-of-order callback from downgrading a terminal outcome. Identity comes
+// ONLY from row.message_id (= the token-verified call_attempt_id), NEVER from
+// the payload's invitation_id.
 export async function processCallResult(row: WebhookInboxRow): Promise<void> {
   const parsed = voxCallbackSchema.safeParse(row.payload);
   if (!parsed.success) return; // route already validated; a bad stored payload is a no-op
@@ -66,9 +67,9 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
   }
 
   if (body.call_status === 'completed' || body.call_status === 'handed_off') {
-    // Stage 6 billing decision (owner-authorized 12.8): a handed-off call is a
-    // reached human exactly like a completed AI call — "reached" in the signed
-    // agreement is channel-neutral ("מענה אנושי בשיחה"). Both statuses share
+    // Billing: a handed-off call is a reached human exactly like a completed AI
+    // call — "reached" in the signed agreement is channel-neutral
+    // ("מענה אנושי בשיחה"). Both statuses share
     // this ONE branch (single writeReach call site) with a distinct evidence
     // string per status; terminalStatus()'s precedence in the scenario already
     // guarantees 'completed' wins whenever the AI conversation actually
@@ -84,9 +85,7 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
       rsvp_digit: body.rsvp_digit ?? null,
       rsvp_method: body.rsvp_method ?? null,
       call_duration_sec: duration,
-      // Disposition (agent_end_call/guest_hangup). Until 2026-09-07 the
-      // completed branch never wrote finish_reason at all — only the failure
-      // branch did (SIP codes) — so every completed row rendered "—".
+      // Disposition (agent_end_call/guest_hangup).
       finish_reason: body.finish_reason ?? null,
     });
 
@@ -96,7 +95,7 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
     // them — the webhook retry would see the row already present (fresh=false) and
     // skip billing/RSVP forever. Instead every side effect is itself idempotent, so
     // the retry safely re-runs whatever did not complete, without duplicating what
-    // already did. (This is the fix that makes partial-failure recovery lossless.)
+    // already did.
     await insertInteraction({
       event_id: attempt.event_id,
       campaign_id: attempt.campaign_id,
@@ -180,7 +179,7 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
   // Persist the disposition too. The scenario reports the SIP code as
   // error_reason ('sip_408' / 'sip_486' / 'sip_603' …) — that is what separates
   // "no one picked up, try again" from "the number does not exist, fix the
-  // list". The schema has always accepted the field; it was simply dropped here.
+  // list".
   const { applied } = await recordCallOutcome(attemptId, {
     status: body.call_status,
     call_duration_sec: duration,
@@ -226,15 +225,14 @@ export async function processCallRsvp(
   body: VoxSaveRsvp,
 ): Promise<RsvpApplyOutcome> {
   const attempt = await getCallAttemptById(attemptId);
-  // Written ONLY when the contact was bound to exactly one guest at dial time.
-  // An attempt with no bound guest can never gain one, so this is terminal, not
-  // a transient miss the drain could recover from.
+  // A missing attempt is terminal, not a transient miss the drain could recover
+  // from.
   if (!attempt) return { status: 'rejected', reason: 'not_found' };
 
   // Audit/display: what THIS call concluded, stamped on the attempt row itself
   // BEFORE any apply gate — a validated answer was given even when the apply is
   // later refused (closed event) or the guest binding is missing, and losing it
-  // is what made every agent call invisible to /admin/voice until 2026-09-07.
+  // would leave the agent call invisible to /admin/voice.
   // Last write wins: a mid-call correction arrives as a later body and should
   // win. Best-effort — the RSVP apply below must never fail on a display stamp.
   try {
@@ -243,6 +241,9 @@ export async function processCallRsvp(
     /* display-only stamp; the durable inbox row still allows a later backfill */
   }
 
+  // Written ONLY when the contact was bound to exactly one guest at dial time.
+  // An attempt with no bound guest can never gain one, so this is terminal, not
+  // a transient miss the drain could recover from.
   if (!attempt.guest_id) return { status: 'rejected', reason: 'not_found' };
   const rsvpToken = await getGuestRsvpToken(attempt.guest_id);
   if (!rsvpToken) return { status: 'rejected', reason: 'not_found' };
@@ -350,12 +351,12 @@ export async function processOwnerNoteRow(row: WebhookInboxRow): Promise<void> {
 // payload is a no-op (the route already validated it).
 export async function processCallRsvpRow(row: WebhookInboxRow): Promise<void> {
   const parsed = voxSaveRsvpSchema.safeParse(row.payload);
-  // A stored payload that no longer validates can never start validating; close
-  // the row with the reason rather than looping or silently dropping it.
+  // A stored payload that no longer validates can never start validating;
+  // return so the drain closes the row rather than retrying it forever.
   if (!parsed.success) return;
   const attemptId = row.message_id;
   if (!attemptId) return;
-  // The outcome is no longer discarded: processCallRsvp records a refusal to the
+  // The outcome is not needed here: processCallRsvp records a refusal to the
   // event-scoped activity_log before returning, so a rejected RSVP is visible to
   // the owner instead of vanishing behind a row marked processed.
   await processCallRsvp(attemptId, parsed.data);

@@ -15,7 +15,7 @@ import { submitRatingAction } from './actions';
 // composition for this exact shape (reui c-rating-9's shell: Card + rating +
 // adaptive copy + Textarea + gated submit) with c-rating-8's plain-button
 // icon-picker pattern instead of the star control, and lucide icons (Frown/
-// Meh/Smile — already used elsewhere in the app, e.g. not-found.tsx) instead
+// Meh/Smile — lucide is already used elsewhere in the app, e.g. not-found.tsx) instead
 // of emoji: a real web page doesn't have email's rendering constraints, so it
 // gets the sharper, on-brand icon instead of a platform emoji glyph.
 const OPTIONS = [

@@ -33,9 +33,9 @@ export const updateGuestStatusSchema = {
     ...statusProperty,
     ...actionBranchesProperty,
     rsvpStatus: { ...requiredText, options: Object.values(rsvpStatusOptions) },
-    // Surfaced on THIS node only. Upstream's guidance is to spread the fragment
-    // "on node types that should surface the choice; omit it elsewhere — the
-    // runner defaults to 'fail' when the field is absent."
+    // Upstream's guidance is to spread the fragment "on node types that should
+    // surface the choice; omit it elsewhere — the runner defaults to 'fail' when
+    // the field is absent."
     //
     // The trigger is excluded because a trigger that throws has produced no run
     // to continue. The condition is excluded for a sharper reason: under

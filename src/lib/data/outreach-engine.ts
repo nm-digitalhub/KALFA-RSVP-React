@@ -69,8 +69,9 @@ export type CampaignContext = {
   event: TemplateParamsContext['event'];
 };
 
-// Seed one outreach_state row per FROZEN-set contact at activation (idempotent).
-// The set is the binding cap, so the engine can never target a non-set contact.
+// Seed one outreach_state row per authorized-set contact (idempotent; the worker's
+// arm tick calls this — activation only flips status). The set is the binding
+// cap, so the engine can never target a non-set contact.
 export async function seedOutreachState(
   eventId: string,
   campaignId: string,
@@ -361,7 +362,8 @@ export type StepAction =
   | { action: 'call_request'; callRequest: OutreachCallRequest }
   | { action: 'skipped' };
 
-// Execute touchpoint N for a contact (called AFTER the worker schedules N+1).
+// Execute touchpoint N for a contact. The worker does not call this; it drives
+// prepareAndSendStep through the serial flow below.
 // Re-checks eligibility, atomically claims the step, then sends (WhatsApp) or
 // signals a call dispatch. At-most-once by design (a missed nudge beats a double
 // message; the multi-touchpoint schedule self-covers).
@@ -383,9 +385,8 @@ export async function executeStep(
     .maybeSingle();
   if (!contact || contact.removal_requested) return { action: 'skipped' };
   // Same admin switch the recipient query honours (whatsapp_consent_required).
-  // Read here too rather than trusted from upstream: this function is also the
-  // crash-recovery entry point, and a step re-entered after a restart must make
-  // the same decision as the first attempt.
+  // Read here too rather than trusted from upstream: a step re-entered after a
+  // restart must make the same decision as the first attempt.
   if (
     tp.channel === 'whatsapp' &&
     !contact.whatsapp_consent_at &&
@@ -487,10 +488,11 @@ export async function executeStep(
   };
 }
 
-// The SHARED reach path (both channels). Records the billed reach through the
+// The reach path for call results. Records the billed reach through the
 // SAME try_record_billed_result RPC (cross-channel dedup) — never a raw insert —
-// and on 'billed' stops the contact's outreach. Called by the WhatsApp webhook
-// and (C2) the call result webhook. Must carry campaignId + attemptId.
+// and on 'billed' stops the contact's outreach. Called by the call result
+// webhook (the WhatsApp webhook calls recordReached directly). Must carry
+// campaignId + attemptId.
 export async function writeReach(args: ReachedArgs): Promise<string> {
   const outcome = await recordReached(args);
   if (outcome === 'billed') {
@@ -499,9 +501,9 @@ export async function writeReach(args: ReachedArgs): Promise<string> {
   return outcome;
 }
 
-// Stop a contact's outreach when reached (the data-side cancel; the worker also
-// cancels pending pg-boss jobs, but the execution-time reach check is the
-// guarantee). Idempotent.
+// Stop a contact's outreach when reached (the data-side stop; pending pg-boss
+// jobs are not cancelled — the execution-time reach check is the guarantee).
+// Idempotent.
 export async function cancelOutreachForContact(
   campaignId: string,
   contactId: string,
@@ -511,7 +513,7 @@ export async function cancelOutreachForContact(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // §12 FINAL (M1) SERIAL FLOW — cursor-first reserve → send → resolve.
-// The four RPCs below are SECURITY INVOKER / service_role-only (createAdminClient
+// The three RPCs below are SECURITY INVOKER / service_role-only (createAdminClient
 // runs as service_role). Each returns the RPC's text verdict; a transport error
 // surfaces as 'error' (the caller decides — never silently advance). Some SQL
 // params are NULLABLE (the CAS uses IS NOT DISTINCT FROM); the generated Args
@@ -617,15 +619,6 @@ export async function loadOutreachRow(
   return data ?? null;
 }
 
-// Build + send the WhatsApp/call for the CURSOR step, classified into a
-// StepSendResult. It does NOT reserve/advance (the RPCs own that) — it only
-// performs the external, non-idempotent side effect and reports the outcome:
-//   accepted/definitely_not_sent/unknown — the WhatsApp delivery classification.
-//   skip{reason}     — config/template integrity (advance-skip; schedule covers).
-//   terminal{reason} — opt-out / no consent (terminalize the contact).
-//   advance{reason}  — a call request was dispatched (advance the cursor).
-// On accepted it bumps whatsapp_sent_count + op status adjacent to the send (a
-// resolve failure after accept ⇒ possible sent-count under-count, never resend).
 // The terminal-precheck conditions for one step as a PURE function — the SINGLE
 // source of truth shared by prepareAndSendStep (its first gate) and the
 // crash-recovery re-check. removal_requested terminates on ANY channel; missing
@@ -646,8 +639,8 @@ export function terminalReasonFor(
   return null;
 }
 
-// Read-only terminal re-check for the crash-recovery path (terminal-recovery
-// fix): NO send. Lets runStepExecution re-terminalize an opt-out / no-consent
+// Read-only terminal re-check for the crash-recovery path: NO send. Lets
+// runStepExecution re-terminalize an opt-out / no-consent
 // contact instead of blindly advancing a failed terminalize. null → not terminal
 // (a prior real send may have happened → advance once, at-most-once).
 export async function checkStepTerminal(
@@ -672,6 +665,15 @@ export async function checkStepTerminal(
   return reason ? { reason } : null;
 }
 
+// Build + send the WhatsApp/call for the CURSOR step, classified into a
+// StepSendResult. It does NOT reserve/advance (the RPCs own that) — it only
+// performs the external, non-idempotent side effect and reports the outcome:
+//   accepted/definitely_not_sent/unknown — the WhatsApp delivery classification.
+//   skip{reason}     — config/template integrity (advance-skip; schedule covers).
+//   terminal{reason} — opt-out / no consent (terminalize the contact).
+//   advance{reason}  — a call request was dispatched (advance the cursor).
+// On accepted it bumps whatsapp_sent_count + op status adjacent to the send (a
+// resolve failure after accept ⇒ possible sent-count under-count, never resend).
 export async function prepareAndSendStep(
   boss: PgBoss,
   ctx: CampaignContext,

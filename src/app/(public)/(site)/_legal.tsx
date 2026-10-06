@@ -5,7 +5,7 @@ import { toE164Israel, type CompanyLegal } from '@/lib/data/company';
 
 // Shared shell for the public legal pages (privacy policy, terms). RTL Hebrew,
 // reads the company identity from config so it stays in sync with the agreement.
-// Legal wording reviewed and approved — no draft banner (removed 2026-08-30).
+// Legal wording reviewed and approved — no draft banner.
 //
 // Back link: a lucide ArrowRight, not the literal "←" glyph the responsive/RTL
 // audit flagged (docs/design/responsive-rtl-audit.md §3). In RTL "back" points
@@ -41,8 +41,7 @@ export function LegalShell({
         לדף הבית
       </Link>
 
-      {/* Same heading scale + rhythm as /faq and /contact (they were a smaller
-          text-2xl with no responsive step). */}
+      {/* Same heading scale + rhythm as /faq and /contact. */}
       <h1 className="mt-2 text-balance text-display font-extrabold tracking-tight">{title}</h1>
       <p className="mt-2 text-xs text-muted-foreground">{updatedText}</p>
 

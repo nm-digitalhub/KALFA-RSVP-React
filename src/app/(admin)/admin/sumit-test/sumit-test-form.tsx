@@ -6,7 +6,7 @@ import Script from 'next/script';
 // ============================================================================
 // /admin/sumit-test — the SUMIT diagnostic screen.
 //
-// THE PAGE IS TWO INDEPENDENT <form>s, and which one you want depends on WHERE
+// THE PAGE IS THREE INDEPENDENT <form>s, and which one you want depends on WHERE
 // THE CARD COMES FROM. They post to the same route (/api/admin/sumit-test) and
 // end up in the same chargeRaw() call; what differs is how the card reaches it.
 //
@@ -24,6 +24,10 @@ import Script from 'next/script';
 //     This form deliberately has NO `data-og="form"`, so payments.js never
 //     binds it (its BindFormSubmit selects `form[data-og=form]` only, verified
 //     against the live script) and it submits as a plain POST.
+//
+//   FORM 3 — "מימוש תפיסת מסגרת": neither a card nor a token is entered. A J5
+//     hold that form 1 made is captured (J4 on its AuthNumber); the browser posts
+//     only the hold's row id and an amount, and route.ts resolves the rest.
 //
 // WHY THE HEADINGS AND LABELS BELOW ARE WORDED SO LITERALLY. An earlier version
 // left form 1 untitled while form 2 was headed "עסקת חיוב", and form 2's token
@@ -72,7 +76,7 @@ function FormHeading({ n, title, subtitle }: { n: number; title: string; subtitl
 
 type ChargeLine = { name: string; quantity: string; unitPrice: string };
 
-// Items rows editor — shared by both forms.
+// Items rows editor — shared by forms 1 and 2.
 //
 // The operator edits a structured list; it is serialised into ONE hidden JSON
 // field, the same controlled-JSON bridge the package form uses, so nobody

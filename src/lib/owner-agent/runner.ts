@@ -19,15 +19,16 @@ import { toolsForPermissions } from '@/lib/owner-agent/tools/registry';
 import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-agent/tools/shared';
 
 // One owner-agent answer: a headless `claude -p` run whose only tools are the
-// owner-agent MCP server's and two of the official Supabase MCP server's (plan
-// §4, owner decision 2026-09-24: "work exactly the same way as the fleet";
-// plans/owner-agent-free-read-plan.md §3: free read-only SQL).
+// owner-agent MCP server's, two of the official Supabase MCP server's and the
+// built-in RemoteTrigger and Read (plan §4, owner decision 2026-09-24: "work
+// exactly the same way as the fleet"; plans/owner-agent-free-read-plan.md §3:
+// free read-only SQL).
 //
 // ⚠️ THE FLEET'S METHOD, ON PURPOSE. `.claude/fleet/bin/run-role.sh` and the
 // workflow engine's `ai` port (src/lib/workflow/enqueue.ts) already drive the
 // installed CLI with the long-lived CLAUDE_CODE_OAUTH_TOKEN from
-// .claude/fleet/.token.env. Mirrored from them: the token read from that file
-// at run time; HOME and PATH pinned exactly as run-role.sh pins them;
+// .claude/fleet/.token.env. Mirrored from them:
+// HOME and PATH pinned exactly as run-role.sh pins them;
 // `--permission-mode dontAsk --setting-sources project --settings <file>`;
 // execFile, never a shell; a hard timeout; and the JSON trace parsed for the
 // result text, total_cost_usd and session_id. No API key, no Mastra Agent.
@@ -38,12 +39,14 @@ import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-
 //     locks/global.lock. A WhatsApp answer must never wait behind a
 //     20-minute fleet role, and this run starts no `next build` (the thing
 //     the lock exists to serialize).
-//  2. TOOLS COME ONLY FROM OUR TWO MCP SERVERS. `--tools ""` removes every
-//     built-in (help: 'Use "" to disable all tools'), `--strict-mcp-config`
-//     ignores every MCP server except the two in --mcp-config, our server
-//     registers only the tools the caller's permission set unlocks, and of
-//     the Supabase server's tools only execute_sql and list_tables are
-//     allowed (--allowedTools and the settings file; dontAsk denies the rest).
+//  2. TOOLS COME FROM OUR TWO MCP SERVERS, PLUS RemoteTrigger AND Read.
+//     `--tools RemoteTrigger,Read` removes every other built-in (help:
+//     'Specify the list of available tools from the built-in set'),
+//     `--strict-mcp-config` ignores every MCP server except the two in
+//     --mcp-config, our server registers only the tools the caller's
+//     permission set unlocks, and of the Supabase server's tools only
+//     execute_sql and list_tables are allowed (--allowedTools and the
+//     settings file; dontAsk denies the rest).
 //  3. THE PROMPT GOES ON STDIN, NOT IN ARGV. The CLI accepts either ("Input
 //     must be provided either through stdin or as a prompt argument when
 //     using --print", 2.1.281 binary). A positional prompt that begins with
@@ -54,11 +57,11 @@ import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-
 //     kernel's 128 KiB limit on a single argument.
 //  4. THE ENVIRONMENT IS BUILT, NOT INHERITED. run-role.sh inherits the
 //     scheduler's environment and pins HOME/PATH; the workflow port passes
-//     the whole worker environment. The consumer of this runner will hold
+//     the whole worker environment. The consumer of this runner holds
 //     the Supabase service-role key, and the CLI has no use for it — so the
 //     CLI gets HOME, PATH, NODE_ENV and TZ (as a fleet run has them), the
-//     OAuth token and Supabase access token, and nothing else. Our MCP server loads its own credentials with
-//     `node --env-file` (./mcp/main.ts).
+//     Supabase access token, and nothing else. Our MCP server loads its own
+//     credentials with `node --env-file` (./mcp/main.ts).
 //
 //     ⚠️ THE SUPABASE ACCESS TOKEN TRAVELS IN THE CLI's ENVIRONMENT, NEVER IN
 //     ARGV (free-read plan §4.3). --mcp-config is an argv string, readable by
@@ -71,11 +74,13 @@ import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-
 //     config → `failed`). So each server's config blanks the credentials it
 //     has no use for: ours gets no Supabase access token and no OAuth token,
 //     the Supabase server no OAuth token. No temp config file is needed.
-//  5. A MISSING TOKEN IS AN ERROR. run-role.sh proceeds without the file, and
-//     under the pinned HOME the CLI would fall back to the owner's
-//     interactive login. A service must not silently depend on that login.
-//  6. THE TOKEN FILE IS PARSED, NOT SOURCED. run-role.sh `.`-sources it; a
-//     Node process reads the one assignment it needs and executes nothing.
+//  5. NO OAUTH TOKEN. run-role.sh exports the fleet's CLAUDE_CODE_OAUTH_TOKEN
+//     from .token.env; this runner reads no token file and passes none: the
+//     CLI uses the claude.ai login stored under the pinned HOME (see the
+//     warning above buildCliEnv below).
+//  6. ENV FILES ARE PARSED, NOT SOURCED. run-role.sh `.`-sources .token.env; a
+//     Node process reads the one assignment it needs from .env.local
+//     (parseEnvAssignment) and executes nothing.
 //  7. `--output-format stream-json --verbose`, NOT `json`. The single `json`
 //     result carries no tool names (its 2.1.281 schema: result, num_turns,
 //     session_id, total_cost_usd, usage, permission_denials — no tool list),
@@ -85,12 +90,9 @@ import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-
 //     with it in print mode (the CLI refuses otherwise).
 //  8. `--system-prompt` REPLACES Claude Code's default system prompt (help:
 //     "System prompt to use for the session"; `--append-system-prompt`
-//     would keep the coding-assistant prompt and add to it), and
-//     CLAUDE.md loading is no longer disabled by an environment variable:
-//     from the dedicated cwd below, the walk up would otherwise reach
-//     beta/CLAUDE.md and ~/.claude/CLAUDE.md. The variable is present in the
-//     2.1.281 binary and is exactly what `--safe-mode` sets, whose help says
-//     it starts "with all customizations (CLAUDE.md, …) disabled".
+//     would keep the coding-assistant prompt and add to it). CLAUDE.md files
+//     are NOT kept out: from the dedicated cwd below, the walk up reaches
+//     beta/CLAUDE.md and ~/.claude/CLAUDE.md.
 //  9. A DEDICATED CWD: <repo>/.fleet-logs/owner-agent/cwd. The CLI keeps a
 //     session under $HOME/.claude/projects/<cwd with every non-alphanumeric
 //     character replaced by '-'>/<session_id>.jsonl — here
@@ -104,13 +106,12 @@ import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-
 //     `timeout --kill-after=60`). The runner reports the timeout only once
 //     the process is gone; an owner waiting on WhatsApp should not wait a
 //     further minute for a CLI that ignored SIGTERM.
-// 11. NO OUTPUT FILTER. The phone mask this runner used to apply is gone
-//     (owner decision 2026-09-24 on 9.7: "the agent hides nothing"): a staff
-//     member who asks for a phone number gets it. What reaches WhatsApp is
-//     decided by the allow list and the send gate, not by a regex.
+// 11. NO OUTPUT FILTER (owner decision 2026-09-24 on 9.7: "the agent hides
+//     nothing"): a staff member who asks for a phone number gets it. What
+//     reaches WhatsApp is decided by the allow list and the send gate, not by
+//     a regex.
 // 12. IMAGES AND DOCUMENTS GO ON STDIN AS CONTENT BLOCKS, never as files
-//     (capabilities plan §4.2). There is no Read tool and there must never be
-//     one (deviation 2), so a run with attachments switches to
+//     (capabilities plan §4.2). A run with attachments switches to
 //     `--input-format stream-json`: stdin is ONE user message line whose
 //     content is the attachment blocks and then the prompt text, built with
 //     JSON.stringify. MEASURED against the installed 2.1.283 (2026-09-27,
@@ -194,7 +195,7 @@ export interface OwnerAgentRunInput {
    * by the caller (has_platform_permission_for_user). Never from the model.
    */
   permissions: readonly OwnerAgentPermission[];
-  /** Continue an earlier CLI session (`--resume`). Stage 6b decides whether. */
+  /** Continue an earlier CLI session (`--resume`). The consumer decides whether (consumer/sessions.ts). */
   resumeSessionId?: string;
   /** Model as the CLI spells it: an alias (`sonnet`) or a full name. */
   model: string;
@@ -427,7 +428,7 @@ export function parseEnvAssignment(contents: string, key: string): string | null
   return token;
 }
 
-// Read at run time too, like the OAuth token: a rotated PAT in .env.local is
+// Read at run time: a rotated PAT in .env.local is
 // picked up without a restart, and the smoke script (node without --env-file)
 // reads the same file the consumer does.
 async function loadSupabaseAccess(paths: OwnerAgentPaths): Promise<{ token: string; projectRef: string }> {
@@ -463,7 +464,7 @@ export function allowedToolsFor(permissions: readonly string[]): string[] {
 
 // HOME and PATH exactly as run-role.sh pins them; NODE_ENV and TZ as the
 // kalfa-fleet pm2 entry declares them (ecosystem.config.cjs), so the CLI sees
-// what it sees in a fleet run; then the OAuth token and the
+// what it sees in a fleet run; then the
 // Supabase server's access token (deviation 4: env, never argv). Nothing else,
 // and nothing inherited from process.env.
 //
@@ -512,8 +513,9 @@ export function buildMcpConfig(options: {
           SUPABASE_ACCESS_TOKEN: '',
         },
         // "All tools from this server are always included in the prompt and
-        // never deferred behind tool search" (2.1.281 schema). With every
-        // built-in off there is no ToolSearch to un-defer them with.
+        // never deferred behind tool search" (2.1.281 schema). With only
+        // RemoteTrigger and Read as built-ins there is no ToolSearch to
+        // un-defer them with.
         alwaysLoad: true,
       },
       // Free-read plan §3.2. `--read-only` makes the server send read_only

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-// Pure normalizers for EXTERNAL Voximplant payloads (plan §4). Policy:
+// Pure normalizers for EXTERNAL Voximplant payloads. Policy:
 //   - our own inputs (admin forms, cb bodies) use strictObject elsewhere;
 //   - EXTERNAL provider responses use LOOSE schemas + a pure normalizer, so a
 //     provider-side field addition/rename degrades a value to null/'unknown'
@@ -134,7 +134,7 @@ export interface NormalizedCallListTask {
   startExecutionAt: string | null;
   finishExecutionAt: string | null;
   // METADATA ONLY — the content of custom_data/result_data is guest PII and
-  // never leaves the normalizer (plan §4).
+  // never leaves the normalizer.
   customData: PayloadMeta;
   resultData: PayloadMeta;
 }
@@ -166,7 +166,7 @@ export function normalizeCallListTask(raw: unknown): NormalizedCallListTask {
 // A3 — GetAuditLog
 // ---------------------------------------------------------------------------
 
-// Plan §4: NO detail field AT ALL (not even partial). IP is masked to /24.
+// NO detail field AT ALL (not even partial). IP is masked to /24.
 export interface NormalizedAuditEntry {
   at: string | null;
   command: string | null;
@@ -190,8 +190,9 @@ export function maskIp(v: unknown): string | null {
 export function normalizeAuditEntry(raw: unknown): NormalizedAuditEntry {
   const p = looseRecord.safeParse(raw);
   const o: Record<string, unknown> = p.success ? p.data : {};
-  // AuditLogInfoType is not enumerated in the research corpus — probe the
-  // plausible field names defensively (confirmed live at stage-1 smoke).
+  // The documented AuditLogInfoType fields (docs/voximplant/reference/httpapi/
+  // structure.md) do not cover every name probed here — probe the plausible
+  // field names defensively (confirmed live in a smoke test).
   const actorRaw = (
     asString(o.account_email) ? 'account'
     : asString(o.subuser_login) ? 'subuser'
@@ -366,7 +367,7 @@ export interface NormalizedAccountInfo {
   balance: number | null; // null = unparseable → caller alerts "unknown balance"
   currency: string | null;
   active: boolean | null;
-  callbackUrl: string | null; // echo — may be absent (undocumented; stage-6 OPEN)
+  callbackUrl: string | null; // echo — may be absent
   callbackSalt: string | null;
 }
 

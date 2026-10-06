@@ -188,15 +188,12 @@ describe('POST /api/voximplant/console/event', () => {
     expect(updateConsoleCallStatus).not.toHaveBeenCalled();
   });
 
-  // Full telephony audit (13.8): both scenarios have sent consult_connected
-  // since consult shipped, but it was missing from consoleEventBodySchema's
-  // discriminatedUnion — every report was rejected 400 before the secret
-  // check ever ran. Now accepted AND load-bearing: it stamps
-  // consult_connected_at, which is the ONLY thing the UI may gate "השלמת
-  // העברה" on. consult_agent_id is written earlier and optimistically (at
-  // consult_started, while the target is still ringing), so gating the
-  // button on it offered a no-op click for up to 20s — the save_rsvp
-  // 'queued' false-promise pattern. See migration 20260813064814.
+  // consult_connected is load-bearing: it stamps consult_connected_at, which
+  // is the ONLY thing the UI may gate "השלמת העברה" on. consult_agent_id is
+  // written earlier and optimistically (at consult_started, while the target
+  // is still ringing), so gating the button on it offered a no-op click for up
+  // to 20s — the save_rsvp 'queued' false-promise pattern. See migration
+  // 20260813064814.
   it('consult_connected: stamps consult_connected_at (the honest "ready to complete" signal)', async () => {
     const res = await POST(
       req({
@@ -278,7 +275,7 @@ describe('POST /api/voximplant/console/event', () => {
 
   // ── Stage 2 (3-way conference) ───────────────────────────────────────────
 
-  // Same schema gap and same fix as consult_connected above.
+  // conference_started is recognized by the schema but writes nothing.
   it('conference_started: accepted (was a schema-rejected 400) and never touches the DAL', async () => {
     const res = await POST(
       req({

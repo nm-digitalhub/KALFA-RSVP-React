@@ -10,7 +10,7 @@ import { SumitTestForm } from './sumit-test-form';
 export const metadata: Metadata = { title: 'בדיקת SUMIT' };
 
 // Admin-only SUMIT POC. Verifies live REST behavior (J5/AuthorizeAmount/token)
-// against an admin-chosen parameter set before we build the production flow.
+// against an admin-chosen parameter set.
 export default async function SumitTestPage() {
   await requirePlatformPermission('manage_billing');
   const config = await getSumitPublicConfig();
@@ -39,10 +39,7 @@ export default async function SumitTestPage() {
         // The route-B (saved-token J4) form lives inside SumitTestForm itself —
         // a second, genuinely separate <form> with no data-og="form" so
         // payments.js never touches it (verified against its live source).
-        // It collects the mandatory expiry + CitizenID that route.ts now
-        // requires; an earlier, separate copy of this form lived here and was
-        // removed for being redundant AND broken (missing those fields, so it
-        // always failed the new mandatory-field check).
+        // It collects the mandatory expiry + CitizenID that route.ts requires.
         <SumitTestForm
           companyId={config.companyId}
           apiPublicKey={config.apiPublicKey}

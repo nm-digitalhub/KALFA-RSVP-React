@@ -8,15 +8,18 @@ import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
 // Shared request guard for the ElevenLabs agent-tool endpoints
-// (/api/voximplant/agent-tool/*/{token} and /api/voximplant/mtg/cb/*/{token}).
+// (/api/voximplant/agent-tool/*/{token}, /api/voximplant/{mtg,sls}/tool/*/{token})
+// and the per-surface terminal-report endpoints
+// (/api/voximplant/{mtg,sls}/cb/{token}, /api/voximplant/purpose/{purpose}/cb/{token}).
 // One canonical implementation of the cb-route auth model: fail-closed rate
 // limit → body-size caps → opaque per-call access-token resolution (identity =
 // the resolved attempt row, NEVER the body) → expiry check → capped body read.
 // Each route then only parses its own schema and persists/processes.
 //
-// Two thin exports, one shared core: guardAgentToolRequest (call_attempts, the
-// original RSVP/sales surface) and guardMeetingToolRequest
-// (callback_request_attempts, the meeting-booking surface) — kept as SEPARATE
+// Thin named exports, one shared core: guardAgentToolRequest (call_attempts, the
+// original RSVP surface), guardMeetingToolRequest
+// (callback_request_attempts, the meeting-booking surface), and the sales and
+// purpose guards below — kept as SEPARATE
 // named functions rather than one generic parameterized export, so a route
 // import (`guardAgentToolRequest` vs `guardMeetingToolRequest`) states which
 // table it authorizes against just by its name, matching this table's own

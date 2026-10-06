@@ -6,7 +6,7 @@ import { isVersionSkewError } from '@/lib/version-skew';
 // Replaces the root layout when an error is thrown in it. Must render its own
 // <html>/<body>. Uses inline styles so it renders even if the app stylesheet is
 // not loaded. Generic, privacy-safe message only. Also the fallback for routes
-// without their own boundary (e.g. public RSVP): a stale-deployment Server
+// without their own boundary (e.g. /oauth/consent): a stale-deployment Server
 // Action error triggers a one-time reload instead (useVersionSkewReload).
 export default function GlobalError({
   error,

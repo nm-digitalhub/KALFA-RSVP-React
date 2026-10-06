@@ -23,7 +23,7 @@ const optionalPhone = z
     error: 'מספר טלפון לא תקין. למספר בחו״ל יש להוסיף קידומת מדינה, למשל ‎+33',
   });
 
-// A non-negative integer guest count (adults/kids), optional. Coerced from the
+// A non-negative integer expected guest count, optional. Coerced from the
 // string form fields carry.
 const optionalCount = z.coerce
   .number({ error: 'נא להזין מספר' })

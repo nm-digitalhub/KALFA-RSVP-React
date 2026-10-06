@@ -19,24 +19,17 @@ export const isTrigger = false;
 
 // Trigger fields offered in the condition's dropdown.
 //
-// This list used to hold two entries and to be the ONLY thing a condition could
-// look at, on the reasoning that "an unbounded accessor would invite reaching
-// into something that is not there and failing at run time instead of at save
-// time". Two things make that reasoning obsolete:
+// The dropdown is the convenient path, not a ceiling: `left` below opens the
+// door the docs describe — `nodes/conditional.md` and `nodes/decision.md`
+// specify X and Y as free values that, per the latter, "support referencing data
+// from earlier nodes and the trigger payload". A condition can compare
+// `{{nodes.<id>.value}}` to anything, which is what makes multi-step logic
+// expressible at all.
 //
-//   1. the trigger payload grew from two fields to seven, so the closed set was
-//      hiding five values a workflow was already carrying; and
-//   2. `resolveConfigTemplates` now runs over every field of every config before
-//      the handler sees it, and an unresolvable reference raises
-//      `PermanentNodeExecutionError` naming the offending token. The failure the
-//      closed set was protecting against is now loud, immediate and specific —
-//      which was the only thing wrong with it.
-//
-// So the dropdown stays as the convenient path and is complete, while `left`
-// below opens the door the docs describe: `nodes/conditional.md` specifies X and
-// Y as free values that "support referencing data from earlier nodes and the
-// trigger payload". A condition can now compare `{{nodes.<id>.value}}` to
-// anything, which is what makes multi-step logic expressible at all.
+// That openness is safe because `resolveConfigTemplates` runs over every field
+// of every config before the handler sees it, and an unresolvable reference
+// raises `PermanentNodeExecutionError` naming the offending token — the failure
+// is loud, immediate and specific.
 export const CONDITION_FIELDS = [
   'message_text',
   'button_payload',

@@ -165,7 +165,7 @@ describe('the four-answer RSVP template', () => {
   });
 
   it('every seeded branch carries the conditions that select it', () => {
-    // The switch routes on `conditions`, not on the old `case1/2/3` fields. A
+    // The switch routes on each branch's `conditions`. A
     // template whose branches were seeded with empty rows would load, look
     // right, and send EVERY answer to the default — the exact defect this file
     // exists to catch.
@@ -404,7 +404,7 @@ describe('clock, wait and fan-out templates', () => {
 
   it('⚠️ the child template is NOT reachable from the public endpoint', () => {
     // Its trigger exists only to satisfy "exactly one start node". An empty
-    // hash is refused by `findWorkflowForToken` on both sides, so arming it
+    // hash is refused by `findWorkflowForEndpoint` on both sides, so arming it
     // opens nothing — but a fan-out can still start it.
     const trigger = child.value.diagram.nodes.find((n) => n.type === 'start-node')!;
     expect(trigger.data.type).toBe('trigger.webhook');
@@ -449,11 +449,12 @@ describe('clock, wait and fan-out templates', () => {
   });
 
   it('a dry run of the wait template REPORTS the limit instead of crashing', async () => {
-    // MEASURED, not assumed: `dryRunWorkflow` calls `runWorkflow` directly and so
-    // never passes the wait interceptor that `run-workflow.ts` installs. Pressing
-    // "dry run" on this template therefore cannot simulate the pause — it stops
-    // at the wait and names it. Pinned because the acceptable failure here is a
-    // NAMED one; an unhandled throw would look like a broken template.
+    // MEASURED, not assumed: the dry run's ledger has no `beginWait`, so
+    // `activity-runner.ts` fails a wait CLOSED (`wait_unsupported`) instead of
+    // parking it. Pressing "dry run" on this template therefore cannot simulate
+    // the pause — it stops at the wait and names it. Pinned because the
+    // acceptable failure here is a NAMED one; an unhandled throw would look like
+    // a broken template.
     const r = await dryRunWorkflow({
       workflowId: 'wf-dry',
       storedDefinition: asStored(nudge),
@@ -624,7 +625,7 @@ describe('the voice template branches SAFELY', () => {
 
   it('⚠️ every reference to the call’s outcome carries the safe marker', () => {
     // `resolve-template` THROWS on a missing path rather than resolving to ''
-    // (resolve-template.ts:127), and `resolveConfigTemplates` walks every string
+    // (resolve-template.ts), and `resolveConfigTemplates` walks every string
     // in a node's config — so one unguarded reference fails the whole step,
     // permanently, and the run dies.
     //

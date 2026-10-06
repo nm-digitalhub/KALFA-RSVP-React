@@ -4,12 +4,13 @@ import { createClient } from '@/lib/supabase/server';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 
-// Admin: guest-OUTREACH provider config (WhatsApp Cloud API; Voximplant ships
-// with C2). Stored on the app_settings singleton (admin-only RLS). Secrets
-// (access token, app secret) are returned to the admin form shown masked with a
-// reveal toggle — the same gateway-plugin pattern as the SUMIT/SMTP keys in
-// settings.ts. They are sent ONLY to this requireAdmin HTTPS page and never
-// logged. `outreach_enabled` is the shared master switch for all channels.
+// Admin: guest-OUTREACH provider config (WhatsApp Cloud API; Voximplant's lives
+// in voximplant-channel.ts). Stored on the app_settings singleton (admin-only
+// RLS). Secrets (access token, app secret) are returned to the admin form shown
+// masked with a reveal toggle — the same gateway-plugin pattern as the
+// SUMIT/SMTP keys in settings.ts. They are sent ONLY to this admin-only
+// (manage_settings) HTTPS page and never logged. `outreach_enabled` is the
+// shared master switch for all channels.
 
 export type WhatsAppChannelConfig = {
   outreach_enabled: boolean;
@@ -118,7 +119,7 @@ export async function testWhatsAppConnection(): Promise<ConnectionTestResult> {
   if (!cfg.configured) {
     return { ok: false, message: 'חסרים מזהה מספר או טוקן' };
   }
-  // One pinned version for the whole system (G5). The former
+  // One pinned version for the whole system. The former
   // WHATSAPP_GRAPH_VERSION env override is gone on purpose: it was never set
   // (verified 2026-09-09), and an override here could make the admin's "test
   // connection" pass on a version the send path does not use — the exact

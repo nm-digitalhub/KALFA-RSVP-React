@@ -12,11 +12,13 @@ import { countWinddownCampaigns as countWinddownCampaignsCore } from '@/lib/owne
 // Sidebar nav badges: how many items in each domain are actionable right now.
 // Modeled directly on getDashboardCounts() (./dashboard.ts) — same fail-soft,
 // count-only, per-domain-permission-gated shape. Each predicate matches the
-// domain's own "needs handling" definition exactly (contacts/callbacks:
-// status='new'; campaigns: the same WINDDOWN_STATUSES listCampaignsForAdmin()
-// filters by; fleet: status='pending' AND filed by an agent — the same
-// "ממתין לך" predicate the fleet conversation list uses), so the badge number always
-// matches what the destination page itself calls "needs attention".
+// domain's own "needs handling" definition (contacts: status 'new' or
+// 'reopened'; callbacks: status='new'; campaigns: WINDDOWN_STATUSES, the
+// wind-down half of what listCampaignsForAdmin() filters by — that list also
+// shows stuck holds, which the badge does not count; fleet: status='pending'
+// AND filed by an agent — the same "ממתין לך" predicate the fleet conversation
+// list uses), so the badge number matches what the destination page itself
+// calls "needs attention".
 
 export interface AdminNavCounts {
   contacts: number | null;
@@ -90,7 +92,7 @@ export async function getAdminNavCounts(): Promise<AdminNavCounts> {
   // just cleared requirePlatformStaff() at the top of that same layout was
   // ejected to /app three lines later. Exactly the defect the 2026-09-10 axis
   // merge existed to remove, still alive in the one module every admin page
-  // loads. Fixed 2026-09-10.
+  // loads.
   //
   // Resolve permissions once (cache()-memoized) and only run a count the
   // caller is entitled to see — a staff member can legitimately hold none of

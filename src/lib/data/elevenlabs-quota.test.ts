@@ -42,7 +42,7 @@ describe('evaluateQuotaAlert (pure threshold decision)', () => {
 
   it('reports used/limit/percent fields (rounded)', () => {
     expect(evaluateQuotaAlert(ok(90, 100))?.fields).toEqual({ used: 90, limit: 100, percent: 90 });
-    // 9860/350071 ≈ 2.8% → below threshold → null (the live beta value).
+    // 9860/350071 ≈ 2.8% → below threshold → null.
     expect(evaluateQuotaAlert(ok(9860, 350071))).toBeNull();
   });
 

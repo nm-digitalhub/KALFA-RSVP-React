@@ -1,8 +1,7 @@
 'use client';
 
 // Starter template 13 of 13 — its diagram and its selector entry. Editor
-// side; `./index.ts` places it in `DIAGRAM_TEMPLATES` at the position the
-// inline entry held.
+// side; `./index.ts` places it in `DIAGRAM_TEMPLATES`.
 import type { DiagramModel, TemplateModel } from '@workflowbuilder/sdk';
 
 import { SOURCE, TARGET } from './shared';
@@ -14,8 +13,8 @@ const HOLD_ALERT_ID = 'tmpl-sumit-hold-alert';
  * SUMIT tells us a frame hold changed; a person is told.
  *
  * WHY THIS ONE EXISTS. `sumit-hold-reconcile.ts` discovers a manually released
- * hold by POLLING the "תפיסות מסגרת" folder (1076735289), because the comment
- * above `crm-holds.ts` believed SUMIT could not notify. It can: its trigger
+ * hold by POLLING the "תפיסות מסגרת" folder (1076735289), because its header
+ * comment believed SUMIT could not notify. It can: its trigger
  * module posts to a URL on a card change (`/triggers/triggers/subscribe/`,
  * "usually done by make.com/zapier, but can also be used directly"). This is
  * that notification, landing in the team channel.
@@ -33,7 +32,7 @@ const HOLD_ALERT_ID = 'tmpl-sumit-hold-alert';
  *
  * ⚠️ THE TITLE CARRIES THE CARD ID. The alert layer suppresses a repeated title
  * inside its dedup window, so a fixed title would report the first release of
- * the hour and swallow the rest.
+ * the minute and swallow the rest.
  */
 const sumitHoldChanged: DiagramModel = {
   name: 'תפיסת מסגרת השתנתה ב-SUMIT — התראה לצוות',

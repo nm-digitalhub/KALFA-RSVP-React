@@ -12,9 +12,8 @@ import type { Json } from '@/lib/supabase/types';
 // row into calendar material, shared by the <AddToCalendar> component and the
 // two ICS routes (/g/[token]/event.ics, /r/[token]/event.ics). Server-side.
 //
-// Generators (owner-approved plan, 2026-09-08): web deep links come from
-// `calendar-link` (Google / Outlook.com / Microsoft 365 — the same call shape the
-// pre-pivot component used), the .ics file from the `ics` package (RFC 5545
+// Generators: web deep links come from `calendar-link` (Google / Outlook.com /
+// Microsoft 365), the .ics file from the `ics` package (RFC 5545
 // generator; escapes text, emits UTC instants). Both are pure, synchronous and
 // documented — no module-level state, so concurrent page renders and route
 // hits cannot interfere (the previous generator's undocumented single-channel

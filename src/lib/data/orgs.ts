@@ -151,7 +151,7 @@ export async function ensurePersonalOrg(): Promise<string> {
 // ---------------------------------------------------------------------------
 
 // The global role catalog (for the invite/role-change selectors and the
-// read-only roles reference). Highest-rank first.
+// roles matrix). Highest-rank first.
 export async function listRoles(): Promise<OrgRoleDTO[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -170,7 +170,7 @@ export async function listRoles(): Promise<OrgRoleDTO[]> {
   }));
 }
 
-// The permission catalog (for the read-only roles matrix reference).
+// The permission catalog (the rows of the roles matrix).
 export async function getPermissionCatalog(): Promise<PermissionDefDTO[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -374,7 +374,7 @@ export async function setOrgRolePermission(
 }
 
 // Reset one non-owner role's org-scoped grants back to the frozen factory
-// template (role_permissions), applying the same two exclusions the Phase-1
+// template (role_permissions), applying the same two exclusions the
 // backfill / create_organization seed use: system_protected permissions and
 // guests.delete are never re-seeded to a non-owner role. Diff-based (deletes only
 // the extras, inserts only the missing) so the audit trail records the real
@@ -720,11 +720,10 @@ export async function acceptInvitation(token: string): Promise<string> {
   return data;
 }
 
-// Lightweight membership list for the org switcher (delegates to org context).
+// Lightweight membership list (delegates to org context).
 export async function listOrgsForUser() {
   const ctx = await getOrgContext();
   return ctx.orgs;
 }
 
-// Exported so callers (e.g. event creation) can resolve the current user once.
 export { getUser };

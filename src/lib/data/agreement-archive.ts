@@ -29,7 +29,8 @@ import { ISRAEL_TIME_ZONE } from '@/lib/date';
 // Idempotency: the row is selected on sharepoint_exported_at IS NULL and marked
 // only after upload + metadata succeed; the upload itself uses
 // conflictBehavior=fail, so a re-run after a crash finds the file already there
-// and adopts it only when its recorded hash matches.
+// and adopts it only when its recorded hash matches (or, with no metadata
+// written yet, its byte size).
 
 export const ARCHIVE_LIBRARY = 'Customer-Agreements';
 export const RETENTION_YEARS = 7;
@@ -306,7 +307,6 @@ export async function resolveLibraryTarget(libraryName: string): Promise<Archive
   return target;
 }
 
-/** Exported for the graph-status check shared with the maintenance sweep. */
 export function graphStatusOf(err: unknown): number {
   return graphStatus(err);
 }

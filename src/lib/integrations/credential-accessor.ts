@@ -101,7 +101,7 @@ export function createCredentialAccessor(
     // ⚠️ NORMALISED, because the two sides are spelled differently BY THE
     // PROVIDER'S OWN SPECIFICATION — `Mail.Send` here, `…/mail.send` in the
     // token response. A plain `includes` failed every send, and failed it
-    // intermittently. See scopes.ts; the check itself is unchanged.
+    // intermittently. See scopes.ts.
     const missingScopes = unsatisfiedScopes(
       connection.scopes,
       requiredScopes,

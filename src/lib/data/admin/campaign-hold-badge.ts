@@ -7,7 +7,7 @@
 // 'authorized' for the campaign's whole life; what happened to the money after
 // that is written elsewhere:
 //   - charge_status = 'charged'          → the hold was CAPTURED (final charge,
-//                                           recordCampaignCharge in campaigns.ts);
+//                                           recordCampaignCharge in data/campaigns.ts);
 //   - charge_status = 'nothing_to_charge'→ the campaign closed with ₪0, so the
 //                                           hold is only ever RELEASED, never
 //                                           captured — until the reconciler sees

@@ -54,7 +54,7 @@ export default async function VoicePlatformPage() {
 
   // Log-export state as a part-to-whole mix. `noLog` (rows with nothing to
   // export) is included so the donut's proportions reflect the true total —
-  // the dl above only shows the three counts an operator acts on.
+  // the dl below only shows the three counts an operator acts on.
   const logExportBreakdown: StackedBarSegment[] = [
     { key: 'stored', label: 'נשמרו', value: logExport.stored, tone: 'success' },
     { key: 'pending', label: 'ממתינים', value: logExport.pending, tone: 'info' },
@@ -146,7 +146,7 @@ export default async function VoicePlatformPage() {
         <WiringControls state={view.wiring.state} proposedUrl={proposedCallbackBase} />
       </section>
 
-      {/* §2 call lists (A1) */}
+      {/* §2 call lists */}
       <section className={sectionClass}>
         <h2 className="text-lg font-semibold">רשימות חיוג</h2>
         {view.callLists.status !== 'ok' ? (
@@ -193,7 +193,7 @@ export default async function VoicePlatformPage() {
         )}
       </section>
 
-      {/* §3 audit (A3) */}
+      {/* §3 audit */}
       <section className={sectionClass}>
         <h2 className="text-lg font-semibold">יומן ביקורת</h2>
         {view.audit.status !== 'ok' ? (
@@ -228,7 +228,7 @@ export default async function VoicePlatformPage() {
         )}
       </section>
 
-      {/* §4 allowlist (A2) */}
+      {/* §4 allowlist */}
       <section className={sectionClass}>
         <h2 className="text-lg font-semibold">Allowlist לחומת אש (IONOS)</h2>
         {view.allowlist.status !== 'ok' ? (
@@ -248,7 +248,7 @@ export default async function VoicePlatformPage() {
         )}
       </section>
 
-      {/* §5 log export (A4) */}
+      {/* §5 log export */}
       <section className={sectionClass}>
         <h2 className="text-lg font-semibold">ייצוא לוגים</h2>
         <StatusDonut segments={logExportBreakdown} ariaLabel="פילוח מצב ייצוא לוגים" centerSubLabel="רשומות" />

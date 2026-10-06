@@ -42,9 +42,9 @@ export type CreateCallbackRequestConfig = {
  * What a guest's callback request is about.
  *
  * ⚠️ CLOSED, AND THE REASON IS WHO GETS CALLED. `topic` is not a label — it is
- * the ROUTER. `enqueueSalesCallDispatch` gates on `topic !== 'מכירות'` and
- * `enqueueMeetingConfirmDispatch` on `topic === 'מכירות'`, so the string decides
- * which ElevenLabs agent dials the person.
+ * the ROUTER. `enqueueSalesCallDispatch` returns early on `topic !== 'מכירות'`
+ * and `enqueueMeetingConfirmDispatch` on `topic === 'מכירות'`, so the string
+ * decides which ElevenLabs agent dials the person.
  *
  * The node is guest-scoped: `requireGuestContext` refuses it without an event
  * and a contact, and the port reads `guests.full_name` / `guests.phone`. So the

@@ -101,7 +101,7 @@ describe('getIntegrationsIndex', () => {
   });
 
   it('opens exactly the cards the viewer\'s permission covers', async () => {
-    viewer(['manage_voice']); // the ops shape: voice but not settings
+    viewer(['manage_voice']); // voice but not settings
     const { cards } = await byKey();
     expect(cards.voximplant.canOpen).toBe(true);
     expect(cards.elevenlabs.canOpen).toBe(true);
@@ -184,7 +184,7 @@ describe('getIntegrationsIndex', () => {
   it('resolves each distinct permission once, not once per card', async () => {
     viewer(['manage_settings']);
     await getIntegrationsIndex();
-    // Two distinct keys across seven cards.
+    // Two distinct keys across all the permission-gated cards.
     expect(vi.mocked(hasPlatformPermission).mock.calls.map((c) => c[0]).sort()).toEqual([
       'manage_settings',
       'manage_voice',

@@ -9,14 +9,9 @@
 // LIVE STATE (verified 2026-08-30, not just the code default): the env var is
 // TRUE in production — owner signed off 2026-07-21. Both bulk-import passes
 // (import-actions.ts and whatsapp/actions.ts) call reconcile since 2026-08-30.
-// The funded_cap that bounded the set was retired 2026-09-25 (migration
-// 20260925003335): the RPC admits every eligible contact. Historical note — the
-// P1 cap design gap it once had (not accounting for base_price/
-// included_reached) was found and fixed 2026-08-30, verified
-// via campaign_authorized_set_audit (empty) and 4 days of kalfa-beta logs (no
-// [reconcile] line ever) that the bug was live but never actually exercised,
-// so no real guest mutation was affected before the fix. Read per-call (not
-// cached) so it can be toggled without a code deploy. Dependency-free leaf
+// The funded_cap that once bounded the set was retired 2026-09-25 (migration
+// 20260925003335), so the hold no longer limits who is admitted. Read per-call
+// (not cached) so it can be toggled without a code deploy. Dependency-free leaf
 // module so the pg-boss worker can import it without dragging in server-only
 // code.
 export function isReconcileEnabled(): boolean {

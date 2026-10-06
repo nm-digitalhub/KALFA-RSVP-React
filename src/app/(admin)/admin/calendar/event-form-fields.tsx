@@ -16,10 +16,9 @@ import type { ExchangeCategory } from '@/lib/exchange-ews/types';
 // reminder, show-as, private — grouped into the same Time / Location &
 // description / Reminder & privacy sections Outlook uses.
 //
-// Everything here is REAL: each control maps to an Exchange property the
-// provider actually writes (Appointment.Location, RequiredAttendees,
-// Recurrence, LegacyFreeBusyStatus, Sensitivity, Categories,
-// ReminderMinutesBeforeStart). Nothing is decorative.
+// Everything here is REAL: each control maps to a calendar-event property the
+// provider actually writes (location, attendees, recurrence, showAs,
+// sensitivity, categories, reminderMinutesBeforeStart). Nothing is decorative.
 
 export const FIELD_INPUT_CLASS =
   'w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-60';

@@ -1,7 +1,7 @@
 // Probe implementations for kalfa-ops-agent. Every external command runs via
 // execFile with a FIXED argument list — never a shell string, never
 // user-supplied input (this process takes no request body/query, only a
-// fixed set of GET routes). See ops/agent.mjs for the HTTP wrapper.
+// fixed set of GET routes). See ops/probe-server.mjs for the HTTP wrapper.
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';

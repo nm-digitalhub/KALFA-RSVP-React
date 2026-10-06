@@ -12,14 +12,11 @@
 //   at commit b1f47943b723c628b6dd9f6cc67f160df58a55b8 (2026-09-22)
 // License: https://www.apache.org/licenses/LICENSE-2.0
 //
-// MODIFIED (Apache-2.0 §4b) in exactly three places, each forced or measured.
+// MODIFIED (Apache-2.0 §4b) in exactly three places, each with its reason below.
 // Everything else — the slots, the placement, the icons, the disabled rules, the
 // keys — is the vendor's.
 //
 //   1. The buttons are `kalfa-workflow-appbar-button`, not `NavButton`.
-//      FORCED: `NavButton` comes from `@workflowbuilder/ui`, which the vendor's
-//      own package.json marks `publishConfig.access: public` and which npm
-//      nonetheless answers with 404 — it exists only inside their monorepo.
 //      `kalfa-workflow-appbar-button` is what `app-bar.tsx` already uses for the
 //      two buttons it puts in this same app bar, so these match the bar they sit
 //      in rather than introducing a third look.

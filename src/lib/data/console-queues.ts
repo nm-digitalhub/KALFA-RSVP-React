@@ -3,11 +3,10 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { findRoutableAgents } from '@/lib/data/console-calls';
 import type { Tables } from '@/lib/supabase/types';
-// Department queues (plan §10 extension point: "מחלקות (נקודת הרחבה = ring-order
-// בשרת)") — an ADDITIVE layer over the existing server-side ring-order
+// Department queues — an ADDITIVE layer over the existing server-side ring-order
 // mechanism in console-calls.ts (computeRingOrder / findRoutableAgents). This
-// module does NOT adopt Voximplant SmartQueue (ACDv2): the plan evaluated and
-// deferred it — it duplicates the presence model that already lives in
+// module does NOT adopt Voximplant SmartQueue (ACDv2): it was evaluated and
+// deferred — it duplicates the presence model that already lives in
 // agent_status (this app's business source of truth for who's routable) and
 // has no verified v5 integration guide. Queues here are a plain admin-managed
 // grouping of console_agents, and "queue routing" is just a different input to
@@ -21,7 +20,7 @@ type ConsoleQueueRow = Tables<'console_queues'>;
 
 // The four departments seeded by the migration. A fixed union (not a free
 // `string`) because V1 ships no create/delete-queue UI — admins only toggle
-// `is_active` and manage membership on this fixed set (task brief).
+// `is_active` and manage membership on this fixed set.
 export const CONSOLE_QUEUE_KEYS = ['sales', 'support', 'events', 'billing'] as const;
 export type ConsoleQueueKey = (typeof CONSOLE_QUEUE_KEYS)[number];
 
@@ -141,7 +140,7 @@ export interface AgentQueueMembership {
 
 /**
  * This agent's own queue memberships, for the read-only panel display next to
- * presence (task brief). Fetched server-side (admin layout, alongside the rest
+ * presence. Fetched server-side (admin layout, alongside the rest
  * of SoftphoneGateInfo) rather than as a browser RLS read — console_queues/
  * console_agent_queues DO carry an is_console_agent() SELECT policy for
  * defense-in-depth and future direct client reads, but no current browser
@@ -170,12 +169,11 @@ export async function getAgentQueueMemberships(agentId: string): Promise<AgentQu
 // ─────────────────────────────────────────────────────────────────────────
 // Inbound queue selection — the one call site route-inbound uses.
 //
-// DESIGN DECISION (documented per task instructions — "justify what you
-// chose; honest over clever"): there is exactly ONE inbound DID
+// DESIGN DECISION: there is exactly ONE inbound DID
 // (97237219347), so the only real signals available before answering are (a)
 // caller-history (route-inbound already runs identifyInboundCaller, which can
 // resolve CLI -> contact/guest/event) or (b) a flat default, with DTMF-IVR
-// explicitly out of scope for this task ("do not invent an IVR").
+// out of scope (no IVR is invented here).
 //
 // This module chooses (b), a single flat default, NOT a caller-history
 // heuristic — deliberately. identifyInboundCaller proves WHO is calling (an
@@ -186,9 +184,8 @@ export async function getAgentQueueMemberships(agentId: string): Promise<AgentQu
 // any of the four with about equal plausibility, and nothing in the caller
 // lookup distinguishes them. Building a mapping like "identified + active
 // event -> events queue" on that non-signal would be exactly the kind of
-// invented-but-unjustified classification the task explicitly asks to avoid;
-// a flat default that is honest about routing on zero information beats a
-// heuristic that LOOKS informed but isn't.
+// invented-but-unjustified classification; a flat default that is honest about
+// routing on zero information beats a heuristic that LOOKS informed but isn't.
 //
 // DEFAULT_QUEUE_KEY = 'support': the conventional front door for an
 // inbound call with no stronger routing signal — general customer service,
@@ -200,9 +197,9 @@ export const DEFAULT_QUEUE_KEY: ConsoleQueueKey = 'support';
 
 export interface ResolveInboundQueueKeyInput {
   /**
-   * Typed extension point for a future DTMF-IVR queue selector (plan §10,
-   * explicitly deferred — "there is exactly ONE number... do not invent an
-   * IVR"). Always undefined today: ConsoleInbound.voxengine.js never collects
+   * Typed extension point for a future DTMF-IVR queue selector (explicitly
+   * deferred — there is exactly ONE number, so no IVR is invented). Always
+   * undefined today: ConsoleInbound.voxengine.js never collects
    * or reports a digit, and nothing populates this field yet. When a future
    * caller does populate it (post a digit-select step before/instead of this
    * gate), it takes priority over DEFAULT_QUEUE_KEY — this function is the

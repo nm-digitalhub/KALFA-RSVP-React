@@ -35,6 +35,14 @@ export type InboundMessage = {
   messageText: string;
   buttonPayload: string;
   /**
+   * Meta's `phone_number_id` for the line the message ARRIVED ON — ours, not the
+   * guest's. `null` for an inbox row written before the column was populated.
+   *
+   * Read straight off `webhook_inbox.phone_number_id` by the caller, so this
+   * module needs no lookup and stays pure.
+   */
+  phoneNumberId: string | null;
+  /**
    * Context resolved ONCE by the caller, before any workflow is matched.
    *
    * It belongs here rather than inside `planRuns` because this module is pure —
@@ -45,14 +53,6 @@ export type InboundMessage = {
    * Resolved once per MESSAGE, not once per matched workflow: three armed
    * workflows firing on the same message share one guest lookup.
    */
-  /**
-   * Meta's `phone_number_id` for the line the message ARRIVED ON — ours, not the
-   * guest's. `null` for an inbox row written before the column was populated.
-   *
-   * Read straight off `webhook_inbox.phone_number_id` by the caller, so this
-   * module needs no lookup and stays pure.
-   */
-  phoneNumberId: string | null;
   /**
    * Absent, never `''`, when the phone backs anything other than exactly one
    * guest — so a template's `| default:'…'` fires. See the note on
@@ -68,8 +68,9 @@ export type InboundMessage = {
  *
  * Structurally `WorkflowTriggerPayload`, restated rather than imported: this
  * module is read by the webhook drain and must not pull in ./steps, which
- * carries the handlers and their dependencies. `tsc` still catches a drift
- * between the two, because the worker assigns one to the other.
+ * carries the handlers and their dependencies. `tsc` catches some drift between
+ * the two, because `webhook-trigger.ts` passes a `WorkflowTriggerPayload` where
+ * a `TriggerPayload` is expected.
  *
  * `{{trigger.…}}` names exactly these keys, so the snake_case is a contract with
  * every saved workflow — not a style choice — and renaming one breaks references
@@ -118,10 +119,9 @@ export type TriggerContext = {
 /**
  * Build the payload, in ONE place, for every trigger source there will ever be.
  *
- * Extracted from `planRuns` when the manual start was added. Two builders would
- * drift on the first field either one gains, and the failure mode of that drift
- * is silent: a reference that resolves under one trigger and renders as its
- * `| default:` under another.
+ * Two builders would drift on the first field either one gains, and the failure
+ * mode of that drift is silent: a reference that resolves under one trigger and
+ * renders as its `| default:` under another.
  */
 export function buildTriggerPayload(input: {
   eventId: string;
@@ -165,22 +165,22 @@ export type PlannedRun = {
   /**
    * What asked for this run, written straight to `workflow_runs.trigger_source`.
    *
-   * Carried on the plan rather than hardcoded in the store. The column is
-   * deliberately free text — its own comment says "the set grows with every new
-   * trigger node type" — but `createRunIfNew` used to write the literal
-   * `'whatsapp_inbound'`, which quietly made the store the one place that had to
-   * change for every new way of starting a workflow. It no longer is.
+   * Carried on the plan rather than hardcoded in the store, so the store is not
+   * the one place that has to change for every new way of starting a workflow.
+   * The column is deliberately free text — its own comment says "the set grows
+   * with every new trigger node type".
    */
   triggerSource: string;
   /**
    * The workflow definition as it stands RIGHT NOW, stored on the run.
    *
-   * ⚠️ REQUIRED, AND THAT IS THE POINT. A run resumes from `logic.wait` by
-   * re-reading the workflow — the LIVE row, via a join in `loadRunForExecution`
-   * — so a definition edited while the run slept is the one that executes.
-   * Optional would mean a new way of starting a workflow could silently skip the
-   * snapshot and reintroduce exactly that; required means the compiler names the
-   * site instead of the bug appearing days later in someone's guest list.
+   * ⚠️ REQUIRED, AND THAT IS THE POINT. Without it, a run resuming from
+   * `logic.wait` would re-read the workflow — the LIVE row, via a join in
+   * `loadRunForExecution` — so a definition edited while the run slept would be
+   * the one that executes. Optional would mean a new way of starting a workflow
+   * could silently skip the snapshot and reintroduce exactly that; required
+   * means the compiler names the site instead of the bug appearing days later in
+   * someone's guest list.
    *
    * Consulted ONLY when a run comes back from 'waiting'. A prompt run keeps
    * reading fresh state, which `handleWorkflowRun` documents as deliberate.

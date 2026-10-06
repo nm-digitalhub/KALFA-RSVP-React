@@ -8,7 +8,7 @@
 // each of the last CATCH_UP minutes into the zone and asks whether that minute
 // reads 08:00. Intl applies the zone's real rules, so:
 //   - a slot inside the spring-forward gap never reads on the clock, and is not
-//     sent that day (Israel switches at 02:00, where no slot is offered);
+//     sent that day (Israel switches at 02:00; 02:00–02:59 does not exist then);
 //   - a slot inside the repeated autumn hour reads twice, but both readings
 //     carry the same key (local_date, slot_time), and the run table's UNIQUE
 //     key keeps it to one run;
@@ -93,9 +93,9 @@ export interface DueSlot {
 
 /**
  * Every (subscription, local date, slot) whose minute began within the last
- * REPORT_CATCH_UP_MINUTES. The tick runs every 5 minutes and inserts ON
- * CONFLICT DO NOTHING, so a slot is seen by up to twelve ticks and becomes one
- * run; a restart that misses a few ticks still catches it.
+ * REPORT_CATCH_UP_MINUTES. The tick runs every 5 minutes and the run table's
+ * UNIQUE key refuses a repeat insert, so a slot is seen by up to twelve ticks
+ * and becomes one run; a restart that misses a few ticks still catches it.
  */
 export function planDueSlots(subscriptions: readonly PlannerSubscription[], nowMs: number): DueSlot[] {
   const due: DueSlot[] = [];

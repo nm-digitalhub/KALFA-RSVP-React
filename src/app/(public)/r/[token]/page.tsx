@@ -101,7 +101,7 @@ export default async function RsvpPage({
         view={view}
         inviteImageUrl={inviteImageUrl}
         attendees={attendees}
-        // Server-rendered here (SSR helper is server-only); the form shows it
+        // Server-rendered here (link generation is server-side); the form shows it
         // in the success state once the guest confirms attendance. Same event
         // fields the form already renders — nothing new reaches the browser.
         calendar={

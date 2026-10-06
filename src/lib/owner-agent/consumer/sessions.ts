@@ -16,8 +16,8 @@ import { OWNER_AGENT_SYSTEM_PROMPT } from './reply-text';
 //   <repo>/.fleet-logs/owner-agent/sessions.json   (0600, .fleet-logs/ is gitignored)
 //   { "version": 1, "sessions": { "<staffUserId>": { sessionId, lastAt, permissions, config } } }
 //
-// Ids, a timestamp and permission KEYS only — never a question, an answer or a
-// phone. The transcript itself is the CLI's session file (retention.ts).
+// Ids, a timestamp, permission KEYS and a config hash only — never a question,
+// an answer or a phone. The transcript itself is the CLI's session file (retention.ts).
 //
 // ⚠️ A SESSION IS RESUMED ONLY UNDER THE SAME PERMISSION SET. A resumed session
 // replays its history, including earlier tool results. If a permission was

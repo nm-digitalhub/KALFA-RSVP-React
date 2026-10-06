@@ -33,7 +33,7 @@ export type VoxCallDirection = 'inbound' | 'outbound' | 'unknown';
 /**
  * What actually happened, from Voximplant's record rather than our inference.
  *
- * Four inbound outcomes rather than two, because a single "not answered" bucket
+ * Four inbound populations rather than two, because a single "not answered" bucket
  * hides populations that call for opposite responses. Measured over 1,913 live
  * sessions, 2026-08-17:
  *
@@ -45,7 +45,8 @@ export type VoxCallDirection = 'inbound' | 'outbound' | 'unknown';
  *                    Here, ≤3s, no audio ever exchanged. Platform-level refusal
  *                    of flood traffic, not a caller we failed.
  *
- * The last two used to be one bucket. They are separated on a fact, not a
+ * The last two are still one bucket in decideOutcome: both come out 'abandoned'
+ * and 'rejected' is never produced. What tells them apart is a fact, not a
  * heuristic — whether the inbound leg itself reports `successful` — and the split
  * matters because 671 refused probes drowning 1,073 real hang-ups is how a queue
  * becomes something nobody reads. Note the 486s are NOT our own gate: the
@@ -145,6 +146,8 @@ export function parseEndReason(raw: unknown): { code: number | null; details: st
   return { code: null, details: s };
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Reads our console_calls id back out of `custom_data`.
  *
@@ -153,8 +156,6 @@ export function parseEndReason(raw: unknown): { code: number | null; details: st
  * `CallSettings.customData`, and both are capped at 200 bytes. A value we did not
  * write — or a truncated one — yields null rather than a wrong association.
  */
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export function parseConsoleCallId(customData: unknown): string | null {
   const s = str(customData);
   if (!s) return null;
@@ -234,7 +235,8 @@ function pickRecord(
  *  1. An agent connected → answered, whatever else failed around it.
  *  2. Agents were rung and none connected → missed. This is the case our own
  *     bookkeeping lost entirely.
- *  3. No agent leg at all → abandoned inbound, or a failed outbound.
+ *  3. No agent leg at all → abandoned inbound; an outbound session is answered
+ *     or failed by whether any leg succeeded.
  */
 function decideOutcome(
   direction: VoxCallDirection,

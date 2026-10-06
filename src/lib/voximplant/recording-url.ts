@@ -17,9 +17,9 @@
 // Strict pattern for Voximplant cloud storage gateways: storage-gw-<region>-<nn>.voximplant.com
 const RECORDING_HOST_PATTERN = /^storage-gw-[a-z]{2}-\d{2}\.voximplant\.com$/;
 
-// The private/loopback/link-local test moved to @/lib/net/private-host on
-// 2026-09-13 when the outgoing-webhook node became a second caller. Behaviour is
-// unchanged; this file's own tests still cover it through validateRecordingUrl.
+// The private/loopback/link-local test lives in @/lib/net/private-host, shared
+// with the outgoing-webhook node. This file's own tests still cover it through
+// validateRecordingUrl.
 import { isPrivateOrLocalHost } from '@/lib/net/private-host';
 
 // Extra exact hosts (e.g. a custom S3 endpoint) — empty today (account uses cloud).

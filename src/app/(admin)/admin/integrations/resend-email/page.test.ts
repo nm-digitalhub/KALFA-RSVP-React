@@ -1,4 +1,4 @@
-// Guards the silent-deletion class this branch has been chasing since Task 0.3, plus
+// Guards the silent-deletion class (a moved piece dropped from the page unnoticed), plus
 // the two claims this page makes that would be wrong if the code drifted: which
 // transport is live, and that a dead probe does not take the form down.
 import { describe, expect, it, vi } from 'vitest';
@@ -136,11 +136,9 @@ describe('/admin/integrations/resend-email', () => {
     // smtp.resend.com:465 as user `resend`, from netanel.kalfa@kalfa.me — the SAME
     // Resend account, domain and From address the app's API path uses.
     //
-    // The first version of this page said the two paths were simply separate, and
-    // this test pinned that wording. It was too coarse in the direction that matters:
-    // the domain verdict above DOES cover auth mail's deliverability. What it cannot
-    // see is Supabase's own SMTP password — which is the failure someone would
-    // otherwise debug against a green card.
+    // The two paths are not simply separate: the domain verdict above DOES cover
+    // auth mail's deliverability. What it cannot see is Supabase's own SMTP password —
+    // which is the failure someone would otherwise debug against a green card.
     const text = textOf(await render());
     expect(text).toContain('Supabase Auth');
     expect(text).toContain('smtp.resend.com:465');

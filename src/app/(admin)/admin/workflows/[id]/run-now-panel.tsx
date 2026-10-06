@@ -1,12 +1,6 @@
 'use client';
 
-// The door that did not exist.
-//
-// Until this panel, `trigger.whatsapp_inbound` was the only trigger in the
-// catalogue and an inbound guest message was the only thing that could create a
-// run. On 2026-09-10 the live count was 20 saved workflows, one armed, and ZERO
-// runs ever — an editor, a runner, a step ledger and a live log all sitting
-// behind a door only a guest could open. This opens a second one.
+// Starts a run by hand, on a real person.
 //
 // It is NOT the dry run beside it. This creates a real `workflow_runs` row and
 // hands it to the worker with the real ports, so a `send_whatsapp` node sends
@@ -78,10 +72,10 @@ export function RunNowPanel({
     };
   }, [scopedEventId]);
 
-  // Fetch only. The three resets that used to live here moved into
-  // `chooseEvent` below: lint is right that clearing React state synchronously
-  // in an effect body is a cascading render, and the clearing belongs to the
-  // user's action anyway — it is not synchronisation with anything external.
+  // Fetch only. The resets live in `chooseEvent` below: clearing React state
+  // synchronously in an effect body is a cascading render (lint flags it), and
+  // the clearing belongs to the user's action anyway — it is not synchronisation
+  // with anything external.
   useEffect(() => {
     if (!eventId) return;
     let cancelled = false;

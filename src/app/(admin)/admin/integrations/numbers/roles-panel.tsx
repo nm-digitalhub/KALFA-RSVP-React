@@ -22,7 +22,7 @@ import type { FormState } from '@/lib/validation/result';
 // unassigned role resolves to null at runtime and the caller falls back to whatever it
 // used before this table existed — silently. This list is where that becomes visible.
 //
-// Reassignment is a single change of the select: the action upserts on `role`, so
+// Reassignment is a single change of the select: the DAL upserts on `role`, so
 // there is no state in between where two numbers claim it and no cleanup to forget.
 
 function numberLabel(n: ProviderNumber): string {

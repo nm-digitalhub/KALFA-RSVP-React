@@ -30,7 +30,7 @@ vi.mock('@/lib/data/contacts', () => ({
   buildContactsForEvent: vi.fn(),
   reconcileCampaignSetForContact: vi.fn(),
 }));
-// The action's OWN authorization gate (added 2026-09-08). Mocked as a pass-through
+// The action's OWN authorization gate. Mocked as a pass-through
 // by default; the dedicated describe below flips it to prove it runs first.
 vi.mock('@/lib/data/events', () => ({ requireEventAccess: vi.fn() }));
 
@@ -66,8 +66,8 @@ beforeEach(() => {
   // clearAllMocks keeps implementations: re-arm the gate as a pass-through so a
   // rejecting gate in one test never leaks into the next.
   vi.mocked(requireEventAccess).mockResolvedValue(undefined as never);
-  // Default shape matching the real return (contactIds added 30.8 — the
-  // reconcile-wiring fix); individual tests override when they care about it.
+  // Default shape matching the real return; individual tests override when
+  // they care about it.
   vi.mocked(buildContactsForEvent).mockResolvedValue({
     guests: 0,
     withValidPhone: 0,

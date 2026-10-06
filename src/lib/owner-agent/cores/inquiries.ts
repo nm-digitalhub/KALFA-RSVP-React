@@ -17,7 +17,7 @@ import { upTo, type CoreWindow } from './window';
 // it. Authorization is NOT here — the caller holds it:
 //   - the admin sidebar badge and the /admin dashboard tiles reach these
 //     counters through nav-counts.ts, which checks view_customer_data first;
-//   - the owner agent will expose this core only to a staff member whose
+//   - the owner agent exposes this core only to a staff member whose
 //     view_customer_data was resolved server-side (plan §3.2).
 //
 // Privacy: head-only counts (`head: true`), so no row — and therefore no name,

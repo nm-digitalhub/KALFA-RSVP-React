@@ -21,9 +21,9 @@ export type WhatsAppNumberOption = {
   label: string;
 };
 
-// The only entry whose options are not knowable at module scope: the account's
+// An entry whose options are not knowable at module scope: the account's
 // WhatsApp numbers are rows, and they change without a deploy. `buildPaletteItems`
-// in `catalogue/schemas.ts` takes them; `PALETTE_ITEMS` is the empty-list case.
+// in `catalogue/schemas.ts` takes them; `PALETTE_ITEMS` is the base it rewrites.
 export const whatsappInboundSchema = {
   type: 'object',
   // The definition's own array, not a copy: `NODE_REQUIRED_FIELDS` points at the

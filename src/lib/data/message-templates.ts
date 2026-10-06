@@ -7,9 +7,10 @@ import type { Tables } from '@/lib/supabase/types';
 // Admin management surface for message_templates (/admin/templates). The
 // request-free outreach template READERS (getTemplateByKey / resolveTemplateForEvent)
 // live in @/lib/data/message-templates-resolve so the pg-boss worker can import
-// them WITHOUT dragging this file's requireAdmin + request-scoped createClient
+// them WITHOUT dragging this file's requirePlatformPermission + request-scoped createClient
 // (→ next/headers|navigation) into the worker bundle. message_templates is
-// admin-only RLS; these wrappers gate on requireAdmin() before touching data.
+// admin-only RLS; these wrappers gate on requirePlatformPermission('manage_settings')
+// before touching data.
 
 type MessageTemplateRow = Tables<'message_templates'>;
 
@@ -82,7 +83,7 @@ export async function updateMessageTemplate(
 /**
  * Accept Meta's category for a template that drifted from what we asked for.
  *
- * Closes D4. `isCategoryDowngraded` compares `requested_category` with the
+ * `isCategoryDowngraded` compares `requested_category` with the
  * `category` Meta reports, and the nightly sync raises a Slack alert on every
  * TRANSITION into a mismatched state. Three templates (gift, thankyou,
  * sales_signup_link) have been sitting mismatched since before that alert

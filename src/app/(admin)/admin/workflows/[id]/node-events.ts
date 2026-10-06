@@ -14,8 +14,8 @@ import type { StreamEvent } from '@/lib/workflow/execution-events';
 //     second run and lost its first.
 //
 //   * `measureInfo` — how much there is to show for a value, so the log can
-//     print a short one inline and summarise a long one (owner, 25.9: by amount
-//     of information, not by which event carried it).
+//     print a short one inline and summarise a long one (by amount of
+//     information, not by which event carried it).
 
 export type AttemptStatus = 'running' | 'waiting' | 'completed' | 'failed' | 'skipped';
 

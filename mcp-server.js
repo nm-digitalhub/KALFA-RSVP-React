@@ -10,7 +10,7 @@ let mcpProcess = null;
 app.get('/mcp', (req, res) => {
   console.log('🔗 Claude configuration initiated...');
   
-  // הגדרת הצינור המאובטח של ה-MCP
+  // הגדרת הצינור של ה-MCP
   transport = new SSEServerTransport('/mcp/message', res);
 
   // הפעלת ה-Internal CLI הרשמי של כרום כבן תהליך (Sub-process)

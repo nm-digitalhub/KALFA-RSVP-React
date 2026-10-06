@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 // list (design tokens, RTL, keyboard) — installed from the shadcn-google-maps
 // registry (2.9.2026) and adapted for KALFA:
 //   • the chosen place fills BOTH the venue name (this input) and, through
-//     onPlaceSelect, the address field next to it (owner decision "א", 2.9);
+//     onPlaceSelect, the address field next to it;
 //   • `name`/`id`/`required`/`autoComplete` reach the input so the value rides
 //     in FormData like any other field and <label htmlFor> works;
 //   • no API key or a failed script load → a plain, ENABLED input. The venue

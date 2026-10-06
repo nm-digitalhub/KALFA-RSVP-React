@@ -33,8 +33,8 @@ export const metadata: Metadata = {
 // render time) — render per-request, same reasoning as /contact and /terms.
 export const dynamic = 'force-dynamic';
 
-// Presentational only (icon + short eyebrow label above each section's H2,
-// spec §4) — not business content, so it lives here rather than in
+// Presentational only (icon + short eyebrow label above each section's H2)
+// — not business content, so it lives here rather than in
 // src/lib/faq/page-model.ts alongside the real section titles.
 const SECTION_EYEBROW: Record<FaqCategory, { icon: LucideIcon; label: string }> = {
   about: { icon: Info, label: 'אודות' },
@@ -44,8 +44,9 @@ const SECTION_EYEBROW: Record<FaqCategory, { icon: LucideIcon; label: string }> 
 };
 
 // Public FAQ page (beta.kalfa.me/faq). Hebrew, RTL. Every question below the
-// price card is a genuinely PUBLIC, admin-managed row (RLS `faq_items_public_read`,
-// published-only) — no auth, no session required. All 14 questions render
+// price card (except the code-owned billing-unit one, see
+// src/lib/faq/page-model.ts) is a genuinely PUBLIC, admin-managed row (RLS
+// `faq_items_public_read`, published-only) — no auth, no session required. All 14 questions render
 // fully expanded (no accordion): this is a public marketing/AI-search page,
 // and hiding an answer behind a click interaction is exactly what the SEO/GEO
 // plan warns against for FAQ content (answer-first, extractable by AI search).
@@ -68,7 +69,7 @@ export default async function FaqPage() {
         dangerouslySetInnerHTML={{ __html: faqJsonLdScript(jsonLd) }}
       />
 
-      {/* Header: the shared SiteHeader from the (site) layout (24.8). */}
+      {/* Header: the shared SiteHeader from the (site) layout. */}
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-12">
         <div>
           <h1 className="text-balance text-display font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">שאלות נפוצות</h1>
@@ -89,7 +90,7 @@ export default async function FaqPage() {
 
         {model.sections.length > 0 ? (
           <>
-            {/* Category chips: 44px touch target (they were ~34px) and the
+            {/* Category chips: 44px touch target and the
                 shared keyboard focus outline; the sections they jump to carry
                 `scroll-mt-20` so the title lands below the 64px sticky
                 header instead of under it. */}

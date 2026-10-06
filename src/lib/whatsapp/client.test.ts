@@ -61,7 +61,7 @@ describe('sendWhatsAppTemplate', () => {
     });
 
     // Exact-shape assertion on the real SDK message object: the serialized
-    // payload must be name+language ONLY (pre-binding behavior, unchanged).
+    // payload must be name+language ONLY.
     const message = sendMessage.mock.calls[0][2];
     expect(JSON.parse(JSON.stringify(message))).toEqual({
       name: 'rsvp_invite',

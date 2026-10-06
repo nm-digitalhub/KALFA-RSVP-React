@@ -13,7 +13,7 @@
 // hint to third parties, not part of our correctness. A failure prints a
 // warning and exits 0 so a slow Bing endpoint can never fail a deploy.
 //
-// What it submits: every <loc> in the live sitemap. That is 12 URLs today — a
+// What it submits: every <loc> in the live sitemap. That is 13 URLs today — a
 // single request, well under IndexNow's 10,000-URL cap — so "only the changed
 // ones" would buy nothing yet. The key file lives in public/ (public by
 // protocol design: the engine fetches it to prove we own the host) and the key

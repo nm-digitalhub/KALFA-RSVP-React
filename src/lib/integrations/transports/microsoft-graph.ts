@@ -8,7 +8,7 @@ export const MICROSOFT_GRAPH_ORIGIN = 'https://graph.microsoft.com';
  *
  * ⚠️ `to` IS ONE ADDRESS; `cc`, `bcc` AND `replyTo` ARE LISTS — one string each,
  * separated by `,` or `;`. Widening the primary recipient is a separate change
- * with its own contract, so it is deliberately not done here (2026-09-17).
+ * with its own contract, so it is deliberately not done here.
  *
  * Every option below is optional and every default is GRAPH'S OWN, which is what
  * makes this backward compatible by construction: a node saved before these
@@ -100,11 +100,11 @@ function readSendMailInput(input: unknown): ParsedSendMail {
   const saveToSentItems =
     typeof record.saveToSentItems === 'boolean' ? record.saveToSentItems : true;
 
-  // ⚠️ `to` IS SHAPE-CHECKED HERE AND WAS NOT BEFORE. Until now a malformed
-  // recipient travelled to Graph and came back as a 400 the owner had to read
-  // through a run log. This is the last point at which the value is final —
-  // templates resolved before the handler ran — so it is the right place to
-  // refuse, and the refusal is permanent: a retry cannot fix a typo.
+  // ⚠️ `to` IS SHAPE-CHECKED HERE, BEFORE THE REQUEST LEAVES. A malformed
+  // recipient would otherwise travel to Graph and come back as a 400 the owner
+  // had to read through a run log. This is the last point at which the value is
+  // final — templates resolved before the handler ran — so it is the right place
+  // to refuse, and the refusal is permanent: a retry cannot fix a typo.
   if (!to || !looksLikeEmail(to) || !subject || !body.trim()) throw invalidInput();
 
   return { to, cc, bcc, replyTo, subject, body, contentType, importance, saveToSentItems };

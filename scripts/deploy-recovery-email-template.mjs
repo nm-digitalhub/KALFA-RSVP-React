@@ -88,7 +88,7 @@ console.log(`Project:  ${ref}`);
 console.log(`Template: ${TEMPLATE_PATH} (${html.length} bytes)`);
 console.log(`Mode:     ${apply ? 'APPLY' : 'DRY-RUN (no changes)'}\n`);
 
-// 1. Read the remote config FIRST and show the diff.
+// 3. Read the remote config FIRST and show the diff.
 const getRes = await fetch(API, { headers: authHeaders });
 if (!getRes.ok) {
   fail(`GET config/auth failed: ${getRes.status} ${getRes.statusText}`);

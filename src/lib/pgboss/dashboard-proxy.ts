@@ -6,8 +6,8 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 //
 // The dashboard (@pg-boss/dashboard) is a standalone HTTP server built with a
 // baked base path of `/admin/jobs`, listening only on loopback, with NO auth of
-// its own — access is gated here by requireAdmin(), reusing the same Supabase
-// admin session as the rest of /admin.
+// its own — access is gated here by requirePlatformPermission('manage_settings'),
+// reusing the same Supabase session as the rest of /admin.
 //
 // This lives in a shared module because the dashboard's URL space does NOT fit
 // under a single Next segment. It is a React Router app, and React Router asks

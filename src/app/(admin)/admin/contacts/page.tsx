@@ -73,8 +73,7 @@ export default async function AdminContactsPage({
   const urgency = await resolveInquiryUrgency([...urgencyInputs.values()]);
 
   // The thread loads ONLY for the selected inquiry — with a detail pane there
-  // is only ever one open at a time, unlike the old flat list that loaded
-  // every visible row's thread up front.
+  // is only ever one open at a time.
   const realThread = selected ? await listInquiryMessages([selected.id]) : [];
   // Every inquiry NOW gets an initial `inbound` thread row on intake — but
   // rows created before that fix (or a rare best-effort insert failure) can
@@ -258,11 +257,10 @@ function ContactDetail({
           <ContactReplyForm
             key={msg.id}
             id={msg.id}
-            // Compare TIMES, not "was there ever a reply". The old gate was
-            // `replied_at ? undefined : draft_reply`, and once a thread had
-            // been answered `replied_at` stayed set forever — so a NEW draft
-            // written for a reopened thread was saved to the database and
-            // never shown.
+            // Compare TIMES, not "was there ever a reply": once a thread has
+            // been answered `replied_at` stays set forever, so gating on it
+            // alone would never show a NEW draft written for a reopened
+            // thread.
             defaultReply={
               msg.draft_created_at && (!msg.replied_at || msg.draft_created_at > msg.replied_at)
                 ? msg.draft_reply

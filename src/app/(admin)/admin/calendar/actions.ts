@@ -62,7 +62,7 @@ export type CalendarCategoriesResult =
  *
  * Fetched once by the calendar client rather than per dialog: the list is a
  * property of the mailbox, it changes only when the owner edits it in Outlook,
- * and an EWS round-trip on every dialog open would be paid for nothing.
+ * and a mailbox round-trip on every dialog open would be paid for nothing.
  */
 export async function fetchCalendarCategoriesAction(input: {
   connectionId: string;
@@ -159,11 +159,12 @@ export async function fetchCalendarEventAction(input: {
 
 
 // An appointment edited here can BE a scheduled callback, and moving it moves
-// when the AI actually dials. Two things follow, and neither used to happen.
+// when the AI actually dials. Two things follow.
 //
 // 1. RECORD IT. The same change made from the callback page logs
-//    `callback.rescheduled` with the admin who made it; made here it left no
-//    trace at all. The one thing this channel can offer that Outlook never
+//    `callback.rescheduled` with the admin who made it; made here it is logged
+//    as `calendar.event_updated` / `calendar.event_deleted` with the admin who
+//    made it. The one thing this channel can offer that Outlook never
 //    can is WHO — Graph exposes no last-modifier on a calendar event, and the
 //    mailbox is reached with one application identity anyway, so a move made
 //    in Outlook is unattributable by construction. Recorded from here it is

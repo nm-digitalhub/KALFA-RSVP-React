@@ -27,7 +27,7 @@ export type RunWorkflowArgs = {
    * behind `getAppOrigin()` in a `server-only` module — importing that here
    * would drag `server-only`, a file read and a Supabase client into the module
    * the worker bundles and every engine test imports. That mistake was made once
-   * already this session with the Slack alert, and the whole suite failed at
+   * already with the Slack alert, and the whole suite failed at
    * import. So the caller supplies it: `enqueue.ts` on the live path, the dry run
    * on the test path.
    *
@@ -74,12 +74,12 @@ export type RunWorkflowOutcome =
   /**
    * Another delivery of THIS SAME RUN holds the node right now.
    *
-   * ⚠️ NOT A FAILURE, and it used to be recorded as one. Two jobs for one run is
+   * ⚠️ NOT A FAILURE. Two jobs for one run is
    * a thing pg-boss allows — `singletonKey` constrains nothing under the
    * `standard` policy, and a job that outlives `expireInSeconds` is re-queued
    * while its handler is still running — so a retry meeting a live claim is
-   * ordinary scheduling, not a broken workflow. Writing 'failed' for it ended
-   * runs that were working perfectly.
+   * ordinary scheduling, not a broken workflow. Writing 'failed' for it would
+   * end runs that were working perfectly.
    *
    * The run row is left EXACTLY as it was: no status write at all. The winner
    * owns the run's state, and a loser that stamped 'running' would clear
@@ -94,7 +94,8 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
 
   // Conversion first, and it is allowed to end the run. A graph that fails the
   // contract never reaches `runGraph`, so no node executes and no side effect
-  // happens — that is test 10, and it is why validation lives in the adapter
+  // happens — that is what 'a graph that fails the contract never executes'
+  // asserts, and it is why validation lives in the adapter
   // rather than relying on the runner's own `resolveStartNode`, which would
   // already have emitted `execution_started`.
   const converted = toWorkflowDefinition(workflowId, storedDefinition);
@@ -110,16 +111,13 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
   //
   // The vendored runner flattens a throw to `{message, code, attempt}` before it
   // emits `node_failed` (graph-runner.ts, via extractDeepestError), so by the
-  // time the event is observed the wait's own fields are gone. That is why the
-  // deadline used to be recovered with a regex over the error message — and why
-  // adding a correlation the same way would have meant a second, more brittle
-  // one.
+  // time the event is observed the wait's own fields are gone.
   //
   // The runner's `onWait` is where the park is seen WHOLE — deadline,
   // correlation, and the ephemeral `verify` closure — immediately after the row
-  // is durable and before the error is rethrown. It replaced a wrapper around
-  // `beginWait`, which could only ever see the durable half, because `beginWait`
-  // is a persistence contract and a closure has no row to live in.
+  // is durable and before the error is rethrown. `beginWait` could only ever see
+  // the durable half, because it is a persistence contract and a closure has no
+  // row to live in.
   //
   // Nothing under `vendor/` is modified, and nothing is parsed.
   let parked: CapturedWait | null = null;
@@ -226,8 +224,9 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
     emitEvent: async (executionId, type, payload, nodeId) => {
       // The EVENT only says a wait happened; the VALUES come from the capture
       // above, which saw them structured. `parked` is always set by the time
-      // this fires — activity-runner calls `beginWait` immediately before it
-      // rethrows, and refuses the node when the ledger cannot park — but it is
+      // this fires — activity-runner calls `beginWait` and then `onWait`
+      // immediately before it rethrows, and refuses the node when the ledger
+      // cannot park — but it is
       // read defensively rather than asserted, because losing a park to a crash
       // here would be worse than a run that simply does not wait.
       // Contention, intercepted the same way a wait is and for a closely related
@@ -355,10 +354,7 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
         workflow_id: workflowId,
       },
       // `global` is the other one: "global variables defined manually in the
-      // builder" — whatever the owner typed into the variables panel. It was
-      // `{}` while that panel was happily accepting definitions and persisting
-      // them, which made this input factually wrong about the diagram it came
-      // from.
+      // builder" — whatever the owner typed into the variables panel.
       //
       // Both bags are live: `resolve-template.ts` is vendored, imported by
       // `activity-runner.ts`, and runs over every field of every node config
@@ -444,17 +440,15 @@ function isRunStatus(value: string): value is RunStatus {
  * via `extractDeepestError`), so the thrown object — and every field the wait
  * put on it — is gone by the time this sees anything.
  *
- * It used to recover the deadline with a regex over the message, for exactly
- * that reason. It no longer does: `beginWait` is wrapped where the park is still
- * structured, so the values come from there and the event is left with the one
- * job it can still do reliably. Adding a correlation the old way would have
- * meant a second and more brittle pattern; this removed the first instead.
+ * The deadline and correlation are not parsed back out of the message: they come
+ * from the park captured through `onWait`, where it is still structured, and the
+ * event is left with the one job it can still do reliably.
  *
  * `node_failed` is emitted from exactly ONE place in the vendored runner
  * (graph-runner.ts:321, inside the catch around `executeNode`), and every wait
  * therefore passes through activity-runner's own catch, which calls `beginWait`
- * before it rethrows and refuses the node outright when the ledger cannot park.
- * That is what makes the capture complete rather than best-effort.
+ * and `onWait` before it rethrows and refuses the node outright when the ledger
+ * cannot park. That is what makes the capture complete rather than best-effort.
  */
 function isWaitFailure(payload: unknown): boolean {
   const error = (payload as { error?: { code?: unknown } } | undefined)?.error;
@@ -468,7 +462,7 @@ function isWaitFailure(payload: unknown): boolean {
  * reason: `runNode` has already rebuilt the payload into
  * `{ error: { message, code, attempt } }`, so the thrown object is gone. The code
  * is shared with the raiser through `STEP_IN_FLIGHT_CODE` rather than repeated
- * as a literal — a rename on one side used to turn every contention silently
+ * as a literal — a rename on one side would turn every contention silently
  * back into a failed run.
  */
 function contentionReason(payload: unknown): 'in_flight' | 'abandoned' | null {

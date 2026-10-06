@@ -1,8 +1,7 @@
 'use client';
 
 // Starter template 11 of 13 — its diagram and its selector entry. Editor
-// side; `./index.ts` places it in `DIAGRAM_TEMPLATES` at the position the
-// inline entry held.
+// side; `./index.ts` places it in `DIAGRAM_TEMPLATES`.
 import type { DiagramModel, TemplateModel } from '@workflowbuilder/sdk';
 
 import { ACTION_BRANCH_HANDLES } from '../types';
@@ -20,8 +19,9 @@ const RECEIPT_ALERT_ID = 'tmpl-receipt-alert';
  * edge would teach the shape that costs a run: `propagate` in the vendored
  * runner returns a dead end whenever a node names a port and no outgoing edge
  * carries it, so a rejected document would end the run `execution_incomplete`
- * with nobody told. Both branches are wired, for the same reason the RSVP
- * template wires both sides of its condition.
+ * with nobody told. The error branch is wired, for the same reason the RSVP
+ * template wires both sides of its condition; the success branch has no next
+ * step to lead to.
  *
  * The document is a DRAFT and its customer fields are blank — a template is a
  * valid draft the owner has not filled in yet (see arm-check.ts's own note), and

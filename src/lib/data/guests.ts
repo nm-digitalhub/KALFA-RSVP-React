@@ -74,7 +74,7 @@ export const GUEST_DETAIL_COLUMNS =
 export const GROUP_COLUMNS = 'id, event_id, name, color, created_at';
 
 // Raw shape of one list-query row (columns + FK embed + computed field) —
-// see the .returns override in listGuests.
+// see the boundary cast in listGuests.
 type GuestListQueryRow = Pick<
   GuestRow,
   | 'id'
@@ -206,10 +206,10 @@ function isContactStatus(v: string): v is ContactStatus {
 // searching may type a different form of the same number.
 //
 // phoneSearchVariants derives every form worth matching from ONE parse, using
-// the project's parser rather than country-specific string surgery. It replaced
-// repairIsraeliLocalPhone here (2026-09-09): that helper returns null for any
-// non-Israeli number by design, so once international guests became storable a
-// French guest could only be found by retyping the exact stored characters.
+// the project's parser rather than country-specific string surgery
+// (repairIsraeliLocalPhone returns null for any non-Israeli number by design,
+// so a French guest could only be found by retyping the exact stored
+// characters).
 //
 // The variants are DIGITS ONLY, never the "+" form, and that is deliberate:
 // they are matched against guests.phone_digits (a stored generated column that
@@ -496,11 +496,6 @@ export async function createGuest(
   };
 }
 
-/**
- * Update a guest within an owned event. The update is scoped by BOTH event_id
- * and id, and the patch never includes event_id/id/rsvp_token, so those cannot
- * be changed via this path.
- */
 // How many guests have no invited size. Drives the back-fill prompt on the
 // guest list, which must appear only when there is something to fix — a
 // permanent "set a default" control would be noise on a fully-filled list.
@@ -550,6 +545,11 @@ export async function fillMissingExpectedCount(
   return data?.length ?? 0;
 }
 
+/**
+ * Update a guest within an owned event. The update is scoped by BOTH event_id
+ * and id, and the patch never includes event_id/id/rsvp_token, so those cannot
+ * be changed via this path.
+ */
 export async function updateGuest(
   eventId: string,
   guestId: string,
@@ -736,10 +736,10 @@ export async function getGuestTotals(eventId: string): Promise<GuestTotals> {
   return data as unknown as GuestTotals;
 }
 
-// Head count of the event's guest rows (RLS-scoped, like listGuests). The setup
-// page's "any guests yet?" signal. Deliberately NOT gated with requireEventAccess:
-// the event page has already passed its own gate, and a member without
-// guests.view simply sees 0 through RLS rather than a 404 on the whole page.
+// Head count of the event's guest rows (RLS-scoped, like listGuests).
+// Deliberately NOT gated with requireEventAccess: the calling page has already
+// passed its own gate, and a member without guests.view simply sees 0 through
+// RLS rather than a 404 on the whole page.
 export async function countGuests(eventId: string): Promise<number> {
   const supabase = await createClient();
   const { count, error } = await supabase
@@ -905,10 +905,11 @@ export async function bulkInsertGuests(
   const inserted = data?.length ?? 0;
 
   // P0-1 (A6): a bulk import into a LIVE campaign must link each new contact and
-  // admit it to the authorized set (no size cap) instead of silently
-  // dropping it. Kill-switch gated (inert by default → import behaves exactly as
-  // before). Best-effort per row; the guests are already committed. `insert
-  // ... returning` preserves input order, so rows[i] ↔ data[i].
+  // admit it to the authorized set (capped only by the campaign's package
+  // contact_quota, when it has one) instead of silently dropping it.
+  // Kill-switch gated (inert by default → import behaves exactly as before).
+  // Best-effort per row; the guests are already committed. `insert ...
+  // returning` preserves input order, so rows[i] ↔ data[i].
   if (isReconcileEnabled() && inserted > 0 && data) {
     for (let i = 0; i < data.length; i++) {
       const phone = rows[i]?.phone ?? null;

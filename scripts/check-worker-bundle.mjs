@@ -17,8 +17,9 @@
 // suite never loads the bundle, and `npm run deploy` restarts pm2 without
 // asking whether the artifact it just wrote can be loaded. Every gate passes on
 // a dead artifact. This happened on 2026-07-29 and surfaced only because
-// ops-monitor read the pm2 error log — three days after `worker/main.ts:449`
-// had already been fixed in source, while a stale bundle stayed on disk.
+// ops-monitor read the pm2 error log — three days after the offending
+// `import.meta` use in `worker/main.ts` had already been fixed in source,
+// while a stale bundle stayed on disk.
 //
 // A load test would be the thorough check, but `require()`-ing this bundle
 // STARTS the worker (main() runs at module load), which means connecting to
@@ -37,8 +38,8 @@ const BUNDLE = 'dist/worker.cjs';
 const SHIM = 'var import_meta = {}';
 
 // A bundle far below this is a truncated or failed build, not a small one:
-// the real artifact is ~6.8MB unminified (MEASURED 2026-09-08; 93% of it is
-// bundled node_modules). Catches a disk-full or interrupted esbuild that still
+// the real artifact is ~7.5MB unminified (MEASURED 2026-10-05; roughly 90% of
+// it is bundled node_modules). Catches a disk-full or interrupted esbuild that still
 // exited 0. Kept well under the real size so a legitimately smaller build
 // (a dropped dependency) does not trip it.
 const MIN_BYTES = 4_000_000;

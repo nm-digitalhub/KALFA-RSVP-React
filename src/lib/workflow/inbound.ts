@@ -48,29 +48,28 @@ export async function createRunsForInboundMessage(
 
   const payload = (row.payload ?? {}) as InboundMessagePayload & { from?: string };
 
-  // ⚠️ THE BILLING CLASSIFIER IS NO LONGER THE AUTOMATION GATE.
+  // ⚠️ THE BILLING CLASSIFIER IS NOT THE AUTOMATION GATE.
   //
-  // This used to open `if (!billable) return []`, reusing BILLABLE_MESSAGE_TYPES
-  // to decide what an owner may automate. The two agree for a guest replying and
-  // disagree completely for the case that matters: an owner sending a guest list
-  // is not a billable reach, so a CSV or a batch of contact cards could never
-  // start a run — which is why importing guests had to live as a separate
-  // hard-coded mechanism instead of as a flow an owner draws.
+  // Reusing BILLABLE_MESSAGE_TYPES to decide what an owner may automate would be
+  // wrong. The two agree for a guest replying and disagree completely for the
+  // case that matters: an owner sending a guest list is not a billable reach, so
+  // a CSV or a batch of contact cards could never start a run.
   //
   // `replyId` is still taken from the classifier (it is the quick-reply id, not
   // a billing fact). Billing itself is untouched: `processWebhookEvent` runs
   // beside this and still counts exactly what it counted.
   //
-  // WHICH kinds start a run is now each TRIGGER's own answer (`matchesKind`),
-  // defaulting to the old billable set — so every saved diagram behaves
-  // identically until its owner says otherwise.
+  // WHICH kinds start a run is each TRIGGER's own answer (`matchesKind`),
+  // defaulting to the billable set — so a diagram whose trigger names no kinds
+  // reacts only to a guest speaking, until its owner says otherwise.
   //
-  // `processMessage` opens with one gate this does NOT repeat:
-  // `if (await stageWhatsAppImport(row)) return;`. Calling it again would be a
-  // bug, not a fix — it replies to the owner, so a second call sends a second
-  // message. The import path and this one now see the SAME messages, and that is
-  // deliberate: staging keeps working exactly as before while a workflow can
-  // also observe and act on the arrival.
+  // `processMessage` hands an owner's guest list to `stageWhatsAppImport` (or, on
+  // the RSVP number once an import number exists, to `replyImportPointer`) before
+  // any billing logic, and this does NOT repeat that call. Calling it again
+  // would be a bug, not a fix — it replies to the owner, so a second call sends
+  // a second message. The import path and this one see the SAME messages, and
+  // that is deliberate: staging keeps working while a workflow can also observe
+  // and act on the arrival.
   const { replyId } = classifyMessagePayload(payload);
   const kind = typeof payload.type === 'string' ? payload.type : '';
 

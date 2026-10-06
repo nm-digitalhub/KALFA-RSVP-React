@@ -99,7 +99,7 @@ export interface ReportAuditInput {
   reportRunId: string;
   staffUserId?: string | null;
   allowlistEntryId?: string | null;
-  /** The report's sections, as their tool ids (e.g. events_pipeline). */
+  /** The report's sections, as their tool ids (e.g. events_pipeline), or a model report's tool names. */
   sections?: readonly string[] | null;
   latencyMs?: number | null;
 }

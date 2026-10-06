@@ -251,7 +251,7 @@ function HeaderRowsControl({
  * The registry entry, for `<WorkflowBuilder.Root jsonForm={{ renderers: [...] }}>`.
  *
  * Rank 5000 is comfortably above every built-in (the SDK's own controls register
- * in the low thousands), which is what `rankWith`'s documentation prescribes for
+ * at rank 1 in 2.3.0), which is what `rankWith`'s documentation prescribes for
  * overriding one. The tester matches `options.format` rather than the scope, so
  * the binding is declared at the call site instead of inferred from a field name.
  */

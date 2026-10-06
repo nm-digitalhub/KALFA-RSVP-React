@@ -57,7 +57,8 @@ describe('getTemplateByKey', () => {
 describe('resolveTemplateForEvent', () => {
   // Doubles as the mock row AND (spread) the expected resolved shape.
   // resolveTemplateForEvent always returns rsvpQuickReply (false unless
-  // components.rsvp_quick_reply === true), so it rides along in the expectations.
+  // components.rsvp_quick_reply[eventType] === true) and paramContract (null unless
+  // components.param_contract[eventType] is set), so both ride along in the expectations.
   const genericRow = {
     name: 'kalfa_event_invite_v2',
     language: 'he',
@@ -295,7 +296,7 @@ describe('updateMessageTemplate', () => {
   });
 });
 
-// ── acknowledgeTemplateCategory (D4) ────────────────────────────────────────
+// ── acknowledgeTemplateCategory ────────────────────────────────────────
 // A bespoke double rather than createMockSupabase: this function READS and then
 // WRITES, and the two calls must be able to answer differently — the whole point
 // of the pin is what happens when the row moved between them.

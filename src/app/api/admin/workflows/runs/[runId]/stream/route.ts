@@ -15,8 +15,7 @@ import { fetchEventsAfter } from '@/lib/workflow/stream';
 // the same cookie session as every other admin surface — and on
 // `view_customer_data`, not the coarse staff floor, because the sentence below
 // is the whole argument: the stream carries a guest's message text and a guest
-// id, so it is exactly as sensitive as the run row it describes. It was
-// `requireAdmin()` until 2026-09-10, which let an auditor read guest messages.
+// id, so it is exactly as sensitive as the run row it describes.
 //
 // Their own file flags the reason this matters more here than elsewhere:
 // EventSource cannot send an Authorization header, so an SSE endpoint's auth

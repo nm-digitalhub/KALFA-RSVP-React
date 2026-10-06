@@ -5,9 +5,10 @@
 // rows to show and how a link is opened; every URL is server-generated.
 //
 // `webview`: an iOS UA with AppleWebKit but no "Safari" token (WKWebView —
-// Chrome/Firefox for iOS, Instagram/Facebook in-app browsers, WhatsApp's in-app
+// Instagram/Facebook in-app browsers, WhatsApp's in-app
 // browser when it is WKWebView-based) or an Android UA carrying "; wv".
-// SFSafariViewController reports Safari's own UA and is NOT a webview here.
+// SFSafariViewController and Chrome for iOS carry the Safari token and are NOT
+// a webview here.
 
 export type CalendarOs = 'ios' | 'android' | 'other';
 

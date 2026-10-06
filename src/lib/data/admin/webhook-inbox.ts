@@ -17,7 +17,7 @@ import {
   type NumberRole,
 } from '@/lib/validation/provider-numbers';
 // Admin Webhook Inspector data layer. Reads the durable `webhook_inbox` intake
-// table behind requireAdmin() with the service-role client (the table is
+// table behind requirePlatformPermission('view_webhooks') with the service-role client (the table is
 // admin-only RLS; service-role bypasses it — the policy is defence-in-depth).
 //
 // PII: the raw `payload` holds phones/names. It is projected OFF the list (detail
@@ -266,14 +266,13 @@ export async function getWebhookInboxDetail(
 }
 
 export interface WebhookFilter extends PageParams {
-  // Which integration sent the event: whatsapp | graph | voximplant | resend.
+  // Which integration sent the event: whatsapp | graph | voximplant | resend | elevenlabs.
   // This is the COARSE endpoint filter. It is deliberately not called
   // "endpoint", because provider is NOT 1:1 with a route — VERIFIED 2026-08-26
   // by enumerating every insert site: 'voximplant' is written by six different
   // routes (cb, agent-tool/{rsvp,note,dnc}, mtg/tool/dnc, sls/tool/dnc).
   // `event_kind` is what identifies the individual route; the two together are
-  // the endpoint. The column was always selected and displayed but could not be
-  // filtered on, so one provider's traffic could not be isolated.
+  // the endpoint.
   provider?: string;
   // event_kind — the FINE endpoint filter, 1:1 with a route except
   // /api/webhooks/whatsapp, which emits both 'message' and 'status'.
@@ -359,9 +358,9 @@ export interface WebhookHealth {
   failedCount: number;
 }
 
-// Fail-soft adapter: the header strip has always shown 0 / "—" for a read that
-// failed rather than failing the page (/admin/debug additionally catches), and
-// that stays. The core throws, so the agent never reports a failed read as 0.
+// Fail-soft adapter: the header strip shows 0 / "—" for a read that failed
+// rather than failing the page (/admin/debug additionally catches). The core
+// throws, so the agent never reports a failed read as 0.
 async function orFallback<T>(read: Promise<T>, fallback: T): Promise<T> {
   try {
     return await read;

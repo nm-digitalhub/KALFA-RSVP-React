@@ -1,11 +1,9 @@
 import { getAppUrl } from '@/lib/url';
 
-// Shared page shell for the guest token surfaces (/r /g /ty /rate /join).
+// Shared page shell for the guest token surfaces (/r /g /ty /rate).
 //
-// It replaces four byte-similar local `Shell` copies — three were identical and
-// one differed only in width — so the brand line below has ONE definition
-// rather than five, and a change to guest chrome cannot land on some pages and
-// miss others.
+// The brand line below has ONE definition, and a change to guest chrome cannot
+// land on some pages and miss others.
 //
 // LAYOUT, and why it is not just `justify-center` with an extra child: the old
 // shells centred everything vertically in a `min-h-svh` column. Appending the
@@ -55,7 +53,7 @@ export async function GuestShell({
   width = 'lg',
 }: {
   children: React.ReactNode;
-  /** /r and /join were narrower than the rest; kept rather than silently rewidened. */
+  /** /r is narrower than the rest; kept rather than silently rewidened. */
   width?: 'md' | 'lg';
 }) {
   return (

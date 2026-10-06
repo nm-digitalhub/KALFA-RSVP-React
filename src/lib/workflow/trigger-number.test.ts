@@ -16,8 +16,8 @@ const IMPORT_LINE = '1298694319994421';
 
 describe('matchesNumber', () => {
   it('an unset filter matches ANY line — including an unknown one', () => {
-    // The owner's ruling (2026-09-13): every diagram saved before this field
-    // existed keeps its behaviour rather than silently narrowing to one line.
+    // Every diagram saved before this field existed keeps its behaviour rather
+    // than silently narrowing to one line.
     for (const arrived of [RSVP_LINE, IMPORT_LINE, null]) {
       expect(matchesNumber('', arrived)).toBe(true);
       expect(matchesNumber(undefined, arrived)).toBe(true);

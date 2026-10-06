@@ -28,10 +28,9 @@ describe('public RSVP page rate-limit keys never embed the raw token', () => {
   });
 });
 
-// The mutation site (production-readiness audit 21.8, §2 finding 5): the read
-// site above was already fixed while the submit action — the more sensitive
-// of the two, since it accepts a POST — still built its key from the raw
-// token. Same tripwire shape, same file-under-test discipline.
+// The mutation site (production-readiness audit 21.8, §2 finding 5): the
+// submit action is the more sensitive of the two, since it accepts a POST.
+// Same tripwire shape, same file-under-test discipline.
 describe('public RSVP submit action rate-limit key never embeds the raw token', () => {
   const source = readFileSync(join(__dirname, 'actions.ts'), 'utf8');
 

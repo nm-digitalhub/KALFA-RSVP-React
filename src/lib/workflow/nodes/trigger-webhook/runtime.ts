@@ -16,13 +16,11 @@ import type { StepHandler } from '../../steps/shared';
 export const webhookTrigger: StepHandler = async (_config, ctx) => ({
   output: {
     body: ctx.trigger.body ?? {},
-    // ⚠️ PUBLISHED SEPARATELY, AND IT HAS TO BE RETURNED HERE TOO. The query
-    // string was added to the trigger payload and to this node's outputSchema on
-    // 2026-09-22 — but not to this return, so `{{nodes.<trigger>.query.x}}`
-    // resolved to nothing while the picker happily offered it. A declaration is
+    // ⚠️ PUBLISHED SEPARATELY, AND IT HAS TO BE RETURNED HERE TOO. Declared in
+    // `outputFields` but not returned, `{{nodes.<trigger>.query.x}}` would
+    // resolve to nothing while the picker happily offered it. A declaration is
     // a promise the HANDLER keeps; declaring without returning is the same class
-    // of defect as returning without declaring, and the same gate now catches
-    // both.
+    // of defect as returning without declaring.
     query: ctx.trigger.query ?? {},
   },
 });

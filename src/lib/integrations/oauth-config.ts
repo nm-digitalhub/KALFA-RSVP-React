@@ -29,7 +29,7 @@ export type OAuthConfigLoader = {
 
 /**
  * `discovery` for a provider that publishes a document, the `Configuration`
- * constructor for one that does not. Injected so the refresh service can be
+ * constructor for one that does not. Injected so the config loader can be
  * tested without a network call to an issuer.
  */
 export type DiscoveryFn = typeof client.discovery;

@@ -131,8 +131,8 @@ export async function GET(request: Request) {
         calls: result.rows.map((r) => ({
           id: r.id,
           direction: r.inbound ? 'inbound' : 'outbound',
-          // The four outcomes Voximplant supports, not the two our table could
-          // express. `answered` stays alongside them so an older build keeps
+          // Every outcome Voximplant reports (VoxCallOutcome), not the two our
+          // table could express. `answered` stays alongside them so an older build keeps
           // rendering rather than showing every row as missed.
           outcome: r.outcome,
           answered: r.answered,

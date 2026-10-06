@@ -46,9 +46,8 @@ describe('reducing a scope to a comparable form', () => {
       'https://graph.microsoft.com/mail.send',
     );
     // A stray empty string must not turn into the prefix `/`. Asserted on a
-    // value that WOULD be affected — the previous version of this case used a
-    // scope starting with `https:`, which the mutation could not change either
-    // way, so it proved nothing. Caught by fault injection.
+    // value that WOULD be affected — a scope starting with `https:` comes out
+    // the same either way, so it would prove nothing.
     expect(canonicalScope('/mail.send', ['', '   '])).toBe('/mail.send');
     expect(canonicalScope('https://graph.microsoft.com/mail.send', ['', '   '])).toBe(
       'https://graph.microsoft.com/mail.send',

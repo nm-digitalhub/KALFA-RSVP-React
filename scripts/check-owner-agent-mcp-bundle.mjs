@@ -12,8 +12,8 @@
 //
 // Why not a require() load test: requiring it starts the server, which reads
 // stdin for JSON-RPC and never returns. The byte-level checks here are the
-// side-effect-free part; the stage-6a verification drove the built file over
-// stdio with the SDK's own client instead.
+// side-effect-free part; to exercise the built file itself, drive it over
+// stdio with the SDK's own client.
 //
 // The path is an argument so the same check runs on a scratch build:
 //   node scripts/check-owner-agent-mcp-bundle.mjs <file>

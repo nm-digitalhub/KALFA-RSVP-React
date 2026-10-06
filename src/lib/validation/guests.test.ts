@@ -155,7 +155,8 @@ describe('guest phone — international numbers', () => {
   });
 
   it('accepts a formatted international number longer than 20 characters', () => {
-    // "+1 (415) 555-2671" style grouping used to blow the old 20-char cap.
+    // Parenthesised grouping like "+1 (415) 555-2671" is legitimate international
+    // input, so the field cap (PHONE_INPUT_MAX) must leave room for it.
     expect(
       createGuestSchema.safeParse({ full_name: 'דנה', phone: '+1 (415) 555-2671' })
         .success,

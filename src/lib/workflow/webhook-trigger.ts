@@ -30,9 +30,9 @@ import type { WorkflowTriggerPayload } from './steps';
 //                  `x-kalfa-webhook-secret`, with a public endpoint id in the
 //                  path, so no secret reaches an access log or a Referer.
 //        `address` — the path segment itself, for a caller that can be given a
-//                  URL and nothing else. Chosen by the owner on 2026-09-23 for
-//                  SUMIT, whose `/triggers/triggers/subscribe/` has one field
-//                  for the destination and no way to add a header.
+//                  URL and nothing else. Used for SUMIT, whose
+//                  `/triggers/triggers/subscribe/` has one field for the
+//                  destination and no way to add a header.
 //      See plans/webhook-address-vs-secret.md for the trade each mode makes.
 //   2. Only ARMED workflows are searched. Disarming a workflow closes its URL.
 //   3. The run carries NO event and NO contact, so every guest-touching node
@@ -48,8 +48,8 @@ export type WebhookTriggerResult =
       ok: true;
       runId: string | undefined;
       /**
-       * The status to answer a NEW run with. 202 for `trigger.webhook`, as it
-       * always was; 200 for `trigger.sumit_card`, because SUMIT's help article
+       * The status to answer a NEW run with. 202 for `trigger.webhook`;
+       * 200 for `trigger.sumit_card`, because SUMIT's help article
        * says it waits for "HTTP Status 200" and suspends the whole trigger after
        * five answers it does not accept. Decided here, by node type, so the
        * route stays transport and does not learn which caller is which.
@@ -69,7 +69,7 @@ export type WebhookTriggerResult =
  * start a flow, never the stored JSON) instead of writing a second, looser
  * matcher in SQL.
  *
- * ⚠️ BOTH HALVES ARE REQUIRED AND BOTH ARE COMPARED IN CONSTANT TIME. The
+ * ⚠️ IN `header` MODE BOTH HALVES ARE REQUIRED AND BOTH ARE COMPARED IN CONSTANT TIME. The
  * endpoint id is public, so a timing leak on it would reveal nothing an
  * attacker cannot already hold — but it is compared the same way regardless,
  * because "this one is safe to be sloppy with" is the reasoning that ages badly
@@ -77,11 +77,10 @@ export type WebhookTriggerResult =
  * secret gets the same `null` as one that presents neither.
  */
 async function findWorkflowForEndpoint(endpointId: string, secret: string, method: string) {
-  // ⚠️ ONLY THE PATH IS REQUIRED UP FRONT NOW. It used to bail here on an empty
-  // SECRET too, which was right while every node was header-authenticated and
-  // is wrong now: an `address`-mode node asks for no header at all, so a blanket
-  // refusal would make that mode unreachable. The secret is still mandatory —
-  // per node, below, for every node that is in `header` mode.
+  // ⚠️ ONLY THE PATH IS REQUIRED UP FRONT. Bailing here on an empty SECRET too
+  // would be wrong: an `address`-mode node asks for no header at all, so a
+  // blanket refusal would make that mode unreachable. The secret is still
+  // mandatory — per node, below, for every node that is in `header` mode.
   if (endpointId.trim() === '') return null;
 
   // Hashed ONCE, outside the loop: the diagram stores `tokenHash`, so the value
@@ -128,9 +127,9 @@ async function findWorkflowForEndpoint(endpointId: string, secret: string, metho
       // neither helped nor refused by it; this mode simply does not read one.
       if (!webhookHashesMatch(configuredHash, presentedPath)) continue;
     } else {
-      // ⚠️ HEADER MODE IS UNCHANGED, INCLUDING ITS REFUSALS. An empty header
-      // hashes to `''` above and can never equal a 64-character digest, so a
-      // caller who knows the public id and sends no secret still gets nothing.
+      // ⚠️ HEADER MODE REQUIRES THE SECRET. An empty header hashes to `''`
+      // above and can never equal a 64-character digest, so a caller who knows
+      // the public id and sends no secret gets nothing.
       const configuredId = properties.endpointId;
       if (typeof configuredId !== 'string' || configuredId.trim() === '') continue;
       if (!webhookHashesMatch(configuredId, endpointId)) continue;
@@ -162,10 +161,10 @@ async function findWorkflowForEndpoint(endpointId: string, secret: string, metho
  * receiver to store the call and answer that it was received, and to do the
  * processing afterwards; an answer it does not accept counts as a failure, and
  * five of them suspend the trigger. On 2026-09-23 the first live calls from
- * SUMIT were answered 400 by the shape check below (measured in the proxy log:
- * `expected_json_object`, 43 bytes plus HTTP/1.1 chunk framing = the 54 logged)
- * — so SUMIT does NOT always send the single `{ Folder, EntityID, … }` object
- * its screenshot shows, and nobody here has seen what it does send.
+ * SUMIT were answered 400 by the object-only shape check (measured in the proxy
+ * log: `expected_json_object`, 43 bytes plus HTTP/1.1 chunk framing = the 54
+ * logged) — so SUMIT does NOT always send the single `{ Folder, EntityID, … }`
+ * object its screenshot shows; the shape it does send is measured below.
  *
  * So a SUMIT node keeps what arrived instead of refusing it, under a key that
  * says what it is: `value` for JSON that is not an object, `text` for a body
@@ -255,11 +254,10 @@ export async function startRunFromWebhook(input: {
 
   const found = await findWorkflowForEndpoint(input.endpointId, input.secret, input.method);
 
-  // ⚠️ EVERY ANSWER A `trigger.webhook` CALLER COULD GET BEFORE, IT STILL GETS.
-  // A body that is not one JSON object was refused BEFORE the lookup, so it was
-  // 400 whether or not the address existed; checking it first here keeps that
-  // exactly — an unknown address with a bad body is still 400, never a 404 that
-  // would now say "the body was fine, the address was not".
+  // ⚠️ AN UNKNOWN ADDRESS WITH A BODY THAT IS NOT ONE JSON OBJECT IS 400, NEVER
+  // A 404 that would say "the body was fine, the address was not". For a
+  // `trigger.webhook` that body is refused whether or not the address exists,
+  // so it is checked first here.
   if (!found) return objectBody ? { ok: false, reason: 'not_found' } : { ok: false, reason: 'bad_json' };
   // ONE answer for "no such endpoint", "wrong secret", "verb not allowed", and
   // "belongs to a disarmed workflow" — above. Distinguishing them would turn

@@ -93,13 +93,13 @@ export async function dispatchVoicePurposeCall(input: {
   if (purpose.isBuiltin) return { kind: 'blocked', reason: 'purpose_is_builtin' };
   if (!purpose.active) return { kind: 'skipped', reason: 'purpose_inactive' };
   if (!purpose.enabled) return { kind: 'skipped', reason: 'purpose_disabled' };
-  // ⚠️ THE NODE'S RULE WINS, AND A PURPOSE WITHOUT ONE IS NO LONGER FATAL — as
-  // long as the node supplied one. That is the whole point of putting the
+  // ⚠️ THE NODE'S RULE WINS, AND A PURPOSE WITHOUT ONE IS NOT FATAL — as long as
+  // the node supplied one. That is the whole point of putting the
   // configuration on the node: a purpose is a policy (its window, its token TTL,
   // its name), and which scenario runs is a property of the call.
   //
-  // Both missing is still blocked, and with the same reason as before: there is
-  // no rule to start, so `StartScenarios` has nothing to launch.
+  // Both missing is blocked: there is no rule to start, so `StartScenarios` has
+  // nothing to launch.
   const ruleId = input.overrides?.ruleId?.trim() || purpose.ruleId;
   if (!ruleId) return { kind: 'blocked', reason: 'purpose_rule_missing' };
 
@@ -239,8 +239,8 @@ export async function dispatchVoicePurposeCall(input: {
   const payload = JSON.stringify({
     to: phone,
     // The node's number when it named one, the account's otherwise. This
-    // reaches the call today: all three deployed agent scenarios read
-    // `state.from = customData.from` and pass it to `VoxEngine.callPSTN(to,
+    // reaches the call: every deployed agent scenario reads
+    // `state.from = customData.from` and passes it to `VoxEngine.callPSTN(to,
     // callerid)` — no scenario change is needed for this one.
     from: input.overrides?.callerId?.trim() || config.callerId,
     tok: accessToken,

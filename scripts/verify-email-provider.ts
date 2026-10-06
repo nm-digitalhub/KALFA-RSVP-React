@@ -8,8 +8,7 @@
  * DMARC and stamps the result into `Authentication-Results`. Reading that
  * header back is the only way to see what a real recipient sees.
  *
- * It also carries an attachment, because the traffic this path exists for is
- * the signed agreement, and that is a PDF.
+ * It also carries an attachment, to exercise the sender's attachment path.
  *
  * Build + run:
  *   npx esbuild scripts/verify-email-provider.ts --bundle --platform=node \

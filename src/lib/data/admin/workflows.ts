@@ -2,28 +2,30 @@ import 'server-only';
 
 // Admin reads and writes for workflows. Authorization lives here, at the data
 // layer, exactly as it does for channels and the rest of /admin — a Server
-// Action is a thin wrapper over these, never a second gate.
+// Action is a thin wrapper over these, never a second gate (the one exception
+// is starting a real run, below: its gate lives in the Server Action).
 //
 // EVERY function gates on a NAMED PLATFORM PERMISSION, not on requireAdmin().
 //
-// It used to gate on `requireAdmin()` alone — the coarse `has_role('admin')`
-// flag, which is a DIFFERENT axis from the platform-permission matrix and is
-// held by anyone with the admin role. That was measured on 2026-09-10 and it is
-// the widest possible staff gate: `support_agent` and `auditor` — roles built
-// deliberately WITHOUT `manage_voice` and WITHOUT `campaigns.runstate` — would
-// have been able to arm an automation and place a real call to a guest.
+// `requireAdmin()` alone is the coarse `has_role('admin')` flag, which is a
+// DIFFERENT axis from the platform-permission matrix and is held by anyone with
+// the admin role. Measured on 2026-09-10, it is the widest possible staff gate:
+// `support_agent` and `auditor` — roles built deliberately WITHOUT
+// `manage_voice` and WITHOUT `campaigns.runstate` — would have been able to arm
+// an automation and place a real call to a guest.
 //
 // The split follows what each function actually does, not which page it serves:
 //
 //   configuration (create/save/arm/delete/cancel/dry-run/list) → manage_settings
 //   reads that return GUEST NAMES (the manual-run pickers)     → view_customer_data
-//   starting a real run (startManualRun, in manual-run.ts)     → view_customer_data
+//   starting a real run (startManualRunAction, in actions.ts)  → view_customer_data
 //                                                              + manage_voice
 //
 // The last one requires BOTH on purpose: it reads a guest's identity AND dials a
 // phone, so neither permission alone should be enough. `voice-ops.ts` already
-// requires manage_voice + view_recordings merely to LOOK at call history; it
-// would be incoherent for placing a call to ask for less.
+// requires manage_voice merely to LOOK at call history (and the stricter
+// view_recordings for the recordings themselves); it would be incoherent for
+// placing a call to ask for less.
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Json } from '@/lib/supabase/types';
@@ -226,9 +228,10 @@ export type ArmResult =
       /**
        * Something the arming did BESIDES arming, in Hebrew, for the admin to read.
        *
-       * Today there is exactly one: claiming the `whatsapp_import_sender` role for
-       * the number a guest-list trigger is pinned to. A side effect on
-       * account-wide routing must never be silent — see `claimImportRole`.
+       * Today there are two sources: claiming the `whatsapp_import_sender` role for
+       * the number a guest-list trigger is pinned to, and any SUMIT trigger
+       * registration problem. A side effect on account-wide routing must never be
+       * silent — see `claimImportRole`.
        */
       notice?: string;
     }
@@ -467,23 +470,25 @@ export async function deleteWorkflow(id: string): Promise<DeleteResult> {
 export type CancelRunResult = { ok: true } | { ok: false; errors: string[] };
 
 /**
- * Cancel a run that has not started yet.
+ * Cancel a run that is not executing: one that has not started yet, or one
+ * parked in `waiting`.
  *
- * DELIBERATELY PENDING-ONLY. The vendored `runGraph` has no cancellation seam —
- * it never polls for a cancel signal, and it cannot, because it is written to
- * be replay-deterministic (see replay-audit.md rules 1-3: no clock, no I/O, no
- * ambient state). Upstream gets cancellation from Temporal, which injects a
- * `CancelledFailure` at the next activity boundary; pg-boss has no equivalent,
- * so a run already inside `runGraph` will finish whatever it is doing.
+ * DELIBERATELY NEVER A RUNNING ONE. The vendored `runGraph` has no cancellation
+ * seam — it never polls for a cancel signal, and it cannot, because it is
+ * written to be replay-deterministic (no clock, no I/O, no ambient state).
+ * Upstream gets cancellation from Temporal, which injects a `CancelledFailure`
+ * at the next activity boundary; pg-boss has no equivalent, so a run already
+ * inside `runGraph` will finish whatever it is doing.
  *
  * Offering a button that claims to stop a running graph and does not would be
  * worse than offering none. What this does stop is the gap between enqueue and
- * pickup, which for a queued backlog is the window that matters.
+ * pickup, which for a queued backlog is the window that matters, and a run
+ * parked at a wait.
  *
  * The status filter is the whole concurrency story: the update matches only
- * while the row is still `pending`, so a worker that claimed the job first
- * simply leaves zero rows matched, and `handleWorkflowRun` refuses to execute a
- * run whose status is no longer pending or running.
+ * while the row is still `pending` or `waiting`, so a worker that claimed the
+ * job first simply leaves zero rows matched, and `handleWorkflowRun` refuses to
+ * execute a run whose status is not pending, running or waiting.
  */
 export async function cancelRun(runId: string): Promise<CancelRunResult> {
   await requirePlatformPermission('manage_settings');
@@ -492,8 +497,7 @@ export async function cancelRun(runId: string): Promise<CancelRunResult> {
   const { data, error } = await supabase
     .from('workflow_runs')
     // `resume_at` is cleared with the status: it means "wake me then", and a
-    // cancelled run is never waking. Leaving it would also leave the row in the
-    // partial index the stuck-run sweep reads.
+    // cancelled run is never waking.
     .update({ status: 'cancelled', finished_at: new Date().toISOString(), resume_at: null })
     .eq('id', runId)
     // ⚠️ 'waiting' TOO, and the original reasoning is exactly why it is safe.
@@ -570,9 +574,7 @@ export type RunSummary = {
  *
  * Returns keys, types AND ONE EXAMPLE VALUE per field (in its description) —
  * SUMIT's field names do not describe their content, so the picker needs the
- * value to be usable (owner 25.9). The value may be a customer's name or card
- * digits; the run list on the same page already shows the full body under the
- * same `manage_settings` gate.
+ * value to be usable. The value may be a customer's name or card digits.
  *
  * `null` means "keep the fixed list": no SUMIT call yet, none of the recent
  * webhook runs is a SUMIT card (a `trigger.webhook` run shares the source), or

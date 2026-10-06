@@ -47,7 +47,7 @@ describe('buildHebrewStyleGuide', () => {
   it('carries the measured mistakes, not only abstract rules', () => {
     expect(guide.measured_mistakes.length).toBeGreaterThanOrEqual(5);
     const joined = guide.measured_mistakes.join(' ');
-    // The four defects observed in real drafts today.
+    // Defects observed in real drafts.
     expect(joined).toContain('ברכ');
     expect(joined).toContain('חתימה');
     expect(joined).toContain('נציג יפרט');

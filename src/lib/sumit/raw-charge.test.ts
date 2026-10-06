@@ -182,11 +182,10 @@ describe('chargeRaw', () => {
       externalId: 'p',
     });
     const body = sentBodyOf(f);
-    // ABSENT, not null. This used to send `VATRate: null` while its own comment
-    // claimed it "mirrors capture.ts" — capture.ts does not send the key at all,
-    // so the POC was putting a different body on the wire than the production
-    // path it existed to predict. The business is an עוסק פטור: no VAT field,
-    // company default balances the document.
+    // ABSENT, not null: capture.ts does not send the key at all, and the POC
+    // must put the same body on the wire as the production path it exists to
+    // predict. The business is an עוסק פטור: no VAT field, company default
+    // balances the document.
     expect('VATRate' in body).toBe(false);
     expect('VATIncluded' in body).toBe(false); // עוסק פטור — company default, same as production
   });

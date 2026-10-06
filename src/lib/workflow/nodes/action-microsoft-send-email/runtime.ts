@@ -41,8 +41,8 @@ export const microsoftSendEmail: StepHandler = async (config, ctx) => {
   const saveToSentItems =
     typeof config.saveToSentItems === 'boolean' ? config.saveToSentItems : true;
 
-  // The same four fields as before. `cc`, `bcc` and `replyTo` are deliberately
-  // NOT required: a mail with no carbon copy is an ordinary mail.
+  // The four required fields. `cc`, `bcc` and `replyTo` are deliberately NOT
+  // required: a mail with no carbon copy is an ordinary mail.
   if (!connectionId || !to || !subject || !body.trim()) {
     throw new PermanentNodeExecutionError(
       'invalid_config',

@@ -6,7 +6,7 @@ import { RefreshCw } from 'lucide-react';
 import { FormError, FormNotice } from '@/components/forms';
 import type { FormState } from '@/lib/validation/result';
 
-// One button per provider. Read-only against the provider — one GET, nothing
+// One button per provider. Read-only against the provider — list reads only, nothing
 // purchased, nothing bound, no message sent — so there is no confirmation dialog
 // here on purpose; a dialog in front of a harmless read teaches people to click
 // through the ones that matter.

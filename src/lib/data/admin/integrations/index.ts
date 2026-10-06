@@ -8,7 +8,7 @@ import { getIntegrationsStatus, type IntegrationStatus } from '@/lib/ops/integra
 // The /admin/integrations index: one card per provider, for whoever is looking.
 //
 // ⚠️ WHY THE PAGE IS ON THE STAFF FLOOR AND THE CARDS ARE NOT.
-// The obvious gate is `manage_settings` — it opens six of the seven destinations. It
+// The obvious gate is `manage_settings` — it opens six of the nine destinations. It
 // is the wrong one, for a reason that took two wrong answers to reach:
 //
 //   * First attempt: staff floor, because "an ops person holding only manage_voice
@@ -19,10 +19,10 @@ import { getIntegrationsStatus, type IntegrationStatus } from '@/lib/ops/integra
 //     not.
 //
 // So the gate describes the RESOURCE. This page is a navigation surface plus
-// read-only status, and every staff member may see where things stand. The two
-// WRITES that share the page (the outreach master switch and the channel catalog)
-// carry `manage_settings` themselves, in their own actions, and the page renders
-// them only for holders — hiding is convenience, the action is the gate.
+// read-only status, and every staff member may see where things stand. The one
+// WRITE that shares the page (the channel catalog) carries `manage_settings`
+// itself, in its own write path, and the page renders it only for holders — hiding
+// is convenience, the server-side check is the gate.
 //
 // A card the viewer cannot use is shown as "no permission", NOT as a link. That
 // distinction is the whole reason the floor is safe here: without it, a billing
@@ -58,9 +58,8 @@ interface CardSpec {
    */
   permission: string;
   /**
-   * Where the settings live RIGHT NOW. The dedicated /admin/integrations/<provider>
-   * pages arrive in later tasks; until then the index is a real hub rather than a
-   * wall of dead tiles, and each href is repointed as its page lands.
+   * Where the settings live. Usually /admin/integrations/<provider>; ElevenLabs
+   * has no page of its own there and lives under /admin/voice/platform.
    */
   href: string;
 }
@@ -80,11 +79,6 @@ const CARDS: CardSpec[] = [
 // GA4 is deliberately absent. getIntegrationsStatus() reports it because Debug Mode
 // wants it, but nobody "connects" it from the panel — it is env-only and has no
 // settings page to link to. It stays a diagnostics row.
-//
-// Microsoft/Exchange is absent for the opposite reason: it has a DEDICATED debug panel
-// that shows every admin's connection, while listMyExchangeConnections() returns only
-// the caller's own. A card built from the weaker source would quietly under-report, so
-// it waits for its own page and reads the same source that panel does.
 
 export interface IntegrationCard {
   key: IntegrationKey;
@@ -109,7 +103,7 @@ export interface IntegrationCard {
 
 export interface IntegrationsIndex {
   cards: IntegrationCard[];
-  /** The page's two write surfaces render only for holders. */
+  /** The page's numbers link and channel catalog editor render only for holders. */
   canManageSettings: boolean;
   /** True when "last checked" could be resolved at all — see below. */
   showsLastChecked: boolean;

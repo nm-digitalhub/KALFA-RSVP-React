@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 // and silently turn the early wake back into a ceiling wake.
 //
 // This models the SQL's predicates instead of assuming them, and drives the
-// exact interleaving the 0ב review asked about. It cannot execute Postgres, so
+// exact interleaving of the callback window. It cannot execute Postgres, so
 // it is a CONTRACT, not a proof of the deployed function — but a contract that
 // fails loudly when the two disagree is what was missing.
 //

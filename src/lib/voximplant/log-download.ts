@@ -1,19 +1,22 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
 
-// SSRF-hardened download of a Voximplant session-log file (plan §8, item A4).
+// SSRF-hardened download of a Voximplant session-log file.
 //
 // The log_file_url comes from an EXTERNAL API response and is treated as
 // untrusted input end-to-end. Gates, in order (every one fail-closed):
 //   1. URL shape: https only, port 443 only, no credentials, host allowlist
 //      (Voximplant storage-gateway patterns — same family recording-url.ts
-//      verified empirically; a mismatch is recorded so the stage-3 live run can
-//      reveal the real log host and extend the allowlist DELIBERATELY).
+//      verified empirically; a mismatch is recorded so a live run
+//      (scripts/voximplant/fetch-session-log.ts) can reveal the real log host
+//      and extend the allowlist DELIBERATELY).
 //   2. DNS: resolve the host and reject if ANY address is private/reserved
 //      (RFC1918, loopback, link-local/metadata, CGNAT, ULA, v4-mapped).
 //   3. Fetch: redirect:'manual' — ANY 3xx is rejected; response size capped.
 //   4. Auth: anonymous GET first; the Management JWT is attached ONLY on a
-//      401/403 retry (docs do not mandate JWT for logs — stage-3 OPEN), and
-//      only to a URL that already passed gates 1-2.
+//      401/403 retry (docs require it only when the application has "Secure
+//      storage of applications and logs" enabled — verify live with
+//      scripts/voximplant/fetch-session-log.ts), and only to a URL that already
+//      passed gates 1-2.
 //
 // Known limitation (documented): the resolved-IP check and the fetch are two
 // steps (DNS TOCTOU). The primary gate is the strict host allowlist — only
@@ -26,7 +29,7 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 const LOG_HOST_PATTERN = /^storage-gw-[a-z]{2}-\d{2}\.voximplant\.com$/;
 export const LOG_HOST_EXTRA: readonly string[] = [];
 
-export const MAX_LOG_BYTES = 5 * 1024 * 1024; // >5MB → failed with reason (plan §4)
+export const MAX_LOG_BYTES = 5 * 1024 * 1024; // >5MB → failed with reason
 
 export type LogUrlRejection =
   | 'unparseable'

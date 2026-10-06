@@ -546,8 +546,8 @@ export function deriveSubject(body: string): string {
 }
 
 /** Server-side title for a new owner message: the given subject, or the first
- * line, or — when both are too short for the DB-mirrored minimum — a
- * generic "הודעה ל-<role>". */
+ * line, or — when both are shorter than TITLE_MIN — a generic
+ * "הודעה ל-<role>". */
 export function resolveOwnerTitle(subject: string, body: string, role: string): string {
   const candidates = [subject.trim().slice(0, TITLE_MAX), deriveSubject(body)];
   return candidates.find((c) => c.length >= TITLE_MIN) ?? `הודעה ל-${role}`.slice(0, TITLE_MAX);

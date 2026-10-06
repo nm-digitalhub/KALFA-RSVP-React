@@ -12,9 +12,9 @@ import { hasPlatformPermission, isPlatformOwner, requirePlatformStaff } from '@/
 // requirePlatformPermission is what refuses. The problem this solves is the
 // opposite one: BEFORE 2026-09-10 the panel could only be entered by someone
 // holding user_roles.admin, which in practice meant the three owners, so
-// showing all 33 links to everyone cost nothing. Merging the two auth axes made
-// every platform_staff row an admin-area login, and a support_agent now sees 33
-// links of which 4 work. The other 29 do not say "no access" — they call
+// showing every link to everyone cost nothing. Merging the two auth axes made
+// every platform_staff row an admin-area login, and a support_agent saw every
+// link although only a few worked. The rest do not say "no access" — they call
 // redirect('/app'), which ejects them from the panel into the customer app.
 //
 // So this is a UX repair with a security-shaped cause, and it is deliberately

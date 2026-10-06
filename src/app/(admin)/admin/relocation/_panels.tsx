@@ -312,8 +312,8 @@ function StepRow({ step, now }: { step: RelocationStepView; now: Date }) {
 
 export function StageTimeline({ run }: { run: RelocationRunView }) {
   const now = new Date();
-  // Open the stage holding the current focus step; with no focus (done/failed
-  // terminal states) open nothing and let the admin expand freely.
+  // Open the stage holding the current focus step; with no focus (e.g. a
+  // completed run) open nothing and let the admin expand freely.
   const focusStage = run.stages.find((stage) =>
     stage.steps.some((step) => step.id === run.focusStepId),
   );

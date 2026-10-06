@@ -29,7 +29,8 @@ describe('insertContactMessage', () => {
     // The shared mock builder resolves every awaited chain the same way; the
     // insert-then-select-single chain for contact_messages needs `data.id`,
     // and the thread insert below only reads `.error`, so one configured
-    // result correctly serves both calls.
+    // result correctly serves every call (the topic's queue lookup included —
+    // it only reads `data.id`, and the value is irrelevant to this assertion).
     const { client, builder } = createMockSupabase<{ id: string }>({
       data: { id: 'c-new-1' },
       error: null,

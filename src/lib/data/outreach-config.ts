@@ -9,9 +9,9 @@ import {
 } from '@/lib/outreach/send-policy';
 
 // Server-side readers of the admin-managed outreach config (app_settings, a
-// singleton with ADMIN-ONLY RLS). Fail-safe AND forward-compatible: the columns
-// are added by a pending migration, so until they exist `select('*')` simply
-// omits them and these resolve to off / null (fail-closed — outreach stays off).
+// singleton with ADMIN-ONLY RLS). Fail-safe: `select('*')` reads each column
+// defensively out of the row, so a missing column, a missing row or a read error
+// resolves to off / null (fail-closed — outreach stays off).
 // Mirrors getCampaignHoldsEnabled. The access token / app secret never leave the
 // server and are never logged.
 
@@ -106,8 +106,8 @@ export async function getWhatsAppConfig(): Promise<WhatsAppConfig | null> {
 // Why this is a separate reader and not two more fields on WhatsAppConfig.
 // The plan (§1.5.3 Task 3) called for widening WhatsAppConfig itself. Measured
 // against the code that would pay for it: getWhatsAppConfig() runs ONCE PER
-// RECIPIENT on the send path (outreach-engine.ts:398 and :724, inside the
-// per-contact step delivery), so folding the role lookup into it would add a
+// RECIPIENT on the send path (outreach-engine.ts executeStep and
+// prepareAndSendStep, inside the per-contact step delivery), so folding the role lookup into it would add a
 // second round-trip per recipient — a 300-guest campaign would pay 300 of them
 // for a field no send path reads. That is the same cost §1.5.2 forbids when it
 // says the resolution "must be cached per-message-batch and not read once per
@@ -158,17 +158,17 @@ export async function getWhatsAppChannel(): Promise<WhatsAppChannel | null> {
 // AI-call channel.
 //
 // FAIL-SAFE: anything but an explicit false — including a read error, a missing
-// column before the migration lands, or a null row — reads as "required", so a
+// column, or a null row — reads as "required", so a
 // hiccup can never silently drop the consent requirement and start sending to
 // contacts who never gave one.
 //
 // Lifting the requirement skips ONLY the whatsapp_consent_at check. Opt-out
-// (contacts.removal_requested) and the frozen campaign_authorized_contacts set
+// (contacts.removal_requested) and the campaign_authorized_contacts set
 // are enforced separately and are never affected by this flag.
 //
 // Reads with `select('*')` deliberately, matching getOutreachEnabled above: the
 // column is read defensively out of the row so this resolves to the SAFE value
-// on a database that has not run the migration yet, instead of erroring.
+// on a database that lacks the column, instead of erroring.
 export async function getWhatsAppConsentRequired(): Promise<boolean> {
   try {
     const admin = createAdminClient();

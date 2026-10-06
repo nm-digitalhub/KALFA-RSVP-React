@@ -37,7 +37,8 @@ import { NewGoalSheet } from './fleet-goals';
 //   continue → createFleetRequestAction with continueFrom=<id> (body >= 2)
 //
 // No optimistic append: the button shows pending, then the revalidated page
-// brings the real bubble, and the router lands on it (?focus=).
+// brings the real bubble (a deduplicated send lands on the existing one via
+// ?focus=).
 
 export type ComposerMode =
   | { type: 'new' }
@@ -173,7 +174,7 @@ export function ComposerProvider({ role, children }: { role: string; children?: 
 }
 
 // "N פניות ממתינות לתשובתך ↑" — jumps to the first bubble waiting on the
-// owner. Replaces the old "another message in this thread is waiting" Alert.
+// owner.
 export function PendingBar({ count }: { count: number }) {
   if (count === 0) return null;
   return (
@@ -241,7 +242,7 @@ export function FleetComposer({
   autoFocus,
 }: {
   reach: Reachability;
-  /** Same, for the goal_due trigger (the "+ מטרה" sheet). */
+  /** Same, for the goal_due trigger (the new-goal sheet). */
   goalReach: Reachability;
   /** At least one closed exchange exists — shows the "no context" hint. */
   hasClosedExchange: boolean;

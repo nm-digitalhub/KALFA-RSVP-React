@@ -9,7 +9,8 @@ export const metadata: Metadata = { title: 'מדיניות תזמון שיחות
 
 // Admin: the callback-scheduling policy (schedule-policy.ts's admin-editable
 // counterpart) — business hours per weekday, minimum notice, horizon, call
-// duration, daily cap, and the post-motzash-shabbat resume delay. A change
+// duration, daily cap, the post-motzash-shabbat resume delay, the actual-dial
+// window and the dial attempt cap/window. A change to the scheduling fields
 // here affects only NEW scheduling decisions; already-booked appointments are
 // untouched (see getCallbackPolicy's own fail-safe-to-default comment).
 export default async function AdminCallbackPolicyPage() {

@@ -70,7 +70,8 @@ vi.mock('@/lib/whatsapp/client', () => ({
   sendWhatsAppMarketingTemplate: vi.fn(),
 }));
 // After the request-free split, outreach.ts resolves contacts through
-// @/lib/data/sendable-contacts (which imports ONLY createAdminClient), so
+// @/lib/data/sendable-contacts (which imports only createAdminClient and
+// outreach-config), so
 // contacts.ts / reconcile-config are no longer in the worker send graph. This
 // stub stays as belt-and-suspenders in case the graph regresses back through
 // contacts.ts (module load only — the resolver never calls it).

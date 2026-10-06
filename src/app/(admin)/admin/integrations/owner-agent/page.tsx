@@ -28,11 +28,12 @@ export const metadata: Metadata = { title: 'סוכן WhatsApp לבעלים — �
 
 // The owner WhatsApp business-data agent, stage 2 of plans/owner-whatsapp-agent-plan.md:
 // the kill switch, the number it answers on, the daily cap, the allow-list, and the
-// recent audit. The webhook reads these settings (stage 4, src/lib/owner-agent/
-// intake.ts): with a number selected, an allow-listed phone's messages to it are
-// diverted and audited here. With no number selected (the default) nothing is.
-// The reply process (stage 6, pm2 kalfa-owner-agent) answers them; it went live on
-// 2026-09-24, so the page no longer carries a "no answers yet" notice.
+// recent audit — plus the proactive report (§4.8 of
+// plans/owner-agent-chat-sdk-capabilities-plan.md). The webhook reads these settings
+// (stage 4, src/lib/owner-agent/intake.ts): with a number selected, an allow-listed
+// phone's messages to it are diverted and audited here. With no number selected (the
+// default) nothing is.
+// The reply process (stage 6, pm2 kalfa-owner-agent) answers them.
 //
 // OWNER ONLY (decision 9.4, 2026-09-24). Every reader and writer below calls
 // requirePlatformOwner itself, and so does every action; this page-level call is

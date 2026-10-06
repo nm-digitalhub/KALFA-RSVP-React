@@ -15,11 +15,10 @@ import { voxPurposeCallbackSchema } from '@/lib/validation/voximplant';
 // call by the Voximplant SCENARIO itself (from CallEvents.Disconnected/Failed
 // or its global timeout), saying the call session ended and how.
 //
-// WHY IT DID NOT EXIST. `purpose/<key>/` shipped with `ctx` and no `cb`, so a
-// purpose call could FETCH its context but had nowhere to report an outcome.
-// `voice_purpose_attempts.finish_reason` was therefore only ever written by the
-// dispatcher's own error paths — the column looked wired and was not. A row
-// stayed at 'confirmed' forever and no reader could tell a call that was still
+// WHY IT EXISTS. Without it a purpose call could FETCH its context but had
+// nowhere to report an outcome: `voice_purpose_attempts.finish_reason` is
+// otherwise written only by the dispatcher's own error paths. A row would stay
+// at 'confirmed' forever and no reader could tell a call that was still
 // running from one that had ended an hour ago.
 //
 // It is also where a parked workflow run is WOKEN. `run_id`/`node_id` live on
@@ -74,8 +73,7 @@ export async function POST(
     // that had already failed — and in both cases the FIRST verdict is the
     // right one and the scenario must still be told 200 so it stops retrying.
     //
-    // ⚠️ TWO FACTS, TWO COLUMNS — the shape every other call surface here already
-    // uses, and the one this route was the exception to.
+    // ⚠️ TWO FACTS, TWO COLUMNS — the shape the RSVP call surface already uses.
     //
     // `call-result-processing.ts` writes the RSVP surface exactly this way:
     //
@@ -87,19 +85,18 @@ export async function POST(
     // what separates 'no one picked up, try again' from 'the number does not
     // exist, fix the list'".
     //
-    // This route used to pass `body.error_reason ?? body.call_status` as the one
-    // reason argument, so whenever the scenario sent both — which it does on
-    // every failure path it has, `call_status:'failed'` beside
+    // Passing `body.error_reason ?? body.call_status` as the one reason argument
+    // would DISCARD the verdict whenever the scenario sent both — which it does
+    // on every failure path it has, `call_status:'failed'` beside
     // `error_reason:'missing_secret' | 'ctx_parse_error' | 'ctx_fetch_error' |
-    // 'ctx_fetch_failed_<code>'` — the verdict was DISCARDED and only the free
-    // text survived.
+    // 'ctx_fetch_failed_<code>'` — and only the free text would survive.
     //
-    // What that cost was a WRONG ANSWER, not a missing field. `toBusinessOutcome`
-    // reads the row back, finds `dispatch_status:'concluded'` and a reason it has
-    // no mapping for, and falls to its `default: 'completed'` — reasoning that is
-    // right for an unmapped success reason and false for an error string. A call
-    // that failed before it reached anybody came back to the diagram as a
-    // success, and the flow took the success branch.
+    // What that would cost is a WRONG ANSWER, not a missing field.
+    // `toBusinessOutcome` would read the row back, find `dispatch_status:'concluded'`
+    // and a reason it has no mapping for, and fall to its `default: 'completed'` —
+    // reasoning that is right for an unmapped success reason and false for an
+    // error string. A call that failed before it reached anybody would come back
+    // to the diagram as a success, and the flow would take the success branch.
     //
     // ⚠️ AND WHY THIS TABLE NEEDS A THIRD COLUMN WHERE `call_attempts` NEEDS TWO.
     // There the row's `status` IS the scenario's verdict. Here `dispatch_status`
@@ -129,9 +126,10 @@ export async function POST(
   // that is still waiting on THIS attempt — so firing it every time is cheaper
   // than working out whether it is needed.
   //
-  // ⚠️ NOT BEST-EFFORT — and it was, which defeated the retry it depends on.
+  // ⚠️ NOT BEST-EFFORT — swallowing a failure here would defeat the retry it
+  // depends on.
   //
-  // Two different things were being conflated. `woke: false` is an ANSWER: the
+  // Two different things must not be conflated. `woke: false` is an ANSWER: the
   // run is not waiting on this event, so there is nothing to wake and 200 is
   // correct. A THROW is a failure of the attempt to find out — a database blip,
   // a pooler timeout — and answering 200 to that tells the scenario its report

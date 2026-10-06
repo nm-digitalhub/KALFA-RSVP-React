@@ -16,9 +16,10 @@ import {
 
 // Tool 3 (plan §5): counts AND money sums. The sums come from
 // public.owner_agent_billing_sums (supabase/migrations/
-// 20260924061630_owner_agent_read_aggregates.sql, applied) through the core,
-// in shekels; `money` below admits a non-integer, never a negative or NaN.
-// Offered under view_billing (registry.ts OWNER_AGENT_TOOLS).
+// 20260924061630_owner_agent_read_aggregates.sql, recreated with _until in
+// 20260927011338_owner_agent_capabilities.sql) through the core, in shekels;
+// `money` below admits a non-integer, never a negative or NaN. Offered under
+// view_billing (registry.ts OWNER_AGENT_TOOLS).
 export const BILLING_SUMMARY_ID = 'billing_summary';
 export const BILLING_SUMMARY_PERMISSION = 'view_billing' satisfies OwnerAgentPermission;
 

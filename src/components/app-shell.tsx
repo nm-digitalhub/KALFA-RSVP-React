@@ -47,16 +47,19 @@ import { getInitials } from '@/lib/utils';
 // customer layout stays a Server Component and renders this client shell so
 // navigation can highlight the active link, toggle the mobile drawer, and open
 // the profile menu. Base UI defaults to LTR and ignores the DOM `dir`
-// attribute, so DirectionProvider is required for the menu/sheet to position
-// correctly in RTL (the HTML `dir="rtl"` is already set on <html>).
+// attribute, so a DirectionProvider is required for the menu/sheet to position
+// correctly in RTL (the HTML `dir="rtl"` is already set on <html>, and the root
+// layout already provides a DirectionProvider; the local one is redundant but
+// harmless).
 
 type NavItem = { href: string; label: string; icon: LucideIcon };
 
 // Two groups rather than one array sliced by index: the conditional links are
 // spliced between them, and a hard-coded slice boundary silently shifts the
 // moment an item is added or removed. There is deliberately no '/app' entry —
-// it is a server-side routing hop that never renders, so a link to it could
-// never light up or land anywhere.
+// it is a server-side routing hop that redirects away whenever the user has any
+// visible event (it paints only the zero-events welcome screen), so a link to it
+// would almost never light up or land anywhere.
 const NAV_PRIMARY: NavItem[] = [
   { href: '/app/events', label: 'האירועים שלי', icon: CalendarDays },
 ];
@@ -74,7 +77,7 @@ function isActive(pathname: string, href: string): boolean {
 }
 
 // Hamburger that opens the sidebar Sheet on mobile only. The desktop sidebar is
-// fixed (per the approved design), so the trigger is hidden from md upward.
+// fixed, so the trigger is hidden from md upward.
 function MobileMenuTrigger() {
   const { toggleSidebar, openMobile } = useSidebar();
   return (
@@ -133,7 +136,7 @@ export function AppShell({
   // this is a convenience link only — the /admin layout enforces authorization.
   isAdmin?: boolean;
   // Organizations the user belongs to + the active one (for the switcher) and
-  // whether to reveal the user-management nav link (members.view). All resolved
+  // whether to reveal the user-management nav link (members.manage). All resolved
   // server-side in the layout; the /app/team route re-checks the permission.
   orgs?: OrgOption[];
   activeOrgId?: string | null;

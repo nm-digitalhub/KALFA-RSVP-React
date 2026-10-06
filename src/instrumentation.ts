@@ -17,7 +17,8 @@ import { rateLimit } from '@/lib/security/rate-limit';
 // docs' NEXT_RUNTIME guard for runtime-specific code. This keeps the notifier
 // out of any Edge bundle and keeps the hook fail-safe.
 // Next.js throws "Failed to find Server Action" (framework error codes E974/E975,
-// node_modules/next/dist/server/app-render/action-handler.js) when a POST carries
+// node_modules/next/dist/server/app-render/manifests-singleton.js and
+// action-handler.js) when a POST carries
 // an action id it cannot resolve in the module map. This class is dominated by
 // forged/scanner traffic (junk `$ACTION_ID_*` fields — e.g. 57× id "x" in the prod
 // logs); the genuine case is cross-deployment skew, which real users AUTO-RECOVER
@@ -109,7 +110,7 @@ export function isRouterStateParseError(error: {
 }
 
 // "aborted" with `code: 'ECONNRESET'` — Node's own error when the CLIENT closes the
-// socket while the server is still reading the request body. Same family as the two
+// socket while the server is still reading the request body. Same family as the
 // predicates above: a fault in someone else's network, reported as ours.
 //
 // MEASURED 2026-08-17, and the correlation is what settles it. The native agent console
@@ -127,8 +128,8 @@ export function isRouterStateParseError(error: {
 // KEYED ON THE MESSAGE, NOT ON `code` ALONE — and that is the whole care in this
 // function.
 //
-// The first version of this matched `code === 'ECONNRESET'` on its own, which is too
-// broad in a direction that matters: ECONNRESET is equally what an OUTBOUND call gets
+// Matching `code === 'ECONNRESET'` on its own would be too broad in a direction that
+// matters: ECONNRESET is equally what an OUTBOUND call gets
 // when Supabase, SUMIT or Voximplant resets the connection mid-flight. That is a real
 // server-side fault and must keep paging. A predicate that cannot tell "the phone went
 // away while POSTing to us" from "our request to the payment provider was reset" would
@@ -210,7 +211,7 @@ export const onRequestError: Instrumentation.onRequestError = async (err, reques
   };
   // Benign, known-noisy patterns: DOWNGRADE to an info breadcrumb instead of
   // paging as a red error. Genuine render errors stay level 'error'. Order
-  // matters only for the title below; both predicates are independent checks.
+  // matters only for the title below; the predicates are independent checks.
   const benignTitle = isUnknownServerActionError(error)
     ? 'Unknown Server Action (benign)'
     : isDestinationStreamClosedError(error)

@@ -15,7 +15,8 @@
 //
 // ⚠️ WHY THIS IS A COPY AND NOT AN IMPORT. The plugin is not published: none of
 // the nine `@workflowbuilder/*` plugin packages exists on npm (each returns
-// 404), and only `@workflowbuilder/sdk` is installed. Undo/Redo is one of the
+// 404), and of the `@workflowbuilder/*` packages only `@workflowbuilder/sdk` and
+// the vendored `@workflowbuilder/ui` are installed. Undo/Redo is one of the
 // two plugins the vendor's docs do NOT mark Enterprise, and its source is
 // Apache-2.0 in their public repo — so the vendor's code is used as written
 // rather than rebuilt by hand.

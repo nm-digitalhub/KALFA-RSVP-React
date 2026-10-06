@@ -15,7 +15,7 @@ import { hasPlatformPermission, requirePlatformStaff } from '@/lib/auth/dal';
 //
 // The safe-config gate, the per-process cache (per-range core slots, one
 // realtime slot, single-flight, quota backoff, stale-on-failure) and every
-// mapper live in src/lib/analytics/ga4-dashboard.ts, moved there unchanged so
+// mapper live in src/lib/analytics/ga4-dashboard.ts so
 // the owner WhatsApp agent runs the same request and mapper as this page. This module keeps the gate: requirePlatformStaff, then
 // view_customer_data. Failures NEVER throw out of here — they map to
 // per-section states so one broken source cannot take down the page.

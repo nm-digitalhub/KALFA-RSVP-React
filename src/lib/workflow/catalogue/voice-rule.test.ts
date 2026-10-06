@@ -21,7 +21,8 @@ import { PALETTE_ITEMS, buildPaletteItems } from './schemas';
 //   }
 //
 // Note what it validates: the RESOLVED VALUE, not the object around it. That is
-// why the schema is `{ minLength: 1 }` and not `{ properties: { purposeKey: … } }`.
+// why the schema is `{ type: 'string', minLength: 1 }` and not
+// `{ properties: { purposeKey: … } }`.
 
 type Rule = {
   effect: string;
@@ -65,13 +66,11 @@ describe('"wait for the outcome" is hidden until a purpose is chosen', () => {
     expect(waitControl.rule!.condition.failWhenUndefined).toBe(true);
     expect(fulfilled(waitControl.rule!, undefined)).toBe(false);
 
-    // ⚠️ TWO INDEPENDENT GUARDS, each pinned on its own — and it was ONE until
-    // `type: 'string'` was added to the condition schema to settle an Ajv
-    // strict-mode warning. That addition also made the schema reject `undefined`
-    // by itself, so the older assertion here — "without the flag, undefined
-    // PASSES" — stopped being true. It is replaced rather than deleted, because
-    // what it was protecting still needs protecting: whichever guard a future
-    // edit removes, the other must still hide the switch.
+    // ⚠️ TWO INDEPENDENT GUARDS, each pinned on its own. `type: 'string'` in the
+    // condition schema (there to settle an Ajv strict-mode warning) makes the
+    // schema reject `undefined` by itself, so the flag is not the only guard:
+    // whichever guard a future edit removes, the other must still hide the
+    // switch.
 
     // 1. The flag alone, against a schema loose enough to admit undefined.
     const flagOnly = {
@@ -87,8 +86,8 @@ describe('"wait for the outcome" is hidden until a purpose is chosen', () => {
     };
     expect(fulfilled(schemaOnly, undefined)).toBe(false);
 
-    // And the schema's half also covers the case neither one caught before: a
-    // legacy `null`, which is not undefined and so was never the flag's job.
+    // And the schema's half also covers a legacy `null`, which is not undefined
+    // and so was never the flag's job.
     expect(fulfilled(waitControl.rule!, null as unknown as string)).toBe(false);
   });
 });
@@ -103,11 +102,9 @@ describe('the voice node’s property panel', () => {
     // So an owner can open this node, find nothing to pick, and have nothing on
     // screen saying a purpose must be created first. The arm gate says it, but
     // only when they try to arm.
-    // ⚠️ BY SCOPE, NOT BY POSITION — the second time this file learned that
-    // lesson. `[0]` passed until `...globalControls` was spread in above, which
-    // contributes its OWN MessageOnError (the SDK's missing-previous-variable
-    // slot) and took index 0. The assertion was still true about the thing it
-    // meant; it was just no longer looking at it.
+    // ⚠️ BY SCOPE, NOT BY POSITION. A positional `[0]` reads a different element
+    // as soon as the panel gains another MessageOnError above this one, while the
+    // thing the assertion means is still true.
     const message = byType('MessageOnError').find(
       (e) => (e as { scope?: string }).scope === '#/properties/purposeKey',
     ) as { scope: string; text: string };
@@ -126,10 +123,8 @@ describe('the voice node’s property panel', () => {
   });
 
   it('the advanced field is collapsed, and only the advanced one', () => {
-    // ⚠️ BY LABEL, NEVER BY POSITION. This selected `[0]` until the dial-parameter
-    // group landed above it, at which point the test read a different accordion
-    // and failed while the thing it guards was still true. A panel gains groups;
-    // an assertion that depends on their order is a tripwire for the next one.
+    // ⚠️ BY LABEL, NEVER BY POSITION. A panel gains groups; an assertion that
+    // depends on their order is a tripwire for the next one.
     const accordion = byType('Accordion').find(
       (a) => (a as { label?: string }).label === 'מתקדם',
     ) as { label: string; elements: { scope: string }[] };
@@ -152,7 +147,7 @@ describe('the voice node’s property panel', () => {
 // arm a diagram containing a node left on 'draft'. The voice node carried
 // `status` in its schema and in its defaults, and rendered no control for it —
 // so an owner could neither park it as a draft nor see why a diagram armed when
-// they expected it not to. Seventeen of eighteen node types rendered one.
+// they expected it not to.
 describe('every node type can set its own status', () => {
   it('⚠️ the voice node renders a status control', () => {
     const scopes: string[] = [];

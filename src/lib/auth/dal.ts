@@ -30,8 +30,10 @@ export const requireUser = cache(async () => {
 
 // Whether the current user is an administrator. Non-redirecting — for
 // conditional UI (e.g. showing an admin nav link). Returns false for
-// anonymous users. Authorization for admin routes is still enforced by
-// requireAdmin in the admin layout; this is convenience only, never a gate.
+// anonymous users. Authorization for admin routes is enforced by
+// requirePlatformStaff in the admin layout and by a named permission in each
+// data-layer function; apart from the close-charge route's own check, this is
+// convenience only, never a gate.
 // Memoized per render pass so repeated calls share one RPC round-trip.
 export const isAdmin = cache(async (): Promise<boolean> => {
   const user = await getUser();
@@ -56,7 +58,7 @@ export const isAdmin = cache(async (): Promise<boolean> => {
  * Checks `has_role(uid,'admin')` on `user_roles`, a separate axis from
  * platform_staff that exists for historical reasons and is being retired. Do not
  * reach for it in new code: a data-layer function names a permission, and the
- * area floor is platform staff. Kept only for the surfaces not yet migrated.
+ * area floor is platform staff.
  */
 export const requireAdmin = cache(async () => {
   const user = await requireUser();
@@ -86,7 +88,7 @@ export const requireAdmin = cache(async () => {
 // carries roles, permissions, granted_by, an audit log and a last-owner guard).
 // Nothing tied them together — no foreign key, no trigger — and they were
 // written by two flows that did not know about each other: `setPlatformAdmin`
-// touches only user_roles, `assignStaffRole` only platform_staff.
+// (since removed) touched only user_roles, `assignStaffRole` only platform_staff.
 //
 // The consequence: adding a `billing_clerk` through /admin/roles produced a
 // person the admin layout REDIRECTED to /app, because the layout asked the other
@@ -106,14 +108,14 @@ export const requireAdmin = cache(async () => {
 //
 // ⚠️ THE LAYOUT IS NOT THE GATE. `(admin)/admin/layout.tsx` calls
 // requirePlatformStaff(), and that is defense in depth, NOT authority. Next's own
-// guidance is explicit: "A layout does not control whether the rest of the route
+// guidance is explicit: "A layout also does not control whether the rest of the route
 // renders… Instead, you should do the checks close to your data source"
 // (node_modules/next/dist/docs/01-app/02-guides/authentication.md, "Layouts and
 // auth checks"). Route segments still render and still emit an RSC payload even
 // when the layout would have redirected. The real gate is the one in the DAL
 // function that touches the data — which is why every module under
-// src/lib/data/admin is pinned to a permission and the coverage test fails
-// closed on a new one.
+// src/lib/data/admin is pinned to a permission (or carries a documented
+// exemption) and the coverage test fails closed on a new one.
 //
 // ⚠️ WHY THESE ARE RPCs AND NOT JWT CLAIMS. Supabase documents RBAC through a
 // Custom Access Token Auth Hook that stamps the role into the token, and

@@ -80,7 +80,7 @@ export function buildFaqTokenValues(facts: BusinessFacts): Record<FaqTokenName, 
 
 // Thin re-export of the shared `{{token}}` engine (src/lib/text/substitute-tokens.ts)
 // under the FAQ-specific name existing call sites already use. A token NOT
-// present as a key in `values` (i.e. not one of the four known names above —
+// present as a key in `values` (i.e. not one of the known names above —
 // a typo) is left as-is: visible in an admin preview/review instead of
 // silently vanishing, which would hide the authoring mistake.
 export const substituteFaqTokens = substituteTokens;

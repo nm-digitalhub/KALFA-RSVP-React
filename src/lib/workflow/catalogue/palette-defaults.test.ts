@@ -81,20 +81,21 @@ describe('every seeded default is a value its own control offers', () => {
 });
 
 // ⚠️ AND A BLANK REQUIRED FIELD IS NOT A DEFECT — the opposite rule to the one
-// above, deliberately not asserted. Seven required fields ship seeded blank
-// (`url`, `body`, `title`, `value`, `token`, `targetWorkflowId`, `purposeKey`),
-// and every one of them is something only the owner can know: there is no
-// sensible starting value for "the address to call" or "the message to send".
-// `findArmBlockers` is the gate for those, and it names the field. A test
-// demanding non-blank defaults here would need to exempt seven of eight cases,
-// which is a test that asserts nothing.
+// above, deliberately not asserted. Required fields ship seeded blank on many
+// nodes (`url`, `body`, `title`, `value`, `tokenHash`, `targetWorkflowId`,
+// `purposeKey`, `connectionId`, `customerName`, …), and every one of them is
+// something only the owner can know: there is no sensible starting value for
+// "the address to call" or "the message to send". `findArmBlockers` is the gate
+// for those, and it names the field. A test demanding non-blank defaults here
+// would need to exempt most of those cases, which is a test that asserts
+// nothing.
 
 // ⚠️ THE RULE THAT HIDES THE BODY BOX, AND WHY IT HAS NO `failWhenUndefined`.
 //
-// `sendOutboundWebhook` attaches a body only for a verb in
-// `HTTP_METHODS_WITH_BODY`; on GET or DELETE the body is built, resolved and
-// secret-checked, and then silently not sent. The panel offered a three-row
-// editor for it anyway.
+// The outbound webhook port (`createOutboundWebhook` in `outbound-webhook.ts`)
+// attaches a body only for a verb in `HTTP_METHODS_WITH_BODY`; on GET or DELETE
+// the body is built, resolved and secret-checked, and then silently not sent.
+// The panel offered a three-row editor for it anyway.
 //
 // The rule is SHOW on the with-body list rather than HIDE on its complement so
 // it is derived from the same constant the runtime branches on. That choice only
@@ -140,9 +141,9 @@ describe('⚠️ every default key is a key the schema declares', () => {
   // sha256 the incoming route matches on. The owner's report was the symptom
   // stated exactly: "there is no way to actually set the trigger that fires it".
   //
-  // NOTHING CAUGHT IT AND NOTHING COULD. The key is a bare string in three
-  // separate files; `satisfies NodeSchema` types the schema, not the defaults,
-  // so tsc sees two unrelated object literals. Templates were unaffected — they
+  // NOTHING CAUGHT IT AND NOTHING COULD. The key was a bare string in three
+  // separate files; `satisfies NodeSchema` typed the schema, not the defaults,
+  // so tsc saw two unrelated object literals. Templates were unaffected — they
   // spell `tokenHash` correctly — which is why the suite stayed green while the
   // palette was broken.
   //
@@ -196,8 +197,8 @@ describe('⚠️ a custom-renderer field carries a Hebrew label, or JsonForms wr
   //
   // THE MECHANISM, because it is not obvious from the uischema: these three
   // renderers draw the label themselves —
-  //   checkbox-list-control.tsx:100     <FormControlWithLabel label={label} …>
-  //   header-rows-control.tsx:137       <FormControlWithLabel label={label} …>
+  //   checkbox-list-control.tsx         <FormControlWithLabel label={label} …>
+  //   header-rows-control.tsx           <FormControlWithLabel label={label} …>
   //   integration-connection-control.tsx
   // `label` is whatever JsonForms computed. With no `label` in the uischema and
   // no i18n entry, JsonForms falls back to `startCase(scope)` — English, from

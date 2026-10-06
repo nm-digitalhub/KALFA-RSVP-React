@@ -29,8 +29,8 @@ import { useExecutionStore, type NodeExecutionState } from './use-execution-stor
 //
 // ⚠️ WHY A JSONFORMS CONTROL AND NOT THE PANEL'S `tabs` PROP, WHICH EXISTS.
 // `PropertiesBarProps` does declare `tabs?: PropertiesBarTab[]`, and the panel
-// does render a tab strip from it. A first attempt used it. It reached exactly
-// ONE node type in the whole product, and the reason is in the vendor's source
+// does render a tab strip from it. A first attempt used it. It reached only
+// THREE node types in the whole product, and the reason is in the vendor's source
 // (packages/sdk/src/features/properties-bar/components/properties-bar/properties-bar.tsx):
 //
 //     when: () => isExpanded && !!selection?.node
@@ -41,10 +41,11 @@ import { useExecutionStore, type NodeExecutionState } from './use-execution-stor
 // that enum says it "drives diagram validation rules …, the variable picker's
 // traversal, and rendering choices in the default node template". Our palette
 // declares `DecisionNode` for fifteen entries (they need the branch body and the
-// OptionalNodeContent slot) and `StartNode` for three triggers, leaving
-// `logic.set_value` as the only entry that falls to the default. So the strip
-// rendered for one node and the pane was unreachable everywhere else — silently,
-// because an absent strip is not an error.
+// OptionalNodeContent slot), `StartNode` for four triggers and `AiNode` for
+// `action.ai_agent`, leaving `action.send_template`, `logic.set_value` and
+// `logic.wait` as the only entries that fall to the default. So the strip
+// rendered for those three and the pane was unreachable everywhere else —
+// silently, because an absent strip is not an error.
 //
 // ⚠️ AND IT IS NOT A SEAM WE WERE MEANT TO USE. Nothing in the vendor's own repo
 // passes `tabs` — not `PropertiesBarContainer`, not any of the ~13 demo plugins.
@@ -55,14 +56,14 @@ import { useExecutionStore, type NodeExecutionState } from './use-execution-stor
 // renderer is part of the published plugin API (`JsonFormsRendererExtension`),
 // and the panel's content is exactly what the node's uischema says it is — no
 // node-type condition anywhere in that path. `schemas.ts` puts the element on
-// every palette entry in one place, so this is data, not nineteen edits.
+// every palette entry in one place, so this is data, not an edit per node type.
 //
 // The shape is the vendor's own: their `globalControls` is a display-only
 // element ("UISchema fragments rendered on every node's properties tab
 // regardless of the node type") whose scope names a property that does not
-// exist. We are not spreading THAT array — `schemas.ts` records at length why
-// its single element can only ever print an untranslated key — but the shape it
-// demonstrates is the one used here.
+// exist. We are not spreading THAT array — `nodes/action-start-voice-call/uischema.ts`
+// records at length why its single element can only ever print an untranslated
+// key — but the shape it demonstrates is the one used here.
 
 const STATUS_HE: Record<NodeExecutionState['status'], string> = {
   idle: 'לא הגיעה לכאן',
@@ -104,15 +105,15 @@ export function formatOutput(output: unknown): string | null {
  * How to describe a parked step, or `null` when saying nothing is the honest answer.
  *
  * ⚠️ A TIMER AND AN EVENT WAIT READ DIFFERENTLY, and conflating them is a
- * mistake this codebase already made once — `node-markers.tsx` records that the
- * canvas "said 'continues at 14:30' about a node really waiting for a phone call
- * to end". `resumeAt` is a RESUME time for a timer and a TIMEOUT for a
+ * mistake this codebase already made once — `use-execution-store.ts` records that
+ * the canvas "said 'continues at 14:30' about a node really waiting for a phone
+ * call to end". `resumeAt` is a RESUME time for a timer and a TIMEOUT for a
  * correlated wait: the callback may land long before it, or never.
  *
  * Both kinds are named explicitly rather than one falling out of the other, for
- * the reason given there: a row written before `waitKind` shipped carries a
- * `resumeAt` and no kind, and reading that as a timer would announce a resume
- * time it never had.
+ * the reason `node-markers.tsx` gives: a row written before `waitKind` shipped
+ * carries a `resumeAt` and no kind, and reading that as a timer would announce a
+ * resume time it never had.
  */
 export function describeWait(
   state: Pick<NodeExecutionState, 'resumeAt' | 'waitKind'>,
@@ -266,11 +267,13 @@ function NodeRunControl() {
   );
 }
 
-// ⚠️ `withJsonFormsLabelProps`, MATCHING THE ELEMENT. The other four renderers
-// here wrap controls and take `withJsonFormsControlProps`; this one is bound to
-// a `Label`, whose own HOC the SDK exports beside it. Rank 5000 is the house
-// number — above every built-in, and `optionIs` keeps it from claiming any
-// element that does not carry this exact format.
+// ⚠️ `withJsonFormsLabelProps`, MATCHING THE ELEMENT. The control renderers here
+// (checkbox list, header rows, integration connection, SUMIT folder, webhook
+// token) wrap controls and take `withJsonFormsControlProps`; this one, like
+// `trigger-switch-control.tsx`, is bound to a `Label`, whose own HOC the SDK
+// exports beside it. Rank 5000 is the house number — above every built-in, and
+// `optionIs` keeps it from claiming any element that does not carry this exact
+// format.
 export const nodeRunRenderer: JsonFormsRendererExtension = {
   tester: rankWith(5000, optionIs('format', NODE_RUN_FORMAT)),
   renderer: withJsonFormsLabelProps(NodeRunControl),

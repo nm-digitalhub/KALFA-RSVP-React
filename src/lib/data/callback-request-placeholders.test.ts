@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 // first name — correct for "דנה כהן", and nonsense for a stand-in.
 //
 // ⚠️ MEASURED: session 8429772552 on 2026-09-14 was dispatched with
-// `dynamic_variables.lead_name = "מתקשר"`, and the agent's waypoint 1 says
+// `dynamic_variables.lead_name = "מתקשר"`, and the agent's waypoint 1 then said
 // verbatim `שאל "מדבר/ת עם {{lead_name}}?"` — so a real person was asked
 // "am I speaking with caller?".
 //

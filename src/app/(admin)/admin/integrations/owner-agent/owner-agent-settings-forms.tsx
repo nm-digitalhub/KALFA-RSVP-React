@@ -6,7 +6,7 @@ import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/fo
 
 import { setOwnerAgentDailyCapAction, setOwnerAgentEnabledAction } from './actions';
 
-// The two app_settings scalars of the owner agent: the kill switch and the daily cap.
+// Two of the owner agent's app_settings scalars: the kill switch and the daily cap.
 // Same shape as the outreach master switch (checkbox + explicit submit) so every
 // switch in /admin/integrations is recognisably one mechanism, and a stray click
 // changes nothing until "עדכון" is pressed.

@@ -38,7 +38,7 @@ beforeEach(() => rows.mockReset());
 
 describe('listDialableVoicePurposes', () => {
   it('⚠️ drops the built-ins the dialler refuses', async () => {
-    // voice-purpose-dispatch.ts:78 blocks them outright. Offering one in the
+    // voice-purpose-dispatch.ts blocks them outright. Offering one in the
     // call node's dropdown lets an owner pick it, satisfy every required-field
     // gate (purposeKey is non-empty — that is all NODE_REQUIRED_FIELDS asks),
     // arm the workflow, and find out only when a guest should have been called.
@@ -50,7 +50,7 @@ describe('listDialableVoicePurposes', () => {
   });
 
   it('⚠️ drops a purpose with no rule, which the dialler also refuses', async () => {
-    // :81, `purpose_rule_missing`. A purpose can be non-built-in and still
+    // The dispatcher's `purpose_rule_missing`. A purpose can be non-built-in and still
     // unwired — that is the state a newly created one starts in.
     rows.mockResolvedValue({
       data: [row({ key: 'unwired', rule_id: null }), row({ key: 'mine' })],

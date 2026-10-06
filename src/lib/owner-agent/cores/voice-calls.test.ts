@@ -109,13 +109,13 @@ describe('wrapper ↔ core parity (same data, same number)', () => {
 
     const page = await getVoiceDashboardSummary(NOW);
     expect(requirePlatformPermission).toHaveBeenCalledWith('manage_voice');
-    // Same number of queries as before the refactor.
+    // The core's 4 head-counts + the UTC-midnight 'today'.
     expect(calls).toHaveLength(5);
 
     const core = await getVoiceCallsSummary(client as unknown as AdminClient, '7d', NOW);
     expect(page).toEqual({
       activeNow: core.activeNow,
-      today: 4, // a1..a4 since 2026-09-24T00:00Z (UTC midnight — unchanged behaviour)
+      today: 4, // a1..a4 since 2026-09-24T00:00Z (UTC midnight)
       last7d: core.attempts,
       completed7d: core.completed,
       answerRate7d: core.answerRate,

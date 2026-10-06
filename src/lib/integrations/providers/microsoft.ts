@@ -12,9 +12,7 @@ export const MICROSOFT_PROVIDER_ID = 'microsoft';
  * The capability key the mail-sending node asks for.
  *
  * Exported so a caller reduces a stored grant through `capabilities` rather than
- * re-typing the scope it maps to — that literal is exactly what drifted in
- * `workflow-connections.ts`, where a hard-coded `'Mail.Send'` kept answering a
- * question the provider had already answered differently.
+ * re-typing the scope it maps to.
  *
  * ⚠️ The editor's client component keeps its own copy: this module is
  * `server-only`, so a browser bundle cannot reach it.
@@ -37,7 +35,7 @@ export const microsoftProvider = {
     // `discovery()` documents this argument as "URL representation of the
     // Authorization Server's Issuer Identifier", and it branches on the spelling:
     //
-    //   openid-client/build/index.js:263
+    //   openid-client/build/index.js:264
     //     const resolve = !server.href.includes('/.well-known/');
     //   :287
     //     if (resolve && new URL(as.issuer).href !== server.href) {
@@ -45,7 +43,7 @@ export const microsoftProvider = {
     //
     // `handleEntraId` is what installs the library's OWN Microsoft support: it
     // marks the server and then substitutes the real tenant into the issuer
-    // template (`:493`, `server.issuer.replace('{tenantid}', tid)`). Microsoft's
+    // template (`:494`, `server.issuer.replace('{tenantid}', tid)`). Microsoft's
     // `/organizations/` document literally publishes
     // `https://login.microsoftonline.com/{tenantid}/v2.0` as its issuer, while
     // the ID token carries the real tenant — so without that substitution the

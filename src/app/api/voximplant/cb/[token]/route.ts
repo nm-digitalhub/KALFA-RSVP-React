@@ -24,9 +24,10 @@ import {
 // path (Branch B: the same 128-bit random nonce on the call_attempts row, looked
 // up server-side; identity is the resolved row, never the body). PERSIST-THEN-PROCESS: this route
 // only VERIFIES + PERSISTS (idempotent, into webhook_inbox) and returns fast; the
-// existing 1-minute webhook drain (processWebhookEvent → processCallResult) does
-// the RSVP/billing with received/processed/failed states + retry, so a processing
-// failure never loses the callback. Mirrors src/app/api/webhooks/whatsapp/route.ts.
+// existing webhook drain (processWebhookEvent → processCallResult; the persist
+// wakes it, with a 5-minute cron as the fallback) does the RSVP/billing with
+// received/processed/failed states + retry, so a processing failure never loses
+// the callback. Mirrors src/app/api/webhooks/whatsapp/route.ts.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -49,7 +50,7 @@ export async function POST(
 ) {
   const { token } = await params;
 
-  // Rate limit FAIL-CLOSED (requirement H): a limiter trip rejects the callback.
+  // Rate limit FAIL-CLOSED: a limiter trip rejects the callback.
   const ip = getClientIp(req.headers.get.bind(req.headers));
   const fp = token ? tokenFingerprint(token) : 'none';
   if (!rateLimit(`vox-cb:${fp}:${ip}`, CB_RATE).allowed) return bad(429);
@@ -69,7 +70,7 @@ export async function POST(
     return bad(404);
   }
   if (!ref) return bad(404);
-  // Reject an expired token (row's token_expires_at is the sole expiry source now).
+  // Reject an expired token (row's token_expires_at is the sole expiry source).
   if (!ref.token_expires_at || Date.parse(ref.token_expires_at) <= Date.now()) {
     return bad(404);
   }
@@ -86,7 +87,7 @@ export async function POST(
   }
 
   // schedule_callback (combination feature): handled OUT-OF-BAND — persisted
-  // directly (activity_log + forward-compatible attempt columns), NOT queued to
+  // directly (activity_log + the attempt's callback_* columns), NOT queued to
   // webhook_inbox, so the drain's processCallResult never sees it (it would
   // otherwise write status:'callback_requested'). Tried BEFORE the shared schema;
   // a normal cb body (completed/…) does not match the literal and falls through.
@@ -154,10 +155,9 @@ export async function POST(
     return bad(500);
   }
 
-  // ADDITIVE (item-2 second link vector): if the ElevenLabs-bridge scenario sent a
+  // ADDITIVE (second link vector): if the ElevenLabs-bridge scenario sent a
   // conversation_id, store it on the token-resolved attempt. Best-effort — a
-  // failure (incl. the column not existing yet, before the parallel migration
-  // lands) never affects the ack, and the token nonce remains the PRIMARY link.
+  // failure never affects the ack, and the token nonce remains the PRIMARY link.
   // Branch B never sends this field, so this path is inert for the DTMF scenario.
   if (typeof body.el_conversation_id === 'string' && body.el_conversation_id.length > 0) {
     try {

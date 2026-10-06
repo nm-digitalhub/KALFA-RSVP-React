@@ -548,8 +548,7 @@ export function IntegrationsPanel({
                     </Badge>
                   </TableCell>
                   {/* Separate from "מוגדר" on purpose: a provider can be fully set up
-                      and deliberately switched off, and until 2026-09-10 this panel
-                      showed that state as "לא מוגדר" — see integrations.ts. A provider
+                      and deliberately switched off — see integrations.ts. A provider
                       that is not configured has no meaningful switch state, so it
                       shows a dash rather than a misleading "כבוי". */}
                   <TableCell>
@@ -581,7 +580,7 @@ export function IntegrationsPanel({
   );
 }
 
-// --- Exchange calendar (mid-migration: IONOS EWS → Microsoft 365 Graph) -----
+// --- Exchange calendar -------------------------------------------------------
 
 const EXCHANGE_STATUS_VARIANT: Record<ExchangeConnectionView['status'], BadgeVariant> = {
   verified: 'success',
@@ -692,7 +691,7 @@ export function ExchangePanel({
   );
 }
 
-// --- App errors (folded into the top of the page, not its own big panel) ---
+// --- App errors ------------------------------------------------------------
 
 export function AppErrorsPanel({
   counts,

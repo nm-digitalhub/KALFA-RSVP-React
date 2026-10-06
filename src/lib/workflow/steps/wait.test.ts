@@ -68,10 +68,10 @@ describe('parking', () => {
   });
 
   it('⚠️ the deadline is an ISO timestamp inside the MESSAGE', async () => {
-    // Load-bearing, and easy to break by "tidying" the message. The thrown object
-    // does not survive: `runGraph` rebuilds the payload as
-    // `{ error: { message, code } }` and redacts it, so by the time
-    // `run-workflow` sees anything the only carrier left is the text.
+    // The thrown object does not survive: `runGraph` rebuilds the payload as
+    // `{ error: { message, code } }`, so the message is the only place the
+    // deadline survives in that payload. `run-workflow` does not parse it back
+    // out — it takes the deadline from the park captured through `onWait`.
     const error = (await handler({ amount: 1, unit: 'hours' }, ctx()).catch(
       (e: unknown) => e,
     )) as Error;

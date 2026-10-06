@@ -4,8 +4,9 @@
  * implementation of "register domain / issue cert / write vhost / DNS"
  * instead of maintaining it twice.
  *
- * Every mutating helper here goes through exec.ts/nginx.ts, which already
- * enforce the RELOCATE_EXECUTE latch — this module adds no latch of its own.
+ * The system-mutating helpers here are guarded by the RELOCATE_EXECUTE latch
+ * (assertExecuteLatch from exec.ts) — called directly, or inside nginx.ts's
+ * writeVhost/nginxReload.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -341,7 +342,7 @@ export async function runVerificationSuite(opts: {
  * StepDefinition contract gives apply() no channel to write into
  * `step.externalCalls` (only `backup()` can update engine-tracked state, and
  * only in the file-shaped {path,backupPath} form) — so external-API steps
- * (F1/F4/F7/G1) persist their own "what stood before" here, under `.relocate/`
+ * (Stage F/G) persist their own "what stood before" here, under `.relocate/`
  * (already git-ignored, already the wizard's scratch dir), keyed by step id.
  * rollback() reads it back. Never holds secrets — only the previous URL/value
  * shapes these steps themselves already treat as non-secret.

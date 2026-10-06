@@ -5,8 +5,6 @@ import type { NextRequest } from 'next/server';
 import { getAppOrigin } from '@/lib/url';
 
 // Authentication itself is Supabase OAuth (src/lib/owner-agent/mcp/oauth.ts).
-// The static KALFA_MCP_SECRET_TOKEN bearer this file used to check is gone: it
-// carried no user, so it could not be tied to a staff member's permissions.
 
 /** This MCP server's public URL — the RFC 9728 `resource` identifier. */
 export async function mcpResourceUrl(): Promise<URL> {

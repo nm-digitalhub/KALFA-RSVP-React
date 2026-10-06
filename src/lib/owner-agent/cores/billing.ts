@@ -24,10 +24,14 @@ import { upTo, type CoreWindow } from './window';
 // granted are sums, and PostgREST aggregates are disabled on this project
 // (measured 2026-09-24: authenticator carries no pgrst.db_aggregates_enabled),
 // so they cannot be computed through the Data API without loading rows. They
-// come from public.owner_agent_billing_sums(_since), in
-// supabase/migrations/20260924061630_owner_agent_read_aggregates.sql — applied,
-// with its types in types.generated.ts. Amounts are shekels, the unit of
-// campaigns.final_charge_amount (tax-ceiling.ts compares the same sum against
+// come from public.owner_agent_billing_sums(_since, _until), created in
+// supabase/migrations/20260924061630_owner_agent_read_aggregates.sql and
+// recreated with the optional _until in
+// 20260927011338_owner_agent_capabilities.sql — applied, with its types in
+// types.generated.ts; re-created with the payment ledger as a second source in
+// 20261006040156_payment_ledger_db_guards.sql (a campaign with ledger rows is
+// read from the ledger, one without from the old campaign columns — never both).
+// Amounts are shekels (tax-ceiling.ts compares the same charged_amount against
 // OSEK_PATUR_YEARLY_CEILING_ILS), and are not integers.
 //
 // Errors THROW: a failed count or sum must not reach the owner as a confident 0.
@@ -80,7 +84,8 @@ async function billingSums(client: AdminClient, sinceIso: string, window: CoreWi
 
 export interface BillingSummary {
   // Close-charge outcomes dated by charged_at within the range. 'charged' is
-  // the turnover definition of tax-ceiling.ts; 'nothing_to_charge' is a closed
+  // a final charge on the old per-result path (the package purchase is not counted
+  // here: it has no charge_status); 'nothing_to_charge' is a closed
   // campaign whose accrued total was fully covered (credit, or nothing reached).
   chargedInRange: number;
   nothingToChargeInRange: number;
@@ -95,10 +100,10 @@ export interface BillingSummary {
   creditsActive: number; // not voided
   creditsGrantedInRange: number; // granted in range and not voided
   creditsVoidedInRange: number;
-  // Sums in shekels (owner_agent_billing_sums). In range: final charges
-  // captured (charge_status 'charged', by charged_at — tax-ceiling.ts's
-  // turnover), credit consumed by close-charges, credit granted and not voided.
-  // Current: all credit granted and not voided.
+  // Sums in shekels (owner_agent_billing_sums). In range: money collected —
+  // final charges and package purchases, net of returns, by the date of each
+  // operation (tax-ceiling.ts's turnover) — the credit consumed by those charges,
+  // and credit granted and not voided. Current: all credit granted and not voided.
   chargedAmountIls: number;
   creditAppliedAmountIls: number;
   creditGrantedAmountIls: number;

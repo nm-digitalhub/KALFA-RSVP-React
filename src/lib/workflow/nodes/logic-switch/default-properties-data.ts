@@ -5,8 +5,8 @@
 // Annotated with `NodeDataProperties`, not the vendor starter's
 // `Required<NodeDataProperties<…>>`: `armNotice` is in the schema and is
 // deliberately never seeded (see `identityProperties`). The annotation on a
-// fresh literal keeps the excess-property check the inline entry had, so an
-// undeclared key here is still a compile error.
+// fresh literal keeps the excess-property check, so an undeclared key here is
+// still a compile error.
 import type { NodeDataProperties } from '@workflowbuilder/sdk';
 
 import { nodeStatusOptions } from '../../catalogue/editor-shared';
@@ -34,9 +34,8 @@ export const switchDefaultPropertiesData: NodeDataProperties<SwitchSchema> = {
   // `source:inner:<id>` is `getHandleId({ handleType: 'source', innerId })`.
   // The first branch's handle is the same string `switchBranchHandle('branch-1')`
   // in ./definition returns — the helper that spells it once for branches WE
-  // seed — but it is still written out as a literal here, exactly as the entry
-  // carried it before it moved into this folder. Branches the OWNER adds get
-  // theirs minted by the control, in this same shape.
+  // seed — but it is still written out as a literal here. Branches the OWNER
+  // adds get theirs minted by the control, in this same shape.
   decisionBranches: [
     { id: 'branch-1', sourceHandle: 'source:inner:branch-1', label: 'מסלול ראשון', conditions: [] },
     {

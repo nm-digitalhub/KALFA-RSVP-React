@@ -6,8 +6,8 @@ import { useCallback, useMemo, useState } from 'react';
 // Loads the Google Maps JavaScript API once (next/script dedupes by src) with
 // `loading=async` — nothing runs on load; the places library is pulled lazily
 // via google.maps.importLibrary('places') by the autocomplete component.
-// Installed from the shadcn-google-maps registry (2.9.2026) and adapted:
-// Hebrew results + Israel bias by default. The key is a referrer-restricted
+// Adapted from the shadcn-google-maps registry: Hebrew results + Israel bias
+// by default. The key is a referrer-restricted
 // BROWSER key (public by design) read from NEXT_PUBLIC_GOOGLE_MAPS_API_KEY at
 // build time; no key → no script, and the component falls back to a plain
 // input.

@@ -9,7 +9,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 //
 // ⚠️ THE SERVICE-ROLE CLIENT, NOT THE COOKIE CLIENT, AND THAT IS A DIVERGENCE
 // FROM ITS NEIGHBOURS. `send-policy.ts` next door uses the cookie client so that
-// admin-only RLS on `app_settings` applies on top of the app gate. That is not
+// staff-only RLS on `app_settings` applies on top of the app gate. That is not
 // available here: `integration_provider_configs` is a CLOSED table — RLS enabled
 // with zero policies, and every grant to `anon` and `authenticated` revoked — so
 // a cookie client reads nothing at all. The app gate below is therefore the

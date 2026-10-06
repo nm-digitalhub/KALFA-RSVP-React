@@ -14,9 +14,10 @@ import {
 } from './subscriptions';
 
 // The scheduled half of the WhatsApp health check: run the passive probe, and say
-// something ONLY when the answer changes for the worse.
+// something ONLY when it finds a real fault. It keeps no state between runs, so a
+// fault that persists alerts again on the next one.
 //
-// Alerting rules, in the order they mattered when writing this:
+// Alerting rules:
 //
 //  1. NOT CONFIGURED IS NOT A FAULT. An install with no WhatsApp credentials is a
 //     valid state, and paging about it hourly forever is how an alert channel gets
@@ -30,9 +31,9 @@ import {
 //     and template loss and nothing else in this system would surface it.
 //  4. Never throws. A health check that can take the worker down is worse than no
 //     health check.
-//  5. IT NOW ALSO CHECKS THAT META WILL ACTUALLY DELIVER ANYTHING — see below.
-//     A healthy token and a delivered webhook are different claims, and until
-//     2026-09-13 only the first was ever asked.
+//  5. IT ALSO CHECKS THAT META WILL ACTUALLY DELIVER ANYTHING — see
+//     checkWebhookSubscription. A healthy token and a delivered webhook are
+//     different claims, and both are asked.
 export type HealthCheckOutcome = 'ok' | 'skipped' | 'degraded' | 'failed';
 
 export interface HealthCheckSummary {
@@ -60,8 +61,9 @@ export interface HealthCheckSummary {
  *   - It alerts on EVERY repair, success or failure. A self-heal nobody is told
  *     about is its own kind of invisible, and the disappearance itself is a fact
  *     someone needs to see — it means something removed it.
- *   - Missing app secret / verify token / app id → alert, no attempt. Guessing at
- *     a verify token would break the callback verification that is working today.
+ *   - Missing app id / app secret → silent skip (the subscription cannot even be
+ *     read). Missing verify token → alert, no attempt. Guessing at a verify token
+ *     would break the callback verification that is working today.
  *
  * Never throws: this is a subordinate check inside a check that must not take the
  * worker down.
@@ -82,7 +84,7 @@ async function checkWebhookSubscription(config: {
     state = readWhatsAppSubscription(await getAppSubscriptions({ appId, appSecret: config.appSecret }));
   } catch {
     // Could not ASK. Silent by design: Meta being unreachable for one tick says
-    // nothing about the subscription, and the send-path probe above already
+    // nothing about the subscription, and the send-path probe below already
     // alerts when Meta is genuinely unavailable.
     return;
   }

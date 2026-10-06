@@ -7,10 +7,6 @@
  * silently move the version every message goes out on. Both are passed this
  * constant explicitly instead.
  *
- * This closes gap G5. Before it, the version was pinned in SIX places that had
- * drifted apart — v21 in two relocation modules, v23 in four more, and a
- * seventh value coming from the SDK. Every one of them now imports this.
- *
  * v25.0 is MEASURED, not assumed (2026-09-08): reads of phone numbers and
  * templates return identical results on v24.0 and v25.0 for WABA
  * 990921550130385, and four real invites were delivered and read on v25.0 from

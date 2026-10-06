@@ -66,12 +66,11 @@ function CardBody({ card, showsLastChecked }: { card: IntegrationCard; showsLast
 export default async function AdminIntegrationsPage() {
   const { cards, canManageSettings, showsLastChecked } = await getIntegrationsIndex();
 
-  // The channel catalog's home since Task 0.6 Step 4b deleted /admin/channels
-  // (§3.3: "קטלוג הערוצים → /admin/integrations, סקציה תחתונה"). Fetched only for
-  // a viewer who may edit it: listAllChannels enforces manage_settings itself, so
-  // calling it unconditionally would redirect a staff member with a lower
-  // permission straight out of the admin area — the exact behaviour the note at
-  // the top of this file says the consolidation exists to stop.
+  // The channel catalog's home: the standalone /admin/channels page no longer exists.
+  // Fetched only for a viewer who may edit it: listAllChannels enforces
+  // manage_settings itself, so calling it unconditionally would redirect a staff
+  // member with a lower permission straight out of the admin area — the exact
+  // behaviour the note at the top of this file says the consolidation exists to stop.
   const catalogChannels = canManageSettings ? await listAllChannels() : [];
 
   return (

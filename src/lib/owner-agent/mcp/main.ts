@@ -19,10 +19,10 @@ console.log = console.error;
 console.info = console.error;
 console.debug = console.error;
 
-// Whether the CLI hands its own environment to a stdio server is not
-// something this repo verified (the 2.1.281 config schema has an `env` field,
-// nothing says what it is merged with). If it does, the model's credential
-// has no business in the data process.
+// The CLI hands its own environment to a stdio server (measured, ../runner.ts
+// deviation 4), and the runner also blanks this variable in the server's `env`.
+// The model's credential has no business in the data process, so it is dropped
+// here too.
 delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
 
 async function main(): Promise<void> {

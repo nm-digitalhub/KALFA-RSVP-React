@@ -242,10 +242,8 @@ describe('secrets — the value goes on the wire and nowhere else', () => {
   });
 
   it('substitutes into the BODY too — plenty of APIs want the key there', async () => {
-    // This refused to substitute until 2026-09-13, on a "headers are where
-    // credentials go" rule that simply was not true. An API expecting its key in
-    // the JSON payload or a form field is ordinary, and the value still only
-    // exists between here and the socket either way.
+    // An API expecting its key in the JSON payload or a form field is ordinary,
+    // and the value still only exists between here and the socket either way.
     await post({ ...base, body: '{"k":"{{secrets.ACME}}"}' });
     expect(String(calls[0]!.init.body)).toBe(`{"k":"${SECRET}"}`);
   });
@@ -304,7 +302,8 @@ describe('the response', () => {
 
   it('survives Hebrew that straddles the buffer', async () => {
     // The naive per-chunk decode produces replacement characters mid-word. This
-    // pins the streaming decode.
+    // checks that Hebrew decodes intact; the stub delivers the body as one chunk,
+    // so a split across chunks is not exercised here.
     stubFetch({ body: 'שלום עולם' });
     const r = await post({ ...base, captureResponse: true });
     expect(r.body).toBe('שלום עולם');

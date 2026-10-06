@@ -14,14 +14,14 @@ vi.mock('@/lib/workflow/engine/dry-run', () => ({}));
 
 import { cancelRun } from './workflows';
 
-// ⚠️ WHICH RUNS MAY BE STOPPED, and why a parked one is now among them.
+// ⚠️ WHICH RUNS MAY BE STOPPED: a queued run, and a parked one.
 //
-// The rule was "queued only", on the grounds that the vendored runner cannot be
-// interrupted once it is inside `runGraph`. That reasoning is sound and it does
-// NOT cover a parked run: a run waiting on `logic.wait` is not inside runGraph —
-// it is a row with a deadline and a pg-boss job that has not fired. With waits
-// allowed up to a year, refusing to cancel it left an owner watching a run they
-// no longer wanted with no way to stop it, since disarming does not touch runs
+// The vendored runner cannot be interrupted once it is inside `runGraph`, so a
+// run already executing cannot be stopped. That reasoning does NOT cover a
+// parked run: a run waiting on `logic.wait` is not inside runGraph — it is a row
+// with a deadline and a pg-boss job that has not fired. With waits allowed up to
+// a year, refusing to cancel it would leave an owner watching a run they no
+// longer want with no way to stop it, since disarming does not touch runs
 // already in flight.
 
 function mockDb(matched: { id: string }[]) {

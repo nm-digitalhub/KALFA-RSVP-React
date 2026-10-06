@@ -2,9 +2,9 @@ import { parsePhoneNumberFromString } from 'libphonenumber-js';
 
 import { ISRAELI_PHONE_RE } from '@/lib/constants';
 
-// Phone normalization for the outcome-billing model. A "contact" (§2–3 of the
-// billing spec) is a UNIQUE reachable phone per event; the canonical dedup key
-// is the E.164 form. Israeli numbers default to the 'IL' region so users may
+// Phone normalization for the outcome-billing model. A "contact" is a UNIQUE
+// reachable phone per event; the canonical dedup key is the E.164 form. Israeli
+// numbers default to the 'IL' region so users may
 // enter local `05x-xxxxxxx` and still normalize to +972…. Use the non-throwing
 // parser at every boundary.
 
@@ -76,12 +76,12 @@ export function maskPhoneForDisplay(raw: string | null | undefined): string {
 // substring of a stored "+33756982370", so a contains-match finds it either
 // way, and no "+" ever reaches the raw PostgREST `.or()` filter string.
 //
-// Country-agnostic by construction. It replaced repairIsraeliLocalPhone in the
-// guest search (2026-09-09) because that helper returns null for anything
-// non-Israeli by design — so once international guests became storable, a
-// French guest could only be found by retyping the exact stored characters.
+// Country-agnostic by construction, unlike repairIsraeliLocalPhone, which
+// returns null for anything non-Israeli by design — with that helper a French
+// guest could only be found by retyping the exact stored characters.
 // formatNational() gives each country its OWN local form (0502223333 for IL,
-// 0756982370 for FR), which keeps the previous Israeli behaviour identical.
+// 0756982370 for FR), which keeps the Israeli local form identical to
+// repairIsraeliLocalPhone's.
 //
 // [] when the term does not parse as a valid number — a name, or a half-typed
 // number — so the caller adds no phone clause at all.

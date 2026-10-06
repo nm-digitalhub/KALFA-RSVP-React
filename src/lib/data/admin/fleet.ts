@@ -480,7 +480,7 @@ export async function answerFleetRequest(input: {
     .maybeSingle();
   if (readError) throw new Error('שמירת המענה נכשלה');
   if (!target) throw new Error('הפנייה לא נמצאה');
-  // B1: a request the owner opened (payload.origin='owner') is a task FOR the
+  // A request the owner opened (payload.origin='owner') is a task FOR the
   // agent, not a question to the owner. Answering it flips it to `answered`
   // and hands the agent a fake verdict (cmdVerdicts does not exclude
   // owner-origin rows). The RPC does not check origin (owner decision Q1 is
@@ -510,8 +510,7 @@ export async function answerFleetRequest(input: {
 
   // Close the Slack side of the loop: the request-filed alert already went to
   // the channel, so the verdict must land there too or the thread looks
-  // unanswered (real gap caught by the channel bot on the first smoke test).
-  // Posted as a REPLY in the original request's thread when its ts was
+  // unanswered. Posted as a REPLY in the original request's thread when its ts was
   // captured (fleet_request_slack_threads); top-level otherwise. Title +
   // verdict only — the answer text stays out of Slack (non-PII rule).
   // sendSlackAlert is fail-safe; a Slack outage must not fail the answer.

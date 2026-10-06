@@ -132,7 +132,7 @@ describe('stepGate — L1 past-event stop (live event_date)', () => {
   });
 });
 
-// S2.4 — R9: defense-in-depth on top of the DB trigger
+// R9: defense-in-depth on top of the DB trigger
 // (campaigns_require_active_event) + R7's structural guarantee. Genuinely
 // redundant under normal DB operation but required explicitly per the plan's
 // "ALL commercial paths" list.
@@ -237,7 +237,7 @@ describe('writeReach (shared reach path — stop on billed)', () => {
 });
 
 // §5.6 — a broken outreach_schedule touchpoint must never send, and must be
-// recorded durably through recordTemplateFailure (now shared via outreach.ts;
+// recorded durably through recordTemplateFailure (shared via outreach.ts;
 // its atomic-upsert/UNIQUE-conflict-key DB contract is pinned in
 // outreach.test.ts). Here we pin WHEN the engine records and with which
 // (campaign, touchpoint, reason, key, channel) identity.
@@ -537,7 +537,7 @@ describe('executeStep — send-time parameter binding', () => {
 });
 
 // hasCallConsent is the ONLY gate that blocks an AI dial for a contact without
-// recorded prior consent, and app_settings.call_consent_required can now lift that
+// recorded prior consent, and app_settings.call_consent_required can lift that
 // check at runtime. Because turning it off has LEGAL weight, these tests pin the
 // exact truth table — especially that opt-out and fail-closed are NEVER lifted.
 describe('hasCallConsent — AI-call consent gate', () => {

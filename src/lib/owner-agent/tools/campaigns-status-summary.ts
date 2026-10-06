@@ -14,9 +14,8 @@ import {
 } from '@/lib/owner-agent/tools/shared';
 
 // Tool 2 (plan §5). needsAttention is the length of the /admin/campaigns list
-// by construction (the core owns the filter both use). Decision 9.7 (assumed
-// default): no event names — the admin list's eventName and hold-document URL
-// are never read.
+// by construction (the core owns the filter both use). Counts only, no event
+// names: the admin list's eventName and hold-document URL are never read.
 export const CAMPAIGNS_STATUS_SUMMARY_ID = 'campaigns_status_summary';
 export const CAMPAIGNS_STATUS_SUMMARY_PERMISSION = 'manage_billing' satisfies OwnerAgentPermission;
 

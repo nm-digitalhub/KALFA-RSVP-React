@@ -86,9 +86,10 @@ function webhookStateBadges(g: GuestListItem): ReactNode {
   );
 }
 
-// Confirmed headcount for an attending guest (adults + kids), with the
-// over-invited flag. Returns null for non-attending guests. Shared by table +
-// card so the "prefers WhatsApp-confirmed headcount" rule lives in one place.
+// Confirmed headcount for an attending guest (WhatsApp-confirmed headcount,
+// else adults + kids). Returns null for non-attending guests and when no count
+// was given. Shared by table + card so the "prefers WhatsApp-confirmed
+// headcount" rule lives in one place.
 function actualConfirmedCount(g: GuestListItem): number | null {
   if (g.status !== 'attending') return null;
 
@@ -139,10 +140,11 @@ function headcountValue(g: GuestListItem): ReactNode {
 
 // Mobile / tablet (< lg) presentation of a single guest. The desktop table has
 // 8 columns and forces horizontal scrolling below ~1024px, so under lg each
-// guest is a compact list row instead — two lines plus an optional third:
+// guest is a compact list row instead — two lines plus optional extras:
 //   line 1: status badge · name · edit/delete (icons)
 //   line 2: phone · group · headcount   |   contact-status quick-select
-//   line 3: over-invite flag + WhatsApp webhook badges (only when present)
+//   line 3: adults · kids · expected · counted-as (attending guests only)
+//   line 4: over-invite flag + WhatsApp webhook badges (only when present)
 // Denser than a stacked card (~90–115px vs ~230px) while dropping no
 // information and using no fixed width.
 function GuestCard({
@@ -224,8 +226,8 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
   const { id: eventId } = await params;
   const sp = await searchParams;
 
-  // requireOwnedEvent here too so the page title can show the event name and the
-  // 404 happens before any list query if the event is not owned.
+  // requireEventAccess here too so the page title can show the event name and the
+  // 404 happens before any list query if the user has no access to the event.
   const event = await requireEventAccess(eventId, 'guests', 'view');
 
   const page = Number(first(sp.page)) || 1;

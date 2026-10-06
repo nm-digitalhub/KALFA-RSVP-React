@@ -13,18 +13,6 @@ console.log("Hello from Functions!");
 // Use secret for Server-to-server, internal calls
 const handler = {
   fetch: withSupabase({ auth: ["publishable", "secret"] }, async (req, _ctx) => {
-    // Called by another service with a secret key
-    // ctx.supabaseAdmin bypasses RLS — use for privileged operations
-    /*
-    if (ctx.authMode === "secret") {
-      const { user_id } = await req.json();
-      const { data } = await ctx.supabaseAdmin.auth.admin.getUserById(user_id);
-
-      return Response.json({
-        email: data?.user?.email,
-      });
-    }
-    */
 
     const { name } = await req.json();
 

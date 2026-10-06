@@ -30,16 +30,17 @@ export const isTrigger = false;
  *     workflow started by a clock can actually deliver.
  *
  * `messageKey` names a row in `message_templates`, never a Meta template name:
- * the row carries the approved name per language and per event type, so a brit
- * and a wedding resolve to different approved layouts from the same key.
+ * its routes (`message_template_routes`) pick the approved template per event
+ * type, so a brit and a wedding resolve to different approved layouts from the
+ * same key.
  */
 export type SendTemplateConfig = {
   messageKey: string;
 };
 
 // The message keys, NOT the Meta template names. A key resolves per event type
-// and per language through `message_templates`, so one key sends the approved
-// brit layout at a brit and the approved wedding one at a wedding.
+// through the routes of its `message_templates` row, so one key sends the
+// approved brit layout at a brit and the approved wedding one at a wedding.
 //
 // ⚠️ THE LABELS SAY WHICH ARE MARKETING. That is not decoration: a MARKETING
 // template is subject to the consent gate (currently off, by the owner's

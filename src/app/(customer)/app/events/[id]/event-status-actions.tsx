@@ -25,10 +25,8 @@ type BoundAction = (
 
 // Shared Button/buttonVariants — same component the page's nav links (ניהול
 // מוזמנים/סטטיסטיקות) already use — so every action on this page shares one
-// height/radius/variant system instead of two subtly mismatched ones
-// (verified gap, 2026-08-30: this used to hand-roll its own className,
-// rounded-md instead of the shared rounded-lg, no fixed height). Plus a
-// disabled state with an explanatory hint (R7's "close blocked" case).
+// height/radius/variant system. Plus a disabled state with an explanatory
+// hint (R7's "close blocked" case).
 function ActionButton({
   action,
   label,
@@ -92,8 +90,8 @@ function ActionButton({
 }
 
 // R6: the owner's only direct status transition here is the close (destructive).
-// Confirming the details (draft → active) lives in the setup steps above, as
-// the first step of the RSVP flow. `closed` is terminal — no actions once closed.
+// Confirming the details (draft → active) lives in the setup steps above (the
+// confirm step). `closed` is terminal — no actions once closed.
 export function EventStatusActions({
   status,
   hasBlockingCampaign,

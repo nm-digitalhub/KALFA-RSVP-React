@@ -17,11 +17,11 @@ export const conditionUiSchema: UISchema = {
     ...identityControls(conditionScope('properties.label'), conditionScope('properties.description')),
     { type: 'Select', scope: conditionScope('properties.field'), label: 'בדוק את' },
     {
-      // The escape hatch from the dropdown, and the reason the dropdown is no
-      // longer a ceiling. `nodes/conditional.md` describes both sides of a
-      // comparison as free values that may reference earlier nodes; this is that
-      // side. Left blank, the dropdown above is used — which is how every
-      // diagram saved before this keeps behaving.
+      // The escape hatch from the dropdown, and the reason the dropdown is not a
+      // ceiling. `nodes/decision.md` describes both sides of a comparison (the
+      // same X / Y rows a Conditional uses) as free values that may reference
+      // earlier nodes; this is that side. Left blank, the dropdown above is used
+      // — which is how every diagram saved before this keeps behaving.
       type: 'VariableText',
       scope: conditionScope('properties.left'),
       label: 'או השוו ערך משלכם (גובר על הבחירה למעלה)',

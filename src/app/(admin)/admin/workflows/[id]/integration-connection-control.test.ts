@@ -3,7 +3,6 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-// The control's import graph reaches catalogue modules that are server-only.
 vi.mock('server-only', () => ({}));
 
 import { INTEGRATION_CONNECTION_FORMAT } from '@/lib/workflow/catalogue/ui-formats';
@@ -177,18 +176,14 @@ describe('integration connection JsonForms renderer', () => {
   });
 
   it('⚠️ writes the connection id and NOTHING ELSE into the node', () => {
-    // WHAT CHANGED AND WHY. This control used to be forbidden from calling
-    // `handleChange` at all: it delegated the field to the SDK's own Select and
-    // never wrote a value itself, so the ban was a cheap way to pin that.
-    //
     // Selecting the freshly connected account requires writing it, and
     // `handleChange(path, value)` is the documented way — the WorkflowBuilder
     // guide for custom JsonForms controls uses exactly that call, and going
     // around it would write into a model JsonForms owns.
     //
-    // So the invariant is no longer "never writes" but "writes only this". The
-    // control has exactly ONE call, its value is the parked connection id, and
-    // the id came from the popup's message — never from anything on the page.
+    // So the invariant is "writes only this". The control has exactly ONE call,
+    // its value is the parked connection id, and the id came from the popup's
+    // message — never from anything on the page.
     const calls = [...controlCode.matchAll(/handleChange\(([^)]*)\)/g)].map((m) => m[1]);
     expect(calls).toEqual(['path, id']);
 
@@ -232,10 +227,9 @@ describe('integration connection JsonForms renderer', () => {
 
   it('⚠️ and actually renders that warning', () => {
     // The predicate above passed while the branch was dead — caught by fault
-    // injection. Without a render harness for an SDK control, the reachable
-    // assertion is that the alert hangs off `isUnavailable` and carries
-    // `role="alert"`, so a screen reader announces it rather than an author
-    // discovering it at run time.
+    // injection. So this asserts that the alert hangs off `isUnavailable` and
+    // carries `role="alert"`, so a screen reader announces it rather than an
+    // author discovering it at run time.
     expect(controlSource).toContain('const isUnavailable = selectedConnectionUnavailable(');
     expect(controlSource).toMatch(/\{isUnavailable \? \(\s*<p\s+role="alert"/);
   });
@@ -316,11 +310,10 @@ describe('integration connection JsonForms renderer', () => {
   });
 
   it('⚠️ does not draw an empty picker — the select is conditional', () => {
-    // WHAT THIS CAN AND CANNOT PROVE. There is no render harness for an SDK
-    // control in this repo (the tests here exercise testers and wiring), so this
-    // asserts the SHAPE of the decision, not pixels: that the select sits behind
-    // a condition derived from `hasConnections`, rather than being drawn
-    // unconditionally with nothing in it.
+    // WHAT THIS CAN AND CANNOT PROVE. It asserts the SHAPE of the decision, not
+    // pixels: that the select sits behind a condition derived from
+    // `hasConnections`, rather than being drawn unconditionally with nothing in
+    // it.
     //
     // n8n reaches the same structure in `NodeCredentials.vue`, where
     // `<N8nSelect>` is the final `v-else` and `options.length === 0` is tested

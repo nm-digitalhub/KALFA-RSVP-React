@@ -142,13 +142,14 @@ export function normalizeTokenResponse(
  *
  * ZERO IS NOT NULL. `expiresIn()` returns 0 for a token that is already expired
  * — that is knowledge, not silence — so it becomes a timestamp of `now` and the
- * accessor refuses it with `integration_credential_expired`. Collapsing it to
+ * accessor treats it as spent and refreshes it before use. Collapsing it to
  * null would make a known-dead token look like one of unknown lifetime and send
  * it out to earn a 401 instead.
  */
 function deriveExpiresAt(tokens: GrantTokenResponse, nowMs: number): string | null {
-  // Prefer the helper — it subtracts the time already spent in transit — and
-  // fall back to the raw field, which is all a hand-built fixture carries.
+  // Prefer the helper — it subtracts the time already elapsed since the response
+  // arrived — and fall back to the raw field, which is all a hand-built fixture
+  // carries.
   const seconds =
     typeof tokens.expiresIn === 'function' ? tokens.expiresIn() : tokens.expires_in;
 

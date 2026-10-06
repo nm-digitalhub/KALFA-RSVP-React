@@ -24,42 +24,40 @@ import type { NodeExecutionResult } from '../vendor/workflowbuilder/execution-co
 // The trigger payload a run carries
 // ---------------------------------------------------------------------------
 
-// What the webhook drain hands a run. Narrow and explicit: the condition node's
-// readable fields (CONDITION_FIELDS) are exactly the keys here, so the two
-// cannot drift without a type error.
+// What a run starts with. The condition node's readable fields
+// (CONDITION_FIELDS) are all keys here, so the two cannot drift without a type
+// error.
 /**
- * What a run starts with, and — since the template resolver landed — the whole
- * of what `{{trigger.…}}` can name.
+ * What a run starts with — the whole of what `{{trigger.…}}` can name.
  *
- * The first four fields are the message. The last three are CONTEXT, added
- * 2026-09-10 because a resolver with nothing to resolve is not a feature: the
- * pipe was open and `{{trigger.message_text}}` was the only interesting thing
- * in it, so a personalised reply still could not say the guest's name.
+ * `message_text` and `button_payload` are the message. `guest_name`,
+ * `event_name` and `event_date` are CONTEXT: without them a personalised reply
+ * could not say the guest's name.
  *
  * `guest_name` is a FIRST name, through `deriveGuestFirstName` — the same
- * derivation both WhatsApp send paths already use, so an automated greeting
+ * derivation every WhatsApp send path uses, so an automated greeting
  * reads exactly like a manual one, household rows included ("משפחת כהן" yields
  * nothing rather than greeting "שלום משפחת,").
  *
- * It is EMPTY when the phone backs more than one guest. That is the same
+ * It is ABSENT when the phone backs more than one guest. That is the same
  * refusal `action.update_guest_status` makes, for the same reason: with several
  * guests behind one contact there is no answer to "whose name", and greeting
  * the wrong person by name is worse than not greeting at all.
  *
- * ON PII. These land in `workflow_runs.trigger_payload` and in the
- * `node_started` event payload. That store already holds `message_text` — the
- * guest's own words — so a first name and the event they were invited to add no
- * new CATEGORY of exposure. `redact.ts` is key-based and will not mask them, by
- * design: a workflow that cannot see a name cannot personalise a message, which
- * is the entire point of the field.
+ * ON PII. These land in `workflow_runs.trigger_payload`. That store already
+ * holds `message_text` — the guest's own words — so a first name and the event
+ * they were invited to add no new CATEGORY of exposure. `redact.ts` is
+ * key-based and will not mask them, by design: a workflow that cannot see a name
+ * cannot personalise a message, which is the entire point of the field.
  */
 export type WorkflowTriggerPayload = {
   /**
-   * OPTIONAL SINCE `trigger.webhook` LANDED, and that is the whole point.
+   * OPTIONAL, and that is the whole point.
    *
-   * A run started by an inbound WhatsApp message is always about a known guest
+   * A run started by a guest's inbound WhatsApp message is about a known guest
    * on a known event. A run started by an external system calling in is about
-   * whatever that system sent — there may be no guest at all. Rather than invent
+   * whatever that system sent — there may be no guest at all, and neither does a
+   * scheduled run or one started by the owner sending a list. Rather than invent
    * a placeholder id (which would make every guest-touching node write to the
    * wrong row), the fields are absent and `requireGuestContext` below refuses
    * the nodes that need them, by name.
@@ -117,15 +115,16 @@ export type WorkflowTriggerPayload = {
    * `resolveTemplate` fires `?` and `| default:'…'` only when the resolved value
    * is strictly `undefined` — `''`, `null` and `0` are real values, which the
    * vendor's own suite pins (resolve-template.test.ts, "the modifier only fires
-   * for undefined"). So normalising an unknown name to `''` did not merely lose
-   * the name: it silently defeated the owner's own fallback. Someone writing
+   * for undefined"). So normalising an unknown name to `''` would not merely
+   * lose the name: it would silently defeat the owner's own fallback. Someone
+   * writing
    *
    *     שלום {{trigger.guest_name | default:'אורח יקר'}}
    *
-   * got `שלום ` — a sentence with a hole — because the empty string resolved.
-   * Absent, the same template reads `שלום אורח יקר`.
+   * would get `שלום ` — a sentence with a hole — because the empty string
+   * resolves. Absent, the same template reads `שלום אורח יקר`.
    *
-   * A strict `{{trigger.guest_name}}` now throws when the name is unknown, which
+   * A strict `{{trigger.guest_name}}` throws when the name is unknown, which
    * is the documented contract and the loud half of the same choice.
    */
   /** First name of the single linked guest. Absent when there is not exactly one. */
@@ -146,9 +145,9 @@ export type StepContext = {
   /**
    * This attempt took over a PARKED step whose deadline has passed.
    *
-   * Only `logic.wait` reads it, and only it should: see the note in that
-   * handler for why a wait cannot recognise its own resumption without being
-   * told.
+   * Only the nodes that park (`logic.wait`, `action.start_voice_call`) read it,
+   * and only they should: see the note in those handlers for why a parked step
+   * cannot recognise its own resumption without being told.
    */
   resumedFromWait?: boolean;
   trigger: WorkflowTriggerPayload;
@@ -218,11 +217,11 @@ export function readEnum<T extends string>(
 /**
  * The guest a step is about — or a refusal that names the step.
  *
- * Five handlers write to a guest, and all five need an event and a contact. A
- * webhook-triggered run may have neither. This is where that is caught: a
- * PERMANENT error, because no retry will add a guest to a run that never had
- * one, and the message says which step and why rather than surfacing as a
- * confusing null-id write.
+ * The handlers listed in `GUEST_SCOPED_NODE_TYPES` act on a guest, and each
+ * needs an event and a contact. A webhook-triggered run may have neither. This
+ * is where that is caught: a PERMANENT error, because no retry will add a guest
+ * to a run that never had one, and the message says which step and why rather
+ * than surfacing as a confusing null-id write.
  */
 export function requireGuestContext(
   ctx: StepContext,

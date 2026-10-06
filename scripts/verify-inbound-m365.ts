@@ -7,10 +7,8 @@
  * accepted by Exchange Online — which is exactly the inbound path this proves.
  * Then it looks for the message in the mailbox over Graph.
  *
- * The transport is REPORTED rather than assumed. An earlier version hardcoded
- * "IONOS SMTP" in its output; once EMAIL_PROVIDER moved to an API sender that
- * narration was simply false, and a check that misreports its own setup cannot
- * be trusted about anything else.
+ * The transport is REPORTED rather than assumed, because a check that
+ * misreports its own setup cannot be trusted about anything else.
  *
  * Read-only apart from the one test message it sends to the owner's own mailbox.
  *

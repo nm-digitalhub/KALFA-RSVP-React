@@ -70,9 +70,8 @@ export default async function JoinPage({
           </p>
           <form action={acceptInvitationAction}>
             <input type="hidden" name="token" value={token} />
-            {/* Shared pending-aware submit (design audit: this was the one
-                public form hand-rolling a bare <button> with no pending state,
-                i.e. a double-submit risk on a slow network). */}
+            {/* Shared pending-aware submit (a bare <button> has no pending
+                state, i.e. a double-submit risk on a slow network). */}
             <SubmitButton size="lg">הצטרפות</SubmitButton>
           </form>
         </div>

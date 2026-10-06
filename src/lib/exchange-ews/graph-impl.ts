@@ -41,12 +41,12 @@ import type {
 //    so the shared interface keeps working while the credential model changes
 //    underneath it. The credential is a module-level singleton: MSAL caches
 //    and refreshes tokens per credential instance, so rebuilding one per call
-//    (as ews-impl does with its service object) would defeat that cache.
+//    would defeat that cache.
 //
-// 2. Graph is JSON, so xmlSafe() must NOT be applied to anything here. It
-//    exists only because the EWS library writes values into SOAP unescaped;
-//    running it on a JSON value double-escapes it (`&` becomes `&amp;` in the
-//    stored subject). Only HTML BODIES still need escaping, and that is the
+// 2. Graph is JSON, so no value here may be XML-escaped: doing so
+//    double-escapes it (`&` becomes `&amp;` in the stored subject). The EWS
+//    path needed that escaping only because its library wrote values into
+//    SOAP unescaped. Only HTML BODIES still need escaping, and that is the
 //    caller's job exactly as before.
 
 // Read LAZILY, never at module scope. The worker loads .env.local from its own
@@ -83,8 +83,7 @@ function graphClient(): Client {
 // Graph does NOT publish a list of `error.code` strings — verified against
 // learn.microsoft.com/graph/errors, which documents the error envelope but
 // enumerates no codes. Classification is therefore driven by HTTP status,
-// which IS stable and documented, exactly as classifyError() in ews-impl is
-// driven by SOAP fault shape rather than message text.
+// which IS stable and documented, rather than by message text.
 function classifyGraphError(err: unknown): ExchangeErrorCode {
   const status =
     typeof err === 'object' && err !== null && 'statusCode' in err
@@ -257,9 +256,9 @@ const SHOW_AS_TO_GRAPH: Record<AppointmentShowAs, string> = {
   working_elsewhere: 'workingElsewhere',
 };
 
-// Graph adds 'unknown', which EWS has no counterpart for. Everything
-// unrecognised collapses to 'busy' — the same conservative default ews-impl
-// uses, so an unfamiliar value never silently frees up the owner's time.
+// Graph also reports 'unknown', which AppointmentShowAs has no value for.
+// Everything unrecognised collapses to 'busy' — a conservative default, so an
+// unfamiliar value never silently frees up the owner's time.
 function showAsFromGraph(v: unknown): AppointmentShowAs {
   switch (String(v)) {
     case 'free':
@@ -287,9 +286,9 @@ function sensitivityFromGraph(v: unknown): AppointmentSensitivity {
   return s === 'personal' || s === 'private' || s === 'confidential' ? s : 'normal';
 }
 
-// EWS exposed a four-way AppointmentType; Graph's `type` carries the same four
-// states under different names. Anything that is not a standalone item is
-// series-linked and therefore read-only for us.
+// Graph's `type` is one of singleInstance / occurrence / exception /
+// seriesMaster. Anything that is not a standalone item is series-linked and
+// therefore read-only for us.
 function isSeriesLinked(type: unknown): boolean {
   return String(type) !== 'singleInstance';
 }
@@ -434,10 +433,10 @@ export const graphProvider: ExchangeCalendarProvider = {
       const client = graphClient();
       const res = await client.api(`${mailboxPath(cfg)}/calendars`).select('id,name').get();
       const calendars = (res?.value ?? []) as GraphEvent[];
-      // Graph's calendar resource carries no item count (EWS's folder object
-      // did), so each count is its own request. They run together rather than
-      // in sequence, and the whole block degrades to 0 rather than failing the
-      // listing — a count is informational, the calendar list is not.
+      // Graph's calendar resource carries no item count, so each count is its
+      // own request. They run together rather than in sequence, and the whole
+      // block degrades to 0 rather than failing the listing — a count is
+      // informational, the calendar list is not.
       const counts = await Promise.all(
         calendars.map(async (c) => {
           try {
@@ -471,7 +470,7 @@ export const graphProvider: ExchangeCalendarProvider = {
       // Prefer: IdType="ImmutableId" — createAppointment() below sets the
       // SAME header, so the id it hands back (and that callers persist, e.g.
       // reconcileCallbacksWithCalendar in callback-scheduling.ts, which later
-      // checks `liveIds.has(storedId)` against exactly this list) is in the
+      // checks `liveById.has(calendar_item_id)` against exactly this list) is in the
       // IMMUTABLE format. Without this header HERE, Graph lists the DEFAULT
       // (mutable) id for the same event — a different string — so that
       // comparison can never match. MEASURED 17.08 against the live mailbox:
@@ -493,15 +492,10 @@ export const graphProvider: ExchangeCalendarProvider = {
   async getAvailability(cfg, range) {
     return run(async () => {
       const zone = await mailboxTimeZone(cfg);
-      // REAL free/busy, via the availability service itself. ews-impl could
-      // not do this: GetUserAvailability returns HTTP 500 /
-      // ErrorInternalServerError(127) on the old hosting, so availability
-      // there had to be *derived* by listing calendar items and reading each
-      // one's LegacyFreeBusyStatus. That workaround is retired here.
-      //
-      // What it buys beyond the old approach: private and tentative items
-      // count toward busy without exposing their content, out-of-office
-      // periods are included, and it is one request instead of a paged list.
+      // REAL free/busy, via the availability service itself (getSchedule):
+      // private and tentative items count toward busy without exposing their
+      // content, out-of-office periods are included, and it is one request
+      // instead of a paged list.
       const res = await graphClient()
         .api(`${mailboxPath(cfg)}/calendar/getSchedule`)
         .post({
@@ -564,9 +558,9 @@ export const graphProvider: ExchangeCalendarProvider = {
   async updateAppointment(cfg, appointmentId, update) {
     return run(async () => {
       const client = graphClient();
-      // Server-side series guard. EWS raised this from the library; Graph has
-      // no equivalent refusal, so the check is made here explicitly — without
-      // it the UI's readOnly flag would be the only barrier and a hand-crafted
+      // Server-side series guard. Graph has no built-in refusal to edit a
+      // series item, so the check is made here explicitly — without it the
+      // UI's readOnly flag would be the only barrier and a hand-crafted
       // request would sail past it.
       // `isAllDay` rides along on the guard's read at no extra cost, and it is
       // required: an item that IS all-day must keep being written as one. The
@@ -612,7 +606,7 @@ export const graphProvider: ExchangeCalendarProvider = {
   async deleteAppointment(cfg, appointmentId) {
     return run(async () => {
       // Graph sends cancellations to attendees automatically when the item is
-      // a meeting — the behaviour ews-impl had to reason about explicitly.
+      // a meeting.
       await graphClient().api(`${mailboxPath(cfg)}/events/${encodeURIComponent(appointmentId)}`).delete();
     });
   },

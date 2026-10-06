@@ -49,7 +49,7 @@ describe('getDashboardCounts — per-domain permission gating', () => {
       count: 'exact',
       head: true,
     });
-    // The two domains no longer share one predicate, and the difference is the
+    // The two domains do not share one predicate, and the difference is the
     // point. A contact_message can be `reopened` — a customer wrote back on a
     // thread already answered, and they are waiting exactly as much as a
     // first-time sender. A callback_request has no such state, so it still

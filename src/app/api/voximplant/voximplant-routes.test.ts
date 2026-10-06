@@ -151,7 +151,7 @@ describe('ctx GET', () => {
     // the owner's free-text title, which on a live call was two names and no noun.
     expect(json.event_kind).toBe('חתונה');
     expect(json.event_venue).toBe('אולם הגן');
-    // Additive item-2 link field: the row's non-authorizing correlation nonce.
+    // Link field: the row's non-authorizing correlation nonce.
     // Both keys carry the SAME value — that is what makes the transition safe,
     // and what lets the old one be deleted without touching the other.
     expect(json.kalfa_attempt_token).toBe('nonce_test_abc');

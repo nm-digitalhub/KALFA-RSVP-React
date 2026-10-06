@@ -29,9 +29,9 @@ import {
   processElevenLabsSalesAnalysisRow,
 } from './elevenlabs-analysis-processing';
 
-// The processing these two functions took over from the HTTP routes on
-// 2026-09-01, now retried locally instead of depending on a provider retry that
-// never fires after a 4xx (and is switched off entirely on the RSVP webhook).
+// The processing these two functions took over from the HTTP routes, now retried
+// locally instead of depending on a provider retry that never fires after a 4xx
+// (and is switched off entirely on the RSVP webhook).
 function row(overrides: Record<string, unknown> = {}): Tables<'webhook_inbox'> {
   return {
     id: 'row-1',

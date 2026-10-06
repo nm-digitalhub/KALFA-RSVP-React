@@ -5,13 +5,15 @@ import {
 } from './core';
 
 // Voximplant Management API — MUTATING wrappers, deliberately separated from
-// the read-only `./core` (plan §3, owner directive):
+// the read-only `./core` (owner directive):
 //
 //   - `./core` stays strictly read-only and is what the CLI imports;
 //   - THIS module is never imported by the CLI (a guard test pins that), so no
 //     terminal command can place a call or change account state;
 //   - allowed consumers: `./client` (server-only re-export for Next server
-//     code) and the request-free worker dispatcher (`outreach-calls.ts`).
+//     code), server-side data modules and the request-free worker dispatchers
+//     (`outreach-calls.ts` and its siblings), and one-off ops scripts under
+//     scripts/voximplant/ — never the CLI itself.
 //
 // Like core, this file carries no `server-only` import so the esbuild worker
 // bundle can include it; the Next.js boundary is enforced by `./client`.
@@ -27,9 +29,9 @@ export interface StartScenariosResponse {
   result: number;
   call_session_history_id?: number;
   media_session_access_url?: string;
-  // HTTPS control URL (verified field, httpapi/scenarios "Returns"). Type-only —
-  // not persisted, and NEVER proof of a started call (only result===1 &&
-  // call_session_history_id is proof).
+  // HTTPS control URL (verified field, httpapi/scenarios "Returns"). Persisted
+  // on call_attempts and preferred by session-command.ts, but NEVER proof of a
+  // started call (only result===1 && call_session_history_id is proof).
   media_session_access_secure_url?: string;
 }
 export function startScenarios(
@@ -45,7 +47,7 @@ export function startScenarios(
   );
 }
 
-// SetAccountInfo — RESTRICTED to the two account-callback fields (plan B5).
+// SetAccountInfo — RESTRICTED to the two account-callback fields.
 // The params object is built inline from exactly two named arguments — no
 // spread of caller input — so no other SetAccountInfo field (email, password,
 // billing…) can EVER be sent through this wrapper; a test pins the exact body
@@ -178,7 +180,8 @@ export function reorderApplicationRules(
 
 // AddUser — create a Voximplant SDK/SIP user inside an application.
 //
-// MUTATION, and the only one in this codebase that MINTS A CREDENTIAL. It is
+// MUTATION, and one of the two in this codebase that MINT A CREDENTIAL (the
+// other is setVoximplantUserPassword, below). It is
 // here and deliberately NOT in the read-only CLI (see cli-guard.test.ts): a
 // password comes into existence at the moment of this call and must be stored in
 // the same operation, which a terminal command cannot guarantee.
@@ -333,8 +336,9 @@ export function addVoximplantUser(
 //                          by KALFA today (same reason as AddUser).
 //   opts.userId          — (לא חובה) alternative to user_name — a numeric
 //                          Voximplant user id (or semicolon list / 'all').
-//                          Not used by KALFA today: console_agents stores only
-//                          vox_username, never Voximplant's own numeric id.
+//                          Used by KALFA when console_agents.vox_user_id is
+//                          known; agents provisioned before that column existed
+//                          fall back to user_name.
 //                          When given, it REPLACES user_name in the request
 //                          (the API takes one or the other, never both).
 //
@@ -380,15 +384,19 @@ export function delVoximplantUser(
 //
 // WHY THIS MATTERS BEYOND RULE WIRING. Voximplant keeps scenarios created
 // without an application_id in an account-wide "Shared folder", visible to
-// every application. Binding a scenario to an application MOVES it out of that
-// folder: "binding will remove a scenario from the Shared folder, i.e. it won't
-// be available for other applications"
+// every application. The control panel's bind-to-application action MOVES a
+// scenario out of that folder: "binding will remove a scenario from the Shared
+// folder, i.e. it won't be available for other applications"
 // (https://voximplant.com/blog/introducing-new-control-panel).
 //
-// That is the documented migration path for legacy Shared scenarios, and it is
-// the reason this wrapper exists: voxengine-ci <= 35 never passed application_id
-// to AddScenario, so every scenario it deployed for this account is Shared, and
-// voxengine-ci 36 — which filters scenarios by application_id — cannot see them.
+// This API method does NOT do that (measured live 2026-09-14): binding a
+// scenario to a rule inside an application attaches it to the rule but leaves it
+// in the Shared folder. The wrapper exists for the Shared->application migration
+// (scripts/voximplant/migrate-scenarios-to-application.ts), which binds/unbinds
+// scenarios per rule: voxengine-ci <= 35 never passed application_id to
+// AddScenario, so every scenario it deployed for this account was Shared, and
+// voxengine-ci 36 — which filters scenarios by application_id — could not see
+// them until they were migrated.
 // See docs/voximplant/voxengine-ci-36-upgrade-blocked.md.
 //
 // `scenario_id` is an API "intlist": SEMICOLON-separated, same convention as
@@ -401,8 +409,9 @@ export interface BindScenarioResponse {
 // unless rule_name is provided", but the control panel's own action is "bind
 // scenario to APPLICATION" with no rule involved, and the reference has already
 // proved stale on this page (the Shared-folder concept section it links to has
-// been deleted). Whether the API accepts an application-only bind is therefore a
-// question to MEASURE, not to rule out from the docs — omit ruleId to ask it.
+// been deleted). Measured live 2026-09-14: an application-only bind (ruleId
+// omitted) is rejected with error 147 "'rule_id' parameter is invalid"; ruleId
+// stays optional only so the probe can keep asking that question.
 export function bindScenario(
   config: VoximplantConfig,
   options: {
@@ -487,12 +496,13 @@ export function delRule(
 //
 // So passing `applicationId` is what makes a scenario application-scoped, and
 // voxengine-ci <= 35 never passed it — which is why every scenario it deployed
-// for this account is Shared and invisible to voxengine-ci 36.
+// for this account was Shared and invisible to voxengine-ci 36 until migrated.
 //
 // `rewrite` ("Whether to rewrite the existing scenario") exists, but the
 // reference does not say what it does when combined with `applicationId` on a
-// name that already exists in the Shared folder: move, duplicate, or reject.
-// That is measured by scripts/voximplant/probe-scenario-binding.ts, not assumed.
+// name that already exists in the Shared folder. Measured live 2026-09-14
+// (scripts/voximplant/probe-scenario-binding.ts): rejected with error 133
+// SCENARIO_NAME_ISNT_UNIQUE, with and without `rewrite`.
 export interface AddScenarioResponse {
   result?: number;
   scenario_id?: number;
@@ -501,10 +511,11 @@ export interface AddScenarioResponse {
 // `ruleId` is real and load-bearing: the vendor's own request type
 // (node_modules/@voximplant/apiclient-nodejs/dist/Interfaces.d.ts,
 // AddScenarioRequest) documents it as "The new scenario binds to the specified
-// rule", so creation and binding are ONE call. That matters for the Shared->app
-// migration, where every extra call widens the window in which a rule resolves
-// to no scenario. The same type also warns that a scenario bound to no rule
-// cannot be executed at all.
+// rule", so creation and binding are ONE call. The same type also warns that a
+// scenario bound to no rule cannot be executed at all. The Shared->app
+// migration script deliberately does NOT use it: a rule executes ALL its
+// attached scenarios, so binding at creation would make the new scenario run
+// alongside the old one that is still attached.
 export function addScenario(
   config: VoximplantConfig,
   options: {

@@ -1,8 +1,7 @@
 'use client';
 
 // Starter template 4 of 13 — its diagram and its selector entry. Editor
-// side; `./index.ts` places it in `DIAGRAM_TEMPLATES` at the position the
-// inline entry held.
+// side; `./index.ts` places it in `DIAGRAM_TEMPLATES`.
 import type { DiagramModel, TemplateModel } from '@workflowbuilder/sdk';
 
 import { switchBranchHandle, SWITCH_DEFAULT_BRANCH_ID, SWITCH_DEFAULT_HANDLE } from '../types';
@@ -12,10 +11,10 @@ import { SOURCE, TARGET } from './shared';
 // Template 4 — every answer has a route, including the one nobody planned for
 // ---------------------------------------------------------------------------
 
-// What the three templates before it (ids 1–3) cannot express, and why this one
-// exists.
+// What the two condition templates before it (ids 1–2) cannot express, and why
+// this one exists.
 //
-// All of them branch on `logic.condition`, which names one of TWO ports and
+// Both of them branch on `logic.condition`, which names one of TWO ports and
 // where both of them mean "the test". So "כן" is one route and everything else
 // — "לא", "אולי", "מי זה?", a photo caption — is the other. A guest who answers
 // "אולי" is recorded as DECLINED, which is worse than not answering: it is a

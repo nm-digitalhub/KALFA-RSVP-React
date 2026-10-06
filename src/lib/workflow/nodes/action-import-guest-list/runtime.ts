@@ -10,10 +10,9 @@ import { PermanentNodeExecutionError } from '../../vendor/workflowbuilder/execut
  *
  * ⚠️ THIS IS THE NODE THAT MAKES GUEST IMPORT A FLOW INSTEAD OF A MECHANISM.
  *
- * Importing from WhatsApp used to be unreachable from a workflow twice over: a
- * file or a contact card never started a run (the BILLING classifier was the
- * automation gate), and there was no step that could do anything with one. Both
- * halves are gone — `matchesKind` on the trigger, and this.
+ * Importing from WhatsApp is reachable from a workflow in two halves: a file or
+ * a contact card starts a run when the trigger's `matchesKind` accepts its
+ * kind, and this is the step that does something with it.
  *
  * IT NEEDS NO CONFIG. Everything it could be asked is either settled (which
  * event) or belongs on the canvas (what to do about 400 rows, or about a file

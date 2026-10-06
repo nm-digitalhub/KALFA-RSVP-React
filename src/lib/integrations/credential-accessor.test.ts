@@ -83,9 +83,8 @@ describe('serving a credential', () => {
   });
 
   it('⚠️ REFRESHES a spent token instead of refusing it', async () => {
-    // This replaces the old contract, where an expired credential was a
-    // permanent failure. Self-healing is the whole point of the lifecycle: the
-    // expiry is a fact about the token, not about the connection.
+    // Self-healing is the whole point of the lifecycle: the expiry is a fact
+    // about the token, not about the connection.
     const h = harness(connection({ expires_at: '2029-01-01T00:00:00.000Z' }));
 
     await expect(h.accessor.resolve(RESOLVE_ARGS)).resolves.toBe('refreshed-token');

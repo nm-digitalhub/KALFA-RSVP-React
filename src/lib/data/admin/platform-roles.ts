@@ -243,7 +243,7 @@ export async function createPlatformRole(name: string, label: string): Promise<P
 // These live in this module (not a separate one) because enrolment is a platform
 // staff privilege decision: it is gated by the same owner check, surfaces on the
 // same user-detail screen as the staff-role selector, and its removal is the
-// cascade that revokeStaffRole() above already has to account for.
+// cascade that revokeStaffRole() below already has to account for.
 // ---------------------------------------------------------------------------
 
 export interface ConsoleAgentDTO {

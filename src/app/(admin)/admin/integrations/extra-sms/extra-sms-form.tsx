@@ -9,11 +9,6 @@ import { updateExtraSmsAction } from './actions';
 
 // Credentials + the SMS switch for ExtrA.
 //
-// This form is not a move — it is a RESTORATION. Task 0.2 split the provider
-// credentials out of settings-form.tsx and built the DAL pair for them, but the
-// "הודעות" tab went with it and nothing replaced the UI, so between 0.2 and this
-// commit the ExtrA token and sender could not be edited from the panel at all.
-//
 // `sms_enabled` sits in the same form as the credentials on purpose: it is this
 // provider's own switch, not the global outreach master, and separating them would
 // mean two saves to configure one channel. The DAL keeps `configured` credentials-only

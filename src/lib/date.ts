@@ -92,8 +92,9 @@ export function formatIsraelWeekday(value: DateInput): string {
 // --- Spoken date (TTS) -------------------------------------------------------
 // A spoken-friendly Israel date for the AI-voice RSVP call's `ctx` payload:
 // weekday + day + Gregorian month name (Hebrew) + bare numeric year. The year is
-// left as bare digits on purpose — the VoxEngine scenario's own normalizeForSpeech
-// converts "2026"→"אלפיים עשרים ושש" before the TTS voices it.
+// left as bare digits on purpose — the say()-based RSVP scenario's own
+// normalizeForSpeech converts "2026"→"אלפיים עשרים ושש" before the TTS voices it
+// (RSVPAgent forwards the raw string to ElevenLabs, which runs its own TTS).
 const spokenDateFmt = new Intl.DateTimeFormat(ISRAEL_LOCALE, {
   timeZone: ISRAEL_TIME_ZONE,
   weekday: 'long',
@@ -154,14 +155,14 @@ export function formatIsraelHebrewDate(value: DateInput): string {
  * Whole days from today to a Y-m-d expiry date, both read as CALENDAR DATES in
  * Asia/Jerusalem.
  *
- * Three decisions, each of which was wrong on the first attempt:
+ * Three decisions:
  *
  *  1. Date-only arithmetic. The API gives a date with no time; subtracting it from
  *     `Date.now()` would make "expires today" read as a fraction and floor to -1 for
  *     most of the day.
  *  2. Asia/Jerusalem explicitly, NOT the process's local zone. ExtrA is an Israeli
- *     provider and its dates are Israeli calendar dates. The first version used
- *     `now.getFullYear()/getMonth()/getDate()`, which is the SERVER's zone — correct
+ *     provider and its dates are Israeli calendar dates. Reading
+ *     `now.getFullYear()/getMonth()/getDate()` would use the SERVER's zone — correct
  *     only by luck on a machine set to Israel time, and silently off by a day on one
  *     that is not. The worker and the app need not share a timezone with the vendor.
  *  3. null for anything unparseable, never a number. An expiry we cannot read must
@@ -186,8 +187,9 @@ export function daysUntil(ymd: string | null | undefined, now: Date = new Date()
 }
 
 // --- Spoken clock & relative date (ElevenLabs TTS) ---------------------------
-// The formatters ABOVE emit digits on purpose: the RSVP VoxEngine scenarios run
-// their own `normalizeForSpeech` over the ctx payload before `call.say()`.
+// The formatters ABOVE emit digits on purpose: the say()-based RSVP VoxEngine
+// scenarios run their own `normalizeForSpeech` over the ctx payload before
+// `call.say()`.
 //
 // ⚠️ MeetingConfirmAgent.voxengine.js has NO such normalization — it forwards
 // the ctx strings straight into ElevenLabs `dynamic_variables`, and the prompt

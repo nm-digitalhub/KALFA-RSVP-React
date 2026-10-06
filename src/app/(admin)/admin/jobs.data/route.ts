@@ -12,7 +12,7 @@ import { BASE_PATH, proxyToDashboard } from '@/lib/pgboss/dashboard-proxy';
 // "404 The requested page could not be found" while every other tab worked.
 //
 // A literal directory segment containing a dot is the documented way to serve
-// such a path from the App Router (same shape as `app/robots.txt/route.ts`).
+// such a path from the App Router (same shape as `app/llms.txt/route.ts`).
 //
 // GET/HEAD only: this URL is a data read. The catch-all next door keeps the
 // full method set for the dashboard's own mutations, which all live under

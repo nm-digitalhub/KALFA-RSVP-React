@@ -23,9 +23,9 @@ export type ChannelNumbers = {
 export type InboundChannel = 'import' | 'rsvp' | 'unknown';
 
 // Which path an inbound row belongs to. Legacy (no import number, or no config
-// at all) is deliberately 'rsvp' for EVERY phone_number_id — exactly today's
-// behaviour — so deploying this before the owner assigns the
-// `whatsapp_import_sender` role changes nothing. Once the import number is
+// at all) is deliberately 'rsvp' for EVERY phone_number_id — the behaviour from
+// before the split — so leaving the `whatsapp_import_sender` role unassigned
+// changes nothing. Once the import number is
 // resolved: the import number → import only; the RSVP number (or a row without
 // metadata) → RSVP; anything else → unknown (ignored + alerted by the caller,
 // never billed).
@@ -33,8 +33,8 @@ export type InboundChannel = 'import' | 'rsvp' | 'unknown';
 // ⚠️ The caller must not hand this a `numbers` whose importPhoneNumberId was
 // defaulted to null by a FAILED lookup. 'rsvp' is the billing path, so a
 // fail-safe null here is a fail-OPEN null: it would bill import traffic. See
-// resolveImportSenderStrict in provider-numbers-resolve.ts — the router's
-// source throws on a read error rather than answering null.
+// resolveNumberForRoleStrict in provider-numbers-resolve.ts — the router's
+// source (getWhatsAppChannel) throws on a read error rather than answering null.
 export function classifyInboundChannel(
   rowPhoneNumberId: string | null,
   numbers: ChannelNumbers | null,
@@ -57,8 +57,9 @@ export function classifyInboundChannel(
 // Staging worked; the reply did not. This function returned
 // `importPhoneNumberId ?? phoneNumberId`, so with the role unassigned it
 // answered from the RSVP number: a number the owner had never messaged, with no
-// open 24-hour window, so Meta refused the free-form text. `safeReply` discards
-// the outcome ("best-effort"), so nothing surfaced anywhere.
+// open 24-hour window, so Meta refused the free-form text. `safeReply` then
+// discarded the outcome ("best-effort"), so nothing surfaced anywhere (a failed
+// reply is alerted now).
 //
 // The old shape also created a requirement nobody should have to meet: pinning a
 // workflow trigger to a number expressed the intent perfectly well, and the

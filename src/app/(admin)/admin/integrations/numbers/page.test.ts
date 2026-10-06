@@ -203,13 +203,12 @@ describe('the add-number wizard', () => {
       (p) => (p.__type as { name?: string } | undefined)?.name === 'AddNumberWizard',
     );
     expect(wizard?.isOwner).toBe(false);
-    // The page still renders: hiding the last step is a UI courtesy, and the action
-    // it submits to carries its own requirePlatformOwner.
+    // The page still renders: hiding the last step is a UI courtesy, and the DAL
+    // function behind the action it submits to runs its own requirePlatformOwner.
     expect(wizard).toBeDefined();
   });
 
   it('no longer claims that adding a number happens on the provider page', async () => {
-    // It used to say exactly that, and the sentence outlived the fact.
     const text = textOf(await NumbersPage());
     expect(text).toContain('הוספת מספר');
     expect(text).not.toContain('ואימות מספר מול Meta נשארים בעמוד הספק');
@@ -223,8 +222,9 @@ describe('the deregister panel', () => {
   });
 
   it('is absent for staff who are not the owner', async () => {
-    // Hiding it is a courtesy, not the boundary — deregisterNumberAction carries its
-    // own requirePlatformOwner. The page still renders everything else.
+    // Hiding it is a courtesy, not the boundary — the DAL function behind
+    // deregisterNumberAction runs its own requirePlatformOwner. The page still renders
+    // everything else.
     ownerMock.mockResolvedValue(false);
     const names = componentNames(await NumbersPage());
     expect(names).not.toContain('MetaNumberManagement');

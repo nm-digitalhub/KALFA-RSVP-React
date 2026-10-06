@@ -86,7 +86,7 @@ describe('what the connection stores as granted scopes', () => {
     // `offline_access` buys a refresh token, not a permission, and Microsoft
     // does not report it as granted. A caller that wrongly passed it in would
     // still only get back what it passed — the guard that matters is that
-    // `capabilities` never lists it, which provider.test.ts covers.
+    // `capabilities` never lists it, which microsoft.test.ts covers.
     const result = normalizeTokenResponse({
       tokens: tokens({ scope: 'Mail.Send', refresh_token: 'refresh-1' }),
       requestedAccessScopes: ['Mail.Send'],
@@ -158,7 +158,8 @@ describe('when the access token expires', () => {
   });
 
   it('prefers the helper over the raw field, because it has already elapsed', () => {
-    // `expiresIn()` subtracts the time spent in transit; `expires_in` does not.
+    // `expiresIn()` subtracts the time elapsed since the response arrived;
+    // `expires_in` does not.
     const result = normalizeTokenResponse({
       tokens: tokens({ expires_in: 3599, expiresIn: () => 3000 }),
       requestedAccessScopes: ['Mail.Send'],
@@ -194,7 +195,7 @@ describe('when the access token expires', () => {
   it('⚠️ keeps an already-expired token as a PAST timestamp, never null', () => {
     // `expiresIn()` answers 0 for a token that is already dead. That is
     // knowledge, and null means silence — collapsing the two would send a
-    // known-dead token out to earn a 401 instead of refusing it up front.
+    // known-dead token out to earn a 401 instead of refreshing it up front.
     const result = normalizeTokenResponse({
       tokens: tokens({ expiresIn: () => 0 }),
       requestedAccessScopes: ['Mail.Send'],

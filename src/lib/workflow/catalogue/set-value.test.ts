@@ -1,10 +1,10 @@
-// `logic.set_value` is the only node in the catalogue that performs no I/O, and
-// that makes it the easiest one to ship broken: it type-checks, it appears in
+// `logic.set_value` performs no I/O, and that makes it one of the easiest nodes
+// to ship broken: it type-checks, it appears in
 // the palette, it "runs", and it is still worthless unless a LATER node can
 // quote what it computed. Nothing about the handler proves that — the proof
 // lives in three separate places that have to agree:
 //
-//   1. the handler returns `{ output: { value } }`               (steps/index.ts)
+//   1. the handler returns `{ output: { value } }`               (logic-set-value/runtime.ts)
 //   2. the runner writes `nodeOutputs[node.id] = result.output`  (graph-runner.ts)
 //   3. the resolver maps the `nodes` namespace onto `nodeOutputs` (resolve-template.ts)
 //
@@ -133,12 +133,12 @@ describe('logic.set_value as a composition primitive', () => {
     // `guestCase: 'several'` is the live rule: two guests behind one phone, so
     // there is no answer to "whose name".
     //
-    // This assertion is INVERTED from what it used to be, deliberately. The
-    // field was normalised to `''`, the strict reference resolved, and the guest
-    // received `שלום , נתראה…` — a sentence with a hole, from a run that
-    // reported success. The key is now ABSENT, so a strict reference throws and
-    // the owner is told. The next test is the other half: an owner who expects
-    // the name to be missing sometimes says so, and gets their own wording.
+    // The key is ABSENT, not normalised to `''`: an empty field would let the
+    // strict reference resolve and the guest would receive `שלום , נתראה…` — a
+    // sentence with a hole, from a run that reported success. Absent, a strict
+    // reference throws and the owner is told. The next test is the other half:
+    // an owner who expects the name to be missing sometimes says so, and gets
+    // their own wording.
     const run = await dryRunWorkflow({
       workflowId: 'wf-set-value',
       storedDefinition: diagram,
@@ -154,10 +154,10 @@ describe('logic.set_value as a composition primitive', () => {
   });
 
   it('and `| default` now actually fires for that same case', async () => {
-    // The reason the change above was worth making. `resolveTemplate` fires a
+    // Why the key must be absent rather than emptied. `resolveTemplate` fires a
     // fallback only for a strictly undefined value — the vendor's own suite pins
-    // that `''` is a real value — so while the field was emptied, this template
-    // produced `שלום ` and the owner's fallback never ran.
+    // that `''` is a real value — so with the field emptied, this template
+    // would produce `שלום ` and the owner's fallback would never run.
     const withFallback = {
       ...diagram,
       nodes: diagram.nodes.map((n) =>

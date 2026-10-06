@@ -1,8 +1,7 @@
 'use client';
 
 // Starter template 6 of 13 — its diagram and its selector entry. Editor
-// side; `./index.ts` places it in `DIAGRAM_TEMPLATES` at the position the
-// inline entry held.
+// side; `./index.ts` places it in `DIAGRAM_TEMPLATES`.
 import type { DiagramModel, TemplateModel } from '@workflowbuilder/sdk';
 
 import { SOURCE, TARGET } from './shared';
@@ -22,11 +21,6 @@ const NUDGE_SEND_ID = 'tmpl-nudge-send';
  * the 24-hour window that made a free-text reply legal has closed. This is the
  * distinction the two send nodes exist for, and the template is the half that
  * still works.
- *
- * ⚠️ AND EDITING THIS FLOW WHILE A RUN IS PARKED CHANGES THAT RUN. Steps that
- * already finished are replayed from the ledger and never re-run, but a node
- * ADDED before the wait will execute on resume — a known limitation recorded in
- * the engine plan, pending a second migration.
  *
  * One of the clock / wait / fan-out trio; the note on the trio is in
  * `./weekly-pending-sweep.ts`.

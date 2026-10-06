@@ -1,10 +1,11 @@
 import { z } from 'zod';
 
 // Input shapes for the proactive-report section of /admin/integrations/owner-agent
-// (plans/owner-agent-chat-sdk-capabilities-plan.md §4.8). Owner decision 27.9: the
-// schedule is set ONLY here — there is no agent write tool. Every bound mirrors a CHECK
-// in 20260927011338_owner_agent_capabilities.sql, so a value that passes cannot be
-// refused by the database with an error the form has no field for.
+// (plans/owner-agent-chat-sdk-capabilities-plan.md §4.8). The schedule is set ONLY
+// here — the agent has no write tool for it. Every bound mirrors a CHECK in
+// 20260927011338_owner_agent_capabilities.sql, 20260927015535_owner_agent_report_instructions.sql
+// or 20260927173139_owner_agent_custom_report_template.sql, so a value that passes
+// cannot be refused by the database with an error the form has no field for.
 
 /** Every message the reports DAL throws on purpose — the only ones an action shows. */
 export const OWNER_AGENT_REPORT_ERRORS = {
@@ -24,12 +25,12 @@ export function isOwnerAgentReportUserError(message: string): boolean {
 }
 
 /**
- * A slot is any whole-minute time, Israel time (owner decision 27.9: no fixed menu).
+ * A slot is any whole-minute time, Israel time (owner decision: no fixed menu).
  * The column is `time` with a seconds = 0 CHECK; this is its HH:MM form.
  */
 const SLOT_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-/** The owner's request of 25.9: a report at 08:00 and at 00:00. Offered for a row with no schedule yet. */
+/** The owner's request: a report at 08:00 and at 00:00. Offered for a row with no schedule yet. */
 export const DEFAULT_REPORT_SLOTS = ['08:00', '00:00'] as const;
 
 /** A sanity limit on times per row (Zod only — the database has none). */

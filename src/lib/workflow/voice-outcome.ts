@@ -3,7 +3,7 @@ import * as startVoiceCallDefinition from './nodes/action-start-voice-call/defin
 
 // What a voice call MEANT, as opposed to what the telephony reported.
 //
-// ⚠️ WHY THIS LAYER EXISTS. Until now a workflow branching on a call had to read
+// ⚠️ WHY THIS LAYER EXISTS. A workflow branching on a call would otherwise have to read
 // `finishReason` — a string that is sometimes a word ('completed'), sometimes a
 // sentence ('Normal termination'), and sometimes `sip_${code}` built at run time
 // inside the scenario. Asking an owner to write `{{nodes.x.finishReason}} ==
@@ -88,7 +88,7 @@ export function toBusinessOutcome(input: {
    * which its `default` reads as 'completed'. A call that failed before anyone
    * was reached came back to the diagram as a SUCCESS.
    *
-   * Optional, because rows written before 2026-09-15 have no such column; for
+   * Optional, because rows written before 2026-09-15 have no value for it; for
    * them the `finishReason` reasoning below is unchanged and still correct.
    */
   callStatus?: string | null | undefined;
@@ -116,7 +116,7 @@ export function toBusinessOutcome(input: {
   // being interpreted as a success by the `default` below.
   //
   // 'no_response' is the guest ANSWERING and then saying nothing
-  // (`wasAnswered ? 'no_response' : 'no_answer'` in the scenario). It is not a
+  // (`state.callWasConnected ? 'no_response' : 'no_answer'` in the scenario). It is not a
   // fourth business outcome: to an owner deciding what to do next, a call that
   // reached nobody and a call that reached someone who did not engage both mean
   // "we did not get an answer".

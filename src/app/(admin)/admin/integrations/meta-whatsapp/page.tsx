@@ -25,12 +25,6 @@ export const metadata: Metadata = { title: 'Meta / WhatsApp — אינטגרצי
 // Gated on manage_settings, which is what the DAL behind every one of these enforces
 // for itself — the page gate is defence in depth, not the boundary (see
 // src/lib/auth/dal.ts).
-//
-// The WhatsApp controls below were LIFTED out of the old /admin/channels tab into
-// their own files rather than copied, so the two surfaces could not drift while both
-// existed. /admin/channels was deleted in Task 0.6 Step 4b and now redirects here.
-// Separating the redirect from the deletion is what kept Phase 0 reversible: a
-// problem is undone by removing two lines from next.config.ts, not by reverting.
 
 export default async function MetaWhatsAppPage() {
   await requirePlatformPermission('manage_settings');
@@ -40,7 +34,7 @@ export default async function MetaWhatsAppPage() {
     getOutreachMasterState(),
     getAppUrl('/api/webhooks/whatsapp'),
     // One live Graph call. It is in the Promise.all rather than after it so a
-    // slow Meta never serializes behind the three local reads; getMetaStatus
+    // slow Meta never serializes behind the local reads; getMetaStatus
     // resolves rather than throws on every failure, so it cannot take the page
     // down with it.
     getMetaStatus(),
@@ -63,8 +57,7 @@ export default async function MetaWhatsAppPage() {
         </Link>
         <PageHeading>Meta / WhatsApp Cloud API</PageHeading>
         <p className="mt-1 text-sm text-muted-foreground">
-          {/* Moved verbatim from channels/page.tsx — the sentence that stops someone
-              reading "מוגדר" as "ready to send". */}
+          {/* The sentence that stops someone reading "מוגדר" as "ready to send". */}
           הפעלת ערוץ מתחילה שליחות חיות בתשלום. ההפעלה עצמה היא מתג הפנייה הראשי,
           ולא העמוד הזה.
         </p>
@@ -73,8 +66,8 @@ export default async function MetaWhatsAppPage() {
       {/* The master switch heads this page as well as /admin/integrations/voximplant:
           it gates every outbound channel, not WhatsApp alone. It also has to be HERE
           rather than only on the index — WhatsAppCredentialsForm's status line says
-          "הפעלה/כיבוי דרך מתג הפנייה הראשי שמעל", and until this was added that
-          sentence pointed at nothing on this page. Its single writer is unchanged. */}
+          "הפעלה/כיבוי דרך מתג הפנייה הראשי שמעל", which must point at something on
+          this page. */}
       <OutreachMasterSwitch enabled={master.enabled} anyChannelReady={master.anyChannelReady} />
 
       {/* Above the credentials form on purpose: the first question an admin

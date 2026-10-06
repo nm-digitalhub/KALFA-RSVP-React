@@ -107,7 +107,7 @@ export async function GET(
     return notFound();
   }
 
-  // First name only — same mitigation as ctx/[token]'s guest_name, per
+  // First name only — a privacy mitigation, per
   // public-rsvp-sentinel's explicit review note that this plan's field list
   // didn't yet say so. Never leak the full callback_requests row.
   //

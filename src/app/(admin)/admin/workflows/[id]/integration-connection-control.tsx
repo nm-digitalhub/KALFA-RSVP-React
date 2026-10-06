@@ -80,9 +80,9 @@ export function OAuthConnectionProvider({
 /**
  * The connection ids the picker can currently offer.
  *
- * Read off the node schema because that is where they are: `schemas.ts` builds
- * `connectionId.options` from the rows the page loaded, so the control never
- * fetches anything of its own.
+ * Read off the node schema because that is where they are:
+ * `microsoftSendEmailSchemaFor` builds `connectionId.options` from the rows the
+ * page loaded, so the control never fetches anything of its own.
  */
 export function connectionOptionValues(rootSchema: unknown): string[] {
   const options = (
@@ -102,7 +102,7 @@ export function connectionOptionValues(rootSchema: unknown): string[] {
  *
  * ⚠️ THIS IS A SILENT RUN-TIME FAILURE TODAY. `listActiveMicrosoftWorkflowConnections`
  * filters `status = 'active'`, so the moment a connection turns
- * `requires_reauthorization`, `revoked` or `error` it DROPS OUT OF THE OPTIONS —
+ * `requires_reauthorization`, `revoked` or `failed` it DROPS OUT OF THE OPTIONS —
  * while `connectionId` still holds its uuid. The select renders blank, the arm
  * gate is satisfied (the field is non-empty), and the workflow arms and then
  * fails when it runs.

@@ -1,8 +1,7 @@
 'use client';
 
 // Starter template 10 of 13 — its diagram and its selector entry. Editor
-// side; `./index.ts` places it in `DIAGRAM_TEMPLATES` at the position the
-// inline entry held.
+// side; `./index.ts` places it in `DIAGRAM_TEMPLATES`.
 import type { TemplateModel } from '@workflowbuilder/sdk';
 
 import {
@@ -19,7 +18,7 @@ import { SOURCE, TARGET } from './shared';
  * ⚠️ WHAT MAKES THIS DIFFERENT FROM `voiceCallWithOutcome`, which also dials and
  * also waits. That one teaches the WAIT — park on the call, branch on how it
  * ended. This one teaches WHO CALLS WHOM: the four dial parameters the node
- * gained on 2026-09-15 (the number it goes out from, the routing rule that picks
+ * carries (the number it goes out from, the routing rule that picks
  * the scenario, the ElevenLabs agent that answers, and the destination), all of
  * which used to live inside a deployed scenario's source.
  *
@@ -32,11 +31,12 @@ import { SOURCE, TARGET } from './shared';
  * workflow until the one that matters — a rule, from either place — exists.
  *
  * ⚠️ `toOverride` IS LEFT EMPTY RATHER THAN DEMONSTRATED. It accepts
- * `{{nodes.<id>.<output>}}`, and showing that off here would be a trap: no
- * trigger in this catalogue declares an `outputSchema` (checked, all three), so
- * a reference to one resolves to nothing — and `resolve-template` THROWS on an
- * unresolved path rather than falling back to empty, which would fail the step
- * permanently the first time this template ran.
+ * `{{nodes.<id>.<output>}}`, and showing that off here would be a trap: the only
+ * node upstream is the schedule trigger, whose single output is `firedAt` — no
+ * number to dial — so a reference to anything else on it resolves to nothing,
+ * and `resolve-template` THROWS on an unresolved path rather than falling back
+ * to empty, which would fail the step permanently the first time this template
+ * ran.
  */
 const configuredPurposeCall: TemplateModel['value'] = {
   name: 'שיחת ייעוד — עם בחירת סוכן ומספר',

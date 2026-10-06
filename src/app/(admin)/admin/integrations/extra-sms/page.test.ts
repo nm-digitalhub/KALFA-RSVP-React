@@ -1,6 +1,6 @@
-// Same regression this branch has been guarding since Task 0.3: a silent deletion, not
-// a broken render. This page additionally carries the one control in the integrations
-// tree that spends money, so its presence is pinned rather than assumed.
+// The regression guarded here is a silent deletion, not a broken render. This page
+// carries the one control in the integrations tree that spends money, so its presence
+// is pinned rather than assumed.
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
@@ -153,7 +153,7 @@ describe('/admin/integrations/extra-sms', () => {
   });
 
   it('never renders the api key as page text', async () => {
-    // It reaches EditableField as a masked defaultValue (owner ruling 2026-08-24);
+    // It reaches EditableField as a masked defaultValue;
     // what must never happen is it landing in a text node.
     expect(textOf(await render())).not.toContain(TOKEN);
   });

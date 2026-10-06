@@ -26,13 +26,13 @@ import { upTo, type CoreWindow } from './window';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
-// The answer-rate denominator (voice-ops plan §4, binding): terminal outcomes
-// only; cancelled is excluded (the attempt never reached the callee), and the
-// non-terminal failed_to_start/start_unknown markers are excluded too.
+// The answer-rate denominator: terminal outcomes only; cancelled is excluded
+// (the attempt never reached the callee), and the non-terminal
+// failed_to_start/start_unknown markers are excluded too.
 export const ANSWER_RATE_DENOM = ['completed', 'no_answer', 'no_response', 'failed'] as const;
 
-// Answer-rate formula (plan §4, binding): completed / (completed + no_answer +
-// no_response + failed). null ('—' on the page) when the denominator is 0.
+// Answer-rate formula: completed / (completed + no_answer + no_response +
+// failed). null ('—' on the page) when the denominator is 0.
 export function computeAnswerRate(completed: number, denominator: number): number | null {
   return denominator > 0 ? completed / denominator : null;
 }

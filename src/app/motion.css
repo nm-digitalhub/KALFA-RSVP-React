@@ -33,7 +33,7 @@
 
 /* `pointer-fine-hover:` — a real hover-capable fine pointer (mouse/trackpad),
    the same test TiltCard's FINE_POINTER media query makes in JS. Used to keep
-   the hero's ambient glow loop off touch devices (owner, 2026-09-08: battery),
+   the hero's ambient glow loop off touch devices (battery),
    where it would otherwise run for as long as the tab is open. Compiles to a
    nested `@media (hover: hover) and (pointer: fine)` block (verified against
    the installed 4.3.3 `compile()`). */
@@ -49,7 +49,7 @@
      `k-glow-drift` is the single permitted ambient loop (hero glow) — applied
      in markup as `motion-safe:pointer-fine-hover:before:animate-k-glow-drift`,
      i.e. only for hover-capable fine pointers; touch devices get the static
-     glow (owner decision 2026-09-08). */
+     glow. */
   --animate-k-pop: k-pop 480ms var(--ease-k-spring) both;
   --animate-k-rise: k-rise 600ms var(--ease-k-out) both;
   --animate-k-glow-drift: k-glow-drift 14s ease-in-out infinite alternate;
@@ -255,9 +255,9 @@
 }
 
 /* Homepage feature-icon loops (cards 04 "real-time status" and 07 "reports").
-   Owner decision 2026-09-08, option 2: the loops run ONLY while the enclosing
-   `k-card` is hovered by a real hover pointer with motion allowed, and are
-   inert otherwise — no infinite animation at rest, no `will-change` at rest.
+   The loops run ONLY while the enclosing `k-card` is hovered by a real hover
+   pointer with motion allowed, and are inert otherwise — no infinite
+   animation at rest, no `will-change` at rest.
    They hang off `.k-card:hover` so the card's hover system stays the single
    source of "this card is active" (no extra `group` marker in the markup).
    The keyframes live outside @theme so they are always emitted (see above). */

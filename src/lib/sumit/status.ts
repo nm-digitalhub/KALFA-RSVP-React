@@ -8,26 +8,22 @@ import 'server-only';
 //
 //     "Teva.Common.ResponseStatus": "Success (0)" | "BusinessError (1)" | "TechnicalError (2)"
 //
-// (Two generated clients were produced from that spec on the same day and neither is
-// committed or imported yet — one openapi-typescript, one orval; which to keep is an
-// open question. Nothing here depends on either: the shapes below are read from the
-// spec, not generated from it.)
+// (Two generated clients were produced from that spec on the same day — one
+// openapi-typescript, src/lib/sumit/types.generated.ts, which charge.ts imports; one
+// orval, openapi/src/lib/sumit/sumit-v1.generated.ts, which nothing imports; which to
+// keep is an open question. Nothing here depends on either: the shapes below are read
+// from the spec, not generated from it.)
 //
 // The live API does not restrict itself to that. authorize.ts and capture.ts each
 // already carried the same three-way test, written from what came back in practice:
 // a NUMBER (0/1/2), that STRING, or an OBJECT with `IsError`. Three copies of one
 // rule is how the fourth copy ends up subtly different, so the rule lives here.
 //
-// ⚠️ NOT YET WIRED INTO THE BILLING PATHS. authorize.ts and capture.ts keep their own
-// inline copies for now: they are live money code with tests around them, and swapping
-// their decline logic is a change that deserves its own review rather than riding along
-// with a settings page. Their copies and this module must agree — if you change one,
-// change all of them, and the comment in each points here.
-//
-// Also unwired, for a different reason: charge.ts:94 checks ONLY `Status?.IsError`, so
-// the string form the vendor now documents would read as "not a decline" there. It is
-// dead code — `chargeSumit` has no caller; only its error classes are imported — which
-// is why it is a note rather than a fix.
+// ⚠️ NOT YET WIRED INTO authorize.ts AND capture.ts. They keep their own inline copies
+// for now: they are live money code with tests around them, and swapping their decline
+// logic is a change that deserves its own review rather than riding along with a
+// settings page. Their copies and this module must agree — if you change one, change
+// all of them.
 
 export type SumitStatus = 'success' | 'business_error' | 'technical_error' | 'unknown';
 

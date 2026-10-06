@@ -12,8 +12,9 @@ import { useComposer } from './fleet-composer';
 
 // The client islands of a (server-rendered) bubble: verdict buttons on an
 // agent's open request, and the buttons that switch the composer into
-// "reply" / "continue". Actions appear ONLY on an agent bubble that is still
-// pending — never on a message the owner sent (plan D4; B1).
+// "reply" / "continue". Verdict and reply actions appear ONLY on an agent
+// bubble that is still pending — never on a message the owner sent (plan D4;
+// B1). ContinueButton is the exception: it belongs to closed messages.
 
 function VerdictButton({
   verdict,
@@ -93,7 +94,7 @@ export function PendingRequestActions({
         ) : kind === 'fyi' ? (
           <>
             {/* A verdict like any other: the answer-watcher may wake the
-                agent on it (plan D4, R12) — same as before the redesign. */}
+                agent on it (plan D4, R12). */}
             <VerdictButton verdict="answered" variant="outline" label={`אשר קריאה: ${title}`}>
               <Check aria-hidden />
               אשר קריאה

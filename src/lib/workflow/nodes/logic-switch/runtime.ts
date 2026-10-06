@@ -14,12 +14,6 @@ import {
 // N named branches, each with its own conditions — the SDK's `DecisionBranches`
 // shape, evaluated here.
 //
-// REBUILT 2026-09-13. The first version hard-coded three cases plus a default,
-// on the reasoning that "the WORKER would have to discover the port list from
-// the diagram". It does discover it — from the branch the conditions selected —
-// and that is not a hazard, it is how a dynamic switch has to work. The SDK
-// ships the composer; the ceiling was mine.
-//
 // FIRST MATCH WINS, top to bottom, which is the order the owner sees on the
 // canvas. A branch with no conditions never matches (it would otherwise swallow
 // everything below it); the DEFAULT branch is selected by ELIMINATION, not by a
@@ -84,7 +78,7 @@ export function evaluateSwitchCondition(row: SwitchCondition): boolean {
 /**
  * The rows of ONE branch, joined by a SINGLE operator read off `conditions[0]`.
  *
- * ⚠️ NOT a per-row fold, and the first version here was wrong about this.
+ * ⚠️ NOT a per-row fold.
  *
  * MEASURED in the shipped control (`dist/index-CEBfv0NZ.js`): the AND/OR picker
  * is rendered with `shouldShowOperator: index === 0 && lastIndex !== 0` — so it

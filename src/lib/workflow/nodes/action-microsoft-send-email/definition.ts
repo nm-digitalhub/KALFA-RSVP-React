@@ -44,10 +44,10 @@ export type MicrosoftMailImportance = (typeof MICROSOFT_MAIL_IMPORTANCES)[number
  * because every default below is Graph's own.
  *
  * ⚠️ `to` IS ONE ADDRESS; `cc`, `bcc` AND `replyTo` ARE LISTS. That asymmetry is
- * a decision, not an oversight (2026-09-17). Widening the primary recipient from
+ * a decision, not an oversight. Widening the primary recipient from
  * one address to many changes what an existing node means at run time, and it
  * deserves its own change with its own test rather than arriving as a side
- * effect of adding carbon copies. The three new fields are stored as one string
+ * effect of adding carbon copies. The three list fields are stored as one string
  * each and split on `,` or `;` by the transport — neither character can appear
  * in a legal address, so nothing that parsed as one address stops doing so.
  *

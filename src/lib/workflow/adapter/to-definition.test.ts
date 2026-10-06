@@ -87,16 +87,14 @@ describe('catalogue', () => {
   });
 
   it('declares exactly the trigger types that exist, and no others', () => {
-    // Was "exactly one trigger type in this slice" while WhatsApp was the only
-    // way in; `trigger.webhook` made it two and `trigger.schedule` three. The
-    // assertion is UPDATED each time rather than relaxed, because the LIST is
+    // The assertion stays exact rather than relaxed, because the LIST is
     // the point: a node type that quietly became a trigger — or a trigger that
     // quietly stopped being one — is a change to who may start a flow, and rule
     // 1 says that is the catalogue's decision alone.
     //
     // Each is a genuinely different way in, which is why they are worth naming:
-    // a guest speaking to us, an outside system calling in, the clock — and,
-    // since 2026-09-23, SUMIT telling us a card changed. That fourth one shares
+    // a guest speaking to us, an outside system calling in, the clock — and
+    // SUMIT telling us a card changed. That fourth one shares
     // the webhook's ROUTE (`INBOUND_HTTP_TRIGGER_TYPES`) but not its meaning:
     // the caller is known, so the node can name what it sends.
     expect(CATALOGUE.filter((e) => e.isTrigger).map((e) => e.type).sort()).toEqual(
@@ -256,14 +254,11 @@ describe('conversion contract', () => {
     ]);
   });
 
-  // --- the three wirings added 2026-09-09 --------------------------------
+  // --- global variables and errorPolicy ----------------------------------
 
   it('lets {{global.…}} through to be resolved at run time', () => {
-    // This used to be blocked, and the block was right while no resolver
-    // existed: the characters themselves would have reached a guest. With
-    // `resolve-template.ts` vendored, `global` is one of the four namespaces it
-    // knows, and the value comes from the same variables panel the diagram
-    // carries.
+    // `global` is one of the four namespaces `resolve-template.ts` knows, and
+    // the value comes from the same variables panel the diagram carries.
     const result = toWorkflowDefinition(
       'wf1',
       diagram([node('t', TRIGGER), node('a', ACTION, { status: 'attending', label: '{{global.eventName}}' })], [
@@ -316,11 +311,9 @@ describe('conversion contract', () => {
   });
 
   it('accepts errorRoute, which it used to drop', () => {
-    // This assertion was inverted. `errorRoute` sat in the rejected list because
-    // nothing in the editor could draw an edge carrying the runner's reserved
-    // port — true of the SDK's handle minting, and never true of the adapter,
-    // which rewrites `source:inner:error` into it. See unblocked.test.ts for the
-    // routing itself; here it is only that the policy survives conversion.
+    // The adapter rewrites the editor's `source:inner:error` handle into the
+    // runner's reserved port. See unblocked.test.ts for the routing itself; here
+    // it is only that the policy survives conversion.
     const result = toWorkflowDefinition(
       'wf1',
       diagram(
@@ -378,9 +371,8 @@ describe('conversion contract', () => {
   });
 
   it("11. a template reference converts, and Meta's {{1}} is left alone", () => {
-    // Both halves are one decision, and it survived the guard's removal
-    // unchanged: what separates a VARIABLE reference from a WhatsApp
-    // placeholder is the dot after the namespace.
+    // Both halves are one decision: what separates a VARIABLE reference from a
+    // WhatsApp placeholder is the dot after the namespace.
     //
     // `resolveTemplate`'s outer matcher is `\{\{\s*\w+\.…\}\}` — a word,
     // then a DOT. `{{1}}` has no dot, so the resolver never sees it as a
@@ -391,7 +383,7 @@ describe('conversion contract', () => {
       'wf1',
       diagram([node('t', TRIGGER, { keyword: 'שלום {{trigger.message_text}}' })]),
     );
-    // Converts now. The reference is resolved at RUN time by the activity
+    // Converts. The reference is resolved at RUN time by the activity
     // runner, against a context that does not exist while the owner is drawing.
     expect(codes(withReference)).toEqual([]);
 

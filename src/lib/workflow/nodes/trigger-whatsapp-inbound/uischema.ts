@@ -29,9 +29,8 @@ export const whatsappInboundUiSchema: UISchema = {
       label: 'המספר שאליו נשלחה ההודעה',
     },
     {
-      // The warning the owner asked for. "כל המספרים" is the compatible default,
-      // not the safe one: with two live lines an RSVP automation also fires on
-      // messages sent to the import line.
+      // "כל המספרים" is the compatible default, not the safe one: with two live
+      // lines an RSVP automation also fires on messages sent to the import line.
       type: 'Label',
       text: 'כל המספרים: התהליך ירוץ גם על הודעות שנשלחו לקו הייבוא. בחרו מספר כדי לצמצם.',
     },
@@ -41,8 +40,8 @@ export const whatsappInboundUiSchema: UISchema = {
       label: 'הפעל רק אם ההודעה מכילה',
     },
     {
-      // ⚠️ AN ACCORDION IS COLLAPSIB-LE, NOT COLLAPSED — measured in the 2.3.0
-      // bundle, and this comment used to claim the opposite. The renderer
+      // ⚠️ AN ACCORDION IS COLLAPSIBLE, NOT COLLAPSED — measured in the 2.3.0
+      // bundle. The renderer
       // (`GH`) passes the layout NOTHING but `label` and `children`; the
       // container (`Ag`) declares `defaultOpen = true` and is the only thing
       // that decides. `AccordionLayoutElement` has no `defaultOpen` field, so

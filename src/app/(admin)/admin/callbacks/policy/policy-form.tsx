@@ -1,7 +1,8 @@
 'use client';
 
 // Admin form for the callback-scheduling policy (business hours per weekday,
-// minimum notice, horizon, call duration, daily cap, motzash resume delay).
+// minimum notice, horizon, call duration, daily cap, motzash resume delay, the
+// actual-dial window and the dial attempt cap/window).
 // Follows the established admin-form pattern (useActionState + FormState +
 // FieldError/FormError/FormNotice/SubmitButton), mirroring agreement-config-form.tsx.
 

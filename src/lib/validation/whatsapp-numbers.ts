@@ -6,22 +6,21 @@ import { z } from 'zod';
 //
 // The add-number field rules are NOT invented here. They mirror Meta's OpenAPI spec
 // (facebook/openapi e96a1c9), which `src/lib/whatsapp/add-waba-phone-number.ts`
-// already enforces at the boundary: `phone_number` is E.164 WITHOUT the plus and
-// WITH the country code (the spec's own example is `16315551000` beside `cc: "1"`),
-// and `verified_name` is 2–75 characters — 75, not the 512 an earlier draft of the
-// plan guessed. Validating here as well is not duplication: this layer returns a
-// Hebrew field error to the admin, while the client's normalisers throw TypeErrors
-// that exist to stop a bad request reaching Meta at all.
+// already enforces at the boundary: `verified_name` is 2–75 characters. (The spec
+// describes `phone_number` as E.164 without the plus, country code included; live
+// behaviour overrules that — see `wabaPhoneSchema` below.) Validating here as well
+// is not duplication: this layer returns a Hebrew field error to the admin, while
+// the client's normalisers throw TypeErrors that exist to stop a bad request
+// reaching Meta at all.
 
 /**
  * ONE phone field, split into Meta's two by the parser — not by the admin.
  *
- * The first version of this asked for `cc` and `phone_number` separately, with a hint
- * explaining that the second one carries the country code but not the '+'. That is a
- * convention Meta's API has and a person does not, and this codebase had already
- * decided not to ask: `PhoneInput` (the flag control the guest form and the contact
- * forms use) submits ONE value, exactly as typed, and libphonenumber-js works out the
- * country. `0501234567` and `+972 50-123 4567` are the same number, and the owner
+ * Asking for `cc` and `phone_number` separately would rely on a convention Meta's API
+ * has and a person does not, and this codebase had already decided not to ask:
+ * `PhoneInput` (the flag control the guest form and the contact forms use) submits
+ * ONE value, exactly as typed, and libphonenumber-js works out the country.
+ * `0501234567` and `+972 50-123 4567` are the same number, and the owner
  * should not have to know which of Meta's two fields each half belongs in.
  *
  * `defaultCountry: 'IL'` matches src/lib/phone.ts — consulted only when the value
@@ -45,11 +44,11 @@ export const wabaPhoneSchema = z
       // phone_number="33756982370" (E.164 minus the plus) created
       // +3333756982370 on the WABA — the calling code doubled.
       //
-      // This overrules the OpenAPI spec, which is what an earlier version of this file
-      // followed. Its example reads `phone_number: 16315551000` beside `cc: "1"`, and
-      // that cannot be right: concatenated it yields +116315551000. The reference
-      // page's "national digits" phrasing is the accurate one, and the spec example is
-      // the trap. Meta's own behaviour is the only source that settled it.
+      // This overrules the OpenAPI spec. Its example reads
+      // `phone_number: 16315551000` beside `cc: "1"`, and that cannot be right:
+      // concatenated it yields +116315551000. The reference page's "national
+      // digits" phrasing is the accurate one, and the spec example is the trap.
+      // Meta's own behaviour is the only source that settled it.
       cc: parsed.countryCallingCode,
       phoneNumber: parsed.nationalNumber,
     };

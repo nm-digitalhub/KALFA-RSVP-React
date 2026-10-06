@@ -59,8 +59,8 @@ export default async function EditGuestPage({ params }: PageProps) {
   // Bind event + guest ids server-side; the action re-verifies ownership.
   const action = updateGuestAction.bind(null, eventId, guestId);
 
-  // Absolute, shareable RSVP link — APP_ORIGIN when configured, else derived
-  // from the request host (see getAppUrl). Always an absolute URL.
+  // Absolute, shareable RSVP link — built from APP_ORIGIN only, never from the
+  // request host (see getAppUrl). Always an absolute URL.
   const rsvpUrl = linkInfo ? await getAppUrl(`/r/${linkInfo.token}`) : '';
 
   // The guest's own confirmed counts (the RSVP result) — not shown in the

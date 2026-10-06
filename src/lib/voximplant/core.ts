@@ -1,7 +1,8 @@
 import { createSign } from 'node:crypto';
 
 // Voximplant Management API — runtime-agnostic core (no `server-only` guard, so
-// both the Next server module `./client` and the in-repo CLI `./cli` can share
+// both the Next server module `./client` and the in-repo CLI
+// (scripts/voximplant/cli.ts) can share
 // ONE implementation instead of re-hand-rolling JWT+fetch per call).
 //
 // WHY fetch (no SDK): the official `@voximplant/apiclient-nodejs` pins abandoned
@@ -224,7 +225,7 @@ export async function voxRetry<T>(
 // every wrapper that carries a mandatory id (application_id / history_report_id)
 // (1) omits that id from its params type so a caller cannot pass it, and
 // (2) sets the id AFTER the `...params` spread so it can never be overridden.
-// This is the ONLY place Management API method names are used — the CLI/server
+// Management API method names live in this module and ./mutations — the CLI
 // never builds a raw call.
 
 // GetAccountInfo — read-only connectivity check + balance.
@@ -236,10 +237,9 @@ export interface AccountInfo {
   currency: string;
   balance: number;
   created: string;
-  // Account-callback echo (plan B5). UNVERIFIED against live responses —
-  // AccountInfoType's full field list is not in the research corpus; treat as
-  // optional and confirm at the stage-6 wiring gate (a panel/first-callback
-  // fallback is specced if the echo turns out to be absent).
+  // Account-callback echo. Documented on AccountInfoType but UNVERIFIED against
+  // live responses; treat as optional — wireVoximplantAccountCallback snapshots
+  // explicit nulls when the echo is absent.
   callback_url?: string | null;
   callback_salt?: string | null;
 }
@@ -273,12 +273,10 @@ export function getAccountInfo(
 // outranks a docs index — treat it as a supported Management API method that the
 // published list has fallen behind on, not an internal endpoint.
 //
-// NO PUBLIC SETTER WAS FOUND — deliberately phrased that way. An earlier version
-// of this comment claimed no setter EXISTS, reasoning from that same 15-method
-// index. That reasoning is void: the index omits this very method, so its silence
-// proves nothing about a SetAutochargeConfig. What is true is that a search of
-// the API reference surfaces no such method, and that support configured this
-// account by ticket.
+// NO PUBLIC SETTER WAS FOUND — deliberately phrased that way. The 15-method
+// index omits this very method, so its silence proves nothing about a
+// SetAutochargeConfig. What is true is that a search of the API reference
+// surfaces no such method, and that support configured this account by ticket.
 //
 // Worth having because the balance floor stopped being a natural brake the
 // moment autocharge was enabled: before, a runaway would exhaust the balance and
@@ -417,7 +415,7 @@ export function getUsers(
   // Params verified against the official method tree
   // (voximplant.com/api/v2/getDoc?fqdn=references.httpapi.users): GetUsers takes
   // application_id / application_name / with_queues / with_skills — there is NO
-  // `with_application` flag, which an earlier draft of this function invented.
+  // `with_application` flag.
   return voxRequest<GetUsersResponse>(
     config,
     'GetUsers',
@@ -468,8 +466,9 @@ export function getTransactionHistory(
 }
 
 // NOTE: this module is READ-ONLY by design (owner directive). Mutating
-// wrappers (StartScenarios, the restricted SetAccountInfo) live in
-// `./mutations`, which the CLI never imports — a guard test pins both facts.
+// wrappers (StartScenarios, the restricted SetAccountInfo, the Secrets pair,
+// user provisioning) live in `./mutations`, which the CLI never imports — a
+// guard test pins both facts.
 
 // GetApplications
 export interface ApplicationInfo {
@@ -848,7 +847,7 @@ export function getCallLists(
 // from the params type and set AFTER the spread; `output:'json'` is FORCED
 // after the spread so a caller can never flip the response to csv/xls.
 // Task rows carry guest PII in custom_data/result_data — normalize to
-// metadata-only before anything user-facing (plan §4).
+// metadata-only before anything user-facing.
 export interface GetCallListDetailsRequest {
   batch_id?: string;
   count?: number;

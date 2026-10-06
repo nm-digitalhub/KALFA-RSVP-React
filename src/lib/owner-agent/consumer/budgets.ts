@@ -18,8 +18,8 @@ import { KILL_AFTER_MS } from '@/lib/owner-agent/runner';
 // again. It never sends twice — the intake status CAS (reply.ts) sees to that.
 
 /**
- * How long one `claude -p` answer may run (the runner's timeoutMs). 180s since
- * free read (free-read plan §3.5): a free-SQL answer takes more turns, each
+ * How long one `claude -p` answer may run (the runner's timeoutMs). 180s
+ * (free-read plan §3.5): a free-SQL answer takes more turns, each
  * Supabase call 1–3s (measured 2026-09-24), within OWNER_AGENT_MAX_TURNS.
  */
 export const OWNER_AGENT_RUN_TIMEOUT_MS = 180_000;
@@ -28,7 +28,7 @@ export const OWNER_AGENT_RUN_TIMEOUT_MS = 180_000;
 export const OWNER_AGENT_MODEL = 'sonnet';
 
 /**
- * The CLI's --max-turns per answer. 12 since free read: primer → (at most) a
+ * The CLI's --max-turns per answer. 12: primer → (at most) a
  * pg_catalog look-up → a query → a fixed query, and room for a follow-up.
  */
 export const OWNER_AGENT_MAX_TURNS = 12;
@@ -39,9 +39,7 @@ export const OWNER_AGENT_RUN_KILL_AFTER_MS = KILL_AFTER_MS;
 /**
  * Everything around the run: the intake read, the gate (eight small queries),
  * the permission RPCs, up to five WhatsApp sends (MAX_REPLY_PARTS) and the audit. Generous on
- * purpose — the pooler's measured ~134ms round trip times twenty is ~3s. It was
- * 50s; 20s of that slack is now OWNER_AGENT_SEND_RETRY_MS, so the chain's total
- * is unchanged.
+ * purpose — the pooler's measured ~134ms round trip times twenty is ~3s.
  */
 export const OWNER_AGENT_REPLY_OVERHEAD_MS = 30_000;
 
@@ -133,7 +131,7 @@ export const OWNER_AGENT_PM2_KILL_TIMEOUT_MS = 330_000;
  * job-meta pool (2) and the web tier's send-only sender (2) — 12. Two here
  * leaves one slot free even with everything at its maximum; three would fill
  * the last one, and the process refused a connection could be the worker
- * that drives guests (review 2026-09-24). budgets.test.ts reads the other
+ * that drives guests. budgets.test.ts reads the other
  * three pool sizes from their files.
  */
 export const OWNER_AGENT_DB_POOL_MAX = 2;

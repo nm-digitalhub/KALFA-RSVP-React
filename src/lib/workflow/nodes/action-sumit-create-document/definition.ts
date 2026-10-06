@@ -26,7 +26,8 @@ export const isTrigger = false;
  *   • Expense and supplier documents describe something WE bought. An outgoing
  *     automation has no business writing one.
  *   • `Invoice` / `InvoiceAndReceipt` are חשבונית מס, which an עוסק פטור may
- *     not issue (the business's status — see the tax notes on close-charge).
+ *     not issue (the business's status — see the VAT note in
+ *     `src/lib/sumit/accounting.ts`).
  *     They are absent so the editor cannot offer them, rather than present with
  *     a warning nobody reads.
  *
@@ -93,7 +94,7 @@ export type SumitCreateDocumentConfig = {
  * Mutable (`string[]`), because that is the type `NODE_REQUIRED_FIELDS` declares.
  *
  * documentType + a customer name are the minimum SUMIT itself requires
- * (`Details.Type`, and `Customer.Name` "Required for creating a new customer").
+ * (`Details.Type`, and `Customer.Name` "Required for creating new customer").
  */
 export const requiredFields: string[] = ['label', 'description', 'documentType', 'customerName'];
 
@@ -121,10 +122,11 @@ export const deploymentBindings: Readonly<Record<string, 'identifier' | 'secret'
  *
  * The palette entry's `outputSchema.properties` is built from this, so the
  * picker has one declaration of the node's output. The handler (`runtime.ts`)
- * returns the port's answer whole, which carries the same four keys.
+ * returns the port's answer whole, which carries these four keys (the live
+ * port also returns `documentPaymentUrl`, which the picker does not offer).
  */
 export const outputFields = {
-  // The four fields SUMIT's own response carries
+  // Four of the five fields SUMIT's own response carries
   // (`Accounting_Documents_Create_Response`). A later node can reference
   // any of them as {{nodes.<id>.<field>}} with no extra wiring.
   documentId: { type: 'number', label: 'מזהה המסמך' },

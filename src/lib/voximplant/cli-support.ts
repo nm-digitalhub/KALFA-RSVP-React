@@ -1,5 +1,5 @@
 /**
- * Pure, testable support logic for the Voximplant CLI (`./cli`).
+ * Pure, testable support logic for the Voximplant CLI (`scripts/voximplant/cli.ts`).
  *
  * Everything here is IO-free or IO-injected so it can be unit-tested without a
  * network, clock, or filesystem. `cli.ts` is a thin wiring layer over this.
@@ -118,8 +118,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 // ---------------------------------------------------------------------------
 
 // READ-ONLY command set (owner directive): the CLI can never mutate Voximplant
-// state — `start` was removed with the mutations split (the server dispatcher
-// is the only dial path) and a guard test pins this list.
+// state, and a guard test pins this list.
 export const KNOWN_COMMANDS = ['account', 'autocharge', 'rules', 'history', 'numbers', 'users', 'transactions', 'recording', 'log', 'call-lists', 'media-resources', 'audit', 'scenario', 'push-credentials'] as const;
 export type KnownCommand = (typeof KNOWN_COMMANDS)[number];
 
@@ -159,11 +158,11 @@ const ALLOWED_FLAGS: Record<KnownCommand, Set<string>> = {
   // Same shape as `recording`: both fetch a session asset whose URL 401s to an
   // anonymous GET and is signed with the Management-API JWT.
   log: new Set(['key', 'session', 'output', 'days']),
-  // READ-ONLY: observe server-side dialing campaigns (A1). PII-safe output only.
+  // READ-ONLY: observe server-side dialing campaigns. PII-safe output only.
   'call-lists': new Set(['key', 'list-id', 'days']),
-  // Public firewall-allowlist inventory (A2) — needs NO credentials at all.
+  // Public firewall-allowlist inventory — needs NO credentials at all.
   'media-resources': new Set([]),
-  // READ-ONLY account audit log (A3). Owner-role-only per docs — prints a clean
+  // READ-ONLY account audit log. Owner-role-only per docs — prints a clean
   // degraded message when the service-account key is refused.
   audit: new Set(['key', 'days', 'count']),
   // READ-ONLY: fetch a scenario's DEPLOYED text by id (GetScenarios with_script)
@@ -359,10 +358,8 @@ export function resolveHistoryPlan(flags: Record<string, FlagValue>): HistoryPla
 }
 
 // ---------------------------------------------------------------------------
-// call-lists / audit command plans (A1 + A3)
+// call-lists / audit command plans
 // ---------------------------------------------------------------------------
-// The former `start` command (live-dial byte-cap probe) was REMOVED with the
-// read-only/mutations split — the server dispatcher is the only dial path.
 
 export interface CallListsPlan {
   listId?: number;

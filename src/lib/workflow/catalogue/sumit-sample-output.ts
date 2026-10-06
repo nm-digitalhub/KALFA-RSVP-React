@@ -24,8 +24,7 @@ import {
 // names SUMIT sends do not describe their content — measured on folder
 // 1076735286, `Billing_PaymentsCount` holds the status "מאושר" and
 // `Billing_Amount` a date — so a picker of bare names could not be chosen from.
-// This reverses the earlier keys-and-types-only rule: the value may be a
-// customer's name or card digits. Whoever opens the editor already sees the same
+// The value may be a customer's name or card digits. Whoever opens the editor already sees the same
 // body in the run log on the same page (same `manage_settings` gate), so no new
 // reader gains access. Values are cut to `MAX_EXAMPLE_CHARS`.
 //

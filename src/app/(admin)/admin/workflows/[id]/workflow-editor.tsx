@@ -88,12 +88,12 @@ type Props = {
   layoutDirection?: IntegrationDataFormat["layoutDirection"];
   initialGlobalVariables?: IntegrationDataFormat["globalVariables"];
   /**
-   * A Server Action. It carries `requireAdmin` and the ownership check on its
-   * own side — nothing here is authorization, and the browser's copy of the id
+   * A Server Action. The `manage_settings` gate lives on its own side, in the
+   * data layer — nothing here is authorization, and the browser's copy of the id
    * is not trusted by it.
    *
    * It THROWS on failure rather than returning a falsy value. See the comment on
-   * `handleSave`.
+   * `makeSaveHandler`.
    */
   saveAction: (workflowId: string, definition: unknown) => Promise<void>;
   /**
@@ -227,8 +227,9 @@ export function WorkflowEditor({
   // the pickers, never the editor.
   //
   // ONCE PER EDITOR. `requested` is a ref, not state: it must not re-render, and
-  // it must survive the selection changing away and back. The retry below is the
-  // only thing that clears it.
+  // it must survive the selection changing away and back. Nothing clears it: the
+  // retry below calls `loadDialLists` directly and so bypasses the guard in
+  // `loadDialListsOnce`.
   const [dialLists, setDialLists] = useState<{
     rules: readonly VoiceDialOption[];
     agents: readonly VoiceDialOption[];
@@ -240,8 +241,7 @@ export function WorkflowEditor({
   // The selection is watched INSIDE `<Root>` — see this callback's use in
   // `WorkflowEditorLayout`.
   //
-  // Not a correctness requirement, and worth recording as such rather than
-  // leaving a scarier comment standing: the 2.3.0 store is a module-level
+  // Not a correctness requirement: the 2.3.0 store is a module-level
   // zustand singleton (`create()(devtools(…))` in the shipped bundle, matching
   // the typings' own "module-level global singleton" note), so the hook would
   // work from here too. The docs' architecture page describes a
@@ -278,10 +278,11 @@ export function WorkflowEditor({
   }, [loadDialLists]);
   // MEMOISED, and that is a requirement rather than an optimisation: upstream
   // states `nodeTypes` "must be a stable reference — declare at module scope or
-  // memoize". Every other palette entry is module-scope data; this one entry's
-  // dropdown is a live list, which is why the whole array has to be built here
-  // instead. A fresh array each render would re-register the palette on every
-  // keystroke in the properties panel.
+  // memoize". Most palette entries are module-scope data; the ones whose
+  // dropdowns are server rows or live lists (WhatsApp numbers, voice purposes and
+  // dial lists, Microsoft connections, the SUMIT card fields) are why the whole
+  // array has to be built here instead. A fresh array each render would
+  // re-register the palette on every keystroke in the properties panel.
   const paletteItems = useMemo(
     () =>
       buildPaletteItems(
@@ -386,8 +387,8 @@ export function WorkflowEditor({
   //     path never writes one, so there is no stored camera to restore. React
   //     Flow therefore falls back to `{ x: 0, y: 0, zoom: 1 }`.
   //   • Nothing called fitView on mount. `app-bar.tsx` calls it from the
-  //     "הצגת הכול" button and from the layout-direction toggle, and those are
-  //     the only two callers.
+  //     "הצגת הכול" button and from the layout-direction toggle, and
+  //     `focus-node.ts` from a click on a log row — all of them user-triggered.
   // So the diagram rendered at origin at 100% in a canvas sized for the whole
   // screen, and the owner had to press a button on every single visit. The
   // vendor's own editor opens fitted.
@@ -462,10 +463,10 @@ export function WorkflowEditor({
         // something. So the list stays honest (it holds only real rules and real
         // agents) and the reason it is short is stated here, next to a retry.
         //
-        // ⚠️ ABOVE THE FRAME AND IN NORMAL FLOW, not floating inside it. It sat
-        // `absolute top-2` within the editor frame for one revision, which put it
-        // straight over the SDK's app bar — an alert covering the Save button is
-        // a worse bug than the one it reports.
+        // ⚠️ ABOVE THE FRAME AND IN NORMAL FLOW, not floating inside it. Placed
+        // `absolute top-2` within the editor frame it lands straight over the
+        // SDK's app bar — an alert covering the Save button is a worse bug than
+        // the one it reports.
         //
         // `role="alert"` and not a toast: this is a persistent condition, not an
         // event, and it stays until the retry succeeds.
@@ -486,7 +487,7 @@ export function WorkflowEditor({
         </div>
       )}
       {/*
-        THE POSITIONING CONTEXT, and the whole reason this file was rewritten.
+        THE POSITIONING CONTEXT.
         The SDK's own root is
           ._container_ { position: absolute; height: 100%; width: 100% }
         so it fills its nearest POSITIONED ancestor. Without `relative` here it
@@ -521,9 +522,10 @@ export function WorkflowEditor({
             initialNodes={normalizedInitialNodes}
             initialEdges={initialEdges}
             isValidConnection={isValidConnection}
-            // Mounts the per-node execution badges into the OptionalNodeContent slot.
-            // Module-scope array: `plugins` is read once on first mount, and a fresh
-            // array each render would be a new reference for no reason.
+            // Execution badges (OptionalNodeContent slot), app-bar controls,
+            // undo/redo and copy & paste. Module-scope array: `plugins` is read
+            // once on first mount, and a fresh array each render would be a new
+            // reference for no reason.
             plugins={PLUGINS}
             jsonForm={JSON_FORM}
             // MUST be passed. The default is { strategy: 'localStorage' } — omit it
@@ -549,21 +551,18 @@ export function WorkflowEditor({
  * Custom layout for the embedded admin editor.
  *
  * The SDK docs explicitly allow composing TopBar / Canvas / Palette /
- * PropertiesPanel as children of Root, and that is what this is. What it does
- * NOT do any more is replace the app bar.
+ * PropertiesPanel as children of Root, and that is what this is. The app bar is
+ * the SDK's own TopBar, not a replacement for it: the bar renders entirely
+ * through `t(...)`, and `i18n-he.ts` supplies Hebrew for every key it reaches.
+ * What the app bar is NOT is an overlay: `._container_` is a plain
+ * `display:flex; height:auto; width:100%` div in normal flow (verified in the
+ * shipped stylesheet), unlike Palette and PropertiesPanel, which the SDK sizes
+ * from its own row and which are the reason DefaultLayout could not simply be
+ * dropped into hand-rolled columns. So the bar composes here and the panels
+ * still do not.
  *
- * The reason it once did — "TopBar ships English controls" — stopped being true
- * the moment `i18n-he.ts` landed: the bar renders entirely through `t(...)`, and
- * that file now supplies Hebrew for every key it reaches. What the app bar is
- * NOT is an overlay: `._container_` is a plain `display:flex; height:auto;
- * width:100%` div in normal flow (verified in the shipped stylesheet), unlike
- * Palette and PropertiesPanel, which the SDK sizes from its own row and which
- * are the reason DefaultLayout could not simply be dropped into hand-rolled
- * columns. So the bar composes here and the panels still do not.
- *
- * Mounting it back returns the SDK's auto-save and save-on-unload — both live
- * inside its Save button — plus Settings, Import and Export, which existed in
- * `useWorkflowBuilderActions` all along with nothing wired to them.
+ * Mounting it provides the SDK's auto-save and save-on-unload — both live inside
+ * its Save button — plus Settings, Import and Export.
  */
 function WorkflowEditorLayout({
   /**
@@ -621,12 +620,13 @@ function WorkflowEditorLayout({
   // ⚠️ THE ARM GATE'S OWN REFUSALS, MOVED ONTO THE NODES THEY BELONG TO.
   //
   // `findArmBlockersByNode` reports everything arming refuses. Of those,
-  // `syncArmBlockerMarkers` surfaces ONLY `source: 'arm-only'` — the five no
-  // JSON Schema can make: a step left in draft, a guest step under a guestless
-  // trigger, a keyword no message kind can satisfy, a fan-out pointing at its
-  // own workflow, a callback routed to the sales agent. One of them is truly
-  // cross-node (the guest rule reads the trigger at the other end); the rest are
-  // same-node facts the schema still cannot express.
+  // `syncArmBlockerMarkers` surfaces ONLY `source: 'arm-only'` — the ones no
+  // JSON Schema can make, for example: a step left in draft, a guest step under
+  // a guestless trigger, a keyword no message kind can satisfy, a fan-out
+  // pointing at its own workflow, a callback routed to the sales agent. Some are
+  // cross-node (the guest rule reads the trigger at the other end; the error-port
+  // rule reads an edge); the rest are same-node facts the schema still cannot
+  // express.
   //
   // It does NOT mirror the schema's own refusals. `Ga()` counts customErrors
   // toward validity alongside schema errors, so doing that would put two errors
@@ -646,12 +646,12 @@ function WorkflowEditorLayout({
 
   const selectionKey = selected?.node?.id ?? selected?.edge?.id ?? null;
 
-  // An EFFECT, not the render-phase `if (key !== lastKey)` this used to be.
+  // An EFFECT, not a render-phase `if (key !== lastKey)`.
   //
   // That pattern is only sound for a component's own `useState`. `isPropertiesOpen`
-  // now lives in a module store, so writing it during render mutates state outside
+  // lives in a module store, so writing it during render mutates state outside
   // React — which tears under a double-render and is a side effect in the render
-  // phase besides. It has to move here.
+  // phase besides.
   useEffect(() => {
     setPropertiesOpen(Boolean(selectionKey));
   }, [selectionKey]);
@@ -667,20 +667,17 @@ function WorkflowEditorLayout({
 
   // Escape closes the phone overlays, through the SDK's own key hook.
   //
-  // ⚠️ THIS WAS A HAND-ROLLED `document.addEventListener('keydown')`, and the
-  // comment justifying it described a problem `useKeyPress` already solves. The
-  // reasoning was: React's `onKeyDown` only sees events that bubble through the
-  // element, a keydown is dispatched at `document.activeElement`, and on a fresh
-  // load — or after a tap on empty canvas, the phone case these overlays exist
-  // for — nothing inside the editor holds focus, so activeElement is <body> and
-  // the handler never ran. All true. But the SDK's hook fires "when the diagram
-  // canvas (BODY / .react-flow__*) has focus" by default, which is exactly that
-  // case.
+  // React's `onKeyDown` only sees events that bubble through the element, and a
+  // keydown is dispatched at `document.activeElement`. On a fresh load — or after
+  // a tap on empty canvas, the phone case these overlays exist for — nothing
+  // inside the editor holds focus, so activeElement is <body> and such a handler
+  // would never run. The SDK's hook fires "when the diagram canvas
+  // (BODY / .react-flow__*) has focus" by default, which is exactly that case.
   //
-  // And it fixes something the hand-rolled version got wrong: it EXCLUDES text
-  // inputs, "so typing in a property field doesn't accidentally trigger keyboard
-  // shortcuts". Ours listened on the document unconditionally, so Escape while
-  // editing a node's title closed the panel out from under the owner.
+  // It also EXCLUDES text inputs, "so typing in a property field doesn't
+  // accidentally trigger keyboard shortcuts" — a listener on the document
+  // unconditionally would close the panel out from under the owner on Escape
+  // while editing a node's title.
   //
   // `useEffectChange` is the matching half: `useKeyPress` reports a HELD state,
   // and this fires only on a change after mount, so the press acts once instead
@@ -783,30 +780,30 @@ function makeSaveHandler(
 ) => Promise<DidSaveStatus> {
   return async (data, params) => {
     // The editor also saves in the background — before the user leaves the page
-    // — at a rate we do not control. Both paths persist; `isAutoSave` is carried
-    // so the action can tell a deliberate save from a background one and the
-    // snackbar stays off for the latter (the runtime already suppresses it).
+    // — at a rate we do not control. Both paths persist identically, so
+    // `isAutoSave` plays no part in what is saved; the runtime already keeps the
+    // snackbar off for the background one.
     void params?.isAutoSave;
 
     // The WHOLE payload, not a chosen four fields.
     //
-    // This used to rebuild `{ name, layoutDirection, nodes, edges }` — the shape
-    // the docs site documents for IntegrationDataFormat. The installed
+    // The docs site documents IntegrationDataFormat as
+    // `{ name, layoutDirection, nodes, edges }`. The installed
     // `dist/index.d.ts` declares a fifth, `globalVariables: VariablesIndex`,
-    // which appears nowhere in their published docs. Cherry-picking therefore
-    // silently erased the diagram's global variables on every save, including
-    // every background auto-save.
+    // which appears nowhere in their published docs. Cherry-picking the four
+    // documented fields would therefore silently erase the diagram's global
+    // variables on every save, including every background auto-save.
     //
     // Passing `data` straight through also means the next field they add
     // survives instead of being dropped until someone notices. The column stores
     // the editor's format verbatim precisely so this can be a pass-through.
     // ⚠️ MINUS THE EDITOR'S OWN VALIDATION STATE. `properties.errors` is written
     // by the SDK on every change and `properties.customErrors` by our arm-blocker
-    // sync; neither is diagram CONTENT, and eight of the twenty-two nodes stored
-    // today already carry a stale `errors` array because nothing ever stripped
-    // them. Schema errors are self-healing — the SDK recomputes them on load —
-    // but a persisted `customErrors` would show an owner a refusal that was
-    // fixed in another session.
+    // sync; neither is diagram CONTENT, and on 2026-09-15 eight of the twenty-two
+    // stored nodes already carried a stale `errors` array because nothing ever
+    // stripped them. Schema errors are self-healing — the SDK recomputes them on
+    // load — but a persisted `customErrors` would show an owner a refusal that
+    // was fixed in another session.
     //
     // Two keys removed by name, everything else copied: this is not the
     // cherry-picking the comment above warns about.

@@ -1,7 +1,7 @@
 // Which container each grouping uses, and the renderer fact behind the choice.
 //
 // ⚠️ MEASURED IN THE 2.3.0 BUNDLE, because the answer decides the whole
-// classification and two comments in `schemas.ts` had it backwards:
+// classification:
 //
 //   • The JsonForms Accordion renderer passes the container `label` and
 //     `children` and NOTHING else — no `defaultOpen`, no `isOpen`.
@@ -64,7 +64,7 @@ describe('container choice', () => {
 
   it('⚠️ the identity block is a Group, and it is the only container of its kind', () => {
     // An Accordion here would invite an owner to fold away `description` (required
-    // on all eighteen types) and `status` (decides whether the step runs at all).
+    // on every node type) and `status` (decides whether the step runs at all).
     const groups = allElements().filter((e) => e.type === 'Group');
     expect(groups.map((g) => g.label)).toEqual(['פרטי הצעד']);
 

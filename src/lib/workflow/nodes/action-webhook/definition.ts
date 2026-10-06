@@ -123,9 +123,9 @@ export const deploymentBindings: Readonly<Record<string, 'identifier' | 'secret'
  * The field that is required only on some verbs — `NODE_CONDITIONAL_REQUIRED_FIELDS`
  * reads this, and through it both the editor schema's `allOf` and `arm-check.ts`.
  *
- * `sendOutboundWebhook` genuinely branches on the verb: it builds, resolves and
- * secret-checks the body and then, for GET and DELETE, does not send it. So the
- * body is mandatory on exactly the three verbs that send one.
+ * `createOutboundWebhook`'s `post` genuinely branches on the verb: it builds,
+ * resolves and secret-checks the body and then, for GET and DELETE, does not
+ * send it. So the body is mandatory on exactly the three verbs that send one.
  *
  * The element shape is `ConditionalRequirement` from `catalogue/types.ts`,
  * spelled out rather than imported because this file imports nothing; the

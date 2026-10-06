@@ -21,7 +21,7 @@ const SETTLE_STABLE_MS = 700;
  *
  * הרצפה היא ההודאה שאי אפשר לדעת מתי עמוד "סיים": היא קונה חלון שבו טעינה
  * מאוחרת עוד נתפסת, ומעליה עדיין אפשר לפספס. מה שמונע פספוס שקט הוא לא המספר
- * הזה אלא הבדיקה שאחרי החילוץ - ראו `verifyNoLateContent`.
+ * הזה אלא הבדיקה שאחרי החילוץ - ראו `measureLateChanges`.
  */
 const SETTLE_MIN_OBSERVE_MS = 2_000;
 
@@ -79,7 +79,7 @@ export async function detectContentRoot(page) {
         // matchIndex נשמר לצד הסלקטור, כי סלקטור לבדו אינו מזהה אלמנט. עמוד עם
         // שני <article> - הראשון כרטיס תקציר, השני גוף העמוד - גורם ל-analysis
         // לבחור את השני ול-extractor לקרוא את הראשון, ואף אחד מהשניים לא מדווח
-        // על סתירה. זה בדיוק הכשל השקט שהגרסה הזו קיימת כדי למנוע.
+        // על סתירה. זה בדיוק הכשל השקט ש-matchIndex קיים כדי למנוע.
         for (const selector of explicitSelectors) {
             document.querySelectorAll(selector).forEach((el, matchIndex) => {
                 if (seenElements.has(el)) return;
@@ -128,15 +128,15 @@ export async function detectContentRoot(page) {
     });
 }
 
-// חילוץ אחד, root אחד. ב-v1 היו שני סלקטורים שונים לתוכן ולקישורים, ולכן
-// "לאן העמוד הזה מפנה" החזיר את סרגל הניווט של האתר.
+// חילוץ אחד, root אחד: תוכן וקישורים נקראים מאותו root, כדי ש"לאן העמוד הזה
+// מפנה" לא יחזיר את סרגל הניווט של האתר.
 //
-// מוחזרות ארבע שכבות ולא אחת: html (המקור, לאחר ניקוי), content (טקסט),
+// מוחזרות כמה שכבות ולא אחת: html (המקור, לאחר ניקוי), content (טקסט),
 // headings, codeBlocks ו-hyperlinks. ה-Markdown נגזר מ-html בצד Node, ולכן
 // אינו מוחזר כאן - אבל הוא גם לא מחליף את codeBlocks (ראו למטה).
 export async function extractPage(page, contentRoot) {
     // מקבל גם מחרוזת וגם את ה-contentRoot המלא, כדי לא לשבור קריאה קיימת.
-    // מחרוזת פירושה "ההתאמה הראשונה", וזו בדיוק ההנחה שהייתה כאן קודם.
+    // מחרוזת פירושה "ההתאמה הראשונה".
     const descriptor = contentRootDescriptor(contentRoot);
 
     if (!descriptor) {
@@ -180,7 +180,7 @@ export async function extractPage(page, contentRoot) {
         // DEL, וכל השאר מגישים pre רגיל. הכתיב '\u007F' מפורש בכוונה: תו בקרה
         // ממשי בקוד המקור נמחק בשקט בכל עריכה או העתקה.
         //
-        // המסלול הזה נשאר גם אחרי שנוסף ה-Markdown, ובמכוון: ה-data-code הוא
+        // המסלול הזה קיים גם לצד ה-Markdown, ובמכוון: ה-data-code הוא
         // המקור הנקי, בעוד שה-<pre> הוא הגרסה המעוצבת. Markdown שנגזר מה-HTML
         // הוא פלט נוסף, לא מקור אמת יחיד.
         const fromCopyButtons = [...root.querySelectorAll('button[data-code]')]
@@ -213,7 +213,7 @@ export async function extractPage(page, contentRoot) {
         //      שלהם היה נשפך ל-Markdown כאילו היה פסקה. button ו-aria-hidden
         //      הם פקדי ממשק ("Copy", "Edit this page", עוגני כותרת): לא תיעוד.
         //      ביודעין לא מוסרים כאן class names כמו .pagination-links - זה היה
-        //      חוזר בדיוק ל-hardcode-לפי-אתר שהגרסה הזו מוחקת.
+        //      חוזר בדיוק ל-hardcode-לפי-אתר.
         //   2. הפיכת קישורים ותמונות לכתובות מוחלטות. ב-Markdown שיישמר בדיסק
         //      "../api/foo" הוא חסר משמעות, כי אין יותר עמוד שממנו הוא יחסי.
         const clone = root.cloneNode(true);
@@ -404,7 +404,7 @@ export async function readMetaRefreshTarget(page) {
 // המתנה גנרית לתוכן: עד שהעמוד מפסיק להשתנות, ולא עד שיש בו "מספיק" טקסט.
 //
 // לא networkidle (סקריפטי אנליטיקה דוחים אותו עד לפסק הזמן) ולא סלקטור קבוע
-// (זה בדיוק ה-hardcode שהגרסה הזו מוחקת).
+// (זה בדיוק hardcode לפי אתר).
 //
 // ⚠️ התנאי הקודם היה "לפחות 200 תווים ב-body", והוא חתך עמודים בשקט. נמדד על
 // jsonforms.io/docs/uischema/controls/: סרגל הניווט והכותרת לבדם חוצים 200 תווים

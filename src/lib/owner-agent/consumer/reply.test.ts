@@ -319,7 +319,7 @@ describe('every gate failure is silence: no model run, no message, one audit row
       extraIntake: [{ ...today('d'), received_at: iso(NOW - 20 * 3_600_000) }],
     });
     expect(await handleOwnerAgentReply(job, yesterday.deps)).toBe('answered');
-    // Questions that arrived AFTER this one do not count against it (review 24.9).
+    // Questions that arrived AFTER this one do not count against it.
     const later = world({
       settings: { owner_agent_daily_cap: 1 },
       extraIntake: [

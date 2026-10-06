@@ -22,7 +22,7 @@ import type { OwnerAgentRange } from '@/lib/owner-agent/range';
 //   - fetchedAt (a string timestamp — not needed to answer, and the output
 //     contract is numbers/enums only);
 //   - purchaseRevenue (money belongs under view_billing, not under the
-//     view_customer_data key this tool will sit behind);
+//     view_customer_data key this tool sits behind);
 //   - every other dashboard section (pages, sources, geo, demographics) —
 //     they carry text (paths, titles, campaign names), and the plan excludes
 //     demographics outright.

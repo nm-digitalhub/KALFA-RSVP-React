@@ -35,9 +35,9 @@ export const webhookSchema = {
     errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
     method: { type: 'string', options: Object.values(httpMethodOptions) },
     url: { ...requiredText },
-    // The field the old design refused to have. See WebhookConfig for why it can
-    // exist now: a value may be `{{secrets.<NAME>}}`, and the NAME is what is
-    // stored — the secret itself is fetched at the socket and never comes back.
+    // A value may be `{{secrets.<NAME>}}`, and the NAME is what is stored — the
+    // secret itself is fetched at the socket and never comes back. See the note
+    // above `HTTP_METHODS` in ./definition.
     headers: {
       type: 'array',
       items: {

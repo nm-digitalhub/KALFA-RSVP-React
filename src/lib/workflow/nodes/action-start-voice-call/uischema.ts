@@ -12,19 +12,18 @@ const voiceCallScope = getScope<VoiceCallSchema>;
 
 export const voiceCallUiSchema = {
   type: 'VerticalLayout',
-  // ⚠️ THE DECISION FIRST, THE CHROME COLLAPSED — the shape the SDK's own Delay
-  // node uses, and the opposite of what this panel did. It opened with "שם הצעד",
-  // which is a label on a card, and buried the one choice the node exists to make.
-  // Upstream puts the type selector at the top and folds title/status/description
-  // into a "General Information" accordion below it.
+  // ⚠️ THE DECISION FIRST, THE CHROME LAST — the shape the SDK's own Delay node
+  // uses: the one choice the node exists to make comes first, and "שם הצעד",
+  // which is a label on a card, comes after it. Upstream puts the type selector
+  // at the top and folds title/status/description into a "General Information"
+  // accordion below it; here that block is the `Group` at the end.
   elements: [
     // ⚠️ `...globalControls` DOES NOT BELONG HERE, AND THE REASON IS MEASURED.
     //
-    // It was spread in for one commit, on the strength of the vendor's own
-    // reference node (apps/demo/.../conditional/uischema.ts opens with it) and
-    // of the display mechanism being in the base bundle rather than in the
-    // Enterprise Validation plugin — both of which are true. What is ALSO true,
-    // and decides it:
+    // The vendor's own reference node (apps/demo/.../conditional/uischema.ts
+    // opens with it) and the display mechanism being in the base bundle rather
+    // than in the Enterprise Validation plugin both argue for spreading it —
+    // and both are true. What is ALSO true, and decides it:
     //
     //   • Its single element is `{ type:'MessageOnError', scope:
     //     '#/properties/missingPreviousVariable', text:
@@ -54,8 +53,7 @@ export const voiceCallUiSchema = {
     //
     // `customErrors`
     // remains the way to RAISE a node-level error the schema cannot express —
-    // that half of the earlier reading holds — it just has to be displayed by a
-    // control whose text we own.
+    // it just has to be displayed by a control whose text we own.
     {
       type: 'Select',
       scope: voiceCallScope('properties.purposeKey'),
@@ -104,22 +102,21 @@ export const voiceCallUiSchema = {
       // diagram saved before this field existed, would otherwise PASS the
       // condition and show the switch.
       //
-      // It is no longer the ONLY thing standing there: the `type: 'string'`
-      // added below rejects `undefined` on its own. Both are kept, and
+      // It is not the ONLY thing standing there: the `type: 'string'` in the
+      // condition below rejects `undefined` on its own. Both are kept, and
       // voice-rule.test.ts pins each one separately, so removing either still
       // leaves the switch hidden.
       //
-      // ⚠️ FOUR EFFECTS ARE USABLE ON A BUILT-IN CONTROL, NOT SIX — and the
-      // reason is NOT the one an earlier version of this comment gave.
+      // ⚠️ FOUR EFFECTS ARE USABLE ON A BUILT-IN CONTROL, NOT SIX.
       //
       // `RuleEffect` is re-exported straight from @jsonforms/core, which ships
       // SHOW, HIDE, ENABLE, DISABLE, READONLY and WRITABLE. Workflow Builder's
       // own API page documents only the first four.
       //
-      // The wrong reason, corrected here so it is not re-derived: it is NOT that
-      // `separateReadonlyFromDisabled` folds READONLY into DISABLE. The rule
-      // paths are genuinely separate in core 3.8.0 — `hasEnableRule` matches only
-      // ENABLE/DISABLE, `hasReadonlyRule` only READONLY/WRITABLE, and
+      // The reason is NOT that `separateReadonlyFromDisabled` folds READONLY into
+      // DISABLE. The rule paths are genuinely separate in core 3.8.0 —
+      // `hasEnableRule` matches only ENABLE/DISABLE, `hasReadonlyRule` only
+      // READONLY/WRITABLE, and
       // `isInherentlyReadonly` consults the rule with NO reference to that flag.
       // A READONLY rule really does arrive at the renderer as `readonly: true`.
       // The flag governs something else: whether a GLOBAL readonly (the editor's
@@ -176,10 +173,10 @@ export const voiceCallUiSchema = {
       // before there is a call to make, and offering it first teaches the wrong
       // order. `rule` is available on a LAYOUT element, not only on a control —
       // `BaseLayoutElement` carries `rule?: UISchemaRule` in the 2.3.0 typings —
-      // so one rule here covers all three fields instead of three copies.
+      // so one rule here covers all four fields instead of four copies.
       //
       // `type` alongside `minLength`, and `failWhenUndefined`, for the reasons
-      // spelled out on the switch below: Ajv strict mode warns without the
+      // spelled out on the switch above: Ajv strict mode warns without the
       // first, and a legacy diagram carrying `purposeKey: null` passes without
       // either.
       type: 'Accordion',
@@ -220,22 +217,21 @@ export const voiceCallUiSchema = {
       ],
     },
     {
-      // ⚠️ GROUPED, NOT COLLAPSED — and the distinction is a correction.
+      // ⚠️ GROUPED, NOT COLLAPSED.
       //
       // Upstream's prose calls Accordion a "collapsible labeled section … body
-      // hidden by default", and an earlier version of this comment repeated it.
-      // THE SHIPPED CODE DISAGREES: the Accordion renderer (`GH` in the 2.3.0
-      // bundle) renders `<Accordion label={…}>` passing NO `defaultOpen`, and
-      // the component's own default is `defaultOpen = true`. Every Accordion in
-      // this editor therefore opens EXPANDED; the chevron lets an owner close
-      // one, it does not start closed.
+      // hidden by default". THE SHIPPED CODE DISAGREES: the Accordion renderer
+      // (`GH` in the 2.3.0 bundle) renders `<Accordion label={…}>` passing NO
+      // `defaultOpen`, and the component's own default is `defaultOpen = true`.
+      // Every Accordion in this editor therefore opens EXPANDED; the chevron lets
+      // an owner close one, it does not start closed.
       //
       // So what this buys is a heading and a boundary, not concealment. That is
       // still the right container for `errorPolicy` — most owners never move it
-      // off the default, and this node now carries several fields where it
-      // carried two — but nothing here is hidden from anyone.
+      // off the default, and this node carries several other fields — but
+      // nothing here is hidden from anyone.
       //
-      // NOT swept across the other nine nodes that expose the same field. That
+      // NOT swept across the other nodes that expose the same field. That
       // is a different change — it trades discoverability for tidiness on every
       // node at once, and an owner asking "why did my whole workflow stop?" is
       // looking for precisely this control. One node's crowding is a reason to
@@ -250,10 +246,10 @@ export const voiceCallUiSchema = {
       // ⚠️ A GROUP, NOT AN ACCORDION, AND THE DIFFERENCE IS A CLAIM ABOUT THE
       // CONTENTS. An Accordion says "advanced — fold this away when you are
       // done"; these three are the node's IDENTITY. `description` is required on
-      // all eighteen types and `status` decides whether the step runs at all, so
+      // every node type and `status` decides whether the step runs at all, so
       // neither is something an owner should be encouraged to close over.
       //
-      // The other seventeen nodes render these inline with no container. This
+      // The other nodes render these inline with no container. This
       // one keeps a heading because it is the most crowded panel in the palette
       // — `Group` is exactly that heading plus a boundary, with no chevron and
       // no implication of optionality. Its renderer (`XH`) is a plain div; the
@@ -262,12 +258,10 @@ export const voiceCallUiSchema = {
       label: 'פרטי הצעד',
       elements: [
         ...identityControls(voiceCallScope('properties.label'), voiceCallScope('properties.description')),
-        // ⚠️ THE CONTROL THIS NODE WAS MISSING, and its absence was not cosmetic.
-        // Seventeen of the eighteen node types render `statusControl`; this one
-        // did not, while still carrying `status` in its schema and in its
-        // defaults. `arm-check.ts` reads that value — a node left on 'draft'
-        // blocks arming — so an owner could neither park this node as a draft
-        // nor see why a diagram armed when they expected it not to.
+        // ⚠️ `status` MUST HAVE A CONTROL HERE, and not for cosmetic reasons.
+        // `arm-check.ts` reads that value — a node left on 'draft' blocks
+        // arming — so without it an owner could neither park this node as a
+        // draft nor see why a diagram armed when they expected it not to.
         statusControl(voiceCallScope('properties.status')),
       ],
     },

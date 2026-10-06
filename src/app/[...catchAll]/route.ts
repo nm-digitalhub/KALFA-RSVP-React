@@ -7,7 +7,7 @@ import { trustedAppOrigin } from '@/lib/http/trusted-origin';
 // a static or dynamic segment over a catch-all (verified against
 // next/dist/shared/lib/router/utils/sorted-routes.js's UrlNode._smoosh, which
 // sorts static children first, then `[slug]`, then `[...catchAll]` last) — so
-// this can never shadow a real page, api route, or the 6-page Markdown
+// this can never shadow a real page, api route, or the Markdown
 // allowlist in markdown-negotiation.ts.
 //
 // This does NOT delegate to notFound() from next/navigation. Two things were
@@ -53,17 +53,16 @@ function markdownNotFoundBody(): string {
   ].join('\n');
 }
 
-// Same on-brand copy and layout as not-found.tsx (owner spec 2026-08-25), and
+// Same on-brand copy and layout as not-found.tsx, and
 // the SAME design token VALUES (not class names — a Route Handler has no path
 // to the site's compiled/hashed Tailwind stylesheet, so colors are copied
 // from src/app/globals.css `:root` directly). Two deliberate departures from
-// not-found.tsx, both per the same spec:
+// not-found.tsx:
 // 1. System font stack, no next/font and no Google Fonts <link> — a Route
 //    Handler returning a raw string has no path to next/font's self-hosting
 //    pipeline at all (that only runs inside the JSX compilation), and a font
 //    fetched at runtime is exactly the kind of extra round-trip a 404 should
-//    not add. Earlier version of this file DID add a live fonts.googleapis.com
-//    <link>; caught in review, removed.
+//    not add.
 // 2. The MailQuestionMark icon is redrawn as static inline SVG (path data
 //    copied from node_modules/lucide-react's compiled icon, not guessed) —
 //    lucide-react itself is a React component library, unusable from a
@@ -102,7 +101,7 @@ function htmlNotFoundBody(): string {
     // .card's margin-top, and no z-index is needed either: a later flex
     // item already paints over an earlier one wherever they overlap.
     // Fades the watermark's own opacity to zero right where .card covers it
-    // (owner request 2026-08-25) instead of card transparency, which would
+    // instead of card transparency, which would
     // let "404" show through behind the card's real text/buttons and risk
     // contrast (WCAG 1.4.3) — this only touches the decorative element.
     '.watermark{margin-top:.5rem;margin-bottom:-2.5rem;font-size:7rem;font-weight:900;line-height:1;',

@@ -9,9 +9,7 @@ import { PermanentNodeExecutionError } from '../../vendor/workflowbuilder/execut
 
 import * as updateGuestStatusDefinition from './definition';
 
-// The first real side effect, and deliberately one that sends nothing outward:
-// it changes a row we own. `send_whatsapp` is the next node, once this chain is
-// proven end to end.
+// Deliberately sends nothing outward: it changes a row we own.
 export const updateGuestStatus: StepHandler = async (config, ctx) => {
   // `rsvpStatus` first, `status` second. The key was renamed when the SDK's own
   // node-lifecycle `status` — Active / Draft / Disabled — moved into the same
@@ -30,11 +28,11 @@ export const updateGuestStatus: StepHandler = async (config, ctx) => {
   const guests = await ctx.deps.guests.getGuestsForContact(eventId, contactId);
 
   // ריבוי-אורחים: a phone may back several guests, and "who did this message
-  // mean?" has no answer. The inbound webhook refuses to guess (C9 in
-  // webhook-processing.ts) and so does this: the same rule, because it is a rule
-  // about shared phones, not about which code path arrived at it. Reported as a
-  // completed step with `skipped: true` rather than a failure — nothing went
-  // wrong, there was simply nothing unambiguous to do.
+  // mean?" has no answer. The inbound webhook refuses to guess
+  // (webhook-processing.ts, tested as C9) and so does this: the same rule,
+  // because it is a rule about shared phones, not about which code path arrived
+  // at it. Reported as a completed step with `skipped: true` rather than a
+  // failure — nothing went wrong, there was simply nothing unambiguous to do.
   if (guests.length !== 1) {
     return {
       output: {

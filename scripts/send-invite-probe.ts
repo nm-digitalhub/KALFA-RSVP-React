@@ -2,14 +2,21 @@
 // explicitly named contact through the REAL production send path, to prove
 // that pinning GRAPH_API_VERSION (v25.0) did not break outbound WhatsApp.
 //
-// It does NOT re-implement the send. Every step below is the same function the
-// campaign engine calls (src/lib/data/outreach-engine.ts:395-450):
+// It does NOT re-implement the send. sendOneWhatsApp → client.ts is the same
+// path the campaign engine takes (prepareAndSendStep in
+// src/lib/data/outreach-engine.ts). The steps before it use the stand-alone
+// resolvers:
 //   getCampaignContext → resolveTemplateForEvent → deriveGuestFirstName →
-//   buildBodyParams → resolveTemplateMedia → sendOneWhatsApp → client.ts
-// The ONLY thing replaced is the scheduler that decides WHICH contact is due;
-// the recipient is pinned by CLI argument so a probe can never fan out.
+//   buildBodyParams → resolveTemplateMedia
+// whereas the engine resolves template + variables through resolveWhatsAppSend
+// (src/lib/data/whatsapp-template-send.ts).
+// Besides that, the ONLY thing replaced is the scheduler that decides WHICH
+// contact is due; the recipient is pinned by CLI argument so a probe can never
+// fan out.
 //
-// Run (owner): npm run probe:invite -- --campaign <id> --contact <id> --confirm
+// Run (owner): bundle with esbuild like the other scripts/*.ts (see
+// sync:voximplant-sa in package.json), then
+//   node --env-file=.env.local dist/send-invite-probe.cjs --campaign <id> --contact <id> --confirm
 // Without --confirm it stops after printing exactly what WOULD be sent.
 //
 // --from <phone_number_id> sends from a DIFFERENT business number on the same

@@ -12,8 +12,7 @@ import { triggerSwitchRenderer } from './trigger-switch-control';
 // "מה מפעיל את התהליך" — the control that lets an owner change WHICH trigger
 // starts a flow.
 //
-// ⚠️ THE GAP WAS REPORTED BY THE OWNER, 2026-09-22: "אין לי אפשרות באמת לקבוע
-// את הטריגר שמפעיל". Three separate trigger palette entries and no way to move
+// ⚠️ THE GAP THIS CLOSES: separate trigger palette entries and no way to move
 // between them — a template that shipped with a webhook trigger could not become
 // a WhatsApp one without deleting the node and rewiring its edge.
 

@@ -128,8 +128,6 @@ const REASON_LABELS: Record<string, string> = {
   bad_slot: 'שעה לא תקינה',
 };
 
-// Any report_* outcome a later change adds reads as a report outcome rather
-// than as a bare code.
 // Meta's own error codes (Cloud API error-code reference), for the ones a send or
 // a delivery can realistically hit. Any other code still shows as its number.
 const META_CODE_LABELS: Record<string, string> = {
@@ -164,6 +162,8 @@ function reasonLabel(code: string): string {
   return code;
 }
 
+// Any report_* outcome a later change adds reads as a report outcome rather
+// than as a bare code.
 function outcomeLabel(outcome: string): { label: string; tone: BadgeVariant } | undefined {
   const known = OUTCOME_LABELS[outcome];
   if (known) return known;

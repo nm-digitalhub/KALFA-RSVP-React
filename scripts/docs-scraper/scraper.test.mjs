@@ -1,7 +1,7 @@
-// בדיקות ל-scripts/scraper-v2.mjs.
+// בדיקות ל-scripts/docs-scraper/scraper.mjs.
 //
 // מורצות עם `npm run test:scraper` (node --test), ולא תחת vitest: הסוויטה של
-// vitest מוגדרת ל-src/**/*.test.ts ורצה בסביבת node ללא דפדפן, בעוד שכאן
+// vitest מוגדרת ל-src/**/*.test.{ts,tsx} ורצה בסביבת node ללא דפדפן, בעוד שכאן
 // חייבים דפדפן אמיתי ושרת HTTP אמיתי - הבדיקות המעניינות הן בדיוק אלה
 // שבודקות DOM וזחילה, ולא ניתן לזייף אותן בלי לזייף את מה שנבדק.
 //
@@ -1418,8 +1418,7 @@ describe('end to end', () => {
         });
     });
 
-    // ארבעת החוזים שהסוויטה הקודמת לא ייצגה - ולכן ירוקה לא הייתה יכולה
-    // לחשוף אותם. כולם על אותו נושא: ה-analysis חייב לבדוק בדיוק את מה
+    // ארבעה חוזים, כולם על אותו נושא: ה-analysis חייב לבדוק בדיוק את מה
     // שהסריקה תבדוק, ועל אותם עמודים שהיא תסרוק.
     describe('the analyzer measures what the crawler will actually do', () => {
         it('a start URL that returns 500 with documentation-shaped HTML is refused', async () => {

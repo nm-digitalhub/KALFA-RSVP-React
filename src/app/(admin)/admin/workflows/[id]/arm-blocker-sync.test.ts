@@ -90,8 +90,7 @@ describe('syncArmBlockerMarkers', () => {
       // could not explain until they pressed "arm". Every node's uischema now
       // carries a text-less `MessageOnError` on `#/properties/armNotice`, which
       // is the vendor's own display mechanism rather than a second one of ours.
-      // Spelled literally rather than imported: this file mocks the SDK store,
-      // and reaching `ARM_NOTICE_PATH` would pull in `types.ts` for a string.
+      // Spelled literally rather than imported.
       // `palette-defaults.test.ts` is where the constant and every uischema's
       // scope are proven to be the same value.
       instancePath: '/armNotice',

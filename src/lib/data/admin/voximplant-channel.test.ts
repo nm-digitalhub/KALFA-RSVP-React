@@ -112,9 +112,8 @@ describe('updateVoximplantChannelConfig', () => {
     // nullable text cols cleared to null
     expect(payload.voximplant_rule_id).toBeNull();
     expect(payload.voximplant_callback_secret).toBeNull();
-    // Added 2026-09-14 — both columns had no admin surface at all before, so
-    // they get the same '' => null contract as the three above, asserted here
-    // rather than assumed.
+    // Both columns get the same '' => null contract as the nullable text
+    // columns above, asserted here rather than assumed.
     expect(payload.voximplant_call_me_now_rule_id).toBeNull();
     expect(payload.voximplant_application_id).toBeNull();
   });
@@ -140,9 +139,9 @@ describe('updateVoximplantChannelConfig', () => {
   });
 });
 
-// The rule picker's data source. Added 2026-09-14 so four admin fields could
-// offer the account's real rules instead of a free-text id — a wrong id there
-// dials a different scenario without any error.
+// The rule picker's data source: admin fields offer the account's real rules
+// instead of a free-text id — a wrong id there dials a different scenario
+// without any error.
 describe('listVoximplantRules', () => {
   const AUTH = { accountId: 1, keyId: 'k', privateKey: 'p' };
 

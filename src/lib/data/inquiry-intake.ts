@@ -101,9 +101,8 @@ export async function insertContactMessage(
 
   // Mirrors the flat `message` column into the thread table so the admin
   // detail view's InquiryThread shows the original question, not just
-  // replies — mail intake already does this (inquiry-mail-intake.ts); this was
-  // the missing half for web-form submissions, which never got an initial
-  // `inbound` row. Best-effort: the inquiry itself (inserted above) is the
+  // replies — mail intake does the same (inquiry-mail-intake.ts).
+  // Best-effort: the inquiry itself (inserted above) is the
   // thing that must not be lost, so a thread-mirror failure must not fail
   // the submission — the flat `message` column still holds the text either way.
   const { error: threadError } = await supabase.from('inquiry_messages').insert({
@@ -169,7 +168,7 @@ export async function insertCallbackRequest(
     level: 'info',
     title: 'בקשת חזרה טלפונית חדשה',
     source: 'callback_form',
-    // Counts and closed vocabulary only — no name, phone or note in an alert.
+    // Ids and closed vocabulary only — no name, phone or note in an alert.
     fields: { callbackRequestId: data.id, topic: input.topic, מועד: input.preference },
   });
 

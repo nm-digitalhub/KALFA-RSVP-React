@@ -243,7 +243,7 @@ describe('errors stay safe', () => {
 
   it('does not let a ZodError through just because its JSON contains Hebrew', async () => {
     // The DAL re-validates its input; a ZodError's message is the JSON of its issues,
-    // Hebrew messages included. The previous "contains Hebrew" test passed it verbatim.
+    // Hebrew messages included.
     const zodError = z.string().min(5, 'מספר טלפון לא תקין').safeParse('a').error;
     expect(zodError?.message).toMatch(/[\u0590-\u05FF]/);
     addMock.mockRejectedValue(zodError);

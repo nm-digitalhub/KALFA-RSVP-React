@@ -13,7 +13,8 @@ import type { createAdminClient } from '@/lib/supabase/admin';
 import { REPORT_CONTENT_TIMEOUT_MS } from './budgets';
 import type { ReportPeriod } from './planner';
 
-// The report's text, from the DETERMINISTIC cores (plan §4.8) — no `claude -p`:
+// The report's text, from the DETERMINISTIC cores (plans/owner-agent-chat-sdk-capabilities-plan.md
+// §4.8) — no `claude -p`:
 // no model cost, no injection surface, seconds rather than minutes. Numbers
 // only, the same numbers the read tools give, and never a name, phone, event
 // name or message text (the cores return none).

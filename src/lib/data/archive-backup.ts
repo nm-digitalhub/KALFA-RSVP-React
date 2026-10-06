@@ -14,8 +14,8 @@ import { listArchiveFiles } from '@/lib/data/archive-maintenance';
 //     Supplier contracts live ONLY there, and SharePoint's only safety net is
 //     a 93-day recycle bin.
 //   - Supabase id-documents: the signed agreement PDFs and signature images.
-//     Owner instruction 2026-09-06 — back these up too, don't assume the
-//     system of record is safe by being the system of record.
+//     Backed up too: the system of record is not assumed safe merely by
+//     being the system of record.
 //
 // The destination is a content-addressed store in the private archive-backup
 // bucket: `objects/<sha[0:2]>/<sha>` holds each distinct file exactly once,

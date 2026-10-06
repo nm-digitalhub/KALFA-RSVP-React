@@ -27,9 +27,9 @@ function RequiredMark() {
 }
 
 // The create form carries the SAME fields as the event page's edit form
-// (owner ruling 2026-09-02: 1:1 — every owner-editable detail can be entered up
-// front, not discovered later on the event page). What it deliberately lacks
-// are the edit form's locks (dates after confirmation, type/celebrants/venue
+// (1:1 — every owner-editable detail can be entered up front, not discovered
+// later on the event page). What it deliberately lacks
+// are the edit form's locks (dates once the first message is sent, type/celebrants/venue
 // while a campaign is in process) — none apply to a brand-new draft — and the
 // prefilled values. Both forms validate against the one eventFormSchema and
 // share CelebrantFields, so they cannot drift apart.

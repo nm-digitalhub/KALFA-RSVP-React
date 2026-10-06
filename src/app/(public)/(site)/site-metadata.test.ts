@@ -34,8 +34,7 @@ function pageFiles(): { route: string; src: string }[] {
 
 // PRESENCE of a metadata field, however its value is produced. The event-type
 // pages set `description: content.description` from the catalogue rather than a
-// string literal, and that is a real description — an earlier version of this
-// file only matched quoted strings and wrongly flagged all four.
+// string literal, and that is a real description.
 function hasField(src: string, name: 'title' | 'description' | 'openGraph'): boolean {
   return new RegExp(`\\n\\s*${name}:`).test(src.split('export default')[0]);
 }

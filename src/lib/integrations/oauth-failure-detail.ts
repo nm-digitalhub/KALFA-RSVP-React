@@ -11,7 +11,7 @@
  * unauthenticated caller controls. Logging either whole would put provider
  * responses — and attacker-supplied text — into our logs.
  *
- * So this reader extracts exactly two things, both of which are FIXED
+ * So this reader extracts exactly two identifiers, both of which are FIXED
  * VOCABULARIES rather than content:
  *
  *   oauthError    the RFC 6749 §5.2 error code — `invalid_grant`,
@@ -27,7 +27,8 @@
  *                 account, token or tenant data.
  *
  * Everything else is dropped: the message, the description, the correlation id,
- * the timestamp, the response body, the headers.
+ * the timestamp, the response body, the headers. Only the numeric HTTP `status`
+ * of the level the identifiers came from rides along, and it is a number.
  */
 
 /** RFC 6749 §5.2 error codes are lowercase ASCII with underscores, and short. */
@@ -58,7 +59,8 @@ export const NO_OAUTH_FAILURE_DETAIL: OAuthFailureDetail = {
 };
 
 /**
- * Walk the `cause` chain and report only the two safe identifiers.
+ * Walk the `cause` chain and report only the two safe identifiers, plus the
+ * status of the level they came from.
  *
  * ⚠️ STRUCTURAL, NOT `instanceof`. The OAuth library may be bundled more than
  * once, and an `instanceof` check against our copy of the class would silently

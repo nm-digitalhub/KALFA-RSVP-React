@@ -80,8 +80,8 @@ describe('getAppSettings / updateAppSettings — inquiry_followup_enabled', () =
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
-    // The provider fields this used to pass now belong to their own writers
-    // (Task 0.2) — passing them here would not compile, which is the point.
+    // The provider fields belong to their own writers — passing them here would
+    // not compile, which is the point.
     // Every toggle true, so the assertion below proves each one is carried rather
     // than matching a shared default. The numeric field keeps a number (and a
     // DISTINCT one, 777, so the assertion cannot pass on the fixture default).
@@ -160,7 +160,7 @@ describe('getInfraConfigStatus', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Provider credentials split out of the one big settings form (Task 0.2)
+// Provider credentials split out of the one big settings form
 // ---------------------------------------------------------------------------
 //
 // The risk this suite exists to pin is not "does the new function work" — it is
@@ -217,8 +217,8 @@ describe('updateAppSettings no longer owns provider credentials', () => {
       'inquiry_followup_enabled',
       'console_softphone_enabled',
       'console_dtmf_handoff_enabled',
-      // The hold-sizing cap had no admin writer at all until it was added here;
-      // it is in this list so it cannot be dropped back out silently.
+      // The hold-sizing cap is in this list so it cannot be dropped back out
+      // silently.
       'reasonable_coverage_contacts',
     ]) {
       expect(patch).toHaveProperty(column);

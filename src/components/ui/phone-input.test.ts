@@ -76,9 +76,8 @@ describe('PhoneInput country derivation', () => {
   };
 
   it('names the country as soon as the calling code is typed', () => {
-    // The complaint this fixes: typing "+33" showed nothing until all ten
-    // digits were in. A "+" is the owner stating the country, so the field
-    // acknowledges it immediately.
+    // A "+" is the owner stating the country, so the field acknowledges it
+    // as soon as the calling code is typed, not after all the digits.
     expect(countryOf('+33')).toBe('FR');
     expect(countryOf('+972')).toBe('IL');
     expect(countryOf('+49')).toBe('DE');
@@ -119,7 +118,7 @@ describe('PhoneInput country derivation', () => {
   it('never claims Israel for input the parser only defaulted there', () => {
     // parsePhoneNumberFromString applies the 'IL' default region eagerly, so
     // `.country` alone is 'IL' for all of these. Gating on isValid() is what
-    // stops the flag from contradicting the server: the third case is the
+    // stops the flag from contradicting the server: the last case is the
     // French number typed without its "+", which submit rejects with a message
     // telling the owner to add a country code — a 🇮🇱 flag beside it would be
     // the single most misleading thing this field could show.
@@ -130,8 +129,8 @@ describe('PhoneInput country derivation', () => {
   });
 
   it('agrees with the server gate on every value the guest form accepts', () => {
-    // A flag means "this number is valid"; the server decides the same thing
-    // with the same parser. Any value that shows a flag must therefore pass
+    // For a complete number the flag and the server agree: both decide with
+    // the same parser. Every value below shows a flag, so each must also pass
     // isAcceptablePhoneInput, or the field would promise a save that fails.
     for (const v of [
       '0501234567',
@@ -199,8 +198,9 @@ describe('PhoneInput country derivation', () => {
 
     expect(nationalOf('0501234567')).toBe('501234567');
     expect(nationalOf('+33 7 56 98 23 70')).toBe('756982370');
-    // Half-typed input has no parse, so the fallback strips a country code and
-    // any separators rather than losing what was entered.
+    // Half-typed input is not a valid number, but its digits are still kept —
+    // from the partial parse, or by stripping a country code and any
+    // separators — rather than losing what was entered.
     expect(nationalOf('+33 7 56 98')).toBe('75698');
     expect(nationalOf('')).toBe('');
   });
@@ -238,8 +238,9 @@ describe('PhoneInput country derivation', () => {
   });
 
   it('resolves every country it reports to a Hebrew name', () => {
-    // The component labels the flag with Intl.DisplayNames(['he']); a code it
-    // cannot name would render an alt of bare "FR" to a screen reader.
+    // The component names the country with Intl.DisplayNames(['he']) (button
+    // label, picker list, hint line); a code it cannot name would read as a
+    // bare "FR" to a screen reader.
     const he = new Intl.DisplayNames(['he'], { type: 'region' });
     const unnamed = getCountries().filter((code) => {
       const name = he.of(code);

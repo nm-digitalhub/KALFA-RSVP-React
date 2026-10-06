@@ -319,17 +319,16 @@ describe('at-least-once delivery', () => {
     const d = deps();
     // A row claimed moments ago — a live attempt, mid-node.
     //
-    // ⚠️ THIS USED TO EXPECT 'failed', on the strength of a comment saying
-    // `singletonKey: runId` made it unreachable for a retry of the same run.
-    // That was wrong: `singletonKey` enforces nothing on a `standard` queue
-    // (pg-boss 12.30.0 — every unique index over `singleton_key` is
-    // policy-conditioned, and this queue has no policy), and a job that outlives
-    // `expireInSeconds` is re-queued while its handler is still running. So two
-    // deliveries for one run is ordinary, and ending the run for it ended
-    // automations that were working.
+    // ⚠️ THE OUTCOME IS `contended`, NOT 'failed'. `singletonKey: runId` does not
+    // make this unreachable for a retry of the same run: it enforces nothing on a
+    // `standard` queue (pg-boss 12.30.0 — every unique index over `singleton_key`
+    // is policy-conditioned, and this queue has no policy), and a job that
+    // outlives `expireInSeconds` is re-queued while its handler is still running.
+    // So two deliveries for one run is ordinary, and ending the run for it would
+    // end automations that were working.
     //
-    // It is now `contended`: the same refusal to touch the node, reported as the
-    // scheduling fact it is. `handleWorkflowRun` throws on it so pg-boss retries.
+    // The node is refused all the same, reported as the scheduling fact it is.
+    // `handleWorkflowRun` throws on it so pg-boss retries.
     d._ledger.rows.set('run-1:t', { status: 'running', startedAt: Date.now() });
 
     const outcome = await run(slice(), d);
@@ -344,8 +343,8 @@ describe('at-least-once delivery', () => {
   it('recovers a run whose worker died holding a node', async () => {
     // WITHOUT the lease this is the shape that makes a crash permanent: the
     // retry meets the dead attempt's own `running` row on the very first node
-    // and fails, every time, until the retry limit is gone. The run would be
-    // safe and useless.
+    // and is turned away, every time, until the retry limit is gone. The run
+    // would be safe and useless.
     const d = deps();
     d._ledger.rows.set('run-1:t', {
       status: 'running',
@@ -412,18 +411,13 @@ describe('a graph that fails the contract never executes', () => {
   });
 
   it('fails the step, not the conversion, on an unresolvable reference', async () => {
-    // This used to assert the opposite: that the graph was refused before a
-    // single node ran. That was the right contract while `{{…}}` could not be
-    // resolved at all — passing it through would have sent the raw characters
-    // to a guest.
-    //
-    // With the resolver vendored the check MOVED rather than disappeared, and
-    // it had to: `{{trigger.guest.name}}` is unresolvable, but
+    // The check lives in the step, not in the conversion, and it has to:
+    // `{{trigger.guest.name}}` is unresolvable, but
     // `{{trigger.message_text}}` is perfectly valid and equally unresolvable at
     // save time, because no message has arrived while the owner is drawing.
     // Only a live context can tell the two apart.
     //
-    // So the run now STARTS, and the step raises
+    // So the run STARTS, and the step raises
     // `PermanentNodeExecutionError('unresolved_template_reference')` — which is
     // permanent on purpose: a typo does not fix itself on the second attempt.
     const d = deps();
@@ -445,9 +439,9 @@ describe('a graph that fails the contract never executes', () => {
 });
 
 describe('the execution log names steps the way the owner does', () => {
-  // The log used to render every row — and the dead-end line, which is the one
-  // that tells an owner what to FIX — with the node's uuid. `label` was already
-  // on BaseNode, lifted out of the properties by the adapter; nothing read it.
+  // Without labels the log would render every row — and the dead-end line, which
+  // is the one that tells an owner what to FIX — with the node's uuid. `label` is
+  // on BaseNode, lifted out of the properties by the adapter.
   it('puts the label on every node event, and on a dead end', async () => {
     const log = collectingLog();
     const d = deps();
@@ -562,10 +556,10 @@ describe('the execution log names steps the way the owner does', () => {
 });
 
 describe('a template failure leaves a usable trace', () => {
-  // A trigger AND the failing node. The first version of this omitted the
-  // trigger, so the adapter rejected the graph with `no_start_node` before
-  // `runGraph` ever ran — the run "failed" and both assertions passed without
-  // the code under test being reached at all.
+  // A trigger AND the failing node. Without the trigger the adapter rejects the
+  // graph with `no_start_node` before `runGraph` ever runs — the run would
+  // "fail" and both assertions would pass without the code under test being
+  // reached at all.
   const graph = {
     name: 'בדיקה',
     layoutDirection: 'DOWN',

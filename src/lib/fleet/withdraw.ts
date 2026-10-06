@@ -5,10 +5,6 @@
 // requests, applied here to the narrower withdraw case: role only. Status
 // (pending -> expired) is still enforced by cmdWithdraw's own atomic CAS
 // UPDATE, not duplicated here.
-//
-// Fixed 2026-08-12: cmdWithdraw used to accept any --id with no ownership
-// check at all — any role could retire any OTHER role's still-pending
-// request just by knowing its id.
 
 export type WithdrawRequestRow = { role: string } | null | undefined;
 

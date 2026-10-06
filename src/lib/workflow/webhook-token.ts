@@ -1,10 +1,10 @@
 // The webhook trigger's credential, and the one place that decides its shape.
 //
-// ⚠️ THE DIAGRAM STORES A HASH, NEVER THE TOKEN. It used to store the value, and
-// the field's own label already called it a password — so a workflow's stored
-// JSON was a live credential, and the editor's Export menu put it in a copyable
-// box. Scrubbing that on the way out works, but it is a rule someone has to
-// remember; a hash is safe because there is nothing to remember.
+// ⚠️ THE DIAGRAM STORES A HASH, NEVER THE TOKEN. Storing the value would make a
+// workflow's stored JSON a live credential, and the editor's Export menu would
+// put it in a copyable box. Scrubbing that on the way out works, but it is a
+// rule someone has to remember; a hash is safe because there is nothing to
+// remember.
 //
 // This is the model n8n reaches by a different route: there, a node references a
 // credential by id and the value lives in its own encrypted table, so a workflow
@@ -50,13 +50,12 @@ function randomBase64Url(byteLength: number): string {
  * A fresh PUBLIC endpoint id — the part of the address that may be shown,
  * copied, and kept forever.
  *
- * ⚠️ THIS IS THE HALF THAT MAKES THE ADDRESS RECOVERABLE. The old design put the
- * secret in the path, so the address WAS the credential and could never be shown
- * twice; the owner's report ("אין לי אפשרות לדעת מה כתובת ה-webhook?") is the
- * direct consequence. Splitting the two means the address is stable and public
- * while the secret rotates independently — so rotating no longer breaks the
- * caller, and the secret stops being written into every access log that records
- * a URL. See plans/webhook-address-vs-secret.md.
+ * ⚠️ THIS IS THE HALF THAT MAKES THE ADDRESS RECOVERABLE. With the secret in the
+ * path (`address` mode) the address IS the credential and can never be shown
+ * twice. Splitting the two means the address is stable and public while the
+ * secret rotates independently — so rotating does not break the caller, and the
+ * secret is not written into every access log that records a URL. See
+ * plans/webhook-address-vs-secret.md.
  */
 export function generateWebhookEndpointId(): string {
   return randomBase64Url(ENDPOINT_BYTES);
@@ -94,10 +93,9 @@ export async function hashWebhookToken(token: string): Promise<string> {
  *
  *   `header` mode passes `endpointId`, a public 16-byte id. The string is safe
  *     to display, copy and keep, and the credential rides in
- *     `x-kalfa-webhook-secret`. This was the whole point of the 2026-09-22
- *     split: before it the token WAS the path, which made the URL unshowable
- *     and put a live credential into every access log, proxy record and Referer
- *     that stores a path.
+ *     `x-kalfa-webhook-secret`. That is the whole point of the split: a token in
+ *     the path makes the URL unshowable and puts a live credential into every
+ *     access log, proxy record and Referer that stores a path.
  *
  *   `address` mode passes the 32-byte TOKEN, because there the path is the
  *     credential — for callers like SUMIT that can be given a URL and nothing

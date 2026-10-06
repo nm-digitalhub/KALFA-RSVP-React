@@ -6,7 +6,7 @@ import type { OutboundWebhookPort } from '@/lib/workflow/engine/ports';
 
 import { STEP_HANDLERS, type StepContext } from './index';
 
-// `action.webhook` — the one node whose effect leaves KALFA entirely.
+// `action.webhook` — an HTTP call to a system that is not ours.
 //
 // The handler is thin by design: every security decision lives behind the port.
 // What is asserted here is the contract between the two — what gets sent, what

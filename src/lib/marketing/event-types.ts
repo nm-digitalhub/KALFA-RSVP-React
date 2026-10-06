@@ -38,7 +38,7 @@ export type EventTypeContent = {
   readonly title: string;
   /** <meta name="description"> — one sentence, ~150 chars. */
   readonly description: string;
-  /** Short label used in the home page's audience grid and the footer. */
+  /** Short label used in the footer. */
   readonly navLabel: string;
   readonly h1: string;
   readonly lede: string;

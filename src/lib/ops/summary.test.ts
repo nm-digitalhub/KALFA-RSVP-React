@@ -184,7 +184,7 @@ function jobRow(overrides: Partial<JobHealthRow> = {}): JobHealthRow {
   };
 }
 
-const TEN_DAYS_MIN = 10 * 24 * 60; // what QUEUE_EXPECTED_MAX_MINUTES gives both weeklies
+const TEN_DAYS_MIN = 10 * 24 * 60; // what QUEUE_EXPECTED_MAX_MINUTES gives the weekly queues
 const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
 const DAY = 86_400_000;
 

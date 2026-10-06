@@ -18,9 +18,10 @@ export const webhookTriggerUiSchema: UISchema = {
     ...identityControls(webhookTriggerScope('properties.label'), webhookTriggerScope('properties.description')),
     {
       // ⚠️ ABOVE THE ADDRESS CONTROL, because it decides what that control is
-      // for. Changing it CLEARS whatever was generated — see the control — so an
-      // owner who flips it after generating has to press the button again, and
-      // arming refuses until they do.
+      // for. Changing it leaves whatever was generated useless — the control
+      // mints a different credential per mode — so an owner who flips it after
+      // generating has to press the button again, and arming refuses until they
+      // do.
       type: 'Select',
       scope: webhookTriggerScope('properties.auth'),
       label: 'איך הקורא מזדהה',

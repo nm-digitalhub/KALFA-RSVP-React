@@ -4,14 +4,15 @@ import { createClient } from '@/lib/supabase/server';
 import { isConfiguredServiceRoleKey } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 
-// Admin: the singleton app/system settings (operational toggle + admin-managed
-// SUMIT clearing config). Authorized by requireAdmin() + the
-// app_settings_admin_all RLS policy via the request-scoped session client.
+// Admin: the singleton app/system settings (operational toggles + admin-managed
+// provider config). Authorized by requirePlatformPermission('manage_settings') +
+// the app_settings_admin_all RLS policy via the request-scoped session client.
 //
-// SECURITY NOTE: getAppSettings() returns the SUMIT keys (including the secret)
-// so the admin form can show them masked with a reveal toggle — the common
+// SECURITY NOTE: the provider readers below (getSumitCredentials,
+// getExtraSmsConfig, getEmailTransportConfig) return the real secrets so the
+// admin form can show them masked with a reveal toggle — the common
 // gateway-plugin pattern. They are sent ONLY to this admin-only page over HTTPS
-// (requireAdmin), masked by default in the UI, and never logged.
+// (requirePlatformPermission), masked by default in the UI, and never logged.
 
 export type AppSettings = {
   payments_enabled: boolean;
@@ -20,8 +21,6 @@ export type AppSettings = {
   agreement_archive_enabled: boolean; // nightly SharePoint archive of signed customer agreements
   signup_reminder_enabled: boolean; // daily one-shot "confirm your email" reminder to unconfirmed signups
   unconfirmed_cleanup_enabled: boolean; // daily deletion of signups still unconfirmed after 30 days
-  // Below: columns the runtime already read but nothing could WRITE — they had
-  // no admin control anywhere, so the only way to flip one was direct SQL.
   campaign_holds_enabled: boolean;
   billing_exposure_gate: boolean;
   monitor_enabled: boolean;
@@ -38,7 +37,8 @@ export type AppSettings = {
    * The only non-boolean setting this form owns. Caps how many contacts count
    * toward the J5 hold: covered = min(full_unique_contacts, this), so it sets
    * the hold SIZE without touching what is ultimately charged (the close-charge
-   * is capped independently at the campaign's snapshot ceiling).
+   * is capped independently, by the signed ceiling, and only under a
+   * frozen-figure agreement — v4 and earlier).
    *
    * Read LIVE at hold time by getHoldSizingKnobs (data/campaigns.ts) rather than
    * snapshotted onto the campaign — so an edit here resizes the hold of every
@@ -124,8 +124,8 @@ export async function updateAppSettings(
 
   const supabase = await createClient();
 
-  // The form is prefilled with the current values (masked), so every save
-  // submits all fields. Empty → null (intentional unset).
+  // The form is prefilled with the current values, so every save submits all
+  // fields.
   const { error } = await supabase
     .from('app_settings')
     .update({
@@ -282,7 +282,7 @@ export async function getInfraConfigStatus(): Promise<InfraConfigItem[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Provider credentials — one reader/writer pair per provider (Task 0.2)
+// Provider credentials — one reader/writer pair per provider
 // ---------------------------------------------------------------------------
 //
 // These left appSettingsSchema and updateAppSettings so each provider gets its own
@@ -294,7 +294,7 @@ export async function getInfraConfigStatus(): Promise<InfraConfigItem[]> {
 // never the switch. Conflating them is what made the integrations panel report ExtrA
 // as "not configured" whenever SMS was merely turned off.
 //
-// The masked-field convention is unchanged (owner ruling 2026-08-24): the reader
+// The masked-field convention (owner ruling 2026-08-24): the reader
 // returns the real secret because the form renders it masked with a reveal toggle,
 // and '' on write is an intentional unset, not an empty string.
 
@@ -446,8 +446,8 @@ export async function updateEmailTransportConfig(input: {
     .update({
       email_enabled: input.email_enabled,
       smtp_host: input.smtp_host || null,
-      // parseInt, carried over from updateAppSettings: the column is an integer and
-      // the form sends text. '' must become null, never NaN.
+      // parseInt: the column is an integer and the form sends text. '' must become
+      // null, never NaN.
       smtp_port: input.smtp_port ? parseInt(input.smtp_port, 10) : null,
       smtp_secure: input.smtp_secure,
       smtp_user: input.smtp_user || null,

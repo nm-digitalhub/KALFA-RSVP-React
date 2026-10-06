@@ -15,7 +15,7 @@ import {
 import { checkInboundBalanceReserve } from '@/lib/data/voximplant-balance-cache';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 
-// POST /api/widget/call-intent   body: (none)   →   { ok, token?, callId? }
+// POST /api/widget/call-intent   body: (none)   →   { ok, token?, call_id? }
 //
 // PUBLIC — called by the browser widget BEFORE it attempts Client.call(),
 // the moment it has real cost potential: a signed-in shared identity placing
@@ -26,8 +26,8 @@ import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 // real per-visitor signal (the IP) available BEFORE any Voximplant session
 // exists at all, and mints a single-use token
 // (mintDialToken/verifyDialToken — REUSED unchanged from the manual-dial
-// flow, not reinvented) that the future widget-authorize route will verify
-// scenario-side as the SECOND, authoritative gate — same "browser proposes,
+// flow, not reinvented) that the widget-authorize route verifies
+// scenario-side (no scenario calls it — superseded by call-me-now) as the SECOND, authoritative gate — same "browser proposes,
 // server disposes, and re-checks live state a second time" shape as
 // dial-intent -> authorize.
 //

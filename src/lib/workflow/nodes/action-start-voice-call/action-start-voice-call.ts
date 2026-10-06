@@ -1,9 +1,9 @@
 'use client';
 
 // `action.start_voice_call` — its palette entry. Editor side;
-// `catalogue/schemas.ts` places it in `PALETTE_ITEMS` at the index the inline
-// entry held, and `buildPaletteItems` swaps in `voiceCallSchemaFor` with the
-// installation's live purposes and dial lists.
+// `catalogue/schemas.ts` places it in `PALETTE_ITEMS`, and `buildPaletteItems`
+// swaps in `voiceCallSchemaFor` with the installation's live purposes and dial
+// lists.
 //
 // The output fields come from the definition, so the variable picker reads one
 // declaration of what this node returns.

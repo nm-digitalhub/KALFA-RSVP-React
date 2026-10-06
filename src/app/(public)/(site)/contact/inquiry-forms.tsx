@@ -149,11 +149,10 @@ export function ContactForm({
 }
 
 /**
- * When to call back.
- *
- * The ONE field on this form a machine acts on. Everything else is read by a
- * person; this becomes the instant the scheduler starts searching from, which
- * is why it is a closed set of choices rather than another line of prose.
+ * The call-back form. Its time preference (CallbackTimePreference) is the
+ * field the scheduler acts on: it becomes the instant the scheduler starts
+ * searching from, which is why it is a closed set of choices rather than
+ * another line of prose.
  *
  * It exists because prose does not reach the scheduler: measured 28.07, a
  * caller wrote that they were reachable 08:00–13:00 and not today, and the

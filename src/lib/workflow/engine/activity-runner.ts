@@ -65,9 +65,9 @@ export type ActivityRunnerArgs = {
    * pg-boss hands every handler an `AbortSignal` on `job.signal` and aborts it
    * when the batch ends — including when the handler outlives `expireInSeconds`
    * and the job has been re-queued under it, and when the process is shutting
-   * down and `failWip()` has already failed the job (manager.js:412, 538, and
-   * `resolveWithinSeconds` in tools.js). We never read it, so a handler that
-   * lost its job carried on walking the graph, executing nodes alongside the
+   * down and `failWip()` has already failed the job (manager.js, and
+   * `resolveWithinSeconds` in tools.js). Without reading it, a handler that
+   * lost its job would carry on walking the graph, executing nodes alongside the
    * retry that had been given the same run.
    *
    * Checked BETWEEN nodes rather than inside one: aborting cannot stop work
@@ -135,12 +135,12 @@ type RunnableNode = {
  * throwing, so the outbound port can substitute it at the socket — see
  * secrets.ts.
  *
- * SCOPED BY NODE, NOT BY FIELD, and the first version got that wrong. It allowed
- * secrets only under a field named `headers`, which refused a Slack incoming
- * webhook (a URL that is entirely a secret) and every API that wants its key in
- * the body or a query string. The field name was never the security boundary —
- * the node is: `action.webhook` is the only step whose port can substitute, so
- * it is the only step where the reference means anything.
+ * SCOPED BY NODE, NOT BY FIELD. Allowing secrets only under a field named
+ * `headers` would refuse a Slack incoming webhook (a URL that is entirely a
+ * secret) and every API that wants its key in the body or a query string. The
+ * field name is not the security boundary — the node is: `action.webhook` is
+ * the only step whose port can substitute, so it is the only step where the
+ * reference means anything.
  *
  * It is still NOT global. A deferral everywhere would let `{{secrets.API_KEY}}`
  * pass through a WhatsApp body and be delivered to a guest as literal text —
@@ -184,9 +184,8 @@ export function createActivityRunner<TNode extends RunnableNode>(
     args;
 
   return {
-    // `context` was ignored until templates landed — the handlers took only
-    // their own config and the trigger. It carries nodeOutputs, variables and
-    // global, which is everything a reference can name.
+    // `context` carries the trigger payload, nodeOutputs, variables and global,
+    // which is everything a reference can name.
     async executeNode(node, context): Promise<NodeExecutionResult> {
       // Rule 5 again, at the last possible moment. The adapter already rejected
       // unknown types before this graph became a run — this is the assertion
@@ -319,8 +318,9 @@ export function createActivityRunner<TNode extends RunnableNode>(
             workflowId,
             nodeId: node.id,
             trigger,
-            // Only `logic.wait` reads it. See StepContext — a wait cannot tell its
-            // own resumption from a first arrival, because the whole graph replays.
+            // Only the nodes that park (`logic.wait`, `action.start_voice_call`)
+            // read it. See StepContext — a wait cannot tell its own resumption
+            // from a first arrival, because the whole graph replays.
             ...(claim.resumedFromWait ? { resumedFromWait: true } : {}),
             deps: { guests, alerts, webhook, integrations, accounting, ai },
           }),

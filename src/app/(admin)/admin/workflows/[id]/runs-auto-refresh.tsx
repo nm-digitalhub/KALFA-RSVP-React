@@ -59,7 +59,7 @@ import { useRouter } from 'next/navigation';
 //
 // The vendor is no help either, and that was checked rather than assumed: the
 // SDK ships NO execution surface at all. `executionStore`, `execution_snapshot`,
-// `EventSource`, `node_started`, `run_status` — zero occurrences in the 606 KB
+// `EventSource`, `node_started`, `run_status` — zero occurrences in the shipped
 // bundle, and the only status-shaped exports are `DidSaveStatus` (saving) and
 // `statusOptions` (a node's own lifecycle). Their own docs say it outright:
 // "Run history and live run lists are entirely the host application's

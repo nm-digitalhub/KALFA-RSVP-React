@@ -25,8 +25,7 @@ export function TimeSelect24({
   labelPrefix,
 }: {
   id: string;
-  // undefined (edit form after publish) keeps the field out of the POST,
-  // exactly like the old input's conditional `name`.
+  // undefined (edit form after publish) keeps the field out of the POST.
   name?: string;
   // 'HH:mm' or '' (no time set).
   defaultValue?: string;

@@ -14,7 +14,8 @@ import { rateLimit } from '@/lib/security/rate-limit';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 // The owner WhatsApp agent's side of the shared WhatsApp webhook
-// (plans/owner-whatsapp-agent-plan.md §2.2–§2.3, §3.1, §3.7 — stage 4).
+// (plans/owner-whatsapp-agent-plan.md §2.2–§2.3, §3.1, §3.7; "plan §4.x" below is
+// plans/owner-agent-chat-sdk-capabilities-plan.md).
 //
 // THE INVARIANT this module exists to keep: guest traffic does not change. A
 // message is diverted here only when BOTH hold —
@@ -26,9 +27,11 @@ import { createAdminClient } from '@/lib/supabase/admin';
 //      and still bound to the row's current phone; see §4 below).
 // Every status, template-health event, other field, message on another number
 // and message from anyone else stays on today's path, untouched. The route
-// (src/app/api/webhooks/whatsapp/route.ts) calls in at three points:
+// (src/app/api/webhooks/whatsapp/route.ts) calls in at these points:
 //   getOwnerAgentRouting()      — beside the two existing app_settings reads;
 //   planOwnerAgentDiversion()   — pure: which messages go to the agent;
+//   withoutDivertedRows()       — the webhook_inbox rows minus those messages;
+//   handleOwnerAgentRevocations() — clears the binding of a rotated BSUID (§4 below);
 //   handleOwnerAgentMessages()  — the gate, the intake row, the enqueue, the
 //                                 audit; only after the guests are persisted.
 //
@@ -44,12 +47,12 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // this module in a log, an alert or an audit row. Alerts and audit rows carry
 // ids and codes only; `error.code` is used, never `error.message` (a PostgREST
 // check violation quotes the failing row, which here holds the question).
-// logActivity is not used: it needs a user session (activity.ts:34), and the
+// logActivity is not used: it needs a user session (activity.ts, requireUser), and the
 // dependency rules keep this directory away from the session DAL. The audit
 // trail for this surface is owner_agent_audit.
 //
-// NO CONSUMER YET. The job enqueued here is read by stage 6; until then it waits
-// in QUEUES.ownerAgentReply. No reply is sent to anyone from this module.
+// The job enqueued here is read by the reply consumer (consumer/main.ts, on
+// QUEUES.ownerAgentReply). No reply is sent to anyone from this module.
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -156,7 +159,7 @@ export const NO_DIVERSION: OwnerAgentDiversion = Object.freeze({
   revocations: Object.freeze([]) as readonly OwnerAgentBsuidRevocation[],
 });
 
-// Per staff member, per process — a first line only (rate-limit.ts:1-8). The
+// Per allow-list row, per process — a first line only (rate-limit.ts:1-8). The
 // daily cap below counts real rows and is the durable bound.
 export const OWNER_AGENT_RATE_LIMIT = { limit: 10, windowMs: 60_000 } as const;
 

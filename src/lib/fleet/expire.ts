@@ -1,8 +1,8 @@
 // The fleet-request expiry sweep: pending requests past expires_at become
 // status='expired' (the fleet_requests_guard's legal pending->expired edge,
 // same one cmdWithdraw uses). ONE implementation shared by both callers:
-//   - worker/main.ts runs it as a pg-boss cron every 10 minutes — the request
-//     detail page's answer RPC (fleet_answer_request) deliberately refuses an
+//   - worker/main.ts runs it as a pg-boss cron every 10 minutes — the
+//     /admin/fleet answer RPC (fleet_answer_request) deliberately refuses an
 //     expired request, so without a frequent sweep an unanswered request past
 //     its window shows "pending" in /admin/fleet with no way to close it from
 //     the UI (exactly what happened to 84088c5f on 2026-08-23, when the daily

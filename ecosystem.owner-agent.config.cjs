@@ -13,9 +13,10 @@
 // defines exactly kalfa-owner-agent, and ecosystem.config.cjs does not.
 //
 // What it runs: works QUEUES.ownerAgentReply one job at a time, answering
-// through `claude -p` (src/lib/owner-agent/runner.ts), plus its intake sweep
-// and daily retention. Its own process, not kalfa-worker: a model run of up to
-// two minutes must not sit in the process that drives billing. It does not
+// through `claude -p` (src/lib/owner-agent/runner.ts), plus
+// QUEUES.ownerAgentReport (proactive reports), its intake sweep and daily
+// retention. Its own process, not kalfa-worker: a model run of up to three
+// minutes must not sit in the process that drives billing. It does not
 // use the fleet's global flock either.
 //
 // Modelled on kalfa-ops-agent (node --env-file) and kalfa-worker
@@ -24,7 +25,7 @@
 // from .claude/fleet/.token.env) and never hands it this one.
 //
 // kill_timeout is the last link of a budget chain pinned by
-// src/lib/owner-agent/consumer/budgets.test.ts: one answer (≤255s) < job
+// src/lib/owner-agent/consumer/budgets.test.ts: one answer (≤295s) < job
 // expiry (300s) < the graceful stop (310s) < this (330s), so a restart lets an
 // answer in flight finish instead of paying for it twice. ⚠️ `pm2 restart`
 // keeps the kill_timeout it stored at the first start; a changed value needs

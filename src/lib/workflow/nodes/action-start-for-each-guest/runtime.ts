@@ -14,9 +14,9 @@ import { MAX_FANOUT_DEPTH, type ForEachGuestConfig } from './definition';
 // A single press starts hundreds of runs that each reach a real person. Three
 // separate ceilings apply, on purpose:
 //
-//   1. `maxGuests` — the owner's own, REQUIRED with no default. A node that
-//      shipped with a generous one would be a node whose blast radius nobody
-//      chose.
+//   1. `maxGuests` — the owner's own, REQUIRED, with only a small default. A
+//      node that shipped with a generous one would be a node whose blast radius
+//      nobody chose.
 //   2. FAN_OUT_HARD_CAP — in code, above the owner's. `maxGuests` lives in a
 //      jsonb row, and the row is exactly what a mistake would have edited.
 //   3. The port enforces both again, because a handler that trusted its own
@@ -56,10 +56,9 @@ export const startForEachGuest: StepHandler = async (config, ctx) => {
     );
   }
 
-  // ⚠️ NOT ITSELF. Documented as a rule from the day this node was written and
-  // never implemented until 2026-09-14: a workflow starting itself per guest has
-  // every child fan out again, and the dedupe key cannot stop it because the
-  // parent run id is new each generation.
+  // ⚠️ NOT ITSELF. A workflow starting itself per guest has every child fan out
+  // again, and the dedupe key cannot stop it because the parent run id is new
+  // each generation.
   //
   // Also checked at ARM time, where it is a static property of the diagram and
   // can be refused before anything runs. Kept here too because arming is not

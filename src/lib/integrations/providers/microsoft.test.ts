@@ -64,14 +64,14 @@ describe('what this provider declares to Microsoft', () => {
     //
     // `discovery()` decides how much work to do from the SPELLING of this URL:
     //
-    //   openid-client/build/index.js:263
+    //   openid-client/build/index.js:264
     //     const resolve = !server.href.includes('/.well-known/');
     //   :287
     //     if (resolve && new URL(as.issuer).href !== server.href) {
     //       handleEntraId(server, as, options) || ...
     //
     // `handleEntraId` is the library's OWN Microsoft support — it installs the
-    // substitution of the real tenant into the issuer template (`:493`). Microsoft
+    // substitution of the real tenant into the issuer template (`:494`). Microsoft
     // publishes `https://login.microsoftonline.com/{tenantid}/v2.0` as the issuer
     // of `/organizations/`, and the ID token carries the real tenant, so without
     // it the two can never match.

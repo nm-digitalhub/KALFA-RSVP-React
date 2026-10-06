@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // זחלן תיעוד כללי - מודד, מחליט, מאמת, ורק אז סורק.
 //
-// ההבדל מ-scripts/scraper-v1.mjs אינו בכמות הפיצ'רים אלא בסדר הפעולות. v1 קיבע
+// ההבדל מ-v1 המקורי (scripts/scraper-v1.mjs הוא כיום רק נקודת כניסה שמעבירה
+// לכאן) אינו בכמות הפיצ'רים אלא בסדר הפעולות. v1 קיבע
 // גבול סריקה (origin/**) וסלקטור חילוץ (article || main || .col-content) לפני
 // שראה עמוד אחד, ולכן כל אתר חדש הוסיף לו exception. כאן אין hardcode לאתר או
 // למחולל: שלב analysis מודד את ה-DOM ואת הקישורים, מחליט לפי ספים קבועים,
@@ -24,7 +25,8 @@
 //   node scripts/docs-scraper/scraper.mjs <start-url> <out.json> --glob 'https://host/path/**'
 //   node scripts/docs-scraper/scraper.mjs --only <out.json> <url> <url> ...
 //
-// קודי יציאה: 0 תקין, 1 הסתיים עם עמודים ריקים או כושלים, 2 ה-analysis נכשל.
+// קודי יציאה: 0 תקין, 1 הסתיים עם עמודים ריקים או כושלים, זחילה שנחתכה בתקרה
+// או שהזחלן נפל, 2 ה-analysis נכשל או שגיאת CLI.
 
 import { createHash } from 'node:crypto';
 import { basename, join } from 'node:path';

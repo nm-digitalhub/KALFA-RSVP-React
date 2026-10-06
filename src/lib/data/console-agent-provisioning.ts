@@ -34,9 +34,8 @@ function describeThrown(err: unknown): string {
 // gone, and the only recovery is to delete the user and start again. A terminal
 // command cannot promise that; this can.
 //
-// It also removes the state we already have and do not want: console_agents held
-// a vox_username with no user behind it — a value that reads as provisioned and
-// is not. Nothing produced that string; it was written out of band.
+// It also keeps console_agents from holding a vox_username with no user behind
+// it — a value that reads as provisioned and is not.
 
 // Voximplant's own rule, quoted from the method tree
 // (voximplant.com/api/v2/getDoc?fqdn=references.httpapi.users): "at least 8
@@ -98,7 +97,7 @@ export type ProvisionOutcome =
  * the caller (a display-name edit, no Voximplant call at all). This function
  * therefore never checks for an existing identity; it always mints one.
  *
- * ORDER IS THE WHOLE DESIGN, and it is now the OWNER'S OWN RULE, not just an
+ * ORDER IS THE WHOLE DESIGN, and it is the OWNER'S OWN RULE, not just an
  * internal convention: "לא הגיוני לבצע שינויים שקשורים לספק רק מהצד שלנו" — no
  * local grant of console access may exist unless Voximplant genuinely holds the
  * identity behind it.
@@ -115,10 +114,9 @@ export type ProvisionOutcome =
  *                       reverse.
  *
  * A failure at step 2, 3, or 4 leaves a Voximplant user Kalfa cannot yet use —
- * the same narrow, already-logged "delete it there and retry" state this
- * module has always surfaced for a failed store. What no longer happens is the
- * OLD failure mode: real console access granted locally while Voximplant was
- * never actually asked, or was asked and refused.
+ * a narrow, already-logged "delete it there and retry" state. Real console
+ * access is never granted locally while Voximplant was never actually asked,
+ * or was asked and refused.
  */
 export async function provisionConsoleAgentVoxUser(
   userId: string,
@@ -200,10 +198,9 @@ export async function provisionConsoleAgentVoxUser(
   // hashes the SHORT name (`user:voximplant.com:password`), so this is the form
   // the signing route needs. The full
   // `user_name@application_name.account_name.voximplant.com` that the SDK's
-  // loginWithOneTimeKey takes is COMPOSED at login time — it needs the
-  // application and account names, which are not stored yet. That is tracked in
-  // the plan; storing a half-derived FQDN here would repeat the mistake this
-  // whole change exists to fix.
+  // loginWithOneTimeKey takes is COMPOSED at login time (VOX_APP_DOMAIN in
+  // src/lib/voximplant/web-client.ts); storing a half-derived FQDN here would
+  // record a value Voximplant never confirmed.
   const { error: nameErr } = await admin
     .from('console_agents')
     .update({ vox_username: userName, vox_user_id: voxUserId ?? null })
@@ -222,7 +219,7 @@ export type RotateOutcome =
 
 /**
  * Rotate the platform password of an ALREADY-provisioned console agent and
- * store the fresh secret. Recovery for the state live login just exposed
+ * store the fresh secret. Recovery for the state live login exposed
  * (LoginInvalidPasswordError with a correct hash formula): the stored secret
  * and the platform password have drifted, and since Voximplant never reads a
  * password back, re-minting the pair is the only honest repair.
@@ -412,9 +409,6 @@ export async function setConsoleAgentVoxActive(
 
 // The application new users are created in. Configuration, not a constant:
 // which application is production is an ops fact, not something to hardcode.
-// (An earlier version of this comment justified that with "the account has more
-// than one application". Measured 2026-09-14 via GetApplications: there is
-// exactly one, 11107202. The reasoning holds; the claim did not.)
 async function readApplicationId(
   admin: ReturnType<typeof createAdminClient>,
 ): Promise<number | null> {

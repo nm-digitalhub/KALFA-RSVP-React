@@ -7,8 +7,7 @@ import { resolveMetaAppId } from '@/lib/whatsapp/meta-app-id';
 import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 
 // The Meta connection as Meta describes it, rather than as our own columns
-// describe it. Closes gap G7 (nothing ever asked whether the token was still
-// valid) and the readable half of G8.
+// describe it.
 //
 // WHY THIS IS NOT "configured: true" AGAIN. The panel already derives
 // `configured` from our app_settings row — phone-number-id present, token

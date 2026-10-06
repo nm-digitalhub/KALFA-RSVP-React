@@ -20,9 +20,9 @@ import { getInitials } from '@/lib/utils';
 // Header avatar + account menu for a signed-in visitor on the public landing
 // page. Mirrors the account menu in AppShell (src/components/app-shell.tsx) —
 // same initials derivation, same primitives, same logout mechanism — so the
-// two stay consistent. Base UI's menu portal ignores the DOM `dir` attribute,
-// so it needs its own DirectionProvider (the landing page has no ancestor
-// one, unlike the customer app shell's sidebar).
+// two stay consistent. Base UI's menu portal ignores the DOM `dir` attribute
+// and reads a DirectionProvider instead; the root layout already provides one,
+// so the local provider here is redundant but harmless.
 
 function LogoutMenuItem() {
   // The menu closes (and unmounts via an exit animation) on item click, which

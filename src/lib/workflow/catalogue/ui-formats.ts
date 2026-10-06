@@ -2,9 +2,10 @@
 // it.
 //
 // Its own module, and deliberately tiny, because the two ends live on opposite
-// sides of a boundary that must not be crossed the other way: `schemas.ts` is
-// catalogue data, the renderer is a React component, and neither should import
-// the other. A shared constant is the whole contract.
+// sides of a boundary that must not be crossed the other way: the node folders'
+// `uischema.ts` files (and `schemas.ts`) are catalogue data, the renderer is a
+// React component, and neither should import the other. A shared constant is the
+// whole contract.
 //
 // Matched with the SDK's `optionIs('format', …)` tester. See
 // header-rows-control.tsx.

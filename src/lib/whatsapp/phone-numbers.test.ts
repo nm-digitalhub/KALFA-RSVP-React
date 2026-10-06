@@ -123,11 +123,9 @@ describe('listWabaPhoneNumbers', () => {
   });
 
   // ── pagination ────────────────────────────────────────────────────────────
-  // Added 2026-09-13. Until then this read `body.data` from ONE limit=50 request
-  // and stopped. That was survivable while the list was short and became unsafe the
-  // moment the sync started concluding "absent ⇒ deleted at Meta": over a first
-  // page only, number 51 of 51 is indistinguishable from a deleted one. `complete`
-  // is what the sync gates that inference on.
+  // The sync concludes "absent ⇒ deleted at Meta", and over a first page only,
+  // number 51 of 51 is indistinguishable from a deleted one. `complete` is what the
+  // sync gates that inference on.
 
   const SECOND = { id: '1298694319994421', display_phone_number: '+972 37 219347' };
   // Built from the pinned constant, not spelled out: graph-version.test.ts scans

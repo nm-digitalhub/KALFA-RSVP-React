@@ -35,10 +35,10 @@ async function ringOrderOf(res: Response): Promise<string[]> {
 
 // The retry wave is the ONLY place a sleeping agent can be rung, and ringing
 // them is what makes Voximplant push their device (the platform pushes on
-// callUser; callUser only happens for names in a ring order). Before 14.8 this
-// route re-checked heartbeat freshness only, which meant a sleeper could never
-// be woken by the platform — no heartbeat ⇒ not in any ring ⇒ no callUser ⇒ no
-// push. These tests pin the loop-breaking behaviour and its ordering.
+// callUser; callUser only happens for names in a ring order). A heartbeat-only
+// check could never wake a sleeper — no heartbeat ⇒ not in any ring ⇒ no
+// callUser ⇒ no push. These tests pin the loop-breaking behaviour and its
+// ordering.
 describe('POST /api/voximplant/console/route-inbound-retry', () => {
   beforeEach(() => {
     vi.resetAllMocks();

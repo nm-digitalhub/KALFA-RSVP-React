@@ -1,5 +1,5 @@
 /**
- * Voximplant — READ-ONLY verification of the session-log download path (A4).
+ * Voximplant — READ-ONLY verification of the session-log download path.
  *
  * Given a call_session_history_id, this fetches the session's log_file_url via
  * GetCallHistory(with_other_resources) and runs the SAME SSRF-hardened

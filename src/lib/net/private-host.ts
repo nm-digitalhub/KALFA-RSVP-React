@@ -1,11 +1,10 @@
 // Is a hostname one that must never be reached from a server-side fetch?
 //
-// Extracted 2026-09-13 from `voximplant/recording-url.ts`, where it had lived
-// since the recording-URL validator was written against the OWASP SSRF
-// Prevention Cheat Sheet. It moved because a SECOND caller appeared — the
-// outgoing-webhook workflow node, which unlike that one actually FETCHES the URL
-// — and a copy would have meant two lists of private ranges drifting apart, with
-// the copy that matters more being the newer and less reviewed one.
+// Shared by `voximplant/recording-url.ts` (written against the OWASP SSRF
+// Prevention Cheat Sheet) and the outgoing-webhook workflow node
+// (`workflow/webhook-url.ts`), which unlike that one actually FETCHES the URL.
+// It is one list rather than a copy per caller, because two lists of private
+// ranges would drift apart.
 //
 // Pure, and imports nothing: it is read by the pg-boss worker.
 //

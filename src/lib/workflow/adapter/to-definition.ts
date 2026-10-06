@@ -83,7 +83,7 @@ export type ConversionError = {
   message: string;
   /** The offending node, where there is one — so the owner can find it on the canvas. */
   nodeId?: string;
-  /** The offending property, for the template guard. */
+  /** The offending property, where an error is about a single property. */
   field?: string;
 };
 
@@ -117,26 +117,15 @@ export type ConversionResult =
 // and the SDK stores it as plain text. `trigger.*`, `variables.*` and
 // `global.*` can land in any text field the same way.
 //
-// UNBLOCKED 2026-09-10. This module used to REFUSE any diagram containing such
-// a reference, and the refusal was correct while it stood: `resolve-template.ts`
-// was not vendored, so the characters themselves would have been sent — a guest
-// receiving a WhatsApp message reading `{{trigger.customer.name}}`.
+// This module does not inspect those references. Resolution happens ONCE, in
+// `activity-runner.ts`, over the whole config before the handler runs. A
+// reference the context cannot satisfy raises `PermanentNodeExecutionError` at
+// that point — loud, on the first attempt, with the offending token in the
+// message.
 //
-// The reason it was not vendored — "it needs target: ES2018" — was half true
-// and outlived its accuracy. `replaceAll` compiles fine here (`lib: esnext`,
-// and `redact.ts` from the same package already uses it); only the four NAMED
-// capture groups were rejected, and converting those to numbered positions is
-// mechanical. The vendored file now carries that one divergence, and upstream's
-// own 32 tests pass against it unchanged.
-//
-// Resolution happens ONCE, in `activity-runner.ts`, over the whole config
-// before the handler runs. A reference the context cannot satisfy raises
-// `PermanentNodeExecutionError` at that point — loud, on the first attempt,
-// with the offending token in the message.
-//
-// What is deliberately NOT re-added here: a save-time check that every
-// reference resolves. It cannot be done honestly — `{{trigger.message_text}}`
-// is valid and unresolvable at save time, because no message has arrived yet.
+// There is deliberately NO save-time check that every reference resolves. It
+// cannot be done honestly — `{{trigger.message_text}}` is valid and
+// unresolvable at save time, because no message has arrived yet.
 
 /**
  * The node's Active / Draft / Disabled switch.
@@ -273,7 +262,7 @@ export function toWorkflowDefinition(
       });
       continue;
     }
-    // A node dropped for an earlier error (unknown type, template reference)
+    // A node dropped for an earlier error (an unknown type)
     // leaves its edges pointing at nothing runnable. Those errors are already
     // reported; adding an edge error for the same cause would bury them.
     if (!inDegree.has(editorEdge.source) || !inDegree.has(editorEdge.target)) {

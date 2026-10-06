@@ -4,9 +4,9 @@ import { createClient as createServiceClient } from '@supabase/supabase-js';
 
 import type { Database } from './types';
 
-// The literal value currently seeded in .env / .env.example. Treated as
-// "not configured" so a placeholder deployment fails loudly instead of
-// silently attempting calls with an invalid key.
+// A known placeholder value. Treated as "not configured" so a placeholder
+// deployment fails loudly instead of silently attempting calls with an invalid
+// key.
 const PLACEHOLDER_SERVICE_ROLE_KEY = 'placeholder-service-role-key';
 
 // Shared by createAdminClient() and getInfraConfigStatus() so the "is this a

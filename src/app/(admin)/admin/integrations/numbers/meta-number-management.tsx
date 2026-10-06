@@ -23,9 +23,9 @@ import type { FormState } from '@/lib/validation/result';
 // per number per 72 hours, then Meta blocks the number — so a register/deregister
 // cycle burns the window twice as fast as it looks.
 //
-// Rendered only for the owner. That is the UI half; deregisterNumberAction calls
-// requirePlatformOwner itself, because a Server Action is reachable without ever
-// rendering this component.
+// Rendered only for the owner. That is the UI half; the DAL's deregisterNumber, which
+// deregisterNumberAction calls, runs requirePlatformOwner itself, because a Server
+// Action is reachable without ever rendering this component.
 
 export function MetaNumberManagement({
   numbers,

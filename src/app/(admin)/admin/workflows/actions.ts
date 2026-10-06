@@ -38,9 +38,10 @@ import {
   type DryRunResult,
 } from '@/lib/workflow/engine/dry-run';
 
-// Thin wrappers. Every one of these calls a data-layer function that performs
-// `requireAdmin()` itself — the action never becomes the authorization boundary,
-// and the id arriving from the browser is not trusted by anything here.
+// Thin wrappers. Most of these call a data-layer function that performs its own
+// `requirePlatformPermission(...)` check — the action never becomes the
+// authorization boundary, and the id arriving from the browser is not trusted by
+// anything here. The few that gate themselves do so inline.
 
 const idSchema = z.uuid();
 
@@ -124,18 +125,12 @@ const scenarioSchema = z.object({
 });
 
 /**
- * Run the saved workflow against nothing and return the trace.
- *
- * Nothing is revalidated: a test writes no row, changes no guest, and leaves no
- * run in the history. That is the point of it.
- */
-/**
  * Start a REAL run, because a person asked.
  *
- * The ONE action in this file that carries its own gate, and deliberately so.
- * Everywhere else the rule holds — the data layer gates, the action is a thin
- * wrapper — but `startManualRun` is domain logic in `src/lib/workflow/`, not a
- * DAL function, so nothing below it would check anything.
+ * Carries its own gate, and deliberately so. For most actions in this file the
+ * rule holds — the data layer gates, the action is a thin wrapper — but
+ * `startManualRun` is domain logic in `src/lib/workflow/`, not a DAL function,
+ * so nothing below it would check anything.
  *
  * Unlike `testWorkflowAction` this DOES have side effects: the run is executed
  * by the worker with the real ports, so a `send_whatsapp` node sends and a
@@ -155,8 +150,8 @@ export async function startManualRunAction(
   // half should be enough on its own: `view_customer_data` without
   // `manage_voice` must not become a way to place calls, and `manage_voice`
   // without `view_customer_data` must not become a way to enumerate guests.
-  // `requireAdmin()` — which this used to call — is neither; it is the coarse
-  // `has_role('admin')` flag that `support_agent` and `auditor` also carry.
+  // `requireAdmin()` is neither; it is the coarse `has_role('admin')` flag that
+  // `support_agent` and `auditor` also carry.
   await requirePlatformPermission('view_customer_data');
   await requirePlatformPermission('manage_voice');
 
@@ -169,11 +164,9 @@ export async function startManualRunAction(
   });
 
   // AUDITED. A workflow run started by a person can send a message and place a
-  // call, and until now it left no trace at all — while flipping a cookie-consent
-  // switch did (`admin.cookie_consent.master_toggled`). The contact id is
-  // recorded, never the phone or the name: the id is enough to answer "who was
-  // called" from the event's own records, and `logActivity` is not a place for
-  // guest PII.
+  // call. The contact id is recorded, never the phone or the name: the id is
+  // enough to answer "who was called" from the event's own records, and
+  // `logActivity` is not a place for guest PII.
   try {
     await logActivity({
       action: 'admin.workflow.manual_run',
@@ -206,6 +199,12 @@ export async function listManualRunContactsAction(
   return listContactsForManualRun(idSchema.parse(eventId));
 }
 
+/**
+ * Run the saved workflow against nothing and return the trace.
+ *
+ * Nothing is revalidated: a test writes no row, changes no guest, and leaves no
+ * run in the history. That is the point of it.
+ */
 export async function testWorkflowAction(
   workflowId: string,
   scenario: unknown,

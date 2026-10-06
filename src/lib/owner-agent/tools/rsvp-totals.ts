@@ -16,7 +16,7 @@ import {
 // Tool 6 (plan §5): guest ROWS by RSVP status, and PEOPLE (a row may stand
 // for a family) from public.owner_agent_rsvp_people_totals (supabase/migrations/
 // 20260924061630_owner_agent_read_aggregates.sql, applied) through the core.
-// No event names (decision 9.7: counts only). Offered under view_events
+// No event names (counts only). Offered under view_events
 // (registry.ts OWNER_AGENT_TOOLS).
 export const RSVP_TOTALS_ID = 'rsvp_totals';
 export const RSVP_TOTALS_PERMISSION = 'view_events' satisfies OwnerAgentPermission;

@@ -1,7 +1,7 @@
-// sendExtraTestSmsAction is the one action in the integrations tree whose gate is NOT
-// delegated: readSmsSettings and createExtraSmsSender both run on the service-role
-// client and check nothing, so the requirePlatformPermission call inside this file IS
-// the entire authorization. It also spends money and reaches a real handset.
+// sendExtraTestSmsAction is an action whose gate is NOT delegated: readSmsSettings
+// runs on the service-role client and createExtraSmsSender is a plain HTTP sender,
+// and neither checks anything, so the requirePlatformPermission call inside this
+// file IS the entire authorization. It also spends money and reaches a real handset.
 //
 // admin-data-layer-coverage.test.ts cannot cover that — it says so itself: it proves
 // only that an endpoint gating HERE does not gate coarsely, not that a delegating one

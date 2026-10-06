@@ -30,10 +30,9 @@ interface AddGuestsOnboardingProps {
   stage: CampaignStage | null;
   /**
    * The dedicated guest-import number, when one is wired. null = no number to
-   * advertise, and the WhatsApp option keeps its original copy and its link to
-   * the in-app import screen — which is exactly what it did before the split
-   * existed, so an unconfigured or momentarily unreadable number degrades
-   * instead of breaking the page.
+   * advertise, and the WhatsApp option keeps its generic copy and its link to
+   * the in-app import screen, so an unconfigured or momentarily unreadable
+   * number degrades instead of breaking the page.
    */
   importChannel: WhatsAppImportChannel | null;
 }
@@ -76,9 +75,7 @@ function Option({ href, icon, title, description, cta, primary, external }: Opti
           without tailwind-merge, so the primary-toned border below would sit
           next to the outline variant's `border-border` and the winner would fall
           out of CSS order. cn() merges them deterministically.
-          The purple outline itself is the reference design, not a workaround —
-          the missing-border bug it once compensated for is fixed at the source
-          in components/ui/button.tsx. */}
+          The purple outline itself is the reference design, not a workaround. */}
       <Link
         href={href}
         {...(external
@@ -130,8 +127,8 @@ export function AddGuestsOnboarding({
           external={importChannel !== null}
           /* The registry component defaults to fill=none + stroke, but the MDI
              path is a SOLID glyph — stroking it outlines the silhouette twice.
-             Fill it and drop the stroke; both are spread props, so the generated
-             file stays untouched. */
+             Fill it and drop the stroke; both are passed as props, so the
+             generated file stays untouched. */
           icon={<WhatsappIcon size={20} fill="currentColor" strokeWidth={0} />}
           title="ייבוא דרך WhatsApp"
           description={
@@ -169,7 +166,7 @@ export function AddGuestsOnboarding({
 
       {/* The question every owner has at this exact moment: "if I upload my
           contacts, does KALFA start messaging them?" — answered before it is
-          asked. True of every path above: each one ends in a review screen. */}
+          asked. */}
       <p className="flex items-center gap-2 rounded-lg bg-muted px-4 py-3 text-sm text-muted-foreground">
         <Info aria-hidden className="size-4 shrink-0 text-primary" />
         שום הודעה לא תישלח לפני שתאשרו את הרשימה.

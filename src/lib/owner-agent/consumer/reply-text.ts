@@ -202,7 +202,7 @@ export function buildFollowupMessage(
 // cut inside a surrogate pair.
 export const WHATSAPP_TEXT_LIMIT = 4096;
 // An answer longer than this many messages is cut: a runaway answer should
-// not become a wall of messages. Five since free read — a list of names can
+// not become a wall of messages. Five: a list of names can
 // be long, and the prompt caps a list at 30 items and offers the rest.
 export const MAX_REPLY_PARTS = 5;
 const ELLIPSIS = '…';

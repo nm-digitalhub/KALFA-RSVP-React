@@ -179,7 +179,7 @@ describe('sendCampaignWhatsApp', () => {
     expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
   });
 
-  // S2.4 — R9: defense-in-depth on top of the DB trigger (campaigns_require_
+  // R9: defense-in-depth on top of the DB trigger (campaigns_require_
   // active_event); campaign.status='active' structurally implies event.status
   // was 'active' at SOME point (R9's DB trigger), but R7 also guarantees the
   // event can't have moved to 'closed' while this campaign stayed 'active' — so
@@ -431,14 +431,14 @@ describe('sendCampaignWhatsApp', () => {
   });
 });
 
-// Auto-thankyou 131049 mitigation (plan §2.1/§2.2, hardened after
-// thankyou-review BUG #1): the CORE guard is an ATOMIC claim-before-send via
-// the claim_thankyou_recipient RPC (supabase/migrations/20260712205030_auto_
-// thankyou_schema.sql), backed by a partial UNIQUE index on
-// contact_interactions(campaign_id, contact_id) WHERE message_key='thankyou'.
+// Auto-thankyou 131049 mitigation (plan §2.1/§2.2): the CORE guard is an
+// ATOMIC claim-before-send via the claim_thankyou_recipient RPC
+// (supabase/migrations/20260712205030_auto_thankyou_schema.sql), backed by a
+// partial UNIQUE index on contact_interactions(campaign_id, contact_id) WHERE
+// message_key='thankyou'.
 // A read-then-filter check (read prior rows, then decide) has a check-then-
 // act race between the manual button and the sweep, or between two
-// overlapping sweep ticks — this replaced that with an atomic reserve. The
+// overlapping sweep ticks — hence the atomic reserve. The
 // SQL-level uniqueness itself is exercised at migration-apply time, not here;
 // these tests verify the APPLICATION respects the RPC's verdict correctly.
 // Await order for messageKey='thankyou': campaign, event (first read),
@@ -594,10 +594,9 @@ describe('sendCampaignWhatsApp — thankyou (auto-thankyou 131049 mitigation)', 
     );
   });
 
-  // Bug fix (thankyou-review, high — BUG #1): on an accepted send, the claim
-  // row's placeholder provider_id must be finalized to the REAL one, or
-  // Meta's delivery-status webhook (which matches by provider_id) can never
-  // find this row again.
+  // On an accepted send, the claim row's placeholder provider_id must be
+  // finalized to the REAL one, or Meta's delivery-status webhook (which matches
+  // by provider_id) can never find this row again.
   it('finalizes the claim row with the REAL provider_id on an accepted send', async () => {
     vi.mocked(getOutreachEnabled).mockResolvedValue(true);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
@@ -653,7 +652,7 @@ describe('sendCampaignWhatsApp — thankyou (auto-thankyou 131049 mitigation)', 
 });
 
 // MM Lite routing — the messageKey argument decides the send transport:
-// MARKETING_MESSAGE_KEYS (currently only 'thankyou') go through
+// MARKETING_MESSAGE_KEYS ('thankyou' and 'sales_signup_link') go through
 // sendWhatsAppMarketingTemplate (`/marketing_messages`); every other key keeps
 // using sendWhatsAppTemplate (`/messages`), unchanged.
 describe('sendOneWhatsApp routing', () => {
@@ -704,7 +703,7 @@ describe('sendOneWhatsApp routing', () => {
   });
 });
 
-// §5.6 — the shared sink write (engine executeStep + manual batch path). The
+// §5.6 — the shared sink write (engine step sends + manual batch path). The
 // DB-level dedup contract lives HERE, once: ONE atomic upsert whose
 // (campaign_id, touchpoint_index, reason) conflict key matches the sink's
 // UNIQUE constraint — never select-then-insert, since concurrent workers can

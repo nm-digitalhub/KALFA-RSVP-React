@@ -13,7 +13,9 @@
  *     (SharePoint REST — Graph has no API for these)
  *
  * Idempotent: every step checks before it creates, so re-running after a
- * partial failure is safe. Nothing is ever deleted or renamed by this script.
+ * partial failure is safe. Nothing is ever deleted or renamed by this script,
+ * except the Archive.aspx page it generates itself (deleted and recreated on
+ * re-runs, unless --text-only).
  *
  * Auth: app-only, the same certificate + app registration scripts/exo.cjs uses
  * (Graph application permissions include Sites.FullControl.All, verified
@@ -38,7 +40,7 @@ const REST = `https://${SP_HOST}${SITE_PATH}/_api`;
 
 const DRY_RUN = process.argv.includes('--dry-run');
 // _ARCHIVE-RULES.md is created once and then never touched again, so a
-// correction to the README constant above reaches the repo and NOT the archive
+// correction to the README constant below reaches the repo and NOT the archive
 // — which is exactly how the live copy drifted (its filename templates were
 // rendering empty in SharePoint for anyone reading them). Overwriting a file in
 // a contracts library is not something a routine provisioning run should ever
@@ -767,7 +769,8 @@ async function ensureNavigation(sp) {
 // the libraries, the working views (URLs read from the live lists so they
 // never drift), an intake checklist and the standing rules. Same brand as the
 // portal (tenant theme "KALFA Coral", K logo, Compact/Strong header). The old
-// Home.aspx is left in place — this script never deletes site content.
+// Home.aspx is left in place — the only page this script ever deletes is its
+// own generated Archive.aspx (recreated on re-runs, unless --text-only).
 
 const shared = require('./lib/sharepoint.cjs');
 const HOME_PAGE = 'Archive.aspx';

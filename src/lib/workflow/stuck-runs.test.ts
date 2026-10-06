@@ -92,7 +92,7 @@ describe('listStuckWaitingRuns', () => {
 
 describe('redeliverStuckWaitingRuns', () => {
   it('⚠️ re-delivers with the ORIGINAL deadline, not with "now"', async () => {
-    // THE LINE A FAULT INJECTION PROVED IS LOAD-BEARING AND UNTESTED. The
+    // THE LINE A FAULT INJECTION PROVED IS LOAD-BEARING. The
     // deadline is folded into the pg-boss job id, so passing it rebuilds the id
     // the lost wake-up carried. Omit it and the id becomes the FIRST delivery's
     // — long completed — and pg-boss inserts with ON CONFLICT DO NOTHING, so the

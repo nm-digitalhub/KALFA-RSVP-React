@@ -26,10 +26,11 @@
 // documents the same limit in its own words — "every plugin's strings live under
 // `translation.plugins.<pluginName>` to namespace away from SDK keys"
 // (docs/workflowbuilder/api/plugins/plugintranslationresource.md) — so this is
-// the vendor's design, not a gap we are routing around. The same page describes
+// the vendor's design, not a gap we are routing around. The registerPluginTranslation
+// page (docs/workflowbuilder/api/plugins/registerplugintranslation.md) describes
 // exactly the mechanism used below: "each call also issues
 // `i18n.addResourceBundle(...)` so newly registered strings surface live, even
-// when the plugin registers after the SDK has already initialised i18next. What makes
+// when the plugin registers after the SDK has already initialised i18next." What makes
 // this file work instead is that the SDK's bundle imports `from "i18next"` as a
 // BARE EXTERNAL specifier. Declaring i18next as our own dependency at the same
 // version deduped the tree — `npm ls i18next` now shows one copy with both SDK
@@ -55,11 +56,14 @@
 // annotated with it compiles clean. Measured, not assumed.
 //
 // COVERAGE, and the two families deliberately left out. Diffing this bundle
-// against the shipped `en` resource leaves exactly `node.*` (12 keys) and
-// `aiTools.*` (4). Neither is dead weight by guesswork: `t('node.trigger.label')`
-// and `t('aiTools.title')` appear ZERO times in the shipped bundle. They
+// against the shipped `en` resource leaves exactly `node.*` (14 keys) and
+// `aiTools.*` (4). `node.*` is not dead weight by guesswork:
+// `t('node.trigger.label')` appears ZERO times in the shipped bundle. Those keys
 // describe the vendor demo's own node data, and our palette comes from
-// `PALETTE_ITEMS`. Everything the SDK can actually render is translated here.
+// `PALETTE_ITEMS`. `aiTools.*` is different: the SDK does render it — the
+// `AiTools` control, which the ai_agent node's uischema carries, reads it through
+// `keyPrefix: 'aiTools'` and `t('aiTools.modalTitle')` — and it is currently left
+// in English. Everything else the SDK can actually render is translated here.
 import i18next from 'i18next';
 
 const HE = {
@@ -219,9 +223,7 @@ const HE = {
     removeVariableIsBlocked: 'המשתנה בשימוש בצעדים הבאים ולכן אי אפשר למחוק אותו.',
   },
   workflowsSettings: {
-    // Unreachable until the app bar was restored: the modal opens from
-    // `ProjectSelection`'s kebab, and the previous hand-rolled toolbar had no
-    // route to `openSettings` at all.
+    // The modal opens from `ProjectSelection`'s kebab menu.
     modalTitle: 'הגדרות',
     modalDescription: 'ניהול מאפייני התהליך',
     tab: {
@@ -236,8 +238,7 @@ const HE = {
     },
   },
   validation: {
-    // Surfaced by the import modal, which reached the UI for the first time
-    // with the app bar's dots menu.
+    // Surfaced by the import modal, which the app bar's dots menu opens.
     error: {
       notJSONObject: 'הערך שהוזן אינו אובייקט JSON תקין.',
       nodesWithoutDefinition: 'צעדים שאינם נתמכים: {{nodesIds}}',

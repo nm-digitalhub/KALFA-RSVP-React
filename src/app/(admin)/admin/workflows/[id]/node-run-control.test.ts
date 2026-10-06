@@ -10,12 +10,12 @@ import { describeWait, formatOutput, nodeRunRenderer } from './node-run-control'
 // ⚠️ THE FAILURE MODE IS AN ABSENT PANEL, NOT A CRASH. A uischema element with
 // no matching renderer, or a renderer with no matching element, produces nothing
 // on screen and no error anywhere. The first attempt at this feature reached one
-// node type out of nineteen for exactly that reason — the SDK's `tabs` prop
-// renders its tab strip only when `selection.node.type === 'node'`, which is the
-// node's VISUAL template, and our palette declares `decision-node` for fifteen
-// entries and `start-node` for three. Nothing failed; the tab was simply
-// unreachable. These tests pin both halves of the replacement so the same thing
-// cannot happen quietly again.
+// node type out of the nineteen then in the palette for exactly that reason —
+// the SDK's `tabs` prop renders its tab strip only when `selection.node.type ===
+// 'node'`, which is the node's VISUAL template, and our palette declares
+// `decision-node` for fifteen entries and `start-node` for four. Nothing failed;
+// the tab was simply unreachable. These tests pin both halves of the replacement
+// so the same thing cannot happen quietly again.
 
 const testerContext = { rootSchema: {}, config: {} };
 
@@ -140,8 +140,9 @@ describe('formatOutput', () => {
 });
 
 describe('⚠️ describeWait keeps a timer apart from an event', () => {
-  // `node-markers.tsx` records the mistake this guards: the canvas once "said
-  // 'continues at 14:30' about a node really waiting for a phone call to end".
+  // `use-execution-store.ts` records the mistake this guards: the canvas once
+  // "said 'continues at 14:30' about a node really waiting for a phone call to
+  // end".
   const at = '2026-09-18T11:30:00.000Z';
 
   it('a timer resumes at a known time', () => {

@@ -1,8 +1,8 @@
 // One-off, idempotent: sync the Voximplant SERVICE-ACCOUNT JSON from the local
 // gitignored credentials file into app_settings.voximplant_service_account_json,
-// so the /admin/channels Voximplant tab reports the service account as
+// so the /admin/integrations/voximplant page reports the service account as
 // configured. The app reads config from the DB (getVoximplantConfig →
-// app_settings), NOT from disk — this bridges the committed CLI credential file
+// app_settings), NOT from disk — this bridges the local CLI credential file
 // to the DB-backed admin config.
 //
 // SECURITY: the file holds an RSA private_key. This runner reads it and writes

@@ -175,10 +175,10 @@ function isSuccess(status: SumitEnvelope<unknown>['Status']): boolean {
   );
 }
 
-// Shared transport. Mirrors the error semantics of charge.ts/capture.ts exactly:
-// only a DEFINITIVE business error is a SumitDeclinedError; anything ambiguous
-// is a SumitNetworkError so the caller retries or reviews rather than treating
-// an unknown outcome as success.
+// Shared transport. Mirrors the error semantics of charge.ts/capture.ts: only a
+// DEFINITIVE business error is a SumitAccountingError (their SumitDeclinedError
+// counterpart); anything ambiguous is a SumitNetworkError so the caller retries
+// or reviews rather than treating an unknown outcome as success.
 //
 // The provider's own message is carried on the thrown error, because SUMIT
 // answers a rejected document with Status 1 and an otherwise empty body — the

@@ -51,13 +51,12 @@ type AgentsPage = {
 };
 
 /**
- * The agents this account can dial, newest name-sorted, for a live picker.
+ * The agents this account can dial, name-sorted, for a live picker.
  *
  * ⚠️ ON DEMAND ONLY — never in a page's render path. This is an external HTTP
  * call with unbounded latency, and the workflow editor must open whether or not
  * ElevenLabs is reachable. A failure is a message, never a throw: the caller
- * degrades to "the agent configured in the scenario", which is exactly what
- * dialled before the field existed.
+ * degrades to "the agent configured in the scenario".
  */
 export async function listElevenLabsAgents(): Promise<ElevenLabsAgentsResult> {
   await requirePlatformPermission('manage_voice');

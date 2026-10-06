@@ -293,7 +293,7 @@ export async function setOwnerAgentReportSchedule(input: ReportScheduleInput): P
     const { error } = await admin.from('owner_agent_report_subscription').update({ enabled: false }).in('id', disable);
     if (error) throw new Error(E.scheduleSaveFailed);
   }
-  // At most 24 rows per owner (the Zod limit), one small update each.
+  // At most 24 rows (the Zod limit on slots), one small update each.
   for (const [slot, row] of keep) {
     const { error } = await admin
       .from('owner_agent_report_subscription')

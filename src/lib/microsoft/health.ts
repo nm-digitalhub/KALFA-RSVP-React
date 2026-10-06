@@ -10,24 +10,25 @@ import { graphClient, graphConfigured, primaryMailbox } from './graph-client';
 // The obvious source was `exchange_connections`, and both of its readers are wrong
 // for a status surface:
 //
-//   • listMyExchangeConnections() returns only the CALLER's rows. A card built on it
+//   • listMyExchangeConnections() returns only the CALLER's rows (in per_user mode,
+//     the default). A card built on it
 //     reads "not configured" because YOU have no mailbox, while a colleague has
 //     three — the same class of lie as `null` rendered as `false`.
 //   • listAllExchangeConnectionsForDebug() is org-wide but gated on
 //     requirePlatformOwner(), which REDIRECTS. Composing a card from it ejects every
 //     non-owner from the admin area.
 //
-// So `src/lib/ops/integrations.ts` deliberately carries no Microsoft row and says
-// "anything composing a Microsoft card must read the dedicated source". Graph IS
-// that source: the app authenticates as itself with a certificate, so what it
-// reports is the tenant's state rather than one admin's slice of it.
+// So the Microsoft row in `src/lib/ops/integrations.ts` does not read that table
+// either: it is env-only (graphConfigured()), and this deep check is the dedicated
+// source. Graph IS that source: the app authenticates as itself with a certificate,
+// so what it reports is the tenant's state rather than one admin's slice of it.
 //
 // Read-only. Three GETs, no mail sent, no calendar touched, no customer data read —
 // /organization is our own tenant, the mailbox probe selects three non-content
 // fields, and the application read returns our own app registration.
 //
-// THE CERTIFICATE EXPIRY IS THE REASON THIS EXISTS. Everything Microsoft in this
-// system authenticates with one certificate, and nothing watches its expiry. When it
+// THE CERTIFICATE EXPIRY IS THE REASON THIS EXISTS. Calendar sync and mail intake
+// authenticate with one certificate, and nothing watches its expiry. When it
 // lapses, calendar sync and mail intake stop — not loudly, but as `auth_failed` in a
 // worker log. Measured 2026-09-10: the app holds ONE credential
 // (CN=KALFA Calendar Service, valid to 2031-08-14) and ZERO client secrets, which is

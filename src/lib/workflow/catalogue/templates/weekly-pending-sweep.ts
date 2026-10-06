@@ -1,21 +1,20 @@
 'use client';
 
 // Starter template 7 of 13 — its diagram and its selector entry. Editor
-// side; `./index.ts` places it in `DIAGRAM_TEMPLATES` at the position the
-// inline entry held.
+// side; `./index.ts` places it in `DIAGRAM_TEMPLATES`.
 import type { DiagramModel, TemplateModel } from '@workflowbuilder/sdk';
 
 import { ACTION_BRANCH_HANDLES } from '../types';
 import { SOURCE, TARGET } from './shared';
 
 // ---------------------------------------------------------------------------
-// The clock, the wait, and the fan-out — the three capabilities added 13.9.2026
+// The clock, the wait, and the fan-out
 // ---------------------------------------------------------------------------
 //
-// Until now every template started from a guest speaking to us. These three —
-// this one, `./per-guest-reminder.ts` and `./delayed-nudge.ts` — do
-// not, and they exist because a capability with no starting point is a capability
-// nobody finds: `trigger.schedule`, `logic.wait`, `action.send_template` and
+// The first templates all started from a guest speaking to us. These three —
+// this one, `./per-guest-reminder.ts` and `./delayed-nudge.ts` — cover what
+// that shape cannot, and they exist because a capability with no starting point
+// is a capability nobody finds: `trigger.schedule`, `logic.wait`, `action.send_template` and
 // `action.start_for_each_guest` appeared in ZERO templates the day after they
 // shipped.
 //
@@ -34,8 +33,8 @@ const SWEEP_FAILED_ID = 'tmpl-sweep-failed';
 /**
  * Every Sunday at 10:00, nudge the guests who have not answered yet.
  *
- * THE FLOW THE WHOLE ENGINE PROJECT WAS FOR. It needs all three of the pieces
- * that did not exist yesterday: a clock to start it, a step that finds guests,
+ * THE FLOW THE WHOLE ENGINE PROJECT WAS FOR. It needs all three of the pieces:
+ * a clock to start it, a step that finds guests,
  * and a send that works outside the service window.
  *
  * ⚠️ WHY "WHO HAVE NOT ANSWERED" AND NOT "THANK EVERYONE WHO IS COMING" — the
@@ -70,8 +69,9 @@ const SWEEP_FAILED_ID = 'tmpl-sweep-failed';
  *
  * ⚠️ AND ARMING REFUSES UNTIL YOU DO. `setWorkflowActive` runs `findArmBlockers`
  * after the conversion contract, so pressing "arm" on this template answers
- * `הצעד "לכל אורח שטרם ענה": השדה "targetWorkflowId" ריק.` instead of flipping
- * the switch and failing silently on Sunday at 10:00.
+ * `הצעד "לכל אורח שטרם ענה": לא נבחר תהליך להרצה. צרו את תהליך-הבן (למשל מהתבנית
+ * "תזכורת לאורח אחד") והדביקו את המזהה שלו כאן.` instead of flipping the switch
+ * and failing silently on Sunday at 10:00.
  *
  * The template still LOADS and SAVES with the blank — that is the point of a
  * template — because the check lives at arming, not in the converter.
@@ -162,9 +162,10 @@ const weeklyPendingSweep: DiagramModel = {
             description: 'הפיצול לא הצליח',
             level: 'warn',
             title: 'הפיצול לתזכורות נכשל',
-            // `reason?` — safe navigation, because `reason` is NOT in the
-            // fan-out's outputSchema: it appears only on the error branch. A
-            // strict reference to an absent field fails the whole run.
+            // `reason?` — safe navigation, because `reason` is only present when
+            // the port refuses the fan-out. A step that THROWS reaches this branch
+            // with `{ error }` and no `reason`, and a strict reference to an absent
+            // field fails the whole run.
             detail: 'סיבה: {{nodes.tmpl-sweep-fanout.reason?}}',
             errorPolicy: 'continue',
           },

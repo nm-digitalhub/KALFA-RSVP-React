@@ -8,8 +8,8 @@ import type { NextConfig } from 'next';
 // client assets and the one the pm2 `next start` process reads at boot are
 // always the same file → same value. A tab from an older deploy then triggers
 // a hard reload on navigation instead of invoking stale Server Action ids
-// ("Failed to find Server Action"). No .deploy-id (dev, verification builds)
-// → undefined → skew protection simply off, exactly as before.
+// ("Failed to find Server Action"). No .deploy-id (e.g. a fresh checkout,
+// since the file is gitignored) → undefined → skew protection simply off.
 function readDeployId(): string | undefined {
   try {
     const id = readFileSync(join(process.cwd(), '.deploy-id'), 'utf8').trim();
@@ -31,18 +31,12 @@ function supabaseHostname(): string {
 }
 
 const nextConfig: NextConfig = {
-  // Phase 0 of the integrations consolidation retired two admin pages. The
-  // redirect shipped in its OWN commit, BEFORE the pages were deleted (Task 0.6
-  // Step 4b), and that separation is the whole reversibility story: a failure in
-  // production is undone by removing two lines here, not by reverting a phase.
+  // The integrations consolidation retired /admin/channels and /admin/alerts;
+  // these redirects keep old bookmarks working.
   //
-  // /admin/channels now lands on the INDEX. Until Step 4b it went to meta-whatsapp,
-  // because the index still linked BACK to /admin/channels for the channel catalog
-  // and the redirect would have landed on the page you were already on. Step 4b
-  // moved the catalog onto the index itself, so the index is now the honest
-  // destination: it carries the catalog the old page owned AND links to both
-  // provider tabs, instead of silently picking one of them for a bookmark that
-  // meant "the channels page".
+  // /admin/channels lands on the INDEX: it carries the channel catalog the old
+  // page owned AND links to every provider tab, instead of silently picking one
+  // of them for a bookmark that meant "the channels page".
   //
   // `permanent: false` (307): a permanent redirect is cached by the browser and
   // would survive a rollback, which is exactly the property we do not want.
@@ -114,14 +108,6 @@ const nextConfig: NextConfig = {
   //
   // Google Analytics Data uses Node-specific runtime loading through
   // google-gax; keep it external to the Next.js server bundle.
-  //
-  // ews-javascript-api + @ewsjs/xhr (IONOS Exchange calendar): @ewsjs/xhr's
-  // NTLM transport pulls http-cookie-agent, whose dynamic require webpack
-  // cannot bundle (the build itself warns "Critical dependency: require
-  // function is used in a way in which dependencies cannot be statically
-  // extracted"). MEASURED 27.07: the identical provider code reaches the
-  // Exchange server fine under plain Node but failed inside the bundle —
-  // same class of problem as puppeteer/pg-boss above.
   serverExternalPackages: [
     'puppeteer',
     'pg-boss',
@@ -139,16 +125,15 @@ const nextConfig: NextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          // HSTS (owner decision 2026-08-24). nginx already 301s http→https for
+          // HSTS. nginx already 301s http→https for
           // beta.kalfa.me; this tells browsers to never try http first. Value
           // per node_modules/next/dist/docs/.../headers.md §Strict-Transport-Security
           // (2 years), WITHOUT `preload` — preload is effectively irreversible.
-          // Measured 24.8: no Strict-Transport-Security anywhere on beta before this.
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
           // Verified gap (30.8): beta-proxy.conf never set proxy_buffering off,
           // so nginx defaults to buffering the ENTIRE response before sending
           // anything to the client — silently defeating the streaming that the
-          // app's loading.tsx/Suspense boundaries (8 routes) depend on for a
+          // app's loading.tsx/Suspense boundaries depend on for a
           // fast first paint. Per node_modules/next/dist/docs/.../self-hosting.md
           // §Streaming and Suspense, this header is nginx's own documented
           // per-response override (nginx.org proxy_buffering: X-Accel-Buffering)
@@ -171,9 +156,10 @@ const nextConfig: NextConfig = {
         ],
       },
       // Voximplant ctx/cb API routes carry a per-call bearer token in the path
-      // and the ctx response includes a provider key — same no-store/no-referrer
-      // posture as the token pages (routes also set no-store explicitly on each
-      // response as the primary control; this block is defense-in-depth).
+      // and the ctx response carries guest-facing call data — same
+      // no-store/no-referrer posture as the token pages (routes also set
+      // no-store explicitly on each response as the primary control; this block
+      // is defense-in-depth).
       {
         source: '/api/voximplant/:path*',
         headers: [

@@ -6,9 +6,9 @@ import { pullWorkflowRunForward } from './enqueue';
 import { markParkedRunReady } from './wake-store';
 
 // Wake a workflow run that is parked on an external event, because the event
-// happened (step 0ב-3 / 0ב-4).
+// happened.
 //
-// Until now a parked run could only be woken by TIME. `logic.wait` names a
+// Otherwise a parked run is woken only by TIME. `logic.wait` names a
 // duration and pg-boss holds a delayed job until it elapses, which is exactly
 // right for "wait two days" and exactly wrong for "wait until this phone call
 // ends": the only way to express that was to guess, so a seven-minute call was

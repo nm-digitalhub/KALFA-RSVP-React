@@ -65,9 +65,7 @@ const PROVIDER_OPTIONS = [
   { value: 'elevenlabs', label: 'ניתוח שיחות AI' },
 ];
 
-// VERIFIED 2026-08-26 against every insertWebhookEvents call site. Previously
-// this list held only WhatsApp's two kinds, so seven of the nine endpoints could
-// not be filtered at all.
+// VERIFIED 2026-08-26 against every insertWebhookEvents call site.
 const KIND_GROUPS = [
   {
     provider: 'whatsapp',

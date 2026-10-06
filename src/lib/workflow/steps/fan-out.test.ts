@@ -215,10 +215,8 @@ describe('action.send_template', () => {
 // The chain
 // ---------------------------------------------------------------------------
 //
-// ⚠️ WHAT WAS DOCUMENTED AND NOT IMPLEMENTED UNTIL 2026-09-14. The comment above
-// this handler has always said "IT MUST NOT FAN OUT TO ITSELF … Refused
-// permanently rather than capped". Nothing checked it, and nothing bounded the
-// depth either.
+// ⚠️ A FAN-OUT MUST NOT START ITS OWN WORKFLOW, AND A CHAIN OF THEM MUST BE
+// DEPTH-BOUNDED.
 //
 // The arithmetic is why it matters. `FAN_OUT_HARD_CAP` bounds the WIDTH of one
 // generation, never the number of generations, and the child dedupe key is

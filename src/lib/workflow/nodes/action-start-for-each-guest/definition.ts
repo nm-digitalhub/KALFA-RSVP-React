@@ -30,8 +30,7 @@ export const isTrigger = false;
  *
  * ⚠️ AND IT IS THE MOST DANGEROUS NODE IN THE PALETTE. One press can start
  * hundreds of runs that each message a real person. `maxGuests` is therefore
- * REQUIRED with no generous default, and the dry run prints the number before
- * anything is armed.
+ * REQUIRED with no generous default.
  */
 export const GUEST_FILTER_STATUSES = ['pending', 'attending', 'declined', 'maybe'] as const;
 export type GuestFilterStatus = (typeof GUEST_FILTER_STATUSES)[number];
@@ -73,8 +72,8 @@ export const FAN_OUT_HARD_CAP = 500;
  * every leaf may message a real guest.
  *
  * A run nobody fanned out to is depth 0, so 3 permits three generations of
- * children and refuses the fourth. Chosen with the owner on 2026-09-14; no real
- * flow needs more, and a chain that does is better stopped and read than run.
+ * children and refuses the fourth. No real flow needs more, and a chain that
+ * does is better stopped and read than run.
  */
 export const MAX_FANOUT_DEPTH = 3;
 
@@ -135,9 +134,7 @@ export const outputFields = {
   started: { type: 'number', label: 'כמה הרצות התחילו' },
   matched: { type: 'number', label: 'כמה אורחים התאימו' },
   capped: { type: 'boolean', label: 'נעצר בתקרה', description: 'היו יותר אורחים מהתקרה' },
-  // The same gap as `action.import_guest_list`: the error branch returns
-  // `{ started: 0, reason }`, `reason` was never published, and the
-  // weekly-sweep starter referenced it as `{{…reason?}}` from the source
-  // rather than from the picker.
+  // The error branch returns `{ started: 0, reason }`, so `reason` is declared
+  // for the picker; the weekly-sweep starter reads it as `{{…reason?}}`.
   reason: { type: 'string', label: 'סיבת הכישלון', description: 'קיים רק במסלול "נכשל"' },
 } as const;

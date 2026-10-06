@@ -5,8 +5,8 @@
 // Annotated with `NodeDataProperties`, not the vendor starter's
 // `Required<NodeDataProperties<…>>`: `armNotice` is in the schema and is
 // deliberately never seeded (see `identityProperties`). The annotation on a
-// fresh literal keeps the excess-property check the inline entry had, so an
-// undeclared key here is still a compile error.
+// fresh literal keeps the excess-property check, so an undeclared key here is
+// still a compile error.
 import type { NodeDataProperties } from '@workflowbuilder/sdk';
 
 import { nodeStatusOptions } from '../../catalogue/editor-shared';
@@ -19,10 +19,8 @@ export const webhookTriggerDefaultPropertiesData: NodeDataProperties<WebhookTrig
   description: 'מערכת חיצונית קוראת לכתובת והתהליך מתחיל',
   // ⚠️ `header` EXPLICITLY, NOT LEFT ABSENT. `readWebhookAuthMode` reads an
   // absent value as `header` anyway, so this changes no behaviour — it is
-  // here because `palette-defaults.test.ts` requires a conditional rule's
-  // decider to be a member of its own `whenIn`, and a node born with the
-  // field set is a node whose mode is visible in the panel from the first
-  // render rather than implied.
+  // here because a node born with the field set is a node whose mode is
+  // visible in the panel from the first render rather than implied.
   auth: 'header',
   // Both halves start blank and are minted together by the control. A
   // diagram with one and not the other is the state `arm-check` refuses.
@@ -35,9 +33,9 @@ export const webhookTriggerDefaultPropertiesData: NodeDataProperties<WebhookTrig
   // ⚠️ `tokenHash`, NOT `token` — this key must match `webhookTriggerSchema`
   // and the uischema's `properties.tokenHash` scope, or a node dragged from
   // the palette is born carrying a field the schema does not declare AND
-  // missing its only required one. That was live until 2026-09-22 and no
-  // gate saw it: the key is a plain string in three files that never get
-  // compared. `palette-defaults.test.ts` now compares them.
+  // missing its only required one. The annotation above turns an undeclared
+  // key into a compile error, and `palette-defaults.test.ts` fails on a
+  // required field that is not seeded.
   //
   // EMPTY, never a value minted here. This module runs in the BROWSER, and a
   // token from `Math.random`/`crypto` on a page is a token whose entropy

@@ -16,10 +16,10 @@ import {
   type ConsolePhoneSnapshot,
 } from '@/lib/voximplant/web-client';
 
-// Dev login surface (stage 2). The ConnectionNode of the account is UNVERIFIED —
-// this panel exists to determine it empirically: pick a node, connect, log in.
-// The chosen node is remembered locally; once proven it graduates to real
-// configuration in stage 3.
+// Dev login surface (stage 2): pick a node, connect, log in. The account's node
+// is already measured (MEASURED_CONNECTION_NODE in web-client.ts), so this picker
+// is a diagnostic override. The chosen node is remembered locally and wins over
+// that default in the softphone panel.
 const NODE_STORAGE_KEY = 'kalfa-console-node';
 
 // Hebrew labels per business state; sdkState is shown raw for diagnostics.

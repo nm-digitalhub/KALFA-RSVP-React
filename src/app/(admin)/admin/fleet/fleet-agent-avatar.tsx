@@ -5,7 +5,7 @@ import { getFleetAgentAvatarSrc } from '@/lib/fleet/agent-avatars';
 import type { ContentAuthor } from '@/lib/fleet/content-author';
 import { getInitials } from '@/lib/utils';
 
-// `sm` sits next to a timeline entry, `default` next to a card header.
+// `sm` sits next to a message bubble, `default` in the conversation list and header.
 type AvatarSize = 'sm' | 'default';
 
 // The agent's own image (explicit map in lib/fleet/agent-avatars — never a

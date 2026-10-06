@@ -171,8 +171,8 @@ export const pasteElements = ({
   }
 
   // ⚠️ THE `!` ON `mappedIds[…]` BELOW IS TYPE-ONLY, AND IT IS NOT ALWAYS TRUE.
-  // Added to satisfy `noUncheckedIndexedAccess`; the runtime is the vendor's,
-  // unchanged. An edge whose other end was NOT copied has no entry, so the value
+  // The runtime is the vendor's, unchanged.
+  // An edge whose other end was NOT copied has no entry, so the value
   // is `undefined` there. `getSelectionWithNodesBetween` drops such edges — but
   // the caller applies it only when MORE THAN ONE node is selected, so a single
   // node copied together with an explicitly selected edge keeps it, and the

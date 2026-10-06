@@ -60,9 +60,10 @@ describe('getAdminNavCounts — per-domain permission gating', () => {
       count: 'exact',
       head: true,
     });
-    // contacts/callbacks/fleet each filter on a single status value; campaigns
-    // filters on the WINDDOWN_STATUSES list (the same predicate
-    // listCampaignsForAdmin() itself uses).
+    // callbacks/fleet each filter on a single status value; contacts on the
+    // OPEN_CONTACT_STATUSES list ('new' + 'reopened'); campaigns on the
+    // WINDDOWN_STATUSES list (the wind-down half of the predicate
+    // listCampaignsForAdmin() uses).
     expect(builder.eq).toHaveBeenCalledWith('status', 'new');
     expect(builder.eq).toHaveBeenCalledWith('status', 'pending');
     // fleet counts only agent-filed pending rows: an owner-opened request

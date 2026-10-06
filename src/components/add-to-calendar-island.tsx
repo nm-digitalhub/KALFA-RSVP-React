@@ -60,8 +60,8 @@ const ROW_CLASS =
 const SERVER_PLATFORM: CalendarPlatform = { os: 'other', webview: false };
 const noop = () => () => {};
 // useSyncExternalStore compares snapshots by identity: a fresh object per call
-// re-renders forever (React error #185 — caught by the headless harness before
-// this shipped), so the detection result is memoised per user-agent string.
+// re-renders forever (React error #185), so the detection result is memoised
+// per user-agent string.
 let cachedUa: string | null = null;
 let cachedPlatform: CalendarPlatform = SERVER_PLATFORM;
 function clientPlatform(): CalendarPlatform {
@@ -79,7 +79,7 @@ function usePlatform(): CalendarPlatform {
 interface Row {
   key: string;
   label: string;
-  /** What will happen, in the guest's words — the surprise the owner reported. */
+  /** What will happen, in the guest's words. */
   hint: string;
   href: string;
   newTab: boolean;

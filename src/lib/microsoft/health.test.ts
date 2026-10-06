@@ -80,7 +80,7 @@ describe('checkMicrosoftHealth', () => {
 
   it('reads the tenant, the mailbox and the certificate FROM MICROSOFT', async () => {
     // Not from exchange_connections: that table's org-wide reader is owner-gated and
-    // its ungated reader returns only the caller's own rows.
+    // its other reader returns only the caller's own rows (in per_user mode).
     graph({
       '/organization': ORG,
       '/users/': { displayName: 'Netanel' },

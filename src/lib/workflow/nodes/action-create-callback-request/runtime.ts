@@ -34,7 +34,7 @@ export const createCallbackRequest: StepHandler = async (config, ctx) => {
   // reads `guests.full_name` / `guests.phone` — so that string would put the
   // sales-closing agent on the phone to a wedding guest to sell them KALFA.
   //
-  // The form no longer offers it, and this refuses it anyway: the value lives in
+  // The form does not offer it, and this refuses it anyway: the value lives in
   // a jsonb row that the form does not re-validate, and an older saved diagram
   // may carry anything. Permanent rather than routed to the error branch — it is
   // a configuration mistake, not a runtime condition, and retrying cannot help.

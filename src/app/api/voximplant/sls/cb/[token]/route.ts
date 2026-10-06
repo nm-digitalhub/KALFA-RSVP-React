@@ -87,7 +87,7 @@ export async function POST(
     } catch {
       // Never fail the callback over the outcome write — dispatch_status is
       // already recorded above; a missed no_answer close is caught by the
-      // existing 3-attempt cap on the next scheduling pass.
+      // existing attempt cap (CallbackPolicy.maxAttempts) on the next scheduling pass.
     }
   }
 

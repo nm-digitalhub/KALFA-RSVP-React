@@ -33,7 +33,7 @@ export type InteractionRow = {
 
 // Idempotent insert (UNIQUE(channel, provider_id)). Returns true only when THIS
 // call inserted the row — so a Meta retry of the same event is a no-op and
-// downstream billing runs at most once per provider event (§replay-safety).
+// downstream billing runs at most once per provider event.
 export async function insertInteraction(row: InteractionRow): Promise<boolean> {
   const admin = createAdminClient();
   const { data, error } = await admin

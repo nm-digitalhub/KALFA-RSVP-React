@@ -123,13 +123,11 @@
 
    `--text-*` follows the built-in `--text-4xl` / `--text-4xl--line-height`
    pair shape in node_modules/tailwindcss/theme.css, so `text-hero` etc. emit
-   font-size + line-height like any core text utility. Fluid clamp() replaces
-   the `text-4xl sm:text-6xl` breakpoint jumps on the marketing headings:
-     hero    36px → 60px (homepage h1; was 36 then 60 from `sm`)
-     title   36px → 48px (sub-page h1s; was 36 then 48 from `sm`)
-     display 30px → 36px (section h2s; was 30 then 36 from `sm`)
-   The endpoints are the OLD sizes, so nothing gets bigger or smaller at the
-   extremes — the middle just stops jumping at 640px.
+   font-size + line-height like any core text utility. Fluid clamp() sizes the
+   marketing headings, with no breakpoint jump:
+     hero    36px → 60px (homepage h1)
+     title   36px → 48px (sub-page h1s)
+     display 30px → 36px (section h2s)
 
    Motion (entrances, scroll reveals, hover lifts) for the public pages is a
    separate layer, src/app/motion.css — nothing animated is defined here. */
@@ -192,10 +190,6 @@ body {
   --suggestion-active-bg: oklch(0.3 0.08 276.97);
   --suggestion-active-bar: oklch(0.72 0.16 276.97);
 }
-
-/* The homepage feature-icon loops (`k-ico-pulse`, `k-ico-bars`) moved to
-   src/app/motion.css on 2026-09-08 — one motion system; they now run only
-   while their card is hovered (owner decision, option 2). */
 
 @layer base {
   * {

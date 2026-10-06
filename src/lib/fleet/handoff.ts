@@ -56,8 +56,7 @@ export function parseFleetRoles(raw: unknown): Map<string, boolean> {
 // callback_requests_pending AND now also advances a persistent goal via
 // goal_due). fleet.json may still write a single string for a role with only
 // one trigger; parseReactive normalizes both shapes so callers never branch
-// on which form was used. Empty array = no reactive trigger, replacing the
-// old `null` sentinel.
+// on which form was used. Empty array = no reactive trigger.
 export interface FleetRoleInfo {
   name: string;
   enabled: boolean;

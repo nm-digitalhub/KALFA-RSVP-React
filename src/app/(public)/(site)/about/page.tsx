@@ -10,7 +10,7 @@ import { pageOpenGraph } from '@/lib/seo/open-graph';
 import { getAppOrigin } from '@/lib/url';
 
 // Public "about" page — the trust/identity page search engines and AI answer
-// engines look for (E-E-A-T), added 2026-09-27 (plans/seo-exposure-plan-2026-09-27.md).
+// engines look for (E-E-A-T) (plans/seo-exposure-plan-2026-09-27.md).
 //
 // CONTENT RULES — read before editing:
 // 1. Only shipped capabilities, the same truthfulness rule as

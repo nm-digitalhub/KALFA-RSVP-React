@@ -96,9 +96,8 @@ describe('the contract stays provider-agnostic', () => {
     const { readFileSync } = await import('node:fs');
     const source = readFileSync(new URL('./provider.ts', import.meta.url), 'utf8');
 
-    // Whole words, not substrings — the first draft matched `meta` inside
-    // `metadata` and failed on its own file. The identifier is what matters,
-    // not a letter sequence.
+    // Whole words, not substrings — `meta` would otherwise match inside
+    // `metadata`. The identifier is what matters, not a letter sequence.
     for (const vendor of ['google', 'microsoft', 'slack', 'notion', 'hubspot', 'meta', 'azure']) {
       expect(source).not.toMatch(new RegExp(`\\b${vendor}\\b`, 'i'));
     }

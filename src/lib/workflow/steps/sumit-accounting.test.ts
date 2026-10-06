@@ -9,12 +9,11 @@ import { assertCoversEveryNodeFolder, serverStepSources } from '../node-sources'
 //
 // ⚠️ THE PROPERTY THIS FILE EXISTS FOR is the last test: a dry run must not
 // reach SUMIT. The editor's "הרצת בדיקה" panel promises "לא נשלחת הודעה ולא
-// משתנים אורחים", and the owner's explicit decision (2026-09-22) was that a
-// document node must say what it WOULD issue and issue nothing. That holds only
-// because the handler goes through `ctx.deps.accounting`, which the dry run
-// swaps for a recording stub — so a future edit that imports
-// `@/lib/sumit/accounting` directly would silently start writing to the real
-// books from a test button.
+// משתנים אורחים", so a document node must say what it WOULD issue and issue
+// nothing. That holds only because the handler goes through
+// `ctx.deps.accounting`, which the dry run swaps for a recording stub — so a
+// future edit that imports `@/lib/sumit/accounting` directly would silently
+// start writing to the real books from a test button.
 
 function ctxWith(accounting: Partial<StepContext['deps']['accounting']>): StepContext {
   return {
@@ -186,8 +185,8 @@ describe('⚠️ the step layer never reaches SUMIT except through the port', ()
   // admin-data-layer-coverage.test.ts scans: the thing being guarded is what the
   // file IMPORTS, and only the file can answer that.
   it('no step handler imports anything from src/lib/sumit', () => {
-    // Every server-side step file — the registry and each node folder's
-    // runtime. Anti-no-op: the scan must include every node folder on disk, so
+    // Every server-side step file — everything in `steps/` and in each node
+    // folder. Anti-no-op: the scan must include every node folder on disk, so
     // a handler that moved cannot take the guarantee with it silently.
     const files = serverStepSources();
     expect(assertCoversEveryNodeFolder(files)).toEqual([]);

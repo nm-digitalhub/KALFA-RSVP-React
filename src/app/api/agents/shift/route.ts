@@ -71,8 +71,8 @@ export async function POST(request: Request) {
 
   // Own-row upsert as the caller (RLS-scoped) — same shape as /api/agents/status.
   // console_agent_shift is a real typed table (migration
-  // 20260812200243_callcenter_wake_shift_and_flag.sql, pushed and reflected
-  // in types.ts — verified live, console audit 12.8); no cast needed.
+  // 20260812200243_callcenter_wake_shift_and_flag.sql, reflected in
+  // types.generated.ts); no cast needed.
   const { error } = await ctx.supabase
     .from('console_agent_shift')
     .upsert(

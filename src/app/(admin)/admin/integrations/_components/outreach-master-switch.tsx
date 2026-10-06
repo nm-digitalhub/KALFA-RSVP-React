@@ -5,15 +5,15 @@ import { useActionState } from 'react';
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { updateOutreachMasterSwitchAction } from '@/app/(admin)/admin/integrations/actions';
 
-// The ONE global outreach switch (app_settings.outreach_enabled), lifted verbatim out
-// of channels-client.tsx. It gates every outbound channel — WhatsApp sends AND AI
-// dials (src/lib/data/outreach-calls.ts checks getOutreachEnabled() before dialing) —
-// which is why it heads BOTH provider pages rather than living on one of them.
+// The ONE global outreach switch (app_settings.outreach_enabled). It gates every
+// outbound channel — WhatsApp sends AND AI dials (src/lib/data/outreach-calls.ts
+// checks getOutreachEnabled() before dialing) — which is why it heads BOTH
+// provider pages rather than living on one of them.
 //
-// The switch has a single writer, updateOutreachMasterSwitchAction, and that does not
-// change here: this component only moves the control, never the ownership. The action
-// re-checks "at least one channel is configured" server-side, so the `disabled`
-// attribute below is a courtesy, not the gate.
+// The switch has a single writer, updateOutreachMasterSwitchAction; this
+// component only renders the control. The action re-checks "at least one channel
+// is configured" server-side, so the `disabled` attribute below is a courtesy,
+// not the gate.
 //
 // It requires `manage_settings` (getOutreachMasterState + setOutreachEnabled both
 // enforce it). A page whose own gate is a DIFFERENT permission must therefore decide

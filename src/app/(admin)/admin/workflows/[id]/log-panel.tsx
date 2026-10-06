@@ -2,16 +2,14 @@
 
 // Ported from the reference app's components/execution/log-panel.tsx.
 //
-// Behaviour kept verbatim: collapsible header carrying the run status,
+// Behaviour kept: collapsible header carrying the run status,
 // per-event rows, click-to-expand detail (run-level rows; a step's row opens
 // its panel instead), skip reasons spelled out, stick-to-
 // bottom that yields the moment the reader scrolls up, and scroll-into-view when
 // a node is selected on the canvas.
 //
-// Styling is Tailwind rather than CSS modules — that is this project's idiom,
-// and the panel's own colours come from the same --kalfa-wf-status-* tokens the
-// highlighting defines, so the log and the canvas agree on what "failed" looks
-// like. Labels are Hebrew.
+// Styling is Tailwind rather than CSS modules — that is this project's idiom.
+// Labels are Hebrew.
 import { useSingleSelectedElement } from '@workflowbuilder/sdk';
 import { useEffect, useRef, useState } from 'react';
 
@@ -42,7 +40,7 @@ const EVENT_LABEL: Record<string, string> = {
   // reference runner does not emit it and its reference client does not project
   // it, so this table — ported from that client — arrived without the label and
   // the Hebrew log printed the raw string through the `?? event.type` fallback.
-  // KALFA emits it for `logic.wait`.
+  // KALFA emits it for a parked wait (`logic.wait`, a started voice call).
   node_waiting: 'צעד ממתין',
   node_completed: 'צעד הושלם',
   node_failed: 'צעד נכשל',
@@ -57,14 +55,12 @@ const EVENT_LABEL: Record<string, string> = {
 };
 
 /**
- * ⚠️ THE SAME VOCABULARY AS `RUN_STATUS_HE` IN `page.tsx`, and it had drifted.
+ * ⚠️ THE SAME VOCABULARY AS `RUN_STATUS_HE` IN `page.tsx` — keep the two in step.
  *
- * Two of them were missing here and present there: `waiting`, which is KALFA's
- * own status for a run parked on a `logic.wait` deadline, and `cancelling`,
- * which is the vendor's (`ExecutionStatus = 'pending' | 'running' |
- * 'cancelling' | TerminalExecutionStatus`). Both fell through the `?? status`
- * fallback and showed in English on a Hebrew panel — the exact defect the runs
- * table was fixed for, left standing one component over.
+ * `waiting` is KALFA's own status for a run parked on a `logic.wait` deadline,
+ * and `cancelling` is the vendor's (`ExecutionStatus = 'pending' | 'running' |
+ * 'cancelling' | TerminalExecutionStatus`). A status missing from this table
+ * falls through the `?? status` fallback and shows in English on a Hebrew panel.
  *
  * `waiting` is not "בהמתנה": that is `pending`, a run queued and about to go.
  * A parked run may be days from waking, and conflating the two makes one look
@@ -129,12 +125,11 @@ function detailFor(event: StreamEvent): string | undefined {
     // line, and in full in the step's panel — so it has no text detail here.
     case 'node_completed':
       return undefined;
-    // ⚠️ THE FIELD THE ENGINE ATTACHED FOR THIS PANEL AND NOBODY READ.
+    // ⚠️ THE FIELD THE ENGINE ATTACHES FOR THIS PANEL.
     //
     // `run-workflow.ts` extends the vendor's `NodeWaitingPayload` with
     // `resumeAt`, saying so in a comment: "the log panel is ours, and 'waiting'
-    // without 'until when' is not useful". It was right — and the field was
-    // written to every parked run's event row and displayed nowhere.
+    // without 'until when' is not useful".
     //
     // Absent for a vendored join-wait, which waits on other nodes rather than
     // on a clock; that row keeps its label and gets no detail line.
@@ -201,8 +196,8 @@ function EventRow({
   // rather than being replaced by the label.
   const nodeLabel = (event.payload as { nodeLabel?: string } | undefined)?.nodeLabel;
 
-  // ⚠️ WHAT THE ROW SHOWS IS DECIDED BY HOW MUCH THERE IS, not by the event type
-  // (owner, 25.9): nothing → the bare row; short → inline; long → a summary.
+  // ⚠️ WHAT THE ROW SHOWS IS DECIDED BY HOW MUCH THERE IS, not by the event
+  // type: nothing → the bare row; short → inline; long → a summary.
   // A step's full detail — every run of it, times, the output tree — is in its
   // properties panel, which a click on the row opens (`focusNodeOnCanvas`), as
   // the vendor's guidance places it. A run-level row has no step to open, so its
@@ -296,10 +291,10 @@ export function ExecutionLogPanel() {
   const runId = useExecutionStore((s) => s.runId);
   const isCollapsed = useExecutionStore((s) => s.isLogCollapsed);
 
-  // `SingleSelectedElement` is `{ node, edge }` — it has no `id` of its own.
-  // An earlier version here tested `'id' in selected`, which is always false, so
-  // the highlight and the scroll-into-view below silently never fired. tsc
-  // accepts `in` on any object, so nothing caught it.
+  // `SingleSelectedElement` is `{ node, edge }` — it has no `id` of its own, so
+  // testing `'id' in selected` is always false and the highlight and the
+  // scroll-into-view below would silently never fire. tsc accepts `in` on any
+  // object, so nothing would catch it.
   const selected = useSingleSelectedElement();
   const selectedNodeId = selected?.node?.id ?? null;
 

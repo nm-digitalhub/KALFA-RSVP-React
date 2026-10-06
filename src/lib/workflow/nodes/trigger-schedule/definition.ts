@@ -54,7 +54,7 @@ export const requiredFields: string[] = ['label', 'description', 'time'];
 
 /**
  * The budget for one call of the handler: the 120s default, stated explicitly.
- * `NODE_ACTIVITY_PROFILES` has no entry for this node and never had one.
+ * `NODE_ACTIVITY_PROFILES` has no entry for this node.
  */
 export const activityProfile = 'default' as const;
 

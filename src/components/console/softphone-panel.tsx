@@ -51,8 +51,8 @@ import { cn } from '@/lib/utils';
 // app_settings.console_softphone_enabled flag, `voxUsername` is non-null only
 // for an enrolled+provisioned console agent, `handoffEnabled` is the
 // app_settings.handoff_enabled flag gating the "שיחות AI חיות" section
-// (stage 6-UI — app_settings is admin-only RLS, so the browser can never read
-// it directly). All threaded through unconditionally by AdminShell via
+// (app_settings is admin-only RLS, so the browser can never read it
+// directly). All threaded through unconditionally by AdminShell via
 // `{...softphone}`. Both `enabled`+`voxUsername` are required for anything to
 // render — see the early return below.
 export interface SoftphoneGateInfo {
@@ -60,18 +60,16 @@ export interface SoftphoneGateInfo {
   voxUsername: string | null;
   displayName: string;
   handoffEnabled: boolean;
-  // Plan §10 extension point (department queues) — read-only, next to
-  // presence. Admin-managed only (see /admin/voice/queues); this agent cannot
+  // Department queues — read-only, next to presence. Admin-managed only (see /admin/voice/queues); this agent cannot
   // change it from here.
   queueMemberships: { key: string; nameHe: string }[];
-  // app_settings.console_consult_conference_enabled (stage 2) — gates
+  // app_settings.console_consult_conference_enabled — gates
   // CallBar's התייעצות/צירוף לשיחה controls. Same admin-only-RLS / read-at-
   // the-shell / fail-closed discipline as handoffEnabled above.
   consultConferenceEnabled: boolean;
   // Wake-and-answer research (12.8) — app_settings.console_wake_enabled.
-  // Gates whether the panel ever ATTEMPTS an auto-connect (shift toggle
-  // still renders so an agent can express intent even before the owner
-  // flips this on; it just has no effect on connection behaviour yet).
+  // Gates whether the panel ever ATTEMPTS an auto-connect, and whether the
+  // shift toggle renders at all (no point offering a control with no effect).
   wakeEnabled: boolean;
   // This agent's OWN console_agent_shift row, already read through its
   // bounded-freshness window server-side (isShiftActiveAndFresh) — the panel
@@ -142,7 +140,7 @@ const PHONE_STATE_VARIANT: Partial<Record<ConsolePhoneSnapshot['state'], BadgeVa
   reconnecting: 'warning',
 };
 
-// Exported so CallBar's target-agent picker (stage 2 — consult/conference)
+// Exported so CallBar's target-agent picker (consult/conference)
 // can share the exact same shape rather than redeclaring it.
 export interface RosterAgent {
   userId: string;
@@ -175,7 +173,7 @@ const CALENDAR_SHOW_AS_LABEL: Record<string, string> = {
   working_elsewhere: 'עובד מרחוק',
 };
 
-// Stage 8 — customer-card auto-open (see the effect below).
+// Customer-card auto-open (see the effect below).
 interface ActiveConsoleCall {
   id: string;
   status: string;
@@ -383,7 +381,7 @@ function SoftphonePanelBody({
   const [heartbeatDegraded, setHeartbeatDegraded] = useState(false);
   const heartbeatFailureStreak = useRef(0);
 
-  // Heartbeat (plan stage-4 carried item): while the SDK is logged in,
+  // Heartbeat: while the SDK is logged in,
   // re-POST the CURRENT presence status every 60s so agent_status.updated_at
   // keeps advancing. This is the freshness signal findRoutableAgentVoxUsernames()
   // needs before an inbound-caller ring can require <90s freshness — without
@@ -443,8 +441,7 @@ function SoftphonePanelBody({
     // auto-connect) sits outside AGENT_STATUS_FRESHNESS_MS's <90s window for
     // up to 60s before the first interval tick, during which
     // findRoutableAgents() (and this feature's own route-inbound-retry) will
-    // not see them as routable — a real latent gap this fix closes for both
-    // paths, not only the new one (wake-and-answer research, 12.8).
+    // not see them as routable.
     void beat();
     const id = setInterval(() => void beat(), 60_000);
     const onVisible = () => {
@@ -457,7 +454,7 @@ function SoftphonePanelBody({
     };
   }, [phoneSnap.state, selfStatus]);
 
-  // Active customer call (stage 8 — customer-card auto-open). Watches MY OWN
+  // Active customer call (customer-card auto-open). Watches MY OWN
   // live console_calls rows (agent_id OR transferred_to_agent_id = me, since
   // a transferred-in call is just as much "my" active call). console_calls
   // carries no PII (caller_masked only) — the guest's name/RSVP/phone comes
@@ -541,7 +538,7 @@ function SoftphonePanelBody({
     };
   }, [selfUserId]);
 
-  // Internal chat (plan "שלב 2") — state lifted to the panel body rather than
+  // Internal chat — state lifted to the panel body rather than
   // owned by ChatSection itself, on purpose: the closed-state FAB button
   // below needs to show an unread badge, and ChatSection only mounts while
   // `open` is true (see the early `if (!open)` return below — none of the
@@ -858,7 +855,7 @@ function SoftphonePanelBody({
           {/* Incoming/outgoing/connected call — driven entirely by the SDK
               CALL snapshot (call-bar.tsx), never optimistic. Lives under the
               same "טלפוניה" section since it's the same technical/SDK axis.
-              selfUserId+roster (stage 2) let CallBar offer/target-pick
+              selfUserId+roster let CallBar offer/target-pick
               consult/conference without a second roster fetch — both are
               already loaded above for the "נציגים" section. */}
           <CallBar
@@ -938,7 +935,7 @@ function SoftphonePanelBody({
               זמינים. בדקו את החיבור לאינטרנט.
             </p>
           ) : null}
-          {/* Department queues (plan §10 extension point) — read-only display;
+          {/* Department queues — read-only display;
               managed only by an admin at /admin/voice/queues. */}
           {queueMemberships.length > 0 ? (
             <div className="flex flex-wrap items-center gap-1.5 pt-1">
@@ -1010,7 +1007,7 @@ function SoftphonePanelBody({
         </section>
 
         {/* Customer card — auto-opens the panel on a live customer call of MY
-            OWN (stage 8). Never rendered from the console_calls row alone:
+            OWN. Never rendered from the console_calls row alone:
             console_calls carries no PII, so this waits for the
             console_event_guests fetch before showing anything. */}
         {activeCall ? (

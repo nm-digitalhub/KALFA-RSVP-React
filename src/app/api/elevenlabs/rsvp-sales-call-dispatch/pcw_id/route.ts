@@ -22,31 +22,31 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 // this exact path is now permanently bound to a real, already-registered
 // ElevenLabs webhook.
 //
-// PURPOSE: closes a real gap found live 2026-08-31. sales-call-attempts.ts's
-// file header documents FOUR outcome-write paths (send_signup_link,
-// log_outcome, the sls/cb no-answer report, and — until now — nothing else),
-// all gated behind claimSalesOutcome()'s one-shot outcome_recorded_at claim.
+// PURPOSE: the catch-all outcome path for a sales call. sales-call-dispatch.ts's
+// file header documents FOUR outcome-write paths (the sls/cb no-answer report,
+// sls/tool/signup-link, sls/tool/log-outcome, and this webhook's post-call
+// analysis), all gated behind claimSalesOutcome()'s one-shot
+// outcome_recorded_at claim.
 // A sales call that telephony-CONNECTED, had a real conversation, and then
 // ended (e.g. the caller hung up) WITHOUT the agent ever calling
-// send_signup_link or log_outcome hits none of those four paths — the claim
+// send_signup_link or log_outcome hits none of the other paths — the claim
 // is never made, outcome_recorded_at stays NULL forever, and
 // getUnresolvedSalesAttempt then blocks EVERY subsequent dial to that same
-// contact with reason 'prior_call_unresolved' (observed live, repeatedly,
-// this session — see callback_request_id 35eab495…). This route is the
-// fifth, catch-all path: ElevenLabs's own post-call analysis is the
+// contact with reason 'prior_call_unresolved'. This webhook is the
+// catch-all path: ElevenLabs's own post-call analysis is the
 // authoritative signal that the conversation is fully over, so once it
-// arrives, anything still unclaimed is resolved here as 'needs_followup' —
+// arrives, anything still unclaimed is resolved as 'needs_followup' —
 // the same value the agent's own prompt already uses for every other
 // non-success, non-terminal case (step 7 / "צריך לחשוב על זה").
 //
-// Both of those — persisting the analysis and making the catch-all claim — now
+// Both of those — persisting the analysis and making the catch-all claim —
 // run in the WORKER, off this request (elevenlabs-analysis-processing.ts). This
-// route verifies, persists the raw delivery, and answers. Rewritten 2026-09-01;
-// it previously did all of it inline and returned 500 to buy a provider retry,
-// which the provider's own documentation rules out twice over: a 4xx is never
-// retried at all, and "repeated failure to return a success response may result
-// in the webhook becoming automatically disabled" — so trading 500s for retries
-// risks escalating a passing database fault into a disconnected webhook.
+// route verifies, persists the raw delivery, and answers. It never returns 500
+// to buy a provider retry, which the provider's own documentation rules out
+// twice over: a 4xx is never retried at all, and "repeated failure to return a
+// success response may result in the webhook becoming automatically disabled" —
+// so trading 500s for retries risks escalating a passing database fault into a
+// disconnected webhook.
 //
 // AuthN is the identical HMAC scheme as rsvp/update (verifyElevenLabsWebhook)
 // — just a different secret, since this is a different webhook_id. A signature
@@ -113,7 +113,7 @@ export async function POST(req: Request) {
   if (!row) return resp(200, 'ok');
 
   // 5. Persist-then-process. Storing the analysis AND resolving the stuck
-  //    attempt (the fifth outcome-write path described above) both moved to
+  //    attempt (the catch-all outcome-write path described above) both run in
   //    the worker — see elevenlabs-analysis-processing.ts. Failure there is
   //    retried locally and lands in /admin/webhooks with its error, instead of
   //    depending on the provider retrying a delivery it will not retry after a

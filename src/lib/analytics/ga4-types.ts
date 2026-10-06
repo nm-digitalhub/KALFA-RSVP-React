@@ -44,7 +44,7 @@ export function rangeToDateRange(range: AnalyticsRange): { startDate: string; en
   }
 }
 
-// The immediately-preceding period of equal length, for KPI deltas (v3).
+// The immediately-preceding period of equal length, for KPI deltas.
 export function rangeToPreviousDateRange(
   range: AnalyticsRange,
 ): { startDate: string; endDate: string } {
@@ -93,7 +93,7 @@ export interface OverviewMetrics {
   pageViews: number;
   engagementRate: number | null; // 0–1; null when there are no sessions
   averageSessionDuration: number; // seconds, as returned by the API
-  purchaseRevenue: number; // ILS (v3)
+  purchaseRevenue: number; // ILS
 }
 
 // current = the selected range; previous = the equal-length period right
@@ -166,8 +166,6 @@ export interface QuotaSnapshot {
   tokensPerHour: { consumed: number; remaining: number };
 }
 
-// ---- v3 additions ----
-
 // Phase-1 business-event funnel, in journey order. Counts come from the
 // eventCount metric filtered to exactly these names.
 export const FUNNEL_EVENTS = [
@@ -206,7 +204,7 @@ export const GENDER_LABELS: Record<string, string> = {
   unknown: 'לא ידוע',
 };
 
-// v4 (27.7 אחה"צ): פילוחים מהמימדים המותאמים + קבוצת הערוצים של KALFA.
+// פילוחים מהמימדים המותאמים + קבוצת הערוצים של KALFA.
 export const LEAD_SOURCE_LABELS: Record<string, string> = {
   contact_form: 'טופס יצירת קשר',
   callback_request: 'בקשת חזרה',
@@ -229,15 +227,16 @@ export interface BillingModelRow {
   revenue: number;
 }
 
-// v5 — campaign performance (sessionCampaignName), for owner-run paid
+// Campaign performance (sessionCampaignName), for owner-run paid
 // campaigns (e.g. Instagram UTM tests). Session-scoped, same attribution
 // model as the rest of the dashboard (sessions/channels/sources are all
 // session-scoped too): a lead counts toward a campaign only when generate_lead
 // fires in a session that itself carries that campaign — a later return visit
 // in a new session (direct/bookmark) is not joined back to the campaign that
 // originally acquired the user. leads comes from a SEPARATE eventName-filtered
-// report joined by campaignName (dimensionFilter can't mix an eventName
-// restriction with unfiltered session metrics in one report).
+// report joined on the [campaignName, source, medium] triple (dimensionFilter
+// can't mix an eventName restriction with unfiltered session metrics in one
+// report).
 export interface CampaignRow {
   campaignName: string;
   source: string;
@@ -266,20 +265,20 @@ export interface AnalyticsDashboard {
   geo: Sectioned<CountryRow[]>;
   devices: Sectioned<DeviceRow[]>;
   events: Sectioned<EventCountRow[]>;
-  funnel: Sectioned<FunnelStep[]>; // v3 — phase-1 journey
-  notFound: Sectioned<NotFoundRow[]>; // v3 — 404 detector
-  ages: Sectioned<DemographicRow[]>; // v3 — Signals
-  genders: Sectioned<DemographicRow[]>; // v3 — Signals
-  interests: Sectioned<DemographicRow[]>; // v3 — Signals
-  landingPages: Sectioned<LandingPageRow[]>; // v3
-  leadSources: Sectioned<LabeledCountRow[]>; // v4 — customEvent:lead_source
-  billingModels: Sectioned<BillingModelRow[]>; // v4 — customEvent:billing_model
-  campaigns: Sectioned<CampaignRow[]>; // v5 — sessionCampaignName + generate_lead attribution
-  kalfaChannels: Sectioned<LabeledCountRow[]>; // v4 — sessionCustomChannelGroup
+  funnel: Sectioned<FunnelStep[]>; // phase-1 journey
+  notFound: Sectioned<NotFoundRow[]>; // 404 detector
+  ages: Sectioned<DemographicRow[]>; // Signals
+  genders: Sectioned<DemographicRow[]>; // Signals
+  interests: Sectioned<DemographicRow[]>; // Signals
+  landingPages: Sectioned<LandingPageRow[]>;
+  leadSources: Sectioned<LabeledCountRow[]>; // customEvent:lead_source
+  billingModels: Sectioned<BillingModelRow[]>; // customEvent:billing_model
+  campaigns: Sectioned<CampaignRow[]>; // sessionCampaignName + generate_lead attribution
+  kalfaChannels: Sectioned<LabeledCountRow[]>; // sessionCustomChannelGroup
   coreQuota: QuotaSnapshot | null; // core and realtime pools are separate
 }
 
-// getRealtimeSnapshot v3 return: the section plus the realtime pool's own
+// getRealtimeSnapshot return: the section plus the realtime pool's own
 // quota (a separate token pool from core — surfaced separately in the banner).
 export interface RealtimeResult {
   section: Sectioned<RealtimeSnapshot>;

@@ -18,8 +18,7 @@ type OpStatus = Enums<'contact_op_status'>;
 // interactions layer — keeping them here means the request-FREE interactions.ts
 // (webhook write-plumbing + billing/worker readers, service-role) never drags
 // events.ts → auth/dal → next/headers|navigation into the pg-boss worker bundle
-// (enforced by .dependency-cruiser.cjs). Behavior is byte-identical to before
-// the split; only the file location changed.
+// (enforced by .dependency-cruiser.cjs).
 // ---------------------------------------------------------------------------
 
 // One timeline entry = one WhatsApp message. delivery_status is updated IN PLACE

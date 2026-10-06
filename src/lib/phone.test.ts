@@ -136,16 +136,16 @@ describe('isAcceptablePhoneInput (guest phone field — IL + international)', ()
 
 describe('phoneSearchVariants (guest search — every country)', () => {
   it('keeps the Israeli behaviour the old helper had', () => {
-    // repairIsraeliLocalPhone used to produce exactly this local form; the
-    // replacement must not narrow what an Israeli search already matched.
+    // repairIsraeliLocalPhone produces exactly this local form;
+    // phoneSearchVariants must not narrow what an Israeli search already matched.
     expect(phoneSearchVariants('972502223333')).toContain('0502223333');
     expect(phoneSearchVariants('+972502223333')).toContain('0502223333');
     expect(phoneSearchVariants('0502223333')).toContain('972502223333');
   });
 
   it('derives the same variants for a non-Israeli number', () => {
-    // The case that motivated the change: before this, a French guest was only
-    // findable by retyping the exact stored characters.
+    // A French guest must be findable too, not only by retyping the exact
+    // stored characters.
     const fr = phoneSearchVariants('+33756982370');
     expect(fr).toContain('33756982370'); // E.164 digits
     expect(fr).toContain('0756982370'); // France's own local form

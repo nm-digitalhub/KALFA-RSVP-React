@@ -2,15 +2,15 @@ import { z } from 'zod';
 
 import { Constants, type Enums, type Json } from '@/lib/supabase/types';
 
-// Validation for the provider-numbers module (plan §4.2, Phase 1).
+// Validation for the provider-numbers module.
 //
 // ⚠️ THE TWO VOCABULARIES COME FROM THE DATABASE, NOT FROM A LIST TYPED HERE.
 // `provider_key` and `provider_number_role` are real Postgres enums, so `Constants`
 // is generated from the live schema and `scripts/check-supabase-types.mjs` — the
 // first step of `npm run deploy` — blocks a deploy when the two drift. That is the
-// whole reason Task 1.1 Step 4 chose enums over `text + CHECK`: an earlier draft of
-// this plan added `business_line_inbound` to the SQL, the backfill wrote the row,
-// and the hand-maintained TS union stayed at nine values with `tsc` still green.
+// whole reason these are enums rather than `text + CHECK`: once `business_line_inbound`
+// was added to the SQL and the backfill wrote the row, a hand-maintained TS union
+// stayed at nine values with `tsc` still green.
 // A list retyped in this file would reintroduce exactly that gap.
 
 export type ProviderKey = Enums<'provider_key'>;
@@ -43,7 +43,7 @@ export const numberRoleSchema = z.enum(NUMBER_ROLES, {
 // `Record<string, unknown>` plus a cast at the call site — means a value that cannot
 // survive the round trip (a Date, a function, undefined nested in an array) is
 // refused at this boundary with a field error, instead of becoming a cast that
-// compiles and a 22P02 at 3am. It also removes the only `as` in the DAL.
+// compiles and a 22P02 at 3am.
 const jsonValueSchema: z.ZodType<Json> = z.lazy(() =>
   z.union([
     z.string(),

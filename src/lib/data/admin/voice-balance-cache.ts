@@ -5,10 +5,11 @@ import { getAccountInfo } from '@/lib/voximplant/core';
 import { normalizeAccountInfo } from '@/lib/validation/vox-payloads';
 
 // Short-TTL, per-process cache for the ADMIN DASHBOARD's Voximplant balance
-// tile (getVoiceBalanceTile in voice-ops.ts — shown on /admin/voice AND
-// /admin/voice/platform). Investigated 13.8 while chasing a "destination
-// stream closed early" render error: that specific error turned out to be
-// page-agnostic React/Next streaming noise (confirmed against ops_errors —
+// tile (getVoiceBalanceTile in voice-ops.ts — shown on /admin/voice,
+// /admin/voice/platform AND /admin/integrations/voximplant). Investigated 13.8
+// while chasing a "destination stream closed early" render error: that specific
+// error turned out to be page-agnostic React/Next streaming noise (confirmed
+// against ops_errors —
 // it also fired on /admin/campaigns; that page, admin/layout.tsx's softphone
 // block, and console-calls.ts's flag readers were checked and are all plain
 // DB reads with no Voximplant call), so it is NOT what this cache fixes.

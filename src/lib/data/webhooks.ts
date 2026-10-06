@@ -6,7 +6,7 @@ import { QUEUES } from '@/lib/queue/queues';
 import { getWebJobSender } from '@/lib/queue/web-sender';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Json, Tables, TablesInsert } from '@/lib/supabase/types';
-// Durable intake for provider webhooks (B2). The signature-verified route
+// Durable intake for provider webhooks. The signature-verified route
 // normalizes events and inserts them here; a pg-boss worker processes them
 // out-of-band (persist-then-process), so the economic logic never depends on the
 // HTTP request lifetime and Meta retries can't double-bill. All writes are
@@ -98,8 +98,8 @@ export async function insertWebhookDelivery(input: {
 // budget (attempts<5 dead-letters a poison row so one bad event can't stall the
 // queue forever — it stays for the admin inspector with its last_error). Goes
 // through the claim_webhook_events RPC, which adds `FOR UPDATE SKIP LOCKED` so two
-// overlapping worker drains (cron every minute, max:4) receive DISJOINT sets and
-// never double-process. The RPC is SECURITY DEFINER + service_role-only.
+// overlapping worker drains receive DISJOINT sets and never double-process. The
+// RPC is SECURITY DEFINER + service_role-only.
 export async function claimUnprocessedWebhookEvents(
   limit: number,
 ): Promise<WebhookInboxRow[]> {

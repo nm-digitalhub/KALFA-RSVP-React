@@ -1,8 +1,7 @@
 'use client';
 
 // `action.update_guest_status` — its palette entry. Editor side;
-// `catalogue/schemas.ts` places it in `PALETTE_ITEMS` at the index the inline
-// entry held.
+// `catalogue/schemas.ts` places it in `PALETTE_ITEMS`.
 //
 // The output fields come from the definition, so the variable picker reads one
 // declaration of what this node returns.
@@ -18,7 +17,7 @@ export const updateGuestStatusPaletteItem = {
   type: updateGuestStatusDefinition.type,
   // Rendered as a decision node so the failure branch has a handle to leave
   // from. Without it `errorPolicy: 'errorRoute'` names a port no edge carries,
-  // which is a guaranteed dead end — the reason the option was withheld.
+  // which is a guaranteed dead end.
   templateType: NodeType.DecisionNode,
   label: 'עדכון סטטוס אורח',
   description: 'קובע את אישור ההגעה של האורח ששלח את ההודעה',

@@ -15,8 +15,8 @@ const node = (type: string, properties: Record<string, unknown>) => ({
 
 describe('stripComputedErrors', () => {
   it('⚠️ removes the validation state the save path has been persisting', () => {
-    // Measured 2026-09-15: 8 of 22 stored nodes carry `properties.errors`,
-    // because `makeSaveHandler` passes the payload through verbatim.
+    // Measured 2026-09-15: 8 of 22 stored nodes carried `properties.errors`,
+    // because `makeSaveHandler` passed the payload through verbatim.
     const data = {
       name: 'w',
       nodes: [
@@ -62,7 +62,7 @@ describe('stripComputedErrors', () => {
   });
 
   it('tolerates a payload with no nodes at all', () => {
-    // A diagram mid-load, and the shape `IntegrationDataFormat` allows.
+    // A diagram mid-load, and the shape `IntegrationDataFormatOptional` allows.
     const empty: { name: string; nodes?: unknown } = { name: 'w' };
     expect(stripComputedErrors(empty)).toEqual({ name: 'w' });
 

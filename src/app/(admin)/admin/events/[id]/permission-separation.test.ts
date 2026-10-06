@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 // The staff event page exists because /app/events/{id} authorizes on OWNERSHIP
-// alone — the platform owner holding all eleven permissions still gets a 404 on
+// alone — the platform owner holding every permission still gets a 404 on
 // a customer's event, including from the business calendar entry that links
-// there. The owner's condition for building it was one sentence: "אתה חייב
-// להפריד בין ההרשאות" (2026-09-07).
+// there. The page must keep the permissions separate: each section behind its
+// own key.
 //
 // This file pins that separation textually, because it is the kind of property
 // that decays silently: a later edit that reads the owner's phone number "while

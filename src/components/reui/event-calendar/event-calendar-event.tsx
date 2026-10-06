@@ -43,7 +43,7 @@ import { RepeatIcon } from "lucide-react"
 
 /**
  * Effective Tailwind palette presets for event colors; every entry works on
- * light and dark surfaces through the chip's alpha background + accent border.
+ * light and dark surfaces through the chip's alpha background + inset ring.
  */
 const EVENT_CALENDAR_COLORS: Array<{ name: string; value: string }> = [
   { name: "Blue", value: "var(--color-blue-500)" },
@@ -128,7 +128,7 @@ interface EventCalendarEventProps<TData = unknown> extends Omit<
   /**
    * Static drag clone: renders the chip exactly as-is but inert - no gestures,
    * resize handles, selection/drag state, focus, or pointer events. Used for
-   * the full-fidelity ghost that tracks the proposed slot during a move.
+   * the full-fidelity ghost that tracks the proposed extent during a resize.
    */
   preview?: boolean
 }
@@ -246,8 +246,8 @@ function EventCalendarEvent<TData = unknown>({
 
   // Agenda time text is per-day for multi-day events: the first day reads
   // "From 9:00 AM", middle days "All day", the last day "Until 5:00 PM".
-  // Boundaries derive from the occurrence vs segment.day (never the packing
-  // flags - lane merging rewrites those on shared segment objects).
+  // Boundaries derive from the occurrence vs segment.day, not from the
+  // segment flags.
   const agendaTimeText = (() => {
     if (view !== "agenda") return ""
     if (occurrence.allDay) return settings.i18n.labels.allDay
@@ -306,9 +306,8 @@ function EventCalendarEvent<TData = unknown>({
   // skips the custom subtree and it doesn't flicker; on drop only the moved
   // chip's inputs change and recompute. Deps are exactly renderProps' inputs
   // plus the render fns (all stable during an internal drag).
-  // KALFA fix (react-hooks/exhaustive-deps, real fix): destructured so the
-  // dependency list lists exactly the two render functions the memo reads —
-  // same invalidation surface upstream intended, now rule-exact.
+  // The render fns are destructured so the dependency list names exactly the
+  // two functions the memo reads (react-hooks/exhaustive-deps).
   const { renderAgendaEvent, renderEvent } = viewConfig
   const customContent = useMemo(() => {
     const renderProps = { occurrence, segment, view, isDragging, isSelected }
@@ -435,8 +434,8 @@ function EventCalendarEvent<TData = unknown>({
     </>
   )
 
-  // KALFA fix (react-hooks/purity, real fix): Date.now() may not run during
-  // render. The reference instant is captured once per mount (useState
+  // Date.now() may not run during render (react-hooks/purity). The reference
+  // instant is captured once per mount (useState
   // initializer = React's sanctioned impure-init boundary); "data-past" is a
   // styling hint and chips remount on every view/range navigation, so the
   // staleness window is minutes at most.
@@ -501,7 +500,7 @@ function EventCalendarEvent<TData = unknown>({
       preview && "pointer-events-none",
       view === "agenda"
         ? // plain list row: color lives in the dot badge, not a tinted pill;
-          // hover AND selection surfaces are owned by the agenda row wrapper
+          // the hover surface is owned by the agenda row wrapper
           "gap-3 rounded-md text-sm"
         : cn(
             // @container removes intrinsic sizing; only grid chips are containers

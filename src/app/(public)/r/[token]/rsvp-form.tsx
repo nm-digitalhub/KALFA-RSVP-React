@@ -39,10 +39,10 @@ const COUNT_FALLBACK_CAP = 50;
 const FIELD_CLASS =
   'min-h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50';
 
-// 44px stepper buttons (design audit: they were h-9 w-9 = 36px on the most
-// mobile-heavy page in the product). `touch-manipulation` removes the 300ms
-// double-tap-zoom delay on the +/− taps. Motion (press/entrance) is owned by
-// the public-pages motion layer, not here.
+// 44px stepper buttons (touch target size on the most mobile-heavy page in the
+// product). `touch-manipulation` removes the 300ms double-tap-zoom delay on the
+// +/− taps. Motion (press/entrance) is owned by the public-pages motion layer,
+// not here.
 const STEPPER_BUTTON_CLASS =
   'grid size-11 shrink-0 place-items-center rounded-md text-xl leading-none transition-colors outline-none select-none touch-manipulation hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-40 disabled:hover:bg-transparent';
 
@@ -117,8 +117,9 @@ export function RsvpForm({
   attendees?: RsvpAttendee[];
   // The shared <AddToCalendar> element, rendered by the PAGE (a Server
   // Component) and shown here only after the guest confirms attendance. It is
-  // a prop, not an import, because that component uses the library's
-  // server-only SSR helper, which must never enter this client bundle.
+  // a prop, not an import, because that component's link generation
+  // (src/lib/calendar) is server-side code that must never enter this client
+  // bundle.
   calendar?: React.ReactNode;
 }) {
   const { guest, event, questions, can_respond: canRespond } = view;

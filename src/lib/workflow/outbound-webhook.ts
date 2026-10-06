@@ -69,7 +69,8 @@ type HeaderResult =
  *      as its affordance, so a saved node normally has one.
  *   2. Reserved names are REFUSED, not silently dropped — see
  *      FORBIDDEN_HTTP_HEADERS for why each one would break a guarantee made
- *      elsewhere. A refusal names the header; the owner can fix it.
+ *      elsewhere. A refusal names the header; the owner can fix it. A newline in
+ *      a name or a value is refused the same way.
  *   3. Secrets are substituted. A missing one fails the whole call rather than
  *      sending a half-authenticated request (see substituteSecrets).
  *   4. A leftover `{{secrets.…}}` — a name too malformed for the pattern to have

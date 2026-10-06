@@ -86,7 +86,7 @@ export type KalfaNodeType = (typeof NODE_TYPES)[number];
 // editor's menu, the default, the owner kinds and the text-bearing ones) are
 // declared with the rest of its contract in
 // `nodes/trigger-whatsapp-inbound/definition.ts`. Re-exported here for existing
-// readers (`inbound.ts`, `arm-check.ts` and the admin data layer among them).
+// readers (`inbound.ts` and the admin data layer among them).
 export {
   DEFAULT_WHATSAPP_MESSAGE_KINDS,
   OWNER_WHATSAPP_MESSAGE_KINDS,
@@ -233,23 +233,18 @@ export type SwitchConfig = switchDefinition.SwitchConfig;
 //             from deleting the node: the wiring survives, so switching it back
 //             on is one click rather than a redraw.
 //
-// Offered on ACTION nodes only. On a condition, "skip and continue" has no
-// honest answer — the node's whole job is to pick a port, and skipping it
-// would either fire every branch or dead-end the run. Same reason
-// `errorPolicy` is action-only.
+// Offered on every node type — triggers, logic nodes and actions alike. The
+// field that is action-only is `errorPolicy`.
 export const NODE_STATUSES = ['active', 'draft', 'disabled'] as const;
 export type NodeStatus = (typeof NODE_STATUSES)[number];
 
 // What the runner does when a step throws.
 //
-// All THREE values the vendored runner accepts. Two of them used to be exposed,
-// and the comment here argued that the third could not work: "'errorRoute' tells
-// the runner to fire only outgoing edges whose sourceHandle is the reserved
-// literal 'errorRoute'. Nothing in this editor can draw such an edge."
-//
-// The premise was right and the conclusion was wrong. Nothing in the editor
-// MINTS that literal — `getHandleId` always produces `source:inner:<id>` — but
-// nothing has to. The adapter already rewrites the diagram into the runner's
+// All THREE values the vendored runner accepts. 'errorRoute' tells the runner to
+// fire only outgoing edges whose `sourceHandle` is the reserved literal
+// 'errorRoute'. Nothing in the editor MINTS that literal — `getHandleId` always
+// produces `source:inner:<id>` — but nothing has to. The adapter already
+// rewrites the diagram into the runner's
 // vocabulary, so it rewrites this too: an edge drawn from the action node's
 // error branch leaves the editor as `source:inner:error` and enters the
 // definition as `errorRoute`. See `ACTION_BRANCH_HANDLES` below.
@@ -258,18 +253,8 @@ export type NodeStatus = (typeof NODE_STATUSES)[number];
 // `logic.condition`: `templateType: NodeType.DecisionNode` plus a
 // `decisionBranches` array renders one labelled handle per entry.
 //
-// 'errorRoute' tells the runner to fire only outgoing edges whose
-// `sourceHandle` is the reserved literal 'errorRoute'. Nothing in this editor
-// can draw such an edge: `errorRoute` appears in the SDK bundle exactly twice,
-// both times inside that schema fragment's option list and its English label
-// map, and NOWHERE in any node template's handle rendering (verified against
-// dist/index-CEBfv0NZ.js at 2.3.0). So a node set to 'errorRoute' names a port
-// no edge can carry, and `isEdgeLive` prunes every branch — which is the
-// definition of a dead end, so the run ends `execution_incomplete`. Offering it
-// would be offering a setting whose only outcome is a broken run.
-//
-// The two we do expose keep the SDK's own value spelling, because that string
-// is what the runner compares against.
+// All three keep the SDK's own value spelling, because that string is what the
+// runner compares against.
 export const ERROR_POLICIES = ['fail', 'continue', 'errorRoute'] as const;
 export type ErrorPolicy = (typeof ERROR_POLICIES)[number];
 
@@ -371,7 +356,7 @@ export type WebhookConfig = webhookDefinition.WebhookConfig;
 /**
  * Headers the node refuses to let an owner set, lower-cased.
  *
- * Not paranoia — each one would break a guarantee made elsewhere in this file:
+ * Not paranoia — each one would break a guarantee made elsewhere, in `outbound-webhook.ts`:
  * `host` defeats the URL check by addressing a different vhost than the one
  * validated; `content-length` and the `transfer-encoding` family are how request
  * smuggling is spelled; and `x-kalfa-idempotency-key` is the receiver's only
@@ -394,11 +379,9 @@ export const MAX_CAPTURED_RESPONSE_BYTES = 8 * 1024;
 /**
  * `{{secrets.<NAME>}}` — the ONE namespace that is not resolved with the others.
  *
- * A name is word characters and dashes, ANY CASE. It was upper-snake only until
- * 2026-09-13, which refused `{{secrets.acme_key}}` for no reason anyone could
- * defend: the security property is the `KALFA_WORKFLOW_SECRET_` prefix on the
- * environment lookup, not the shape of what follows it. A case rule bought
- * nothing and cost a support question.
+ * A name is word characters and dashes, ANY CASE: the security property is the
+ * `KALFA_WORKFLOW_SECRET_` prefix on the environment lookup, not the shape of
+ * what follows it, so a case rule would buy nothing.
  *
  * The characters are still constrained, and that part IS load-bearing: the name
  * is concatenated into an environment key, so `.` and `/` must never appear.
@@ -413,13 +396,13 @@ export const SECRET_NAME_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
 /**
  * The node types whose fields may carry `{{secrets.…}}`.
  *
- * SCOPED BY NODE, NOT BY FIELD — and the first version got this wrong.
+ * SCOPED BY NODE, NOT BY FIELD.
  *
- * It allowed secrets only under a field literally named `headers`, on the
- * reasoning that headers are where credentials go. They are not the only place:
- * a Slack incoming webhook is a URL that is ENTIRELY a secret, and plenty of
+ * Allowing secrets only under a field literally named `headers` would be too
+ * narrow: headers are where credentials usually go, but not the only place.
+ * A Slack incoming webhook is a URL that is ENTIRELY a secret, and plenty of
  * APIs want the key in the JSON body or a query string. Restricting by field
- * name refused all of that for no gain.
+ * name would refuse all of that for no gain.
  *
  * The honest boundary is the NODE: `action.webhook` is the only step whose port
  * knows how to substitute a secret before the socket, so it is the only step
@@ -588,18 +571,17 @@ export type DeploymentBinding =
  *
  * ⚠️ DERIVED FROM THE CATALOGUE, NOT FROM SAVED DATA. A first pass built from
  * the 21 nodes present in this installation's saved workflows missed the
- * webhook trigger's credential field (then `token`, since split into
- * `endpointId` and `tokenHash`) and `action.start_for_each_guest.targetWorkflowId`
- * outright — neither node type had ever been used here. The classification was
- * read from the node property schemas (then all in `schemas.ts`, now each in
- * its `nodes/<name>/schema.ts`), which is the list of what a node CAN hold
- * rather than what one happens to.
+ * webhook trigger's credential field and
+ * `action.start_for_each_guest.targetWorkflowId` outright — neither node type
+ * had ever been used here. The classification is read from the node property
+ * schemas (each in its `nodes/<name>/schema.ts`), which is the list of what a
+ * node CAN hold rather than what one happens to.
  *
  * Each node declares its own bindings in its folder's `definition.ts`, together
  * with the reason for each one, checked at its use site rather than from its
  * name; this map only reads them.
  *
- * Fail-closed: `portability.test.ts` refuses a property that neither appears
+ * Fail-closed: `portability-coverage.test.ts` refuses a property that neither appears
  * here nor in its allow-list of reviewed portable names, so a new node cannot
  * ship unclassified.
  */
@@ -832,8 +814,7 @@ export function triggerSuppliesGuestContext(
  * carrying BOTH `required: [field]` and a `minLength` on it, so the schema
  * alone refuses an absent body and a blank one alike.
  *
- * ⚠️ AN EARLIER VERSION OF THIS COMMENT CLAIMED THE SCHEMA COULD NOT DO THAT,
- * on the grounds that the SDK's `ConditionalSchema` is typed as
+ * ⚠️ THE SDK'S `ConditionalSchema` IS TYPED AS
  * `{ properties: Record<string, FieldValidationSchema> }` with no root
  * `required` slot. The type really is that narrow — and it does not matter.
  * TypeScript checks excess properties only on a FRESH LITERAL at the assignment
@@ -863,7 +844,7 @@ export type ConditionalRequirement = {
    * What the runtime uses when `decidedBy` is ABSENT.
    *
    * ⚠️ IT MUST BE A MEMBER OF `whenIn` OR THE TWO GATES CONTRADICT EACH OTHER,
-   * and `palette-defaults.test.ts` asserts that. The reason is a JSON Schema
+   * and `conditional-required.test.ts` asserts that. The reason is a JSON Schema
    * subtlety: `if: { properties: { method: { const: 'POST' } } }` MATCHES an
    * object with no `method` at all, because `properties` does not constrain
    * absent keys — so every branch fires at once on a legacy diagram. That is

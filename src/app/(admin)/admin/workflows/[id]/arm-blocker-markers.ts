@@ -9,9 +9,9 @@ import { findArmBlockersByNode } from "@/lib/workflow/catalogue/arm-check";
 
 // The refusals the arm button would give, shown on the nodes while editing.
 //
-// ⚠️ THE FAILURE THIS CLOSES. Five refusals no JSON Schema makes, and until now
-// the owner met every one of them by pressing "arm" and reading a list while the
-// node itself looked fine:
+// ⚠️ THE FAILURE THIS CLOSES. Refusals no JSON Schema makes, which the owner
+// would otherwise meet only by pressing "arm" and reading a list while the node
+// itself looked fine. For example:
 //
 //   a step left in DRAFT          — 'draft' is a legitimate value of the enum
 //   a guest step under a          — CROSS-NODE: the answer depends on the node
@@ -26,13 +26,11 @@ import { findArmBlockersByNode } from "@/lib/workflow/catalogue/arm-check";
 // Each is a refusal the engine already makes; all this does is move the news
 // forward in time, onto the node it belongs to.
 //
-// ⚠️ AND IT SURFACES ONLY THOSE. An earlier version of this comment argued the
-// opposite — that repeating the schema's own refusals here "costs nothing" —
-// and the code did exactly that. It was wrong twice over: `Ga()` counts
-// `customErrors` toward node validity alongside schema errors, so the same
-// invariant was injected twice at the data layer, and the schema's own message
-// already renders beside the field while ours could not. `syncArmBlockerMarkers`
-// now filters on `source`; see the block above it.
+// ⚠️ AND IT SURFACES ONLY THOSE. Repeating the schema's own refusals here would
+// inject the same invariant twice at the data layer: `Ga()` counts
+// `customErrors` toward node validity alongside schema errors, and the schema's
+// own message already renders beside the field. `syncArmBlockerMarkers` filters
+// on `source` for that reason.
 //
 // The SDK exposes exactly the right seam: `data.properties.customErrors` puts an
 // exclamation mark on the node and the message in the properties panel. Its own
@@ -50,12 +48,12 @@ const ARM_BLOCKER_KEYWORD = "armBlocker";
 /**
  * The Ajv error shape the SDK documents for `customErrors`.
  *
- * ⚠️ `instancePath` IS THE FIELD BINDING, and it used to be hardcoded to `''`.
+ * ⚠️ `instancePath` IS THE FIELD BINDING.
  * JsonForms documents it as the way an external error attaches to a property
  * (`/lastname` in their own example), so a root-scoped error marks the node and
- * lands next to nothing. Each blocker now carries its own path — `/status` for
- * a draft step, `/topic` for a sales-routed callback — and `''` only where the
- * refusal genuinely is not about one field.
+ * lands next to nothing. Each blocker carries its own path — `/status` for
+ * a draft step, `/topic` for a sales-routed callback — and `ARM_NOTICE_PATH`
+ * where the refusal belongs to the node rather than to one field.
  */
 function toErrorObject(blocker: { message: string; instancePath: string }) {
   return {
@@ -92,11 +90,11 @@ function identitiesOf(node: WorkflowBuilderNode): ErrorIdentity[] {
 /**
  * ⚠️ COMPARES IDENTITY, NOT JUST THE SENTENCE — and that is load-bearing.
  *
- * An earlier version compared `message` alone. Moving a blocker from the root to
- * its own field changes ONLY `instancePath`; the wording is unchanged. Under a
- * message-only comparison the sync would see no difference, skip the write, and
- * the error would stay attached to the node instead of the field — a silent
- * no-op that looks exactly like "already up to date".
+ * Moving a blocker from the root to its own field changes ONLY `instancePath`;
+ * the wording is unchanged. Under a message-only comparison the sync would see
+ * no difference, skip the write, and the error would stay attached to the node
+ * instead of the field — a silent no-op that looks exactly like "already up to
+ * date".
  */
 function sameErrors(a: readonly ErrorIdentity[], b: readonly ErrorIdentity[]): boolean {
   return (
@@ -141,10 +139,11 @@ export function syncArmBlockerMarkers(
   // at the data layer: two errors on one node for one mistake, differing only in
   // wording. Not a rendering detail — `Ga()` counts both toward validity.
   //
-  // What is left is exactly the set the schema cannot see: a step left in draft,
-  // a guest step under a guestless trigger, a keyword no kind can satisfy, a
-  // fan-out pointing at itself, a callback routed to the sales agent. Those are
-  // the ones an owner would otherwise meet for the first time by pressing "arm".
+  // What is left is exactly the set the schema cannot see — for example a step
+  // left in draft, a guest step under a guestless trigger, a keyword no kind can
+  // satisfy, a fan-out pointing at itself, a callback routed to the sales agent.
+  // Those are the ones an owner would otherwise meet for the first time by
+  // pressing "arm".
   const byNode = new Map<string, ErrorIdentity[]>();
   for (const blocker of blockers) {
     if (blocker.source !== "arm-only") continue;
@@ -184,12 +183,13 @@ export function syncArmBlockerMarkers(
  * Strip the editor's computed validation state out of a diagram before it is
  * persisted.
  *
- * ⚠️ THIS IS A BUG FIX THAT PREDATES `customErrors`, AND IT IS MEASURED. Eight
- * of twenty-two stored nodes already carry `properties.errors` — the save path
- * is a verbatim pass-through and has never stripped anything. Schema errors are
- * self-healing, because the SDK recomputes them on load; `customErrors` are not,
- * because nothing but this module computes them. Persisting one would show an
- * owner a refusal that was fixed in another session and is no longer true.
+ * ⚠️ THIS IS A BUG FIX THAT PREDATES `customErrors`, AND IT IS MEASURED. On
+ * 2026-09-15 eight of twenty-two stored nodes carried `properties.errors` — the
+ * save path was a verbatim pass-through that never stripped anything. Schema
+ * errors are self-healing, because the SDK recomputes them on load;
+ * `customErrors` are not, because nothing but this module computes them.
+ * Persisting one would show an owner a refusal that was fixed in another session
+ * and is no longer true.
  *
  * ⚠️ AND IT IS STILL A PASS-THROUGH IN THE SENSE THAT MATTERS. The handler's own
  * comment warns against rebuilding the payload from a chosen four fields — that

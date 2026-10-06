@@ -19,22 +19,17 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
-        // KALFA semantic status tones — added per shadcn customization §3 (add a
-        // variant via cva). These reproduce the tones of the Badge that used to
-        // live in `src/app/(admin)/admin/_components.tsx`, so the per-domain
-        // `Record<Enum, BadgeVariant>` status maps (order/guest/campaign/webhook…)
-        // keep working after the promotion. tailwind-merge lets each tone's
-        // `border-*` win over the base `border-transparent`.
+        // KALFA semantic status tones, used by the per-domain
+        // `Record<Enum, BadgeVariant>` status maps. tailwind-merge lets each
+        // tone's `border-*` win over the base `border-transparent`.
         neutral: "border-border text-muted-foreground",
         success: "border-success/20 bg-success/10 text-success",
         warning: "border-warning/20 bg-warning/10 text-warning",
         info: "border-info/20 bg-info/10 text-info",
       },
     },
-    // `neutral` was the default of the promoted admin Badge; keeping it as the
-    // default here preserves the appearance of every call-site that renders
-    // <Badge> without an explicit variant (admin callbacks/agreement/users, the
-    // team member/invitation chips, etc.).
+    // `neutral` is the default, so every call-site that renders <Badge>
+    // without an explicit variant gets the neutral tone.
     defaultVariants: {
       variant: "neutral",
     },

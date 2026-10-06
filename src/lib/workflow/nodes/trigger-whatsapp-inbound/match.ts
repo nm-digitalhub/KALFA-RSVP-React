@@ -30,18 +30,17 @@ export function matchesKeyword(keyword: unknown, messageText: string): boolean {
 /**
  * The MESSAGE-KIND filter — text, a button tap, a file, contact cards.
  *
- * ⚠️ THE GATE THAT USED TO LIVE IN THE BILLING CLASSIFIER.
+ * ⚠️ THE AUTOMATION GATE IS NOT THE BILLING CLASSIFIER.
  *
- * `createRunsForInboundMessage` opened with `if (!billable) return []`, reusing
- * `BILLABLE_MESSAGE_TYPES` — a BILLING concept — to decide what an owner is
- * allowed to automate. The two happen to agree for a guest replying, and
+ * `BILLABLE_MESSAGE_TYPES` is a BILLING concept and must not decide what an
+ * owner is allowed to automate. The two happen to agree for a guest replying, and
  * disagree completely for the case that matters: an owner sending a guest list
  * is not a billable reach, so a file or a contact card could never start a
- * workflow, and importing guests had to live as a separate hard-coded mechanism.
+ * workflow if billing were the gate.
  *
  * Billing is untouched. This is the automation half, and it is per-workflow.
  *
- * ABSENT OR EMPTY MEANS `DEFAULT_WHATSAPP_MESSAGE_KINDS` — exactly the old
+ * ABSENT OR EMPTY MEANS `DEFAULT_WHATSAPP_MESSAGE_KINDS` — exactly the
  * billable set — so every diagram saved before this field keeps its behaviour
  * with no migration. An owner who wants files says so on the node.
  *
@@ -85,14 +84,13 @@ export function matchesKind(configured: unknown, kind: string): boolean {
  *
  * THE GAP THIS CLOSES. `startWorkflowRuns` is called beside `processWebhookEvent`
  * in the drain loop, not behind it, so the inbound router's decision — import
- * traffic goes to stageWhatsAppImport and returns — never applied to workflows.
- * Since the second number went live on 2026-09-10 every armed workflow has been
- * firing on both lines with nothing able to distinguish them.
+ * traffic goes to stageWhatsAppImport and returns — never applies to workflows.
+ * Since the second number went live on 2026-09-10 an armed workflow fires on
+ * both lines unless this filter names one.
  *
- * EMPTY OR ABSENT MATCHES ANYTHING, deliberately, and it is the owner's call
- * (2026-09-13): every diagram saved before this field existed keeps its current
- * behaviour rather than silently narrowing to one line. The editor warns on the
- * node when no number is chosen.
+ * EMPTY OR ABSENT MATCHES ANYTHING, deliberately: every diagram saved before this
+ * field existed keeps its current behaviour rather than silently narrowing to one
+ * line. The properties panel warns about it under the number picker.
  *
  * A configured number against an UNKNOWN arrival (`null` — an older inbox row
  * written before the column was populated) does NOT match. Fail closed: "we do

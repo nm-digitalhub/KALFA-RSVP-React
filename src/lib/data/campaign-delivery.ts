@@ -5,15 +5,19 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { requireEventAccess } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
 import type { Database, Enums } from '@/lib/supabase/types';
-// B8 — the WhatsApp/Meta webhook breakdown for a campaign, shown BESIDE (never
-// replacing) the existing billing summary on the campaign board. Every figure is
-// a reflection of an inbound Meta signal:
+// The delivery breakdown for a campaign (WhatsApp/Meta webhook signals plus
+// AI-call outcomes), shown BESIDE (never replacing) the existing billing
+// summary on the campaign board. Every WhatsApp figure is a reflection of an
+// inbound Meta signal:
 //   - `delivery_status` (sent/delivered/read/failed) from the status callbacks,
 //   - `op_status` (reached_billed / wrong_number) from the contact's outcome,
 //   - `removal_requested` from an opt-out reply.
-// Owner-scoped: all reads go through the cookie client (owner RLS, owns_event)
-// and the campaign's event ownership is re-asserted (defense-in-depth). The
-// billing summary (reached/accrued/ceiling) is a separate RPC and is untouched.
+// The AI-call figures are tallied from the contacts' call outcomes (`call` below).
+// Owner-scoped: the owner path reads through the cookie client (org-aware RLS,
+// can_access_event) and the caller's access to the campaign's event is
+// re-asserted (defense-in-depth); staff reads go through
+// getCampaignDeliveryForAdminView. The billing summary
+// (reached/accrued/ceiling) is a separate RPC and is untouched.
 
 type OpStatus = Enums<'contact_op_status'>;
 
@@ -191,7 +195,7 @@ export async function getCampaignDeliveryBreakdown(
 ): Promise<CampaignDeliveryBreakdown | null> {
   const supabase = await createClient();
 
-  // Resolve the campaign's event under owner RLS; a non-owner sees null.
+  // Resolve the campaign's event under RLS (owner or org member); anyone else sees null.
   const { data: campaign, error: cErr } = await supabase
     .from('campaigns')
     .select('event_id')

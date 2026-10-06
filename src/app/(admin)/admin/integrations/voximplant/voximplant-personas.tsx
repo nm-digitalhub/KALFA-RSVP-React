@@ -10,14 +10,12 @@ import {
   updateSalesCallChannelAction,
 } from '@/app/(admin)/admin/integrations/actions';
 
-// The three call KILL SWITCHES, lifted out of channels-client.tsx so the provider page
-// and the old channels tab render one definition while both exist.
+// The three call KILL SWITCHES.
 //
-// ⚠️ SIBLING FORMS, NEVER NESTED. Carried over verbatim from the comment these forms
-// were written under, because it is the evidence for the bug it prevents: a <form>
-// inside another <form> produced "React form was unexpectedly submitted" on this exact
-// panel. Each switch owns its own <form> and its own useActionState, which is why they
-// are exported as three components rather than one.
+// ⚠️ SIBLING FORMS, NEVER NESTED. A <form> inside another <form> produced "React form
+// was unexpectedly submitted" on this exact panel. Each switch owns its own <form> and
+// its own useActionState, which is why they are exported as three components rather
+// than one.
 //
 // Each dials its OWN rule_id, deliberately separate from voximplant_rule_id
 // (the RSVPAgent bridge rule — 1520915, `OutCallAgent` — must never carry another
@@ -72,7 +70,7 @@ export function VoximplantLiveCallsToggle({
   );
 }
 
-/** Meeting-confirm persona (2026-08-22): its own rule_id, its own toggle. */
+/** Meeting-confirm persona: its own rule_id, its own toggle. */
 export function VoximplantMeetingConfirmToggle({
   ruleId,
   enabled,
@@ -121,7 +119,7 @@ export function VoximplantMeetingConfirmToggle({
   );
 }
 
-/** Sales-closing persona (2026-08-22): its own rule_id, its own toggle. */
+/** Sales-closing persona: its own rule_id, its own toggle. */
 export function VoximplantSalesCallToggle({
   ruleId,
   enabled,

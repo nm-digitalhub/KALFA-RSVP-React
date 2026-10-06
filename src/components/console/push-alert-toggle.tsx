@@ -106,8 +106,7 @@ export function ConsolePushAlertToggle() {
         await subscription.unsubscribe();
       } catch {
         // Still attempt the server-side revoke below even if the browser-side
-        // unsubscribe itself failed (e.g. already gone) — same fail-forward
-        // shape as unsubscribeFromPush in the settings page.
+        // unsubscribe itself failed (e.g. already gone).
       }
       const result = await unsubscribeConsolePushAction(endpoint);
       if (!result.success) {

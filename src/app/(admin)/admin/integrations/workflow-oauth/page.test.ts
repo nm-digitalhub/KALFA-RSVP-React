@@ -204,8 +204,8 @@ describe('Workflow OAuth admin page', () => {
   });
 
   it('⚠️ shows the Redirect URI an operator must register in Entra', async () => {
-    // It was nowhere in the product: the only way to learn the value was to read
-    // `oauth-flow.ts` and combine the callback path with APP_ORIGIN by hand.
+    // Without it the only way to learn the value is to read `oauth-flow.ts` and
+    // combine the callback path with APP_ORIGIN by hand.
     // Microsoft requires an EXACT match and answers AADSTS50011 otherwise, so a
     // value the operator has to reconstruct is a value they will get wrong.
     const rendered = collect(await render()).find(

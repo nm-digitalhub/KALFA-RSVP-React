@@ -57,8 +57,8 @@ import type { AddNumberState } from './actions';
 // So a "back" on step 1 would promise an undo that does not exist. What the wizard
 // owes instead is a way back IN: a number added and then abandoned (the sheet closed,
 // the tab lost) still exists at Meta, and without RESUME it could never be verified —
-// the wizard always restarted at step 1, and nothing else on the page can request a
-// code. That was a trap, and `candidates` + the resume picker below are the way out.
+// the wizard would always restart at step 1, and nothing else on the page can request
+// a code. `candidates` + the resume picker below are the way out.
 
 type Step = 'add' | 'code' | 'verify' | 'register';
 
@@ -293,16 +293,11 @@ export function AddNumberWizard({
                 <div>
                   <Label htmlFor="phone">מספר הטלפון</Label>
                   {/* THE FLAG CONTROL THE GUEST FORM AND THE CONTACT FORMS ALREADY USE.
-                      Two boxes stood here first — a country code, and "the full number
-                      including the country code but without the +". That made the admin
-                      perform the split that libphonenumber-js does for free, into a
-                      format that exists for Meta's convenience and nobody else's.
-
-                      One field now. `0501234567` works, `+972 50-123 4567` works, and a
+                      One field: `0501234567` works, `+972 50-123 4567` works, and a
                       number from another country works too — the flag reports which
-                      country it was read as, which is the check the two boxes could
-                      never make. The split into Meta's `cc` and `phone_number` happens
-                      server-side in addNumberSchema, once, at the boundary. */}
+                      country it was read as. The admin never performs the split into
+                      Meta's `cc` and `phone_number`: it happens server-side in
+                      addNumberSchema, once, at the boundary. */}
                   <PhoneInput
                     id="phone"
                     name="phone"
@@ -430,20 +425,14 @@ export function AddNumberWizard({
                 <input type="hidden" name="phoneNumberId" value={phoneNumberId} />
                 <div>
                   <Label htmlFor="code">הקוד שהתקבל</Label>
-                  {/* THE SAME OTP COMPOSITION THE PROFILE PAGE USES, including the
+                  {/* THE SAME OTP COMPOSITION THE SETTINGS PAGE USES, including the
                       dir="ltr" ON THE GROUP — and that attribute is not cosmetic.
                       input-otp has no direction handling of its own (the settings
                       page's note records that its dist contains no `dir`, `rtl` or
                       `direction`), so under the admin shell's dir="rtl" the slot row
                       reverses and slot 0 renders on the RIGHT: 538395 would read back
                       as 593835. The owner would type the code they were sent and be
-                      told it is wrong.
-
-                      A plain <Input dir="ltr"> was here first. It is not broken in the
-                      same way, but it made the one screen in the panel that asks for a
-                      texted code look unlike the one screen in the app that already
-                      does — for no reason other than that this file was written
-                      without looking at that one. */}
+                      told it is wrong. */}
                   <InputOTP
                     id="code"
                     name="code"

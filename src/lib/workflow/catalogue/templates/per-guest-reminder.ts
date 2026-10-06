@@ -1,8 +1,7 @@
 'use client';
 
 // Starter template 8 of 13 — its diagram and its selector entry. Editor
-// side; `./index.ts` places it in `DIAGRAM_TEMPLATES` at the position the
-// inline entry held.
+// side; `./index.ts` places it in `DIAGRAM_TEMPLATES`.
 import type { DiagramModel, TemplateModel } from '@workflowbuilder/sdk';
 
 import { SOURCE, TARGET } from './shared';
@@ -18,7 +17,7 @@ const PERGUEST_SEND_ID = 'tmpl-perguest-send';
  *
  * Its trigger is a webhook whose token hash is left EMPTY. That is not an
  * oversight:
- * every graph must declare exactly one start node (rule 1 of the conversion
+ * every graph must declare exactly one start node (rule 4 of the conversion
  * contract), so a workflow needs a trigger even when nothing fires it — and an
  * empty hash means the public endpoint cannot reach it either. A WhatsApp
  * trigger here would have been worse: armed, it would fire on every inbound

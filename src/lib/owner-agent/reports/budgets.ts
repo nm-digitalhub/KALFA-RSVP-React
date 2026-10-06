@@ -15,8 +15,9 @@ import { REPORT_CATCH_UP_MS } from './planner';
 // And the retry chain fits inside the catch-up window: a report retried after a
 // database blip must still be on time, or the handler expires it.
 //
-// There is no model run here: a report is a handful of head-count queries and
-// at most six WhatsApp sends, so the numbers are seconds, not minutes.
+// There is no model run in these budgets (model reports: below): a numeric
+// report is a handful of head-count queries and at most six WhatsApp sends, so
+// the numbers are seconds, not minutes.
 
 /** The content reads (six cores in parallel) must finish within this, or the job throws and retries. */
 export const REPORT_CONTENT_TIMEOUT_MS = 30_000;

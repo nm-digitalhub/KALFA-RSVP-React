@@ -20,8 +20,7 @@ import { TestEventSection } from './test-event-section';
 // /app/events/{id}, which authorizes on ownership alone and 404s for staff.
 // This page is that address; event-exchange-sync now points the calendar here.
 //
-// PERMISSION SEPARATION IS THE POINT OF THIS FILE (owner, 2026-09-07:
-// "אתה חייב להפריד בין ההרשאות"). Two rules hold it:
+// PERMISSION SEPARATION IS THE POINT OF THIS FILE. Two rules hold it:
 //   1. The page itself requires ONLY 'view_events' — the identity of the event
 //      and nothing else. Everything richer lives behind its own key.
 //   2. A section whose key the viewer lacks is ABSENT, never a redirect and

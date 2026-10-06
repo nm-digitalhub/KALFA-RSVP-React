@@ -7,8 +7,9 @@ import { listVoicePurposes } from '@/lib/data/voice-purposes';
 // Can every call node in this workflow actually place its call?
 //
 // ⚠️ WHY THIS IS SEPARATE FROM `findArmBlockers`. That one is a PURE function
-// over the stored definition — it runs in the browser bundle's tests, imports
-// only `./types`, and touches no database. The question here cannot be answered
+// over the stored definition — it also runs in the browser (the workflow
+// editor's arm-blocker markers), imports no database client, and touches no
+// database. The question here cannot be answered
 // from the definition alone: whether a purpose still exists, is still enabled,
 // and still carries a rule is a fact about `voice_purposes`, not about the
 // diagram. Reaching for that from inside a pure module would drag a Supabase
@@ -23,10 +24,9 @@ import { listVoicePurposes } from '@/lib/data/voice-purposes';
 // a purpose can be disabled between arming and running, and only the dispatcher
 // is there when it matters.
 //
-// ⚠️ THE NODE'S OWN RULE COUNTS. A purpose with no rule used to be
-// unconditionally undialable; it no longer is, because the node can name one.
-// Checking only the purpose here would refuse to arm a workflow that dials
-// perfectly well — the exact inversion of what a gate is for.
+// ⚠️ THE NODE'S OWN RULE COUNTS. A purpose with no rule is still dialable when
+// the node names one. Checking only the purpose here would refuse to arm a
+// workflow that dials perfectly well — the exact inversion of what a gate is for.
 
 const CALL_NODE = startVoiceCallDefinition.type;
 
@@ -91,8 +91,7 @@ export async function findVoiceDialBlockers(storedDefinition: unknown): Promise<
       continue;
     }
 
-    // THE RULE, from either place. This is the check the node's own fields
-    // changed: before them, a rule-less purpose could not be chosen at all.
+    // THE RULE, from either place: the purpose's, or the node's own.
     if (!purpose.ruleId && readText(properties, 'ruleId') === '') {
       blockers.push(
         `${where}: אין כלל ניתוב. בחרו כלל בשדה "כלל הניתוב" בצעד, או קשרו כלל לייעוד "${purpose.displayName}".`,

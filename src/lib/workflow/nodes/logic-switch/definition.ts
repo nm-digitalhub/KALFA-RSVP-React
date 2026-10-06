@@ -20,16 +20,16 @@ export const isTrigger = false;
 /**
  * `logic.switch` — N named branches, each with its own conditions.
  *
- * REBUILT 1:1 ON THE SDK'S OWN `DecisionBranches` CONTROL (2026-09-13). The first
- * version hard-coded three cases and a default because I had not read far enough:
- * the SDK ships a composer that gives the owner add / remove / reorder / rename
- * over the branch list, and `ArrayFieldSchema` to declare it. The ceiling was
- * mine, not the package's.
+ * BUILT 1:1 ON THE SDK'S OWN `DecisionBranches` CONTROL: the SDK ships a composer
+ * that gives the owner add / remove / reorder / rename over the branch list, and
+ * `ArrayFieldSchema` to declare it.
  *
  * The operators below are the SDK's own `comparisonsOperators`, copied as
  * literals rather than imported — this module is read by the pg-boss worker and
- * must not load `@workflowbuilder/sdk`. `branch-handles.test.ts` pins them
- * against the package so a drift fails a test rather than a live workflow.
+ * must not load `@workflowbuilder/sdk`. Unlike the handle ids, no test pins them
+ * against the package (`branch-handles.test.ts` covers only the handles), so a
+ * change to the SDK's list has to be mirrored here by hand; `steps/switch.test.ts`
+ * evaluates each of the ten.
  */
 export const SWITCH_COMPARISON_OPERATORS = [
   'isEqual',
@@ -60,10 +60,7 @@ export type SwitchLogicalOperator = (typeof SWITCH_LOGICAL_OPERATORS)[number];
  *
  * `x` and `y` are free values — literal text or `{{…}}` references — and both
  * arrive ALREADY RESOLVED, because `resolveConfigTemplates` walks the whole
- * config before the handler runs. That is what an earlier note (quoted, and
- * retracted, in `nodes/logic-condition/logic-condition.ts`) said we could not do ("their conditions resolve through resolveTemplate, which
- * we did not vendor"); resolve-template IS vendored and wired, so the reason is
- * gone and the control can be exposed as designed.
+ * config before the handler runs.
  */
 export type SwitchCondition = {
   x: string;
@@ -75,10 +72,10 @@ export type SwitchCondition = {
 /**
  * One branch: a handle, a label and the rows that select it.
  *
- * `sourceHandle` is minted by the EDITOR through `getHandleId`, so unlike the
- * fixed three-case version the worker cannot know the ports in advance — it
- * reads them from the branch the conditions selected. That is the whole reason
- * this shape can be dynamic at all.
+ * `sourceHandle` is minted by the EDITOR through `getHandleId`, so the worker
+ * cannot know the ports in advance — it reads them from the branch the
+ * conditions selected. That is the whole reason this shape can be dynamic at
+ * all.
  */
 export type SwitchBranch = {
   id: string;
@@ -90,10 +87,12 @@ export type SwitchBranch = {
 /**
  * The DEFAULT port — fired when no branch matched.
  *
- * Seeded by the palette and NOT removable from the control, because "none of the
- * above" is the one route that must always exist: without it an unmatched value
- * names no port, `isEdgeLive` prunes every edge, and the run ends `incomplete`
- * with a dead end rather than going somewhere a person chose.
+ * Seeded by the palette, because "none of the above" is the one route that must
+ * always exist: without it an unmatched value reaches no drawn port,
+ * `isEdgeLive` prunes every edge, and the run ends `incomplete` with a dead end
+ * rather than going somewhere a person chose. The SDK's control puts a remove
+ * button on every branch card, this one included, and nothing in the palette
+ * entry or the schema protects it.
  */
 export const SWITCH_DEFAULT_HANDLE = 'source:inner:default';
 export const SWITCH_DEFAULT_BRANCH_ID = 'default';
@@ -165,7 +164,7 @@ export const deploymentBindings: Readonly<Record<string, 'identifier' | 'secret'
  */
 export const outputFields = {
   matched: { type: 'boolean', label: 'נמצאה התאמה', description: 'האם תנאי כלשהו התקיים' },
-  // A NAME now, not a number. With N owner-named branches "מסלול 3" is not
+  // A NAME, not a number. With N owner-named branches "מסלול 3" is not
   // a fact the node knows; the label the owner typed is.
   branch: { type: 'string', label: 'שם המסלול שנבחר', description: 'ריק כאשר נבחרה ברירת המחדל' },
 } as const;

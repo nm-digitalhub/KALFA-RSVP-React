@@ -62,7 +62,7 @@ export async function setOwnerAgentReportTemplateAction(
 
   await requirePlatformOwner();
   try {
-    // The DAL re-parses (it has callers other than this form), so it gets the raw strings.
+    // The DAL re-parses, so it gets the raw strings.
     await setOwnerAgentReportTemplate(raw);
   } catch (err) {
     unstable_rethrow(err);

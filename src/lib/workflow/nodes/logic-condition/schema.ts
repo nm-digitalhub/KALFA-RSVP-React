@@ -8,9 +8,8 @@ import { identityProperties, requiredText, statusProperty } from '../../catalogu
 
 import { requiredFields, type ConditionField, type ConditionOperator } from './definition';
 
-// Indexed by NAME, not by position in the tuple. The previous form read
-// `CONDITION_FIELDS[0]`, `[1]`, `[2]` … which is correct exactly as long as
-// nobody inserts an entry — and this list just grew from two to seven. Naming
+// Indexed by NAME, not by position in the tuple. Reading `CONDITION_FIELDS[0]`,
+// `[1]`, `[2]` … is correct exactly as long as nobody inserts an entry. Naming
 // the member makes a reorder a type error instead of a silently relabelled
 // dropdown.
 export const conditionFieldOptions = {

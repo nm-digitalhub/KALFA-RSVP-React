@@ -10,9 +10,9 @@ import { REPORT_MODEL_RUN_TIMEOUT_MS } from './budgets';
 import { TEMPLATE_PLACEHOLDER, templateParam, type ReportContent } from './content';
 import type { ReportPeriod } from './planner';
 
-// A report WITH the owner's "הנחיות לדוח" (owner decision 27.9, c): the text is
+// A report WITH the owner's "הנחיות לדוח": the text is
 // written by the model — the same runner, system prompt and permission set as
-// an answer (runner.ts runOwnerAgent, imported, not edited) — from a FIXED
+// an answer (runner.ts runOwnerAgent, bound in consumer/main.ts) — from a FIXED
 // wrapper prompt: the report period, then the instructions, framed as the
 // owner's own request. Differences from an answer, all on purpose:
 //   - never resumed, never remembered and never persisted (persistSession:

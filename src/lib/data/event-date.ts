@@ -1,7 +1,7 @@
 // L1 — the single shared "past event" rule, as a dependency-free leaf module so
-// it is safe to import from the pg-boss worker (no `server-only`) and, later, from
-// client UI (e.g. disabling an RSVP button) without dragging in the events data
-// layer. `@/lib/data/events` re-exports these as the documented home.
+// it is safe to import from the pg-boss worker (no `server-only`) and from client
+// UI without dragging in the events data layer. `@/lib/data/events` re-exports
+// these as the documented home.
 //
 // An event is "past" only AFTER the end of its calendar day in Israel, matching
 // the DB guard `(now() AT TIME ZONE 'Asia/Jerusalem')::date >

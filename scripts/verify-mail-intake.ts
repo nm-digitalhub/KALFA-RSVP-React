@@ -1,6 +1,6 @@
 /**
  * Brings up (or heals) the Outlook mail-intake subscription and reports the
- * live state — the S1 gate for plans/m365-fleet-mail-intake.md.
+ * live state (see plans/m365-fleet-mail-intake.md, §4.1 and §4.4).
  *
  * Runs the SAME function the worker cron runs, rather than a parallel
  * implementation, so a pass here means the cron path works and not merely that

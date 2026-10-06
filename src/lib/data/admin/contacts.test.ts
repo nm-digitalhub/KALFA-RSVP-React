@@ -248,13 +248,13 @@ describe('sendInquiryReply', () => {
     return send;
   }
 
-  // sendInquiryReply now runs up to FOUR sequential queries against the same
+  // sendInquiryReply runs up to FOUR sequential queries against the same
   // admin client: (1) the contact_messages row (email/name/status/ref_code),
   // (2) the most recent INBOUND inquiry_messages row for that inquiry (to
   // compute isFirst / In-Reply-To), (3) the inquiry_messages insert recording
   // the outbound reply, (4) the contact_messages update. createMockSupabase
   // gives every `.from()` call the SAME builder, so — same technique as
-  // resolveInquiryUrgency's mockTwoReads above — `builder.then` is stubbed
+  // resolveInquiryUrgency's mockTwoReads below — `builder.then` is stubbed
   // once per query, in call order, via mockImplementationOnce. A test whose
   // code path throws early (cancelled/no-email/send failure) simply never
   // consumes the later, unused implementations.
@@ -305,10 +305,10 @@ describe('sendInquiryReply', () => {
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({ to: 'dana@example.com', subject: 's' }),
     );
-    // A reply no longer auto-closes the inquiry to 'done' — it advances to
+    // A reply does not auto-close the inquiry to 'done' — it advances to
     // 'in_progress' (someone is actively working the thread), and clears
-    // handled_at since in_progress is never terminal. 'done' is now reachable
-    // only via an explicit admin status change.
+    // handled_at since in_progress is never terminal. 'done' is reachable
+    // only via an explicit admin status change (or the silence auto-close sweep).
     expect(builder.update).toHaveBeenCalledWith(
       expect.objectContaining({
         sent_reply: 'שלום, תודה על פנייתך.',

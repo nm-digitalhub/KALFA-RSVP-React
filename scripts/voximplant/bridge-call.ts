@@ -19,7 +19,7 @@
 //     ElevenLabs credits — nothing runs without --confirm.
 //   * Default rule = 1520915 (OutCallAgent → RSVPAgent on kalfa-rsvp). It
 //     hard-refuses the DTMF production OutCall rule (1494311) — that rule's
-//     scenario is not the bridge and is driven only by the worker dispatcher.
+//     scenario is not the bridge.
 //   * Refuses an event that can no longer record an RSVP (not active / past
 //     event day / passed deadline) — the same refusals submit_rsvp applies, and
 //     the same gate the worker dispatcher enforces at 4b. --allow-closed-event
@@ -53,7 +53,7 @@ import type { VoximplantConfig } from '@/lib/voximplant/core';
 import { startScenarios } from '@/lib/voximplant/mutations';
 
 // The DTMF production OutCall rule — this launcher must NEVER touch it (its
-// scenario is RSVP.voxengine.js, not the bridge; only the worker dials it).
+// scenario is RSVP.voxengine.js, not the bridge).
 const PROD_OUTCALL_RULE = '1494311';
 // OutCallAgent → RSVPAgent on kalfa-rsvp (rules metadata, promoted 2026-07-20).
 const DEFAULT_AGENT_RULE = '1520915';
@@ -211,12 +211,10 @@ async function main(): Promise<void> {
   // PRE_TERMINAL, so a cb callback that already advanced the row is never
   // clobbered.
   //
-  // This launcher used to print the StartScenarios response and drop it, leaving
-  // vox_call_session_history_id and media_session_access_url NULL. Since it is
-  // the only path that actually dials today (no campaign is enabled, so the
-  // worker never runs), those columns were empty on every row ever created — and
-  // media_session_access_url is the server-side handle a live-session command
-  // channel needs. Printing an id the database never learns is not a dial record.
+  // vox_call_session_history_id and media_session_access_url must be written
+  // here, not just printed: media_session_access_url is the server-side handle a
+  // live-session command channel needs. Printing an id the database never learns
+  // is not a dial record.
   const { applied } = await recordDialConfirmed(attemptId, {
     callSessionHistoryId: resp.call_session_history_id,
     mediaSessionAccessUrl: resp.media_session_access_url ?? null,

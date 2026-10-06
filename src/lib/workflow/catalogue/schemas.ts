@@ -158,10 +158,9 @@ const NODE_RUN_ELEMENT: UISchema = {
  * added later gets it without anyone remembering to.
  *
  * ⚠️ AND HERE RATHER THAN ON `PALETTE_ITEMS` ITSELF. That array is also read by
- * `normalizeLegacyProperties` and by the tests that police container choice;
- * neither has any business seeing an element that exists only for the editor's
- * live view. `nodeTypes` is the only consumer that needs it, and this function
- * is what builds it.
+ * the tests that police container choice; they have no business seeing an
+ * element that exists only for the editor's live view. `nodeTypes` is the only
+ * consumer that needs it, and this function is what builds it.
  *
  * ⚠️ FIRST, matching where the vendor puts `globalControls` in their own nodes.
  * It is also what an owner opening a node DURING a run came to read; the
@@ -182,9 +181,10 @@ function withNodeRunControl(item: PaletteItem): PaletteItem {
 }
 
 /**
- * The palette, built for a given set of WhatsApp numbers.
+ * The palette, built for a given set of live lists (WhatsApp numbers, voice
+ * agents and dial parameters, Microsoft connections, the SUMIT card fields).
  *
- * A FACTORY and not a const, because one entry's dropdown is a live list: the
+ * A FACTORY and not a const, because some entries' dropdowns are live lists: the
  * account's numbers are rows in `provider_numbers` and change without a deploy.
  *
  * ⚠️ THE SDK REQUIRES A STABLE REFERENCE for `nodeTypes` ("declare at module
@@ -246,8 +246,8 @@ export function buildPaletteItems(
 /**
  * The palette with NO numbers offered — the dropdown shows only "כל המספרים".
  *
- * Kept as the base the factory rewrites one entry of, so every other node type
- * is declared exactly once. It is also what the tests and the i18n audit read.
+ * Kept as the base the factory rewrites a few entries of, so every other node
+ * type is declared exactly once. It is also what the tests and the i18n audit read.
  *
  * Built at MODULE SCOPE. `<WorkflowBuilder.Root nodeTypes={…} />` wants a
  * stable reference: an array rebuilt each render re-renders the palette on
@@ -256,57 +256,32 @@ export function buildPaletteItems(
  * nothing to recompute anyway.
  *
  * EVERY entry carries an `outputSchema`, which is what puts a node into the
- * variable picker's suggestion list. An earlier note here said the opposite —
- * "omitted deliberately, until a template resolver exists". That resolver is
+ * variable picker's suggestion list. The references it offers are resolved by
  * `resolve-template.ts`: vendored, wired into `activity-runner.ts`, and proven
- * on the `nodes.` namespace by `references.test.ts`. The note described a state
- * that had already ended.
+ * on the `nodes.` namespace by `references.test.ts`.
  */
 export const PALETTE_ITEMS: PaletteItem[] = [
-  // Moved to its own folder — see nodes/action-sumit-create-document/.
   sumitCreateDocumentPaletteItem,
-  // Moved to its own folder — see nodes/action-sumit-create-customer/.
   sumitCreateCustomerPaletteItem,
-  // Moved to its own folder — see nodes/action-ai-agent/.
   aiAgentPaletteItem,
-  // Moved to its own folder — see nodes/action-start-voice-call/.
   voiceCallPaletteItem,
-  // Moved to its own folder — see nodes/trigger-whatsapp-inbound/.
   whatsappInboundPaletteItem,
-  // Moved to its own folder — see nodes/trigger-webhook/.
   webhookTriggerPaletteItem,
-  // Moved to its own folder — see nodes/trigger-schedule/.
   schedulePaletteItem,
-  // Moved to its own folder — see nodes/trigger-sumit-card/.
   sumitCardTriggerPaletteItem,
-  // Moved to its own folder — see nodes/logic-condition/.
   conditionPaletteItem,
-  // Moved to its own folder — see nodes/logic-switch/.
   switchPaletteItem,
-  // Moved to its own folder — see nodes/action-update-guest-status/.
   updateGuestStatusPaletteItem,
-  // Moved to its own folder — see nodes/action-send-whatsapp/.
   sendWhatsappPaletteItem,
-  // Moved to its own folder — see nodes/action-microsoft-send-email/.
   microsoftSendEmailPaletteItem,
-  // Moved to its own folder — see nodes/action-start-rsvp-ai-callback/.
   startRsvpAiCallbackPaletteItem,
-  // Moved to its own folder — see nodes/action-notify-team/.
   notifyTeamPaletteItem,
-  // Moved to its own folder — see nodes/action-set-guest-field/.
   setGuestFieldPaletteItem,
-  // Moved to its own folder — see nodes/action-create-callback-request/.
   callbackRequestPaletteItem,
-  // Moved to its own folder — see nodes/action-webhook/.
   webhookPaletteItem,
-  // Moved to its own folder — see nodes/action-import-guest-list/.
   importGuestListPaletteItem,
-  // Moved to its own folder — see nodes/logic-wait/.
   waitPaletteItem,
-  // Moved to its own folder — see nodes/action-send-template/.
   sendTemplatePaletteItem,
-  // Moved to its own folder — see nodes/action-start-for-each-guest/.
   forEachGuestPaletteItem,
-  // Moved to its own folder — see nodes/logic-set-value/.
   setValuePaletteItem,
 ];

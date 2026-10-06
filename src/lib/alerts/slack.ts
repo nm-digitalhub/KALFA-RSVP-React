@@ -125,7 +125,7 @@ function pruneExpiredDedup(now: number): void {
 
 // --- PII redaction (defense-in-depth) --------------------------------------
 
-// Israeli phone-like sequences: optional +972 or a leading 0, then 8-9 more
+// Israeli phone-like sequences: optional +972 or a leading 0, then 8-10 more
 // digits with optional space/dot/hyphen separators. Masks numbers a caller
 // accidentally embedded in a title/detail/field. The `(?<![\w-])` / `(?![\w-])`
 // boundaries require the sequence to stand alone (not be a segment of a longer
@@ -429,7 +429,8 @@ export async function sendSlackTestAlert(): Promise<{
 /**
  * Test-only: clear the in-memory dedup state so each test starts clean.
  * (The global rate-limit window lives in the shared limiter and is not reset
- * here; GLOBAL_MAX_PER_MIN is high enough that the test suite never trips it.)
+ * here; tests reset it with __resetRateLimitStateForTests from
+ * src/lib/security/rate-limit.)
  */
 export function __resetSlackAlertStateForTests(): void {
   dedup.clear();

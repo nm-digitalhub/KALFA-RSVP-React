@@ -1,19 +1,18 @@
 // "This field is required, but only when that field says so."
 //
 // ⚠️ THE CONTRACT, STATED ONCE: a webhook body is meaningless on GET or DELETE
-// and mandatory on the three verbs that send one. `sendOutboundWebhook` already
-// branches exactly there — it builds, resolves and secret-checks the body and
-// then, for GET and DELETE, does not send it — so the panel was offering a
-// three-row editor for a field that went nowhere, and accepting an empty one for
-// a POST that needs it.
+// and mandatory on the three verbs that send one. `createOutboundWebhook` (in
+// outbound-webhook.ts) already branches exactly there — it builds, resolves and
+// secret-checks the body and then, for GET and DELETE, does not send it — so the
+// panel was offering a three-row editor for a field that went nowhere, and
+// accepting an empty one for a POST that needs it.
 //
-// ⚠️ THE SCHEMA CARRIES THE WHOLE CONTRACT, and an earlier version of this file
-// asserted it could not. The claim was that `ConditionalSchema` is typed
-// `{ properties: … }` with no root `required`, so `then` could only constrain a
-// body that was already there. The TYPE is that narrow; it does not bind. A
-// function return is compared structurally, not as a fresh literal, so `then`
-// may carry `required` alongside `properties` with no cast — and the bundled
-// validator honours it. Both assertions below are the proof.
+// ⚠️ THE SCHEMA CARRIES THE WHOLE CONTRACT, although `ConditionalSchema` is typed
+// `{ properties: … }` with no root `required`, which suggests `then` could only
+// constrain a body that was already there. The TYPE is that narrow; it does not
+// bind. A function return is compared structurally, not as a fresh literal, so
+// `then` may carry `required` alongside `properties` with no cast — and the
+// bundled validator honours it. Both assertions below are the proof.
 //
 // `findArmBlockers` applies the SAME declaration a second time. Not as a
 // fallback for a gap, but because the schema runs in the EDITOR: a definition
@@ -59,9 +58,8 @@ describe('the schema half — @cfworker/json-schema 4.1.1, the SDK’s own valid
     // the exact shape of the bug `minLength` was added to fix, one step in.
     // `pattern: '\\S'` is what makes the two agree.
     //
-    // Both fixtures are here deliberately: this file used to test the schema
-    // with '' and the arm gate with '   ', so neither half ever saw the case
-    // that disagreed.
+    // Both fixtures are here deliberately: testing the schema with '' and the arm
+    // gate with '   ' would mean neither half ever saw the case that disagreed.
     for (const method of HTTP_METHODS_WITH_BODY) {
       expect(valid({ method, body: '   ' }), `${method} accepted a whitespace body`).toBe(false);
       expect(valid({ method, body: '\t\n' }), `${method} accepted a tab/newline body`).toBe(false);
@@ -88,10 +86,9 @@ describe('the schema half — @cfworker/json-schema 4.1.1, the SDK’s own valid
   });
 
   it('⚠️ an ABSENT body is refused too — `then` carries `required`', () => {
-    // The assertion this file was rewritten for. `properties` alone would let an
-    // absent key through; `required` inside `then` is what closes it, and it
-    // compiles with no cast despite the SDK typing `ConditionalSchema` without
-    // a root `required`.
+    // `properties` alone would let an absent key through; `required` inside
+    // `then` is what closes it, and it compiles with no cast despite the SDK
+    // typing `ConditionalSchema` without a root `required`.
     expect(valid({ method: 'POST' })).toBe(false);
     // …and only for the verbs that send one.
     expect(valid({ method: 'GET' })).toBe(true);
@@ -181,9 +178,9 @@ describe('the arm-gate half', () => {
 
 describe('⚠️ the schema and the arm gate agree on what "blank" means', () => {
   // The general rule, not just the webhook body. Both gates decide the same
-  // question — "is this field filled in?" — and they used to answer it with
-  // different primitives: `minLength` counts characters, `trim()` ignores
-  // whitespace. Any required text field is a place they could drift again.
+  // question — "is this field filled in?" — and each answers it with a different
+  // primitive: `minLength` counts characters, `trim()` ignores whitespace. Any
+  // required text field is a place they could drift.
   const WHITESPACE = ['', ' ', '   ', '\t', '\n', '\t \n'];
 
   for (const item of PALETTE_ITEMS) {

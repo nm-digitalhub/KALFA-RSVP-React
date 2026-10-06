@@ -20,9 +20,8 @@ import {
 //
 // GATE. `manage_settings` for reads, because the list spans every provider and a
 // reader holding only `manage_voice` would otherwise be REDIRECTED out of the admin
-// area by requirePlatformPermission rather than shown a narrower list — the ejection
-// bug fixed in Task 0.4. Writes that touch a single provider take their gate from
-// that provider (see assignRole).
+// area by requirePlatformPermission rather than shown a narrower list. Writes take
+// their gate from what they touch (see ROLE_PERMISSION and PROVIDER_PERMISSION).
 //
 // Cookie client, not service-role: provider_numbers carries RLS gated on
 // is_platform_staff(), and the whole point of that policy is that the caller stays
@@ -105,8 +104,7 @@ const ROLE_PERMISSION: Record<NumberRole, 'manage_settings' | 'manage_voice'> = 
  * enforces by reading `requirePlatformPermission('…')` as TEXT — it is a regression
  * guard, not a call-graph analysis. `requirePlatformPermission(ROLE_PERMISSION[r])`
  * gates correctly at runtime and is INVISIBLE to that check, so a later edit
- * flipping a voice role to the weaker key would ship green. Caught by that suite on
- * the first run of this file rather than in review.
+ * flipping a voice role to the weaker key would ship green.
  */
 async function requireRolePermission(role: NumberRole): Promise<void> {
   if (ROLE_PERMISSION[role] === 'manage_voice') {
@@ -275,11 +273,11 @@ export interface SyncResult {
  * makes it match provider_numbers_e164_chk — and what lets the RPC recognise the
  * backfill row for the same line instead of inserting beside it.
  *
- * ⚠️ AND IT DEACTIVATES WHAT META NO LONGER LISTS. Until 2026-09-13 this was an
- * upsert loop and nothing else, so a number DELETED at Meta was never visited: its
- * row kept `is_active = true` forever and the panel went on showing it as a live
- * number. MEASURED on the live table — a test number deleted at Meta sat there for
- * days with a stale `snapshot_at` beside four rows the same sync had just updated.
+ * ⚠️ AND IT DEACTIVATES WHAT META NO LONGER LISTS. An upsert loop alone never
+ * visits a number DELETED at Meta: its row kept `is_active = true` forever and the
+ * panel went on showing it as a live number. MEASURED on the live table — a test
+ * number deleted at Meta sat there for days with a stale `snapshot_at` beside four
+ * rows the same sync had just updated.
  *
  * The two providers say "this number is gone" in different ways, which is why only
  * this one had the hole: Voximplant keeps returning the number with
@@ -321,13 +319,9 @@ export async function syncMetaNumbers(): Promise<SyncResult> {
       providerRef: n.id,
       e164: digits ? `+${digits}` : null,
       // Meta's own display name, as a FALLBACK ONLY — it fills an empty label and
-      // never replaces one. That is enforced in upsert_provider_number, not here,
-      // and the first version of this comment claimed it while the SQL did the
-      // opposite: coalesce(p_display_label, display_label) prefers the INCOMING
-      // value, so it stops a sync blanking a label but not renaming one. Measured
-      // on the live table after the first real sync — 'מספר אישורי הגעה (RSVP)'
-      // became 'Kalfa Event'. The precedence is reversed in the follow-up
-      // migration; the provider's current name stays in snapshot.verified_name.
+      // never replaces one. That is enforced in upsert_provider_number, not here:
+      // the stored label wins in every branch of that function. The provider's
+      // current name stays in snapshot.verified_name.
       displayLabel: n.verified_name ?? null,
       snapshot: {
         verified_name: n.verified_name ?? null,
