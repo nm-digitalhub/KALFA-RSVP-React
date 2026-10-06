@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
@@ -35,7 +36,7 @@ export async function login(
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   const supabase = await createClient();
@@ -95,7 +96,7 @@ export async function resendConfirmationEmail(
 ): Promise<FormState> {
   const parsed = forgotPasswordSchema.safeParse({ email: formData.get('email') });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   const supabase = await createClient();
@@ -131,7 +132,7 @@ export async function signup(
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   const { email, password, full_name, phone, ref } = parsed.data;
@@ -248,7 +249,7 @@ export async function requestPasswordReset(
 ): Promise<FormState> {
   const parsed = forgotPasswordSchema.safeParse({ email: formData.get('email') });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   const supabase = await createClient();
@@ -285,7 +286,7 @@ export async function updatePassword(
     confirm: formData.get('confirm'),
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   const supabase = await createClient();

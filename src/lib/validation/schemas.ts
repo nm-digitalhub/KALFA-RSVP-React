@@ -108,9 +108,8 @@ export const EVENT_TYPES = [
 export const EVENT_STATUSES = ['draft', 'active', 'closed'] as const;
 
 // The ONE event form schema. The create form and the edit form carry the SAME
-// fields (owner ruling 2026-09-02: the create form mirrors the edit form 1:1),
-// so both validate against this single definition — a field added here reaches
-// both forms, and the two can never drift apart. Optional text/date fields
+// fields, so both validate against this single definition — a field added here
+// reaches both forms, and the two can never drift apart. Optional text/date fields
 // accept an empty string (the actions map '' to null); id/owner/status are
 // derived server-side, never here.
 export const eventFormSchema = z.object({
@@ -179,17 +178,16 @@ export const eventFormSchema = z.object({
     },
   )
   // R2: event_date is NULL/'' (legal while draft) or >= tomorrow (Israel).
-  // Locked once non-draft (R5) — enforced at the DB/data layer, not here (this
+  // Locked from the first send (R5) — enforced at the DB/data layer, not here (this
   // schema has no `status` field to branch on; see events.ts's key-presence
-  // guard for the non-draft reject path).
+  // guard for the locked reject path).
   .refine((v) => !v.event_date || !isBeforeTomorrowIL(v.event_date), {
     error: 'מועד האירוע חייב להיות החל ממחר',
     path: ['event_date'],
   })
-  // R2b (NEW — found live on ec7c68d1, 2026-07-01): rsvp_deadline must not
-  // already be in the past. Lower bound is >= TODAY (Israel), NOT >= tomorrow
-  // — same-day is legal. The CHECK events_rsvp_deadline_within_event (the
-  // upper-bound refine above) is untouched; this is purely additive.
+  // R2b: rsvp_deadline must not already be in the past. Lower bound is >= TODAY
+  // (Israel), NOT >= tomorrow — same-day is legal. The upper bound is the refine
+  // above (mirroring the CHECK events_rsvp_deadline_within_event).
   .refine((v) => !v.rsvp_deadline || v.rsvp_deadline >= todayIL(), {
     error: 'המועד האחרון לאישור הגעה לא יכול להיות בעבר.',
     path: ['rsvp_deadline'],
@@ -206,8 +204,9 @@ export type UpdateEventInput = z.infer<typeof updateEventSchema>;
 // jsonb; see the column comment). Storage has NO kind discriminator —
 // event_type IS the key: four shape kinds cover the nine event types.
 // Form-level, every field is OPTIONAL (an event saves fine without/with
-// partial celebrants); completeness is enforced ONLY by the campaign
-// enablement gate via celebrantsCompleteFor().
+// partial celebrants); completeness is NOT a form rule — it is checked by
+// celebrantsCompleteFor() (campaign enablement gate, setup prerequisites, and
+// the live-campaign edit guard).
 
 export type CelebrantKind = 'couple' | 'single' | 'parents' | 'free';
 
@@ -264,7 +263,7 @@ const CELEBRANT_FORM_SCHEMA_BY_KIND = {
 } as const;
 
 // The celebrant form schema for an event type (the name is promised by the
-// events.celebrants column comment). Generic so a LITERAL event type resolves
+// events.celebrants migration). Generic so a LITERAL event type resolves
 // to its kind's exact schema (precise .shape/.safeParse typing); a plain
 // EventType still yields the union of the four.
 export function celebrantsSchemaFor<T extends EventType>(eventType: T) {
@@ -389,7 +388,8 @@ const CELEBRANT_COMPLETE_SCHEMA_BY_KIND: Record<CelebrantKind, z.ZodType> = {
 };
 
 // True when the stored celebrants value satisfies the event type's kind —
-// the ONLY place celebrants become required (campaign enablement).
+// the single definition of "complete" (campaign enablement, setup
+// prerequisites, live-campaign edit guard).
 export function celebrantsCompleteFor(eventType: EventType, value: unknown): boolean {
   return CELEBRANT_COMPLETE_SCHEMA_BY_KIND[CELEBRANT_KIND_BY_EVENT_TYPE[eventType]].safeParse(
     value,
@@ -451,16 +451,12 @@ export const emailChangeSchema = z.object({
 });
 export type EmailChangeInput = z.infer<typeof emailChangeSchema>;
 
-// Exchange (IONOS Hosted EWS) calendar connection — /app/settings, Stage 1 of
-// plans/exchange-ews-stage1.md. `password` has a generous max only (not a
-// strength rule) — it is the owner's EXISTING mailbox password, not a new
-// KALFA credential, so it must not be silently rejected for being long.
-// `password` is OPTIONAL because only the EWS path has any use for it. Graph
-// authenticates as the application with a certificate and never reads a mailbox
-// secret, so requiring one here forced an admin to hand over a live password to
-// create a connection that would not use it. The DAL rejects an empty password
-// when EWS is genuinely the active provider — the requirement moved to where the
-// answer is actually known, rather than being asserted at the form boundary.
+// Exchange calendar connection — /admin/settings. `password` has a generous max
+// only (not a strength rule) and is OPTIONAL: Graph authenticates as the
+// application with a certificate and never reads a mailbox secret, so requiring
+// one here forced an admin to hand over a live password to create a connection
+// that would not use it. The DAL ignores it and stores nothing
+// (createExchangeConnection).
 export const createExchangeConnectionSchema = z.object({
   mailboxEmail: z.string().trim().pipe(z.email({ error: 'כתובת אימייל לא תקינה' })),
   password: z.string().max(256, { error: 'הסיסמה ארוכה מדי' }).optional(),
@@ -501,8 +497,8 @@ const recurrenceSchema = z.object({
 });
 
 // /admin/calendar. ISO datetimes travel as strings between the client
-// calendar and the Server Actions; EWS ItemIds are long opaque base64-ish
-// strings (measured well under 1kB) — bounded, never interpolated anywhere.
+// calendar and the Server Actions; appointment ids are long opaque
+// strings — bounded, never interpolated anywhere.
 const isoInstant = z.iso.datetime({ offset: true, error: 'תאריך לא תקין' });
 
 export const calendarRangeSchema = z.object({
@@ -615,27 +611,27 @@ export type OrgNameInput = z.infer<typeof orgNameSchema>;
 
 export const inviteMemberSchema = z.object({
   email: z.string().trim().pipe(z.email({ error: 'כתובת אימייל לא תקינה' })),
-  role_id: z.string().uuid({ error: 'תפקיד לא תקין' }),
+  role_id: z.uuid({ error: 'תפקיד לא תקין' }),
 });
 export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;
 
 export const changeMemberRoleSchema = z.object({
-  member_id: z.string().uuid({ error: 'מזהה חבר לא תקין' }),
-  role_id: z.string().uuid({ error: 'תפקיד לא תקין' }),
+  member_id: z.uuid({ error: 'מזהה חבר לא תקין' }),
+  role_id: z.uuid({ error: 'תפקיד לא תקין' }),
 });
 export type ChangeMemberRoleInput = z.infer<typeof changeMemberRoleSchema>;
 
 export const memberIdSchema = z.object({
-  member_id: z.string().uuid({ error: 'מזהה חבר לא תקין' }),
+  member_id: z.uuid({ error: 'מזהה חבר לא תקין' }),
 });
 export type MemberIdInput = z.infer<typeof memberIdSchema>;
 
 export const invitationIdSchema = z.object({
-  invitation_id: z.string().uuid({ error: 'מזהה הזמנה לא תקין' }),
+  invitation_id: z.uuid({ error: 'מזהה הזמנה לא תקין' }),
 });
 export type InvitationIdInput = z.infer<typeof invitationIdSchema>;
 
 export const activeOrgSchema = z.object({
-  org_id: z.string().uuid({ error: 'מזהה ארגון לא תקין' }),
+  org_id: z.uuid({ error: 'מזהה ארגון לא תקין' }),
 });
 export type ActiveOrgInput = z.infer<typeof activeOrgSchema>;

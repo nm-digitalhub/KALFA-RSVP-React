@@ -9,13 +9,13 @@ import { logActivity } from '@/lib/data/activity';
 import { setQueueActive, syncQueueMembers } from '@/lib/data/console-queues';
 import type { FormState } from '@/lib/validation/result';
 
-// Queue membership/activation is an ADMIN decision, not self-service (task
-// brief — mirrors the migration's RLS: console_queues/console_agent_queues
-// grant zero write access to `authenticated`; only these service-role Server
-// Actions, gated on manage_voice, ever write them).
+// Queue membership/activation is an ADMIN decision, not self-service (mirrors
+// the migration's RLS: console_queues/console_agent_queues grant zero write
+// access to `authenticated`; only these service-role Server Actions, gated on
+// manage_voice, ever write them).
 
 const toggleQueueActiveSchema = z.object({
-  queue_id: z.string().uuid(),
+  queue_id: z.uuid(),
   // Checkbox convention (OutreachMasterSwitch precedent): present ("on") when
   // checked, absent (undefined) when unchecked.
   is_active: z.string().optional(),
@@ -48,8 +48,8 @@ export async function toggleQueueActiveAction(
 }
 
 const updateQueueMembersSchema = z.object({
-  queue_id: z.string().uuid(),
-  agent_ids: z.array(z.string().uuid()),
+  queue_id: z.uuid(),
+  agent_ids: z.array(z.uuid()),
 });
 
 export async function updateQueueMembersAction(

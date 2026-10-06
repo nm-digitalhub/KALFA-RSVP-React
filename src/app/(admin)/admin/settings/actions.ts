@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 
@@ -47,7 +48,7 @@ export async function updateSettingsAction(
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   try {
@@ -104,7 +105,7 @@ export async function updateBaseOveragePricingAction(
   };
 }
 
-// Ownership-model switch for Exchange (EWS) connections (plan §3.1). Does NOT
+// Ownership-model switch for Exchange connections (plan §3.1). Does NOT
 // touch existing exchange_connections rows — only which mode new connections
 // are created under and which UI path /app/settings shows.
 export async function updateExchangeConnectionModeAction(

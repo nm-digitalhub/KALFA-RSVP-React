@@ -1,15 +1,15 @@
 import { z } from 'zod';
 
 // Zod schema for the Voximplant RSVP scenario's callback (cb) POST body. Shapes
-// verified against voxfiles/applications/<app>/scenarios/src/RSVP.voxengine.js (the emitted payloads
-// at lines 197-207, 384-389, 420-428, 436-442) AND the ElevenLabs bridge
+// verified against voxfiles/applications/<app>/scenarios/src/RSVP.voxengine.js (its
+// emitted payloads) AND the ElevenLabs bridge
 // RSVPAgent.voxengine.js terminal callbacks (rsvp_method 'agent', no digit).
 // Validated at the server boundary before any persistence; a parse failure →
 // 400, nothing stored.
 //
 // NOTE: `invitation_id` is accepted but MUST NOT be trusted for identity — the cb
-// route resolves the call only from the URL-path access_token. It is kept for a
-// sanity/anomaly log at most.
+// route resolves the call only from the URL-path access_token. It is kept as a
+// sanity check at most (the cb route rejects a mismatch).
 
 const transcriptTurn = z.object({
   speaker: z.enum(['agent', 'guest']),
@@ -18,7 +18,7 @@ const transcriptTurn = z.object({
 });
 
 // strictObject (Zod v4): reject any field NOT in the verified contract — the
-// callback must match the scenario's payload exactly (requirement C).
+// callback must match the scenario's payload exactly.
 export const voxCallbackSchema = z
   .strictObject({
     call_status: z.enum([
@@ -50,18 +50,19 @@ export const voxCallbackSchema = z
     // real counts with 1/0 defaults).
     rsvp_method: z.enum(['dtmf', 'voice_asr', 'agent']).nullish(),
     invitation_id: z.string().max(128).nullish(), // NEVER trusted for lookup
-    recording_url: z.string().url().max(2048).nullish(),
+    recording_url: z.url().max(2048).nullish(),
     // The scenario sends an array of turns, or (legacy) a plain string.
     transcript: z.union([z.array(transcriptTurn).max(200), z.string().max(20000)]).nullish(),
     error_reason: z.string().max(256).nullish(),
-    // Disposition of a COMPLETED call, sent by the bridge scenario since
-    // 2026-09-07: 'agent_end_call' (the agent hung up after its farewell) or
+    // Disposition of a COMPLETED call, sent by the bridge scenario:
+    // 'agent_end_call' (the agent hung up after its farewell) or
     // 'guest_hangup' (the far end dropped first). Kept separate from
     // error_reason, which carries FAILURE codes (sip_*, session_terminating).
     finish_reason: z.enum(['agent_end_call', 'guest_hangup']).nullish(),
-    // ADDITIVE (item-2 second link vector): the ElevenLabs conversation_id, sent by
-    // the bridge scenario (VoiceAgentTest) on its recording_started callback. Branch
-    // B's RSVP.voxengine.js never sends it (nullish → no effect on the DTMF path).
+    // ADDITIVE (a second link vector besides the pre-call nonce): the ElevenLabs
+    // conversation_id, sent by the bridge scenario (RSVPAgent) on its
+    // recording_started callback. Branch B's RSVP.voxengine.js never sends it
+    // (nullish → no effect on the DTMF path).
     el_conversation_id: z.string().max(128).nullish(),
   })
   .refine(
@@ -159,7 +160,7 @@ export const voxNotifyOwnerSchema = z.strictObject({
 });
 export type VoxNotifyOwner = z.infer<typeof voxNotifyOwnerSchema>;
 
-// --- Meeting-booking agent tools (mtg/cb/*, docs/voice-agent/plans/
+// --- Meeting-booking agent tools (mtg/tool/*, docs/voice-agent/plans/
 // 2026-08-22-meeting-booking-agent-plan.md §4) ---
 //
 // Unlike the RSVP agent's tools (one shared `cb/[token]` endpoint that
@@ -168,7 +169,7 @@ export type VoxNotifyOwner = z.infer<typeof voxNotifyOwnerSchema>;
 // field — two of them (`confirm_meeting`, `mark_opt_out`) take no
 // conversational parameters at all, so a body-only discriminator would be
 // ambiguous. Each tool therefore gets its OWN URL
-// (mtg/cb/{confirm,reschedule,dnc,escalate}/[token]), mirroring the proven
+// (mtg/tool/{confirm,reschedule,dnc,escalate}/[token]), mirroring the proven
 // agent-tool/{rsvp,dnc,note}/[token] convention exactly — no new ElevenLabs
 // mechanism required (verified live against the server-tools docs 2026-08-22:
 // no documented constant/non-LLM body-field type exists to discriminate a
@@ -200,15 +201,13 @@ export const voxMeetingOptOutSchema = z.strictObject({
 });
 export type VoxMeetingOptOut = z.infer<typeof voxMeetingOptOutSchema>;
 
-// `escalate_to_queue`: reason is a closed vocabulary (§4's exact enum) so the
-// admin queue always shows a triageable label even when note_he is empty.
 // The meeting-booking scenario's OWN terminal lifecycle report (mtg/cb/[token]
 // — distinct from the 4 mtg/tool/* agent-tool schemas above). Mirrors
 // voxCallbackSchema's call_status vocabulary minus 'handed_off' /
-// 'recording_started' / rsvp_digit / rsvp_method / transcript — this persona
-// has no handoff/DTMF/RSVP concepts (plan's own non-goals). Deliberately its
-// OWN strictObject, never voxCallbackSchema itself, so a change to the RSVP
-// contract can never silently reshape this one.
+// 'recording_started' / 'cancelled' / rsvp_digit / rsvp_method / transcript —
+// this persona has no handoff/DTMF/RSVP concepts (plan's own non-goals).
+// Deliberately its OWN strictObject, never voxCallbackSchema itself, so a
+// change to the RSVP contract can never silently reshape this one.
 export const voxMeetingCallbackSchema = z.strictObject({
   call_status: z.enum(['completed', 'no_answer', 'no_response', 'failed']),
   call_duration: z
@@ -244,6 +243,8 @@ export const voxPurposeCallbackSchema = z.strictObject({
 });
 export type VoxPurposeCallback = z.infer<typeof voxPurposeCallbackSchema>;
 
+// `escalate_to_queue`: reason is a closed vocabulary (§4's exact enum) so the
+// admin queue always shows a triageable label even when note_he is empty.
 export const voxMeetingEscalateSchema = z.strictObject({
   reason: z.enum([
     'wrong_person',
@@ -290,12 +291,11 @@ export type VoxSalesDiscount = z.infer<typeof voxSalesDiscountSchema>;
 
 // send_signup_link — §3. wa_consent gates the WhatsApp attempt only;
 // SMS is always the fallback (never gated on consent — see no-contact-sms.ts).
-// Field renamed from whatsapp_consent -> wa_consent (31.8) to match the live
-// ElevenLabs tool's own parameter identifier (owner renamed it in the
-// Dashboard to match update_state's wa_consent dynamic variable) — the two
-// had silently drifted apart, and the VoxEngine bridge blindly forwards
-// whatever the tool call's argument key is, so keeping this schema in sync
-// with the LIVE tool identifier is load-bearing, not cosmetic.
+// The field is named wa_consent to match the live ElevenLabs tool's own
+// parameter identifier (and update_state's wa_consent dynamic variable) — the
+// VoxEngine bridge blindly forwards whatever the tool call's argument key is,
+// so keeping this schema in sync with the LIVE tool identifier is
+// load-bearing, not cosmetic.
 // tool_call_id — same reason as voxSalesDiscountSchema above.
 export const voxSalesSignupLinkSchema = z.strictObject({
   wa_consent: z.boolean(),

@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
 
 import { rsvpSubmitSchema } from './rsvp';
@@ -59,7 +60,7 @@ describe('rsvpSubmitSchema', () => {
     });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.flatten().fieldErrors.adults).toBeDefined();
+      expect(z.flattenError(result.error).fieldErrors.adults).toBeDefined();
     }
   });
 

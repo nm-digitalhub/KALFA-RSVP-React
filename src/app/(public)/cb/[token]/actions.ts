@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { headers } from 'next/headers';
 
 import { submitCallbackIntake } from '@/lib/data/callback-intake';
@@ -66,7 +67,7 @@ export async function submitIntakeAction(
   if (!parsed.success) {
     return {
       error: 'נא לבדוק את הפרטים שמולאו.',
-      fieldErrors: parsed.error.flatten().fieldErrors,
+      fieldErrors: z.flattenError(parsed.error).fieldErrors,
     };
   }
 

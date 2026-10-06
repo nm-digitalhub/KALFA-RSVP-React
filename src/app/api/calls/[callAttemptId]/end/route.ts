@@ -34,7 +34,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.uuid();
 const TERMINAL: ReadonlySet<string> = new Set(TERMINAL_STATUSES);
 
 function json(body: unknown, status: number) {

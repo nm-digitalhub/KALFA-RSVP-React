@@ -39,24 +39,19 @@ import type { FormState } from '@/lib/validation/result';
 import { sendPolicyFromFormData } from '@/lib/validation/send-policy-form';
 
 // ─── WHERE A SAVE HAS TO BE REFLECTED ────────────────────────────────────────
-// `revalidatePath` invalidates exactly the path it is handed. While these
-// actions rendered on two surfaces (the old /admin/channels tabs and the
-// provider pages that IMPORTED the same components), revalidating only
-// '/admin/channels' left a save made from the new page showing its own pre-save
-// values — a real defect that shipped with Task 0.3, not a hypothetical one.
-// Task 0.6 Step 4b retired that page, so the legacy path is gone from these
-// lists; every remaining entry names a route that still exists.
+// `revalidatePath` invalidates exactly the path it is handed, so a save is
+// reflected only on the surfaces named here.
 //
 // Revalidating a path nobody is currently rendering costs nothing, so every
 // surface is invalidated unconditionally. The index is included because its
 // cards print `configured`/`enabled` for the very columns these actions write —
-// and, since 4b, because it hosts the channel catalog itself.
+// and because it hosts the channel catalog itself.
 //
 // This module lives at /admin/integrations/actions.ts rather than beside one
-// provider because its eleven actions span WhatsApp, Voximplant, the global
-// outreach switch and the channel catalog. It moved here from the deleted
-// /admin/channels/ directory; Next derives Server Action ids from module path +
-// export name, so that move invalidated all eleven ids — which is what the
+// provider because its actions span WhatsApp, Voximplant, the global outreach
+// switch, the channel catalog, the send policy, voice purposes and workflow
+// OAuth. Next derives Server Action ids from module path + export name, so
+// moving this module invalidates every action id in it — which is what the
 // .deploy-id version-skew guard exists to catch.
 const INDEX = '/admin/integrations';
 const META_WHATSAPP = '/admin/integrations/meta-whatsapp';
@@ -64,8 +59,7 @@ const VOXIMPLANT = '/admin/integrations/voximplant';
 const WORKFLOW_OAUTH = '/admin/integrations/workflow-oauth';
 // ⚠️ A DYNAMIC ROUTE, REVALIDATED BY ITS PATTERN. The workflow editor reads this
 // provider's configuration to decide whether a node can offer "connect an
-// account", and it can now open the provider form in a modal WITHOUT leaving the
-// canvas — so a save made there has to be reflected on the page behind it.
+// account", so a save has to be reflected there too.
 // `'page'` is required: with a bracketed segment, `revalidatePath` treats the
 // first argument as a literal path unless the type is given, and would match
 // nothing.
@@ -81,8 +75,8 @@ function revalidateWorkflowOAuth(): void {
   revalidatePath(WORKFLOW_EDITOR, 'page');
 }
 
-// Form-friendly: every field is an optional string; the master toggle is a
-// checkbox. Trimmed; '' is an intentional unset (mapped to null in the DAL).
+// Form-friendly: every field is an optional string. Trimmed; '' is an
+// intentional unset (mapped to null in the DAL).
 const whatsappChannelSchema = z.object({
   whatsapp_phone_number_id: z.string().trim().max(64).default(''),
   whatsapp_waba_id: z.string().trim().max(64).default(''),
@@ -103,13 +97,13 @@ export async function updateWhatsAppChannelAction(
     whatsapp_verify_token: formData.get('whatsapp_verify_token') ?? '',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   // This form only persists WhatsApp config. The global outreach switch is owned
-  // solely by updateOutreachMasterSwitchAction — this action no longer reads or
-  // writes `outreach_enabled` (dropping it here + from the DAL SET prevents every
-  // WhatsApp save from clobbering the shared switch to false).
+  // solely by updateOutreachMasterSwitchAction — this action neither reads nor
+  // writes `outreach_enabled`, so a WhatsApp save cannot clobber the shared
+  // switch to false.
   try {
     await updateWhatsAppChannelConfig(parsed.data);
   } catch (err) {
@@ -135,8 +129,8 @@ export async function testWhatsAppConnectionAction(
 }
 
 // Form-friendly: every field optional string; '' is an intentional unset (DAL
-// maps to null, except the write-only service-account JSON which '' leaves
-// untouched).
+// maps to null, except the write-only service-account JSON and the four numeric
+// tuning fields, where '' leaves the stored value untouched).
 const voximplantChannelSchema = z.object({
   voximplant_service_account_json: z.string().trim().max(8192).default(''),
   voximplant_rule_id: z.string().trim().max(64).default(''),
@@ -146,8 +140,8 @@ const voximplantChannelSchema = z.object({
   voximplant_min_call_reserve: z.string().trim().max(16).default(''),
   voximplant_max_concurrent_calls: z.string().trim().max(8).default(''),
   voximplant_max_calls_per_campaign_hour: z.string().trim().max(8).default(''),
-  // Both nullable text; '' unsets. Neither had an admin field before 2026-09-14
-  // — see the note on VoximplantChannelConfig for what each one drives.
+  // Both nullable text; '' unsets. See the note on VoximplantChannelConfig for
+  // what each one drives.
   voximplant_call_me_now_rule_id: z.string().trim().max(64).default(''),
   voximplant_application_id: z.string().trim().max(64).default(''),
 });
@@ -175,7 +169,7 @@ export async function updateVoximplantChannelAction(
     voximplant_application_id: formData.get('voximplant_application_id') ?? '',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   // Both rule-id fields on this form go through the same one-rule-one-purpose
@@ -254,7 +248,7 @@ export async function updateOutreachMasterSwitchAction(
 ): Promise<FormState> {
   const enabled = formData.get('outreach_enabled') === 'on';
   if (enabled) {
-    const state = await getOutreachMasterState(); // requireAdmin inside; re-checks readiness server-side
+    const state = await getOutreachMasterState(); // manage_settings gate inside; re-checks readiness server-side
     if (!state.anyChannelReady) {
       return {
         error:
@@ -276,7 +270,7 @@ export async function updateOutreachMasterSwitchAction(
 // Enabling PERMITS real, paid outbound calls. Fail-closed: refuses to enable
 // without a complete dial config (SA + rule + caller + callback).
 // Emits a SECURITY Slack audit on every flip. The env VOXIMPLANT_LIVE_CALLS
-// ='false' still hard-overrides regardless of this toggle. requireAdmin is
+// ='false' still hard-overrides regardless of this toggle. manage_voice is
 // enforced in getVoximplantChannelConfig + updateVoximplantLiveCalls.
 export async function updateVoximplantLiveCallsAction(
   _prev: FormState,
@@ -284,7 +278,7 @@ export async function updateVoximplantLiveCallsAction(
 ): Promise<FormState> {
   const enabled = formData.get('voximplant_live_calls') === 'on';
   if (enabled) {
-    const cfg = await getVoximplantChannelConfig(); // requireAdmin inside
+    const cfg = await getVoximplantChannelConfig(); // manage_voice gate inside
     if (!cfg.fullyConfigured) {
       return {
         error:
@@ -320,8 +314,8 @@ export async function updateVoximplantLiveCallsAction(
 // The checkbox is "require explicit consent"; DEFAULT is on (SAFE). Turning it OFF
 // permits AI dials to contacts with NO recorded prior consent — spam-law exposure,
 // an owner/legal decision. opt-out + DNC + fail-closed still apply. Emits a
-// SECURITY Slack audit on every flip. requireAdmin is enforced inside
-// updateCallConsentRequired (manage_voice).
+// SECURITY Slack audit on every flip. The manage_voice permission is enforced
+// inside updateCallConsentRequired.
 export async function updateCallConsentRequiredAction(
   _prev: FormState,
   formData: FormData,
@@ -352,17 +346,6 @@ export async function updateCallConsentRequiredAction(
   };
 }
 
-// Per-persona kill switches (2026-08-22) — meeting-confirm and sales-closing
-// each get their OWN toggle+rule_id, deliberately separate from
-// voximplant_live_calls/voximplant_rule_id (the RSVPAgent bridge rule,
-// 1520915/`OutCallAgent`, must never carry another persona's calls). Rule
-// 1494311 is `OutCall` — the DTMF `RSVP` scenario — and per CLAUDE.md no
-// agent persona may point at it at all. Fail-closed exactly like updateVoximplantLiveCallsAction:
-// refuses to enable without this persona's OWN rule_id AND the shared base
-// config (service account + caller id). Checks the EFFECTIVE rule_id — the
-// one being submitted in this same request, or the already-stored one if
-// this submission leaves it blank — so "type a rule id and enable in one
-// submit" and "enable using an already-saved rule id" both work.
 // Every rule id currently claimed anywhere, so a save can refuse to hand one
 // rule to a second purpose. Both reads gate on manage_voice internally, the same
 // permission every caller here already holds.
@@ -403,6 +386,17 @@ async function readRuleIdClaims(): Promise<RuleIdClaim[]> {
   ];
 }
 
+// Per-persona kill switches — meeting-confirm and sales-closing each get their
+// OWN toggle+rule_id, deliberately separate from
+// voximplant_live_calls/voximplant_rule_id (the RSVPAgent bridge rule,
+// 1520915/`OutCallAgent`, must never carry another persona's calls). Rule
+// 1494311 is `OutCall` — the DTMF `RSVP` scenario — and per CLAUDE.md no
+// agent persona may point at it at all. Fail-closed like
+// updateVoximplantLiveCallsAction: refuses to enable without this persona's
+// OWN rule_id AND the shared base config (service account + caller id). The
+// rule_id checked is the one submitted in this same request, so "type a rule
+// id and enable in one submit" and "enable using an already-saved rule id" both
+// work (the form pre-fills the stored value).
 const personaChannelSchema = z.object({
   ruleId: z.string().trim().max(64).default(''),
   enabled: z.boolean(),
@@ -428,7 +422,7 @@ async function updatePersonaChannel(
     enabled: formData.get(enabledField) === 'on',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
   const { ruleId, enabled } = parsed.data;
 
@@ -441,7 +435,7 @@ async function updatePersonaChannel(
   // in the UI, not blank-means-keep) — so the submitted value IS the
   // effective one, no separate stored-value fallback needed here.
   if (enabled) {
-    const cfg = await getVoximplantChannelConfig(); // requireAdmin inside
+    const cfg = await getVoximplantChannelConfig(); // manage_voice gate inside
     const baseConfigured = cfg.serviceAccountConfigured && !!cfg.voximplant_caller_id;
     if (!baseConfigured || !ruleId) {
       return { error: errors.enableWithoutRule };
@@ -535,7 +529,7 @@ export async function updateChannelCatalogAction(
     sort_order: (formData.get('sort_order') || '0') as string,
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
   try {
     await updateChannelMetadata(parsed.data);
@@ -543,9 +537,8 @@ export async function updateChannelCatalogAction(
     unstable_rethrow(err);
     return { error: 'עדכון הערוץ נכשל. נסו שוב.' };
   }
-  // The catalog editor renders in a section of the integrations index (Task 0.6
-  // Step 4b gave it that home when /admin/channels was deleted), so the index is
-  // the one surface that has to be re-rendered.
+  // The catalog editor renders in a section of the integrations index, so the
+  // index is the one surface that has to be re-rendered.
   revalidatePath(INDEX);
   return { notice: `הערוץ "${parsed.data.display_name}" נשמר` };
 }
@@ -558,10 +551,10 @@ export async function updateChannelCatalogAction(
 // The checkbox is "require explicit consent"; DEFAULT is on (SAFE). Turning it
 // OFF permits WhatsApp templates to contacts with NO recorded
 // contacts.whatsapp_consent_at — Israeli spam-law exposure, an owner/legal
-// decision, not a technical one. Opt-out (removal_requested), the frozen
+// decision, not a technical one. Opt-out (removal_requested), the
 // campaign_authorized_contacts set, and fail-closed reads still apply.
-// Emits a SECURITY Slack audit on every flip. requireAdmin is enforced inside
-// updateWhatsAppConsentRequired (manage_settings).
+// Emits a SECURITY Slack audit on every flip. The manage_settings permission is
+// enforced inside updateWhatsAppConsentRequired.
 export async function updateWhatsAppConsentRequiredAction(
   _prev: FormState,
   formData: FormData,
@@ -592,9 +585,9 @@ export async function updateWhatsAppConsentRequiredAction(
   };
 }
 
-// ─── SEND POLICY (G9) ────────────────────────────────────────────────────────
+// ─── SEND POLICY ─────────────────────────────────────────────────────────────
 // updateSendPolicy (manage_settings). The send-timing window every campaign is
-// scheduled against; until now it was editable only in SQL.
+// scheduled against.
 //
 // Thin on purpose. Form → policy is a PURE function (sendPolicyFromFormData) so
 // the ceiling rejections can be tested without a Server Action runtime, and the

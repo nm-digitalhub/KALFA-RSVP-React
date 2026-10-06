@@ -2,8 +2,9 @@
 
 // Server Action for /admin/callbacks/policy — saves the admin-editable
 // callback-scheduling policy (business hours per weekday, notice, horizon,
-// call duration, daily cap, motzash resume delay) into the
-// callback_schedule_policies singleton row.
+// call duration, daily cap, motzash resume delay, the actual-dial window and
+// the dial attempt cap/window) into the callback_schedule_policies singleton
+// row.
 //
 // Same authorization shape as config-actions.ts (agreement config): manage_settings
 // gates the write, and the write goes through the request-scoped cookie session
@@ -146,7 +147,7 @@ export async function saveCallbackPolicyAction(
   });
 
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   const dayColumns: Record<string, number | null> = {};

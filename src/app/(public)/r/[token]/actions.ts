@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { headers } from 'next/headers';
 
 import { RSVP_SUBMIT_RATE } from '@/lib/constants';
@@ -76,7 +77,7 @@ export async function submitRsvpAction(
   if (!parsed.success) {
     return {
       error: 'נא לבדוק את הפרטים שמולאו.',
-      fieldErrors: parsed.error.flatten().fieldErrors,
+      fieldErrors: z.flattenError(parsed.error).fieldErrors,
     };
   }
 

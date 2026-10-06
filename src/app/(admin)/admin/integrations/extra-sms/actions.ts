@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 
@@ -28,7 +29,7 @@ export async function updateExtraSmsAction(
     callback_intake_sms_daily_cap: formData.get('callback_intake_sms_daily_cap') ?? 0,
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
   try {
     await updateExtraSmsConfig(parsed.data);

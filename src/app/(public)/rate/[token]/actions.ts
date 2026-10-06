@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { headers } from 'next/headers';
 
 import { RATING_SUBMIT_RATE } from '@/lib/constants';
@@ -35,7 +36,7 @@ export async function submitRatingAction(
   if (!parsed.success) {
     return {
       error: 'נא לבחור דירוג תקין.',
-      fieldErrors: parsed.error.flatten().fieldErrors,
+      fieldErrors: z.flattenError(parsed.error).fieldErrors,
     };
   }
 

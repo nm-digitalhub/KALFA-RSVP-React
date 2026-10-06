@@ -20,7 +20,7 @@ import {
 
 // POST /api/console-calls/{id}/transfer   body: { to_agent_id: uuid }
 //
-// Blind agent-to-agent transfer (plan stage 7, V1 = scenario-side, no consult).
+// Blind agent-to-agent transfer (V1 = scenario-side, no consult).
 // { id } is a console_calls row (a live manual-outbound or inbound-customer
 // call — NEVER an ai_handoff row or an internal call, which this route does
 // not touch at all). The browser names the TARGET AGENT only; the route
@@ -48,7 +48,7 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 1024;
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.uuid();
 
 function json(body: unknown, status: number) {
   return NextResponse.json(body, { status, headers: NO_STORE });

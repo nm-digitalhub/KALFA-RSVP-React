@@ -29,7 +29,7 @@ const ROLES_PATH = '/admin/roles';
 
 // Toggle one (role, permission) matrix cell. Called directly by the client
 // Switch (optimistic + revert on { error }), so it takes a typed object rather
-// than FormData — mirrors setAlertToggleAction in ../alerts/actions.ts.
+// than FormData — mirrors setAlertToggleAction in ../integrations/slack/actions.ts.
 const setRolePermissionSchema = z.object({
   roleId: z.uuid(),
   permissionId: z.uuid(),
@@ -84,7 +84,7 @@ export async function createPlatformRoleAction(
     label: formData.get('label') ?? '',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
   try {
     await createPlatformRole(parsed.data.name, parsed.data.label);
@@ -213,7 +213,7 @@ export async function removeConsoleAgentAction(input: { userId: string }): Promi
     unstable_rethrow(err);
     return { error: err instanceof Error ? err.message : 'הסרת נציג המוקד נכשלה. נסו שוב.' };
   }
-  // Removal now depends on Voximplant (owner directive): a failed deletion
+  // Removal depends on Voximplant (owner directive): a failed deletion
   // there means the removal did NOT happen — the agent is still enrolled,
   // locally too. This must read as a real failure, not a completed removal
   // with a side note.

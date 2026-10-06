@@ -26,9 +26,9 @@ const PATH = '/admin/fleet';
 // modes share this one action because they share one form:
 //
 // - new message: role (the open conversation), optional subject, body >= 10.
-//   The minimum mirrors the DB-side body rule and keeps a one-word "כן" from
-//   waking an agent run. The title is the visible subject, else the first
-//   line, else "הודעה ל-<role>" (resolveOwnerTitle) — never a hidden value.
+//   The minimum keeps a one-word "כן" from waking an agent run. The title is
+//   the visible subject, else the first line, else "הודעה ל-<role>"
+//   (resolveOwnerTitle) — never a hidden value.
 // - continuation ("השב" on a closed message): only the replied-to id travels;
 //   role/tier/thread root/title are derived from the DB row server-side
 //   (createOwnerFleetContinuation). Body >= 2 — the context comes from the root.
@@ -80,7 +80,7 @@ export async function createFleetRequestAction(
   const continueFrom = formData.get('continueFrom');
   if (typeof continueFrom === 'string' && continueFrom !== '') {
     const parsed = continueSchema.safeParse({ continueFrom, body: formData.get('body') ?? '' });
-    if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors };
+    if (!parsed.success) return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
     try {
       const result = await createOwnerFleetContinuation(parsed.data);
       await logActivity({
@@ -114,7 +114,7 @@ export async function createFleetRequestAction(
     body: formData.get('body') ?? '',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   let result: { id: string; deduplicated: boolean };
@@ -185,7 +185,7 @@ export async function answerFleetRequestAction(
     answer: formData.get('answer') ?? '',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   try {
@@ -242,7 +242,7 @@ export async function createFleetGoalAction(
     body: formData.get('body') ?? '',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   let goalId: string;
@@ -283,7 +283,7 @@ export async function pauseFleetGoalAction(
     note: formData.get('note') ?? '',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   try {
@@ -323,7 +323,7 @@ export async function resumeFleetGoalAction(
     nextWakeAt: formData.get('next_wake_at') ?? '',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   try {
@@ -366,7 +366,7 @@ export async function abandonFleetGoalAction(
     note: formData.get('note') ?? '',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   try {

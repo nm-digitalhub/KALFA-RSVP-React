@@ -19,10 +19,9 @@ import type { FormState } from '@/lib/validation/result';
 // ─── WHERE A SAVE HAS TO BE REFLECTED ────────────────────────────────────────
 // Two surfaces: this provider page, and the integrations index whose Slack card
 // prints the very `configured`/`enabled` columns written here. `revalidatePath`
-// invalidates exactly the path it is handed — revalidating only one of them is the
-// defect that shipped with Task 0.3 and was fixed in 0.4. Revalidating a path
-// nobody is rendering costs nothing, so there is no condition. The third entry was
-// the legacy /admin/alerts page, deleted in Task 0.6 Step 4b.
+// invalidates exactly the path it is handed — revalidating only one of them leaves
+// the other stale. Revalidating a path nobody is rendering costs nothing, so there
+// is no condition.
 const SLACK = '/admin/integrations/slack';
 const INDEX = '/admin/integrations';
 
@@ -57,7 +56,7 @@ export async function saveSlackConnectionAction(
     slack_alert_channel_id: formData.get('slack_alert_channel_id') ?? '',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   try {
@@ -99,7 +98,7 @@ export async function saveSlackMentionAction(
     slack_mention_min_level: formData.get('slack_mention_min_level') ?? 'off',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   try {

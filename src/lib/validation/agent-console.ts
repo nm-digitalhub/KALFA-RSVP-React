@@ -5,10 +5,11 @@ import { z } from 'zod';
 // arriving with `Authorization: Bearer <supabase-jwt>` — validated with Zod before
 // any authorization or side effect, mirroring the vox-payloads pattern.
 //
-// The console is READ-mostly. The only writes it drives are: the agent's own
-// `agent_status` row, live-call AI-management signaling relayed to the VoxEngine
-// bridge, a monitor/takeover attach request, and (later) a human-captured outcome.
-// It NEVER writes RSVP outcomes on the AI's behalf.
+// The console is READ-mostly. The writes it drives are: the agent's own
+// `agent_status` row and shift intent, live-call AI-management signaling (and
+// hang-up) relayed to the VoxEngine bridge, a monitor/takeover attach request,
+// an outbound-call enqueue, campaign pause/revival, and (later) a human-captured
+// outcome. It NEVER writes RSVP outcomes on the AI's behalf.
 
 // ---------------------------------------------------------------------------
 // Agent presence — POST /api/agents/status
@@ -44,8 +45,8 @@ export type AgentShiftBody = z.infer<typeof agentShiftSchema>;
 // the destination from our own data (event→campaign, guest→contact→phone). The
 // schema below still accepts a client-supplied phone, which the shipped route
 // deliberately does not: a console must not be able to name an arbitrary number
-// to dial. Kept because the deployed app may still send this shape, not because
-// it is the target contract.
+// to dial. No route consumes it (there is no POST /api/calls/outbound), and it is
+// not the target contract.
 //
 // The rest of the app contract, as of 2026-07-21:
 //   POST /api/agents/status                      LIVE
@@ -65,16 +66,15 @@ export type AgentShiftBody = z.infer<typeof agentShiftSchema>;
 //     one-time key so the console agent can log in as its per-agent Voximplant
 //     identity — the identity the monitor conference dials via callUser.
 //   POST /api/campaigns/{id}/status              LIVE — run state only.
-//     Body {action: 'activate' | 'pause'}. This was previously blocked: the
-//     lifecycle functions reached authorization through requireAdmin /
-//     requireOwnedEvent, which read the COOKIE session, and the console
-//     authenticates by Bearer. Resolved by separating the two concerns that had
-//     been welded together — WHO is acting (now a CampaignActor value, one
-//     variant per authentication path) and WHICH business guards apply (the J5
-//     hold, the past-event refusal, the active-event requirement), which now run
-//     for every actor. The route calls the same activateCampaign / pauseCampaign
-//     the web Server Actions call; it does not reimplement them, and
-//     campaign-lifecycle-parity.test.ts fails if a future route tries.
+//     Body {action: 'activate' | 'pause'}. The console authenticates by Bearer,
+//     while the owner/admin lifecycle paths read the COOKIE session, so two
+//     concerns are kept separate — WHO is acting (a CampaignActor value, one
+//     variant per authentication path) and WHICH business guards apply (the
+//     funding precondition: J5 hold or package payment, the past-event refusal,
+//     the active-event requirement), which run for every actor. The route calls
+//     the same activateCampaign / pauseCampaign the web Server Actions call; it
+//     does not reimplement them, and campaign-lifecycle-parity.test.ts fails if a
+//     future route tries.
 //
 //     Authority is `campaigns.runstate` (migration 20260721183855), NOT
 //     manage_voice — pausing a campaign also stops its WhatsApp sends, so it is
@@ -88,16 +88,15 @@ export type AgentShiftBody = z.infer<typeof agentShiftSchema>;
 //     reachable only from `active`, so a revived campaign is provably one the
 //     owner already ran.
 
-// The console asks the backend to ENQUEUE an outbound AI call. The request path
-// only enqueues (the worker owns dispatch + StartScenarios); it returns the
-// created call_attempt id. `event_id` must be a real owned event (not the old
-// "default-event" placeholder). Phone is E.164 (+972…), validated server-side.
+// The legacy request shape for asking the backend to ENQUEUE an outbound AI call
+// to a raw phone number. `event_id` must be a UUID (not the old "default-event"
+// placeholder). Phone is E.164 (+972…).
 export const outboundCallSchema = z.strictObject({
   phone: z
     .string()
     .trim()
     .regex(/^\+\d{8,15}$/, 'phone must be E.164, e.g. +9725XXXXXXXX'),
-  event_id: z.string().uuid(),
+  event_id: z.uuid(),
 });
 export type OutboundCallBody = z.infer<typeof outboundCallSchema>;
 
@@ -123,7 +122,7 @@ export type AttachModeBody = z.infer<typeof attachModeSchema>;
 //   {text}); SupabaseImplementations.kt:560-563 serialises `{command, ...fields}`
 //   FLAT (text at top level, NOT nested under "payload"); Telephony.kt:35 documents
 //   the four commands. Each maps to a VERIFIED ElevenLabs.AgentsClient method
-//   (typings voxengine.d.ts:6114-6190), applied by the VoxEngine dispatcher:
+//   (typings voxengine.d.ts, class ElevenLabs.AgentsClient), applied by the VoxEngine dispatcher:
 //     contextual_update → agent.contextualUpdate({text})  (NON-interrupting whisper)
 //     user_message      → agent.userMessage({text})       (injects a user turn; interrupts)
 //     clear_buffer      → agent.clearMediaBuffer()         (one-shot barge-in)
@@ -160,7 +159,7 @@ export type AgentCommandBody = z.infer<typeof agentCommandBodySchema>;
 // ---------------------------------------------------------------------------
 
 // What the server↔session channel may carry: the four the console can request,
-// plus 'call_end'.
+// plus 'call_end', 'attach' and 'detach'.
 //
 // call_end is deliberately NOT in AGENT_COMMANDS. The four above act on the AI
 // leg; this one hangs up on the guest, and a control that ends a live
@@ -170,7 +169,8 @@ export type AgentCommandBody = z.infer<typeof agentCommandBodySchema>;
 // `attach` / `detach` add and remove a human agent's audio leg (monitor or
 // takeover). Like call_end, they are NOT in AGENT_COMMANDS: they change the call
 // TOPOLOGY (a third leg via VoxEngine.callUser into a mixer conference), not the
-// AI conversation, and reach the wire only through /api/calls/{id}/monitor.
+// AI conversation. `attach` is sent only by /api/calls/{id}/monitor; nothing
+// sends `detach` yet.
 //
 // The mixer, not manual media routing, is forced by the platform: a Call may
 // RECEIVE only one audio stream (Call.sendMediaTo docs, verified live 2026-07-22),
