@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { MetaTemplate } from '@/lib/whatsapp/template-health';
+
 vi.mock('server-only', () => ({}));
 
 // Chainable admin-client stub: .select().eq().neq() for the row list read,
@@ -229,7 +231,7 @@ const META_TEMPLATE = {
   library_template_name: 'lib_x',
   disable_ios_autofill: false,
   is_primary_device_delivery_only: false,
-};
+} satisfies MetaTemplate;
 
 describe('toMirrorRow', () => {
   it('copies every Meta key into the column of the same name', () => {

@@ -1,5 +1,6 @@
 import 'server-only';
 
+import type { components as IncomingWebhook } from '@/lib/whatsapp/generated/incoming-webhook';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getWhatsAppConfig, type WhatsAppChannel } from '@/lib/data/outreach-config';
@@ -36,8 +37,7 @@ export type ImportEvent = { id: string; name: string | null; event_type: EventTy
 // replyImportPointer.
 //
 // REPLIES LEAVE FROM THE NUMBER THAT RECEIVED THE LIST — always, whatever the
-// roles say. That was the intent of this paragraph from the start; it was not
-// what the code did. With the role unassigned, `importSender` fell back to the
+// roles say. With the role unassigned, `importSender` used to fall back to the
 // RSVP number, so a list sent to any THIRD business number was staged correctly
 // and then answered from a number the owner had never written to — no open
 // 24-hour window, refused by Meta, and discarded by `safeReply`. Measured live
@@ -49,10 +49,14 @@ type InboxRow = {
 };
 
 // The two import-bearing inbound shapes, with the sender already normalized.
+// Types and fields are Meta's (generated webhook types); the fields read back
+// from jsonb are optional.
+type WebhookSchemas = IncomingWebhook['schemas'];
+type ImportDocument = Partial<Pick<WebhookSchemas['DocumentMessage']['document'], 'id' | 'filename'>>;
 type ImportPayload = {
-  type: 'document' | 'contacts';
+  type: WebhookSchemas['DocumentMessage']['type'] | WebhookSchemas['ContactSharingMessage']['type'];
   from: string; // E.164
-  document?: { id?: string; filename?: string };
+  document?: ImportDocument;
   id?: string; // inbound wamid
 };
 
@@ -65,7 +69,7 @@ function readImportPayload(payload: Json | null): ImportPayload | null {
     id?: string;
     type?: string;
     from?: string;
-    document?: { id?: string; filename?: string };
+    document?: ImportDocument;
   };
   if (p.type !== 'document' && p.type !== 'contacts') return null;
   const from = typeof p.from === 'string' ? normalizePhone(p.from) : null;
@@ -104,8 +108,9 @@ type EventRow = {
 // the sender managed more than one active event (incident 2026-07-06: a brit
 // guest list landed on a newer wedding event). The caller now decides: exactly
 // one → stage; more than one → ask which, never guess.
-// Exported (only) so the composite-key regression test below can drive it
-// directly — it is not part of the module's public contract.
+// Exported (only) so the composite-key regression test in
+// whatsapp-import.test.ts can drive it directly — it is not part of the
+// module's public contract.
 export async function resolveOwnerActiveEvents(
   senderE164: string,
 ): Promise<ImportEvent[]> {
@@ -300,16 +305,13 @@ export function parseCsvToStagedRows(bytes: Uint8Array): {
  * returned null, so the code fell back to the raw display string and staged
  * `+33 7 56 98 23 70`, spaces and all.
  *
- * That is not a cosmetic defect. `guests_event_phone_key` is a unique index on
- * the stored value, so a spaced number does not collide with the same person's
- * normalised one — the same guest gets created twice — and `findImportMatches`
- * compares phones, so the review screen would not have offered the merge either.
+ * The staged value is written to `guests.phone` unchanged when the owner
+ * confirms, so the display string's separators would be stored as typed.
  *
- * ⚠️ THE OUTPUT IS THE HOUSE FORMAT, NOT E.164, and that was nearly the second
- * bug. MEASURED in `guests` on 2026-09-13: 41 of 44 stored phones are the LOCAL
- * `0…` form and only 3 are E.164. Canonicalising everything to `+972…` would have
- * made every Israeli contact card fail to match those 41 rows — recreating the
- * duplicate-guest problem this function exists to close, from the other side.
+ * ⚠️ THE OUTPUT IS THE HOUSE FORMAT, NOT E.164. MEASURED in `guests` on
+ * 2026-09-13: 41 of 44 stored phones are the LOCAL `0…` form and only 3 are
+ * E.164, so an Israeli contact card is staged as `0…` like the rest of the list
+ * rather than canonicalised to `+972…`.
  *
  * So an Israeli number comes back as `0…` (`repairIsraeliLocalPhone`, which
  * normalises through libphonenumber and converts back), and a foreign one comes
@@ -423,7 +425,8 @@ async function downloadDocument(
 // Deliberately NO literal fallback — a reply link minted on a stale hardcoded
 // origin outlives a domain move silently (relocation plan Phase 0 #1), so an
 // unset APP_ORIGIN throws loudly instead.
-// Exported (only) so the regression test below can drive it directly.
+// Exported (only) so the regression test in whatsapp-import.test.ts can drive
+// it directly.
 export function resolveReplyOrigin(): string {
   const origin = process.env.APP_ORIGIN?.split(/[\s#]/)[0]?.trim();
   if (!origin) {
@@ -591,12 +594,7 @@ async function safeReply(
   body: string,
 ): Promise<void> {
   // Best-effort for the RUN — a refused reply must never fail the staging that
-  // already succeeded — but NOT invisible any more.
-  //
-  // The outcome used to be discarded outright, and that is how a broken reply
-  // went unnoticed for as long as it did: the list was staged, the owner was
-  // told nothing, and no log, alert or row recorded that anything had failed.
-  // The only symptom was a person saying "I didn't get a link".
+  // already succeeded — but NOT invisible: a failed reply is alerted below.
   // ⚠️ NOTHING BELOW MAY THROW. The list is already staged by the time this
   // runs; a failed reply must cost the owner a link, never the import. The
   // try/catch is the guarantee, and it is not theoretical — adding the alert

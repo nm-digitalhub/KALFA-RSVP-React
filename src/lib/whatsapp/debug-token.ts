@@ -1,15 +1,16 @@
 import 'server-only';
 
+import type { GraphErrorBody } from '@/lib/whatsapp/graph-error';
+
 import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 
 /**
  * `GET /{version}/debug_token` — what Meta says about the access token we hold.
  *
- * This closes gap G7: nothing in this codebase ever asked Meta whether the
- * WhatsApp token was still valid. The failure mode it exists for is silent —
- * a System User token whose data-access window lapses keeps its shape, so every
- * send starts failing with a provider error nobody expected, and the admin
- * panel goes on reporting the channel as "מוגדר".
+ * It asks Meta whether the WhatsApp token is still valid. The failure mode it
+ * exists for is silent — a System User token whose data-access window lapses
+ * keeps its shape, so every send starts failing with a provider error nobody
+ * expected, and the admin panel goes on reporting the channel as "מוגדר".
  *
  * VERIFIED against the live reference (developers.facebook.com/docs/graph-api/
  * reference/debug_token/, read 2026-09-13): it is a GET; `input_token` is the
@@ -55,10 +56,10 @@ type DebugTokenResponse = {
     data_access_expires_at?: number;
     scopes?: string[];
     granular_scopes?: Array<{ scope?: unknown; target_ids?: unknown }>;
+    // The token's own problem (debug_token's payload), not a request error.
     error?: { message?: string; code?: number };
   };
-  error?: { message?: string; code?: number };
-};
+} & GraphErrorBody;
 
 // Unix-seconds field that Meta may omit entirely. 0 is kept as 0 — it is
 // meaningful (see the header) and must not collapse into "unknown".

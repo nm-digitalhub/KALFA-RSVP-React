@@ -31,6 +31,8 @@ function assertExecuteLatch(): void {
   if (process.env.RELOCATE_EXECUTE !== "1") throw new RelocateExecuteLatchError();
 }
 
+import type { components, paths } from "@/lib/whatsapp/generated/message-templates";
+import type { GraphErrorBody } from "@/lib/whatsapp/graph-error";
 import { GRAPH_API_VERSION } from "@/lib/whatsapp/graph-version";
 
 // One pinned Graph version for the whole system (G5). Safe to import from this
@@ -44,32 +46,20 @@ export interface MetaCreds {
   accessToken: string;
 }
 
-export interface MetaTemplateButton {
-  type: string;
-  text?: string;
-  url?: string;
-  example?: string[];
-  [key: string]: unknown;
-}
+// Meta's own types, generated from its published message-template spec
+// (`npm run meta:types`). A listed template is keyed by name, so one Graph
+// returned without a name is dropped when listing.
+type Schemas = components["schemas"];
+export type MetaTemplate = Schemas["MessageTemplate"] & { name: string };
+export type MetaTemplateComponent = NonNullable<Schemas["MessageTemplate"]["components"]>[number];
+export type MetaTemplateButton = NonNullable<MetaTemplateComponent["buttons"]>[number];
 
-export interface MetaTemplateComponent {
-  type: string;
-  format?: string;
-  text?: string;
-  example?: unknown;
-  buttons?: MetaTemplateButton[];
-  [key: string]: unknown;
-}
-
-export interface MetaTemplate {
-  id?: string;
-  name: string;
-  status: string;
-  category: string;
-  language: string;
-  parameter_format?: string;
-  components: MetaTemplateComponent[];
-}
+// The create request as the spec defines it, except `components`: the spec types
+// a new template's components as bare objects, so they take the same shape a
+// listed template's components have (which is what is re-submitted here).
+type CreateTemplateBody =
+  paths["/{Version}/{WABA-ID}/message_templates"]["post"]["requestBody"]["content"]["application/json"];
+export type NewMetaTemplate = Omit<CreateTemplateBody, "components"> & { components: MetaTemplateComponent[] };
 
 /* ------------------------------------------------------------------------- *
  * Pure helpers (exported for tests)
@@ -122,11 +112,11 @@ function rewriteUrl(url: string, oldHost: string, newOrigin: string): string {
  * QUICK_REPLY buttons) is carried verbatim so the review sees the same
  * template with a new link base. */
 export function rewriteComponents(
-  components: MetaTemplateComponent[],
+  components: readonly MetaTemplateComponent[] | undefined,
   oldHost: string,
   newOrigin: string,
 ): MetaTemplateComponent[] {
-  return components.map((c) => {
+  return (components ?? []).map((c) => {
     if (c.type !== "BUTTONS" || !Array.isArray(c.buttons)) return structuredClone(c);
     return {
       ...structuredClone(c),
@@ -171,7 +161,7 @@ export function planTemplateNames(
         templateUrls(s).some((u) => hostOf(u) === newHost),
     );
     if (successor) {
-      return { oldName: t.name, newName: successor.name, newStatus: successor.status };
+      return { oldName: t.name, newName: successor.name, newStatus: successor.status ?? null };
     }
     const newName = nextVersionName(t.name, taken);
     taken.add(newName);
@@ -274,8 +264,8 @@ export function templateSwitchSql(update: TemplateRowUpdate): string {
   return `UPDATE message_templates SET name = ${sqlLiteral(update.name)}, components = ${components} WHERE message_key = ${sqlLiteral(update.message_key)}`;
 }
 
-/** The routing model (message_template_routes → whatsapp_message_templates,
- * 2026-09-30): repoint every route from an old template to its APPROVED
+/** The routing model (message_template_routes → whatsapp_message_templates):
+ * repoint every route from an old template to its APPROVED
  * successor in the Meta mirror, copying the old template's variable rows and
  * settings to the successor first (variables belong to the template). A
  * successor the mirror has not seen yet (the nightly sync) changes nothing and
@@ -323,8 +313,8 @@ export async function listMetaTemplates(creds: MetaCreds): Promise<MetaTemplate[
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`Meta template list failed: HTTP ${res.status}`);
-    const body = (await res.json()) as { data?: MetaTemplate[]; paging?: { next?: string } };
-    out.push(...(body.data ?? []));
+    const body = (await res.json()) as Schemas["MessageTemplatesResponse"];
+    out.push(...(body.data ?? []).filter((t): t is MetaTemplate => typeof t.name === "string"));
     // paging.next already carries the access token as a query param on Meta's
     // side; we still send the header and never print the URL.
     url = body.paging?.next ?? null;
@@ -335,7 +325,7 @@ export async function listMetaTemplates(creds: MetaCreds): Promise<MetaTemplate[
 /** MUTATING. Submits one new template version for review. */
 export async function createMetaTemplate(
   creds: MetaCreds,
-  template: Pick<MetaTemplate, "name" | "language" | "category" | "parameter_format" | "components">,
+  template: NewMetaTemplate,
 ): Promise<{ ok: boolean; detail: string; id?: string; status?: string }> {
   assertExecuteLatch();
   try {
@@ -351,14 +341,10 @@ export async function createMetaTemplate(
         category: template.category,
         ...(template.parameter_format ? { parameter_format: template.parameter_format } : {}),
         components: template.components,
-      }),
+      } satisfies NewMetaTemplate),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    const body = (await res.json().catch(() => ({}))) as {
-      id?: string;
-      status?: string;
-      error?: { message?: string; error_user_msg?: string };
-    };
+    const body = (await res.json().catch(() => ({}))) as Schemas["CreateTemplateResponse"] & GraphErrorBody;
     if (!res.ok) {
       const msg = body.error?.error_user_msg ?? body.error?.message ?? `HTTP ${res.status}`;
       return { ok: false, detail: msg.slice(0, 200) };

@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
@@ -13,10 +13,10 @@ vi.mock('@/lib/data/webhooks', () => ({
   insertWebhookDelivery: vi.fn(),
 }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
-// Owner agent (stage 4): the route now also reads its routing through the
-// service-role client and may enqueue. Both are faked; the default state is the
-// migration's own default — no number chosen — so every test above this block
-// runs against the feature UNCONFIGURED, which is exactly "today".
+// Owner agent: the route also reads its routing through the service-role
+// client and may enqueue. Both are faked; the default state is the migration's
+// own default — no number chosen — so every test that does not set up the owner
+// agent itself runs against the feature UNCONFIGURED, which is exactly "today".
 const ownerAgentFake = vi.hoisted(() => ({
   admin: null as unknown as import('@/test/owner-agent-fake-admin').FakeAdmin,
 }));
@@ -343,7 +343,8 @@ describe('POST /api/webhooks/whatsapp — persist-then-process intake', () => {
 });
 
 // Template-health fields (message_template_status_update / template_category_update /
-// template_correct_category_detection / message_template_quality_update) are
+// template_correct_category_detection / message_template_quality_update /
+// message_template_components_update) are
 // NOT in whatsapp-api-js's typed PostData union — normalizeTemplateHealthRows
 // reads them off the raw payload, so these are exercised directly through the
 // signed HTTP round-trip (same as every other event kind here), not a
@@ -431,6 +432,28 @@ describe('POST /api/webhooks/whatsapp — template-health fields', () => {
     expect(rowsArg()[0]).toMatchObject({ event_kind: 'template_quality' });
   });
 
+  it('persists message_template_components_update with its own event_kind', async () => {
+    // Meta's reference example (webhooks/reference/message_template_components_update).
+    const res = await POST(
+      signed(
+        templateDelivery('message_template_components_update', {
+          message_template_id: 1315502779341834,
+          message_template_name: 'order_confirmation',
+          message_template_language: 'en_US',
+          message_template_element: 'Thank you for your order, {{1}}!',
+          message_template_buttons: [
+            { message_template_button_type: 'URL', message_template_button_text: 'Email support' },
+          ],
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(rowsArg()[0]).toMatchObject({
+      event_kind: 'template_components',
+      dedupe_key: 'wa-tmpl:template_components:1315502779341834:1700000000',
+    });
+  });
+
   it('persists a template-health field that lacks message_template_id under its raw field name', async () => {
     const res = await POST(
       signed(templateDelivery('message_template_status_update', { event: 'APPROVED' })),
@@ -449,8 +472,8 @@ describe('POST /api/webhooks/whatsapp — template-health fields', () => {
 // Every other subscribed field (account_update, business_username_updates,
 // phone_number_quality_update, user_preferences, calls, …) is persisted
 // generically under its Meta field name so nothing Meta delivers is invisible
-// in /admin/webhooks. The worker has no handler for these kinds and marks them
-// processed untouched.
+// in /admin/webhooks. The worker handles the account-level kinds and marks the
+// rest processed untouched.
 describe('POST /api/webhooks/whatsapp — every other subscribed field is persisted', () => {
   it('persists an unrecognized field under its raw field name with a stable dedupe key', async () => {
     const body = templateDelivery('business_username_updates', {
@@ -479,6 +502,20 @@ describe('POST /api/webhooks/whatsapp — every other subscribed field is persis
     vi.mocked(insertWebhookEvents).mockClear();
     await POST(signed(body));
     expect(rowsArg()[0].dedupe_key).toBe(rows[0].dedupe_key);
+  });
+
+  it('carries the WABA id (entry.id) on the row without changing the dedupe key', async () => {
+    // Meta's reference example (webhooks/reference/account_review_update): the
+    // value is `{ decision }` alone, so the account is only in entry.id.
+    const res = await POST(signed(templateDelivery('account_review_update', { decision: 'APPROVED' })));
+    expect(res.status).toBe(200);
+    const row = rowsArg()[0];
+    expect(row).toMatchObject({ event_kind: 'account_review_update' });
+    expect(row.payload).toEqual({ decision: 'APPROVED', entry_waba_id: 'waba-1' });
+    // The digest is taken over Meta's value only, so a row stored before the
+    // id was carried and one stored after share the key.
+    const digest = createHash('sha256').update(JSON.stringify({ decision: 'APPROVED' })).digest('hex').slice(0, 16);
+    expect(row.dedupe_key).toBe(`wa-field:account_review_update:waba-1:1700000000:${digest}`);
   });
 
   it('keeps phone_number_id when the field value carries metadata', async () => {
@@ -628,9 +665,9 @@ describe('POST /api/webhooks/whatsapp — Meta sandbox test payloads persist on 
 
 // The value-level `contacts[]` block is where Meta puts the sender's profile
 // name, `wa_id`, and — per the BSUID/usernames rollout — `user_id` and
-// `username`. It is not part of the message object, so it used to be dropped.
-// It is now carried on the persisted row under a key that cannot collide with a
-// message field (`contacts` is itself a message type).
+// `username`. It is not part of the message object, so it is carried on the
+// persisted row under a key that cannot collide with a message field
+// (`contacts` is itself a message type).
 describe('POST /api/webhooks/whatsapp — sender/recipient contact block is kept', () => {
   it('attaches sender_contact (profile + wa_id + user_id + username) to an inbound message row', async () => {
     await POST(
@@ -751,10 +788,12 @@ describe('POST /api/webhooks/whatsapp — rejected deliveries are visible (ids o
 //   * every insertWebhookDelivery call;
 //   * every insertWebhookEvents call;
 //   * every sendSlackAlert call from the webhook itself.
-// The ONE permitted difference is task-mandated: a failed routing read sends one
-// ids-only alert from source 'owner-agent'. So alerts are partitioned by source:
-// the webhook's own must match the baseline exactly, and the owner-agent ones must
-// number exactly 1 in a cell where a routing read actually failed, else 0.
+// The permitted differences are owner-agent only: a failed routing read sends one
+// ids-only alert from source 'owner-agent', and a rotation of the bound BSUID
+// revokes the binding (one audit row, one ids-only alert). So alerts are
+// partitioned by source: the webhook's own must match the baseline exactly, and
+// the owner-agent ones must number exactly 1 in a cell where a routing read
+// actually failed or a rotation revoked a binding, else 0.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const OA_CHOSEN = '1111222233334444';

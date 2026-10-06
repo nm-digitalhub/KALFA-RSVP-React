@@ -1,12 +1,12 @@
 /**
  * Relocation wizard — step definitions for stages B–H.
  *
- * Wired 2026-08-23: apply()/verify()/rollback() call the execution modules
+ * apply()/verify()/rollback() call the execution modules
  * (exec/nginx/env-rewrite/pm2/external/setup-form) behind the RELOCATE_EXECUTE
  * latch those modules already enforce — the CLI is the only thing that ever
  * sets that env var, and only for a real (non-dry-run), gate-approved run.
- * Steps left as NotImplementedError are DELIBERATELY owner-gated/manual
- * (each says why in its message) — not an oversight.
+ * C4 is the only step without an apply(): its check() always reports done, so
+ * the engine never runs the NotImplementedError fallback.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -193,7 +193,7 @@ async function readTemplateRows(handle: { token: string; projectRef: string }): 
 }
 
 // Template names the routing tables send today (message_template_routes →
-// whatsapp_message_templates) — the sending source of truth since 2026-09-30.
+// whatsapp_message_templates) — the sending source of truth.
 async function readRoutedTemplateNames(handle: { token: string; projectRef: string }): Promise<string[] | null> {
   const res = await runSupabaseSql({
     ...handle,
@@ -268,6 +268,11 @@ export function buildStepDefinitions(): StepDefinition[] {
           if (p.newStatus !== null) continue;
           const src = byName.get(p.oldName);
           if (!src) continue;
+          // Meta's spec leaves both optional; a new version cannot be submitted
+          // without them, so a template listed without one stops the step loudly.
+          if (!src.language || !src.category) {
+            throw new Error(`Meta returned ${p.oldName} without language/category — cannot submit ${p.newName}`);
+          }
           const res = await createMetaTemplate(creds, {
             name: p.newName,
             language: src.language,

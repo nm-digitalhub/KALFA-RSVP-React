@@ -9,6 +9,7 @@ import {
   buildEventValues,
   buildLeadValues,
   carriesRsvpQuickReplies,
+  decideRoutedTemplate,
   LEAD_MESSAGE_KEYS,
   pickTemplateRoute,
   readSendValue,
@@ -19,8 +20,8 @@ import {
 import { buildSendContext, type SendContextInput } from '@/lib/whatsapp/template-spec';
 
 // The ONE place a WhatsApp send decides which Meta template goes out and what
-// fills its variables — step 7 (cutover) of
-// docs/superpowers/plans/2026-09-30-whatsapp-templates-meta-mirror.md.
+// fills its variables (design:
+// docs/superpowers/plans/2026-09-30-whatsapp-templates-meta-mirror.md).
 //
 // Reads the step (message_templates: active + channel), its routes
 // (message_template_routes), the Meta mirror row and that template's variable
@@ -32,7 +33,7 @@ import { buildSendContext, type SendContextInput } from '@/lib/whatsapp/template
 // Failure is never silent: a step whose template is not in Meta any more, not
 // APPROVED, or whose mapping names a value that does not exist, is reported to
 // Slack (deduplicated) as well as returned to the caller, which records it in
-// its failure sink exactly as before.
+// its failure sink.
 
 export type WhatsAppSendValues = {
   event?: SendContextInput['event'];
@@ -173,31 +174,34 @@ export async function resolveWhatsAppSend(input: {
   }
   if (!route) return { kind: 'template_missing' };
 
-  let template = plan.routes.find((r) => r === route)?.template ?? null;
-  if (template?.status === 'DELETED') {
-    const twin = await liveTwin(template);
+  const routed = plan.routes.find((r) => r === route)?.template ?? null;
+  // The twin is looked up only for a deleted template (one extra query).
+  const twin = routed?.status === 'DELETED' ? await liveTwin(routed) : null;
+  // The rule itself is shared with the admin screen (template-route.ts).
+  const decision = decideRoutedTemplate(routed, twin);
+  if (decision.deletedOriginal) {
     alertOnce(
-      `deleted:${messageKey}:${template.id}`,
+      `deleted:${messageKey}:${decision.deletedOriginal.id}`,
       twin
         ? 'תבנית WhatsApp נמחקה ונוצרה מחדש ב-Meta — נשלחת הגרסה החדשה; יש לעדכן את השיוך'
         : 'תבנית WhatsApp נמחקה ב-Meta — השלב לא נשלח',
-      { message_key: messageKey, template: template.name, event_type: eventType ?? 'default' },
+      { message_key: messageKey, template: decision.deletedOriginal.name, event_type: eventType ?? 'default' },
     );
-    template = twin;
   }
-  if (!template || template.status !== 'APPROVED') {
+  if (!decision.send) {
     alertOnce(
-      `unapproved:${messageKey}:${template?.id ?? 'none'}`,
+      `unapproved:${messageKey}:${decision.template?.id ?? 'none'}`,
       'תבנית WhatsApp לא מאושרת ב-Meta — השלב לא נשלח',
       {
         message_key: messageKey,
-        template: template?.name ?? 'none',
-        status: template?.status ?? 'missing',
+        template: decision.template?.name ?? 'none',
+        status: decision.template?.status ?? 'missing',
         event_type: eventType ?? 'default',
       },
     );
     return { kind: 'template_missing' };
   }
+  const template = decision.template;
 
   // The same value builders the admin picker lists (template-route.ts), so a
   // path it offers is always one this can read. Unknown = not a value this step

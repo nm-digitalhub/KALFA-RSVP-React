@@ -8,7 +8,15 @@
 // webhook can bill the reach AND then stop future outreach. Only the boolean
 // leaves this module — the raw text is never returned or logged (PII-safe).
 
-const BILLABLE_MESSAGE_TYPES = new Set([
+import type { components } from '@/lib/whatsapp/generated/incoming-webhook';
+
+// Meta's own shapes, generated from its published webhook spec
+// (`npm run meta:types`, whatsapp-incoming-webhook-payload).
+type Webhook = components['schemas'];
+type IncomingMessageType = Webhook['IncomingMessage']['type'];
+
+// Typed by Meta's message-type enum: a name Meta does not send fails to compile.
+const BILLABLE_MESSAGE_TYPES = new Set<IncomingMessageType>([
   'text',
   'button',
   'interactive',
@@ -42,18 +50,21 @@ const REMOVAL_KEYWORDS = new Set([
 // sender wa_id), used only as the phone-resolution fallback when a reply carries
 // no Meta context.id. Declared here so the raw text is extracted and matched in
 // ONE place and never leaves this module; the phone never leaves the resolver.
+//
+// Each field is Meta's (the generated webhook types), made optional: the row is
+// read back from jsonb, so any of them may be missing.
 export type InboundMessagePayload = {
   type?: string;
-  from?: string;
-  text?: { body?: string };
+  from?: Webhook['BaseMessageProperties']['from'];
+  text?: Partial<Webhook['TextMessage']['text']>;
   // A template quick-reply tap arrives as type:"button" with `payload` carrying
   // the OPAQUE action id we set on the outbound template (`text` is its label).
-  button?: { text?: string; payload?: string };
+  button?: Partial<Webhook['ButtonMessage']['button']>;
   // An interactive reply carries both the human label (`title`, matched for
   // opt-out) and the OPAQUE action id (`id`) we set on the button/list row.
   interactive?: {
-    button_reply?: { id?: string; title?: string };
-    list_reply?: { id?: string; title?: string };
+    button_reply?: Partial<Webhook['InteractiveButtonReplyContent']['button_reply']>;
+    list_reply?: Partial<Webhook['InteractiveListReplyContent']['list_reply']>;
   };
 };
 
@@ -98,7 +109,7 @@ export function isRemovalIntent(text: string): boolean {
 // Is this message type one of the billable "human reached" signals (§4.1)?
 // Single source for the type gate, reused by the per-row webhook processor.
 export function isBillableMessageType(type: string | undefined | null): boolean {
-  return !!type && BILLABLE_MESSAGE_TYPES.has(type);
+  return !!type && [...BILLABLE_MESSAGE_TYPES].some((t) => t === type);
 }
 
 // Classify ONE persisted inbound message into the billing-/routing-relevant

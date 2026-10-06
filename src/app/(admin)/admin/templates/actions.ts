@@ -9,16 +9,18 @@ import {
   updateMessageTemplate,
 } from '@/lib/data/message-templates';
 import {
+  acknowledgeWhatsAppTemplateCategory,
   removeTemplateRoute,
   requestTemplateSync,
   saveTemplateParameters,
   setTemplateRoute,
+  setWhatsAppStepActive,
 } from '@/lib/data/admin/whatsapp-templates';
 import type { FormState } from '@/lib/validation/result';
 import { EVENT_TYPES } from '@/lib/validation/schemas';
 
 const schema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   name: z.string().trim().max(200).default(''),
   language: z.string().trim().max(16).default('he'),
   body: z.string().trim().max(4000).default(''),
@@ -35,7 +37,7 @@ export async function updateTemplateAction(
     body: formData.get('body') ?? '',
   });
   if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
   const active = formData.get('active') === 'on';
@@ -63,8 +65,8 @@ export async function updateTemplateAction(
   return { notice: active ? 'נשמר — התבנית פעילה' : 'התבנית נשמרה' };
 }
 
-// Accept Meta's category for a template that drifted (D4). Not a fix — Meta
-// classifies by message body and the template goes on being billed as MARKETING;
+// Accept Meta's category for a template that drifted. Not a fix — Meta
+// classifies by message body and the template goes on being billed under Meta's category;
 // this records that we expect it, so the badge clears, the nightly alert stops,
 // and a LATER move by Meta alerts again as a new transition.
 //
@@ -102,15 +104,22 @@ export async function acknowledgeTemplateCategoryAction(
   }
 }
 
-// --- WhatsApp routes and variables (step 8, whatsapp-templates-meta-mirror) ---
+// --- WhatsApp routes and variables ---
 //
-// Called with the form's data object (JSON Forms), not FormData. Every input is
-// re-validated here and again in the data layer against the live template;
-// nothing the browser sends is trusted.
+// Called with plain objects, not FormData (the variables form's data comes from
+// JSON Forms). Every input is re-validated here and again in the data layer
+// against the live template; nothing the browser sends is trusted.
 
 export type TemplateAdminActionResult =
   | { ok: true; warning?: string }
   | { ok: false; problems: string[] };
+
+// The list and guest-journey view, and every template's own page. Two calls:
+// there is no layout.tsx at /admin/templates for a 'layout' revalidation to hang on.
+function revalidateTemplates(): void {
+  revalidatePath('/admin/templates');
+  revalidatePath('/admin/templates/[templateId]', 'page');
+}
 
 const INVALID: TemplateAdminActionResult = { ok: false, problems: ['בקשה לא תקינה'] };
 const FAILED: TemplateAdminActionResult = { ok: false, problems: ['השמירה נכשלה. נסו שוב.'] };
@@ -127,7 +136,7 @@ export async function setTemplateRouteAction(input: unknown): Promise<TemplateAd
   if (!parsed.success) return INVALID;
   try {
     const result = await setTemplateRoute(parsed.data);
-    if (result.ok) revalidatePath('/admin/templates');
+    if (result.ok) revalidateTemplates();
     return result;
   } catch (err) {
     unstable_rethrow(err);
@@ -140,7 +149,7 @@ export async function removeTemplateRouteAction(input: unknown): Promise<Templat
   if (!parsed.success) return INVALID;
   try {
     const result = await removeTemplateRoute(parsed.data);
-    if (result.ok) revalidatePath('/admin/templates');
+    if (result.ok) revalidateTemplates();
     return result;
   } catch (err) {
     unstable_rethrow(err);
@@ -168,7 +177,7 @@ export async function saveTemplateParametersAction(input: unknown): Promise<Temp
   if (!parsed.success) return INVALID;
   try {
     const result = await saveTemplateParameters(parsed.data);
-    if (result.ok) revalidatePath('/admin/templates');
+    if (result.ok) revalidateTemplates();
     return result;
   } catch (err) {
     unstable_rethrow(err);
@@ -183,5 +192,33 @@ export async function requestTemplateSyncAction(): Promise<TemplateAdminActionRe
   } catch (err) {
     unstable_rethrow(err);
     return { ok: false, problems: ['לא הצלחנו לבקש סנכרון. נסו שוב.'] };
+  }
+}
+
+export async function setStepActiveAction(input: unknown): Promise<TemplateAdminActionResult> {
+  const parsed = z.object({ messageKey, active: z.boolean() }).safeParse(input);
+  if (!parsed.success) return INVALID;
+  try {
+    const result = await setWhatsAppStepActive(parsed.data);
+    if (result.ok) revalidateTemplates();
+    return result;
+  } catch (err) {
+    unstable_rethrow(err);
+    return FAILED;
+  }
+}
+
+export async function acknowledgeWhatsAppCategoryAction(input: unknown): Promise<TemplateAdminActionResult> {
+  const parsed = z
+    .object({ templateId: z.string().regex(/^\d{1,32}$/), observedCategory: z.string().trim().min(1).max(32) })
+    .safeParse(input);
+  if (!parsed.success) return INVALID;
+  try {
+    const result = await acknowledgeWhatsAppTemplateCategory(parsed.data);
+    if (result.ok) revalidateTemplates();
+    return result;
+  } catch (err) {
+    unstable_rethrow(err);
+    return FAILED;
   }
 }

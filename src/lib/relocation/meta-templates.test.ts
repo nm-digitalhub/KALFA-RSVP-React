@@ -15,11 +15,12 @@ import {
   templateSwitchSql,
   templateUrls,
   type MetaTemplate,
+  type NewMetaTemplate,
 } from "./meta-templates";
 
 // Shape copied from the LIVE inventory (2026-08-24): text-only, POSITIONAL,
 // full example blocks, one URL button with a {{1}} suffix.
-function tpl(name: string, url: string, status = "APPROVED"): MetaTemplate {
+function tpl(name: string, url: string, status: MetaTemplate["status"] = "APPROVED"): MetaTemplate & NewMetaTemplate {
   return {
     name,
     status,
@@ -62,10 +63,10 @@ describe("template inventory helpers", () => {
     const src = tpl("gift_v1", `https://${OLD}/g/{{1}}`);
     const out = rewriteComponents(src.components, OLD, NEW_ORIGIN);
     expect(out[0]).toEqual(src.components[0]);
-    expect(out[1].buttons?.[0].url).toBe(`${NEW_ORIGIN}/g/{{1}}`);
-    expect(out[1].buttons?.[0].example).toEqual([`${NEW_ORIGIN}/g/3f2a9c1b8d4e`]);
+    expect(out[1]?.buttons?.[0]?.url).toBe(`${NEW_ORIGIN}/g/{{1}}`);
+    expect(out[1]?.buttons?.[0]?.example).toEqual([`${NEW_ORIGIN}/g/3f2a9c1b8d4e`]);
     // source untouched
-    expect(src.components[1].buttons?.[0].url).toBe(`https://${OLD}/g/{{1}}`);
+    expect(src.components[1]?.buttons?.[0]?.url).toBe(`https://${OLD}/g/{{1}}`);
   });
 
   it("planTemplateNames recognises an existing successor on the new host (any status) and plans the rest", () => {

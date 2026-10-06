@@ -8,15 +8,18 @@ import {
   templateCategoryUpdateSchema,
   templateCategoryMisuseSchema,
   templateQualityUpdateSchema,
+  templateComponentsUpdateSchema,
 } from '@/lib/validation/whatsapp-template-health';
+import { runTemplateHealthSync } from '@/lib/data/template-health-sync';
+import { parameterCoverageProblems, sendValuePaths } from '@/lib/whatsapp/template-route';
 
 type WebhookInboxRow = Tables<'webhook_inbox'>;
 
-// Applies the 4 template-health webhook events (see route.ts's
+// Applies the 5 template-health webhook events (see route.ts's
 // normalizeTemplateHealthRows) to the Meta mirror (whatsapp_message_templates,
-// by Meta's template id — every template, since 2026-09-30) and, until the
+// by Meta's template id — every template) and, until the
 // admin screen reads the mirror, also to the legacy message_templates row. The
-// legacy half below: Matched by
+// legacy half is matched by
 // (name, language) — Meta's payload never carries our internal message_key.
 // A row with no match (a template not tracked in our admin config, or a
 // name/language mismatch) is a silent no-op: nothing to update, and alerting
@@ -43,7 +46,7 @@ async function findTemplateRowId(
 
 // The Meta mirror row this webhook is about (by Meta's template id), with
 // whether any step sends it (message_template_routes) and the category it was
-// requested under (whatsapp_template_settings). Since 2026-09-30 every routed
+// requested under (whatsapp_template_settings). Every routed
 // template is watched — the event-type and image variants included, not only a
 // step's base template (which is all findTemplateRowId can see).
 type MirrorTarget = { id: string; requestedCategory: string | null; messageKeys: string[] };
@@ -296,4 +299,49 @@ export async function processTemplateQualityRow(row: WebhookInboxRow): Promise<v
       fields: { message_key: label, new_score: v.new_quality_score },
     });
   }
+}
+
+// message_template_components_update — the template was edited on Meta. The
+// webhook carries a flattened copy of the new text; the mirror is refreshed from
+// Graph instead (the same sync the nightly job and the admin button run), so the
+// stored components are Meta's own shape. Then every step that sends this
+// template is checked against the variable mapping saved for it: an edit that
+// adds, removes or renames a variable breaks the send (Meta error 132000) until
+// the mapping is fixed. A template no step sends is only mirrored — no alert.
+export async function processTemplateComponentsRow(row: WebhookInboxRow): Promise<void> {
+  const parsed = templateComponentsUpdateSchema.safeParse(row.payload);
+  if (!parsed.success) return;
+  const v = parsed.data;
+  await runTemplateHealthSync();
+
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from('whatsapp_message_templates')
+    .select(
+      'components, message_template_routes(message_key), whatsapp_template_parameters(type, sub_type, index, position, source_path)',
+    )
+    .eq('id', v.message_template_id)
+    .maybeSingle();
+  if (!data) return;
+  const steps = [...new Set((data.message_template_routes ?? []).map((r) => r.message_key))];
+  if (steps.length === 0) return;
+
+  const parameters = data.whatsapp_template_parameters ?? [];
+  const problems = [
+    ...new Set(steps.flatMap((step) => parameterCoverageProblems(data.components, parameters, sendValuePaths(step)))),
+  ];
+  await sendSlackAlert({
+    level: problems.length > 0 ? 'error' : 'info',
+    category: 'send_health',
+    source: 'whatsapp-template-components',
+    title:
+      problems.length > 0
+        ? `תבנית WhatsApp נערכה ב-Meta והמשתנים שלה כבר לא תואמים: ${steps.join(', ')}`
+        : `תבנית WhatsApp נערכה ב-Meta: ${steps.join(', ')}`,
+    detail:
+      problems.length > 0
+        ? `${problems.join(' · ')}. עד שהמשתנים יתוקנו במסך התבניות, השליחה בשלב הזה תיכשל.`
+        : 'המשתנים השמורים עדיין מכסים את התבנית. אחרי עריכה Meta בודקת את התבנית מחדש.',
+    fields: { message_key: steps.join(', '), template_name: v.message_template_name },
+  });
 }

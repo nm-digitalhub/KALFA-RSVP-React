@@ -29,6 +29,11 @@ vi.mock('@/lib/data/whatsapp-import', () => ({
 // getWhatsAppConsentRequired — if a future test drives a path that reaches one,
 // it fails as "undefined is not a function"; add it here rather than debugging.
 vi.mock('@/lib/data/outreach-config', () => ({ getWhatsAppChannel: vi.fn() }));
+vi.mock('@/lib/data/whatsapp-account-processing', () => ({
+  processAccountReviewRow: vi.fn(async () => {}),
+  processAccountUpdateRow: vi.fn(async () => {}),
+  processPhoneNumberQualityRow: vi.fn(async () => {}),
+}));
 vi.mock('@/lib/whatsapp/embedded-signup/connected-numbers', () => ({
   isEsConnectedPhoneNumber: vi.fn(async () => false),
 }));
@@ -61,6 +66,11 @@ import {
   getWhatsAppChannel,
   type WhatsAppChannel,
 } from '@/lib/data/outreach-config';
+import {
+  processAccountReviewRow,
+  processAccountUpdateRow,
+  processPhoneNumberQualityRow,
+} from '@/lib/data/whatsapp-account-processing';
 import { isEsConnectedPhoneNumber } from '@/lib/whatsapp/embedded-signup/connected-numbers';
 
 // How the channel reads in each of the two states. LEGACY is how this ships —
@@ -445,13 +455,12 @@ describe('processWebhookEvent — RSVP from a quick-reply button (C9)', () => {
   });
 });
 
-// Generic Meta fields persisted by the route (account_update,
-// business_username_updates, phone_number_quality_update, …) have no economic
-// meaning: the worker must leave them untouched (no interaction, no billing,
-// no alert) so the caller marks them processed and they stay visible in
-// /admin/webhooks.
+// Generic Meta fields persisted by the route (business_username_updates,
+// user_preferences, messages_other, …) have no economic meaning: the worker must
+// leave them untouched (no interaction, no billing, no alert) so the caller
+// marks them processed and they stay visible in /admin/webhooks.
 describe('processWebhookEvent — generic provider fields', () => {
-  it.each(['business_username_updates', 'account_update', 'messages_other'])(
+  it.each(['business_username_updates', 'user_preferences', 'messages_other'])(
     'resolves %s without any side effect',
     async (kind) => {
       await expect(
@@ -471,6 +480,26 @@ describe('processWebhookEvent — generic provider fields', () => {
       expect(sendSlackAlert).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('processWebhookEvent — account-level WABA fields', () => {
+  it.each([
+    ['account_update', processAccountUpdateRow],
+    ['account_review_update', processAccountReviewRow],
+    ['phone_number_quality_update', processPhoneNumberQualityRow],
+  ] as const)('routes %s to its handler and nothing else', async (kind, handler) => {
+    const row = messageRow({
+      event_kind: kind,
+      dedupe_key: `wa-field:${kind}:waba-1:na:0123456789abcdef`,
+      message_id: null,
+      context_message_id: null,
+      payload: { event: 'SOMETHING' },
+    });
+    await processWebhookEvent(row);
+    expect(handler).toHaveBeenCalledWith(row);
+    expect(insertInteraction).not.toHaveBeenCalled();
+    expect(recordReached).not.toHaveBeenCalled();
+  });
 });
 
 describe('processWebhookEvent — status', () => {

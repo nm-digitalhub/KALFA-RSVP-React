@@ -13,7 +13,7 @@
 //
 //   …/reference/<resource>/<api>/<version>.openapi.yaml
 //
-// MEASURED 2026-09-09: v25.0 returns 200 for the six APIs below; v26.0 returns
+// MEASURED 2026-09-09: v25.0 returns 200 for the first six APIs below; v26.0 returns
 // 500 for all of them, which is also the evidence that v25.0 is the newest
 // published spec — the same conclusion D3 reached from live sends. Not every
 // reference page publishes one: message-template-management, messages, media
@@ -42,7 +42,8 @@ const GENERATOR_TYPESCRIPT = 'typescript@5.9.3';
 const REFERENCE =
   'https://developers.facebook.com/documentation/business-messaging/whatsapp/reference';
 
-// The APIs Phase 2 touches. Each is fetched at GRAPH_API_VERSION, cached under
+// The APIs we generate types for (the first six are what Phase 2 touches).
+// Each is fetched at GRAPH_API_VERSION, cached under
 // openapi/meta/ (committed — a clean clone must be able to regenerate without
 // network), and turned into its own types module.
 const APIS = [
@@ -68,6 +69,19 @@ const APIS = [
   {
     slug: 'business/client-whatsapp-business-accounts-api',
     name: 'client-wabas',
+  },
+  // Message templates (list / get / create / edit / delete). MEASURED
+  // 2026-09-30: this slug publishes v25.0 — the `message-template-management`
+  // page above does not.
+  {
+    slug: 'whatsapp-business-account/message-template-api',
+    name: 'message-templates',
+  },
+  // The `messages` webhook payload (incoming messages, button replies,
+  // delivery statuses, groups). MEASURED 2026-09-30: published at v25.0.
+  {
+    slug: 'webhooks/whatsapp-incoming-webhook-payload',
+    name: 'incoming-webhook',
   },
 ];
 
@@ -140,6 +154,92 @@ function patchSpec(text, name) {
     }
   }
 
+  if (name === 'message-templates') {
+    // `disable_ios_autofill`. Graph returns it for every template when named in
+    // `fields=` (MEASURED 2026-09-30: all 80 mirrored templates carry it, and
+    // whatsapp_message_templates stores it), but the published MessageTemplate
+    // schema leaves it out. Added next to its sibling device flag so the type
+    // the sync reads is the one the API really sends.
+    const added = out.replace(
+      /^( {8})is_primary_device_delivery_only:\n( {10}type: boolean\n)/m,
+      '$1disable_ios_autofill:\n$1  type: boolean\n$1  description: Whether iOS autofill is disabled for this template (returned by Graph, absent from the published spec).\n$1is_primary_device_delivery_only:\n$2',
+    );
+    if (added !== out) {
+      out = added;
+      notes.push('disable_ios_autofill נוסף');
+    }
+
+    // `CUSTOM` sub-category. Graph returns it (MEASURED 2026-09-30: one live
+    // UTILITY template carries sub_category CUSTOM), but the published enum
+    // lists only the named utility sub-categories. Without it the generated
+    // type would call a real response impossible.
+    const custom = out.replace(
+      /(^ {4}WhatsAppBusinessHSMTagSubCategory:\n(?: {6}.*\n)*? {6}enum:\n)/m,
+      '$1        - CUSTOM\n',
+    );
+    if (custom !== out) {
+      out = custom;
+      notes.push('sub_category CUSTOM נוסף');
+    }
+
+    // Button `example`. A URL button with a {{1}} suffix carries the example
+    // link Meta reviewed (`example: ["https://…/abc"]`) — MEASURED 2026-09-30 on
+    // 24 live buttons, and required when submitting one — but the published
+    // button schema leaves it out.
+    const buttonExample = out.replace(
+      /^( {20})text:\n( {22}type: string\n {22}description: Button label text\n)/m,
+      '$1example:\n$1  type: array\n$1  description: Example values for the button parameter (the URL suffix Meta reviewed).\n$1  items:\n$1    type: string\n$1text:\n$2',
+    );
+    if (buttonExample !== out) {
+      out = buttonExample;
+      notes.push('example לכפתור נוסף');
+    }
+  }
+
+  if (name === 'incoming-webhook') {
+    // UnsupportedMessage + ButtonMessage merged. MEASURED 2026-09-30 (three
+    // identical fetches): the served v25.0 document has the header of
+    // `UnsupportedMessage` followed by the BODY of `ButtonMessage` (its button
+    // example, its context/button properties) with the enum of the unsupported
+    // one, and no `ButtonMessage` schema at all — while `IncomingMessage.oneOf`
+    // still $refs it, so generation fails ("Can't resolve $ref"). Restored to
+    // the two schemas the rest of the document describes: UnsupportedMessage =
+    // base + type unsupported/unknown + errors; ButtonMessage = that body with
+    // `type: button`.
+    const split = out.replace(
+      /^ {4}UnsupportedMessage:\n {6}allOf:\n/m,
+      [
+        '    UnsupportedMessage:',
+        '      allOf:',
+        "        - $ref: '#/components/schemas/BaseMessageProperties'",
+        '        - type: object',
+        '          required:',
+        '            - type',
+        '          properties:',
+        '            type:',
+        '              type: string',
+        '              enum:',
+        '                - unsupported',
+        '                - unknown',
+        '            errors:',
+        '              type: array',
+        '              items:',
+        "                $ref: '#/components/schemas/StatusError'",
+        '    ButtonMessage:',
+        '      allOf:',
+        '',
+      ].join('\n'),
+    );
+    const buttonType = split.replace(
+      /( {14}example: button\n {14}enum:\n) {16}- unsupported\n {16}- unknown\n/,
+      '$1                - button\n',
+    );
+    if (split !== out && buttonType !== split && !/^ {4}ButtonMessage:/m.test(out)) {
+      out = buttonType;
+      notes.push('UnsupportedMessage/ButtonMessage הופרדו');
+    }
+  }
+
   return notes.length ? { text: out, notes } : { text: null, notes };
 }
 
@@ -184,7 +284,7 @@ for (const api of APIS) {
     writeFileSync(specPath, body);
   }
 
-  // Correct the two places where the published spec contradicts the live API,
+  // Correct the places where the published spec contradicts the live API,
   // MEASURED via `npm run meta:verify` (see the plan's §0.0 for the full
   // matrix). Applied to a COPY, in memory — the cached spec on disk stays a
   // faithful record of what Meta published.

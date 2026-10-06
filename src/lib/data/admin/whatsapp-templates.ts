@@ -14,6 +14,7 @@ import {
   templateSlots,
   type TemplateSlot,
 } from '@/lib/whatsapp/template-route';
+import { mirroredQualityScore, stepOutcome, type StepTemplate } from '@/lib/whatsapp/template-status';
 
 // Admin surface of the WhatsApp template model (step 8 of
 // docs/superpowers/plans/2026-09-30-whatsapp-templates-meta-mirror.md): which
@@ -39,6 +40,9 @@ export type AdminMetaTemplate = {
   category: string | null;
   components: Json | null;
   requestedCategory: string | null;
+  // Meta's own health signals, as the sync mirrored them.
+  qualityScore: string | null;
+  rejectedReason: string | null;
   rsvpQuickReplies: boolean;
   // One entry per variable the template has, with its current value (null =
   // not mapped yet), plus what the sender cannot fill.
@@ -87,7 +91,7 @@ export async function loadWhatsAppTemplateAdmin(): Promise<WhatsAppTemplateAdmin
     admin
       .from('whatsapp_message_templates')
       .select(
-        'id, name, language, status, category, components, synced_at, whatsapp_template_settings(requested_category), whatsapp_template_parameters(id, type, sub_type, index, position, source_path), message_template_routes(id)',
+        'id, name, language, status, category, components, quality_score, rejected_reason, synced_at, whatsapp_template_settings(requested_category), whatsapp_template_parameters(id, type, sub_type, index, position, source_path), message_template_routes(id)',
       )
       .order('name'),
   ]);
@@ -127,6 +131,8 @@ export async function loadWhatsAppTemplateAdmin(): Promise<WhatsAppTemplateAdmin
       category: t.category,
       components: t.components,
       requestedCategory: requested ?? null,
+      qualityScore: mirroredQualityScore(t.quality_score),
+      rejectedReason: t.rejected_reason,
       rsvpQuickReplies: carriesRsvpQuickReplies(t.components),
       parameters: slots.map((s) => ({ ...s, source_path: rows.get(slotKey(s)) ?? null })),
       unsupported,
@@ -349,6 +355,135 @@ export async function saveTemplateParameters(input: {
       changed,
       removed: stale.map((p) => ({ slot: slotKey(p), from: p.source_path })),
     },
+  });
+  return { ok: true };
+}
+
+/**
+ * Turn a WhatsApp step on or off. Off = no guest gets it (the sender reads only
+ * active steps). On only when the step can really send: its default text route
+ * points at a template the sender would send (stepOutcome, the sender's rule)
+ * with every variable mapped — switching on a step that would fail every send
+ * is refused, not recorded.
+ */
+export async function setWhatsAppStepActive(input: { messageKey: string; active: boolean }): Promise<AdminWriteResult> {
+  await requirePlatformPermission('manage_settings');
+  const admin = createAdminClient();
+  const { data: step, error } = await admin
+    .from('message_templates')
+    .select(
+      'message_key, channel, active, message_template_routes(message_key, event_type, with_media, whatsapp_template_id, whatsapp_message_templates(id, name, language, status, category, components, quality_score, rejected_reason, whatsapp_template_parameters(type, sub_type, index, position, source_path)))',
+    )
+    .eq('message_key', input.messageKey)
+    .maybeSingle();
+  if (error) throw new Error('טעינת השלב נכשלה');
+  if (!step || step.channel !== 'whatsapp') return { ok: false, problems: ['השלב לא נמצא או שאינו שלב WhatsApp'] };
+  if (step.active === input.active) return { ok: true };
+
+  if (input.active) {
+    const routes = step.message_template_routes ?? [];
+    const templates = routes
+      .map((r) => r.whatsapp_message_templates)
+      .filter((t): t is NonNullable<typeof t> => t !== null);
+    const asStepTemplate = (t: (typeof templates)[number]): StepTemplate => {
+      const { slots, unsupported } = templateSlots(t.components);
+      const rows = new Map((t.whatsapp_template_parameters ?? []).map((p) => [slotKey(p), p.source_path]));
+      return {
+        id: t.id,
+        name: t.name,
+        language: t.language,
+        status: t.status,
+        category: t.category,
+        requestedCategory: null,
+        qualityScore: mirroredQualityScore(t.quality_score),
+        rejectedReason: t.rejected_reason,
+        unsupported,
+        components: t.components,
+        parameters: slots.map((sl) => ({ ...sl, source_path: rows.get(slotKey(sl)) ?? null })),
+      };
+    };
+    const byId = new Map(templates.map((t) => [t.id, asStepTemplate(t)]));
+    // A deleted default is judged with its live twin, exactly as the sender does.
+    const live = new Map<string, StepTemplate>();
+    const deleted = [...byId.values()].filter((t) => t.status === 'DELETED');
+    if (deleted.length > 0) {
+      const { data: twins, error: twinError } = await admin
+        .from('whatsapp_message_templates')
+        .select('id, name, language, status, category, components, quality_score, rejected_reason, whatsapp_template_parameters(type, sub_type, index, position, source_path)')
+        .in('name', deleted.map((t) => t.name))
+        .neq('status', 'DELETED');
+      if (twinError) throw new Error('טעינת התבניות נכשלה');
+      for (const t of twins ?? []) live.set(`${t.name}|${t.language}`, asStepTemplate(t));
+    }
+    const outcome = stepOutcome({
+      messageKey: input.messageKey,
+      active: true,
+      routes,
+      templatesById: byId,
+      liveByNameLanguage: live,
+      eventType: null,
+      withImage: false,
+      valuePaths: sendValuePaths(input.messageKey),
+    });
+    if (outcome.state !== 'sends') {
+      return { ok: false, problems: outcome.issues.filter((i) => i.level === 'block').map((i) => i.title) };
+    }
+  }
+
+  const { error: writeError } = await admin
+    .from('message_templates')
+    .update({ active: input.active })
+    .eq('message_key', input.messageKey)
+    .eq('channel', 'whatsapp');
+  if (writeError) throw new Error('עדכון השלב נכשל');
+  await logActivity({
+    action: 'admin.templates.step_active_set',
+    meta: { message_key: input.messageKey, from: step.active, to: input.active },
+  });
+  return { ok: true };
+}
+
+/**
+ * Accept the category Meta gave a template (it classifies by the message body).
+ * Not a fix: the template goes on being billed and limited as that category.
+ * It records that we expect it, so the drift warning and alert stop, and a LATER
+ * move by Meta is a new transition that alerts again. Pinned to the category the
+ * admin was looking at: a sync landing in between is refused, not accepted.
+ */
+export async function acknowledgeWhatsAppTemplateCategory(input: {
+  templateId: string;
+  observedCategory: string;
+}): Promise<AdminWriteResult> {
+  await requirePlatformPermission('manage_settings');
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('whatsapp_message_templates')
+    .select('id, name, category, whatsapp_template_settings(requested_category)')
+    .eq('id', input.templateId)
+    .maybeSingle();
+  if (error) throw new Error('טעינת התבנית נכשלה');
+  if (!data) return { ok: false, problems: ['התבנית לא נמצאה'] };
+  if (!data.category) return { ok: false, problems: ['התבנית טרם סונכרנה מול Meta'] };
+  if (data.category !== input.observedCategory) {
+    return { ok: false, problems: ['הקטגוריה השתנתה מאז שהעמוד נטען. רעננו ובדקו שוב לפני האישור.'] };
+  }
+  const settings = data.whatsapp_template_settings as
+    | { requested_category: string | null }
+    | Array<{ requested_category: string | null }>
+    | null;
+  const requested = Array.isArray(settings) ? settings[0]?.requested_category : settings?.requested_category;
+  if (requested === data.category) return { ok: false, problems: ['אין פער קטגוריה לאשר'] };
+
+  const { error: writeError } = await admin
+    .from('whatsapp_template_settings')
+    .upsert(
+      { whatsapp_template_id: data.id, requested_category: data.category },
+      { onConflict: 'whatsapp_template_id' },
+    );
+  if (writeError) throw new Error('אישור הקטגוריה נכשל');
+  await logActivity({
+    action: 'admin.templates.category_acknowledged',
+    meta: { whatsapp_template_id: data.id, template_name: data.name, from: requested ?? null, to: data.category },
   });
   return { ok: true };
 }

@@ -1,5 +1,7 @@
 import 'server-only';
 
+import type { GraphErrorBody } from '@/lib/whatsapp/graph-error';
+
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 import { WhatsAppAPI } from 'whatsapp-api-js';
@@ -96,8 +98,7 @@ export function isDefinitelyNotSentError(error: { code: number; isTransient?: un
 function classifyResponse(res: unknown): DeliveryOutcome {
   const r = res as {
     messages?: Array<{ id?: string | null } | null> | null;
-    error?: { code?: number; is_transient?: unknown } | null;
-  } | null;
+  } & GraphErrorBody | null;
   const providerId = r?.messages?.[0]?.id;
   if (providerId) return { kind: 'accepted', providerId };
   const code = r?.error?.code;
@@ -278,7 +279,7 @@ export async function sendWhatsAppTemplate(
     return { kind: 'unknown', reason: 'url_and_rsvp_buttons_conflict' };
   }
   // secure:false avoids requiring the appSecret for SENDING (the secret is only
-  // needed to verify INBOUND webhooks, handled in B2). v pinned explicitly —
+  // needed to verify INBOUND webhooks, in api/webhooks/whatsapp/route.ts). v pinned explicitly —
   // same reasoning as sendWhatsAppMarketingTemplate below (never ride the
   // library's own default silently).
   const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: GRAPH_API_VERSION });

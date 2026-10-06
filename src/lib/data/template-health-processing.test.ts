@@ -32,6 +32,9 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }));
 
+const runTemplateHealthSync = vi.fn(async () => ({ synced: 0, skipped: 0, newDowngrades: 0, mirrored: 0 }));
+vi.mock('@/lib/data/template-health-sync', () => ({ runTemplateHealthSync: () => runTemplateHealthSync() }));
+
 const sendSlackAlert = vi.fn(async (..._args: unknown[]) => null as string | null);
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: (...args: unknown[]) => sendSlackAlert(...args) }));
 
@@ -40,6 +43,7 @@ import {
   processTemplateCategoryRow,
   processTemplateCategoryMisuseRow,
   processTemplateQualityRow,
+  processTemplateComponentsRow,
 } from './template-health-processing';
 import { isCategoryDowngraded } from '@/lib/whatsapp/template-health';
 
@@ -293,5 +297,55 @@ describe('mirror (whatsapp_message_templates)', () => {
     );
     expect(updateCalls).toHaveLength(0);
     expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+});
+
+describe('processTemplateComponentsRow (message_template_components_update)', () => {
+  // Meta's reference example, with an id our mirror knows.
+  const edited = {
+    message_template_id: 555,
+    message_template_name: 'kalfa_invite',
+    message_template_language: 'he',
+    message_template_element: 'שלום {{1}}, {{2}}',
+  };
+  const body = (text: string) => [{ type: 'BODY', text }];
+
+  it('refreshes the mirror from Meta before judging the template', async () => {
+    mirrorResult = { data: null, error: null };
+    await processTemplateComponentsRow(row(edited));
+    expect(runTemplateHealthSync).toHaveBeenCalledTimes(1);
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet for a template no step sends', async () => {
+    mirrorResult = {
+      data: { components: body('שלום {{1}}'), message_template_routes: [], whatsapp_template_parameters: [] },
+      error: null,
+    };
+    await processTemplateComponentsRow(row(edited));
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('reports an error naming the step when the edit added a variable with no value', async () => {
+    mirrorResult = {
+      data: {
+        components: body('שלום {{1}}, {{2}}'),
+        message_template_routes: [{ message_key: 'invite' }, { message_key: 'invite' }],
+        whatsapp_template_parameters: [
+          { type: 'body', sub_type: null, index: null, position: 1, source_path: 'guest.first_name' },
+        ],
+      },
+      error: null,
+    };
+    await processTemplateComponentsRow(row(edited));
+    const a = sendSlackAlert.mock.calls[0][0] as { level: string; title: string; detail: string };
+    expect(a.level).toBe('error');
+    expect(a.title).toContain('invite');
+    expect(a.detail).toContain('חסר ערך ל-{{2}}');
+  });
+
+  it('ignores a payload without the template keys', async () => {
+    await processTemplateComponentsRow(row({ message_template_name: 'x' }));
+    expect(runTemplateHealthSync).not.toHaveBeenCalled();
   });
 });

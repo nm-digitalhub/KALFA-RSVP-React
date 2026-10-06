@@ -3,7 +3,7 @@
 // so it can be unit-tested directly; fleet-agent-cli.ts wires these functions to the actual
 // Supabase reads/writes and the .fleet-logs/ file I/O.
 //
-// Four independent safety checks gate the (not-yet-implemented) Meta call, per plan §4.5:
+// Four independent safety checks gate the Meta call, per plan §4.5:
 //   1. validatePublishRequestRow + validatePublishPayload — an OWNER'S approving verdict for
 //      role='social-manager', kind='approval', payload.action='publish_social', AND
 //      payload.platform matching the platform actually being invoked. The platform check is
@@ -20,6 +20,7 @@
 //   4. checkReviewApproved — the batch's REVIEW.md must mechanically show brand-director's
 //      "סטטוס: מוכנה-לאישור".
 
+import type { GraphErrorBody } from '@/lib/whatsapp/graph-error';
 import { createHash } from 'node:crypto';
 import { basename, dirname, extname, join } from 'node:path';
 
@@ -236,10 +237,10 @@ export function decideExistingRow(status: string): ExistingRowDecision {
   throw new Error(`unexpected fleet_social_posts.status: "${status}"`);
 }
 
-// Pure request-body builders — used to both populate the --dry-run artifact and, in a
-// future stage, the real fetch() call (plan §4.6). No network/credential access here: Meta
-// endpoint host paths are written with the literal env-var-name placeholder, never a real
-// page/account id or token.
+// Pure request-body builders — used to populate the --dry-run artifact; the Instagram plan
+// (buildInstagramPublishPlan) also drives the real Instagram fetch() calls (plan §4.6). No
+// network/credential access here: Meta endpoint host paths are written with the literal
+// env-var-name placeholder, never a real page/account id or token.
 export interface FacebookFeedRequest {
   method: 'POST';
   endpoint: string;
@@ -398,15 +399,9 @@ const RATE_LIMIT_CODES = new Set([4, 17, 32, 80001, 341, 368, 506, 613]);
 // official page as 190.
 const AUTH_ERROR_CODES = new Set([190, 102]);
 
-export interface GraphApiErrorBody {
-  error?: {
-    message?: string;
-    type?: string;
-    code?: number;
-    error_subcode?: number;
-    fbtrace_id?: string;
-  };
-}
+// Graph's error envelope is the same on every Graph API (Pages, Instagram,
+// WhatsApp); the type is the one generated from Meta's spec.
+export type GraphApiErrorBody = GraphErrorBody;
 
 export function classifyGraphApiError(body: GraphApiErrorBody | null): GraphApiErrorKind {
   const code = body?.error?.code;

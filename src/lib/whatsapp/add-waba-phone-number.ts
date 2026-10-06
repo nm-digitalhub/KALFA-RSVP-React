@@ -5,6 +5,7 @@ import type {
   paths,
 } from '@/lib/whatsapp/generated/phone-number-management';
 import { createMetaGraphClient } from '@/lib/whatsapp/graph-client';
+import type { GraphErrorBody } from '@/lib/whatsapp/graph-error';
 import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 
 type PhoneNumberCreateRequest =
@@ -12,16 +13,6 @@ type PhoneNumberCreateRequest =
 type PhoneNumberCreateResponse =
   components['schemas']['PhoneNumberCreateResponse'];
 
-type GraphApiErrorBody = {
-  error?: {
-    message?: string;
-    type?: string;
-    code?: number;
-    error_subcode?: number;
-    fbtrace_id?: string;
-    is_transient?: boolean;
-  };
-};
 
 export type AddWabaPhoneNumberInput = Omit<
   PhoneNumberCreateRequest,
@@ -147,7 +138,7 @@ export async function addWabaPhoneNumber(
   );
 
   if (error || !data) {
-    const graphError = error as GraphApiErrorBody | undefined;
+    const graphError = error as GraphErrorBody | undefined;
     const providerError = graphError?.error;
     throw new AddWabaPhoneNumberError({
       httpStatus: response.status,

@@ -6,10 +6,12 @@ import { getWebJobSender } from '@/lib/queue/web-sender';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 import {
+  acknowledgeWhatsAppTemplateCategory,
   removeTemplateRoute,
   requestTemplateSync,
   saveTemplateParameters,
   setTemplateRoute,
+  setWhatsAppStepActive,
 } from './whatsapp-templates';
 
 vi.mock('server-only', () => ({}));
@@ -25,7 +27,7 @@ function fakeAdmin(answers: Record<string, Result[]>) {
   const calls: Array<{ table: string; method: string; args: unknown[] }> = [];
   const from = vi.fn((table: string) => {
     const builder: Record<string, unknown> = {};
-    for (const m of ['select', 'insert', 'update', 'delete', 'upsert', 'eq', 'is', 'maybeSingle']) {
+    for (const m of ['select', 'insert', 'update', 'delete', 'upsert', 'eq', 'is', 'in', 'neq', 'maybeSingle']) {
       builder[m] = (...args: unknown[]) => {
         calls.push({ table, method: m, args });
         return builder;
@@ -255,5 +257,96 @@ describe('requestTemplateSync', () => {
     await requestTemplateSync();
     expect(requirePlatformPermission).toHaveBeenCalledWith('manage_settings');
     expect(send).toHaveBeenCalledWith('whatsapp-template-health-sync', {});
+  });
+});
+
+describe('setWhatsAppStepActive', () => {
+  const stepWith = (template: Record<string, unknown>, active = false) => ({
+    data: {
+      message_key: 'invite',
+      channel: 'whatsapp',
+      active,
+      message_template_routes: [
+        { message_key: 'invite', event_type: null, with_media: false, whatsapp_template_id: '111', whatsapp_message_templates: template },
+      ],
+    },
+    error: null,
+  });
+  const MIRROR = {
+    id: '111',
+    name: 'invite_v2',
+    language: 'he',
+    status: 'APPROVED',
+    category: 'UTILITY',
+    components: [{ type: 'BODY', text: 'שלום {{1}}' }],
+    quality_score: { score: 'GREEN' },
+    rejected_reason: null,
+    whatsapp_template_parameters: [{ type: 'body', sub_type: null, index: null, position: 1, source_path: 'guest.first_name' }],
+  };
+
+  it('checks the permission first', async () => {
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(new Error('FORBIDDEN'));
+    const calls = fakeAdmin({});
+    await expect(setWhatsAppStepActive({ messageKey: 'invite', active: true })).rejects.toThrow('FORBIDDEN');
+    expect(calls).toEqual([]);
+  });
+
+  it('switches on a step whose default template would send, and logs it', async () => {
+    const calls = fakeAdmin({ message_templates: [stepWith(MIRROR), { data: null, error: null }] });
+    expect(await setWhatsAppStepActive({ messageKey: 'invite', active: true })).toEqual({ ok: true });
+    expect(calls).toContainEqual({ table: 'message_templates', method: 'update', args: [{ active: true }] });
+    expect(logActivity).toHaveBeenCalledWith({
+      action: 'admin.templates.step_active_set',
+      meta: { message_key: 'invite', from: false, to: true },
+    });
+  });
+
+  it('⚠️ refuses to switch on a step whose template is paused — and writes nothing', async () => {
+    const calls = fakeAdmin({ message_templates: [stepWith({ ...MIRROR, status: 'PAUSED' })] });
+    const result = await setWhatsAppStepActive({ messageKey: 'invite', active: true });
+    expect(result).toEqual({ ok: false, problems: ['התבנית מושהית — השלב לא נשלח'] });
+    expect(calls.some((c) => c.method === 'update')).toBe(false);
+  });
+
+  it('refuses to switch on a step with an unmapped variable', async () => {
+    fakeAdmin({ message_templates: [stepWith({ ...MIRROR, whatsapp_template_parameters: [] })] });
+    expect(await setWhatsAppStepActive({ messageKey: 'invite', active: true })).toEqual({
+      ok: false,
+      problems: ['חסר ערך ל-{{1}}'],
+    });
+  });
+
+  it('switching off needs no check', async () => {
+    const calls = fakeAdmin({ message_templates: [stepWith({ ...MIRROR, status: 'PAUSED' }, true), { data: null, error: null }] });
+    expect(await setWhatsAppStepActive({ messageKey: 'invite', active: false })).toEqual({ ok: true });
+    expect(calls).toContainEqual({ table: 'message_templates', method: 'update', args: [{ active: false }] });
+  });
+});
+
+describe('acknowledgeWhatsAppTemplateCategory', () => {
+  const row = (category: string, requested: string) => ({
+    data: { id: '111', name: 'thankyou_v1', category, whatsapp_template_settings: { requested_category: requested } },
+    error: null,
+  });
+
+  it('records the category Meta gave as the expected one', async () => {
+    const calls = fakeAdmin({ whatsapp_message_templates: [row('MARKETING', 'UTILITY')], whatsapp_template_settings: [{ data: null, error: null }] });
+    expect(await acknowledgeWhatsAppTemplateCategory({ templateId: '111', observedCategory: 'MARKETING' })).toEqual({ ok: true });
+    expect(calls).toContainEqual({
+      table: 'whatsapp_template_settings',
+      method: 'upsert',
+      args: [{ whatsapp_template_id: '111', requested_category: 'MARKETING' }, { onConflict: 'whatsapp_template_id' }],
+    });
+    expect(logActivity).toHaveBeenCalledWith({
+      action: 'admin.templates.category_acknowledged',
+      meta: { whatsapp_template_id: '111', template_name: 'thankyou_v1', from: 'UTILITY', to: 'MARKETING' },
+    });
+  });
+
+  it('⚠️ refuses when the category changed since the page loaded', async () => {
+    const calls = fakeAdmin({ whatsapp_message_templates: [row('AUTHENTICATION', 'UTILITY')] });
+    const result = await acknowledgeWhatsAppTemplateCategory({ templateId: '111', observedCategory: 'MARKETING' });
+    expect(result.ok).toBe(false);
+    expect(calls.some((c) => c.table === 'whatsapp_template_settings')).toBe(false);
   });
 });

@@ -54,8 +54,9 @@ const FIELD_MATRIX = [
   'code_verification_status',
 
   // ---------------------------------------------------------------------------
-  // Added 2026-09-10 — the six the plan's Task 1.3 Step 0b names as NEVER probed
-  // live, because a WhatsApp health check is about to request them.
+  // The fields the WhatsApp health check and the numbers fetch request, plus
+  // last_onboarded_time, which they leave out (Task 1.3 Step 0b in
+  // docs/admin-integrations-consolidation-plan-2026-09-08.md).
   // ---------------------------------------------------------------------------
   // Graph refuses the WHOLE request over one unavailable field, and its error
   // blames the wrong part (the OBA filter failed with "operation not supported"
@@ -64,20 +65,19 @@ const FIELD_MATRIX = [
   // time, and the message points elsewhere.
   //
   // `quality_rating` is the one that matters most: it is the whole point of a
-  // passive health check (GREEN/YELLOW/RED without sending anything), and it has
-  // never been read here.
+  // passive health check (GREEN/YELLOW/RED without sending anything).
   'quality_rating',
-  // Measured as a FILTER in §0.0, never as a readable field — a different thing.
+  // Measured as a FILTER in §0.0 — a different thing from reading it as a field.
   'account_mode',
   'is_official_business_account',
-  // Zero occurrences in the local spec, nested object, never measured.
+  // Zero occurrences in the local spec; nested object.
   'throughput',
   // Expected to work; included so the health check's exact field list is proven
   // as a set, not field by field.
   'status',
-  // HIGH RISK, and expected to FAIL: §0.0 measured it as sortable but not
-  // readable, and it appears in the official v25.0 spec five times, all under
-  // `sort`. Listed so the failure is recorded rather than rediscovered.
+  // Accepted but always EMPTY on every version, so neither request includes it.
+  // §0.0 measured it as sortable but not readable, and it appears in the
+  // official v25.0 spec five times, all under `sort`.
   'last_onboarded_time',
 ];
 
@@ -95,20 +95,13 @@ const PROBES = [
       `https://graph.facebook.com/${GRAPH_API_VERSION}/${wabaId}/phone_numbers?fields=${fields.join(',')}&limit=1`,
   },
   {
-    // Meta publishes no OpenAPI document for message templates at any version
-    // tried, so this probe reads the field list this codebase actually sends
-    // (template-health.ts) rather than a spec.
+    // Meta's message-template-api spec (the message-template-management page
+    // publishes none). Every declared field is requested, like the phone-number
+    // probe.
     label: 'WABA message templates',
-    spec: null,
-    specPath: null,
-    fallbackFields: [
-      'id',
-      'name',
-      'language',
-      'category',
-      'quality_score',
-      'status',
-    ],
+    spec: `message-templates.${GRAPH_API_VERSION}.yaml`,
+    specPath: '/{Version}/{WABA-ID}/message_templates',
+    fallbackFields: null,
     url: (wabaId: string, fields: string[]) =>
       `https://graph.facebook.com/${GRAPH_API_VERSION}/${wabaId}/message_templates?fields=${fields.join(',')}&limit=1`,
   },
@@ -122,8 +115,7 @@ type Schema = {
 };
 
 // Most responses in this spec are `$ref`s into components/schemas, so a probe
-// that does not follow them silently measures nothing — which is how the
-// phone_numbers probe reported "המפרט לא מצהיר שדות" on the first run.
+// that does not follow them silently measures nothing.
 function deref(schema: Schema | undefined, spec: unknown): Schema | undefined {
   let current = schema;
   // Bounded: a malformed spec must not spin here.
@@ -281,11 +273,10 @@ async function main() {
   // predict what the API answers. Asking one field across several versions is
   // what separates "this version dropped it" from "this account/token never
   // had it".
-  // The reference documents `filtering` and `sort` on this edge. Phase 2's
-  // numbers page wants both server-side, so whether they actually work decides
-  // whether it can page against Graph or must pull everything and sort in the
-  // app. Documented is not the same as working — that is the lesson of every
-  // other finding on this page.
+  // The reference documents `filtering` and `sort` on this edge. Whether they
+  // actually work decides whether a numbers list can filter and sort against
+  // Graph or must pull everything and do it in the app. Documented is not the
+  // same as working — that is the lesson of every other finding on this page.
   console.log('\n── יכולות שאילתה (filtering / sort) ──');
   const CAPABILITIES = [
     {

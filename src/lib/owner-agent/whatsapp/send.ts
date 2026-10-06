@@ -1,16 +1,18 @@
 import 'server-only';
 
+import type { GraphErrorBody } from '@/lib/whatsapp/graph-error';
+
 import { isDefinitelyNotSentError, sendWithMetaRetry, type DeliveryOutcome } from '@/lib/whatsapp/client';
 
 import type { GraphSendResponse, OwnerAgentInteractive, OwnerAgentWhatsApp } from './adapter';
 
 // Owner-agent senders over the adapter (plan §4.1, §4.3, §4.5, §9.2). Every one
 // returns our DeliveryOutcome, never throws, and keeps the at-most-once rule of
-// client.ts: ONLY a Meta error code in DEFINITELY_NOT_SENT_CODES (or a local
-// check that stopped us before any request) is `definitely_not_sent`.
-// Everything else — a throw, a timeout, a 2xx without a message id, a code not
-// on the list (130429 throttling, …) — is `unknown`, and the caller never
-// resends on unknown.
+// client.ts: ONLY a Meta error with a numeric code not marked `is_transient`
+// (isDefinitelyNotSentError), or a local check that stopped us before any
+// request, is `definitely_not_sent`. Everything else — a throw, a timeout, a 2xx
+// without a message id, an error Meta marked `is_transient` — is `unknown`, and
+// the caller never resends on unknown.
 //
 // The adapter throws WhatsAppApiError on a non-2xx (dist:2146-2154) where
 // whatsapp-api-js returns the error body — hence the mapping here instead of
@@ -74,9 +76,7 @@ export function classifyAdapterThrow(e: unknown): DeliveryOutcome {
   const status = typeof err.status === 'number' ? err.status : undefined;
   if (err.name === 'WhatsAppApiError' && typeof err.errorCode === 'number') {
     const providerCode = String(err.errorCode);
-    const raw = (typeof err.raw === 'object' && err.raw !== null ? err.raw : {}) as {
-      error?: { is_transient?: unknown } | null;
-    };
+    const raw = (typeof err.raw === 'object' && err.raw !== null ? err.raw : {}) as GraphErrorBody;
     return isDefinitelyNotSentError({ code: err.errorCode, isTransient: raw.error?.is_transient })
       ? { kind: 'definitely_not_sent', reason: 'provider_rejected', providerStatus: status, providerCode }
       : { kind: 'unknown', reason: 'provider_error', providerStatus: status, providerCode, retryable: true };

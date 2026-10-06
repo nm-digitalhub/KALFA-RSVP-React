@@ -24,9 +24,12 @@ import {
   type OwnerAgentDiversion,
   type OwnerAgentRouting,
 } from '@/lib/owner-agent/intake';
+import type { components as IncomingWebhook } from '@/lib/whatsapp/generated/incoming-webhook';
 import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 
-// Meta WhatsApp inbound webhook — persist-then-process (B2). Server-to-server:
+type IncomingValue = IncomingWebhook['schemas']['IncomingMessageValueGeneral'];
+
+// Meta WhatsApp inbound webhook — persist-then-process. Server-to-server:
 // the X-Hub-Signature-256 HMAC IS the auth (no session/CSRF). This route does
 // the minimum: verify the signature with the installed whatsapp-api-js, normalize
 // EVERY event in the (possibly batched) payload, durably insert into
@@ -55,7 +58,7 @@ function tsToIso(ts: string | undefined): string | null {
 
 // Template-health webhook fields (message_template_status_update,
 // template_category_update, template_correct_category_detection,
-// message_template_quality_update) are NOT part of whatsapp-api-js's typed
+// message_template_quality_update, message_template_components_update) are NOT part of whatsapp-api-js's typed
 // PostData union (it only models "messages"/"calls") — live-doc-verified
 // shapes (2026-08-27), read generically off the raw parsed JSON rather than
 // hand-invented. See src/lib/data/template-health-processing.ts for how each
@@ -76,6 +79,7 @@ const TEMPLATE_HEALTH_FIELDS = new Set([
   'template_category_update',
   'template_correct_category_detection',
   'message_template_quality_update',
+  'message_template_components_update',
 ]);
 
 // event_kind naming mirrors the Meta field name 1:1, minus the common prefix,
@@ -85,6 +89,7 @@ const TEMPLATE_EVENT_KIND: Record<string, string> = {
   template_category_update: 'template_category',
   template_correct_category_detection: 'template_category_misuse',
   message_template_quality_update: 'template_quality',
+  message_template_components_update: 'template_components',
 };
 
 function normalizeTemplateHealthRows(raw: RawPostData): WebhookInboxInsert[] {
@@ -115,14 +120,16 @@ function normalizeTemplateHealthRows(raw: RawPostData): WebhookInboxInsert[] {
   return rows;
 }
 
-// Every OTHER change in a verified delivery — any subscribed field the two
-// normalizers above do not model (account_update, business_username_updates,
+// Every OTHER change in a verified delivery — any subscribed field the
+// messages/statuses and template-health normalizers do not model (account_update, business_username_updates,
 // phone_number_quality_update, user_preferences, calls, security, …), a
 // template-health change without a template id, or a `messages` change that
 // carries neither `messages` nor `statuses` (e.g. an `errors` block) — is
 // persisted generically under the Meta field name. Nothing Meta signs and
-// delivers is allowed to vanish: it stays inspectable in /admin/webhooks and the
-// worker, which has no handler for these kinds, marks it processed untouched.
+// delivers is allowed to vanish: it stays inspectable in /admin/webhooks. The
+// worker handles the account-level kinds (account_update, account_review_update,
+// phone_number_quality_update — whatsapp-account-processing.ts) and marks every
+// other kind processed untouched.
 // The dedupe key hashes the change value so a Meta retry of the SAME delivery
 // is a DB no-op while two distinct events sharing an entry `time` both persist.
 function normalizeOtherFieldRows(raw: RawPostData): WebhookInboxInsert[] {
@@ -133,7 +140,7 @@ function normalizeOtherFieldRows(raw: RawPostData): WebhookInboxInsert[] {
       const value = change.value ?? {};
       let kind: string;
       if (change.field === 'messages') {
-        if ('messages' in value || 'statuses' in value) continue; // typed path above
+        if ('messages' in value || 'statuses' in value) continue; // typed path (normalizeWebhookRows)
         kind = 'messages_other';
       } else if (
         TEMPLATE_HEALTH_FIELDS.has(change.field) &&
@@ -158,7 +165,16 @@ function normalizeOtherFieldRows(raw: RawPostData): WebhookInboxInsert[] {
         context_message_id: null,
         phone_number_id: phoneNumberId,
         event_at: tsToIso(entryTime != null ? String(entryTime) : undefined),
-        payload: value as unknown as WebhookInboxInsert['payload'],
+        // entry.id — the WABA this change is about — is carried on the row,
+        // because an account-level value does not name it (account_review_update
+        // is `{ decision }` alone) and the worker must tell our account, another
+        // one and Meta's dashboard sample (id "0") apart. Added after the digest,
+        // so the dedupe key is unchanged; the name cannot collide with a key of
+        // Meta's value.
+        payload: {
+          ...value,
+          ...(entry.id ? { entry_waba_id: entry.id } : {}),
+        } as unknown as WebhookInboxInsert['payload'],
       });
     }
   }
@@ -193,7 +209,10 @@ function normalizeWebhookRows(data: PostData): WebhookInboxInsert[] {
       // and username. It is not part of the message/status object, so it is
       // carried on the row under keys that cannot collide with a message field
       // (`contacts` is itself a message type: a shared contact card).
-      const contactBlock = (value as unknown as { contacts?: unknown }).contacts;
+      // Meta's ContactProfile[] (generated webhook types). Still checked at
+      // runtime: the block carries more than the spec lists (BSUID user_id,
+      // username), and it is kept whole.
+      const contactBlock: IncomingValue['contacts'] | undefined = 'contacts' in value ? (value as IncomingValue).contacts : undefined;
       const contact =
         Array.isArray(contactBlock) &&
         contactBlock.length > 0 &&

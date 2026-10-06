@@ -51,7 +51,7 @@ export interface EnvKeySpec {
 const httpsOrigin = z
   .string()
   .regex(/^https:\/\/[^/\s]+$/, "must be a bare https origin");
-const url = z.string().url();
+const url = z.url();
 const nonEmpty = z.string().min(1);
 const boolStr = z.enum(["true", "false"]);
 const numeric = z.string().regex(/^\d+$/, "must be numeric");
@@ -96,7 +96,7 @@ export const ENV_KEY_SPECS: readonly EnvKeySpec[] = [
   { key: "MS_GRAPH_TENANT_ID", kind: "probe", format: nonEmpty, probe: "graph-app" },
   { key: "MS_GRAPH_CLIENT_ID", kind: "probe", format: nonEmpty, probe: "graph-app" },
   { key: "MS_GRAPH_CERT_PATH", kind: "probe", format: nonEmpty, probe: "graph-app" },
-  { key: "MS_GRAPH_PRIMARY_MAILBOX", kind: "probe", format: z.string().email(), probe: "graph-mailbox" },
+  { key: "MS_GRAPH_PRIMARY_MAILBOX", kind: "probe", format: z.email(), probe: "graph-mailbox" },
   { key: "MS_GRAPH_INTAKE_FOLDER", kind: "format", format: nonEmpty },
   { key: "MS_GRAPH_WEBHOOK_SECRET", kind: "format", format: hex32 },
   { key: "EXCHANGE_PROVIDER", kind: "format", format: z.enum(["graph", "off"]) },

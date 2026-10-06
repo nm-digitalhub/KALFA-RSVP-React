@@ -1,5 +1,7 @@
 import 'server-only';
 
+import type { components as IncomingWebhook } from '@/lib/whatsapp/generated/incoming-webhook';
+
 import {
   classifyMessagePayload,
   type InboundMessagePayload,
@@ -22,6 +24,11 @@ import {
   processCallRsvpRow,
   processOwnerNoteRow,
 } from '@/lib/data/call-result-processing';
+import {
+  processAccountReviewRow,
+  processAccountUpdateRow,
+  processPhoneNumberQualityRow,
+} from '@/lib/data/whatsapp-account-processing';
 import { processMeetingOptOutRow } from '@/lib/data/callback-voice-processing';
 import { processSalesOptOutRow } from '@/lib/data/sales-voice-processing';
 import { recordSalesWaDeliveryStatus } from '@/lib/data/sales-call-attempts';
@@ -40,6 +47,7 @@ import {
   processTemplateCategoryRow,
   processTemplateCategoryMisuseRow,
   processTemplateQualityRow,
+  processTemplateComponentsRow,
 } from '@/lib/data/template-health-processing';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { isEsConnectedPhoneNumber } from '@/lib/whatsapp/embedded-signup/connected-numbers';
@@ -77,11 +85,13 @@ import { RSVP_BUTTON_MAP } from '@/lib/whatsapp/rsvp-buttons';
 // this set there if the false-positive rate proves too high.
 const WRONG_NUMBER_CODES = new Set(['131026']);
 
-// The persisted status payload shape we read (subset of the provider status
-// object). `errors[0].code` carries the Meta failure code on a `failed` status.
+// The persisted status payload we read: Meta's status object (generated webhook
+// types), every field optional because it is read back from jsonb.
+// `errors[0].code` carries the Meta failure code on a `failed` status.
+type WebhookSchemas = IncomingWebhook['schemas'];
 type StatusPayload = {
-  status?: string;
-  errors?: Array<{ code?: number | string }>;
+  status?: WebhookSchemas['Statuses']['status'];
+  errors?: Array<Partial<WebhookSchemas['StatusError']>>;
 };
 
 // Per-drain memo for the reads that are the SAME for every row in a batch.
@@ -201,6 +211,24 @@ export async function processWebhookEvent(
     await processTemplateQualityRow(row);
     return;
   }
+  if (row.event_kind === 'template_components') {
+    await processTemplateComponentsRow(row);
+    return;
+  }
+  // Account-level WABA fields, stored under Meta's field name (route.ts
+  // normalizeOtherFieldRows).
+  if (row.event_kind === 'account_review_update') {
+    await processAccountReviewRow(row);
+    return;
+  }
+  if (row.event_kind === 'account_update') {
+    await processAccountUpdateRow(row);
+    return;
+  }
+  if (row.event_kind === 'phone_number_quality_update') {
+    await processPhoneNumberQualityRow(row);
+    return;
+  }
   // Unknown kind — nothing to do; caller marks it processed (no retry storm).
 }
 
@@ -240,9 +268,9 @@ async function processGraphMail(row: WebhookInboxRow): Promise<void> {
 // context.id binding (the reply quotes the exact outbound wamid we sent); it
 // falls back to the sender phone when the reply carries no context — a plain
 // typed-in reply (the common "כן אגיע" / "הסר" case, not a swipe/button) — so a
-// billable reach AND any opt-out it carries are never silently dropped (this
-// restores the pre-rework billing surface; the context.id path adds precision on
-// top of it). Double-bill-safe either way: insertInteraction's
+// billable reach AND any opt-out it carries are never silently dropped (the
+// context.id path adds precision on top of it). Double-bill-safe either way:
+// insertInteraction's
 // UNIQUE(channel, provider_id) on this inbound message_id + the `fresh` gate bill
 // at most once. Only when NEITHER context nor phone resolves is it recorded
 // processed without billing.
@@ -359,7 +387,7 @@ async function processMessage(
     }
   }
 
-  // D4: an opt-out reply BILLS (it is a human reach) and only THEN stops future
+  // An opt-out reply BILLS (it is a human reach) and only THEN stops future
   // outreach — never the reverse, or the billing RPC's removal guard would block
   // the reach that carries the removal. Runs even on a deduped re-process
   // (idempotent) so an opt-out is never lost.
@@ -367,7 +395,7 @@ async function processMessage(
     await markContactRemovalRequested(resolved.contactId);
   }
 
-  // C9: a recognized RSVP quick-reply BUTTON records the RSVP through the same
+  // A recognized RSVP quick-reply BUTTON records the RSVP through the same
   // atomic submit_rsvp gate the public form uses — no RSVP rule is reimplemented
   // here. Gated on `fresh` (NOT just the RPC's data-idempotency) so a Meta retry
   // of the same inbound wamid cannot append duplicate audit rows. attending needs
@@ -513,8 +541,8 @@ const NON_ACTIONABLE_BOUNCE_TYPES = new Set(['Transient', 'Temporary', 'Undeterm
 
 async function processEmailDelivery(row: WebhookInboxRow): Promise<void> {
   const payload = (row.payload ?? {}) as BouncePayload;
-  // sent / delivered / delivery_delayed / complained are recorded by the route
-  // and acted on by nobody. Only a bounce means a customer got nothing.
+  // sent / delivered / delivery_delayed / complained / failed are recorded by the
+  // route and acted on by nobody. Only a bounce raises an alert.
   if (payload.type !== 'email.bounced') return;
 
   const bounceType = payload.data?.bounce?.type;

@@ -5,7 +5,7 @@ import { getWhatsAppConfig } from '@/lib/data/outreach-config';
 import {
   fetchTemplateHealth,
   isCategoryDowngraded,
-  type MetaTemplateHealthRow,
+  type MetaTemplate,
 } from '@/lib/whatsapp/template-health';
 import type { Json, TablesInsert } from '@/lib/supabase/types';
 import { sendSlackAlert } from '@/lib/alerts/slack';
@@ -26,7 +26,7 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 // keys, so this is a straight copy; a template without id/name/language
 // cannot be keyed and is left out.
 export function toMirrorRow(
-  t: MetaTemplateHealthRow,
+  t: MetaTemplate,
   syncedAt: string,
 ): TablesInsert<'whatsapp_message_templates'> | null {
   // Meta ids are numeric strings; anything else is refused (it is also
@@ -66,7 +66,7 @@ export function toMirrorRow(
 // unaffected.
 async function mirrorTemplates(
   admin: ReturnType<typeof createAdminClient>,
-  templates: MetaTemplateHealthRow[],
+  templates: MetaTemplate[],
   syncedAt: string,
 ): Promise<number> {
   const rows = templates
@@ -141,7 +141,7 @@ async function loadWatchedTemplates(
 // Alert once per genuine transition into a downgrade (was not, now is).
 async function alertNewDowngrades(
   watched: WatchedTemplate[],
-  metaTemplates: MetaTemplateHealthRow[],
+  metaTemplates: MetaTemplate[],
 ): Promise<number> {
   let count = 0;
   for (const w of watched) {
@@ -206,7 +206,7 @@ export async function runTemplateHealthSync(): Promise<{
   const now = new Date().toISOString();
   // Category as stored BEFORE this sync, for every template a step sends — so a
   // downgrade is alerted once, on the transition, for the event-type / image
-  // variants too (since 2026-09-30), not only a step's base template.
+  // variants too, not only a step's base template.
   const watched = await loadWatchedTemplates(admin);
   const mirrored = await mirrorTemplates(admin, metaTemplates, now);
   const newDowngrades = await alertNewDowngrades(watched, metaTemplates);

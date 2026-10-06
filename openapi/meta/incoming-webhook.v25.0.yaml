@@ -1,0 +1,1874 @@
+---
+openapi: 3.1.0
+info:
+  title: WhatsApp Incoming Webhook Payload
+  version: v25.0
+  description: |
+    Schemas for incoming WhatsApp webhook notifications.
+    Defines payload structures for messages, status updates, and user interactions
+    sent from WhatsApp users to businesses via webhooks.
+paths:
+  /whatsapp/webhooks:
+    post:
+      responses:
+        200:
+          description: Webhook received successfully
+      summary: Receive incoming WhatsApp messages
+      description: >
+        Endpoint for receiving webhook payloads
+        for diverse incoming WhatsApp message
+        types.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookPayload'
+            examples:
+              Text Message:
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '419561257915477'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            contacts:
+                              0:
+                                profile:
+                                  name: Sheena Nelson
+                                wa_id: '16505551234'
+                            messages:
+                              0:
+                                from: '16505551234'
+                                id: >
+                                  wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTRBNjU5OUFFRTAzODEwMTQ0RgA=
+                                timestamp: '1749416383'
+                                type: text
+                                text:
+                                  body: Does it come in another color?
+                          field: messages
+              Text Message with Context (Product Inquiry):
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '102290129340398'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            contacts:
+                              0:
+                                profile:
+                                  name: Sheena Nelson
+                                wa_id: '16505551234'
+                            messages:
+                              0:
+                                context:
+                                  from: '15550783881'
+                                  id: >
+                                    wamid.HBgLMTY1MDM4Nzk0MzkVAgARGA9wcm9kdWN0X2lucXVpcnkA
+                                  referred_product:
+                                    catalog_id: '194836987003835'
+                                    product_retailer_id: di9ozbzfi4
+                                from: '16505551234'
+                                id: >
+                                  wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTA2NTUwRkNEMDdFQjJCRUU0NQA=
+                                timestamp: '1750016800'
+                                text:
+                                  body: Is this still available?
+                                type: text
+                          field: messages
+              Text Message from Click to WhatsApp Ad:
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '102290129340398'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            contacts:
+                              0:
+                                profile:
+                                  name: Sheena Nelson
+                                wa_id: '16505551234'
+                            messages:
+                              0:
+                                referral:
+                                  source_url: https://fb.me/3cr4Wqqkv
+                                  source_id: '120226305854810726'
+                                  source_type: ad
+                                  body: Summer Succulents are here!
+                                  headline: Chat with us
+                                  media_type: image
+                                  image_url: https://scontent.xx.fbcdn.net/v/t45.1...
+                                  ctwa_clid: >
+                                    Aff-n8ZTODiE79d22KtAwQKj9e_mIEOOj27vDVwFjN80dp4_0NiNhEgpGo0AHemvuSoifXaytfTzcchptiErTKCqTrJ5nW1h7IHYeYymGb5K5J5iTROpBhWAGaIAeUzHL50
+                                  welcome_message:
+                                    text: Hi there! Let us know how we can help!
+                                from: '16505551234'
+                                id: >
+                                  wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQUQ0N0VFMDA2MTQ0RkJFNkNDNAA=
+                                timestamp: '1750275992'
+                                text:
+                                  body: Hello! Can I get more info on this?
+                                type: text
+                          field: messages
+              Reaction Message:
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '419561257915477'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            contacts:
+                              0:
+                                profile:
+                                  name: Sheena Nelson
+                                wa_id: '16505551234'
+                            messages:
+                              0:
+                                from: '16505551234'
+                                id: >
+                                  wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTRBNjU5OUFFRTAzODEwMTQ0RgA=
+                                timestamp: '1749419544'
+                                type: reaction
+                                reaction:
+                                  message_id: >
+                                    wamid.HBgLMTY1MDM4Nzk0MzkVAgARGBI0RTJEOTc2ODVERUY5RDlGNkYA
+                                  emoji: 👍
+                          field: messages
+              Image Message:
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '419561257915477'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            contacts:
+                              0:
+                                profile:
+                                  name: Sheena Nelson
+                                wa_id: '16505551234'
+                            messages:
+                              0:
+                                from: '16505551234'
+                                id: >
+                                  wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTRBNjU5OUFFRTAzODEwMTQ0RgA=
+                                timestamp: '1744344496'
+                                type: image
+                                image:
+                                  caption: Taj Mahal
+                                  mime_type: image/jpeg
+                                  sha256: >
+                                    SfInY0gGKTsJlUWbwxC1k+FAD0FZHvzwfpvO0zX0GUI=
+                                  id: '1003383421387256'
+                          field: messages
+              Location Message:
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '419561257915477'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            contacts:
+                              0:
+                                profile:
+                                  name: Sheena Nelson
+                                wa_id: '16505551234'
+                            messages:
+                              0:
+                                from: '16505551234'
+                                id: >
+                                  wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTU2MjZEMDBGRkE3MENEMDE0RQA=
+                                timestamp: '1744344496'
+                                location:
+                                  address: 101 Forest Ave, Palo Alto, CA 94301
+                                  latitude: 37.44221496582
+                                  longitude: -122.16165924072
+                                  name: Philz Coffee
+                                  url: https://philzcoffee.com/
+                                type: location
+                          field: messages
+              Contact Sharing Message:
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '419561257915477'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            contacts:
+                              0:
+                                profile:
+                                  name: Sheena Nelson
+                                wa_id: '16505551234'
+                            messages:
+                              0:
+                                from: '16505551234'
+                                id: >
+                                  wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTRBNjU5OUFFRTAzODEwMTQ0RgA=
+                                timestamp: '1744344496'
+                                type: contacts
+                                contacts:
+                                  0:
+                                    name:
+                                      first_name: Lucía
+                                      last_name: Gómez
+                                      formatted_name: Lucía Gómez
+                                    org:
+                                      company: Google
+                                    phones:
+                                      0:
+                                        phone: +1 (983) 555-2319
+                                        wa_id: '19835552319'
+                                        type: MOBILE
+                          field: messages
+              Unsupported Message:
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '419561257915477'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            contacts:
+                              0:
+                                profile:
+                                  name: Sheena Nelson
+                                wa_id: '16505551234'
+                            messages:
+                              0:
+                                from: '16505551234'
+                                id: >
+                                  wamid.HBgLMTQyMDU1NTA3NDkVAgASGBI5N0MwRjg0RTVBNUI1RDA2OTkA
+                                timestamp: '1750090702'
+                                errors:
+                                  0:
+                                    code: 131051
+                                    title: Message type unknown
+                                    message: Message type unknown
+                                    error_data:
+                                      details: Message type is currently not supported.
+                                type: unsupported
+                          field: messages
+              Button Message:
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '419561257915477'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            contacts:
+                              0:
+                                profile:
+                                  name: Sheena Nelson
+                                wa_id: '16505551234'
+                            messages:
+                              0:
+                                context:
+                                  from: '15550783881'
+                                  id: >
+                                    wamid.HBgLMTY1MDM4Nzk0MzkVAgARGBJFNjk2OTMwNEZCQjhGMzUyQUYA
+                                from: '16505551234'
+                                id: >
+                                  wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQUU0M0MxQzQzMUJCMTMwNUZFOQA=
+                                timestamp: '1750091045'
+                                type: button
+                                button:
+                                  payload: Unsubscribe
+                                  text: Unsubscribe
+                          field: messages
+              Interactive List Reply Message:
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '419561257915477'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            contacts:
+                              0:
+                                profile:
+                                  name: Sheena Nelson
+                                wa_id: '16505551234'
+                            messages:
+                              0:
+                                context:
+                                  from: '15550783881'
+                                  id: >
+                                    wamid.HBgLMTY1MDM4Nzk0MzkVAgARGBJGMzEyNzhENTZDMzNGODlDRDgA
+                                from: '16505551234'
+                                id: >
+                                  wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQUJDQ0NDM0FEODY4ODkzOTc5RgA=
+                                timestamp: '1749854575'
+                                type: interactive
+                                interactive:
+                                  type: list_reply
+                                  list_reply:
+                                    id: priority_express
+                                    title: Priority Mail Express
+                                    description: Next Day to 2 Days
+                          field: messages
+              Interactive Button Reply Message:
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '419561257915477'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            contacts:
+                              0:
+                                profile:
+                                  name: Sheena Nelson
+                                wa_id: '16505551234'
+                            messages:
+                              0:
+                                context:
+                                  from: '15550783881'
+                                  id: >
+                                    wamid.HBgLMTY1MDM4Nzk0MzkVAgARGBI3MEM2RUJFNkI0RENGQTVDRjUA
+                                from: '16505551234'
+                                id: >
+                                  wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTZBQzg0MzQ4QjRCM0NGNkVGOAA=
+                                timestamp: '1750025136'
+                                type: interactive
+                                interactive:
+                                  type: button_reply
+                                  button_reply:
+                                    id: cancel-button
+                                    title: Cancel
+                          field: messages
+              Order Message:
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '419561257915477'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            contacts:
+                              0:
+                                profile:
+                                  name: Sheena Nelson
+                                wa_id: '16505551234'
+                            messages:
+                              0:
+                                from: '16505551234'
+                                id: >
+                                  wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTEyQjFGNzI1QTQxMjI5QTMyOQA=
+                                timestamp: '1750096325'
+                                type: order
+                                order:
+                                  catalog_id: '194836987003835'
+                                  text:
+                                  product_items:
+                                    0:
+                                      product_retailer_id: di9ozbzfi4
+                                      quantity: 2
+                                      item_price: 30
+                                      currency: USD
+                                    1:
+                                      product_retailer_id: nqryix03ez
+                                      quantity: 1
+                                      item_price: 25
+                                      currency: USD
+                          field: messages
+              System Message:
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '102290129340398'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            messages:
+                              0:
+                                from: '16505551234'
+                                id: >
+                                  wamid.HBgLMTk4MzU1NTE5NzQVAgASGAoxMTgyMDg2MjY3AA==
+                                timestamp: '1750269342'
+                                system:
+                                  body: >
+                                    User Sheena Nelson changed from
+                                    16505551234 to 12195555358
+                                  wa_id: '12195555358'
+                                  type: user_changed_number
+                                type: system
+                          field: messages
+              Group Create Message:
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '102290129340398'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            groups:
+                              0:
+                                timestamp: '1750269342'
+                                group_id: >
+                                  Y2FwaV9ncm91cDoxODA1NTU1MDE3MjoxMjAzNjMyMjI3NzE5NjMwNjcZD
+                                type: group_create
+                                request_id: 784D93D0C468593037EA0B1ECA245D9C
+                                subject: your-group-subject
+                                description: your-group-description
+                                added_participants:
+                                  0:
+                                    input: 16505551234
+                                    wa_id: 16505551234
+                                  1:
+                                    input: 16505551235
+                                    wa_id: 16505551235
+                          field: group_lifecycle_update
+              Group Settings Update:
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '102290129340398'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            groups:
+                              0:
+                                timestamp: '1750269342'
+                                group_id: >
+                                  Y2FwaV9ncm91cDoxODA1NTU1MDE3MjoxMjAzNjMyMjI3NzE5NjMwNjcZD
+                                type: group_settings_update
+                                request_id: 784D93D0C468593037EA0B1ECA245D9C
+                                profile_picture:
+                                  mime_type: image/jpeg
+                                  sha256: SfInY0gGKTsJlUWbwxC1k+FAD0FZHv
+                          field: group_settings_update
+              Group Remove Participants:
+                value:
+                  object: whatsapp_business_account
+                  entry:
+                    0:
+                      id: '102290129340398'
+                      changes:
+                        0:
+                          value:
+                            messaging_product: whatsapp
+                            metadata:
+                              display_phone_number: '15550783881'
+                              phone_number_id: '106540352242922'
+                            groups:
+                              0:
+                                timestamp: '1750269342'
+                                group_id: >
+                                  Y2FwaV9ncm91cDoxODA1NTU1MDE3MjoxMjAzNjMyMjI3NzE5NjMwNjcZD
+                                type: group_create
+                                request_id: 784D93D0C468593037EA0B1ECA245D9C
+                                removed_participants:
+                                  0:
+                                    input: 16505551234
+                                    wa_id: 16505551234
+                                  1:
+                                    input: 16505551235
+                                    wa_id: 16505551235
+                          field: group_participants_update
+        description: >
+          Webhook payload containing incoming
+          WhatsApp messages.
+        required: true
+components:
+  schemas:
+    WebhookPayload:
+      type: object
+      required:
+        - object
+        - entry
+      properties:
+        object:
+          type: string
+          description: >
+            Always 'whatsapp_business_account' for
+            these webhooks.
+          example: whatsapp_business_account
+        entry:
+          type: array
+          items:
+            $ref: '#/components/schemas/Entry'
+    Entry:
+      type: object
+      required:
+        - id
+        - changes
+      properties:
+        id:
+          type: string
+          description: WhatsApp Business Account ID.
+          example: '419561257915477'
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Change'
+    Change:
+      type: object
+      required:
+        - value
+        - field
+      properties:
+        value:
+          oneOf:
+            - 
+              $ref: '#/components/schemas/IncomingMessageValueGeneral'
+            - 
+              $ref: '#/components/schemas/IncomingMessageValueSystem'
+            - 
+              $ref: '#/components/schemas/StatusMessageValue'
+            - 
+              $ref: '#/components/schemas/GroupValue'
+        field:
+          type: string
+          description: |
+            The field indicate to what object is the webhook related:
+            - messages: the webhook is related to messages from consumer or status of message sent by business to consumer.
+            - group_lifecycle_update: the webhook is related to group creation and deletion.
+            - group_settings_update: the webhook is related to group settings update.
+            - group_participant_update: the webhook is related to participants joining and leaving the groups.
+          example: messages
+          enum:
+            - messages
+            - group_lifecycle_update
+            - group_settings_update
+            - group_participant_update
+    Metadata:
+      type: object
+      required:
+        - display_phone_number
+        - phone_number_id
+      properties:
+        display_phone_number:
+          type: string
+          description: Business display phone number.
+          example: '15550783881'
+        phone_number_id:
+          type: string
+          description: Business phone number ID.
+          example: '106540352242922'
+    ContactProfile:
+      type: object
+      required:
+        - profile
+      properties:
+        profile:
+          type: object
+          required:
+            - name
+          properties:
+            name:
+              type: string
+              description: >
+                WhatsApp user's name as it appears in
+                their profile in the WhatsApp client.
+              example: Sheena Nelson
+        wa_id:
+          type: string
+          description: >
+            WhatsApp user ID. Note that a WhatsApp
+            user's ID and phone number may not
+            always match.
+          example: '16505551234'
+    IncomingMessageValueGeneral:
+      type: object
+      required:
+        - messaging_product
+        - metadata
+        - contacts
+        - messages
+      properties:
+        messaging_product:
+          type: string
+          description: Always 'whatsapp'.
+          example: whatsapp
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+        contacts:
+          type: array
+          description: >
+            Array of contact profiles for the
+            sender. Included for all non-system
+            incoming messages.
+          items:
+            $ref: '#/components/schemas/ContactProfile'
+        messages:
+          type: array
+          description: >
+            Array of message objects. The structure
+            varies based on the 'type' property.
+          items:
+            $ref: '#/components/schemas/IncomingMessage'
+    IncomingMessageValueSystem:
+      type: object
+      required:
+        - messaging_product
+        - metadata
+        - messages
+      properties:
+        messaging_product:
+          type: string
+          description: Always 'whatsapp'.
+          example: whatsapp
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+        messages:
+          type: array
+          description: >
+            Array containing only 'system' message
+            objects.
+          items:
+            $ref: '#/components/schemas/SystemMessage'
+      not:
+        required:
+          - contacts
+    StatusMessageValue:
+      type: object
+      required:
+        - messaging_product
+        - metadata
+        - statuses
+      properties:
+        messaging_product:
+          type: string
+          description: Always 'whatsapp'.
+          example: whatsapp
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+        statuses:
+          type: array
+          description: Array of status objects.
+          items:
+            $ref: '#/components/schemas/Statuses'
+    Statuses:
+      type: object
+      required:
+        - id
+        - status
+        - timestamp
+        - recipient_id
+      properties:
+        id:
+          type: string
+          description: >
+            Unique WhatsApp message ID the status is
+            associated with.
+        status:
+          type: string
+          enum:
+            - sent
+            - delivered
+            - read
+            - failed
+        timestamp:
+          type: string
+        recipient_id:
+          type: string
+          description: Recipient phone number.
+        group_id:
+          type: string
+          description: >
+            Group ID if the message was sent to a
+            group.
+        conversation:
+          $ref: '#/components/schemas/Conversation'
+        pricing:
+          $ref: '#/components/schemas/Pricing'
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatusError'
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+        expiration_timestamp:
+          type: string
+        origin:
+          $ref: '#/components/schemas/ConversationOrigin'
+    ConversationOrigin:
+      type: object
+      properties:
+        type:
+          type: string
+    Pricing:
+      type: object
+      properties:
+        billable:
+          type: boolean
+        pricing_model:
+          type: string
+          enum:
+            - CBP
+            - PMP
+        category:
+          type: string
+    StatusError:
+      type: object
+      properties:
+        code:
+          type: integer
+        title:
+          type: string
+        message:
+          type: string
+        error_data:
+          $ref: '#/components/schemas/ErrorData'
+        href:
+          type: string
+    ErrorData:
+      type: object
+      properties:
+        details:
+          type: string
+    GroupValue:
+      type: object
+      required:
+        - messaging_product
+        - metadata
+        - groups
+      properties:
+        messaging_product:
+          type: string
+          description: Always 'whatsapp'.
+          example: whatsapp
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+        groups:
+          type: array
+          description: Array of group objects.
+          items:
+            $ref: '#/components/schemas/Groups'
+    Groups:
+      type: object
+      required:
+        - timestamp
+        - group_id
+        - type
+        - request_id
+      properties:
+        timestamp:
+          type: integer
+          description: Unix timestamp of the group event
+        group_id:
+          type: string
+          description: Unique identifier for the group
+        type:
+          type: string
+          description: Type of group event
+          enum:
+            - group_create
+            - group_delete
+            - group_settings_update
+            - group_add_participants
+            - group_remove_participants
+        request_id:
+          type: string
+          description: Unique identifier for the request
+        subject:
+          type: string
+          description: Group subject/name
+        description:
+          type: string
+          description: Group description
+        added_participants:
+          type: array
+          description: List of participants added to the group
+          items:
+            $ref: '#/components/schemas/GroupParticipant'
+        removed_participants:
+          type: array
+          description: >
+            List of participants removed from the
+            group
+          items:
+            $ref: '#/components/schemas/GroupParticipant'
+        profile_picture:
+          $ref: '#/components/schemas/GroupProfilePicture'
+          description: Group profile picture information
+    GroupParticipant:
+      type: object
+      properties:
+        input:
+          type: string
+          description: Input phone number or WhatsApp ID
+        wa_id:
+          type: string
+          description: WhatsApp ID of the participant
+    GroupProfilePicture:
+      type: object
+      properties:
+        mime_type:
+          type: string
+          description: MIME type of the profile picture
+        sha256:
+          type: string
+          description: SHA256 hash of the profile picture
+    BaseMessageProperties:
+      type: object
+      required:
+        - from
+        - id
+        - timestamp
+      properties:
+        from:
+          type: string
+          description: >
+            WhatsApp user phone number. Note that a
+            WhatsApp user's phone number and ID may
+            not always match.
+          example: '16505551234'
+        id:
+          type: string
+          description: Unique WhatsApp message ID.
+          example: >
+            wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTRBNjU5OUFFRTAzODEwMTQ0RgA=
+        timestamp:
+          type: string
+          description: >
+            Unix timestamp indicating when the
+            webhook was triggered.
+          example: '1749416383'
+    IncomingMessage:
+      type: object
+      oneOf:
+        - 
+          $ref: '#/components/schemas/TextMessage'
+        - 
+          $ref: '#/components/schemas/ReactionMessage'
+        - 
+          $ref: '#/components/schemas/AudioMessage'
+        - 
+          $ref: '#/components/schemas/DocumentMessage'
+        - 
+          $ref: '#/components/schemas/ImageMessage'
+        - 
+          $ref: '#/components/schemas/StickerMessage'
+        - 
+          $ref: '#/components/schemas/VideoMessage'
+        - 
+          $ref: '#/components/schemas/LocationMessage'
+        - 
+          $ref: '#/components/schemas/ContactSharingMessage'
+        - 
+          $ref: '#/components/schemas/UnsupportedMessage'
+        - 
+          $ref: '#/components/schemas/ButtonMessage'
+        - 
+          $ref: '#/components/schemas/InteractiveMessageReply'
+        - 
+          $ref: '#/components/schemas/OrderMessage'
+      discriminator:
+        propertyName: type
+        mapping:
+          text: '#/components/schemas/TextMessage'
+          reaction: '#/components/schemas/ReactionMessage'
+          audio: '#/components/schemas/AudioMessage'
+          document: '#/components/schemas/DocumentMessage'
+          image: '#/components/schemas/ImageMessage'
+          sticker: '#/components/schemas/StickerMessage'
+          video: '#/components/schemas/VideoMessage'
+          location: '#/components/schemas/LocationMessage'
+          contacts: '#/components/schemas/ContactSharingMessage'
+          unsupported: '#/components/schemas/UnsupportedMessage'
+          unknown: '#/components/schemas/UnsupportedMessage'
+          button: '#/components/schemas/ButtonMessage'
+          interactive: '#/components/schemas/InteractiveMessageReply'
+          order: '#/components/schemas/OrderMessage'
+    TextMessage:
+      allOf:
+        - 
+          $ref: '#/components/schemas/BaseMessageProperties'
+        - 
+          type: object
+          example:
+            from: '16505551234'
+            id: >
+              wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTRBNjU5OUFFRTAzODEwMTQ0RgA=
+            timestamp: '1749416383'
+            type: text
+            text:
+              body: Does it come in another color?
+          required:
+            - type
+            - text
+          properties:
+            type:
+              type: string
+              example: text
+              enum:
+                - text
+            text:
+              type: object
+              required:
+                - body
+              properties:
+                body:
+                  type: string
+                  description: Text body of the message.
+                  example: Does it come in another color?
+            context:
+              $ref: '#/components/schemas/ContextObject'
+            referral:
+              $ref: '#/components/schemas/ReferralObject'
+    ContextObject:
+      type: object
+      description: >
+        Only included if message via a "Message
+        business" button.
+      required:
+        - from
+        - id
+        - referred_product
+      properties:
+        from:
+          type: string
+          description: Business display phone number.
+          example: '15550783881'
+        id:
+          type: string
+          description: >
+            WhatsApp message ID of the message the
+            user used to access the "Message
+            business" button.
+          example: >
+            wamid.HBgLMTY1MDM4Nzk0MzkVAgARGA9wcm9kdWN0X2lucXVpcnkA
+        referred_product:
+          type: object
+          required:
+            - catalog_id
+            - product_retailer_id
+          properties:
+            catalog_id:
+              type: string
+              description: Product catalog ID.
+              example: '194836987003835'
+            product_retailer_id:
+              type: string
+              description: Product ID.
+              example: di9ozbzfi4
+    ReferralObject:
+      type: object
+      description: >
+        Only included if message via a Click to
+        WhatsApp ad.
+      required:
+        - source_url
+        - source_id
+        - source_type
+        - body
+        - headline
+        - media_type
+        - ctwa_clid
+      properties:
+        source_url:
+          type: string
+          description: Ad URL.
+          example: https://fb.me/3cr4Wqqkv
+        source_id:
+          type: string
+          description: Ad ID.
+          example: '120226305854810726'
+        source_type:
+          type: string
+          example: ad
+          enum:
+            - ad
+            - post
+        body:
+          type: string
+          description: Ad primary text.
+          example: Summer Succulents are here!
+        headline:
+          type: string
+          description: Ad headline.
+          example: Chat with us
+        media_type:
+          type: string
+          example: image
+          enum:
+            - image
+            - video
+        image_url:
+          type: string
+          description: Only included for image media_type.
+          example: https://scontent.xx.fbcdn.net/v/t45.1...
+        video_url:
+          type: string
+          description: Only included for video media_type.
+          example: https://example.com/video.mp4
+        thumbnail_url:
+          type: string
+          description: Only included for video media_type.
+          example: https://example.com/thumbnail.jpg
+        ctwa_clid:
+          type: string
+          description: Ad click ID.
+          example: >
+            Aff-n8ZTODiE79d22KtAwQKj9e_mIEOOj27vDVwFjN80dp4_0NiNhEgpGo0AHemvuSoifXaytfTzcchptiErTKCqTrJ5nW1h7IHYeYymGb5K5J5iTROpBhWAGaIAeUzHL50
+        welcome_message:
+          type: object
+          required:
+            - text
+          properties:
+            text:
+              type: string
+              description: Ad greeting text.
+              example: Hi there! Let us know how we can help!
+    ReactionMessage:
+      allOf:
+        - 
+          $ref: '#/components/schemas/BaseMessageProperties'
+        - 
+          type: object
+          example:
+            from: '16505551234'
+            id: >
+              wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTRBNjU5OUFFRTAzODEwMTQ0RgA=
+            timestamp: '1749419544'
+            type: reaction
+            reaction:
+              message_id: >
+                wamid.HBgLMTY1MDM4Nzk0MzkVAgARGBI0RTJEOTc2ODVERUY5RDlGNkYA
+              emoji: 👍
+          required:
+            - type
+            - reaction
+          properties:
+            type:
+              type: string
+              example: reaction
+              enum:
+                - reaction
+            reaction:
+              type: object
+              required:
+                - message_id
+                - emoji
+              properties:
+                message_id:
+                  type: string
+                  description: >
+                    WhatsApp message ID of the message the
+                    WhatsApp user reacted to.
+                  example: >
+                    wamid.HBgLMTY1MDM4Nzk0MzkVAgARGBI0RTJEOTc2ODVERUY5RDlGNkYA
+                emoji:
+                  type: string
+                  description: >
+                    Emoji sent by the WhatsApp user as a
+                    reaction.
+                  example: 👍
+    MediaMessageProperties:
+      type: object
+      required:
+        - mime_type
+        - sha256
+        - id
+      properties:
+        mime_type:
+          type: string
+          description: Media asset MIME type.
+          example: image/jpeg
+        sha256:
+          type: string
+          description: Media asset SHA-256 hash.
+          example: >
+            SfInY0gGKTsJlUWbwxC1k+FAD0FZHvzwfpvO0zX0GUI=
+        id:
+          type: string
+          description: >
+            Media asset ID. A GET request on this ID
+            can provide the asset URL.
+          example: '1003383421387256'
+    AudioMessage:
+      allOf:
+        - 
+          $ref: '#/components/schemas/BaseMessageProperties'
+        - 
+          type: object
+          required:
+            - type
+            - audio
+          properties:
+            type:
+              type: string
+              example: audio
+              enum:
+                - audio
+            audio:
+              allOf:
+                - 
+                  $ref: '#/components/schemas/MediaMessageProperties'
+                - 
+                  type: object
+                  required:
+                    - voice
+                  properties:
+                    voice:
+                      type: boolean
+                      description: >
+                        Boolean indicating if audio is a
+                        recording made with the WhatsApp client
+                        voice recording feature (true) or not
+                        (false).
+                      example: true
+    DocumentMessage:
+      allOf:
+        - 
+          $ref: '#/components/schemas/BaseMessageProperties'
+        - 
+          type: object
+          required:
+            - type
+            - document
+          properties:
+            type:
+              type: string
+              example: document
+              enum:
+                - document
+            document:
+              allOf:
+                - 
+                  $ref: '#/components/schemas/MediaMessageProperties'
+                - 
+                  type: object
+                  required:
+                    - filename
+                  properties:
+                    filename:
+                      type: string
+                      description: Media asset filename.
+                      example: receipt.pdf
+    ImageMessage:
+      allOf:
+        - 
+          $ref: '#/components/schemas/BaseMessageProperties'
+        - 
+          type: object
+          example:
+            from: '16505551234'
+            id: >
+              wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTRBNjU5OUFFRTAzODEwMTQ0RgA=
+            timestamp: '1744344496'
+            type: image
+            image:
+              caption: Taj Mahal
+              mime_type: image/jpeg
+              sha256: >
+                SfInY0gGKTsJlUWbwxC1k+FAD0FZHvzwfpvO0zX0GUI=
+              id: '1003383421387256'
+          required:
+            - type
+            - image
+          properties:
+            type:
+              type: string
+              example: image
+              enum:
+                - image
+            image:
+              allOf:
+                - 
+                  $ref: '#/components/schemas/MediaMessageProperties'
+                - 
+                  type: object
+                  properties:
+                    caption:
+                      type: string
+                      description: Media asset caption text.
+                      example: Taj Mahal
+    StickerMessage:
+      allOf:
+        - 
+          $ref: '#/components/schemas/BaseMessageProperties'
+        - 
+          type: object
+          required:
+            - type
+            - sticker
+          properties:
+            type:
+              type: string
+              example: sticker
+              enum:
+                - sticker
+            sticker:
+              allOf:
+                - 
+                  $ref: '#/components/schemas/MediaMessageProperties'
+                - 
+                  type: object
+                  required:
+                    - animated
+                  properties:
+                    animated:
+                      type: boolean
+                      description: >
+                        Boolean indicating if the sticker is
+                        animated (true) or not (false).
+                      example: true
+    VideoMessage:
+      allOf:
+        - 
+          $ref: '#/components/schemas/BaseMessageProperties'
+        - 
+          type: object
+          required:
+            - type
+            - video
+          properties:
+            type:
+              type: string
+              example: video
+              enum:
+                - video
+            video:
+              allOf:
+                - 
+                  $ref: '#/components/schemas/MediaMessageProperties'
+                - 
+                  type: object
+                  properties:
+                    caption:
+                      type: string
+                      description: Media asset caption text.
+                      example: My vacation video
+    LocationMessage:
+      allOf:
+        - 
+          $ref: '#/components/schemas/BaseMessageProperties'
+        - 
+          type: object
+          example:
+            from: '16505551234'
+            id: >
+              wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTU2MjZEMDBGRkE3MENEMDE0RQA=
+            timestamp: '1744344496'
+            type: location
+            location:
+              address: 101 Forest Ave, Palo Alto, CA 94301
+              latitude: 37.44221496582
+              longitude: -122.16165924072
+              name: Philz Coffee
+              url: https://philzcoffee.com/
+          required:
+            - type
+            - location
+          properties:
+            type:
+              type: string
+              example: location
+              enum:
+                - location
+            location:
+              type: object
+              required:
+                - latitude
+                - longitude
+              properties:
+                address:
+                  type: string
+                  description: Location address.
+                  example: 101 Forest Ave, Palo Alto, CA 94301
+                latitude:
+                  type: number
+                  format: float
+                  description: Location latitude.
+                  example: 37.44221496582
+                longitude:
+                  type: number
+                  format: float
+                  description: Location longitude.
+                  example: -122.16165924072
+                name:
+                  type: string
+                  description: Location name.
+                  example: Philz Coffee
+                url:
+                  type: string
+                  description: >
+                    Location URL. Usually only included for
+                    business locations.
+                  example: https://philzcoffee.com/
+    ContactSharingMessage:
+      allOf:
+        - 
+          $ref: '#/components/schemas/BaseMessageProperties'
+        - 
+          type: object
+          example:
+            from: '16505551234'
+            id: >
+              wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTRBNjU5OUFFRTAzODEwMTQ0RgA=
+            timestamp: '1744344496'
+            type: contacts
+            contacts:
+              0:
+                name:
+                  first_name: Lucía
+                  last_name: Gómez
+                  formatted_name: Lucía Gómez
+                org:
+                  company: Google
+                phones:
+                  0:
+                    phone: +1 (983) 555-2319
+                    wa_id: '19835552319'
+                    type: MOBILE
+          required:
+            - type
+            - contacts
+          properties:
+            type:
+              type: string
+              example: contacts
+              enum:
+                - contacts
+            contacts:
+              type: array
+              description: >
+                Array of contact objects. Many contact
+                object properties may be omitted if the
+                WhatsApp user chooses not to share them,
+                or their device prevents them from being
+                shared.
+              items:
+                $ref: '#/components/schemas/ContactObject'
+    ContactObject:
+      type: object
+      properties:
+        addresses:
+          type: array
+          items:
+            type: object
+            properties:
+              city:
+                type: string
+                description: City mentioned in the contact address
+                example: Menlo Park
+              country:
+                type: string
+                description: Country mentioned in the contact address
+                example: United States
+              country_code:
+                type: string
+                description: ISO country code for the contact address
+                example: US
+              state:
+                type: string
+                description: State mentioned in the contact address
+                example: CA
+              street:
+                type: string
+                description: Street mentioned in the contact address
+                example: 1 Hacker Way
+              type:
+                type: string
+                description: Type of address, such as home or work
+                example: Home
+              zip:
+                type: string
+                description: Zip code in the contact address
+                example: '94025'
+        birthday:
+          type: string
+          format: date
+          description: Contact birthday (YYYY-MM-DD).
+          example: 1999-01-23
+        emails:
+          type: array
+          items:
+            type: object
+            properties:
+              email:
+                type: string
+                format: email
+                description: Email address of the contact
+                example: 'foo@gmail.com'
+              type:
+                type: string
+                description: Type of email, such as personal or work
+                example: Personal
+        name:
+          type: object
+          required:
+            - formatted_name
+          properties:
+            formatted_name:
+              type: string
+              description: Contact's formatted name
+              example: Barbara J. Johnson
+            first_name:
+              type: string
+              description: Contact’s first name
+              example: Barbara
+            last_name:
+              type: string
+              description: Contact’s last name
+              example: Johnson
+            middle_name:
+              type: string
+              description: Contact’s middle name
+              example: Joana
+            suffix:
+              type: string
+              description: Contact’s name suffix
+              example: Esq.
+            prefix:
+              type: string
+              description: Contact’s name prefix
+              example: Dr.
+        org:
+          type: object
+          properties:
+            company:
+              type: string
+              description: >
+                Name of the company where the contact
+                works
+              example: Meta Inc
+            department:
+              type: string
+              description: >
+                Name of the department where the contact
+                works
+              example: Engineering
+            title:
+              type: string
+              description: Contact's job title
+              example: Software Engineer
+        phones:
+          type: array
+          items:
+            type: object
+            properties:
+              phone:
+                type: string
+                description: Contact’s Phone number
+                example: '+14125550829'
+              wa_id:
+                type: string
+                description: >
+                  Contact's WhatsApp Number. Note that a
+                  WhatsApp user's ID and phone number may
+                  not always match.
+                example: '14125550829'
+              type:
+                type: string
+                description: >
+                  Type of phone number. For example, cell,
+                  mobile, main, iPhone, home, work, etc.
+                example: CELL
+        urls:
+          type: array
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+                format: uri
+                description: >
+                  Website URL associated with the contact
+                  or their company
+                example: meta.com
+              type:
+                type: string
+                description: >
+                  Type of website. For example, company,
+                  work, personal, Facebook Page,
+                  Instagram, etc.
+                example: Company
+    UnsupportedMessage:
+      allOf:
+        - 
+          $ref: '#/components/schemas/BaseMessageProperties'
+        - 
+          type: object
+          example:
+            from: '16505551234'
+            id: >
+              wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQUU0M0MxQzQzMUJCMTMwNUZFOQA=
+            timestamp: '1750091045'
+            type: button
+            context:
+              from: '15550783881'
+              id: >
+                wamid.HBgLMTY1MDM4Nzk0MzkVAgARGBJFNjk2OTMwNEZCQjhGMzUyQUYA
+            button:
+              payload: Unsubscribe
+              text: Unsubscribe
+          required:
+            - type
+            - context
+            - button
+          properties:
+            type:
+              type: string
+              example: button
+              enum:
+                - unsupported
+                - unknown
+            context:
+              type: object
+              required:
+                - from
+                - id
+              properties:
+                from:
+                  type: string
+                  description: Business display phone number.
+                  example: '15550783881'
+                id:
+                  type: string
+                  description: >
+                    WhatsApp message ID of the message
+                    containing the button the WhatsApp user
+                    tapped.
+                  example: >
+                    wamid.HBgLMTY1MDM4Nzk0MzkVAgARGBJFNjk2OTMwNEZCQjhGMzUyQUYA
+            button:
+              type: object
+              required:
+                - payload
+                - text
+              properties:
+                payload:
+                  type: string
+                  description: Quick-reply button payload.
+                  example: Unsubscribe
+                text:
+                  type: string
+                  description: Quick-reply button label text.
+                  example: Unsubscribe
+    InteractiveMessageReply:
+      allOf:
+        - 
+          $ref: '#/components/schemas/BaseMessageProperties'
+        - 
+          type: object
+          example:
+            from: '16505551234'
+            id: >
+              wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQUJDQ0NDM0FEODY4ODkzOTc5RgA=
+            timestamp: '1749854575'
+            type: interactive
+            context:
+              from: '15550783881'
+              id: >
+                wamid.HBgLMTY1MDM4Nzk0MzkVAgARGBJGMzEyNzhENTZDMzNGODlDRDgA
+            interactive:
+              type: list_reply
+              list_reply:
+                id: priority_express
+                title: Priority Mail Express
+                description: Next Day to 2 Days
+          required:
+            - type
+            - context
+            - interactive
+          properties:
+            type:
+              type: string
+              example: interactive
+              enum:
+                - interactive
+            context:
+              type: object
+              required:
+                - from
+                - id
+              properties:
+                from:
+                  type: string
+                  description: Business display phone number.
+                  example: '15550783881'
+                id:
+                  type: string
+                  description: >
+                    WhatsApp message ID of the message
+                    containing the interactive component the
+                    user tapped.
+                  example: >
+                    wamid.HBgLMTY1MDM4Nzk0MzkVAgARGBJGMzEyNzhENTZDMzNGODlDRDgA
+            interactive:
+              type: object
+              required:
+                - type
+              properties:
+                type:
+                  type: string
+                  description: >
+                    Type of interactive reply (list_reply or
+                    button_reply).
+                  example: list_reply
+                  enum:
+                    - list_reply
+                    - button_reply
+              discriminator:
+                propertyName: type
+                mapping:
+                  list_reply: '#/components/schemas/InteractiveListReplyContent'
+                  button_reply: '#/components/schemas/InteractiveButtonReplyContent'
+    InteractiveListReplyContent:
+      type: object
+      required:
+        - list_reply
+      properties:
+        list_reply:
+          type: object
+          required:
+            - id
+            - title
+            - description
+          properties:
+            id:
+              type: string
+              description: Row ID.
+              example: priority_express
+            title:
+              type: string
+              description: Row title.
+              example: Priority Mail Express
+            description:
+              type: string
+              description: Row description.
+              example: Next Day to 2 Days
+    InteractiveButtonReplyContent:
+      type: object
+      required:
+        - button_reply
+      properties:
+        button_reply:
+          type: object
+          required:
+            - id
+            - title
+          properties:
+            id:
+              type: string
+              description: Button ID.
+              example: cancel-button
+            title:
+              type: string
+              description: Button label text.
+              example: Cancel
+    OrderMessage:
+      allOf:
+        - 
+          $ref: '#/components/schemas/BaseMessageProperties'
+        - 
+          type: object
+          example:
+            from: '16505551234'
+            id: >
+              wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTEyQjFGNzI1QTQxMjI5QTMyOQA=
+            timestamp: '1750096325'
+            type: order
+            order:
+              catalog_id: '194836987003835'
+              text:
+              product_items:
+                0:
+                  product_retailer_id: di9ozbzfi4
+                  quantity: 2
+                  item_price: 30
+                  currency: USD
+                1:
+                  product_retailer_id: nqryix03ez
+                  quantity: 1
+                  item_price: 25
+                  currency: USD
+          required:
+            - type
+            - order
+          properties:
+            type:
+              type: string
+              example: order
+              enum:
+                - order
+            order:
+              type: object
+              required:
+                - catalog_id
+                - text
+                - product_items
+              properties:
+                catalog_id:
+                  type: string
+                  description: Product catalog ID.
+                  example: '194836987003835'
+                text:
+                  type: string
+                  description: Empty string.
+                  example:
+                product_items:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - product_retailer_id
+                      - quantity
+                      - item_price
+                      - currency
+                    properties:
+                      product_retailer_id:
+                        type: string
+                        description: Product ID.
+                        example: di9ozbzfi4
+                      quantity:
+                        type: integer
+                        description: Product quantity.
+                        example: 2
+                      item_price:
+                        type: number
+                        format: float
+                        description: Individual product price.
+                        example: 30
+                      currency:
+                        type: string
+                        description: Catalog currency code.
+                        example: USD
+    SystemMessage:
+      allOf:
+        - 
+          $ref: '#/components/schemas/BaseMessageProperties'
+        - 
+          type: object
+          example:
+            from: '16505551234'
+            id: >
+              wamid.HBgLMTk4MzU1NTE5NzQVAgASGAoxMTgyMDg2MjY3AA==
+            timestamp: '1750269342'
+            type: system
+            system:
+              body: >
+                User Sheena Nelson changed from
+                16505551234 to 12195555358
+              wa_id: '12195555358'
+              type: user_changed_number
+          required:
+            - type
+            - system
+          properties:
+            type:
+              type: string
+              example: system
+              enum:
+                - system
+            system:
+              type: object
+              required:
+                - body
+                - type
+              properties:
+                body:
+                  type: string
+                  description: >
+                    Description of the system change (e.g.,
+                    user changed number).
+                  example: >
+                    User Sheena Nelson changed from
+                    16505551234 to 12195555358
+                wa_id:
+                  type: string
+                  description: New WhatsApp user ID.
+                  example: '12195555358'
+                type:
+                  type: string
+                  description: Type of system message.
+                  example: user_changed_number
+                  enum:
+                    - user_changed_number
+  securitySchemes:
+    bearerAuth:
+      type: http
+      description: |
+        System user access token with whatsapp_business_management permission. Format: Bearer YOUR_SYSTEM_USER_ACCESS_TOKEN
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - 
+    bearerAuth: [ ]

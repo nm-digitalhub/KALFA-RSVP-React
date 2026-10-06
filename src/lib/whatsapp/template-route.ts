@@ -7,6 +7,7 @@
 // (message_template_routes), the Meta mirror (whatsapp_message_templates) and
 // the variable rows (whatsapp_template_parameters) — and these functions decide.
 
+import type { components } from '@/lib/whatsapp/generated/message-templates';
 import { RSVP_QUICK_REPLY } from '@/lib/whatsapp/rsvp-buttons';
 import { buildSendContext, type SendContext, type SendContextInput } from '@/lib/whatsapp/template-spec';
 
@@ -27,8 +28,17 @@ export type TemplateParameterRow = {
   source_path: string;
 };
 
-type MetaButton = { type?: string; url?: string };
-type MetaComponent = { type?: string; buttons?: MetaButton[] };
+/**
+ * One part of a Meta template (header, body, footer, buttons, …) — the type
+ * generated from Meta's published spec (`npm run meta:types`). The mirror keeps
+ * `components` as jsonb, so a reader casts the column to this.
+ */
+export type MetaTemplateComponent = NonNullable<components['schemas']['MessageTemplate']['components']>[number];
+
+/** The mirrored `components` column as Meta's parts; anything else = none. */
+export function metaComponents(value: unknown): MetaTemplateComponent[] {
+  return Array.isArray(value) ? (value as MetaTemplateComponent[]) : [];
+}
 
 /**
  * Which template a step sends. Resolution order, most specific first:
@@ -62,6 +72,38 @@ export function pickTemplateRoute(
 }
 
 /**
+ * What a send does with the template a route points at — the SAME rule for the
+ * sender (whatsapp-template-send.ts) and the admin screen, so the screen never
+ * says a step goes out when the sender would stop it, or the reverse.
+ *
+ * - DELETED in Meta: the live row with the same name + language (`liveTwin`,
+ *   looked up by the caller only for a deleted template) is sent instead; no
+ *   twin → the step is not sent.
+ * - Anything but APPROVED (PENDING, REJECTED, PAUSED, DISABLED, a status Meta
+ *   adds tomorrow…): the step is not sent. There is no fallback to the default
+ *   route — a blocked template blocks the step.
+ */
+export type RoutedTemplateDecision<T> =
+  | { send: true; template: T; deletedOriginal: T | null }
+  | { send: false; reason: 'deleted_no_twin' | 'not_approved' | 'missing'; template: T | null; deletedOriginal: T | null };
+
+export function decideRoutedTemplate<T extends { status: string | null }>(
+  template: T | null,
+  liveTwin: T | null,
+): RoutedTemplateDecision<T> {
+  let current = template;
+  let deletedOriginal: T | null = null;
+  if (current?.status === 'DELETED') {
+    deletedOriginal = current;
+    current = liveTwin;
+    if (!current) return { send: false, reason: 'deleted_no_twin', template: null, deletedOriginal };
+  }
+  if (!current) return { send: false, reason: 'missing', template: null, deletedOriginal };
+  if (current.status !== 'APPROVED') return { send: false, reason: 'not_approved', template: current, deletedOriginal };
+  return { send: true, template: current, deletedOriginal };
+}
+
+/**
  * Whether a send must inject the RSVP quick-reply payloads, read from the Meta
  * template itself instead of a hand-set flag: its buttons are exactly the
  * RSVP_QUICK_REPLY count of QUICK_REPLY buttons and nothing else (a URL button
@@ -69,8 +111,7 @@ export function pickTemplateRoute(
  * Unknown/empty components → false.
  */
 export function carriesRsvpQuickReplies(components: unknown): boolean {
-  if (!Array.isArray(components)) return false;
-  const buttons = (components as MetaComponent[])
+  const buttons = metaComponents(components)
     .filter((c) => c?.type === 'BUTTONS')
     .flatMap((c) => c.buttons ?? []);
   return (
@@ -151,7 +192,7 @@ export function readSendValue(groups: SendValueGroups, path: string): string | n
 // --- The variables a Meta template has, and whether a mapping covers them ---
 //
 // Read from Meta's own components (the mirror), limited to what the sender
-// (client.ts buildTemplateComponents) can fill: an IMAGE header, positional
+// (client.ts buildTemplateMessage) can fill: an IMAGE header, positional
 // {{n}} body variables and one URL-button suffix. Anything else is reported,
 // never guessed — Meta rejects a send whose parameters do not match (132000).
 
@@ -162,20 +203,12 @@ export type TemplateSlot = {
   position: number;
 };
 
-type SlotComponent = {
-  type?: string;
-  format?: string;
-  text?: string;
-  buttons?: Array<{ type?: string; url?: string }>;
-};
-
 const VARIABLE = /\{\{\s*([^}\s]+)\s*\}\}/g;
 
 export function templateSlots(components: unknown): { slots: TemplateSlot[]; unsupported: string[] } {
   const slots: TemplateSlot[] = [];
   const unsupported: string[] = [];
-  const list = Array.isArray(components) ? (components as SlotComponent[]) : [];
-  for (const c of list) {
+  for (const c of metaComponents(components)) {
     const vars = [...new Set([...(c.text ?? '').matchAll(VARIABLE)].map((m) => m[1]))];
     if (c.type === 'HEADER') {
       if (c.format === 'IMAGE') slots.push({ type: 'header', sub_type: null, index: null, position: 1 });
@@ -194,6 +227,10 @@ export function templateSlots(components: unknown): { slots: TemplateSlot[]; uns
           unsupported.push(`כפתור מסוג ${b.type ?? '?'}`);
         }
       });
+    } else if (c.type !== 'FOOTER') {
+      // CAROUSEL, LIMITED_TIME_OFFER and any part Meta adds later carry their
+      // own parameters the sender does not build: reported, never skipped.
+      unsupported.push(`חלק מסוג ${c.type ?? '?'}`);
     }
   }
   return { slots, unsupported };

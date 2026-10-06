@@ -1,16 +1,16 @@
 import 'server-only';
 
+import type { GraphErrorBody } from '@/lib/whatsapp/graph-error';
+
 import { GRAPH_API_VERSION } from './graph-version';
 
 // Passive health check for the WhatsApp channel: does the integration actually
 // work, asked WITHOUT sending anything to anyone.
 //
-// Until now /admin/debug said "אין בדיקת בריאות זמינה — send-only" for WhatsApp,
-// which treated "we cannot test it without messaging a guest" as the end of the
-// question. It is not: Meta exposes the phone number node and the WABA's number
-// list, and reading both exercises the exact credentials and ids the send path
-// needs — the token, the phone number id, the WABA id, and the relationship
-// between the last two.
+// "We cannot test it without messaging a guest" is not the end of the question:
+// Meta exposes the phone number node and the WABA's number list, and reading both
+// exercises the exact credentials and ids the send path needs — the token, the
+// phone number id, the WABA id, and the relationship between the last two.
 //
 // ⚠️ WHAT IT DOES NOT PROVE. That a particular message will be delivered. A send
 // can still fail on template state, category, the 24-hour window, quality-based
@@ -33,8 +33,8 @@ import { GRAPH_API_VERSION } from './graph-version';
 //
 // unified_cert_status is therefore absent, and always must be: it is declared by
 // Meta's own v25.0 spec and refused by Meta's own API. last_onboarded_time is absent
-// too — not because it fails (the plan said it would; measured, it does not) but
-// because it is always empty here and an always-empty field is noise.
+// too — not because it fails (measured, it does not) but because it is always
+// empty here and an always-empty field is noise.
 export const HEALTH_FIELDS = [
   'id',
   'display_phone_number',
@@ -112,9 +112,6 @@ function classify(code: number | undefined, node: 'number' | 'waba'): WhatsAppHe
   return 'unreachable';
 }
 
-interface GraphError {
-  error?: { code?: number; message?: string };
-}
 
 async function graphGet<T>(
   url: string,
@@ -126,7 +123,7 @@ async function graphGet<T>(
       signal: AbortSignal.timeout(12_000),
       cache: 'no-store',
     });
-    const body = (await res.json().catch(() => null)) as (T & GraphError) | null;
+    const body = (await res.json().catch(() => null)) as (T & GraphErrorBody) | null;
     if (!res.ok || !body || body.error) {
       return { ok: false, code: body?.error?.code };
     }
