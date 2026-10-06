@@ -31,6 +31,7 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   // Every minute.
   'outreach-arm': 3,
   'workflow-schedule-sweep': 3,
+  'rdp-access-sweep': 3,
   // Every 5 minutes.
   // webhook-process: event-driven (each persist nudges it) with this cron as a
   // safety net.

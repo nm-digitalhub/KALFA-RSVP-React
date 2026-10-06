@@ -133,6 +133,11 @@ export const QUEUES = {
   // expired requests by design) until chief-of-staff's daily CLI sweep — a
   // whole day late when that run is missed. See src/lib/fleet/expire.ts.
   fleetExpireSweep: 'fleet-request-expire-sweep',
+  // Remote-desktop access sweep — every minute: expire stale requests and grants, end grants whose holder lost
+  // the permission, and retry the gateway disconnect of ended grants until two disconnects are confirmed.
+  // Correctness never depends on it (expiry is evaluated against now() on every check). See
+  // src/lib/rdp-access/sweep.ts.
+  rdpAccessSweep: 'rdp-access-sweep',
   // Sales-closing dispatch trigger — event-driven, same idiom as
   // meetingConfirmDispatch above, with one deliberate difference: this fires
   // AT scheduled_at itself, not 24h before it (dispatchSalesCall's own

@@ -155,6 +155,17 @@ const nextConfig: NextConfig = {
           { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
         ],
       },
+      // Remote-desktop gateway callback (loopback only; the gateway calls the Next.js port directly). Same
+      // no-store/no-referrer/noindex posture as the token routes (the route also sets no-store on each response
+      // as the primary control; this block is defense-in-depth).
+      {
+        source: '/api/internal/rdp-gateway/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, max-age=0' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
       // Voximplant ctx/cb API routes carry a per-call bearer token in the path
       // and the ctx response carries guest-facing call data — same
       // no-store/no-referrer posture as the token pages (routes also set
