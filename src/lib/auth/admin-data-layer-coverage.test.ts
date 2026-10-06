@@ -138,6 +138,14 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // is billing authority, not general staff access.
   'src/lib/data/admin/sumit-test.ts': 'manage_billing',
   'src/lib/data/admin/sumit-test-transactions.ts': 'manage_billing',
+  // The staff side of the remote-desktop approval flow: asking for access, cancelling, ending it and downloading the
+  // connection file. Its OWN key (seeded by 20261006164315, held by the owner role only until the owner grants it), not
+  // manage_settings: asking to log in to the server is not "may change system settings".
+  'src/lib/data/admin/rdp-access.ts': 'rdp.request',
+  // The owner's read-only list/detail of those requests. Separate module, owner-only, no key: approving and revoking
+  // are not here at all (they happen in the server terminal), and the two files must not be able to borrow each
+  // other's authority.
+  'src/lib/data/admin/rdp-access-owner.ts': [],
   // Owner-only surfaces: they gate on requirePlatformOwner and name no key.
   'src/lib/data/admin/platform-roles.ts': [],
   'src/lib/data/admin/relocation.ts': [],
@@ -292,6 +300,7 @@ const PERMISSION_CATALOGUE = [
   'manage_settings',
   'manage_staff',
   'manage_voice',
+  'rdp.request',
   'roles.manage',
   'view_activity_log',
   'view_billing',
@@ -813,6 +822,7 @@ describe('the owner-agent data layer gates every export on requirePlatformOwner'
   const modules: Array<[string, number]> = [
     ['src/lib/data/admin/owner-agent.ts', 12],
     ['src/lib/data/admin/owner-agent-reports.ts', 7],
+    ['src/lib/data/admin/rdp-access-owner.ts', 3],
   ];
   for (const [relPath, min] of modules) {
     const blocks = splitExportedFunctions(readFileSync(join(ROOT, relPath), 'utf8'));

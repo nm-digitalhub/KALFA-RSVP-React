@@ -60,6 +60,19 @@
   --variable-ring: oklch(0.511 0.262 276.97);
   --suggestion-active-bg: oklch(0.955 0.03 276.97);
   --suggestion-active-bar: oklch(0.511 0.262 276.97);
+  /* Remote-desktop access console (/admin/rdp-access): an always-dark panel, like a terminal, that stays
+     the same in dark mode (so it is defined here only and never redefined under .dark). Hue of --primary. */
+  --console: oklch(0.2 0.03 277);
+  --console-raised: oklch(0.26 0.04 277);
+  --console-line: oklch(0.45 0.06 277);
+  --console-foreground: oklch(0.985 0 0);
+  --console-muted: oklch(0.88 0.04 277);
+  --console-accent: oklch(0.86 0.09 277);
+  --console-accent-foreground: oklch(0.2 0.05 277);
+  --console-warning: oklch(0.3 0.06 75);
+  --console-warning-foreground: oklch(0.92 0.08 85);
+  --console-danger: oklch(0.82 0.12 27);
+  --console-live: oklch(0.75 0.19 152.5);
 }
 
 @theme inline {
@@ -99,6 +112,17 @@
   --color-variable-ring: var(--variable-ring);
   --color-suggestion-active-bg: var(--suggestion-active-bg);
   --color-suggestion-active-bar: var(--suggestion-active-bar);
+  --color-console: var(--console);
+  --color-console-raised: var(--console-raised);
+  --color-console-line: var(--console-line);
+  --color-console-foreground: var(--console-foreground);
+  --color-console-muted: var(--console-muted);
+  --color-console-accent: var(--console-accent);
+  --color-console-accent-foreground: var(--console-accent-foreground);
+  --color-console-warning: var(--console-warning);
+  --color-console-warning-foreground: var(--console-warning-foreground);
+  --color-console-danger: var(--console-danger);
+  --color-console-live: var(--console-live);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);

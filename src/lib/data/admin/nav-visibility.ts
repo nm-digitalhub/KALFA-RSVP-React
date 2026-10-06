@@ -39,6 +39,7 @@ export const NAV_PERMISSION_KEYS = [
   'view_recordings',
   'view_activity_log',
   'view_webhooks',
+  'rdp.request',
 ] as const;
 
 export interface AdminNavGrants {
