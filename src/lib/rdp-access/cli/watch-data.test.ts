@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { RDP_EVENT_KINDS } from '../events';
-import { describeRecentEvent, liveConnections, terminalSize, toHistoryLines } from './watch-data';
+import { describeRecentEvent, liveConnections, toHistoryLines } from './watch-data';
 
 const ID = '0199e9d1-8c2a-7b3c-9d4e-5f6a7b8c9d0e';
 
@@ -24,7 +24,10 @@ describe('describeRecentEvent', () => {
 
   it('appends a short outcome code and shows an unknown kind by its own code instead of hiding it', () => {
     expect(describeRecentEvent({ kind: 'file_failed', requestId: ID, outcome: 'timeout' })).toBe('0199e9d1  File preparation failed (timeout)');
+    expect(describeRecentEvent({ kind: 'disconnect_ok', requestId: ID, outcome: 'ok' })).toBe('0199e9d1  Live connections cut');
+    expect(describeRecentEvent({ kind: 'approved', requestId: ID, outcome: 'approved' })).toBe('0199e9d1  Approved');
     expect(describeRecentEvent({ kind: 'brand_new_kind', requestId: null, outcome: null })).toBe('--------  brand_new_kind');
+    expect(describeRecentEvent({ kind: 'brand_new_kind', requestId: null, outcome: 'x' })).toBe('--------  brand_new_kind (x)');
   });
 });
 
@@ -54,15 +57,5 @@ describe('liveConnections', () => {
   it('is unknown, not zero, when the gateway could not be asked', () => {
     expect(liveConnections({ ok: false })).toEqual({ known: false });
     expect(liveConnections(null)).toEqual({ known: false });
-  });
-});
-
-describe('terminalSize', () => {
-  it('reads a terminal stream and falls back for anything else', () => {
-    const fallback = { columns: 100, rows: 40 };
-    expect(terminalSize({ columns: 120, rows: 30 }, fallback)).toEqual({ columns: 120, rows: 30 });
-    expect(terminalSize({}, fallback)).toEqual(fallback);
-    expect(terminalSize({ columns: 0, rows: undefined }, fallback)).toEqual(fallback);
-    expect(terminalSize({ columns: '120' }, fallback)).toEqual(fallback);
   });
 });

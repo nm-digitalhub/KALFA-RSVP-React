@@ -1,4 +1,4 @@
-import { render, useApp, useInput, useStdout } from 'ink';
+import { render, useApp, useInput, useStdout, useWindowSize } from 'ink';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   countRdpRequestsSince, getActiveRdpGrant, listRdpRequestExtras, listRdpRequests, listRecentRdpEvents, nameMap, RdpQueryError,
@@ -7,7 +7,7 @@ import {
 import { cmdApprove, cmdDeny, cmdRevoke, EXIT, type CliContext, type ExitCode } from './commands';
 import { WatchView, type ActivityLine } from './watch-view';
 import { CLI_TEXT } from './text';
-import { liveConnections, terminalSize, toHistoryLines, type HistoryLine, type LiveConnections } from './watch-data';
+import { liveConnections, toHistoryLines, type HistoryLine, type LiveConnections } from './watch-data';
 import {
   clampSelected, handleWatchKey, hasNewRequest, INITIAL_WATCH_STATE,
   type WatchEffect, type WatchState,
@@ -16,7 +16,6 @@ import {
 const LOG_LINES = 5;
 const HISTORY_EVENTS = 6;
 const EXPIRED_WINDOW_MS = 24 * 3_600_000;
-const FALLBACK_SIZE = { columns: 100, rows: 40 };
 type Snapshot = {
   rows: RdpRequestSummary[]; names: Map<string, string>; grant: RdpGrantSummary | null; error: string | null; loadedAt: string | null;
   expired24h: number; extras: Map<string, RdpRequestExtras>; history: HistoryLine[]; live: LiveConnections;
@@ -30,7 +29,8 @@ const clock = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { timeZ
 function WatchApp({ ctx, intervalMs }: { ctx: CliContext; intervalMs: number }) {
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const [size, setSize] = useState(() => terminalSize(stdout, FALLBACK_SIZE));
+  // Ink's own hook: the window's size, and a re-render on every resize (it falls back to 80x24 when stdout is no TTY)
+  const size = useWindowSize();
   const [inspecting, setInspecting] = useState(false);
   const [snapshot, setSnapshot] = useState<Snapshot>(EMPTY);
   const [state, setState] = useState<WatchState>(INITIAL_WATCH_STATE);
@@ -42,11 +42,6 @@ function WatchApp({ ctx, intervalMs }: { ctx: CliContext; intervalMs: number }) 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
   const push = useCallback((line: string) => setLog((prev) => [...prev, { time: ctx.now().toLocaleTimeString('en-GB', { timeZone: 'Asia/Jerusalem', hour12: false }), message: line }].slice(-LOG_LINES)), [ctx]);
 
-  useEffect(() => {
-    const resize = () => setSize(terminalSize(stdout, FALLBACK_SIZE));
-    stdout.on('resize', resize);
-    return () => { stdout.off('resize', resize); };
-  }, [stdout]);
   useEffect(() => {
     const timer = setInterval(refresh, intervalMs);
     return () => clearInterval(timer);
@@ -177,7 +172,9 @@ function WatchApp({ ctx, intervalMs }: { ctx: CliContext; intervalMs: number }) 
 
 export async function runWatch(ctx: CliContext, intervalSeconds: number): Promise<ExitCode> {
   if (!ctx.host.isTTY) { ctx.err(CLI_TEXT.watchNeedsTty); return EXIT.error; }
-  const app = render(<WatchApp ctx={ctx} intervalMs={intervalSeconds * 1000} />);
+  // alternateScreen: drawn in the terminal's second buffer like vim or htop, so the owner's scrollback is left alone and
+  // every frame is exactly the window's size; the previous screen comes back on exit.
+  const app = render(<WatchApp ctx={ctx} intervalMs={intervalSeconds * 1000} />, { alternateScreen: true });
   await app.waitUntilExit();
   return EXIT.ok;
 }

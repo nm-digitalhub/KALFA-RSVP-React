@@ -121,3 +121,69 @@ describe('WatchView', () => {
     expect(out).toContain('ACCESS REQUESTS');
   });
 });
+
+// ── any window size ─────────────────────────────────────────────────────────────────────────────
+
+const MANY = Array.from({ length: 9 }, (_, i) => ({
+  ...REQUEST,
+  id: `0199e9d${i}-8c2a-7b3c-9d4e-5f6a7b8c9d0e`,
+  requester_id: i % 2 ? USER_ID : null,
+  reason: 'החלפת מפתח בשרת ובדיקת הלוגים של ה-worker '.repeat(6),
+}));
+const NAMES = new Map([[USER_ID, 'Dana Levi-Mevorach With A Very Long Display Name']]);
+const HISTORY = Array.from({ length: 6 }, (_, i) => ({ time: `00:00:0${i}`, message: `0199e9d1  Gateway check: allowed ${'x'.repeat(80)}` }));
+
+async function frameLines(props: WatchViewProps): Promise<string[]> {
+  const stdout = Object.assign(new PassThrough(), { columns: props.columns, rows: props.terminalRows });
+  const writes: string[] = [];
+  stdout.on('data', (chunk: Buffer) => {
+    writes.push(chunk.toString('utf8'));
+  });
+  const app = render(<WatchView {...props} />, { stdout: stdout as unknown as NodeJS.WriteStream, debug: true, patchConsole: false, exitOnCtrlC: false });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  app.unmount();
+  // debug mode writes the whole frame on every render; the last write that has content is what the terminal ends up showing
+  const last = writes.filter((w) => w.trim() !== '').at(-1) ?? '';
+  return last.replace(/\u001b\[[0-9;]*m/g, '').replace(/\n+$/, '').split('\n');
+}
+
+const SIZES: ReadonlyArray<readonly [number, number]> = [
+  [40, 16], [40, 24], [60, 20], [80, 24], [80, 30], [94, 28], [95, 28], [100, 36], [120, 44], [120, 50], [160, 60], [200, 80], [300, 100],
+];
+
+describe('WatchView at any window size', () => {
+  for (const [columns, rows] of SIZES) {
+    it(`${columns}x${rows}: fits the window, shows the selected request and how to quit`, async () => {
+      const lines = await frameLines(
+        base({
+          columns, terminalRows: rows, requests: MANY, chosen: MANY[6], selected: 6, names: NAMES, history: HISTORY,
+          extras: new Map(MANY.map((r) => [r.id, { requestIp: '2001:db8:85a3::8a2e:370:7334', answerNote: null }])),
+          activity: [{ time: '00:01:00', message: 'Approved 0199e9d1 '.repeat(8) }],
+          active: { id: 'g', request_id: REQUEST_ID, user_id: USER_ID, status: 'active', target: 'h:3389', starts_at: '2026-10-07T00:00:00Z', expires_at: '2026-10-07T01:00:00Z', ended_at: null, ended_reason: null, files_issued: 2, max_files: 20, tunnels_cut_at: null, cut_attempts: 0 },
+          mode: { kind: 'approve', requestId: MANY[6]!.id, minutes: 60 },
+        }),
+      );
+      const text = lines.join('\n');
+      expect(lines.length, 'taller than the window').toBeLessThanOrEqual(rows - 1);
+      expect(Math.max(...lines.map((l) => l.length)), 'wider than the window').toBeLessThanOrEqual(columns - 1);
+      expect(text).toContain('0199e9d6'); // the selected request is on screen, however short the list
+      expect(text).toMatch(/Q/);
+      expect(text).toContain('Approve 0199e9d6'); // the confirmation prompt is never pushed off the bottom
+    });
+  }
+
+  it('says so under the minimum size and still names the way out', async () => {
+    const lines = await frameLines(base({ columns: 39, terminalRows: 15 }));
+    const text = lines.join('\n');
+    expect(text).toContain('Terminal too small');
+    expect(text).toContain('39x15, need 40x16');
+    expect(text).toContain('press Q to quit');
+  });
+
+  it('shows the details of the selected request on demand in a narrow window', async () => {
+    const lines = await frameLines(base({ columns: 80, terminalRows: 30, inspecting: true }));
+    const text = lines.join('\n');
+    expect(text).toContain('REQUEST DETAILS');
+    expect(text).not.toContain('ACCESS REQUESTS');
+  });
+});

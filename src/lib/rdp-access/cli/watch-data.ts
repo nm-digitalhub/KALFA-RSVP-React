@@ -29,6 +29,8 @@ const EVENT_LINE: Record<RdpEventKind, string> = {
   disconnect_failed: 'Cutting live connections failed',
 };
 
+const OUTCOME_EXPLAINS: ReadonlySet<string> = new Set(['file_refused', 'file_failed', 'disconnect_failed', 'tunnel_closed']);
+
 function isEventKind(kind: string): kind is RdpEventKind {
   return (RDP_EVENT_KINDS as readonly string[]).includes(kind);
 }
@@ -42,7 +44,9 @@ export function describeRecentEvent(event: Pick<RdpRecentEvent, 'kind' | 'reques
     const reason = event.outcome?.replace(/^deny:/, '');
     return `${id}  ${base}: denied${reason ? ` (${reason})` : ''}`;
   }
-  return `${id}  ${base}${event.outcome ? ` (${event.outcome})` : ''}`;
+  // the outcome of most kinds only repeats the line ("Approved (approved)"); it is kept where it explains a failure
+  const explains = event.outcome && (OUTCOME_EXPLAINS.has(event.kind) || !isEventKind(event.kind));
+  return `${id}  ${base}${explains ? ` (${event.outcome})` : ''}`;
 }
 
 export type HistoryLine = { time: string; message: string };
@@ -61,14 +65,4 @@ export function liveConnections(
   result: { ok: true; value: { tunnels: readonly RdpLiveTunnel[] } } | { ok: false } | null,
 ): LiveConnections {
   return result && result.ok ? { known: true, count: result.value.tunnels.length, tunnels: result.value.tunnels } : { known: false };
-}
-
-/**
- * A terminal's size, read without a type assertion: Ink hands back a generic writable stream, and only a TTY
- * stream has `columns` and `rows`. Anything else (a pipe, a test double) gets the fallback.
- */
-export function terminalSize(stream: object, fallback: { columns: number; rows: number }): { columns: number; rows: number } {
-  const columns = 'columns' in stream && typeof stream.columns === 'number' && stream.columns > 0 ? stream.columns : fallback.columns;
-  const rows = 'rows' in stream && typeof stream.rows === 'number' && stream.rows > 0 ? stream.rows : fallback.rows;
-  return { columns, rows };
 }
