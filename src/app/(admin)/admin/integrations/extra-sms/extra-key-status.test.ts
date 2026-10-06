@@ -34,14 +34,14 @@ const healthy = (daysToExpiry: number | null, scopes: Record<string, unknown> | 
 
 describe('ExtraKeyStatus', () => {
   it('is quiet one day above the threshold and warns on it', () => {
-    expect(textOf(ExtraKeyStatus({ health: healthy(EXTRA_KEY_WARN_DAYS + 1) }))).not.toContain('⚠️');
-    expect(textOf(ExtraKeyStatus({ health: healthy(EXTRA_KEY_WARN_DAYS) }))).toContain('⚠️');
+    expect(textOf(ExtraKeyStatus({ health: healthy(EXTRA_KEY_WARN_DAYS + 1) }))).not.toContain('חידוש מתבצע');
+    expect(textOf(ExtraKeyStatus({ health: healthy(EXTRA_KEY_WARN_DAYS) }))).toContain('חידוש מתבצע');
   });
 
   it('warns EARLIER than Slack does — 60, not 30', () => {
     // If someone collapses the two thresholds into one constant, this is what fails.
     expect(EXTRA_KEY_WARN_DAYS).toBe(60);
-    expect(textOf(ExtraKeyStatus({ health: healthy(45) }))).toContain('⚠️');
+    expect(textOf(ExtraKeyStatus({ health: healthy(45) }))).toContain('חידוש מתבצע');
   });
 
   it('shows the dates and the remaining days', () => {
@@ -63,7 +63,7 @@ describe('ExtraKeyStatus', () => {
     // null means "we could not tell", which must not render as "0 days" or as fine.
     const text = textOf(ExtraKeyStatus({ health: healthy(null) }));
     expect(text).not.toContain('ימים לתפוגה');
-    expect(text).not.toContain('⚠️');
+    expect(text).not.toContain('חידוש מתבצע');
   });
 
   it('separates a rejected key from an unreachable service', () => {

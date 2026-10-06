@@ -1,5 +1,8 @@
 'use client';
 
+import { TriangleAlert } from 'lucide-react';
+
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '../../_components';
 import type { SumitHealth } from '@/lib/sumit/health';
 
@@ -41,10 +44,13 @@ export function SumitStatusCard({ health }: { health: SumitHealth | null }) {
             זו אמירה על SUMIT או על הרשת, לא על הפרטים שלכם — אין צורך לשנות דבר כאן.
           </p>
         ) : (
-          <p className="mt-2 text-xs font-semibold text-red-600 dark:text-red-400">
-            ⚠️ סליקה מושבתת בפועל: חיוב סגירת קמפיין, תפיסת מסגרת וזיכויים עוברים
-            כולם דרך אותם פרטים.
-          </p>
+          <Alert variant="destructive" className="mt-2">
+            <TriangleAlert aria-hidden />
+            <AlertTitle>סליקה מושבתת בפועל</AlertTitle>
+            <AlertDescription>
+              חיוב סגירת קמפיין, תפיסת מסגרת וזיכויים עוברים כולם דרך אותם פרטים.
+            </AlertDescription>
+          </Alert>
         )}
       </div>
     );

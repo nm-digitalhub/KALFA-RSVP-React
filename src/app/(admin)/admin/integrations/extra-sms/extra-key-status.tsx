@@ -1,11 +1,14 @@
 'use client';
 
+import { TriangleAlert } from 'lucide-react';
+
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '../../_components';
 import { type ExtraKeyHealth } from '@/lib/sms/extra-client';
 import { EXTRA_KEY_WARN_DAYS } from './thresholds';
 
 // The key's remaining life, which is the reason this page exists at all: it expires
-// 2027-10-27 and, until the daily queue added alongside it, nothing watched that date.
+// 2027-10-27.
 //
 // Its own file rather than a helper inside page.tsx for two reasons. It holds the only
 // branch on this page worth pinning — the 60-day threshold — and a component nested
@@ -62,10 +65,13 @@ export function ExtraKeyStatus({ health }: { health: ExtraKeyHealth }) {
         </p>
       ) : null}
       {expiringSoon ? (
-        <p className="mt-3 text-xs font-semibold text-amber-700 dark:text-amber-400">
-          ⚠️ חידוש מתבצע ב-<span dir="ltr">/my/api/</span> בפורטל ExtrA, ואז עדכון השדה
-          כאן. בפקיעה נעצרות כל שליחות ה-SMS בבת אחת.
-        </p>
+        <Alert className="mt-3 text-amber-700 dark:text-amber-400">
+          <TriangleAlert aria-hidden />
+          <AlertDescription className="text-current">
+            חידוש מתבצע ב-<span dir="ltr">/my/api/</span> בפורטל ExtrA, ואז עדכון השדה
+            כאן. בפקיעה נעצרות כל שליחות ה-SMS בבת אחת.
+          </AlertDescription>
+        </Alert>
       ) : null}
     </div>
   );

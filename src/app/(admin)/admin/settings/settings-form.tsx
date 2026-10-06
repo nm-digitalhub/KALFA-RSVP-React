@@ -12,12 +12,8 @@ import { Tabs, TabsList, TabsTab, TabsPanel } from '@/components/ui/tabs';
 import type { AppSettings } from '@/lib/data/admin/settings';
 import { updateSettingsAction } from './actions';
 
-// A value row with its own controls: an eye toggle (mask/reveal) for key fields,
-// and an "ערוך" toggle that enables editing. The input is ALWAYS present in the
-// form — readOnly fields still submit — so values aren't lost when untouched.
-
-// Twenty toggles share one markup; the component is what keeps adding another
-// from being another fifteen lines of copy.
+// The toggles on this form share one markup; the component is what keeps adding
+// another from being another fifteen lines of copy.
 function Toggle({
   name,
   label,
@@ -106,7 +102,7 @@ function Panel({ value, children }: { value: string; children: React.ReactNode }
   // keepMounted is load-bearing, not cosmetic: Base UI unmounts a hidden panel by
   // default, and this is ONE form with ONE save. An unmounted checkbox is absent
   // from the FormData, and absent reads as `false` — so saving from any tab would
-  // silently switch off every toggle on the other three.
+  // silently switch off every toggle on the other two.
   return (
     <TabsPanel value={value} keepMounted className="space-y-5">
       {children}
@@ -127,11 +123,10 @@ export function SettingsForm({
       <FormNotice message={state?.notice} />
 
       <Tabs defaultValue="payments">
-        {/* THREE labels now — the fourth ("הודעות") moved to its own provider
-            forms in Task 0.2. The grid stays 2x2 and must NOT become grid-cols-3:
-            Hebrew labels do not fit one row on a phone, and a scrolling strip hides
-            half of them behind an affordance nobody looks for. Three in a 2x2 grid
-            simply leaves one cell empty, which is the cheap, correct outcome. */}
+        {/* The grid stays 2x2 and must NOT become grid-cols-3: Hebrew labels do
+            not fit one row on a phone, and a scrolling strip hides half of them
+            behind an affordance nobody looks for. Three in a 2x2 grid simply
+            leaves one cell empty, which is the cheap, correct outcome. */}
         <TabsList className="grid w-full grid-cols-2 sm:inline-flex sm:w-auto">
           <TabsTab value="payments" className="justify-center sm:justify-start">
             תשלומים
@@ -245,8 +240,6 @@ export function SettingsForm({
           </Toggle>
         </Panel>
 
-        {/* Every switch in this panel was a database column the runtime read but
-            nothing could write — until now the only way to flip one was SQL. */}
         <Panel value="calls">
           <GroupHeading>טלפון הנציג</GroupHeading>
 
@@ -342,7 +335,7 @@ export function SettingsForm({
       </Tabs>
 
       {/* Outside the tabs, and stuck to the bottom on a phone: one save covers
-          all four panels, and it must not sit behind ten switches of scrolling. */}
+          all three panels, and it must not sit behind ten switches of scrolling. */}
       <div className="sticky bottom-0 z-10 -mx-1 border-t border-border bg-background/95 px-1 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <SubmitButton>שמירה</SubmitButton>
       </div>

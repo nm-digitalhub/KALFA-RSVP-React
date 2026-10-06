@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ExchangeConnectionConfig } from './types';
 
@@ -88,10 +88,19 @@ function graphEvent(id: string) {
 //   2. listAppointments never sent Prefer: IdType="ImmutableId", so listed
 //      ids came back in the DEFAULT (mutable) format while createAppointment
 //      (which DOES send that header) stores the IMMUTABLE format —
-//      reconcileCallbacksWithCalendar's `liveIds.has(storedId)` check could
+//      reconcileCallbacksWithCalendar's `liveById.has(calendar_item_id)` check could
 //      never match, so every scheduled callback looked "gone" on the next
 //      sweep and got released + re-created.
 describe('graph-impl listAppointments pagination + id format', () => {
+  // The first import of graph-impl is cold (date-fns, @date-fns/tz, windows-iana:
+  // ~1.3s measured alone) and grows under the full parallel suite until it blew
+  // the first test's 5s budget (measured 2026-09-30, along with the follow-on
+  // call-count failure it caused). Paying that cost here, with its own budget,
+  // keeps the tests themselves at their real, few-ms cost.
+  beforeAll(async () => {
+    await import('./graph-impl');
+  }, 30_000);
+
   beforeEach(() => {
     process.env.MS_GRAPH_TENANT_ID = 'tenant';
     process.env.MS_GRAPH_CLIENT_ID = 'client';

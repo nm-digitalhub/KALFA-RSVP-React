@@ -1,6 +1,7 @@
 'use client';
 
 import { useId, useState, useTransition } from 'react';
+import { TriangleAlert } from 'lucide-react';
 
 import {
   Select,
@@ -9,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { HelpTip } from '@/components/help-tip';
 import { loadVoximplantRulesAction } from '@/app/(admin)/admin/integrations/actions';
 import type { VoximplantRuleOption } from '@/lib/data/admin/voximplant-channel';
@@ -167,15 +169,21 @@ export function VoximplantRuleField({
         ) : null}
 
         {rules && !known && value ? (
-          <span className="text-amber-600 dark:text-amber-500" role="status">
-            ⚠️ המזהה השמור ({value}) לא קיים בחשבון — ייתכן שהכלל נמחק.
-          </span>
+          <Alert className="text-amber-600 dark:text-amber-500" role="status">
+            <TriangleAlert aria-hidden />
+            <AlertDescription className="text-current">
+              המזהה השמור ({value}) לא קיים בחשבון — ייתכן שהכלל נמחק.
+            </AlertDescription>
+          </Alert>
         ) : null}
 
         {warn ? (
-          <span className="text-destructive" role="status">
-            ⚠️ 1494311 הוא הכלל OutCall (תרחיש ה-DTMF הישן) — אסור לסוכני AI.
-          </span>
+          <Alert variant="destructive" role="status">
+            <TriangleAlert aria-hidden />
+            <AlertDescription>
+              1494311 הוא הכלל OutCall (תרחיש ה-DTMF הישן) — אסור לסוכני AI.
+            </AlertDescription>
+          </Alert>
         ) : null}
       </div>
     </div>

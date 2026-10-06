@@ -38,7 +38,7 @@ describe('SumitStatusCard', () => {
     const text = textOf(
       SumitStatusCard({ health: { ok: false, kind: 'credentials_rejected', message: 'נדחו' } }),
     );
-    expect(text).toContain('⚠️');
+    expect(text).toContain('אותם פרטים');
     expect(text).toContain('סליקה מושבתת');
   });
 

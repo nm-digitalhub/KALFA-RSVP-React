@@ -9,8 +9,7 @@ import { updateSendPolicyAction } from '@/app/(admin)/admin/integrations/actions
 import type { AdminSendPolicy } from '@/lib/data/admin/integrations/send-policy';
 import { EDITABLE_WEEKDAYS, WEEKDAY_LABELS } from '@/lib/validation/send-policy-form';
 
-// The send-timing window, editable from the panel for the first time (G9). Every
-// campaign send is scheduled against this; the value was live and SQL-only.
+// The send-timing window. Every campaign send is scheduled against this.
 //
 // WHAT THIS FORM CANNOT DO, and why that is the feature: it can only NARROW.
 // parseSendPolicy holds the floor (09:00), the weekday and Friday ceilings, the
@@ -102,7 +101,7 @@ function NumberInput({
         dir="ltr"
         className={inputClass}
       />
-      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
+      {hint ? <p className="mt-1 text-sm text-muted-foreground">{hint}</p> : null}
       <FieldError errors={errors} />
     </div>
   );
@@ -140,16 +139,15 @@ export function SendPolicyForm({ policy: admin }: { policy: AdminSendPolicy }) {
             ? 'הערכים למטה הם מה שמנוע השליחה משתמש בו כרגע.'
             : admin.source === 'default'
               ? 'לא נשמרה מדיניות, ולכן מנוע השליחה משתמש בברירת המחדל שמוצגת למטה. שמירה תקבע אותה במפורש.'
-              : /* The state with no other way to be seen: a value IS stored, the
-                   sender rejects it, and the panel used to show a policy nothing
-                   was obeying. */
+              : /* The state with no other way to be seen: a value IS stored and the
+                   sender rejects it, so it runs on the default instead. */
                 `נשמרה מדיניות שאינה עוברת אימות, ולכן מנוע השליחה מתעלם ממנה ומשתמש בברירת המחדל שמוצגת למטה. הסיבה: ${admin.invalidReason}`}
         </span>
       </div>
 
       <fieldset className="space-y-3">
         <legend className="text-sm font-medium">חלון שליחה יומי</legend>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           אפשר לצמצם בלבד: התחלה לא לפני 09:00, סיום לא אחרי 20:30 (יום שישי 12:00).
           שבת חסומה תמיד.
         </p>
@@ -224,7 +222,7 @@ export function SendPolicyForm({ policy: admin }: { policy: AdminSendPolicy }) {
 
       <fieldset className="space-y-3">
         <legend className="text-sm font-medium">שעה מועדפת לפי ימים לפני האירוע</legend>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           כל מספר ימים שאין לו שורה נשלח בשעת ברירת המחדל. מחיקת השעה מסירה את
           השורה; השורה הריקה בסוף מוסיפה חדשה.
         </p>

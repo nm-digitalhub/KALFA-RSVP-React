@@ -20,10 +20,12 @@ export const metadata: Metadata = { title: 'הגדרות' };
 
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 
-// Admin system settings. requirePlatformPermission('manage_settings') is enforced in the data layer (and the
-// /admin layout). Manages the clearing master switch + SUMIT provider keys
-// (edited via the form, masked with reveal), and shows a read-only health view
-// of the infra config that stays in env.
+// Admin system settings. requirePlatformPermission('manage_settings') is enforced in the data layer (the
+// /admin layout only requires platform staff). Manages the operating switches
+// (payments, automations, call centre), the base+overage pricing gate and the
+// Exchange connection, and shows a read-only health view of the infra config
+// that stays in env. Provider credentials (SUMIT, SMS, email) are edited on
+// their own pages under /admin/integrations.
 export default async function AdminSettingsPage() {
   const [settings, infra, baseOveragePricing, exchangeMode, exchangeConnections] =
     await Promise.all([
@@ -40,11 +42,6 @@ export default async function AdminSettingsPage() {
 
       <section className={sectionClass}>
         <div>
-          {/* Was "סליקה (SUMIT)" with a promise of masked keys and a reveal
-              toggle. Wrong twice after Task 0.2: the SUMIT keys moved to their own
-              provider form, and this heading was never only about SUMIT anyway —
-              it wraps the whole three-tab form, which also holds the automations
-              and the call-centre switches. Named for what it actually is. */}
           <h2 className="text-lg font-semibold">מדיניות והפעלה</h2>
           <p className="text-sm text-muted-foreground">
             מתגי הפעלה בלבד — סליקה וחיוב, אוטומציות ומוקד השיחות. פרטי ההתחברות

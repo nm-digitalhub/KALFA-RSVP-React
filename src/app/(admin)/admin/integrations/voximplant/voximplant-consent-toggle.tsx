@@ -1,7 +1,9 @@
 'use client';
 
 import { useActionState } from 'react';
+import { TriangleAlert } from 'lucide-react';
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { updateCallConsentRequiredAction } from '@/app/(admin)/admin/integrations/actions';
 
@@ -31,29 +33,33 @@ export function VoximplantConsentToggle({ consentRequired }: { consentRequired: 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 space-y-1">
           <p className="text-sm font-semibold">דרישת הסכמה לשיחות AI</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             כשמסומן (ברירת מחדל) — שיחות AI יוצאות רק לאנשי קשר עם הסכמה מתועדת
             (<code>call_consent_at</code>). ביטול הסימון מאפשר חיוג גם ללא הסכמה
             מוקדמת. הסרת נמענים (opt-out), רשימת DNL וכשל־סגור נשמרים בכל מקרה.
           </p>
           {consentRequired ? null : (
-            <p className="text-xs font-semibold text-red-600 dark:text-red-400">
-              ⚠️ דרישת ההסכמה כבויה — שיחות AI ייצאו לאנשי קשר ללא הסכמה מוקדמת.
-              זו חשיפה משפטית תחת סעיף 30א (חוק הספאם) והחלטה משפטית, לא טכנית.
-            </p>
+            <Alert variant="destructive" className="mt-2">
+              <TriangleAlert aria-hidden />
+              <AlertTitle>דרישת ההסכמה כבויה</AlertTitle>
+              <AlertDescription>
+                שיחות AI ייצאו לאנשי קשר ללא הסכמה מוקדמת. זו חשיפה משפטית תחת סעיף
+                30א (חוק הספאם) והחלטה משפטית, לא טכנית.
+              </AlertDescription>
+            </Alert>
           )}
         </div>
         <div className="flex shrink-0 items-center justify-end gap-3">
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
+          <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm font-medium">
             <input
               type="checkbox"
               name="call_consent_required"
               defaultChecked={consentRequired}
-              className="size-4 accent-primary"
+              className="size-5 accent-primary"
             />
             דרוש הסכמה
           </label>
-          <SubmitButton className="w-auto">עדכון</SubmitButton>
+          <SubmitButton className="w-auto">עדכון דרישת הסכמה</SubmitButton>
         </div>
       </div>
     </form>
