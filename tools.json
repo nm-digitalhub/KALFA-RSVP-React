@@ -64,6 +64,11 @@
             "type": "client",
             "config": "tool_configs/log_outcome.json",
             "id": "tool_8001m0mxm9adevp854d05p1g93kh"
+        },
+        {
+            "type": "webhook",
+            "config": "tool_configs/lookup_guest_rsvp.json",
+            "id": "tool_5701m0d6w5nze4b8wvtyxe11q26j"
         }
     ]
 }

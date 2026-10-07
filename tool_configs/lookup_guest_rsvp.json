@@ -1,0 +1,67 @@
+{
+    "api_schema": {
+        "auth_connection": null,
+        "auth_resolved_params": [],
+        "content_type": "application/json",
+        "kind": "webhook",
+        "method": "POST",
+        "mtls_auth_connection": null,
+        "path_params_schema": {},
+        "query_params_schema": null,
+        "request_body_schema": {
+            "description": "פרטי החיפוש של האורח",
+            "dynamic_variable": "",
+            "is_omitted": false,
+            "properties": {
+                "event_code": {
+                    "allowed_values": null,
+                    "allowed_values_dynamic_variable": "",
+                    "constant_value": "",
+                    "description": "מזהה או קוד האירוע אם האורח מסר אותו, אחרת השאר ריק",
+                    "dynamic_variable": "",
+                    "enum": null,
+                    "is_omitted": false,
+                    "is_system_provided": false,
+                    "type": "string"
+                },
+                "phone_number": {
+                    "allowed_values": null,
+                    "allowed_values_dynamic_variable": "",
+                    "constant_value": "",
+                    "description": "מספר הטלפון של האורח כפי שנמסר בשיחה, כולל קידומת (למשל 0521234567)",
+                    "dynamic_variable": "",
+                    "enum": null,
+                    "is_omitted": false,
+                    "is_system_provided": false,
+                    "type": "string"
+                }
+            },
+            "required": [
+                "phone_number"
+            ],
+            "type": "object"
+        },
+        "request_headers": {},
+        "response_body_schema": null,
+        "response_filter": null,
+        "url": "https://beta.kalfa.me/api/agent/rsvp-lookup"
+    },
+    "assignments": [],
+    "description": "מחפש את פרטי ההזמנה ואישור ההגעה של אורח במערכת kalfa.me, לפי מספר טלפון (ואופציונלית מזהה אירוע אם ידוע). השתמש בכלי הזה כשהאורח מבקש לבדוק, לעדכן, לבטל או לאשר את השתתפותו באירוע ספציפי. לעולם אל תמציא פרטי אירוע - תמיד תשתמש בכלי הזה כדי לקבל מידע אמיתי.",
+    "disable_interruptions": false,
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    },
+    "execution_mode": "immediate",
+    "follow_redirects": false,
+    "follow_redirects_allowed_domains": [],
+    "force_pre_tool_speech": false,
+    "interruption_mode": "allow",
+    "name": "lookup_guest_rsvp",
+    "pre_tool_speech": "auto",
+    "response_timeout_secs": 20,
+    "tool_call_sound": null,
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "auto",
+    "type": "webhook"
+}

@@ -16,10 +16,10 @@
                 "bedrock_llm": null,
                 "built_in_tools": {
                     "end_call": null,
+                    "flag_issue_for_review": null,
                     "language_detection": null,
                     "memory_entry_search": null,
                     "play_keypad_touch_tone": null,
-                    "request_help": null,
                     "run_subagent": null,
                     "skip_turn": null,
                     "transfer_to_agent": null,
@@ -62,6 +62,9 @@
                     "query_rewrite_prompt_override": null
                 },
                 "reasoning_effort": null,
+                "rich_content": {
+                    "enabled_components": []
+                },
                 "service_tier": "standard",
                 "speech_engine": null,
                 "temperature": 0.0,
@@ -78,6 +81,7 @@
                             "content_type": "application/json",
                             "kind": "webhook",
                             "method": "POST",
+                            "mtls_auth_connection": null,
                             "path_params_schema": {},
                             "query_params_schema": null,
                             "request_body_schema": {
@@ -398,7 +402,8 @@
             "apply_to_existing_conversations": false,
             "conversation_history_redaction": {
                 "enabled": false,
-                "entities": []
+                "entities": [],
+                "excluded_data_collection_ids": []
             },
             "delete_audio": false,
             "delete_transcript_and_pii": false,
@@ -407,7 +412,7 @@
             "retention_days": -1,
             "user_memory": {
                 "enabled": false,
-                "scale": "some"
+                "scale": "balanced"
             },
             "zero_retention_mode": false
         },
@@ -547,8 +552,12 @@
                 "main_label": null,
                 "mute_microphone": null,
                 "new_call": null,
+                "queue_timed_out": null,
+                "queue_waiting_status": null,
+                "queue_waiting_status_short": null,
                 "remove_file": null,
                 "request_follow_up_feedback": null,
+                "rich_content_unavailable": null,
                 "send_message": null,
                 "speaking_status": null,
                 "start_call": null,
@@ -569,11 +578,19 @@
             "variant": "full"
         },
         "workspace_overrides": {
+            "cloud_storage_export": {
+                "destination_id": null,
+                "events": [
+                    "transcript"
+                ],
+                "transcript_format": "json"
+            },
             "conversation_initiation_client_data_webhook": null,
             "webhooks": {
                 "events": [
                     "transcript"
                 ],
+                "exclude_transcript": false,
                 "post_call_webhook_id": null,
                 "send_audio": false,
                 "transcript_format": "json"
