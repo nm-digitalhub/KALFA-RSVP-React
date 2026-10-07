@@ -1125,6 +1125,12 @@
       "skillPath": "plugins/stitch-design/skills/upload-to-stitch/SKILL.md",
       "computedHash": "3f9f27b6be1c3ddccc22891ae227037e836e0079a404a87f1be0ac5f0cd1de3b"
     },
+    "stop-slop": {
+      "source": "hardikpandya/stop-slop",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "617bf97d33162a6bd0da4f40a97aac589de58e5a6c9cf011ed6108992210e7cb"
+    },
     "storytelling": {
       "source": "louisblythe/salesskills",
       "sourceType": "github",
