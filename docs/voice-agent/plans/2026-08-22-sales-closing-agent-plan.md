@@ -1,5 +1,9 @@
 # KALFA — Plan: Sales-Closing Voice Agent
 
+> **הוחלף חלקית, 2026-10-07:** הנחות התמחור והנוסחים כאן (A-3, A-13, שורה (3) בגילוי המשפטי: דמי הפעלה, תוספת לכל איש קשר
+> שהגעתם אליו, חיוב בסוף הקמפיין) מתארים את המודל הישן ואינם בתוקף. הוחלף בחבילות במחיר קבוע עם מכסה.
+> המצב הנוכחי: `docs/voice-agent/plans/2026-10-07-sales-agent-package-model.md`.
+
 **Status:** planning document only. No code, no ElevenLabs/Voximplant changes.
 **Scope owner:** this plan covers the sales-closing persona ONLY. The
 inbound call-answering agent and the meeting-booking agent are separate

@@ -1,7 +1,7 @@
 {
     "type": "client",
     "name": "get_pricing",
-    "description": "קורא נתוני תמחור חיים מטבלת packages. לקרוא בכל פעם שעולה נושא מחיר/חבילה/מה כלול. לעולם לא לנחש בלי לקרוא, גם אם נדמה שזוכרים ממחיר קודם באותה שיחה. מחזיר package_name, base_price, included_reached, price_per_reached, price_with_vat.",
+    "description": "קורא את חבילות המחיר הקבוע החיות מטבלת packages. לקרוא בכל פעם שעולה נושא מחיר/חבילה/מה כלול. לעולם לא לנחש בלי לקרוא, גם אם נדמה שזוכרים ממחיר קודם באותה שיחה. מחזיר available, ואם יש חבילות: packages, רשימה שבה לכל חבילה package_name, price (מחיר סופי בשקלים, תשלום חד-פעמי, ללא מע\"מ), contact_quota (מספר אנשי הקשר שהקמפיין רשאי לפנות אליהם, בין אם השיבו ובין אם לא), channels ו-includes. אם available=false אין מחיר זמין, ואין להמציא מספר.",
     "response_timeout_secs": 28,
     "disable_interruptions": true,
     "interruption_mode": "disable_during_tool",
