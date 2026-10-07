@@ -1,29 +1,4 @@
 {
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/var/www/vhosts/kalfa.me/beta/.claude/fleet/bin/main-inbox.sh",
-            "timeout": 20,
-            "statusMessage": "בודק תיבת main של ה-fleet..."
-          }
-        ]
-      }
-    ]
-  },
-  "extraKnownMarketplaces": {
-    "postgres-skills": {
-      "source": {
-        "source": "github",
-        "repo": "neondatabase/postgres-skills"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "postgres-best-practices@postgres-skills": true
-  },
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_FLOW_V3_ENABLED": "true",
@@ -35,7 +10,8 @@
       "Bash(npx @claude-flow*)",
       "Bash(npx claude-flow*)",
       "Bash(node .claude/*)",
-      "mcp__claude-flow__*"
+      "mcp__claude-flow__*",
+      "Bash(sudo journalctl -u rdpgw *)"
     ]
   },
   "skillOverrides": {
@@ -194,5 +170,30 @@
     "win-loss-reason-extraction": "name-only",
     "written-communication": "name-only"
   },
-  "workflowSizeGuideline": "medium"
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/var/www/vhosts/kalfa.me/beta/.claude/fleet/bin/main-inbox.sh",
+            "timeout": 20,
+            "statusMessage": "בודק תיבת main של ה-fleet..."
+          }
+        ]
+      }
+    ]
+  },
+  "workflowSizeGuideline": "medium",
+  "enabledPlugins": {
+    "postgres-best-practices@postgres-skills": true
+  },
+  "extraKnownMarketplaces": {
+    "postgres-skills": {
+      "source": {
+        "source": "github",
+        "repo": "neondatabase/postgres-skills"
+      }
+    }
+  }
 }
