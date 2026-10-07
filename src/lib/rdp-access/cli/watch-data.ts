@@ -1,6 +1,5 @@
 import type { RdpEventKind } from '../events';
 import { outcomeExplains, RDP_EVENT_KINDS } from '../events';
-import type { RdpLiveTunnel } from '../gateway-client';
 import type { RdpRecentEvent } from '../queries';
 import { shortId } from './format';
 
@@ -50,15 +49,4 @@ export type HistoryLine = { time: string; message: string };
 /** Newest-first events become oldest-first lines (the screen shows the tail), each with its already formatted time. */
 export function toHistoryLines(events: readonly RdpRecentEvent[], formatTime: (iso: string) => string): HistoryLine[] {
   return [...events].reverse().map((event) => ({ time: formatTime(event.at), message: describeRecentEvent(event) }));
-}
-
-/** Live gateway connections: how many, and who from. `known: false` when the gateway could not be asked. */
-export type LiveConnections =
-  | { known: true; count: number; tunnels: readonly RdpLiveTunnel[] }
-  | { known: false };
-
-export function liveConnections(
-  result: { ok: true; value: { tunnels: readonly RdpLiveTunnel[] } } | { ok: false } | null,
-): LiveConnections {
-  return result && result.ok ? { known: true, count: result.value.tunnels.length, tunnels: result.value.tunnels } : { known: false };
 }

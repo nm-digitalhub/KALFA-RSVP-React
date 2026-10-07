@@ -12,6 +12,7 @@ import {
   hasActiveRdpGrant,
   markRdpCut,
   RdpAccessServiceError,
+  recordRdpFileFailure,
   requestRdpAccess,
   sweepRdpAccess,
 } from './service';
@@ -324,5 +325,23 @@ describe('answerRdpRequest busy outcome', () => {
       context: {},
     });
     expect(result.outcome).toBe('busy');
+  });
+});
+
+describe('recordRdpFileFailure', () => {
+  it('records a failed download as a staff event with the fixed outcome, and no tunnel', async () => {
+    const { admin, rpc } = fake({ data: null, error: null });
+    await recordRdpFileFailure(admin, { grantId: GRANT, requestId: REQUEST, clientIp: '203.0.113.7', outcome: 'timeout' });
+    expect(rpc).toHaveBeenCalledWith('rdp_record_event', {
+      p_kind: 'file_failed', p_actor_kind: 'staff', p_grant_id: GRANT, p_request_id: REQUEST,
+      p_client_ip: '203.0.113.7', p_tunnel_ref: '', p_outcome: 'timeout',
+    });
+  });
+
+  it('names the operation only when the database refuses', async () => {
+    const { admin } = fake({ data: null, error: { code: '42501', message: 'permission denied for table secret' } });
+    await expect(recordRdpFileFailure(admin, { grantId: GRANT, requestId: REQUEST, clientIp: null, outcome: 'x' })).rejects.toThrow(
+      'rdp-access: record_file_failure failed',
+    );
   });
 });

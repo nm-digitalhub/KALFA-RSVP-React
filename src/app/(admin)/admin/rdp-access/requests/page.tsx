@@ -127,8 +127,8 @@ export default async function RdpRequestsPage({ searchParams }: { searchParams: 
                 <TableCell className="whitespace-nowrap">{minutesLabel(item.grantedMinutes ?? item.requestedMinutes)}</TableCell>
                 <TableCell>
                   <ProgressDots
-                    states={stationStatesFor(item.status, item.filesIssued)}
-                    label={`${OWNER_STATUS_LABEL[item.status]}, הורדו ${item.filesIssued} קבצים`}
+                    states={stationStatesFor(item.status, { filesIssued: item.filesIssued, connected: item.connectedAt !== null })}
+                    label={`${OWNER_STATUS_LABEL[item.status]}, הורדו ${item.filesIssued} קבצים, ${item.connectedAt ? 'השער אישר חיבור' : 'לא נרשם חיבור'}`}
                   />
                 </TableCell>
                 <TableCell>

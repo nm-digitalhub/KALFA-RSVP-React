@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { isValidRdpTarget } from './policy';
+import { isTicketAccount, isValidRdpTarget, OS_ACCOUNT_PATTERN } from './policy';
 
 // Configuration for the remote-desktop gateway (rdpgw) integration, read from the process environment
 // like KALFA_CONSOLE_SECRET: set in .env.local, FAIL CLOSED when anything is missing or malformed, and
@@ -27,7 +27,6 @@ const MIN_SECRET_LENGTH = 32;
 // The OS account the gateway signs people in as. The gateway identity IS this account name (the
 // token-login chain requires the token subject to be an existing OS user), so it is configuration, not
 // a literal in code.
-const OS_USER_PATTERN = /^[a-z_][a-z0-9_.-]{0,31}$/i;
 
 // Literal loopback addresses only. The gateway itself refuses "localhost" (IPv6 resolution would
 // land on a port nobody listens on), and a hostname could be re-pointed by DNS or /etc/hosts.
@@ -110,7 +109,7 @@ export function getRdpGatewayConfig(env: Env = process.env): RdpGatewayConfigRes
   const target =
     targetRaw === null ? null : isValidRdpTarget(targetRaw) ? targetRaw : invalid(RDPGW_ENV.target);
   const gatewayUser =
-    userRaw === null ? null : OS_USER_PATTERN.test(userRaw) ? userRaw : invalid(RDPGW_ENV.user);
+    userRaw === null ? null : OS_ACCOUNT_PATTERN.test(userRaw) ? userRaw : invalid(RDPGW_ENV.user);
 
   const secrets: [RdpGatewayConfigProblem['variable'], string | null][] = [
     [RDPGW_ENV.checkSecret, checkRaw],
@@ -153,4 +152,62 @@ export function getRdpGatewayConfig(env: Env = process.env): RdpGatewayConfigRes
       adminSecret: adminSecretRaw,
     },
   };
+}
+
+// ── ticket login to the shared desktop (xrdp) ────────────────────────────────────────────────────
+
+// Two more secrets, again one per direction, both optional as a PAIR (the feature is off until both are set):
+//   RDPGW_XRDP_TICKET_SECRET  this app only: keys the MAC inside each ticket (xrdp-ticket.ts)
+//   RDPGW_XRDP_CHECK_SECRET   the PAM helper on the server -> this app: the Bearer secret of /xrdp-ticket
+// They never overlap with each other or with the three gateway secrets above.
+export const XRDP_TICKET_ENV = {
+  ticketSecret: 'RDPGW_XRDP_TICKET_SECRET',
+  checkSecret: 'RDPGW_XRDP_CHECK_SECRET',
+} as const;
+
+export type XrdpTicketConfig = {
+  ticketSecret: string;
+  checkSecret: string;
+  /** The Linux account every ticket logs into. Decided by this server's configuration, never by the file or the browser. */
+  account: string;
+};
+
+export type XrdpTicketConfigResult =
+  | { ok: true; config: XrdpTicketConfig }
+  /** Neither secret is set: ticket login is simply not enabled, and the file stays as it is today. */
+  | { ok: false; reason: 'off' }
+  /** Something is half-set or wrong. Variable NAMES only, never values. */
+  | { ok: false; reason: 'invalid'; variables: string[] };
+
+export function getXrdpTicketConfig(env: Env = process.env): XrdpTicketConfigResult {
+  const ticketRaw = env[XRDP_TICKET_ENV.ticketSecret]?.trim() || null;
+  const checkRaw = env[XRDP_TICKET_ENV.checkSecret]?.trim() || null;
+  if (ticketRaw === null && checkRaw === null) return { ok: false, reason: 'off' };
+
+  const variables: string[] = [];
+  if (ticketRaw === null || ticketRaw.length < MIN_SECRET_LENGTH) variables.push(XRDP_TICKET_ENV.ticketSecret);
+  if (checkRaw === null || checkRaw.length < MIN_SECRET_LENGTH) variables.push(XRDP_TICKET_ENV.checkSecret);
+
+  // one secret per direction: reusing a value across directions defeats the separation
+  const others = [RDPGW_ENV.checkSecret, RDPGW_ENV.connectSecret, RDPGW_ENV.adminSecret]
+    .map((name) => env[name]?.trim())
+    .filter((value): value is string => Boolean(value));
+  const name = (variable: string) => {
+    if (!variables.includes(variable)) variables.push(variable);
+  };
+  if (ticketRaw !== null && others.includes(ticketRaw)) name(XRDP_TICKET_ENV.ticketSecret);
+  if (checkRaw !== null && others.includes(checkRaw)) name(XRDP_TICKET_ENV.checkSecret);
+  // the two ticket secrets must differ from each other, and neither of them is the "right" one to blame
+  if (ticketRaw !== null && ticketRaw === checkRaw) {
+    name(XRDP_TICKET_ENV.ticketSecret);
+    name(XRDP_TICKET_ENV.checkSecret);
+  }
+
+  const account = env[RDPGW_ENV.user]?.trim() || null;
+  if (account === null || !isTicketAccount(account)) variables.push(RDPGW_ENV.user);
+
+  if (variables.length > 0 || ticketRaw === null || checkRaw === null || account === null) {
+    return { ok: false, reason: 'invalid', variables };
+  }
+  return { ok: true, config: { ticketSecret: ticketRaw, checkSecret: checkRaw, account } };
 }

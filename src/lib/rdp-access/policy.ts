@@ -44,9 +44,18 @@ export function isValidRdpTarget(value: string): boolean {
   return port >= RDP_PORT_MIN && port <= RDP_PORT_MAX;
 }
 
+/**
+ * How long a downloaded connection file stays usable: the gateway's access token expires 5 minutes after it is issued
+ * (`time.Minute * 5` in cmd/rdpgw/security/jwt.go of the pinned commit, not configurable). It mirrors the gateway source,
+ * not the database; ops/rdpgw/PINNED_COMMIT says which source.
+ */
+export const RDP_FILE_VALID_MINUTES = 5;
+
 /** Hard size caps for the two payloads the application parses from the gateway side. */
 export const RDP_GATEWAY_CHECK_BODY_MAX_BYTES = 4096;
 export const RDP_FILE_MAX_BYTES = 16_384;
+/** The desktop's login helper sends a ticket and an account name; nothing near this size is legitimate. */
+export const RDP_XRDP_TICKET_BODY_MAX_BYTES = 1024;
 
 /**
  * Disconnect bookkeeping. A grant counts as cut only after TWO successful gateway disconnects at least
@@ -59,3 +68,16 @@ export const RDP_CUT_WINDOW_HOURS = 24;
 
 /** The gateway check route must answer inside this budget or the gateway treats it as a refusal. */
 export const RDP_GATEWAY_CHECK_TIMEOUT_MS = 2500;
+/** The login helper gives up after 2 s; answering later than this is the same as refusing. */
+export const RDP_XRDP_TICKET_TIMEOUT_MS = 1500;
+
+/**
+ * A Linux account name: what an OS user name may look like. The gateway identity (RDPGW_USER) and the account a
+ * desktop ticket logs into are both checked against it.
+ */
+export const OS_ACCOUNT_PATTERN = /^[a-z_][a-z0-9_.-]{0,31}$/i;
+
+/** A Linux account this app may log a ticket into: well formed, and never root. */
+export function isTicketAccount(value: string): boolean {
+  return OS_ACCOUNT_PATTERN.test(value) && value.toLowerCase() !== 'root';
+}

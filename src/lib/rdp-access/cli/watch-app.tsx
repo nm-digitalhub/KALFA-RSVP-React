@@ -1,5 +1,4 @@
 import { render, useApp, useInput, useStdout, useWindowSize } from 'ink';
-import { formatIsraelTimeSeconds } from '@/lib/date';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   countRdpRequestsSince, getActiveRdpGrant, listRdpRequestExtras, listRdpRequests, listRecentRdpEvents, nameMap, RdpQueryError,
@@ -8,7 +7,13 @@ import {
 import { cmdApprove, cmdDeny, cmdRevoke, EXIT, type CliContext, type ExitCode } from './commands';
 import { WatchView, type ActivityLine } from './watch-view';
 import { CLI_TEXT } from './text';
-import { liveConnections, toHistoryLines, type HistoryLine, type LiveConnections } from './watch-data';
+import { clock } from './format';
+import { toHistoryLines, type HistoryLine } from './watch-data';
+import {
+  connectionRows, createSerialRunner, handleConnectionsKey, INITIAL_CONNECTIONS, INITIAL_CONNECTIONS_VIEW, nextConnectionsState,
+  type ConnectionsState, type ConnectionsViewState,
+} from './connections-state';
+import { connectionDetailLines } from './watch-connections';
 import {
   clampSelected, handleWatchKey, hasNewRequest, INITIAL_WATCH_STATE,
   type WatchEffect, type WatchState,
@@ -19,11 +24,11 @@ const HISTORY_EVENTS = 6;
 const EXPIRED_WINDOW_MS = 24 * 3_600_000;
 type Snapshot = {
   rows: RdpRequestSummary[]; names: Map<string, string>; grant: RdpGrantSummary | null; error: string | null; loadedAt: string | null;
-  expired24h: number; extras: Map<string, RdpRequestExtras>; history: HistoryLine[]; live: LiveConnections;
+  expired24h: number; extras: Map<string, RdpRequestExtras>; history: HistoryLine[];
 };
 const EMPTY: Snapshot = {
   rows: [], names: new Map(), grant: null, error: null, loadedAt: null,
-  expired24h: 0, extras: new Map(), history: [], live: { known: false },
+  expired24h: 0, extras: new Map(), history: [],
 };
 
 function WatchApp({ ctx, intervalMs }: { ctx: CliContext; intervalMs: number }) {
@@ -38,63 +43,101 @@ function WatchApp({ ctx, intervalMs }: { ctx: CliContext; intervalMs: number }) 
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const snapshotRef = useRef(EMPTY);
-  const [tick, setTick] = useState(0);
-  const refresh = useCallback(() => setTick((t) => t + 1), []);
-  const push = useCallback((line: string) => setLog((prev) => [...prev, { time: formatIsraelTimeSeconds(ctx.now()), message: line }].slice(-LOG_LINES)), [ctx]);
+  const [view, setView] = useState<'requests' | 'connections'>('requests');
+  const [connections, setConnections] = useState<ConnectionsState>(INITIAL_CONNECTIONS);
+  const [connectionNames, setConnectionNames] = useState<Map<string, string>>(new Map());
+  const [connView, setConnView] = useState<ConnectionsViewState>(INITIAL_CONNECTIONS_VIEW);
+  // a local clock for the countdowns of the connections view: a re-render each second, never a read of the database
+  const [clockNow, setClockNow] = useState(() => ctx.now());
+  const mountedRef = useRef(true);
+  const push = useCallback((line: string) => setLog((prev) => [...prev, { time: clock(ctx.now()), message: line }].slice(-LOG_LINES)), [ctx]);
 
+  useEffect(() => () => { mountedRef.current = false; }, []);
   useEffect(() => {
-    const timer = setInterval(refresh, intervalMs);
+    if (view !== 'connections') return;
+    const timer = setInterval(() => setClockNow(ctx.now()), 1000);
     return () => clearInterval(timer);
-  }, [refresh, intervalMs]);
+  }, [ctx, view]);
 
+  // The requests half and the connections half of a refresh are independent: the database failing must not hide what
+  // the gateway says, and the gateway failing must not hide the requests.
+  const loadRequests = useCallback(async (now: Date) => {
+    try {
+      const rows0 = await listRdpRequests(ctx.admin, { status: 'pending' });
+      const [grant, events, expired24h] = await Promise.all([
+        getActiveRdpGrant(ctx.admin, now),
+        listRecentRdpEvents(ctx.admin, { limit: HISTORY_EVENTS }),
+        countRdpRequestsSince(ctx.admin, { status: 'expired', since: new Date(now.getTime() - EXPIRED_WINDOW_MS) }),
+      ]);
+      const rows = rows0.filter((r) => Date.parse(r.expires_at) > now.getTime());
+      const [names, extras] = await Promise.all([
+        nameMap(ctx.admin, [...rows.map((r) => r.requester_id), grant?.user_id ?? null]),
+        listRdpRequestExtras(ctx.admin, rows.map((r) => r.id)),
+      ]);
+      if (!mountedRef.current) return;
+      const previous = snapshotRef.current;
+      const previousIds = previous.loadedAt ? new Set(previous.rows.map((r) => r.id)) : null;
+      if (hasNewRequest(previousIds, rows)) stdout.write('\x07');
+      const next: Snapshot = {
+        rows, names, grant, error: null, loadedAt: now.toISOString(), expired24h, extras, history: toHistoryLines(events, clock),
+      };
+      snapshotRef.current = next;
+      setSnapshot(next);
+      setState((prev) => {
+        const previousId = previous.rows[prev.selected]?.id;
+        const index = rows.findIndex((r) => r.id === previousId);
+        const selected = index >= 0 ? index : clampSelected(prev.selected, rows.length);
+        const mode = prev.mode;
+        const requestGone = (mode.kind === 'approve' || mode.kind === 'deny') && !rows.some((r) => r.id === mode.requestId);
+        const grantGone = mode.kind === 'revoke' && grant?.id !== mode.grantId;
+        return { selected, mode: requestGone || grantGone ? { kind: 'list' } : mode };
+      });
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const operation = error instanceof RdpQueryError ? error.operation : 'unexpected';
+      setSnapshot((prev) => ({ ...prev, error: operation }));
+      setState((prev) => ({ ...prev, mode: { kind: 'list' } }));
+    }
+  }, [ctx, stdout]);
+
+  const loadGateway = useCallback(async (now: Date) => {
+    const nowIso = now.toISOString();
+    const gateway = ctx.api.getConfig(ctx.env);
+    if (!gateway.ok) {
+      setConnections((prev) => nextConnectionsState(prev, { gateway: 'unconfigured' }, nowIso));
+      return;
+    }
+    try {
+      const result = await ctx.api.connections(ctx.admin, () => ctx.api.listTunnels(gateway.config), now);
+      const ids = result.gateway === 'ok' ? result.connections.flatMap((c) => [c.requesterId, c.approverId]) : [];
+      // without names the screen shows short ids; it never invents a name
+      const names = ids.length ? await nameMap(ctx.admin, ids).catch((error: unknown) => {
+        if (error instanceof RdpQueryError) return new Map<string, string>();
+        throw error;
+      }) : new Map<string, string>();
+      if (!mountedRef.current) return;
+      setConnectionNames(names);
+      setConnections((prev) => nextConnectionsState(prev, result, nowIso));
+    } catch {
+      if (!mountedRef.current) return;
+      setSnapshot((prev) => ({ ...prev, error: 'connections' }));
+    }
+  }, [ctx]);
+
+  // One refresh at a time: a timer tick that finds one running is dropped, a manual refresh runs right after it, and a
+  // slow answer therefore can never land after, and overwrite, a newer one.
+  const runnerRef = useRef<ReturnType<typeof createSerialRunner> | null>(null);
   useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const now = ctx.now();
-        const gateway = ctx.api.getConfig(ctx.env);
-        const [pending, grant, events, expired24h, tunnels] = await Promise.all([
-          listRdpRequests(ctx.admin, { status: 'pending' }),
-          getActiveRdpGrant(ctx.admin, now),
-          listRecentRdpEvents(ctx.admin, { limit: HISTORY_EVENTS }),
-          countRdpRequestsSince(ctx.admin, { status: 'expired', since: new Date(now.getTime() - EXPIRED_WINDOW_MS) }),
-          // not being able to ask the gateway is a state to show (LIVE --), never a reason to stop the screen
-          gateway.ok ? ctx.api.listTunnels(gateway.config) : Promise.resolve(null),
-        ]);
-        const rows = pending.filter((r) => Date.parse(r.expires_at) > now.getTime());
-        const [names, extras] = await Promise.all([
-          nameMap(ctx.admin, [...rows.map((r) => r.requester_id), grant?.user_id ?? null]),
-          listRdpRequestExtras(ctx.admin, rows.map((r) => r.id)),
-        ]);
-        if (cancelled) return;
-        const previous = snapshotRef.current;
-        const previousIds = previous.loadedAt ? new Set(previous.rows.map((r) => r.id)) : null;
-        if (hasNewRequest(previousIds, rows)) stdout.write('\x07');
-        const next: Snapshot = {
-          rows, names, grant, error: null, loadedAt: now.toISOString(), expired24h, extras,
-          history: toHistoryLines(events, formatIsraelTimeSeconds), live: liveConnections(tunnels),
-        };
-        snapshotRef.current = next;
-        setSnapshot(next);
-        setState((prev) => {
-          const previousId = previous.rows[prev.selected]?.id;
-          const index = rows.findIndex((r) => r.id === previousId);
-          const selected = index >= 0 ? index : clampSelected(prev.selected, rows.length);
-          const mode = prev.mode;
-          const requestGone = (mode.kind === 'approve' || mode.kind === 'deny') && !rows.some((r) => r.id === mode.requestId);
-          const grantGone = mode.kind === 'revoke' && grant?.id !== mode.grantId;
-          return { selected, mode: requestGone || grantGone ? { kind: 'list' } : mode };
-        });
-      } catch (error) {
-        if (cancelled) return;
-        const operation = error instanceof RdpQueryError ? error.operation : 'unexpected';
-        setSnapshot((prev) => ({ ...prev, error: operation }));
-        setState((prev) => ({ ...prev, mode: { kind: 'list' } }));
-      }
-    };
-    void load();
-    return () => { cancelled = true; };
-  }, [ctx, tick, stdout]);
+    const runner = createSerialRunner(async () => {
+      const now = ctx.now();
+      await Promise.all([loadRequests(now), loadGateway(now)]);
+    });
+    runnerRef.current = runner;
+    runner.refresh();
+    const timer = setInterval(runner.tick, intervalMs);
+    return () => clearInterval(timer);
+  }, [ctx, loadRequests, loadGateway, intervalMs]);
+  const refresh = useCallback(() => runnerRef.current?.refresh(), []);
 
   const actionCtx = useMemo<CliContext>(
     () => ({ ...ctx, out: push, err: push, confirm: () => Promise.resolve(true) }), [ctx, push],
@@ -122,10 +165,26 @@ function WatchApp({ ctx, intervalMs }: { ctx: CliContext; intervalMs: number }) 
     }
   }, [actionCtx, push, refresh]);
 
+  const connectionRowsNow = connectionRows(connections);
+  const connectionIds = connectionRowsNow.map((r) => r.connection.tunnelId);
+  const connectionNamesAll = useMemo(() => new Map([...snapshot.names, ...connectionNames]), [snapshot.names, connectionNames]);
+  const selectedConnection = connectionRowsNow.find((r) => r.connection.tunnelId === connView.selectedId) ?? connectionRowsNow[0];
+
   useInput((rawInput, key) => {
     const input = rawInput.toLowerCase();
+    if (view === 'connections') {
+      // read-only view: it moves, opens details, refreshes, switches and quits; no key here acts on anything
+      const lines = selectedConnection ? connectionDetailLines(selectedConnection, connections, connectionNamesAll, ctx.now()) : [];
+      const result = handleConnectionsKey(connView, connectionIds, { ...key, input }, Math.max(0, lines.length - 1));
+      setConnView(result.state);
+      if (result.effect?.kind === 'quit') exit();
+      else if (result.effect?.kind === 'refresh') refresh();
+      else if (result.effect?.kind === 'switch') setView('requests');
+      return;
+    }
     if ((key.ctrl && input === 'c') || (input === 'q' && state.mode.kind === 'list')) { exit(); return; }
     if (busyRef.current) return;
+    if ((key.tab || input === 'c') && state.mode.kind === 'list') { setView('connections'); setInspecting(false); return; }
     if ((input === 'r' || input === 'f') && state.mode.kind === 'list') { refresh(); return; }
     if (key.escape && inspecting) { setInspecting(false); return; }
     if ((input === 'i' || key.return) && state.mode.kind === 'list') { setInspecting((prev) => !prev); return; }
@@ -151,7 +210,7 @@ function WatchApp({ ctx, intervalMs }: { ctx: CliContext; intervalMs: number }) 
     else if (result.effect) void perform(result.effect);
   });
 
-  const { rows, names, grant, error } = snapshot;
+  const { rows, grant, error } = snapshot;
   const selected = clampSelected(state.selected, rows.length);
   const mode = state.mode;
   const chosen = mode.kind === 'approve' || mode.kind === 'deny'
@@ -160,8 +219,9 @@ function WatchApp({ ctx, intervalMs }: { ctx: CliContext; intervalMs: number }) 
   const config = ctx.api.getConfig(ctx.env);
   return <WatchView
     columns={size.columns} terminalRows={size.rows} hostname={ctx.host.hostname}
-    now={ctx.now()} requests={rows} names={names} selected={selected} chosen={chosen}
-    active={active} expired24h={snapshot.expired24h} extras={snapshot.extras} live={snapshot.live} history={snapshot.history}
+    now={view === 'connections' ? clockNow : ctx.now()} requests={rows} names={connectionNamesAll} selected={selected} chosen={chosen}
+    active={active} expired24h={snapshot.expired24h} extras={snapshot.extras} history={snapshot.history}
+    view={view} connections={connections} connectionsView={connView}
     identity={config.ok ? config.config.gatewayUser : null} route={config.ok ? 'RD Gateway' : null}
     target={config.ok ? config.config.target : null} loaded={snapshot.loadedAt !== null}
     error={error} busy={busy} intervalSeconds={intervalMs / 1000}

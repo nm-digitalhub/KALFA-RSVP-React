@@ -6,6 +6,11 @@ import {
   countRdpRequestsSince,
   getRdpGrantRequestId,
   getRdpRequestOwnerExtras,
+  listFirstGatewayAllows,
+  listGatewayAllows,
+  listGrantsByIds,
+  listRequestsByIds,
+  listTunnelTraces,
   listRdpRequestExtras,
   listRecentRdpEvents,
   listRdpRequestsPage,
@@ -91,27 +96,29 @@ describe('getRdpGrantRequestId and getRdpRequestOwnerExtras', () => {
   });
 
   it('returns the address and the note, treating a non-text inet value as unknown', async () => {
-    expect(await getRdpRequestOwnerExtras(fakeAdmin([{ data: [{ id: 'r', request_ip: '203.0.113.7', answer_note: 'בדיקת שער' }] }]).admin, 'r')).toEqual({
+    expect(await getRdpRequestOwnerExtras(fakeAdmin([{ data: [{ id: 'r', request_ip: '203.0.113.7', answer_note: 'בדיקת שער', answered_by: 'owner-1' }] }]).admin, 'r')).toEqual({
       requestIp: '203.0.113.7',
       answerNote: 'בדיקת שער',
+      answeredBy: 'owner-1',
     });
-    expect(await getRdpRequestOwnerExtras(fakeAdmin([{ data: [{ id: 'r', request_ip: null, answer_note: null }] }]).admin, 'r')).toEqual({
+    expect(await getRdpRequestOwnerExtras(fakeAdmin([{ data: [{ id: 'r', request_ip: null, answer_note: null, answered_by: null }] }]).admin, 'r')).toEqual({
       requestIp: null,
       answerNote: null,
+      answeredBy: null,
     });
-    expect(await getRdpRequestOwnerExtras(fakeAdmin([{ data: [] }]).admin, 'r')).toEqual({ requestIp: null, answerNote: null });
+    expect(await getRdpRequestOwnerExtras(fakeAdmin([{ data: [] }]).admin, 'r')).toEqual({ requestIp: null, answerNote: null, answeredBy: null });
   });
 });
 
 describe('listRdpRequestExtras', () => {
   it('reads every requested row in one query and keys them by id', async () => {
     const { admin, calls } = fakeAdmin([
-      { data: [{ id: 'a', request_ip: '203.0.113.7', answer_note: null }, { id: 'b', request_ip: 42, answer_note: 'x' }] },
+      { data: [{ id: 'a', request_ip: '203.0.113.7', answer_note: null, answered_by: 'o' }, { id: 'b', request_ip: 42, answer_note: 'x', answered_by: null }] },
     ]);
     const extras = await listRdpRequestExtras(admin, ['a', 'b']);
     expect(calls.filter((c) => c.method === 'in')).toEqual([{ table: 'rdp_access_requests', method: 'in', args: ['id', ['a', 'b']] }]);
-    expect(extras.get('a')).toEqual({ requestIp: '203.0.113.7', answerNote: null });
-    expect(extras.get('b')).toEqual({ requestIp: null, answerNote: 'x' });
+    expect(extras.get('a')).toEqual({ requestIp: '203.0.113.7', answerNote: null, answeredBy: 'o' });
+    expect(extras.get('b')).toEqual({ requestIp: null, answerNote: 'x', answeredBy: null });
   });
 
   it('does not query at all for an empty list', async () => {
@@ -142,5 +149,83 @@ describe('countRdpRequestsSince', () => {
     expect(calls).toContainEqual({ table: 'rdp_access_requests', method: 'eq', args: ['status', 'expired'] });
     expect(calls).toContainEqual({ table: 'rdp_access_requests', method: 'gte', args: ['created_at', since.toISOString()] });
     expect(await countRdpRequestsSince(fakeAdmin([{ data: null, count: null }]).admin, { status: 'expired', since })).toBe(0);
+  });
+});
+
+describe('listFirstGatewayAllows', () => {
+  it('asks once for the allowed gateway checks of the grants, oldest first, and keeps the first per grant', async () => {
+    const { admin, calls } = fakeAdmin([
+      { data: [{ grant_id: 'g1', at: 't1' }, { grant_id: 'g2', at: 't2' }, { grant_id: 'g1', at: 't3' }, { grant_id: null, at: 't0' }] },
+    ]);
+    const first = await listFirstGatewayAllows(admin, ['g1', 'g2', 'g3']);
+    expect(calls).toContainEqual({ table: 'rdp_access_events', method: 'eq', args: ['kind', 'tunnel_check'] });
+    expect(calls).toContainEqual({ table: 'rdp_access_events', method: 'eq', args: ['outcome', 'allow'] });
+    expect(calls).toContainEqual({ table: 'rdp_access_events', method: 'in', args: ['grant_id', ['g1', 'g2', 'g3']] });
+    expect(calls).toContainEqual({ table: 'rdp_access_events', method: 'order', args: ['at', { ascending: true }] });
+    expect([...first]).toEqual([['g1', 't1'], ['g2', 't2']]);
+  });
+
+  it('does not query for no grants, and a database error names the operation only', async () => {
+    const none = fakeAdmin([]);
+    expect((await listFirstGatewayAllows(none.admin, [])).size).toBe(0);
+    expect(none.calls).toHaveLength(0);
+    await expect(listFirstGatewayAllows(fakeAdmin([{ data: null, error: { message: 'boom: secret' } }]).admin, ['g'])).rejects.toThrow(
+      'rdp-access: list_gateway_allows failed',
+    );
+  });
+});
+
+describe('listTunnelTraces', () => {
+  it('returns every allowed check of each tunnel, oldest first, so a tunnel under two grants stays visible', async () => {
+    const { admin, calls } = fakeAdmin([
+      {
+        data: [
+          { tunnel_ref: 't1', grant_id: 'g1', request_id: 'r1', at: 'a' },
+          { tunnel_ref: 't1', grant_id: 'g2', request_id: 'r2', at: 'b' },
+          { tunnel_ref: 't2', grant_id: 'g1', request_id: null, at: 'c' },
+          { tunnel_ref: null, grant_id: 'g1', request_id: 'r1', at: 'd' },
+          { tunnel_ref: 't3', grant_id: null, request_id: null, at: 'e' },
+        ],
+      },
+    ]);
+    const traces = await listTunnelTraces(admin, ['t1', 't2', 't3']);
+    expect(calls).toContainEqual({ table: 'rdp_access_events', method: 'eq', args: ['kind', 'tunnel_check'] });
+    expect(calls).toContainEqual({ table: 'rdp_access_events', method: 'eq', args: ['outcome', 'allow'] });
+    expect(calls).toContainEqual({ table: 'rdp_access_events', method: 'in', args: ['tunnel_ref', ['t1', 't2', 't3']] });
+    expect(traces.get('t1')!.map((t) => t.grantId)).toEqual(['g1', 'g2']);
+    expect(traces.get('t2')).toEqual([{ tunnelId: 't2', grantId: 'g1', requestId: null, at: 'c' }]);
+    expect(traces.has('t3')).toBe(false); // an allowed check with no grant on it is no attribution
+  });
+
+  it('does not query for no tunnels, and a database error names the operation only', async () => {
+    const none = fakeAdmin([]);
+    expect((await listTunnelTraces(none.admin, [])).size).toBe(0);
+    expect(none.calls).toHaveLength(0);
+    await expect(listTunnelTraces(fakeAdmin([{ data: null, error: { message: 'boom: secret' } }]).admin, ['t'])).rejects.toThrow('rdp-access: list_tunnel_traces failed');
+  });
+});
+
+describe('listGatewayAllows', () => {
+  it('groups the allowed checks by grant, oldest first', async () => {
+    const { admin } = fakeAdmin([{ data: [{ grant_id: 'g1', at: 'a' }, { grant_id: 'g2', at: 'b' }, { grant_id: 'g1', at: 'c' }, { grant_id: null, at: 'd' }] }]);
+    expect([...(await listGatewayAllows(admin, ['g1', 'g2']))]).toEqual([['g1', ['a', 'c']], ['g2', ['b']]]);
+  });
+});
+
+describe('listGrantsByIds / listRequestsByIds', () => {
+  it('reads the rows by id in one query each and keys them, and skips the query for no ids', async () => {
+    const grants = fakeAdmin([{ data: [{ id: 'g1', status: 'active' }, { id: 'g2', status: 'revoked' }] }]);
+    const byId = await listGrantsByIds(grants.admin, ['g1', 'g2']);
+    expect(grants.calls).toContainEqual({ table: 'rdp_access_grants', method: 'in', args: ['id', ['g1', 'g2']] });
+    expect([...byId.keys()]).toEqual(['g1', 'g2']);
+
+    const requests = fakeAdmin([{ data: [{ id: 'r1' }] }]);
+    expect([...(await listRequestsByIds(requests.admin, ['r1'])).keys()]).toEqual(['r1']);
+    expect(requests.calls).toContainEqual({ table: 'rdp_access_requests', method: 'in', args: ['id', ['r1']] });
+
+    const none = fakeAdmin([]);
+    expect((await listGrantsByIds(none.admin, [])).size).toBe(0);
+    expect((await listRequestsByIds(none.admin, [])).size).toBe(0);
+    expect(none.calls).toHaveLength(0);
   });
 });

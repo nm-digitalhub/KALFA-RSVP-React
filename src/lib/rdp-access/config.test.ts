@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-import { getRdpGatewayConfig, RDPGW_ENV } from './config';
+import { getRdpGatewayConfig, getXrdpTicketConfig, RDPGW_ENV, XRDP_TICKET_ENV } from './config';
+import { isTicketAccount } from './policy';
 
 // 32+ characters each, all different: one secret per direction.
 const SECRET_CHECK = 'c'.repeat(40);
@@ -99,5 +100,49 @@ describe('getRdpGatewayConfig', () => {
     for (const secret of [SECRET_CHECK, SECRET_CONNECT, SECRET_ADMIN]) {
       expect(serialized).not.toContain(secret);
     }
+  });
+});
+
+describe('getXrdpTicketConfig', () => {
+  const TICKET = 't'.repeat(40);
+  const CHECK = 'x'.repeat(40);
+  const BOTH = { ...VALID, RDPGW_XRDP_TICKET_SECRET: TICKET, RDPGW_XRDP_CHECK_SECRET: CHECK };
+
+  it('is simply off while neither secret is set, so the file stays as it is today', () => {
+    expect(getXrdpTicketConfig(VALID)).toEqual({ ok: false, reason: 'off' });
+    expect(getXrdpTicketConfig({ ...VALID, RDPGW_XRDP_TICKET_SECRET: ' ', RDPGW_XRDP_CHECK_SECRET: '' })).toEqual({ ok: false, reason: 'off' });
+  });
+
+  it('is on with both secrets and the account taken from the server configuration', () => {
+    expect(getXrdpTicketConfig(BOTH)).toEqual({ ok: true, config: { ticketSecret: TICKET, checkSecret: CHECK, account: 'desktopuser' } });
+  });
+
+  it('names the variable (never the value) when only one secret is set', () => {
+    expect(getXrdpTicketConfig({ ...VALID, RDPGW_XRDP_TICKET_SECRET: TICKET })).toEqual({ ok: false, reason: 'invalid', variables: [XRDP_TICKET_ENV.checkSecret] });
+    expect(getXrdpTicketConfig({ ...VALID, RDPGW_XRDP_CHECK_SECRET: CHECK })).toEqual({ ok: false, reason: 'invalid', variables: [XRDP_TICKET_ENV.ticketSecret] });
+  });
+
+  it('refuses short secrets and a secret reused from another direction or from the other ticket secret', () => {
+    expect(getXrdpTicketConfig({ ...BOTH, RDPGW_XRDP_TICKET_SECRET: 'short' })).toMatchObject({ ok: false, variables: [XRDP_TICKET_ENV.ticketSecret] });
+    expect(getXrdpTicketConfig({ ...BOTH, RDPGW_XRDP_TICKET_SECRET: SECRET_CHECK })).toMatchObject({ ok: false, variables: [XRDP_TICKET_ENV.ticketSecret] });
+    expect(getXrdpTicketConfig({ ...BOTH, RDPGW_XRDP_CHECK_SECRET: SECRET_ADMIN })).toMatchObject({ ok: false, variables: [XRDP_TICKET_ENV.checkSecret] });
+    expect(getXrdpTicketConfig({ ...BOTH, RDPGW_XRDP_CHECK_SECRET: TICKET })).toMatchObject({
+      ok: false,
+      variables: [XRDP_TICKET_ENV.ticketSecret, XRDP_TICKET_ENV.checkSecret],
+    });
+  });
+
+  it('never logs a secret into an account: a missing, malformed or root account is invalid', () => {
+    for (const account of ['', 'root', 'ROOT', 'bad name', '-x', 'a'.repeat(40)]) {
+      const result = getXrdpTicketConfig({ ...BOTH, RDPGW_USER: account });
+      expect(result, account).toMatchObject({ ok: false, reason: 'invalid', variables: [RDPGW_ENV.user] });
+    }
+    expect(isTicketAccount('kalfa.me')).toBe(true);
+    expect(isTicketAccount('root')).toBe(false);
+  });
+
+  it('carries no secret value in a refusal', () => {
+    const result = getXrdpTicketConfig({ ...BOTH, RDPGW_XRDP_TICKET_SECRET: 'short-secret-value' });
+    expect(JSON.stringify(result)).not.toContain('short-secret-value');
   });
 });

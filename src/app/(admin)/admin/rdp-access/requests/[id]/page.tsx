@@ -33,9 +33,14 @@ function stationHints(d: RdpOwnerDetail): readonly [string, string, string, stri
   const approval =
     d.status === 'pending' ? 'ממתין להחלטה' : d.answeredAt ? formatIsraelTime(d.answeredAt) : OWNER_STATUS_LABEL[d.status];
   const file = d.grant ? `הורד ${d.grant.filesIssued} מתוך ${d.grant.maxFiles}` : 'לא הורד';
-  const end = d.grant?.endedAt
-    ? `${d.grant.endedReason ? (ENDED_REASON_TEXT[d.grant.endedReason] ?? OWNER_STATUS_LABEL[d.status]) : OWNER_STATUS_LABEL[d.status]} ${formatIsraelTime(d.grant.endedAt)}`
-    : OWNER_STATUS_LABEL[d.status];
+  // the fourth station is what the gateway recorded, not what the grant implies
+  const end = d.connectedAt
+    ? `השער אישר חיבור ב-${formatIsraelTime(d.connectedAt)}`
+    : d.grant?.endedAt
+      ? `לא נרשם חיבור · ${d.grant.endedReason ? (ENDED_REASON_TEXT[d.grant.endedReason] ?? OWNER_STATUS_LABEL[d.status]) : OWNER_STATUS_LABEL[d.status]} ${formatIsraelTime(d.grant.endedAt)}`
+      : d.grant
+        ? 'עוד לא נרשם חיבור'
+        : OWNER_STATUS_LABEL[d.status];
   return [formatIsraelTime(d.createdAt), approval, file, end];
 }
 
@@ -82,7 +87,7 @@ export default async function RdpRequestDetailPage({ params }: { params: Promise
         <Badge variant={STATUS_BADGE[detail.status]}>{OWNER_STATUS_LABEL[detail.status]}</Badge>
       </div>
 
-      <AccessTrack states={stationStatesFor(detail.status, detail.grant?.filesIssued ?? 0)} hints={stationHints(detail)} />
+      <AccessTrack states={stationStatesFor(detail.status, { filesIssued: detail.grant?.filesIssued ?? 0, connected: detail.connectedAt !== null })} hints={stationHints(detail)} />
 
       <section aria-labelledby="rdp-detail-facts" className="flex flex-col gap-4 rounded-2xl border border-border bg-muted/30 p-5 sm:p-6">
         <h2 id="rdp-detail-facts" className="text-lg font-bold">

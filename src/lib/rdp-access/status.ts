@@ -31,20 +31,36 @@ export type StationState = 'done' | 'current' | 'waiting' | 'upcoming' | 'stoppe
 export type StationStates = readonly [StationState, StationState, StationState, StationState];
 
 /**
- * `connected` is INFERRED, not measured: nothing in the grant row says a tunnel was opened (the gateway reports that
- * only through the audit trail), so it is shown as reached only because a connection file was downloaded.
+ * `connected` is the one station the grant row cannot tell: the gateway reports it only through the audit trail. It is
+ * lit ONLY when the gateway has recorded an allowed tunnel for the grant (see firstGatewayAllow), never because a file
+ * was downloaded: a download does not mean the file was opened.
  */
-export function stationStatesFor(status: RdpDisplayStatus, filesIssued: number): StationStates {
+export function stationStatesFor(status: RdpDisplayStatus, trace: { filesIssued: number; connected: boolean }): StationStates {
   switch (status) {
     case 'pending':
       return ['done', 'waiting', 'upcoming', 'upcoming'];
     case 'active':
-      return filesIssued > 0 ? ['done', 'done', 'done', 'current'] : ['done', 'done', 'current', 'upcoming'];
+      return trace.connected ? ['done', 'done', 'done', 'current'] : ['done', 'done', 'current', 'upcoming'];
     case 'ended':
-      return filesIssued > 0 ? ['done', 'done', 'done', 'done'] : ['done', 'done', 'stopped', 'upcoming'];
+      if (trace.connected) return ['done', 'done', 'done', 'done'];
+      return trace.filesIssued > 0 ? ['done', 'done', 'done', 'stopped'] : ['done', 'done', 'stopped', 'upcoming'];
     case 'denied':
     case 'expired':
     case 'cancelled':
       return ['done', 'stopped', 'upcoming', 'upcoming'];
   }
+}
+
+/**
+ * When the gateway first allowed a tunnel for a grant: the one measured trace of a connection (the gateway asks the
+ * app once per new tunnel, and the app logs `tunnel_check` with outcome `allow`). Null when it never did. `events` may
+ * be in any order.
+ */
+export function firstGatewayAllow(events: readonly { at: string; kind: string; outcome: string | null }[]): string | null {
+  let first: string | null = null;
+  for (const event of events) {
+    if (event.kind !== 'tunnel_check' || event.outcome !== 'allow') continue;
+    if (first === null || Date.parse(event.at) < Date.parse(first)) first = event.at;
+  }
+  return first;
 }

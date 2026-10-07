@@ -77,8 +77,10 @@ function build(overrides: Partial<MockApi> = {}, confirm = true) {
     markCut: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn().mockResolvedValue({ ok: true, value: { closed: 0 } }),
     listTunnels: vi.fn().mockResolvedValue({ ok: true, value: { tunnels: [] } }),
+    connections: vi.fn().mockResolvedValue({ gateway: 'ok', attribution: 'ok', connections: [] }),
     notify: vi.fn().mockResolvedValue(undefined),
     getConfig: vi.fn().mockReturnValue(CONFIG),
+    getTicketConfig: vi.fn().mockReturnValue({ ok: false, reason: 'off' }),
     ...overrides,
   };
   const confirmFn = vi.fn().mockResolvedValue(confirm);
@@ -388,6 +390,21 @@ describe('read-only commands', () => {
     const text = out.join('\n');
     expect(text).toContain('בקשות ממתינות: 2');
     expect(text).not.toContain('c'.repeat(40));
+  });
+
+  it('says whether ticket login is on, off or half-set, by variable name and never by value', async () => {
+    const off = build();
+    await cmdStatus(off.ctx);
+    expect(off.out.join('\n')).toContain('כניסה לשולחן עם כרטיס: כבויה');
+
+    const on = build({ getTicketConfig: vi.fn().mockReturnValue({ ok: true, config: { ticketSecret: 't'.repeat(40), checkSecret: 'k'.repeat(40), account: 'desktopuser' } }) });
+    await cmdStatus(on.ctx);
+    expect(on.out.join('\n')).toContain('כניסה לשולחן עם כרטיס: מוגדרת');
+    expect(on.out.join('\n')).not.toMatch(/t{40}|k{40}/);
+
+    const broken = build({ getTicketConfig: vi.fn().mockReturnValue({ ok: false, reason: 'invalid', variables: ['RDPGW_XRDP_CHECK_SECRET'] }) });
+    await cmdStatus(broken.ctx);
+    expect(broken.out.join('\n')).toContain('RDPGW_XRDP_CHECK_SECRET');
   });
 
   it('lists the failing gateway variables by name in the status', async () => {

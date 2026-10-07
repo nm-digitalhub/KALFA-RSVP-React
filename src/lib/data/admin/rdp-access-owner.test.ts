@@ -12,6 +12,7 @@ const queries = {
   getActiveRdpGrant: vi.fn(),
   getRdpRequestDetail: vi.fn(),
   getRdpRequestOwnerExtras: vi.fn(),
+  listFirstGatewayAllows: vi.fn(),
   listRdpRequestsPage: vi.fn(),
   nameMap: vi.fn(),
 };
@@ -20,6 +21,7 @@ vi.mock('@/lib/rdp-access/queries', () => ({
   getActiveRdpGrant: (...a: unknown[]) => queries.getActiveRdpGrant(...a),
   getRdpRequestDetail: (...a: unknown[]) => queries.getRdpRequestDetail(...a),
   getRdpRequestOwnerExtras: (...a: unknown[]) => queries.getRdpRequestOwnerExtras(...a),
+  listFirstGatewayAllows: (...a: unknown[]) => queries.listFirstGatewayAllows(...a),
   listRdpRequestsPage: (...a: unknown[]) => queries.listRdpRequestsPage(...a),
   nameMap: (...a: unknown[]) => queries.nameMap(...a),
 }));
@@ -39,6 +41,7 @@ beforeEach(() => {
   createAdminClient.mockClear();
   requirePlatformOwner.mockResolvedValue({ id: 'owner' });
   queries.nameMap.mockResolvedValue(new Map([[USER, 'יוסי כהן']]));
+  queries.listFirstGatewayAllows.mockResolvedValue(new Map());
 });
 
 describe('the owner module gates every export on requirePlatformOwner, before any read', () => {
@@ -79,10 +82,11 @@ describe('listRdpAccessRequests', () => {
       total: 3,
       rows: [
         { ...base, id: 'a', status: 'pending', grant: null },
-        { ...base, id: 'b', status: 'approved', granted_minutes: 5, grant: { status: 'active', expires_at: '2999-01-01T00:00:00.000Z', files_issued: 4, max_files: 20 } },
-        { ...base, id: 'c', status: 'approved', granted_minutes: 5, grant: { status: 'revoked', expires_at: '2999-01-01T00:00:00.000Z', files_issued: 1, max_files: 20 } },
+        { ...base, id: 'b', status: 'approved', granted_minutes: 5, grant: { id: 'gb', status: 'active', expires_at: '2999-01-01T00:00:00.000Z', files_issued: 4, max_files: 20 } },
+        { ...base, id: 'c', status: 'approved', granted_minutes: 5, grant: { id: 'gc', status: 'revoked', expires_at: '2999-01-01T00:00:00.000Z', files_issued: 1, max_files: 20 } },
       ],
     });
+    queries.listFirstGatewayAllows.mockResolvedValue(new Map([['gb', '2026-10-07T00:00:09.000Z']]));
     const result = await listRdpAccessRequests({ filter: 'all', page: 2 });
     expect(queries.listRdpRequestsPage).toHaveBeenCalledWith({ admin: true }, expect.objectContaining({ filter: 'all', page: 2, pageSize: RDP_OWNER_PAGE_SIZE }));
     expect(result.total).toBe(3);
@@ -91,6 +95,9 @@ describe('listRdpAccessRequests', () => {
       ['b', 'active', 4, 'יוסי כהן'],
       ['c', 'ended', 1, 'יוסי כהן'],
     ]);
+    // the connection comes from the gateway's own trace, one batch query for the grants on the page
+    expect(queries.listFirstGatewayAllows).toHaveBeenCalledWith({ admin: true }, ['gb', 'gc']);
+    expect(result.items.map((i) => i.connectedAt)).toEqual([null, '2026-10-07T00:00:09.000Z', null]);
   });
 });
 
@@ -111,7 +118,10 @@ describe('getRdpAccessRequestDetail', () => {
         id: 'g', status: 'revoked', target: 'desktop.example.test:3389', starts_at: '2026-10-07T00:00:07.000Z', expires_at: '2026-10-07T00:05:07.000Z',
         ended_at: '2026-10-07T00:00:12.000Z', ended_reason: 'revoked_by_owner', files_issued: 1, max_files: 20, tunnels_cut_at: '2026-10-07T00:06:19.000Z', cut_attempts: 2, last_cut_error: 'timeout',
       },
-      events: [{ at: '2026-10-07T00:00:07.000Z', kind: 'approved', actor_kind: 'owner_cli', outcome: null, detail: { secret: 1 } }],
+      events: [
+        { at: '2026-10-07T00:00:07.000Z', kind: 'approved', actor_kind: 'owner_cli', outcome: null, detail: { secret: 1 } },
+        { at: '2026-10-07T00:00:09.000Z', kind: 'tunnel_check', actor_kind: 'gateway', outcome: 'allow' },
+      ],
     });
     queries.getRdpRequestOwnerExtras.mockResolvedValue({ requestIp: '203.0.113.7', answerNote: 'בדיקת שער' });
 
@@ -124,7 +134,11 @@ describe('getRdpAccessRequestDetail', () => {
       answerNote: 'בדיקת שער',
       grantedMinutes: 5,
       grant: { target: 'desktop.example.test:3389', filesIssued: 1, maxFiles: 20, tunnelsCutAt: '2026-10-07T00:06:19.000Z', cutAttempts: 2, endedReason: 'revoked_by_owner' },
-      events: [{ at: '2026-10-07T00:00:07.000Z', kind: 'approved', actorKind: 'owner_cli', outcome: null }],
+      connectedAt: '2026-10-07T00:00:09.000Z',
+      events: [
+        { at: '2026-10-07T00:00:07.000Z', kind: 'approved', actorKind: 'owner_cli', outcome: null },
+        { at: '2026-10-07T00:00:09.000Z', kind: 'tunnel_check', actorKind: 'gateway', outcome: 'allow' },
+      ],
     });
     const serialized = JSON.stringify(detail);
     expect(serialized).not.toContain('os_user');

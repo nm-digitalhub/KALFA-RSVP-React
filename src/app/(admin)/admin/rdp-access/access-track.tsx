@@ -92,28 +92,3 @@ export function AccessTrack({ states, hints }: { states: StationStates; hints: r
     </ol>
   );
 }
-
-/** The short form the finished-request panels use: the same four stations as dots on a line, with the stop marked. */
-export function MiniTrack({ states, label }: { states: StationStates; label: string }) {
-  return (
-    <div role="img" aria-label={label} className="flex max-w-[420px] items-center">
-      {TRACK_STATIONS.map((station, index) => {
-        const state = states[index]!;
-        const previous = states[index - 1];
-        return (
-          <div key={station.id} className={cn('flex items-center', index > 0 && 'flex-1')}>
-            {index > 0 ? (
-              <span
-                aria-hidden
-                className={cn('h-1 flex-1', previous === 'done' && state !== 'upcoming' ? 'bg-primary' : 'bg-border')}
-              />
-            ) : null}
-            <span className={cn('inline-flex size-10 shrink-0 items-center justify-center rounded-full', circleClass(state === 'current' || state === 'waiting' ? 'upcoming' : state))}>
-              <Glyph id={station.id} state={state === 'current' || state === 'waiting' ? 'upcoming' : state} className="size-[18px]" />
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}

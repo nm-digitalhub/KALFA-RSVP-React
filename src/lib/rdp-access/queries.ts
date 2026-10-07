@@ -30,13 +30,14 @@ export type RdpGrantSummary = Pick<
   | 'max_files'
   | 'tunnels_cut_at'
   | 'cut_attempts'
+  | 'last_cut_error'
 >;
 export type RdpEventSummary = Pick<Tables<'rdp_access_events'>, 'at' | 'kind' | 'actor_kind' | 'outcome'>;
 
 const REQUEST_COLUMNS =
   'id, status, reason, requested_minutes, granted_minutes, requester_id, created_at, expires_at, answered_at' as const;
 const GRANT_COLUMNS =
-  'id, request_id, user_id, status, target, starts_at, expires_at, ended_at, ended_reason, files_issued, max_files, tunnels_cut_at, cut_attempts' as const;
+  'id, request_id, user_id, status, target, starts_at, expires_at, ended_at, ended_reason, files_issued, max_files, tunnels_cut_at, cut_attempts, last_cut_error' as const;
 
 export class RdpQueryError extends Error {
   constructor(readonly operation: string) {
@@ -154,11 +155,90 @@ export async function getRdpGrantRequestId(admin: AdminClient, grantId: string):
   return data[0]?.request_id ?? null;
 }
 
-export type RdpRequestExtras = { requestIp: string | null; answerNote: string | null };
+/**
+ * Every time the gateway allowed a new tunnel, per grant, oldest first. The gateway asks once per new tunnel, so a
+ * grant has only a handful of such rows.
+ */
+export async function listGatewayAllows(admin: AdminClient, grantIds: readonly string[]): Promise<Map<string, string[]>> {
+  const allows = new Map<string, string[]>();
+  if (grantIds.length === 0) return allows;
+  const { data, error } = await admin
+    .from('rdp_access_events')
+    .select('grant_id, at')
+    .eq('kind', 'tunnel_check')
+    .eq('outcome', 'allow')
+    .in('grant_id', [...grantIds])
+    .order('at', { ascending: true });
+  if (error) throw new RdpQueryError('list_gateway_allows');
+  for (const row of data) {
+    if (!row.grant_id) continue;
+    const times = allows.get(row.grant_id);
+    if (times) times.push(row.at);
+    else allows.set(row.grant_id, [row.at]);
+  }
+  return allows;
+}
+
+/** When the gateway first allowed a tunnel, per grant: the one measured trace that a connection happened. */
+export async function listFirstGatewayAllows(admin: AdminClient, grantIds: readonly string[]): Promise<Map<string, string>> {
+  const first = new Map<string, string>();
+  for (const [grantId, times] of await listGatewayAllows(admin, grantIds)) first.set(grantId, times[0]!);
+  return first;
+}
+
+export type RdpTunnelTrace = { tunnelId: string; grantId: string; requestId: string | null; at: string };
 
 /**
- * The two request fields the summary rows leave out: the address the request came from and the owner's own answer
- * note. `request_ip` is an inet column the generated types call `unknown`; it reaches here as text. One query for
+ * The gateway's allowed checks per tunnel: which grant and request each tunnel was opened under. The check's
+ * `tunnel_ref` IS the gateway's tunnel id (the same `Id` the admin API lists), verified in the pinned gateway source
+ * and in the recorded events. EVERY allowed check of a tunnel is returned, oldest first, so a caller can see a tunnel
+ * that is recorded under more than one grant instead of silently keeping the first. A tunnel with no entry has no
+ * permission on record.
+ */
+export async function listTunnelTraces(admin: AdminClient, tunnelIds: readonly string[]): Promise<Map<string, RdpTunnelTrace[]>> {
+  const traces = new Map<string, RdpTunnelTrace[]>();
+  if (tunnelIds.length === 0) return traces;
+  const { data, error } = await admin
+    .from('rdp_access_events')
+    .select('tunnel_ref, grant_id, request_id, at')
+    .eq('kind', 'tunnel_check')
+    .eq('outcome', 'allow')
+    .in('tunnel_ref', [...tunnelIds])
+    .order('at', { ascending: true });
+  if (error) throw new RdpQueryError('list_tunnel_traces');
+  for (const row of data) {
+    if (!row.tunnel_ref || !row.grant_id) continue;
+    const trace: RdpTunnelTrace = { tunnelId: row.tunnel_ref, grantId: row.grant_id, requestId: row.request_id, at: row.at };
+    const existing = traces.get(row.tunnel_ref);
+    if (existing) existing.push(trace);
+    else traces.set(row.tunnel_ref, [trace]);
+  }
+  return traces;
+}
+
+export async function listGrantsByIds(admin: AdminClient, grantIds: readonly string[]): Promise<Map<string, RdpGrantSummary>> {
+  const grants = new Map<string, RdpGrantSummary>();
+  if (grantIds.length === 0) return grants;
+  const { data, error } = await admin.from('rdp_access_grants').select(GRANT_COLUMNS).in('id', [...grantIds]);
+  if (error) throw new RdpQueryError('list_grants_by_ids');
+  for (const row of data) grants.set(row.id, row);
+  return grants;
+}
+
+export async function listRequestsByIds(admin: AdminClient, requestIds: readonly string[]): Promise<Map<string, RdpRequestSummary>> {
+  const requests = new Map<string, RdpRequestSummary>();
+  if (requestIds.length === 0) return requests;
+  const { data, error } = await admin.from('rdp_access_requests').select(REQUEST_COLUMNS).in('id', [...requestIds]);
+  if (error) throw new RdpQueryError('list_requests_by_ids');
+  for (const row of data) requests.set(row.id, row);
+  return requests;
+}
+
+export type RdpRequestExtras = { requestIp: string | null; answerNote: string | null; answeredBy: string | null };
+
+/**
+ * The request fields the summary rows leave out: the address the request came from, the owner's own answer note and
+ * who answered. `request_ip` is an inet column the generated types call `unknown`; it reaches here as text. One query for
  * any number of requests (the CLI asks for every pending row at once, the owner's detail page for one).
  */
 export async function listRdpRequestExtras(
@@ -169,13 +249,14 @@ export async function listRdpRequestExtras(
   if (requestIds.length === 0) return extras;
   const { data, error } = await admin
     .from('rdp_access_requests')
-    .select('id, request_ip, answer_note')
+    .select('id, request_ip, answer_note, answered_by')
     .in('id', [...requestIds]);
   if (error) throw new RdpQueryError('list_request_extras');
   for (const row of data) {
     extras.set(row.id, {
       requestIp: typeof row.request_ip === 'string' ? row.request_ip : null,
       answerNote: row.answer_note ?? null,
+      answeredBy: row.answered_by ?? null,
     });
   }
   return extras;
@@ -183,7 +264,7 @@ export async function listRdpRequestExtras(
 
 export async function getRdpRequestOwnerExtras(admin: AdminClient, requestId: string): Promise<RdpRequestExtras> {
   const extras = await listRdpRequestExtras(admin, [requestId]);
-  return extras.get(requestId) ?? { requestIp: null, answerNote: null };
+  return extras.get(requestId) ?? { requestIp: null, answerNote: null, answeredBy: null };
 }
 
 export type RdpRecentEvent = {

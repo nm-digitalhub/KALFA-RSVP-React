@@ -24,6 +24,7 @@ export type WatchKey = {
   rightArrow?: boolean;
   return?: boolean;
   escape?: boolean;
+  tab?: boolean;
   ctrl?: boolean;
 };
 

@@ -1,5 +1,5 @@
 import { outcomeExplains } from './events';
-import { RDP_FILE_MIN_INTERVAL_SECONDS, RDP_REQUESTS_PER_HOUR, RDP_REQUEST_TTL_MINUTES } from './policy';
+import { RDP_FILE_MIN_INTERVAL_SECONDS, RDP_FILE_VALID_MINUTES, RDP_REQUESTS_PER_HOUR, RDP_REQUEST_TTL_MINUTES } from './policy';
 import type { RdpDisplayStatus } from './status';
 
 // Every sentence of the remote-desktop screens that is not layout, kept apart from the logic so the screens can
@@ -119,8 +119,8 @@ export const ACTIVE_COPY = {
   purpose: 'מטרה',
   download: 'הורדת קובץ חיבור',
   downloading: 'מכין קובץ…',
-  fileValidity: 'הקובץ תקף 5 דקות מההורדה',
-  fileReady: 'הקובץ ירד. פתחו אותו עכשיו; הוא תקף 5 דקות.',
+  fileValidity: `הקובץ תקף ${RDP_FILE_VALID_MINUTES} דקות מההורדה`,
+  fileReady: `הקובץ ירד. פתחו אותו עכשיו; הוא תקף ${RDP_FILE_VALID_MINUTES} דקות.`,
   end: 'סיום גישה',
   shared: 'שולחן העבודה משותף.',
   sharedBody: 'חיבור שלכם ינתק את מי שמחובר אליו כרגע.',
@@ -148,12 +148,17 @@ export const ENDED_REASON_TEXT: Record<string, string> = {
   access_removed: 'ההרשאה לגישה הוסרה',
 };
 
-export const OUTCOME_COPY = {
-  denied: { title: 'הבקשה נדחתה', noteLabel: 'הערת הבעלים:' },
-  expired: { title: 'הבקשה פגה ללא מענה', body: `הבעלים לא הגיב תוך ${RDP_REQUEST_TTL_MINUTES} דקות. אפשר לשלוח בקשה חדשה.` },
-  cancelled: { title: 'הבקשה בוטלה', body: 'אפשר לשלוח בקשה חדשה בכל רגע.' },
-  ended: { title: 'הגישה הסתיימה', closed: 'החיבורים הפתוחים נסגרים. לחיבור נוסף צריך בקשה חדשה.' },
-  newRequest: 'בקשה חדשה',
+// The notice above the request form about the person's last request (outcome-notice.tsx).
+export const LAST_REQUEST_COPY = {
+  label: 'הבקשה האחרונה',
+  denied: 'נדחתה',
+  expired: 'פגה ללא מענה',
+  cancelled: 'בוטלה',
+  ended: 'הגישה האחרונה הסתיימה',
+  endedAt: 'ב-',
+  connected: 'השער אישר חיבור ב-',
+  notConnected: 'לא נרשם חיבור',
+  noteLabel: 'הערת הבעלים:',
 } as const;
 
 export function filesDownloadedText(count: number): string {

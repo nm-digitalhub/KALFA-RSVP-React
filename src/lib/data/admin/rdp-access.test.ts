@@ -26,13 +26,27 @@ vi.mock('@/lib/rdp-access/service', () => ({
 }));
 
 const getRdpGatewayConfig = vi.fn();
-vi.mock('@/lib/rdp-access/config', () => ({ getRdpGatewayConfig: () => getRdpGatewayConfig() }));
+const getXrdpTicketConfig = vi.fn();
+vi.mock('@/lib/rdp-access/config', () => ({
+  getRdpGatewayConfig: () => getRdpGatewayConfig(),
+  getXrdpTicketConfig: () => getXrdpTicketConfig(),
+}));
 const connectRdpFile = vi.fn();
 vi.mock('@/lib/rdp-access/gateway-client', () => ({ connectRdpFile: (...a: unknown[]) => connectRdpFile(...a) }));
 const getRdpGrantRequestId = vi.fn();
-vi.mock('@/lib/rdp-access/queries', () => ({ getRdpGrantRequestId: (...a: unknown[]) => getRdpGrantRequestId(...a) }));
+const listFirstGatewayAllows = vi.fn();
+vi.mock('@/lib/rdp-access/queries', () => ({
+  getRdpGrantRequestId: (...a: unknown[]) => getRdpGrantRequestId(...a),
+  listFirstGatewayAllows: (...a: unknown[]) => listFirstGatewayAllows(...a),
+}));
 const validateRdpFile = vi.fn();
-vi.mock('@/lib/rdp-access/rdp-file', () => ({ validateRdpFile: (...a: unknown[]) => validateRdpFile(...a) }));
+const addXrdpLogon = vi.fn();
+vi.mock('@/lib/rdp-access/rdp-file', () => ({
+  validateRdpFile: (...a: unknown[]) => validateRdpFile(...a),
+  addXrdpLogon: (...a: unknown[]) => addXrdpLogon(...a),
+}));
+const mintXrdpTicket = vi.fn();
+vi.mock('@/lib/rdp-access/xrdp-ticket', () => ({ mintXrdpTicket: (...a: unknown[]) => mintXrdpTicket(...a) }));
 
 import {
   cancelMyRdpRequest,
@@ -80,26 +94,27 @@ function grant(over: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
-  for (const fn of [...Object.values(service), requirePlatformPermission, createClient, getRdpGatewayConfig, connectRdpFile, getRdpGrantRequestId, validateRdpFile]) {
+  for (const fn of [...Object.values(service), requirePlatformPermission, createClient, getRdpGatewayConfig, getXrdpTicketConfig, addXrdpLogon, mintXrdpTicket, connectRdpFile, getRdpGrantRequestId, listFirstGatewayAllows, validateRdpFile]) {
     fn.mockReset();
   }
   createAdminClient.mockClear();
   requirePlatformPermission.mockResolvedValue(USER);
+  listFirstGatewayAllows.mockResolvedValue(new Map());
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
 });
 
 describe('deriveRdpAccessView', () => {
   it('is none without a request', () => {
-    expect(deriveRdpAccessView(null, null, NOW)).toEqual({ kind: 'none' });
+    expect(deriveRdpAccessView(null, null, NOW, null)).toEqual({ kind: 'none' });
   });
 
   it('shows a pending request until its own expiry, then as expired', () => {
-    expect(deriveRdpAccessView(request(), null, NOW)).toMatchObject({ kind: 'pending', requestId: REQUEST, requestedMinutes: 60 });
-    expect(deriveRdpAccessView(request({ expires_at: '2026-10-06T23:59:00.000Z' }), null, NOW)).toMatchObject({ kind: 'expired' });
+    expect(deriveRdpAccessView(request(), null, NOW, null)).toMatchObject({ kind: 'pending', requestId: REQUEST, requestedMinutes: 60 });
+    expect(deriveRdpAccessView(request({ expires_at: '2026-10-06T23:59:00.000Z' }), null, NOW, null)).toMatchObject({ kind: 'expired' });
   });
 
   it('shows the live grant with its download counter and the granted (not the requested) minutes', () => {
-    const view = deriveRdpAccessView(request({ status: 'approved', granted_minutes: 5, answered_at: '2026-10-06T23:58:00.000Z' }), grant(), NOW);
+    const view = deriveRdpAccessView(request({ status: 'approved', granted_minutes: 5, answered_at: '2026-10-06T23:58:00.000Z' }), grant(), NOW, null);
     expect(view).toEqual({
       kind: 'active',
       requestId: REQUEST,
@@ -109,23 +124,32 @@ describe('deriveRdpAccessView', () => {
       expiresAt: '2026-10-07T00:58:00.000Z',
       filesIssued: 3,
       maxFiles: 20,
+      connectedAt: null,
     });
+  });
+
+  it('carries the gateway\'s first allowed tunnel as the measured connection, on a live grant and on an ended one', () => {
+    const at = '2026-10-06T23:59:00.000Z';
+    const approved = request({ status: 'approved', granted_minutes: 60 });
+    expect(deriveRdpAccessView(approved, grant(), NOW, at)).toMatchObject({ kind: 'active', connectedAt: at });
+    expect(deriveRdpAccessView(approved, grant({ status: 'revoked', ended_at: '2026-10-07T00:10:00.000Z' }), NOW, at)).toMatchObject({ kind: 'ended', connectedAt: at });
+    expect(deriveRdpAccessView(approved, grant(), NOW, null)).toMatchObject({ connectedAt: null });
   });
 
   it('treats an approved request whose grant is over, revoked or past its end as ended', () => {
     const approved = request({ status: 'approved', granted_minutes: 60 });
-    expect(deriveRdpAccessView(approved, grant({ status: 'revoked', ended_at: '2026-10-07T00:10:00.000Z', ended_reason: 'revoked_by_owner' }), NOW))
+    expect(deriveRdpAccessView(approved, grant({ status: 'revoked', ended_at: '2026-10-07T00:10:00.000Z', ended_reason: 'revoked_by_owner' }), NOW, null))
       .toMatchObject({ kind: 'ended', endedReason: 'revoked_by_owner', endedAt: '2026-10-07T00:10:00.000Z', filesIssued: 3 });
-    expect(deriveRdpAccessView(approved, grant({ expires_at: '2026-10-06T23:59:00.000Z' }), NOW))
+    expect(deriveRdpAccessView(approved, grant({ expires_at: '2026-10-06T23:59:00.000Z' }), NOW, null))
       .toMatchObject({ kind: 'ended', endedReason: 'expired' });
-    expect(deriveRdpAccessView(approved, null, NOW)).toMatchObject({ kind: 'ended', endedReason: null, filesIssued: 0 });
+    expect(deriveRdpAccessView(approved, null, NOW, null)).toMatchObject({ kind: 'ended', endedReason: null, filesIssued: 0 });
   });
 
   it('carries the owner note of a denial and maps cancelled and expired', () => {
-    expect(deriveRdpAccessView(request({ status: 'denied', answered_at: '2026-10-07T00:01:00.000Z', answer_note: 'נא לתאם מראש' }), null, NOW))
+    expect(deriveRdpAccessView(request({ status: 'denied', answered_at: '2026-10-07T00:01:00.000Z', answer_note: 'נא לתאם מראש' }), null, NOW, null))
       .toEqual({ kind: 'denied', requestId: REQUEST, requestedMinutes: 60, answeredAt: '2026-10-07T00:01:00.000Z', note: 'נא לתאם מראש' });
-    expect(deriveRdpAccessView(request({ status: 'cancelled' }), null, NOW)).toMatchObject({ kind: 'cancelled' });
-    expect(deriveRdpAccessView(request({ status: 'expired' }), null, NOW)).toMatchObject({ kind: 'expired' });
+    expect(deriveRdpAccessView(request({ status: 'cancelled' }), null, NOW, null)).toMatchObject({ kind: 'cancelled' });
+    expect(deriveRdpAccessView(request({ status: 'expired' }), null, NOW, null)).toMatchObject({ kind: 'expired' });
   });
 });
 
@@ -207,6 +231,7 @@ describe('issueMyRdpFile', () => {
 
   beforeEach(() => {
     getRdpGatewayConfig.mockReturnValue({ ok: true, config });
+    getXrdpTicketConfig.mockReturnValue({ ok: false, reason: 'off' });
     service.beginRdpFileIssue.mockResolvedValue(reserved);
     connectRdpFile.mockResolvedValue({ ok: true, value: { text: 'raw' } });
     validateRdpFile.mockReturnValue({ ok: true, content: 'validated' });
@@ -256,5 +281,56 @@ describe('issueMyRdpFile', () => {
     expect(result).toEqual({ ok: false, reason: 'gateway_unavailable' });
     expect(JSON.stringify(result)).not.toContain('raw');
     expect(service.recordRdpFileFailure).toHaveBeenCalledWith({ admin: true }, expect.objectContaining({ outcome: 'file_forbidden_setting' }));
+  });
+
+  describe('with ticket login', () => {
+    const ticketConfig = { ticketSecret: 't'.repeat(40), checkSecret: 'k'.repeat(40), account: 'desktopuser' };
+
+    beforeEach(() => {
+      getXrdpTicketConfig.mockReturnValue({ ok: true, config: ticketConfig });
+      mintXrdpTicket.mockReturnValue('k1.minted');
+      addXrdpLogon.mockReturnValue({ ok: true, content: 'validated+logon' });
+    });
+
+    it('mints the ticket for this grant, this requester and the configured account, and adds it after validation', async () => {
+      await expect(issueMyRdpFile('203.0.113.7')).resolves.toEqual({ ok: true, content: 'validated+logon' });
+      expect(mintXrdpTicket).toHaveBeenCalledWith(
+        { secret: ticketConfig.ticketSecret, grantId: GRANT, userId: USER.id, account: 'desktopuser' },
+        expect.any(Date),
+      );
+      expect(addXrdpLogon).toHaveBeenCalledWith('validated', { account: 'desktopuser', ticket: 'k1.minted' });
+      expect(service.recordRdpFileFailure).not.toHaveBeenCalled();
+    });
+
+    it('refuses without reserving a download when the ticket login is half-configured', async () => {
+      getXrdpTicketConfig.mockReturnValue({ ok: false, reason: 'invalid', variables: ['RDPGW_XRDP_CHECK_SECRET'] });
+      await expect(issueMyRdpFile('203.0.113.7')).resolves.toEqual({ ok: false, reason: 'gateway_unavailable' });
+      expect(service.beginRdpFileIssue).not.toHaveBeenCalled();
+      expect(mintXrdpTicket).not.toHaveBeenCalled();
+    });
+
+    it('fails closed and records why when the ticket cannot be added: no ticketless file is handed out', async () => {
+      addXrdpLogon.mockReturnValue({ ok: false, reason: 'has_username' });
+      const result = await issueMyRdpFile('203.0.113.7');
+      expect(result).toEqual({ ok: false, reason: 'gateway_unavailable' });
+      expect(service.recordRdpFileFailure).toHaveBeenCalledWith({ admin: true }, expect.objectContaining({ outcome: 'logon_has_username' }));
+    });
+
+    it('does not mint a ticket when the gateway fails or its file is rejected', async () => {
+      connectRdpFile.mockResolvedValue({ ok: false, kind: 'timeout' });
+      await issueMyRdpFile('203.0.113.7');
+      validateRdpFile.mockReturnValue({ ok: false, reason: 'binary' });
+      connectRdpFile.mockResolvedValue({ ok: true, value: { text: 'raw' } });
+      await issueMyRdpFile('203.0.113.7');
+      expect(mintXrdpTicket).not.toHaveBeenCalled();
+    });
+
+    it('never puts the ticket in a log line', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      addXrdpLogon.mockReturnValue({ ok: false, reason: 'bad_ticket' });
+      await issueMyRdpFile('203.0.113.7');
+      expect(JSON.stringify(error.mock.calls)).not.toContain('k1.minted');
+      error.mockRestore();
+    });
   });
 });

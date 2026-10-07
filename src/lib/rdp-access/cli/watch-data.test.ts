@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { RDP_EVENT_KINDS } from '../events';
-import { describeRecentEvent, liveConnections, toHistoryLines } from './watch-data';
+import { describeRecentEvent, toHistoryLines } from './watch-data';
 
 const ID = '0199e9d1-8c2a-7b3c-9d4e-5f6a7b8c9d0e';
 
@@ -44,18 +44,5 @@ describe('toHistoryLines', () => {
       { time: '00:00:07', message: '0199e9d1  Approved' },
       { time: '00:00:12', message: '0199e9d1  Access revoked' },
     ]);
-  });
-});
-
-describe('liveConnections', () => {
-  it('counts the gateway\'s tunnels, including none', () => {
-    expect(liveConnections({ ok: true, value: { tunnels: [] } })).toEqual({ known: true, count: 0, tunnels: [] });
-    const tunnel = { tunnelId: 't', user: 'u', clientIp: '203.0.113.7', target: 'h:3389', connectedOn: 'x' };
-    expect(liveConnections({ ok: true, value: { tunnels: [tunnel] } })).toEqual({ known: true, count: 1, tunnels: [tunnel] });
-  });
-
-  it('is unknown, not zero, when the gateway could not be asked', () => {
-    expect(liveConnections({ ok: false })).toEqual({ known: false });
-    expect(liveConnections(null)).toEqual({ known: false });
   });
 });

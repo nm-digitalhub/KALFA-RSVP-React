@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { RDP_FILE_MAX_BYTES } from './policy';
-import { validateRdpFile } from './rdp-file';
+import { addXrdpLogon, validateRdpFile } from './rdp-file';
+import { XRDP_LOGON_MAX_CHARS } from './xrdp-ticket';
 
 const TARGET = 'desktop.example.test:3389';
 const TOKEN = 'header.payload.signature';
@@ -120,5 +121,56 @@ describe('validateRdpFile', () => {
     const result = check(withLine('alternate shell:s:cmd.exe'));
     expect(JSON.stringify(result)).not.toContain(TOKEN);
     expect(JSON.stringify(result)).not.toContain('cmd.exe');
+  });
+});
+
+describe('addXrdpLogon', () => {
+  const TICKET = `k1.${'A'.repeat(38)}`;
+  const add = (content: string, over: Partial<{ account: string; ticket: string }> = {}) =>
+    addXrdpLogon(content, { account: 'kalfa.me', ticket: TICKET, ...over });
+
+  it('adds exactly one username line with the unit separator between the account and the ticket', () => {
+    const result = add(GOOD);
+    expect(result).toEqual({ ok: true, content: `${GOOD}\r\nusername:s:kalfa.me\x1f${TICKET}\r\n` });
+  });
+
+  it('keeps the line ending style of the file and a trailing newline that is already there', () => {
+    const lf = GOOD.replaceAll('\r\n', '\n') + '\n';
+    expect(add(lf)).toEqual({ ok: true, content: `${lf}username:s:kalfa.me\x1f${TICKET}\n` });
+  });
+
+  it('changes nothing else in the file', () => {
+    const result = add(GOOD);
+    expect(result.ok && result.content.startsWith(GOOD)).toBe(true);
+  });
+
+  it('refuses a file that already names a user or a domain, whatever the case or spacing', () => {
+    for (const line of ['username:s:someone', 'Username:s:someone', 'domain:s:CORP', ' username:s:x']) {
+      expect(add(withLine(line))).toEqual({ ok: false, reason: 'has_username' });
+    }
+  });
+
+  it('refuses an account that is not a plain account name', () => {
+    for (const account of ['', 'root', 'kalfa me', 'a\x1fb', 'a\nb', '../x', 'x'.repeat(40)]) {
+      expect(add(GOOD, { account })).toEqual({ ok: false, reason: 'bad_account' });
+    }
+  });
+
+  it('refuses a ticket of the wrong shape, so nothing else can ride in the username line', () => {
+    for (const ticket of ['', 'password', `${TICKET}\n`, `${TICKET}\x1fx`, `k2.${'A'.repeat(38)}`, `k1.${'A'.repeat(39)}`]) {
+      expect(add(GOOD, { ticket })).toEqual({ ok: false, reason: 'bad_ticket' });
+    }
+  });
+
+  it('fits the connection cookie limit even with the longest account name the pattern allows', () => {
+    const longest = 'a'.repeat(32);
+    const result = add(GOOD, { account: longest });
+    expect(result.ok).toBe(true);
+    expect(longest.length + 1 + TICKET.length).toBeLessThan(XRDP_LOGON_MAX_CHARS);
+  });
+
+  it('only runs after validation: the file it returns is no longer a file validateRdpFile accepts', () => {
+    const composed = add(GOOD);
+    expect(composed.ok && check(composed.content)).toEqual({ ok: false, reason: 'binary' });
   });
 });

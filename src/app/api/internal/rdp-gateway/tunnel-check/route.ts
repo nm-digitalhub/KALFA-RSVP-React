@@ -1,9 +1,8 @@
-import { NextResponse } from 'next/server';
-
 import { rateLimit } from '@/lib/security/rate-limit';
 import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getRdpGatewayConfig } from '@/lib/rdp-access/config';
+import { bearerOf, cameThroughProxy, jsonNoStore as json, notFoundResponse, withTimeout } from '@/lib/rdp-access/internal-route';
 import { RDP_GATEWAY_CHECK_BODY_MAX_BYTES, RDP_GATEWAY_CHECK_TIMEOUT_MS } from '@/lib/rdp-access/policy';
 import { checkRdpTunnel } from '@/lib/rdp-access/service';
 import { rdpGatewayCheckBodySchema } from '@/lib/validation/rdp-access';
@@ -32,47 +31,12 @@ import { rdpGatewayCheckBodySchema } from '@/lib/validation/rdp-access';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 const REFUSED = { allow: false as const };
 // Coarse flood guard only, NOT a security control (the call comes from one local process).
 const RATE = { limit: 600, windowMs: 60_000 } as const;
 
-// Headers only a reverse proxy adds (Next.js never sets either). Their presence means the request did not come
-// straight from the gateway. Do not add x-forwarded-*: Next sets those on every request.
-const PROXY_HEADERS = ['x-real-ip', 'forwarded'] as const;
-
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
-
-function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('timeout')), ms);
-    work.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err: unknown) => {
-        clearTimeout(timer);
-        reject(err instanceof Error ? err : new Error('failed'));
-      },
-    );
-  });
-}
-
-function bearerOf(request: Request): string | null {
-  const header = request.headers.get('authorization');
-  if (!header) return null;
-  const [scheme, token, ...rest] = header.split(' ');
-  if (scheme?.toLowerCase() !== 'bearer' || !token || rest.length > 0) return null;
-  return token;
-}
-
 export async function POST(request: Request) {
-  if (PROXY_HEADERS.some((name) => request.headers.has(name))) {
-    return new NextResponse(null, { status: 404, headers: NO_STORE });
-  }
+  if (cameThroughProxy(request)) return notFoundResponse();
 
   const config = getRdpGatewayConfig();
   if (!config.ok) return json(REFUSED, 503);

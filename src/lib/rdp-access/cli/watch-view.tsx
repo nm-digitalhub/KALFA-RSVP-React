@@ -1,9 +1,17 @@
 import { Box, Text, useBoxMetrics, type DOMElement } from 'ink';
 import { useRef, type ReactNode } from 'react';
-import { formatIsraelTimeSeconds } from '@/lib/date';
 import type { RdpGrantSummary, RdpRequestExtras, RdpRequestSummary } from '../queries';
-import { shortId as short } from './format';
-import type { HistoryLine, LiveConnections } from './watch-data';
+import { clock as time, shortId as short } from './format';
+import { connectionRows, type ConnectionsState, type ConnectionsViewState } from './connections-state';
+import type { HistoryLine } from './watch-data';
+import {
+  ConnectionDetailRows,
+  ConnectionRows,
+  ConnectionsHeader,
+  connectionDetailLines,
+  listBanner,
+  rowTag,
+} from './watch-connections';
 import type { WatchMode } from './watch-state';
 
 // The layout is Ink's own: the screen is as big as the window (useWindowSize, in watch-app), flexbox gives every part
@@ -26,8 +34,11 @@ export type WatchViewProps = {
   expired24h: number;
   /** The address each pending request came from, as recorded when it was made. */
   extras: Map<string, RdpRequestExtras>;
-  /** What the gateway holds open right now. Unknown when the gateway could not be asked. */
-  live: LiveConnections;
+  /** Which view the middle of the screen shows. */
+  view: 'requests' | 'connections';
+  /** What the gateway holds open, and how far that can be trusted (read-only view). */
+  connections: ConnectionsState;
+  connectionsView: ConnectionsViewState;
   /** The newest audit events across every request (from the database), oldest first. */
   history: HistoryLine[];
   /** The account the gateway signs in as (NOT the requester), and the way in. Null when the gateway is not configured. */
@@ -38,8 +49,6 @@ export type WatchViewProps = {
   activity: ActivityLine[];
 };
 
-// the shared Israel-time formatter; '-' for a value that is not a date
-const time = (value: string | Date): string => formatIsraelTimeSeconds(value) || '-';
 function wait(created: string, now: Date): string {
   const seconds = Math.max(0, Math.floor((now.getTime() - Date.parse(created)) / 1000));
   if (!Number.isFinite(seconds)) return '-';
@@ -105,7 +114,10 @@ export function WatchView(p: WatchViewProps) {
   const count = (n: number) => String(n).padStart(2, '0');
   const pending = p.loaded ? count(p.requests.length) : '--';
   const grant = p.loaded ? count(p.active ? 1 : 0) : '--';
-  const live = p.loaded && p.live.known ? count(p.live.count) : '--';
+  // LIVE is a count only when the gateway has just answered. A gateway that did not answer is `--`, never 00.
+  const gatewayOk = p.connections.gateway === 'ok';
+  const live = gatewayOk ? count(p.connections.open.length) : '--';
+  const firstOpen = gatewayOk ? p.connections.open[0] : undefined;
   const expired = p.loaded ? count(p.expired24h) : '--';
 
   const chosen = p.chosen;
@@ -126,7 +138,7 @@ export function WatchView(p: WatchViewProps) {
   const lastHistory = p.history.length ? p.history[p.history.length - 1] : undefined;
   const sessionText = sessionLine ? `${sessionLine.time}  CLI  ${sessionLine.message}` : null;
   const activeText = p.active
-    ? `Active: ${nameOf(p.active.user_id)} until ${time(p.active.expires_at)} | Files ${p.active.files_issued}/${p.active.max_files}${p.live.known ? ` | Live ${p.live.count}${p.live.tunnels[0] ? ` from ${p.live.tunnels[0].clientIp} since ${time(p.live.tunnels[0].connectedOn)}` : ''}` : ' | Live unknown'}`
+    ? `Active: ${nameOf(p.active.user_id)} until ${time(p.active.expires_at)} | Files ${p.active.files_issued}/${p.active.max_files}${gatewayOk ? ` | Live ${p.connections.open.length}${firstOpen ? ` from ${firstOpen.clientIp} since ${time(firstOpen.connectedOn)}` : ''}` : ' | Live unknown'}`
     : null;
   const emptyHistory = p.loaded ? 'No access events yet.' : 'Loading activity...';
   const prompt =
@@ -165,6 +177,33 @@ export function WatchView(p: WatchViewProps) {
     </>}
   </Panel>;
 
+  // ── the connections view (read-only) ────────────────────────────────────────
+  const rows = connectionRows(p.connections);
+  const selectedRow = rows.find((r) => r.connection.tunnelId === p.connectionsView.selectedId) ?? rows[0];
+  const detailLines = selectedRow ? connectionDetailLines(selectedRow, p.connections, p.names, p.now) : [];
+  const banner = listBanner(p.connections, p.now);
+  const expanded = p.connectionsView.details;
+
+  const connectionsList = <Panel flexGrow={1}>
+    <Text bold color={C.orange}>OPEN CONNECTIONS</Text>
+    {banner ? <Text color={C.orange} wrap="truncate">{banner}</Text> : null}
+    <ConnectionsHeader columns={p.columns} />
+    <Rule />
+    <ConnectionRows rows={rows} selectedId={selectedRow?.connection.tunnelId ?? null} state={p.connections} now={p.now} names={p.names} columns={p.columns} />
+  </Panel>;
+
+  const connectionsDetails = <Panel {...(wide && !expanded ? { width: '39%' } : { flexGrow: 1 })}>
+    <Text bold color={C.orange}>CONNECTION DETAILS</Text>
+    {selectedRow
+      ? <ConnectionDetailRows lines={detailLines} scroll={expanded ? p.connectionsView.scroll : 0} />
+      : <Text color={C.muted}>{p.connections.gateway === 'ok' ? 'No open connections.' : 'Select a connection when the list is available.'}</Text>}
+    {selectedRow && !expanded ? <Text color={C.muted} wrap="truncate">Enter: all details</Text> : null}
+  </Panel>;
+
+  const connectionsSummary = selectedRow
+    ? `${short(selectedRow.connection.tunnelId)}  ${selectedRow.connection.clientIp}  ${rowTag(selectedRow)}  (Enter: details)`
+    : 'Select a connection. Enter shows its details.';
+
   return <Box width={p.columns - 1} height={p.terminalRows - 1} overflow="hidden" flexDirection="column" backgroundColor={C.bg} paddingX={1}>
     <Box flexDirection="column" borderStyle={BORDER} borderColor={C.border} borderBackgroundColor={C.bg} paddingX={1} flexShrink={0}>
       <Box justifyContent="space-between" columnGap={2}>
@@ -180,7 +219,11 @@ export function WatchView(p: WatchViewProps) {
     </Box>
 
     <Box flexGrow={1} flexShrink={1} overflow="hidden" marginTop={1} flexDirection={wide ? 'row' : 'column'} columnGap={1}>
-      {wide ? <>{list}{details}</>
+      {p.view === 'connections'
+        ? (expanded ? connectionsDetails
+          : wide ? <>{connectionsList}{connectionsDetails}</>
+          : <>{connectionsList}<Box flexShrink={0}><Text color={C.muted} wrap="truncate">{connectionsSummary}</Text></Box></>)
+        : wide ? <>{list}{details}</>
         : p.inspecting ? details
         : <>{list}<Box flexShrink={0}><Text color={C.muted} wrap="truncate">{summary}</Text></Box></>}
     </Box>
@@ -201,13 +244,22 @@ export function WatchView(p: WatchViewProps) {
 
     {prompt ? <Box flexShrink={0}><Text color={C.orange}>{prompt}</Text></Box> : null}
     <Box flexShrink={0} marginTop={compact ? 0 : 1} columnGap={2} flexWrap="wrap">
-      <Text color={C.text}><Text bold color={C.orange}>[A]</Text> Approve</Text>
-      <Text color={C.text}><Text bold color={C.orange}>[D]</Text> Deny</Text>
-      <Text color={C.text}><Text bold color={C.orange}>[I]</Text> Inspect</Text>
-      <Text color={C.text}><Text bold color={C.orange}>[R]</Text> Refresh</Text>
-      {p.active ? <Text color={C.text}><Text bold color={C.orange}>[X]</Text> Revoke</Text> : null}
+      {p.view === 'connections' ? <>
+        <Text color={C.text}><Text bold color={C.orange}>[Tab]</Text> Requests</Text>
+        {expanded
+          ? <Text color={C.text}><Text bold color={C.orange}>[Up/Down]</Text> Scroll  <Text bold color={C.orange}>[Esc]</Text> Back</Text>
+          : <Text color={C.text}><Text bold color={C.orange}>[Enter]</Text> Details</Text>}
+        <Text color={C.text}><Text bold color={C.orange}>[R]</Text> Refresh</Text>
+      </> : <>
+        <Text color={C.text}><Text bold color={C.orange}>[A]</Text> Approve</Text>
+        <Text color={C.text}><Text bold color={C.orange}>[D]</Text> Deny</Text>
+        <Text color={C.text}><Text bold color={C.orange}>[I]</Text> Inspect</Text>
+        <Text color={C.text}><Text bold color={C.orange}>[Tab]</Text> Connections</Text>
+        <Text color={C.text}><Text bold color={C.orange}>[R]</Text> Refresh</Text>
+        {p.active ? <Text color={C.text}><Text bold color={C.orange}>[X]</Text> Revoke</Text> : null}
+      </>}
       <Text color={C.text}><Text bold color={C.orange}>[Q]</Text> Quit</Text>
     </Box>
-    {compact ? null : <Box flexShrink={0}><Text color={C.muted} wrap="truncate">{`Arrow keys: select | Enter: details | Poll: ${p.intervalSeconds}s`}</Text></Box>}
+    {compact ? null : <Box flexShrink={0}><Text color={C.muted} wrap="truncate">{p.view === 'connections' ? `Arrow keys: select | Enter: details | Esc: back | Poll: ${p.intervalSeconds}s` : `Arrow keys: select | Enter: details | Poll: ${p.intervalSeconds}s`}</Text></Box>}
   </Box>;
 }

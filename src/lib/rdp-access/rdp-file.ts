@@ -1,4 +1,5 @@
-import { RDP_FILE_MAX_BYTES } from './policy';
+import { isTicketAccount, RDP_FILE_MAX_BYTES } from './policy';
+import { XRDP_LOGON_MAX_CHARS, XRDP_TICKET_PATTERN } from './xrdp-ticket';
 
 // Validation of the .rdp file the gateway's /connect returns, BEFORE it reaches a staff member's browser.
 //
@@ -96,4 +97,34 @@ export function validateRdpFile(raw: string, expected: { target: string }): RdpF
     return { ok: false, reason: 'wrong_target' };
   }
   return { ok: true, content: raw };
+}
+
+export type XrdpLogonRejection = 'has_username' | 'bad_account' | 'bad_ticket' | 'too_long';
+export type XrdpLogonResult = { ok: true; content: string } | { ok: false; reason: XrdpLogonRejection };
+
+// The unit separator xrdp (enable_token_login) splits the username field on: everything before it is the user,
+// everything after it is the login token. This is the one control character the file is allowed to carry, and
+// only here: validateRdpFile (above) still refuses control characters in the file the gateway returns.
+const TOKEN_SEPARATOR = '\x1f';
+const USERNAME_SETTINGS: ReadonlySet<string> = new Set(['username', 'domain']);
+
+/**
+ * Adds the one-time desktop login to a file that has ALREADY passed validateRdpFile: a single
+ * `username:s:<account><0x1F><ticket>` line. It refuses to touch a file that already names a user or a domain (the
+ * gateway is configured not to), and refuses an account or ticket of the wrong shape, so the line can only ever be
+ * what this app minted for the account the server decided.
+ */
+export function addXrdpLogon(content: string, logon: { account: string; ticket: string }): XrdpLogonResult {
+  if (!isTicketAccount(logon.account)) return { ok: false, reason: 'bad_account' };
+  if (!XRDP_TICKET_PATTERN.test(logon.ticket)) return { ok: false, reason: 'bad_ticket' };
+  if (logon.account.length + 1 + logon.ticket.length > XRDP_LOGON_MAX_CHARS) return { ok: false, reason: 'too_long' };
+
+  for (const line of content.split(/\r?\n/)) {
+    const match = SETTING_LINE.exec(line);
+    if (match && USERNAME_SETTINGS.has(match[1]!.trim().toLowerCase())) return { ok: false, reason: 'has_username' };
+  }
+
+  const eol = content.includes('\r\n') ? '\r\n' : '\n';
+  const base = content.endsWith('\n') ? content : content + eol;
+  return { ok: true, content: `${base}username:s:${logon.account}${TOKEN_SEPARATOR}${logon.ticket}${eol}` };
 }

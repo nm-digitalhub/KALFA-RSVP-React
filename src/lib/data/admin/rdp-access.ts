@@ -3,10 +3,11 @@ import 'server-only';
 import { isIP } from 'node:net';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
-import { getRdpGatewayConfig } from '@/lib/rdp-access/config';
+import { getRdpGatewayConfig, getXrdpTicketConfig } from '@/lib/rdp-access/config';
 import { connectRdpFile } from '@/lib/rdp-access/gateway-client';
-import { getRdpGrantRequestId } from '@/lib/rdp-access/queries';
-import { validateRdpFile } from '@/lib/rdp-access/rdp-file';
+import { getRdpGrantRequestId, listFirstGatewayAllows } from '@/lib/rdp-access/queries';
+import { addXrdpLogon, validateRdpFile } from '@/lib/rdp-access/rdp-file';
+import { mintXrdpTicket } from '@/lib/rdp-access/xrdp-ticket';
 import {
   beginRdpFileIssue,
   cancelRdpRequest,
@@ -74,6 +75,8 @@ export type RdpAccessView =
       expiresAt: string;
       filesIssued: number;
       maxFiles: number;
+      /** When the gateway first allowed a tunnel for this grant (measured from the audit trail); null if it never did. */
+      connectedAt: string | null;
     }
   | { kind: 'denied'; requestId: string; requestedMinutes: number; answeredAt: string | null; note: string | null }
   | { kind: 'expired'; requestId: string; requestedMinutes: number; expiresAt: string }
@@ -85,6 +88,7 @@ export type RdpAccessView =
       endedAt: string | null;
       endedReason: RdpEndedReason | null;
       filesIssued: number;
+      connectedAt: string | null;
     };
 
 export type RdpAccessState = {
@@ -102,7 +106,12 @@ function narrowEndedReason(value: string | null): RdpEndedReason | null {
  * a grant past its end are presented as finished even if the sweep has not marked them yet (the database already
  * refuses both; this only keeps the page from showing a live countdown for something that is over).
  */
-export function deriveRdpAccessView(request: RequestRow | null, grant: GrantRow | null, now: Date): RdpAccessView {
+export function deriveRdpAccessView(
+  request: RequestRow | null,
+  grant: GrantRow | null,
+  now: Date,
+  connectedAt: string | null,
+): RdpAccessView {
   if (!request) return { kind: 'none' };
   const nowMs = now.getTime();
   const requestedMinutes = request.requested_minutes;
@@ -133,6 +142,7 @@ export function deriveRdpAccessView(request: RequestRow | null, grant: GrantRow 
         expiresAt: grant.expires_at,
         filesIssued: grant.files_issued,
         maxFiles: grant.max_files,
+        connectedAt,
       };
     }
     return {
@@ -142,6 +152,7 @@ export function deriveRdpAccessView(request: RequestRow | null, grant: GrantRow 
       endedAt: grant ? (grant.ended_at ?? grant.expires_at) : null,
       endedReason: grant ? (narrowEndedReason(grant.ended_reason) ?? (grant.status === 'active' ? 'expired' : null)) : null,
       filesIssued: grant?.files_issued ?? 0,
+      connectedAt,
     };
   }
 
@@ -178,8 +189,12 @@ export async function getMyRdpAccessState(): Promise<RdpAccessState> {
     grant = grants.data[0] ?? null;
   }
 
+  // The gateway's own trace of a connection lives in the audit table, which a staff member cannot read. This one
+  // timestamp for the caller's own grant is read server-side after the gate; nothing else of that table leaves.
+  const connectedAt = grant ? ((await listFirstGatewayAllows(createAdminClient(), [grant.id])).get(grant.id) ?? null) : null;
+
   const now = new Date();
-  const view = deriveRdpAccessView(request, grant, now);
+  const view = deriveRdpAccessView(request, grant, now, connectedAt);
   return {
     view: isStaleOutcome(view, request, grant, now) ? { kind: 'none' } : view,
     serverNow: now.toISOString(),
@@ -221,8 +236,13 @@ export type RdpFileIssueResult = { ok: true; content: string } | { ok: false; re
  * text back. The body is never stored or logged. The target comes from the grant row the owner approved, never from
  * configuration or from the browser.
  *
- * Nothing is reserved when the gateway is not configured or the caller's address is unknown, so those two cannot
- * use up a download. A failure AFTER the reservation is recorded in the audit trail; the download stays counted.
+ * When ticket login is configured the file also carries a 5-minute desktop login ticket for the account the SERVER
+ * decided (see xrdp-ticket.ts), added after validation. When it is not configured at all the file is exactly what the
+ * gateway returned; when it is half-configured nothing is issued.
+ *
+ * Nothing is reserved when the gateway or the ticket login is misconfigured or the caller's address is unknown, so
+ * those cannot use up a download. A failure AFTER the reservation is recorded in the audit trail; the download stays
+ * counted.
  */
 export async function issueMyRdpFile(clientIp: string | null): Promise<RdpFileIssueResult> {
   const user = await requirePlatformPermission('rdp.request');
@@ -234,6 +254,13 @@ export async function issueMyRdpFile(clientIp: string | null): Promise<RdpFileIs
     return { ok: false, reason: 'gateway_unavailable' };
   }
 
+  const xrdp = getXrdpTicketConfig();
+  if (!xrdp.ok && xrdp.reason === 'invalid') {
+    // names only: a half-set ticket login must not quietly fall back to a file that cannot log in
+    console.error(`rdp-access: ticket login is misconfigured (${xrdp.variables.join(', ')}), no file was issued`);
+    return { ok: false, reason: 'gateway_unavailable' };
+  }
+
   const admin = createAdminClient();
   const reserved = await beginRdpFileIssue(admin, { userId: user.id, clientIp });
   if (reserved.outcome === 'unexpected') return { ok: false, reason: 'gateway_unavailable' };
@@ -242,9 +269,20 @@ export async function issueMyRdpFile(clientIp: string | null): Promise<RdpFileIs
 
   const fetched = await connectRdpFile({ ...gateway.config, target: reserved.target }, clientIp);
   const validated = fetched.ok ? validateRdpFile(fetched.value.text, { target: reserved.target }) : null;
-  if (fetched.ok && validated?.ok) return { ok: true, content: validated.content };
+  let failure: string;
+  if (fetched.ok && validated?.ok) {
+    if (!xrdp.ok) return { ok: true, content: validated.content };
+    const ticket = mintXrdpTicket(
+      { secret: xrdp.config.ticketSecret, grantId: reserved.grantId, userId: user.id, account: xrdp.config.account },
+      new Date(),
+    );
+    const composed = addXrdpLogon(validated.content, { account: xrdp.config.account, ticket });
+    if (composed.ok) return { ok: true, content: composed.content };
+    failure = `logon_${composed.reason}`;
+  } else {
+    failure = fetched.ok ? `file_${validated?.ok === false ? validated.reason : 'invalid'}` : fetched.kind;
+  }
 
-  const failure = fetched.ok ? `file_${validated?.ok === false ? validated.reason : 'invalid'}` : fetched.kind;
   const requestId = await getRdpGrantRequestId(admin, reserved.grantId);
   if (requestId !== null) {
     await recordRdpFileFailure(admin, { grantId: reserved.grantId, requestId, clientIp, outcome: failure.slice(0, 40) });

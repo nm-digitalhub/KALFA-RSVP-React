@@ -1,7 +1,8 @@
 import type { createAdminClient } from '@/lib/supabase/admin';
 import type { Json } from '@/lib/supabase/types';
 
-import { getRdpGatewayConfig } from '../config';
+import { getRdpGatewayConfig, getXrdpTicketConfig } from '../config';
+import { loadConnections } from '../connections';
 import { disconnectRdpTunnels, listRdpTunnels } from '../gateway-client';
 import { notifyRdpOwnerAction } from '../notify';
 import { RDP_MINUTES_MAX, RDP_MINUTES_MIN } from '../policy';
@@ -41,8 +42,10 @@ export type CliApi = {
   markCut: typeof markRdpCut;
   disconnect: typeof disconnectRdpTunnels;
   listTunnels: typeof listRdpTunnels;
+  connections: typeof loadConnections;
   notify: typeof notifyRdpOwnerAction;
   getConfig: typeof getRdpGatewayConfig;
+  getTicketConfig: typeof getXrdpTicketConfig;
 };
 
 export const defaultCliApi: CliApi = {
@@ -51,8 +54,10 @@ export const defaultCliApi: CliApi = {
   markCut: markRdpCut,
   disconnect: disconnectRdpTunnels,
   listTunnels: listRdpTunnels,
+  connections: loadConnections,
   notify: notifyRdpOwnerAction,
   getConfig: getRdpGatewayConfig,
+  getTicketConfig: getXrdpTicketConfig,
 };
 
 export type CliContext = {
@@ -188,6 +193,15 @@ export async function cmdStatus(ctx: CliContext): Promise<ExitCode> {
     config.ok
       ? 'השער: מוגדר'
       : `${CLI_TEXT.gatewayNotConfigured} ${config.problems.map((p) => `${p.variable} (${p.reason})`).join(', ')}`,
+  );
+  // names and a yes/no only, never a value
+  const ticket = ctx.api.getTicketConfig(ctx.env);
+  ctx.out(
+    ticket.ok
+      ? CLI_TEXT.ticketLoginOn
+      : ticket.reason === 'off'
+        ? CLI_TEXT.ticketLoginOff
+        : `${CLI_TEXT.ticketLoginBroken} ${ticket.variables.join(', ')}`,
   );
   ctx.out(
     owner.ok

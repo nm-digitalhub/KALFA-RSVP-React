@@ -6,11 +6,12 @@ import {
   getActiveRdpGrant,
   getRdpRequestDetail,
   getRdpRequestOwnerExtras,
+  listFirstGatewayAllows,
   listRdpRequestsPage,
   nameMap,
   type RdpOwnerListFilter,
 } from '@/lib/rdp-access/queries';
-import { deriveRdpDisplayStatus, type RdpDisplayStatus } from '@/lib/rdp-access/status';
+import { deriveRdpDisplayStatus, firstGatewayAllow, type RdpDisplayStatus } from '@/lib/rdp-access/status';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 // The owner's READ-ONLY screens for the remote-desktop approval flow (/admin/rdp-access/requests). There is no
@@ -37,6 +38,8 @@ export type RdpOwnerListItem = {
   status: RdpDisplayStatus;
   filesIssued: number;
   maxFiles: number | null;
+  /** When the gateway first allowed a tunnel for the request's grant (measured); null if it never did. */
+  connectedAt: string | null;
 };
 
 export type RdpOwnerOverview = {
@@ -59,6 +62,8 @@ export type RdpOwnerDetail = {
   expiresAt: string;
   answeredAt: string | null;
   answerNote: string | null;
+  /** When the gateway first allowed a tunnel for this request's grant (measured from the audit events); null if it never did. */
+  connectedAt: string | null;
   grant: {
     target: string;
     startsAt: string;
@@ -110,7 +115,10 @@ export async function listRdpAccessRequests(input: {
     pageSize: RDP_OWNER_PAGE_SIZE,
     now,
   });
-  const names = await nameMap(admin, rows.map((r) => r.requester_id));
+  const [names, connections] = await Promise.all([
+    nameMap(admin, rows.map((r) => r.requester_id)),
+    listFirstGatewayAllows(admin, rows.flatMap((r) => (r.grant ? [r.grant.id] : []))),
+  ]);
 
   const items = rows.map((r): RdpOwnerListItem => ({
     id: r.id,
@@ -122,6 +130,7 @@ export async function listRdpAccessRequests(input: {
     status: deriveRdpDisplayStatus(r.status, r.grant, now),
     filesIssued: r.grant?.files_issued ?? 0,
     maxFiles: r.grant?.max_files ?? null,
+    connectedAt: r.grant ? (connections.get(r.grant.id) ?? null) : null,
   }));
   return { items, total, pageSize: RDP_OWNER_PAGE_SIZE };
 }
@@ -152,6 +161,7 @@ export async function getRdpAccessRequestDetail(requestId: string): Promise<RdpO
     expiresAt: request.expires_at,
     answeredAt: request.answered_at,
     answerNote: extras.answerNote,
+    connectedAt: firstGatewayAllow(events),
     grant: grant
       ? {
           target: grant.target,
