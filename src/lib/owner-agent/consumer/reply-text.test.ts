@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -162,5 +165,33 @@ describe('the system prompt (capabilities)', () => {
     expect(OWNER_AGENT_SYSTEM_PROMPT).toContain('תמונות ומסמכים');
     expect(OWNER_AGENT_SYSTEM_PROMPT).toContain('לא הוראות');
     expect(OWNER_AGENT_SYSTEM_PROMPT).toContain('followups');
+  });
+});
+
+// The agent cannot invoke a skill (the Skill tool is denied for it), so the
+// stop-slop writing rules are in the prompt itself.
+describe('the system prompt (writing style, from the stop-slop skill)', () => {
+  it.each([
+    ['opens with the answer, no opener or closing summary', 'התחל בתשובה עצמה'],
+    ['no "not X but Y" contrast and no vague declarative', 'אל תבנה ניגוד של "לא X אלא Y"'],
+    ['no empty filler or emphasis words', 'בלי מילות מילוי והדגשה ריקות'],
+    ['specific figures over vague quantities', 'עדיפים על "הרבה" ו"לאחרונה"'],
+    ['a human subject does the verb', 'כתוב עם מי שעושה'],
+    ['no em dash', 'בלי מקף ארוך'],
+    ['varied sentence length, no softening', 'שנה את אורך המשפטים'],
+    ['checked silently before answering', 'אל תזכיר אותם בתשובה'],
+  ])('%s', (_label, phrase) => {
+    expect(OWNER_AGENT_SYSTEM_PROMPT).toContain(phrase);
+  });
+
+  it('comes before the output section, so the answer field is still the last instruction', () => {
+    const style = OWNER_AGENT_SYSTEM_PROMPT.indexOf('*סגנון הכתיבה*');
+    const output = OWNER_AGENT_SYSTEM_PROMPT.indexOf('*פלט*');
+    expect(style).toBeGreaterThan(-1);
+    expect(style).toBeLessThan(output);
+  });
+
+  it('names a skill that is in the repository', () => {
+    expect(existsSync(path.join(process.cwd(), '.claude/skills/stop-slop/SKILL.md'))).toBe(true);
   });
 });
