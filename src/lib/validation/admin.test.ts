@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   CALLBACK_STATUSES,
@@ -10,6 +10,7 @@ import {
   callOutcomeEnum,
   updateCallOutcomeSchema,
   cancelCallbackSchema,
+  rescheduleCallbackSchema,
   contactStatusEnum,
   updateContactStatusSchema,
   packageBaseSchema,
@@ -529,5 +530,82 @@ describe('operationalFieldsSchema — fixed-price package with a contact quota',
     const msg = 'שדה זה שייך לתפיסת מסגרת ואינו בשימוש בחבילה עם מכסה';
     expect(issue(operationalFieldsSchema.safeParse({ ...quotaBase, min_hold_floor: '50' }), 'min_hold_floor')).toBe(msg);
     expect(issue(operationalFieldsSchema.safeParse({ ...quotaBase, hold_buffer_pct: '10' }), 'hold_buffer_pct')).toBe(msg);
+  });
+});
+
+// The reschedule form posts the raw value of an <input type="datetime-local">:
+// Israel wall time, minute precision, no zone. The schema converts it to the
+// real instant, so what the admin typed is what gets stored. Before this the
+// string was stored as-is and Postgres read it as UTC — every time typed landed
+// three hours late in summer (incident 2026-10-07: 06:36 became 10:36).
+describe('rescheduleCallbackSchema', () => {
+  const ID = '3b0ab9ec-c77b-4c75-b6e4-2c431c1d8cd0';
+  const INVALID = 'נא לבחור מועד עתידי תקין';
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // 06:33 in Israel (IDT, UTC+3).
+    vi.setSystemTime(new Date('2026-10-07T03:33:00.000Z'));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const parse = (exactAt: unknown) => rescheduleCallbackSchema.safeParse({ id: ID, exactAt });
+
+  it('converts the Israel wall time to the instant — 06:36 is 03:36Z, not 06:36Z', () => {
+    const r = parse('2026-10-07T06:36');
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.exactAt).toBe('2026-10-07T03:36:00.000Z');
+  });
+
+  it('uses the offset of the date typed (winter is UTC+2)', () => {
+    vi.setSystemTime(new Date('2026-01-15T05:00:00.000Z'));
+    const r = parse('2026-01-15T09:30');
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.exactAt).toBe('2026-01-15T07:30:00.000Z');
+  });
+
+  it('keeps the id as submitted', () => {
+    const r = parse('2026-10-07T06:36');
+    expect(r.success && r.data.id).toBe(ID);
+  });
+
+  it('rejects a time that is already past in Israel, and the current minute', () => {
+    for (const past of ['2026-10-07T06:30', '2026-10-07T06:33', '2026-10-06T23:00']) {
+      const r = parse(past);
+      expect(r.success, past).toBe(false);
+      if (!r.success) expect(r.error.issues[0].message).toBe(INVALID);
+    }
+  });
+
+  it('judges "future" on the converted instant, not on the raw digits', () => {
+    // 09:00 as raw digits is "after" 06:33 only because Postgres would have read
+    // it as UTC; in Israel 06:35 is 2 minutes ahead and 06:32 is already past.
+    expect(parse('2026-10-07T06:35').success).toBe(true);
+    expect(parse('2026-10-07T06:32').success).toBe(false);
+  });
+
+  it('rejects anything that is not minute-precision wall time with no zone', () => {
+    for (const bad of [
+      '',
+      'garbage',
+      '2026-10-07',
+      '2026-10-07T06:36:30',
+      '2026-10-07T06:36:00Z', // the form Zod's docs show as valid for `local: true`
+      '2026-10-07T06:36Z',
+      '2026-10-07T06:36+03:00',
+      '2026-10-07T03:36:00.000Z',
+      '2026-02-30T10:00',
+      null,
+      undefined,
+    ]) {
+      const r = parse(bad);
+      expect(r.success, String(bad)).toBe(false);
+      if (!r.success) expect(r.error.issues[0].message).toBe(INVALID);
+    }
+  });
+
+  it('still requires a valid request id', () => {
+    const r = rescheduleCallbackSchema.safeParse({ id: 'not-a-uuid', exactAt: '2026-10-07T06:36' });
+    expect(r.success).toBe(false);
   });
 });

@@ -1,12 +1,14 @@
-// L1 — the single shared "past event" rule, as a dependency-free leaf module so
-// it is safe to import from the pg-boss worker (no `server-only`) and from client
-// UI without dragging in the events data layer. `@/lib/data/events` re-exports
-// these as the documented home.
+// L1 — the single shared "past event" rule, as a leaf module (its only imports
+// are `@/lib/date` and the pure `@date-fns/tz`) so it is safe to import from the
+// pg-boss worker (no `server-only`) and from client UI without dragging in the
+// events data layer. `@/lib/data/events` re-exports these as the documented home.
 //
 // An event is "past" only AFTER the end of its calendar day in Israel, matching
 // the DB guard `(now() AT TIME ZONE 'Asia/Jerusalem')::date >
 // (event_date AT TIME ZONE 'Asia/Jerusalem')::date`. An event TODAY is still
 // valid; a null/unparseable date is never "past" (mirrors the DB NULL semantics).
+
+import { TZDate } from '@date-fns/tz';
 
 import { ISRAEL_TIME_ZONE } from '@/lib/date';
 
@@ -126,6 +128,34 @@ export function ilWallTimeToIso(dateStr: string, timeStr: string): string {
   const m = part?.match(/GMT([+-]\d{2}:\d{2})/);
   const offset = m ? m[1] : '+02:00';
   return `${dateStr}T${timeStr}:00${offset}`;
+}
+
+// Resolve a zone-less wall-clock datetime ("2026-10-07T06:36", seconds optional)
+// read IN `zone` to the real instant, DST included. This is the one place that
+// turns an <input type="datetime-local"> value into an instant: such a value
+// carries no zone, so handing it to Postgres stores it as UTC and to Date.parse
+// reads it in the host zone — a three-hour error for Israel in summer.
+//
+// Built from components, never from a string: @date-fns/tz documents the
+// component constructor (wall clock in the given zone) but not how its string
+// constructor reads zone-less text, and measured it depends on the host zone.
+// A wall time inside the spring-forward gap resolves to the instant just after
+// it; one in the fall-back overlap resolves to one of its two instants
+// (host-zone dependent, so the tests run under the pinned TZ).
+//
+// Total: returns null for text that is not a wall-clock datetime or a zone
+// TZDate cannot resolve, never throws — it also runs inside a Zod transform,
+// where a throw would escape safeParse.
+export function wallClockToDate(wall: string, zone: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(wall);
+  if (!m) return null;
+  const [, y, mo, d, hh, mi, ss] = m;
+  try {
+    const ms = new TZDate(+y, +mo - 1, +d, +hh, +mi, +(ss ?? 0), zone).getTime();
+    return Number.isNaN(ms) ? null : new Date(ms);
+  } catch {
+    return null;
+  }
 }
 
 // The IL wall-clock HH:mm of a stored event instant, for <input type="time">

@@ -1,12 +1,20 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 
 import { FieldError, FormError, FormNotice } from '@/components/forms';
 import { rescheduleCallbackAction } from './actions';
 
-// <input type="datetime-local"> speaks local wall time, not ISO instants —
-// same convention as event-edit-dialog.tsx's toLocalInput/fromLocalInput.
+// <input type="datetime-local"> speaks wall time with no zone, not ISO instants.
+// What this field posts is read on the SERVER as Israel wall time and converted
+// to the real instant there (rescheduleCallbackSchema) — nothing here converts.
+// The default below is built from the browser's own clock, so it equals Israel
+// time only for a browser set to Israel's zone.
+//
+// The field is CONTROLLED (value + onChange): React resets an uncontrolled field
+// to its default once a form action succeeds (react.dev, `<form>`), and the
+// default here is "now + 1 hour" — so after saving 07:53 the field jumped to
+// 08:54 and looked as if a different time had been scheduled.
 function nowPlusOneHourLocal(): string {
   const d = new Date(Date.now() + 60 * 60_000);
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -24,6 +32,7 @@ export function RescheduleForm({ id }: { id: string }) {
     null,
   );
   const fieldId = `reschedule-${id}`;
+  const [exactAt, setExactAt] = useState(nowPlusOneHourLocal);
 
   return (
     <form action={formAction} className="flex flex-col gap-1">
@@ -36,7 +45,8 @@ export function RescheduleForm({ id }: { id: string }) {
           id={fieldId}
           name="exactAt"
           type="datetime-local"
-          defaultValue={nowPlusOneHourLocal()}
+          value={exactAt}
+          onChange={(e) => setExactAt(e.target.value)}
           className="rounded-md border border-border bg-background px-2 py-1 text-sm"
         />
         <button
