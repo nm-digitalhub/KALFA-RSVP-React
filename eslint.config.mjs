@@ -20,6 +20,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // The esbuild bundles (pg-boss worker, owner agent, operator CLIs) — output, not source.
     "dist/**",
+    // rdpgw's cloned upstream source (ops/rdpgw/build.sh): a Go project with one template script, not ours.
+    "ops/rdpgw/build/**",
     // Supabase schema types — generator output (`npm run gen:types`), never
     // hand-edited; `npm run types:check` guards it against the live DB instead.
     "src/lib/supabase/types.generated.ts",

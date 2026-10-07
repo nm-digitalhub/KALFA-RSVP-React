@@ -1,0 +1,38 @@
+# /etc/rdpgw/rdpgw.yaml  (root:root 0644, NO secrets)  -- DRAFT
+# Section names MUST be capitalised exactly (koanf paths are case-sensitive); keys inside are case-insensitive.
+Server:
+  Authentication: [header]            # identity is stamped by KALFA on a loopback /connect call; the RDG endpoint itself is token-only
+  Tls: disable                        # nginx terminates TLS (gw.kalfa.me)
+  BindAddress: 127.0.0.1
+  Port: 3013
+  GatewayAddress: gw.kalfa.me         # advertised in the .rdp as gatewayhostname
+  Hosts:
+    - nm-digitalhub.tail703115.ts.net:3389   # lowercase, with port (mstsc sends name:port); resolved by the gateway via systemd-resolved -> 100.106.199.107
+  HostSelection: roundrobin           # curated list of ONE entry. NEVER "any" (see notes)
+  TrustedProxies: ["127.0.0.1/32"]    # honour X-Forwarded-For from nginx and from the KALFA app (loopback only)
+  SessionStore: cookie
+  AdminAddress: 127.0.0.1:3014        # [patch 0001] loopback-only list/disconnect API
+Header:
+  UserHeader: X-Kalfa-Staff-Id
+  TrustedProxies: ["127.0.0.1/32"]
+  SecretHeader: X-Kalfa-Internal      # [patch 0002, optional]
+Caps:
+  TokenAuth: true
+  IdleTimeout: 30                     # minutes, client-enforced
+  EnableClipboard: false
+  EnableDrive: false
+  EnablePrinter: false
+  EnablePort: false
+  EnablePnp: false
+Client:
+  NoUsername: true
+  Defaults: /etc/rdpgw/default.rdp
+Security:
+  VerifyClientIp: true
+  EnableUserToken: false
+  GrantCheckUrl: http://127.0.0.1:3002/api/internal/rdp-gateway/tunnel-check   # [patch 0001] 127.0.0.1 literal, not "localhost"
+  GrantCheckTimeoutMs: 3000
+# secrets.env (root:rdpgw 0640), generated without printing:
+#   RDPGW_SERVER__SESSIONKEY, RDPGW_SERVER__SESSIONENCRYPTIONKEY,
+#   RDPGW_SECURITY__PAATOKENSIGNINGKEY, RDPGW_SECURITY__PAATOKENENCRYPTIONKEY   -> exactly 32 chars each (openssl rand -hex 16)
+#   RDPGW_SECURITY__GRANTCHECKTOKEN, RDPGW_SECURITY__ADMINTOKEN, RDPGW_HEADER__SECRET -> >= 32 chars (openssl rand -hex 32)

@@ -204,3 +204,6 @@ voxfiles/pronunciation/audit/results/
 
 # Server-level Python deps (agent360 monitoring, root-owned) — not this app's.
 /requirements.txt
+
+# rdpgw build output (ops/rdpgw/build.sh)
+ops/rdpgw/build/

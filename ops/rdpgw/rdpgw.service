@@ -1,0 +1,51 @@
+# /etc/systemd/system/rdpgw.service   -- DRAFT, not applied. Style: seating-optimizer.service.
+[Unit]
+Description=KALFA RD Gateway (rdpgw @16cdaaf4 + KALFA patches) - loopback only, behind nginx gw.kalfa.me
+After=network-online.target tailscaled.service
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=rdpgw
+Group=rdpgw
+# secrets (0640 root:rdpgw): RDPGW_SERVER__SESSIONKEY, ..., RDPGW_SECURITY__GRANTCHECKTOKEN, RDPGW_SECURITY__ADMINTOKEN, RDPGW_HEADER__SECRET
+EnvironmentFile=/etc/rdpgw/secrets.env
+ExecStart=/opt/rdpgw/current/rdpgw -c /etc/rdpgw/rdpgw.yaml
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rdpgw
+
+# --- hardening ---
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+# Egress allow-list: DNS stub + KALFA grant check (127.0.0.0/8), xrdp over the tailnet address only.
+IPAddressDeny=any
+IPAddressAllow=127.0.0.0/8 100.106.199.107/32
+MemoryMax=256M
+TasksMax=256
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

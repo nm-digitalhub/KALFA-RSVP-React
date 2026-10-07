@@ -1,0 +1,4 @@
+b55bd259f8e50b88c8087b287858401409b4868f670045112d406fc68483952c  patches/0001-kalfa-grant-check-and-disconnect.patch
+09c3c35379c1dddb4e623269ef41de664b85dd252fd1a407bdc668ccfdcbafad  patches/0002-kalfa-header-shared-secret.patch
+742b73458b0482ecd286b6221f92e5012d429f0693f59807a4c1c8c32e83df0c  patches/0003-kalfa-dependency-security-updates.patch
+a71109815ba8b77ec2143bda8dc1630d6f1eb512098abfcdf12d5a9d78798c6e  go.sum
