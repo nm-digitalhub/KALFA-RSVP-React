@@ -5201,6 +5201,7 @@ export type Database = {
           credit_applied: number
           event_id: string
           id: string
+          is_test: boolean
           kind: string
           meta: Json
           note: string | null
@@ -5227,6 +5228,8 @@ export type Database = {
           provider_rrn: string | null
           provider_status: string | null
           provider_status_description: string | null
+          provider_terminal: number | null
+          provider_terminal_echo: number | null
           provider_unique_id: string | null
           recorded_at: string
           source: string
@@ -5252,6 +5255,7 @@ export type Database = {
           credit_applied?: number
           event_id: string
           id?: string
+          is_test?: boolean
           kind: string
           meta?: Json
           note?: string | null
@@ -5278,6 +5282,8 @@ export type Database = {
           provider_rrn?: string | null
           provider_status?: string | null
           provider_status_description?: string | null
+          provider_terminal?: number | null
+          provider_terminal_echo?: number | null
           provider_unique_id?: string | null
           recorded_at?: string
           source?: string
@@ -5303,6 +5309,7 @@ export type Database = {
           credit_applied?: number
           event_id?: string
           id?: string
+          is_test?: boolean
           kind?: string
           meta?: Json
           note?: string | null
@@ -5329,6 +5336,8 @@ export type Database = {
           provider_rrn?: string | null
           provider_status?: string | null
           provider_status_description?: string | null
+          provider_terminal?: number | null
+          provider_terminal_echo?: number | null
           provider_unique_id?: string | null
           recorded_at?: string
           source?: string
@@ -8169,6 +8178,10 @@ export type Database = {
       payment_citizen_id_write: {
         Args: { p_campaign_id: string; p_citizen_id: string }
         Returns: string
+      }
+      payment_is_test_terminal: {
+        Args: { p_terminal: number }
+        Returns: boolean
       }
       purge_stale_phone_change: { Args: { p_grace?: string }; Returns: number }
       purge_test_event: {
