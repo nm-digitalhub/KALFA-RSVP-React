@@ -35,6 +35,14 @@ describe('PackageChoiceForm', () => {
     expect(new Set(names)).toEqual(new Set(['package_id']));
   });
 
+  it('a multi-paragraph description keeps its line breaks on screen', () => {
+    const description = 'פסקה ראשונה.\n\nפסקה שנייה.';
+    const { container } = form([{ ...OFFERS[0], description }]);
+    const paragraph = Array.from(container.querySelectorAll('p')).find((p) => p.textContent === description);
+    expect(paragraph).toBeDefined();
+    expect(paragraph?.className).toContain('whitespace-pre-line');
+  });
+
   it('a fractional price keeps both agorot digits', () => {
     const { container } = form();
     expect(container.textContent).toContain('99.90');
