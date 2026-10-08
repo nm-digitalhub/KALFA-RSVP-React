@@ -27,14 +27,16 @@ import { PURCHASE_ERROR_MESSAGES, type PurchaseErrorCode } from '@/lib/payments/
 // servers; the rest (owner ID, name, e-mail, expiry) is ours.
 //
 // What the buyer is told always comes from the SERVER's answer after it asked CardCom — never from what the iframe says:
-//   1. "continue to payment" → POST …/purchase/cardcom opens a session (a LowProfileId, nothing else comes back);
+//   1. the form opens a session as soon as it is shown → POST …/purchase/cardcom (a LowProfileId, nothing else comes back);
 //   2. the frames are initialised with that id; the buyer fills the form and solves CardCom's reCAPTCHA frame (the master frame
 //      reports it); "pay" posts doTransaction to the master frame;
 //   3. CardCom's frame answers HandleSubmit / HandleEror — only a reason to ask the server, via POST …/purchase/settle;
 //   4. the server's state (paid / declined / review / in progress) decides the screen.
-// The session opens only when the buyer asks, so a page that is merely looked at writes nothing to the payment ledger.
+// The payment page is reached right after the terms are approved, so the session opens by itself and the buyer sees the card
+// fields at once. Opening writes a pending ledger row; coming back to the page (a reload, a second tab) hands back the SAME
+// young unpaid session instead of opening a new one (resolvePending in cardcom-purchase.ts). The button stays for a retry.
 
-type Phase = 'idle' | 'opening' | 'ready' | 'paying' | 'declined' | 'failed' | 'waiting';
+type Phase = 'opening' | 'ready' | 'paying' | 'declined' | 'failed' | 'waiting';
 
 type StartAnswer = { status?: string; lowProfileId?: string };
 type SettleAnswer = { state?: string; activation?: string };
@@ -95,7 +97,8 @@ export function CardcomOpenFieldsForm({
   pollDelayMs?: number;
 }) {
   const router = useRouter();
-  const [phase, setPhase] = useState<Phase>('idle');
+  // The form opens its session as soon as it is shown (below), so it starts in 'opening'.
+  const [phase, setPhase] = useState<Phase>('opening');
   const [lowProfileId, setLowProfileId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [ownerId, setOwnerId] = useState('');
@@ -150,6 +153,14 @@ export function CardcomOpenFieldsForm({
       if (mounted.current) fail('purchase_failed');
     }
   }, [campaignId, fail, router]);
+
+  // Open the session once, when the form is first shown. The ref keeps React's development double-run from opening twice.
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (autoOpened.current) return;
+    autoOpened.current = true;
+    void openSession();
+  }, [openSession]);
 
   // Asks the server what CardCom says, and shows ITS answer. Once per submit; a payment that CardCom has not confirmed yet
   // (3D Secure takes a moment) is asked about a few more times before the buyer is told to wait.
@@ -254,11 +265,13 @@ export function CardcomOpenFieldsForm({
         </p>
       ) : null}
 
-      {!showFrames ? (
+      {/* Before the frames: a spinner while the session opens, a retry after a decline or a failure, and nothing while a
+          payment is in flight or under review (the notice above says so, and paying again must not be offered). */}
+      {showFrames ? null : phase === 'waiting' ? null : (
         <Button
           type="button"
           className="h-10 w-full"
-          disabled={phase === 'opening' || phase === 'waiting'}
+          disabled={phase === 'opening'}
           onClick={() => void openSession()}
         >
           {phase === 'opening' ? (
@@ -266,13 +279,12 @@ export function CardcomOpenFieldsForm({
               <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
               פותחים טופס תשלום…
             </>
-          ) : phase === 'declined' || phase === 'failed' ? (
-            'ניסיון נוסף'
           ) : (
-            'המשך לתשלום'
+            'ניסיון נוסף'
           )}
         </Button>
-      ) : (
+      )}
+      {!showFrames ? null : (
         <form onSubmit={submit} className="space-y-4" noValidate aria-busy={phase === 'paying'}>
           <div className="space-y-1.5">
             <Label htmlFor="cc-owner-name">שם בעל הכרטיס</Label>

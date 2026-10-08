@@ -10,7 +10,7 @@ import type { FormState } from '@/lib/validation/result';
 // records who approved, when, from where and which version (recordPackageApproval). `terms_version` is the version of
 // the terms the page SHOWED; the server compares it with the active document, so terms that changed between reading
 // and clicking are never approved unseen. useActionState surfaces the server's safe Hebrew error inline; on success the
-// action redirects back to the setup flow.
+// action redirects straight to the payment page.
 export function ApprovePackageTermsForm({
   action,
   termsVersion,
