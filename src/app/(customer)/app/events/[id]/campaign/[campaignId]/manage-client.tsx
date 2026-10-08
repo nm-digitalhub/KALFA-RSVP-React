@@ -27,7 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import type { GaActionEvent } from '@/lib/analytics/ga-event-contracts';
 import type { CampaignStatus } from '@/lib/data/campaigns';
-import { isCampaignCancellable } from '@/lib/data/campaign-status';
+import { cancelActionCopy, isCampaignCancellable } from '@/lib/data/campaign-status';
 import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
 import { computeChargeAmount } from '@/lib/data/close-charge-amount';
 import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
@@ -61,10 +61,13 @@ type Campaign = {
   // state the page derived for it (null for the other model, or when the ledger could not be read).
   package_price: number | null;
   payment_status: string | null;
+  // Everything that settled on the payment is test money (a payment on the no-money test terminal). Absent = false.
+  payment_test_money?: boolean;
 };
 
-// What the stage and the cancel rule need from the campaign about its payment.
-const paymentOf = (c: Pick<Campaign, 'payment_status'>) => (c.payment_status ? { status: c.payment_status } : null);
+// What the stage, the cancel rule and the cancel button's words need from the campaign about its payment.
+const paymentOf = (c: Pick<Campaign, 'payment_status' | 'payment_test_money'>) =>
+  c.payment_status ? { status: c.payment_status, ...(c.payment_test_money ? { testMoney: true } : {}) } : null;
 
 type Summary = {
   reachedCount: number;
@@ -827,6 +830,8 @@ function ActionsPanel({
   alreadyNotified: number;
 }) {
   const isActive = campaign.status === 'active';
+  // A campaign whose only money is test money is reset, not "cancelled": the button says which.
+  const cancelCopy = cancelActionCopy(paymentOf(campaign));
   const hasOwnerActions = canActivate || needsPayment || isActive;
   const hasAdminActions = canPause || canClose || canSettle || canCancel;
   const showThankyou = Boolean(thankyou) && thankyouRelevant;
@@ -937,9 +942,9 @@ function ActionsPanel({
             {canCancel ? (
               <ActionButton
                 action={actions.cancel}
-                label="ביטול קמפיין"
+                label={cancelCopy.label}
                 variant="danger"
-                confirm="לבטל את הקמפיין לצמיתות? הפעולה עוצרת כל פנייה נוספת ולא ניתנת לשחזור."
+                confirm={cancelCopy.confirm}
               />
             ) : null}
           </div>

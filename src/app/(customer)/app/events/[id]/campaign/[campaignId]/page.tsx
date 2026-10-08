@@ -186,6 +186,7 @@ export default async function CampaignManagePage({
           included_reached: campaign.included_reached,
           package_price: campaign.package_price,
           payment_status: payment?.status ?? null,
+          payment_test_money: payment?.testMoney === true,
         }}
         summary={summary}
         summaryFailed={summaryFailed}

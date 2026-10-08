@@ -28,6 +28,10 @@ const UNAVAILABLE_MESSAGE = {
 
 const NOTICE_CLASS = 'rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning';
 
+// Staff only in practice: a customer is never offered the test terminal, and test money exists only where it was paid.
+const TEST_TERMINAL_NOTICE = 'מסוף בדיקה — לא יחויב כרטיס אמיתי.';
+const TEST_MONEY_PAID_NOTICE = 'תשלום בדיקה — לא נגבה כסף ולא נספר בהכנסות.';
+
 export function PackagePaymentView({
   screen,
   errorMessage,
@@ -66,6 +70,11 @@ export function PackagePaymentView({
         <section className="space-y-4 rounded-lg border border-success/40 bg-success/10 p-6 text-center">
           <p className="text-2xl font-bold text-success">התשלום התקבל</p>
           <p className="text-sm">שולם {formatAmount(screen.amount)} עבור החבילה.</p>
+          {screen.testMoney ? (
+            <p role="status" className={NOTICE_CLASS}>
+              {TEST_MONEY_PAID_NOTICE}
+            </p>
+          ) : null}
           {screen.activation === 'active' ? (
             <p className="text-sm">הקמפיין פעיל. הפניות לאורחים יישלחו לפי לוח הזמנים.</p>
           ) : null}
@@ -148,6 +157,11 @@ export function PackagePaymentView({
 
           <section className="space-y-4 rounded-lg border border-border bg-card p-4">
             <h2 className="text-sm font-semibold">פרטי כרטיס אשראי</h2>
+            {screen.testTerminal ? (
+              <p role="status" className={NOTICE_CLASS}>
+                {TEST_TERMINAL_NOTICE}
+              </p>
+            ) : null}
             {provider === 'cardcom' ? (
               <CardcomOpenFieldsForm
                 eventId={eventId}

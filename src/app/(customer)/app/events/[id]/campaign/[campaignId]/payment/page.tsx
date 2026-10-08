@@ -4,7 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
 import { hasPlatformPermission, requireUser } from '@/lib/auth/dal';
-import { getCardcomServerConfig } from '@/lib/data/cardcom-config';
+import { getCardcomServerConfig, isCardcomTestTerminal } from '@/lib/data/cardcom-config';
 import { getCampaign, previewCampaignHoldSizing } from '@/lib/data/campaigns';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
@@ -133,6 +133,8 @@ export default async function CampaignPaymentPage({
       eventActive: event.status === 'active',
       gatesOpen: paymentsEnabled && packageEnabled && (provider === 'cardcom' || publicConfig !== null),
       pendingIsResumable,
+      // Said on the form, so nobody mistakes a run on CardCom's test terminal for a real payment.
+      testTerminal: provider === 'cardcom' && cardcomConfig !== null && isCardcomTestTerminal(cardcomConfig.terminalNumber),
     });
     return (
       <div className="mx-auto max-w-2xl space-y-6">

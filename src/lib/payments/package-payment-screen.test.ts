@@ -106,3 +106,24 @@ describe('packagePaymentScreen — paid: what the customer can do next', () => {
   });
 });
 
+// Test money is said out loud on the two screens where a person could mistake it for a real payment: the form that would take it, and
+// the screen that says it was paid. Both flags exist only when true, so every other screen keeps exactly the shape it always had.
+describe('packagePaymentScreen — test money', () => {
+  it('paid with test money only says so', () => {
+    expect(screen({ payment: { status: 'collected', collected: 120, credit: 0, committed: 0, testMoney: true } })).toEqual({ kind: 'paid', amount: 120, activation: 'ready', testMoney: true });
+  });
+
+  it('paid with real money carries no test mark', () => {
+    expect('testMoney' in screen({ payment: { status: 'collected', collected: 120, credit: 0, committed: 0 } })).toBe(false);
+  });
+
+  it('the form on the test terminal says so; on any other terminal it carries no mark', () => {
+    expect(screen({ testTerminal: true })).toEqual({ kind: 'form', amount: 120, testTerminal: true });
+    expect(screen({ testTerminal: false })).toEqual({ kind: 'form', amount: 120 });
+    expect(screen({})).toEqual({ kind: 'form', amount: 120 });
+  });
+
+  it('the test-terminal flag does not make a closed screen open', () => {
+    expect(screen({ testTerminal: true, gatesOpen: false })).toEqual({ kind: 'unavailable', reason: 'disabled' });
+  });
+});

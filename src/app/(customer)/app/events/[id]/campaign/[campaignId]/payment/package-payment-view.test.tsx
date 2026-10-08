@@ -94,6 +94,33 @@ describe('PackagePaymentView — a payment that exists, or may exist, never offe
   });
 });
 
+// Test money is said out loud on the two screens where a person could mistake it for a real payment. (Staff only in practice: a
+// customer is never offered the test terminal.)
+describe('PackagePaymentView — test money is said out loud', () => {
+  it('the form on the test terminal says no real card will be charged, and is still the form', () => {
+    render(view({ kind: 'form', amount: 120, testTerminal: true }));
+    expect(screen.getByRole('status').textContent).toBe('מסוף בדיקה — לא יחויב כרטיס אמיתי.');
+    expect(screen.getByTestId('card-form')).toBeTruthy();
+  });
+
+  it('the form on any other terminal says nothing of the kind', () => {
+    render(view({ kind: 'form', amount: 120 }));
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('the paid screen of test money says nothing was collected and that it is not counted - and the flow still works as paid', () => {
+    const { container } = render(view({ kind: 'paid', amount: 120, activation: 'unavailable', testMoney: true }));
+    expect(screen.getByRole('status').textContent).toBe('תשלום בדיקה — לא נגבה כסף ולא נספר בהכנסות.');
+    expect(container.textContent).toContain('התשלום התקבל');
+    expect(screen.getByRole('link', { name: 'מעבר לניהול הקמפיין' })).toBeTruthy();
+  });
+
+  it('the paid screen of real money has no such note', () => {
+    render(view({ kind: 'paid', amount: 120, activation: 'unavailable' }));
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
 describe('PackagePaymentView — unavailable', () => {
   it.each([
     ['ledger', PURCHASE_ERROR_MESSAGES.purchase_failed],
