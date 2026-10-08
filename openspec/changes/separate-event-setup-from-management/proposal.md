@@ -12,6 +12,12 @@ The owner defines this as one problem: there is no clear boundary between settin
 - **Routing follows the boundary.** `/app/events/[id]` redirects an owner whose setup is unfinished to `/setup`. `/setup` redirects a paid event to `/app/events/[id]`, not to the campaign page. Login, email verification and return visits keep landing on `/app`, which already routes to the event page; the event page then picks setup or management.
 - **One step list, flat content.** The stepper renders only in the setup shell, once. Step content is one surface with headings and dividers, not cards inside cards. The payment route renders inside the same setup shell, so the step list stays visible while paying.
 - **Purchase ends setup; there is no "activation" (owner decision, 8.10).** The recorded purchase starts the service automatically, whether or not the event has guests. The customer never sees an activation, "start" or "paid, not started" state. Guests are not a setup step: they are managed after purchase, can be added at any time, and each one is approached on the package schedule up to the quota.
+- **The quota is enforced where guests are added (owner decision, 8.10).** Purchase needs no guests. Adding a guest is what puts the guest on the outreach list, in order of addition, up to the package's contact quota; beyond it the guest is added and waits, visibly. The activation-time fill that used to back this up was removed in `16413312`, so this change adds code-based safety nets in its place (see design D9):
+  - **order of addition is kept atomically:** a migration replaces `reconcile_authorized_set` so that an add, and a removal that frees a seat, admit the first waiting guest by order of addition inside the same transaction, even against a concurrent add;
+  - **a missed admission is repaired:** the worker, on each tick, re-links guests whose contact link failed and tops up every running package list. Neither step depends on `RECONCILE_AUTHORIZED_SET_ENABLED`;
+  - **the guards do not depend on the switch** for a package: a deleted guest's contact never leaves the list silently through a cascade, and never receives outreach;
+  - the WhatsApp import logs a failed admission instead of swallowing it;
+  - the guests page shows each guest's outreach status, and tells "beyond the quota" apart from a missing phone, a missing link, a request not to be contacted and a pending admission.
 - **Close and back inside setup.** The setup shell offers "סגירת האירוע" (with confirmation). The back link from the package step goes to the details step inside setup, not to the event page, which would now redirect back.
 - **"קמפיין" is removed from customer-visible text.** This covers step labels, stage labels, page titles, `metadata` titles, buttons and server error messages that reach the owner. The new wording is "אישורי הגעה" / "השירות". Staff surfaces keep the word.
 - **Closing an event discards unpaid setup data atomically.** A new database function closes the event and cancels its unpaid campaign in one transaction, with an audit row. Nothing is deleted:
@@ -21,7 +27,7 @@ The owner defines this as one problem: there is no clear boundary between settin
   - guest data follows the existing closed-event behavior.
 
   This corrects an earlier chat message that said the leftover "is deleted with it".
-- **Payment states are first-class setup states.** Not started or declined: pay again. In progress or in review: a waiting state, and closing is blocked with a support message. Paid but not activated (no contacts): management page with the start action.
+- **Payment states are first-class setup states.** Not started or declined: pay again. In progress or in review: a waiting state, and closing is blocked with a support message. Paid: the management page, with no start action, whether or not guests exist.
 
 ## Capabilities
 
@@ -58,8 +64,15 @@ None. `openspec/specs/` has no existing capabilities.
   - `src/lib/data/package-activation-errors.ts` and `package-purchase-errors.ts` (customer-facing error strings);
   - `src/lib/data/event-labels.ts` (customer labels);
   - `src/lib/data/events.ts` (`closeEvent` calls the new RPC);
+  - `src/lib/data/contacts.ts` (`reconcileCampaignSetForContact` and `pruneOrphanContact`: not switch-gated for a package; a new request-free link repair) and `worker/main.ts` (`handleArm`: link repair and top-up of running package lists);
+  - `src/lib/data/outreach-engine.ts` (the `no_live_guest` skip, not switch-gated for a package);
+  - `guests/import/whatsapp/actions.ts` (log a failed admission) and `guests/page.tsx` (per-guest "beyond the quota" marker);
   - customer-facing error strings in `src/lib/data/campaigns.ts` and `src/lib/data/agreements.ts`.
-- **Database:** one migration adds a security-invoker function, callable by `service_role` only, that closes an event and retires its unpaid campaign. The R7 trigger, `cancel_campaign` and the ledger are unchanged. `types.generated.ts` is regenerated through the normal command.
+- **Database:** two migrations.
+  - One adds a security-invoker function, callable by `service_role` only, that closes an event and retires its unpaid campaign. The R7 trigger, `cancel_campaign` and the ledger are unchanged.
+  - One replaces `reconcile_authorized_set` (same signature and results) and adds a shared admission function used by it and by `fill_authorized_set`, so admission by order of addition is atomic. The audit vocabulary is unchanged.
+
+  `types.generated.ts` is regenerated through the normal command.
 - **Tests:**
   - `setup-steps` unit tests;
   - event, setup and payment page routing tests;
@@ -68,5 +81,8 @@ None. `openspec/specs/` has no existing capabilities.
   - `permission-separation.test.ts`;
   - `campaign-status.test.ts` parity (unchanged);
   - a vocabulary scan of customer routes;
+  - guest-add admission tests for the single add, bulk insert, CSV import and WhatsApp import paths, and for the worker link repair and top-up;
+  - the DB integration suites `reconcile.integration.test.ts` and `fill-authorized-set.integration.test.ts` (skipped unless `OUTREACH_DB_IT=1` on a dedicated test DB), extended with order of addition, the freed seat and a concurrent add;
+  - a dry-run script for the `reconcile_authorized_set` replacement;
   - a migration dry-run script.
 - **Operations:** the owner applies the migration and deploys. Build and the full test suite run only when the owner says so.
