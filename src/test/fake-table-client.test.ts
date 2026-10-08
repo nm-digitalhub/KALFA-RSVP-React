@@ -154,4 +154,22 @@ describe('beforeInsert — what a BEFORE INSERT trigger does', () => {
     expect((await from(db, 'ops').insert({ campaign_id: 'c1', kind: 'refund', outcome: 'pending' })).error).toBeNull();
     expect(db.rows('ops').find((r) => r.kind === 'refund')?.once_slot).toBe(false);
   });
+
+  it('is handed the rows already in the table, so a trigger can read another row (a child looking at its parent)', async () => {
+    const seen: Array<{ already: number; ids: unknown[] }> = [];
+    const db = createFakeTableClient(
+      { ops: [{ id: 'parent', kind: 'charge', flavor: 'sweet' }] },
+      {},
+      {
+        beforeInsert: (_table, row, rows) => {
+          seen.push({ already: rows.length, ids: rows.map((r) => r.id) });
+          const parent = rows.find((r) => r.id === row.parent_id);
+          return { ...row, flavor: parent?.flavor ?? null };
+        },
+      },
+    );
+    await from(db, 'ops').insert({ id: 'child', kind: 'refund', parent_id: 'parent' });
+    expect(seen).toEqual([{ already: 1, ids: ['parent'] }]);
+    expect(db.rows('ops').find((r) => r.id === 'child')?.flavor).toBe('sweet');
+  });
 });

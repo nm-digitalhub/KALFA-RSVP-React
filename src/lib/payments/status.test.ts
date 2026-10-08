@@ -135,6 +135,50 @@ describe('refundableAmount', () => {
   });
 });
 
+// Test money (a payment opened on a no-money terminal) is a property of the SETTLED money, decided by the database when each row is
+// born. It is only ever added to a state when true, so every state of real money keeps exactly the shape the rest of the code and its
+// tests were written against.
+describe('deriveStatus — testMoney', () => {
+  const t = (kind: string, effect: OperationRow['effect'], outcome: OperationRow['outcome'], amount: number, at: string, isTest?: boolean): OperationRow =>
+    ({ ...op(kind, effect, outcome, amount, at), ...(isTest === undefined ? {} : { isTest }) });
+  const D1 = '2026-10-01T00:00:00Z';
+  const D2 = '2026-10-02T00:00:00Z';
+
+  it('rows that say nothing about their class are real money: no testMoney key at all', () => {
+    const state = deriveStatus([op('package_purchase', 'collect', 'succeeded', 100)]);
+    expect(state).toEqual({ status: 'collected', collected: 100, credit: 0, committed: 0 });
+    expect('testMoney' in state).toBe(false);
+  });
+  it('rows explicitly marked real (isTest false) keep the same shape', () => {
+    expect('testMoney' in deriveStatus([t('package_purchase', 'collect', 'succeeded', 100, D1, false)])).toBe(false);
+  });
+  it('a succeeded test collect is test money', () => {
+    expect(deriveStatus([t('package_purchase', 'collect', 'succeeded', 100, D1, true)])).toEqual({ status: 'collected', collected: 100, credit: 0, committed: 0, testMoney: true });
+  });
+  it('a test collect and its test refund are still test money (status refunded)', () => {
+    expect(deriveStatus([t('package_purchase', 'collect', 'succeeded', 100, D1, true), t('refund', 'return', 'succeeded', 100, D2, true)])).toEqual({ status: 'refunded', collected: 0, credit: 0, committed: 0, testMoney: true });
+  });
+  it('one real succeeded collect among test ones makes the whole thing real', () => {
+    const state = deriveStatus([t('package_purchase', 'collect', 'succeeded', 100, D1, true), t('package_upgrade', 'collect', 'succeeded', 50, D2, false)]);
+    expect(state.status).toBe('collected');
+    expect('testMoney' in state).toBe(false);
+  });
+  it('a real collect that was refunded is not test money', () => {
+    expect('testMoney' in deriveStatus([t('package_purchase', 'collect', 'succeeded', 100, D1), t('refund', 'return', 'succeeded', 100, D2)])).toBe(false);
+  });
+  it('a test row that has not settled (pending, review, failed) is no settled money at all', () => {
+    for (const outcome of ['pending', 'review', 'failed'] as const) {
+      expect('testMoney' in deriveStatus([t('package_purchase', 'collect', outcome, 100, D1, true)])).toBe(false);
+    }
+  });
+  it('a hold (commit) and informational rows do not count as money, test or not', () => {
+    expect('testMoney' in deriveStatus([t('authorize', 'commit', 'succeeded', 200, D1, true), t('note', 'none', 'succeeded', 0, D2, true)])).toBe(false);
+  });
+  it('a test purchase followed by an unresolved row keeps the in-flight status and still says the settled money was test', () => {
+    expect(deriveStatus([t('package_purchase', 'collect', 'succeeded', 100, D1, true), t('refund', 'return', 'pending', 100, D2, true)])).toMatchObject({ status: 'pending', testMoney: true });
+  });
+});
+
 describe('paymentBadge — never the word תפוס', () => {
   const st = (status: PaymentState['status'], collected = 0, credit = 0): PaymentState => ({ status, collected, credit, committed: 0 });
   it.each([

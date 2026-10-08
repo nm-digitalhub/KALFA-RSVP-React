@@ -17,6 +17,7 @@ import { getCampaignCreditTotal } from '@/lib/data/billing';
 import { getCardcomServerConfig } from '@/lib/data/cardcom-config';
 import { getPackageModelEnabled, getPaymentsEnabled } from '@/lib/data/payments';
 import { createFakeTableClient, type FakeTableClient, type TableRow } from '@/test/fake-table-client';
+import { withLedgerStamp } from '@/test/ledger-stamp-trigger';
 
 let fake: FakeTableClient;
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => fake.client }));
@@ -42,7 +43,8 @@ const input = (over: Partial<CardcomStartInput> = {}): CardcomStartInput => ({
 
 const ONCE = new Set(['package_purchase']);
 const ledgerOptions = {
-  beforeInsert: (_t: string, row: TableRow) => ({ ...row, once_slot: ONCE.has(String(row.kind)) }),
+  // The database's trigger: the once_slot snapshot, and the stamp (is_test from the terminal, a child from its parent).
+  beforeInsert: withLedgerStamp((_t: string, row: TableRow) => ({ ...row, once_slot: ONCE.has(String(row.kind)) })),
   uniqueIndexes: [
     { table: 'payment_operations', columns: ['campaign_id', 'kind'], where: { once_slot: true, outcome: ['pending', 'review', 'succeeded'] } },
     { table: 'payment_operations', columns: ['campaign_id', 'kind'], where: { outcome: 'pending' } },
@@ -203,6 +205,26 @@ describe('startCardcomPurchase: opening the session', () => {
       SuccessRedirectUrl: 'https://beta.kalfa.me/app/events/e1/campaign/c1/payment',
     });
     expect(vi.mocked(lowProfileCreate).mock.calls[0][1]).toEqual({ cardcom: { timeoutMs: 10_000 } });
+  });
+
+  it('stamps the pending row with the provider and the terminal the session is asked to open on - the very terminal in the Create request', async () => {
+    await startCardcomPurchase(input());
+    const sent = vi.mocked(lowProfileCreate).mock.calls[0][0];
+    expect(ops()).toMatchObject([{ provider: 'cardcom', provider_terminal: 1001, is_test: false }]);
+    expect(sent).toMatchObject({ TerminalNumber: ops()[0].provider_terminal });
+  });
+
+  it('on the test terminal the row is born as test money, and the request names the same terminal', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'kalfa-api', enabled: true });
+    await expect(startCardcomPurchase(input({ mayUseTestTerminal: true }))).resolves.toMatchObject({ status: 'ready' });
+    expect(ops()).toMatchObject([{ provider: 'cardcom', provider_terminal: 1000, is_test: true }]);
+    expect(vi.mocked(lowProfileCreate).mock.calls[0][0]).toMatchObject({ TerminalNumber: 1000 });
+  });
+
+  it('the stamp is on the row even when the session never opens: the failed row still says where it was meant to go', async () => {
+    vi.mocked(lowProfileCreate).mockResolvedValue({ ResponseCode: 5, Description: 'terminal not allowed' } as never);
+    await startCardcomPurchase(input());
+    expect(ops()).toMatchObject([{ outcome: 'failed', provider: 'cardcom', provider_terminal: 1001 }]);
   });
 
   it('a second click (or a reload) while the first session is still open gets the SAME session back, never a second row', async () => {

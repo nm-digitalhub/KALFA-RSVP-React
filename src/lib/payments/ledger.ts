@@ -47,6 +47,10 @@ export type OperationDetails = {
   paymentFacts?: PaymentFacts | null;
   providerPaymentId?: number | null;
   providerAuthRef?: string | null;
+  // The terminal CardCom itself reports in its answer (terminalEchoFromCardcom). Written once, when the row is completed and the
+  // answer carried one; the database refuses to change it afterwards. Not the terminal the row was opened on - that one is
+  // `providerTerminal` of NewOperation, set at birth and frozen.
+  providerTerminalEcho?: number | null;
   providerStatus?: string | null;
   providerStatusDescription?: string | null;
   providerDocument?: ProviderDocument | null;
@@ -66,6 +70,12 @@ export type NewOperation = OperationDetails & {
   amount: number;
   outcome: OperationOutcome;
   parentOperationId?: string | null;
+  // Which clearing company the row belongs to, and the terminal its payment session was ASKED to open on (the same configuration
+  // object that builds the request). Written when the row is born and never changed: the database freezes both and derives
+  // `is_test` from the terminal, once. Only a NEW row carries them - a completion cannot, by type and by detailColumns - and a
+  // refund or a release takes them from its parent whatever is sent here. Absent = the database default (sumit, no terminal).
+  provider?: 'sumit' | 'cardcom';
+  providerTerminal?: number | null;
   source?: 'app' | 'provider_sync' | 'manual_backfill';
   // Non-sensitive extras only — never card data, a citizen id or a raw provider body.
   meta?: { [key: string]: Json | undefined };
@@ -151,6 +161,7 @@ function detailColumns(d: OperationDetails): TablesUpdate<'payment_operations'> 
   if (d.creditApplied !== undefined) out.credit_applied = d.creditApplied;
   if (d.providerPaymentId !== undefined) out.provider_payment_id = d.providerPaymentId;
   if (d.providerAuthRef !== undefined) out.provider_auth_ref = d.providerAuthRef;
+  if (d.providerTerminalEcho !== undefined) out.provider_terminal_echo = d.providerTerminalEcho;
   if (d.providerStatus !== undefined) out.provider_status = d.providerStatus;
   if (d.providerStatusDescription !== undefined) out.provider_status_description = d.providerStatusDescription;
   if (d.providerDocument !== undefined) {
@@ -214,6 +225,10 @@ function insertRow(op: NewOperation): TablesInsert<'payment_operations'> {
     meta: op.meta ?? {},
     // The column default, written out: a row always says how much of it came from credit, even when that is nothing.
     credit_applied: 0,
+    // The stamp is written here and ONLY here (detailColumns is shared with completions, which must never touch it). `is_test` is
+    // not written by anyone: the database sets it from the terminal when the row is inserted.
+    ...(op.provider === undefined ? {} : { provider: op.provider }),
+    ...(op.providerTerminal === undefined ? {} : { provider_terminal: op.providerTerminal }),
     ...detailColumns(op),
   };
 }
@@ -381,7 +396,7 @@ function isEffect(v: unknown): v is OperationEffect {
 export async function loadOperations(admin: AdminClient, campaignId: string): Promise<OperationRow[]> {
   const { data, error } = await admin
     .from('payment_operations')
-    .select('kind, outcome, amount, credit_applied, occurred_at, recorded_at, payment_operation_kinds!inner(effect), payment_operation_lines(line_total)')
+    .select('kind, outcome, amount, credit_applied, is_test, occurred_at, recorded_at, payment_operation_kinds!inner(effect), payment_operation_lines(line_total)')
     .eq('campaign_id', campaignId)
     .order('occurred_at', { ascending: true })
     .order('recorded_at', { ascending: true });
@@ -399,6 +414,9 @@ export async function loadOperations(admin: AdminClient, campaignId: string): Pr
       // numeric may arrive as a string
       amount: Number(row.amount),
       credit: lines.length > 0 ? creditOfTotals(lines.map((l) => l.line_total)) : Number(row.credit_applied),
+      // The class the database gave the row when it was born (a no-money terminal). Never derived here. Only present when true,
+      // so a row of real money keeps the shape it always had.
+      ...(row.is_test === true ? { isTest: true } : {}),
       occurredAt: row.occurred_at,
       recordedAt: row.recorded_at,
     };

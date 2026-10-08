@@ -21,7 +21,8 @@ export type PackageRefundRefusal =
   | 'no_customer' // SUMIT: the payer has no customer number: a credit must never open a second customer
   | 'no_card' // SUMIT: no saved card / expiry / holder id: the admin refunds by hand
   | 'no_document' // CardCom: the payment has no document that can be cancelled (number, or a type we can name): refund by hand
-  | 'partial_unsupported'; // CardCom: only a FULL refund is built (a partial one waits for plan item U9)
+  | 'partial_unsupported' // CardCom: only a FULL refund is built (a partial one waits for plan item U9)
+  | 'terminal_changed'; // CardCom: the payment was made on a terminal that is not the one the connection uses now, or on one never recorded (an old row)
 
 export type PackageRefundResult =
   | { status: 'refunded'; amount: number; document: ProviderDocument | null; alreadyDone: boolean }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFakeTableClient, type FakeTableClient, type TableRow } from '@/test/fake-table-client';
+import { withLedgerStamp } from '@/test/ledger-stamp-trigger';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
@@ -44,7 +45,9 @@ const INDEXES = [
 
 const seed = (kind: string, outcome: string, over: TableRow = {}): TableRow => ({
   id: `seed-${kind}-${outcome}`, campaign_id: 'c1', event_id: 'e1', kind, outcome, amount: 149, credit_applied: 0, once_slot: ONCE.has(kind),
-  payment_operation_kinds: { effect: EFFECT[kind] }, occurred_at: '2026-10-01T10:00:00.000Z', recorded_at: '2026-10-01T10:00:00.000Z', meta: {}, ...over,
+  payment_operation_kinds: { effect: EFFECT[kind] }, occurred_at: '2026-10-01T10:00:00.000Z', recorded_at: '2026-10-01T10:00:00.000Z', meta: {},
+  // Stamped the way the database stamps a CardCom row: the terminal the payment was opened on (the connection's, 1001) and its class.
+  provider: 'cardcom', provider_terminal: 1001, is_test: false, ...over,
 });
 // The purchase: paid 149 through CardCom, a receipt (number 77) issued by it.
 const PURCHASE = seed('package_purchase', 'succeeded', {
@@ -56,7 +59,7 @@ const okAnswer = { ResponseCode: 0, Description: 'ok', NewDocumentNumber: 78, Ne
 let db: FakeTableClient;
 let errorLog: ReturnType<typeof vi.spyOn>;
 function useDb(rows: TableRow[] = [PURCHASE]) {
-  db = createFakeTableClient({ payment_operations: rows }, {}, { beforeInsert: trigger, uniqueIndexes: INDEXES });
+  db = createFakeTableClient({ payment_operations: rows }, {}, { beforeInsert: withLedgerStamp(trigger), uniqueIndexes: INDEXES });
   vi.mocked(createAdminClient).mockReturnValue(db.client as never);
 }
 const REQ = { campaignId: 'c1', eventId: 'e1', cancellationRequestId: 'req1' };
@@ -118,6 +121,22 @@ describe('refundCardcomPayment: a full refund', () => {
     expect(vi.mocked(documentsCancelDoc).mock.calls[0][0]).toMatchObject({ DocumentNumber: 90, DocumentType: 1 });
   });
 
+  it('refunds a TEST payment on the test terminal like any other: the refund row is test money too (the database copies it from the parent), and every alert says so', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'kalfa-api', enabled: true });
+    useDb([{ ...PURCHASE, provider_terminal: 1000, is_test: true }]);
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toMatchObject({ status: 'refunded', amount: 149 });
+    expect(refundRows()).toMatchObject([{ outcome: 'succeeded', provider: 'cardcom', provider_terminal: 1000, is_test: true }]);
+    expect(vi.mocked(sendSlackAlert).mock.calls.map(([a]) => a.title)).toEqual([expect.stringMatching(/^\[בדיקה\] /)]);
+    expect(logActivity).toHaveBeenCalledWith(expect.objectContaining({ meta: expect.objectContaining({ testMoney: true }) }));
+  });
+
+  it('the refund of REAL money is a real row, with no test mark anywhere', async () => {
+    await refundCardcomPayment({ ...REQ, amount: 149 });
+    expect(refundRows()).toMatchObject([{ provider: 'cardcom', provider_terminal: 1001, is_test: false }]);
+    expect(vi.mocked(sendSlackAlert).mock.calls.map(([a]) => a.title).join()).not.toContain('[בדיקה]');
+    expect(vi.mocked(logActivity).mock.calls[0][0].meta).not.toHaveProperty('testMoney');
+  });
+
   it('still refunds when the pilot switch was turned off after the payment: the money goes back through the company that was paid', async () => {
     vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: false });
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toMatchObject({ status: 'refunded' });
@@ -154,6 +173,30 @@ describe('refundCardcomPayment: refused before anything is written or sent', () 
     useDb([]);
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'refused', reason: 'no_payment' });
     nothingHappened();
+  });
+
+  it('refuses a payment made on ANOTHER terminal than the connection uses now: CancelDoc names the company only by the connection\'s credentials', async () => {
+    useDb([{ ...PURCHASE, provider_terminal: 1000, is_test: true }]);
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'refused', reason: 'terminal_changed' });
+    nothingHappened();
+  });
+
+  it('refuses a payment with NO recorded terminal (a row from before the stamp existed): it cannot be vouched for', async () => {
+    useDb([{ ...PURCHASE, provider: 'sumit', provider_terminal: null }]);
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'refused', reason: 'terminal_changed' });
+    nothingHappened();
+  });
+
+  it('says so before it says "partial": a payment the connection cannot refund at all is the first thing an admin must hear', async () => {
+    useDb([{ ...PURCHASE, provider_terminal: 1000, is_test: true }]);
+    await expect(refundCardcomPayment({ ...REQ, amount: 129 })).resolves.toEqual({ status: 'refused', reason: 'terminal_changed' });
+  });
+
+  it('still reports the older, plainer refusals first: no payment, and more than was paid', async () => {
+    useDb([{ ...PURCHASE, provider_terminal: 1000, is_test: true }]);
+    await expect(refundCardcomPayment({ ...REQ, amount: 150 })).resolves.toEqual({ status: 'refused', reason: 'exceeds_refundable' });
+    useDb([]);
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'refused', reason: 'no_payment' });
   });
 
   it('refuses a PARTIAL refund (a cancellation fee): CancelDoc cancels a document whole, and a partial one waits for plan item U9', async () => {
@@ -288,6 +331,16 @@ describe('cardcomRefundSummary', () => {
 
   it('says a payment with no cancellable document cannot be refunded (the screen\'s "no card" state)', async () => {
     useDb([{ ...PURCHASE, provider_document_number: null }]);
+    await expect(cardcomRefundSummary('c1')).resolves.toMatchObject({ hasCard: false });
+  });
+
+  it('says a payment the connection cannot refund (another terminal, none recorded, or no connection) is a payment with "no card": the screen never promises a refund the server will refuse', async () => {
+    useDb([{ ...PURCHASE, provider_terminal: 1000, is_test: true }]);
+    await expect(cardcomRefundSummary('c1')).resolves.toMatchObject({ refundable: 149, hasCard: false });
+    useDb([{ ...PURCHASE, provider: 'sumit', provider_terminal: null }]);
+    await expect(cardcomRefundSummary('c1')).resolves.toMatchObject({ hasCard: false });
+    useDb();
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(null);
     await expect(cardcomRefundSummary('c1')).resolves.toMatchObject({ hasCard: false });
   });
 

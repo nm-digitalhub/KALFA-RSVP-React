@@ -3,13 +3,15 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 
 import { createFakeTableClient, type TableRow } from '@/test/fake-table-client';
+import { withLedgerStamp } from '@/test/ledger-stamp-trigger';
 import { beginOperation, completeOperation, currentCard, getOperation, latestOperation, loadOperations, OperationStateError, recordOperation, refundsOfRequest } from './ledger';
 
 // What the BEFORE INSERT trigger does in the database: it snapshots the registry's once_per_campaign flag onto the
 // row (once_slot), and the partial unique index only looks at rows that carry it. A double with no trigger would let
-// every "once per campaign" test pass for the wrong reason.
+// every "once per campaign" test pass for the wrong reason. It also stamps the row the way the trigger does (is_test from the
+// terminal, a child from its parent), so a test of the stamp cannot pass for the wrong reason either.
 const ONCE_KINDS = new Set(['authorize', 'charge', 'package_purchase']);
-const trigger = { beforeInsert: (_table: string, row: TableRow) => ({ ...row, once_slot: ONCE_KINDS.has(String(row.kind)) }) };
+const trigger = { beforeInsert: withLedgerStamp((_table: string, row: TableRow) => ({ ...row, once_slot: ONCE_KINDS.has(String(row.kind)) })) };
 
 describe('ledger writes', () => {
   it('recordOperation inserts one row and returns its id', async () => {
@@ -105,6 +107,97 @@ describe('ledger writes', () => {
       payment_operations: [{ id: 'c', campaign_id: 'c1', kind: 'charge', outcome: 'succeeded', amount: '0', credit_applied: '84', occurred_at: '2026-09-02T00:00:00Z', recorded_at: '2026-09-02T00:00:01Z', payment_operation_kinds: { effect: 'collect' } }],
     });
     expect(await loadOperations(db.client as never, 'c1')).toEqual([{ kind: 'charge', effect: 'collect', outcome: 'succeeded', amount: 0, credit: 84, occurredAt: '2026-09-02T00:00:00Z', recordedAt: '2026-09-02T00:00:01Z' }]);
+  });
+});
+
+// A row is born with the terminal its payment session was ASKED to open on; the database gives it its class (is_test) once, from that
+// terminal, and freezes both; CardCom's own report of the terminal (the echo) is written when the row is completed. The application
+// writes the stamp in exactly one place - the insert - and never writes the class at all.
+describe('the stamp: provider and terminal at birth, the class from the database, the echo at completion', () => {
+  const BORN = { campaignId: 'c1', eventId: 'e1', kind: 'package_purchase', amount: 100 } as const;
+  const empty = () => createFakeTableClient({ payment_operations: [] }, {}, trigger);
+
+  it('a new CardCom row carries the provider and the terminal it was asked to open on', async () => {
+    const db = empty();
+    await beginOperation(db.client as never, { ...BORN, provider: 'cardcom', providerTerminal: 1001 });
+    expect(db.ops[0].patch).toMatchObject({ provider: 'cardcom', provider_terminal: 1001 });
+    expect(db.rows('payment_operations')[0]).toMatchObject({ provider: 'cardcom', provider_terminal: 1001 });
+  });
+
+  it('a row that says nothing about them writes neither column, so the database default applies', async () => {
+    const db = empty();
+    await beginOperation(db.client as never, { ...BORN });
+    expect(db.ops[0].patch).not.toHaveProperty('provider');
+    expect(db.ops[0].patch).not.toHaveProperty('provider_terminal');
+    expect(db.ops[0].patch).not.toHaveProperty('provider_terminal_echo');
+  });
+
+  it('recordOperation (a row born already finished) carries the stamp too', async () => {
+    const db = empty();
+    await recordOperation(db.client as never, { ...BORN, outcome: 'succeeded', provider: 'cardcom', providerTerminal: 1000 });
+    expect(db.ops[0].patch).toMatchObject({ provider: 'cardcom', provider_terminal: 1000 });
+  });
+
+  it('the class is the database\'s alone: the terminal decides it, and the application never sends it', async () => {
+    const db = createFakeTableClient({ payment_operations: [] }, {}, { ...trigger, uniqueIndexes: [] });
+    await beginOperation(db.client as never, { ...BORN, kind: 'package_upgrade', provider: 'cardcom', providerTerminal: 1000 });
+    await beginOperation(db.client as never, { ...BORN, kind: 'charge', provider: 'cardcom', providerTerminal: 1001 });
+    await beginOperation(db.client as never, { ...BORN, kind: 'authorize' });
+    expect(db.rows('payment_operations').map((r) => r.is_test)).toEqual([true, false, false]);
+    for (const op of db.ops) expect(op.patch).not.toHaveProperty('is_test');
+  });
+
+  it('even a caller that tries to send the class (against the types) cannot: it is not written, on insert or on completion', async () => {
+    const db = empty();
+    const begun = await beginOperation(db.client as never, { ...BORN, isTest: true, is_test: true } as never);
+    if (!('id' in begun)) throw new Error('expected an id');
+    await completeOperation(db.client as never, begun.id, { from: 'pending', outcome: 'succeeded', isTest: true, is_test: true } as never);
+    for (const op of db.ops) expect(op.patch).not.toHaveProperty('is_test');
+    expect(db.rows('payment_operations')[0].is_test).toBe(false);
+  });
+
+  it('a completion cannot touch the stamp: provider and terminal are not written, even if a caller passes them (against the types)', async () => {
+    const db = createFakeTableClient({ payment_operations: [{ id: 'p1', campaign_id: 'c1', kind: 'package_purchase', outcome: 'pending', provider: 'cardcom', provider_terminal: 1000, is_test: true }] });
+    await completeOperation(db.client as never, 'p1', { from: 'pending', outcome: 'succeeded', amount: 100, provider: 'sumit', providerTerminal: 1001, providerTerminalEcho: 1000 } as never);
+    const patch = db.ops[0].patch ?? {};
+    expect(patch).not.toHaveProperty('provider');
+    expect(patch).not.toHaveProperty('provider_terminal');
+    expect(patch).not.toHaveProperty('is_test');
+    expect(db.rows('payment_operations')[0]).toMatchObject({ provider: 'cardcom', provider_terminal: 1000, is_test: true });
+  });
+
+  it('a completion writes the echo CardCom reported, in its own column', async () => {
+    const db = createFakeTableClient({ payment_operations: [{ id: 'p1', campaign_id: 'c1', kind: 'package_purchase', outcome: 'pending' }] });
+    await completeOperation(db.client as never, 'p1', { from: 'pending', outcome: 'succeeded', amount: 100, providerTerminalEcho: 1000 });
+    expect(db.rows('payment_operations')[0]).toMatchObject({ outcome: 'succeeded', provider_terminal_echo: 1000 });
+  });
+
+  it('a completion with no echo writes no echo column: nothing the row already holds is overwritten', async () => {
+    const db = createFakeTableClient({ payment_operations: [{ id: 'p1', campaign_id: 'c1', kind: 'package_purchase', outcome: 'pending', provider_terminal_echo: 1000 }] });
+    await completeOperation(db.client as never, 'p1', { from: 'pending', outcome: 'failed' });
+    expect(db.ops[0].patch).not.toHaveProperty('provider_terminal_echo');
+    expect(db.rows('payment_operations')[0].provider_terminal_echo).toBe(1000);
+  });
+
+  it('a human resolution from review can carry the echo too', async () => {
+    const db = createFakeTableClient({ payment_operations: [{ id: 'r1', campaign_id: 'c1', kind: 'package_purchase', outcome: 'review' }] });
+    await completeOperation(db.client as never, 'r1', { from: 'review', outcome: 'failed', providerTerminalEcho: 1001 });
+    expect(db.rows('payment_operations')[0]).toMatchObject({ outcome: 'failed', provider_terminal_echo: 1001 });
+  });
+
+  it('loadOperations passes the class the database gave a row on as isTest, and says nothing for a row of real money', async () => {
+    const at = { occurred_at: '2026-10-01T00:00:00Z', recorded_at: '2026-10-01T00:00:01Z', credit_applied: '0', payment_operation_kinds: { effect: 'collect' } };
+    const db = createFakeTableClient({
+      payment_operations: [
+        { id: 't', campaign_id: 'c1', kind: 'package_purchase', outcome: 'succeeded', amount: '100', is_test: true, ...at },
+        { id: 'r', campaign_id: 'c1', kind: 'package_upgrade', outcome: 'succeeded', amount: '50', is_test: false, ...at },
+      ],
+    });
+    const rows = await loadOperations(db.client as never, 'c1');
+    expect(rows[0]).toMatchObject({ kind: 'package_purchase', isTest: true });
+    expect(rows[1]).toMatchObject({ kind: 'package_upgrade' });
+    expect('isTest' in rows[1]).toBe(false);
+    expect(db.ops[0].columns).toContain('is_test');
   });
 });
 

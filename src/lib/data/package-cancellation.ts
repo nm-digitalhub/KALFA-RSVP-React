@@ -63,6 +63,7 @@ const REFUSALS: Record<PackageRefundRefusal, string> = {
   no_card: 'אין כרטיס שמור לקמפיין — יש להחזיר ידנית אצל חברת הסליקה. לא בוצעה פעולה',
   no_document: 'לתשלום הזה אין מסמך שאפשר לזכות אוטומטית — יש להחזיר ידנית אצל חברת הסליקה. לא בוצעה פעולה',
   partial_unsupported: 'החזר חלקי לתשלום שבוצע בספק הסליקה החלופי עדיין אינו נתמך אוטומטית — יש להחזיר ידנית אצל חברת הסליקה, או לאשר ביטול מלא. לא בוצעה פעולה',
+  terminal_changed: 'התשלום בוצע במסוף שונה מזה שבחיבור הנוכחי של חברת הסליקה (או שהמסוף שלו לא נרשם) — אי אפשר לזכות אותו אוטומטית. יש להחזיר ידנית אצל חברת הסליקה. לא בוצעה פעולה',
 };
 
 // What the admin reads when a refund did not go through. Fixed sentences only: never the provider's own text, never a

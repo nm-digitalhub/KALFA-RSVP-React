@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFakeTableClient, type FakeTableClient, type TableRow } from '@/test/fake-table-client';
+import { withLedgerStamp } from '@/test/ledger-stamp-trigger';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
@@ -112,10 +113,10 @@ function useDb(rows: TableRow[] = [PURCHASE], hook?: (table: string, row: TableR
     { payment_operations: rows },
     {},
     {
-      beforeInsert: (table, row) => {
+      beforeInsert: withLedgerStamp((table, row) => {
         hook?.(table, row);
         return trigger(table, row);
-      },
+      }),
       uniqueIndexes: INDEXES,
     },
   );
