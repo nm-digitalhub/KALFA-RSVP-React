@@ -13,7 +13,6 @@ import { POST } from './route';
 import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { activateCampaign, getCampaignForPurchase } from '@/lib/data/campaigns';
-import { PACKAGE_NO_CONTACTS_ERROR } from '@/lib/data/package-activation-errors';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { getProfile } from '@/lib/data/profiles';
 import { purchasePackage, type PurchaseOutcome } from '@/lib/payments/package-purchase';
@@ -214,17 +213,7 @@ describe('POST /api/campaigns/[id]/purchase — after a payment that was just re
     expect(loc.searchParams.get('activate')).toBeNull();
   });
 
-  it('a refused activation keeps the payment and says why: nobody on the list', async () => {
-    vi.mocked(purchasePackage).mockResolvedValue('paid');
-    vi.mocked(activateCampaign).mockRejectedValue(new Error(PACKAGE_NO_CONTACTS_ERROR));
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    const loc = location(await callPost(request({ 'og-token': 'og-123' })));
-    expect(loc.searchParams.get('paid')).toBe('1');
-    expect(loc.searchParams.get('activate')).toBe('no_contacts');
-    expect(loc.searchParams.get('error')).toBeNull();
-  });
-
-  it('any other refused activation: paid, activate=failed, and Slack is told that a paying customer is not live', async () => {
+  it('a refused activation keeps the payment: paid, activate=failed, and Slack is told that a paying customer is not live', async () => {
     vi.mocked(purchasePackage).mockResolvedValue('paid');
     vi.mocked(activateCampaign).mockRejectedValue(new Error('connect ECONNREFUSED 10.0.0.5:5432'));
     vi.spyOn(console, 'error').mockImplementation(() => {});

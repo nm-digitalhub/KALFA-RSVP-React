@@ -14,12 +14,9 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { logActivity } from '@/lib/data/activity';
 import { getBaseOveragePricingEnabled, getPackageModelEnabled } from '@/lib/data/payments';
-import { fillAuthorizedSet } from '@/lib/data/authorized-fill';
 import {
   PACKAGE_NOT_PAID_ERROR,
-  PACKAGE_NO_CONTACTS_ERROR,
   PACKAGE_PAYMENT_UNVERIFIED_ERROR,
-  PACKAGE_SUPPORT_ERROR,
 } from '@/lib/data/package-activation-errors';
 import { getPackagePaymentState, packagePaymentOf } from '@/lib/payments/package-paid';
 import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
@@ -1060,7 +1057,7 @@ async function transitionCampaignStatus(
   opts?: {
     rejectPastEvent?: boolean;
     requireActiveEvent?: boolean;
-    // Package campaigns only: the funding precondition (payment from the ledger, then the first fill). Runs after the
+    // Package campaigns only: the funding precondition (the payment, from the ledger). Runs after the
     // identity and event checks, before the status write.
     preparePackage?: (campaign: { id: string; event_id: string }) => Promise<void>;
   },
@@ -1142,13 +1139,11 @@ async function transitionCampaignStatus(
   return { eventDate };
 }
 
-const TRANSITION_REFUSED_ERROR = 'לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי';
-
-// What a package campaign needs before it may start, in this order: the payment is recorded in the ledger (the only
-// source of truth for package money), then the list every send reads is filled (D6: charged → filled → activated).
-// Runs AFTER the ownership and event checks of the transition and BEFORE the status write, so a refused activation
-// never leaves a half-filled list behind for a customer who is not allowed to start.
-async function requirePackageFundingAndFill(campaignId: string, eventId: string): Promise<void> {
+// What a package campaign needs before it may start: its payment recorded in the ledger (the only source of truth for
+// package money). The list every send reads is not filled here: guests added before the approval are admitted when the
+// terms are approved (agreements.ts), and a guest added later by reconcileCampaignSetForContact (contacts.ts), up to the
+// package quota.
+async function requirePackageFunding(campaignId: string): Promise<void> {
   let paid: boolean;
   try {
     paid = (await getPackagePaymentState(campaignId)).status === 'collected';
@@ -1157,16 +1152,6 @@ async function requirePackageFundingAndFill(campaignId: string, eventId: string)
     throw new Error(PACKAGE_PAYMENT_UNVERIFIED_ERROR);
   }
   if (!paid) throw new Error(PACKAGE_NOT_PAID_ERROR);
-
-  const fill = await fillAuthorizedSet(eventId, campaignId, 'activation');
-  if (fill.verdict === 'not_operational') throw new Error(TRANSITION_REFUSED_ERROR);
-  if (fill.verdict !== 'filled') {
-    console.error('[campaign-lifecycle] package list could not be filled', { campaignId, verdict: fill.verdict });
-    throw new Error(PACKAGE_SUPPORT_ERROR);
-  }
-  // A campaign with nobody on its list would read "active" and approach no one. The customer has paid: tell them what
-  // to do instead of activating into silence.
-  if (fill.size === 0) throw new Error(PACKAGE_NO_CONTACTS_ERROR);
 }
 
 // Activate (begin outreach). Requires an approved/scheduled/paused campaign that
@@ -1199,7 +1184,7 @@ export async function activateCampaign(
     {
       rejectPastEvent: true,
       requireActiveEvent: true,
-      preparePackage: (c) => requirePackageFundingAndFill(c.id, c.event_id),
+      preparePackage: (c) => requirePackageFunding(c.id),
     },
     actor,
   );

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 
 import { buttonVariants } from '@/components/ui/button';
-import { PACKAGE_NO_CONTACTS_ERROR } from '@/lib/data/package-activation-errors';
+import type { ActivationResult } from '@/lib/payments/activate-after-payment';
 import type { PackagePaymentScreen } from '@/lib/payments/package-payment-screen';
 import { PURCHASE_ERROR_MESSAGES } from '@/lib/payments/package-purchase-errors';
 
@@ -61,8 +61,9 @@ export function PackagePaymentView({
   // Starts the campaign from here: the fallback for a payment whose automatic start was refused (the same Server Action
   // as the manage page). Only used when the campaign can be started from this screen.
   activateAction?: (prev: FormState, formData: FormData) => Promise<FormState>;
-  // Why the automatic start after the payment was refused (the purchase route's `?activate=`); null = it was not.
-  activateReason?: 'no_contacts' | 'failed' | null;
+  // How the automatic start after the payment ended, when it did not start (`?activate=`, set by the purchase route and by
+  // the CardCom form after settling); null = it was not refused. Derived from activateAfterPayment's own result type.
+  activateReason?: Exclude<ActivationResult, 'started'> | null;
 }) {
   switch (screen.kind) {
     case 'paid':
@@ -82,9 +83,7 @@ export function PackagePaymentView({
             <div className="space-y-3 text-start">
               {activateReason ? (
                 <p role="alert" className={NOTICE_CLASS}>
-                  {activateReason === 'no_contacts'
-                    ? PACKAGE_NO_CONTACTS_ERROR
-                    : 'הקמפיין עוד לא הופעל אוטומטית. אפשר להפעיל אותו כעת.'}
+                  הקמפיין עוד לא הופעל אוטומטית. אפשר להפעיל אותו כעת.
                 </p>
               ) : null}
               <ActivateNowForm action={activateAction} />

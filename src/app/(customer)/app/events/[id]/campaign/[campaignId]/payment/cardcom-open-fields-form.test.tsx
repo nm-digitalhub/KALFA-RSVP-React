@@ -325,12 +325,12 @@ describe('CardcomOpenFieldsForm', () => {
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1'));
   });
 
-  it('passes on why the automatic start was refused, so the page can show the reason and the start button', async () => {
-    answerWith(SETTLE_URL, { state: 'paid', activation: 'no_contacts' });
+  it('passes on that the automatic start was refused, so the page can show a notice and the start button', async () => {
+    answerWith(SETTLE_URL, { state: 'paid', activation: 'failed' });
     render(<CardcomOpenFieldsForm {...props} />);
     await openSession();
     cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true } });
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1&activate=no_contacts'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1&activate=failed'));
   });
 
   it('settles only once for one submit, however many messages arrive', async () => {

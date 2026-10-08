@@ -456,13 +456,13 @@ export async function recordPackageApproval(
   // Lock the campaign as approved (status-guarded, race-safe) with the version actually shown.
   await approveCampaign(campaign.id, agreementDoc.version);
 
-  // The list every send reads is empty until something fills it. Filling it HERE (and again at activation) keeps the
-  // places in order of addition: otherwise a guest added after the approval would take the first place of an empty
-  // list ahead of everyone who was added earlier. Best-effort: the approval is recorded and must not be undone by this.
+  // The list every send reads is empty until something fills it. This is the only fill of the guests added BEFORE the
+  // approval, in order of addition; a guest added after it is admitted by reconcileCampaignSetForContact (contacts.ts)
+  // up to the package quota. Best-effort: the approval is recorded and must not be undone by this.
   try {
     await fillAuthorizedSet(campaign.event_id, campaign.id, 'package_approval');
   } catch (err) {
-    console.error('[package-approval] first fill failed (non-fatal; activation fills again)', {
+    console.error('[package-approval] first fill failed (non-fatal; the approval stands)', {
       campaignId: campaign.id,
       error: err instanceof Error ? err.message : String(err),
     });

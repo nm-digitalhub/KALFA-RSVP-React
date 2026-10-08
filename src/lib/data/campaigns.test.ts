@@ -111,7 +111,6 @@ import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
 import { fillAuthorizedSet } from '@/lib/data/authorized-fill';
 import {
   PACKAGE_NOT_PAID_ERROR,
-  PACKAGE_NO_CONTACTS_ERROR,
   PACKAGE_PAYMENT_UNVERIFIED_ERROR,
 } from '@/lib/data/package-activation-errors';
 import { getPackagePaymentState } from '@/lib/payments/package-paid';
@@ -1884,11 +1883,11 @@ describe('activateCampaign — a paid package campaign', () => {
     vi.mocked(fillAuthorizedSet).mockReset();
   });
 
-  it('checks the ledger, fills the list, then moves to active — guarded by the package model and not by a card hold', async () => {
+  it('checks the ledger and moves to active without filling the guest list', async () => {
     const b = wire();
     await activateCampaign('c1');
     expect(getPackagePaymentState).toHaveBeenCalledWith('c1');
-    expect(fillAuthorizedSet).toHaveBeenCalledWith('e1', 'c1', 'activation');
+    expect(fillAuthorizedSet).not.toHaveBeenCalled();
     expect(b.campaigns.update).toHaveBeenCalledWith({ status: 'active' });
     expect(b.campaigns.not).toHaveBeenCalledWith('package_price', 'is', null);
     expect(b.campaigns.is).toHaveBeenCalledWith('capture_status', null);
@@ -1896,12 +1895,13 @@ describe('activateCampaign — a paid package campaign', () => {
     expect(b.campaigns.eq).not.toHaveBeenCalledWith('capture_status', 'authorized');
   });
 
-  it('proves ownership before it reads the ledger or writes the list', async () => {
-    wire();
+  it('proves ownership before reading payment, and payment before changing status', async () => {
+    const b = wire();
     await activateCampaign('c1');
     const order = (m: unknown) => (m as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0];
     expect(order(requireOwnedEvent)).toBeLessThan(order(getPackagePaymentState));
-    expect(order(getPackagePaymentState)).toBeLessThan(order(fillAuthorizedSet));
+    expect(order(getPackagePaymentState)).toBeLessThan(order(b.campaigns.update));
+    expect(fillAuthorizedSet).not.toHaveBeenCalled();
   });
 
   it.each(['none', 'pending', 'review', 'declined', 'refunded', 'released', 'committed'] as const)(
@@ -1931,31 +1931,29 @@ describe('activateCampaign — a paid package campaign', () => {
     expect(fillAuthorizedSet).not.toHaveBeenCalled();
   });
 
-  it('refuses to start with nobody to approach: the customer paid, so the message says what to do', async () => {
+  it('activates a paid campaign that has no guests yet, without filling the list', async () => {
     const b = wire();
-    vi.mocked(fillAuthorizedSet).mockResolvedValue({ verdict: 'filled', admitted: 0, size: 0, quota: 100, waiting: 0 });
-    await expect(activateCampaign('c1')).rejects.toThrow(PACKAGE_NO_CONTACTS_ERROR);
-    expect(b.campaigns.update).not.toHaveBeenCalled();
+    vi.mocked(fillAuthorizedSet).mockResolvedValue({
+      verdict: 'filled', admitted: 0, size: 0, quota: 100, waiting: 0,
+    });
+
+    await expect(activateCampaign('c1')).resolves.toBeUndefined();
+
+    expect(getPackagePaymentState).toHaveBeenCalledWith('c1');
+    expect(fillAuthorizedSet).not.toHaveBeenCalled();
+    expect(b.campaigns.update).toHaveBeenCalledWith({ status: 'active' });
   });
 
-  it.each([
-    ['not_operational', 'לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי'],
-    ['no_quota', 'לא ניתן להפעיל את הקמפיין — פנו לתמיכה'],
-    ['no_campaign', 'לא ניתן להפעיל את הקמפיין — פנו לתמיכה'],
-    ['event_mismatch', 'לא ניתן להפעיל את הקמפיין — פנו לתמיכה'],
-  ] as const)('a %s answer from the fill refuses the activation', async (verdict, message) => {
+  it('does not depend on the guest-list filler being available', async () => {
     const b = wire();
-    vi.mocked(fillAuthorizedSet).mockResolvedValue({ verdict });
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    await expect(activateCampaign('c1')).rejects.toThrow(message);
-    expect(b.campaigns.update).not.toHaveBeenCalled();
-  });
+    vi.mocked(fillAuthorizedSet).mockRejectedValue(
+      new Error('Guest-list filler unavailable'),
+    );
 
-  it('a failure of the fill itself refuses the activation and leaves the status alone', async () => {
-    const b = wire();
-    vi.mocked(fillAuthorizedSet).mockRejectedValue(new Error('מילוי רשימת אנשי הקשר נכשל'));
-    await expect(activateCampaign('c1')).rejects.toThrow('מילוי רשימת אנשי הקשר נכשל');
-    expect(b.campaigns.update).not.toHaveBeenCalled();
+    await expect(activateCampaign('c1')).resolves.toBeUndefined();
+
+    expect(fillAuthorizedSet).not.toHaveBeenCalled();
+    expect(b.campaigns.update).toHaveBeenCalledWith({ status: 'active' });
   });
 
   it('a console revival (paused → active) of a package campaign needs the same payment', async () => {

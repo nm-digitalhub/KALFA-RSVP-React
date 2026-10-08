@@ -4,7 +4,6 @@ import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { PackagePaymentScreen } from '@/lib/payments/package-payment-screen';
-import { PACKAGE_NO_CONTACTS_ERROR } from '@/lib/data/package-activation-errors';
 import { PURCHASE_ERROR_MESSAGES } from '@/lib/payments/package-purchase-errors';
 
 // The card form itself needs payments.js, jQuery and next/script; here it is a marker that records what it was given.
@@ -135,25 +134,19 @@ describe('PackagePaymentView — unavailable', () => {
   });
 });
 
-describe('PackagePaymentView — paid: the way to start, and why the automatic start did not happen', () => {
+describe('PackagePaymentView — paid: the way to start, and a notice when the automatic start did not happen', () => {
   const activate = vi.fn();
   const ready: PackagePaymentScreen = { kind: 'paid', amount: 120, activation: 'ready' };
 
-  it('ready: shows the start button, with the reason when the list was empty, and a way to add guests', () => {
-    render(<PackagePaymentView {...base} screen={ready} errorMessage={null} activateAction={activate} activateReason="no_contacts" />);
+  it('ready, the automatic start was refused: a neutral sentence, the start button and a way to add guests', () => {
+    render(<PackagePaymentView {...base} screen={ready} errorMessage={null} activateAction={activate} activateReason="failed" />);
     expect(screen.getByText('התשלום התקבל')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toContain('עוד לא הופעל אוטומטית');
     expect(screen.getByTestId('activate-form')).toBeTruthy();
-    expect(screen.getByRole('alert').textContent).toBe(PACKAGE_NO_CONTACTS_ERROR);
     expect(screen.getByRole('link', { name: 'הוספת מוזמנים' })).toBeTruthy();
   });
 
-  it('ready, refused for another reason: a neutral sentence and the start button', () => {
-    render(<PackagePaymentView {...base} screen={ready} errorMessage={null} activateAction={activate} activateReason="failed" />);
-    expect(screen.getByRole('alert').textContent).toContain('עוד לא הופעל אוטומטית');
-    expect(screen.getByTestId('activate-form')).toBeTruthy();
-  });
-
-  it('ready without a reason (the customer simply came back): the button, and no alert', () => {
+  it('ready, no refused start (the customer simply came back): the button, and no alert', () => {
     render(<PackagePaymentView {...base} screen={ready} errorMessage={null} activateAction={activate} />);
     expect(screen.getByTestId('activate-form')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();

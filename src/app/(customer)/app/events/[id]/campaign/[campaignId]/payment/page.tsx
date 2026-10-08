@@ -150,7 +150,7 @@ export default async function CampaignPaymentPage({
           signerEmail={user.email ?? ''}
           signerPhone={profile?.phone ?? ''}
           activateAction={activateCampaignAction.bind(null, id, campaignId)}
-          activateReason={activate === 'no_contacts' ? 'no_contacts' : activate === 'failed' ? 'failed' : null}
+          activateReason={activate === 'failed' ? 'failed' : null}
         />
       </div>
     );

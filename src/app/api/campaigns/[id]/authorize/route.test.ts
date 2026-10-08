@@ -217,7 +217,7 @@ describe('POST /api/campaigns/[id]/authorize — auto-activation after a confirm
 
 // A fixed-price package campaign is paid by ONE purchase (../purchase). The old hold would reserve an amount on the
 // card, set capture_status='authorized' and auto-activate the campaign — outreach with no payment recorded in the
-// ledger and no guest list filled.
+// ledger.
 describe('POST /api/campaigns/[id]/authorize — a package campaign never takes the old card hold', () => {
   beforeEach(happyPath);
 

@@ -141,17 +141,17 @@ describe('payment page — a package campaign', () => {
     expect(await render({ paid: '1' })).toContain('data-screen="form"');
   });
 
-  it('a paid, approved package campaign can be started from here, and the page says why the automatic start did not happen', async () => {
+  it('a paid, approved package campaign can be started from here, and the page says the automatic start did not happen', async () => {
     vi.mocked(getCampaign).mockResolvedValue(campaign({ package_price: 120, status: 'approved' }) as never);
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0 });
-    const html = await render({ paid: '1', activate: 'no_contacts' });
+    const html = await render({ paid: '1', activate: 'failed' });
     expect(html).toContain('data-screen="paid"');
     expect(html).toContain('data-activation="ready"');
     expect(html).toContain('data-can-activate="yes"');
-    expect(html).toContain('data-activate-reason="no_contacts"');
-    expect(await render({ activate: 'failed' })).toContain('data-activate-reason="failed"');
-    // an `?activate=` value the page does not know is ignored, never echoed
+    expect(html).toContain('data-activate-reason="failed"');
+    // an `?activate=` value the page does not know is ignored, never echoed — including the retired `no_contacts`
     expect(await render({ activate: '<script>' })).toContain('data-activate-reason=""');
+    expect(await render({ activate: 'no_contacts' })).toContain('data-activate-reason=""');
   });
 
   it('a paid package campaign that is already running says so', async () => {

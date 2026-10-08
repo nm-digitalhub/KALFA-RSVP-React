@@ -79,9 +79,9 @@ describe('POST /api/campaigns/[id]/purchase/settle', () => {
     expect(activateAfterPayment).not.toHaveBeenCalled();
   });
 
-  it('passes on why the start was refused, so the page can say so', async () => {
-    vi.mocked(activateAfterPayment).mockResolvedValue('no_contacts');
-    expect(await (await call()).json()).toEqual({ state: 'paid', activation: 'no_contacts' });
+  it('passes on that the start was refused, so the page can say so', async () => {
+    vi.mocked(activateAfterPayment).mockResolvedValue('failed');
+    expect(await (await call()).json()).toEqual({ state: 'paid', activation: 'failed' });
   });
 
   it.each([

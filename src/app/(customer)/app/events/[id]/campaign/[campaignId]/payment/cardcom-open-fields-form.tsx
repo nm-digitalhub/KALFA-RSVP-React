@@ -166,7 +166,7 @@ export function CardcomOpenFieldsForm({
         }
         if (!mounted.current) return;
         if (answer.state === 'paid') {
-          const reason = answer.activation === 'no_contacts' || answer.activation === 'failed' ? `&activate=${answer.activation}` : '';
+          const reason = answer.activation === 'failed' ? '&activate=failed' : '';
           router.replace(`${payUrl}?paid=1${reason}`);
           router.refresh();
           return;
