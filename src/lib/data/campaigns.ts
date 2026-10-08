@@ -1438,11 +1438,14 @@ export async function cancelCampaign(campaignId: string): Promise<void> {
     const { notFound } = await import('next/navigation');
     return notFound();
   }
-  await requirePlatformPermission('campaigns.runstate'); // redirects anyone else
+  const staff = await requirePlatformPermission('campaigns.runstate'); // redirects anyone else
 
+  // The RPC writes the audit row itself, in the same transaction as the status change, and names who did it: the staff member who
+  // just passed the gate above - never an id from the browser. Without a record the cancellation does not happen.
   const admin = createAdminClient();
   const { data, error } = await admin.rpc('cancel_campaign', {
     p_campaign: campaignId,
+    p_actor: staff.id,
   });
   if (error) throw new Error('ביטול הקמפיין נכשל');
   if (data === 'no_campaign' || data === 'not_cancellable') {

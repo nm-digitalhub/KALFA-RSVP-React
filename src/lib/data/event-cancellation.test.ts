@@ -168,7 +168,7 @@ describe('getCampaignForEventAdmin', () => {
       error: null,
     });
     (createAdminClient as unknown as Mock).mockReturnValue({
-      from: () => ({ select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }),
+      from: () => ({ select: () => ({ eq: () => ({ neq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }) }),
     });
     const r = await getCampaignForEventAdmin('e1');
     expect(r).toEqual({
@@ -198,7 +198,7 @@ describe('getCampaignForEventAdmin', () => {
       error: null,
     });
     (createAdminClient as unknown as Mock).mockReturnValue({
-      from: () => ({ select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }),
+      from: () => ({ select: () => ({ eq: () => ({ neq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }) }),
     });
     const r = await getCampaignForEventAdmin('e1');
     expect(r?.hasCardOnFile).toBe(false);
@@ -208,7 +208,7 @@ describe('getCampaignForEventAdmin', () => {
   function adminClientFor(row: Record<string, unknown>) {
     const maybeSingle = vi.fn().mockResolvedValue({ data: row, error: null });
     (createAdminClient as unknown as Mock).mockReturnValue({
-      from: () => ({ select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }),
+      from: () => ({ select: () => ({ eq: () => ({ neq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }) }),
     });
   }
   const PKG_ROW = {
@@ -254,11 +254,19 @@ describe('getCampaignForEventAdmin', () => {
     expect(r).toMatchObject({ isPackage: false, packagePaid: null, packageRefundable: null, packageRefundedForRequest: null, packageUnreadable: false });
   });
 
+  it('asks only for the LIVE campaign: a cancelled one is never what a cancellation request is about, so the screen cannot promise what the resolver will not do', async () => {
+    (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
+    const neq = vi.fn(() => ({ order: () => ({ limit: () => ({ maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }) }) }) }));
+    (createAdminClient as unknown as Mock).mockReturnValue({ from: () => ({ select: () => ({ eq: () => ({ neq }) }) }) });
+    expect(await getCampaignForEventAdmin('e1')).toBeNull();
+    expect(neq).toHaveBeenCalledWith('status', 'cancelled');
+  });
+
   it('returns null when the event has no campaign', async () => {
     (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
     const maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
     (createAdminClient as unknown as Mock).mockReturnValue({
-      from: () => ({ select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }),
+      from: () => ({ select: () => ({ eq: () => ({ neq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }) }),
     });
     const r = await getCampaignForEventAdmin('e1');
     expect(r).toBeNull();
@@ -267,6 +275,13 @@ describe('getCampaignForEventAdmin', () => {
 
 describe('resolveCancellationRequest', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  // The embed lists an event's campaigns in no promised order. A cancelled one (older, with its own id) put before or after the live one.
+  function withCancelled<T extends Record<string, unknown>>(where: 'before' | 'after' | undefined, live: T[]): Array<T | Record<string, unknown>> {
+    if (!where) return live;
+    const cancelled = { id: 'camp0', status: 'cancelled', created_at: '2026-10-08T08:00:00+00:00', charge_status: null, final_charge_amount: null, max_charge_ceiling: null, auth_external_ref: null, package_price: 120, card_token_ref: null, card_exp_month: null, card_exp_year: null, card_citizen_id: null };
+    return where === 'before' ? [cancelled, ...live] : [...live, cancelled];
+  }
 
   // `chargeStatus` controls which branch fires: null/failed/review/nothing_to_charge
   // ⇒ campaign is still pre-charge ⇒ closeCampaignAndCharge IS called; 'charged'
@@ -279,6 +294,8 @@ describe('resolveCancellationRequest', () => {
     packagePrice?: number | null;
     maxChargeCeiling?: number | null;
     campaignStatus?: string;
+    // The event also has a CANCELLED campaign (a reset test run leaves one), listed before or after the live one.
+    cancelledCampaign?: 'before' | 'after';
   }) {
     (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
     const cardFields = opts.noCard
@@ -296,10 +313,11 @@ describe('resolveCancellationRequest', () => {
           id: 'e1',
           status: 'active',
           owner_id: 'u1',
-          campaigns: [
+          campaigns: withCancelled(opts.cancelledCampaign, [
             {
               id: 'camp1',
               status: opts.campaignStatus ?? 'active',
+              created_at: '2026-10-08T10:00:00+00:00',
               charge_status: opts.chargeStatus,
               final_charge_amount: opts.finalChargeAmount ?? 0,
               max_charge_ceiling: opts.maxChargeCeiling ?? null,
@@ -307,7 +325,7 @@ describe('resolveCancellationRequest', () => {
               package_price: opts.packagePrice ?? null,
               ...cardFields,
             },
-          ],
+          ]),
         },
       },
       error: null,
@@ -373,6 +391,18 @@ describe('resolveCancellationRequest', () => {
       return h;
     }
     const order = (m: unknown) => (m as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0];
+
+    it.each(['before', 'after'] as const)('with a cancelled campaign listed %s the live one, the refund is made for the LIVE campaign, never the cancelled one', async (where) => {
+      const h = happy({ chargeStatus: null, packagePrice: 120, campaignStatus: 'active', cancelledCampaign: where });
+      (packageRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 120, refundedForRequest: 0, hasCard: true });
+      (checkPackageRefund as unknown as Mock).mockResolvedValue(null);
+      (refundPackagePayment as unknown as Mock).mockImplementation(async (i: { amount: number }) => ({ status: 'refunded', amount: i.amount, document: DOC, alreadyDone: false }));
+      await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' });
+      expect(packageRefundSummary).toHaveBeenCalledWith('camp1', 'r1');
+      expect(refundPackagePayment).toHaveBeenCalledWith({ campaignId: 'camp1', eventId: 'e1', amount: 120, cancellationRequestId: 'r1' });
+      expect(packageRefundSummary).not.toHaveBeenCalledWith('camp0', expect.anything());
+      expect(h.update).toBeDefined();
+    });
 
     it('full cancellation: refunds what the card paid, closes the campaign and the event, and records the credit document', async () => {
       const { update } = pkg();

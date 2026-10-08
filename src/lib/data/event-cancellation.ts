@@ -14,7 +14,7 @@ import { buildCancellationSmsText } from '@/lib/data/cancellation-sms';
 import { cancellationFeeBase, feeFromPercent } from '@/lib/data/cancellation-fee';
 import { packageRefundMessage, planPackageRefund } from '@/lib/data/package-cancellation';
 import { closeCampaign } from '@/lib/data/campaigns';
-import { CLOSEABLE_CAMPAIGN_STATUSES } from '@/lib/data/campaign-status';
+import { CLOSEABLE_CAMPAIGN_STATUSES, liveCampaignOf } from '@/lib/data/campaign-status';
 import { checkPackageRefund, packageRefundSummary, refundPackagePayment } from '@/lib/payments/package-refund';
 import { getAppOrigin } from '@/lib/url';
 import { logActivity } from '@/lib/data/activity';
@@ -236,6 +236,10 @@ export async function getCampaignForEventAdmin(
       'id, charge_status, max_charge_ceiling, final_charge_amount, package_price, tos_version, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, base_price, included_reached, price_per_reached',
     )
     .eq('event_id', eventId)
+    // The LIVE campaign: the one resolveCancellationRequest acts on (liveCampaignOf), so the screen never promises what the resolver will
+    // not do. A cancelled campaign - every reset test run leaves one - is not what a cancellation request is about, and an event whose
+    // campaigns are all cancelled has none, exactly as the resolver sees it.
+    .neq('status', 'cancelled')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -383,6 +387,7 @@ export async function resolveCancellationRequest(
       campaigns: {
         id: string;
         status: string;
+        created_at: string;
         charge_status: string | null;
         final_charge_amount: number | null;
         max_charge_ceiling: number | null;
@@ -400,7 +405,7 @@ export async function resolveCancellationRequest(
     .from('event_cancellation_requests')
     .select(
       'id, request_number, event_id, sms_consent, status, ' +
-        'events(id, status, owner_id, campaigns(id, status, charge_status, final_charge_amount, max_charge_ceiling, ' +
+        'events(id, status, owner_id, campaigns(id, status, created_at, charge_status, final_charge_amount, max_charge_ceiling, ' +
         'card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, package_price))',
     )
     .eq('id', requestId)
@@ -412,8 +417,10 @@ export async function resolveCancellationRequest(
 
   const event = reqRow.events;
   if (!event) throw new Error('האירוע המקושר לבקשה לא נמצא');
-  // At most one NON-CANCELLED campaign per event (campaigns_event_noncancelled_uidx).
-  const campaign = event.campaigns[0] ?? null;
+  // At most one NON-CANCELLED campaign per event (campaigns_event_noncancelled_uidx) - but any number of cancelled ones (every reset
+  // test run leaves one), and the embed promises no order. The campaign a cancellation request is about is the live one: money is
+  // never refunded from, and a charge never taken on, a cancelled campaign. Newest first, then the live one.
+  const campaign = liveCampaignOf([...event.campaigns].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? '')));
   // A fixed-price package was paid at purchase and has no settlement: neither money branch below fits it
   // (closeCampaignAndCharge refuses it). Resolving its request means giving money BACK through the payment ledger
   // (package-refund.ts); the pieces for that are decided here, before the customer is e-mailed.

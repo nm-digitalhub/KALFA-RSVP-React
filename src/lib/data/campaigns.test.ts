@@ -1261,7 +1261,8 @@ describe('cancelCampaign (R8 — wind-down, platform-admin only)', () => {
 
     expect(requirePlatformPermission).toHaveBeenCalledWith('campaigns.runstate');
     expect(requireOwnedEvent).not.toHaveBeenCalled();
-    expect(client.rpc).toHaveBeenCalledWith('cancel_campaign', { p_campaign: 'c1' });
+    // Who cancelled is the staff member who passed the gate (the default mock above), recorded by the RPC in the same transaction.
+    expect(client.rpc).toHaveBeenCalledWith('cancel_campaign', { p_campaign: 'c1', p_actor: 'admin' });
     // Additive campaign_billing alert on a FRESH cancellation.
     expect(sendSlackAlert).toHaveBeenCalledWith(
       expect.objectContaining({
