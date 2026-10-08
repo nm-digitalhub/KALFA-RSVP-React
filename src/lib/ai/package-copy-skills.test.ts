@@ -24,6 +24,17 @@ describe('package copy skills', () => {
     expect(request.args.slice(0, 3)).toEqual(['--no-install', 'skills', 'use']);
     expect(request.args).not.toContain('--agent');
   });
+  it('asks for a rewrite of the description and keeps the item count and order for the list', async () => {
+    exec.mockResolvedValue(success);
+    const { getPackageCopySkill } = await import('./package-copy-skills');
+    const description = await getPackageCopySkill('description', '/repo', { NODE_ENV: 'test' });
+    const includes = await getPackageCopySkill('includes', '/repo', { NODE_ENV: 'test' });
+    expect(description.task).toContain('שכתב');
+    expect(description.task).toContain('אל תסתפק בהגהה');
+    expect(description.task).toContain('2000');
+    expect(includes.task).toContain('מספר הפריטים ועל סדרם');
+    expect(includes.task).toContain('200');
+  });
   it('shares an in-flight download between two callers', async () => {
     let resolve!: (value: unknown) => void;
     exec.mockImplementation(() => new Promise((done) => { resolve = done; }));

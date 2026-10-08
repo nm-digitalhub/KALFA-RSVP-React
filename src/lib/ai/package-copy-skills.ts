@@ -8,14 +8,16 @@ const HEBREW_WRITER = {
   source: 'https://github.com/skills-il/localization/tree/v1.3.0-hebrew-content-writer/hebrew-content-writer',
   skill: 'hebrew-content-writer',
 };
+// The task is a REWRITE, not a proofread: the model is told what it may change (order, structure, mechanical or translated phrasing,
+// the opening) so it does not stop at fixing commas. What it may not change is in the boundaries of package-copy.ts.
 const contexts = {
   description: {
     ...HEBREW_WRITER,
-    task: 'ערוך את תיאור החבילה בעברית מקצועית ונגישה, עם דגש שיווקי מתון. אין להוסיף עובדות או הבטחות.',
+    task: 'שכתב את תיאור החבילה כך שיישמע כמו טקסט שיווקי טבעי שנכתב בעברית מלכתחילה, לא כמו תרגום. מותר ורצוי לשנות את סדר המשפטים והמבנה, לפצל או לאחד משפטים, להחליף ניסוחים מכניים או מתורגמים, ולפתוח בתועלת ללקוח. אל תסתפק בהגהה. לכל היותר 2000 תווים.',
   },
   includes: {
     ...HEBREW_WRITER,
-    task: 'ערוך את רשימת השירותים בעברית עניינית וקצרה. שמור על מספר הפריטים וסדרם, פריט בכל שורה, בלי להוסיף שירותים.',
+    task: 'שכתב כל פריט כך שיהיה קצר, ברור ומוחשי, בעברית טבעית. שמור על מספר הפריטים ועל סדרם, פריט בכל שורה, בלי תבליטים ובלי מספור. לכל היותר 200 תווים לפריט.',
   },
 } as const;
 
