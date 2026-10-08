@@ -1818,6 +1818,62 @@ export type Database = {
           },
         ]
       }
+      cardcom_config: {
+        Row: {
+          api_name: string
+          api_password_secret: string | null
+          enabled: boolean
+          id: boolean
+          terminal_number: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          api_name: string
+          api_password_secret?: string | null
+          enabled?: boolean
+          id?: boolean
+          terminal_number: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          api_name?: string
+          api_password_secret?: string | null
+          enabled?: boolean
+          id?: boolean
+          terminal_number?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      cardcom_payment_sessions: {
+        Row: {
+          created_at: string
+          low_profile_id: string
+          operation_id: string
+        }
+        Insert: {
+          created_at?: string
+          low_profile_id: string
+          operation_id: string
+        }
+        Update: {
+          created_at?: string
+          low_profile_id?: string
+          operation_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cardcom_payment_sessions_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: true
+            referencedRelation: "payment_operations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       channels: {
         Row: {
           active: boolean
@@ -5130,9 +5186,16 @@ export type Database = {
           card_brand: string | null
           card_exp_month: number | null
           card_exp_year: number | null
+          card_first_digits: string | null
+          card_info: string | null
+          card_is_abroad: boolean | null
           card_issuer: string | null
           card_last4: string | null
           card_mask: string | null
+          card_name: string | null
+          card_owner_email: string | null
+          card_owner_name: string | null
+          card_owner_phone: string | null
           card_token_ref: string | null
           citizen_id_secret: string | null
           credit_applied: number
@@ -5141,6 +5204,7 @@ export type Database = {
           kind: string
           meta: Json
           note: string | null
+          number_of_payments: number | null
           occurred_at: string
           once_slot: boolean
           outcome: Database["public"]["Enums"]["payment_operation_outcome"]
@@ -5148,13 +5212,22 @@ export type Database = {
           parent_slot: boolean
           payment_method_type: string | null
           provider: string
+          provider_account_id: number | null
+          provider_acquirer: string | null
+          provider_auth_description: string | null
           provider_auth_ref: string | null
+          provider_coupon_number: string | null
+          provider_deal_type: string | null
           provider_document_id: number | null
           provider_document_number: number | null
           provider_document_url: string | null
+          provider_entry_mode: string | null
           provider_payment_id: number | null
+          provider_payment_type: string | null
+          provider_rrn: string | null
           provider_status: string | null
           provider_status_description: string | null
+          provider_unique_id: string | null
           recorded_at: string
           source: string
         }
@@ -5164,9 +5237,16 @@ export type Database = {
           card_brand?: string | null
           card_exp_month?: number | null
           card_exp_year?: number | null
+          card_first_digits?: string | null
+          card_info?: string | null
+          card_is_abroad?: boolean | null
           card_issuer?: string | null
           card_last4?: string | null
           card_mask?: string | null
+          card_name?: string | null
+          card_owner_email?: string | null
+          card_owner_name?: string | null
+          card_owner_phone?: string | null
           card_token_ref?: string | null
           citizen_id_secret?: string | null
           credit_applied?: number
@@ -5175,6 +5255,7 @@ export type Database = {
           kind: string
           meta?: Json
           note?: string | null
+          number_of_payments?: number | null
           occurred_at?: string
           once_slot?: boolean
           outcome?: Database["public"]["Enums"]["payment_operation_outcome"]
@@ -5182,13 +5263,22 @@ export type Database = {
           parent_slot?: boolean
           payment_method_type?: string | null
           provider?: string
+          provider_account_id?: number | null
+          provider_acquirer?: string | null
+          provider_auth_description?: string | null
           provider_auth_ref?: string | null
+          provider_coupon_number?: string | null
+          provider_deal_type?: string | null
           provider_document_id?: number | null
           provider_document_number?: number | null
           provider_document_url?: string | null
+          provider_entry_mode?: string | null
           provider_payment_id?: number | null
+          provider_payment_type?: string | null
+          provider_rrn?: string | null
           provider_status?: string | null
           provider_status_description?: string | null
+          provider_unique_id?: string | null
           recorded_at?: string
           source?: string
         }
@@ -5198,9 +5288,16 @@ export type Database = {
           card_brand?: string | null
           card_exp_month?: number | null
           card_exp_year?: number | null
+          card_first_digits?: string | null
+          card_info?: string | null
+          card_is_abroad?: boolean | null
           card_issuer?: string | null
           card_last4?: string | null
           card_mask?: string | null
+          card_name?: string | null
+          card_owner_email?: string | null
+          card_owner_name?: string | null
+          card_owner_phone?: string | null
           card_token_ref?: string | null
           citizen_id_secret?: string | null
           credit_applied?: number
@@ -5209,6 +5306,7 @@ export type Database = {
           kind?: string
           meta?: Json
           note?: string | null
+          number_of_payments?: number | null
           occurred_at?: string
           once_slot?: boolean
           outcome?: Database["public"]["Enums"]["payment_operation_outcome"]
@@ -5216,13 +5314,22 @@ export type Database = {
           parent_slot?: boolean
           payment_method_type?: string | null
           provider?: string
+          provider_account_id?: number | null
+          provider_acquirer?: string | null
+          provider_auth_description?: string | null
           provider_auth_ref?: string | null
+          provider_coupon_number?: string | null
+          provider_deal_type?: string | null
           provider_document_id?: number | null
           provider_document_number?: number | null
           provider_document_url?: string | null
+          provider_entry_mode?: string | null
           provider_payment_id?: number | null
+          provider_payment_type?: string | null
+          provider_rrn?: string | null
           provider_status?: string | null
           provider_status_description?: string | null
+          provider_unique_id?: string | null
           recorded_at?: string
           source?: string
         }
@@ -7621,6 +7728,17 @@ export type Database = {
         Returns: boolean
       }
       cancel_campaign: { Args: { p_campaign: string }; Returns: string }
+      cardcom_api_password: { Args: never; Returns: string }
+      cardcom_config_save: {
+        Args: {
+          p_api_name: string
+          p_api_password: string
+          p_enabled: boolean
+          p_terminal_number: number
+          p_updated_by: string
+        }
+        Returns: undefined
+      }
       claim_callback_triage: {
         Args: never
         Returns: {
