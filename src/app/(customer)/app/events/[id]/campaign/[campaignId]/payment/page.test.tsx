@@ -16,6 +16,9 @@ vi.mock('@/lib/data/payments', () => ({
   getSumitPublicConfig: vi.fn(),
 }));
 vi.mock('@/lib/payments/package-purchase', () => ({ getPackagePaymentState: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ hasPlatformPermission: vi.fn(), requireUser: vi.fn() }));
+vi.mock('@/lib/data/cardcom-config', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/lib/data/cardcom-config')>()), getCardcomServerConfig: vi.fn() }));
+vi.mock('@/lib/payments/cardcom-pending', () => ({ isCardcomPurchasePending: vi.fn() }));
 vi.mock('../../campaign-actions', () => ({ activateCampaignAction: vi.fn() }));
 vi.mock('./hold-form', () => ({
   CampaignHoldForm: (props: { purpose?: string }) => <div data-marker="hold-form" data-purpose={props.purpose ?? 'hold'} />,
@@ -27,6 +30,9 @@ vi.mock('./package-payment-view', () => ({
     screen: { kind: string; activation?: string };
     errorMessage: string | null;
     formConfig: unknown;
+    provider?: string;
+    signerEmail?: string;
+    signerPhone?: string;
     activateAction?: unknown;
     activateReason?: string | null;
   }) => (
@@ -36,6 +42,9 @@ vi.mock('./package-payment-view', () => ({
       data-activation={props.screen.activation ?? ''}
       data-error={props.errorMessage ?? ''}
       data-config={props.formConfig ? 'yes' : 'no'}
+      data-provider={props.provider ?? ''}
+      data-email={props.signerEmail ?? ''}
+      data-phone={props.signerPhone ?? ''}
       data-can-activate={props.activateAction ? 'yes' : 'no'}
       data-activate-reason={props.activateReason ?? ''}
     />
@@ -46,6 +55,9 @@ import { getCampaign, previewCampaignHoldSizing } from '@/lib/data/campaigns';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { getProfile } from '@/lib/data/profiles';
 import { getCampaignHoldsEnabled, getPackageModelEnabled, getPaymentsEnabled, getSumitPublicConfig } from '@/lib/data/payments';
+import { hasPlatformPermission, requireUser } from '@/lib/auth/dal';
+import { getCardcomServerConfig } from '@/lib/data/cardcom-config';
+import { isCardcomPurchasePending } from '@/lib/payments/cardcom-pending';
 import { getPackagePaymentState } from '@/lib/payments/package-purchase';
 import { PURCHASE_ERROR_MESSAGES } from '@/lib/payments/package-purchase-errors';
 import CampaignPaymentPage from './page';
@@ -91,13 +103,17 @@ beforeEach(() => {
     status: 'active',
     event_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
   } as never);
-  vi.mocked(getProfile).mockResolvedValue({ id: 'u1', full_name: 'דנה כהן', phone: null, updated_at: null } as never);
+  vi.mocked(getProfile).mockResolvedValue({ id: 'u1', full_name: 'דנה כהן', phone: '0501234567', updated_at: null } as never);
   vi.mocked(getPaymentsEnabled).mockResolvedValue(true);
   vi.mocked(getCampaignHoldsEnabled).mockResolvedValue(true);
   vi.mocked(getPackageModelEnabled).mockResolvedValue(true);
   vi.mocked(getSumitPublicConfig).mockResolvedValue({ companyId: 12345, apiPublicKey: 'pub-key' });
   vi.mocked(previewCampaignHoldSizing).mockResolvedValue({ holdAmount: 80, ceiling: 600, full: 10, covered: 10 });
   vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'none', collected: 0, credit: 0, committed: 0 });
+  vi.mocked(requireUser).mockResolvedValue({ id: 'u1', email: 'dana@example.com' } as never);
+  vi.mocked(hasPlatformPermission).mockResolvedValue(false);
+  vi.mocked(getCardcomServerConfig).mockResolvedValue(null);
+  vi.mocked(isCardcomPurchasePending).mockResolvedValue(false);
 });
 
 describe('payment page — a package campaign', () => {
@@ -193,5 +209,63 @@ describe('payment page — a pay-per-result campaign is unchanged', () => {
     vi.mocked(getCampaign).mockResolvedValue(campaign({ capture_status: 'authorized', auth_amount: 80 }) as never);
     const html = await render({ activate: 'failed' });
     expect(html).toContain('data-marker="activate-now"');
+  });
+});
+
+// Which clearing company's form the package screen shows is decided by resolvePurchaseProvider, with the same inputs the
+// purchase routes use. SUMIT unless the CardCom pilot is on; on CardCom's test terminal only for someone who may configure it.
+describe('payment page — the CardCom pilot', () => {
+  const cardcom = (over: Record<string, unknown> = {}) => ({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, ...over });
+  beforeEach(() => {
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ package_price: 120 }) as never);
+  });
+
+  it('shows SUMIT\'s form while CardCom is not configured or not switched on', async () => {
+    expect(await render()).toContain('data-provider="sumit"');
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ enabled: false }) as never);
+    expect(await render()).toContain('data-provider="sumit"');
+  });
+
+  it('shows CardCom\'s form when the pilot is on, with the buyer\'s e-mail, and needs no SUMIT public configuration', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom() as never);
+    vi.mocked(getSumitPublicConfig).mockResolvedValue(null);
+    const html = await render();
+    expect(html).toContain('data-provider="cardcom"');
+    expect(html).toContain('data-screen="form"');
+    expect(html).toContain('data-email="dana@example.com"');
+    expect(html).toContain('data-phone="0501234567"');
+  });
+
+  it('keeps a customer on SUMIT when the pilot is on the TEST terminal; an admin is on CardCom', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ terminalNumber: 1000 }) as never);
+    expect(await render()).toContain('data-provider="sumit"');
+    vi.mocked(hasPlatformPermission).mockResolvedValue(true);
+    expect(await render()).toContain('data-provider="cardcom"');
+    expect(hasPlatformPermission).toHaveBeenCalledWith('integrations.manage');
+  });
+
+  it('a pending CardCom payment shows the form again (the same session is handed back); a pending SUMIT one stays "in progress"', async () => {
+    vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'pending', collected: 0, credit: 0, committed: 0 });
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom() as never);
+    vi.mocked(isCardcomPurchasePending).mockResolvedValue(true);
+    expect(await render()).toContain('data-screen="form"');
+    vi.mocked(isCardcomPurchasePending).mockResolvedValue(false);
+    expect(await render()).toContain('data-screen="in_progress"');
+  });
+
+  it('does not even ask about a pending CardCom purchase when SUMIT is the provider or nothing is pending', async () => {
+    vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'pending', collected: 0, credit: 0, committed: 0 });
+    await render();
+    expect(isCardcomPurchasePending).not.toHaveBeenCalled();
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom() as never);
+    vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'none', collected: 0, credit: 0, committed: 0 });
+    await render();
+    expect(isCardcomPurchasePending).not.toHaveBeenCalled();
+  });
+
+  it('a closed gate still closes the CardCom form', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom() as never);
+    vi.mocked(getPackageModelEnabled).mockResolvedValue(false);
+    expect(await render()).toContain('data-screen="unavailable"');
   });
 });

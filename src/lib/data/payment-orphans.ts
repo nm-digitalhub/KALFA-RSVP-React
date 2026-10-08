@@ -1,8 +1,10 @@
 import 'server-only';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { CARDCOM_ABANDON_AFTER_MINUTES, settleCardcomSession } from '@/lib/payments/cardcom-settle';
 import { completeOperation, OperationStateError } from '@/lib/payments/ledger';
 import type { createAdminClient } from '@/lib/supabase/admin';
+import type { Json } from '@/lib/supabase/types';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -21,6 +23,12 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 // for the answer is far younger.
 // If the original process finishes in the same second the sweep runs, the compare-and-set in completeOperation
 // matches nothing and the sweep skips the row.
+//
+// ONE EXCEPTION: a CardCom purchase (meta.provider = 'cardcom'). Its row is pending while the BUYER fills in the Open Fields
+// form, which is not "a process that died" and can take longer than ten minutes. It is never moved to review for its age.
+// It is settled from CardCom's side instead (settleCardcomSession): paid → succeeded, and — only once the session is older
+// than CARDCOM_ABANDON_AFTER_MINUTES and CardCom confirms there is no payment — failed, so the buyer can try again.
+// A row with no session at all never reached the buyer, so nothing can be paid on it: it is closed as failed.
 export const ORPHAN_AFTER_MINUTES = 10;
 
 const MAX_IDS_IN_ALERT = 5;
@@ -39,6 +47,32 @@ interface PendingRow {
   campaign_id: string;
   event_id: string;
   kind: string;
+  recorded_at: string;
+  meta: Json;
+}
+
+const isCardcom = (meta: Json): boolean =>
+  meta !== null && typeof meta === 'object' && !Array.isArray(meta) && meta.provider === 'cardcom';
+
+// A CardCom purchase that has been pending a while: ask CardCom, never guess. Every branch leaves the row either settled
+// by settleCardcomSession (which alerts on review / failure itself) or exactly as it was.
+async function sweepCardcomRow(admin: AdminClient, row: PendingRow, now: Date): Promise<void> {
+  const { data: session, error } = await admin.from('cardcom_payment_sessions').select('low_profile_id').eq('operation_id', row.id).maybeSingle();
+  if (error) {
+    console.error('[payment-orphans] could not read the CardCom session of a pending purchase', { operationId: row.id });
+    return;
+  }
+  if (!session) {
+    // The session was never recorded, so the buyer was never given an id: nothing can have been paid.
+    try {
+      await completeOperation(admin, row.id, { from: 'pending', outcome: 'failed', note: 'no CardCom session was ever opened for this purchase; nothing was charged' });
+    } catch (err) {
+      if (!(err instanceof OperationStateError)) console.error('[payment-orphans] could not close a CardCom purchase that has no session', { operationId: row.id });
+    }
+    return;
+  }
+  const ageMinutes = (now.getTime() - Date.parse(row.recorded_at)) / 60_000;
+  await settleCardcomSession(session.low_profile_id, { finalizeUnpaid: ageMinutes > CARDCOM_ABANDON_AFTER_MINUTES });
 }
 
 export async function runPaymentOrphanSweep(
@@ -48,7 +82,7 @@ export async function runPaymentOrphanSweep(
   const cutoff = new Date(now.getTime() - ORPHAN_AFTER_MINUTES * 60_000).toISOString();
   const { data, error } = await admin
     .from('payment_operations')
-    .select('id, campaign_id, event_id, kind')
+    .select('id, campaign_id, event_id, kind, recorded_at, meta')
     .eq('outcome', 'pending')
     .lt('recorded_at', cutoff);
   // Thrown, not "0 found": a sweep that cannot read must look failed so the job is retried and shows up in the queue.
@@ -61,6 +95,10 @@ export async function runPaymentOrphanSweep(
   let auditFailed = 0;
 
   for (const row of rows) {
+    if (isCardcom(row.meta)) {
+      await sweepCardcomRow(admin, row, now);
+      continue;
+    }
     try {
       await completeOperation(admin, row.id, {
         from: 'pending',

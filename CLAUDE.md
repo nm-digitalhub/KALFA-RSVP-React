@@ -125,7 +125,7 @@ Public RSVP handles personal data and must be treated as a security-sensitive su
 
 ## Voice Agent (ElevenLabs + Voximplant)
 
-Never hand-edit `agent_configs/*.json` and never `PATCH` the agent directly. The config's canonical shape is defined by the server, and manual edits are silently dropped.
+Never edit `agent_configs/*.json` before running `agents pull --update`, never edit it from documentation examples, and never `PATCH` the agent directly. The config's canonical shape is defined by the server, and edits made on a stale or hand-written shape are silently dropped. Editing the file after a fresh `pull --update`, then `agents push` and a confirming `pull --update`, is the sanctioned flow (§6.1).
 
 Follow `docs/voice-agent/elevenlabs-json-reference.md` §6 for every change: `agents pull --update` before editing, `tools add`/`tools push` to register a client tool (an inline `tools[]` entry alone is silently dropped), and verification by transcribing the actual call audio — the agent's own transcript hides bugs. The production bridge scenario is `RSVPAgent` on the `kalfa-rsvp` application (rule `OutCallAgent`, promoted 2026-07-20); deploy it only via `voxengine-ci upload`, and never touch the DTMF `OutCall` rule (1494311) with the bridge.
 

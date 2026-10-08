@@ -11,11 +11,15 @@ vi.mock('@/lib/auth/dal', () => ({
 vi.mock('@/lib/ops/db-health', () => ({ getJobHealth: vi.fn() }));
 vi.mock('@/lib/ops/integrations', () => ({ getIntegrationsStatus: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 
 import { hasPlatformPermission, isPlatformOwner, requirePlatformStaff } from '@/lib/auth/dal';
 import { getJobHealth } from '@/lib/ops/db-health';
 import { getIntegrationsStatus } from '@/lib/ops/integrations';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
+
+import { createFakeTableClient } from '@/test/fake-table-client';
 
 import { getIntegrationsIndex } from './index';
 
@@ -71,6 +75,7 @@ beforeEach(() => {
   mockPermissionLabels([
     { key: 'manage_settings', label: 'ניהול הגדרות מערכת' },
     { key: 'manage_voice', label: 'ניהול מוקד שיחות AI' },
+    { key: 'integrations.manage', label: 'ניהול חיבורי אינטגרציה' },
   ]);
   viewer([]);
 });
@@ -184,8 +189,9 @@ describe('getIntegrationsIndex', () => {
   it('resolves each distinct permission once, not once per card', async () => {
     viewer(['manage_settings']);
     await getIntegrationsIndex();
-    // Two distinct keys across all the permission-gated cards.
+    // Three distinct keys across all the permission-gated cards.
     expect(vi.mocked(hasPlatformPermission).mock.calls.map((c) => c[0]).sort()).toEqual([
+      'integrations.manage',
       'manage_settings',
       'manage_voice',
     ]);
@@ -261,5 +267,44 @@ describe('the owner-agent card', () => {
     const { cards } = await byKey();
     expect(cards['owner-agent']).toBeUndefined();
     expect(Object.keys(cards)).toHaveLength(7);
+  });
+});
+
+// The CardCom card (the pilot): its status comes from its own closed table, read with the service-role client.
+describe('the CardCom card', () => {
+  const cardcomRows = (rows: Array<Record<string, unknown>>) =>
+    vi.mocked(createAdminClient).mockReturnValue(createFakeTableClient({ cardcom_config: rows }).client as never);
+
+  it('is shown as "not configured" when nothing was ever saved, so staff can see where to set it up', async () => {
+    cardcomRows([]);
+    const { cards } = await byKey();
+    expect(cards.cardcom).toMatchObject({ label: 'CardCom', configured: false, enabled: false });
+  });
+
+  it('carries configured and enabled through separately', async () => {
+    cardcomRows([{ id: true, enabled: false }]);
+    expect((await byKey()).cards.cardcom).toMatchObject({ configured: true, enabled: false });
+    cardcomRows([{ id: true, enabled: true }]);
+    expect((await byKey()).cards.cardcom).toMatchObject({ configured: true, enabled: true });
+  });
+
+  it('opens only for the holder of integrations.manage, and is a locked card for everyone else', async () => {
+    cardcomRows([]);
+    viewer(['manage_settings']);
+    expect((await byKey()).cards.cardcom).toMatchObject({ canOpen: false, href: null, permission: 'integrations.manage' });
+    viewer(['integrations.manage']);
+    expect((await byKey()).cards.cardcom).toMatchObject({ canOpen: true, href: '/admin/integrations/cardcom' });
+  });
+
+  it('labels the missing permission from the database', async () => {
+    cardcomRows([]);
+    expect((await byKey()).cards.cardcom.permissionLabel).toBe('ניהול חיבורי אינטגרציה');
+  });
+
+  it('is left out, not invented, when its table cannot be read', async () => {
+    const fake = createFakeTableClient({ cardcom_config: [] });
+    fake.fail('cardcom_config', '42501');
+    vi.mocked(createAdminClient).mockReturnValue(fake.client as never);
+    expect((await byKey()).cards.cardcom).toBeUndefined();
   });
 });

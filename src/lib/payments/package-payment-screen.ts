@@ -26,6 +26,10 @@ export interface PackagePaymentScreenInput {
   eventActive: boolean;
   // payments + the package model + the provider's public configuration are all on.
   gatesOpen: boolean;
+  // A pending payment the BUYER can pick up again: a CardCom Open Fields session still open in a form (a reload, a second
+  // tab). The form is shown and asks the server for the same session. A SUMIT charge in flight is never resumable — its
+  // card may already have been charged — so it stays "in progress". Defaults to false.
+  pendingIsResumable?: boolean;
 }
 
 function activationOf(i: PackagePaymentScreenInput): 'active' | 'ready' | 'unavailable' {
@@ -41,7 +45,8 @@ export function packagePaymentScreen(i: PackagePaymentScreenInput): PackagePayme
     case 'collected':
       return { kind: 'paid', amount: i.payment.collected, activation: activationOf(i) };
     case 'pending':
-      return { kind: 'in_progress' };
+      if (!i.pendingIsResumable) return { kind: 'in_progress' };
+      break;
     case 'review':
       return { kind: 'review' };
     case 'none':

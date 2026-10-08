@@ -10,6 +10,7 @@ import { formatAmount } from '@/lib/format';
 import type { FormState } from '@/lib/validation/result';
 
 import { ActivateNowForm } from './activate-now-form';
+import { CardcomOpenFieldsForm } from './cardcom-open-fields-form';
 import { CampaignHoldForm } from './hold-form';
 
 // The payment step of a fixed-price package campaign. Presentational: the page decides WHICH screen
@@ -33,7 +34,10 @@ export function PackagePaymentView({
   eventId,
   campaignId,
   formConfig,
+  provider = 'sumit',
   signerName,
+  signerEmail = '',
+  signerPhone = '',
   activateAction,
   activateReason = null,
 }: {
@@ -45,7 +49,11 @@ export function PackagePaymentView({
   // The provider's public (non-secret) tokenization configuration. The screen decision already requires it for the
   // form; it is checked again here so a missing one can only ever show a message, never a broken form.
   formConfig: { companyId: number; apiPublicKey: string } | null;
+  // Which clearing company takes the purchase (resolvePurchaseProvider). CardCom's form needs no public configuration.
+  provider?: 'sumit' | 'cardcom';
   signerName: string;
+  signerEmail?: string;
+  signerPhone?: string;
   // Starts the campaign from here: the fallback for a payment whose automatic start was refused (the same Server Action
   // as the manage page). Only used when the campaign can be started from this screen.
   activateAction?: (prev: FormState, formData: FormData) => Promise<FormState>;
@@ -109,7 +117,7 @@ export function PackagePaymentView({
       );
 
     case 'form':
-      if (!formConfig) {
+      if (provider === 'sumit' && !formConfig) {
         return (
           <p role="status" className={NOTICE_CLASS}>
             {PURCHASE_ERROR_MESSAGES.purchase_disabled}
@@ -140,14 +148,25 @@ export function PackagePaymentView({
 
           <section className="space-y-4 rounded-lg border border-border bg-card p-4">
             <h2 className="text-sm font-semibold">פרטי כרטיס אשראי</h2>
-            <CampaignHoldForm
-              purpose="purchase"
-              campaignId={campaignId}
-              companyId={formConfig.companyId}
-              apiPublicKey={formConfig.apiPublicKey}
-              amount={screen.amount}
-              signerName={signerName}
-            />
+            {provider === 'cardcom' ? (
+              <CardcomOpenFieldsForm
+                eventId={eventId}
+                campaignId={campaignId}
+                amount={screen.amount}
+                defaultName={signerName}
+                defaultEmail={signerEmail}
+                defaultPhone={signerPhone}
+              />
+            ) : formConfig ? (
+              <CampaignHoldForm
+                purpose="purchase"
+                campaignId={campaignId}
+                companyId={formConfig.companyId}
+                apiPublicKey={formConfig.apiPublicKey}
+                amount={screen.amount}
+                signerName={signerName}
+              />
+            ) : null}
           </section>
         </div>
       );

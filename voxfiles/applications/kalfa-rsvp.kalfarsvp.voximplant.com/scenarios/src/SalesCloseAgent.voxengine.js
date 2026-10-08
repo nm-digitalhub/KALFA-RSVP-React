@@ -486,16 +486,13 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     get_pricing: {
                         path: 'pricing',
                         body: function () { return {}; },
+                        // The fixed-price package catalogue: a list of
+                        // { package_name, price, contact_quota, channels, includes }.
+                        // Passed through whole — the figures are the server's, and
+                        // the agent must read them, not rebuild them.
                         resultFrom: function (ok, body) {
-                            if (ok && body && body.available) {
-                                return {
-                                    available: true,
-                                    package_name: body.package_name,
-                                    base_price: body.base_price,
-                                    included_reached: body.included_reached,
-                                    price_per_reached: body.price_per_reached,
-                                    price_with_vat: body.price_with_vat
-                                };
+                            if (ok && body && body.available && Array.isArray(body.packages) && body.packages.length > 0) {
+                                return { available: true, packages: body.packages };
                             }
                             return { available: false };
                         }

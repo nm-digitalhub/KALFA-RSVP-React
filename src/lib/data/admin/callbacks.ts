@@ -896,6 +896,11 @@ export async function updateCallOutcome(
  * callback-scheduling.ts REQUEST-FREE (no requireUser/cookies, so the worker
  * bundle can import that module), so it carries no authorization of its own;
  * this is the only path a browser request can reach it through.
+ *
+ * `exactIso` must be a real instant (ISO with `Z`): the action gets it from
+ * rescheduleCallbackSchema, which converts the form's Israel wall time. The
+ * instant is recorded in the audit row, so the time that was actually saved is
+ * never invisible — a timestamp carries no personal data.
  */
 export async function rescheduleCallback(
   id: string,
@@ -907,7 +912,12 @@ export async function rescheduleCallback(
 
   await logActivity({
     action: 'callback.rescheduled',
-    meta: { callbackRequestId: id, ok: outcome.ok, ...(outcome.ok ? {} : { reason: outcome.reason }) },
+    meta: {
+      callbackRequestId: id,
+      requestedAt: exactIso,
+      ok: outcome.ok,
+      ...(outcome.ok ? {} : { reason: outcome.reason }),
+    },
   });
 
   return outcome;

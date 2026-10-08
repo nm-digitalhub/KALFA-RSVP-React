@@ -2,15 +2,21 @@
 
 import { defineStepper } from '@stepperize/react';
 import { Check, Circle, LoaderCircle, Lock } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
+import { buttonVariants } from '@/components/ui/button';
 import type { SetupStep } from '@/lib/data/setup-steps';
 import { cn } from '@/lib/utils';
 
-// Display-only view of the one-time setup flow. The step states are decided on
-// the SERVER (computeSetupSteps); this component only renders them, so the
-// stepper is fully controlled: `step` and `completed` come from props and every
-// change request is ignored (there is no client-side navigation between setup
-// steps — each step's action lives in its own page/form).
+// View of the one-time setup flow. The step states are decided on the SERVER
+// (computeSetupSteps); this component only renders them, so the stepper is fully
+// controlled: `step` and `completed` come from props. The only navigation is
+// "back", and it is the library's own `Stepper.Prev` button: the server says
+// whether there is a back at all and where it leads (setupBackTarget), and
+// `onStepChange` — the library's hook for syncing a stepper with the router —
+// follows that link. Nothing else can change the step (no Trigger, no Next, and
+// `beforeStepChange` refuses any direction but "prev"); each step's action lives
+// in its own page/form.
 //
 // Stepperize models two independent axes, and so do we: `data-status` is the
 // step's POSITION relative to the active one, `data-complete` is BUSINESS
@@ -66,8 +72,11 @@ function StepIcon({ state }: { state: SetupStep['state'] }) {
 const noop = () => undefined;
 
 export type SetupStepView = SetupStep & { label: string };
+/** Where "back" leads, decided on the server: the href, and the name of the step it leads to. */
+export type SetupStepperBack = { href: string; label: string };
 
-export function SetupStepper({ steps }: { steps: SetupStepView[] }) {
+export function SetupStepper({ steps, back = null }: { steps: SetupStepView[]; back?: SetupStepperBack | null }) {
+  const router = useRouter();
   const byKey = new Map(steps.map((s) => [s.key, s]));
   // The server marks at most one step `current` (or `blocked`, when the next
   // step cannot proceed). When every step is done there is none: point at the
@@ -81,7 +90,10 @@ export function SetupStepper({ steps }: { steps: SetupStepView[] }) {
   return (
     <Stepper.Root
       step={active.key}
-      onStepChange={noop}
+      onStepChange={() => {
+        if (back) router.push(back.href);
+      }}
+      beforeStepChange={(context) => back !== null && context.direction === 'prev'}
       completed={completed}
       onCompletedChange={noop}
       orientation="vertical"
@@ -130,6 +142,18 @@ export function SetupStepper({ steps }: { steps: SetupStepView[] }) {
           }}
         </Stepper.Items>
       </Stepper.List>
+      {back ? (
+        <Stepper.Actions className="mt-3">
+          <Stepper.Prev
+            render={(props) => (
+              <button {...props} className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}>
+                <span aria-hidden="true">→</span>
+                חזרה: {back.label}
+              </button>
+            )}
+          />
+        </Stepper.Actions>
+      ) : null}
     </Stepper.Root>
   );
 }

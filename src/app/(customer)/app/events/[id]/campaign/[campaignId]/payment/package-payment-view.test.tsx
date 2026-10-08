@@ -17,6 +17,14 @@ vi.mock('./hold-form', async (importOriginal) => ({
   },
 }));
 
+const cardcomProps = vi.fn();
+vi.mock('./cardcom-open-fields-form', () => ({
+  CardcomOpenFieldsForm: (props: Record<string, unknown>) => {
+    cardcomProps(props);
+    return <div data-testid="cardcom-form" />;
+  },
+}));
+
 vi.mock('./activate-now-form', () => ({
   ActivateNowForm: () => <div data-testid="activate-form" />,
 }));
@@ -26,6 +34,7 @@ import { PackagePaymentView } from './package-payment-view';
 afterEach(() => {
   cleanup();
   formProps.mockClear();
+  cardcomProps.mockClear();
 });
 
 const config = { companyId: 12345, apiPublicKey: 'pub-key' };
@@ -136,3 +145,32 @@ describe('PackagePaymentView — paid: the way to start, and why the automatic s
   });
 });
 
+describe('PackagePaymentView — which form', () => {
+  it('shows CardCom\'s form, with the price and the buyer\'s name and e-mail, when CardCom takes the purchase — and not the SUMIT form', () => {
+    render(<PackagePaymentView {...base} provider="cardcom" signerEmail="dana@example.com" signerPhone="0501234567" screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
+    expect(screen.getByTestId('cardcom-form')).toBeTruthy();
+    expect(screen.queryByTestId('card-form')).toBeNull();
+    expect(cardcomProps).toHaveBeenCalledWith({ eventId: 'e1', campaignId: 'c1', amount: 149, defaultName: 'דנה כהן', defaultEmail: 'dana@example.com', defaultPhone: '0501234567' });
+  });
+
+  it('needs no SUMIT public configuration for CardCom, but never shows an empty SUMIT form without it', () => {
+    render(<PackagePaymentView {...base} provider="cardcom" formConfig={null} screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
+    expect(screen.getByTestId('cardcom-form')).toBeTruthy();
+    cleanup();
+    render(<PackagePaymentView {...base} provider="sumit" formConfig={null} screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
+    expect(screen.queryByTestId('cardcom-form')).toBeNull();
+    expect(screen.queryByTestId('card-form')).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe(PURCHASE_ERROR_MESSAGES.purchase_disabled);
+  });
+
+  it('keeps the SUMIT form when no provider is given (the default)', () => {
+    render(<PackagePaymentView {...base} screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
+    expect(screen.getByTestId('card-form')).toBeTruthy();
+    expect(screen.queryByTestId('cardcom-form')).toBeNull();
+  });
+
+  it('names no payment provider in what the customer reads', () => {
+    render(<PackagePaymentView {...base} provider="cardcom" screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
+    expect(document.body.textContent).not.toMatch(/cardcom|sumit|קארדקום|סאמיט/i);
+  });
+});

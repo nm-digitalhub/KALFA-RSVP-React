@@ -156,7 +156,7 @@ export default async function AdminCancellationDetailPage({
           ) : packageState === 'no_card' ? (
             <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               בקמפיין החבילה שולם {formatCurrency(packagePaid ?? 0)} אך אין כרטיס שמור להחזיר אליו — לא ניתן להחזיר
-              אוטומטית, ואישור שיש בו סכום להחזרה ייכשל בהודעה ולא ישנה דבר. החזירו ידנית ב-SUMIT, או דחו את הבקשה.
+              אוטומטית, ואישור שיש בו סכום להחזרה ייכשל בהודעה ולא ישנה דבר. החזירו ידנית אצל חברת הסליקה, או דחו את הבקשה.
             </div>
           ) : packageState === 'nothing_to_refund' ? (
             <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">

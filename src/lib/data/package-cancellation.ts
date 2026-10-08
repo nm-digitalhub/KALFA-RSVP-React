@@ -2,6 +2,8 @@
 // the admin is told when it could not. No server-only imports, nothing read or written: the money itself moves in
 // src/lib/payments/package-refund.ts.
 
+import type { PackageRefundRefusal } from '@/lib/payments/package-refund-types';
+
 const toCents = (n: number) => Math.round(n * 100);
 
 // The same meaning the post-charge branch of resolveCancellationRequest already gives the two resolutions:
@@ -49,16 +51,19 @@ export function packageCancellationState(input: {
 
 type RefundResultLike =
   | { status: 'declined' | 'review' | 'in_progress' | 'error' }
-  | { status: 'refused'; reason: 'disabled' | 'invalid_amount' | 'no_payment' | 'exceeds_refundable' | 'no_customer' | 'no_card' };
+  | { status: 'refused'; reason: PackageRefundRefusal };
 
-const REFUSALS = {
-  disabled: 'התשלומים כבויים או שהגדרות SUMIT חסרות — לא בוצעה פעולה',
+// Wording that names no clearing company: the same sentences serve a refund through SUMIT and one through CardCom.
+const REFUSALS: Record<PackageRefundRefusal, string> = {
+  disabled: 'התשלומים כבויים או שהגדרות הסליקה חסרות — לא בוצעה פעולה',
   invalid_amount: 'סכום ההחזר אינו תקין — לא בוצעה פעולה',
   no_payment: 'אין בקמפיין תשלום חבילה להחזרה — לא בוצעה פעולה',
   exceeds_refundable: 'סכום ההחזר גדול ממה שנותר להחזרה בקמפיין — לא בוצעה פעולה',
-  no_customer: 'לא נמצא מספר לקוח ב-SUMIT עבור המשלם — יש להחזיר ידנית ב-SUMIT. לא בוצעה פעולה',
-  no_card: 'אין כרטיס שמור לקמפיין — יש להחזיר ידנית ב-SUMIT. לא בוצעה פעולה',
-} as const;
+  no_customer: 'לא נמצא מספר לקוח אצל חברת הסליקה עבור המשלם — יש להחזיר ידנית אצלה. לא בוצעה פעולה',
+  no_card: 'אין כרטיס שמור לקמפיין — יש להחזיר ידנית אצל חברת הסליקה. לא בוצעה פעולה',
+  no_document: 'לתשלום הזה אין מסמך שאפשר לזכות אוטומטית — יש להחזיר ידנית אצל חברת הסליקה. לא בוצעה פעולה',
+  partial_unsupported: 'החזר חלקי לתשלום שבוצע בספק הסליקה החלופי עדיין אינו נתמך אוטומטית — יש להחזיר ידנית אצל חברת הסליקה, או לאשר ביטול מלא. לא בוצעה פעולה',
+};
 
 // What the admin reads when a refund did not go through. Fixed sentences only: never the provider's own text, never a
 // number someone typed. The request stays open in every one of these cases.
@@ -67,9 +72,9 @@ export function packageRefundMessage(result: RefundResultLike): string {
     case 'refused':
       return REFUSALS[result.reason];
     case 'declined':
-      return 'הזיכוי נדחה על ידי חברת האשראי — לא הוחזר כסף. הבקשה נשארה פתוחה ואפשר לנסות שוב או להחזיר ידנית ב-SUMIT';
+      return 'הזיכוי נדחה על ידי חברת הסליקה — לא הוחזר כסף. הבקשה נשארה פתוחה ואפשר לנסות שוב או להחזיר ידנית אצלה';
     case 'review':
-      return 'תשובת SUMIT לא חד-משמעית — ייתכן שהכסף כבר הוחזר. בדקו ב-SUMIT ובמסך התשלומים שממתינים להכרעה, ואל תנסו שוב';
+      return 'תשובת חברת הסליקה לא חד-משמעית — ייתכן שהכסף כבר הוחזר. בדקו אצלה ובמסך התשלומים שממתינים להכרעה, ואל תנסו שוב';
     case 'in_progress':
       return 'זיכוי לבקשה הזו כבר בתהליך — המתינו לסיומו';
     case 'error':

@@ -9,6 +9,7 @@ import {
   formatIsraelRelativeSpokenDate,
   formatIsraelSpokenClock,
   formatIsraelTime,
+  formatIsraelTimeSeconds,
   formatIsraelWeekday,
 } from './date';
 
@@ -24,6 +25,7 @@ describe('Israel display formatters', () => {
       '12.07.2026, 17:30',
     );
     expect(formatIsraelTime('2026-07-12T14:30:00.000Z')).toBe('17:30');
+    expect(formatIsraelTimeSeconds('2026-07-12T14:30:07.000Z')).toBe('17:30:07');
   });
 
   it('formats a winter (IST, +02:00) instant — DST switch is automatic', () => {
@@ -52,6 +54,7 @@ describe('Israel display formatters', () => {
     expect(formatIsraelDate('not-a-date')).toBe('');
     expect(formatIsraelDateTime('')).toBe('');
     expect(formatIsraelTime('garbage')).toBe('');
+    expect(formatIsraelTimeSeconds('garbage')).toBe('');
   });
 });
 

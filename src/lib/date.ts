@@ -47,6 +47,14 @@ const timeFmt = new Intl.DateTimeFormat(ISRAEL_LOCALE, {
   hourCycle: 'h23',
 });
 
+const timeSecondsFmt = new Intl.DateTimeFormat(ISRAEL_LOCALE, {
+  timeZone: ISRAEL_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
 // null for empty/unparseable input — formatters return '' instead of throwing
 // (Intl.format throws a RangeError on an Invalid Date), so a bad DB value can
 // never crash a page; call sites keep their own fallbacks ('—', 'לא הוגדר').
@@ -72,6 +80,12 @@ export function formatIsraelDate(value: DateInput): string {
 export function formatIsraelTime(value: DateInput): string {
   const ms = toMs(value);
   return ms === null ? '' : timeFmt.format(ms);
+}
+
+/** '17:30:05' — Israel wall-clock time with seconds, 24h (event timelines). '' for invalid input. */
+export function formatIsraelTimeSeconds(value: DateInput): string {
+  const ms = toMs(value);
+  return ms === null ? '' : timeSecondsFmt.format(ms);
 }
 
 // --- Weekday (Israel) --------------------------------------------------------

@@ -10,6 +10,7 @@ import {
   POST_ACTIVATION_STAGES,
   SETUP_LOCK_WARNING,
   computeSetupSteps,
+  setupBackTarget,
   setupStepLabels,
   toSetupEvent,
 } from '@/lib/data/setup-steps';
@@ -96,6 +97,10 @@ export default async function SetupPage({
   // everything (and a draft's details are editable by definition).
   const editingDetails = step === 'details' && event.status === 'draft';
   const current = editingDetails ? 'details' : (steps.find((s) => s.state === 'current')?.key ?? null);
+  // "Back" leads to the previous step's page, as decided by the server. Not while the details form is already the view:
+  // the stepper still names the confirm step as the current one then, and a back to where the owner already is would be a lie.
+  const backTarget = editingDetails ? null : setupBackTarget({ eventId: id, steps });
+  const back = backTarget ? { href: backTarget.href, label: labels[backTarget.key] } : null;
 
   // Only the details step shows the invitation image. Fail-open, like the event
   // page: a signing hiccup must not take the step down.
@@ -123,7 +128,7 @@ export default async function SetupPage({
       <p className="text-sm text-muted-foreground">{event.name}</p>
 
       <section className="rounded-lg border border-border bg-card p-6">
-        <SetupStepper steps={steps.map((s) => ({ ...s, label: labels[s.key] }))} />
+        <SetupStepper steps={steps.map((s) => ({ ...s, label: labels[s.key] }))} back={back} />
       </section>
 
       {isPast ? (

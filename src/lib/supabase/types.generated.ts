@@ -1818,6 +1818,62 @@ export type Database = {
           },
         ]
       }
+      cardcom_config: {
+        Row: {
+          api_name: string
+          api_password_secret: string | null
+          enabled: boolean
+          id: boolean
+          terminal_number: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          api_name: string
+          api_password_secret?: string | null
+          enabled?: boolean
+          id?: boolean
+          terminal_number: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          api_name?: string
+          api_password_secret?: string | null
+          enabled?: boolean
+          id?: boolean
+          terminal_number?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      cardcom_payment_sessions: {
+        Row: {
+          created_at: string
+          low_profile_id: string
+          operation_id: string
+        }
+        Insert: {
+          created_at?: string
+          low_profile_id: string
+          operation_id: string
+        }
+        Update: {
+          created_at?: string
+          low_profile_id?: string
+          operation_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cardcom_payment_sessions_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: true
+            referencedRelation: "payment_operations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       channels: {
         Row: {
           active: boolean
@@ -5130,17 +5186,26 @@ export type Database = {
           card_brand: string | null
           card_exp_month: number | null
           card_exp_year: number | null
+          card_first_digits: string | null
+          card_info: string | null
+          card_is_abroad: boolean | null
           card_issuer: string | null
           card_last4: string | null
           card_mask: string | null
+          card_name: string | null
+          card_owner_email: string | null
+          card_owner_name: string | null
+          card_owner_phone: string | null
           card_token_ref: string | null
           citizen_id_secret: string | null
           credit_applied: number
           event_id: string
           id: string
+          is_test: boolean
           kind: string
           meta: Json
           note: string | null
+          number_of_payments: number | null
           occurred_at: string
           once_slot: boolean
           outcome: Database["public"]["Enums"]["payment_operation_outcome"]
@@ -5148,13 +5213,24 @@ export type Database = {
           parent_slot: boolean
           payment_method_type: string | null
           provider: string
+          provider_account_id: number | null
+          provider_acquirer: string | null
+          provider_auth_description: string | null
           provider_auth_ref: string | null
+          provider_coupon_number: string | null
+          provider_deal_type: string | null
           provider_document_id: number | null
           provider_document_number: number | null
           provider_document_url: string | null
+          provider_entry_mode: string | null
           provider_payment_id: number | null
+          provider_payment_type: string | null
+          provider_rrn: string | null
           provider_status: string | null
           provider_status_description: string | null
+          provider_terminal: number | null
+          provider_terminal_echo: number | null
+          provider_unique_id: string | null
           recorded_at: string
           source: string
         }
@@ -5164,17 +5240,26 @@ export type Database = {
           card_brand?: string | null
           card_exp_month?: number | null
           card_exp_year?: number | null
+          card_first_digits?: string | null
+          card_info?: string | null
+          card_is_abroad?: boolean | null
           card_issuer?: string | null
           card_last4?: string | null
           card_mask?: string | null
+          card_name?: string | null
+          card_owner_email?: string | null
+          card_owner_name?: string | null
+          card_owner_phone?: string | null
           card_token_ref?: string | null
           citizen_id_secret?: string | null
           credit_applied?: number
           event_id: string
           id?: string
+          is_test?: boolean
           kind: string
           meta?: Json
           note?: string | null
+          number_of_payments?: number | null
           occurred_at?: string
           once_slot?: boolean
           outcome?: Database["public"]["Enums"]["payment_operation_outcome"]
@@ -5182,13 +5267,24 @@ export type Database = {
           parent_slot?: boolean
           payment_method_type?: string | null
           provider?: string
+          provider_account_id?: number | null
+          provider_acquirer?: string | null
+          provider_auth_description?: string | null
           provider_auth_ref?: string | null
+          provider_coupon_number?: string | null
+          provider_deal_type?: string | null
           provider_document_id?: number | null
           provider_document_number?: number | null
           provider_document_url?: string | null
+          provider_entry_mode?: string | null
           provider_payment_id?: number | null
+          provider_payment_type?: string | null
+          provider_rrn?: string | null
           provider_status?: string | null
           provider_status_description?: string | null
+          provider_terminal?: number | null
+          provider_terminal_echo?: number | null
+          provider_unique_id?: string | null
           recorded_at?: string
           source?: string
         }
@@ -5198,17 +5294,26 @@ export type Database = {
           card_brand?: string | null
           card_exp_month?: number | null
           card_exp_year?: number | null
+          card_first_digits?: string | null
+          card_info?: string | null
+          card_is_abroad?: boolean | null
           card_issuer?: string | null
           card_last4?: string | null
           card_mask?: string | null
+          card_name?: string | null
+          card_owner_email?: string | null
+          card_owner_name?: string | null
+          card_owner_phone?: string | null
           card_token_ref?: string | null
           citizen_id_secret?: string | null
           credit_applied?: number
           event_id?: string
           id?: string
+          is_test?: boolean
           kind?: string
           meta?: Json
           note?: string | null
+          number_of_payments?: number | null
           occurred_at?: string
           once_slot?: boolean
           outcome?: Database["public"]["Enums"]["payment_operation_outcome"]
@@ -5216,13 +5321,24 @@ export type Database = {
           parent_slot?: boolean
           payment_method_type?: string | null
           provider?: string
+          provider_account_id?: number | null
+          provider_acquirer?: string | null
+          provider_auth_description?: string | null
           provider_auth_ref?: string | null
+          provider_coupon_number?: string | null
+          provider_deal_type?: string | null
           provider_document_id?: number | null
           provider_document_number?: number | null
           provider_document_url?: string | null
+          provider_entry_mode?: string | null
           provider_payment_id?: number | null
+          provider_payment_type?: string | null
+          provider_rrn?: string | null
           provider_status?: string | null
           provider_status_description?: string | null
+          provider_terminal?: number | null
+          provider_terminal_echo?: number | null
+          provider_unique_id?: string | null
           recorded_at?: string
           source?: string
         }
@@ -5701,6 +5817,194 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      rdp_access_events: {
+        Row: {
+          actor_id: string | null
+          actor_kind: string
+          at: string
+          client_ip: unknown
+          detail: Json
+          grant_id: string | null
+          id: string
+          kind: string
+          outcome: string | null
+          request_id: string | null
+          tunnel_ref: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_kind: string
+          at?: string
+          client_ip?: unknown
+          detail?: Json
+          grant_id?: string | null
+          id?: string
+          kind: string
+          outcome?: string | null
+          request_id?: string | null
+          tunnel_ref?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          actor_kind?: string
+          at?: string
+          client_ip?: unknown
+          detail?: Json
+          grant_id?: string | null
+          id?: string
+          kind?: string
+          outcome?: string | null
+          request_id?: string | null
+          tunnel_ref?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rdp_access_events_grant_id_fkey"
+            columns: ["grant_id"]
+            isOneToOne: false
+            referencedRelation: "rdp_access_grants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rdp_access_events_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "rdp_access_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rdp_access_grants: {
+        Row: {
+          created_at: string
+          cut_attempts: number
+          cut_ok_count: number
+          ended_at: string | null
+          ended_by: string | null
+          ended_reason: string | null
+          expires_at: string
+          files_issued: number
+          granted_by: string | null
+          id: string
+          last_cut_at: string | null
+          last_cut_error: string | null
+          last_file_at: string | null
+          max_files: number
+          request_id: string
+          starts_at: string
+          status: string
+          target: string
+          tunnels_cut_at: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          cut_attempts?: number
+          cut_ok_count?: number
+          ended_at?: string | null
+          ended_by?: string | null
+          ended_reason?: string | null
+          expires_at: string
+          files_issued?: number
+          granted_by?: string | null
+          id?: string
+          last_cut_at?: string | null
+          last_cut_error?: string | null
+          last_file_at?: string | null
+          max_files?: number
+          request_id: string
+          starts_at?: string
+          status?: string
+          target: string
+          tunnels_cut_at?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          cut_attempts?: number
+          cut_ok_count?: number
+          ended_at?: string | null
+          ended_by?: string | null
+          ended_reason?: string | null
+          expires_at?: string
+          files_issued?: number
+          granted_by?: string | null
+          id?: string
+          last_cut_at?: string | null
+          last_cut_error?: string | null
+          last_file_at?: string | null
+          max_files?: number
+          request_id?: string
+          starts_at?: string
+          status?: string
+          target?: string
+          tunnels_cut_at?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rdp_access_grants_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: true
+            referencedRelation: "rdp_access_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rdp_access_requests: {
+        Row: {
+          answer_note: string | null
+          answered_at: string | null
+          answered_by: string | null
+          approver_context: Json | null
+          cancelled_at: string | null
+          created_at: string
+          expires_at: string
+          granted_minutes: number | null
+          id: string
+          reason: string
+          request_ip: unknown
+          requested_minutes: number
+          requester_id: string | null
+          status: string
+        }
+        Insert: {
+          answer_note?: string | null
+          answered_at?: string | null
+          answered_by?: string | null
+          approver_context?: Json | null
+          cancelled_at?: string | null
+          created_at?: string
+          expires_at?: string
+          granted_minutes?: number | null
+          id?: string
+          reason: string
+          request_ip?: unknown
+          requested_minutes: number
+          requester_id?: string | null
+          status?: string
+        }
+        Update: {
+          answer_note?: string | null
+          answered_at?: string | null
+          answered_by?: string | null
+          approver_context?: Json | null
+          cancelled_at?: string | null
+          created_at?: string
+          expires_at?: string
+          granted_minutes?: number | null
+          id?: string
+          reason?: string
+          request_ip?: unknown
+          requested_minutes?: number
+          requester_id?: string | null
+          status?: string
+        }
+        Relationships: []
       }
       role_permissions: {
         Row: {
@@ -7432,7 +7736,21 @@ export type Database = {
         Args: { _action?: string; _event_id: string; _resource?: string }
         Returns: boolean
       }
-      cancel_campaign: { Args: { p_campaign: string }; Returns: string }
+      cancel_campaign: {
+        Args: { p_actor?: string; p_campaign: string }
+        Returns: string
+      }
+      cardcom_api_password: { Args: never; Returns: string }
+      cardcom_config_save: {
+        Args: {
+          p_api_name: string
+          p_api_password: string
+          p_enabled: boolean
+          p_terminal_number: number
+          p_updated_by: string
+        }
+        Returns: undefined
+      }
       claim_callback_triage: {
         Args: never
         Returns: {
@@ -7792,6 +8110,10 @@ export type Database = {
       is_org_member: { Args: { _org_id: string }; Returns: boolean }
       is_org_owner: { Args: { _org_id: string }; Returns: boolean }
       is_platform_owner: { Args: never; Returns: boolean }
+      is_platform_owner_for_user: {
+        Args: { _user_id: string }
+        Returns: boolean
+      }
       is_platform_staff: { Args: never; Returns: boolean }
       is_platform_staff_for_user: {
         Args: { _user_id: string }
@@ -7860,10 +8182,128 @@ export type Database = {
         Args: { p_campaign_id: string; p_citizen_id: string }
         Returns: string
       }
+      payment_is_test_terminal: {
+        Args: { p_terminal: number }
+        Returns: boolean
+      }
       purge_stale_phone_change: { Args: { p_grace?: string }; Returns: number }
       purge_test_event: {
         Args: { p_actor: string; p_event: string }
         Returns: string
+      }
+      rdp_answer_request: {
+        Args: {
+          p_actor_id: string
+          p_context: Json
+          p_minutes: number
+          p_note: string
+          p_request_id: string
+          p_target: string
+          p_verdict: string
+        }
+        Returns: {
+          conflicting_grant_id: string
+          expires_at: string
+          grant_id: string
+          outcome: string
+        }[]
+      }
+      rdp_begin_file_issue: {
+        Args: { p_client_ip: unknown; p_user_id: string }
+        Returns: {
+          expires_at: string
+          files_left: number
+          grant_id: string
+          outcome: string
+          target: string
+        }[]
+      }
+      rdp_cancel_request: {
+        Args: { p_request_id: string; p_user_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      rdp_check_tunnel: {
+        Args: { p_client_ip: unknown; p_target: string; p_tunnel_ref: string }
+        Returns: {
+          allow: boolean
+          expires_at: string
+          grant_id: string
+        }[]
+      }
+      rdp_end_grant: {
+        Args: { p_actor_id: string; p_grant_id?: string; p_reason?: string }
+        Returns: {
+          grant_id: string
+          outcome: string
+        }[]
+      }
+      rdp_end_own_grant: {
+        Args: { p_user_id: string }
+        Returns: {
+          grant_id: string
+          outcome: string
+        }[]
+      }
+      rdp_expire_stale: {
+        Args: { p_now?: string }
+        Returns: {
+          grants_expired: number
+          requests_expired: number
+        }[]
+      }
+      rdp_log: {
+        Args: {
+          p_actor: string
+          p_actor_kind: string
+          p_detail?: Json
+          p_grant: string
+          p_ip: unknown
+          p_kind: string
+          p_outcome: string
+          p_request: string
+          p_tunnel: string
+        }
+        Returns: undefined
+      }
+      rdp_mark_cut: {
+        Args: { p_error_code: string; p_grant_id: string; p_ok: boolean }
+        Returns: undefined
+      }
+      rdp_record_event: {
+        Args: {
+          p_actor_kind: string
+          p_client_ip: unknown
+          p_grant_id: string
+          p_kind: string
+          p_outcome: string
+          p_request_id: string
+          p_tunnel_ref: string
+        }
+        Returns: undefined
+      }
+      rdp_redact_old_ips: { Args: { p_before: string }; Returns: number }
+      rdp_request_access: {
+        Args: {
+          p_client_ip: unknown
+          p_minutes: number
+          p_reason: string
+          p_user_id: string
+        }
+        Returns: {
+          expires_at: string
+          outcome: string
+          request_id: string
+        }[]
+      }
+      rdp_sweep: {
+        Args: { p_now?: string }
+        Returns: {
+          access_removed: number
+          grants_expired: number
+          requests_expired: number
+        }[]
       }
       reconcile_authorized_set: {
         Args: {

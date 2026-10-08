@@ -36,6 +36,16 @@ describe('ledger writes', () => {
     expect('id' in a).toBe(true);
     expect(b).toEqual({ alreadyInProgress: true });
   });
+  it('completeOperation can keep provider extras in meta (the caller passes the merged meta back)', async () => {
+    const db = createFakeTableClient({ payment_operations: [{ id: 'p1', campaign_id: 'c1', kind: 'package_purchase', outcome: 'pending', meta: { provider: 'cardcom', payerUserId: 'u1' } }] });
+    await completeOperation(db.client as never, 'p1', { from: 'pending', outcome: 'succeeded', amount: 149, meta: { provider: 'cardcom', payerUserId: 'u1', cardcom_document_type: 'Receipt' } });
+    expect(db.rows('payment_operations')[0]).toMatchObject({ outcome: 'succeeded', meta: { provider: 'cardcom', payerUserId: 'u1', cardcom_document_type: 'Receipt' } });
+  });
+  it('completeOperation leaves meta alone when none is given', async () => {
+    const db = createFakeTableClient({ payment_operations: [{ id: 'p1', campaign_id: 'c1', kind: 'package_purchase', outcome: 'pending', meta: { provider: 'cardcom' } }] });
+    await completeOperation(db.client as never, 'p1', { from: 'pending', outcome: 'failed' });
+    expect(db.rows('payment_operations')[0].meta).toEqual({ provider: 'cardcom' });
+  });
   it('completeOperation finishes the pending row once; completing it again throws', async () => {
     const db = createFakeTableClient({ payment_operations: [{ id: 'p1', campaign_id: 'c1', kind: 'charge', outcome: 'pending' }] });
     await completeOperation(db.client as never, 'p1', { from: 'pending', outcome: 'succeeded', amount: 120, providerDocument: { id: 7, number: 1, url: 'u' } });
@@ -55,6 +65,34 @@ describe('ledger writes', () => {
     const db = createFakeTableClient({ payment_operations: [{ id: 'a1', campaign_id: 'c1', kind: 'authorize', outcome: 'pending', card_token_ref: null }] });
     await completeOperation(db.client as never, 'a1', { from: 'pending', outcome: 'succeeded', amount: 200, card: { methodType: '1', tokenRef: 'tok', expMonth: 7, expYear: 2031, last4: '9183', mask: 'XXXXXXXXXXXX9183', citizenSecretId: 's-1' }, providerAuthRef: '055528' });
     expect(db.rows('payment_operations')[0]).toMatchObject({ outcome: 'succeeded', card_token_ref: 'tok', card_last4: '9183', citizen_id_secret: 's-1', provider_auth_ref: '055528' });
+  });
+  it('a provider other than SUMIT records what it says about the card, its token and the Vault id of the holder ID, in the card columns', async () => {
+    const db = createFakeTableClient({ payment_operations: [{ id: 'p1', campaign_id: 'c1', kind: 'package_purchase', outcome: 'pending', card_token_ref: null }] });
+    await completeOperation(db.client as never, 'p1', { from: 'pending', outcome: 'succeeded', amount: 200, cardFacts: { last4: '0008', expMonth: 12, expYear: 2030, brand: 'Visa', issuer: 'CAL', tokenRef: 'tok-cardcom', citizenSecretId: 'secret-1' } });
+    expect(db.rows('payment_operations')[0]).toMatchObject({ outcome: 'succeeded', card_last4: '0008', card_exp_month: 12, card_exp_year: 2030, card_brand: 'Visa', card_issuer: 'CAL', card_token_ref: 'tok-cardcom', citizen_id_secret: 'secret-1' });
+    // The provider gives neither a payment-method type nor a mask: nothing is invented for them.
+    expect(db.rows('payment_operations')[0].payment_method_type ?? null).toBeNull();
+    expect(db.rows('payment_operations')[0].card_mask ?? null).toBeNull();
+  });
+  it('the provider\'s record of the payment goes to its own columns, and an absent one writes nothing', async () => {
+    const db = createFakeTableClient({ payment_operations: [{ id: 'p3', campaign_id: 'c1', kind: 'package_purchase', outcome: 'pending', provider_rrn: 'kept' }] });
+    await completeOperation(db.client as never, 'p3', {
+      from: 'pending', outcome: 'succeeded', amount: 200,
+      paymentFacts: { cardOwnerName: 'Dana', cardOwnerEmail: 'd@example.com', cardOwnerPhone: '050', cardName: 'Gold', cardInfo: 'Israeli', cardFirstDigits: '458028', cardIsAbroad: false, numberOfPayments: 1, couponNumber: '74', uniqueId: 'u-1', rrn: null, acquirer: 'Laumicard', paymentType: 'Standard', entryMode: 'Phone', dealType: 'Debit', accountId: null, authDescription: 'ok' },
+    });
+    expect(db.rows('payment_operations')[0]).toMatchObject({
+      card_owner_name: 'Dana', card_owner_email: 'd@example.com', card_owner_phone: '050', card_name: 'Gold', card_info: 'Israeli', card_first_digits: '458028',
+      card_is_abroad: false, number_of_payments: 1, provider_coupon_number: '74', provider_unique_id: 'u-1', provider_acquirer: 'Laumicard',
+      provider_payment_type: 'Standard', provider_entry_mode: 'Phone', provider_deal_type: 'Debit', provider_auth_description: 'ok',
+    });
+    const other = createFakeTableClient({ payment_operations: [{ id: 'p4', campaign_id: 'c1', kind: 'package_purchase', outcome: 'pending', card_owner_name: 'Kept' }] });
+    await completeOperation(other.client as never, 'p4', { from: 'pending', outcome: 'succeeded', amount: 200, paymentFacts: null });
+    expect(other.rows('payment_operations')[0]).toMatchObject({ outcome: 'succeeded', card_owner_name: 'Kept' });
+  });
+  it('no card facts writes no card column: an unset field never overwrites what the row holds', async () => {
+    const db = createFakeTableClient({ payment_operations: [{ id: 'p2', campaign_id: 'c1', kind: 'package_purchase', outcome: 'pending', card_last4: '1111' }] });
+    await completeOperation(db.client as never, 'p2', { from: 'pending', outcome: 'succeeded', amount: 200, cardFacts: null });
+    expect(db.rows('payment_operations')[0]).toMatchObject({ outcome: 'succeeded', card_last4: '1111' });
   });
   it('loadOperations joins the effect from the registry and maps to OperationRow', async () => {
     const db = createFakeTableClient({

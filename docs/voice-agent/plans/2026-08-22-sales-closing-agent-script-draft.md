@@ -1,5 +1,9 @@
 # KALFA — Sales-Closing Voice Agent: Full Draft Script
 
+> **הוחלף חלקית, 2026-10-07:** מודל התמחור שמתואר כאן (דמי הפעלה + תוספת לכל איש קשר שנענה, וחוזה `get_pricing` עם
+> `base_price` / `included_reached` / `price_per_reached`) הוחלף בחבילות במחיר קבוע עם מכסת אנשי קשר. הנוסחים והחוזה
+> שבמסמך הזה על מחיר ותשלום אינם בתוקף. המצב הנוכחי: `docs/voice-agent/plans/2026-10-07-sales-agent-package-model.md`.
+
 **Recording-disclosure question — RESOLVED, 2026-08-22 (live statute research this session):**
 Consumer Protection Law §16ד (the section requiring an explicit "this call is
 recorded, you may request a copy" line at the start of every call) does **not**

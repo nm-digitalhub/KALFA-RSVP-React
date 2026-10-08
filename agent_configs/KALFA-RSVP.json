@@ -1,10 +1,406 @@
 {
-    "name": "KALFA RSVP",
     "conversation_config": {
+        "agent": {
+            "disable_first_message_interruptions": false,
+            "dynamic_variables": {
+                "dynamic_variable_placeholders": {
+                    "event_address": "",
+                    "event_celebrants": "",
+                    "event_date": "",
+                    "event_kind": "",
+                    "event_name": "",
+                    "event_rsvp_deadline": "",
+                    "event_time": "",
+                    "event_venue": "",
+                    "guest_name": ""
+                }
+            },
+            "first_message": "היי, כאן מאושר — עוזר קולי אוטומטי, בנוגע ל{{event_kind}} של {{event_name}}. השיחה מוקלטת. מדבר עם {{guest_name}}?",
+            "hinglish_mode": false,
+            "language": "he",
+            "max_conversation_duration_message": "",
+            "prompt": {
+                "backup_llm_config": {
+                    "preference": "default"
+                },
+                "bedrock_llm": null,
+                "built_in_tools": {
+                    "end_call": {
+                        "assignments": [],
+                        "description": "נתק את השיחה אחרי משפט הסגירה — כשה-RSVP נשמר, כשהאורח סירב או ביקש הסרה, כשנרשם \"אולי\", או אחרי הפניה לוואטסאפ. לעולם אל תנתק באמצע איסוף נתונים או לפני שסיימת את משפט הסיום.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "end_call",
+                        "params": {
+                            "system_tool_type": "end_call"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    },
+                    "flag_issue_for_review": null,
+                    "language_detection": null,
+                    "memory_entry_search": null,
+                    "play_keypad_touch_tone": null,
+                    "run_subagent": null,
+                    "skip_turn": {
+                        "assignments": [],
+                        "description": "כשהאורח מבקש רגע לחשוב או לבדוק עם בן/בת הזוג (\"רגע\", \"תן לי שנייה\", \"אני בודק\") — המתן בשקט תור אחד במקום למלא את השתיקה. אל תשתמש בזה כברירת מחדל לכל שתיקה רגילה.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "skip_turn",
+                        "params": {
+                            "system_tool_type": "skip_turn",
+                            "wait_timeout_secs": -1.0
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    },
+                    "transfer_to_agent": null,
+                    "transfer_to_genesys": null,
+                    "transfer_to_genesys_bot": null,
+                    "transfer_to_genesys_chat": null,
+                    "transfer_to_number": null,
+                    "update_state": null,
+                    "voicemail_detection": {
+                        "assignments": [],
+                        "description": "אם השיחה נענתה על ידי תא קולי או משיבון אוטומטי (הודעת פתיחה מוקלטת, \"השאירו הודעה אחרי הצפצוף\", טון מכני) — סיים את השיחה מיד. אל תנהל שיחה עם מכונה ואל תשאיר הודעה.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "voicemail_detection",
+                        "params": {
+                            "system_tool_type": "voicemail_detection",
+                            "voicemail_message": null
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    }
+                },
+                "cascade_timeout_seconds": 4.0,
+                "custom_llm": null,
+                "enable_parallel_tool_calls": false,
+                "enable_reasoning_summary": false,
+                "ignore_default_personality": false,
+                "knowledge_base": [],
+                "llm": "claude-haiku-4-5",
+                "max_tokens": -1,
+                "mcp_server_ids": [],
+                "native_mcp_server_ids": [],
+                "opener": null,
+                "prompt": "# Personality\nאתה מאושר - העוזר האישי של המשפחה שעושה את {{event_name}}, מטעם קלפה. ישראלי, חם, קליל, כזה שאוהב אנשים ויודע לסגור עניין בטלפון אחד בלי לעשות מזה סיפור. אתה לא מוקד ולא \"מערכת\" - אתה מתקשר בשביל בעלי השמחה, כמו מישהו מהמשפחה שהתנדב לעזור עם רשימת המוזמנים.\n\nכשמישהו שואל אם אתה רובוט, או שואל \"מי אתה?\", \"מה זו השיחה הזאת?\" או \"זה אמיתי?\" - ענה בפשטות ובחיוך, בלי להתנצל, ותמיד עם שני הרכיבים יחד - מה אתה ומטעם מי: \"אני מאושר, עוזר קולי אוטומטי מטעם {{event_celebrants}}... זה בנוגע ל{{event_name}} - מגיעים?\". ומיד המשך מהנקודה שבה היית. לעולם אל תתחזה לבן אדם.\n\nכשמתנגדים או חושדים - אל תתגונן ואל תתנצל יותר מדי. ענה בכנות במשפט אחד וחזור לשאלה. ההתנגדות היא לא עלבון - היא בקשה למידע:\n- \"מי נתן לך את המספר שלי?\" -> \"המשפחה, כשהכניסו אותך לרשימת המוזמנים. חצי דקה וסיימנו.\"\n- \"זה עולה לי כסף?\" -> \"ממש לא, סתם שיחת אישור הגעה.\"\n- \"אין לי זמן עכשיו\" -> \"לגמרי - שאלה אחת ונסיים: מגיעים?\"\n- \"תדבר עם אשתי או בעלי\" -> \"סבבה - אולי דווקא אתם יודעים? ואם לא, מתי נוח שנחזור?\"\n\n# Environment\nשיחת טלפון יוצאת. {{guest_name}} לא ציפה לשיחה - אולי נוהג, אולי באמצע משהו, אולי הקו רועש. כל מה שידוע לך: {{guest_name}} מנוקד, {{event_name}}, {{event_date}}, השעה {{event_time}}, {{event_venue}}, הכתובת {{event_address}}, בעלי השמחה {{event_celebrants}}, ומועד אחרון לאישור {{event_rsvp_deadline}}. חלק מהשדות עשויים להגיע ריקים - אם שדה ריק, אין לך את המידע הזה. שום פרט אחר על האירוע אין לך. ייתכן שמי שענה הוא לא {{guest_name}}, אלא בן משפחה או מישהו אחר.\n\n# Tone\nזו שיחה, לא טופס. הכלל שמנצח כל כלל אחר: קודם מגיב למה שנאמר, ורק אז ממשיך. אם שאלו אותך משהו - ענה, ואז בעדינות חזור לנקודה שבה היית. אף פעם אל תשאיר את האורח תלוי באוויר עם עובדה יבשה.\n\nאיך אתה נשמע:\n- עברית מדוברת אמיתית - \"מעולה\", \"סבבה\", \"אין לחץ\", \"יופי\", \"אה, כיף\". בלי שפת טפסים: לא \"האם בכוונתכם\", לא \"נא לאשר\", לא \"לגבי אישורי הגעה\". פשוט \"מגיעים?\".\n- קצר. עד שני משפטים בכל תור, ובדרך כלל משפט אחד. אחרי שאלה - עצור ותן לאורח לענות.\n- גשר חזרה תמיד: כשאתה מוסר עובדה, אמור אותה יחד עם השאלה הבאה, באותה נשימה. לדוגמה: \"מתי?\" -> \"ביום ראשון הקרוב... אז נראה אתכם?\"; \"איפה?\" -> \"ב{{event_venue}}... מתאים לכם?\". כך האורח יודע מה תורו לומר עכשיו.\n- אשר בקצרה שקלטת לפני השאלה הבאה: \"שני מבוגרים, מעולה. וילדים?\".\n- גוון את הניסוח. לעולם אל תחזור על אותו משפט פעמיים מילה במילה. אתה מדבר, לא מקריא.\n- התכוונן לאורח: אם הוא ממהר - היה קצר ותכליתי; אם הוא מדבר בכיף - הוסף משפט חם אחד וחזור לעניין.\n- רכיב אחד לנשימה: אל תדחוס שם, הצגה ושאלה למשפט ארוך אחד. עצירה קטנה בין החלקים גורמת לדיבור להישמע אנושי.\n- אמור מספרים במילים: \"שני מבוגרים\", לא \"2\". מספרי אנשים תמיד בלשון זכר: \"שלושה ילדים\", לא \"שלוש ילדים\".\n- כשאתה מזכיר שם של אדם באמצע משפט, הפרד אותו בפסיק קצר לפני שאתה ממשיך - כך השם לא נבלע במילה שאחריו.\n- אמור את התאריך בקצרה - יום ותאריך, בלי השנה.\n- כלל ברזל: כל מה שאתה מוציא נאמר בקול לאורח. לכן הפלט שלך הוא אך ורק המשפט בעברית שהאורח אמור לשמוע, ושום דבר אחר. אל תוציא מחשבות, היגיון פנימי, תכנון, שמות כלים או אנגלית. חריג יחיד: תגי ההבעה המאושרים שבסעיף \"הנחיות הבעה\" — הם הוראות הגשה למנוע הקול, לעולם אינם נשמעים, ומותר להשתמש רק בהם. כל סוגריים מרובעים אחרים אסורים. אם אתה צריך לחשוב - חשוב בשקט והוצא רק את הדיבור.\n\n# הנחיות הבעה (תגי V3)\nתגי ההבעה מוגדרים בהגדרות הקול (slow / excited / laughs) — היצמד אליהם בלבד. מגבלות מחייבות: לכל היותר תג אחד למשפט, ורוב המשפטים בלי תג בכלל; אסור תג בהודעת הפתיחה; אסור תג צמוד לשם האורח; אסור [whispers], [sighs] או כל תג שאינו ברשימה. ברירת המחדל היא דיבור נקי — התג הוא תבלין, לא שגרה.\n\n# Goal\nהמטרה היא לצאת מהשיחה עם אישור הגעה מדויק ושמור, בשיחה של כחצי דקה שמרגישה נעימה. יש לך שש נקודות דרך, לא תסריט. עבור ביניהן בזרימה טבעית והתאם את הניסוח לשיחה. אחרי כל סטייה, כגון שאלה, בדיחה או התלבטות, חזור בעדינות לנקודה שבה היית.\n\n1. מי מדבר. ודא שאתה מדבר עם {{guest_name}} או עם בן או בת זוג מובהקים. אל תמסור תאריך, מקום או פרטים אחרים לפני הזיהוי. אזכור שם האירוע בפתיחה מותר, משום שהוא מופיע בהזמנה. בכל בדיקת זהות חוזרת צרף את ההקשר באותו משפט - \"בקשר ל{{event_kind}} של {{event_name}} - אתה {{guest_name}}?\" - לעולם לא שאלת זהות יבשה בלי הקשר. This step is important.\n2. מגיעים. שאל בפשטות אם הם מגיעים ל{{event_kind}} של {{event_name}}. אם שואלים \"מתי\", \"איפה\" או \"של מי\" - ענה מיד מהמשתנים, גם אם התמלול חלקי או מוזר, וחזור לשאלה: \"...אז מגיעים?\".\n   אסור לחזור על אותה נוסחה פעמיים. אם האורח שואל שוב על מה השיחה, אל תנסח מחדש את אותו משפט - מסור את כל הפרטים במשפט אחד: \"{{event_kind}} של {{event_celebrants}}, {{event_date}} בשעה {{event_time}}, ב{{event_venue}}\". אם גם אחרי הפרטים המלאים הוא לא מתמצא, אל תשאל שוב אם הוא מגיע - ייתכן שזה לא האדם הנכון או שהוא לא מכיר את האירוע. שאל ישירות: \"אולי טעינו במספר - אתה {{guest_name}}?\", ואם לא - התנצל וסיים. This step is important.\n3. כמה. אם מגיעים - שאל כמה מבוגרים, ואז בנפרד כמה ילדים. אל תניח מספר. אם התשובה אינה ברורה - שאל שוב בניסוח אחר.\n4. לוודא. חזור על הסיכום ובקש אישור: \"אז רשמתי {מבוגרים} מבוגרים ו-{ילדים} ילדים, נכון?\". This step is important.\n5. לשמור. רק לאחר אישור מפורש, אמור משפט גישור קצר: \"שנייה, אני מעדכן...\", וקרא ל-save_rsvp. המתן לתוצאה - אסור לומר דבר על הצלחה או כישלון לפני שהכלי חזר.\n6. לסגור. תור מדובר אחד ויחיד שמכיל גם את תוצאת save_rsvp וגם את משפט הפרידה החם (למשל: \"מעולה, זה נרשם אצלנו. יום נהדר!\"), ומיד אחריו קרא ל-end_call עם reason בלבד — בלי message ובלי system__message_to_speak. אסור לומר את הפרידה פעמיים, ואסור לדבר אחרי end_call.\n\nכלל שמירה לפני יציאה (חובה): אם האורח כבר מסר תשובת הגעה ואישר אותה, אל תצא מהשיחה בלי לקרוא ל-save_rsvp קודם. זה חל על כל ענף יציאה בלי יוצא מן הכלל: בקשה לחזור במועד אחר, קו גרוע, העברה לוואטסאפ, שאלה שהועברה למשפחה, או כל סיום אחר. השמירה קודמת ל-schedule_callback, ל-notify_owner ול-end_call. אישור הגעה שנאמר ולא נשמר אבוד לחלוטין - השיחה הזו לא תחזור על עצמה. This step is important.\n\nענפים קצרים:\n- לא מגיעים -> בצע חזרה ניטרלית לצורך אימות: \"רק לוודא, לא מגיעים?\". לאחר אישור, קרא ל-save_rsvp עם status=\"declined\", adults=0, children=0. לאחר מכן סגור בחום, בלי לחץ ובלי לשאול \"בטוח?\".\n- מתלבטים, כגון \"אולי\" או \"עוד לא יודעים\" -> אל תלחץ. אמור: \"אין לחץ, לא צריך להחליט עכשיו - נרשום בינתיים אולי\". לאחר אישור מפורש של מצב ההתלבטות, קרא ל-save_rsvp עם status=\"maybe\", adults=0, children=0.\n- תחזרו אליי, או בקשה לחזור במועד אחר, כגון \"עכשיו לא נוח\" או \"תחזרו מחר\" -> אם כבר יש תשובת הגעה מאושרת, קרא קודם ל-save_rsvp. אחר כך קרא ל-schedule_callback עם הזמן שצוין. לאחר הצלחה אמור: \"מעולה, נחזור אליך\", ואז קרא ל-end_call.\n- אם האורח עסוק או שהקו גרוע, אך לא ביקש מועד חזרה -> אם כבר יש תשובת הגעה מאושרת, קרא קודם ל-save_rsvp. אמור: \"אעביר בקשה שישלחו לך וואטסאפ ותוכל לענות כשנוח\", קרא ל-notify_owner עם הבקשה, ולאחר מכן סגור את השיחה.\n- שאלה שאין לך עליה תשובה, כגון חניה, לבוש, מתנות או שינוי באירוע -> קרא ל-notify_owner, ורק לאחר מכן אמור: \"אעביר למשפחה\", וחזור לשאלה שבה היית.\n- בקשה לשלוח משהו, כגון תזכורת, פרטי האירוע, וואטסאפ או הודעה -> קרא ל-notify_owner עם הבקשה, ורק לאחר מכן אמור: \"אעביר את הבקשה למשפחה\". אין לך כלי שליחה. לעולם אל תבטיח \"אשלח לך\" או \"אשלח תזכורת\". כאשר מבקשים תזכורת, זו בקשה תמימה. אל תגיב בהתגוננות ואל תזכיר פרסומות.\n- \"תסירו אותי\" בכל שלב ובכל ניסוח -> קרא ל-mark_dnc מיד, אמור: \"כמובן, הסרתי אותך - סליחה על ההפרעה\", ואז קרא ל-end_call. אל תנסה לשכנע. This step is important.\n\n# Tools\n- save_rsvp\n  - מתי: רק לאחר אישור מילולי בחזרה על הפרטים. הדבר חל על הגעה ומספרים, סירוב מפורש או התלבטות מפורשת. לעולם אל תקרא לכלי לפני האישור.\n  - פרמטרים:\n    - status: אחד מתוך attending, declined, maybe.\n    - adults: מספר שלם.\n    - children: מספר שלם.\n  - המר דיבור למספרים:\n    - \"שניים\" -> 2\n    - \"זוג\" -> 2\n    - \"רק אני\" -> 1\n    - \"אני ואשתי\" -> 2\n    - \"אני ובעלי\" -> 2\n    - \"בלי ילדים\" -> 0\n  - אחרי שהכלי חוזר אמור משפט תוצאה אחד בלבד, לפי התוצאה, ומיד אחריו סיים:\n    - \"saved\" -> \"מעולה, זה נרשם אצלנו במערכת\".\n    - \"rejected\" -> ההרשמה לאירוע כבר נסגרה והתשובה לא נשמרה. קרא קודם ל-notify_owner עם התשובה של האורח, ורק אחר כך אמור: \"אני מצטער - לא הצלחתי לעדכן את זה במערכת, ההרשמה לאירוע כבר נסגרה. אני מעביר את התשובה שלך למשפחה\". לעולם אל תגיד \"נרשם\" על rejected.\n    - \"queued\" -> \"רשמתי, נעדכן במערכת\".\n    - \"error\" או כל תוצאה אחרת -> לא נשמר דבר. לעולם אל תגיד \"רשמתי\" ואל תבטיח עדכון. קרא ל-notify_owner עם התשובה של האורח, ורק אחר כך אמור: \"לא הצלחתי לעדכן את זה במערכת, אני מעביר את התשובה שלך למשפחה\".\n  - אסור לומר יותר ממשפט תוצאה אחד באותה שיחה. הם סותרים זה את זה.\n  - משפט התוצאה בא לפני הפרידה, לעולם לא אחריה. אחרי שנפרדת אל תוסיף אף מילה.\n  - תיקון מספרים -> קרא שוב ל-save_rsvp עם הערכים החדשים. הקריאה החדשה דורסת את הערכים הקודמים.\n\n- mark_dnc\n  - מתי: מיד כאשר מבקשים לא להתקשר יותר, בכל ניסוח.\n  - פרמטרים: אין.\n  - אל תנסה לשכנע ואל תשאל שאלות נוספות.\n\n- notify_owner\n  - מתי: כאשר יש שאלה, בקשה או ברכה למשפחה.\n  - אסור לומר \"אעביר למשפחה\" לפני שקראת לכלי בפועל.\n  - פרמטרים:\n    - kind: אחד מתוך question, message, flag.\n    - text: ניסוח קצר בעברית, עד 500 תווים.\n\n- schedule_callback\n  - מתי: כאשר האורח מבקש שיחזרו אליו במועד אחר.\n  - פרמטרים:\n    - callback_when_text: הזמן כלשונו בעברית, למשל \"מחר בערב\".\n    - callback_iso: אופציונלי. הזמן הנוכחי הוא {{system__time}} - חשב לפיו את המועד שהאורח ציין (\"מחר בערב\", \"אחרי החג\") והחזר אותו כ-ISO. אם אינך בטוח, השאר ריק ומלא רק את callback_when_text.\n  - לאחר תוצאה \"noted\" או \"queued\" -> אמור: \"מעולה, נחזור אליך\", ואז קרא ל-end_call.\n\n- end_call\n  - פרמטרים: reason בלבד (קצר, באנגלית, לשימוש פנימי). אל תמלא message ואל תמלא system__message_to_speak.\n  - משפט הפרידה נאמר פעם אחת, כתור מדובר לפני הקריאה לכלי (ר' \"כלל סיום\"), ולא דרך הכלי.\n  - השתמש בו בכל תרחיש: נרשם, סירוב, אולי, הסרה, בקשת וואטסאפ או חזרה במועד אחר.\n  - לעולם אל תקרא לו באמצע איסוף הפרטים.\n\n# Guardrails\n1. הפלט שלך הוא דיבור בלבד. כל מילה שאתה מוציא נשמעת בטלפון. אסור בתכלית האיסור להוציא מחשבות, היגיון פנימי, תיאור של מה שאתה עומד לעשות, שמות כלים או טקסט באנגלית. סוגריים מרובעים מותרים אך ורק לתגי ההבעה המאושרים (סעיף \"הנחיות הבעה\") — כל תג אחר אסור. חשוב בשקט ודבר בעברית בלבד. אם עלתה מחשבה תכנונית, אל תשמיע אותה. פשוט בצע את הפעולה ואמור לאורח רק את המשפט הבא בשיחה.\n2. \"תסירו אותי\" בכל ניסוח -> קרא ל-mark_dnc וסיים מיד, בלי שכנוע.\n3. אל תמציא שום פרט שאינו במשתנים. שעה, כתובת ובעלי השמחה נמצאים במשתנים - מסור אותם כלשונם כשנשאלת, ורק אם המשתנה ריק אל תנחש. לעולם אל תמציא מתנות, מי עוד מוזמן, תפריט או שינויים באירוע. אם אינך יודע -> קרא ל-notify_owner, ורק לאחר מכן אמור: \"אעביר למשפחה\".\n4. אמור \"נרשם\" או \"אושר\" רק לאחר ש-save_rsvp החזיר \"saved\". אם החזיר \"rejected\" - אמור זאת בכנות; לעולם אל תציג דחייה כהצלחה.\n5. כאשר שואלים אותך מי אתה, מה זו השיחה, או אם אתה רובוט או אמיתי - אמור שאתה עוזר קולי אוטומטי מטעם בעלי השמחה. אסור לך להתחזות לאדם.\n6. אל תבקש ואל תקבל פרטים אישיים מעבר להגעה ולמספר המשתתפים. אל תדבר על תשלום או כסף, למעט תשובה קצרה אם נשאלת האם השיחה עולה כסף.\n7. כבד תשובת \"לא\" מיד. בלי לחץ, בלי רגשות אשם ובלי \"בטוח?\". חזרה ניטרלית אחת, כגון \"לא מגיעים, נכון?\", נדרשת לצורך דיוק ואינה לחץ.\n8. אל תשמור שום תוצאה, כגון מגיע, לא מגיע או אולי, בלי אישור מפורש. אם התמלול נשמע שגוי, קצר, לא ברור או בשפה אחרת - אל תניח דבר. שאל שוב בעברית.\n9. בנושא רגיש, כגון אבל או מחלה -> הבע אמפתיה קצרה וסיים בכבוד, בלי לשמור תשובת הגעה.\n10. מותר תמיד, גם לפני זיהוי: שם האורח (כשאלת זיהוי), מי אתה, ושם האירוע {{event_name}} כפי שמופיע בהזמנה. אסור לפני זיהוי מאומת: תאריך מדויק, שעה, מקום או כתובת, מי עוד מוזמן, וכל פרט נוסף על האירוע. לעולם אל תמסור מספרי טלפון.\n11. אל תבטיח שליחת וואטסאפ, תזכורת או הודעה. אין לך כלי שליחה. כאשר נדרשת שליחה, קרא ל-notify_owner ואמור רק שהבקשה תועבר למשפחה.\n12. אל תשתמש בלשון נקבה ביחס לעצמך. אתה מאושר, עוזר דיגיטלי זכר, וכל ההתייחסויות שלך לעצמך הן בלשון זכר.\n13. אל תניח את מינו של האורח לפי השם בלבד. העדף ניסוחים ניטרליים או רבים כאשר הדבר אפשרי.\n14. אל תקריא לאורח שמות משתנים, מזהים, ערכי status, שמות פרמטרים או שמות כלים.\n15. אל תבצע יותר משתי קריאות לאותו כלי עקב כשל. לאחר שני ניסיונות, עבור לנוסח כשל הכלי וסיים.\n16. {{system__time}} מגיע בפורמט אנגלי. השתמש בו לחישוב בלבד ולעולם אל תקריא אותו. כשאתה מדבר על זמן, אמור אותו בעברית בלבד.\n\n# Error handling\n- שקט לאחר שאלה:\n  - אל תתנצל אוטומטית.\n  - תחילה בדוק שיש קו: \"הלו?... שומע אותך?\".\n  - אם ענו -> המשך מהנקודה שבה היית.\n  - אם עדיין יש שקט -> נסח את השאלה מחדש פעם אחת, בניסוח אחר.\n  - אם יש שקט בפעם השלישית -> אמור: \"אולי הקו לא משהו - אעביר בקשה שישלחו לך וואטסאפ ותוכל לענות שם. יום נהדר!\". קרא ל-notify_owner עם הבקשה, ואז קרא ל-end_call.\n\n- שתי אי הבנות באותה שאלה:\n  - אמור: \"בוא נעשה את זה קל - אעביר בקשה שישלחו לכם וואטסאפ ותוכלו לענות כשנוח. יום טוב!\".\n  - קרא ל-notify_owner עם הבקשה, ואז קרא ל-end_call.\n\n- קו גרוע או רעש:\n  - אמור: \"קצת קשה לי לשמוע - אעביר בקשה שישלחו לך וואטסאפ במקום. יום נהדר!\".\n  - קרא ל-notify_owner עם הבקשה, ואז קרא ל-end_call.\n\n- כשל כלי:\n  - אל תנחש.\n  - אל תנסה יותר מפעמיים.\n  - אל תגיד \"רשמתי\" או \"נרשם\" על כלי שנכשל. אמור: \"לא הצלחתי לעדכן את זה במערכת, אני מעביר את זה למשפחה\". קרא ל-notify_owner עם פרטי הבקשה, אלא אם notify_owner הוא הכלי שנכשל.\n  - סגור את השיחה במשפט חם וקרא ל-end_call.\n\n- לעולם אל תאשים את האורח:\n  - אמור \"לא בטוח שקלטתי\" או \"נראה שנפל הקו\".\n  - אל תאמר \"לא ענית ברור\".\n\n- שפה אחרת:\n  - אל תנחש את התשובה ואל תשמור דבר.\n  - אמור משפט קצר שמבהיר שתועבר בקשה לשליחת וואטסאפ.\n  - קרא ל-notify_owner עם kind=\"flag\" ותיאור קצר של מחסום השפה.\n  - לאחר מכן קרא ל-end_call.\n\n# כלל סיום (חובה)\nמשפט הפרידה נאמר פעם אחת בלבד, כחלק מהתור המדובר האחרון שלך — ורק אז end_call עם reason בלבד. לעולם לא תור פרידה נוסף ולעולם לא message/system__message_to_speak ב-end_call: הודעה כזו נחתכת (אומת 23.08) ופרידה בשני תורות נשמעת לאורח כגמגום (\"יום נהדר. יום נהדר!\" — אומת בהקלטה 07.09).",
+                "rag": {
+                    "embedding_model": "e5_mistral_7b_instruct",
+                    "enabled": false,
+                    "include_source_urls": false,
+                    "knowledge_base_tool_info": null,
+                    "max_documents_length": 50000,
+                    "max_retrieved_rag_chunks_count": 20,
+                    "max_vector_distance": 0.6,
+                    "num_candidates": null,
+                    "optional_rag_enabled": false,
+                    "query_rewrite_prompt_override": null
+                },
+                "reasoning_effort": null,
+                "rich_content": {
+                    "enabled_components": []
+                },
+                "service_tier": "standard",
+                "speech_engine": null,
+                "temperature": 0.56,
+                "thinking_budget": null,
+                "timezone": "Asia/Jerusalem",
+                "tool_ids": [
+                    "tool_1501kxjzme3zf3htm544kyjfwkzg",
+                    "tool_0501kxjzme40e93bjg2vh4ah9cvb",
+                    "tool_1901kxjzme41em68xms7w4e69m2k",
+                    "tool_7901kxxsaw1cfhkrpe5w2mkrxxk3"
+                ],
+                "tools": [
+                    {
+                        "assignments": [],
+                        "description": "שומר את אישור ההגעה במערכת קלפה. לקרוא רק אחרי אישור מילולי בסיכום (attending), או סירוב מפורש (declined), או התלבטות מפורשת (maybe). תוצאות: saved = נשמר בהצלחה; rejected = המערכת סירבה (ההרשמה לאירוע נסגרה) - התשובה לא נשמרה ואסור לומר שנרשם; queued = נקלט ויעודכן בהמשך.",
+                        "disable_interruptions": true,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "immediate",
+                        "expects_response": true,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "disable_during_tool_and_turn",
+                        "name": "save_rsvp",
+                        "parameters": {
+                            "description": "",
+                            "dynamic_variable": "",
+                            "is_omitted": false,
+                            "properties": {
+                                "adults": {
+                                    "allowed_values": null,
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "מספר המבוגרים שיגיעו (0 כשלא מגיעים/מתלבטים). המר מדיבור: שניים=2, זוג=2, רק אני=1",
+                                    "dynamic_variable": "",
+                                    "enum": null,
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "integer"
+                                },
+                                "children": {
+                                    "allowed_values": null,
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "מספר הילדים שיגיעו (0 אם אין)",
+                                    "dynamic_variable": "",
+                                    "enum": null,
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "integer"
+                                },
+                                "status": {
+                                    "allowed_values": null,
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "attending=מגיעים, declined=לא מגיעים, maybe=מתלבטים",
+                                    "dynamic_variable": "",
+                                    "enum": [
+                                        "attending",
+                                        "declined",
+                                        "maybe"
+                                    ],
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "status",
+                                "adults",
+                                "children"
+                            ],
+                            "type": "object"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "client"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "מסיר את המספר מרשימת השיחות לצמיתות. לקרוא מיד כשהאורח מבקש לא להתקשר יותר, בכל ניסוח. מחזיר removed בהצלחה.",
+                        "disable_interruptions": false,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "immediate",
+                        "expects_response": true,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "mark_dnc",
+                        "parameters": {
+                            "description": "",
+                            "dynamic_variable": "",
+                            "is_omitted": false,
+                            "properties": {},
+                            "required": [],
+                            "type": "object"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 10,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "client"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "מעביר שאלה/מסר/דגל לבעלי האירוע. לקרוא כשהאורח שואל שאלה שאין עליה תשובה במשתנים, מבקש בקשה מיוחדת, או מוסר ברכה. מחזיר noted בהצלחה.",
+                        "disable_interruptions": false,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "immediate",
+                        "expects_response": true,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "notify_owner",
+                        "parameters": {
+                            "description": "",
+                            "dynamic_variable": "",
+                            "is_omitted": false,
+                            "properties": {
+                                "kind": {
+                                    "allowed_values": null,
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "question=שאלה שדורשת מענה, message=מסר/ברכה, flag=דגל חריג (מספר שגוי, בקשת מחיקה)",
+                                    "dynamic_variable": "",
+                                    "enum": [
+                                        "question",
+                                        "message",
+                                        "flag"
+                                    ],
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "string"
+                                },
+                                "text": {
+                                    "allowed_values": null,
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "ניסוח קצר בעברית של הפנייה, עד 500 תווים",
+                                    "dynamic_variable": "",
+                                    "enum": null,
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "kind",
+                                "text"
+                            ],
+                            "type": "object"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 10,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "client"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "כשהאורח מבקש שנחזור אליו במועד אחר (\"תחזרו אליי מחר\", \"עכשיו לא נוח\", \"בערב\", \"אחרי החג\") — קראי לכלי גם עם callback_when_text (כלשונו) וגם עם callback_iso (הזמן המחושב). בלי callback_iso השיחה החוזרת לא תתבצע כלל. כשאת מאשרת לאורח בקול — אמרי את השעה בשעון ישראל בפורמט 24 שעות (\"נחזור אליך בסביבות 19:00\"). אחרי שהכלי חוזר, אשרי בקצרה וסיימי ב-end_call. מחזיר noted/queued.",
+                        "disable_interruptions": false,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "immediate",
+                        "expects_response": true,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "schedule_callback",
+                        "parameters": {
+                            "description": "",
+                            "dynamic_variable": "",
+                            "is_omitted": false,
+                            "properties": {
+                                "callback_iso": {
+                                    "allowed_values": null,
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "הזמן המוחלט לחזרה, ISO 8601. חשבי אותו מ-{{system__time_utc}} — הזמן הנוכחי ב-UTC, זמין לך תמיד. דוגמאות: \"בעוד עשרים דקות\" ← system__time_utc ועוד 20 דקות. \"מחר בשמונה בערב\" ← מחר בשעה 20:00 שעון ישראל, מומר ל-UTC. שעון ישראל הוא UTC+3 בקיץ (אפריל–אוקטובר) ו-UTC+2 בחורף. השאירי ריק רק אם האורח לא נקב בזמן כלשהו (\"מתישהו\", \"תחזרו אליי\") — זמן יחסי כמו \"בעוד שעה\" או \"מחר\" הוא תמיד ניתן לחישוב.",
+                                    "dynamic_variable": "",
+                                    "enum": null,
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "string"
+                                },
+                                "callback_when_text": {
+                                    "allowed_values": null,
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "הזמן שהאורח ציין לחזרה, כלשונו בעברית (\"מחר בערב\", \"אחרי שש\", \"ביום ראשון\")",
+                                    "dynamic_variable": "",
+                                    "enum": null,
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "callback_when_text"
+                            ],
+                            "type": "object"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 10,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "client"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "נתק את השיחה אחרי משפט הסגירה — כשה-RSVP נשמר, כשהאורח סירב או ביקש הסרה, כשנרשם \"אולי\", או אחרי הפניה לוואטסאפ. לעולם אל תנתק באמצע איסוף נתונים או לפני שסיימת את משפט הסיום.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "end_call",
+                        "params": {
+                            "system_tool_type": "end_call"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "כשהאורח מבקש רגע לחשוב או לבדוק עם בן/בת הזוג (\"רגע\", \"תן לי שנייה\", \"אני בודק\") — המתן בשקט תור אחד במקום למלא את השתיקה. אל תשתמש בזה כברירת מחדל לכל שתיקה רגילה.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "skip_turn",
+                        "params": {
+                            "system_tool_type": "skip_turn",
+                            "wait_timeout_secs": -1.0
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "אם השיחה נענתה על ידי תא קולי או משיבון אוטומטי (הודעת פתיחה מוקלטת, \"השאירו הודעה אחרי הצפצוף\", טון מכני) — סיים את השיחה מיד. אל תנהל שיחה עם מכונה ואל תשאיר הודעה.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "voicemail_detection",
+                        "params": {
+                            "system_tool_type": "voicemail_detection",
+                            "voicemail_message": null
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    }
+                ]
+            },
+            "subagents": [],
+            "text_behavior_overrides": {
+                "whatsapp": {
+                    "disable_max_duration": null,
+                    "interaction_budget": null,
+                    "output_format": null,
+                    "verbosity": null
+                }
+            }
+        },
         "asr": {
-            "quality": "high",
-            "provider": "scribe_realtime",
-            "user_input_audio_format": "pcm_16000",
             "keywords": [
                 "כן",
                 "לא",
@@ -27,17 +423,86 @@
                 "אולי",
                 "עדיין לא יודע",
                 "תסירו אותי"
-            ]
+            ],
+            "provider": "scribe_realtime",
+            "quality": "high",
+            "user_input_audio_format": "pcm_16000"
+        },
+        "conversation": {
+            "background_sound": {
+                "crossfade_loop": false,
+                "source_id": null,
+                "source_type": null,
+                "volume": 0.6
+            },
+            "client_events": [
+                "audio",
+                "interruption",
+                "agent_response",
+                "user_transcript",
+                "agent_response_correction",
+                "agent_tool_response",
+                "agent_chat_response_part"
+            ],
+            "compaction": {
+                "enabled": null,
+                "min_reclaimable_tokens": null,
+                "soft_trigger_fraction": null,
+                "tail_size": null
+            },
+            "dtmf_input_settings": null,
+            "file_input": {
+                "enabled": true,
+                "max_files_in_memory": 10,
+                "max_files_per_conversation": 10
+            },
+            "max_duration_seconds": 600,
+            "max_duration_seconds_after_last_agent_message": null,
+            "monitoring_enabled": false,
+            "monitoring_events": [
+                "user_transcript",
+                "agent_response",
+                "agent_response_correction"
+            ],
+            "source_attribution": false,
+            "text_only": false
+        },
+        "language_presets": {},
+        "realtime_model": null,
+        "tts": {
+            "agent_output_audio_format": "pcm_16000",
+            "audio_effects": null,
+            "enable_phoneme_tags": true,
+            "expressive_mode": false,
+            "model_id": "eleven_v3_conversational",
+            "optimize_streaming_latency": 3,
+            "pronunciation_dictionary_locators": [],
+            "similarity_boost": 0.8,
+            "speed": 1.0,
+            "stability": 0.4,
+            "suggested_audio_tags": [
+                {
+                    "description": "בעת מסירת פרטים שחשוב שייקלטו: כתובת, תאריך, שעה, והקראת סיכום המספרים לפני השמירה",
+                    "tag": "slow"
+                },
+                {
+                    "description": "קלות בלבד, ברגע חיובי אמיתי: אחרי שהאורח אישר הגעה, ובמשפט הפרידה החם",
+                    "tag": "excited"
+                },
+                {
+                    "description": "צחוק קצר ועדין, ורק אם האורח התבדח קודם — לעולם לא ביוזמת הסוכן",
+                    "tag": "laughs"
+                }
+            ],
+            "supported_voices": [],
+            "text_normalisation_type": "system_prompt",
+            "voice_id": "eac91g6mnNRvS4L6tF5P"
         },
         "turn": {
-            "turn_timeout": 4,
-            "silence_end_call_timeout": -1,
-            "mode": "turn",
-            "turn_eagerness": "normal",
-            "spelling_patience": "auto",
-            "speculative_turn": true,
-            "retranscribe_on_turn_timeout": true,
-            "turn_model": "turn_v3",
+            "initial_wait_time": null,
+            "interruption_ignore_term_languages": [
+                "he"
+            ],
             "interruption_ignore_terms": [
                 "כן",
                 "נכון",
@@ -56,600 +521,156 @@
                 "כמובן",
                 "אמן"
             ],
-            "interruption_ignore_term_languages": [
-                "he"
-            ],
             "merge_with_default_ignore_terms": false,
-            "transcribe_on_disabled_interruptions": true,
+            "mode": "turn",
+            "retranscribe_on_turn_timeout": true,
+            "silence_end_call_timeout": -1.0,
             "soft_timeout_config": {
-                "timeout_seconds": -1,
-                "message": "רק רגע...",
                 "additional_soft_timeout_messages": [],
-                "use_llm_generated_message": false,
-                "randomize_fillers": false,
+                "disable_until_first_user_message": false,
+                "llm_generated_message_prompt_override": null,
                 "max_soft_timeouts_per_generation": 1,
-                "disable_until_first_user_message": false
-            }
-        },
-        "tts": {
-            "model_id": "eleven_v3_conversational",
-            "voice_id": "eac91g6mnNRvS4L6tF5P",
-            "supported_voices": [],
-            "expressive_mode": false,
-            "suggested_audio_tags": [
-                {
-                    "tag": "slow",
-                    "description": "בעת מסירת פרטים שחשוב שייקלטו: כתובת, תאריך, שעה, והקראת סיכום המספרים לפני השמירה"
-                },
-                {
-                    "tag": "excited",
-                    "description": "קלות בלבד, ברגע חיובי אמיתי: אחרי שהאורח אישר הגעה, ובמשפט הפרידה החם"
-                },
-                {
-                    "tag": "laughs",
-                    "description": "צחוק קצר ועדין, ורק אם האורח התבדח קודם — לעולם לא ביוזמת הסוכן"
-                }
-            ],
-            "agent_output_audio_format": "pcm_16000",
-            "optimize_streaming_latency": 3,
-            "stability": 0.4,
-            "speed": 1,
-            "similarity_boost": 0.8,
-            "text_normalisation_type": "system_prompt",
-            "pronunciation_dictionary_locators": [],
-            "enable_phoneme_tags": true,
-            "audio_effects": null
-        },
-        "conversation": {
-            "text_only": false,
-            "max_duration_seconds": 600,
-            "max_duration_seconds_after_last_agent_message": null,
-            "client_events": [
-                "audio",
-                "interruption",
-                "agent_response",
-                "user_transcript",
-                "agent_response_correction",
-                "agent_tool_response",
-                "agent_chat_response_part"
-            ],
-            "file_input": {
-                "enabled": true,
-                "max_files_in_memory": 10,
-                "max_files_per_conversation": 10
+                "message": "רק רגע...",
+                "randomize_fillers": false,
+                "timeout_seconds": -1.0,
+                "use_llm_generated_message": false
             },
-            "monitoring_enabled": false,
-            "monitoring_events": [
-                "user_transcript",
-                "agent_response",
-                "agent_response_correction"
-            ],
-            "dtmf_input_settings": null,
-            "background_sound": {
-                "volume": 0.6,
-                "crossfade_loop": false
-            },
-            "compaction": {
-                "enabled": null,
-                "soft_trigger_fraction": null,
-                "tail_size": null,
-                "min_reclaimable_tokens": null
-            },
-            "source_attribution": false
+            "speculative_turn": true,
+            "spelling_patience": "auto",
+            "transcribe_on_disabled_interruptions": true,
+            "turn_eagerness": "normal",
+            "turn_model": "turn_v3",
+            "turn_timeout": 4.0
         },
-        "language_presets": {},
         "vad": {
             "background_voice_detection": false
-        },
-        "realtime_model": null,
-        "agent": {
-            "first_message": "היי, כאן מאושר — עוזר קולי אוטומטי, בנוגע ל{{event_kind}} של {{event_name}}. השיחה מוקלטת. מדבר עם {{guest_name}}?",
-            "language": "he",
-            "hinglish_mode": false,
-            "dynamic_variables": {
-                "dynamic_variable_placeholders": {
-                    "event_address": "",
-                    "event_celebrants": "",
-                    "event_date": "",
-                    "event_name": "",
-                    "event_rsvp_deadline": "",
-                    "event_time": "",
-                    "event_venue": "",
-                    "guest_name": "",
-                    "event_kind": ""
-                }
-            },
-            "disable_first_message_interruptions": false,
-            "max_conversation_duration_message": "",
-            "text_behavior_overrides": {
-                "whatsapp": {}
-            },
-            "subagents": [],
-            "prompt": {
-                "prompt": "# Personality\nאתה מאושר - העוזר האישי של המשפחה שעושה את {{event_name}}, מטעם קלפה. ישראלי, חם, קליל, כזה שאוהב אנשים ויודע לסגור עניין בטלפון אחד בלי לעשות מזה סיפור. אתה לא מוקד ולא \"מערכת\" - אתה מתקשר בשביל בעלי השמחה, כמו מישהו מהמשפחה שהתנדב לעזור עם רשימת המוזמנים.\n\nכשמישהו שואל אם אתה רובוט, או שואל \"מי אתה?\", \"מה זו השיחה הזאת?\" או \"זה אמיתי?\" - ענה בפשטות ובחיוך, בלי להתנצל, ותמיד עם שני הרכיבים יחד - מה אתה ומטעם מי: \"אני מאושר, עוזר קולי אוטומטי מטעם {{event_celebrants}}... זה בנוגע ל{{event_name}} - מגיעים?\". ומיד המשך מהנקודה שבה היית. לעולם אל תתחזה לבן אדם.\n\nכשמתנגדים או חושדים - אל תתגונן ואל תתנצל יותר מדי. ענה בכנות במשפט אחד וחזור לשאלה. ההתנגדות היא לא עלבון - היא בקשה למידע:\n- \"מי נתן לך את המספר שלי?\" -> \"המשפחה, כשהכניסו אותך לרשימת המוזמנים. חצי דקה וסיימנו.\"\n- \"זה עולה לי כסף?\" -> \"ממש לא, סתם שיחת אישור הגעה.\"\n- \"אין לי זמן עכשיו\" -> \"לגמרי - שאלה אחת ונסיים: מגיעים?\"\n- \"תדבר עם אשתי או בעלי\" -> \"סבבה - אולי דווקא אתם יודעים? ואם לא, מתי נוח שנחזור?\"\n\n# Environment\nשיחת טלפון יוצאת. {{guest_name}} לא ציפה לשיחה - אולי נוהג, אולי באמצע משהו, אולי הקו רועש. כל מה שידוע לך: {{guest_name}} מנוקד, {{event_name}}, {{event_date}}, השעה {{event_time}}, {{event_venue}}, הכתובת {{event_address}}, בעלי השמחה {{event_celebrants}}, ומועד אחרון לאישור {{event_rsvp_deadline}}. חלק מהשדות עשויים להגיע ריקים - אם שדה ריק, אין לך את המידע הזה. שום פרט אחר על האירוע אין לך. ייתכן שמי שענה הוא לא {{guest_name}}, אלא בן משפחה או מישהו אחר.\n\n# Tone\nזו שיחה, לא טופס. הכלל שמנצח כל כלל אחר: קודם מגיב למה שנאמר, ורק אז ממשיך. אם שאלו אותך משהו - ענה, ואז בעדינות חזור לנקודה שבה היית. אף פעם אל תשאיר את האורח תלוי באוויר עם עובדה יבשה.\n\nאיך אתה נשמע:\n- עברית מדוברת אמיתית - \"מעולה\", \"סבבה\", \"אין לחץ\", \"יופי\", \"אה, כיף\". בלי שפת טפסים: לא \"האם בכוונתכם\", לא \"נא לאשר\", לא \"לגבי אישורי הגעה\". פשוט \"מגיעים?\".\n- קצר. עד שני משפטים בכל תור, ובדרך כלל משפט אחד. אחרי שאלה - עצור ותן לאורח לענות.\n- גשר חזרה תמיד: כשאתה מוסר עובדה, אמור אותה יחד עם השאלה הבאה, באותה נשימה. לדוגמה: \"מתי?\" -> \"ביום ראשון הקרוב... אז נראה אתכם?\"; \"איפה?\" -> \"ב{{event_venue}}... מתאים לכם?\". כך האורח יודע מה תורו לומר עכשיו.\n- אשר בקצרה שקלטת לפני השאלה הבאה: \"שני מבוגרים, מעולה. וילדים?\".\n- גוון את הניסוח. לעולם אל תחזור על אותו משפט פעמיים מילה במילה. אתה מדבר, לא מקריא.\n- התכוונן לאורח: אם הוא ממהר - היה קצר ותכליתי; אם הוא מדבר בכיף - הוסף משפט חם אחד וחזור לעניין.\n- רכיב אחד לנשימה: אל תדחוס שם, הצגה ושאלה למשפט ארוך אחד. עצירה קטנה בין החלקים גורמת לדיבור להישמע אנושי.\n- אמור מספרים במילים: \"שני מבוגרים\", לא \"2\". מספרי אנשים תמיד בלשון זכר: \"שלושה ילדים\", לא \"שלוש ילדים\".\n- כשאתה מזכיר שם של אדם באמצע משפט, הפרד אותו בפסיק קצר לפני שאתה ממשיך - כך השם לא נבלע במילה שאחריו.\n- אמור את התאריך בקצרה - יום ותאריך, בלי השנה.\n- כלל ברזל: כל מה שאתה מוציא נאמר בקול לאורח. לכן הפלט שלך הוא אך ורק המשפט בעברית שהאורח אמור לשמוע, ושום דבר אחר. אל תוציא מחשבות, היגיון פנימי, תכנון, שמות כלים או אנגלית. חריג יחיד: תגי ההבעה המאושרים שבסעיף \"הנחיות הבעה\" — הם הוראות הגשה למנוע הקול, לעולם אינם נשמעים, ומותר להשתמש רק בהם. כל סוגריים מרובעים אחרים אסורים. אם אתה צריך לחשוב - חשוב בשקט והוצא רק את הדיבור.\n\n# הנחיות הבעה (תגי V3)\nתגי ההבעה מוגדרים בהגדרות הקול (slow / excited / laughs) — היצמד אליהם בלבד. מגבלות מחייבות: לכל היותר תג אחד למשפט, ורוב המשפטים בלי תג בכלל; אסור תג בהודעת הפתיחה; אסור תג צמוד לשם האורח; אסור [whispers], [sighs] או כל תג שאינו ברשימה. ברירת המחדל היא דיבור נקי — התג הוא תבלין, לא שגרה.\n\n# Goal\nהמטרה היא לצאת מהשיחה עם אישור הגעה מדויק ושמור, בשיחה של כחצי דקה שמרגישה נעימה. יש לך שש נקודות דרך, לא תסריט. עבור ביניהן בזרימה טבעית והתאם את הניסוח לשיחה. אחרי כל סטייה, כגון שאלה, בדיחה או התלבטות, חזור בעדינות לנקודה שבה היית.\n\n1. מי מדבר. ודא שאתה מדבר עם {{guest_name}} או עם בן או בת זוג מובהקים. אל תמסור תאריך, מקום או פרטים אחרים לפני הזיהוי. אזכור שם האירוע בפתיחה מותר, משום שהוא מופיע בהזמנה. בכל בדיקת זהות חוזרת צרף את ההקשר באותו משפט - \"בקשר ל{{event_kind}} של {{event_name}} - אתה {{guest_name}}?\" - לעולם לא שאלת זהות יבשה בלי הקשר. This step is important.\n2. מגיעים. שאל בפשטות אם הם מגיעים ל{{event_kind}} של {{event_name}}. אם שואלים \"מתי\", \"איפה\" או \"של מי\" - ענה מיד מהמשתנים, גם אם התמלול חלקי או מוזר, וחזור לשאלה: \"...אז מגיעים?\".\n   אסור לחזור על אותה נוסחה פעמיים. אם האורח שואל שוב על מה השיחה, אל תנסח מחדש את אותו משפט - מסור את כל הפרטים במשפט אחד: \"{{event_kind}} של {{event_celebrants}}, {{event_date}} בשעה {{event_time}}, ב{{event_venue}}\". אם גם אחרי הפרטים המלאים הוא לא מתמצא, אל תשאל שוב אם הוא מגיע - ייתכן שזה לא האדם הנכון או שהוא לא מכיר את האירוע. שאל ישירות: \"אולי טעינו במספר - אתה {{guest_name}}?\", ואם לא - התנצל וסיים. This step is important.\n3. כמה. אם מגיעים - שאל כמה מבוגרים, ואז בנפרד כמה ילדים. אל תניח מספר. אם התשובה אינה ברורה - שאל שוב בניסוח אחר.\n4. לוודא. חזור על הסיכום ובקש אישור: \"אז רשמתי {מבוגרים} מבוגרים ו-{ילדים} ילדים, נכון?\". This step is important.\n5. לשמור. רק לאחר אישור מפורש, אמור משפט גישור קצר: \"שנייה, אני מעדכן...\", וקרא ל-save_rsvp. המתן לתוצאה - אסור לומר דבר על הצלחה או כישלון לפני שהכלי חזר.\n6. לסגור. תור מדובר אחד ויחיד שמכיל גם את תוצאת save_rsvp וגם את משפט הפרידה החם (למשל: \"מעולה, זה נרשם אצלנו. יום נהדר!\"), ומיד אחריו קרא ל-end_call עם reason בלבד — בלי message ובלי system__message_to_speak. אסור לומר את הפרידה פעמיים, ואסור לדבר אחרי end_call.\n\nכלל שמירה לפני יציאה (חובה): אם האורח כבר מסר תשובת הגעה ואישר אותה, אל תצא מהשיחה בלי לקרוא ל-save_rsvp קודם. זה חל על כל ענף יציאה בלי יוצא מן הכלל: בקשה לחזור במועד אחר, קו גרוע, העברה לוואטסאפ, שאלה שהועברה למשפחה, או כל סיום אחר. השמירה קודמת ל-schedule_callback, ל-notify_owner ול-end_call. אישור הגעה שנאמר ולא נשמר אבוד לחלוטין - השיחה הזו לא תחזור על עצמה. This step is important.\n\nענפים קצרים:\n- לא מגיעים -> בצע חזרה ניטרלית לצורך אימות: \"רק לוודא, לא מגיעים?\". לאחר אישור, קרא ל-save_rsvp עם status=\"declined\", adults=0, children=0. לאחר מכן סגור בחום, בלי לחץ ובלי לשאול \"בטוח?\".\n- מתלבטים, כגון \"אולי\" או \"עוד לא יודעים\" -> אל תלחץ. אמור: \"אין לחץ, לא צריך להחליט עכשיו - נרשום בינתיים אולי\". לאחר אישור מפורש של מצב ההתלבטות, קרא ל-save_rsvp עם status=\"maybe\", adults=0, children=0.\n- תחזרו אליי, או בקשה לחזור במועד אחר, כגון \"עכשיו לא נוח\" או \"תחזרו מחר\" -> אם כבר יש תשובת הגעה מאושרת, קרא קודם ל-save_rsvp. אחר כך קרא ל-schedule_callback עם הזמן שצוין. לאחר הצלחה אמור: \"מעולה, נחזור אליך\", ואז קרא ל-end_call.\n- אם האורח עסוק או שהקו גרוע, אך לא ביקש מועד חזרה -> אם כבר יש תשובת הגעה מאושרת, קרא קודם ל-save_rsvp. אמור: \"אעביר בקשה שישלחו לך וואטסאפ ותוכל לענות כשנוח\", קרא ל-notify_owner עם הבקשה, ולאחר מכן סגור את השיחה.\n- שאלה שאין לך עליה תשובה, כגון חניה, לבוש, מתנות או שינוי באירוע -> קרא ל-notify_owner, ורק לאחר מכן אמור: \"אעביר למשפחה\", וחזור לשאלה שבה היית.\n- בקשה לשלוח משהו, כגון תזכורת, פרטי האירוע, וואטסאפ או הודעה -> קרא ל-notify_owner עם הבקשה, ורק לאחר מכן אמור: \"אעביר את הבקשה למשפחה\". אין לך כלי שליחה. לעולם אל תבטיח \"אשלח לך\" או \"אשלח תזכורת\". כאשר מבקשים תזכורת, זו בקשה תמימה. אל תגיב בהתגוננות ואל תזכיר פרסומות.\n- \"תסירו אותי\" בכל שלב ובכל ניסוח -> קרא ל-mark_dnc מיד, אמור: \"כמובן, הסרתי אותך - סליחה על ההפרעה\", ואז קרא ל-end_call. אל תנסה לשכנע. This step is important.\n\n# Tools\n- save_rsvp\n  - מתי: רק לאחר אישור מילולי בחזרה על הפרטים. הדבר חל על הגעה ומספרים, סירוב מפורש או התלבטות מפורשת. לעולם אל תקרא לכלי לפני האישור.\n  - פרמטרים:\n    - status: אחד מתוך attending, declined, maybe.\n    - adults: מספר שלם.\n    - children: מספר שלם.\n  - המר דיבור למספרים:\n    - \"שניים\" -> 2\n    - \"זוג\" -> 2\n    - \"רק אני\" -> 1\n    - \"אני ואשתי\" -> 2\n    - \"אני ובעלי\" -> 2\n    - \"בלי ילדים\" -> 0\n  - אחרי שהכלי חוזר אמור משפט תוצאה אחד בלבד, לפי התוצאה, ומיד אחריו סיים:\n    - \"saved\" -> \"מעולה, זה נרשם אצלנו במערכת\".\n    - \"rejected\" -> ההרשמה לאירוע כבר נסגרה והתשובה לא נשמרה. קרא קודם ל-notify_owner עם התשובה של האורח, ורק אחר כך אמור: \"אני מצטער - לא הצלחתי לעדכן את זה במערכת, ההרשמה לאירוע כבר נסגרה. אני מעביר את התשובה שלך למשפחה\". לעולם אל תגיד \"נרשם\" על rejected.\n    - \"queued\" או כל תוצאה אחרת -> \"רשמתי, נעדכן במערכת\".\n  - אסור לומר יותר ממשפט תוצאה אחד באותה שיחה. הם סותרים זה את זה.\n  - משפט התוצאה בא לפני הפרידה, לעולם לא אחריה. אחרי שנפרדת אל תוסיף אף מילה.\n  - תיקון מספרים -> קרא שוב ל-save_rsvp עם הערכים החדשים. הקריאה החדשה דורסת את הערכים הקודמים.\n\n- mark_dnc\n  - מתי: מיד כאשר מבקשים לא להתקשר יותר, בכל ניסוח.\n  - פרמטרים: אין.\n  - אל תנסה לשכנע ואל תשאל שאלות נוספות.\n\n- notify_owner\n  - מתי: כאשר יש שאלה, בקשה או ברכה למשפחה.\n  - אסור לומר \"אעביר למשפחה\" לפני שקראת לכלי בפועל.\n  - פרמטרים:\n    - kind: אחד מתוך question, message, flag.\n    - text: ניסוח קצר בעברית, עד 500 תווים.\n\n- schedule_callback\n  - מתי: כאשר האורח מבקש שיחזרו אליו במועד אחר.\n  - פרמטרים:\n    - callback_when_text: הזמן כלשונו בעברית, למשל \"מחר בערב\".\n    - callback_iso: אופציונלי. הזמן הנוכחי הוא {{system__time}} - חשב לפיו את המועד שהאורח ציין (\"מחר בערב\", \"אחרי החג\") והחזר אותו כ-ISO. אם אינך בטוח, השאר ריק ומלא רק את callback_when_text.\n  - לאחר תוצאה \"noted\" או \"queued\" -> אמור: \"מעולה, נחזור אליך\", ואז קרא ל-end_call.\n\n- end_call\n  - פרמטרים: reason (קצר, באנגלית, לשימוש פנימי); message - משפט הפרידה בעברית שיישמע לאורח.\n  - שים את משפט הפרידה ב-message של הכלי, ואל תאמר אותו כתור נפרד לפני כן. כך הפרידה היא הדבר האחרון שנשמע.\n  - השתמש בו בכל תרחיש: נרשם, סירוב, אולי, הסרה, בקשת וואטסאפ או חזרה במועד אחר.\n  - לעולם אל תקרא לו באמצע איסוף הפרטים.\n\n# Guardrails\n1. הפלט שלך הוא דיבור בלבד. כל מילה שאתה מוציא נשמעת בטלפון. אסור בתכלית האיסור להוציא מחשבות, היגיון פנימי, תיאור של מה שאתה עומד לעשות, שמות כלים או טקסט באנגלית. סוגריים מרובעים מותרים אך ורק לתגי ההבעה המאושרים (סעיף \"הנחיות הבעה\") — כל תג אחר אסור. חשוב בשקט ודבר בעברית בלבד. אם עלתה מחשבה תכנונית, אל תשמיע אותה. פשוט בצע את הפעולה ואמור לאורח רק את המשפט הבא בשיחה.\n2. \"תסירו אותי\" בכל ניסוח -> קרא ל-mark_dnc וסיים מיד, בלי שכנוע.\n3. אל תמציא שום פרט שאינו במשתנים. שעה, כתובת ובעלי השמחה נמצאים במשתנים - מסור אותם כלשונם כשנשאלת, ורק אם המשתנה ריק אל תנחש. לעולם אל תמציא מתנות, מי עוד מוזמן, תפריט או שינויים באירוע. אם אינך יודע -> קרא ל-notify_owner, ורק לאחר מכן אמור: \"אעביר למשפחה\".\n4. אמור \"נרשם\" או \"אושר\" רק לאחר ש-save_rsvp החזיר \"saved\". אם החזיר \"rejected\" - אמור זאת בכנות; לעולם אל תציג דחייה כהצלחה.\n5. כאשר שואלים אותך מי אתה, מה זו השיחה, או אם אתה רובוט או אמיתי - אמור שאתה עוזר קולי אוטומטי מטעם בעלי השמחה. אסור לך להתחזות לאדם.\n6. אל תבקש ואל תקבל פרטים אישיים מעבר להגעה ולמספר המשתתפים. אל תדבר על תשלום או כסף, למעט תשובה קצרה אם נשאלת האם השיחה עולה כסף.\n7. כבד תשובת \"לא\" מיד. בלי לחץ, בלי רגשות אשם ובלי \"בטוח?\". חזרה ניטרלית אחת, כגון \"לא מגיעים, נכון?\", נדרשת לצורך דיוק ואינה לחץ.\n8. אל תשמור שום תוצאה, כגון מגיע, לא מגיע או אולי, בלי אישור מפורש. אם התמלול נשמע שגוי, קצר, לא ברור או בשפה אחרת - אל תניח דבר. שאל שוב בעברית.\n9. בנושא רגיש, כגון אבל או מחלה -> הבע אמפתיה קצרה וסיים בכבוד, בלי לשמור תשובת הגעה.\n10. מותר תמיד, גם לפני זיהוי: שם האורח (כשאלת זיהוי), מי אתה, ושם האירוע {{event_name}} כפי שמופיע בהזמנה. אסור לפני זיהוי מאומת: תאריך מדויק, שעה, מקום או כתובת, מי עוד מוזמן, וכל פרט נוסף על האירוע. לעולם אל תמסור מספרי טלפון.\n11. אל תבטיח שליחת וואטסאפ, תזכורת או הודעה. אין לך כלי שליחה. כאשר נדרשת שליחה, קרא ל-notify_owner ואמור רק שהבקשה תועבר למשפחה.\n12. אל תשתמש בלשון נקבה ביחס לעצמך. אתה מאושר, עוזר דיגיטלי זכר, וכל ההתייחסויות שלך לעצמך הן בלשון זכר.\n13. אל תניח את מינו של האורח לפי השם בלבד. העדף ניסוחים ניטרליים או רבים כאשר הדבר אפשרי.\n14. אל תקריא לאורח שמות משתנים, מזהים, ערכי status, שמות פרמטרים או שמות כלים.\n15. אל תבצע יותר משתי קריאות לאותו כלי עקב כשל. לאחר שני ניסיונות, עבור לנוסח כשל הכלי וסיים.\n16. {{system__time}} מגיע בפורמט אנגלי. השתמש בו לחישוב בלבד ולעולם אל תקריא אותו. כשאתה מדבר על זמן, אמור אותו בעברית בלבד.\n\n# Error handling\n- שקט לאחר שאלה:\n  - אל תתנצל אוטומטית.\n  - תחילה בדוק שיש קו: \"הלו?... שומע אותך?\".\n  - אם ענו -> המשך מהנקודה שבה היית.\n  - אם עדיין יש שקט -> נסח את השאלה מחדש פעם אחת, בניסוח אחר.\n  - אם יש שקט בפעם השלישית -> אמור: \"אולי הקו לא משהו - אעביר בקשה שישלחו לך וואטסאפ ותוכל לענות שם. יום נהדר!\". קרא ל-notify_owner עם הבקשה, ואז קרא ל-end_call.\n\n- שתי אי הבנות באותה שאלה:\n  - אמור: \"בוא נעשה את זה קל - אעביר בקשה שישלחו לכם וואטסאפ ותוכלו לענות כשנוח. יום טוב!\".\n  - קרא ל-notify_owner עם הבקשה, ואז קרא ל-end_call.\n\n- קו גרוע או רעש:\n  - אמור: \"קצת קשה לי לשמוע - אעביר בקשה שישלחו לך וואטסאפ במקום. יום נהדר!\".\n  - קרא ל-notify_owner עם הבקשה, ואז קרא ל-end_call.\n\n- כשל כלי:\n  - אל תנחש.\n  - אל תנסה יותר מפעמיים.\n  - אמור: \"רשמתי, נעדכן במערכת\".\n  - סגור את השיחה במשפט חם וקרא ל-end_call.\n\n- לעולם אל תאשים את האורח:\n  - אמור \"לא בטוח שקלטתי\" או \"נראה שנפל הקו\".\n  - אל תאמר \"לא ענית ברור\".\n\n- שפה אחרת:\n  - אל תנחש את התשובה ואל תשמור דבר.\n  - אמור משפט קצר שמבהיר שתועבר בקשה לשליחת וואטסאפ.\n  - קרא ל-notify_owner עם kind=\"flag\" ותיאור קצר של מחסום השפה.\n  - לאחר מכן קרא ל-end_call.\n\n# כלל סיום (חובה)\nמשפט הפרידה נאמר פעם אחת בלבד, כחלק מהתור המדובר האחרון שלך — ורק אז end_call עם reason בלבד. לעולם לא תור פרידה נוסף ולעולם לא message/system__message_to_speak ב-end_call: הודעה כזו נחתכת (אומת 23.08) ופרידה בשני תורות נשמעת לאורח כגמגום (\"יום נהדר. יום נהדר!\" — אומת בהקלטה 07.09).",
-                "llm": "claude-haiku-4-5",
-                "service_tier": "standard",
-                "opener": null,
-                "enable_reasoning_summary": false,
-                "temperature": 0.56,
-                "max_tokens": -1,
-                "tool_ids": [
-                    "tool_1501kxjzme3zf3htm544kyjfwkzg",
-                    "tool_0501kxjzme40e93bjg2vh4ah9cvb",
-                    "tool_1901kxjzme41em68xms7w4e69m2k",
-                    "tool_7901kxxsaw1cfhkrpe5w2mkrxxk3"
-                ],
-                "built_in_tools": {
-                    "update_state": null,
-                    "memory_entry_search": null,
-                    "run_subagent": null,
-                    "request_help": null,
-                    "end_call": {
-                        "type": "system",
-                        "name": "end_call",
-                        "description": "נתק את השיחה אחרי משפט הסגירה — כשה-RSVP נשמר, כשהאורח סירב או ביקש הסרה, כשנרשם \"אולי\", או אחרי הפניה לוואטסאפ. לעולם אל תנתק באמצע איסוף נתונים או לפני שסיימת את משפט הסיום.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "end_call"
-                        }
-                    },
-                    "skip_turn": {
-                        "type": "system",
-                        "name": "skip_turn",
-                        "description": "כשהאורח מבקש רגע לחשוב או לבדוק עם בן/בת הזוג (\"רגע\", \"תן לי שנייה\", \"אני בודק\") — המתן בשקט תור אחד במקום למלא את השתיקה. אל תשתמש בזה כברירת מחדל לכל שתיקה רגילה.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "skip_turn"
-                        }
-                    },
-                    "voicemail_detection": {
-                        "type": "system",
-                        "name": "voicemail_detection",
-                        "description": "אם השיחה נענתה על ידי תא קולי או משיבון אוטומטי (הודעת פתיחה מוקלטת, \"השאירו הודעה אחרי הצפצוף\", טון מכני) — סיים את השיחה מיד. אל תנהל שיחה עם מכונה ואל תשאיר הודעה.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "voicemail_detection"
-                        }
-                    },
-                    "transfer_to_genesys": null,
-                    "transfer_to_genesys_chat": null,
-                    "transfer_to_genesys_bot": null
-                },
-                "enable_parallel_tool_calls": false,
-                "mcp_server_ids": [],
-                "native_mcp_server_ids": [],
-                "knowledge_base": [],
-                "bedrock_llm": null,
-                "speech_engine": null,
-                "ignore_default_personality": false,
-                "rag": {
-                    "enabled": false,
-                    "embedding_model": "e5_mistral_7b_instruct",
-                    "optional_rag_enabled": false,
-                    "max_vector_distance": 0.6,
-                    "max_documents_length": 50000,
-                    "max_retrieved_rag_chunks_count": 20,
-                    "knowledge_base_tool_info": null,
-                    "include_source_urls": false
-                },
-                "timezone": "Asia/Jerusalem",
-                "backup_llm_config": {
-                    "preference": "default"
-                },
-                "cascade_timeout_seconds": 4,
-                "tools": [
-                    {
-                        "type": "client",
-                        "name": "save_rsvp",
-                        "description": "שומר את אישור ההגעה במערכת קלפה. לקרוא רק אחרי אישור מילולי בסיכום (attending), או סירוב מפורש (declined), או התלבטות מפורשת (maybe). תוצאות: saved = נשמר בהצלחה; rejected = המערכת סירבה (ההרשמה לאירוע נסגרה) - התשובה לא נשמרה ואסור לומר שנרשם; queued = נקלט ויעודכן בהמשך.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": true,
-                        "interruption_mode": "disable_during_tool_and_turn",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "parameters": {
-                            "description": "",
-                            "dynamic_variable": "",
-                            "is_omitted": false,
-                            "type": "object",
-                            "required": [
-                                "status",
-                                "adults",
-                                "children"
-                            ],
-                            "properties": {
-                                "status": {
-                                    "type": "string",
-                                    "description": "attending=מגיעים, declined=לא מגיעים, maybe=מתלבטים",
-                                    "enum": [
-                                        "attending",
-                                        "declined",
-                                        "maybe"
-                                    ],
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values": null,
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                },
-                                "adults": {
-                                    "type": "integer",
-                                    "description": "מספר המבוגרים שיגיעו (0 כשלא מגיעים/מתלבטים). המר מדיבור: שניים=2, זוג=2, רק אני=1",
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values": null,
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                },
-                                "children": {
-                                    "type": "integer",
-                                    "description": "מספר הילדים שיגיעו (0 אם אין)",
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values": null,
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                }
-                            }
-                        },
-                        "expects_response": true,
-                        "dynamic_variables": {
-                            "dynamic_variable_placeholders": {}
-                        },
-                        "execution_mode": "immediate"
-                    },
-                    {
-                        "type": "client",
-                        "name": "mark_dnc",
-                        "description": "מסיר את המספר מרשימת השיחות לצמיתות. לקרוא מיד כשהאורח מבקש לא להתקשר יותר, בכל ניסוח. מחזיר removed בהצלחה.",
-                        "response_timeout_secs": 10,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "parameters": {
-                            "description": "",
-                            "dynamic_variable": "",
-                            "is_omitted": false,
-                            "type": "object",
-                            "required": [],
-                            "properties": {}
-                        },
-                        "expects_response": true,
-                        "dynamic_variables": {
-                            "dynamic_variable_placeholders": {}
-                        },
-                        "execution_mode": "immediate"
-                    },
-                    {
-                        "type": "client",
-                        "name": "notify_owner",
-                        "description": "מעביר שאלה/מסר/דגל לבעלי האירוע. לקרוא כשהאורח שואל שאלה שאין עליה תשובה במשתנים, מבקש בקשה מיוחדת, או מוסר ברכה. מחזיר noted בהצלחה.",
-                        "response_timeout_secs": 10,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "parameters": {
-                            "description": "",
-                            "dynamic_variable": "",
-                            "is_omitted": false,
-                            "type": "object",
-                            "required": [
-                                "kind",
-                                "text"
-                            ],
-                            "properties": {
-                                "kind": {
-                                    "type": "string",
-                                    "description": "question=שאלה שדורשת מענה, message=מסר/ברכה, flag=דגל חריג (מספר שגוי, בקשת מחיקה)",
-                                    "enum": [
-                                        "question",
-                                        "message",
-                                        "flag"
-                                    ],
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values": null,
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                },
-                                "text": {
-                                    "type": "string",
-                                    "description": "ניסוח קצר בעברית של הפנייה, עד 500 תווים",
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values": null,
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                }
-                            }
-                        },
-                        "expects_response": true,
-                        "dynamic_variables": {
-                            "dynamic_variable_placeholders": {}
-                        },
-                        "execution_mode": "immediate"
-                    },
-                    {
-                        "type": "client",
-                        "name": "schedule_callback",
-                        "description": "כשהאורח מבקש שנחזור אליו במועד אחר (\"תחזרו אליי מחר\", \"עכשיו לא נוח\", \"בערב\", \"אחרי החג\") — קראי לכלי גם עם callback_when_text (כלשונו) וגם עם callback_iso (הזמן המחושב). בלי callback_iso השיחה החוזרת לא תתבצע כלל. כשאת מאשרת לאורח בקול — אמרי את השעה בשעון ישראל בפורמט 24 שעות (\"נחזור אליך בסביבות 19:00\"). אחרי שהכלי חוזר, אשרי בקצרה וסיימי ב-end_call. מחזיר noted/queued.",
-                        "response_timeout_secs": 10,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "parameters": {
-                            "description": "",
-                            "dynamic_variable": "",
-                            "is_omitted": false,
-                            "type": "object",
-                            "required": [
-                                "callback_when_text"
-                            ],
-                            "properties": {
-                                "callback_when_text": {
-                                    "type": "string",
-                                    "description": "הזמן שהאורח ציין לחזרה, כלשונו בעברית (\"מחר בערב\", \"אחרי שש\", \"ביום ראשון\")",
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values": null,
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                },
-                                "callback_iso": {
-                                    "type": "string",
-                                    "description": "הזמן המוחלט לחזרה, ISO 8601. חשבי אותו מ-{{system__time_utc}} — הזמן הנוכחי ב-UTC, זמין לך תמיד. דוגמאות: \"בעוד עשרים דקות\" ← system__time_utc ועוד 20 דקות. \"מחר בשמונה בערב\" ← מחר בשעה 20:00 שעון ישראל, מומר ל-UTC. שעון ישראל הוא UTC+3 בקיץ (אפריל–אוקטובר) ו-UTC+2 בחורף. השאירי ריק רק אם האורח לא נקב בזמן כלשהו (\"מתישהו\", \"תחזרו אליי\") — זמן יחסי כמו \"בעוד שעה\" או \"מחר\" הוא תמיד ניתן לחישוב.",
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values": null,
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                }
-                            }
-                        },
-                        "expects_response": true,
-                        "dynamic_variables": {
-                            "dynamic_variable_placeholders": {}
-                        },
-                        "execution_mode": "immediate"
-                    },
-                    {
-                        "type": "system",
-                        "name": "end_call",
-                        "description": "נתק את השיחה אחרי משפט הסגירה — כשה-RSVP נשמר, כשהאורח סירב או ביקש הסרה, כשנרשם \"אולי\", או אחרי הפניה לוואטסאפ. לעולם אל תנתק באמצע איסוף נתונים או לפני שסיימת את משפט הסיום.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "end_call"
-                        }
-                    },
-                    {
-                        "type": "system",
-                        "name": "skip_turn",
-                        "description": "כשהאורח מבקש רגע לחשוב או לבדוק עם בן/בת הזוג (\"רגע\", \"תן לי שנייה\", \"אני בודק\") — המתן בשקט תור אחד במקום למלא את השתיקה. אל תשתמש בזה כברירת מחדל לכל שתיקה רגילה.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "skip_turn"
-                        }
-                    },
-                    {
-                        "type": "system",
-                        "name": "voicemail_detection",
-                        "description": "אם השיחה נענתה על ידי תא קולי או משיבון אוטומטי (הודעת פתיחה מוקלטת, \"השאירו הודעה אחרי הצפצוף\", טון מכני) — סיים את השיחה מיד. אל תנהל שיחה עם מכונה ואל תשאיר הודעה.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "voicemail_detection"
-                        }
-                    }
-                ]
-            }
         }
     },
+    "name": "KALFA RSVP",
     "platform_settings": {
-        "evaluation": {
-            "criteria": [
+        "alerting": null,
+        "analysis_bedrock_llm": null,
+        "analysis_items": {
+            "data_collection": [
                 {
-                    "id": "rsvp_captured",
-                    "name": "RSVP נשמר",
-                    "type": "prompt",
-                    "conversation_goal_prompt": "Determine whether the call reached a clear, saved RSVP outcome. Success = the agent called the save_rsvp tool with a status of attending, declined, or maybe after an explicit verbal read-back confirmation, OR the call ended on a legitimate non-save path where skipping the save was correct: the guest asked to be removed (mark_dnc was called), the agent handed off to WhatsApp because of a bad line / language mismatch / repeated misunderstanding, the wrong person answered, or a sensitive situation arose (bereavement, illness). Failure = the call ended with no saved status and no legitimate reason to skip saving. Judge only from the Hebrew conversation and the tool calls, never from the guest's identity.",
-                    "use_knowledge_base": false,
+                    "analysis_item_id": "aitem_5401m0hma9ace5b8zdnjh442p9s1",
                     "scope": "conversation",
-                    "llm_billed": false,
-                    "scoring_mode": "binary",
-                    "max_score": 100
+                    "source": "user",
+                    "version_id": null
                 },
                 {
-                    "id": "headcount_correct",
-                    "name": "מספר אורחים מדויק",
-                    "type": "prompt",
-                    "conversation_goal_prompt": "Evaluate headcount capture, which applies only to attending guests. Success = when the guest confirmed they are attending, the agent collected a whole number of adults and, separately, children, read the totals back for confirmation, and saved only after that confirmation; OR the guest is not attending / undecided / no save occurred, in which case this criterion is not applicable and must be scored as success. Failure = the guest was attending but the agent saved a headcount that was never stated or confirmed, guessed a number, or skipped the read-back. Spoken Hebrew forms such as 'שניים'=2, 'זוג'=2, 'רק אני'=1, 'בלי ילדים'=0 count as validly captured numbers.",
-                    "use_knowledge_base": false,
+                    "analysis_item_id": "aitem_0101m0hma9ameq0bappjp1j9cr41",
                     "scope": "conversation",
-                    "llm_billed": false,
-                    "scoring_mode": "binary",
-                    "max_score": 100
+                    "source": "user",
+                    "version_id": null
                 },
                 {
-                    "id": "dnc_honored",
-                    "name": "בקשת הסרה כובדה",
-                    "type": "prompt",
-                    "conversation_goal_prompt": "Check how removal requests were handled. Success = if at any point the guest asked, in any phrasing, not to be called again or to be removed (for example 'תסירו אותי', 'אל תתקשרו אליי', 'הורידו אותי מהרשימה'), the agent called the mark_dnc tool immediately, acknowledged briefly, and ended the call with no persuasion and no 'are you sure?'; OR no such request was ever made, in which case score success by default. Failure = the guest asked to be removed but mark_dnc was not called, or the agent argued or tried to persuade before honoring the request.",
-                    "use_knowledge_base": false,
+                    "analysis_item_id": "aitem_7001m0hma9a5fjra8159dxxy3vx5",
                     "scope": "conversation",
-                    "llm_billed": false,
-                    "scoring_mode": "binary",
-                    "max_score": 100
+                    "source": "user",
+                    "version_id": null
+                }
+            ],
+            "evaluation_criteria": [
+                {
+                    "additional_version_ids": [],
+                    "analysis_item_id": "aitem_6301m0hma98weatbncax2acmsvjb",
+                    "scope": "conversation",
+                    "source": "user",
+                    "version_id": null,
+                    "weight": null
                 },
                 {
-                    "id": "stayed_on_task",
-                    "name": "נשאר בתחום ולא בדה פרטים",
-                    "type": "prompt",
-                    "conversation_goal_prompt": "Verify the agent stayed within scope and did not fabricate. Success = the agent did not invent any event detail beyond the provided variables (no made-up start time, full address, dress code, gift information, list of other guests, or changes to the event) and instead routed unknown questions to notify_owner; did not impersonate a human, admitting it is a digital assistant when asked; and did not discuss payment or money or collect personal data beyond attendance and headcount. Failure = the agent fabricated an event detail, claimed to be a human, or went outside the RSVP task.",
-                    "use_knowledge_base": false,
+                    "additional_version_ids": [],
+                    "analysis_item_id": "aitem_2201m0hma99efr5bzgmrkjz26a9b",
                     "scope": "conversation",
-                    "llm_billed": false,
-                    "scoring_mode": "binary",
-                    "max_score": 100
+                    "source": "user",
+                    "version_id": null,
+                    "weight": null
+                },
+                {
+                    "additional_version_ids": [],
+                    "analysis_item_id": "aitem_4601m0hma99nerhvg7daaygkar32",
+                    "scope": "conversation",
+                    "source": "user",
+                    "version_id": null,
+                    "weight": null
+                },
+                {
+                    "additional_version_ids": [],
+                    "analysis_item_id": "aitem_8901m0hma99xej5stq2rxsqstdp9",
+                    "scope": "conversation",
+                    "source": "user",
+                    "version_id": null,
+                    "weight": null
                 }
             ]
         },
-        "widget": {
-            "variant": "full",
-            "placement": "bottom-right",
-            "expandable": "never",
-            "avatar": {
-                "type": "orb",
-                "color1": "#2792dc",
-                "color2": "#9ce6e6"
-            },
-            "feedback_mode": "during",
-            "end_feedback": {
-                "type": "rating"
-            },
-            "bg_color": "#ffffff",
-            "text_color": "#000000",
-            "btn_color": "#000000",
-            "btn_text_color": "#ffffff",
-            "border_color": "#e1e1e1",
-            "focus_color": "#000000",
-            "shareable_page_show_terms": true,
-            "terms_text": "#### Terms and conditions\n\nBy clicking \"Agree,\" and each time I interact with this AI agent, I consent to the recording, storage, and sharing of my communications with third-party service providers, and as described in the Privacy Policy.\nIf you do not wish to have your conversations recorded, please refrain from using this service.",
-            "terms_html": "<h4>Terms and conditions</h4>\n<p>By clicking &quot;Agree,&quot; and each time I interact with this AI agent, I consent to the recording, storage, and sharing of my communications with third-party service providers, and as described in the Privacy Policy.\nIf you do not wish to have your conversations recorded, please refrain from using this service.</p>\n",
-            "show_avatar_when_collapsed": false,
-            "disable_banner": false,
-            "markdown_link_allowed_hosts": [],
-            "markdown_link_include_www": true,
-            "markdown_link_allow_http": true,
-            "mic_muting_enabled": false,
-            "transcript_enabled": false,
-            "text_input_enabled": true,
-            "conversation_mode_toggle_enabled": false,
-            "default_expanded": false,
-            "always_expanded": false,
-            "dismissible": false,
-            "show_agent_status": false,
-            "show_conversation_id": true,
-            "strip_audio_tags": true,
-            "text_contents": {
-                "attach_file": null,
-                "remove_file": null,
-                "file_upload_error": null,
-                "file_type_unsupported": null,
-                "file_too_large": null,
-                "file_limit_reached": null,
-                "typing_indicator": null
-            },
-            "styles": {},
-            "show_resize_button": true,
-            "language_selector": false,
-            "supports_text_only": true,
-            "language_presets": {},
-            "first_message_quick_replies": []
+        "analysis_llm": "gemini-2.5-flash",
+        "analysis_llm_billed": false,
+        "archived": false,
+        "auth": {
+            "allowlist": [],
+            "enable_auth": false,
+            "require_origin_header": false,
+            "shareable_token": null
+        },
+        "auto_translate_transcript_to_app_language": null,
+        "ban": null,
+        "call_limits": {
+            "agent_concurrency_limit": -1,
+            "bursting_enabled": true,
+            "daily_limit": 100000
         },
         "data_collection": {
             "adults": {
-                "type": "integer",
-                "description": "Number of adults the guest said would attend, used to cross-check save_rsvp. Convert spoken Hebrew to a whole number: 'שניים'/'זוג'/'אני ואשתי'=2, 'רק אני'=1. Use 0 when the guest is not attending or undecided, or when no adult count was stated. Count only what the guest explicitly said and never guess.",
-                "is_system_provided": false,
-                "dynamic_variable": "",
                 "allowed_values": null,
                 "allowed_values_dynamic_variable": "",
+                "analysis_schedule": null,
                 "constant_value": "",
+                "description": "Number of adults the guest said would attend, used to cross-check save_rsvp. Convert spoken Hebrew to a whole number: 'שניים'/'זוג'/'אני ואשתי'=2, 'רק אני'=1. Use 0 when the guest is not attending or undecided, or when no adult count was stated. Count only what the guest explicitly said and never guess.",
+                "dynamic_variable": "",
+                "enum": null,
                 "is_omitted": false,
+                "is_system_provided": false,
+                "llm": null,
+                "llm_billed": false,
                 "name": null,
-                "llm_billed": false
+                "type": "integer"
             },
             "children": {
-                "type": "integer",
-                "description": "Number of children the guest said would attend, used to cross-check save_rsvp. 'בלי ילדים' or no mention = 0. Convert spoken Hebrew numbers to a whole number. Use 0 when the guest is not attending or undecided. Count only what the guest explicitly said and never guess.",
-                "is_system_provided": false,
-                "dynamic_variable": "",
                 "allowed_values": null,
                 "allowed_values_dynamic_variable": "",
+                "analysis_schedule": null,
                 "constant_value": "",
+                "description": "Number of children the guest said would attend, used to cross-check save_rsvp. 'בלי ילדים' or no mention = 0. Convert spoken Hebrew numbers to a whole number. Use 0 when the guest is not attending or undecided. Count only what the guest explicitly said and never guess.",
+                "dynamic_variable": "",
+                "enum": null,
                 "is_omitted": false,
+                "is_system_provided": false,
+                "llm": null,
+                "llm_billed": false,
                 "name": null,
-                "llm_billed": false
+                "type": "integer"
             },
             "rsvp_status": {
-                "type": "string",
+                "allowed_values": null,
+                "allowed_values_dynamic_variable": "",
+                "analysis_schedule": null,
+                "constant_value": "",
                 "description": "The final RSVP outcome the guest committed to in the Hebrew call, used to cross-check the save_rsvp tool call. Return 'attending' if they confirmed they are coming, 'declined' if they said they are not coming, and 'maybe' if they were undecided ('אולי', 'עוד לא יודעים'). If the call ended with no clear decision (removal request, wrong person, handed off to WhatsApp), leave it unset. Infer only from the guest's own words, never from anything else.",
+                "dynamic_variable": "",
                 "enum": [
                     "attending",
                     "declined",
                     "maybe"
                 ],
-                "is_system_provided": false,
-                "dynamic_variable": "",
-                "allowed_values": null,
-                "allowed_values_dynamic_variable": "",
-                "constant_value": "",
                 "is_omitted": false,
+                "is_system_provided": false,
+                "llm": null,
+                "llm_billed": false,
                 "name": null,
-                "llm_billed": false
+                "type": "string"
             }
         },
         "data_collection_scopes": {
@@ -657,154 +678,74 @@
             "children": "conversation",
             "rsvp_status": "conversation"
         },
-        "analysis_items": {
-            "evaluation_criteria": [
+        "evaluation": {
+            "criteria": [
                 {
-                    "source": "user",
-                    "analysis_item_id": "aitem_6301m0hma98weatbncax2acmsvjb",
-                    "version_id": null,
-                    "additional_version_ids": [],
+                    "analysis_schedule": null,
+                    "conversation_goal_prompt": "Determine whether the call reached a clear, saved RSVP outcome. Success = the agent called the save_rsvp tool with a status of attending, declined, or maybe after an explicit verbal read-back confirmation, OR the call ended on a legitimate non-save path where skipping the save was correct: the guest asked to be removed (mark_dnc was called), the agent handed off to WhatsApp because of a bad line / language mismatch / repeated misunderstanding, the wrong person answered, or a sensitive situation arose (bereavement, illness). Failure = the call ended with no saved status and no legitimate reason to skip saving. Judge only from the Hebrew conversation and the tool calls, never from the guest's identity.",
+                    "id": "rsvp_captured",
+                    "llm": null,
+                    "llm_billed": false,
+                    "max_score": 100,
+                    "name": "RSVP נשמר",
                     "scope": "conversation",
-                    "weight": null
+                    "score_instructions": null,
+                    "scoring_mode": "binary",
+                    "type": "prompt",
+                    "use_knowledge_base": false
                 },
                 {
-                    "source": "user",
-                    "analysis_item_id": "aitem_2201m0hma99efr5bzgmrkjz26a9b",
-                    "version_id": null,
-                    "additional_version_ids": [],
+                    "analysis_schedule": null,
+                    "conversation_goal_prompt": "Evaluate headcount capture, which applies only to attending guests. Success = when the guest confirmed they are attending, the agent collected a whole number of adults and, separately, children, read the totals back for confirmation, and saved only after that confirmation; OR the guest is not attending / undecided / no save occurred, in which case this criterion is not applicable and must be scored as success. Failure = the guest was attending but the agent saved a headcount that was never stated or confirmed, guessed a number, or skipped the read-back. Spoken Hebrew forms such as 'שניים'=2, 'זוג'=2, 'רק אני'=1, 'בלי ילדים'=0 count as validly captured numbers.",
+                    "id": "headcount_correct",
+                    "llm": null,
+                    "llm_billed": false,
+                    "max_score": 100,
+                    "name": "מספר אורחים מדויק",
                     "scope": "conversation",
-                    "weight": null
+                    "score_instructions": null,
+                    "scoring_mode": "binary",
+                    "type": "prompt",
+                    "use_knowledge_base": false
                 },
                 {
-                    "source": "user",
-                    "analysis_item_id": "aitem_4601m0hma99nerhvg7daaygkar32",
-                    "version_id": null,
-                    "additional_version_ids": [],
+                    "analysis_schedule": null,
+                    "conversation_goal_prompt": "Check how removal requests were handled. Success = if at any point the guest asked, in any phrasing, not to be called again or to be removed (for example 'תסירו אותי', 'אל תתקשרו אליי', 'הורידו אותי מהרשימה'), the agent called the mark_dnc tool immediately, acknowledged briefly, and ended the call with no persuasion and no 'are you sure?'; OR no such request was ever made, in which case score success by default. Failure = the guest asked to be removed but mark_dnc was not called, or the agent argued or tried to persuade before honoring the request.",
+                    "id": "dnc_honored",
+                    "llm": null,
+                    "llm_billed": false,
+                    "max_score": 100,
+                    "name": "בקשת הסרה כובדה",
                     "scope": "conversation",
-                    "weight": null
+                    "score_instructions": null,
+                    "scoring_mode": "binary",
+                    "type": "prompt",
+                    "use_knowledge_base": false
                 },
                 {
-                    "source": "user",
-                    "analysis_item_id": "aitem_8901m0hma99xej5stq2rxsqstdp9",
-                    "version_id": null,
-                    "additional_version_ids": [],
+                    "analysis_schedule": null,
+                    "conversation_goal_prompt": "Verify the agent stayed within scope and did not fabricate. Success = the agent did not invent any event detail beyond the provided variables (no made-up start time, full address, dress code, gift information, list of other guests, or changes to the event) and instead routed unknown questions to notify_owner; did not impersonate a human, admitting it is a digital assistant when asked; and did not discuss payment or money or collect personal data beyond attendance and headcount. Failure = the agent fabricated an event detail, claimed to be a human, or went outside the RSVP task.",
+                    "id": "stayed_on_task",
+                    "llm": null,
+                    "llm_billed": false,
+                    "max_score": 100,
+                    "name": "נשאר בתחום ולא בדה פרטים",
                     "scope": "conversation",
-                    "weight": null
-                }
-            ],
-            "data_collection": [
-                {
-                    "source": "user",
-                    "analysis_item_id": "aitem_5401m0hma9ace5b8zdnjh442p9s1",
-                    "version_id": null,
-                    "scope": "conversation"
-                },
-                {
-                    "source": "user",
-                    "analysis_item_id": "aitem_0101m0hma9ameq0bappjp1j9cr41",
-                    "version_id": null,
-                    "scope": "conversation"
-                },
-                {
-                    "source": "user",
-                    "analysis_item_id": "aitem_7001m0hma9a5fjra8159dxxy3vx5",
-                    "version_id": null,
-                    "scope": "conversation"
+                    "score_instructions": null,
+                    "scoring_mode": "binary",
+                    "type": "prompt",
+                    "use_knowledge_base": false
                 }
             ]
         },
-        "overrides": {
-            "conversation_config_override": {
-                "asr": {
-                    "keywords": true
-                },
-                "turn": {
-                    "soft_timeout_config": {
-                        "message": false,
-                        "additional_soft_timeout_messages": false
-                    }
-                },
-                "tts": {
-                    "model_id": false,
-                    "voice_id": false,
-                    "supported_voices": false,
-                    "stability": false,
-                    "speed": false,
-                    "similarity_boost": false,
-                    "pronunciation_dictionary_locators": false
-                },
-                "conversation": {
-                    "text_only": true,
-                    "max_duration_seconds": false
-                },
-                "agent": {
-                    "first_message": false,
-                    "language": true,
-                    "max_conversation_duration_message": false,
-                    "prompt": {
-                        "prompt": false,
-                        "llm": false,
-                        "tool_ids": false,
-                        "native_mcp_server_ids": false,
-                        "knowledge_base": false
-                    }
-                }
-            },
-            "custom_llm_extra_body": false,
-            "enable_conversation_initiation_client_data_from_webhook": false,
-            "enable_starting_workflow_node_id_from_client": false,
-            "enable_procedure_ids_from_client": false
-        },
-        "workspace_overrides": {
-            "webhooks": {
-                "events": [
-                    "transcript"
-                ],
-                "transcript_format": "json",
-                "send_audio": false
-            }
-        },
-        "testing": {
-            "attached_tests": [
-                {
-                    "test_id": "test_0401kxk9rce3frdtes8r479vgyxd"
-                }
-            ],
-            "referenced_tests_ids": [
-                "test_0401kxk9rce3frdtes8r479vgyxd"
-            ]
-        },
-        "archived": false,
         "guardrails": {
-            "version": "1",
-            "focus": {
-                "is_enabled": true
-            },
-            "prompt_injection": {
-                "is_enabled": true
-            },
-            "synthetic_voice": {
-                "is_enabled": false,
-                "trigger_action": {
-                    "type": "end_call"
-                }
-            },
             "content": {
-                "execution_mode": "streaming",
                 "config": {
-                    "sexual": {
-                        "is_enabled": false,
-                        "threshold": "medium"
-                    },
-                    "violence": {
-                        "is_enabled": false,
-                        "threshold": "medium"
-                    },
                     "harassment": {
                         "is_enabled": false,
                         "threshold": "medium"
                     },
-                    "self_harm": {
+                    "medical_and_legal_information": {
                         "is_enabled": false,
                         "threshold": "medium"
                     },
@@ -816,62 +757,114 @@
                         "is_enabled": false,
                         "threshold": "medium"
                     },
-                    "medical_and_legal_information": {
+                    "self_harm": {
+                        "is_enabled": false,
+                        "threshold": "medium"
+                    },
+                    "sexual": {
+                        "is_enabled": false,
+                        "threshold": "medium"
+                    },
+                    "violence": {
                         "is_enabled": false,
                         "threshold": "medium"
                     }
                 },
+                "execution_mode": "streaming",
                 "trigger_action": {
                     "type": "end_call"
                 }
             },
-            "moderation": null,
             "custom": {
                 "config": {
                     "configs": []
                 }
-            }
+            },
+            "focus": {
+                "is_enabled": true
+            },
+            "moderation": null,
+            "prompt_injection": {
+                "is_enabled": true
+            },
+            "synthetic_voice": {
+                "is_enabled": false,
+                "trigger_action": {
+                    "type": "end_call"
+                }
+            },
+            "version": "1"
         },
-        "auth": {
-            "enable_auth": false,
-            "allowlist": [],
-            "require_origin_header": false
+        "overrides": {
+            "conversation_config_override": {
+                "agent": {
+                    "first_message": false,
+                    "language": true,
+                    "max_conversation_duration_message": false,
+                    "prompt": {
+                        "knowledge_base": false,
+                        "llm": false,
+                        "native_mcp_server_ids": false,
+                        "prompt": false,
+                        "tool_ids": false
+                    }
+                },
+                "asr": {
+                    "keywords": true
+                },
+                "conversation": {
+                    "max_duration_seconds": false,
+                    "text_only": true
+                },
+                "tts": {
+                    "model_id": false,
+                    "pronunciation_dictionary_locators": false,
+                    "similarity_boost": false,
+                    "speed": false,
+                    "stability": false,
+                    "supported_voices": false,
+                    "voice_id": false
+                },
+                "turn": {
+                    "soft_timeout_config": {
+                        "additional_soft_timeout_messages": false,
+                        "message": false
+                    }
+                }
+            },
+            "custom_llm_extra_body": false,
+            "enable_conversation_initiation_client_data_from_webhook": false,
+            "enable_procedure_ids_from_client": false,
+            "enable_starting_workflow_node_id_from_client": false
         },
-        "call_limits": {
-            "agent_concurrency_limit": -1,
-            "daily_limit": 100000,
-            "bursting_enabled": true
+        "overview_dashboard_template_id": null,
+        "privacy": {
+            "apply_to_existing_conversations": false,
+            "conversation_history_redaction": {
+                "enabled": false,
+                "entities": [],
+                "excluded_data_collection_ids": []
+            },
+            "delete_audio": false,
+            "delete_transcript_and_pii": false,
+            "nested_history_redaction": false,
+            "record_voice": true,
+            "retention_days": -1,
+            "user_memory": {
+                "enabled": false,
+                "scale": "balanced"
+            },
+            "zero_retention_mode": false
         },
         "queueing_config": {
             "enabled": false,
-            "wait_timeout_seconds": 180,
-            "hold_audio": null
+            "hold_audio": null,
+            "wait_timeout_seconds": 180
         },
-        "ban": null,
-        "smb_metadata": null,
-        "privacy": {
-            "record_voice": true,
-            "retention_days": -1,
-            "delete_transcript_and_pii": false,
-            "delete_audio": false,
-            "apply_to_existing_conversations": false,
-            "zero_retention_mode": false,
-            "nested_history_redaction": false,
-            "conversation_history_redaction": {
-                "enabled": false,
-                "entities": []
-            },
-            "user_memory": {
-                "enabled": false,
-                "scale": "some"
-            }
-        },
-        "trust_context": "unknown",
-        "analysis_llm": "gemini-2.5-flash",
-        "analysis_bedrock_llm": null,
-        "analysis_llm_billed": false,
-        "topic_discovery": {
-            "enabled": true
+        "safety": {
+            "ignore_safety_evaluation": false,
+            "is_blocked_ivc": false,
+            "is_blocked_non_ivc": false
         },
         "sentiment_analysis": {
             "enabled": true
@@ -880,12 +873,175 @@
             "enabled": false,
             "test_ids": []
         },
-        "alerting": null,
-        "overview_dashboard_template_id": null,
-        "safety": {
-            "is_blocked_ivc": false,
-            "is_blocked_non_ivc": false,
-            "ignore_safety_evaluation": false
+        "smb_metadata": null,
+        "summary_language": null,
+        "testing": {
+            "attached_tests": [
+                {
+                    "test_id": "test_0401kxk9rce3frdtes8r479vgyxd",
+                    "workflow_node_id": null
+                }
+            ],
+            "referenced_tests_ids": [
+                "test_0401kxk9rce3frdtes8r479vgyxd"
+            ]
+        },
+        "topic_discovery": {
+            "enabled": true
+        },
+        "trust_context": "unknown",
+        "widget": {
+            "action_text": null,
+            "always_expanded": false,
+            "avatar": {
+                "color_1": "#2792dc",
+                "color_2": "#9ce6e6",
+                "type": "orb"
+            },
+            "bg_color": "#ffffff",
+            "border_color": "#e1e1e1",
+            "border_radius": null,
+            "btn_color": "#000000",
+            "btn_radius": null,
+            "btn_text_color": "#ffffff",
+            "conversation_mode_toggle_enabled": false,
+            "custom_avatar_path": null,
+            "default_expanded": false,
+            "disable_banner": false,
+            "dismissible": false,
+            "end_call_text": null,
+            "end_feedback": {
+                "type": "rating"
+            },
+            "expand_text": null,
+            "expandable": "never",
+            "feedback_mode": "during",
+            "first_message_quick_replies": [],
+            "focus_color": "#000000",
+            "language_presets": {},
+            "language_selector": false,
+            "listening_text": null,
+            "markdown_link_allow_http": true,
+            "markdown_link_allowed_hosts": [],
+            "markdown_link_include_www": true,
+            "mic_muting_enabled": false,
+            "override_link": null,
+            "placement": "bottom-right",
+            "shareable_page_show_terms": true,
+            "shareable_page_text": null,
+            "show_agent_status": false,
+            "show_avatar_when_collapsed": false,
+            "show_conversation_id": true,
+            "show_resize_button": true,
+            "speaking_text": null,
+            "start_call_text": null,
+            "strip_audio_tags": true,
+            "styles": {
+                "accent": null,
+                "accent_active": null,
+                "accent_border": null,
+                "accent_hover": null,
+                "accent_primary": null,
+                "accent_subtle": null,
+                "base": null,
+                "base_active": null,
+                "base_border": null,
+                "base_error": null,
+                "base_hover": null,
+                "base_primary": null,
+                "base_subtle": null,
+                "bubble_radius": null,
+                "button_radius": null,
+                "compact_sheet_radius": null,
+                "dropdown_sheet_radius": null,
+                "input_radius": null,
+                "overlay_padding": null,
+                "sheet_radius": null
+            },
+            "supports_text_only": true,
+            "syntax_highlight_theme": null,
+            "terms_html": "<h4>Terms and conditions</h4>\n<p>By clicking &quot;Agree,&quot; and each time I interact with this AI agent, I consent to the recording, storage, and sharing of my communications with third-party service providers, and as described in the Privacy Policy.\nIf you do not wish to have your conversations recorded, please refrain from using this service.</p>\n",
+            "terms_key": null,
+            "terms_text": "#### Terms and conditions\n\nBy clicking \"Agree,\" and each time I interact with this AI agent, I consent to the recording, storage, and sharing of my communications with third-party service providers, and as described in the Privacy Policy.\nIf you do not wish to have your conversations recorded, please refrain from using this service.",
+            "text_color": "#000000",
+            "text_contents": {
+                "accept_terms": null,
+                "agent_done": null,
+                "agent_ended_conversation": null,
+                "agent_error": null,
+                "agent_working": null,
+                "attach_file": null,
+                "change_language": null,
+                "chatting_status": null,
+                "collapse": null,
+                "connecting_status": null,
+                "conversation_id": null,
+                "copied": null,
+                "copy": null,
+                "copy_id": null,
+                "dismiss_terms": null,
+                "download": null,
+                "end_call": null,
+                "error_occurred": null,
+                "expand": null,
+                "file_limit_reached": null,
+                "file_too_large": null,
+                "file_type_unsupported": null,
+                "file_upload_error": null,
+                "follow_up_feedback_placeholder": null,
+                "go_back": null,
+                "initiate_feedback": null,
+                "input_label": null,
+                "input_placeholder": null,
+                "input_placeholder_new_conversation": null,
+                "input_placeholder_text_only": null,
+                "listening_status": null,
+                "main_label": null,
+                "mute_microphone": null,
+                "new_call": null,
+                "queue_timed_out": null,
+                "queue_waiting_status": null,
+                "queue_waiting_status_short": null,
+                "remove_file": null,
+                "request_follow_up_feedback": null,
+                "rich_content_unavailable": null,
+                "send_message": null,
+                "speaking_status": null,
+                "start_call": null,
+                "start_chat": null,
+                "submit": null,
+                "switched_to_text_mode": null,
+                "switched_to_voice_mode": null,
+                "text_mode": null,
+                "thanks_for_feedback": null,
+                "thanks_for_feedback_details": null,
+                "typing_indicator": null,
+                "user_ended_conversation": null,
+                "voice_mode": null,
+                "wrap": null
+            },
+            "text_input_enabled": true,
+            "transcript_enabled": false,
+            "variant": "full"
+        },
+        "workspace_overrides": {
+            "cloud_storage_export": {
+                "destination_id": null,
+                "events": [
+                    "transcript"
+                ],
+                "transcript_format": "json"
+            },
+            "conversation_initiation_client_data_webhook": null,
+            "webhooks": {
+                "events": [
+                    "transcript"
+                ],
+                "exclude_transcript": false,
+                "post_call_webhook_id": null,
+                "send_audio": false,
+                "transcript_format": "json"
+            }
         }
     },
     "tags": [],
@@ -893,16 +1049,16 @@
         "edges": {},
         "nodes": {
             "start_node": {
-                "type": "start",
-                "position": {
-                    "x": 0,
-                    "y": 0
-                },
                 "edge_order": [],
-                "parent_subgraph_id": null
+                "parent_subgraph_id": null,
+                "position": {
+                    "x": 0.0,
+                    "y": 0.0
+                },
+                "type": "start"
             }
         },
-        "subgraphs": {},
-        "prevent_subagent_loops": false
+        "prevent_subagent_loops": false,
+        "subgraphs": {}
     }
 }

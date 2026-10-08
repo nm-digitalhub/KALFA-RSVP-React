@@ -1,0 +1,936 @@
+diff --git a/cmd/rdpgw/admin/admin.go b/cmd/rdpgw/admin/admin.go
+new file mode 100644
+index 0000000..39a042e
+--- /dev/null
++++ b/cmd/rdpgw/admin/admin.go
+@@ -0,0 +1,94 @@
++// Package admin is a loopback-only control surface for the gateway: it lists
++// live tunnels and closes them (by tunnel id or by user). It is served on its
++// own listener, never on the public gateway port.
++package admin
++
++import (
++	"crypto/subtle"
++	"encoding/json"
++	"fmt"
++	"log"
++	"net"
++	"net/http"
++	"strings"
++
++	"github.com/bolkedebruin/rdpgw/cmd/rdpgw/protocol"
++)
++
++type disconnectRequest struct {
++	User     string `json:"user"`
++	TunnelId string `json:"tunnelId"`
++}
++
++// RequireLoopback returns an error unless addr (host:port) is a loopback IP.
++func RequireLoopback(addr string) error {
++	host, _, err := net.SplitHostPort(addr)
++	if err != nil {
++		return fmt.Errorf("invalid address %q: %w", addr, err)
++	}
++	ip := net.ParseIP(host)
++	if ip == nil || !ip.IsLoopback() {
++		return fmt.Errorf("address %q is not a loopback IP", addr)
++	}
++	return nil
++}
++
++func authorized(r *http.Request, token string) bool {
++	host, _, err := net.SplitHostPort(r.RemoteAddr)
++	if err != nil {
++		return false
++	}
++	ip := net.ParseIP(host)
++	if ip == nil || !ip.IsLoopback() {
++		return false
++	}
++	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
++	return len(token) >= 32 && subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1
++}
++
++// Handler returns the admin mux. token must be at least 32 bytes.
++func Handler(token string) http.Handler {
++	mux := http.NewServeMux()
++
++	mux.HandleFunc("/admin/v1/tunnels", func(w http.ResponseWriter, r *http.Request) {
++		if !authorized(r, token) {
++			http.Error(w, "forbidden", http.StatusForbidden)
++			return
++		}
++		if r.Method != http.MethodGet {
++			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
++			return
++		}
++		w.Header().Set("Content-Type", "application/json")
++		json.NewEncoder(w).Encode(map[string]any{"tunnels": protocol.ListTunnels()})
++	})
++
++	mux.HandleFunc("/admin/v1/disconnect", func(w http.ResponseWriter, r *http.Request) {
++		if !authorized(r, token) {
++			http.Error(w, "forbidden", http.StatusForbidden)
++			return
++		}
++		if r.Method != http.MethodPost {
++			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
++			return
++		}
++		var req disconnectRequest
++		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
++		dec.DisallowUnknownFields()
++		if err := dec.Decode(&req); err != nil || (req.User == "") == (req.TunnelId == "") {
++			http.Error(w, "exactly one of user or tunnelId is required", http.StatusBadRequest)
++			return
++		}
++		closed := 0
++		if req.User != "" {
++			closed = protocol.DisconnectUser(req.User)
++		} else if err := protocol.Disconnect(req.TunnelId); err == nil {
++			closed = 1
++		}
++		log.Printf("admin disconnect: user=%q tunnelId=%q closed=%d", req.User, req.TunnelId, closed)
++		w.Header().Set("Content-Type", "application/json")
++		json.NewEncoder(w).Encode(map[string]int{"closed": closed})
++	})
++
++	return mux
++}
+diff --git a/cmd/rdpgw/admin/admin_test.go b/cmd/rdpgw/admin/admin_test.go
+new file mode 100644
+index 0000000..6350b87
+--- /dev/null
++++ b/cmd/rdpgw/admin/admin_test.go
+@@ -0,0 +1,61 @@
++package admin
++
++import (
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"testing"
++)
++
++const tok = "0123456789abcdef0123456789abcdef"
++
++func do(t *testing.T, h http.Handler, method, path, body, auth, remote string) *httptest.ResponseRecorder {
++	t.Helper()
++	r := httptest.NewRequest(method, path, strings.NewReader(body))
++	r.RemoteAddr = remote
++	if auth != "" {
++		r.Header.Set("Authorization", auth)
++	}
++	w := httptest.NewRecorder()
++	h.ServeHTTP(w, r)
++	return w
++}
++
++func TestAdminAuth(t *testing.T) {
++	h := Handler(tok)
++	if w := do(t, h, "GET", "/admin/v1/tunnels", "", "", "127.0.0.1:5000"); w.Code != 403 {
++		t.Errorf("no token: %d", w.Code)
++	}
++	if w := do(t, h, "GET", "/admin/v1/tunnels", "", "Bearer wrong", "127.0.0.1:5000"); w.Code != 403 {
++		t.Errorf("wrong token: %d", w.Code)
++	}
++	if w := do(t, h, "GET", "/admin/v1/tunnels", "", "Bearer "+tok, "10.1.2.3:5000"); w.Code != 403 {
++		t.Errorf("non-loopback with right token: %d", w.Code)
++	}
++	if w := do(t, h, "GET", "/admin/v1/tunnels", "", "Bearer "+tok, "127.0.0.1:5000"); w.Code != 200 {
++		t.Errorf("good request: %d", w.Code)
++	}
++	if w := do(t, Handler("short"), "GET", "/admin/v1/tunnels", "", "Bearer short", "127.0.0.1:5000"); w.Code != 403 {
++		t.Errorf("short server token must never authorize: %d", w.Code)
++	}
++}
++
++func TestAdminDisconnectValidation(t *testing.T) {
++	h := Handler(tok)
++	for _, body := range []string{``, `{}`, `{"user":"a","tunnelId":"b"}`, `{"user":"a","x":1}`, `nope`} {
++		if w := do(t, h, "POST", "/admin/v1/disconnect", body, "Bearer "+tok, "127.0.0.1:1"); w.Code != 400 {
++			t.Errorf("body %q: %d", body, w.Code)
++		}
++	}
++	if w := do(t, h, "POST", "/admin/v1/disconnect", `{"user":"nobody"}`, "Bearer "+tok, "127.0.0.1:1"); w.Code != 200 || !strings.Contains(w.Body.String(), `"closed":0`) {
++		t.Errorf("unknown user: %d %s", w.Code, w.Body.String())
++	}
++}
++
++func TestRequireLoopback(t *testing.T) {
++	for addr, ok := range map[string]bool{"127.0.0.1:3014": true, "[::1]:3014": true, "0.0.0.0:3014": false, "10.0.0.1:3014": false, "localhost:3014": false, "3014": false} {
++		if err := RequireLoopback(addr); (err == nil) != ok {
++			t.Errorf("%s: err=%v want ok=%v", addr, err, ok)
++		}
++	}
++}
+diff --git a/cmd/rdpgw/config/configuration.go b/cmd/rdpgw/config/configuration.go
+index 493ec2d..4c252fa 100644
+--- a/cmd/rdpgw/config/configuration.go
++++ b/cmd/rdpgw/config/configuration.go
+@@ -110,6 +110,9 @@ type ServerConfig struct {
+ 	// Empty (the default) makes the gateway ignore X-Forwarded-For
+ 	// entirely and use r.RemoteAddr.
+ 	TrustedProxies []string `koanf:"trustedproxies"`
++	// AdminAddress is a loopback host:port for the admin API (list / close
++	// tunnels). Empty disables it. Non-loopback addresses are refused.
++	AdminAddress string `koanf:"adminaddress"`
+ }
+ 
+ type KerberosConfig struct {
+@@ -155,6 +158,13 @@ type SecurityConfig struct {
+ 	QueryTokenIssuer       string `koanf:"querytokenissuer"`
+ 	VerifyClientIp         bool   `koanf:"verifyclientip"`
+ 	EnableUserToken        bool   `koanf:"enableusertoken"`
++	// GrantCheckUrl is a loopback URL asked, for every new tunnel, whether the
++	// user holds an active grant (fail closed). Required with header auth.
++	GrantCheckUrl       string `koanf:"grantcheckurl"`
++	GrantCheckToken     string `koanf:"grantchecktoken"`
++	GrantCheckTimeoutMs int    `koanf:"grantchecktimeoutms"`
++	// AdminToken is the bearer token for the admin API (>= 32 chars).
++	AdminToken string `koanf:"admintoken"`
+ }
+ 
+ type ClientConfig struct {
+@@ -316,6 +326,22 @@ func Load(configFile string) Configuration {
+ 		log.Fatalf("header authentication is configured but no user header was specified")
+ 	}
+ 
++	if Conf.Security.GrantCheckTimeoutMs <= 0 {
++		Conf.Security.GrantCheckTimeoutMs = 3000
++	}
++
++	if Conf.Server.HeaderEnabled() && Conf.Security.GrantCheckUrl == "" {
++		log.Fatalf("header authentication requires `security.grantcheckurl` (refusing to run without a per-tunnel grant check)")
++	}
++
++	if Conf.Security.GrantCheckUrl != "" && len(Conf.Security.GrantCheckToken) < 32 {
++		log.Fatalf("`security.grantcheckurl` is set but `security.grantchecktoken` is shorter than 32 characters")
++	}
++
++	if Conf.Server.AdminAddress != "" && len(Conf.Security.AdminToken) < 32 {
++		log.Fatalf("`server.adminaddress` is set but `security.admintoken` is shorter than 32 characters")
++	}
++
+ 	// prepend '//' if required for URL parsing
+ 	if !strings.Contains(Conf.Server.GatewayAddress, "//") {
+ 		Conf.Server.GatewayAddress = "//" + Conf.Server.GatewayAddress
+diff --git a/cmd/rdpgw/main.go b/cmd/rdpgw/main.go
+index 8729c89..cd830c2 100644
+--- a/cmd/rdpgw/main.go
++++ b/cmd/rdpgw/main.go
+@@ -10,10 +10,12 @@ import (
+ 	"net/url"
+ 	"os"
+ 	"strconv"
++	"time"
+ 
+ 	"github.com/bolkedebruin/gokrb5/v8/keytab"
+ 	"github.com/bolkedebruin/gokrb5/v8/service"
+ 	"github.com/bolkedebruin/gokrb5/v8/spnego"
++	"github.com/bolkedebruin/rdpgw/cmd/rdpgw/admin"
+ 	"github.com/bolkedebruin/rdpgw/cmd/rdpgw/config"
+ 	"github.com/bolkedebruin/rdpgw/cmd/rdpgw/kdcproxy"
+ 	"github.com/bolkedebruin/rdpgw/cmd/rdpgw/protocol"
+@@ -99,6 +101,37 @@ func main() {
+ 	security.HostSelection = conf.Server.HostSelection
+ 	security.Hosts = conf.Server.Hosts
+ 
++	// per-tunnel grant check (loopback authority) and admin API
++	if conf.Security.GrantCheckUrl != "" {
++		gu, err := url.Parse(conf.Security.GrantCheckUrl)
++		if err != nil || (gu.Scheme != "http" && gu.Scheme != "https") {
++			log.Fatalf("security.grantcheckurl is not a valid http(s) URL")
++		}
++		if err := admin.RequireLoopback(net.JoinHostPort(gu.Hostname(), "0")); err != nil {
++			log.Fatalf("security.grantcheckurl must point at a loopback address: %s", err)
++		}
++		security.GrantCheck = security.NewHTTPGrantCheck(conf.Security.GrantCheckUrl,
++			conf.Security.GrantCheckToken,
++			time.Duration(conf.Security.GrantCheckTimeoutMs)*time.Millisecond)
++		log.Printf("per-tunnel grant check enabled (fail closed, timeout %dms)", conf.Security.GrantCheckTimeoutMs)
++	}
++	if conf.Server.AdminAddress != "" {
++		if err := admin.RequireLoopback(conf.Server.AdminAddress); err != nil {
++			log.Fatalf("server.adminaddress: %s", err)
++		}
++		go func() {
++			srv := &http.Server{
++				Addr:              conf.Server.AdminAddress,
++				Handler:           admin.Handler(conf.Security.AdminToken),
++				ReadHeaderTimeout: 5 * time.Second,
++				ReadTimeout:       10 * time.Second,
++				WriteTimeout:      10 * time.Second,
++			}
++			log.Printf("admin API listening on %s", conf.Server.AdminAddress)
++			log.Fatalf("admin API: %s", srv.ListenAndServe())
++		}()
++	}
++
+ 	// init session store
+ 	web.InitStore([]byte(conf.Server.SessionKey),
+ 		[]byte(conf.Server.SessionEncryptionKey),
+diff --git a/cmd/rdpgw/protocol/process.go b/cmd/rdpgw/protocol/process.go
+index ceaf16e..cc7ef0f 100644
+--- a/cmd/rdpgw/protocol/process.go
++++ b/cmd/rdpgw/protocol/process.go
+@@ -25,9 +25,6 @@ type Processor struct {
+ 
+ 	// tunnel is the underlying connection with the client
+ 	tunnel *Tunnel
+-
+-	// ctl is a channel to control the processor in case of events
+-	ctl chan int
+ }
+ 
+ func NewProcessor(gw *Gateway, tunnel *Tunnel) *Processor {
+@@ -35,7 +32,6 @@ func NewProcessor(gw *Gateway, tunnel *Tunnel) *Processor {
+ 		gw:     gw,
+ 		state:  SERVER_STATE_INITIALIZED,
+ 		tunnel: tunnel,
+-		ctl:    make(chan int),
+ 	}
+ 	return h
+ }
+@@ -139,13 +135,20 @@ func (p *Processor) Process(ctx context.Context) error {
+ 					}
+ 				}
+ 				log.Printf("Establishing connection to RDP server: %s", host)
+-				p.tunnel.rwc, err = net.DialTimeout("tcp", host, time.Second*15)
++				rwc, err := net.DialTimeout("tcp", host, time.Second*15)
+ 				if err != nil {
+ 					log.Printf("Error connecting to %s, %s", host, err)
+ 					msg := p.channelResponse(E_PROXY_INTERNALERROR)
+ 					p.tunnel.Write(msg)
+ 					return err
+ 				}
++				if !p.tunnel.setRWC(rwc) {
++					// the tunnel was revoked while the channel was being created
++					rwc.Close()
++					msg := p.channelResponse(E_PROXY_RAP_ACCESSDENIED)
++					p.tunnel.Write(msg)
++					return fmt.Errorf("%x: tunnel closed during channel creation", E_PROXY_RAP_ACCESSDENIED)
++				}
+ 				p.tunnel.TargetServer = host
+ 				log.Printf("Connection established")
+ 				msg := p.channelResponse(ERROR_SUCCESS)
+diff --git a/cmd/rdpgw/protocol/track.go b/cmd/rdpgw/protocol/track.go
+index 0d38d43..d67abf6 100644
+--- a/cmd/rdpgw/protocol/track.go
++++ b/cmd/rdpgw/protocol/track.go
+@@ -6,8 +6,8 @@ import (
+ )
+ 
+ var (
+-	Connections        = map[string]*Monitor{}
+-	connectionsMu      sync.RWMutex
++	Connections   = map[string]*Monitor{}
++	connectionsMu sync.RWMutex
+ )
+ 
+ type Monitor struct {
+@@ -15,10 +15,6 @@ type Monitor struct {
+ 	Tunnel    *Tunnel
+ }
+ 
+-const (
+-	ctlDisconnect = -1
+-)
+-
+ func RegisterTunnel(t *Tunnel, p *Processor) {
+ 	connectionsMu.Lock()
+ 	defer connectionsMu.Unlock()
+@@ -31,11 +27,16 @@ func RegisterTunnel(t *Tunnel, p *Processor) {
+ 
+ func RemoveTunnel(t *Tunnel) {
+ 	connectionsMu.Lock()
+-	defer connectionsMu.Unlock()
+-
+ 	delete(Connections, t.Id)
++	connectionsMu.Unlock()
++
++	t.Close() // releases the grant timer and any half-open transport
+ }
+ 
++// Disconnect closes one live tunnel by id. It does not wait for the tunnel's
++// goroutine: Close unblocks its pending read and the goroutine unwinds on its
++// own. (The previous implementation sent on an unbuffered channel that no
++// goroutine ever received from, so it blocked forever.)
+ func Disconnect(id string) error {
+ 	connectionsMu.RLock()
+ 	m, ok := Connections[id]
+@@ -44,6 +45,38 @@ func Disconnect(id string) error {
+ 	if !ok {
+ 		return fmt.Errorf("%s connection does not exist", id)
+ 	}
+-	m.Processor.ctl <- ctlDisconnect
++	m.Tunnel.Close()
+ 	return nil
+ }
++
++// DisconnectUser closes every live tunnel opened for the given user and
++// returns how many were closed.
++func DisconnectUser(user string) int {
++	if user == "" {
++		return 0
++	}
++	connectionsMu.RLock()
++	var victims []*Tunnel
++	for _, m := range Connections {
++		if m.Tunnel.Subject() == user {
++			victims = append(victims, m.Tunnel)
++		}
++	}
++	connectionsMu.RUnlock()
++
++	for _, t := range victims {
++		t.Close()
++	}
++	return len(victims)
++}
++
++// ListTunnels returns a snapshot of the live tunnels.
++func ListTunnels() []TunnelInfo {
++	connectionsMu.RLock()
++	defer connectionsMu.RUnlock()
++	out := make([]TunnelInfo, 0, len(Connections))
++	for _, m := range Connections {
++		out = append(out, m.Tunnel.Info())
++	}
++	return out
++}
+diff --git a/cmd/rdpgw/protocol/track_test.go b/cmd/rdpgw/protocol/track_test.go
+index 6ac1d47..b107966 100644
+--- a/cmd/rdpgw/protocol/track_test.go
++++ b/cmd/rdpgw/protocol/track_test.go
+@@ -2,6 +2,7 @@ package protocol
+ 
+ import (
+ 	"fmt"
++	"net"
+ 	"sync"
+ 	"testing"
+ 	"time"
+@@ -34,7 +35,7 @@ func TestTunnelTrackerConcurrent(t *testing.T) {
+ 		go func() {
+ 			defer wg.Done()
+ 			id := fmt.Sprintf("tun-%d", i)
+-			RegisterTunnel(&Tunnel{Id: id}, &Processor{ctl: make(chan int)})
++			RegisterTunnel(&Tunnel{Id: id}, &Processor{})
+ 		}()
+ 		go func() {
+ 			defer wg.Done()
+@@ -45,27 +46,109 @@ func TestTunnelTrackerConcurrent(t *testing.T) {
+ 	wg.Wait()
+ }
+ 
+-// TestDisconnectKnownConnection verifies that Disconnect signals the
+-// processor for a connection that exists in the registry.
++// fakeTransport blocks ReadPacket until Close, like a socket with no data.
++type fakeTransport struct {
++	closed chan struct{}
++	once   sync.Once
++}
++
++func newFakeTransport() *fakeTransport { return &fakeTransport{closed: make(chan struct{})} }
++
++func (f *fakeTransport) ReadPacket() (int, []byte, error) {
++	<-f.closed
++	return 0, nil, fmt.Errorf("closed")
++}
++func (f *fakeTransport) WritePacket(b []byte) (int, error) { return len(b), nil }
++func (f *fakeTransport) Close() error {
++	f.once.Do(func() { close(f.closed) })
++	return nil
++}
++
++// TestDisconnectKnownConnection verifies that Disconnect unblocks a tunnel
++// whose goroutine is parked in a read, and that it returns promptly. The old
++// implementation sent on an unbuffered channel nobody received from and hung.
+ func TestDisconnectKnownConnection(t *testing.T) {
+ 	resetConnections()
+ 	t.Cleanup(resetConnections)
+ 
+-	p := &Processor{ctl: make(chan int, 1)}
++	tr := newFakeTransport()
++	tun := &Tunnel{Id: "known", transportIn: tr, transportOut: tr}
+ 	connectionsMu.Lock()
+-	Connections["known"] = &Monitor{Processor: p}
++	Connections["known"] = &Monitor{Processor: &Processor{}, Tunnel: tun}
+ 	connectionsMu.Unlock()
+ 
+-	if err := Disconnect("known"); err != nil {
+-		t.Fatalf("Disconnect on known id returned err: %v", err)
+-	}
++	done := make(chan error, 1)
++	go func() { done <- Disconnect("known") }()
+ 	select {
+-	case v := <-p.ctl:
+-		if v != ctlDisconnect {
+-			t.Errorf("ctl received %d, want ctlDisconnect=%d", v, ctlDisconnect)
++	case err := <-done:
++		if err != nil {
++			t.Fatalf("Disconnect on known id returned err: %v", err)
+ 		}
+-	case <-time.After(100 * time.Millisecond):
+-		t.Error("Disconnect did not signal ctlDisconnect on the processor channel")
++	case <-time.After(time.Second):
++		t.Fatal("Disconnect blocked")
++	}
++	select {
++	case <-tr.closed:
++	case <-time.After(time.Second):
++		t.Fatal("Disconnect did not close the tunnel transport")
++	}
++	if !tun.IsClosed() {
++		t.Error("tunnel not marked closed")
++	}
++}
++
++// TestDisconnectUserClosesOnlyThatUser checks the revocation path.
++func TestDisconnectUserClosesOnlyThatUser(t *testing.T) {
++	resetConnections()
++	t.Cleanup(resetConnections)
++
++	mk := func(id, user string) (*Tunnel, *fakeTransport) {
++		tr := newFakeTransport()
++		tun := &Tunnel{Id: id, transportIn: tr, transportOut: tr}
++		tun.SetOwner(user, "", "")
++		RegisterTunnel(tun, &Processor{})
++		return tun, tr
++	}
++	a1, _ := mk("a1", "alice")
++	a2, _ := mk("a2", "alice")
++	b1, _ := mk("b1", "bob")
++
++	if n := DisconnectUser("alice"); n != 2 {
++		t.Fatalf("DisconnectUser closed %d tunnels, want 2", n)
++	}
++	if !a1.IsClosed() || !a2.IsClosed() {
++		t.Error("alice's tunnels must be closed")
++	}
++	if b1.IsClosed() {
++		t.Error("bob's tunnel must stay open")
++	}
++	if n := DisconnectUser(""); n != 0 {
++		t.Errorf("empty user must close nothing, closed %d", n)
++	}
++}
++
++// TestSetRWCAfterCloseRefuses covers the race between revocation and
++// channel creation: a closed tunnel must not accept a backend connection.
++func TestSetRWCAfterCloseRefuses(t *testing.T) {
++	tun := &Tunnel{Id: "x"}
++	tun.Close()
++	c1, c2 := net.Pipe()
++	defer c1.Close()
++	defer c2.Close()
++	if tun.setRWC(c1) {
++		t.Fatal("setRWC accepted a connection on a closed tunnel")
++	}
++}
++
++// TestGrantDeadlineClosesTunnel covers the hard-expiry watchdog.
++func TestGrantDeadlineClosesTunnel(t *testing.T) {
++	tr := newFakeTransport()
++	tun := &Tunnel{Id: "d", transportIn: tr, transportOut: tr}
++	tun.SetGrantDeadline(time.Now().Add(50 * time.Millisecond))
++	select {
++	case <-tr.closed:
++	case <-time.After(time.Second):
++		t.Fatal("tunnel was not closed at its grant deadline")
+ 	}
+ }
+ 
+diff --git a/cmd/rdpgw/protocol/tunnel.go b/cmd/rdpgw/protocol/tunnel.go
+index 0f4a350..4d4ad0d 100644
+--- a/cmd/rdpgw/protocol/tunnel.go
++++ b/cmd/rdpgw/protocol/tunnel.go
+@@ -2,6 +2,7 @@ package protocol
+ 
+ import (
+ 	"net"
++	"sync"
+ 	"time"
+ 
+ 	"github.com/bolkedebruin/rdpgw/cmd/rdpgw/identity"
+@@ -45,6 +46,119 @@ type Tunnel struct {
+ 
+ 	// LastSeen is when the server received the last packet from the client
+ 	LastSeen time.Time
++
++	// mu guards the fields below, which are touched both by the tunnel's own
++	// goroutine and by the admin/revocation path (Close, Info).
++	mu sync.Mutex
++	// subject is the user the PAA cookie was issued to (set before the grant
++	// check so a revocation cannot miss a tunnel whose check is in flight).
++	subject  string
++	clientIp string
++	target   string
++	// closed is set by Close; once set no RDP-server connection may be opened.
++	closed bool
++	// grantTimer fires Close at the grant's hard expiry.
++	grantTimer *time.Timer
++}
++
++// TunnelInfo is a race-free snapshot of a Tunnel for the admin API.
++type TunnelInfo struct {
++	Id          string    `json:"tunnelId"`
++	Subject     string    `json:"user"`
++	ClientIp    string    `json:"clientIp"`
++	Target      string    `json:"target"`
++	ConnectedOn time.Time `json:"connectedOn"`
++}
++
++// SetOwner records who the tunnel belongs to (and where from / to) for the
++// admin API and for revocation by user.
++func (t *Tunnel) SetOwner(subject, clientIp, target string) {
++	t.mu.Lock()
++	t.subject, t.clientIp, t.target = subject, clientIp, target
++	t.mu.Unlock()
++}
++
++// Subject returns the user recorded by SetOwner.
++func (t *Tunnel) Subject() string {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++	return t.subject
++}
++
++// IsClosed reports whether Close has been called.
++func (t *Tunnel) IsClosed() bool {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++	return t.closed
++}
++
++// SetGrantDeadline makes the tunnel close itself at the given time, whatever
++// the state of the revocation path. A zero time means "no deadline".
++func (t *Tunnel) SetGrantDeadline(at time.Time) {
++	if at.IsZero() {
++		return
++	}
++	t.mu.Lock()
++	defer t.mu.Unlock()
++	if t.closed {
++		return
++	}
++	if t.grantTimer != nil {
++		t.grantTimer.Stop()
++	}
++	t.grantTimer = time.AfterFunc(time.Until(at), t.Close)
++}
++
++// setRWC stores the connection to the RDP server. It reports false (and the
++// caller must close conn) when the tunnel was already closed, so a revocation
++// that raced with channel creation cannot leave a live backend connection.
++func (t *Tunnel) setRWC(c net.Conn) bool {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++	if t.closed {
++		return false
++	}
++	t.rwc = c
++	return true
++}
++
++// Close tears the tunnel down from any goroutine. It closes the client
++// transports and the RDP-server connection; the tunnel's Process loop then
++// fails its next read and unwinds through its normal deferred cleanup. Safe to
++// call more than once. It never touches the RDP session on the server: only
++// the gateway tunnel dies.
++func (t *Tunnel) Close() {
++	t.mu.Lock()
++	if t.closed {
++		t.mu.Unlock()
++		return
++	}
++	t.closed = true
++	if t.grantTimer != nil {
++		t.grantTimer.Stop()
++	}
++	rwc, in, out := t.rwc, t.transportIn, t.transportOut
++	t.mu.Unlock()
++
++	if rwc != nil {
++		rwc.Close()
++	}
++	if in != nil {
++		in.Close()
++	}
++	if out != nil && out != in {
++		out.Close()
++	}
++}
++
++// Info returns a snapshot for the admin API.
++func (t *Tunnel) Info() TunnelInfo {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++	return TunnelInfo{
++		Id: t.Id, Subject: t.subject, ClientIp: t.clientIp, Target: t.target,
++		ConnectedOn: t.ConnectedOn,
++	}
+ }
+ 
+ type message struct {
+diff --git a/cmd/rdpgw/security/grant.go b/cmd/rdpgw/security/grant.go
+new file mode 100644
+index 0000000..0d666f9
+--- /dev/null
++++ b/cmd/rdpgw/security/grant.go
+@@ -0,0 +1,102 @@
++package security
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"io"
++	"log"
++	"net/http"
++	"time"
++)
++
++// GrantRequest is what rdpgw sends to the grant authority (KALFA) for every
++// new tunnel. It carries no token and no credentials.
++type GrantRequest struct {
++	User         string `json:"user"`
++	ClientIp     string `json:"clientIp"`
++	Target       string `json:"target"`
++	TunnelId     string `json:"tunnelId"`
++	RdgConnectId string `json:"rdgConnectionId"`
++}
++
++// GrantResult is the authority's answer. Only an explicit allow=true is an
++// allow; ExpiresAt, when set, is a hard deadline after which rdpgw closes the
++// tunnel by itself even if the revocation call never arrives.
++type GrantResult struct {
++	Allow     bool      `json:"allow"`
++	GrantId   string    `json:"grantId"`
++	ExpiresAt time.Time `json:"expiresAt"`
++}
++
++// GrantCheckFunc decides whether a user may open a new tunnel right now.
++type GrantCheckFunc func(ctx context.Context, req GrantRequest) (GrantResult, error)
++
++// GrantCheck is consulted by CheckPAACookie for every new tunnel. It is set at
++// start-up; when nil CheckPAACookie keeps its original behaviour.
++var GrantCheck GrantCheckFunc
++
++// NewHTTPGrantCheck builds a GrantCheckFunc that POSTs to url with a bearer
++// token. It is fail-closed: any transport error, non-200 status, oversized or
++// malformed body, or allow!=true is a denial.
++func NewHTTPGrantCheck(url, bearer string, timeout time.Duration) GrantCheckFunc {
++	client := &http.Client{
++		Timeout: timeout,
++		Transport: &http.Transport{
++			Proxy:             nil, // never route the check through an env proxy
++			DisableKeepAlives: false,
++			MaxIdleConns:      4,
++			IdleConnTimeout:   30 * time.Second,
++		},
++		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
++	}
++	return func(ctx context.Context, gr GrantRequest) (GrantResult, error) {
++		body, err := json.Marshal(gr)
++		if err != nil {
++			return GrantResult{}, err
++		}
++		ctx, cancel := context.WithTimeout(ctx, timeout)
++		defer cancel()
++		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
++		if err != nil {
++			return GrantResult{}, err
++		}
++		req.Header.Set("Content-Type", "application/json")
++		req.Header.Set("Authorization", "Bearer "+bearer)
++		resp, err := client.Do(req)
++		if err != nil {
++			return GrantResult{}, fmt.Errorf("grant check unreachable: %w", err)
++		}
++		defer resp.Body.Close()
++		if resp.StatusCode != http.StatusOK {
++			io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
++			return GrantResult{}, fmt.Errorf("grant check status %d", resp.StatusCode)
++		}
++		var res GrantResult
++		dec := json.NewDecoder(io.LimitReader(resp.Body, 4096))
++		if err := dec.Decode(&res); err != nil {
++			return GrantResult{}, errors.New("grant check: malformed response")
++		}
++		return res, nil
++	}
++}
++
++// requireGrant runs the grant check for a tunnel. It returns nil only for an
++// explicit allow; the caller must treat every other outcome as access denied.
++func requireGrant(ctx context.Context, req GrantRequest) (GrantResult, error) {
++	if GrantCheck == nil {
++		return GrantResult{Allow: true}, nil
++	}
++	res, err := GrantCheck(ctx, req)
++	if err != nil {
++		log.Printf("grant check failed for user %q (denying): %s", req.User, err)
++		return GrantResult{}, err
++	}
++	if !res.Allow {
++		log.Printf("grant check denied user %q", req.User)
++		return GrantResult{}, errors.New("grant denied")
++	}
++	return res, nil
++}
+diff --git a/cmd/rdpgw/security/grant_test.go b/cmd/rdpgw/security/grant_test.go
+new file mode 100644
+index 0000000..ba3d154
+--- /dev/null
++++ b/cmd/rdpgw/security/grant_test.go
+@@ -0,0 +1,115 @@
++package security
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"testing"
++	"time"
++
++	"github.com/bolkedebruin/rdpgw/cmd/rdpgw/identity"
++	"github.com/bolkedebruin/rdpgw/cmd/rdpgw/protocol"
++)
++
++const testBearer = "0123456789abcdef0123456789abcdef"
++
++func tunnelCtx(t *testing.T, user string) (context.Context, *protocol.Tunnel, string) {
++	t.Helper()
++	SigningKey = []byte("5aa3a1568fe8421cd7e127d5ace28d2d")
++	id := identity.NewUser()
++	id.SetUserName(user)
++	id.SetAttribute(identity.AttrClientIp, "203.0.113.7")
++	ctx := context.WithValue(context.Background(), identity.CTXKey, id)
++	tok, err := GeneratePAAToken(ctx, user, "host.example:3389")
++	if err != nil {
++		t.Fatal(err)
++	}
++	tun := &protocol.Tunnel{Id: "t1", RDGId: "rdg1", User: identity.NewUser()}
++	return context.WithValue(ctx, protocol.CtxTunnel, tun), tun, tok
++}
++
++func withGrant(t *testing.T, h http.HandlerFunc, timeout time.Duration) {
++	t.Helper()
++	srv := httptest.NewServer(h)
++	t.Cleanup(srv.Close)
++	prev := GrantCheck
++	GrantCheck = NewHTTPGrantCheck(srv.URL, testBearer, timeout)
++	t.Cleanup(func() { GrantCheck = prev })
++}
++
++func TestCheckPAACookieGrantAllow(t *testing.T) {
++	var got GrantRequest
++	var raw []byte
++	var token string
++	withGrant(t, func(w http.ResponseWriter, r *http.Request) {
++		if r.Header.Get("Authorization") != "Bearer "+testBearer {
++			http.Error(w, "no", http.StatusForbidden)
++			return
++		}
++		raw, _ = io.ReadAll(r.Body)
++		json.Unmarshal(raw, &got)
++		json.NewEncoder(w).Encode(GrantResult{Allow: true, ExpiresAt: time.Now().Add(time.Hour)})
++	}, time.Second)
++	ctx, tun, tok := tunnelCtx(t, "staff-1")
++	token = tok
++	ok, err := CheckPAACookie(ctx, tok)
++	if !ok || err != nil {
++		t.Fatalf("want allow, got ok=%v err=%v", ok, err)
++	}
++	if got.User != "staff-1" || got.ClientIp != "203.0.113.7" || got.Target != "host.example:3389" || got.TunnelId != "t1" {
++		t.Errorf("grant request carried wrong data: %+v", got)
++	}
++	if len(raw) == 0 || bytes.Contains(raw, []byte(token)) {
++		t.Error("the PAA token must never be sent to the grant authority")
++	}
++	tun.Close()
++}
++
++func TestCheckPAACookieGrantFailsClosed(t *testing.T) {
++	cases := map[string]http.HandlerFunc{
++		"deny":      func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(GrantResult{Allow: false}) },
++		"http 500":  func(w http.ResponseWriter, r *http.Request) { http.Error(w, "boom", 500) },
++		"http 403":  func(w http.ResponseWriter, r *http.Request) { http.Error(w, "no", 403) },
++		"bad json":  func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("{")) },
++		"empty 200": func(w http.ResponseWriter, r *http.Request) {},
++		"slow": func(w http.ResponseWriter, r *http.Request) {
++			time.Sleep(500 * time.Millisecond)
++			json.NewEncoder(w).Encode(GrantResult{Allow: true})
++		},
++	}
++	for name, h := range cases {
++		t.Run(name, func(t *testing.T) {
++			withGrant(t, h, 100*time.Millisecond)
++			ctx, _, tok := tunnelCtx(t, "staff-1")
++			if ok, _ := CheckPAACookie(ctx, tok); ok {
++				t.Fatal("must deny")
++			}
++		})
++	}
++}
++
++func TestCheckPAACookieUnreachableAuthorityDenies(t *testing.T) {
++	prev := GrantCheck
++	GrantCheck = NewHTTPGrantCheck("http://127.0.0.1:1", testBearer, 200*time.Millisecond)
++	t.Cleanup(func() { GrantCheck = prev })
++	ctx, _, tok := tunnelCtx(t, "staff-1")
++	if ok, _ := CheckPAACookie(ctx, tok); ok {
++		t.Fatal("unreachable authority must deny")
++	}
++}
++
++func TestCheckPAACookieRevokedDuringCheckDenies(t *testing.T) {
++	var tun *protocol.Tunnel
++	withGrant(t, func(w http.ResponseWriter, r *http.Request) {
++		tun.Close() // revocation lands while the check is in flight
++		json.NewEncoder(w).Encode(GrantResult{Allow: true})
++	}, time.Second)
++	ctx, tn, tok := tunnelCtx(t, "staff-1")
++	tun = tn
++	if ok, _ := CheckPAACookie(ctx, tok); ok {
++		t.Fatal("a tunnel closed during the check must be denied")
++	}
++}
+diff --git a/cmd/rdpgw/security/jwt.go b/cmd/rdpgw/security/jwt.go
+index 7752bf8..c3fdb74 100644
+--- a/cmd/rdpgw/security/jwt.go
++++ b/cmd/rdpgw/security/jwt.go
+@@ -107,6 +107,25 @@ func CheckPAACookie(ctx context.Context, tokenString string) (bool, error) {
+ 	tunnel.TargetServer = custom.RemoteServer
+ 	tunnel.RemoteAddr = custom.ClientIP
+ 	tunnel.User.SetUserName(standard.Subject)
++	// Record the owner BEFORE asking the grant authority: a revocation that
++	// lands while the check is in flight must still find this tunnel.
++	tunnel.SetOwner(standard.Subject, custom.ClientIP, custom.RemoteServer)
++
++	res, err := requireGrant(ctx, GrantRequest{
++		User:         standard.Subject,
++		ClientIp:     custom.ClientIP,
++		Target:       custom.RemoteServer,
++		TunnelId:     tunnel.Id,
++		RdgConnectId: tunnel.RDGId,
++	})
++	if err != nil {
++		return false, err
++	}
++	// closed by DisconnectUser while the check was running -> deny
++	if tunnel.IsClosed() {
++		return false, errors.New("tunnel revoked")
++	}
++	tunnel.SetGrantDeadline(res.ExpiresAt)
+ 
+ 	return true, nil
+ }

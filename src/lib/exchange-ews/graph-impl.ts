@@ -7,6 +7,7 @@ import { TokenCredentialAuthenticationProvider } from '@microsoft/microsoft-grap
 import { format } from 'date-fns';
 import { findIana } from 'windows-iana';
 
+import { wallClockToDate } from '@/lib/data/event-date';
 import { ISRAEL_TIME_ZONE } from '@/lib/date';
 
 
@@ -227,23 +228,10 @@ function fromGraphDateTime(v: { dateTime?: string; timeZone?: string } | undefin
   const zone = v.timeZone;
   if (!zone || /^utc$/i.test(zone)) return new Date(`${raw}Z`);
 
-  // Resolve "this wall clock, in that zone" to a real instant. Reading the
-  // string as UTC first gives a value that is wrong by exactly the zone's
-  // offset at that moment; measuring that offset and subtracting it lands on
-  // the correct instant, DST included (the offset is sampled AT the date in
-  // question, not today).
-  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(raw);
-  if (!m) return new Date(`${raw}Z`);
-  const [, y, mo, d, hh, mi, ss] = m;
-  try {
-    // Same construction the calendar UI already uses: TZDate built from
-    // components interprets them as wall clock IN that zone and resolves the
-    // instant, DST included.
-    return new Date(new TZDate(+y, +mo - 1, +d, +hh, +mi, +(ss ?? 0), zone).getTime());
-  } catch {
-    // Unknown zone name — fall back to UTC rather than throwing mid-listing.
-    return new Date(`${raw}Z`);
-  }
+  // Resolve "this wall clock, in that zone" to a real instant, DST included —
+  // the shared conversion in event-date.ts. Text it cannot read, or a zone it
+  // cannot resolve, falls back to UTC rather than throwing mid-listing.
+  return wallClockToDate(raw, zone) ?? new Date(`${raw}Z`);
 }
 
 // --- enum mapping ----------------------------------------------------------

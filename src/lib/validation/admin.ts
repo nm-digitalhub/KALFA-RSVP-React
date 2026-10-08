@@ -10,6 +10,8 @@ import { z } from 'zod';
 
 import { Constants, type Enums } from '@/lib/supabase/types';
 import { AGREEMENT_MODELS } from '@/lib/agreements/model';
+import { wallClockToDate } from '@/lib/data/event-date';
+import { ISRAEL_TIME_ZONE } from '@/lib/date';
 
 // --- callback_requests.status: SCHEDULING status (free text in DB, CHECK-
 // constrained as `callback_requests_status_valid` — mirrors the existing
@@ -138,17 +140,29 @@ export const cancelCallbackSchema = z.object({
 // Form payload for rescheduling a callback to a new admin-chosen instant —
 // the caller answered but asked for a different time, or asked to be called
 // again later. `exactAt` is the value of a datetime-local input, posted as-is
-// by the form (local wall time, no zone suffix — there is no client-side ISO
-// conversion). Must be in the future: a past instant would search for a slot
-// that can never be found.
+// by the form: Israel wall time, minute precision, no zone suffix. The parsed
+// output is the real instant as an ISO string with `Z`, converted here on the
+// server with an explicit zone (wallClockToDate): handed on as-is, Postgres
+// would store the wall time as UTC and every time typed would land three hours
+// late in summer. Must be in the future — checked on the converted instant: a
+// past instant would search for a slot that can never be found.
+//
+// Zod's docs: `local: true` still accepts `Z`-qualified forms (their example
+// parses "2020-01-01T06:15:00Z"), and minute precision accepts "…T06:15Z"; no
+// option means "no zone at all". The converter reads digits as Israel wall time
+// whatever follows them, so a value that already names a zone must be refused
+// here, not converted a second time — the regex below does that. The calendar
+// check (no 02-30, no T24:00) comes from the datetime format itself.
+const RESCHEDULE_AT_INVALID = 'נא לבחור מועד עתידי תקין';
+
 export const rescheduleCallbackSchema = z.object({
   id: z.uuid({ error: 'מזהה לא תקין' }),
-  exactAt: z
-    .string()
-    .refine((v) => {
-      const ms = Date.parse(v);
-      return !Number.isNaN(ms) && ms > Date.now();
-    }, 'נא לבחור מועד עתידי תקין'),
+  exactAt: z.iso
+    .datetime({ local: true, precision: -1, error: RESCHEDULE_AT_INVALID })
+    .regex(/T\d{2}:\d{2}$/, RESCHEDULE_AT_INVALID)
+    .transform((wall) => wallClockToDate(wall, ISRAEL_TIME_ZONE))
+    .refine((at): at is Date => at !== null && at.getTime() > Date.now(), RESCHEDULE_AT_INVALID)
+    .transform((at) => at.toISOString()),
 });
 
 // --- contact_messages.status: its own independent vocabulary ---
@@ -501,6 +515,22 @@ export const sumitCredentialsSchema = z.object({
     .regex(/^\d*$/, { error: 'מזהה חברה חייב להכיל ספרות בלבד' }),
   sumit_api_public_key: z.string().trim(),
   sumit_api_key: z.string().trim(),
+});
+
+// The CardCom connection (src/lib/data/admin/integrations/cardcom-config.ts). The terminal number is bounded to what
+// fits the database's integer, and the password may be blank on purpose: blank means "keep the stored one".
+export const cardcomConfigSchema = z.object({
+  terminal_number: z
+    .string()
+    .trim()
+    .regex(/^[1-9]\d{0,8}$/, { error: 'מספר מסוף חייב להיות מספר שלם חיובי (עד 9 ספרות)' }),
+  api_name: z
+    .string()
+    .trim()
+    .min(1, { error: 'שם ה-API חובה' })
+    .max(100, { error: 'שם ה-API ארוך מדי' }),
+  api_password: z.string().trim().max(200, { error: 'סיסמת ה-API ארוכה מדי' }),
+  enabled: z.boolean(),
 });
 
 export const extraSmsSchema = z.object({

@@ -41,6 +41,19 @@ describe('packagePaymentScreen — the ledger decides', () => {
     expect(screen({ payment: { status: 'review', collected: 0, credit: 0, committed: 0 } })).toEqual({ kind: 'review' });
   });
 
+  it('a pending payment the buyer can pick up again (an open CardCom form) shows the form, not "in progress"', () => {
+    const pending: PaymentState = { status: 'pending', collected: 0, credit: 0, committed: 0 };
+    expect(screen({ payment: pending, pendingIsResumable: true })).toEqual({ kind: 'form', amount: 120 });
+    // ...but only when a purchase is otherwise allowed: resuming never gets around a closed gate or a past event.
+    expect(screen({ payment: pending, pendingIsResumable: true, gatesOpen: false })).toEqual({ kind: 'unavailable', reason: 'disabled' });
+    expect(screen({ payment: pending, pendingIsResumable: true, eventPast: true })).toEqual({ kind: 'unavailable', reason: 'past' });
+    expect(screen({ payment: pending, pendingIsResumable: false })).toEqual({ kind: 'in_progress' });
+  });
+
+  it('a review payment is never resumable, whatever the flag says', () => {
+    expect(screen({ payment: { status: 'review', collected: 0, credit: 0, committed: 0 }, pendingIsResumable: true })).toEqual({ kind: 'review' });
+  });
+
   it('an unreadable ledger is "unavailable", never an empty form', () => {
     expect(screen({ payment: null })).toEqual({ kind: 'unavailable', reason: 'ledger' });
   });

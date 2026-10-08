@@ -5,7 +5,56 @@ import {
   ilDateInputValue,
   ilTimeInputValue,
   rsvpClosedReason,
+  wallClockToDate,
 } from './event-date';
+
+// The suite runs under the TZ pinned in vitest.config.mts (Asia/Jerusalem).
+// That matters only for the fall-back overlap below, whose result depends on
+// the host zone; every other case here holds under any host zone.
+describe('wallClockToDate', () => {
+  const IL = 'Asia/Jerusalem';
+  const iso = (d: Date | null) => d?.toISOString() ?? null;
+
+  it('reads the wall time IN the given zone — the 06:36 that was saved as 10:36 (incident 2026-10-07)', () => {
+    // Israel is UTC+3 on that date: 06:36 there is 03:36Z. Stored as the raw
+    // string it became 06:36Z, three hours late.
+    expect(iso(wallClockToDate('2026-10-07T06:36', IL))).toBe('2026-10-07T03:36:00.000Z');
+  });
+
+  it('follows the offset of the date in question, not today’s', () => {
+    // IST (UTC+2) in January, IDT (UTC+3) in July.
+    expect(iso(wallClockToDate('2026-01-15T09:30', IL))).toBe('2026-01-15T07:30:00.000Z');
+    expect(iso(wallClockToDate('2026-07-15T09:30', IL))).toBe('2026-07-15T06:30:00.000Z');
+  });
+
+  it('honours the zone argument and accepts seconds and a space separator', () => {
+    expect(iso(wallClockToDate('2026-10-07T06:36', 'UTC'))).toBe('2026-10-07T06:36:00.000Z');
+    expect(iso(wallClockToDate('2026-10-07T06:36', 'Asia/Singapore'))).toBe('2026-10-06T22:36:00.000Z');
+    expect(iso(wallClockToDate('2026-10-07T06:36:30', IL))).toBe('2026-10-07T03:36:30.000Z');
+    expect(iso(wallClockToDate('2026-10-07 06:36', IL))).toBe('2026-10-07T03:36:00.000Z');
+  });
+
+  it('puts a wall time inside the spring-forward gap just after it', () => {
+    // 2027-03-26 02:00 → 03:00 in Israel: 02:30 does not exist and resolves to
+    // 03:30 IDT = 00:30Z.
+    expect(iso(wallClockToDate('2027-03-26T02:30', IL))).toBe('2027-03-26T00:30:00.000Z');
+  });
+
+  it('resolves a wall time in the fall-back overlap to one of its two instants', () => {
+    // 2026-10-25 02:00 → 01:00: 01:30 happens twice, 22:30Z (IDT) and 23:30Z
+    // (IST). Which one is host-zone dependent, so only the pair is asserted.
+    expect(['2026-10-24T22:30:00.000Z', '2026-10-24T23:30:00.000Z']).toContain(
+      iso(wallClockToDate('2026-10-25T01:30', IL)),
+    );
+  });
+
+  it('returns null — never throws — for text it cannot read or a zone it cannot resolve', () => {
+    expect(wallClockToDate('', IL)).toBeNull();
+    expect(wallClockToDate('not a date', IL)).toBeNull();
+    expect(wallClockToDate('2026-10-07', IL)).toBeNull();
+    expect(wallClockToDate('2026-10-07T06:36', 'Not/AZone')).toBeNull();
+  });
+});
 
 describe('ilDateInputValue', () => {
   it('passes a plain date column value through unchanged', () => {

@@ -891,6 +891,19 @@ describe('rescheduleCallback', () => {
     );
   });
 
+  it('records the instant that was saved, so the time a request really got is visible', async () => {
+    vi.mocked(rescheduleCallbackRequest).mockResolvedValue({ ok: true });
+
+    await rescheduleCallback('cb-1', NEW_ISO);
+
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'callback.rescheduled',
+        meta: expect.objectContaining({ callbackRequestId: 'cb-1', requestedAt: NEW_ISO, ok: true }),
+      }),
+    );
+  });
+
   it('returns the outcome from rescheduleCallbackRequest unchanged', async () => {
     vi.mocked(rescheduleCallbackRequest).mockResolvedValue({ ok: true });
     await expect(rescheduleCallback('cb-1', NEW_ISO)).resolves.toEqual({ ok: true });

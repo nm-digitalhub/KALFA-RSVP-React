@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
+import { hasPlatformPermission, requireUser } from '@/lib/auth/dal';
+import { getCardcomServerConfig } from '@/lib/data/cardcom-config';
 import { getCampaign, previewCampaignHoldSizing } from '@/lib/data/campaigns';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
@@ -13,9 +15,11 @@ import {
   getSumitPublicConfig,
 } from '@/lib/data/payments';
 import { getProfile } from '@/lib/data/profiles';
+import { isCardcomPurchasePending } from '@/lib/payments/cardcom-pending';
 import { packagePaymentScreen } from '@/lib/payments/package-payment-screen';
 import { getPackagePaymentState } from '@/lib/payments/package-purchase';
 import { purchaseErrorMessage } from '@/lib/payments/package-purchase-errors';
+import { resolvePurchaseProvider } from '@/lib/payments/provider';
 import { buttonVariants } from '@/components/ui/button';
 import { activateCampaignAction } from '../../campaign-actions';
 import { CampaignHoldForm } from './hold-form';
@@ -100,7 +104,7 @@ export default async function CampaignPaymentPage({
   // on the card and start outreach with no payment recorded. An unreadable ledger is shown as unavailable, never as an
   // empty form.
   if (campaign.package_price != null) {
-    const [paymentsEnabled, packageEnabled, publicConfig, profile, payment] = await Promise.all([
+    const [paymentsEnabled, packageEnabled, publicConfig, profile, payment, cardcomConfig, mayUseTestTerminal, user] = await Promise.all([
       getPaymentsEnabled(),
       getPackageModelEnabled(),
       getSumitPublicConfig(),
@@ -112,14 +116,23 @@ export default async function CampaignPaymentPage({
         });
         return null;
       }),
+      getCardcomServerConfig(),
+      // Someone who may configure the integration is the only buyer allowed on CardCom's test terminal.
+      hasPlatformPermission('integrations.manage').catch(() => false),
+      requireUser(),
     ]);
+    // Which clearing company takes this purchase — the same decision the purchase routes make (resolvePurchaseProvider).
+    const provider = resolvePurchaseProvider(cardcomConfig, mayUseTestTerminal);
+    // A pending CardCom payment is a form the buyer can pick up again; a pending SUMIT charge never is.
+    const pendingIsResumable = provider === 'cardcom' && payment?.status === 'pending' && (await isCardcomPurchasePending(campaignId));
     const screen = packagePaymentScreen({
       price: Number(campaign.package_price),
       payment,
       campaignStatus: campaign.status,
       eventPast: isPast,
       eventActive: event.status === 'active',
-      gatesOpen: paymentsEnabled && packageEnabled && publicConfig !== null,
+      gatesOpen: paymentsEnabled && packageEnabled && (provider === 'cardcom' || publicConfig !== null),
+      pendingIsResumable,
     });
     return (
       <div className="mx-auto max-w-2xl space-y-6">
@@ -130,7 +143,10 @@ export default async function CampaignPaymentPage({
           eventId={id}
           campaignId={campaignId}
           formConfig={publicConfig}
+          provider={provider}
           signerName={profile?.full_name?.trim() || 'לקוח KALFA'}
+          signerEmail={user.email ?? ''}
+          signerPhone={profile?.phone ?? ''}
           activateAction={activateCampaignAction.bind(null, id, campaignId)}
           activateReason={activate === 'no_contacts' ? 'no_contacts' : activate === 'failed' ? 'failed' : null}
         />

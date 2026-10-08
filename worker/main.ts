@@ -115,6 +115,7 @@ import { runTemplateHealthSync } from '@/lib/data/template-health-sync';
 import { runInstagramTokenRefresh } from '@/lib/data/instagram-token-refresh';
 import { runConsoleAgentCalendarPresenceSync } from '@/lib/data/console-agent-calendar-presence';
 import { runFleetExpireSweep } from '@/lib/fleet/expire';
+import { runRdpAccessSweep } from '@/lib/rdp-access/sweep';
 import { runSumitHoldReconcile } from '@/lib/data/sumit-hold-reconcile';
 import { runPaymentOrphanSweep } from '@/lib/data/payment-orphans';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -1538,6 +1539,17 @@ async function main(): Promise<void> {
     }),
   );
 
+  // Remote-desktop access: every minute — expiry bookkeeping, access removal and gateway disconnect retries.
+  // Correctness never depends on this run (expiry is evaluated against now() on every check; see
+  // src/lib/rdp-access/sweep.ts). A DB error throws into guardedWorker (alert) and the next tick retries.
+  await boss.work(
+    QUEUES.rdpAccessSweep,
+    POLL_MINUTE_CRON,
+    guardedWorker(QUEUES.rdpAccessSweep, async () => {
+      await runRdpAccessSweep(createAdminClient());
+    }),
+  );
+
   // SUMIT has no release API, and the card-change trigger it can POST is
   // unsigned (enough for an alert, not for a status write — see the
   // sumit-hold-changed workflow template), so this poll is the only thing that
@@ -1638,6 +1650,9 @@ async function main(): Promise<void> {
   // Every 10 minutes — expiry windows are 72h, so minute-precision buys
   // nothing; 10m keeps a dead request from ever looking open for long.
   await boss.schedule(QUEUES.fleetExpireSweep, '*/10 * * * *');
+  // Every minute — grants are minutes long; a minute is the finest the cron offers and keeps the gateway
+  // disconnect retry (and the 45-second confirmation gap) prompt.
+  await boss.schedule(QUEUES.rdpAccessSweep, '* * * * *');
   // Every 30 minutes — a manual dashboard release is not time-sensitive to
   // detect; this only exists to stop it going unnoticed forever, not to catch
   // it within seconds.

@@ -6,6 +6,25 @@ import { renderPrimer } from './primer';
 // wrapper, the one fixed failure reply, and the split into WhatsApp-sized
 // messages. Kept apart from the handler so the Hebrew is in one place.
 
+// The writing rules of the stop-slop skill (.claude/skills/stop-slop/SKILL.md,
+// MIT, pinned in skills-lock.json), put into the prompt on purpose: this agent
+// runs `claude -p --tools RemoteTrigger,Read` with `Skill` denied
+// (owner-agent.settings.json, held by owner-agent-settings.test.ts), so the skill
+// cannot be invoked from inside a run. These are its Core Rules and Quick Checks
+// in Hebrew; the English phrase lists under references/ are not copied, they are
+// English openers and structures. Hebrew prose here, so no snake_case identifier
+// and no date or time (primer.test.ts, reply-text.test.ts hold both).
+const OWNER_AGENT_STYLE_RULES = [
+  '*סגנון הכתיבה*',
+  '- התחל בתשובה עצמה. בלי פתיח ("בהחלט", "שאלה טובה", "הנה מה שמצאתי") ובלי משפט סיכום בסוף ("לסיכום", "בקיצור").',
+  '- אל תבנה ניגוד של "לא X אלא Y" ואל תפתח בהצהרה כללית כמו "המצב מורכב". כתוב את הדבר עצמו.',
+  '- בלי מילות מילוי והדגשה ריקות ("ממש", "בעצם", "פשוט", "כמובן", "למעשה") ובלי ריכוך כשיש נתון. מספר, שם ותאריך מהכלים עדיפים על "הרבה" ו"לאחרונה".',
+  '- כתוב עם מי שעושה: "שלחנו", "בדקתי", "אישרו", לא "נשלח" ולא "הנתונים מראים". כשבדקת משהו, אמור מה בדקת.',
+  '- בלי מקף ארוך (—): שים נקודה או פסיק. אל תסיים כל פסקה במשפט קצר שנשמע כמו ציטוט.',
+  '- שנה את אורך המשפטים. אל תסביר לצוות מה שהוא יודע ואל תתנצל מראש.',
+  '- לפני שאתה כותב את answer, עבור על הכללים האלה. אל תזכיר אותם בתשובה.',
+];
+
 // Replaces Claude Code's default system prompt (runner.ts `--system-prompt`).
 // ⚠️ NO DATE OR OTHER CHANGING VALUE HERE. A resumed session replays the
 // system prompt it recorded first (`--system-prompt-snapshot`, on by default in
@@ -47,6 +66,8 @@ export const OWNER_AGENT_SYSTEM_PROMPT = [
   '- רשימה ארוכה: הצג את 30 הראשונים, כתוב כמה נשארו (count(*) over ()), והצע להמשיך.',
   '- התאריך והשעה בישראל כתובים בתחילת כל הודעה. "היום", "אתמול", "השבוע" ו"החודש" נמדדים מהם. הם הקשר בשבילך: אל תחזור עליהם בתשובה, אלא אם השאלה היא על הזמן.',
   '- שאלות על הסוכן עצמו (כמה שאלות ענית, מה נשאלת) — owner_agent_audit ו-owner_agent_intake.',
+  '',
+  ...OWNER_AGENT_STYLE_RULES,
   '',
   '*פלט*',
   '- את התשובה כתוב בשדה answer, בפורמט הוואטסאפ שלמעלה.',

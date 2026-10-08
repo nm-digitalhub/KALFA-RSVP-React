@@ -50,6 +50,8 @@ describe('packageRefundMessage — what the admin is told when the refund did no
       { status: 'refused', reason: 'exceeds_refundable' },
       { status: 'refused', reason: 'no_customer' },
       { status: 'refused', reason: 'no_card' },
+      { status: 'refused', reason: 'no_document' },
+      { status: 'refused', reason: 'partial_unsupported' },
     ] as const;
     const messages = results.map((r) => packageRefundMessage(r));
     for (const m of messages) expect(m).toMatch(/[א-ת]/);
@@ -60,9 +62,23 @@ describe('packageRefundMessage — what the admin is told when the refund did no
     expect(packageRefundMessage({ status: 'review' })).toContain('אל תנסו שוב');
   });
 
-  it('no card / no customer send the admin to refund by hand', () => {
-    expect(packageRefundMessage({ status: 'refused', reason: 'no_card' })).toContain('ידנית');
-    expect(packageRefundMessage({ status: 'refused', reason: 'no_customer' })).toContain('ידנית');
+  it('no card / no customer / no document / a partial CardCom refund send the admin to refund by hand', () => {
+    for (const reason of ['no_card', 'no_customer', 'no_document', 'partial_unsupported'] as const) {
+      expect(packageRefundMessage({ status: 'refused', reason })).toContain('ידנית');
+    }
+  });
+
+  it('the partial-refund sentence says a FULL cancellation can still go through by itself', () => {
+    expect(packageRefundMessage({ status: 'refused', reason: 'partial_unsupported' })).toContain('ביטול מלא');
+  });
+
+  it('names no clearing company: the same sentences serve every provider', () => {
+    const reasons = ['disabled', 'invalid_amount', 'no_payment', 'exceeds_refundable', 'no_customer', 'no_card', 'no_document', 'partial_unsupported'] as const;
+    const all = [
+      ...reasons.map((reason) => packageRefundMessage({ status: 'refused', reason })),
+      ...(['declined', 'review', 'in_progress', 'error'] as const).map((status) => packageRefundMessage({ status })),
+    ];
+    for (const m of all) expect(m).not.toMatch(/sumit|cardcom|סאמיט|קארדקום/i);
   });
 });
 
@@ -106,5 +122,28 @@ describe('packageCancellationState', () => {
   it('a missing or non-numeric amount is "unreadable", never "nothing paid"', () => {
     expect(packageCancellationState({ unreadable: false, paid: null, hasCard: true })).toBe('unreadable');
     expect(packageCancellationState({ unreadable: false, paid: Number.NaN, hasCard: true })).toBe('unreadable');
+  });
+});
+
+// The same sentences serve a refund through either clearing company, so none of them may name one — and every refusal a
+// refund can give has a sentence (a missing one would show the admin an empty banner).
+describe('packageRefundMessage: every refusal has a provider-neutral sentence', () => {
+  const REASONS = ['disabled', 'invalid_amount', 'no_payment', 'exceeds_refundable', 'no_customer', 'no_card', 'no_document', 'partial_unsupported'] as const;
+
+  it.each(REASONS)('%s says what happened, that nothing was done, and names no company', (reason) => {
+    const message = packageRefundMessage({ status: 'refused', reason });
+    expect(message.length).toBeGreaterThan(10);
+    expect(message).toContain('לא בוצעה פעולה');
+    expect(message).not.toMatch(/sumit|cardcom|סאמיט|קארדקום/i);
+  });
+
+  it('a partial refund on the alternative provider tells the admin what to do instead', () => {
+    const message = packageRefundMessage({ status: 'refused', reason: 'partial_unsupported' });
+    expect(message).toContain('ידנית');
+    expect(message).toContain('ביטול מלא');
+  });
+
+  it.each(['declined', 'review', 'in_progress', 'error'] as const)('the %s answer names no company either', (status) => {
+    expect(packageRefundMessage({ status })).not.toMatch(/sumit|cardcom|סאמיט|קארדקום/i);
   });
 });

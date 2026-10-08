@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# kalfa-xrdp-ticket - PAM helper for the shared desktop's ticket login.
+#
+# Run by pam_exec.so (auth, expose_authtok) from /etc/pam.d/xrdp-sesman, as root, once per desktop login:
+#   auth sufficient pam_exec.so quiet expose_authtok /usr/local/sbin/kalfa-xrdp-ticket
+#
+# pam_exec gives this script the login's "password" on stdin (followed by a NUL byte) and the user in PAM_USER. If,
+# and only if, that password is shaped exactly like a ticket the app mints (k1. + 38 URL-safe characters), the script
+# asks the app over loopback whether the ticket may log in as that user right now. Exit 0 = yes; any other exit makes
+# PAM carry on to the ordinary password check, so the owner's own login is unchanged.
+#
+#   - A real password is NEVER sent anywhere: anything that is not ticket-shaped exits 1 before any network call.
+#   - The ticket goes to the app on stdin and in the request body, never in a command line or the environment.
+#   - The app's secret lives in a root-only header file read by curl; it is never on a command line either.
+#   - The only URL it will talk to is loopback. Nothing here prints anything: pam_exec would relay it to the client.
+#
+# The overrides below exist so the script can be tested against a fake curl and a local port. They only ever narrow
+# what the script does (loopback only). pam_exec hands the script only PAM's environment (pam_env: /etc/environment),
+# which is root's, never the connecting client's.
+set -u
+umask 077
+# pam_exec starts this with a nearly empty environment (only PAM's own variables), so the tools are found by an
+# explicit, root-owned PATH and nothing from the client's side can change which `curl` or `tr` runs.
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+URL=${KALFA_XRDP_TICKET_URL:-http://127.0.0.1:3002/api/internal/rdp-gateway/xrdp-ticket}
+HEADER_FILE=${KALFA_XRDP_TICKET_HEADER_FILE:-/etc/kalfa/xrdp-ticket.header}
+CURL=${KALFA_XRDP_TICKET_CURL:-curl}
+
+deny() { exit 1; }
+
+# the ticket: at most 128 bytes are read, NUL/CR/LF are stripped (pam_exec appends a NUL), and the rest must match
+# the ticket shape exactly. `|| true` keeps a closed or empty stdin from becoming anything but a refusal below.
+ticket=$(head -c 128 2>/dev/null | tr -d '\000\r\n') || true
+[[ $ticket =~ ^k1\.[A-Za-z0-9_-]{38}$ ]] || deny
+
+# the account PAM is logging in: a plain account name, nothing that could shape the request
+user=${PAM_USER:-}
+[[ $user =~ ^[A-Za-z_][A-Za-z0-9_.-]{0,31}$ ]] || deny
+
+# loopback only, plain http, no userinfo, no path tricks
+[[ $URL =~ ^http://(127\.0\.0\.1|\[::1\]):[0-9]{1,5}/api/internal/rdp-gateway/xrdp-ticket$ ]] || deny
+
+# the secret header file: a regular file, owned by whoever runs this (root under sesman), and not accessible to anyone else
+[[ -f $HEADER_FILE && ! -L $HEADER_FILE && -r $HEADER_FILE ]] || deny
+read -r mode owner < <(stat -c '%a %u' "$HEADER_FILE" 2>/dev/null) || deny
+[[ $mode =~ ^[0-7]00$ && $owner == "$(id -u)" ]] || deny
+
+answer=$(
+  printf '{"ticket":"%s","user":"%s"}' "$ticket" "$user" |
+    "$CURL" --silent --max-time 2 --connect-timeout 1 --noproxy '*' --proto '=http' \
+      --header "@$HEADER_FILE" --header 'Content-Type: application/json' \
+      --data-binary @- "$URL" 2>/dev/null
+) || deny
+
+[[ $answer == '{"allow":true}' ]] || deny
+exit 0

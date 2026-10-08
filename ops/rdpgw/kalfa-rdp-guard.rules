@@ -1,0 +1,8 @@
+# DRAFT - raw table (Plesk firewall-active.sh never touches 'raw'; it flushes only filter-INPUT/FORWARD/OUTPUT, mangle, nat)
+*raw
+:KALFA_RDP_GUARD - [0:0]
+-I PREROUTING 1 -p tcp -m tcp --dport 3389 -j KALFA_RDP_GUARD
+-A KALFA_RDP_GUARD -i tailscale0 -j RETURN
+-A KALFA_RDP_GUARD -i lo -j RETURN
+-A KALFA_RDP_GUARD -j DROP
+COMMIT

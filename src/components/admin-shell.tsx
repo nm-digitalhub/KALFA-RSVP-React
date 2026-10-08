@@ -28,6 +28,7 @@ import {
   MailOpen,
   Megaphone,
   Menu,
+  Monitor,
   Package,
   PhoneCall,
   PhoneOff,
@@ -175,6 +176,9 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/admin/integrations', label: 'אינטגרציות', icon: Plug },
       { href: '/admin/calendar', label: 'יומן Exchange', icon: CalendarDays, permission: 'manage_settings' },
       { href: '/admin/fleet', label: 'פניות סוכנים', icon: Bot, permission: 'manage_settings' },
+      // Asking for, and downloading, a short-lived connection to the shared desktop. Its own key (the owner role holds it
+      // by default); the owner's read-only list lives under it at /admin/rdp-access/requests.
+      { href: '/admin/rdp-access', label: 'גישה לשולחן עבודה', icon: Monitor, permission: 'rdp.request' },
       { href: '/admin/analytics', label: 'אנליטיקת אתר', icon: ChartColumn },
       { href: '/admin/cookie-consent', label: 'הסכמת עוגיות', icon: Cookie, permission: 'manage_settings' },
       { href: '/admin/activity', label: 'יומן פעילות', icon: ListChecks, permission: 'view_activity_log' },

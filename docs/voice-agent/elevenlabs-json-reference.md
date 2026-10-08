@@ -225,7 +225,9 @@
 ---
 
 ## 5. מנופים פתוחים
-- **LLM (החלטת-מוצר #16):** `agent.prompt.llm` — כרגע `gemini-2.5-flash` (מדליף `[happy]`, מבטיח בלי כלי).
+- **LLM (החלטת-מוצר #16):** `agent.prompt.llm` — לפי השרת (2026-10-07): `claude-haiku-4-5` ב-RSVP, Sales Close ו-Meeting Confirm;
+  `gemini-2.5-flash` בסוכן שירות הלקוחות בלבד (טבלה ב-§6.5). הממצא "מדליף `[happy]`, מבטיח בלי כלי" נמדד על `gemini-2.5-flash`
+  בלבד ולא נמדד מחדש על `claude-haiku-4-5`.
   מומלץ לבנצ'מרק: `gpt-4o` / `claude-sonnet` (ElevenLabs ממליצים לאורקסטרציית-כלים). מדידה = חבילת §4.
 - **פרוזודיה:** שאלות לא עולות בטון (E-13) — ניסוח + אולי tag ב-first_message הסטטי.
 
@@ -319,18 +321,37 @@ npm run voximplant -- recording --session <session_id> --output call.mp3
 שרשרת החשיבה שלו באנגלית (`"The user confirmed the details. Now I need to call the save rsvp tool…"`).
 בתמליל של הסוכן זה לא נראה — רק ב-STT של האודיו הגולמי. שם גם נמדדים latency והפרעות.
 
-### 6.5 קונפיג ידוע-טוב (2026-07-19) ומה אסור
+### 6.5 הקונפיג החי לפי סוכן (נבדק מול השרת 2026-10-07) וממצאים היסטוריים
 
-| שדה | ערך | למה |
+**המודלים נקבעים לכל סוכן בנפרד — אין מודל "נעול".** הערכים נקראו מהשרת החי ב-2026-10-07
+(קריאה בלבד של הגרסה האחרונה בענף הראשי של כל סוכן). מקור-האמת נשאר
+`agent_configs/*.json` אחרי `pull --update` (§6.1) — הטבלה היא צילום-מצב, לא חוזה.
+
+| סוכן | `llm` | `tts.model_id` | `temperature` | `turn_eagerness` | `optimize_streaming_latency` | `speed` |
+|---|---|---|---|---|---|---|
+| KALFA RSVP (`agent_9701…`) | `claude-haiku-4-5` | `eleven_v3_conversational` | 0.56 | `normal` | 3 | 1 |
+| KALFA Sales Close (`agent_4101…`) | `claude-haiku-4-5` | **`eleven_v4_turbo`** | 0.4 | `normal` | 3 | 1 |
+| KALFA Meeting Confirm (`agent_3601…`) | `claude-haiku-4-5` | `eleven_v3_conversational` | 0.4 | `normal` | 3 | 1 |
+| KALFA RSVP - שירות לקוחות (`agent_8801…`) | `gemini-2.5-flash` | `eleven_v3_conversational` | 0 | `normal` | 3 | 1 |
+
+- `thinking_budget` **לא מוגדר** (unset) באף אחד מארבעת הסוכנים.
+- רק Sales Close רץ על `eleven_v4_turbo`; שלושת האחרים עדיין על `eleven_v3_conversational`.
+  איכות העברית של `eleven_v4_turbo` לא נמדדה במסמך הזה.
+- `optimize_streaming_latency`: ⚠️ **חסר משמעות** — השדה deprecated ו-no-op ("this field is a no-op and is ignored",
+  openapi.json). אל תכוונן אותו כדי לשפר latency; הוא לא עושה כלום.
+
+#### ממצאים היסטוריים — לא תיאור של המצב הנוכחי
+
+> נרשמו בסעיף הזה כ"קונפיג ידוע-טוב (2026-07-19)", על המודל שמצוין בכל שורה. תאריך המדידה המדויק של כל שורה
+> לא נרשם. **לא נמדדו מחדש** על `claude-haiku-4-5` או על `eleven_v4_turbo` — אל תסיק מהם עליהם.
+
+| תאריך | מודל שנבדק | ממצא |
 |---|---|---|
-| `llm` | `gemini-2.5-flash` | מודל החשיבה שעבד הכי טוב בעברית |
-| `thinking_budget` | `0` | **קריטי** — בלי זה החשיבה מודלפת לאודיו (§6.4) וגם מוסיפה לאג. `reasoning_effort` נדחה ע"י ה-API ל-Gemini |
-| `turn_eagerness` | `normal` | `eager` הוריד latency 3.20s→2.11s אבל יצר 3 הפרעות + כשל הבנה |
-| `optimize_streaming_latency` | `3` | ⚠️ **חסר משמעות** — השדה deprecated ו-no-op ("this field is a no-op and is ignored", openapi.json). אל תכוונן אותו כדי לשפר latency; הוא לא עושה כלום |
-| `tts.model_id` | `eleven_v3_conversational` | **נעול בגלל עברית** — `eleven_flash_v2_5` ו-`eleven_multilingual_v2` **אינם מפרטים עברית**; רק `eleven_v3` כן. המעבר ל-Flash "לשיפור latency" יאבד תמיכה מתועדת בעברית |
-
-**אסור:** `gemini-2.5-flash-lite` — נמדד 4.01s ממוצע / 9.5s מקסימום, חזרות מילוליות וג'יבריש;
-המשתמש ניתק שיחה חיה באמצע. אין להחזיר בלי בנצ'מרק מלא (§4).
+| 2026-07-19 | `llm: gemini-2.5-flash` | נרשם כ"מודל החשיבה שעבד הכי טוב בעברית" (ללא מספרים בסעיף). |
+| 2026-07-19 | `llm: gemini-2.5-flash` | `thinking_budget: 0` — **קריטי** אז: בלעדיו החשיבה הודלפה לאודיו (§6.4) והוסיפה לאג. `reasoning_effort` נדחה ע"י ה-API ל-Gemini. |
+| 2026-07-19 | `llm: gemini-2.5-flash` (עם `tts: eleven_v3_conversational`) | `turn_eagerness: eager` הוריד latency 3.20s→2.11s, אך יצר 3 הפרעות + כשל הבנה; נבחר `normal`. |
+| 2026-07-19 | `llm: gemini-2.5-flash-lite` | 4.01s ממוצע / 9.5s מקסימום, חזרות מילוליות וג'יבריש; המשתמש ניתק שיחה חיה באמצע. הוחלט אז לא להחזיר אותו בלי בנצ'מרק מלא (§4). |
+| 2026-07-19 (לפי התיעוד שנקרא אז) | `tts: eleven_flash_v2_5`, `eleven_multilingual_v2` מול `eleven_v3` | ההנחה אז: שני הראשונים **אינם מפרטים עברית** ורק `eleven_v3` כן — ולכן נבחר `eleven_v3_conversational`. זו הייתה סיבת בחירה ולא נעילה; לא נבדקה מחדש, ו-Sales Close כבר רץ על `eleven_v4_turbo`. |
 
 **כלל מדידה:** כל שינוי ב-LLM/turn נמדד בשיחה חיה אחת לפחות עם §6.4 — `avg latency`,
 `max latency`, מספר הפרעות, ודליפת אנגלית.

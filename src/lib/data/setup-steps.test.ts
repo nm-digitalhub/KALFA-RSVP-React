@@ -5,6 +5,7 @@ import {
   PAST_EVENT_HINT,
   SETUP_STEP_LABELS,
   computeSetupSteps,
+  setupBackTarget,
   setupStepLabels,
   missingEventPrerequisites,
   missingSetupPrerequisites,
@@ -342,3 +343,34 @@ describe('computeSetupSteps — a package campaign after payment', () => {
   });
 });
 
+
+describe('setupBackTarget', () => {
+  const activeEvent = { ...readyEvent, status: 'active' as const };
+  const back = (input: SetupInput) => setupBackTarget({ eventId: 'e1', steps: computeSetupSteps(input).steps });
+
+  it('on the confirm step: back to the details form, which is open while the event is still a draft', () => {
+    expect(back({ event: readyEvent, campaign: null, isPast: false })).toEqual({ key: 'details', href: '/app/events/e1/setup?step=details' });
+  });
+
+  it('on the package-choice step: back to the event\'s own page, where a confirmed event is edited', () => {
+    expect(back({ event: activeEvent, campaign: null, isPast: false, packageOffered: true })).toEqual({ key: 'details', href: '/app/events/e1' });
+  });
+
+  it('has no back on the details step: there is nothing before it', () => {
+    expect(back({ event: { ...readyEvent, venue_name: null }, campaign: null, isPast: false })).toBeNull();
+  });
+
+  it.each([
+    ['awaiting the approval', { status: 'pending_approval' as const, capture_status: null, package_price: 149 }],
+    ['approved, awaiting payment', { status: 'approved' as const, capture_status: null, package_price: 149, payment: { status: 'none' } }],
+    ['paid, awaiting activation', { status: 'approved' as const, capture_status: null, package_price: 149, payment: { status: 'collected' } }],
+    ['active', { status: 'active' as const, capture_status: 'authorized', package_price: 149 }],
+  ])('has no back once a campaign exists (%s): the choice, the approval and the payment cannot be undone from here', (_name, campaign) => {
+    expect(back({ event: activeEvent, campaign, isPast: false })).toBeNull();
+  });
+
+  it('has no back for a past event: its current step is blocked, not current', () => {
+    expect(back({ event: readyEvent, campaign: null, isPast: true })).toBeNull();
+    expect(back({ event: activeEvent, campaign: null, isPast: true, packageOffered: true })).toBeNull();
+  });
+});
