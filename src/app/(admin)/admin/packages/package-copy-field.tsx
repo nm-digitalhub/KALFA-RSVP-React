@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { useFormStatus } from 'react-dom';
 import { LoaderCircle, WandSparkles } from 'lucide-react';
 
@@ -22,15 +22,15 @@ export function PackageCopyField({
   errors?: string[];
 }) {
   const [value, setValue] = useState(initialValue);
-  const [busy, setBusy] = useState(false);
   const [proposal, setProposal] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState('');
+  // isPending: this field's own request is in flight. formPending: the surrounding form is being saved.
+  const [isPending, startTransition] = useTransition();
   const version = useRef(0);
-  const running = useRef(false);
   const mounted = useRef(true);
   const input = useRef<HTMLTextAreaElement>(null);
-  const { pending } = useFormStatus();
+  const { pending: formPending } = useFormStatus();
   const errorId = `${field}-copy-error`;
   const fieldErrorId = `${field}-field-error`;
 
@@ -47,41 +47,44 @@ export function PackageCopyField({
     setStatus('');
   }
 
-  async function rewrite() {
-    if (running.current || pending || !value.trim()) return;
+  function rewrite() {
+    if (isPending || formPending || !value.trim()) return;
     const requestVersion = version.current;
-    running.current = true;
-    setBusy(true);
     setProposal(null);
     setError(null);
     setStatus('מנסח...');
-    try {
-      const result = await rewritePackageCopyAction(field, value);
-      if (!mounted.current) return;
-      if (version.current !== requestVersion) {
-        setStatus('הטקסט השתנה. אפשר לבקש ניסוח חדש.');
-        return;
+    // The request runs as a transition action: isPending stays true until it settles, and the button is disabled meanwhile.
+    // React does not keep the transition across an await, so the updates after it are wrapped again - that is what commits the
+    // proposal and the end of isPending together. The catch stays: an error thrown inside a transition would otherwise reach
+    // the error boundary instead of the message under the field.
+    startTransition(async () => {
+      try {
+        const result = await rewritePackageCopyAction(field, value);
+        startTransition(() => {
+          if (!mounted.current) return;
+          if (version.current !== requestVersion) {
+            setStatus('הטקסט השתנה. אפשר לבקש ניסוח חדש.');
+          } else if (result.ok) {
+            setProposal(result.text);
+            setStatus('הצעת הניסוח מוכנה.');
+          } else {
+            setError(result.error);
+            setStatus('');
+          }
+        });
+      } catch {
+        startTransition(() => {
+          if (mounted.current && version.current === requestVersion) {
+            setError('לא ניתן לשפר את הניסוח כרגע. נסו שוב.');
+            setStatus('');
+          }
+        });
       }
-      if (result.ok) {
-        setProposal(result.text);
-        setStatus('הצעת הניסוח מוכנה.');
-      } else {
-        setError(result.error);
-        setStatus('');
-      }
-    } catch {
-      if (mounted.current && version.current === requestVersion) {
-        setError('לא ניתן לשפר את הניסוח כרגע. נסו שוב.');
-        setStatus('');
-      }
-    } finally {
-      running.current = false;
-      if (mounted.current) setBusy(false);
-    }
+    });
   }
 
   function apply() {
-    if (proposal === null || pending) return;
+    if (proposal === null || formPending) return;
     change(proposal);
     setStatus('הניסוח הוחל. לשמירה יש לשמור את החבילה.');
     input.current?.focus();
@@ -98,7 +101,7 @@ export function PackageCopyField({
           rows={rows}
           value={value}
           onChange={(event) => change(event.target.value)}
-          readOnly={pending}
+          readOnly={formPending}
           aria-invalid={Boolean(errors?.length || error)}
           aria-describedby={[
             errors?.length ? fieldErrorId : '', error ? errorId : '',
@@ -111,12 +114,12 @@ export function PackageCopyField({
             size="icon-sm"
             className="min-h-11 min-w-11 text-primary"
             onClick={rewrite}
-            disabled={busy || pending || !value.trim()}
+            disabled={isPending || formPending || !value.trim()}
             aria-label={`שפר ניסוח: ${label}`}
             title="שפר ניסוח"
-            aria-busy={busy}
+            aria-busy={isPending}
           >
-            {busy ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+            {isPending ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
               : <WandSparkles aria-hidden="true" className="size-4" />}
           </InputGroupButton>
         </InputGroupAddon>
@@ -131,7 +134,7 @@ export function PackageCopyField({
           <p className="text-sm font-medium">הצעת ניסוח</p>
           <p className="whitespace-pre-wrap break-words text-sm">{proposal}</p>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" disabled={pending} onClick={apply}>החל ניסוח</Button>
+            <Button type="button" disabled={formPending} onClick={apply}>החל ניסוח</Button>
             <Button type="button" variant="outline" onClick={() => {
               setProposal(null);
               setStatus('ההצעה בוטלה. הטקסט המקורי נשמר.');
