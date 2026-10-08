@@ -158,7 +158,16 @@ module.exports = {
     // `error no-circular: enqueue.ts → wake-store.ts → enqueue.ts` and
     // `1 dependency violations (1 errors)`. A rule that has never been seen to
     // fail is not yet a guard.
-    from: {},
+    //
+    // ONE DELIBERATE, NARROW EXCEPTION (8.10.2026): cycles that start inside src/lib/cardcom/generated/. That directory is Orval's
+    // output of CardCom's whole OpenAPI document (orval.config.ts), and the vendor's own schemas reference each other
+    // (`models/banks.ts` <-> `models/banksBranches.ts`). Orval writes those references as `import type`, which the compiler
+    // erases, so no module is ever initialised in a cycle at run time - the failure this rule exists for. The files cannot be
+    // edited by hand (the directory is emptied on every generation), and the application imports a handful of its functions.
+    // `from.pathNot` skips only a cycle whose modules are all in that directory: a cycle that runs through any hand-written module
+    // is still reported. VERIFIED by fault injection the same day: a two-module cycle outside the directory still produced
+    // `1 dependency violations (1 errors)`.
+    from: { pathNot: '^src/lib/cardcom/generated/' },
     to: { circular: true },
   }],
   options: {
