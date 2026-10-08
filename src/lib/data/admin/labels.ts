@@ -193,6 +193,7 @@ export const WEBHOOK_PROVIDER_LABELS: Record<string, string> = {
   voximplant: 'שיחות קוליות',
   resend: 'דואר יוצא (Resend)',
   elevenlabs: 'ניתוח שיחות AI',
+  cardcom: 'מסמכי סליקה (CardCom)',
 };
 
 export function webhookProviderLabel(provider: string): string {
@@ -214,6 +215,7 @@ export const WEBHOOK_KIND_LABELS: Record<string, string> = {
   sls_dnc: 'בקשת הסרה (מכירות)',
   el_analysis_rsvp: 'ניתוח שיחה (אישורי הגעה)',
   el_analysis_sales: 'ניתוח שיחה (מכירות)',
+  cardcom_document: 'מסמך שהופק (CardCom)',
   // Generic Meta fields the WhatsApp route persists under their raw field name
   // (see normalizeOtherFieldRows). Unlisted kinds fall back to the raw name.
   template_status: 'סטטוס תבנית',

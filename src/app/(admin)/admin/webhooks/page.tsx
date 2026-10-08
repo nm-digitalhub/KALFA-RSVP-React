@@ -52,7 +52,7 @@ interface CurrentFilters {
   q?: string;
 }
 
-// Five integrations write to webhook_inbox. `provider` is the COARSE filter;
+// Six integrations write to webhook_inbox. `provider` is the COARSE filter;
 // `event_kind` below is the fine one. Provider is NOT 1:1 with a route —
 // 'voximplant' alone is written by six routes — so the kind options are grouped
 // by provider to make the actual endpoint structure legible, and to make a
@@ -63,9 +63,10 @@ const PROVIDER_OPTIONS = [
   { value: 'voximplant', label: 'שיחות קוליות' },
   { value: 'resend', label: 'דואר יוצא (Resend)' },
   { value: 'elevenlabs', label: 'ניתוח שיחות AI' },
+  { value: 'cardcom', label: 'מסמכי סליקה (CardCom)' },
 ];
 
-// VERIFIED 2026-08-26 against every insertWebhookEvents call site.
+// VERIFIED 2026-08-26 against every insertWebhookEvents call site; cardcom_document added 2026-10-08.
 const KIND_GROUPS = [
   {
     provider: 'whatsapp',
@@ -92,6 +93,11 @@ const KIND_GROUPS = [
       { value: 'el_analysis_rsvp', label: 'ניתוח שיחה (אישורי הגעה)' },
       { value: 'el_analysis_sales', label: 'ניתוח שיחה (מכירות)' },
     ],
+  },
+  {
+    provider: 'cardcom',
+    label: 'מסמכי סליקה — ‎/api/cardcom/document-webhook',
+    options: [{ value: 'cardcom_document', label: 'מסמך שהופק (CardCom)' }],
   },
   {
     provider: 'voximplant',

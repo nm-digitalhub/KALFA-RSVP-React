@@ -12,9 +12,10 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // table (RLS with no policy, every client grant revoked), so a cookie client reads nothing. The permission check is
 // therefore the whole control, and it is the first statement in both functions.
 //
-// ⚠️ THE API PASSWORD NEVER LEAVES THIS MODULE AS A VALUE. The read selects the vault secret id only to answer "is one
-// stored" and converts it to a boolean; the write hands the password to the vault function and records in the audit
-// log only that one was submitted. The form never receives it back, so there is nothing to serialise by accident.
+// ⚠️ THE API PASSWORD AND THE DOCUMENT REPORT SECRET NEVER LEAVE THIS MODULE AS VALUES. The read only answers "is one
+// stored" (the password's vault id and the secret's exists-function both collapse to a boolean); the write hands each value
+// to its vault function and records in the audit log only that one was submitted. The form never receives either back, so
+// there is nothing to serialise by accident.
 
 export type AdminCardcomConfig = {
   /** A row was ever saved. */
@@ -25,6 +26,8 @@ export type AdminCardcomConfig = {
   enabled: boolean;
   /** A password is stored in the vault (needed to refund, and to switch the pilot on). */
   hasPassword: boolean;
+  /** The document report webhook secret is stored in the vault. */
+  hasDocumentReportSecret: boolean;
   /** CardCom's published test terminal: nothing is charged on it. */
   isTestTerminal: boolean;
   updatedAt: string | null;
@@ -36,6 +39,7 @@ export const UNCONFIGURED_CARDCOM: AdminCardcomConfig = {
   apiName: null,
   enabled: false,
   hasPassword: false,
+  hasDocumentReportSecret: false,
   isTestTerminal: false,
   updatedAt: null,
 };
@@ -55,6 +59,9 @@ export async function readCardcomAdminConfig(): Promise<AdminCardcomConfig> {
   // A save still fails loudly, which is where it matters.
   if (error || !data) return UNCONFIGURED_CARDCOM;
 
+  // A boolean straight from the database: the secret's value never reaches this module. An unreadable answer is "not saved".
+  const { data: secretSaved } = await admin.rpc('cardcom_document_report_secret_exists');
+
   return {
     exists: true,
     terminalNumber: data.terminal_number,
@@ -62,6 +69,7 @@ export async function readCardcomAdminConfig(): Promise<AdminCardcomConfig> {
     enabled: data.enabled,
     // The vault secret id collapses to a boolean HERE and is never returned.
     hasPassword: data.api_password_secret !== null,
+    hasDocumentReportSecret: secretSaved === true,
     isTestTerminal: isCardcomTestTerminal(data.terminal_number),
     updatedAt: data.updated_at,
   };
@@ -74,6 +82,8 @@ export async function saveCardcomConfig(input: {
   apiName: string;
   /** '' means KEEP THE STORED PASSWORD (the database function's contract). */
   apiPassword: string;
+  /** '' means KEEP THE STORED DOCUMENT REPORT SECRET. */
+  documentReportSecret: string;
   enabled: boolean;
 }): Promise<SaveCardcomConfigResult> {
   const user = await requirePlatformPermission('integrations.manage');
@@ -97,10 +107,22 @@ export async function saveCardcomConfig(input: {
   });
   if (error) throw error;
 
-  // No password, no secret id. Enough to answer "who changed the clearing configuration and when".
+  if (input.documentReportSecret !== '') {
+    const { error: secretError } = await admin.rpc('cardcom_document_report_secret_save', {
+      p_secret: input.documentReportSecret,
+    });
+    if (secretError) throw secretError;
+  }
+
+  // No password, no secret, no secret id. Enough to answer "who changed the clearing configuration and when".
   await logActivity({
     action: 'admin.cardcom_config.saved',
-    meta: { terminalNumber: input.terminalNumber, enabled: input.enabled, passwordSubmitted: input.apiPassword !== '' },
+    meta: {
+      terminalNumber: input.terminalNumber,
+      enabled: input.enabled,
+      passwordSubmitted: input.apiPassword !== '',
+      documentReportSecretSubmitted: input.documentReportSecret !== '',
+    },
   });
   return { ok: true };
 }

@@ -530,6 +530,12 @@ export const cardcomConfigSchema = z.object({
     .min(1, { error: 'שם ה-API חובה' })
     .max(100, { error: 'שם ה-API ארוך מדי' }),
   api_password: z.string().trim().max(200, { error: 'סיסמת ה-API ארוכה מדי' }),
+  // The secret CardCom appends to every document report ("מחרוזת תוספת לפנייה"). CardCom does not URL-encode that string,
+  // so only English letters and digits are safe in it. '' keeps the stored one.
+  document_report_secret: z
+    .string()
+    .trim()
+    .regex(/^(|[A-Za-z0-9]{24,128})$/, { error: 'הסוד חייב להיות 24–128 אותיות באנגלית וספרות בלבד' }),
   enabled: z.boolean(),
 });
 

@@ -22,7 +22,7 @@ beforeEach(() => {
 describe('updateCardcomConfigAction', () => {
   it('validates, saves with the terminal as a number and the checkbox as a boolean, and revalidates both pages', async () => {
     const state = await updateCardcomConfigAction(null, form());
-    expect(saveMock).toHaveBeenCalledWith({ terminalNumber: 1001, apiName: 'kalfa-api', apiPassword: 'pw', enabled: true });
+    expect(saveMock).toHaveBeenCalledWith({ terminalNumber: 1001, apiName: 'kalfa-api', apiPassword: 'pw', documentReportSecret: '', enabled: true });
     expect(state).toEqual({ notice: 'פרטי CardCom נשמרו' });
     expect(revalidateMock).toHaveBeenCalledWith('/admin/integrations/cardcom');
     expect(revalidateMock).toHaveBeenCalledWith('/admin/integrations');
@@ -32,7 +32,7 @@ describe('updateCardcomConfigAction', () => {
     const f = form({ api_password: '' });
     f.delete('enabled');
     await updateCardcomConfigAction(null, f);
-    expect(saveMock).toHaveBeenCalledWith({ terminalNumber: 1001, apiName: 'kalfa-api', apiPassword: '', enabled: false });
+    expect(saveMock).toHaveBeenCalledWith({ terminalNumber: 1001, apiName: 'kalfa-api', apiPassword: '', documentReportSecret: '', enabled: false });
   });
 
   it.each([
@@ -40,10 +40,20 @@ describe('updateCardcomConfigAction', () => {
     ['terminal_number', '0'],
     ['terminal_number', '12345678901'],
     ['api_name', '   '],
+    // CardCom does not URL-encode the extra string: only English letters and digits, 24 to 128 of them.
+    ['document_report_secret', 'too-short'],
+    ['document_report_secret', 'has space in it but is long enough'],
+    ['document_report_secret', 'סודבעבריתסודבעבריתסודבעבריתסוד'],
   ])('rejects a bad %s (%s) without saving', async (field, value) => {
     const state = await updateCardcomConfigAction(null, form({ [field]: value }));
     expect(state).toMatchObject({ fieldErrors: { [field]: [expect.any(String)] } });
     expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it('passes a valid document report secret on to the save', async () => {
+    const secret = 'A1b2C3d4E5f6G7h8I9j0K1l2';
+    await updateCardcomConfigAction(null, form({ document_report_secret: secret }));
+    expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ documentReportSecret: secret }));
   });
 
   it('says why when the pilot cannot be switched on without a password', async () => {

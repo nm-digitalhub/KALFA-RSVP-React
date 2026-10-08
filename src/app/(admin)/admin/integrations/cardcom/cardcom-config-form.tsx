@@ -13,9 +13,13 @@ export type CardcomConfigFormValues = {
   enabled: boolean;
   /** Whether a password is stored. The password itself is never sent to the form. */
   has_password: boolean;
+  /** Whether the document report secret is stored. The secret itself is never sent to the form. */
+  has_document_report_secret: boolean;
+  /** The address to enter in CardCom's document report settings. */
+  document_report_url: string;
 };
 
-// The CardCom connection: terminal, API name, the API password and the pilot switch.
+// The CardCom connection: terminal, API name, the API password, the document report secret and the pilot switch.
 //
 // The password field starts EMPTY on purpose, and a blank submit keeps the stored one: it lives in the vault and is never
 // read back into the page, so there is nothing to mask, reveal or leak. The switch is in the same form as the
@@ -59,6 +63,21 @@ export function CardcomConfigForm({ values }: { values: CardcomConfigFormValues 
             : 'עדיין לא נשמרה. משמשת רק להחזרים, ונדרשת כדי להפעיל את CardCom.'
         }
         errors={e?.api_password}
+      />
+
+      {/* CardCom posts every issued document to our webhook. The post is not signed: what proves it is CardCom's is this
+          secret, which CardCom appends to each report. Same handling as the password: empty, and blank keeps it. */}
+      <EditableField
+        name="document_report_secret"
+        label="סוד לדיווח מסמכים (סודי)"
+        defaultValue=""
+        maskable
+        hint={`${
+          values.has_document_report_secret
+            ? 'שמור במאגר הסודות. השאירו ריק כדי לשמור את הקיים; הקלדה מחליפה אותו.'
+            : 'עדיין לא נשמר. בלעדיו כל דיווח מסמך מ-CardCom נדחה.'
+        } 24–128 אותיות באנגלית וספרות. ב-CardCom, תחת "הגדרות מסמכים בממשקים": כתובת URL לדיווח ${values.document_report_url}, ובמחרוזת תוספת לפנייה secret=<אותו סוד>.`}
+        errors={e?.document_report_secret}
       />
 
       <label className="flex items-start gap-3">
