@@ -3,14 +3,13 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
-import { activateCampaign, getCampaignForPurchase } from '@/lib/data/campaigns';
-import { PACKAGE_NO_CONTACTS_ERROR } from '@/lib/data/package-activation-errors';
+import { getCampaignForPurchase } from '@/lib/data/campaigns';
 import { getProfile } from '@/lib/data/profiles';
+import { activateAfterPayment } from '@/lib/payments/activate-after-payment';
 import { purchasePackage, type PurchaseOutcome } from '@/lib/payments/package-purchase';
 import { PURCHASE_ERROR, type PurchaseErrorCode } from '@/lib/payments/package-purchase-errors';
 import { purchasePackageSchema } from '@/lib/validation/campaigns';
 import { isAllowedOrigin } from '@/lib/http/allowed-origin';
-import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // Fixed-price package purchase: ONE real charge for the whole package, with the single-use token SUMIT's own form
 // produced. The route is the HTTP shell — origin, session, ownership, the event's state, the token — and hands
@@ -111,23 +110,11 @@ export async function POST(
 
   if (outcome === 'paid') {
     // The payment was the customer's last real decision (D6: charged → list filled → activated), so the campaign
-    // starts now instead of asking for one more click. FAIL-SAFE: the payment is recorded whatever happens below. If the
-    // start is refused (nobody on the list, a ledger that cannot be read right now, a concurrent change) the customer
-    // lands on the paid page with the reason and an explicit start button. Status is written ONLY by activateCampaign.
-    try {
-      await activateCampaign(campaignId);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '';
-      console.error('[package-purchase] auto-activation after a confirmed payment was refused', { campaignId, message });
-      void sendSlackAlert({
-        level: 'warn',
-        category: 'campaign_billing',
-        source: 'package-activation',
-        title: 'חבילה שולמה אך ההפעלה האוטומטית נדחתה',
-        fields: { campaign_id: campaignId, event_id: campaign.event_id },
-      });
-      return r303(payUrl(message === PACKAGE_NO_CONTACTS_ERROR ? 'paid=1&activate=no_contacts' : 'paid=1&activate=failed'));
-    }
+    // starts now instead of asking for one more click. FAIL-SAFE: see activateAfterPayment — the payment is recorded
+    // whatever happens, and a refused start lands the customer on the paid page with the reason and a start button.
+    const activation = await activateAfterPayment(campaignId, campaign.event_id);
+    if (activation === 'no_contacts') return r303(payUrl('paid=1&activate=no_contacts'));
+    if (activation === 'failed') return r303(payUrl('paid=1&activate=failed'));
     return r303(payUrl('paid=1'));
   }
   return payError(OUTCOME_TO_ERROR[outcome]);

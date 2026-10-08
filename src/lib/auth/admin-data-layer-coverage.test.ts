@@ -205,6 +205,13 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
     'integrations.read',
     'integrations.manage',
   ],
+  // The CardCom connection (the pilot): the same two keys, for the same reason as the OAuth config above. Reading answers
+  // "is it set up, and is the pilot on" (the API password is only ever reported as a boolean); writing replaces the credentials
+  // and flips the switch that sends package purchases to CardCom.
+  'src/lib/data/admin/integrations/cardcom-config.ts': [
+    'integrations.read',
+    'integrations.manage',
+  ],
   // Both projections are read-only and return deliberately narrow DTOs: the
   // editor receives label/value options, while the admin page receives safe
   // status timestamps plus a Mail.Send-ready boolean. Credential material and

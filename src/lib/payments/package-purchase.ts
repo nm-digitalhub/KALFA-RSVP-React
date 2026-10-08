@@ -13,6 +13,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { cardFromSumit, saveCitizenId, type CardDetails } from './card';
 import { beginOperation, completeOperation, type ProviderDocument } from './ledger';
 import { getPackagePaymentState } from './package-paid';
+import { RECEIPT_DESCRIPTION } from './package-receipt';
 
 // The fixed-price package PURCHASE (docs/superpowers/plans/2026-10-04-package-payment-plan.md, P-B): one real charge
 // for the whole package, recorded in the payment ledger. The caller (the purchase route) has already verified who the
@@ -55,9 +56,6 @@ export interface PackagePurchaseInput {
   // The single-use token payments.js produced in the browser.
   ogToken: string;
 }
-
-// The receipt line. Customer-facing: it names the product, not the price or any term.
-const RECEIPT_DESCRIPTION = 'KALFA — חבילת אישורי הגעה לאירוע';
 
 const DECLINED_NOTE = 'declined by the card issuer or the provider; nothing was charged';
 const UNCLEAR_NOTE = 'the provider\'s answer was unclear; the card may have been charged — check the provider before any retry';

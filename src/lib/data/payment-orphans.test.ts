@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
+vi.mock('@/lib/payments/cardcom-settle', () => ({ settleCardcomSession: vi.fn(), CARDCOM_ABANDON_AFTER_MINUTES: 60 }));
 // The real completeOperation by default; a single test makes it lose the race or hit a database error.
 vi.mock('@/lib/payments/ledger', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/payments/ledger')>();
@@ -9,6 +10,7 @@ vi.mock('@/lib/payments/ledger', async (importOriginal) => {
 });
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { settleCardcomSession } from '@/lib/payments/cardcom-settle';
 import { beginOperation, completeOperation, OperationStateError } from '@/lib/payments/ledger';
 import { createFakeTableClient, type TableRow } from '@/test/fake-table-client';
 
@@ -131,5 +133,57 @@ describe('runPaymentOrphanSweep', () => {
     db.fail('payment_operations', '57014', 'select');
 
     await expect(runPaymentOrphanSweep(db.client as never, NOW)).rejects.toThrow();
+  });
+});
+
+// A CardCom purchase is pending while the BUYER fills in the form: that is not a dead process, and ten minutes is nothing.
+describe('runPaymentOrphanSweep: CardCom purchases', () => {
+  const cardcomOp = (over: TableRow = {}): TableRow => op({ meta: { provider: 'cardcom', payerUserId: 'u1' }, ...over });
+  const withSession = (rows: TableRow[]) => createFakeTableClient({ payment_operations: rows, cardcom_payment_sessions: [{ low_profile_id: 'lp-1', operation_id: 'op-1' }], activity_log: [] });
+
+  it('asks CardCom instead of moving the row to review, and sends no "orphaned" alert of its own', async () => {
+    const db = withSession([cardcomOp()]);
+    vi.mocked(settleCardcomSession).mockResolvedValue({ status: 'unpaid' });
+    const result = await runPaymentOrphanSweep(db.client as never, NOW);
+    expect(settleCardcomSession).toHaveBeenCalledWith('lp-1', { finalizeUnpaid: false });
+    expect(db.rows('payment_operations')[0].outcome).toBe('pending');
+    expect(db.rows('activity_log')).toHaveLength(0);
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ found: 1, swept: 0, failed: 0 });
+  });
+
+  it('lets CardCom close a session that is older than the abandon age, because then "unpaid" means walked away', async () => {
+    const db = withSession([cardcomOp({ recorded_at: ago(61) })]);
+    vi.mocked(settleCardcomSession).mockResolvedValue({ status: 'settled', outcome: 'failed', alreadyDone: false });
+    await runPaymentOrphanSweep(db.client as never, NOW);
+    expect(settleCardcomSession).toHaveBeenCalledWith('lp-1', { finalizeUnpaid: true });
+  });
+
+  it('settles a payment that was made and never reported, whatever its age', async () => {
+    const db = withSession([cardcomOp({ recorded_at: ago(30) })]);
+    vi.mocked(settleCardcomSession).mockResolvedValue({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
+    await runPaymentOrphanSweep(db.client as never, NOW);
+    expect(settleCardcomSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes a purchase that has no session as failed: the buyer was never given an id, so nothing can have been paid', async () => {
+    const db = createFakeTableClient({ payment_operations: [cardcomOp()], cardcom_payment_sessions: [], activity_log: [] });
+    await runPaymentOrphanSweep(db.client as never, NOW);
+    expect(db.rows('payment_operations')[0]).toMatchObject({ outcome: 'failed' });
+    expect(settleCardcomSession).not.toHaveBeenCalled();
+  });
+
+  it('leaves the row alone when CardCom cannot be asked, to be tried again at the next run', async () => {
+    const db = withSession([cardcomOp({ recorded_at: ago(90) })]);
+    vi.mocked(settleCardcomSession).mockResolvedValue({ status: 'error' });
+    await runPaymentOrphanSweep(db.client as never, NOW);
+    expect(db.rows('payment_operations')[0].outcome).toBe('pending');
+  });
+
+  it('still moves a SUMIT purchase (no provider in its meta) to review, as before', async () => {
+    const db = createFakeTableClient({ payment_operations: [op({ meta: { payerUserId: 'u1' } })], activity_log: [] });
+    await runPaymentOrphanSweep(db.client as never, NOW);
+    expect(db.rows('payment_operations')[0].outcome).toBe('review');
+    expect(settleCardcomSession).not.toHaveBeenCalled();
   });
 });

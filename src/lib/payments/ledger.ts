@@ -4,6 +4,8 @@ import type { createAdminClient } from '@/lib/supabase/admin';
 import type { Json, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
 
 import type { CardDetails } from './card';
+import type { CardFacts } from './cardcom-card-facts';
+import type { PaymentFacts } from './cardcom-payment-facts';
 import type { OperationEffect, OperationOutcome, OperationRow } from './status';
 
 // The payment ledger's only writer and reader (docs/superpowers/plans/2026-09-24-campaign-payment-domain-split.md,
@@ -37,6 +39,12 @@ export type OperationDetails = {
   // What was settled from credit instead of the card. For an operation with lines it is the sum of the negative lines.
   creditApplied?: number;
   card?: CardDetails | null;
+  // What a provider that is not SUMIT says about the card (last four, expiry, brand, issuer, its token, the Vault id of the
+  // holder's ID). The payment-method type and the mask are not set: the provider does not give them. A call passes `card` OR `cardFacts`.
+  cardFacts?: CardFacts | null;
+  // The provider's own record of the payment beyond the card: the cardholder, the card's class, the payment type and the
+  // provider's references (voucher number, unique id, RRN...). Written to their own columns; every one is nullable.
+  paymentFacts?: PaymentFacts | null;
   providerPaymentId?: number | null;
   providerAuthRef?: string | null;
   providerStatus?: string | null;
@@ -45,6 +53,9 @@ export type OperationDetails = {
   // The provider's time when it is known; otherwise the time the row was begun stays.
   occurredAt?: string;
   note?: string | null;
+  // Non-sensitive provider extras the row must keep (a document type a later refund needs). It REPLACES the column:
+  // the caller read the current meta and passes it back merged. Never card data, a citizen id or a raw provider body.
+  meta?: { [key: string]: Json | undefined };
 };
 
 export type NewOperation = OperationDetails & {
@@ -157,8 +168,38 @@ function detailColumns(d: OperationDetails): TablesUpdate<'payment_operations'> 
     // The citizen id itself never reaches this table: only the id of the Vault secret that holds it.
     out.citizen_id_secret = d.card.citizenSecretId;
   }
+  if (d.cardFacts) {
+    out.card_last4 = d.cardFacts.last4;
+    out.card_exp_month = d.cardFacts.expMonth;
+    out.card_exp_year = d.cardFacts.expYear;
+    out.card_brand = d.cardFacts.brand;
+    out.card_issuer = d.cardFacts.issuer;
+    out.card_token_ref = d.cardFacts.tokenRef;
+    out.citizen_id_secret = d.cardFacts.citizenSecretId;
+  }
+  if (d.paymentFacts) {
+    const f = d.paymentFacts;
+    out.card_owner_name = f.cardOwnerName;
+    out.card_owner_email = f.cardOwnerEmail;
+    out.card_owner_phone = f.cardOwnerPhone;
+    out.card_name = f.cardName;
+    out.card_info = f.cardInfo;
+    out.card_first_digits = f.cardFirstDigits;
+    out.card_is_abroad = f.cardIsAbroad;
+    out.number_of_payments = f.numberOfPayments;
+    out.provider_coupon_number = f.couponNumber;
+    out.provider_unique_id = f.uniqueId;
+    out.provider_rrn = f.rrn;
+    out.provider_acquirer = f.acquirer;
+    out.provider_payment_type = f.paymentType;
+    out.provider_entry_mode = f.entryMode;
+    out.provider_deal_type = f.dealType;
+    out.provider_account_id = f.accountId;
+    out.provider_auth_description = f.authDescription;
+  }
   if (d.occurredAt !== undefined) out.occurred_at = d.occurredAt;
   if (d.note !== undefined) out.note = d.note;
+  if (d.meta !== undefined) out.meta = d.meta;
   return out;
 }
 

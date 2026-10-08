@@ -517,6 +517,22 @@ export const sumitCredentialsSchema = z.object({
   sumit_api_key: z.string().trim(),
 });
 
+// The CardCom connection (src/lib/data/admin/integrations/cardcom-config.ts). The terminal number is bounded to what
+// fits the database's integer, and the password may be blank on purpose: blank means "keep the stored one".
+export const cardcomConfigSchema = z.object({
+  terminal_number: z
+    .string()
+    .trim()
+    .regex(/^[1-9]\d{0,8}$/, { error: 'מספר מסוף חייב להיות מספר שלם חיובי (עד 9 ספרות)' }),
+  api_name: z
+    .string()
+    .trim()
+    .min(1, { error: 'שם ה-API חובה' })
+    .max(100, { error: 'שם ה-API ארוך מדי' }),
+  api_password: z.string().trim().max(200, { error: 'סיסמת ה-API ארוכה מדי' }),
+  enabled: z.boolean(),
+});
+
 export const extraSmsSchema = z.object({
   sms_enabled: z.boolean(),
   extra_sms_sender: z.string().trim(),

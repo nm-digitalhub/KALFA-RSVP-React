@@ -21,6 +21,9 @@ import {
   type ProviderDocument,
 } from './ledger';
 import { refundableAmount, refundableCents } from './status';
+import type { PackageRefundInput, PackageRefundRefusal, PackageRefundResult } from './package-refund-types';
+import { cardcomRefundSummary, checkCardcomRefund, refundCardcomPayment } from './cardcom-refund';
+import { purchaseProviderOf } from './purchase-provider';
 
 // Giving a customer's money back for a fixed-price package (docs/superpowers/plans/2026-10-06-package-cancel-refund.md).
 // The mirror image of package-purchase.ts, and the same safety argument, in the same order:
@@ -53,30 +56,8 @@ const SOURCE = 'package-refund';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
-export type PackageRefundInput = {
-  campaignId: string;
-  eventId: string;
-  // What goes back to the card, in shekels and whole agorot. The caller decides it (the admin, from the cancellation
-  // terms); this module only refuses what the ledger says cannot be refunded.
-  amount: number;
-  cancellationRequestId: string;
-};
-
-export type PackageRefundRefusal =
-  | 'disabled' // a gate is closed (payments off, provider not configured)
-  | 'invalid_amount'
-  | 'no_payment' // the campaign has no succeeded package payment, or nothing left on it
-  | 'exceeds_refundable'
-  | 'no_customer' // the payer has no SUMIT customer number: a credit must never open a second customer
-  | 'no_card'; // no saved card / expiry / holder id: the admin refunds by hand
-
-export type PackageRefundResult =
-  | { status: 'refunded'; amount: number; document: ProviderDocument | null; alreadyDone: boolean }
-  | { status: 'declined' } // a clear refusal; nothing went back; may be tried again
-  | { status: 'review' } // unclear; the money may have gone back; a person decides; never retried automatically
-  | { status: 'in_progress' } // another attempt of the same request is running
-  | { status: 'refused'; reason: PackageRefundRefusal } // checked BEFORE anything was written or sent
-  | { status: 'error' }; // something failed BEFORE anything was sent
+// The shapes every refund path shares (SUMIT here, CardCom in cardcom-refund.ts) live in package-refund-types.ts.
+export type { PackageRefundInput, PackageRefundRefusal, PackageRefundResult } from './package-refund-types';
 
 const toCents = (n: number) => Math.round(n * 100);
 const isMoney = (n: number) => Number.isFinite(n) && n > 0 && Math.abs(n * 100 - Math.round(n * 100)) < 1e-6;
@@ -168,6 +149,12 @@ async function prepare(input: PackageRefundInput): Promise<Prepared> {
 // The look before the promise: null when refundPackagePayment would go ahead, otherwise the answer it would give.
 // Reads only. The cancellation resolution sends the customer an e-mail before any money moves, so it asks first.
 export async function checkPackageRefund(input: PackageRefundInput): Promise<PackageRefundResult | null> {
+  // The money goes back through the company that was PAID (read from the purchase itself, not from today's switch).
+  try {
+    if ((await purchaseProviderOf(input.campaignId)) === 'cardcom') return checkCardcomRefund(input);
+  } catch {
+    return { status: 'error' };
+  }
   const prepared = await prepare(input);
   return prepared.ok ? null : prepared.result;
 }
@@ -178,6 +165,7 @@ export async function packageRefundSummary(
   campaignId: string,
   cancellationRequestId?: string,
 ): Promise<{ refundable: number; refundedForRequest: number; hasCard: boolean }> {
+  if ((await purchaseProviderOf(campaignId)) === 'cardcom') return cardcomRefundSummary(campaignId, cancellationRequestId);
   const admin = createAdminClient();
   const [ops, card, earlier] = await Promise.all([
     loadOperations(admin, campaignId),
@@ -194,6 +182,11 @@ export async function packageRefundSummary(
 }
 
 export async function refundPackagePayment(input: PackageRefundInput): Promise<PackageRefundResult> {
+  try {
+    if ((await purchaseProviderOf(input.campaignId)) === 'cardcom') return refundCardcomPayment(input);
+  } catch {
+    return { status: 'error' };
+  }
   const { campaignId, eventId, amount, cancellationRequestId } = input;
   const prepared = await prepare(input);
   if (!prepared.ok) return prepared.result;

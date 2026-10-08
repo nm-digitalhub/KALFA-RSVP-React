@@ -8,6 +8,7 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/data/payments', () => ({ getPaymentsEnabled: vi.fn(), getSumitServerConfig: vi.fn() }));
 vi.mock('@/lib/data/sumit-customers', () => ({ getSumitCustomerId: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
+vi.mock('./cardcom-refund', () => ({ checkCardcomRefund: vi.fn(), refundCardcomPayment: vi.fn(), cardcomRefundSummary: vi.fn() }));
 vi.mock('@/lib/sumit/generated/api', () => ({ billingPaymentsCharge: vi.fn(), accountingDocumentsSend: vi.fn() }));
 // The real card mapper; only the Vault read is replaced.
 vi.mock('./card', async (importOriginal) => ({
@@ -25,6 +26,7 @@ import { SumitError } from '@/lib/sumit/mutator';
 import { readCitizenId } from './card';
 import { deriveStatus } from './status';
 import { loadOperations } from './ledger';
+import { cardcomRefundSummary, checkCardcomRefund, refundCardcomPayment } from './cardcom-refund';
 import { checkPackageRefund, packageRefundSummary, refundPackagePayment } from './package-refund';
 
 // Giving a customer's money back is the one thing here that can never be taken back. The properties defended, each
@@ -531,5 +533,54 @@ describe('refundPackagePayment — nothing secret is ever logged or alerted', ()
     await refundPackagePayment({ ...REQ, amount: 120 });
     const logged = everythingLogged();
     for (const secret of SECRETS) expect(logged).not.toContain(secret);
+  });
+});
+
+// The money goes back through the company that was PAID — read from the purchase itself, never from today's switch.
+describe('which clearing company a refund goes to', () => {
+  const CARDCOM_PURCHASE = { ...PURCHASE, meta: { provider: 'cardcom', payerUserId: 'u1' } };
+  const asked = { ...REQ, amount: 120 };
+
+  it('a CardCom purchase is refunded by the CardCom path — and SUMIT is never asked', async () => {
+    useDb([CARDCOM_PURCHASE]);
+    vi.mocked(refundCardcomPayment).mockResolvedValue({ status: 'declined' });
+    await expect(refundPackagePayment(asked)).resolves.toEqual({ status: 'declined' });
+    expect(refundCardcomPayment).toHaveBeenCalledWith(asked);
+    expect(billingPaymentsCharge).not.toHaveBeenCalled();
+    expect(refundRows()).toHaveLength(0);
+  });
+
+  it('the look before the promise and the summary follow the same rule', async () => {
+    useDb([CARDCOM_PURCHASE]);
+    vi.mocked(checkCardcomRefund).mockResolvedValue(null);
+    vi.mocked(cardcomRefundSummary).mockResolvedValue({ refundable: 120, refundedForRequest: 0, hasCard: true });
+    await expect(checkPackageRefund(asked)).resolves.toBeNull();
+    await expect(packageRefundSummary('c1', 'req1')).resolves.toEqual({ refundable: 120, refundedForRequest: 0, hasCard: true });
+    expect(checkCardcomRefund).toHaveBeenCalledWith(asked);
+    expect(cardcomRefundSummary).toHaveBeenCalledWith('c1', 'req1');
+  });
+
+  it('a purchase with no provider in its meta (everything before the pilot) stays a SUMIT refund', async () => {
+    useDb([PURCHASE]);
+    await refundPackagePayment({ ...REQ, amount: 120 });
+    expect(refundCardcomPayment).not.toHaveBeenCalled();
+    expect(billingPaymentsCharge).toHaveBeenCalled();
+  });
+
+  it('when the purchase cannot be read the refund is an ERROR, never a guess that sends the money to the wrong company', async () => {
+    useDb([PURCHASE]);
+    db.fail('payment_operations', '42501', 'select');
+    await expect(refundPackagePayment(asked)).resolves.toEqual({ status: 'error' });
+    useDb([PURCHASE]);
+    db.fail('payment_operations', '42501', 'select');
+    await expect(checkPackageRefund(asked)).resolves.toEqual({ status: 'error' });
+    expect(billingPaymentsCharge).not.toHaveBeenCalled();
+    expect(refundCardcomPayment).not.toHaveBeenCalled();
+  });
+
+  it('the summary throws when the purchase cannot be read, so "nothing to refund" is never the face of a failed read', async () => {
+    useDb([PURCHASE]);
+    db.fail('payment_operations', '42501', 'select');
+    await expect(packageRefundSummary('c1')).rejects.toBeTruthy();
   });
 });

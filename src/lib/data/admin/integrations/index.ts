@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { hasPlatformPermission, isPlatformOwner, requirePlatformStaff } from '@/lib/auth/dal';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { getJobHealth } from '@/lib/ops/db-health';
 import { getIntegrationsStatus, type IntegrationStatus } from '@/lib/ops/integrations';
@@ -35,6 +36,7 @@ export type IntegrationKey =
   | 'extra-sms'
   | 'resend-email'
   | 'sumit'
+  | 'cardcom'
   | 'slack'
   | 'microsoft'
   | 'elevenlabs'
@@ -71,6 +73,7 @@ const CARDS: CardSpec[] = [
   { statusKey: 'extra-sms', key: 'extra-sms', permission: 'manage_settings', href: '/admin/integrations/extra-sms' },
   { statusKey: 'resend-email', key: 'resend-email', permission: 'manage_settings', href: '/admin/integrations/resend-email' },
   { statusKey: 'sumit', key: 'sumit', permission: 'manage_settings', href: '/admin/integrations/sumit' },
+  { statusKey: 'cardcom', key: 'cardcom', permission: 'integrations.manage', href: '/admin/integrations/cardcom' },
   { statusKey: 'slack', key: 'slack', permission: 'manage_settings', href: '/admin/integrations/slack' },
   { statusKey: 'microsoft', key: 'microsoft', permission: 'manage_settings', href: '/admin/integrations/microsoft' },
   { statusKey: 'owner-agent', key: 'owner-agent', permission: OWNER, href: '/admin/integrations/owner-agent' },
@@ -149,6 +152,34 @@ async function getOwnerAgentStatus(): Promise<IntegrationStatus | null> {
   }
 }
 
+/**
+ * The CardCom card's status row (the pilot, docs/superpowers/plans/2026-10-07-cardcom-pilot-plan.md). It cannot come
+ * from getIntegrationsStatus(): that source predates CardCom and its table is CLOSED (RLS with no policy), so the
+ * cookie client reads nothing — the service-role client reads two booleans here, after the staff floor above, and
+ * nothing else: no terminal, no name, no secret.
+ *
+ * No saved row is "not configured" and the card IS shown (staff should see where to set it up). A failed read omits
+ * the card — the same rule as every other card: never invent a status.
+ */
+async function getCardcomStatus(): Promise<IntegrationStatus | null> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin.from('cardcom_config').select('enabled').eq('id', true).maybeSingle();
+    if (error) return null;
+    return {
+      key: 'cardcom',
+      label: 'CardCom',
+      configured: data !== null,
+      enabled: data?.enabled ?? false,
+      lastCheckedAt: null,
+      healthCheckAvailable: false,
+      note: 'סליקה חלופית בבחינה: רכישת חבילה והחזר. כל עוד המתג כבוי הרכישות נשארות אצל SUMIT.',
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function getIntegrationsIndex(): Promise<IntegrationsIndex> {
   await requirePlatformStaff();
 
@@ -161,12 +192,13 @@ export async function getIntegrationsIndex(): Promise<IntegrationsIndex> {
   // "last checked" column rather than a column full of dashes that look like faults.
   const owner = await isPlatformOwner();
   const jobHealth = owner ? await getJobHealth() : null;
-  const [rows, ownerAgent]: [IntegrationStatus[], IntegrationStatus | null] = await Promise.all([
+  const [rows, ownerAgent, cardcom]: [IntegrationStatus[], IntegrationStatus | null, IntegrationStatus | null] = await Promise.all([
     getIntegrationsStatus(jobHealth?.ok ? jobHealth.data : []),
     getOwnerAgentStatus(),
+    getCardcomStatus(),
   ]);
 
-  const byKey = new Map([...rows, ...(ownerAgent ? [ownerAgent] : [])].map((r) => [r.key, r]));
+  const byKey = new Map([...rows, ...(ownerAgent ? [ownerAgent] : []), ...(cardcom ? [cardcom] : [])].map((r) => [r.key, r]));
 
   // Resolve each distinct permission once; cache() in the DAL collapses the repeats
   // into one RPC per key for the whole render pass. The OWNER sentinel is not a key,
