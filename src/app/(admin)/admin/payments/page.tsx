@@ -4,6 +4,7 @@ import { listPaymentReviews } from '@/lib/data/admin/payment-review';
 
 import { EmptyState, PageHeading, formatCurrency, formatDateTime } from '../_components';
 import { ReviewCard } from './review-card';
+import { cardcomReviewFacts } from './review-card-facts';
 
 export const metadata: Metadata = { title: 'תשלומים לבדיקה' };
 
@@ -19,7 +20,7 @@ export default async function AdminPaymentsPage() {
         <PageHeading>תשלומים לבדיקה</PageHeading>
         <p className="max-w-2xl text-muted-foreground">
           פעולות תשלום שלא ידוע אם בוצעו. הן לא יחויבו שוב אוטומטית, והלקוח לא יכול לשלם מחדש עד שמכריעים בהן. יש
-          לבדוק במסך של SUMIT אם החיוב בוצע, ואז לאשר או לסמן ככושלת.
+          לבדוק אצל חברת הסליקה שבה נפתח התשלום (SUMIT או CardCom) אם החיוב בוצע, ואז לאשר או לסמן ככושלת.
         </p>
       </div>
 
@@ -40,6 +41,7 @@ export default async function AdminPaymentsPage() {
                 eventHref: `/admin/events/${item.eventId}`,
                 campaignHref: `/app/events/${item.eventId}/campaign/${item.campaignId}`,
                 note: item.note,
+                cardcom: cardcomReviewFacts(item),
               }}
             />
           ))}
