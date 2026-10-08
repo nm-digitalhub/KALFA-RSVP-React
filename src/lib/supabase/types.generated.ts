@@ -7736,7 +7736,10 @@ export type Database = {
         Args: { _action?: string; _event_id: string; _resource?: string }
         Returns: boolean
       }
-      cancel_campaign: { Args: { p_campaign: string }; Returns: string }
+      cancel_campaign: {
+        Args: { p_actor?: string; p_campaign: string }
+        Returns: string
+      }
       cardcom_api_password: { Args: never; Returns: string }
       cardcom_config_save: {
         Args: {

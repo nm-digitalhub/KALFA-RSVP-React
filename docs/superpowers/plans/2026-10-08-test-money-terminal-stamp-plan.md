@@ -1,7 +1,14 @@
 # תכנית: רישום המסוף על כל תשלום — כסף בדיקה לא נספר, ואפשר לבדוק שוב ושוב
 
-**סטטוס:** טיוטה לאישור הבעלים. נכתבה ב-8.10.2026 אחרי בדיקה מחמירה (ארבעה בודקים עצמאיים ומבקר; Workflow `wf_3c29f2b1-39d`). **לא שונה דבר במסד, בקוד או במיגרציות.**
+**סטטוס:** בביצוע. נכתבה ב-8.10.2026 אחרי בדיקה מחמירה (ארבעה בודקים עצמאיים ומבקר; Workflow `wf_3c29f2b1-39d`) ואושרה על ידי הבעלים. שלבים 0–2 בוצעו ונמצאים במסד החי (ראו "התקדמות"); קוד האפליקציה (שלב 3) עדיין לא שונה.
 **קשור:** `2026-10-07-cardcom-pilot-plan.md` (הפיילוט שהתכנית הזו נשענת עליו).
+
+**התקדמות (עדכון ביצוע):**
+- שלב 0 בוצע ב-8.10: עבודת הפיילוט נשמרה ב-8 commit-ים ונדחפה על ידי הבעלים.
+- שלב 1 בוצע ב-8.10: מיגרציה A (`20261008033521_ledger_money_source_stamp`) נוצרה בפקודה הרשמית; הרצה יבשה על המסד החי (בעסקה אחת שמתבטלת) עברה 21 בדיקות ללא כשל; הבעלים הריץ `db push --linked`, `gen:types` ו-`types:check` (עבר); אין סטייה בהיסטוריית המיגרציות; עוצמת האבטחה (advisors) לא הציגה ממצא חדש על האובייקטים ששונו; commit `e05ae520` (מקומי, לא נדחף). במסד החי: 10 שורות בספר, אפס מסווגות כבדיקה, ההכנסות 200.00.
+- שלב 2 בוצע ב-8.10, פרט להוכחה ההתנהגותית (ראו הסעיף האחרון כאן): מיגרציה `20261008040027_cancel_campaign_audit` נוצרה בפקודה הרשמית ונכתבה בסקריפט מהנוסח החי; הבעלים הריץ `db push` והיא הוחלה (בלוק האימות שבקובץ עבר, אחרת הייתה מתבטלת), ואחר כך `gen:types` ו-`types:check` (עבר; ההפרש שורה אחת: `cancel_campaign` קיבלה `p_actor?: string`). **ההרצה היבשה לא רצה לפני ההחלה.** אומת אחרי ההחלה בקריאה בלבד: אין סטייה בהיסטוריה; פונקציה אחת `cancel_campaign(uuid, uuid)`, `security invoker`, `search_path` ריק, הרצה לבעלים ול-`service_role` בלבד; גוף הפונקציה במסד זהה לגוף שבקובץ (2285 תווים); שלושת הטריגרים על `campaigns` פעילים; מצב הקמפיינים לא השתנה ואין אף שורת `campaign.cancelled`; advisors: 46 ממצאים לפני ואחרי, זהים, אף אחד על האובייקטים ששונו.
+- **ממתין להרצת הבעלים:** בדיקת התנהגות אחרי ההחלה (`behavior_check_cancel_audit.sql`, אותם תרחישים של ההרצה היבשה, בעסקה שמתבטלת). עד אז לא הוכח בריצה שהרישום נכתב, שכסף אמיתי עדיין חוסם, ושהקריאה בלי `p_actor` עובדת.
+- הבא: שלב 3 (קוד), באישור הבעלים.
 
 ## 0. החלטות הבעלים שכבר נקבעו (לא נפתחות מחדש)
 
@@ -191,47 +198,65 @@ a. `payment_is_test_terminal(1000/1001/null)` ← t, f, f. ב. שורות קיי
 | `query-*` (אינדקסים) | לא נוסף אינדקס על `is_test` או `provider_terminal`: סלקטיביות נמוכה והטבלה קטנה; הסינון `not o.is_test` נוסף לתנאים הקיימים ולא משנה את מסלול הגישה: חיפושי הקמפיין (`campaign_has_payment_activity`, `cancel_campaign`) נשענים על `payment_operations_campaign_idx (campaign_id, occurred_at desc)` הקיים (נבדק ב-`pg_indexes`). |
 | `schema-lowercase-identifiers` | כל השמות באותיות קטנות עם קו תחתי. |
 
-## 6. מיגרציה "ביקורת ביטול" — `cancel_campaign_audit`
+## 6. מיגרציה "ביקורת ביטול" — `cancel_campaign_audit` (הוחלה ב-8.10: `20261008040027`)
 
-הסיבה: ביטול קמפיין ששולם הופך לאפשרי (A7), ושינוי כזה חייב להשאיר רישום של מי ומתי (כללי הפרויקט). היום אין רישום; ה-`logActivity` מהקוד נכשל בשקט וכל משתמש מחובר יכול להוסיף שורה כזו.
+הסיבה: ביטול קמפיין ששולם בכסף בדיקה הופך לאפשרי (מיגרציה A), ושינוי כזה חייב להשאיר רישום של מי ומתי (כללי הפרויקט). היום אין רישום, והקוד אינו יכול לכתוב אותו באמינות: `logActivity` (`src/lib/data/activity.ts`) רץ בהקשר של המשתמש, נכשל בשקט בכוונה (שורת שגיאה כללית בלבד), ומדיניות ההוספה `al_owner_insert` (`with check user_id = auth.uid()`) מאפשרת לכל משתמש מחובר לכתוב שורה בכל פעולה שיבחר. שורה שנכתבת שם לא מוכיחה דבר; שורה שנכתבת בתוך הפונקציה, באותה עסקה, כן.
 
-```sql
-set local lock_timeout = '5s';
-set local statement_timeout = '30s';
-drop function public.cancel_campaign(uuid);
-create function public.cancel_campaign(p_campaign uuid, p_actor uuid default null)
-returns text language plpgsql set search_path = '' as $$
-declare v public.campaigns; v_paid boolean; v_test_only boolean;
-begin
-  select * into v from public.campaigns where id = p_campaign for update;
-  if not found then return 'no_campaign'; end if;
-  if v.status = 'cancelled' then return 'already_cancelled'; end if;
-  if not ( v.status in ('draft','pending_approval','approved')
-    and v.capture_status is distinct from 'authorized'
-    and v.capture_status is distinct from 'pending'
-    and v.capture_status is distinct from 'hold_review'
-    and v.charge_status is null
-    and not exists (select 1 from public.billed_results b where b.campaign_id = v.id)
-    and not public.campaign_has_payment_activity(v.id) ) then
-    return 'not_cancellable';
-  end if;
-  select count(*) > 0, coalesce(bool_and(o.is_test), false) into v_paid, v_test_only
-    from public.payment_operations o join public.payment_operation_kinds k on k.kind = o.kind
-   where o.campaign_id = v.id and o.outcome = 'succeeded' and k.effect in ('collect', 'return');
-  update public.campaigns set status = 'cancelled' where id = p_campaign;
-  insert into public.activity_log (user_id, event_id, action, meta)
-  values (p_actor, v.event_id, 'campaign.cancelled',
-          jsonb_build_object('campaignId', v.id, 'statusBefore', v.status,
-                             'hadSucceededPayment', v_paid, 'testMoneyOnly', v_paid and v_test_only));
-  return 'cancelled';
-end; $$;
-revoke execute on function public.cancel_campaign(uuid, uuid) from public, anon, authenticated;
-grant  execute on function public.cancel_campaign(uuid, uuid) to service_role;
--- בלוק בדיקה: ACL (anon/authenticated ללא הרצה, service_role עם הרצה), prosecdef = false, search_path ריק.
+**מה הקובץ עושה** (הנוסח המלא בקובץ; זה הנוסח החי של 8.10 פחות השורות המסומנות `[audit]`):
+
+1. `drop function public.cancel_campaign(uuid)` ואחריו `create function public.cancel_campaign(p_campaign uuid, p_actor uuid default null)`. לא `create or replace`: שינוי רשימת ארגומנטים בו משאיר שני עומסים, והקריאה בשם שהקוד מבצע (`rpc('cancel_campaign', { p_campaign })`) הופכת דו-משמעית.
+2. `security invoker` (היה `security definer`) עם `search_path` ריק. הקורא היחיד הוא `createAdminClient()` (`service_role`), שמחזיק כבר בכל ההרשאות שהפונקציה משתמשת בהן, ובלוק האימות שבקובץ בודק אותן אחת אחת. זו ברירת המחדל של הפרויקט (זיכרון `supabase-official-tooling`).
+3. שורה אחת ב-`activity_log` באותה עסקה: `action = 'campaign.cancelled'`, `user_id = p_actor` (NULL כשהקורא לא העביר), `event_id` של הקמפיין, `meta = { campaignId, statusBefore, hadSucceededPayment, testMoneyOnly }`. אם כתיבת השורה נכשלת, שינוי הסטטוס מתבטל איתה: ביטול בלי רישום לא קורה.
+4. אותה הרשאת הרצה כמו קודם: הבעלים ו-`service_role` בלבד (`revoke` מ-`public, anon, authenticated`), והערת פונקציה (`comment on function`) שמתעדת את החוזה.
+5. בלוק אימות בסוף הקובץ (העסקה כולה מתבטלת אם אחת נכשלת): פונקציה אחת בלבד; `security invoker` ו-`search_path` ריק; אין מי שמריץ מלבד הבעלים ו-`service_role` (גם לא דרך PUBLIC); לשירות כל ההרשאות הנדרשות; הטריגר `campaigns_guard_cancel` פעיל; שבעה קטעי טקסט בגוף: ששת קטעי הכלל המקוריים (שבדיקות הקוד מצמידות) והוספת השורה ליומן.
+
+הכלל "מתי מותר לבטל", ערכי ההחזרה (`no_campaign`, `already_cancelled`, `not_cancellable`, `cancelled`) והטריגר `campaigns_guard_cancel` לא השתנו. ההפרש מול הפונקציה החיה, וזה כל מה שהשינוי הזה מחזיק:
+
+```diff
+--- live-before
++++ file
+@@ -1,5 +1,5 @@
+-CREATE OR REPLACE FUNCTION public.cancel_campaign(p_campaign uuid)
++CREATE FUNCTION public.cancel_campaign(p_campaign uuid, p_actor uuid DEFAULT NULL)
+  RETURNS text
+  LANGUAGE plpgsql
+- SECURITY DEFINER
++ SECURITY INVOKER
+  SET search_path TO ''
+@@ -7,2 +7,3 @@
+ declare v public.campaigns;
++        v_paid boolean; v_test_only boolean; -- [audit]
+ begin
+@@ -23,3 +24,17 @@
+   end if;
++  -- [audit] What this cancellation erases. The gate above lets a SUCCEEDED payment row through only when it is test money,
++  -- so a true v_paid always comes with a true v_test_only; both are recorded so that a reader never has to infer it.
++  -- Same effect filter as campaign_has_payment_activity, so the record describes exactly the rows the gate waved through.
++  select count(*) > 0, coalesce(bool_and(o.is_test), false) into v_paid, v_test_only
++    from public.payment_operations o
++    join public.payment_operation_kinds k on k.kind = o.kind
++   where o.campaign_id = v.id and o.outcome = 'succeeded' and k.effect <> 'none';
+   update public.campaigns set status='cancelled' where id=p_campaign;
++  -- [audit] Who and when, in the SAME transaction: if this row cannot be written the status change is rolled back with it, so a
++  -- cancellation without a record does not happen. p_actor is the staff member the application verified; NULL = the caller did
++  -- not pass one (old application code).
++  insert into public.activity_log (user_id, event_id, action, meta)
++  values (p_actor, v.event_id, 'campaign.cancelled',
++          jsonb_build_object('campaignId', v.id, 'statusBefore', v.status,
++                             'hadSucceededPayment', v_paid, 'testMoneyOnly', v_paid and v_test_only));
+   return 'cancelled';
 ```
-החתימה עם `p_actor` אופציונלי מאפשרת לקוד הישן (`rpc('cancel_campaign', { p_campaign })`) להמשיך לעבוד עד הפריסה. `campaigns_guard_cancel` לא משתנה.
 
-**SECURITY INVOKER ולא DEFINER:** הפונקציה החיה היא `security definer`, אבל הקורא היחיד הוא `createAdminClient()` (service_role: יש לו הרשאות טבלה ו-BYPASSRLS), ולכן העלאת הרשאות מיותרת. זו ברירת המחדל שנקבעה בפרויקט (זיכרון `supabase-official-tooling`: INVOKER כשהקורא הוא service_role; DEFINER רק כשקורא חלש צריך העלאה). הבדיקה האמיתית היא קריאת `rpc('cancel_campaign')` עם לקוח השירות בשלב 4, לא רק בדיקת `prosecdef`.
+**הבדלים מהטיוטה המקורית של הסעיף הזה** (נקבעו בכתיבת הקובץ): (א) ספירת "שולם" לרישום משתמשת ב-`k.effect <> 'none'`, כמו `campaign_has_payment_activity`, ולא ב-`('collect', 'return')`: הרישום מתאר בדיוק את השורות שהשער העביר; היום התוצאה זהה. (ב) `drop` ואחריו `create function` (בלי `or replace`). (ג) `security invoker` נכתב במפורש. (ד) הערת פונקציה ובלוק אימות מורחב.
+
+**אימות, מה נבדק ומה עוד לא:**
+
+- בלוק האימות שבקובץ עבר (המיגרציה הוחלה).
+- אחרי ההחלה, בקריאה בלבד: ראו "התקדמות" בראש המסמך.
+- **ההרצה היבשה המתוכננת (`dry_run_cancel_audit.sql`) לא רצה לפני ההחלה.** במקומה, בדיקת התנהגות אחרי ההחלה (`behavior_check_cancel_audit.sql`): אותם תרחישים בדיוק, בעסקה שמתבטלת, כ-`service_role`. היא בודקת: הכלל זהה לטקסט הישן; סגור, כסף אמיתי ואין-קמפיין נשארים `not_cancellable` בלי רישום; הקריאה הישנה (`p_campaign` בלבד) מבטלת וכותבת רישום עם `user_id` ריק; קריאה שנייה מחזירה `already_cancelled` בלי רישום שני; עם `p_actor` הרישום נושא את המשתמש; תשלום בדיקה ממתין חוסם, ושהצליח מאפשר ביטול עם `hadSucceededPayment` ו-`testMoneyOnly`; כסף אמיתי חוסם, ו-`update` ישיר עדיין נחסם בטריגר; משתמש שאינו קיים ב-`p_actor` נדחה והסטטוס חוזר; `anon` ו-`authenticated` לא מריצים. **תוצאה: ממתינה להרצת הבעלים.**
+- הבדיקה האמיתית (`rpc('cancel_campaign')` עם לקוח השירות ו-`p_actor` מהקוד) בשלב 4.
+
+**SECURITY INVOKER ולא DEFINER:** הפונקציה החיה הייתה `security definer`, אבל הקורא היחיד הוא `createAdminClient()` (`service_role`: הרשאות טבלה ו-BYPASSRLS), ולכן העלאת הרשאות מיותרת. זו ברירת המחדל שנקבעה בפרויקט (INVOKER כשהקורא הוא `service_role`; DEFINER רק כשקורא חלש צריך העלאה). ההוכחה בריצה היא קריאה אמיתית בשלב 4, לא רק `prosecdef`.
 
 ## 7. שינויי קוד (אחרי שהמיגרציות הוחלו והטיפוסים נוצרו מחדש)
 
@@ -243,8 +268,8 @@ grant  execute on function public.cancel_campaign(uuid, uuid) to service_role;
 | `src/lib/payments/cardcom-purchase.ts` | `beginOperation({ …, provider: 'cardcom', providerTerminal: config.terminalNumber })` מאותו אובייקט `config` שבונה את בקשת ה-Create. `meta.provider` נשאר עד שלב הניקוי. |
 | `src/lib/payments/cardcom-settle.ts` | `TerminalNumber: z.unknown().optional()` ברמה העליונה בלבד (לא `z.number()`: צורה בלתי צפויה לא תהפוך תשלום ששולם ל"לא קריא", לפי ההערה בשורות 49-52). בוחר `provider_terminal` יחד עם השורה. **נעילה:** רשום ושונה מההגדרה הנוכחית ← לא שואלים, לא סוגרים כ"נכשל", לבדיקה ידנית עם התראת error (גם ב-`flagPaymentAfterFailure`). שומר את ההד בהשלמה (הצלחה, כישלון או בדיקה) כשהגיע. הכרעה לפי `checkTerminalEcho`. התראות ו-`afterPaid` קוראים את הסיווג **מהשורה הסגורה** (לא מהשורה שנקראה לפני הסגירה); לשורת בדיקה: בלי בדיקת תקרה, כותרת התראה עם "[בדיקה]", דחייה היא info. |
 | `src/lib/payments/cardcom-refund.ts` | מסרב (`terminal_changed`) כשהמסוף הרשום ריק או שונה מההגדרה הנוכחית (`CancelDoc` לא שולח מסוף). `package-refund-types.ts` ו-`package-cancellation.ts`: הסיבה והמשפט בעברית. |
-| `src/lib/data/campaigns.ts` | `cancelCampaign` מעביר `p_actor` (מזהה המשתמש המאומת). |
-| `src/lib/data/campaign-status.ts` | `isCampaignCancellable`: תשלום `testMoney` אינו חוסם 'collected'; ממתין/בבדיקה חוסמים כמו במסד. תיקון ההערה השגויה בשורות 46-59 (ה-RPC קורא ל-`campaign_has_payment_activity`). בדיקת התאמה שקוראת את טקסט המיגרציה. |
+| `src/lib/data/campaigns.ts` | `cancelCampaign` מעביר `p_actor` (מזהה המשתמש המאומת שעבר את `requirePlatformPermission('campaigns.runstate')`). `campaigns.test.ts:1264` מצפה היום לקריאה בלי `p_actor` ויעודכן. |
+| `src/lib/data/campaign-status.ts` | `isCampaignCancellable`: תשלום `testMoney` אינו חוסם 'collected'; ממתין/בבדיקה חוסמים כמו במסד. תיקון ההערה השגויה בשורות 46-59 (ה-RPC קורא ל-`campaign_has_payment_activity`). בדיקת ההתאמה הקיימת (`campaign-status.test.ts:132`) קוראת היום את `20260630223635_event_lifecycle_state_model.sql` (הנוסח המקורי של הפונקציה) וחותכת מ-`function public.cancel_campaign`; היא תעבור לקרוא את `20261008040027_cancel_campaign_audit.sql` ותעגן ב-`create function public.cancel_campaign(`, כי בקובץ החדש קודם לו `drop function public.cancel_campaign` שאין בו את הכלל. |
 | `src/lib/data/admin/payment-review.ts` + `src/app/(admin)/admin/payments/review-card.tsx` | **כרטיס בדיקה ידנית מותאם לקארדקום** (חייב לעלות עם הנעילה): לשורת קארדקום אין בדיקה מול SUMIT ואין נוסח SUMIT; מוצגים מסוף שביקשנו, מסוף שדווח או "לא דווח", מספר מסמך ואסמכתה; "נכשל" דורש הערה שמציינת מה נבדק בלוח של קארדקום; "הצליח" אינו מוצע כשהמסוף שדווח קיים ושונה. |
 | `src/lib/data/admin/event-view.ts:80` ו-`src/lib/data/event-cancellation.ts:403-416` | לסנן קמפיינים מבוטלים ולמיין מהחדש לישן (היום `maybeSingle()` נכשל עם שני קמפיינים, ו-`campaigns[0]` בדרך ההחזר היחידה עלול להיות המבוטל). בדיקה עם `[מבוטל, חי]` בכל אחד. |
 | תוויות לצוות בלבד (בלי חסימה) | באנר "מסוף בדיקה — לא יחויב כרטיס אמיתי" בטופס; במסך "שולם": "תשלום בדיקה — לא נגבה כסף ולא נספר בהכנסות"; כפתור הביטול בעמוד הקמפיין לכסף בדיקה: "אפס ריצת בדיקה"; ברשימת האירוע של הצוות: "N תשלומי בדיקה, M אמיתיים". `manage-client.tsx` ממשיך להציג את הקמפיין כ"שולם". |
@@ -286,6 +311,7 @@ grant  execute on function public.cancel_campaign(uuid, uuid) to service_role;
 - **שלושה קבלות ₪1 אמיתיות** מדף האבחון של SUMIT בטבלה `sumit_test_transactions`, מחוץ לספר; אחרי המעבר לאוויר יהיו שתי מערכות קבלות (שאלות ליועץ המס).
 - שם, מייל וטלפון של בודקי תשלום נשמרים בשורות שאי אפשר למחוק (מאז המיפוי ב-8.10).
 - הקשחה נגד מחיקה פיזית של שורות ספר (היום אפשר למחוק שתי שורות `release` ישנות).
+- **`activity_log` בלי אינדקס על המפתחות הזרים:** בטבלה רק המפתח הראשי. `event_id` (מחיקה מדורגת עם האירוע) ו-`user_id` (`set null` עם מחיקת המשתמש) נסרקים מלאים בכל מחיקה כזו. ישן יותר מהשינוי הזה ולא נוסף בו (כלל `schema-foreign-key-indexes`); הטבלה קטנה היום.
 
 ## 12. בסיס עובדתי לביקורת (מקורות)
 
