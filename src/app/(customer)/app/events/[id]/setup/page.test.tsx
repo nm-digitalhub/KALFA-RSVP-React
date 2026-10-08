@@ -16,11 +16,13 @@ vi.mock('../campaign-setup-form', () => ({ CampaignSetupForm: () => <div data-ma
 vi.mock('../edit-event-form', () => ({ EditEventForm: () => <div data-marker="details-form" /> }));
 vi.mock('../setup-confirm-form', () => ({ SetupConfirmForm: () => <div data-marker="confirm-form" /> }));
 vi.mock('../setup-stepper', () => ({
-  SetupStepper: ({ steps }: { steps: Array<{ key: string; state: string; label: string }> }) => (
+  SetupStepper: ({ steps, back }: { steps: Array<{ key: string; state: string; label: string }>; back?: { href: string; label: string } | null }) => (
     <div
       data-marker="stepper"
       data-steps={steps.map((s) => `${s.key}:${s.state}`).join(',')}
       data-labels={steps.map((s) => s.label).join('|')}
+      data-back-href={back?.href}
+      data-back-label={back?.label}
     />
   ),
 }));
@@ -62,13 +64,17 @@ const OFFER = {
   outreach_schedule: [{ days_before: 7, channel: 'whatsapp', message_key: 'x' }],
 };
 
-async function render(): Promise<string> {
+async function render(searchParams: Record<string, string> = {}): Promise<string> {
   const tree = await SetupPage({
     params: Promise.resolve({ id: EVENT_ID }),
-    searchParams: Promise.resolve({}),
+    searchParams: Promise.resolve(searchParams),
   });
   return renderToStaticMarkup(tree);
 }
+const backOf = (html: string) => ({
+  href: /data-back-href="([^"]*)"/.exec(html)?.[1].replaceAll('&amp;', '&') ?? null,
+  label: /data-back-label="([^"]*)"/.exec(html)?.[1] ?? null,
+});
 const stepsOf = (html: string) => /data-steps="([^"]*)"/.exec(html)?.[1].split(',').map((s) => s.split(':')[0]);
 
 beforeEach(() => {
@@ -149,5 +155,41 @@ describe('setup page — a package is on offer', () => {
     const html = await render();
     expect(html).toContain('data-marker="stepper"');
     expect(console.error).toHaveBeenCalled();
+  });
+});
+
+// "Back" on the stepper: the server says where it leads, and only to a step whose page can still be used.
+describe('setup page — the way back', () => {
+  it('on the confirm step: back to the details form (the draft is still editable there)', async () => {
+    vi.mocked(getEvent).mockResolvedValue({ ...confirmedEvent, status: 'draft' } as never);
+    expect(backOf(await render())).toEqual({ href: '/app/events/e1/setup?step=details', label: 'פרטי האירוע' });
+  });
+
+  it('the details link really lands on the details form, and not on the confirm form (the destination of the back button)', async () => {
+    vi.mocked(getEvent).mockResolvedValue({ ...confirmedEvent, status: 'draft' } as never);
+    const html = await render({ step: 'details' });
+    expect(html).toContain('data-marker="details-form"');
+    expect(html).not.toContain('data-marker="confirm-form"');
+  });
+
+  it('a confirmed event cannot reopen the details inside the flow (?step=details is ignored): its details are edited on the event page', async () => {
+    const html = await render({ step: 'details' });
+    expect(html).not.toContain('data-marker="details-form"');
+  });
+
+  it('not while the details form is already open: that would be a back to where the owner is', async () => {
+    vi.mocked(getEvent).mockResolvedValue({ ...confirmedEvent, status: 'draft' } as never);
+    expect(backOf(await render({ step: 'details' }))).toEqual({ href: null, label: null });
+  });
+
+  it('on the package-choice step: back to the event page, where a confirmed event is edited', async () => {
+    vi.mocked(listPackageOffers).mockResolvedValue([OFFER as never]);
+    expect(backOf(await render())).toEqual({ href: '/app/events/e1', label: 'פרטי האירוע' });
+  });
+
+  it('once the campaign exists there is no back: the choice, the approval and the payment are not undone from here', async () => {
+    vi.mocked(listPackageOffers).mockResolvedValue([OFFER as never]);
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'pending_approval', capture_status: null, package_price: 150 } as never);
+    expect(backOf(await render())).toEqual({ href: null, label: null });
   });
 });
