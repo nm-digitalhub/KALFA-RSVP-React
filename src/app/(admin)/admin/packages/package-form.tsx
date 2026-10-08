@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useId, useState } from 'react';
+import { PackageCopyField } from './package-copy-field';
 
 import {
   FieldError,
@@ -403,33 +404,21 @@ export function PackageForm({
         <FieldError errors={state?.fieldErrors?.price_with_vat} />
       </div>
 
-      <div className="space-y-1">
-        <label htmlFor="description" className={labelClass}>
-          תיאור
-        </label>
-        <textarea
-          id="description"
-          name="description"
-          rows={3}
-          defaultValue={initial.description}
-          className={inputClass}
-        />
-        <FieldError errors={state?.fieldErrors?.description} />
-      </div>
+      <PackageCopyField
+        field="description"
+        label="תיאור"
+        initialValue={initial.description}
+        rows={3}
+        errors={state?.fieldErrors?.description}
+      />
 
-      <div className="space-y-1">
-        <label htmlFor="includes" className={labelClass}>
-          כלול בחבילה (שורה לכל פריט)
-        </label>
-        <textarea
-          id="includes"
-          name="includes"
-          rows={5}
-          defaultValue={initial.includes.join('\n')}
-          className={inputClass}
-        />
-        <FieldError errors={state?.fieldErrors?.includes} />
-      </div>
+      <PackageCopyField
+        field="includes"
+        label="כלול בחבילה (שורה לכל פריט)"
+        initialValue={initial.includes.join('\n')}
+        rows={5}
+        errors={state?.fieldErrors?.includes}
+      />
 
       <div className="space-y-1">
         <label htmlFor="sort_order" className={labelClass}>

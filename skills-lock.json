@@ -487,6 +487,11 @@
       "skillPath": "skills/handoff-detection/SKILL.md",
       "computedHash": "ea8424a4a50206e5a80ad6ca6bddfe207f8836697047828eb76d43ee5b69a05c"
     },
+    "hebrew-content-writer": {
+      "source": "skills-il/localization",
+      "sourceType": "github",
+      "computedHash": "da7677bda48ea25e2a930dd89601ff5cf083211ca724b4c0d8aea94ecd5a2880"
+    },
     "hebrew-seo-geo-toolkit": {
       "source": "skills-il/marketing-growth",
       "sourceType": "github",
