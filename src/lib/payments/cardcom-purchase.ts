@@ -3,6 +3,7 @@ import 'server-only';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { buildCreateLowProfile } from '@/lib/cardcom/create-request';
 import { lowProfileCreate } from '@/lib/cardcom/generated/low-profile/low-profile';
+import { CardcomError, cardcomFailureFacts } from '@/lib/cardcom/mutator';
 import { getCampaignCreditTotal } from '@/lib/data/billing';
 import type { CampaignPurchaseState } from '@/lib/data/campaigns';
 import { getCardcomServerConfig } from '@/lib/data/cardcom-config';
@@ -203,16 +204,41 @@ export async function startCardcomPurchase(input: CardcomStartInput): Promise<Ca
       });
       void sendSlackAlert({
         level: 'error', category: CATEGORY, source: SOURCE,
-        title: 'CardCom סירבה לפתוח עמוד תשלום לרכישת חבילה',
+        title: 'CardCom סירבה לפתוח סשן תשלום לרכישת חבילה',
         fields: { campaign_id: campaignId, event_id: campaign.event_id, operation_id: operationId },
       });
       return { status: 'error' };
     }
     lowProfileId = answer.LowProfileId;
-  } catch {
-    // The call did not complete: no id reached the buyer, so nothing can be paid on it.
-    console.error('[cardcom-purchase] could not open a CardCom session', { campaignId, operationId });
-    await closeFailed(admin, operationId, 'could not reach CardCom to open a payment session; nothing was charged');
+  } catch (err) {
+    // The call did not complete: no id reached the buyer, so nothing can be paid on it. A 4xx is CardCom REFUSING the
+    // request (wrong credentials, an invalid field) — not "could not reach": that is recorded with the reason it gave, and
+    // staff hear of it, because every purchase will fail the same way until the connection is fixed.
+    const facts = cardcomFailureFacts(err);
+    if (err instanceof CardcomError && err.kind === 'http_error' && !err.outcomeUnknown) {
+      console.error('[cardcom-purchase] CardCom refused the request to open a session', {
+        campaignId, operationId, httpStatus: facts.httpStatus, responseCode: facts.responseCode,
+      });
+      await closeFailed(admin, operationId, `CardCom refused the request to open a payment session (HTTP ${facts.httpStatus}); nothing was charged`, {
+        status: String(facts.responseCode ?? 'none'),
+        // CardCom's own text: for the ledger and an admin, never for the buyer.
+        description: facts.description,
+      });
+      void sendSlackAlert({
+        level: 'error', category: CATEGORY, source: SOURCE,
+        title: 'CardCom סירבה לבקשה לפתוח סשן תשלום לרכישת חבילה',
+        fields: {
+          campaign_id: campaignId, event_id: campaign.event_id, operation_id: operationId,
+          ...(facts.httpStatus !== null ? { http_status: facts.httpStatus } : {}),
+          ...(facts.responseCode !== null ? { response_code: facts.responseCode } : {}),
+          ...(facts.description !== null ? { description: facts.description } : {}),
+        },
+      });
+      return { status: 'error' };
+    }
+    console.error('[cardcom-purchase] could not open a CardCom session', { campaignId, operationId, httpStatus: facts.httpStatus });
+    const http = facts.httpStatus !== null ? ` (HTTP ${facts.httpStatus})` : '';
+    await closeFailed(admin, operationId, `could not reach CardCom to open a payment session${http}; nothing was charged`);
     return { status: 'error' };
   }
 

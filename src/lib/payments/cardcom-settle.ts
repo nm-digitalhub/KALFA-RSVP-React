@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { lowProfileGetLpResult } from '@/lib/cardcom/generated/low-profile/low-profile';
+import { CardcomError, cardcomFailureFacts } from '@/lib/cardcom/mutator';
 import { getCardcomServerConfig } from '@/lib/data/cardcom-config';
 import { checkOsekPaturCeilingAfterCharge } from '@/lib/data/tax-ceiling';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -151,7 +152,14 @@ async function ask(terminalNumber: number, apiName: string, lowProfileId: string
       const parsed = lpResultSchema.safeParse(raw);
       // An answer we cannot read is not retried: asking again returns the same thing.
       return parsed.success ? parsed.data : null;
-    } catch {
+    } catch (err) {
+      // CardCom REFUSED the read (a 4xx: wrong credentials, an unknown session): asking again gets the same answer, so it
+      // is not repeated, and the reason it gave is logged (numbers only). The caller sees "no answer", as before.
+      if (err instanceof CardcomError && !err.outcomeUnknown) {
+        const facts = cardcomFailureFacts(err);
+        console.error('[cardcom-settle] CardCom refused GetLpResult', { httpStatus: facts.httpStatus, responseCode: facts.responseCode });
+        return null;
+      }
       // The call failed (network, timeout, 5xx): this one is a read, so asking again is safe.
     }
   }

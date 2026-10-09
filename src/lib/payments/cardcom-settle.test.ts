@@ -273,6 +273,13 @@ describe('settleCardcomSession: when it cannot tell', () => {
     expect(lowProfileGetLpResult).toHaveBeenCalledTimes(2);
   });
 
+  it('a read CardCom REFUSED (a 4xx) is not repeated — the same request gets the same answer — and the row is left as it was', async () => {
+    vi.mocked(lowProfileGetLpResult).mockRejectedValue(new CardcomError('http_error', 'x', false, 401, { ResponseCode: 7, Description: 'Invalid username' }));
+    await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'error' });
+    expect(lowProfileGetLpResult).toHaveBeenCalledTimes(1);
+    expect(ledger().outcome).toBe('pending');
+  });
+
   it('gives up after the retry and leaves the row exactly as it was', async () => {
     vi.mocked(lowProfileGetLpResult).mockRejectedValue(new CardcomError('unreachable', 'x', true));
     await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'error' });

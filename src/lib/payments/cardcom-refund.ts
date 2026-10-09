@@ -3,7 +3,7 @@ import 'server-only';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { cancelableDocument } from '@/lib/cardcom/document-types';
 import { documentsCancelDoc } from '@/lib/cardcom/generated/documents/documents';
-import { CardcomError } from '@/lib/cardcom/mutator';
+import { CardcomError, cardcomFailureFacts } from '@/lib/cardcom/mutator';
 import { logActivity } from '@/lib/data/activity';
 import { getCardcomApiPassword, getCardcomServerConfig } from '@/lib/data/cardcom-config';
 import { getPaymentsEnabled } from '@/lib/data/payments';
@@ -235,16 +235,29 @@ export async function refundCardcomPayment(input: PackageRefundInput): Promise<P
     );
   } catch (err) {
     // CardCom itself refused the request (a 4xx) and nothing happened: a clear refusal. Everything else — the network, a
-    // timeout, a 5xx, a body we could not read — is "we do not know": the money may already be back.
+    // timeout, a 5xx, a body we could not read — is "we do not know": the money may already be back. Either way what the
+    // failure carries (the HTTP status, CardCom's ResponseCode and Description) is kept: in the row and the alert, and in
+    // the log as numbers only — so a refusal says WHY (9.10.2026: two refusals whose reason was thrown away).
+    const facts = cardcomFailureFacts(err);
+    const http = facts.httpStatus !== null ? ` (HTTP ${facts.httpStatus})` : '';
+    const reason = facts.responseCode !== null || facts.description !== null
+      ? { providerStatus: String(facts.responseCode ?? 'none'), providerStatusDescription: facts.description }
+      : {};
+    const alertFacts = {
+      ...(facts.httpStatus !== null ? { http_status: facts.httpStatus } : {}),
+      ...(facts.responseCode !== null ? { response_code: facts.responseCode } : {}),
+      ...(facts.description !== null ? { description: facts.description } : {}),
+    };
+    const logFacts = { httpStatus: facts.httpStatus, responseCode: facts.responseCode };
     if (err instanceof CardcomError && !err.outcomeUnknown) {
-      console.error('[cardcom-refund] refused', { campaignId, operationId, kind: err.kind });
-      await settle(admin, operationId, campaignId, { from: 'pending', outcome: 'failed', note: DECLINED_NOTE });
-      alert('warn', 'זיכוי ללקוח חבילה ב-CardCom נדחה');
+      console.error('[cardcom-refund] refused', { campaignId, operationId, kind: err.kind, ...logFacts });
+      await settle(admin, operationId, campaignId, { from: 'pending', outcome: 'failed', note: DECLINED_NOTE + http, ...reason });
+      alert('warn', 'זיכוי ללקוח חבילה ב-CardCom נדחה', alertFacts);
       return { status: 'declined' };
     }
-    console.error('[cardcom-refund] ambiguous outcome', { campaignId, operationId });
-    await settle(admin, operationId, campaignId, { from: 'pending', outcome: 'review', note: UNCLEAR_NOTE });
-    alert('error', 'זיכוי ללקוח חבילה ב-CardCom בבדיקה ידנית — התשובה לא חד-משמעית');
+    console.error('[cardcom-refund] ambiguous outcome', { campaignId, operationId, ...logFacts });
+    await settle(admin, operationId, campaignId, { from: 'pending', outcome: 'review', note: UNCLEAR_NOTE + http, ...reason });
+    alert('error', 'זיכוי ללקוח חבילה ב-CardCom בבדיקה ידנית — התשובה לא חד-משמעית', alertFacts);
     return { status: 'review' };
   }
 

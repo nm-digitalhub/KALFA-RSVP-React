@@ -251,6 +251,39 @@ describe('refundCardcomPayment: what CardCom answers', () => {
     expect(refundRows()[0].outcome).toBe('failed');
   });
 
+  // 9.10.2026: two CancelDoc refusals were recorded with no reason. The reason CardCom gives (its ErrorInfo body) is kept in
+  // the row and the staff alert; the log gets the numbers only.
+  it('a 4xx keeps WHY: the HTTP status in the note, CardCom\'s code and text in the row and the alert, numbers only in the log', async () => {
+    vi.mocked(documentsCancelDoc).mockRejectedValue(
+      new CardcomError('http_error', 'x', false, 400, { ResponseCode: 7, Description: 'ApiPassword is not valid' }),
+    );
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'declined' });
+    expect(refundRows()[0]).toMatchObject({
+      outcome: 'failed', provider_status: '7', provider_status_description: 'ApiPassword is not valid',
+      note: expect.stringContaining('(HTTP 400)'),
+    });
+    expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({
+      level: 'warn', fields: expect.objectContaining({ http_status: 400, response_code: 7, description: 'ApiPassword is not valid' }),
+    }));
+    expect(errorLog).toHaveBeenCalledWith('[cardcom-refund] refused', expect.objectContaining({ httpStatus: 400, responseCode: 7 }));
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain('ApiPassword is not valid');
+  });
+
+  it('a 4xx with no reason in it keeps the status and claims no CardCom code', async () => {
+    vi.mocked(documentsCancelDoc).mockRejectedValue(new CardcomError('http_error', 'x', false, 403));
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'declined' });
+    expect(refundRows()[0]).toMatchObject({ outcome: 'failed', note: expect.stringContaining('(HTTP 403)') });
+    expect(refundRows()[0].provider_status ?? null).toBeNull();
+  });
+
+  it('a 5xx goes to REVIEW and keeps what it carried, too', async () => {
+    vi.mocked(documentsCancelDoc).mockRejectedValue(new CardcomError('http_error', 'x', true, 502, { ResponseCode: 99, Description: 'gateway' }));
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'review' });
+    expect(refundRows()[0]).toMatchObject({
+      outcome: 'review', provider_status: '99', provider_status_description: 'gateway', note: expect.stringContaining('(HTTP 502)'),
+    });
+  });
+
   it('a call that may have been processed (timeout, 5xx) goes to REVIEW and is never retried by this code', async () => {
     vi.mocked(documentsCancelDoc).mockRejectedValue(new CardcomError('unreachable', 'x', true));
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'review' });

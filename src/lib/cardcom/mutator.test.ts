@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-import { CardcomError, cardcomFetch } from './mutator';
+import { CardcomError, cardcomFailureFacts, cardcomFetch } from './mutator';
 
 // The mutator is the one place every generated CardCom operation goes through. It enforces the timeout and turns every
 // way a call can go wrong into a typed CardcomError that says whether money MAY have moved. fetch is stubbed: nothing
@@ -100,6 +100,78 @@ describe('cardcomFetch', () => {
     expect(e.kind).toBe('http_error');
     expect(e.httpStatus).toBe(401);
     expect(e.outcomeUnknown).toBe(false);
+  });
+
+  // CardCom's OpenAPI: every operation answers 400 ("see 'Description' in response") and 401 ("Invalid username") with an
+  // ErrorInfo body. That body is the only place the REASON is, so it is kept — and nothing else of the answer.
+  describe('the reason CardCom gives for a failed call', () => {
+    it.each([400, 401, 403, 404, 429])('a %i with an ErrorInfo body keeps its ResponseCode and Description; still a refusal', async (status) => {
+      stubFetch(async () => json({ ResponseCode: 7, Description: 'ApiPassword is not valid', Extra: 'not kept' }, { status }));
+      const e = await failure(cardcomFetch(URL_OK, { method: 'POST', body: body() }));
+      expect(e).toMatchObject({ kind: 'http_error', httpStatus: status, outcomeUnknown: false });
+      expect(e.answer).toEqual({ ResponseCode: 7, Description: 'ApiPassword is not valid' });
+    });
+
+    it('a 5xx with an ErrorInfo body keeps it too, and stays "outcome unknown"', async () => {
+      stubFetch(async () => json({ ResponseCode: 99, Description: 'internal' }, { status: 500 }));
+      const e = await failure(cardcomFetch(URL_OK, { method: 'POST', body: body() }));
+      expect(e).toMatchObject({ httpStatus: 500, outcomeUnknown: true, answer: { ResponseCode: 99, Description: 'internal' } });
+    });
+
+    it('a JSON body with neither field (another format) keeps nothing but the status', async () => {
+      stubFetch(async () => json({ Message: 'Invalid username' }, { status: 401 }));
+      const e = await failure(cardcomFetch(URL_OK, { method: 'POST', body: body() }));
+      expect(e.httpStatus).toBe(401);
+      expect(e.answer).toBeUndefined();
+    });
+
+    it('only one of the two fields is kept as it is, the other as missing', async () => {
+      stubFetch(async () => json({ Description: 'Invalid request' }, { status: 400 }));
+      expect((await failure(cardcomFetch(URL_OK, { method: 'POST', body: body() }))).answer).toEqual({ ResponseCode: undefined, Description: 'Invalid request' });
+      stubFetch(async () => json({ ResponseCode: 12 }, { status: 400 }));
+      expect((await failure(cardcomFetch(URL_OK, { method: 'POST', body: body() }))).answer).toEqual({ ResponseCode: 12, Description: null });
+    });
+
+    it('a body that is not JSON (an HTML page, an empty answer) is not read: the status only', async () => {
+      stubFetch(async () => new Response('<html>blocked</html>', { status: 403, headers: { 'content-type': 'text/html' } }));
+      const e = await failure(cardcomFetch(URL_OK, { method: 'POST', body: body() }));
+      expect(e).toMatchObject({ kind: 'http_error', httpStatus: 403, outcomeUnknown: false });
+      expect(e.answer).toBeUndefined();
+      stubFetch(async () => new Response(null, { status: 401 }));
+      expect((await failure(cardcomFetch(URL_OK, { method: 'POST', body: body() }))).answer).toBeUndefined();
+    });
+
+    it('a JSON body that cannot be parsed changes nothing about the error', async () => {
+      stubFetch(async () => new Response('{"ResponseCode": 7,', { status: 400, headers: { 'content-type': 'application/json' } }));
+      const e = await failure(cardcomFetch(URL_OK, { method: 'POST', body: body() }));
+      expect(e).toMatchObject({ kind: 'http_error', httpStatus: 400, outcomeUnknown: false });
+      expect(e.answer).toBeUndefined();
+    });
+
+    it('a ResponseCode that is not a whole number is not kept', async () => {
+      stubFetch(async () => json({ ResponseCode: '7', Description: 'x' }, { status: 400 }));
+      expect((await failure(cardcomFetch(URL_OK, { method: 'POST', body: body() }))).answer).toEqual({ ResponseCode: undefined, Description: 'x' });
+    });
+
+    it('the API password never travels onward, even if CardCom echoes it', async () => {
+      stubFetch(async () => json({ ResponseCode: 7, Description: `password ${SECRET} rejected` }, { status: 401 }));
+      const e = await failure(cardcomFetch(URL_OK, { method: 'POST', body: body() }));
+      expect(e.answer?.Description).toBe('password [hidden] rejected');
+      expect(leaks(e)).toBe(false);
+    });
+
+    it('the Description is cut to the 250 characters the OpenAPI allows it', async () => {
+      stubFetch(async () => json({ ResponseCode: 7, Description: 'א'.repeat(400) }, { status: 400 }));
+      expect((await failure(cardcomFetch(URL_OK, { method: 'POST', body: body() }))).answer?.Description).toHaveLength(250);
+    });
+
+    it('cardcomFailureFacts reads them, and gives nulls for anything that is not a CardcomError', async () => {
+      expect(cardcomFailureFacts(new CardcomError('http_error', 'x', false, 401, { ResponseCode: 7, Description: 'bad' }))).toEqual({
+        httpStatus: 401, responseCode: 7, description: 'bad',
+      });
+      expect(cardcomFailureFacts(new CardcomError('unreachable', 'x', true))).toEqual({ httpStatus: null, responseCode: null, description: null });
+      expect(cardcomFailureFacts(new Error('x'))).toEqual({ httpStatus: null, responseCode: null, description: null });
+    });
   });
 
   it('a 5xx may have been processed: outcome unknown', async () => {

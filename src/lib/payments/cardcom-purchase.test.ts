@@ -247,7 +247,22 @@ describe('startCardcomPurchase: opening the session', () => {
   it('a call that failed to reach CardCom closes the row as failed too: with no id handed out, nothing can be paid', async () => {
     vi.mocked(lowProfileCreate).mockRejectedValue(new CardcomError('unreachable', 'x', true));
     await expect(startCardcomPurchase(input())).resolves.toEqual({ status: 'error' });
-    expect(ops()).toMatchObject([{ outcome: 'failed' }]);
+    expect(ops()).toMatchObject([{ outcome: 'failed', note: expect.stringContaining('could not reach CardCom') }]);
+  });
+
+  // A 4xx is CardCom answering "no" — not "could not reach". Until the connection is fixed every purchase fails the same
+  // way, so the reason is kept and staff hear of it.
+  it('a request CardCom refused (a 4xx) is recorded as refused, with its reason, and staff are alerted', async () => {
+    vi.mocked(lowProfileCreate).mockRejectedValue(new CardcomError('http_error', 'x', false, 401, { ResponseCode: 7, Description: 'Invalid username' }));
+    await expect(startCardcomPurchase(input())).resolves.toEqual({ status: 'error' });
+    expect(ops()).toMatchObject([{
+      outcome: 'failed', note: expect.stringContaining('CardCom refused the request to open a payment session (HTTP 401)'),
+      provider_status: '7', provider_status_description: 'Invalid username',
+    }]);
+    expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({
+      level: 'error', fields: expect.objectContaining({ http_status: 401, response_code: 7, description: 'Invalid username' }),
+    }));
+    expect(fake.rows('cardcom_payment_sessions')).toHaveLength(0);
   });
 
   it('an answer with no LowProfileId is an error, and the row is closed as failed', async () => {
