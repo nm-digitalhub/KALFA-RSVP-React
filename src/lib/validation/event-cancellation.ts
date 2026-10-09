@@ -22,17 +22,17 @@ export const resolveCancellationRequestSchema = z
   })
   .refine(
     (v) => (v.resolution === 'partial_charge' ? v.resolutionAmount !== undefined || v.resolutionPercent !== undefined : true),
-    { message: 'יש להזין סכום או אחוז עבור חיוב חלקי', path: ['resolutionAmount'] },
+    { message: 'יש להזין סכום או אחוז עבור ביטול עם דמי ביטול', path: ['resolutionAmount'] },
   )
   .refine((v) => !(v.resolutionAmount !== undefined && v.resolutionPercent !== undefined), {
     message: 'יש להזין סכום או אחוז, לא את שניהם',
     path: ['resolutionPercent'],
   })
   .refine((v) => (v.resolution !== 'partial_charge' ? v.resolutionAmount === undefined : true), {
-    message: 'סכום רלוונטי רק לחיוב חלקי',
+    message: 'סכום רלוונטי רק לביטול עם דמי ביטול',
     path: ['resolutionAmount'],
   })
   .refine((v) => (v.resolution !== 'partial_charge' ? v.resolutionPercent === undefined : true), {
-    message: 'אחוז רלוונטי רק לחיוב חלקי',
+    message: 'אחוז רלוונטי רק לביטול עם דמי ביטול',
     path: ['resolutionPercent'],
   });

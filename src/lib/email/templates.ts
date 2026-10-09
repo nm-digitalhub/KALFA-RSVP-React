@@ -222,7 +222,7 @@ const CANCELLATION_RESOLUTION_COPY: Record<
       : 'בקשתך לביטול האירוע אושרה — הביטול בוצע במלואו, ללא חיוב.',
   }),
   partial_charge: (amount, refunded) => ({
-    subjectSuffix: 'בקשתך אושרה עם חיוב חלקי',
+    subjectSuffix: refunded ? 'בקשתך אושרה בניכוי דמי ביטול' : 'בקשתך אושרה עם חיוב חלקי',
     opening: refunded
       ? `בקשתך לביטול האירוע אושרה. דמי ביטול של ₪${amount} נשארו לתשלום, ו-₪${refunded} הוחזרו לכרטיס האשראי שלך.`
       : `בקשתך לביטול האירוע אושרה, עם חיוב חלקי של ₪${amount} עבור שירות שכבר סופק.`,

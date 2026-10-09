@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,12 +11,11 @@ import { ResolveForm } from './resolve-form';
 // The admin's resolution of a cancellation request. When the fee is kept ("חיוב חלקי") the admin may type an AMOUNT or
 // choose a PERCENTAGE of a base the server decides (what was charged, or the campaign's ceiling). The percentage mode
 // shows the resulting amount live — computed with the very function the server uses — and submits ONLY the
-// percentage, never a computed amount.
+// percentage, never a computed amount. Nothing is sent without a confirmation dialog that says what will happen.
 
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
 
 function setup(over: Partial<React.ComponentProps<typeof ResolveForm>> = {}) {
@@ -40,11 +39,24 @@ const submittedFields = (): FormData => {
 };
 
 async function choosePartial(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('radio', { name: 'חיוב חלקי' }));
+  await user.click(screen.getByRole('radio', { name: 'ביטול עם דמי ביטול' }));
+}
+
+// The main button opens the confirmation dialog; its text is what the admin reads before anything is done.
+async function openConfirm(user: ReturnType<typeof userEvent.setup>): Promise<string> {
+  await user.click(screen.getByRole('button', { name: 'אישור הטיפול בבקשה' }));
+  const dialog = await screen.findByRole('alertdialog');
+  return dialog.querySelector('[data-slot="alert-dialog-description"]')?.textContent ?? '';
+}
+
+async function submitAndConfirm(user: ReturnType<typeof userEvent.setup>) {
+  await openConfirm(user);
+  await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'אישור' }));
+  await waitFor(() => expect(resolveCancellationRequestAction).toHaveBeenCalled());
 }
 
 describe('ResolveForm — fee as a percentage', () => {
-  it('offers the percentage mode only after "חיוב חלקי", and only when the server found a base', async () => {
+  it('offers the percentage mode only after "ביטול עם דמי ביטול", and only when the server found a base', async () => {
     const user = setup();
     expect(screen.queryByRole('radio', { name: /אחוז מתוך/ })).toBeNull();
     await choosePartial(user);
@@ -102,7 +114,7 @@ describe('ResolveForm — fee as a percentage', () => {
     await user.click(screen.getByRole('radio', { name: /אחוז מתוך/ }));
     await user.type(document.getElementById('resolutionPercent') as HTMLInputElement, '5');
     await user.type(screen.getByLabelText('הודעה ללקוח'), 'דמי ביטול של חמישה אחוזים');
-    await user.click(screen.getByRole('button', { name: 'אישור הטיפול בבקשה' }));
+    await submitAndConfirm(user);
 
     const fd = submittedFields();
     expect(fd.get('resolution')).toBe('partial_charge');
@@ -114,7 +126,7 @@ describe('ResolveForm — fee as a percentage', () => {
     const user = setup({ suggestedAmount: 20 });
     await choosePartial(user);
     await user.type(screen.getByLabelText('הודעה ללקוח'), 'דמי ביטול בסכום קבוע');
-    await user.click(screen.getByRole('button', { name: 'אישור הטיפול בבקשה' }));
+    await submitAndConfirm(user);
 
     const fd = submittedFields();
     expect(fd.get('resolutionAmount')).toBe('20.00');
@@ -137,22 +149,32 @@ describe('ResolveForm — fee as a percentage', () => {
     await user.click(screen.getByRole('radio', { name: /אחוז מתוך/ }));
     await user.type(document.getElementById('resolutionPercent') as HTMLInputElement, '5');
     await user.type(screen.getByLabelText('הודעה ללקוח'), 'דמי ביטול של חמישה אחוזים');
-    await user.click(screen.getByRole('button', { name: 'אישור הטיפול בבקשה' }));
 
-    expect(window.confirm).toHaveBeenCalledTimes(1);
-    const text = String(vi.mocked(window.confirm).mock.calls[0][0]);
+    const text = await openConfirm(user);
+    expect(resolveCancellationRequestAction).not.toHaveBeenCalled();
     expect(text).toContain('15.00');
     expect(text).toContain('5%');
   });
 
   it('a refused confirmation sends nothing', async () => {
-    vi.mocked(window.confirm).mockReturnValue(false);
     const user = setup();
     await choosePartial(user);
     await user.click(screen.getByRole('radio', { name: /אחוז מתוך/ }));
     fireEvent.change(document.getElementById('resolutionPercent') as HTMLInputElement, { target: { value: '5' } });
     await user.type(screen.getByLabelText('הודעה ללקוח'), 'דמי ביטול של חמישה אחוזים');
-    await user.click(screen.getByRole('button', { name: 'אישור הטיפול בבקשה' }));
+    await openConfirm(user);
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'חזרה לטופס' }));
+    expect(resolveCancellationRequestAction).not.toHaveBeenCalled();
+  });
+
+  // The dialog replaced the browser's confirm, so the form has no plain submit button any more — but Enter in a number
+  // field still submits a form. It must open the confirmation, never reach the server directly.
+  it('Enter in the amount field opens the confirmation instead of sending', async () => {
+    const user = setup({ suggestedAmount: 20 });
+    await choosePartial(user);
+    await user.type(screen.getByLabelText('הודעה ללקוח'), 'דמי ביטול בסכום קבוע');
+    await user.type(document.getElementById('resolutionAmount') as HTMLInputElement, '{Enter}');
+    expect(await screen.findByRole('alertdialog')).toBeTruthy();
     expect(resolveCancellationRequestAction).not.toHaveBeenCalled();
   });
 
@@ -193,23 +215,20 @@ describe('ResolveForm — confirmation text for a package', () => {
   async function approve(user: ReturnType<typeof userEvent.setup>, resolution: 'full' | 'partial') {
     if (resolution === 'partial') await choosePartial(user);
     await user.type(screen.getByLabelText('הודעה ללקוח'), 'הודעה ללקוח על הביטול');
-    await user.click(screen.getByRole('button', { name: 'אישור הטיפול בבקשה' }));
-    return String(vi.mocked(window.confirm).mock.calls[0][0]);
+    return openConfirm(user);
   }
 
   it('a refund by itself: says so for a full cancellation and for a partial one', async () => {
     const full = await approve(setup({ moneyOutcome: 'credit' }), 'full');
     expect(full).toContain('זיכוי אוטומטי מלא');
     cleanup();
-    vi.mocked(window.confirm).mockClear();
     const partial = await approve(setup({ moneyOutcome: 'credit' }), 'partial');
     expect(partial).toContain('זיכוי אוטומטי של ההפרש');
   });
 
   it('cannot be refunded: says the approval will fail, promises no refund and does not send the admin to refund by hand', async () => {
     for (const resolution of ['full', 'partial'] as const) {
-      vi.mocked(window.confirm).mockClear();
-      const text = await approve(setup({ moneyOutcome: 'blocked' }), resolution);
+        const text = await approve(setup({ moneyOutcome: 'blocked' }), resolution);
       expect(text).toContain('אוטומטית');
       expect(text).toContain('ייכשל');
       expect(text).not.toContain('יבוצע זיכוי');
@@ -224,7 +243,6 @@ describe('ResolveForm — confirmation text for a package', () => {
     expect(full).toContain('לא תהיה תנועה כספית');
     expect(full).not.toContain('יבוצע זיכוי');
     cleanup();
-    vi.mocked(window.confirm).mockClear();
     const partial = await approve(setup({ moneyOutcome: 'none' }), 'partial');
     expect(partial).toContain('לא שולם דבר');
     expect(partial).toContain('ייכשל');
@@ -232,8 +250,7 @@ describe('ResolveForm — confirmation text for a package', () => {
 
   it('a resolve being resumed: says nothing is refunded again and that the customer is told what really went back', async () => {
     for (const resolution of ['full', 'partial'] as const) {
-      vi.mocked(window.confirm).mockClear();
-      const text = await approve(setup({ moneyOutcome: 'resume' }), resolution);
+        const text = await approve(setup({ moneyOutcome: 'resume' }), resolution);
       expect(text).toContain('כבר הוחזר');
       expect(text).toContain('בלי להחזיר שוב');
       expect(text).toContain('בפועל');
@@ -248,8 +265,7 @@ describe('ResolveForm — confirmation text for a package', () => {
     await user.click(screen.getByRole('radio', { name: /אחוז מתוך/ }));
     fireEvent.change(document.getElementById('resolutionPercent') as HTMLInputElement, { target: { value: '5' } });
     await user.type(screen.getByLabelText('הודעה ללקוח'), 'הודעה ללקוח על הביטול');
-    await user.click(screen.getByRole('button', { name: 'אישור הטיפול בבקשה' }));
-    const text = String(vi.mocked(window.confirm).mock.calls[0][0]);
+    const text = await openConfirm(user);
     expect(text).toContain('בלי להחזיר שוב');
     expect(text).not.toContain('דמי הביטול:');
     expect(text).not.toContain('5%');
@@ -277,7 +293,85 @@ describe('ResolveForm — confirmation text for a package', () => {
     const user = setup({ moneyOutcome: 'blocked' });
     await user.click(screen.getByRole('radio', { name: 'דחיית הבקשה' }));
     await user.type(screen.getByLabelText('הודעה ללקוח'), 'הבקשה נדחתה מהסיבה הזו');
-    await user.click(screen.getByRole('button', { name: 'אישור הטיפול בבקשה' }));
-    expect(String(vi.mocked(window.confirm).mock.calls[0][0])).toBe('לדחות את בקשת הביטול?');
+    expect(await openConfirm(user)).toBe('לדחות את בקשת הביטול?');
+  });
+
+  it('no clearing company is named in any confirmation', async () => {
+    for (const moneyOutcome of ['capture', 'credit', 'manual', 'none', 'blocked', 'resume', 'no_campaign'] as const) {
+      for (const resolution of ['full', 'partial'] as const) {
+        expect(await approve(setup({ moneyOutcome }), resolution)).not.toMatch(/SUMIT|CardCom/i);
+        cleanup();
+      }
+    }
+  });
+});
+
+// Every choice can be taken: a partial refund goes back through either clearing company (CardCom's refund is a token
+// transaction with any amount since 9.10.2026), and each choice says what it does.
+describe('ResolveForm — the three choices', () => {
+  it('each choice can be chosen and is described', async () => {
+    const user = setup({ moneyOutcome: 'credit' });
+    for (const name of ['ביטול מלא', 'ביטול עם דמי ביטול', 'דחיית הבקשה']) {
+      const radio = screen.getByRole('radio', { name });
+      expect(radio.getAttribute('aria-disabled')).not.toBe('true');
+      expect(document.getElementById(radio.getAttribute('aria-describedby') ?? '')?.textContent?.length).toBeGreaterThan(5);
+    }
+    await user.click(screen.getByRole('radio', { name: 'ביטול עם דמי ביטול' }));
+    expect(document.getElementById('resolutionAmount')).toBeTruthy();
+  });
+});
+
+// After a failed resolve the screen says whether approving again is safe: "do NOT approve again" (the money may be back)
+// must never look like an ordinary "try again".
+describe('ResolveForm — what a failure says about trying again', () => {
+  async function failWith(result: { error: string; retry?: 'allowed' | 'forbidden' | 'wait' }) {
+    vi.mocked(resolveCancellationRequestAction).mockResolvedValue(result as never);
+    const user = setup();
+    await user.type(screen.getByLabelText('הודעה ללקוח'), 'בוטל');
+    await submitAndConfirm(user);
+    return screen.findByRole('alert');
+  }
+
+  it.each([
+    ['allowed', 'לא בוצע — אפשר לנסות שוב'],
+    ['forbidden', 'אל תאשרו שוב'],
+    ['wait', 'ממתין לסיום ניסיון קודם'],
+  ] as const)('%s → "%s", with the message', async (retry, title) => {
+    const alert = await failWith({ error: 'הודעת השרת', retry });
+    expect(alert.textContent).toContain(title);
+    expect(alert.textContent).toContain('הודעת השרת');
+  });
+
+  it('a failure with no advice (validation, anything else) is the plain message', async () => {
+    const alert = await failWith({ error: 'הודעת השרת' });
+    expect(alert.textContent).toBe('הודעת השרת');
+  });
+});
+
+// While the server works on a resolve, a second click must not send a second one (it would e-mail the customer twice and
+// race the refund). useActionState's `pending` locks the button and the dialog's confirm, and the button says so.
+describe('ResolveForm — while the server works', () => {
+  it('locks the button and shows that it is working, then shows the result above the form', async () => {
+    let finish: (value: { error: string }) => void = () => {};
+    vi.mocked(resolveCancellationRequestAction).mockImplementation(
+      () => new Promise((resolve) => { finish = resolve as typeof finish; }),
+    );
+    const user = setup();
+    await user.type(screen.getByLabelText('הודעה ללקוח'), 'בוטל');
+    await openConfirm(user);
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'אישור' }));
+
+    const working = await screen.findByRole('button', { name: /מבצע את הטיפול/ });
+    expect((working as HTMLButtonElement).disabled).toBe(true);
+    await user.click(working);
+    expect(resolveCancellationRequestAction).toHaveBeenCalledTimes(1);
+
+    await act(async () => finish({ error: 'הזיכוי נדחה על ידי חברת הסליקה — לא הוחזר כסף.' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('הזיכוי נדחה');
+    // Above the form's fields, where it is seen — not under the button.
+    const form = alert.closest('form') as HTMLFormElement;
+    expect(form.firstElementChild).toBe(alert);
+    expect((screen.getByRole('button', { name: 'אישור הטיפול בבקשה' }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

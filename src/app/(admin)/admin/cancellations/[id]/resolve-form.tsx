@@ -1,35 +1,49 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useRef, useState } from 'react';
+import { CircleAlert, Hourglass, LoaderCircle, TriangleAlert } from 'lucide-react';
 
-import { FieldError, FormError, FormNotice } from '@/components/forms';
+import { FieldError, FormNotice } from '@/components/forms';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { feeFromPercent } from '@/lib/data/cancellation-fee';
-import type { FormState } from '@/lib/validation/result';
+import type { ResolveFormState, RetryAdvice } from '@/lib/data/package-cancellation';
+import { cn } from '@/lib/utils';
 import { formatCurrency } from '../../_components';
 import { resolveCancellationRequestAction } from '../actions';
 
 type Resolution = 'full_cancellation' | 'partial_charge' | 'declined';
 type FeeMode = 'amount' | 'percent';
 // What the server will do with the money when the request is approved — the page decides it from the same facts
-// resolveCancellationRequest uses: 'capture' (pre-charge, real SUMIT charge), 'credit' (money was paid and there is a card
-// to send it back to, real SUMIT credit), 'manual' (post-charge, no card on file — nothing automatic). A fixed-price
-// package adds three: 'none' (nothing was paid, so no money moves), 'blocked' (something was paid but it cannot be
-// refunded by itself, so the server refuses any approval that has money to return) and 'resume' (an earlier resolve of
-// this request already sent money back and stopped at a later step: an approval finishes it without refunding again).
-// 'no_campaign' is the event with no live campaign at all (it never had one, or every campaign was cancelled): no money moves.
+// resolveCancellationRequest uses: 'capture' (pre-charge, a real charge), 'credit' (money was paid and it can go back to
+// the card by itself), 'manual' (post-charge, no card on file — nothing automatic). A fixed-price package adds three:
+// 'none' (nothing was paid, so no money moves), 'blocked' (something was paid but it cannot be refunded by itself, so the
+// server refuses any approval that has money to return) and 'resume' (an earlier resolve of this request already sent
+// money back and stopped at a later step: an approval finishes it without refunding again). 'no_campaign' is the event
+// with no live campaign at all (it never had one, or every campaign was cancelled): no money moves.
 export type MoneyOutcome = 'capture' | 'credit' | 'manual' | 'none' | 'blocked' | 'resume' | 'no_campaign';
 
 const BLOCKED_TEXT =
-  'לא ניתן להחזיר כסף אוטומטית בקמפיין הזה (אין כרטיס שמור, או שנתוני התשלום לא נקראו). אם יש סכום להחזרה — האישור ייכשל בהודעה ושום דבר לא ישתנה. להמשיך?';
+  'לא ניתן להחזיר כסף אוטומטית בקמפיין הזה (אין כרטיס שמור, אין מסמך זיכוי אוטומטי לסוג המסמך, או שנתוני התשלום לא נקראו). אם יש סכום להחזרה — האישור ייכשל בהודעה ושום דבר לא ישתנה. להמשיך?';
 
 const RESUME_TEXT =
   'כבר הוחזר כסף בבקשה הזו (טיפול קודם שנקטע) — האישור ישלים את הטיפול בלי להחזיר שוב, והלקוח יקבל הודעה לפי מה שהוחזר בפועל, לא לפי מה שהוזן כאן. להמשיך?';
 
 const FULL_CANCELLATION_TEXT: Record<MoneyOutcome, string> = {
   capture: 'לאשר ביטול מלא? לא יבוצע חיוב על הכרטיס.',
-  credit: 'לאשר ביטול מלא? יבוצע זיכוי אוטומטי מלא לכרטיס.',
-  manual: 'לאשר ביטול מלא? אין פרטי כרטיס שמורים — לא יבוצע זיכוי אוטומטי, יש להחזיר ידנית ב-SUMIT.',
+  credit: 'לאשר ביטול מלא? יבוצע זיכוי אוטומטי מלא לכרטיס, והלקוח יקבל מייל אחרי שהזיכוי אושר.',
+  manual: 'לאשר ביטול מלא? אין פרטי כרטיס שמורים — לא יבוצע זיכוי אוטומטי, יש להחזיר ידנית במסוף הסליקה.',
   none: 'לאשר ביטול מלא? לא שולם דבר בחבילה (או שהכול כבר הוחזר) — לא תהיה תנועה כספית. הקמפיין והאירוע ייסגרו.',
   blocked: BLOCKED_TEXT,
   resume: RESUME_TEXT,
@@ -37,13 +51,13 @@ const FULL_CANCELLATION_TEXT: Record<MoneyOutcome, string> = {
 };
 
 const PARTIAL_CHARGE_TEXT: Record<MoneyOutcome, string> = {
-  capture: 'לאשר חיוב חלקי? יבוצע חיוב אמיתי בסכום שהוזן.',
-  credit: 'לאשר חיוב חלקי? יבוצע זיכוי אוטומטי של ההפרש לכרטיס.',
-  manual: 'לאשר חיוב חלקי? אין פרטי כרטיס שמורים — לא יבוצע זיכוי אוטומטי, יש להחזיר ידנית ב-SUMIT.',
-  none: 'לאשר חיוב חלקי? לא שולם דבר בחבילה, ולכן אין סכום להשאיר אצלנו — האישור ייכשל בהודעה ושום דבר לא ישתנה.',
+  capture: 'לאשר ביטול עם דמי ביטול? יבוצע חיוב אמיתי בסכום שהוזן.',
+  credit: 'לאשר ביטול עם דמי ביטול? יבוצע זיכוי אוטומטי של ההפרש לכרטיס, והלקוח יקבל מייל אחרי שהזיכוי אושר.',
+  manual: 'לאשר ביטול עם דמי ביטול? אין פרטי כרטיס שמורים — לא יבוצע זיכוי אוטומטי, יש להחזיר ידנית במסוף הסליקה.',
+  none: 'לאשר ביטול עם דמי ביטול? לא שולם דבר בחבילה, ולכן אין סכום להשאיר אצלנו — האישור ייכשל בהודעה ושום דבר לא ישתנה.',
   blocked: BLOCKED_TEXT,
   resume: RESUME_TEXT,
-  no_campaign: 'לאשר חיוב חלקי? לאירוע אין קמפיין פעיל — לא יחויב דבר, אבל הלקוח יקבל הודעה על חיוב בסכום שהוזן. כדי לסגור בלי חיוב בחרו ביטול מלא.',
+  no_campaign: 'לאשר ביטול עם דמי ביטול? לאירוע אין קמפיין פעיל — לא יחויב דבר, אבל הלקוח יקבל הודעה על חיוב בסכום שהוזן. כדי לסגור בלי חיוב בחרו ביטול מלא.',
 };
 
 const CONFIRM_TEXT: Record<Resolution, (outcome: MoneyOutcome) => string> = {
@@ -52,6 +66,37 @@ const CONFIRM_TEXT: Record<Resolution, (outcome: MoneyOutcome) => string> = {
   declined: () => 'לדחות את בקשת הביטול?',
 };
 
+// What each choice does, said next to it (linked with aria-describedby, so the radio's own name stays the choice).
+const CHOICES: ReadonlyArray<{ value: Resolution; label: string; hint: string }> = [
+  { value: 'full_cancellation', label: 'ביטול מלא', hint: 'הבקשה מאושרת במלואה, והקמפיין והאירוע נסגרים.' },
+  { value: 'partial_charge', label: 'ביטול עם דמי ביטול', hint: 'נגבים דמי ביטול בלבד; מה ששולם מעבר להם חוזר ללקוח.' },
+  { value: 'declined', label: 'דחיית הבקשה', hint: 'שום דבר לא משתנה. הלקוח מקבל את ההודעה שלכם.' },
+];
+
+// A failed resolve, shown above the form in the tone of what may be done next (RetryAdvice): approve again once the
+// cause is fixed; do NOT approve again (the money may already be back); or wait for the attempt that is still running.
+// Without advice (a validation or other failure) it is the plain error.
+const RETRY_LOOK: Record<RetryAdvice, { title: string; className: string; Icon: typeof CircleAlert }> = {
+  allowed: { title: 'לא בוצע — אפשר לנסות שוב', className: 'border-destructive/40 bg-destructive/10 text-destructive', Icon: CircleAlert },
+  forbidden: { title: 'אל תאשרו שוב', className: 'border-warning/40 bg-warning/10 text-warning', Icon: TriangleAlert },
+  wait: { title: 'ממתין לסיום ניסיון קודם', className: 'border-border bg-muted text-foreground', Icon: Hourglass },
+};
+function ResolveError({ message, retry }: { message: string; retry?: RetryAdvice }) {
+  const look = RETRY_LOOK[retry ?? 'allowed'];
+  return (
+    <Alert className={cn('px-4 py-3', look.className)}>
+      <look.Icon aria-hidden />
+      {retry ? <AlertTitle className="font-semibold">{look.title}</AlertTitle> : null}
+      <AlertDescription className="text-current">{message}</AlertDescription>
+    </Alert>
+  );
+}
+
+// The confirmation is a dialog, not window.confirm. It is portaled outside the form, so its confirm button submits the
+// form explicitly (requestSubmit). Every other way the form can be submitted — Enter in the amount or percent field —
+// goes through onSubmit, which opens the dialog instead: nothing reaches the server without the confirmation. While the
+// server works (useActionState's `pending`) the button and the dialog's confirm are locked, so a second click cannot send
+// a second resolve. The result is shown above the form.
 export function ResolveForm({
   requestId,
   suggestedAmount,
@@ -68,10 +113,13 @@ export function ResolveForm({
   feeBaseLabel: string;
 }) {
   const action = resolveCancellationRequestAction.bind(null, requestId);
-  const [state, formAction] = useActionState<FormState, FormData>(action, null);
+  const [state, formAction, pending] = useActionState<ResolveFormState, FormData>(action, null);
   const [resolution, setResolution] = useState<Resolution>('full_cancellation');
   const [feeMode, setFeeMode] = useState<FeeMode>('amount');
   const [percentText, setPercentText] = useState('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const confirmedRef = useRef(false);
 
   const percentMode = feeMode === 'percent' && feeBase > 0;
   const percent = Number(percentText);
@@ -91,41 +139,64 @@ export function ResolveForm({
 
   return (
     <form
+      ref={formRef}
       action={formAction}
-      className="space-y-4 rounded-lg border border-border bg-card p-4"
+      aria-labelledby="resolve-heading"
+      className="space-y-6 rounded-xl border border-border bg-card p-5 sm:p-6"
       onSubmit={(e) => {
-        if (!window.confirm(confirmText())) {
-          e.preventDefault();
+        if (confirmedRef.current) {
+          confirmedRef.current = false;
+          return;
         }
+        e.preventDefault();
+        if (!pending) setConfirmOpen(true);
       }}
     >
-      <RadioGroup
-        name="resolution"
-        value={resolution}
-        onValueChange={(v) => setResolution(v as Resolution)}
-        className="space-y-2"
-      >
-        <label className="flex items-center gap-2 text-sm">
-          <RadioGroupItem value="full_cancellation" />
-          ביטול מלא
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <RadioGroupItem value="partial_charge" />
-          חיוב חלקי
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <RadioGroupItem value="declined" />
-          דחיית הבקשה
-        </label>
-      </RadioGroup>
+      {state?.error ? <ResolveError message={state.error} retry={state.retry} /> : null}
+      <FormNotice message={state?.notice} />
+
+      <h2 id="resolve-heading" className="text-lg font-semibold">
+        ההחלטה
+      </h2>
+
+      <fieldset className="space-y-2.5">
+        <legend className="mb-2.5 text-sm text-muted-foreground">מה עושים עם הבקשה?</legend>
+        <RadioGroup
+          name="resolution"
+          value={resolution}
+          onValueChange={(v) => setResolution(v as Resolution)}
+          className="gap-2.5"
+        >
+          {CHOICES.map((c) => {
+            const hintId = `resolution-hint-${c.value}`;
+            return (
+              <div
+                key={c.value}
+                className={cn(
+                  'rounded-lg border px-4 py-3 transition-colors',
+                  resolution === c.value ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border',
+                )}
+              >
+                <label className="flex cursor-pointer items-center gap-3 text-sm font-semibold">
+                  <RadioGroupItem value={c.value} aria-describedby={hintId} />
+                  {c.label}
+                </label>
+                <p id={hintId} className="ms-7 mt-1 text-sm text-muted-foreground">
+                  {c.hint}
+                </p>
+              </div>
+            );
+          })}
+        </RadioGroup>
+      </fieldset>
 
       {resolution === 'partial_charge' ? (
-        <div className="space-y-3">
+        <div className="space-y-3 rounded-lg bg-muted p-4">
           {feeBase > 0 ? (
             <RadioGroup
               value={feeMode}
               onValueChange={(v) => setFeeMode(v as FeeMode)}
-              className="space-y-2"
+              className="gap-2"
               aria-label="אופן קביעת הסכום"
             >
               <label className="flex items-center gap-2 text-sm">
@@ -155,7 +226,7 @@ export function ResolveForm({
                 required
                 value={percentText}
                 onChange={(e) => setPercentText(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-11 w-full max-w-56 rounded-md border border-input bg-background px-3 text-base"
               />
               {percentFee != null ? (
                 <p role="status" className="mt-1 text-sm text-muted-foreground">
@@ -175,10 +246,11 @@ export function ResolveForm({
                 id="resolutionAmount"
                 name="resolutionAmount"
                 type="number"
+                inputMode="decimal"
                 step="0.01"
                 min="0.01"
                 defaultValue={suggestedAmount.toFixed(2)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-11 w-full max-w-56 rounded-md border border-input bg-background px-3 text-base"
               />
               <FieldError errors={state?.fieldErrors?.resolutionAmount} />
             </div>
@@ -194,20 +266,46 @@ export function ResolveForm({
           id="resolutionNote"
           name="resolutionNote"
           rows={3}
-          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          placeholder="תישלח ללקוח במייל יחד עם ההחלטה"
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-base"
         />
         <FieldError errors={state?.fieldErrors?.resolutionNote} />
       </div>
 
-      <button
-        type="submit"
-        className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
-      >
-        אישור הטיפול בבקשה
-      </button>
+      <div className="flex flex-wrap items-center gap-3 border-t border-border pt-5">
+        <Button type="submit" size="lg" disabled={pending} className="w-full sm:w-auto">
+          {pending ? <LoaderCircle aria-hidden className="size-4 animate-spin" /> : null}
+          {pending ? 'מבצע את הטיפול…' : 'אישור הטיפול בבקשה'}
+        </Button>
+        <p className="text-xs text-muted-foreground" aria-live="polite">
+          {pending ? 'הכפתור נעול עד שהטיפול יסתיים.' : 'לפני הביצוע יוצג סיכום לאישור.'}
+        </p>
+      </div>
 
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        {/* Below sm the same dialog sits at the bottom of the screen, full width, as a sheet (thumb reach); from sm up it is
+            the centred dialog. Only classes on the existing component — no second component. */}
+        <AlertDialogContent className="max-sm:top-auto max-sm:bottom-0 max-sm:translate-y-0 max-sm:rounded-b-none max-sm:pb-[max(1rem,env(safe-area-inset-bottom))] max-sm:data-[size=default]:max-w-none">
+          <AlertDialogHeader>
+            <AlertDialogTitle>אישור הטיפול בבקשה</AlertDialogTitle>
+            <AlertDialogDescription className="whitespace-pre-line">{confirmText()}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>חזרה לטופס</AlertDialogCancel>
+            <AlertDialogAction
+              variant={resolution === 'declined' ? 'default' : 'destructive'}
+              disabled={pending}
+              onClick={() => {
+                setConfirmOpen(false);
+                confirmedRef.current = true;
+                formRef.current?.requestSubmit();
+              }}
+            >
+              אישור
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </form>
   );
 }

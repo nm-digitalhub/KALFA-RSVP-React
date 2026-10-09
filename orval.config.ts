@@ -9,7 +9,7 @@ import { defineConfig } from 'orval';
 // The output directories are Orval's: `clean` empties them on every run, so nothing hand-written may live there. The
 // hand-written parts are src/lib/<provider>/mutator.ts (every call goes through it) and src/lib/sumit/orval/transformer.ts.
 // CardCom's client is generated in full, so it holds every operation of CardCom's API, money-moving ones included: the
-// application calls only LowProfile Create / GetLpResult and Documents CancelDoc (src/lib/payments/cardcom-*.ts).
+// application calls only LowProfile Create / GetLpResult and Transactions Transaction (a refund, src/lib/payments/cardcom-*.ts).
 export default defineConfig({
   sumit: {
     input: {

@@ -1,4 +1,4 @@
-import type { ProviderDocument } from './ledger';
+import type { ProviderDocument, StoredOperation } from './ledger';
 
 // The shapes a package refund shares across clearing companies (package-refund.ts for SUMIT, cardcom-refund.ts for CardCom).
 // Their own file so that neither implementation has to import the other; package-refund.ts re-exports them, so existing
@@ -19,9 +19,8 @@ export type PackageRefundRefusal =
   | 'no_payment' // the campaign has no succeeded package payment, or nothing left on it
   | 'exceeds_refundable'
   | 'no_customer' // SUMIT: the payer has no customer number: a credit must never open a second customer
-  | 'no_card' // SUMIT: no saved card / expiry / holder id: the admin refunds by hand
-  | 'no_document' // CardCom: the payment has no document that can be cancelled (number, or a type we can name): refund by hand
-  | 'partial_unsupported' // CardCom: only a FULL refund is built (a partial one waits for plan item U9)
+  | 'no_card' // no saved card (SUMIT: card, expiry, holder id; CardCom: token, expiry, holder name): the admin refunds by hand
+  | 'no_document' // CardCom: the payment's document type has no credit counterpart we can name: refund by hand
   | 'terminal_changed'; // CardCom: the payment was made on a terminal that is not the one the connection uses now, or on one never recorded (an old row)
 
 export type PackageRefundResult =
@@ -41,4 +40,13 @@ export type PackageRefundSummary = {
   refundedForRequest: number;
   hasCard: boolean;
   refundDocument: ProviderDocument | null;
+};
+
+// The two ledger facts a cancellation screen shows next to the money, for either clearing company: the document the
+// package purchase issued (the receipt a CardCom refund cancels), and how this request's latest refund attempt ended —
+// with the provider's own code and text, so a refused refund says WHY (9.10.2026: CardCom 9006, "no permission to refund").
+export type PackageRefundAttempt = Pick<StoredOperation, 'outcome' | 'providerStatus' | 'providerStatusDescription' | 'recordedAt'>;
+export type PackagePaymentRecord = {
+  purchaseDocument: ProviderDocument | null;
+  lastRefundAttempt: PackageRefundAttempt | null;
 };

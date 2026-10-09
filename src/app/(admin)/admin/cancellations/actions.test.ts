@@ -11,6 +11,7 @@ vi.mock('@/lib/data/event-cancellation', () => ({
 }));
 
 import { resolveCancellationRequest } from '@/lib/data/event-cancellation';
+import { CancellationResolveError } from '@/lib/data/package-cancellation';
 import { resolveCancellationRequestAction } from './actions';
 
 const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
@@ -115,5 +116,14 @@ describe('resolveCancellationRequestAction', () => {
       fd({ resolution: 'declined', resolutionNote: 'טקסט תקין' }),
     );
     expect(result?.error).toBe('בקשה זו כבר טופלה');
+    expect(result?.retry).toBeUndefined();
+  });
+
+  // The screen shows "approve again" and "do NOT approve again" differently: the action passes on what the resolver knew.
+  it.each(['allowed', 'forbidden', 'wait'] as const)('passes on the retry advice (%s) when the resolver gave one', async (retry) => {
+    vi.mocked(resolveCancellationRequest).mockRejectedValue(new CancellationResolveError('לא בוצע', retry));
+    const action = resolveCancellationRequestAction.bind(null, 'r1');
+    const result = await action(null, fd({ resolution: 'full_cancellation', resolutionNote: 'טקסט תקין' }));
+    expect(result).toEqual({ error: 'לא בוצע', retry });
   });
 });

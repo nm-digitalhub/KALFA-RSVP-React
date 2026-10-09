@@ -5,17 +5,17 @@ import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 
 import { resolveCancellationRequest } from '@/lib/data/event-cancellation';
+import { CancellationResolveError, type ResolveFormState } from '@/lib/data/package-cancellation';
 import { resolveCancellationRequestSchema } from '@/lib/validation/event-cancellation';
-import type { FormState } from '@/lib/validation/result';
 
 // Authorization is enforced inside resolveCancellationRequest
 // (requirePlatformPermission('manage_billing')) — this action just parses
 // and delegates.
 export async function resolveCancellationRequestAction(
   requestId: string,
-  _prevState: FormState,
+  _prevState: ResolveFormState,
   formData: FormData,
-): Promise<FormState> {
+): Promise<ResolveFormState> {
   const parsed = resolveCancellationRequestSchema.safeParse({
     resolution: formData.get('resolution'),
     resolutionAmount: formData.get('resolutionAmount') || undefined,
@@ -34,6 +34,9 @@ export async function resolveCancellationRequestAction(
     unstable_rethrow(err);
     return {
       error: err instanceof Error ? err.message : 'טיפול בבקשת הביטול נכשל. נסו שוב.',
+      // Whether approving again is safe, when the resolver knew (a refund that did not go through, an e-mail that failed
+      // after the money went back, a request already resolved elsewhere). The form shows each differently.
+      ...(err instanceof CancellationResolveError ? { retry: err.retry } : {}),
     };
   }
 

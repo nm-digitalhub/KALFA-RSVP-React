@@ -1,25 +1,36 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import Link from 'next/link';
+import { notFound, unstable_rethrow } from 'next/navigation';
+import { ArrowRight, CircleAlert, CircleCheck, CreditCard, FileText, Info, TriangleAlert } from 'lucide-react';
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { buttonVariants } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import {
   getCancellationRequestForAdmin,
   getCampaignForEventAdmin,
   computeSuggestedCancellationAmount,
+  type CampaignForCancellationAdmin,
 } from '@/lib/data/event-cancellation';
 import { getCampaignBillingSummary } from '@/lib/data/billing';
 import { cancellationFeeBase } from '@/lib/data/cancellation-fee';
+import { EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
 import { packageCancellationState, type PackageCancellationState } from '@/lib/data/package-cancellation';
+import type { PackageRefundAttempt } from '@/lib/payments/package-refund-types';
 import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
 import { computeChargeAmount } from '@/lib/data/close-charge-amount';
+import { cn } from '@/lib/utils';
 import { PageHeading, Badge, formatCurrency, formatDateTime } from '../../_components';
 import { ResolveForm, type MoneyOutcome } from './resolve-form';
 
 export const metadata: Metadata = { title: 'בקשת ביטול' };
 
+const LIST_PATH = '/admin/cancellations';
+
 const RESOLUTION_LABELS: Record<string, string> = {
   full_cancellation: 'ביטול מלא',
-  partial_charge: 'חיוב חלקי',
+  partial_charge: 'ביטול עם דמי ביטול',
   declined: 'נדחתה',
 };
 
@@ -32,12 +43,64 @@ const PACKAGE_MONEY_OUTCOME: Record<PackageCancellationState, MoneyOutcome> = {
   resume: 'resume',
 };
 
+// No clearing company is named: the same words serve a SUMIT and a CardCom payment.
 const CAPTURE_OUTCOME_LABELS: Record<string, string> = {
   captured: 'בוצע חיוב',
   refunded: 'בוצע זיכוי',
-  manual_refund_required: 'נדרש זיכוי ידני ב-SUMIT',
+  manual_refund_required: 'נדרש זיכוי ידני במסוף הסליקה',
   not_applicable: 'אין תנועה כספית',
 };
+
+// The event's status as the rest of the admin names it; an unknown value is shown as it is.
+function eventStatusText(status: string): string {
+  return Object.hasOwn(EVENT_STATUS_LABELS, status) ? EVENT_STATUS_LABELS[status as keyof typeof EVENT_STATUS_LABELS] : status;
+}
+
+// The note above the decision. Three tones: money will move (warning), it cannot be moved from here (destructive), nothing
+// moves (muted). role="note": it is part of the page, not an announcement (Alert defaults to role="alert").
+type Tone = 'warning' | 'destructive' | 'muted';
+const TONE_CLASS: Record<Tone, string> = {
+  warning: 'border-warning/40 bg-warning/10 text-warning *:data-[slot=alert-description]:text-warning',
+  destructive: 'border-destructive/40 bg-destructive/10 text-destructive *:data-[slot=alert-description]:text-destructive',
+  muted: 'border-border bg-muted text-foreground',
+};
+function MoneyNote({ tone, title, children }: { tone: Tone; title: string; children: React.ReactNode }) {
+  const Icon = tone === 'muted' ? Info : TriangleAlert;
+  return (
+    <Alert role="note" className={cn('px-4 py-3', TONE_CLASS[tone])}>
+      <Icon aria-hidden />
+      <AlertTitle className="font-semibold">{title}</AlertTitle>
+      <AlertDescription className="leading-relaxed">{children}</AlertDescription>
+    </Alert>
+  );
+}
+
+// The last refund attempt of this request that did not end in a refund: refused (the reason it gave, its code), unclear
+// (the money may be back — check before anything else), or still running.
+function LastAttemptNote({ attempt }: { attempt: PackageRefundAttempt }) {
+  const when = formatDateTime(attempt.recordedAt);
+  if (attempt.outcome === 'failed') {
+    return (
+      <MoneyNote tone="destructive" title={`ניסיון הזיכוי האחרון נדחה (${when})`}>
+        {attempt.providerStatusDescription ?? 'חברת הסליקה לא מסרה סיבה.'}
+        {attempt.providerStatus ? ` · קוד ${attempt.providerStatus}` : ''}. לא הוחזר כסף. תקנו את הסיבה ואשרו שוב.
+      </MoneyNote>
+    );
+  }
+  if (attempt.outcome === 'review') {
+    return (
+      <MoneyNote tone="warning" title={`ניסיון הזיכוי האחרון בבדיקה (${when})`}>
+        התשובה של חברת הסליקה לא הייתה חד-משמעית — ייתכן שהכסף כבר הוחזר. בדקו אצלה ובמסך התשלומים שממתינים להכרעה, ואל
+        תאשרו שוב.
+      </MoneyNote>
+    );
+  }
+  return (
+    <MoneyNote tone="muted" title={`ניסיון זיכוי בתהליך (${when})`}>
+      ניסיון קודם של הבקשה הזו עדיין רץ. המתינו ורעננו את הדף.
+    </MoneyNote>
+  );
+}
 
 export default async function AdminCancellationDetailPage({
   params,
@@ -46,10 +109,21 @@ export default async function AdminCancellationDetailPage({
 }) {
   await requirePlatformPermission('manage_billing');
   const { id } = await params;
+  // A failed read throws to the admin error boundary (retry); only a request that does not exist is a 404.
   const request = await getCancellationRequestForAdmin(id);
   if (!request) notFound();
 
-  const campaign = await getCampaignForEventAdmin(request.eventId, request.id);
+  // A failed campaign read must never pass for "no live campaign" (that would promise no money moves): the screen says it
+  // could not be read and offers no decision until it can.
+  let campaign: CampaignForCancellationAdmin | null = null;
+  let campaignFailed = false;
+  try {
+    campaign = await getCampaignForEventAdmin(request.eventId, request.id);
+  } catch (err) {
+    unstable_rethrow(err);
+    campaignFailed = true;
+  }
+
   // A fixed-price package was paid once, at purchase: resolving the request gives money BACK from the payment ledger. It
   // has no per-result charge, so none of the "not charged yet" logic below applies to it.
   const isPackage = campaign?.isPackage === true;
@@ -64,7 +138,7 @@ export default async function AdminCancellationDetailPage({
       })
     : null;
   // An event with no live campaign (it never had one, or every campaign was cancelled): the resolver moves no money for it.
-  const noLiveCampaign = campaign === null;
+  const noLiveCampaign = !campaignFailed && campaign === null;
   const moneyOutcome: MoneyOutcome = packageState
     ? PACKAGE_MONEY_OUTCOME[packageState]
     : noLiveCampaign
@@ -104,134 +178,240 @@ export default async function AdminCancellationDetailPage({
           credits: 0,
         }).amount
       : 0;
+  const pending = request.status === 'pending';
+  // From the ledger: the receipt the purchase issued, and how THIS request's last refund attempt ended. A refused refund
+  // shows the clearing company's own reason here (staff only), so the admin knows what to fix before approving again.
+  const purchaseDocumentNumber = campaign?.packageRecord?.purchaseDocument?.number ?? null;
+  const lastAttempt = pending ? (campaign?.packageRecord?.lastRefundAttempt ?? null) : null;
 
   return (
     <div className="space-y-6">
-      <PageHeading>בקשת ביטול #{request.requestNumber}</PageHeading>
+      <Link
+        href={LIST_PATH}
+        className="inline-flex min-h-10 items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+      >
+        <ArrowRight aria-hidden className="size-4 ltr:rotate-180" />
+        כל בקשות הביטול
+      </Link>
 
-      <div className="space-y-2 rounded-lg border border-border bg-card p-4">
-        <p>
-          <span className="font-medium">אירוע: </span>
-          {request.eventName || '—'} <Badge>{request.eventStatus}</Badge>
-        </p>
-        <p>
-          <span className="font-medium">הוגשה: </span>
-          {formatDateTime(request.createdAt)}
-        </p>
-        <p className="whitespace-pre-wrap">
-          <span className="font-medium">סיבה: </span>
-          {request.reason}
-        </p>
-        {isPackage && campaign && !campaign.packageUnreadable ? (
-          <p className="text-sm text-muted-foreground">
-            חבילה בתשלום אחד · שולם {formatCurrency(packagePaid ?? 0)}
-            {campaign.packageRefundable != null && campaign.packageRefundable !== packagePaid
-              ? ` · נותר להחזרה ${formatCurrency(campaign.packageRefundable)}`
-              : ''}
-          </p>
-        ) : null}
-        {billingSummary ? (
-          <p className="text-sm text-muted-foreground">
-            {billingSummary.reachedCount} אנשי קשר הושגו · נצבר {formatCurrency(accrued)}
-            {campaign && !isOpenCeilingAgreementVersion(campaign.tosVersion)
-              ? ` מתוך תקרה ${formatCurrency(billingSummary.ceiling)}`
-              : ''}
-          </p>
-        ) : null}
+      <div className="flex flex-wrap items-center gap-3">
+        <PageHeading>בקשת ביטול #{request.requestNumber}</PageHeading>
+        <Badge variant={pending ? 'warning' : 'success'}>{pending ? 'ממתינה להחלטה' : 'טופלה'}</Badge>
       </div>
 
-      {request.status === 'pending' ? (
-        <>
-          {packageState === 'unreadable' ? (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              לא ניתן לקרוא כרגע את נתוני התשלום של החבילה — אפשר לדחות את הבקשה אבל לא לבצע החזר. רעננו את הדף ונסו שוב.
-            </div>
-          ) : packageState === 'resume' ? (
-            <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
-              כבר הוחזרו {formatCurrency(campaign?.packageRefundedForRequest ?? 0)} בבקשה הזו (טיפול קודם שנקטע לפני
-              שהסתיים). אישור ישלים את הטיפול — סגירת הקמפיין והאירוע ועדכון הלקוח — בלי להחזיר שוב. הלקוח יקבל הודעה לפי מה
-              שהוחזר בפועל, לא לפי מה שיוזן כאן; אי אפשר לדחות בקשה שכבר הוחזר בה כסף.
-            </div>
-          ) : packageState === 'refund' ? (
-            <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
-              קמפיין חבילה ששולם ({formatCurrency(packagePaid ?? 0)}) — אישור &quot;ביטול מלא&quot; יחזיר אוטומטית לכרטיס את
-              הסכום המלא, ו&quot;חיוב חלקי&quot; יחזיר את ההפרש. ההחזר מתבצע מיד, והקמפיין והאירוע ייסגרו.
-            </div>
-          ) : packageState === 'no_card' ? (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              בקמפיין החבילה שולם {formatCurrency(packagePaid ?? 0)} אך אין כרטיס שמור להחזיר אליו — לא ניתן להחזיר
-              אוטומטית, ואישור שיש בו סכום להחזרה ייכשל בהודעה ולא ישנה דבר. החזירו ידנית אצל חברת הסליקה, או דחו את הבקשה.
-            </div>
-          ) : packageState === 'nothing_to_refund' ? (
-            <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
-              בקמפיין החבילה לא שולם דבר (או שהכול כבר הוחזר) — אין מה להחזיר. אישור &quot;ביטול מלא&quot; יסגור את הקמפיין
-              והאירוע בלי תנועה כספית.
-            </div>
-          ) : noLiveCampaign ? (
-            <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
-              לאירוע אין קמפיין פעיל (ייתכן שהקמפיין בוטל) — אישור הבקשה לא יזיז כסף, והאירוע ייסגר.
-            </div>
-          ) : isPreCharge ? (
-            <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
-              הקמפיין טרם חויב — אישור &quot;ביטול מלא&quot; או &quot;חיוב חלקי&quot; כאן יבצע חיוב אמיתי בכרטיס מיד.
-            </div>
-          ) : campaign?.hasCardOnFile ? (
-            <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
-              קמפיין זה כבר חויב — יש פרטי כרטיס שמורים, אז אישור כאן יבצע זיכוי אוטומטי לכרטיס מיד, לא חיוב.
-            </div>
-          ) : (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              קמפיין זה כבר חויב ואין פרטי כרטיס שמורים — לא ניתן לבצע זיכוי אוטומטי. אישור כאן ירשום &quot;נדרש זיכוי
-              ידני&quot; בלבד; יש לבצע את ההחזר בפועל ידנית ב-SUMIT.
-            </div>
-          )}
-          <ResolveForm
-            requestId={request.id}
-            suggestedAmount={suggestedAmount}
-            moneyOutcome={moneyOutcome}
-            feeBase={feeBase}
-            feeBaseLabel={feeBaseLabel}
-          />
-        </>
-      ) : (
-        <div className="space-y-2 rounded-lg border border-border bg-card p-4">
-          <p>
-            <span className="font-medium">תוצאה: </span>
-            {RESOLUTION_LABELS[request.resolution ?? ''] ?? request.resolution}
-          </p>
-          {request.resolutionAmount != null ? (
-            <p>
-              <span className="font-medium">סכום: </span>
-              {formatCurrency(request.resolutionAmount)}
-            </p>
+      <div className="flex flex-wrap items-start gap-6">
+        <aside className="flex min-w-0 flex-[1_1_18rem] flex-col gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>פרטי הבקשה</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 text-sm">
+                <dt className="text-muted-foreground">אירוע</dt>
+                <dd className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{request.eventName || '—'}</span>
+                  <Badge>{eventStatusText(request.eventStatus)}</Badge>
+                </dd>
+                <dt className="text-muted-foreground">הוגשה</dt>
+                <dd>{formatDateTime(request.createdAt)}</dd>
+              </dl>
+              <div className="space-y-1.5">
+                <p className="text-sm text-muted-foreground">סיבת הביטול, כפי שכתב הלקוח</p>
+                <blockquote className="whitespace-pre-wrap rounded-md bg-muted px-3 py-2.5 text-sm leading-relaxed">
+                  {request.reason}
+                </blockquote>
+              </div>
+            </CardContent>
+          </Card>
+
+          {isPackage && campaign && !campaign.packageUnreadable ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>תשלום</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-muted-foreground">חבילה בתשלום אחד · שולם</span>
+                  <span className="text-xl font-bold">{formatCurrency(packagePaid ?? 0)}</span>
+                </div>
+                {campaign.packageRefundable != null && campaign.packageRefundable !== packagePaid ? (
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-muted-foreground">נותר להחזרה</span>
+                    <span className="font-semibold">{formatCurrency(campaign.packageRefundable)}</span>
+                  </div>
+                ) : null}
+                {purchaseDocumentNumber != null ? (
+                  <p className="flex items-center gap-2">
+                    <FileText aria-hidden className="size-4 shrink-0" />
+                    {`קבלה מס׳ ${purchaseDocumentNumber}`}
+                  </p>
+                ) : null}
+                <p className="flex items-center gap-2">
+                  <CreditCard aria-hidden className="size-4 shrink-0" />
+                  {campaign.hasCardOnFile ? 'כרטיס שמור — אפשר להחזיר אוטומטית' : 'אין החזר אוטומטי לתשלום הזה'}
+                </p>
+              </CardContent>
+            </Card>
           ) : null}
-          <p>
-            <span className="font-medium">תנועה כספית: </span>
-            {CAPTURE_OUTCOME_LABELS[request.captureOutcome ?? ''] ?? request.captureOutcome}
-          </p>
-          {/* A package refund's credit document is read from the ledger: CardCom answers only its number (no link), and the
-              request row keeps a SUMIT link only. */}
-          {campaign?.packageRefundDocument?.number != null && !request.sumitDocumentUrl ? (
-            <p>
-              <span className="font-medium">מסמך זיכוי: </span>
-              {`מס׳ ${campaign.packageRefundDocument.number}`}
-            </p>
+
+          {billingSummary ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>חיוב לפי תוצאה</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                {billingSummary.reachedCount} אנשי קשר הושגו · נצבר {formatCurrency(accrued)}
+                {campaign && !isOpenCeilingAgreementVersion(campaign.tosVersion)
+                  ? ` מתוך תקרה ${formatCurrency(billingSummary.ceiling)}`
+                  : ''}
+              </CardContent>
+            </Card>
           ) : null}
-          {request.sumitDocumentUrl ? (
-            <p>
-              <a href={request.sumitDocumentUrl} className="text-primary hover:underline" target="_blank" rel="noreferrer">
-                קבלה / תעודת זיכוי
-              </a>
-            </p>
+        </aside>
+
+        <main className="flex min-w-0 flex-[999_1_32rem] flex-col gap-4">
+          {campaignFailed ? (
+            <Alert variant="destructive" className="border-destructive/40 px-4 py-3">
+              <CircleAlert aria-hidden />
+              <AlertTitle className="font-semibold">לא הצלחנו לטעון את נתוני הקמפיין</AlertTitle>
+              <AlertDescription className="space-y-3">
+                <p>
+                  {pending
+                    ? 'אי אפשר לדעת עכשיו אם האישור יזיז כסף, ולכן טופס ההחלטה מוסתר. נסו לטעון שוב.'
+                    : 'פרטי התשלום של הבקשה לא נטענו. נסו לטעון שוב.'}
+                </p>
+                <Link href={`${LIST_PATH}/${request.id}`} className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+                  טעינה מחדש
+                </Link>
+              </AlertDescription>
+            </Alert>
           ) : null}
-          {request.resolutionNote ? (
-            <p className="whitespace-pre-wrap">
-              <span className="font-medium">הודעה ללקוח: </span>
-              {request.resolutionNote}
-            </p>
+
+          {pending && !campaignFailed ? (
+            <>
+              {lastAttempt && lastAttempt.outcome !== 'succeeded' ? (
+                <LastAttemptNote attempt={lastAttempt} />
+              ) : null}
+              {packageState === 'unreadable' ? (
+                <MoneyNote tone="destructive" title="לא ניתן לקרוא כרגע את נתוני התשלום">
+                  אפשר לדחות את הבקשה, אבל לא לבצע החזר. רעננו את הדף ונסו שוב.
+                </MoneyNote>
+              ) : packageState === 'resume' ? (
+                <MoneyNote tone="warning" title={`כבר הוחזרו ${formatCurrency(campaign?.packageRefundedForRequest ?? 0)} בבקשה הזו`}>
+                  טיפול קודם נקטע לפני שהסתיים. אישור ישלים אותו — סגירת הקמפיין והאירוע ועדכון הלקוח — בלי להחזיר שוב. הלקוח
+                  יקבל הודעה לפי מה שהוחזר בפועל, לא לפי מה שיוזן כאן; אי אפשר לדחות בקשה שכבר הוחזר בה כסף.
+                </MoneyNote>
+              ) : packageState === 'refund' ? (
+                <MoneyNote tone="warning" title="האישור יחזיר כסף לכרטיס מיד">
+                  קמפיין חבילה ששולם ({formatCurrency(packagePaid ?? 0)}) — אישור &quot;ביטול מלא&quot; יחזיר אוטומטית לכרטיס את
+                  הסכום המלא, ו&quot;ביטול עם דמי ביטול&quot; יחזיר את ההפרש, ויופק מסמך זיכוי. הקמפיין והאירוע ייסגרו, והלקוח יקבל
+                  מייל אחרי שההחזר אושר.
+                </MoneyNote>
+              ) : packageState === 'no_card' ? (
+                <MoneyNote tone="destructive" title="לא ניתן להחזיר את התשלום הזה מכאן">
+                  שולמו {formatCurrency(packagePaid ?? 0)}, אך אין לתשלום כרטיס שמור להחזיר אליו, סוג המסמך שלו אינו מאפשר מסמך זיכוי
+                  אוטומטי, או שהוא בוצע במסוף אחר מזה שמחובר עכשיו — אישור שיש בו סכום להחזרה ייכשל בהודעה ולא ישנה דבר. החזירו
+                  ידנית במסוף הסליקה, או דחו את הבקשה.
+                </MoneyNote>
+              ) : packageState === 'nothing_to_refund' ? (
+                <MoneyNote tone="muted" title="אין מה להחזיר">
+                  בקמפיין החבילה לא שולם דבר (או שהכול כבר הוחזר). אישור &quot;ביטול מלא&quot; יסגור את הקמפיין והאירוע בלי תנועה
+                  כספית.
+                </MoneyNote>
+              ) : noLiveCampaign ? (
+                <MoneyNote tone="muted" title="לאירוע אין קמפיין פעיל">
+                  ייתכן שהקמפיין בוטל. אישור הבקשה לא יזיז כסף, והאירוע ייסגר.
+                </MoneyNote>
+              ) : isPreCharge ? (
+                <MoneyNote tone="warning" title="האישור יחייב את הכרטיס מיד">
+                  הקמפיין טרם חויב — אישור &quot;ביטול מלא&quot; או &quot;ביטול עם דמי ביטול&quot; כאן יבצע חיוב אמיתי בכרטיס מיד.
+                </MoneyNote>
+              ) : campaign?.hasCardOnFile ? (
+                <MoneyNote tone="warning" title="האישור יחזיר כסף לכרטיס מיד">
+                  קמפיין זה כבר חויב ויש פרטי כרטיס שמורים, אז אישור כאן יבצע זיכוי אוטומטי לכרטיס מיד, לא חיוב.
+                </MoneyNote>
+              ) : (
+                <MoneyNote tone="destructive" title="אין כרטיס שמור — נדרש זיכוי ידני">
+                  קמפיין זה כבר חויב ואין פרטי כרטיס שמורים. אישור כאן ירשום &quot;נדרש זיכוי ידני&quot; בלבד; את ההחזר בפועל
+                  מבצעים ידנית במסוף הסליקה.
+                </MoneyNote>
+              )}
+              <ResolveForm
+                requestId={request.id}
+                suggestedAmount={suggestedAmount}
+                moneyOutcome={moneyOutcome}
+                feeBase={feeBase}
+                feeBaseLabel={feeBaseLabel}
+              />
+            </>
           ) : null}
-        </div>
-      )}
+
+          {!pending ? (
+            <Card className="overflow-hidden pt-0">
+              <div className="flex items-center gap-3 border-b border-success/20 bg-success/10 px-6 py-4 text-success">
+                <CircleCheck aria-hidden className="size-6 shrink-0" />
+                <div>
+                  <p className="text-lg font-bold">{RESOLUTION_LABELS[request.resolution ?? ''] ?? request.resolution}</p>
+                  {request.resolutionAmount != null ? (
+                    <p className="text-sm">{formatCurrency(request.resolutionAmount)}</p>
+                  ) : null}
+                </div>
+              </div>
+              <CardContent>
+                <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-3 text-sm">
+                  <dt className="text-muted-foreground">תוצאה</dt>
+                  <dd className="font-medium">{RESOLUTION_LABELS[request.resolution ?? ''] ?? request.resolution}</dd>
+                  {request.resolutionAmount != null ? (
+                    <>
+                      <dt className="text-muted-foreground">סכום</dt>
+                      <dd className="font-semibold">{formatCurrency(request.resolutionAmount)}</dd>
+                    </>
+                  ) : null}
+                  <dt className="text-muted-foreground">תנועה כספית</dt>
+                  <dd>{CAPTURE_OUTCOME_LABELS[request.captureOutcome ?? ''] ?? request.captureOutcome}</dd>
+                  {/* A package refund's credit document is read from the ledger: CardCom answers only its number (no link),
+                      and the request row keeps a SUMIT link only. */}
+                  {campaign?.packageRefundDocument?.number != null && !request.sumitDocumentUrl ? (
+                    <>
+                      <dt className="text-muted-foreground">מסמך זיכוי</dt>
+                      <dd className="flex items-center gap-1.5">
+                        <FileText aria-hidden className="size-4 shrink-0" />
+                        {`מס׳ ${campaign.packageRefundDocument.number}`}
+                      </dd>
+                    </>
+                  ) : null}
+                  {request.sumitDocumentUrl ? (
+                    <>
+                      <dt className="text-muted-foreground">מסמך</dt>
+                      <dd>
+                        <a
+                          href={request.sumitDocumentUrl}
+                          className="inline-flex items-center gap-1.5 text-primary hover:underline"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <FileText aria-hidden className="size-4 shrink-0" />
+                          קבלה / תעודת זיכוי
+                          <span className="sr-only">(נפתח בלשונית חדשה)</span>
+                        </a>
+                      </dd>
+                    </>
+                  ) : null}
+                </dl>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {!pending && request.resolutionNote ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>ההודעה שנשלחה ללקוח</CardTitle>
+              </CardHeader>
+              <CardContent className="whitespace-pre-wrap text-sm leading-relaxed">{request.resolutionNote}</CardContent>
+            </Card>
+          ) : null}
+        </main>
+      </div>
     </div>
   );
 }

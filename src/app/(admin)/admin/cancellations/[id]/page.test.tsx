@@ -113,6 +113,36 @@ describe('/admin/cancellations/[id]', () => {
     expect(requirePlatformPermission).toHaveBeenCalledWith('manage_billing');
   });
 
+  it('has a way back to the list, and shows the event status the way the admin names it', async () => {
+    const html = await render();
+    expect(html).toMatch(/href="\/admin\/cancellations"[^>]*>.*כל בקשות הביטול/);
+    expect(html).toContain('פרטי האירוע אושרו');
+    expect(html).not.toMatch(/>active</);
+    expect(html).toContain('ממתינה להחלטה');
+  });
+
+  it('names no clearing company anywhere on the screen', async () => {
+    for (const c of [perResult(), perResult({ chargeStatus: 'charged', finalChargeAmount: 300 }), pkg(), pkg({ hasCardOnFile: false })]) {
+      vi.mocked(getCampaignForEventAdmin).mockResolvedValue(c as never);
+      expect(await render()).not.toMatch(/SUMIT|CardCom/i);
+    }
+  });
+
+  // A failed campaign read must never pass for "no live campaign" (that would promise that no money moves).
+  it('a campaign that could not be read: says so, offers a reload, and hides the decision', async () => {
+    vi.mocked(getCampaignForEventAdmin).mockRejectedValue(new Error('טעינת נתוני הקמפיין נכשלה'));
+    const html = await render();
+    expect(html).toContain('לא הצלחנו לטעון את נתוני הקמפיין');
+    expect(html).toContain('טעינה מחדש');
+    expect(html).not.toContain('לאירוע אין קמפיין פעיל');
+    expect(form(html).present).toBe(false);
+  });
+
+  it('a request that could not be read is an error for the error boundary, not a 404', async () => {
+    vi.mocked(getCancellationRequestForAdmin).mockRejectedValue(new Error('טעינת בקשת הביטול נכשלה'));
+    await expect(render()).rejects.toThrow('טעינת בקשת הביטול נכשלה');
+  });
+
   it('a request that does not exist is a 404, not a screen', async () => {
     vi.mocked(getCancellationRequestForAdmin).mockResolvedValue(null);
     await expect(render()).rejects.toThrow();
@@ -129,7 +159,7 @@ describe('a fixed-price package', () => {
     vi.mocked(getCampaignForEventAdmin).mockResolvedValue(pkg() as never);
     const html = await render();
     expect(html).toContain('יחזיר אוטומטית');
-    expect(html).toContain('שולם ₪120.00');
+    expect(html).toMatch(/שולם<\/span><span[^>]*>₪120\.00/);
     expect(form(html)).toMatchObject({ outcome: 'credit', base: '120', baseLabel: 'הסכום ששולם' });
   });
 
@@ -148,10 +178,71 @@ describe('a fixed-price package', () => {
     expect(computeSuggestedCancellationAmount).toHaveBeenCalledWith('c1', 120);
   });
 
+  // A paid package can be refunded in part by either clearing company: the screen says a credit document is issued, and
+  // the form offers every choice.
+  it('a paid package that can be refunded says the money goes back and a credit document is issued', async () => {
+    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(pkg() as never);
+    const html = await render();
+    expect(html).toContain('יופק מסמך זיכוי');
+    expect(html).toContain('יחזיר את ההפרש');
+  });
+
+  // From the ledger: the receipt the purchase issued, and — while the request waits — why its last refund did not go through.
+  it('shows the purchase receipt number', async () => {
+    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(
+      pkg({ packageRecord: { purchaseDocument: { id: null, number: 6, url: null }, lastRefundAttempt: null } }) as never,
+    );
+    expect(await render()).toContain('קבלה מס׳ 6');
+  });
+
+  it('a refused last refund shows the reason the clearing company gave, its code, and that nothing went back', async () => {
+    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(
+      pkg({
+        packageRecord: {
+          purchaseDocument: null,
+          lastRefundAttempt: { outcome: 'failed', providerStatus: '9006', providerStatusDescription: 'למשתמש אין הרשאה לביצוע זיכוי / ביטול במערכת', recordedAt: '2026-10-09T13:12:32Z' },
+        },
+      }) as never,
+    );
+    const html = await render();
+    expect(html).toContain('ניסיון הזיכוי האחרון נדחה');
+    expect(html).toContain('למשתמש אין הרשאה לביצוע זיכוי / ביטול במערכת');
+    expect(html).toContain('קוד 9006');
+    expect(html).toContain('לא הוחזר כסף');
+  });
+
+  it('an unclear last refund says the money may be back and not to approve again', async () => {
+    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(
+      pkg({
+        packageRecord: {
+          purchaseDocument: null,
+          lastRefundAttempt: { outcome: 'review', providerStatus: null, providerStatusDescription: null, recordedAt: '2026-10-09T13:12:32Z' },
+        },
+      }) as never,
+    );
+    const html = await render();
+    expect(html).toContain('ייתכן שהכסף כבר הוחזר');
+    expect(html).toMatch(/אל\s+תאשרו שוב/);
+  });
+
+  it('a request that was resolved shows no earlier attempt note', async () => {
+    vi.mocked(getCancellationRequestForAdmin).mockResolvedValue(request({ status: 'resolved', resolution: 'declined', captureOutcome: 'not_applicable' }) as never);
+    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(
+      pkg({
+        packageRecord: {
+          purchaseDocument: null,
+          lastRefundAttempt: { outcome: 'failed', providerStatus: '9006', providerStatusDescription: 'x', recordedAt: '2026-10-09T13:12:32Z' },
+        },
+      }) as never,
+    );
+    expect(await render()).not.toContain('ניסיון הזיכוי האחרון');
+  });
+
   it('paid but NO saved card: says plainly that it cannot be refunded here, and the form says it will fail', async () => {
     vi.mocked(getCampaignForEventAdmin).mockResolvedValue(pkg({ hasCardOnFile: false }) as never);
     const html = await render();
-    expect(html).toContain('אין כרטיס שמור');
+    expect(html).toContain('לא ניתן להחזיר את התשלום הזה מכאן');
+    expect(html).toContain('כרטיס שמור');
     expect(html).toContain('ייכשל');
     expect(html).not.toContain('יחזיר אוטומטית');
     expect(form(html)).toMatchObject({ outcome: 'blocked', base: '120' });

@@ -21,6 +21,7 @@ vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/payments/package-refund', () => ({
   checkPackageRefund: vi.fn(),
   packageRefundSummary: vi.fn(),
+  packagePaymentRecord: vi.fn(),
   refundPackagePayment: vi.fn(),
 }));
 vi.mock('@/lib/data/campaigns', () => ({ closeCampaign: vi.fn() }));
@@ -38,12 +39,13 @@ import { cancellationRequestResponseEmail } from '@/lib/email/templates';
 import { buildCancellationSmsText } from '@/lib/data/cancellation-sms';
 import { logActivity } from '@/lib/data/activity';
 import { closeCampaign } from '@/lib/data/campaigns';
-import { checkPackageRefund, packageRefundSummary, refundPackagePayment } from '@/lib/payments/package-refund';
+import { checkPackageRefund, packagePaymentRecord, packageRefundSummary, refundPackagePayment } from '@/lib/payments/package-refund';
 import {
   CANCELLATION_REQUEST_ALREADY_OPEN,
   createCancellationRequest,
   computeSuggestedCancellationAmount,
   getCampaignForEventAdmin,
+  getCancellationRequestForAdmin,
   resolveCancellationRequest,
 } from './event-cancellation';
 
@@ -225,6 +227,7 @@ describe('getCampaignForEventAdmin', () => {
       packageRefundedForRequest: null,
       packageUnreadable: false,
       packageRefundDocument: null,
+      packageRecord: null,
       hasCardOnFile: true,
       basePrice: 0,
       includedReached: 0,
@@ -276,6 +279,21 @@ describe('getCampaignForEventAdmin', () => {
     expect(await getCampaignForEventAdmin('e1', 'req1')).toMatchObject({ packagePaid: 120, packageRefundable: 15, packageRefundedForRequest: 105 });
   });
 
+  // The receipt the purchase issued and how this request's last refund attempt ended (with the provider's own answer) come
+  // from the ledger too — a refused refund must show WHY on the screen.
+  it('a package: the purchase document and the last refund attempt of THIS request come from the ledger', async () => {
+    (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
+    adminClientFor(PKG_ROW);
+    (packageRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 120, refundedForRequest: 0, hasCard: true });
+    const record = {
+      purchaseDocument: { id: null, number: 6, url: null },
+      lastRefundAttempt: { outcome: 'failed', providerStatus: '9006', providerStatusDescription: 'אין הרשאה', recordedAt: '2026-10-09T13:12:32Z' },
+    };
+    (packagePaymentRecord as unknown as Mock).mockResolvedValue(record);
+    expect(await getCampaignForEventAdmin('e1', 'req1')).toMatchObject({ packageRecord: record });
+    expect(packagePaymentRecord).toHaveBeenCalledWith('camp1', 'req1');
+  });
+
   it('a package with no usable saved card says so', async () => {
     (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
     adminClientFor(PKG_ROW);
@@ -304,6 +322,16 @@ describe('getCampaignForEventAdmin', () => {
     (createAdminClient as unknown as Mock).mockReturnValue({ from: () => ({ select: () => ({ eq: () => ({ neq }) }) }) });
     expect(await getCampaignForEventAdmin('e1')).toBeNull();
     expect(neq).toHaveBeenCalledWith('status', 'cancelled');
+  });
+
+  // A failed read must never look like "no live campaign": the screen would promise that no money moves.
+  it('throws when the campaign cannot be read, instead of answering "no campaign"', async () => {
+    (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
+    const maybeSingle = vi.fn().mockResolvedValue({ data: null, error: { message: 'db down' } });
+    (createAdminClient as unknown as Mock).mockReturnValue({
+      from: () => ({ select: () => ({ eq: () => ({ neq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }) }),
+    });
+    await expect(getCampaignForEventAdmin('e1')).rejects.toThrow('טעינת נתוני הקמפיין נכשלה');
   });
 
   it('returns null when the event has no campaign', async () => {
@@ -374,7 +402,10 @@ describe('resolveCancellationRequest', () => {
       },
       error: null,
     });
-    const update = vi.fn().mockReturnValue({ eq: () => ({ error: null }) });
+    // The final write: .eq('id').eq('status','pending').select('id') — one row back means this resolve won. Other updates
+    // (campaigns.final_charge_amount) end at .eq('id').
+    const resolvedRows = vi.fn().mockResolvedValue({ data: [{ id: 'r1' }], error: null });
+    const update = vi.fn().mockReturnValue({ eq: () => ({ error: null, eq: () => ({ select: resolvedRows }) }) });
     const profileSingle = vi.fn().mockResolvedValue({
       data: { full_name: 'דנה', phone: '+972500000000' },
       error: null,
@@ -412,7 +443,7 @@ describe('resolveCancellationRequest', () => {
     (creditHeldCardSumit as unknown as Mock).mockResolvedValue({
       documentId: 701, documentNumber: 1, documentUrl: 'https://pay.sumit.co.il/x?download=701', authNumber: 'a1', paymentId: 555,
     });
-    return { send, smsSend, update, eventStatusMaybeSingle };
+    return { send, smsSend, update, eventStatusMaybeSingle, resolvedRows };
   }
 
   // A fixed-price package was paid at purchase and has no settlement. Resolving its cancellation request means giving
@@ -533,7 +564,8 @@ describe('resolveCancellationRequest', () => {
         const { update } = resumed(105);
         await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' });
         expect(emailArg()).toMatchObject({ resolution: 'partial_charge', resolutionAmount: 15 });
-        expect(buildCancellationSmsText).toHaveBeenCalledWith(expect.objectContaining({ resolution: 'partial_charge', resolutionAmount: 105 }));
+        // The SMS says the fee that stayed (₪15) and what went back (₪105) — never the refund as if it were a charge.
+        expect(buildCancellationSmsText).toHaveBeenCalledWith(expect.objectContaining({ resolution: 'partial_charge', resolutionAmount: 15, refundedAmount: 105 }));
         expect(update).toHaveBeenCalledWith(expect.objectContaining({
           resolution: 'partial_charge', resolution_amount: 105, capture_outcome: 'refunded', sumit_document_id: 9001, status: 'resolved',
         }));
@@ -664,11 +696,11 @@ describe('resolveCancellationRequest', () => {
       expect(logActivity).toHaveBeenCalledWith({ eventId: 'e1', action: 'event.closed_by_admin', meta: {} });
     });
 
-    it('the SMS carries the amount that went back', async () => {
+    it('the SMS carries the amount that went back, as a refund', async () => {
       const { smsSend } = pkg();
       await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' });
       expect(smsSend).toHaveBeenCalled();
-      expect(buildCancellationSmsText).toHaveBeenCalledWith(expect.objectContaining({ resolutionAmount: 120 }));
+      expect(buildCancellationSmsText).toHaveBeenCalledWith(expect.objectContaining({ resolution: 'full_cancellation', refundedAmount: 120 }));
     });
   });
 
@@ -832,6 +864,19 @@ describe('resolveCancellationRequest', () => {
     );
   });
 
+  // Two resolves of the same request both pass the "still pending" check at the top. Only one may record it: the final
+  // write is filtered on status='pending', and a write that matched no row is reported, never taken as success.
+  it('the final write is only for a request that is still pending, and a lost race is reported', async () => {
+    const { update, resolvedRows } = happy({ chargeStatus: null });
+    resolvedRows.mockResolvedValue({ data: [], error: null });
+    await expect(
+      resolveCancellationRequest('r1', { resolution: 'declined', resolutionNote: 'לא ניתן' }),
+    ).rejects.toThrow('הבקשה כבר טופלה בניסיון אחר');
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ status: 'resolved' }));
+    expect(resolvedRows).toHaveBeenCalledWith('id');
+    expect(logActivity).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'event_cancellation.resolved' }));
+  });
+
   it('rejects resolving a request that is already resolved', async () => {
     const single = vi.fn().mockResolvedValue({
       data: { id: 'r1', status: 'resolved', sms_consent: false, events: { id: 'e1', status: 'closed', owner_id: 'u1', campaigns: [] } },
@@ -842,5 +887,25 @@ describe('resolveCancellationRequest', () => {
     await expect(
       resolveCancellationRequest('r1', { resolution: 'declined', resolutionNote: 'x' }),
     ).rejects.toThrow();
+  });
+});
+
+describe('getCancellationRequestForAdmin', () => {
+  beforeEach(() => vi.clearAllMocks());
+  function adminReturns(result: { data: unknown; error: unknown }) {
+    (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
+    const maybeSingle = vi.fn().mockResolvedValue(result);
+    (createAdminClient as unknown as Mock).mockReturnValue({ from: () => ({ select: () => ({ eq: () => ({ maybeSingle }) }) }) });
+  }
+
+  it('a request that does not exist is null (the page answers 404)', async () => {
+    adminReturns({ data: null, error: null });
+    expect(await getCancellationRequestForAdmin('r1')).toBeNull();
+  });
+
+  // A failed read must never become "no such request": the admin area's error boundary offers a retry instead.
+  it('a failed read throws instead', async () => {
+    adminReturns({ data: null, error: { message: 'db down' } });
+    await expect(getCancellationRequestForAdmin('r1')).rejects.toThrow('טעינת בקשת הביטול נכשלה');
   });
 });

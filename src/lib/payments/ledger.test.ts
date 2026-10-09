@@ -298,7 +298,8 @@ describe('operation lines — how the money of one operation is composed', () =>
 describe('reading one operation, and the refunds of one cancellation request', () => {
   const row = (over: TableRow = {}): TableRow => ({
     id: 'o1', campaign_id: 'c1', kind: 'package_purchase', outcome: 'succeeded', amount: '120', meta: { payerUserId: 'u1' },
-    provider_document_id: null, provider_document_number: null, provider_document_url: null, ...over,
+    provider_document_id: null, provider_document_number: null, provider_document_url: null,
+    provider_status: null, provider_status_description: null, recorded_at: '2026-10-09T10:00:00.000Z', ...over,
   });
 
   it('getOperation returns the row with its meta and document, amounts as numbers', async () => {
@@ -306,7 +307,13 @@ describe('reading one operation, and the refunds of one cancellation request', (
     expect(await getOperation(db.client as never, 'o1')).toEqual({
       id: 'o1', kind: 'package_purchase', outcome: 'succeeded', amount: 120, meta: { payerUserId: 'u1' },
       document: { id: 7, number: 40106, url: 'u' },
+      providerStatus: null, providerStatusDescription: null, recordedAt: '2026-10-09T10:00:00.000Z',
     });
+  });
+
+  it('getOperation carries what the provider answered, for staff', async () => {
+    const db = createFakeTableClient({ payment_operations: [row({ kind: 'refund', outcome: 'failed', provider_status: '9006', provider_status_description: 'אין הרשאה' })] });
+    expect(await getOperation(db.client as never, 'o1')).toMatchObject({ providerStatus: '9006', providerStatusDescription: 'אין הרשאה' });
   });
 
   it('getOperation: no document → null; unknown id → null', async () => {

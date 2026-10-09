@@ -12,10 +12,21 @@ import { getSmsSender } from '@/lib/sms/sender';
 import { cancellationRequestResponseEmail } from '@/lib/email/templates';
 import { buildCancellationSmsText } from '@/lib/data/cancellation-sms';
 import { cancellationFeeBase, feeFromPercent } from '@/lib/data/cancellation-fee';
-import { packageRefundMessage, planPackageRefund } from '@/lib/data/package-cancellation';
+import {
+  CancellationResolveError,
+  packageRefundMessage,
+  packageRefundRetry,
+  planPackageRefund,
+} from '@/lib/data/package-cancellation';
 import { closeCampaign } from '@/lib/data/campaigns';
 import { CLOSEABLE_CAMPAIGN_STATUSES, liveCampaignOf } from '@/lib/data/campaign-status';
-import { checkPackageRefund, packageRefundSummary, refundPackagePayment } from '@/lib/payments/package-refund';
+import {
+  checkPackageRefund,
+  packagePaymentRecord,
+  packageRefundSummary,
+  refundPackagePayment,
+  type PackagePaymentRecord,
+} from '@/lib/payments/package-refund';
 import type { ProviderDocument } from '@/lib/payments/ledger';
 import { getAppOrigin } from '@/lib/url';
 import { logActivity } from '@/lib/data/activity';
@@ -174,20 +185,41 @@ function mapAdminRow(r: {
   };
 }
 
-export async function listCancellationRequestsForAdmin(): Promise<CancellationRequestForAdmin[]> {
+// The admin list, optionally only one status — filtered in the database, never in the page.
+export async function listCancellationRequestsForAdmin(
+  status?: CancellationRequestForAdmin['status'],
+): Promise<CancellationRequestForAdmin[]> {
   await requirePlatformPermission('manage_billing');
   const admin = createAdminClient();
-  const { data, error } = await admin
+  let query = admin
     .from('event_cancellation_requests')
     .select(ADMIN_SELECT)
     .order('status', { ascending: true }) // pending first (alphabetically before resolved)
     .order('created_at', { ascending: true });
+  if (status) query = query.eq('status', status);
+  const { data, error } = await query;
 
   if (error) throw new Error('טעינת בקשות הביטול נכשלה');
 
   return (data ?? []).map((r) =>
     mapAdminRow(r as unknown as Parameters<typeof mapAdminRow>[0]),
   );
+}
+
+// How many requests wait and how many were handled, counted by the database (the list header and its filter).
+export async function countCancellationRequestsForAdmin(): Promise<Record<CancellationRequestForAdmin['status'], number>> {
+  await requirePlatformPermission('manage_billing');
+  const admin = createAdminClient();
+  const count = async (status: CancellationRequestForAdmin['status']) => {
+    const { count: n, error } = await admin
+      .from('event_cancellation_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', status);
+    if (error) throw new Error('ספירת בקשות הביטול נכשלה');
+    return n ?? 0;
+  };
+  const [pending, resolved] = await Promise.all([count('pending'), count('resolved')]);
+  return { pending, resolved };
 }
 
 export async function getCancellationRequestForAdmin(
@@ -201,7 +233,9 @@ export async function getCancellationRequestForAdmin(
     .eq('id', id)
     .maybeSingle();
 
-  if (error || !data) return null;
+  // A failed read is an error (the admin area's error boundary offers a retry), never a "no such request" 404.
+  if (error) throw new Error('טעינת בקשת הביטול נכשלה');
+  if (!data) return null;
   return mapAdminRow(data as unknown as Parameters<typeof mapAdminRow>[0]);
 }
 
@@ -231,6 +265,9 @@ export type CampaignForCancellationAdmin = {
   // number is kept (the request row has a SUMIT document id and url only). Null when nothing was refunded, when it is not a
   // package, or when the ledger could not be read.
   packageRefundDocument: ProviderDocument | null;
+  // The purchase's document (the receipt a refund credits) and THIS request's latest refund attempt with the provider's own
+  // answer — so a refused refund shows why. Null when it is not a package or the ledger could not be read.
+  packageRecord: PackagePaymentRecord | null;
   // Whether resolveCancellationRequest can actually attempt a SUMIT
   // capture/credit for this campaign (same 4-field check it uses internally)
   // — lets the admin UI state the outcome definitively instead of hedging
@@ -267,7 +304,9 @@ export async function getCampaignForEventAdmin(
     .limit(1)
     .maybeSingle();
 
-  if (error || !data) return null;
+  // A failed read is an error, never "the event has no live campaign": the screen would then promise that no money moves.
+  if (error) throw new Error('טעינת נתוני הקמפיין נכשלה');
+  if (!data) return null;
 
   // A package: the ledger decides what was paid and whether a usable card is saved.
   const isPackage = data.package_price != null;
@@ -277,9 +316,14 @@ export async function getCampaignForEventAdmin(
   let packageCard = false;
   let packageUnreadable = false;
   let packageRefundDocument: ProviderDocument | null = null;
+  let packageRecord: PackagePaymentRecord | null = null;
   if (isPackage) {
     try {
-      const summary = await packageRefundSummary(data.id, cancellationRequestId);
+      const [summary, record] = await Promise.all([
+        packageRefundSummary(data.id, cancellationRequestId),
+        packagePaymentRecord(data.id, cancellationRequestId),
+      ]);
+      packageRecord = record;
       packageRefundable = summary.refundable;
       packageRefundedForRequest = summary.refundedForRequest;
       packagePaid = Math.round((summary.refundable + summary.refundedForRequest) * 100) / 100;
@@ -300,6 +344,7 @@ export async function getCampaignForEventAdmin(
     packageRefundedForRequest,
     packageUnreadable,
     packageRefundDocument,
+    packageRecord,
     tosVersion: data.tos_version,
     hasCardOnFile: isPackage
       ? packageCard
@@ -528,7 +573,7 @@ export async function resolveCancellationRequest(
         amount: packagePlan.refund,
         cancellationRequestId: requestId,
       });
-      if (blocked && blocked.status !== 'refunded') throw new Error(packageRefundMessage(blocked));
+      if (blocked && blocked.status !== 'refunded') throw new CancellationResolveError(packageRefundMessage(blocked), packageRefundRetry(blocked));
     }
   }
 
@@ -617,7 +662,7 @@ export async function resolveCancellationRequest(
       amount: packagePlan.refund,
       cancellationRequestId: requestId,
     });
-    if (refund.status !== 'refunded') throw new Error(packageRefundMessage(refund));
+    if (refund.status !== 'refunded') throw new CancellationResolveError(packageRefundMessage(refund), packageRefundRetry(refund));
     // What the ledger says went back is what is recorded — on a resumed request that is the earlier refund.
     finalAmount = refund.amount;
     sumitDocumentId = refund.document?.id ?? null;
@@ -631,8 +676,9 @@ export async function resolveCancellationRequest(
         requestId,
         error: err instanceof Error ? err.name : typeof err,
       });
-      throw new Error(
+      throw new CancellationResolveError(
         'הכסף הוחזר ללקוח, אך שליחת המייל נכשלה — הבקשה נשארה פתוחה. אשרו שוב כדי לשלוח את המייל; הכסף לא יוחזר פעמיים.',
+        'allowed',
       );
     }
   } else if (captureOutcome === 'captured') {
@@ -699,11 +745,14 @@ export async function resolveCancellationRequest(
   if (reqRow.sms_consent && ownerPhone) {
     try {
       const smsSender = await getSmsSender();
+      // A package refund: the fee that stayed and what went back, as in the e-mail. Everything else keeps its wording.
       const smsText = buildCancellationSmsText({
         fullName: ownerName,
         requestNumber: reqRow.request_number,
         resolution,
-        resolutionAmount: finalAmount || undefined,
+        ...(refundFirst
+          ? { resolutionAmount, refundedAmount: finalAmount }
+          : { resolutionAmount: finalAmount || undefined }),
       });
       await smsSender.send({ to: ownerPhone, text: smsText });
     } catch {
@@ -727,7 +776,10 @@ export async function resolveCancellationRequest(
   }
 
   const now = new Date().toISOString();
-  const { error: updateError } = await admin
+  // Only a request that is STILL pending is resolved. Two resolves of the same request (a double click, two tabs) both pass
+  // the check at the top; without this filter the second would reach the immutable-row trigger only after its e-mail and
+  // money step. A filter that matches no row is not a database error, so the rows written are read back and counted.
+  const { data: resolvedRows, error: updateError } = await admin
     .from('event_cancellation_requests')
     .update({
       status: 'resolved',
@@ -739,8 +791,13 @@ export async function resolveCancellationRequest(
       resolution_note: input.resolutionNote,
       resolved_at: now,
     })
-    .eq('id', requestId);
+    .eq('id', requestId)
+    .eq('status', 'pending')
+    .select('id');
 
+  if (!updateError && (resolvedRows ?? []).length === 0) {
+    throw new CancellationResolveError('הבקשה כבר טופלה בניסיון אחר — רעננו את הדף לפני פעולה נוספת', 'forbidden');
+  }
   if (updateError) {
     throw new Error(
       'העדכון נשלח ללקוח (והחיוב, אם היה, בוצע), אך שמירת הרשומה נכשלה — נא לרענן ולתעד ידנית לפני פעולה נוספת',

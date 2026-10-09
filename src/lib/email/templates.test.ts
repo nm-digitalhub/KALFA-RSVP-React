@@ -242,6 +242,14 @@ describe('cancellationRequestResponseEmail', () => {
     expect(text).toContain('₪105 הוחזרו לכרטיס');
     expect(text).not.toContain('שירות שכבר סופק');
   });
+  it('the subject of a partial with a refund says the fee was deducted, not "חיוב חלקי"', () => {
+    const { subject } = cancellationRequestResponseEmail({
+      recipientName: 'דנה', requestNumber: 42, resolution: 'partial_charge', resolutionAmount: 15, refundedAmount: 105,
+      resolutionNote: 'דמי ביטול', origin: ORIGIN,
+    });
+    expect(subject).toContain('בניכוי דמי ביטול');
+    expect(subject).not.toContain('חיוב חלקי');
+  });
   it('declined body includes the staff note', () => {
     const { text } = cancellationRequestResponseEmail({
       recipientName: 'דנה', requestNumber: 42, resolution: 'declined',

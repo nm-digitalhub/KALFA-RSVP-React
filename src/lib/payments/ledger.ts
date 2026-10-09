@@ -328,7 +328,8 @@ export async function latestOperation(
 }
 
 // One operation as a caller that must act ON it needs it: the id, what it is, how it ended, the non-sensitive extras
-// (payerUserId, cancellation_request_id …) and the provider's document. Never card data.
+// (payerUserId, cancellation_request_id …), the provider's document, and what the provider answered (its status code and
+// text — for staff; a refused refund says why) and when it was recorded. Never card data.
 export type StoredOperation = {
   id: string;
   kind: string;
@@ -336,9 +337,13 @@ export type StoredOperation = {
   amount: number;
   meta: { [key: string]: Json | undefined };
   document: ProviderDocument | null;
+  providerStatus: string | null;
+  providerStatusDescription: string | null;
+  recordedAt: string;
 };
 
-const OPERATION_COLUMNS = 'id, kind, outcome, amount, meta, provider_document_id, provider_document_number, provider_document_url';
+const OPERATION_COLUMNS =
+  'id, kind, outcome, amount, meta, provider_document_id, provider_document_number, provider_document_url, provider_status, provider_status_description, recorded_at';
 type OperationDbRow = {
   id: string;
   kind: string;
@@ -348,6 +353,9 @@ type OperationDbRow = {
   provider_document_id: number | null;
   provider_document_number: number | null;
   provider_document_url: string | null;
+  provider_status: string | null;
+  provider_status_description: string | null;
+  recorded_at: string;
 };
 
 function toStored(row: OperationDbRow): StoredOperation {
@@ -362,6 +370,9 @@ function toStored(row: OperationDbRow): StoredOperation {
     document: hasDocument
       ? { id: row.provider_document_id, number: row.provider_document_number, url: row.provider_document_url }
       : null,
+    providerStatus: row.provider_status ?? null,
+    providerStatusDescription: row.provider_status_description ?? null,
+    recordedAt: row.recorded_at,
   };
 }
 

@@ -3,6 +3,7 @@
 // src/lib/payments/package-refund.ts.
 
 import type { PackageRefundRefusal } from '@/lib/payments/package-refund-types';
+import type { FormState } from '@/lib/validation/result';
 
 const toCents = (n: number) => Math.round(n * 100);
 
@@ -18,7 +19,7 @@ export function planPackageRefund(input: {
 }): { kept: number; refund: number } {
   const paid = toCents(input.paid);
   if (input.resolution === 'full_cancellation') return { kept: 0, refund: paid / 100 };
-  if (input.resolutionAmount === undefined) throw new Error('יש להזין סכום או אחוז עבור חיוב חלקי');
+  if (input.resolutionAmount === undefined) throw new Error('יש להזין סכום או אחוז עבור ביטול עם דמי ביטול');
   const kept = toCents(input.resolutionAmount);
   if (kept > paid) throw new Error('הסכום שנשאר אצלנו גדול ממה ששולם בחבילה');
   return { kept: kept / 100, refund: (paid - kept) / 100 };
@@ -60,9 +61,8 @@ const REFUSALS: Record<PackageRefundRefusal, string> = {
   no_payment: 'אין בקמפיין תשלום חבילה להחזרה — לא בוצעה פעולה',
   exceeds_refundable: 'סכום ההחזר גדול ממה שנותר להחזרה בקמפיין — לא בוצעה פעולה',
   no_customer: 'לא נמצא מספר לקוח אצל חברת הסליקה עבור המשלם — יש להחזיר ידנית אצלה. לא בוצעה פעולה',
-  no_card: 'אין כרטיס שמור לקמפיין — יש להחזיר ידנית אצל חברת הסליקה. לא בוצעה פעולה',
-  no_document: 'לתשלום הזה אין מסמך שאפשר לזכות אוטומטית — יש להחזיר ידנית אצל חברת הסליקה. לא בוצעה פעולה',
-  partial_unsupported: 'החזר חלקי לתשלום שבוצע בספק הסליקה החלופי עדיין אינו נתמך אוטומטית — יש להחזיר ידנית אצל חברת הסליקה, או לאשר ביטול מלא. לא בוצעה פעולה',
+  no_card: 'אין כרטיס שמור לתשלום הזה — יש להחזיר ידנית אצל חברת הסליקה. לא בוצעה פעולה',
+  no_document: 'לסוג המסמך של התשלום הזה אין מסמך זיכוי שאפשר להפיק אוטומטית — יש להחזיר ידנית אצל חברת הסליקה. לא בוצעה פעולה',
   terminal_changed: 'התשלום בוצע במסוף שונה מזה שבחיבור הנוכחי של חברת הסליקה (או שהמסוף שלו לא נרשם) — אי אפשר לזכות אותו אוטומטית. יש להחזיר ידנית אצל חברת הסליקה. לא בוצעה פעולה',
 };
 
@@ -73,7 +73,7 @@ export function packageRefundMessage(result: RefundResultLike): string {
     case 'refused':
       return REFUSALS[result.reason];
     case 'declined':
-      return 'הזיכוי נדחה על ידי חברת הסליקה — לא הוחזר כסף. הבקשה נשארה פתוחה ואפשר לנסות שוב או להחזיר ידנית אצלה';
+      return 'הזיכוי נדחה על ידי חברת הסליקה — לא הוחזר כסף. הסיבה שמסרה מוצגת בפרטי התשלום. הבקשה נשארה פתוחה ואפשר לנסות שוב או להחזיר ידנית אצלה';
     case 'review':
       return 'תשובת חברת הסליקה לא חד-משמעית — ייתכן שהכסף כבר הוחזר. בדקו אצלה ובמסך התשלומים שממתינים להכרעה, ואל תנסו שוב';
     case 'in_progress':
@@ -82,3 +82,38 @@ export function packageRefundMessage(result: RefundResultLike): string {
       return 'קריאת נתוני התשלום נכשלה — לא בוצעה פעולה';
   }
 }
+
+// Whether approving the same request again is safe after a failure — the screen shows each differently, so an admin is
+// never invited to retry a refund that may already have gone back:
+//   allowed   — nothing moved (a clear refusal, a check that stopped it, a read that failed): fix the cause and approve again;
+//   forbidden — the clearing company's answer was unclear and the money MAY be back: check there, never approve again;
+//   wait      — another attempt of this request is still running.
+export type RetryAdvice = 'allowed' | 'forbidden' | 'wait';
+
+export function packageRefundRetry(result: RefundResultLike): RetryAdvice {
+  switch (result.status) {
+    case 'review':
+      return 'forbidden';
+    case 'in_progress':
+      return 'wait';
+    case 'refused':
+    case 'declined':
+    case 'error':
+      return 'allowed';
+  }
+}
+
+// A resolve that stopped, with whether approving again is safe (see RetryAdvice). Thrown where the answer is known: a refund
+// that did not go through, an e-mail that failed after the money went back, a request another attempt already resolved.
+export class CancellationResolveError extends Error {
+  constructor(
+    message: string,
+    readonly retry: RetryAdvice,
+  ) {
+    super(message);
+    this.name = 'CancellationResolveError';
+  }
+}
+
+// The resolve form's state: the shared FormState plus, after a failed resolve, whether approving again is safe.
+export type ResolveFormState = (NonNullable<FormState> & { retry?: RetryAdvice }) | null;

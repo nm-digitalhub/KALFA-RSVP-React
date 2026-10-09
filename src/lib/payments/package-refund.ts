@@ -21,7 +21,7 @@ import {
   type ProviderDocument,
 } from './ledger';
 import { refundableAmount, refundableCents } from './status';
-import type { PackageRefundInput, PackageRefundRefusal, PackageRefundResult, PackageRefundSummary } from './package-refund-types';
+import type { PackagePaymentRecord, PackageRefundInput, PackageRefundRefusal, PackageRefundResult, PackageRefundSummary } from './package-refund-types';
 import { cardcomRefundSummary, checkCardcomRefund, refundCardcomPayment } from './cardcom-refund';
 import { purchaseProviderOf } from './purchase-provider';
 
@@ -57,7 +57,7 @@ const SOURCE = 'package-refund';
 type AdminClient = ReturnType<typeof createAdminClient>;
 
 // The shapes every refund path shares (SUMIT here, CardCom in cardcom-refund.ts) live in package-refund-types.ts.
-export type { PackageRefundInput, PackageRefundRefusal, PackageRefundResult, PackageRefundSummary } from './package-refund-types';
+export type { PackagePaymentRecord, PackageRefundAttempt, PackageRefundInput, PackageRefundRefusal, PackageRefundResult, PackageRefundSummary } from './package-refund-types';
 
 const toCents = (n: number) => Math.round(n * 100);
 const isMoney = (n: number) => Number.isFinite(n) && n > 0 && Math.abs(n * 100 - Math.round(n * 100)) < 1e-6;
@@ -180,6 +180,25 @@ export async function packageRefundSummary(
     refundDocument: succeeded[0]?.document ?? null,
     // A card is usable when the saved row carries the expiry and the id of the vault secret that holds the holder id.
     hasCard: !!(card && card.expMonth && card.expYear && card.citizenSecretId),
+  };
+}
+
+// The purchase's document and this request's latest refund attempt, read from the ledger (see PackagePaymentRecord). The
+// same for both clearing companies: the ledger is shared. THROWS when the ledger cannot be read.
+export async function packagePaymentRecord(campaignId: string, cancellationRequestId?: string): Promise<PackagePaymentRecord> {
+  const admin = createAdminClient();
+  const [purchase, attempts] = await Promise.all([
+    latestOperation(admin, campaignId, 'package_purchase', 'succeeded'),
+    cancellationRequestId ? refundsOfRequest(admin, campaignId, cancellationRequestId) : Promise.resolve([]),
+  ]);
+  const purchaseOp = purchase ? await getOperation(admin, purchase.id) : null;
+  // refundsOfRequest lists them oldest first.
+  const last = attempts.at(-1) ?? null;
+  return {
+    purchaseDocument: purchaseOp?.document ?? null,
+    lastRefundAttempt: last
+      ? { outcome: last.outcome, providerStatus: last.providerStatus, providerStatusDescription: last.providerStatusDescription, recordedAt: last.recordedAt }
+      : null,
   };
 }
 

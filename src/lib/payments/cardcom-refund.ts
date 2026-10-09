@@ -1,9 +1,10 @@
 import 'server-only';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import { cancelableDocument } from '@/lib/cardcom/document-types';
-import { documentsCancelDoc } from '@/lib/cardcom/generated/documents/documents';
+import { refundDocumentFor, type RefundDocument } from '@/lib/cardcom/document-types';
+import { transactionsTransaction } from '@/lib/cardcom/generated/transactions/transactions';
 import { CardcomError, cardcomFailureFacts } from '@/lib/cardcom/mutator';
+import { buildRefundTransaction, expiryMMYY } from '@/lib/cardcom/refund-request';
 import { logActivity } from '@/lib/data/activity';
 import { getCardcomApiPassword, getCardcomServerConfig } from '@/lib/data/cardcom-config';
 import { getPaymentsEnabled } from '@/lib/data/payments';
@@ -28,29 +29,30 @@ import { labelTestMoney } from './test-money-label';
 //      does not look like the refund we asked for — goes to REVIEW and is never retried by this code: the money may be back;
 //   6. once CardCom confirmed, nothing that comes after can undo it.
 //
-// WHAT IS DIFFERENT FROM SUMIT. The mechanism is Documents/CancelDoc: it cancels the payment's document and returns the card
-// payment WHOLE. So:
-//   - only a FULL refund is built. A partial one (a cancellation fee stays with us) is refused as `partial_unsupported`; it
-//     waits for plan item U9 (CardCom's Transactions/RefundByTransactionId returns no document, and which credit document a
-//     partial refund produces is not yet known);
-//   - what is cancelled is identified by the document NUMBER and TYPE the payment issued (kept on its ledger row), and the
-//     document CardCom answers with must be the refund counterpart of it (cardcom/document-types.ts) — otherwise the refund is
-//     not believed;
-//   - CancelDoc sends no terminal: it names the company only by the API name and password of the CURRENT connection. A payment made
-//     on another terminal than the connection uses now - or on one that was never recorded - is refused as `terminal_changed` before
-//     anything is written or sent, and is refunded by hand;
-//   - it needs no saved card and no customer number: the API password (a vault secret) is the only credential;
+// WHAT IS DIFFERENT FROM SUMIT. The mechanism is Transactions/Transaction ("Do Transaction") with Advanced.IsRefund and a
+// Document object: one call gives the money back to the payment's card TOKEN and issues the credit document (owner's choice,
+// 9.10.2026 — Documents/CancelDoc answered 9006 "no permission", and RefundByTransactionId issues no document). So:
+//   - any amount up to what is refundable goes back — a full refund or a partial one (a cancellation fee stays with us);
+//   - it needs the token, its expiry and the cardholder's name CardCom recorded on the payment's ledger row; a payment without
+//     them is refused as `no_card` (refunded by hand);
+//   - the credit document is the counterpart of the payment's own document (cardcom/document-types.ts); a payment whose document
+//     type is not one of the two a package produces is refused as `no_document`. The answer must be a refund that created THAT
+//     document type — otherwise it is not believed (review);
+//   - the request names the terminal; a payment made on another terminal than the connection uses now — or on one never
+//     recorded — is refused as `terminal_changed` before anything is written or sent: its token belongs to that terminal;
+//   - our pending row's id is CardCom's ExternalUniqTranId, so CardCom itself never moves money twice for one row;
 //   - a refund goes back through the company that was PAID, so it needs the connection to exist but not the pilot switch.
-// Never logs the API password. Never puts CardCom's own text in front of an admin except through the ledger row.
+// Never logs the API password or the token. Never puts CardCom's own text in front of an admin except through the ledger row.
 
 const REFUND_LINE = 'KALFA — זיכוי ביטול חבילת אישורי הגעה לאירוע';
-const CANCEL_TIMEOUT_MS = 30_000;
+const REFUND_TIMEOUT_MS = 30_000;
 const CATEGORY = 'campaign_billing' as const;
 const SOURCE = 'cardcom-refund';
 
-const DECLINED_NOTE = 'CardCom refused the cancellation; nothing was returned';
+const DECLINED_NOTE = 'CardCom refused the refund; nothing was returned';
 const UNCLEAR_NOTE = 'the answer from CardCom was unclear; the money may have been returned — check CardCom before any retry';
-const MISMATCH_NOTE = 'CardCom answered success, but not with the refund document we expected — check CardCom before any retry';
+const MISMATCH_NOTE = 'CardCom answered success, but not as the refund with the credit document we asked for — check CardCom before any retry';
+const INVALID_REQUEST_NOTE = 'the refund request could not be built from the payment row; nothing was sent to CardCom';
 const UNLOCKED_NOTE = 'more than the card paid would have been returned; nothing was sent to CardCom';
 const UNRECORDED_NOTE = 'CardCom confirmed the refund but it could not be recorded as succeeded — confirm in CardCom, then resolve';
 
@@ -61,6 +63,7 @@ const isMoney = (n: number) => Number.isFinite(n) && n > 0 && Math.abs(n * 100 -
 const refused = (reason: PackageRefundRefusal): PackageRefundResult => ({ status: 'refused', reason });
 const asMeta = (meta: Json | undefined): { [key: string]: Json | undefined } =>
   meta !== null && typeof meta === 'object' && !Array.isArray(meta) ? meta : {};
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Best-effort completion of a row whose outcome is already certain from CardCom's side. A failure here is loud, not fatal: the
 // row stays pending and the orphan sweeper moves it to review within ten minutes.
@@ -77,14 +80,17 @@ async function settle(admin: AdminClient, operationId: string, campaignId: strin
 }
 
 type PurchaseRow = {
-  id: string; amount: number | string; provider_document_number: number | null; meta: Json;
+  id: string; amount: number | string; meta: Json;
   // The terminal the payment was opened on (null = a row from before the stamp existed) and the class the database gave it.
   provider_terminal: number | null; is_test: boolean;
+  // What a token refund needs, as CardCom recorded it on the payment. The token is read only here and passed only to the request.
+  card_token_ref: string | null; card_exp_month: number | null; card_exp_year: number | null;
+  card_owner_name: string | null; card_owner_email: string | null;
 };
 async function succeededPurchase(admin: AdminClient, campaignId: string): Promise<PurchaseRow | null> {
   const { data, error } = await admin
     .from('payment_operations')
-    .select('id, amount, provider_document_number, meta, provider_terminal, is_test')
+    .select('id, amount, meta, provider_terminal, is_test, card_token_ref, card_exp_month, card_exp_year, card_owner_name, card_owner_email')
     .eq('campaign_id', campaignId)
     .eq('kind', 'package_purchase')
     .eq('outcome', 'succeeded')
@@ -99,16 +105,25 @@ async function succeededPurchase(admin: AdminClient, campaignId: string): Promis
 // refund names the company by the connection's credentials alone. A payment with no recorded terminal cannot be vouched for.
 const refundableOnThisConnection = (purchase: PurchaseRow, terminalNumber: number): boolean => purchase.provider_terminal === terminalNumber;
 
-// The document that can be cancelled for a payment, or null when there is none we can name.
-function documentOf(purchase: PurchaseRow): { number: number; type: number; refundType: number } | null {
-  const number = purchase.provider_document_number;
-  const known = cancelableDocument(asMeta(purchase.meta).cardcom_document_type);
-  if (typeof number !== 'number' || !Number.isInteger(number) || number <= 0 || !known) return null;
-  return { number, type: known.type, refundType: known.refundType };
+// The credit document a refund of this payment issues, or null when the payment's document type is not one we can name.
+const creditDocumentOf = (purchase: PurchaseRow): RefundDocument | null => refundDocumentFor(asMeta(purchase.meta).cardcom_document_type);
+
+// The card the money goes back to: the payment's token, its expiry and the cardholder's name — or null when any is missing.
+type RefundCard = { token: string; expMonth: number; expYear: number; holderName: string; holderEmail: string | null };
+function cardOf(purchase: PurchaseRow): RefundCard | null {
+  const { card_token_ref: token, card_exp_month: expMonth, card_exp_year: expYear } = purchase;
+  const holderName = purchase.card_owner_name?.trim() ?? '';
+  if (typeof token !== 'string' || !GUID.test(token) || expMonth == null || expYear == null || !expiryMMYY(expMonth, expYear) || holderName === '') {
+    return null;
+  }
+  return { token, expMonth, expYear, holderName, holderEmail: purchase.card_owner_email };
 }
 
 type Prepared =
-  | { ok: true; admin: AdminClient; terminalApiName: string; password: string; purchase: PurchaseRow; document: { number: number; type: number; refundType: number } }
+  | {
+      ok: true; admin: AdminClient; terminalNumber: number; terminalApiName: string; password: string; purchase: PurchaseRow;
+      card: RefundCard; document: RefundDocument;
+    }
   | { ok: false; result: PackageRefundResult };
 
 // Everything a refund needs, read WITHOUT writing or sending anything. Either the pieces, or the answer that stops it. Shared by
@@ -141,15 +156,13 @@ async function prepare(input: PackageRefundInput): Promise<Prepared> {
     // Before anything else that says "this could be done": if the connection cannot refund this payment at all, say so.
     if (!refundableOnThisConnection(purchase, config.terminalNumber)) return stop(refused('terminal_changed'));
 
-    // CancelDoc cancels the document, and with it the whole card payment: only a refund of everything the card paid, with
-    // nothing refunded before, is a refund it can make.
-    const paid = toCents(Number(purchase.amount));
-    if (toCents(amount) !== paid || toCents(refundable) !== paid) return stop(refused('partial_unsupported'));
-
-    const document = documentOf(purchase);
+    // The money goes back to the payment's token, and the credit document must be one we can name.
+    const card = cardOf(purchase);
+    if (!card) return stop(refused('no_card'));
+    const document = creditDocumentOf(purchase);
     if (!document) return stop(refused('no_document'));
 
-    return { ok: true, admin, terminalApiName: config.apiName, password, purchase, document };
+    return { ok: true, admin, terminalNumber: config.terminalNumber, terminalApiName: config.apiName, password, purchase, card, document };
   } catch {
     console.error('[cardcom-refund] could not read what is refundable; nothing was sent', { campaignId });
     return stop({ status: 'error' });
@@ -163,7 +176,8 @@ export async function checkCardcomRefund(input: PackageRefundInput): Promise<Pac
 }
 
 // What a screen and the cancellation resolution need to know about a CardCom package's money. THROWS when the ledger cannot be
-// read. `hasCard` keeps its name for the callers it is shared with: for CardCom it means "a document exists that can be refunded".
+// read. `hasCard` means "refundCardcomPayment can give this payment back by itself": a token, a credit document we can name,
+// and the terminal the connection uses now.
 export async function cardcomRefundSummary(
   campaignId: string,
   cancellationRequestId?: string,
@@ -178,9 +192,12 @@ export async function cardcomRefundSummary(
   const succeeded = earlier.filter((op) => op.outcome === 'succeeded');
   const refundedCents = succeeded.reduce((sum, op) => sum + toCents(op.amount), 0);
   // The screen must not promise an automatic refund that refundCardcomPayment will refuse: a payment the connection cannot refund
-  // (another terminal, or none recorded) reads as "no card", which sends the admin to refund by hand.
-  const hasCard = !!purchase && !!config && documentOf(purchase) !== null && refundableOnThisConnection(purchase, config.terminalNumber);
-  // The refund's credit document: CancelDoc answers only its number and type (no id, no link), and the ledger row keeps it.
+  // (no token, a document we cannot name, another terminal or none recorded) reads as "no card", which sends the admin to refund
+  // by hand.
+  const hasCard =
+    !!purchase && !!config && cardOf(purchase) !== null && creditDocumentOf(purchase) !== null &&
+    refundableOnThisConnection(purchase, config.terminalNumber);
+  // The refund's credit document, as the ledger row keeps it (its number and link, from CardCom's answer).
   return { refundable: refundableAmount(ops), refundedForRequest: refundedCents / 100, hasCard, refundDocument: succeeded[0]?.document ?? null };
 }
 
@@ -188,7 +205,7 @@ export async function refundCardcomPayment(input: PackageRefundInput): Promise<P
   const { campaignId, eventId, amount, cancellationRequestId } = input;
   const prepared = await prepare(input);
   if (!prepared.ok) return prepared.result;
-  const { admin, terminalApiName, password, purchase, document } = prepared;
+  const { admin, terminalNumber, terminalApiName, password, purchase, card, document } = prepared;
 
   // The PENDING row, before CardCom is asked for anything. The line is what the ledger shows the money as.
   let operationId: string;
@@ -226,13 +243,25 @@ export async function refundCardcomPayment(input: PackageRefundInput): Promise<P
   const alert = (level: 'error' | 'warn' | 'info', title: string, extra: Record<string, string | number> = {}) =>
     void sendSlackAlert({ level, category: CATEGORY, source: SOURCE, title: labelTestMoney(title, isTest), fields: { campaign_id: campaignId, event_id: eventId, operation_id: operationId, ...extra } });
 
-  // The cancellation.
-  let answer: Awaited<ReturnType<typeof documentsCancelDoc>>;
+  // The request, built before anything is sent: one that cannot be built (prepare already checked every piece, so this is a
+  // bug) closes the row as failed — nothing reached CardCom.
+  let request: ReturnType<typeof buildRefundTransaction>;
   try {
-    answer = await documentsCancelDoc(
-      { ApiName: terminalApiName, ApiPassword: password, DocumentNumber: document.number, DocumentType: document.type },
-      { cardcom: { timeoutMs: CANCEL_TIMEOUT_MS } },
-    );
+    request = buildRefundTransaction({
+      terminalNumber, apiName: terminalApiName, apiPassword: password, operationId, amount,
+      token: card.token, expMonth: card.expMonth, expYear: card.expYear, document,
+      holder: { name: card.holderName, email: card.holderEmail }, line: REFUND_LINE,
+    });
+  } catch {
+    console.error('[cardcom-refund] the refund request could not be built; nothing was sent', { campaignId, operationId });
+    await settle(admin, operationId, campaignId, { from: 'pending', outcome: 'failed', note: INVALID_REQUEST_NOTE });
+    return { status: 'error' };
+  }
+
+  // The refund, with its credit document, in one call.
+  let answer: Awaited<ReturnType<typeof transactionsTransaction>>;
+  try {
+    answer = await transactionsTransaction(request, { cardcom: { timeoutMs: REFUND_TIMEOUT_MS } });
   } catch (err) {
     // CardCom itself refused the request (a 4xx) and nothing happened: a clear refusal. Everything else — the network, a
     // timeout, a 5xx, a body we could not read — is "we do not know": the money may already be back. Either way what the
@@ -261,9 +290,9 @@ export async function refundCardcomPayment(input: PackageRefundInput): Promise<P
     return { status: 'review' };
   }
 
-  // CardCom's guide: a refund answers ResponseCode 0 with the NEW document. A non-zero code is a refusal.
+  // ResponseCode 0 is success (700/701 are J2/J5 checks, never a refund); anything else is a refusal.
   if (answer.ResponseCode !== 0) {
-    console.error('[cardcom-refund] CardCom did not cancel the document', { campaignId, operationId });
+    console.error('[cardcom-refund] CardCom did not make the refund', { campaignId, operationId, responseCode: answer.ResponseCode ?? null });
     await settle(admin, operationId, campaignId, {
       from: 'pending', outcome: 'failed', note: DECLINED_NOTE,
       providerStatus: String(answer.ResponseCode ?? 'none'), providerStatusDescription: answer.Description ?? null,
@@ -272,11 +301,15 @@ export async function refundCardcomPayment(input: PackageRefundInput): Promise<P
     return { status: 'declined' };
   }
 
-  // ResponseCode 0 is not yet "the money is back for THIS payment": the new document must exist and be the refund of the type
-  // we asked to cancel. A different one means the type numbers are wrong (cardcom/document-types.ts) — not believed.
-  const newDocument: ProviderDocument | null = typeof answer.NewDocumentNumber === 'number' ? { id: null, number: answer.NewDocumentNumber, url: null } : null;
-  const refs = { providerStatus: '0', providerStatusDescription: answer.Description ?? null, providerDocument: newDocument };
-  if (!newDocument || answer.NewDocumentType !== document.refundType) {
+  // ResponseCode 0 is not yet "the money is back with its credit document": the answer must be a REFUND that created the
+  // document type we asked for, with its number. Anything else is not believed.
+  const newDocument: ProviderDocument | null =
+    typeof answer.DocumentNumber === 'number' ? { id: null, number: answer.DocumentNumber, url: answer.DocumentUrl ?? null } : null;
+  const refs = {
+    providerStatus: '0', providerStatusDescription: answer.Description ?? null, providerDocument: newDocument,
+    providerPaymentId: typeof answer.TranzactionId === 'number' ? answer.TranzactionId : null,
+  };
+  if (!newDocument || answer.IsRefund !== true || answer.DocumentType !== document.answered) {
     console.error('[cardcom-refund] the answer does not look like the refund that was asked for', { campaignId, operationId });
     await settle(admin, operationId, campaignId, { from: 'pending', outcome: 'review', note: MISMATCH_NOTE, ...refs });
     alert('error', 'זיכוי ללקוח חבילה ב-CardCom בבדיקה ידנית — המסמך שהוחזר אינו תואם לבקשה', { document_number: newDocument?.number ?? 'none' });
