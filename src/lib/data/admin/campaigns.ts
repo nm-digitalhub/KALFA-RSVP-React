@@ -16,7 +16,7 @@ import {
 } from '@/lib/data/campaigns';
 import type { OwnedEvent } from '@/lib/data/events';
 import { loadOperationsOf } from '@/lib/payments/ledger';
-import { ledgerMoney, type LedgerMoney } from '@/lib/payments/status';
+import { deriveStatus, ledgerMoney, type LedgerMoney, type PaymentState } from '@/lib/payments/status';
 import type { CampaignStatus } from '@/lib/data/campaign-status';
 import {
   ADMIN_ATTENTION_FILTER,
@@ -208,8 +208,9 @@ export async function getThankyouScheduleForAdminView(
 }
 
 // A campaign row for the admin wind-down list: the campaign, its status, the
-// owning event's name/date, and the charge/credit outcome so an admin can see
-// the billing state at a glance.
+// owning event's name/date, and the hold/charge columns its single payment
+// status is derived from (campaign-payment-status.ts). Amounts and documents are
+// not listed: they are on the campaign page's payments list.
 export interface AdminCampaignListItem {
   id: string;
   status: CampaignStatus;
@@ -218,7 +219,6 @@ export interface AdminCampaignListItem {
   eventDate: string | null;
   chargeStatus: string | null;
   finalChargeAmount: number | null;
-  creditApplied: number;
   // Hold-tracking: a stuck hold (pending/hold_failed/hold_review) never even
   // reaches status='active', so it would never appear in WINDDOWN_STATUSES-
   // filtered results — see ADMIN_ATTENTION_FILTER / STUCK_CAPTURE_STATUSES
@@ -231,8 +231,6 @@ export interface AdminCampaignListItem {
   // "תפוס" for holds SUMIT had long released (verified live 2026-09-24: all
   // three "תפוס" rows were released in SUMIT's holds folder).
   releaseStatus: string | null;
-  holdOrderDocumentNumber: number | null;
-  holdOrderDocumentUrl: string | null;
 }
 
 // WINDDOWN_STATUSES (wind-down actions: close/pause/settle/cancel) and
@@ -255,7 +253,7 @@ export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> 
   const { data, error } = await admin
     .from('campaigns')
     .select(
-      'id, status, event_id, created_at, charge_status, final_charge_amount, credit_applied, capture_status, release_status, hold_order_document_number, hold_order_document_url, events(name, event_date)',
+      'id, status, event_id, created_at, charge_status, final_charge_amount, capture_status, release_status, events(name, event_date)',
     )
     .or(ADMIN_ATTENTION_FILTER)
     .order('created_at', { ascending: false });
@@ -270,22 +268,21 @@ export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> 
     eventDate: c.events?.event_date ?? null,
     chargeStatus: c.charge_status,
     finalChargeAmount: c.final_charge_amount,
-    creditApplied: Number(c.credit_applied ?? 0),
     captureStatus: c.capture_status,
     releaseStatus: c.release_status,
-    holdOrderDocumentNumber: c.hold_order_document_number,
-    holdOrderDocumentUrl: c.hold_order_document_url,
   }));
 }
 
-// What the payment ledger recorded for each listed campaign (paid, refunded, still unresolved), read in ONE query for the
-// whole list and folded per campaign by each kind's effect (ledgerMoney). A campaign with no ledger rows has no entry.
-// null = the ledger could not be read: the list says so instead of showing every campaign as unpaid.
-export async function ledgerMoneyForAdmin(campaignIds: readonly string[]): Promise<Map<string, LedgerMoney> | null> {
+// What the payment ledger says about each listed campaign — its derived state and its paid / refunded sums — read in
+// ONE query for the whole list and folded per campaign by each kind's effect. A campaign with no ledger rows has no
+// entry. null = the ledger could not be read: the list says so instead of showing every campaign as unpaid.
+export async function ledgerForAdmin(
+  campaignIds: readonly string[],
+): Promise<Map<string, { state: PaymentState; money: LedgerMoney }> | null> {
   await requirePlatformPermission('manage_billing');
   try {
     const rows = await loadOperationsOf(createAdminClient(), campaignIds);
-    return new Map([...rows].map(([id, ops]) => [id, ledgerMoney(ops)]));
+    return new Map([...rows].map(([id, ops]) => [id, { state: deriveStatus(ops), money: ledgerMoney(ops) }]));
   } catch (err) {
     console.error('[admin-campaigns] the payment ledger could not be read', {
       error: err instanceof Error ? err.message : String(err),
