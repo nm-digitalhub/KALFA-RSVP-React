@@ -7751,6 +7751,12 @@ export type Database = {
         }
         Returns: undefined
       }
+      cardcom_document_report_secret: { Args: never; Returns: string }
+      cardcom_document_report_secret_exists: { Args: never; Returns: boolean }
+      cardcom_document_report_secret_save: {
+        Args: { p_secret: string }
+        Returns: undefined
+      }
       claim_callback_triage: {
         Args: never
         Returns: {
