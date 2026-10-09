@@ -79,7 +79,12 @@ describe('CampaignPayments', () => {
     render(<CampaignPayments audience="staff" operations={[{ ...refund, outcome: 'failed', staff: staffFacts }]} />);
     expect(screen.getByText('פרטים טכניים (צוות בלבד)')).toBeTruthy();
     expect(screen.getByText('265709850')).toBeTruthy();
-    expect(screen.getByText('ReceiptRefund')).toBeTruthy();
+    // Technical names in the viewer's language; identifiers stay as recorded.
+    expect(screen.getByText('קבלה זיכוי')).toBeTruthy();
+    expect(screen.getByText('זיכוי')).toBeTruthy();
+    expect(screen.getByText('קארדקום')).toBeTruthy();
+    expect(screen.getByText('המערכת')).toBeTruthy();
+    expect(screen.queryByText('ReceiptRefund')).toBeNull();
     expect(screen.getByText('נכשל')).toBeTruthy();
     expect(screen.queryByText('RRN')).toBeNull();
   });

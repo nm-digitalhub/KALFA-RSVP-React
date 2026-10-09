@@ -3,6 +3,7 @@ import { formatIsraelDateTime } from '@/lib/date';
 import { formatAmount } from '@/lib/format';
 import type { DisplayedOperation, OperationStaffFacts, StaffDisplayedOperation } from '@/lib/payments/ledger';
 import { OPERATION_OUTCOME_LABELS, ledgerMoneyParts } from '@/lib/payments/operation-labels';
+import { providerValueLabel, type ProviderValueField } from '@/lib/payments/provider-value-labels';
 import { ledgerMoney } from '@/lib/payments/status';
 
 // A campaign's payments, as the ledger recorded them: one row per operation, with the operation's own name from the
@@ -51,11 +52,27 @@ const STAFF_FACTS: { key: keyof OperationStaffFacts; label: string }[] = [
   { key: 'recordedAt', label: 'נרשם' },
 ];
 
+// The facts whose value is a provider's (or our own) technical name, and the translation table each is looked up in.
+const TRANSLATED_FACTS: Partial<Record<keyof OperationStaffFacts, ProviderValueField>> = {
+  provider: 'provider',
+  source: 'source',
+  documentType: 'documentType',
+  dealType: 'dealType',
+  paymentType: 'paymentType',
+  acquirer: 'acquirer',
+  cardBrand: 'cardBrand',
+  cardIssuer: 'cardIssuer',
+};
+
 function factValue(key: keyof OperationStaffFacts, value: OperationStaffFacts[keyof OperationStaffFacts]): string | null {
   if (value === null || value === '') return null;
   if (typeof value === 'boolean') return value ? 'כן' : 'לא';
   if (key === 'creditApplied') return Number(value) > 0 ? formatAmount(Number(value)) : null;
   if (key === 'recordedAt') return formatIsraelDateTime(String(value)) || String(value);
+  const table = TRANSLATED_FACTS[key];
+  if (table) return providerValueLabel(table, String(value));
+  // Identifiers, codes and free text (transaction id, approval number, the provider's own description, a note): shown
+  // exactly as recorded, because staff match them against the provider's screens.
   return String(value);
 }
 
