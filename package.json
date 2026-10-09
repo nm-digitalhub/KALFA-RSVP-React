@@ -2,6 +2,9 @@
   "name": "beta",
   "version": "0.1.0",
   "private": true,
+  "scarfSettings": {
+    "enabled": false
+  },
   "scripts": {
     "dev": "next dev",
     "build": "NEXT_DIST_DIR=.next-verify next build --webpack",

@@ -108,10 +108,15 @@ const nextConfig: NextConfig = {
   //
   // Google Analytics Data uses Node-specific runtime loading through
   // google-gax; keep it external to the Next.js server bundle.
+  //
+  // rate-limiter-flexible: its index.js loads every store it supports (Redis, Mongo, Drizzle…), and
+  // RateLimiterDrizzle.js requires an expression webpack cannot resolve ("Critical dependency" build warning).
+  // We use only RateLimiterMemory (src/lib/security/rate-limit.ts); Node's own require loads it at runtime.
   serverExternalPackages: [
     'puppeteer',
     'pg-boss',
     '@google-analytics/data',
+    'rate-limiter-flexible',
   ],
   async headers() {
     return [
