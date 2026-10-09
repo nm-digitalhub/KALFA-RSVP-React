@@ -9,6 +9,7 @@
 // same reason.)
 
 import { escapeHtml as esc } from '@/lib/html';
+import { cancellationReference } from '@/lib/data/cancellation-reference';
 
 // Email notifying the customer their agreement is signed (or, for `kind:
 // 'approved'`, that the package terms were approved), with a SECURE LINK to
@@ -235,7 +236,7 @@ const CANCELLATION_RESOLUTION_COPY: Record<
 
 export function cancellationRequestResponseEmail(input: {
   recipientName: string;
-  requestNumber: number;
+  requestCode: string;
   resolution: 'full_cancellation' | 'partial_charge' | 'declined';
   resolutionAmount?: number;
   // What already went back to the card (see CANCELLATION_RESOLUTION_COPY); omitted when no money was returned.
@@ -245,11 +246,11 @@ export function cancellationRequestResponseEmail(input: {
 }): { subject: string; html: string; text: string } {
   const name = input.recipientName.trim() || 'לקוח יקר';
   const copy = CANCELLATION_RESOLUTION_COPY[input.resolution](input.resolutionAmount, input.refundedAmount);
-  const subject = `בקשת ביטול #${input.requestNumber} — ${copy.subjectSuffix}`;
+  const subject = `בקשת ביטול ${cancellationReference(input.requestCode)} — ${copy.subjectSuffix}`;
   const note = stripDuplicateFraming(input.resolutionNote);
   const text = `שלום ${name},
 
-בקשת ביטול #${input.requestNumber}: ${copy.opening}
+בקשת ביטול ${cancellationReference(input.requestCode)}: ${copy.opening}
 
 ${inlineMarkdownToText(note, input.origin)}
 
@@ -259,7 +260,7 @@ ${inlineMarkdownToText(note, input.origin)}
 <html lang="he" dir="rtl">
 <body lang="he" dir="rtl" style="font-family:Arial,Helvetica,sans-serif;direction:rtl;color:#1a1a1a;line-height:1.7;margin:0;padding:24px;background:#f5f5f7">
   <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:10px;padding:24px;border:1px solid #e3e3e8">
-    <h1 style="font-size:20px;margin:0 0 12px">בקשת ביטול #${input.requestNumber}</h1>
+    <h1 style="font-size:20px;margin:0 0 12px">בקשת ביטול <bdi>${cancellationReference(input.requestCode)}</bdi></h1>
     <p style="margin:8px 0">שלום ${esc(name)},</p>
     <p style="margin:8px 0">${esc(copy.opening)}</p>
     <div style="margin:12px 0;white-space:pre-line">${inlineMarkdownToHtml(esc(note), esc(input.origin))}</div>

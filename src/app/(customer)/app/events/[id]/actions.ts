@@ -30,6 +30,7 @@ import {
 } from '@/lib/validation/schemas';
 import { createCancellationRequestSchema } from '@/lib/validation/event-cancellation';
 import { issuesToFieldErrors, type FormState } from '@/lib/validation/result';
+import { cancellationReference } from '@/lib/data/cancellation-reference';
 
 // `eventId` is bound from the route segment (server-side), NOT submitted by the
 // browser. Authorization is enforced again inside updateEvent via the event-access
@@ -229,9 +230,9 @@ export async function createCancellationRequestAction(
     return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
   try {
-    const { requestNumber } = await createCancellationRequest(eventId, parsed.data);
+    const { requestCode } = await createCancellationRequest(eventId, parsed.data);
     revalidatePath(`/app/events/${eventId}`);
-    return { notice: `בקשת הביטול נשלחה — מספר בקשה #${requestNumber}. נעדכן אותך במייל.` };
+    return { notice: `בקשת הביטול נשלחה — מספר בקשה ${cancellationReference(requestCode)}. נעדכן אותך במייל.` };
   } catch (err) {
     unstable_rethrow(err);
     return { error: err instanceof Error ? err.message : 'פתיחת בקשת הביטול נכשלה' };

@@ -2855,6 +2855,7 @@ export type Database = {
           id: string
           owner_id: string
           reason: string
+          request_code: string
           request_number: number
           resolution: string | null
           resolution_amount: number | null
@@ -2874,6 +2875,7 @@ export type Database = {
           id?: string
           owner_id: string
           reason: string
+          request_code?: string
           request_number?: never
           resolution?: string | null
           resolution_amount?: number | null
@@ -2893,6 +2895,7 @@ export type Database = {
           id?: string
           owner_id?: string
           reason?: string
+          request_code?: string
           request_number?: never
           resolution?: string | null
           resolution_amount?: number | null
@@ -8133,6 +8136,7 @@ export type Database = {
         Args: { p_actor: string; p_event: string }
         Returns: string
       }
+      new_cancellation_request_code: { Args: never; Returns: string }
       next_manual_touchpoint: {
         Args: { p_campaign: string; p_contact: string }
         Returns: number

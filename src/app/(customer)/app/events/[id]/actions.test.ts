@@ -255,13 +255,13 @@ describe('createCancellationRequestAction', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('returns a notice with the request number on success', async () => {
-    vi.mocked(createCancellationRequest).mockResolvedValue({ id: 'r1', requestNumber: 42 });
+    vi.mocked(createCancellationRequest).mockResolvedValue({ id: 'r1', requestCode: '7K4Q-92XM' });
     const result = await createCancellationRequestAction(
       'e1',
       null,
       fd({ reason: 'שינוי תוכניות משפחתיות', smsConsent: 'on' }),
     );
-    expect(result?.notice).toContain('42');
+    expect(result?.notice).toContain('CX-7K4Q-92XM');
   });
 
   it('surfaces a validation error for a too-short reason', async () => {

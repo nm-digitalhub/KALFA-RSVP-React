@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, unstable_rethrow } from 'next/navigation';
 import { ArrowRight, CircleAlert, CircleCheck, CreditCard, FileText, Info, TriangleAlert } from 'lucide-react';
+import { z } from 'zod';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { buttonVariants } from '@/components/ui/button';
@@ -22,6 +23,7 @@ import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
 import { computeChargeAmount } from '@/lib/data/close-charge-amount';
 import { cn } from '@/lib/utils';
 import { PageHeading, Badge, formatCurrency, formatDateTime } from '../../_components';
+import { cancellationReference } from '@/lib/data/cancellation-reference';
 import { ResolveForm, type MoneyOutcome } from './resolve-form';
 
 export const metadata: Metadata = { title: 'בקשת ביטול' };
@@ -109,6 +111,10 @@ export default async function AdminCancellationDetailPage({
 }) {
   await requirePlatformPermission('manage_billing');
   const { id } = await params;
+  // The segment is whatever was typed in the address bar. A request's id is a uuid, and anything else is no request at
+  // all: a 404 here, before the database is asked (which refuses a non-uuid with an error the reader would turn into
+  // "could not load" — measured 9.10.2026: "14" and "abc" both came back as 22P02).
+  if (!z.uuid().safeParse(id).success) notFound();
   // A failed read throws to the admin error boundary (retry); only a request that does not exist is a 404.
   const request = await getCancellationRequestForAdmin(id);
   if (!request) notFound();
@@ -195,7 +201,7 @@ export default async function AdminCancellationDetailPage({
       </Link>
 
       <div className="flex flex-wrap items-center gap-3">
-        <PageHeading>בקשת ביטול #{request.requestNumber}</PageHeading>
+        <PageHeading>בקשת ביטול <bdi>{cancellationReference(request.requestCode)}</bdi></PageHeading>
         <Badge variant={pending ? 'warning' : 'success'}>{pending ? 'ממתינה להחלטה' : 'טופלה'}</Badge>
       </div>
 

@@ -43,6 +43,12 @@ type ResolveInput = z.infer<typeof resolveCancellationRequestSchema>;
 // unique index (event_cancellation_requests_one_pending) when two arrive at the same moment.
 export const CANCELLATION_REQUEST_ALREADY_OPEN = 'כבר קיימת בקשת ביטול פתוחה לאירוע זה';
 
+// The unique constraint on request_code (migration 20261009194139), and how many random draws an insert gets.
+const REQUEST_CODE_CONSTRAINT = 'event_cancellation_requests_request_code_key';
+const MAX_CODE_ATTEMPTS = 3;
+const isCodeCollision = (error: { code?: string; message?: string } | null): boolean =>
+  error?.code === '23505' && (error.message ?? '').includes(REQUEST_CODE_CONSTRAINT);
+
 // Owner-initiated: request to cancel an active/closed event. Uses the
 // owner-scoped cookie client (RLS-enforced ecr_owner_insert), NOT the admin
 // client — mirrors how callback_requests customer-facing inserts work.
@@ -50,7 +56,7 @@ export const CANCELLATION_REQUEST_ALREADY_OPEN = 'כבר קיימת בקשת ב�
 export async function createCancellationRequest(
   eventId: string,
   input: CreateInput,
-): Promise<{ id: string; requestNumber: number }> {
+): Promise<{ id: string; requestCode: string }> {
   const event = await requireOwnedEvent(eventId);
   if (event.status === 'draft') {
     throw new Error('אירוע בטיוטה ניתן למחיקה ישירה — אין צורך בבקשת ביטול');
@@ -73,27 +79,34 @@ export async function createCancellationRequest(
   if (openError) throw new Error('פתיחת בקשת הביטול נכשלה');
   if (open) throw new Error(CANCELLATION_REQUEST_ALREADY_OPEN);
 
-  const { data, error } = await supabase
-    .from('event_cancellation_requests')
-    .insert({
-      event_id: eventId,
-      owner_id: user.id,
-      reason: input.reason,
-      sms_consent: input.smsConsent,
-    })
-    .select('id, request_number')
-    .single();
-
-  if (error?.code === '23505') throw new Error(CANCELLATION_REQUEST_ALREADY_OPEN);
+  // The database draws request_code at random; two equal codes (about one in a trillion) are refused by its unique
+  // constraint, so a collision is simply drawn again. Every other 23505 here is the one-open-request index.
+  const insertOnce = () =>
+    supabase
+      .from('event_cancellation_requests')
+      .insert({
+        event_id: eventId,
+        owner_id: user.id,
+        reason: input.reason,
+        sms_consent: input.smsConsent,
+      })
+      .select('id, request_code')
+      .single();
+  let result = await insertOnce();
+  for (let attempt = 1; attempt < MAX_CODE_ATTEMPTS && isCodeCollision(result.error); attempt++) {
+    result = await insertOnce();
+  }
+  const { data, error } = result;
+  if (error?.code === '23505' && !isCodeCollision(error)) throw new Error(CANCELLATION_REQUEST_ALREADY_OPEN);
   if (error || !data) throw new Error('פתיחת בקשת הביטול נכשלה');
 
   await logActivity({
     eventId,
     action: 'event_cancellation.requested',
-    meta: { requestId: data.id, requestNumber: data.request_number },
+    meta: { requestId: data.id, requestCode: data.request_code },
   });
 
-  return { id: data.id, requestNumber: data.request_number };
+  return { id: data.id, requestCode: data.request_code };
 }
 
 // Owner-scoped read for the customer's own event page: the latest
@@ -102,7 +115,7 @@ export async function createCancellationRequest(
 // eventId filter here, so this can never leak another owner's request).
 export type OwnCancellationRequest = {
   id: string;
-  requestNumber: number;
+  requestCode: string;
   status: 'pending' | 'resolved';
   resolution: 'full_cancellation' | 'partial_charge' | 'declined' | null;
   resolutionNote: string | null;
@@ -114,7 +127,7 @@ export async function getCancellationRequestForEvent(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('event_cancellation_requests')
-    .select('id, request_number, status, resolution, resolution_note')
+    .select('id, request_code, status, resolution, resolution_note')
     .eq('event_id', eventId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -124,7 +137,7 @@ export async function getCancellationRequestForEvent(
 
   return {
     id: data.id,
-    requestNumber: data.request_number,
+    requestCode: data.request_code,
     status: data.status as 'pending' | 'resolved',
     resolution: data.resolution as OwnCancellationRequest['resolution'],
     resolutionNote: data.resolution_note,
@@ -133,7 +146,7 @@ export async function getCancellationRequestForEvent(
 
 export type CancellationRequestForAdmin = {
   id: string;
-  requestNumber: number;
+  requestCode: string;
   eventId: string;
   eventName: string;
   eventStatus: string;
@@ -149,12 +162,12 @@ export type CancellationRequestForAdmin = {
 };
 
 const ADMIN_SELECT =
-  'id, request_number, event_id, reason, sms_consent, status, resolution, resolution_amount, ' +
+  'id, request_code, event_id, reason, sms_consent, status, resolution, resolution_amount, ' +
   'capture_outcome, sumit_document_url, resolution_note, created_at, events(name, status)';
 
 function mapAdminRow(r: {
   id: string;
-  request_number: number;
+  request_code: string;
   event_id: string;
   reason: string;
   sms_consent: boolean;
@@ -169,7 +182,7 @@ function mapAdminRow(r: {
 }): CancellationRequestForAdmin {
   return {
     id: r.id,
-    requestNumber: r.request_number,
+    requestCode: r.request_code,
     eventId: r.event_id,
     eventName: r.events?.name ?? '',
     eventStatus: r.events?.status ?? '',
@@ -450,7 +463,7 @@ export async function resolveCancellationRequest(
   // fetched row explicitly.
   type ResolveFetchRow = {
     id: string;
-    request_number: number;
+    request_code: string;
     event_id: string;
     sms_consent: boolean;
     status: string;
@@ -478,7 +491,7 @@ export async function resolveCancellationRequest(
   const { data, error: fetchError } = await admin
     .from('event_cancellation_requests')
     .select(
-      'id, request_number, event_id, sms_consent, status, ' +
+      'id, request_code, event_id, sms_consent, status, ' +
         'events(id, status, owner_id, campaigns(id, status, created_at, charge_status, final_charge_amount, max_charge_ceiling, ' +
         'card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, package_price))',
     )
@@ -615,7 +628,7 @@ export async function resolveCancellationRequest(
   const emailCustomer = async (refundedAmount?: number): Promise<void> => {
     const { subject, html, text } = cancellationRequestResponseEmail({
       recipientName: ownerName,
-      requestNumber: reqRow.request_number,
+      requestCode: reqRow.request_code,
       resolution,
       resolutionAmount: captureOutcome === 'manual_refund_required' ? finalAmount : resolutionAmount,
       refundedAmount,
@@ -748,7 +761,7 @@ export async function resolveCancellationRequest(
       // A package refund: the fee that stayed and what went back, as in the e-mail. Everything else keeps its wording.
       const smsText = buildCancellationSmsText({
         fullName: ownerName,
-        requestNumber: reqRow.request_number,
+        requestCode: reqRow.request_code,
         resolution,
         ...(refundFirst
           ? { resolutionAmount, refundedAmount: finalAmount }

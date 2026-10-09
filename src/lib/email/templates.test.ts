@@ -210,15 +210,15 @@ describe('inquiryReplyEmail', () => {
 describe('cancellationRequestResponseEmail', () => {
   it('full_cancellation subject and body confirm no charge', () => {
     const { subject, text } = cancellationRequestResponseEmail({
-      recipientName: 'דנה', requestNumber: 42, resolution: 'full_cancellation',
+      recipientName: 'דנה', requestCode: '7K4Q-92XM', resolution: 'full_cancellation',
       resolutionNote: 'מבטלים כי לא נשלחו הודעות', origin: ORIGIN,
     });
-    expect(subject).toContain('42');
+    expect(subject).toContain('בקשת ביטול CX-7K4Q-92XM');
     expect(text).toContain('בוצע במלואו');
   });
   it('partial_charge body includes the amount', () => {
     const { text } = cancellationRequestResponseEmail({
-      recipientName: 'דנה', requestNumber: 42, resolution: 'partial_charge', resolutionAmount: 50,
+      recipientName: 'דנה', requestCode: '7K4Q-92XM', resolution: 'partial_charge', resolutionAmount: 50,
       resolutionNote: 'עבור 12 הודעות שכבר נשלחו', origin: ORIGIN,
     });
     expect(text).toContain('50');
@@ -227,7 +227,7 @@ describe('cancellationRequestResponseEmail', () => {
   // to a customer who paid.
   it('full_cancellation with a refund says the amount went back to the card, not "no charge"', () => {
     const { text } = cancellationRequestResponseEmail({
-      recipientName: 'דנה', requestNumber: 42, resolution: 'full_cancellation', refundedAmount: 120,
+      recipientName: 'דנה', requestCode: '7K4Q-92XM', resolution: 'full_cancellation', refundedAmount: 120,
       resolutionNote: 'בוטל', origin: ORIGIN,
     });
     expect(text).toContain('₪120) הוחזר לכרטיס');
@@ -235,7 +235,7 @@ describe('cancellationRequestResponseEmail', () => {
   });
   it('partial_charge with a refund names the fee kept and the amount that went back', () => {
     const { text } = cancellationRequestResponseEmail({
-      recipientName: 'דנה', requestNumber: 42, resolution: 'partial_charge', resolutionAmount: 15, refundedAmount: 105,
+      recipientName: 'דנה', requestCode: '7K4Q-92XM', resolution: 'partial_charge', resolutionAmount: 15, refundedAmount: 105,
       resolutionNote: 'דמי ביטול', origin: ORIGIN,
     });
     expect(text).toContain('דמי ביטול של ₪15');
@@ -244,7 +244,7 @@ describe('cancellationRequestResponseEmail', () => {
   });
   it('the subject of a partial with a refund says the fee was deducted, not "חיוב חלקי"', () => {
     const { subject } = cancellationRequestResponseEmail({
-      recipientName: 'דנה', requestNumber: 42, resolution: 'partial_charge', resolutionAmount: 15, refundedAmount: 105,
+      recipientName: 'דנה', requestCode: '7K4Q-92XM', resolution: 'partial_charge', resolutionAmount: 15, refundedAmount: 105,
       resolutionNote: 'דמי ביטול', origin: ORIGIN,
     });
     expect(subject).toContain('בניכוי דמי ביטול');
@@ -252,7 +252,7 @@ describe('cancellationRequestResponseEmail', () => {
   });
   it('declined body includes the staff note', () => {
     const { text } = cancellationRequestResponseEmail({
-      recipientName: 'דנה', requestNumber: 42, resolution: 'declined',
+      recipientName: 'דנה', requestCode: '7K4Q-92XM', resolution: 'declined',
       resolutionNote: 'האירוע כבר בעיצומו', origin: ORIGIN,
     });
     expect(text).toContain('האירוע כבר בעיצומו');

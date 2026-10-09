@@ -5,6 +5,7 @@ import { useActionState } from 'react';
 import { FormError, FormNotice, FieldError, SubmitButton } from '@/components/forms';
 import type { FormState } from '@/lib/validation/result';
 import type { OwnCancellationRequest } from '@/lib/data/event-cancellation';
+import { cancellationReference } from '@/lib/data/cancellation-reference';
 
 type BoundAction = (
   prevState: FormState,
@@ -35,7 +36,7 @@ export function CancellationRequestForm({
   if (existingRequest && existingRequest.status === 'pending') {
     return (
       <div className="rounded-lg border border-border bg-card p-4 text-sm">
-        <p className="font-medium">בקשת ביטול #{existingRequest.requestNumber} — ממתינה לטיפול</p>
+        <p className="font-medium">בקשת ביטול <bdi>{cancellationReference(existingRequest.requestCode)}</bdi> — ממתינה לטיפול</p>
         <p className="mt-1 text-muted-foreground">נעדכן אותך במייל ברגע שתטופל.</p>
       </div>
     );
@@ -45,7 +46,7 @@ export function CancellationRequestForm({
     return (
       <div className="rounded-lg border border-border bg-card p-4 text-sm">
         <p className="font-medium">
-          בקשת ביטול #{existingRequest.requestNumber} —{' '}
+          בקשת ביטול <bdi>{cancellationReference(existingRequest.requestCode)}</bdi> —{' '}
           {RESOLUTION_LABELS[existingRequest.resolution ?? ''] ?? existingRequest.resolution}
         </p>
         {existingRequest.resolutionNote ? (

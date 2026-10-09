@@ -24,7 +24,7 @@ import AdminCancellationsPage from './page';
 
 const row = (over: Record<string, unknown> = {}) => ({
   id: '40c6ff9d-bef6-4882-a1c8-5d670d0f3311',
-  requestNumber: 12,
+  requestCode: 'HS64-1HRR',
   eventId: 'e1',
   eventName: 'טסט',
   eventStatus: 'active',
@@ -54,7 +54,7 @@ describe('/admin/cancellations', () => {
   it('gives a pending request a "טיפול בבקשה" link that opens it, in the table and in the card', async () => {
     listMock.mockResolvedValue([row()]);
     const html = await render();
-    const opens = html.match(/href="\/admin\/cancellations\/40c6ff9d-bef6-4882-a1c8-5d670d0f3311" aria-label="טיפול בבקשה #12"/g) ?? [];
+    const opens = html.match(/href="\/admin\/cancellations\/40c6ff9d-bef6-4882-a1c8-5d670d0f3311" aria-label="טיפול בבקשה CX-HS64-1HRR"/g) ?? [];
     expect(opens).toHaveLength(2);
     expect(html).toContain('>ממתינה<');
   });
@@ -62,7 +62,7 @@ describe('/admin/cancellations', () => {
   it('gives a handled request a "צפייה" link instead', async () => {
     listMock.mockResolvedValue([row({ status: 'resolved' })]);
     const html = await render();
-    expect(html).toContain('aria-label="צפייה בבקשה #12"');
+    expect(html).toContain('aria-label="צפייה בבקשה CX-HS64-1HRR"');
     expect(html).not.toContain('aria-label="טיפול בבקשה');
     expect(html).toContain('>טופלה<');
   });

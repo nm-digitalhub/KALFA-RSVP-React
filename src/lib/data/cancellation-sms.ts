@@ -10,15 +10,17 @@
 // refund, like the e-mail). With it, `resolutionAmount` is the fee that stayed and the SMS says both — never "ללא חיוב"
 // to a customer who paid, and never the refunded sum as if it were a charge (both happened before 9.10.2026). Without it
 // the wording is the one for a request that returned nothing.
+import { cancellationReference } from './cancellation-reference';
+
 export function buildCancellationSmsText(input: {
   fullName: string;
-  requestNumber: number;
+  requestCode: string;
   resolution: 'full_cancellation' | 'partial_charge' | 'declined';
   resolutionAmount?: number;
   refundedAmount?: number;
 }): string {
   const name = input.fullName.trim();
-  const ref = `בקשת ביטול #${input.requestNumber}`;
+  const ref = `בקשת ביטול ${cancellationReference(input.requestCode)}`;
   if (input.resolution === 'full_cancellation') {
     return input.refundedAmount
       ? `שלום ${name}, ${ref} בוטלה במלואה, ו-₪${input.refundedAmount} ששילמת הוחזרו לכרטיס. פרטים נשלחו במייל. צוות KALFA`

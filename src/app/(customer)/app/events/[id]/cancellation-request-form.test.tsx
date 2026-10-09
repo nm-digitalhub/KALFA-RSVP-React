@@ -34,11 +34,13 @@ describe('CancellationRequestForm', () => {
   it('shows the open request instead of the form, with no way to send another', () => {
     render(
       <CancellationRequestForm
-        existingRequest={{ id: 'r1', requestNumber: 7, status: 'pending', resolution: null, resolutionNote: null }}
+        existingRequest={{ id: 'r1', requestCode: '7K4Q-92XM', status: 'pending', resolution: null, resolutionNote: null }}
         action={vi.fn()}
       />,
     );
-    expect(screen.getByText(/בקשת ביטול #7/).textContent).toContain('ממתינה לטיפול');
+    // The reference sits in its own <bdi> (a Latin code inside Hebrew text), so the line is matched as a whole paragraph.
+    const line = screen.getByText((_, el) => el?.tagName === 'P' && (el.textContent ?? '').includes('בקשת ביטול CX-7K4Q-92XM'));
+    expect(line.textContent).toContain('ממתינה לטיפול');
     expect(screen.queryByRole('button')).toBeNull();
   });
 });

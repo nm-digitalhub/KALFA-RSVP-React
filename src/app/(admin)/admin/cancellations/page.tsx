@@ -20,6 +20,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { PageHeading, EmptyState, Badge, type BadgeVariant, formatDateTime, firstParam } from '../_components';
+import { cancellationReference } from '@/lib/data/cancellation-reference';
 
 export const metadata: Metadata = { title: 'בקשות ביטול' };
 
@@ -63,7 +64,7 @@ function OpenRequestLink({ request, className }: { request: CancellationRequestF
   return (
     <Link
       href={`${BASE_PATH}/${request.id}`}
-      aria-label={`${pending ? 'טיפול בבקשה' : 'צפייה בבקשה'} #${request.requestNumber}`}
+      aria-label={`${pending ? 'טיפול בבקשה' : 'צפייה בבקשה'} ${cancellationReference(request.requestCode)}`}
       className={cn(buttonVariants({ variant: pending ? 'default' : 'outline' }), className)}
     >
       {pending ? 'טיפול בבקשה' : 'צפייה'}
@@ -145,7 +146,7 @@ export default async function AdminCancellationsPage({
               <TableBody>
                 {requests.map((r) => (
                   <TableRow key={r.id}>
-                    <TableCell className="font-semibold">#{r.requestNumber}</TableCell>
+                    <TableCell className="font-semibold whitespace-nowrap"><bdi>{cancellationReference(r.requestCode)}</bdi></TableCell>
                     <TableCell>
                       <div className="font-medium">{r.eventName || '—'}</div>
                       <div className="text-xs text-muted-foreground">{eventStatusText(r.eventStatus)}</div>
@@ -168,7 +169,7 @@ export default async function AdminCancellationsPage({
             {requests.map((r) => (
               <li key={r.id} className="space-y-3 rounded-xl border border-border bg-card p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-bold">#{r.requestNumber}</span>
+                  <span className="font-bold"><bdi>{cancellationReference(r.requestCode)}</bdi></span>
                   <Badge variant={STATUS_BADGE[r.status]}>{STATUS_LABELS[r.status]}</Badge>
                 </div>
                 <div className="space-y-0.5">

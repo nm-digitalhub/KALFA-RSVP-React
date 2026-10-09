@@ -44,7 +44,7 @@ import AdminCancellationDetailPage from './page';
 
 const request = (over: Record<string, unknown> = {}) => ({
   id: 'r1',
-  requestNumber: 7,
+  requestCode: '7K4Q-92XM',
   eventId: 'e1',
   eventName: 'חתונה',
   eventStatus: 'active',
@@ -80,8 +80,10 @@ const perResult = (over: Record<string, unknown> = {}) => ({
 const pkg = (over: Record<string, unknown> = {}) =>
   perResult({ isPackage: true, maxChargeCeiling: null, packagePaid: 120, packageRefundable: 120, hasCardOnFile: true, ...over });
 
-async function render() {
-  const tree = await AdminCancellationDetailPage({ params: Promise.resolve({ id: 'r1' }) });
+const REQUEST_ID = '3f0b9a52-6c1e-4d8a-9b7e-2a4c5d6e7f80';
+
+async function render(id: string = REQUEST_ID) {
+  const tree = await AdminCancellationDetailPage({ params: Promise.resolve({ id }) });
   return renderToStaticMarkup(tree);
 }
 
@@ -141,6 +143,11 @@ describe('/admin/cancellations/[id]', () => {
   it('a request that could not be read is an error for the error boundary, not a 404', async () => {
     vi.mocked(getCancellationRequestForAdmin).mockRejectedValue(new Error('טעינת בקשת הביטול נכשלה'));
     await expect(render()).rejects.toThrow('טעינת בקשת הביטול נכשלה');
+  });
+
+  it.each(['14', 'abc', '#14', ''])('an address that is not a request id (%j) is a 404, and the database is never asked', async (id) => {
+    await expect(render(id)).rejects.toThrow();
+    expect(getCancellationRequestForAdmin).not.toHaveBeenCalled();
   });
 
   it('a request that does not exist is a 404, not a screen', async () => {

@@ -55,13 +55,18 @@ describe('createCancellationRequest', () => {
   beforeEach(() => vi.clearAllMocks());
 
   // The owner-scoped client: `open` is what the pending-request check finds, `insert` what the insert answers.
-  function client(opts: { open?: unknown; openError?: unknown; insert?: { data: unknown; error: unknown } } = {}) {
+  // `inserts` answers the inserts in order (the last one repeats); `insert` is the single-answer shorthand.
+  function client(
+    opts: { open?: unknown; openError?: unknown; insert?: { data: unknown; error: unknown }; inserts?: { data: unknown; error: unknown }[] } = {},
+  ) {
     const eqCalls: Array<[string, unknown]> = [];
-    const insertMock = vi.fn().mockReturnValue({
+    const answers = opts.inserts ?? [opts.insert ?? { data: { id: 'r1', request_code: '7K4Q-92XM' }, error: null }];
+    let call = 0;
+    const insertMock = vi.fn().mockImplementation(() => ({
       select: () => ({
-        single: async () => opts.insert ?? { data: { id: 'r1', request_number: 42 }, error: null },
+        single: async () => answers[Math.min(call++, answers.length - 1)],
       }),
-    });
+    }));
     const chain = {
       eq: (column: string, value: unknown) => {
         eqCalls.push([column, value]);
@@ -77,11 +82,11 @@ describe('createCancellationRequest', () => {
     return { insertMock, eqCalls };
   }
 
-  it('inserts via the owner-scoped client and returns the request number', async () => {
+  it('inserts via the owner-scoped client and returns the request code', async () => {
     (requireOwnedEvent as unknown as Mock).mockResolvedValue({ id: 'e1', status: 'active' });
     const { eqCalls } = client();
     const r = await createCancellationRequest('e1', { reason: 'שינוי תוכניות', smsConsent: true });
-    expect(r).toEqual({ id: 'r1', requestNumber: 42 });
+    expect(r).toEqual({ id: 'r1', requestCode: '7K4Q-92XM' });
     expect(eqCalls).toEqual([['event_id', 'e1'], ['status', 'pending']]);
   });
 
@@ -96,10 +101,33 @@ describe('createCancellationRequest', () => {
 
   it('answers the same message when the database refuses a simultaneous second request (23505)', async () => {
     (requireOwnedEvent as unknown as Mock).mockResolvedValue({ id: 'e1', status: 'active' });
-    client({ insert: { data: null, error: { code: '23505', message: 'duplicate key' } } });
+    client({ insert: { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "event_cancellation_requests_one_pending"' } } });
     await expect(
       createCancellationRequest('e1', { reason: 'שינוי תוכניות', smsConsent: false }),
     ).rejects.toThrow(CANCELLATION_REQUEST_ALREADY_OPEN);
+  });
+
+  // The database draws the code at random; its unique constraint refuses a repeat, and the insert is simply tried again.
+  const CODE_COLLISION = {
+    data: null,
+    error: { code: '23505', message: 'duplicate key value violates unique constraint "event_cancellation_requests_request_code_key"' },
+  };
+
+  it('a code that collides is drawn again — never reported as "a request is already open"', async () => {
+    (requireOwnedEvent as unknown as Mock).mockResolvedValue({ id: 'e1', status: 'active' });
+    const { insertMock } = client({ inserts: [CODE_COLLISION, { data: { id: 'r2', request_code: 'ZJK4-RETD' }, error: null }] });
+    const r = await createCancellationRequest('e1', { reason: 'שינוי תוכניות', smsConsent: false });
+    expect(r).toEqual({ id: 'r2', requestCode: 'ZJK4-RETD' });
+    expect(insertMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after three collisions with a plain failure', async () => {
+    (requireOwnedEvent as unknown as Mock).mockResolvedValue({ id: 'e1', status: 'active' });
+    const { insertMock } = client({ inserts: [CODE_COLLISION] });
+    await expect(
+      createCancellationRequest('e1', { reason: 'שינוי תוכניות', smsConsent: false }),
+    ).rejects.toThrow('פתיחת בקשת הביטול נכשלה');
+    expect(insertMock).toHaveBeenCalledTimes(3);
   });
 
   it('fails safely when the open-request check cannot be read', async () => {
@@ -376,7 +404,7 @@ describe('resolveCancellationRequest', () => {
     const single = vi.fn().mockResolvedValue({
       data: {
         id: 'r1',
-        request_number: 42,
+        request_code: '7K4Q-92XM',
         status: 'pending',
         sms_consent: opts.smsConsent ?? true,
         event_id: 'e1',
