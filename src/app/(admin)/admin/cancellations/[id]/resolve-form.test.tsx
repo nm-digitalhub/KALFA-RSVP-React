@@ -113,7 +113,7 @@ describe('ResolveForm — fee as a percentage', () => {
     await choosePartial(user);
     await user.click(screen.getByRole('radio', { name: /אחוז מתוך/ }));
     await user.type(document.getElementById('resolutionPercent') as HTMLInputElement, '5');
-    await user.type(screen.getByLabelText('הודעה ללקוח'), 'דמי ביטול של חמישה אחוזים');
+    await user.type(screen.getByLabelText('הודעה ללקוח (נשלחת במייל)'), 'דמי ביטול של חמישה אחוזים');
     await submitAndConfirm(user);
 
     const fd = submittedFields();
@@ -125,7 +125,7 @@ describe('ResolveForm — fee as a percentage', () => {
   it('in amount mode it submits ONLY the amount', async () => {
     const user = setup({ suggestedAmount: 20 });
     await choosePartial(user);
-    await user.type(screen.getByLabelText('הודעה ללקוח'), 'דמי ביטול בסכום קבוע');
+    await user.type(screen.getByLabelText('הודעה ללקוח (נשלחת במייל)'), 'דמי ביטול בסכום קבוע');
     await submitAndConfirm(user);
 
     const fd = submittedFields();
@@ -148,7 +148,7 @@ describe('ResolveForm — fee as a percentage', () => {
     await choosePartial(user);
     await user.click(screen.getByRole('radio', { name: /אחוז מתוך/ }));
     await user.type(document.getElementById('resolutionPercent') as HTMLInputElement, '5');
-    await user.type(screen.getByLabelText('הודעה ללקוח'), 'דמי ביטול של חמישה אחוזים');
+    await user.type(screen.getByLabelText('הודעה ללקוח (נשלחת במייל)'), 'דמי ביטול של חמישה אחוזים');
 
     const text = await openConfirm(user);
     expect(resolveCancellationRequestAction).not.toHaveBeenCalled();
@@ -161,7 +161,7 @@ describe('ResolveForm — fee as a percentage', () => {
     await choosePartial(user);
     await user.click(screen.getByRole('radio', { name: /אחוז מתוך/ }));
     fireEvent.change(document.getElementById('resolutionPercent') as HTMLInputElement, { target: { value: '5' } });
-    await user.type(screen.getByLabelText('הודעה ללקוח'), 'דמי ביטול של חמישה אחוזים');
+    await user.type(screen.getByLabelText('הודעה ללקוח (נשלחת במייל)'), 'דמי ביטול של חמישה אחוזים');
     await openConfirm(user);
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'חזרה לטופס' }));
     expect(resolveCancellationRequestAction).not.toHaveBeenCalled();
@@ -172,7 +172,7 @@ describe('ResolveForm — fee as a percentage', () => {
   it('Enter in the amount field opens the confirmation instead of sending', async () => {
     const user = setup({ suggestedAmount: 20 });
     await choosePartial(user);
-    await user.type(screen.getByLabelText('הודעה ללקוח'), 'דמי ביטול בסכום קבוע');
+    await user.type(screen.getByLabelText('הודעה ללקוח (נשלחת במייל)'), 'דמי ביטול בסכום קבוע');
     await user.type(document.getElementById('resolutionAmount') as HTMLInputElement, '{Enter}');
     expect(await screen.findByRole('alertdialog')).toBeTruthy();
     expect(resolveCancellationRequestAction).not.toHaveBeenCalled();
@@ -214,7 +214,7 @@ describe('ResolveForm — fee as a percentage', () => {
 describe('ResolveForm — confirmation text for a package', () => {
   async function approve(user: ReturnType<typeof userEvent.setup>, resolution: 'full' | 'partial') {
     if (resolution === 'partial') await choosePartial(user);
-    await user.type(screen.getByLabelText('הודעה ללקוח'), 'הודעה ללקוח על הביטול');
+    await user.type(screen.getByLabelText('הודעה ללקוח (נשלחת במייל)'), 'הודעה ללקוח על הביטול');
     return openConfirm(user);
   }
 
@@ -264,7 +264,7 @@ describe('ResolveForm — confirmation text for a package', () => {
     await choosePartial(user);
     await user.click(screen.getByRole('radio', { name: /אחוז מתוך/ }));
     fireEvent.change(document.getElementById('resolutionPercent') as HTMLInputElement, { target: { value: '5' } });
-    await user.type(screen.getByLabelText('הודעה ללקוח'), 'הודעה ללקוח על הביטול');
+    await user.type(screen.getByLabelText('הודעה ללקוח (נשלחת במייל)'), 'הודעה ללקוח על הביטול');
     const text = await openConfirm(user);
     expect(text).toContain('בלי להחזיר שוב');
     expect(text).not.toContain('דמי הביטול:');
@@ -292,7 +292,7 @@ describe('ResolveForm — confirmation text for a package', () => {
   it('declining a request says the same thing whatever the money state', async () => {
     const user = setup({ moneyOutcome: 'blocked' });
     await user.click(screen.getByRole('radio', { name: 'דחיית הבקשה' }));
-    await user.type(screen.getByLabelText('הודעה ללקוח'), 'הבקשה נדחתה מהסיבה הזו');
+    await user.type(screen.getByLabelText('הודעה ללקוח (נשלחת במייל)'), 'הבקשה נדחתה מהסיבה הזו');
     expect(await openConfirm(user)).toBe('לדחות את בקשת הביטול?');
   });
 
@@ -327,7 +327,7 @@ describe('ResolveForm — what a failure says about trying again', () => {
   async function failWith(result: { error: string; retry?: 'allowed' | 'forbidden' | 'wait' }) {
     vi.mocked(resolveCancellationRequestAction).mockResolvedValue(result as never);
     const user = setup();
-    await user.type(screen.getByLabelText('הודעה ללקוח'), 'בוטל');
+    await user.type(screen.getByLabelText('הודעה ללקוח (נשלחת במייל)'), 'בוטל');
     await submitAndConfirm(user);
     return screen.findByRole('alert');
   }
@@ -357,7 +357,7 @@ describe('ResolveForm — while the server works', () => {
       () => new Promise((resolve) => { finish = resolve as typeof finish; }),
     );
     const user = setup();
-    await user.type(screen.getByLabelText('הודעה ללקוח'), 'בוטל');
+    await user.type(screen.getByLabelText('הודעה ללקוח (נשלחת במייל)'), 'בוטל');
     await openConfirm(user);
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'אישור' }));
 
@@ -373,5 +373,36 @@ describe('ResolveForm — while the server works', () => {
     const form = alert.closest('form') as HTMLFormElement;
     expect(form.firstElementChild).toBe(alert);
     expect((screen.getByRole('button', { name: 'אישור הטיפול בבקשה' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+describe('ResolveForm — the fee beside the money that goes back', () => {
+  it('a refund shows what was paid, the fee and what returns to the card, live', async () => {
+    const user = setup({ moneyOutcome: 'credit', feeBase: 120, suggestedAmount: 20, feeBaseLabel: 'הסכום ששולם' });
+    await choosePartial(user);
+    const cubes = screen.getByRole('status');
+    expect(cubes.textContent).toContain('שולם');
+    expect(cubes.textContent).toContain('יוחזר לכרטיס');
+    expect(cubes.textContent).toMatch(/100/);
+    const amount = screen.getByRole('spinbutton');
+    await user.clear(amount);
+    await user.type(amount, '30');
+    expect(screen.getByRole('status').textContent).toMatch(/90/);
+  });
+
+  it('a fee that leaves nothing to return cannot be sent, and says why', async () => {
+    const user = setup({ moneyOutcome: 'credit', feeBase: 120, suggestedAmount: 20, feeBaseLabel: 'הסכום ששולם' });
+    await choosePartial(user);
+    const amount = screen.getByRole('spinbutton');
+    await user.clear(amount);
+    await user.type(amount, '120');
+    expect((screen.getByRole('button', { name: 'אישור הטיפול בבקשה' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('דמי הביטול חייבים להיות גדולים מ-0 וקטנים ממה ששולם.')).toBeTruthy();
+  });
+
+  it('before anything was charged the amount is a charge: no "returns to the card"', async () => {
+    const user = setup({ moneyOutcome: 'capture', feeBase: 300 });
+    await choosePartial(user);
+    expect(screen.queryByText('יוחזר לכרטיס')).toBeNull();
   });
 });

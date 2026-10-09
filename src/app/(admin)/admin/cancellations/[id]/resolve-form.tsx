@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useRef, useState } from 'react';
-import { CircleAlert, Hourglass, LoaderCircle, TriangleAlert } from 'lucide-react';
+import { Ban, CircleAlert, Hourglass, LoaderCircle, Mail, Percent, RotateCcw, ShieldCheck, TriangleAlert, type LucideIcon } from 'lucide-react';
 
 import { FieldError, FormNotice } from '@/components/forms';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -67,11 +67,34 @@ const CONFIRM_TEXT: Record<Resolution, (outcome: MoneyOutcome) => string> = {
 };
 
 // What each choice does, said next to it (linked with aria-describedby, so the radio's own name stays the choice).
-const CHOICES: ReadonlyArray<{ value: Resolution; label: string; hint: string }> = [
-  { value: 'full_cancellation', label: 'ביטול מלא', hint: 'הבקשה מאושרת במלואה, והקמפיין והאירוע נסגרים.' },
-  { value: 'partial_charge', label: 'ביטול עם דמי ביטול', hint: 'נגבים דמי ביטול בלבד; מה ששולם מעבר להם חוזר ללקוח.' },
-  { value: 'declined', label: 'דחיית הבקשה', hint: 'שום דבר לא משתנה. הלקוח מקבל את ההודעה שלכם.' },
+const CHOICES: ReadonlyArray<{ value: Resolution; label: string; hint: string; Icon: LucideIcon }> = [
+  { value: 'full_cancellation', label: 'ביטול מלא', hint: 'הבקשה מאושרת במלואה, והקמפיין והאירוע נסגרים.', Icon: RotateCcw },
+  { value: 'partial_charge', label: 'ביטול עם דמי ביטול', hint: 'נגבים דמי ביטול בלבד; מה ששולם מעבר להם חוזר ללקוח.', Icon: Percent },
+  { value: 'declined', label: 'דחיית הבקשה', hint: 'שום דבר לא משתנה. הלקוח מקבל את ההודעה שלכם.', Icon: Ban },
 ];
+
+// The fee's three amounts beside the field — shown only where money goes BACK (a refund, or a credit of a charged
+// campaign): what was paid, the fee that stays, and what returns to the card. For a pre-charge capture the typed amount is
+// a charge, and "returns to the card" would be false, so they are not shown there.
+function FeeCubes({ paid, fee }: { paid: number; fee: number | null }) {
+  const refund = fee == null ? null : Math.round((paid - fee) * 100) / 100;
+  return (
+    <dl role="status" className="grid grid-cols-3 gap-2 text-sm">
+      <div className="rounded-lg bg-card px-3 py-2.5">
+        <dt className="text-muted-foreground">שולם</dt>
+        <dd className="font-bold">{formatCurrency(paid)}</dd>
+      </div>
+      <div className="rounded-lg bg-card px-3 py-2.5">
+        <dt className="text-muted-foreground">דמי ביטול</dt>
+        <dd className="font-bold">{fee == null ? '—' : formatCurrency(fee)}</dd>
+      </div>
+      <div className="rounded-lg bg-card px-3 py-2.5 outline-2 outline-primary">
+        <dt className="text-muted-foreground">יוחזר לכרטיס</dt>
+        <dd className="font-bold text-primary">{refund == null ? 'הזינו סכום תקין' : formatCurrency(refund)}</dd>
+      </div>
+    </dl>
+  );
+}
 
 // A failed resolve, shown above the form in the tone of what may be done next (RetryAdvice): approve again once the
 // cause is fixed; do NOT approve again (the money may already be back); or wait for the attempt that is still running.
@@ -117,6 +140,7 @@ export function ResolveForm({
   const [resolution, setResolution] = useState<Resolution>('full_cancellation');
   const [feeMode, setFeeMode] = useState<FeeMode>('amount');
   const [percentText, setPercentText] = useState('');
+  const [amountText, setAmountText] = useState(suggestedAmount.toFixed(2));
   const [confirmOpen, setConfirmOpen] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const confirmedRef = useRef(false);
@@ -127,6 +151,14 @@ export function ResolveForm({
   // The same arithmetic the server uses to decide the real amount, so the preview cannot disagree with it. The browser
   // never sends this number — only the percentage.
   const percentFee = validPercent ? feeFromPercent(feeBase, percent) : null;
+  const amount = Number(amountText);
+  const validAmount = amountText.trim() !== '' && Number.isFinite(amount) && amount > 0;
+  // Money goes back: the fee must leave something to return. The server decides for real; this only keeps a clearly
+  // impossible fee from being sent.
+  const refundsMoney = (moneyOutcome === 'credit' || moneyOutcome === 'resume') && feeBase > 0;
+  const fee = percentMode ? percentFee : validAmount ? Math.round(amount * 100) / 100 : null;
+  const feeImpossible =
+    resolution === 'partial_charge' && moneyOutcome !== 'resume' && (fee == null || (refundsMoney && fee >= feeBase));
 
   function confirmText(): string {
     const base = CONFIRM_TEXT[resolution](moneyOutcome);
@@ -149,7 +181,7 @@ export function ResolveForm({
           return;
         }
         e.preventDefault();
-        if (!pending) setConfirmOpen(true);
+        if (!pending && !feeImpossible) setConfirmOpen(true);
       }}
     >
       {state?.error ? <ResolveError message={state.error} retry={state.retry} /> : null}
@@ -165,23 +197,35 @@ export function ResolveForm({
           name="resolution"
           value={resolution}
           onValueChange={(v) => setResolution(v as Resolution)}
-          className="gap-2.5"
+          className="grid gap-2.5 md:grid-cols-3 lg:grid-cols-1"
         >
           {CHOICES.map((c) => {
             const hintId = `resolution-hint-${c.value}`;
+            const selected = resolution === c.value;
             return (
               <div
                 key={c.value}
                 className={cn(
-                  'rounded-lg border px-4 py-3 transition-colors',
-                  resolution === c.value ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border',
+                  'rounded-[10px] border px-4 py-3.5 transition-colors',
+                  selected ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-muted/40',
                 )}
               >
-                <label className="flex cursor-pointer items-center gap-3 text-sm font-semibold">
+                {/* The label holds the choice's name only, so the radio is announced as the choice; the hint is linked to
+                    it with aria-describedby. */}
+                <label className="flex cursor-pointer items-center gap-3 text-[15px] font-semibold">
                   <RadioGroupItem value={c.value} aria-describedby={hintId} />
+                  <span
+                    aria-hidden
+                    className={cn(
+                      'flex size-9 shrink-0 items-center justify-center rounded-[9px]',
+                      selected ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground/80',
+                    )}
+                  >
+                    <c.Icon className="size-[18px]" />
+                  </span>
                   {c.label}
                 </label>
-                <p id={hintId} className="ms-7 mt-1 text-sm text-muted-foreground">
+                <p id={hintId} className="ms-[4.75rem] mt-1 text-sm leading-relaxed text-muted-foreground md:ms-0 md:mt-2 lg:ms-[4.75rem] lg:mt-1">
                   {c.hint}
                 </p>
               </div>
@@ -196,17 +240,26 @@ export function ResolveForm({
             <RadioGroup
               value={feeMode}
               onValueChange={(v) => setFeeMode(v as FeeMode)}
-              className="gap-2"
+              className="flex w-fit flex-wrap gap-1 rounded-[9px] bg-foreground/[0.06] p-1"
               aria-label="אופן קביעת הסכום"
             >
-              <label className="flex items-center gap-2 text-sm">
-                <RadioGroupItem value="amount" />
-                סכום בשקלים
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <RadioGroupItem value="percent" />
-                {`אחוז מתוך ${feeBaseLabel} (${formatCurrency(feeBase)})`}
-              </label>
+              {(
+                [
+                  ['amount', 'סכום בשקלים'],
+                  ['percent', `אחוז מתוך ${feeBaseLabel} (${formatCurrency(feeBase)})`],
+                ] as const
+              ).map(([value, label]) => (
+                <label
+                  key={value}
+                  className={cn(
+                    'flex min-h-11 cursor-pointer items-center gap-2 rounded-[7px] px-3.5 text-sm has-focus-visible:ring-2 has-focus-visible:ring-ring',
+                    feeMode === value ? 'bg-card font-semibold shadow-sm' : 'font-medium text-foreground/75',
+                  )}
+                >
+                  <RadioGroupItem value={value} className="sr-only" />
+                  {label}
+                </label>
+              ))}
             </RadioGroup>
           ) : null}
 
@@ -249,18 +302,21 @@ export function ResolveForm({
                 inputMode="decimal"
                 step="0.01"
                 min="0.01"
-                defaultValue={suggestedAmount.toFixed(2)}
+                value={amountText}
+                onChange={(e) => setAmountText(e.target.value)}
                 className="h-11 w-full max-w-56 rounded-md border border-input bg-background px-3 text-base"
               />
               <FieldError errors={state?.fieldErrors?.resolutionAmount} />
             </div>
           )}
+          {refundsMoney && moneyOutcome !== 'resume' ? <FeeCubes paid={feeBase} fee={fee} /> : null}
         </div>
       ) : null}
 
       <div>
-        <label htmlFor="resolutionNote" className="mb-1 block text-sm font-medium">
-          הודעה ללקוח
+        <label htmlFor="resolutionNote" className="mb-1 flex items-center gap-1.5 text-sm font-medium">
+          <Mail aria-hidden className="size-4 shrink-0" />
+          הודעה ללקוח (נשלחת במייל)
         </label>
         <textarea
           id="resolutionNote"
@@ -272,13 +328,20 @@ export function ResolveForm({
         <FieldError errors={state?.fieldErrors?.resolutionNote} />
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 border-t border-border pt-5">
-        <Button type="submit" size="lg" disabled={pending} className="w-full sm:w-auto">
-          {pending ? <LoaderCircle aria-hidden className="size-4 animate-spin" /> : null}
+      {/* On a phone the button stays in reach at the bottom of the screen while the form scrolls (the same single button). */}
+      <div className="flex flex-wrap items-center gap-3 border-t border-border pt-5 max-sm:sticky max-sm:bottom-0 max-sm:z-10 max-sm:-mx-5 max-sm:-mb-5 max-sm:rounded-b-xl max-sm:bg-card max-sm:px-5 max-sm:pb-5 max-sm:shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+        <Button type="submit" size="lg" disabled={pending || feeImpossible} className="h-12 w-full gap-2 sm:w-auto">
+          {pending ? <LoaderCircle aria-hidden className="size-4 animate-spin" /> : <ShieldCheck aria-hidden className="size-[18px]" />}
           {pending ? 'מבצע את הטיפול…' : 'אישור הטיפול בבקשה'}
         </Button>
-        <p className="text-xs text-muted-foreground" aria-live="polite">
-          {pending ? 'הכפתור נעול עד שהטיפול יסתיים.' : 'לפני הביצוע יוצג סיכום לאישור.'}
+        <p className="text-xs text-muted-foreground max-sm:w-full max-sm:text-center" aria-live="polite">
+          {pending
+            ? 'הכפתור נעול עד שהטיפול יסתיים.'
+            : feeImpossible
+              ? refundsMoney
+                ? 'דמי הביטול חייבים להיות גדולים מ-0 וקטנים ממה ששולם.'
+                : 'הזינו סכום גדול מ-0.'
+              : 'לפני הביצוע יוצג סיכום לאישור.'}
         </p>
       </div>
 

@@ -65,8 +65,8 @@ describe('CampaignPayments', () => {
 
   it('a document link only to an https address; anything else is its number alone', () => {
     render(<CampaignPayments audience="customer" operations={[purchase, refund]} />);
-    expect(screen.getByRole('link', { name: 'מסמך 6' }).getAttribute('href')).toBe('https://secure.cardcom.solutions/doc/6');
-    expect(screen.queryByRole('link', { name: 'מסמך 2' })).toBeNull();
+    expect(screen.getByRole('link', { name: /^מסמך 6/ }).getAttribute('href')).toBe('https://secure.cardcom.solutions/doc/6');
+    expect(screen.queryByRole('link', { name: /^מסמך 2/ })).toBeNull();
     expect(screen.getByText('מסמך 2')).toBeTruthy();
   });
 
@@ -87,6 +87,13 @@ describe('CampaignPayments', () => {
     expect(screen.queryByText('ReceiptRefund')).toBeNull();
     expect(screen.getByText('נכשל')).toBeTruthy();
     expect(screen.queryByText('RRN')).toBeNull();
+  });
+
+  it('staff without the technical section: every attempt and its code, but no provider facts', () => {
+    render(<CampaignPayments audience="staff" facts={false} operations={[{ ...refund, outcome: 'failed', staff: { ...staffFacts, providerStatus: '9006' } }]} />);
+    expect(screen.getByText('קוד 9006')).toBeTruthy();
+    expect(screen.queryByText('פרטים טכניים (צוות בלבד)')).toBeNull();
+    expect(screen.queryByText('קארדקום')).toBeNull();
   });
 
   it('an unreadable ledger says so; an empty one shows nothing', () => {

@@ -126,6 +126,7 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   'src/lib/data/admin/fleet.ts': 'manage_settings',
   'src/lib/data/admin/outreach-master.ts': 'manage_settings',
   'src/lib/data/admin/campaigns.ts': 'manage_billing',
+  'src/lib/data/admin/cancellation-money.ts': 'manage_billing',
   'src/lib/data/admin/call-dnc.ts': 'manage_voice',
   // A row here decides which agent telephones a guest — it belongs with the
   // other dialling controls, not with general configuration.
@@ -281,6 +282,8 @@ const COARSE_GATE_ALLOWED: Record<string, string> = {
   'src/lib/data/admin/nav-visibility.ts':
     'Which sidebar links to show. Read-only and touches no table at all — it returns nine booleans about the CALLER\'s own role. Naming a finer permission would be circular: answering "which permissions do you hold" cannot itself require one of them. Nav visibility is convenience, never authorization; the page keeps the gate.',
   'src/lib/data/admin/labels.ts': 'Pure label maps. No I/O at all.',
+  'src/lib/data/admin/cancellation-list-money.ts':
+    'Pure mapping of a cancellation request\'s money state to one status, from what the (gated) cancellation-money reader already fetched. No I/O at all.',
   'src/lib/data/admin/campaign-payment-status.ts':
     'Pure status derivation from what the (gated) list readers already fetched: the ledger state and three campaign hold columns. No I/O at all. Replaced campaign-hold-badge.ts (9.10.2026).',
   'src/lib/data/admin/shared.ts': 'Shared types and helpers. No I/O at all.',

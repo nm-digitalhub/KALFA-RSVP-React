@@ -8,8 +8,14 @@ vi.mock('next/link', () => ({
   ),
 }));
 
-const { permMock, listMock, countMock } = vi.hoisted(() => ({ permMock: vi.fn(), listMock: vi.fn(), countMock: vi.fn() }));
+const { permMock, listMock, countMock, moneyMock } = vi.hoisted(() => ({
+  permMock: vi.fn(),
+  listMock: vi.fn(),
+  countMock: vi.fn(),
+  moneyMock: vi.fn(),
+}));
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: permMock }));
+vi.mock('@/lib/data/admin/cancellation-money', () => ({ cancellationMoneyForAdmin: moneyMock }));
 vi.mock('@/lib/data/event-cancellation', () => ({
   listCancellationRequestsForAdmin: listMock,
   countCancellationRequestsForAdmin: countMock,
@@ -34,14 +40,17 @@ const row = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-async function render(status?: string) {
-  return renderToStaticMarkup(await AdminCancellationsPage({ searchParams: Promise.resolve(status ? { status } : {}) }));
+async function render(status?: string, q?: string) {
+  return renderToStaticMarkup(
+    await AdminCancellationsPage({ searchParams: Promise.resolve({ ...(status ? { status } : {}), ...(q !== undefined ? { q } : {}) }) }),
+  );
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   permMock.mockResolvedValue({ id: 'staff' });
   countMock.mockResolvedValue({ pending: 1, resolved: 3 });
+  moneyMock.mockResolvedValue(new Map());
 });
 
 describe('/admin/cancellations', () => {
@@ -74,28 +83,60 @@ describe('/admin/cancellations', () => {
     expect(html).not.toMatch(/>active</);
   });
 
+  // The page opens on "ממתינות": a waiting request is the work.
   it.each([
-    [undefined, undefined],
+    [undefined, 'pending'],
     ['pending', 'pending'],
     ['resolved', 'resolved'],
-    ['anything-else', undefined],
+    ['all', undefined],
+    ['anything-else', 'pending'],
   ])('?status=%s asks the database for %s', async (param, asked) => {
     listMock.mockResolvedValue([]);
     await render(param);
-    expect(listMock).toHaveBeenCalledWith(asked);
+    expect(listMock).toHaveBeenCalledWith(asked, null, 'oldest');
   });
 
-  it('marks the current filter, and shows the counts the database gave', async () => {
+  it('marks the current filter, and shows the counts the database gave on each tab', async () => {
     listMock.mockResolvedValue([row()]);
-    const html = await render('pending');
-    expect(html).toMatch(/href="\/admin\/cancellations\?status=pending" aria-current="page"[^>]*>ממתינות \(1\)/);
-    expect(html).toMatch(/<b[^>]*>1<\/b> ממתינות/);
-    expect(html).toMatch(/<b[^>]*>3<\/b> טופלו/);
+    const html = await render();
+    expect(html).toMatch(/href="\/admin\/cancellations" aria-current="page"[^>]*>.*?ממתינות<span[^>]*>1<\/span>/);
+    expect(html).toMatch(/href="\/admin\/cancellations\?status=resolved"[^>]*>.*?טופלו<span[^>]*>3<\/span>/);
+    expect(html).toMatch(/href="\/admin\/cancellations\?status=all"[^>]*>.*?הכל<span[^>]*>4<\/span>/);
   });
 
-  it('an empty filter says so', async () => {
+  it('searches in the database, keeps the search on the tabs, and keeps the tab on the search', async () => {
     listMock.mockResolvedValue([]);
-    expect(await render('resolved')).toContain('אין בקשות בסטטוס הזה.');
-    expect(await render()).toContain('אין בקשות ביטול.');
+    const html = await render('resolved', 'cx-yefz');
+    expect(listMock).toHaveBeenCalledWith('resolved', { likeCode: 'YEFZ', likeText: 'cx-yefz' }, 'oldest');
+    expect(html).toContain('href="/admin/cancellations?q=cx-yefz"');
+    expect(html).toContain('<input type="hidden" name="status" value="resolved"/>');
+    expect(html).toContain('value="cx-yefz"');
+  });
+
+  it('sorts by submission time in the database; the header flips the order and keeps the filter and the search', async () => {
+    listMock.mockResolvedValue([row()]);
+    let html = await render(undefined, 'חתונה');
+    expect(listMock).toHaveBeenLastCalledWith('pending', expect.anything(), 'oldest');
+    expect(html).toContain('aria-sort="ascending"');
+    expect(html).toContain('href="/admin/cancellations?q=%D7%97%D7%AA%D7%95%D7%A0%D7%94&amp;sort=newest"');
+    html = renderToStaticMarkup(
+      await AdminCancellationsPage({ searchParams: Promise.resolve({ status: 'all', sort: 'newest' }) }),
+    );
+    expect(listMock).toHaveBeenLastCalledWith(undefined, null, 'newest');
+    expect(html).toContain('aria-sort="descending"');
+    expect(html).toContain('href="/admin/cancellations?status=all"');
+  });
+
+  it('shows the money of each request, and says so when it could not be read', async () => {
+    listMock.mockResolvedValue([row()]);
+    moneyMock.mockResolvedValue(new Map([[row().id, 'refund_failed']]));
+    expect(await render()).toContain('ניסיון החזר נכשל');
+    moneyMock.mockResolvedValue(null);
+    expect(await render()).toContain('לא ניתן לטעון');
+  });
+
+  it('an empty list says so', async () => {
+    listMock.mockResolvedValue([]);
+    expect(await render('resolved')).toContain('אין בקשות שמתאימות לסינון.');
   });
 });

@@ -7,7 +7,10 @@ vi.mock('@/lib/data/event-cancellation', () => ({
   getCancellationRequestForAdmin: vi.fn(),
   getCampaignForEventAdmin: vi.fn(),
   computeSuggestedCancellationAmount: vi.fn(),
+  getCancellationRequesterNameForAdmin: vi.fn(async () => 'הילה כהן'),
 }));
+// The payments list is its own component with its own tests; here the page only has to hand it this campaign's view.
+vi.mock('@/lib/payments/campaign-payments-view', () => ({ campaignPaymentsView: vi.fn(async () => null) }));
 vi.mock('@/lib/data/billing', () => ({ getCampaignBillingSummary: vi.fn() }));
 vi.mock('../../_components', () => ({
   PageHeading: ({ children }: { children: React.ReactNode }) => <h1>{children}</h1>,
@@ -35,6 +38,7 @@ import {
   getCampaignForEventAdmin,
   getCancellationRequestForAdmin,
 } from '@/lib/data/event-cancellation';
+import { campaignPaymentsView } from '@/lib/payments/campaign-payments-view';
 import AdminCancellationDetailPage from './page';
 
 // /admin/cancellations/[id] — what the admin reads before resolving a request, and what the form is told the money will
@@ -165,8 +169,7 @@ describe('a fixed-price package', () => {
   it('paid, with a saved card: says the refund goes back by itself, and the form refunds', async () => {
     vi.mocked(getCampaignForEventAdmin).mockResolvedValue(pkg() as never);
     const html = await render();
-    expect(html).toContain('יחזיר אוטומטית');
-    expect(html).toMatch(/שולם<\/span><span[^>]*>₪120\.00/);
+    expect(html).toContain('מחזיר את כל ₪120.00');
     expect(form(html)).toMatchObject({ outcome: 'credit', base: '120', baseLabel: 'הסכום ששולם' });
   });
 
@@ -191,15 +194,15 @@ describe('a fixed-price package', () => {
     vi.mocked(getCampaignForEventAdmin).mockResolvedValue(pkg() as never);
     const html = await render();
     expect(html).toContain('יופק מסמך זיכוי');
-    expect(html).toContain('יחזיר את ההפרש');
+    expect(html).toContain('מחזיר את ההפרש');
   });
 
   // From the ledger: the receipt the purchase issued, and — while the request waits — why its last refund did not go through.
-  it('shows the purchase receipt number', async () => {
-    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(
-      pkg({ packageRecord: { purchaseDocument: { id: null, number: 6, url: null }, lastRefundAttempt: null } }) as never,
-    );
-    expect(await render()).toContain('קבלה מס׳ 6');
+  // The receipt and every attempt are in the payments list (its own component), read for THIS campaign.
+  it('reads the payments list of this event\'s campaign', async () => {
+    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(pkg() as never);
+    await render();
+    expect(campaignPaymentsView).toHaveBeenCalledWith('e1', 'c1');
   });
 
   it('a refused last refund shows the reason the clearing company gave, its code, and that nothing went back', async () => {
@@ -212,7 +215,7 @@ describe('a fixed-price package', () => {
       }) as never,
     );
     const html = await render();
-    expect(html).toContain('ניסיון הזיכוי האחרון נדחה');
+    expect(html).toContain('ניסיון ההחזר הקודם נדחה');
     expect(html).toContain('למשתמש אין הרשאה לביצוע זיכוי / ביטול במערכת');
     expect(html).toContain('קוד 9006');
     expect(html).toContain('לא הוחזר כסף');
@@ -354,15 +357,52 @@ describe('a request that was already resolved', () => {
         captureOutcome: 'refunded',
         sumitDocumentUrl: 'https://example.test/doc/1',
         resolutionNote: 'הוחזר במלואו',
+        resolvedAt: '2026-10-05 14:04',
       }) as never,
     );
-    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(pkg({ packageRefundable: 0 }) as never);
+    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(
+      pkg({
+        packageRefundable: 0,
+        packageRefundedForRequest: 120,
+        packageRecord: {
+          purchaseDocument: null,
+          lastRefundAttempt: { outcome: 'succeeded', providerStatus: '0', providerStatusDescription: null, recordedAt: '2026-10-05 14:05' },
+        },
+      }) as never,
+    );
     const html = await render();
     expect(form(html).present).toBe(false);
     expect(html).toContain('ביטול מלא');
-    expect(html).toContain('₪120.00');
-    expect(html).toContain('בוצע זיכוי');
+    expect(html).toContain('הוחזרו ₪120.00 לכרטיס של הלקוח');
     expect(html).toContain('href="https://example.test/doc/1"');
+    // What happened, each step from a recorded fact.
+    expect(html).toContain('הלקוח הגיש בקשה');
+    expect(html).toContain('איש צוות אישר ביטול מלא');
+    expect(html).toContain('₪120.00 הוחזרו לכרטיס והופק מסמך זיכוי');
+    expect(html).toContain('נשלח מייל ללקוח, האירוע נסגר');
+    // A full cancellation has no fee.
+    expect(html).not.toContain('דמי ביטול');
+  });
+
+  it('a partial cancellation: the fee is what was paid minus what went back (never resolution_amount)', async () => {
+    vi.mocked(getCancellationRequestForAdmin).mockResolvedValue(
+      request({ status: 'resolved', resolution: 'partial_charge', resolutionAmount: 100, captureOutcome: 'refunded', resolvedAt: '2026-10-05 14:04' }) as never,
+    );
+    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(pkg({ packageRefundable: 0, packageRefundedForRequest: 100 }) as never);
+    const html = await render();
+    expect(html).toContain('נשארו דמי ביטול של ₪20.00');
+  });
+
+  it('a declined request says nothing was refunded or closed', async () => {
+    vi.mocked(getCancellationRequestForAdmin).mockResolvedValue(
+      request({ status: 'resolved', resolution: 'declined', captureOutcome: 'not_applicable', resolvedAt: '2026-10-05 14:04' }) as never,
+    );
+    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(pkg() as never);
+    const html = await render();
+    expect(html).toContain('איש צוות דחה את הבקשה');
+    expect(html).toContain('נשלח מייל ללקוח');
+    expect(html).not.toContain('האירוע נסגר');
+    expect(html).not.toContain('הוחזרו לכרטיס');
   });
 
   // A CardCom refund leaves no link on the request, only a credit document number in the ledger.

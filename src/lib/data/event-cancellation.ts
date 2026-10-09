@@ -30,6 +30,7 @@ import {
 import type { ProviderDocument } from '@/lib/payments/ledger';
 import { getAppOrigin } from '@/lib/url';
 import { logActivity } from '@/lib/data/activity';
+import type { CancellationSearch } from '@/lib/data/cancellation-search';
 import type {
   createCancellationRequestSchema,
   resolveCancellationRequestSchema,
@@ -150,6 +151,9 @@ export type CancellationRequestForAdmin = {
   eventId: string;
   eventName: string;
   eventStatus: string;
+  eventDate: string | null;
+  // The customer who filed it (the event's owner): the detail page reads their name.
+  ownerId: string;
   reason: string;
   smsConsent: boolean;
   status: 'pending' | 'resolved';
@@ -159,11 +163,14 @@ export type CancellationRequestForAdmin = {
   sumitDocumentUrl: string | null;
   resolutionNote: string | null;
   createdAt: string;
+  // When staff resolved it. The resolve flow sends the customer's e-mail BEFORE it writes this, so a resolved request
+  // was also e-mailed by then.
+  resolvedAt: string | null;
 };
 
 const ADMIN_SELECT =
-  'id, request_code, event_id, reason, sms_consent, status, resolution, resolution_amount, ' +
-  'capture_outcome, sumit_document_url, resolution_note, created_at, events(name, status)';
+  'id, request_code, event_id, owner_id, reason, sms_consent, status, resolution, resolution_amount, ' +
+  'capture_outcome, sumit_document_url, resolution_note, created_at, resolved_at, events(name, status, event_date)';
 
 function mapAdminRow(r: {
   id: string;
@@ -178,7 +185,9 @@ function mapAdminRow(r: {
   sumit_document_url: string | null;
   resolution_note: string | null;
   created_at: string;
-  events: { name: string; status: string } | null;
+  resolved_at: string | null;
+  owner_id: string;
+  events: { name: string; status: string; event_date: string | null } | null;
 }): CancellationRequestForAdmin {
   return {
     id: r.id,
@@ -186,6 +195,8 @@ function mapAdminRow(r: {
     eventId: r.event_id,
     eventName: r.events?.name ?? '',
     eventStatus: r.events?.status ?? '',
+    eventDate: r.events?.event_date ?? null,
+    ownerId: r.owner_id,
     reason: r.reason,
     smsConsent: r.sms_consent,
     status: r.status as 'pending' | 'resolved',
@@ -195,28 +206,71 @@ function mapAdminRow(r: {
     sumitDocumentUrl: r.sumit_document_url,
     resolutionNote: r.resolution_note,
     createdAt: r.created_at,
+    resolvedAt: r.resolved_at,
   };
 }
 
 // The admin list, optionally only one status — filtered in the database, never in the page.
+// The list, optionally narrowed by status and by a search over the request's reference or its event's name (both
+// matched in the database). The search text is never spliced into a filter expression: the reference goes through
+// .ilike() and the event name through its own query whose ids are passed to .in() — so commas, dots or brackets typed
+// by staff cannot change the filter. `search` is the parsed form of the box (cancellationSearch).
+// The order of the list by submission time: oldest first (the default — the request that waited longest is the next to
+// handle) or newest first. Pending requests come before resolved ones either way.
+export type CancellationListSort = 'oldest' | 'newest';
+
 export async function listCancellationRequestsForAdmin(
   status?: CancellationRequestForAdmin['status'],
+  search?: CancellationSearch | null,
+  sort: CancellationListSort = 'oldest',
 ): Promise<CancellationRequestForAdmin[]> {
   await requirePlatformPermission('manage_billing');
   const admin = createAdminClient();
-  let query = admin
-    .from('event_cancellation_requests')
-    .select(ADMIN_SELECT)
-    .order('status', { ascending: true }) // pending first (alphabetically before resolved)
-    .order('created_at', { ascending: true });
-  if (status) query = query.eq('status', status);
-  const { data, error } = await query;
+  const base = () => {
+    let q = admin
+      .from('event_cancellation_requests')
+      .select(ADMIN_SELECT)
+      .order('status', { ascending: true }) // pending first (alphabetically before resolved)
+      .order('created_at', { ascending: sort === 'oldest' });
+    if (status) q = q.eq('status', status);
+    return q;
+  };
 
-  if (error) throw new Error('טעינת בקשות הביטול נכשלה');
+  let rows: unknown[];
+  if (!search) {
+    const { data, error } = await base();
+    if (error) throw new Error('טעינת בקשות הביטול נכשלה');
+    rows = data ?? [];
+  } else {
+    const { data: events, error: eventsError } = await admin
+      .from('events')
+      .select('id')
+      .ilike('name', `%${search.likeText}%`)
+      .limit(200);
+    if (eventsError) throw new Error('טעינת בקשות הביטול נכשלה');
+    const eventIds = (events ?? []).map((e) => e.id);
+    const [byCode, byEvent] = await Promise.all([
+      base().ilike('request_code', `%${search.likeCode}%`),
+      eventIds.length > 0 ? base().in('event_id', eventIds) : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (byCode.error || byEvent.error) throw new Error('טעינת בקשות הביטול נכשלה');
+    const seen = new Set<string>();
+    rows = [...((byCode.data ?? []) as unknown[]), ...((byEvent.data ?? []) as unknown[])].filter((r) => {
+      const id = (r as { id: string }).id;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+    rows.sort((a, b) => {
+      const x = a as { status: string; created_at: string };
+      const y = b as { status: string; created_at: string };
+      const byTime = x.created_at.localeCompare(y.created_at);
+      return x.status.localeCompare(y.status) || (sort === 'oldest' ? byTime : -byTime);
+    });
+  }
+  const data = rows;
 
-  return (data ?? []).map((r) =>
-    mapAdminRow(r as unknown as Parameters<typeof mapAdminRow>[0]),
-  );
+  return data.map((r) => mapAdminRow(r as unknown as Parameters<typeof mapAdminRow>[0]));
 }
 
 // How many requests wait and how many were handled, counted by the database (the list header and its filter).
@@ -233,6 +287,16 @@ export async function countCancellationRequestsForAdmin(): Promise<Record<Cancel
   };
   const [pending, resolved] = await Promise.all([count('pending'), count('resolved')]);
   return { pending, resolved };
+}
+
+// The name of the customer who filed a request (their profile), for the request page's header. Staff only. null when the
+// profile has no name; THROWS on a failed read, like the request reader beside it.
+export async function getCancellationRequesterNameForAdmin(ownerId: string): Promise<string | null> {
+  await requirePlatformPermission('manage_billing');
+  const admin = createAdminClient();
+  const { data, error } = await admin.from('profiles').select('full_name').eq('id', ownerId).maybeSingle();
+  if (error) throw new Error('טעינת פרטי הלקוח נכשלה');
+  return data?.full_name?.trim() || null;
 }
 
 export async function getCancellationRequestForAdmin(
@@ -259,6 +323,8 @@ export async function getCancellationRequestForAdmin(
 // same as every other function in this file gated by manage_billing).
 export type CampaignForCancellationAdmin = {
   id: string;
+  // How many contacts the package covers; null when the campaign has no quota (not a package).
+  contactQuota: number | null;
   chargeStatus: string | null;
   maxChargeCeiling: number | null;
   // What the campaign was charged, net of credits already given back — the base of a percentage fee once charged.
@@ -306,7 +372,7 @@ export async function getCampaignForEventAdmin(
   const { data, error } = await admin
     .from('campaigns')
     .select(
-      'id, charge_status, max_charge_ceiling, final_charge_amount, package_price, tos_version, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, base_price, included_reached, price_per_reached',
+      'id, charge_status, max_charge_ceiling, final_charge_amount, package_price, contact_quota, tos_version, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, base_price, included_reached, price_per_reached',
     )
     .eq('event_id', eventId)
     // The LIVE campaign: the one resolveCancellationRequest acts on (liveCampaignOf), so the screen never promises what the resolver will
@@ -365,6 +431,7 @@ export async function getCampaignForEventAdmin(
     basePrice: Number(data.base_price ?? 0),
     includedReached: Number(data.included_reached ?? 0),
     pricePerReached: Number(data.price_per_reached ?? 0),
+    contactQuota: data.contact_quota,
   };
 }
 
