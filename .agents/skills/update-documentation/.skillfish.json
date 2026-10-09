@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "update-documentation",
+  "owner": "nklisch",
+  "repo": "skills",
+  "path": "plugins/workflow/skills/update-documentation",
+  "branch": "main",
+  "sha": "337b6cd9fe19eb57ee425c33f051ee8eb06a26a3",
+  "source": "manual"
+}
