@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react';
 
-import { FormError, FormNotice, FieldError } from '@/components/forms';
+import { FormError, FormNotice, FieldError, SubmitButton } from '@/components/forms';
 import type { FormState } from '@/lib/validation/result';
 import type { OwnCancellationRequest } from '@/lib/data/event-cancellation';
 
@@ -18,8 +18,11 @@ const RESOLUTION_LABELS: Record<string, string> = {
 };
 
 // Renders the open-request status instead of the form when one already
-// exists and is not resolved-as-declined — one open request at a time (no DB
-// uniqueness constraint enforces this, so the UI is what enforces it).
+// exists and is not resolved-as-declined — one open request at a time. The page
+// only learns of a new request after the action answers, so this alone does not
+// prevent a second one: the submit button locks while the request is in flight,
+// createCancellationRequest refuses when one is already open, and the database
+// allows one pending request per event (event_cancellation_requests_one_pending).
 export function CancellationRequestForm({
   existingRequest,
   action,
@@ -79,12 +82,9 @@ export function CancellationRequestForm({
           אני מאשר/ת קבלת עדכון SMS לגבי בקשה זו (בנוסף לעדכון במייל, שיישלח בכל מקרה)
         </label>
 
-        <button
-          type="submit"
-          className="rounded-md border border-destructive/40 px-4 py-2 text-sm font-medium text-destructive transition hover:bg-destructive/10"
-        >
+        <SubmitButton variant="destructive" className="w-auto">
           שליחת בקשת ביטול
-        </button>
+        </SubmitButton>
 
         <FormError message={state?.error} />
         <FormNotice message={state?.notice} />

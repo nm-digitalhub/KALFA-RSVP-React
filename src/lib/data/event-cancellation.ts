@@ -27,9 +27,14 @@ import type { z } from 'zod';
 type CreateInput = z.infer<typeof createCancellationRequestSchema>;
 type ResolveInput = z.infer<typeof resolveCancellationRequestSchema>;
 
+// One open request per event: the error a second one gets, from the check below or from the database's own
+// unique index (event_cancellation_requests_one_pending) when two arrive at the same moment.
+export const CANCELLATION_REQUEST_ALREADY_OPEN = 'כבר קיימת בקשת ביטול פתוחה לאירוע זה';
+
 // Owner-initiated: request to cancel an active/closed event. Uses the
 // owner-scoped cookie client (RLS-enforced ecr_owner_insert), NOT the admin
 // client — mirrors how callback_requests customer-facing inserts work.
+// Refuses while the event already has a pending request (a double click, a second tab).
 export async function createCancellationRequest(
   eventId: string,
   input: CreateInput,
@@ -44,6 +49,18 @@ export async function createCancellationRequest(
   } = await supabase.auth.getUser();
   if (!user) throw new Error('נדרשת התחברות');
 
+  // The friendly answer for the common case. It is not the guard: two requests sent at the same moment both pass it,
+  // and the unique index below is what refuses the second.
+  const { data: open, error: openError } = await supabase
+    .from('event_cancellation_requests')
+    .select('id')
+    .eq('event_id', eventId)
+    .eq('status', 'pending')
+    .limit(1)
+    .maybeSingle();
+  if (openError) throw new Error('פתיחת בקשת הביטול נכשלה');
+  if (open) throw new Error(CANCELLATION_REQUEST_ALREADY_OPEN);
+
   const { data, error } = await supabase
     .from('event_cancellation_requests')
     .insert({
@@ -55,6 +72,7 @@ export async function createCancellationRequest(
     .select('id, request_number')
     .single();
 
+  if (error?.code === '23505') throw new Error(CANCELLATION_REQUEST_ALREADY_OPEN);
   if (error || !data) throw new Error('פתיחת בקשת הביטול נכשלה');
 
   await logActivity({

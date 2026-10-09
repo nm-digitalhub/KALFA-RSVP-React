@@ -40,6 +40,7 @@ import { logActivity } from '@/lib/data/activity';
 import { closeCampaign } from '@/lib/data/campaigns';
 import { checkPackageRefund, packageRefundSummary, refundPackagePayment } from '@/lib/payments/package-refund';
 import {
+  CANCELLATION_REQUEST_ALREADY_OPEN,
   createCancellationRequest,
   computeSuggestedCancellationAmount,
   getCampaignForEventAdmin,
@@ -51,19 +52,61 @@ type Mock = ReturnType<typeof vi.fn>;
 describe('createCancellationRequest', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('inserts via the owner-scoped client and returns the request number', async () => {
-    (requireOwnedEvent as unknown as Mock).mockResolvedValue({ id: 'e1', status: 'active' });
+  // The owner-scoped client: `open` is what the pending-request check finds, `insert` what the insert answers.
+  function client(opts: { open?: unknown; openError?: unknown; insert?: { data: unknown; error: unknown } } = {}) {
+    const eqCalls: Array<[string, unknown]> = [];
     const insertMock = vi.fn().mockReturnValue({
       select: () => ({
-        single: async () => ({ data: { id: 'r1', request_number: 42 }, error: null }),
+        single: async () => opts.insert ?? { data: { id: 'r1', request_number: 42 }, error: null },
       }),
     });
+    const chain = {
+      eq: (column: string, value: unknown) => {
+        eqCalls.push([column, value]);
+        return chain;
+      },
+      limit: () => chain,
+      maybeSingle: async () => ({ data: opts.open ?? null, error: opts.openError ?? null }),
+    };
     (createClient as unknown as Mock).mockResolvedValue({
-      from: () => ({ insert: insertMock }),
+      from: () => ({ insert: insertMock, select: () => chain }),
       auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) },
     });
+    return { insertMock, eqCalls };
+  }
+
+  it('inserts via the owner-scoped client and returns the request number', async () => {
+    (requireOwnedEvent as unknown as Mock).mockResolvedValue({ id: 'e1', status: 'active' });
+    const { eqCalls } = client();
     const r = await createCancellationRequest('e1', { reason: 'שינוי תוכניות', smsConsent: true });
     expect(r).toEqual({ id: 'r1', requestNumber: 42 });
+    expect(eqCalls).toEqual([['event_id', 'e1'], ['status', 'pending']]);
+  });
+
+  it('refuses a second request while one is already open, without inserting', async () => {
+    (requireOwnedEvent as unknown as Mock).mockResolvedValue({ id: 'e1', status: 'active' });
+    const { insertMock } = client({ open: { id: 'r0' } });
+    await expect(
+      createCancellationRequest('e1', { reason: 'שינוי תוכניות', smsConsent: false }),
+    ).rejects.toThrow(CANCELLATION_REQUEST_ALREADY_OPEN);
+    expect(insertMock).not.toHaveBeenCalled();
+  });
+
+  it('answers the same message when the database refuses a simultaneous second request (23505)', async () => {
+    (requireOwnedEvent as unknown as Mock).mockResolvedValue({ id: 'e1', status: 'active' });
+    client({ insert: { data: null, error: { code: '23505', message: 'duplicate key' } } });
+    await expect(
+      createCancellationRequest('e1', { reason: 'שינוי תוכניות', smsConsent: false }),
+    ).rejects.toThrow(CANCELLATION_REQUEST_ALREADY_OPEN);
+  });
+
+  it('fails safely when the open-request check cannot be read', async () => {
+    (requireOwnedEvent as unknown as Mock).mockResolvedValue({ id: 'e1', status: 'active' });
+    const { insertMock } = client({ openError: { code: '57014' } });
+    await expect(
+      createCancellationRequest('e1', { reason: 'שינוי תוכניות', smsConsent: false }),
+    ).rejects.toThrow('פתיחת בקשת הביטול נכשלה');
+    expect(insertMock).not.toHaveBeenCalled();
   });
 
   it('rejects a draft event without touching the DB', async () => {
