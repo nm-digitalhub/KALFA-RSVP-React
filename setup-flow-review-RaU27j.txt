@@ -1,0 +1,438 @@
+commit 16413312a7ba38b863de1f1534b75ba8c4eeb119
+Author: Netanel Mevorach KALFA <admin@nm-digitalhub.com>
+Date:   Thu Oct 8 19:39:03 2026 +0300
+
+    refactor(package): activation checks the payment only; guests join the list as they are added
+    
+    A paid package campaign starts on its recorded payment alone. Activation no
+    longer fills the contact list or refuses an empty one: the guests added before
+    the terms were approved are admitted at that approval (fill_authorized_set),
+    and a guest added later by reconcileCampaignSetForContact, up to the package
+    quota. A customer can therefore pay first and add guests afterwards.
+    
+    The 'no contacts' and 'support' refusals are gone with it:
+    - PACKAGE_NO_CONTACTS_ERROR and PACKAGE_SUPPORT_ERROR are deleted;
+    - activateAfterPayment answers 'started' or 'failed';
+    - the purchase route, the CardCom form and the payment page carry only
+      ?activate=failed, and the paid screen shows one notice;
+    - the console status route no longer lists the two messages as conflicts;
+    - the view's activateReason type is derived from ActivationResult.
+    
+    Comments and test names that said activation fills again are updated.
+    
+    Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_01Td9aD87DQvYwbHogceVgBU
+
+diff --git a/src/lib/data/agreements.ts b/src/lib/data/agreements.ts
+index bdf3a50a..85dc6abd 100644
+--- a/src/lib/data/agreements.ts
++++ b/src/lib/data/agreements.ts
+@@ -456,13 +456,13 @@ export async function recordPackageApproval(
+   // Lock the campaign as approved (status-guarded, race-safe) with the version actually shown.
+   await approveCampaign(campaign.id, agreementDoc.version);
+ 
+-  // The list every send reads is empty until something fills it. Filling it HERE (and again at activation) keeps the
+-  // places in order of addition: otherwise a guest added after the approval would take the first place of an empty
+-  // list ahead of everyone who was added earlier. Best-effort: the approval is recorded and must not be undone by this.
++  // The list every send reads is empty until something fills it. This is the only fill of the guests added BEFORE the
++  // approval, in order of addition; a guest added after it is admitted by reconcileCampaignSetForContact (contacts.ts)
++  // up to the package quota. Best-effort: the approval is recorded and must not be undone by this.
+   try {
+     await fillAuthorizedSet(campaign.event_id, campaign.id, 'package_approval');
+   } catch (err) {
+-    console.error('[package-approval] first fill failed (non-fatal; activation fills again)', {
++    console.error('[package-approval] first fill failed (non-fatal; the approval stands)', {
+       campaignId: campaign.id,
+       error: err instanceof Error ? err.message : String(err),
+     });
+diff --git a/src/lib/data/authorized-fill.ts b/src/lib/data/authorized-fill.ts
+index 9814c27a..25416057 100644
+--- a/src/lib/data/authorized-fill.ts
++++ b/src/lib/data/authorized-fill.ts
+@@ -4,8 +4,10 @@ import { z } from 'zod';
+ 
+ import { createAdminClient } from '@/lib/supabase/admin';
+ 
+-// The first fill of a quota campaign's authorized list (SQL: fill_authorized_set). Service-role and request-free: the
+-// caller has already authorized the campaign. Request-free so the worker can import it too.
++// The fill of a quota campaign's authorized list with the guests added before the package terms were approved (SQL:
++// fill_authorized_set), called once, at that approval (agreements.ts). A guest added later is admitted by
++// reconcileCampaignSetForContact (contacts.ts). Service-role and request-free: the caller has already authorized the
++// campaign.
+ 
+ const count = z.number().int().nonnegative();
+ 
+diff --git a/src/lib/data/campaigns.ts b/src/lib/data/campaigns.ts
+index 5535ab94..d3f6daf3 100644
+--- a/src/lib/data/campaigns.ts
++++ b/src/lib/data/campaigns.ts
+@@ -14,12 +14,9 @@ import { createAdminClient } from '@/lib/supabase/admin';
+ import { sendSlackAlert } from '@/lib/alerts/slack';
+ import { logActivity } from '@/lib/data/activity';
+ import { getBaseOveragePricingEnabled, getPackageModelEnabled } from '@/lib/data/payments';
+-import { fillAuthorizedSet } from '@/lib/data/authorized-fill';
+ import {
+   PACKAGE_NOT_PAID_ERROR,
+-  PACKAGE_NO_CONTACTS_ERROR,
+   PACKAGE_PAYMENT_UNVERIFIED_ERROR,
+-  PACKAGE_SUPPORT_ERROR,
+ } from '@/lib/data/package-activation-errors';
+ import { getPackagePaymentState, packagePaymentOf } from '@/lib/payments/package-paid';
+ import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
+@@ -1060,7 +1057,7 @@ async function transitionCampaignStatus(
+   opts?: {
+     rejectPastEvent?: boolean;
+     requireActiveEvent?: boolean;
+-    // Package campaigns only: the funding precondition (payment from the ledger, then the first fill). Runs after the
++    // Package campaigns only: the funding precondition (the payment, from the ledger). Runs after the
+     // identity and event checks, before the status write.
+     preparePackage?: (campaign: { id: string; event_id: string }) => Promise<void>;
+   },
+@@ -1142,13 +1139,11 @@ async function transitionCampaignStatus(
+   return { eventDate };
+ }
+ 
+-const TRANSITION_REFUSED_ERROR = 'לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי';
+-
+-// What a package campaign needs before it may start, in this order: the payment is recorded in the ledger (the only
+-// source of truth for package money), then the list every send reads is filled (D6: charged → filled → activated).
+-// Runs AFTER the ownership and event checks of the transition and BEFORE the status write, so a refused activation
+-// never leaves a half-filled list behind for a customer who is not allowed to start.
+-async function requirePackageFundingAndFill(campaignId: string, eventId: string): Promise<void> {
++// What a package campaign needs before it may start: its payment recorded in the ledger (the only source of truth for
++// package money). The list every send reads is not filled here: guests added before the approval are admitted when the
++// terms are approved (agreements.ts), and a guest added later by reconcileCampaignSetForContact (contacts.ts), up to the
++// package quota.
++async function requirePackageFunding(campaignId: string): Promise<void> {
+   let paid: boolean;
+   try {
+     paid = (await getPackagePaymentState(campaignId)).status === 'collected';
+@@ -1157,16 +1152,6 @@ async function requirePackageFundingAndFill(campaignId: string, eventId: string)
+     throw new Error(PACKAGE_PAYMENT_UNVERIFIED_ERROR);
+   }
+   if (!paid) throw new Error(PACKAGE_NOT_PAID_ERROR);
+-
+-  const fill = await fillAuthorizedSet(eventId, campaignId, 'activation');
+-  if (fill.verdict === 'not_operational') throw new Error(TRANSITION_REFUSED_ERROR);
+-  if (fill.verdict !== 'filled') {
+-    console.error('[campaign-lifecycle] package list could not be filled', { campaignId, verdict: fill.verdict });
+-    throw new Error(PACKAGE_SUPPORT_ERROR);
+-  }
+-  // A campaign with nobody on its list would read "active" and approach no one. The customer has paid: tell them what
+-  // to do instead of activating into silence.
+-  if (fill.size === 0) throw new Error(PACKAGE_NO_CONTACTS_ERROR);
+ }
+ 
+ // Activate (begin outreach). Requires an approved/scheduled/paused campaign that
+@@ -1199,7 +1184,7 @@ export async function activateCampaign(
+     {
+       rejectPastEvent: true,
+       requireActiveEvent: true,
+-      preparePackage: (c) => requirePackageFundingAndFill(c.id, c.event_id),
++      preparePackage: (c) => requirePackageFunding(c.id),
+     },
+     actor,
+   );
+diff --git a/src/lib/data/package-activation-errors.ts b/src/lib/data/package-activation-errors.ts
+index 48457f97..882a41c8 100644
+--- a/src/lib/data/package-activation-errors.ts
++++ b/src/lib/data/package-activation-errors.ts
+@@ -1,6 +1,4 @@
+-// What a refused package activation says. Constants, so the route and the screens recognise a reason without
+-// comparing a copy of the sentence. No `server-only`: a client component imports them too.
++// What a refused package activation says. Constants, so the console status route recognises a reason without
++// comparing a copy of the sentence.
+ export const PACKAGE_NOT_PAID_ERROR = 'התשלום על החבילה טרם הושלם';
+ export const PACKAGE_PAYMENT_UNVERIFIED_ERROR = 'לא ניתן לאמת את התשלום כרגע — נסו שוב בעוד רגע';
+-export const PACKAGE_NO_CONTACTS_ERROR = 'יש להוסיף מוזמנים לפני הפעלת הקמפיין';
+-export const PACKAGE_SUPPORT_ERROR = 'לא ניתן להפעיל את הקמפיין — פנו לתמיכה';
+diff --git a/src/lib/payments/activate-after-payment.ts b/src/lib/payments/activate-after-payment.ts
+index a5a612ce..aefaebda 100644
+--- a/src/lib/payments/activate-after-payment.ts
++++ b/src/lib/payments/activate-after-payment.ts
+@@ -2,16 +2,15 @@ import 'server-only';
+ 
+ import { sendSlackAlert } from '@/lib/alerts/slack';
+ import { activateCampaign } from '@/lib/data/campaigns';
+-import { PACKAGE_NO_CONTACTS_ERROR } from '@/lib/data/package-activation-errors';
+ 
+-// Starts a package campaign right after its payment was recorded (plan D6: charged → list filled → activated), so the
+-// buyer's last real decision is the payment and not one more click. Shared by every path that records a package payment
+-// in the buyer's own session — the SUMIT purchase route and the CardCom settle route.
++// Starts a package campaign right after its payment was recorded, so the buyer's last real decision is the payment and
++// not one more click. Shared by every path that records a package payment in the buyer's own session — the SUMIT
++// purchase route and the CardCom settle route.
+ //
+-// FAIL-SAFE: the payment is recorded whatever happens here. If the start is refused (nobody on the list, a ledger that
+-// cannot be read right now, a concurrent change) the caller shows the buyer the reason and the explicit start button.
++// FAIL-SAFE: the payment is recorded whatever happens here. If the start is refused (a ledger that cannot be read right
++// now, a concurrent change) the caller tells the buyer and shows the explicit start button.
+ // Status is written ONLY by activateCampaign. Reported, never thrown.
+-export type ActivationResult = 'started' | 'no_contacts' | 'failed';
++export type ActivationResult = 'started' | 'failed';
+ 
+ export async function activateAfterPayment(campaignId: string, eventId: string): Promise<ActivationResult> {
+   try {
+@@ -27,6 +26,6 @@ export async function activateAfterPayment(campaignId: string, eventId: string):
+       title: 'חבילה שולמה אך ההפעלה האוטומטית נדחתה',
+       fields: { campaign_id: campaignId, event_id: eventId },
+     });
+-    return message === PACKAGE_NO_CONTACTS_ERROR ? 'no_contacts' : 'failed';
++    return 'failed';
+   }
+ }
+openspec/changes/separate-event-setup-from-management/tasks.md-3-## 1. Domain: the setup/management boundary
+openspec/changes/separate-event-setup-from-management/tasks.md-4-
+openspec/changes/separate-event-setup-from-management/tasks.md-5-- [ ] 1.1 Add `eventMode(stage)` to `src/lib/data/setup-steps.ts` and replace `POST_ACTIVATION_STAGES`. Verify with unit tests covering every `CampaignStage`: `awaiting_activation` is management, and a reset event (only a cancelled campaign) is `setup` at the package step.
+openspec/changes/separate-event-setup-from-management/tasks.md:6:- [ ] 1.2 For a package campaign, change `activateCampaign` to set `active` once the ledger shows `collected`, without refusing an empty list. Retire `PACKAGE_NO_CONTACTS_ERROR` and its screens. Verify with campaigns tests: paid with 0 contacts → active; unpaid → refused; ledger unreadable → refused with staff alert.
+openspec/changes/separate-event-setup-from-management/tasks.md-7-- [ ] 1.4 Add a regression test that each guest-add path (single, CSV, WhatsApp import) calls the reconcile with `add` for a running package, and that `quota_full` leaves the guest added. Record in design.md which scheduled messages a late guest receives. Verify that the tests pass.
+openspec/changes/separate-event-setup-from-management/tasks.md-8-- [ ] 1.3 Change `setupBackTarget` so the package step returns `/setup?step=details`. Verify with a `setup-steps` test.
+openspec/changes/separate-event-setup-from-management/tasks.md-9-
+// P0-1 (A6) kill-switch for the authorized-set reconciliation wiring.
+//
+// When this returns false (the code DEFAULT), every reconcile_authorized_set
+// call site — guest add/update/delete, the pruneOrphanContact set-member guard
+// — is INERT, so the app behaves exactly as it did before the P0-1
+// migrations. The DB billing gate (app_settings.billing_exposure_gate) is a
+// SEPARATE, also-default-off toggle.
+//
+// LIVE STATE (verified 2026-08-30, not just the code default): the env var is
+// TRUE in production — owner signed off 2026-07-21. Both bulk-import passes
+// (import-actions.ts and whatsapp/actions.ts) call reconcile since 2026-08-30.
+// The funded_cap that once bounded the set was retired 2026-09-25 (migration
+// 20260925003335), so the hold no longer limits who is admitted. Read per-call
+// (not cached) so it can be toggled without a code deploy. Dependency-free leaf
+// module so the pg-boss worker can import it without dragging in server-only
+// code.
+export function isReconcileEnabled(): boolean {
+  return process.env.RECONCILE_AUTHORIZED_SET_ENABLED === 'true';
+}
+// P0-1 (A6): reconcile a campaign's authorized recipient SET after a guest
+// mutation (add / repoint / delete of a contact). Delegates the money-safe
+// decision (admit every eligible contact — no size cap other than a campaign's
+// contact_quota —, exposed-or-billed pin, audit) to the
+// reconcile_authorized_set RPC, which runs under the same campaigns FOR UPDATE
+// lock as billing. KILL-SWITCH: inert unless RECONCILE_AUTHORIZED_SET_ENABLED
+// (env var, not app_settings — see reconcile-config.ts) — LIVE in production
+// since 2026-07-21, so this path is ACTIVE, not the inert default. Best-effort
+// (the guest mutation is already committed): errors and not_eligible are
+// logged (no PII), never thrown. Callers must have already
+// verified event access (this is an internal service-role helper, like
+// pruneOrphanContact).
+export async function reconcileCampaignSetForContact(
+  eventId: string,
+  op: 'add' | 'repoint' | 'delete',
+  contactId: string,
+  prevContactId?: string | null,
+): Promise<void> {
+  if (!isReconcileEnabled()) return;
+  const admin = createAdminClient();
+
+  // Resolve the operational campaign(s) for this event. The app invariant is one
+  // per event, but the schema does not enforce it — iterate defensively.
+  const { data: campaigns, error: campErr } = await admin
+    .from('campaigns')
+    .select('id')
+    .eq('event_id', eventId)
+    .in('status', ['approved', 'scheduled', 'active', 'paused']);
+  if (campErr || !campaigns || campaigns.length === 0) return;
+
+  for (const c of campaigns) {
+    const { data: outcome, error } = await admin.rpc('reconcile_authorized_set', {
+      p_event: eventId,
+      p_campaign: c.id,
+      p_op: op,
+      p_contact: contactId,
+      p_prev_contact: prevContactId ?? undefined,
+    });
+    if (error) {
+      console.error(
+        `[reconcile] rpc failed (event=${eventId} campaign=${c.id} op=${op}): ${error.message}`,
+      );
+    } else if (outcome === 'not_eligible' || outcome === 'quota_full') {
+      // Surfaced, not silent. not_eligible: the contact was ineligible (foreign/
+      // opted-out/no live guest). quota_full: the campaign has a package quota
+      // (campaigns.contact_quota) and its list is full, so the guest WAITS instead
+      // of being admitted (plan 2026-09-30-contact-quota-package.md §4.3.1); an
+      // upgrade admits him later. A campaign without a quota has no size cap on
+      // the set: billing is bounded by contacts actually reached.
+      console.warn(
+        `[reconcile] ${outcome} (event=${eventId} campaign=${c.id} op=${op})`,
+      );
+    }
+  }
+}
+
+// Size of the campaign's authorized set — "how many contacts the campaign will
+// actually reach out to". Service-role read; callers must have passed their own
+// access gate first (the manage page does). Used for the empty state and the
+// "not included" banner.
+export async function countAuthorizedContacts(campaignId: string): Promise<number> {
+  const admin = createAdminClient();
+  const { count, error } = await admin
+    .from('campaign_authorized_contacts')
+    .select('contact_id', { count: 'exact', head: true })
+    .eq('campaign_id', campaignId);
+  if (error) throw new Error('טעינת מונה אנשי הקשר בקמפיין נכשלה');
+  return count ?? 0;
+}
+
+// Count of unique reachable contacts for an event, derived from the current
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-12-  deleteGuest,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-13-  fillMissingExpectedCount,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-14-  updateContactStatus,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-15-  createGroup,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-16-  updateGroup,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-17-  deleteGroup,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-18-} from '@/lib/data/guests';
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-19-import {
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts:20:  linkGuestContact,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts:21:  reconcileCampaignSetForContact,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-22-} from '@/lib/data/contacts';
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-23-import { regenerateRsvpToken, revokeRsvpToken } from '@/lib/data/rsvp-links';
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-24-import {
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-25-  createGuestSchema,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-26-  updateGuestSchema,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-27-  groupSchema,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-28-} from '@/lib/validation/guests';
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-29-import { Constants } from '@/lib/supabase/types';
+--
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-83-  await syncGuestContact(eventId, createdId, d.phone ? d.phone : null);
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-84-
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-85-  revalidatePath(`/app/events/${eventId}/guests`);
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-86-  redirect(`/app/events/${eventId}/guests`);
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-87-}
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-88-
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-89-// Best-effort contact linking shared by create/update. Swallows failures by
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-90-// design: the preceding guest mutation is already committed, and the contacts
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts:91:// table is derivable/idempotent (linkGuestContact upserts on a UNIQUE key).
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-92-async function syncGuestContact(
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-93-  eventId: string,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-94-  guestId: string,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-95-  phone: string | null,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-96-): Promise<void> {
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-97-  try {
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts:98:    const { contactId, prevContactId } = await linkGuestContact(
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-99-      eventId,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-100-      guestId,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-101-      phone,
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-102-    );
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-103-    // Reconcile the campaign authorized set for this link delta (kill-switch
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-104-    // gated by RECONCILE_AUTHORIZED_SET_ENABLED — a no-op while it is off).
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-105-    if (prevContactId && contactId && prevContactId !== contactId) {
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts:106:      await reconcileCampaignSetForContact(eventId, 'repoint', contactId, prevContactId);
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-107-    } else if (contactId) {
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts:108:      await reconcileCampaignSetForContact(eventId, 'add', contactId);
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-109-    } else if (prevContactId) {
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-110-      // Phone removed/invalidated → the guest no longer points to its contact.
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts:111:      await reconcileCampaignSetForContact(eventId, 'delete', prevContactId);
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-112-    }
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-113-  } catch (err) {
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-114-    // Next control-flow signals must propagate, never be swallowed.
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-115-    unstable_rethrow(err);
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-116-    // Derived secondary effect — never blocks the completed guest mutation, but
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-117-    // log (no phone PII) so a dropped link is auditable and reconcilable.
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-118-    console.error(
+src/app/(customer)/app/events/[id]/guests/guests-actions.ts-119-      `[contacts] guest contact sync failed (event=${eventId} guest=${guestId}): ${
+--
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-10-import { importRowSchema } from '@/lib/validation/guests';
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-11-import { guestImportHeaderKey as headerKey, normalizeGroupName } from '@/lib/data/guest-import-shared';
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-12-import {
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-13-  listGroups,
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-14-  createGroup,
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-15-  bulkInsertGuests,
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-16-  type BulkGuestInput,
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-17-} from '@/lib/data/guests';
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts:18:import { buildContactsForEvent, reconcileCampaignSetForContact } from '@/lib/data/contacts';
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-19-import { createAdminClient } from '@/lib/supabase/admin';
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-20-import { requireEventAccess } from '@/lib/data/events';
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-21-import { CSV_MAX_ROWS, CSV_MAX_BYTES } from '@/lib/constants';
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-22-
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-23-// A single row that failed validation, reported back to the user in Hebrew.
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-24-export interface ImportRowError {
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-25-  /** 1-based row number as it appears in the file (header excluded). */
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-26-  row: number;
+--
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-299-    return { error: 'ייבוא המוזמנים נכשל.', failed };
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-300-  }
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-301-
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-302-  // Materialize the contacts table (billing source-of-truth) from the imported
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-303-  // guests — the bulk path, so a one-time whole-event rebuild is appropriate.
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-304-  // Best-effort: the guests are already committed; a failure must not report
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-305-  // the import as failed.
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-306-  try {
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts:307:    const { contactIds } = await buildContactsForEvent(eventId);
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-308-    // Admit each imported contact into an already-operational campaign's
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-309-    // authorized set — otherwise a bulk-imported contact would be silently
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts:310:    // excluded forever. reconcileCampaignSetForContact is
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-311-    // itself best-effort/never-throws (a cheap no-op when there is no
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-312-    // operational campaign or the contact is already a member), so this loop
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-313-    // cannot fail the import; it only ever helps an eligible contact get
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-314-    // admitted (a campaign with a package quota admits only until it is full).
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-315-    for (const contactId of contactIds) {
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts:316:      await reconcileCampaignSetForContact(eventId, 'add', contactId);
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-317-    }
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-318-  } catch (err) {
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-319-    unstable_rethrow(err);
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-320-    // Derived secondary effect — never blocks a completed import, but log (no
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-321-    // PII) so a failed contacts rebuild is auditable and reconcilable.
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-322-    console.error(
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-323-      `[contacts] post-import contacts rebuild failed (event=${eventId}): ${
+src/app/(customer)/app/events/[id]/guests/import/import-actions.ts-324-        err instanceof Error ? err.message : 'unknown error'
+--
+src/lib/data/guests.ts-29-    throw new Error(PHONE_TAKEN_ERROR);
+src/lib/data/guests.ts-30-  }
+src/lib/data/guests.ts-31-  throw new Error(fallback);
+src/lib/data/guests.ts-32-}
+src/lib/data/guests.ts-33-import { normalizeGroupName, normalizeGuestName } from '@/lib/data/guest-import-shared';
+src/lib/data/guests.ts-34-import { normalizePhone, phoneSearchVariants } from '@/lib/phone';
+src/lib/data/guests.ts-35-import {
+src/lib/data/guests.ts-36-  pruneOrphanContact,
+src/lib/data/guests.ts:37:  linkGuestContact,
+src/lib/data/guests.ts:38:  reconcileCampaignSetForContact,
+src/lib/data/guests.ts-39-} from '@/lib/data/contacts';
+src/lib/data/guests.ts-40-import { isReconcileEnabled } from '@/lib/data/reconcile-config';
+src/lib/data/guests.ts-41-import { logActivity } from '@/lib/data/activity';
+src/lib/data/guests.ts-42-import { getGuestsPageSize } from '@/lib/constants';
+src/lib/data/guests.ts-43-import type { Enums, Tables, TablesUpdate } from '@/lib/supabase/types';
+src/lib/data/guests.ts-44-import { Constants } from '@/lib/supabase/types';
+src/lib/data/guests.ts-45-
+src/lib/data/guests.ts-46-type GuestRow = Tables<'guests'>;
+--
+src/lib/data/guests.ts-631-  if (error) {
+src/lib/data/guests.ts-632-    throw new Error('מחיקת המוזמן נכשלה');
+src/lib/data/guests.ts-633-  }
+src/lib/data/guests.ts-634-
+src/lib/data/guests.ts-635-  // P0-1 (A6): reconcile the campaign set BEFORE pruning — the RPC decides
+src/lib/data/guests.ts-636-  // remove-vs-pin (a serviced/billed contact stays pinned), and the hardened
+src/lib/data/guests.ts-637-  // prune then refuses to delete a still-authorized member. Kill-switch gated.
+src/lib/data/guests.ts-638-  if (contactId) {
+src/lib/data/guests.ts:639:    await reconcileCampaignSetForContact(eventId, 'delete', contactId);
+src/lib/data/guests.ts-640-    // Prune the now-possibly-orphaned contact (safe: keeps any with history or
+src/lib/data/guests.ts-641-    // set membership).
+src/lib/data/guests.ts-642-    await pruneOrphanContact(eventId, contactId);
+src/lib/data/guests.ts-643-  }
+src/lib/data/guests.ts-644-
+src/lib/data/guests.ts-645-  await logActivity({
+src/lib/data/guests.ts-646-    eventId,
+src/lib/data/guests.ts-647-    action: 'guest.deleted',
+--
+src/lib/data/guests.ts-910-  // Kill-switch gated (inert by default → import behaves exactly as before).
+src/lib/data/guests.ts-911-  // Best-effort per row; the guests are already committed. `insert ...
+src/lib/data/guests.ts-912-  // returning` preserves input order, so rows[i] ↔ data[i].
+src/lib/data/guests.ts-913-  if (isReconcileEnabled() && inserted > 0 && data) {
+src/lib/data/guests.ts-914-    for (let i = 0; i < data.length; i++) {
+src/lib/data/guests.ts-915-      const phone = rows[i]?.phone ?? null;
+src/lib/data/guests.ts-916-      if (!phone) continue;
+src/lib/data/guests.ts-917-      try {
+src/lib/data/guests.ts:918:        const { contactId } = await linkGuestContact(eventId, data[i].id, phone);
+src/lib/data/guests.ts-919-        if (contactId) {
+src/lib/data/guests.ts:920:          await reconcileCampaignSetForContact(eventId, 'add', contactId);
+src/lib/data/guests.ts-921-        }
+src/lib/data/guests.ts-922-      } catch (err) {
+src/lib/data/guests.ts-923-        console.error(
+src/lib/data/guests.ts-924-          `[contacts] bulk contact sync failed (event=${eventId} guest=${data[i].id}): ${
+src/lib/data/guests.ts-925-            err instanceof Error ? err.message : 'unknown error'
+src/lib/data/guests.ts-926-          }`,
+src/lib/data/guests.ts-927-        );
+src/lib/data/guests.ts-928-      }
