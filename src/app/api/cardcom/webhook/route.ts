@@ -37,7 +37,7 @@ const respond = (status: number, body: Record<string, unknown> = {}) =>
 
 export async function POST(request: NextRequest) {
   const ip = getClientIp((name) => request.headers.get(name));
-  if (!rateLimit(`cardcom-webhook:${ip}`, RATE).allowed) return respond(429);
+  if (!(await rateLimit(`cardcom-webhook:${ip}`, RATE)).allowed) return respond(429);
 
   const declared = Number(request.headers.get('content-length') ?? '0');
   if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) return respond(413);

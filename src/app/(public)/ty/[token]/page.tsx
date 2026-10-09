@@ -38,7 +38,7 @@ export default async function ThankyouPage({
   // tokens in in-memory keys can surface in diagnostics; same pattern as
   // r/[token]/page.tsx).
   const fp = tokenFingerprint(token);
-  const gate = rateLimit(`ty:view:${fp}:${ip}`, THANKYOU_VIEW_RATE);
+  const gate = (await rateLimit(`ty:view:${fp}:${ip}`, THANKYOU_VIEW_RATE));
   if (!gate.allowed) {
     return (
       <GuestShell>

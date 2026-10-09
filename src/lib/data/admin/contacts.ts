@@ -227,7 +227,7 @@ export async function sendInquiryReply(id: string, replyText: string): Promise<v
     console.error('[sendInquiryReply] lastInbound lookup failed', lastInboundError);
   }
 
-  const { subject, html, text } = inquiryReplyEmail({
+  const { subject, html, text } = (await inquiryReplyEmail({
     recipientName: msg.name,
     replyText,
     origin: await getAppOrigin(),
@@ -238,7 +238,7 @@ export async function sendInquiryReply(id: string, replyText: string): Promise<v
     // replied even once, which still gets a bare (non-Re:) subject in that
     // narrow case — accepted as the minimal fix (§2.2/§3.1).
     isFirst: !lastInbound,
-  });
+  }));
 
   // Actionable errors: the admin is the operator who CAN fix these, so say
   // exactly what to do and where — not a generic "failed". Match on the error

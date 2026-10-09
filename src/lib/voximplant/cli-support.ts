@@ -1,3 +1,4 @@
+import { parseCsv as parseCsvGrid } from '@/lib/csv';
 /**
  * Pure, testable support logic for the Voximplant CLI (`scripts/voximplant/cli.ts`).
  *
@@ -482,55 +483,7 @@ export async function collectAllPages<T>(
 // Parse CSV text into rows of string fields. Handles quoted fields containing the
 // delimiter, CR/LF newlines, and escaped quotes (""). Voximplant uses ';'.
 export function parseCsv(input: string, delimiter = ';'): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = '';
-  let inQuotes = false;
-  let sawAny = false;
-
-  for (let i = 0; i < input.length; i++) {
-    const ch = input[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (input[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += ch;
-      }
-      continue;
-    }
-    if (ch === '"') {
-      inQuotes = true;
-      sawAny = true;
-      continue;
-    }
-    if (ch === delimiter) {
-      row.push(field);
-      field = '';
-      sawAny = true;
-      continue;
-    }
-    if (ch === '\r') continue;
-    if (ch === '\n') {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = '';
-      sawAny = false;
-      continue;
-    }
-    field += ch;
-    sawAny = true;
-  }
-  if (sawAny || field.length > 0 || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-  return rows;
+  return parseCsvGrid(input, delimiter);
 }
 
 // A body only counts as a call-history report if its header row carries the
@@ -538,7 +491,12 @@ export function parseCsv(input: string, delimiter = ';'): string[][] {
 const REQUIRED_REPORT_COLUMNS = ['session_id'];
 
 export function looksLikeReport(csv: string): boolean {
-  const rows = parseCsv(csv);
+  let rows: string[][];
+  try {
+    rows = parseCsv(csv);
+  } catch {
+    return false;
+  }
   const header = rows.find((r) => r.some((c) => c.trim().length > 0));
   if (!header) return false;
   const cols = header.map((h) => h.trim().toLowerCase());

@@ -36,10 +36,10 @@ export default async function CallbackIntakePage({
   const requestHeaders = await headers();
   const ip = getClientIp(requestHeaders.get.bind(requestHeaders));
 
-  const limit = rateLimit(
+  const limit = (await rateLimit(
     `cb-intake-view:${tokenFingerprint(token)}:${ip}`,
     INTAKE_VIEW_RATE,
-  );
+  ));
 
   if (!limit.allowed) {
     notFound();

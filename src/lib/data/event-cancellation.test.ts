@@ -458,7 +458,7 @@ describe('resolveCancellationRequest', () => {
       },
       auth: { admin: { getUserById: async () => ({ data: { user: { email: 'dana@example.com' } } }) } },
     });
-    (cancellationRequestResponseEmail as unknown as Mock).mockReturnValue({ subject: 's', html: '<p>h</p>', text: 't' });
+    (cancellationRequestResponseEmail as unknown as Mock).mockResolvedValue({ subject: 's', html: '<p>h</p>', text: 't' });
     (buildCancellationSmsText as unknown as Mock).mockReturnValue('sms text');
     const send = vi.fn().mockResolvedValue(undefined);
     (getEmailSender as unknown as Mock).mockResolvedValue({ send });

@@ -46,7 +46,7 @@ const ACK = { ok: true } as const;
 
 export async function POST(request: Request) {
   const ip = getClientIp(request.headers.get.bind(request.headers));
-  if (!rateLimit(`vox-console-event:${ip}`, RATE).allowed) {
+  if (!(await rateLimit(`vox-console-event:${ip}`, RATE)).allowed) {
     return json(ACK, 429);
   }
 

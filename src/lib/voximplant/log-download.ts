@@ -1,4 +1,5 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
+import ipaddr from 'ipaddr.js';
 
 // SSRF-hardened download of a Voximplant session-log file.
 //
@@ -71,26 +72,10 @@ export function validateLogUrl(raw: string, extraHosts: readonly string[] = LOG_
 // IPv4-mapped IPv6 forms (::ffff:10.0.0.1).
 export function isPrivateIp(addr: string): boolean {
   const a = addr.toLowerCase().replace(/^\[|\]$/g, '');
-  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(a);
-  const v4 = mapped ? mapped[1] : a;
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(v4);
-  if (m) {
-    const [o1, o2] = [Number(m[1]), Number(m[2])];
-    if (o1 === 0 || o1 === 10 || o1 === 127) return true;
-    if (o1 === 192 && o2 === 168) return true;
-    if (o1 === 172 && o2 >= 16 && o2 <= 31) return true;
-    if (o1 === 169 && o2 === 254) return true; // link-local incl. metadata services
-    if (o1 === 100 && o2 >= 64 && o2 <= 127) return true; // CGNAT 100.64/10
-    if (o1 >= 224) return true; // multicast/reserved
-    return false;
-  }
-  // IPv6: loopback, unspecified, ULA fc00::/7, link-local fe80::/10.
-  if (a === '::1' || a === '::') return true;
-  if (a.startsWith('fc') || a.startsWith('fd')) return true;
-  if (a.startsWith('fe8') || a.startsWith('fe9') || a.startsWith('fea') || a.startsWith('feb')) {
-    return true;
-  }
-  return false;
+  // DNS results must be valid, globally routable addresses. process() also
+  // normalizes hexadecimal and dotted IPv4-mapped IPv6 forms before checking.
+  if (!ipaddr.isValid(a)) return true;
+  return ipaddr.process(a).range() !== 'unicast';
 }
 
 export interface LogDownloadDeps {

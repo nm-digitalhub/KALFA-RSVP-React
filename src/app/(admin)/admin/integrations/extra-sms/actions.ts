@@ -83,10 +83,10 @@ export async function sendExtraTestSmsAction(
     return { fieldErrors: { test_destination: ['מספר הטלפון אינו תקין'] } };
   }
 
-  const gate = rateLimit(`extra-test-sms:${staff.id}`, {
+  const gate = (await rateLimit(`extra-test-sms:${staff.id}`, {
     limit: TEST_SMS_LIMIT,
     windowMs: TEST_SMS_WINDOW_MS,
-  });
+  }));
   if (!gate.allowed) {
     const minutes = Math.max(1, Math.ceil((gate.resetAt - Date.now()) / 60_000));
     return { error: `הגעתם למגבלת ${TEST_SMS_LIMIT} הודעות בדיקה בשעה. נסו שוב בעוד ${minutes} דקות.` };

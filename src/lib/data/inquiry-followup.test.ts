@@ -23,9 +23,9 @@ vi.mock('@/lib/email/sender', () => ({ getEmailSender: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 vi.mock('@/lib/url', () => ({ getAppOrigin: vi.fn(async () => 'https://beta.kalfa.me') }));
 vi.mock('@/lib/email/templates', () => ({
-  inquiryReminderEmail: vi.fn(() => ({ subject: 'reminder', html: 'h', text: 't' })),
-  inquiryClosingWarningEmail: vi.fn(() => ({ subject: 'warning', html: 'h', text: 't' })),
-  inquiryRatingRequestEmail: vi.fn(() => ({ subject: 'rating', html: 'h', text: 't' })),
+  inquiryReminderEmail: vi.fn(async () => ({ subject: 'reminder', html: 'h', text: 't' })),
+  inquiryClosingWarningEmail: vi.fn(async () => ({ subject: 'warning', html: 'h', text: 't' })),
+  inquiryRatingRequestEmail: vi.fn(async () => ({ subject: 'rating', html: 'h', text: 't' })),
 }));
 
 const NOW = Date.parse('2026-08-25T12:00:00Z');

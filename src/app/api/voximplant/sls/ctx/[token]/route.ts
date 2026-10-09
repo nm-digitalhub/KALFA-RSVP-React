@@ -34,7 +34,7 @@ export async function GET(
 
   const ip = getClientIp(req.headers.get.bind(req.headers));
   const fp = token ? tokenFingerprint(token) : 'none';
-  if (!rateLimit(`vox-sls-ctx:${fp}:${ip}`, CTX_RATE).allowed) {
+  if (!(await rateLimit(`vox-sls-ctx:${fp}:${ip}`, CTX_RATE)).allowed) {
     return new NextResponse(null, { status: 429, headers: NO_STORE });
   }
 

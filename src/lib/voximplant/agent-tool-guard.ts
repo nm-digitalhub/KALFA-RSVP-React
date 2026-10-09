@@ -67,7 +67,7 @@ async function guardTokenGatedToolRequest(
   // Rate limit FAIL-CLOSED: a limiter trip rejects the tool call.
   const ip = getClientIp(req.headers.get.bind(req.headers));
   const fp = token ? tokenFingerprint(token) : 'none';
-  if (!rateLimit(`${opts.scope}:${fp}:${ip}`, RATE).allowed) {
+  if (!(await rateLimit(`${opts.scope}:${fp}:${ip}`, RATE)).allowed) {
     return { ok: false, status: 429 };
   }
 

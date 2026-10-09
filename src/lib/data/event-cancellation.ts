@@ -693,7 +693,7 @@ export async function resolveCancellationRequest(
   // The customer's e-mail, built and sent in one place for both orders below. `refundedAmount` is passed only when the
   // money ALREADY went back, so the e-mail can say so (and never "ללא חיוב" to a customer who paid).
   const emailCustomer = async (refundedAmount?: number): Promise<void> => {
-    const { subject, html, text } = cancellationRequestResponseEmail({
+    const { subject, html, text } = (await cancellationRequestResponseEmail({
       recipientName: ownerName,
       requestCode: reqRow.request_code,
       resolution,
@@ -701,7 +701,7 @@ export async function resolveCancellationRequest(
       refundedAmount,
       resolutionNote: input.resolutionNote,
       origin,
-    });
+    }));
     const sender = await getEmailSender();
     await sender.send({ to: ownerEmail, subject, html, text });
   };

@@ -35,8 +35,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const requestHeaders = await headers();
   const ip = getClientIp(requestHeaders.get.bind(requestHeaders));
   const fp = tokenFingerprint(token);
-  const perToken = rateLimit(`rsvp:ics:${fp}:${ip}`, RSVP_READ_RATE);
-  const perIp = rateLimit(`rsvp:ics:ip:${ip}`, RSVP_ICS_IP_RATE);
+  const perToken = (await rateLimit(`rsvp:ics:${fp}:${ip}`, RSVP_READ_RATE));
+  const perIp = (await rateLimit(`rsvp:ics:ip:${ip}`, RSVP_ICS_IP_RATE));
   if (!perToken.allowed || !perIp.allowed) return new Response(null, { status: 429 });
 
   // getRsvpByToken throws on an RPC error (the page shows an error state); this

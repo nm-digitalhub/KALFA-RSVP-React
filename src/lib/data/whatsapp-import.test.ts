@@ -748,3 +748,8 @@ describe('contactsToStagedRows — the phone on a shared contact card', () => {
     expect(row!.phone).toBe('call the office');
   });
 });
+
+it('returns an actionable error for malformed CSV instead of throwing', () => {
+  const out = parseCsvToStagedRows(new TextEncoder().encode('full_name,phone\n"unfinished,0501234567'));
+  expect('error' in out && out.error).toContain('CSV UTF-8');
+});

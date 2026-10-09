@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     return json(REFUSED, 401);
   }
 
-  if (!rateLimit('rdp-xrdp-ticket', RATE).allowed) return json(REFUSED, 429);
+  if (!(await rateLimit('rdp-xrdp-ticket', RATE)).allowed) return json(REFUSED, 429);
 
   const declaredLen = Number(request.headers.get('content-length') ?? '0');
   if (Number.isFinite(declaredLen) && declaredLen > RDP_XRDP_TICKET_BODY_MAX_BYTES) return json(REFUSED, 413);

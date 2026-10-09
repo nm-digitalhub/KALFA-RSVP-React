@@ -106,7 +106,7 @@ async function handle(
   // Keyed on the IP alone, NOT on the token: keying on the token would let an
   // attacker spend someone else's quota by guessing, and would also mean an
   // unknown token got its own fresh budget on every guess.
-  const limited = rateLimit(`workflow-hook:${ip}`, RATE_LIMIT);
+  const limited = (await rateLimit(`workflow-hook:${ip}`, RATE_LIMIT));
   if (!limited.allowed) {
     return NextResponse.json(
       { ok: false },

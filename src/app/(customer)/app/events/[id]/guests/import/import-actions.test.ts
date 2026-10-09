@@ -287,3 +287,10 @@ describe('importGuestsAction — one guest per phone', () => {
     expect(result?.failed?.[0]?.message).toContain('משפחת כהן');
   });
 });
+
+it('returns a fixed error for malformed CSV and inserts no guests', async () => {
+  const file = new File(['name,phone\n"unfinished,0501234567'], 'bad.csv', { type: 'text/csv' });
+  const result = await importGuestsAction('e-1', null, fd(file));
+  expect(result?.error).toContain('CSV UTF-8');
+  expect(bulkInsertGuests).not.toHaveBeenCalled();
+});

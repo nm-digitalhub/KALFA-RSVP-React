@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     return json(REFUSED, 401);
   }
 
-  if (!rateLimit('rdp-gateway-check', RATE).allowed) return json(REFUSED, 429);
+  if (!(await rateLimit('rdp-gateway-check', RATE)).allowed) return json(REFUSED, 429);
 
   const declaredLen = Number(request.headers.get('content-length') ?? '0');
   if (Number.isFinite(declaredLen) && declaredLen > RDP_GATEWAY_CHECK_BODY_MAX_BYTES) {

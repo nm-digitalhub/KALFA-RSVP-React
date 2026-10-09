@@ -50,7 +50,7 @@ export async function GET(request: Request) {
   if (!auth.ok) return json({ error: auth.error }, auth.status);
   const { ctx } = auth;
 
-  if (!rateLimit(`agent-call-history:${ctx.userId}`, RATE).allowed) {
+  if (!(await rateLimit(`agent-call-history:${ctx.userId}`, RATE)).allowed) {
     return json({ error: 'rate_limited' }, 429);
   }
 

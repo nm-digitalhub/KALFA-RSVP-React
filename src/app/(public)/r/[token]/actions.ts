@@ -48,7 +48,7 @@ export async function submitRsvpAction(
   // tokens in in-memory keys can surface in diagnostics; same pattern as the
   // read site, r/[token]/page.tsx).
   const fp = tokenFingerprint(token);
-  const gate = rateLimit(`rsvp:submit:${fp}:${ip}`, RSVP_SUBMIT_RATE);
+  const gate = (await rateLimit(`rsvp:submit:${fp}:${ip}`, RSVP_SUBMIT_RATE));
   if (!gate.allowed) {
     return { error: 'נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.' };
   }

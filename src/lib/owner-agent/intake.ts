@@ -728,7 +728,7 @@ async function handleOne(
     }
 
     // 4. Per-process rate limit (first line), per allow-list row.
-    if (!rateLimit(`owner-agent:${entryId}`, OWNER_AGENT_RATE_LIMIT).allowed) {
+    if (!(await rateLimit(`owner-agent:${entryId}`, OWNER_AGENT_RATE_LIMIT)).allowed) {
       return await gated('rate_limited');
     }
 

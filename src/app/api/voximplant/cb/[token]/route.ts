@@ -53,7 +53,7 @@ export async function POST(
   // Rate limit FAIL-CLOSED: a limiter trip rejects the callback.
   const ip = getClientIp(req.headers.get.bind(req.headers));
   const fp = token ? tokenFingerprint(token) : 'none';
-  if (!rateLimit(`vox-cb:${fp}:${ip}`, CB_RATE).allowed) return bad(429);
+  if (!(await rateLimit(`vox-cb:${fp}:${ip}`, CB_RATE)).allowed) return bad(429);
 
   // Reject oversized bodies before reading (Content-Length hint), then hard-cap.
   const declaredLen = Number(req.headers.get('content-length') ?? '0');

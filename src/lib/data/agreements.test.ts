@@ -227,7 +227,7 @@ describe('recordPackageApproval — the customer approves the package terms (no 
     vi.mocked(approveCampaign).mockResolvedValue(undefined);
     const send = vi.fn().mockResolvedValue(undefined);
     vi.mocked(getEmailSender).mockResolvedValue({ send } as never);
-    vi.mocked(agreementEmail).mockReturnValue({ subject: 's', html: 'h', text: 't' });
+    vi.mocked(agreementEmail).mockResolvedValue({ subject: 's', html: 'h', text: 't' });
     return { builder, send };
   }
 

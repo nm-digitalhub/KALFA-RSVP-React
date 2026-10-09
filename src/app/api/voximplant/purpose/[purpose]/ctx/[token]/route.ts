@@ -36,7 +36,7 @@ export async function GET(
   // must not reach a rate-limit key, a log line or an error.
   const ip = getClientIp(req.headers.get.bind(req.headers));
   const fp = token ? tokenFingerprint(token) : 'none';
-  if (!rateLimit(`vox-purpose-ctx:${fp}:${ip}`, CTX_RATE).allowed) {
+  if (!(await rateLimit(`vox-purpose-ctx:${fp}:${ip}`, CTX_RATE)).allowed) {
     return new NextResponse(null, { status: 429, headers: NO_STORE });
   }
 

@@ -53,7 +53,7 @@ export async function submitContactAction(
 ): Promise<InquiryFormState> {
   const requestHeaders = await headers();
   const ip = getClientIp(requestHeaders.get.bind(requestHeaders));
-  if (!rateLimit(`inquiry:contact:${ip}`, INQUIRY_SUBMIT_RATE).allowed) {
+  if (!(await rateLimit(`inquiry:contact:${ip}`, INQUIRY_SUBMIT_RATE)).allowed) {
     return { error: RATE_ERROR };
   }
 
@@ -91,7 +91,7 @@ export async function submitCallbackAction(
 ): Promise<InquiryFormState> {
   const requestHeaders = await headers();
   const ip = getClientIp(requestHeaders.get.bind(requestHeaders));
-  if (!rateLimit(`inquiry:callback:${ip}`, INQUIRY_SUBMIT_RATE).allowed) {
+  if (!(await rateLimit(`inquiry:callback:${ip}`, INQUIRY_SUBMIT_RATE)).allowed) {
     return { error: RATE_ERROR };
   }
 

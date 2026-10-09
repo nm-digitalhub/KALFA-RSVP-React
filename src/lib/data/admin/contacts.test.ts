@@ -23,7 +23,7 @@ vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/email/sender', () => ({ getEmailSender: vi.fn() }));
 vi.mock('@/lib/email/templates', () => ({
-  inquiryReplyEmail: vi.fn(() => ({ subject: 's', html: 'h', text: 't' })),
+  inquiryReplyEmail: vi.fn(async () => ({ subject: 's', html: 'h', text: 't' })),
 }));
 
 const ADMIN_ID = 'admin-1';

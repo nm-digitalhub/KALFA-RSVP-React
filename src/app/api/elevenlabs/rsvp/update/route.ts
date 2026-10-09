@@ -51,7 +51,7 @@ const resp = (status: number, body: string | null = null) =>
 export async function POST(req: Request) {
   // 1. Coarse flood guard (fail-closed), keyed by client IP.
   const ip = getClientIp(req.headers.get.bind(req.headers));
-  if (!rateLimit(`el-rsvp-update:${ip}`, RATE).allowed) return resp(429);
+  if (!(await rateLimit(`el-rsvp-update:${ip}`, RATE)).allowed) return resp(429);
 
   // 2. Body-size cap: Content-Length hint, then hard cap after read.
   const declaredLen = Number(req.headers.get('content-length') ?? '0');

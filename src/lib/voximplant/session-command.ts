@@ -1,4 +1,5 @@
 import 'server-only';
+import ipaddr from 'ipaddr.js';
 
 // Server → live VoxEngine session command delivery.
 //
@@ -17,11 +18,13 @@ import 'server-only';
 const POST_TIMEOUT_MS = 4000;
 
 function blockedHost(hostname: string): boolean {
-  const h = hostname.toLowerCase();
-  if (h === 'localhost' || h === '0.0.0.0' || h === '::1' || h === '[::1]') return true;
-  if (h.startsWith('127.')) return true; // IPv4 loopback
-  if (h.startsWith('169.254.')) return true; // link-local + cloud metadata (169.254.169.254)
-  return false;
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'localhost') return true;
+  if (!ipaddr.isValid(h)) return false;
+  const range = ipaddr.process(h).range();
+  // This provider-specific policy permits public IP capability URLs. Do not
+  // reuse private-host.ts, which deliberately rejects every bare IPv4 URL.
+  return range === 'loopback' || range === 'linkLocal' || range === 'unspecified';
 }
 
 function safeUrl(raw: string | null | undefined): URL | null {

@@ -43,7 +43,7 @@ export async function POST(
   // 1. Rate limit FAIL-CLOSED.
   const ip = getClientIp(req.headers.get.bind(req.headers));
   const fp = token ? tokenFingerprint(token) : 'none';
-  if (!rateLimit(`vox-acct-cb:${fp}:${ip}`, RATE).allowed) return bad(429);
+  if (!(await rateLimit(`vox-acct-cb:${fp}:${ip}`, RATE)).allowed) return bad(429);
 
   // 2. Body size cap (Content-Length hint, then hard cap after read).
   const declaredLen = Number(req.headers.get('content-length') ?? '0');
@@ -80,7 +80,7 @@ export async function POST(
   // 5. Stamp receipt (best-effort) + verified pull (rate-limited so a flood of
   //    pokes cannot become a flood of GetAccountInfo calls). Both never throw.
   await stampBalanceCallbackReceived();
-  if (rateLimit('vox-acct-cb:pull', PULL_RATE).allowed) {
+  if ((await rateLimit('vox-acct-cb:pull', PULL_RATE)).allowed) {
     await runVerifiedBalancePull();
   }
 

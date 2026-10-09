@@ -50,73 +50,86 @@ describe('rateLimit', () => {
     vi.useRealTimers();
   });
 
-  it('allows requests within the limit', () => {
+  it('allows requests within the limit', async () => {
     // Unique key per test so module-level state does not bleed across cases.
     const key = 'within-limit';
     const opts = { limit: 3, windowMs: 1000 };
 
-    const first = rateLimit(key, opts);
+    const first = (await rateLimit(key, opts));
     expect(first.allowed).toBe(true);
     expect(first.remaining).toBe(2);
 
-    const second = rateLimit(key, opts);
+    const second = (await rateLimit(key, opts));
     expect(second.allowed).toBe(true);
     expect(second.remaining).toBe(1);
 
-    const third = rateLimit(key, opts);
+    const third = (await rateLimit(key, opts));
     expect(third.allowed).toBe(true);
     expect(third.remaining).toBe(0);
   });
 
-  it('blocks requests once over the limit', () => {
+  it('blocks requests once over the limit', async () => {
     const key = 'over-limit';
     const opts = { limit: 2, windowMs: 1000 };
 
-    expect(rateLimit(key, opts).allowed).toBe(true);
-    expect(rateLimit(key, opts).allowed).toBe(true);
+    expect((await rateLimit(key, opts)).allowed).toBe(true);
+    expect((await rateLimit(key, opts)).allowed).toBe(true);
 
-    const blocked = rateLimit(key, opts);
+    const blocked = (await rateLimit(key, opts));
     expect(blocked.allowed).toBe(false);
     expect(blocked.remaining).toBe(0);
   });
 
-  it('keeps resetAt stable across requests in the same window', () => {
+  it('keeps resetAt stable across requests in the same window', async () => {
     const key = 'stable-reset';
     const opts = { limit: 5, windowMs: 1000 };
 
-    const first = rateLimit(key, opts);
+    const first = (await rateLimit(key, opts));
     expect(first.resetAt).toBe(Date.now() + opts.windowMs);
 
     vi.advanceTimersByTime(300);
-    const second = rateLimit(key, opts);
+    const second = (await rateLimit(key, opts));
     expect(second.resetAt).toBe(first.resetAt);
   });
 
-  it('resets the counter after the window elapses', () => {
+  it('resets the counter after the window elapses', async () => {
     const key = 'window-reset';
     const opts = { limit: 1, windowMs: 1000 };
 
-    const first = rateLimit(key, opts);
+    const first = (await rateLimit(key, opts));
     expect(first.allowed).toBe(true);
 
     // Second request in the same window is blocked.
-    expect(rateLimit(key, opts).allowed).toBe(false);
+    expect((await rateLimit(key, opts)).allowed).toBe(false);
 
     // Advance past the window: a fresh window opens and the request is allowed.
     vi.advanceTimersByTime(1001);
-    const afterReset = rateLimit(key, opts);
+    const afterReset = (await rateLimit(key, opts));
     expect(afterReset.allowed).toBe(true);
     expect(afterReset.remaining).toBe(0);
     expect(afterReset.resetAt).toBe(Date.now() + opts.windowMs);
   });
 
-  it('tracks distinct keys independently', () => {
+  it('tracks distinct keys independently', async () => {
     const opts = { limit: 1, windowMs: 1000 };
 
-    expect(rateLimit('key-a', opts).allowed).toBe(true);
+    expect((await rateLimit('key-a', opts)).allowed).toBe(true);
     // A different key has its own fresh window.
-    expect(rateLimit('key-b', opts).allowed).toBe(true);
+    expect((await rateLimit('key-b', opts)).allowed).toBe(true);
     // The first key is now over its limit.
-    expect(rateLimit('key-a', opts).allowed).toBe(false);
+    expect((await rateLimit('key-a', opts)).allowed).toBe(false);
+  });
+});
+
+describe('asynchronous limiter adapter', () => {
+  it('enforces quota for concurrent requests for the same key', async () => {
+    const results = await Promise.all(Array.from({ length: 10 }, () =>
+      rateLimit('migration-concurrent', { limit: 3, windowMs: 1000 })));
+    expect(results.filter((result) => result.allowed)).toHaveLength(3);
+    expect(results.filter((result) => !result.allowed)).toHaveLength(7);
+    expect(results.every((result) => result.remaining >= 0)).toBe(true);
+  });
+  it('rejects invalid configuration rather than disabling expiry', async () => {
+    await expect(rateLimit('invalid-policy', { limit: 1, windowMs: 0 })).rejects.toThrow(RangeError);
   });
 });

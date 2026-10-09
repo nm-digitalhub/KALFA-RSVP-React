@@ -46,7 +46,7 @@ export async function submitIntakeAction(
   const ip = getClientIp(requestHeaders.get.bind(requestHeaders));
   // Keyed on a FINGERPRINT, never the raw bearer token — raw tokens in
   // in-memory keys can surface in diagnostics (same pattern as /r and /ty).
-  if (!rateLimit(`cb-intake:${tokenFingerprint(token)}:${ip}`, RATE).allowed) {
+  if (!(await rateLimit(`cb-intake:${tokenFingerprint(token)}:${ip}`, RATE)).allowed) {
     return { error: 'נשלחו יותר מדי בקשות. נסו שוב בעוד כמה דקות.' };
   }
 

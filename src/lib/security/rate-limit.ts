@@ -1,6 +1,8 @@
-// Dependency-free, in-memory rate limiting and client-IP extraction.
+import { RateLimiterMemory, RateLimiterRes } from 'rate-limiter-flexible';
+
+// Library-backed, per-process rate limiting and client-IP extraction.
 //
-// IMPORTANT: the counter state lives in a module-level Map and is therefore
+// IMPORTANT: the counter state lives in RateLimiterMemory and is therefore
 // PER-PROCESS. Under pm2 cluster mode (or any multi-instance deployment) each
 // worker keeps its own counts, so the effective limit is multiplied by the
 // number of instances and resets on restart/redeploy. This is acceptable as a
@@ -23,12 +25,7 @@ export interface RateLimitResult {
   resetAt: number;
 }
 
-interface WindowState {
-  count: number;
-  resetAt: number;
-}
-
-const windows = new Map<string, WindowState>();
+const limiters = new Map<string, RateLimiterMemory>();
 
 /**
  * Extract the client IP from a header getter.
@@ -69,50 +66,52 @@ export function getClientIp(get: (name: string) => string | null): string {
  * window expires, after which it resets. Returns whether the request is allowed
  * along with the remaining quota and the reset time.
  */
-export function rateLimit(key: string, opts: RateLimitOptions): RateLimitResult {
+export async function rateLimit(
+  key: string,
+  opts: RateLimitOptions,
+): Promise<RateLimitResult> {
   const { limit, windowMs } = opts;
+  if (
+    !Number.isSafeInteger(limit) ||
+    limit < 1 ||
+    !Number.isFinite(windowMs) ||
+    windowMs <= 0
+  ) {
+    throw new RangeError('Invalid rate-limit policy');
+  }
+  // Policies are static call-site configuration, never request input.
+  const policy = `${limit}:${windowMs}`;
+  let limiter = limiters.get(policy);
+  if (!limiter) {
+    limiter = new RateLimiterMemory({
+      points: limit,
+      duration: windowMs / 1000,
+      keyPrefix: policy,
+    });
+    limiters.set(policy, limiter);
+  }
   const now = Date.now();
-
-  pruneExpired(now);
-
-  const existing = windows.get(key);
-
-  // No window yet, or the previous window has expired: start a fresh one.
-  if (!existing || existing.resetAt <= now) {
-    const resetAt = now + windowMs;
-    windows.set(key, { count: 1, resetAt });
-    return { allowed: true, remaining: Math.max(0, limit - 1), resetAt };
+  let result: RateLimiterRes;
+  let allowed = true;
+  try {
+    result = await limiter.consume(key);
+  } catch (error) {
+    // Only a quota rejection is a denied request; unexpected errors propagate.
+    if (!(error instanceof RateLimiterRes)) throw error;
+    result = error;
+    allowed = false;
   }
-
-  // Within an active window.
-  if (existing.count >= limit) {
-    return { allowed: false, remaining: 0, resetAt: existing.resetAt };
-  }
-
-  existing.count += 1;
   return {
-    allowed: true,
-    remaining: Math.max(0, limit - existing.count),
-    resetAt: existing.resetAt,
+    allowed,
+    remaining: result.remainingPoints,
+    resetAt: now + result.msBeforeNext,
   };
 }
 
-/**
- * Opportunistically drop expired entries so the Map does not grow unbounded
- * as new keys (e.g. distinct client IPs) are seen over time.
- */
-function pruneExpired(now: number): void {
-  for (const [key, state] of windows) {
-    if (state.resetAt <= now) {
-      windows.delete(key);
-    }
-  }
-}
-
-/**
- * Test-only: clear all rate-limit windows so a test suite starts from a clean
- * slate (the window Map is module-level and otherwise persists across tests).
- */
+/** Clear counters and their expiry timers between tests. */
 export function __resetRateLimitStateForTests(): void {
-  windows.clear();
+  for (const limiter of limiters.values()) {
+    for (const entry of limiter.dump().storage) void limiter.delete(entry.key);
+  }
+  limiters.clear();
 }

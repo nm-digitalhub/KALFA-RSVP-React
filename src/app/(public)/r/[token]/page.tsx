@@ -34,7 +34,7 @@ export default async function RsvpPage({
   // Bucket key uses a token FINGERPRINT, never the raw bearer token (raw
   // tokens in in-memory keys can surface in diagnostics; ctx-route precedent).
   const fp = tokenFingerprint(token);
-  const gate = rateLimit(`rsvp:read:${fp}:${ip}`, RSVP_READ_RATE);
+  const gate = (await rateLimit(`rsvp:read:${fp}:${ip}`, RSVP_READ_RATE));
   if (!gate.allowed) {
     return (
       <GuestShell width="md">
@@ -84,7 +84,7 @@ export default async function RsvpPage({
   // "Who's coming" opt-in list. Own rate-limit bucket (read-rate shape reused;
   // separate key so it can't starve the main read gate). Fail-open on error —
   // an empty list just hides the section, never blocks the RSVP form itself.
-  const attendeesGate = rateLimit(`rsvp:attendees:${fp}:${ip}`, RSVP_READ_RATE);
+  const attendeesGate = (await rateLimit(`rsvp:attendees:${fp}:${ip}`, RSVP_READ_RATE));
   let attendees: Awaited<ReturnType<typeof getEventAttendeesPublic>> = [];
   if (attendeesGate.allowed) {
     try {

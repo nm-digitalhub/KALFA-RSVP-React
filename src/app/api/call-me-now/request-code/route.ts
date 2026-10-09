@@ -41,7 +41,7 @@ function json(body: unknown, status: number) {
 
 export async function POST(request: Request) {
   const ip = getClientIp(request.headers.get.bind(request.headers));
-  if (!rateLimit(`call-me-now-request-code:${ip}`, FLOOD_RATE).allowed) {
+  if (!(await rateLimit(`call-me-now-request-code:${ip}`, FLOOD_RATE)).allowed) {
     return json({ ok: false, error: 'יותר מדי בקשות. נסו שוב בעוד כמה דקות.' }, 429);
   }
 

@@ -31,7 +31,7 @@ const post = (body: unknown, headers?: Record<string, string>) => POST(request(b
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(rateLimit).mockReturnValue({ allowed: true, remaining: 100, resetAt: 0 });
+  vi.mocked(rateLimit).mockResolvedValue({ allowed: true, remaining: 100, resetAt: 0 });
   vi.mocked(settleCardcomSession).mockResolvedValue({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
 });
 
@@ -95,7 +95,7 @@ describe('POST /api/cardcom/webhook', () => {
   });
 
   it('answers 429 when one address floods it, before doing any work', async () => {
-    vi.mocked(rateLimit).mockReturnValue({ allowed: false, remaining: 0, resetAt: Date.now() + 1000 });
+    vi.mocked(rateLimit).mockResolvedValue({ allowed: false, remaining: 0, resetAt: Date.now() + 1000 });
     expect((await post({ LowProfileId: LP })).status).toBe(429);
     expect(settleCardcomSession).not.toHaveBeenCalled();
   });

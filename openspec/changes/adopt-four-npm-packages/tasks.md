@@ -1,0 +1,18 @@
+- [x] Inspect both CSV parsers and every direct async consumer.
+- [x] Replace CSV parsing and handle invalid uploads.
+- [x] Adapt the memory limiter and await every direct consumer.
+- [x] Classify IPv4/IPv6 through ipaddr.js and test mapped addresses.
+- [x] Render all six email builders using React Email components.
+- [x] Await follow-up callbacks and migrate Promise-aware tests.
+- [x] Pass targeted regression tests, targeted TypeScript and changed-file ESLint.
+- [x] Package compatibility checks, backup, installation and rollback.
+- [x] Rebase on current main and preserve cancellation requestCode.
+- [x] Review full repository inventory, imports, callback consumers and client boundaries.
+- [x] Replace remaining log-download/session-command numeric IP classifiers and add tests.
+- [x] Migrate all affected email mocks to Promise-aware behavior.
+- [x] Guard the complete tracked repository baseline, not only edited files.
+- [ ] Generate the target repository's lockfile with the pinned install.
+- [ ] Pass full repository lint, typecheck, tests and production/worker builds.
+- [ ] Review rendered emails in actual email clients and confirm imports in staging.
+- [ ] Review and commit source, package.json and package-lock.json together.
+- [ ] Archive this change after the full target environment verifies it.

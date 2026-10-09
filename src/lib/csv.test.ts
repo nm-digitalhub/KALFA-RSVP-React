@@ -124,3 +124,25 @@ describe('decodeCsvBuffer', () => {
     expect(decodeCsvBuffer(bytes)).toBe('name,phone\nDana,0501234567\n');
   });
 });
+
+describe('strict CSV syntax and caller-owned validation', () => {
+  it('rejects an unclosed quote instead of silently importing corrupted data', () => {
+    expect(() => parseCsv('name,phone\n"unfinished,0501234567')).toThrow();
+  });
+  it('retains spaces and uneven rows for the existing import validators', () => {
+    expect(parseCsv('name,phone\n  Dana  \nA,0501234567,extra')).toEqual([
+      ['name', 'phone'], ['  Dana  '], ['A', '0501234567', 'extra'],
+    ]);
+  });
+  it('uses the same parser for semicolon-delimited reports', () => {
+    expect(parseCsv('\uFEFFsession_id;name\n1;"A;B"', ';')).toEqual([
+      ['session_id', 'name'], ['1', 'A;B'],
+    ]);
+  });
+});
+
+it('accepts mixed CRLF, LF and CR record separators', () => {
+  expect(parseCsv('a,b\r\nc,d\ne,f\rg,h')).toEqual([
+    ['a', 'b'], ['c', 'd'], ['e', 'f'], ['g', 'h'],
+  ]);
+});

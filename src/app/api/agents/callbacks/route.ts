@@ -60,7 +60,7 @@ export async function GET(request: Request) {
   if (!auth.ok) return json({ error: auth.error }, auth.status);
   const { ctx } = auth;
 
-  if (!rateLimit(`agent-callbacks:${ctx.userId}`, RATE).allowed) {
+  if (!(await rateLimit(`agent-callbacks:${ctx.userId}`, RATE)).allowed) {
     return json({ error: 'rate_limited' }, 429);
   }
 

@@ -122,13 +122,13 @@ async function afterApproval(ctx: {
         `/app/events/${ctx.eventId}/campaign/${ctx.campaignId}/agreement`,
       );
       const sender = await getEmailSender();
-      const { subject, html, text } = agreementEmail({
+      const { subject, html, text } = (await agreementEmail({
         signerName: ctx.signerName,
         eventName: ctx.eventName,
         companyName: ctx.companyName,
         downloadUrl,
         kind: ctx.kind,
-      });
+      }));
       // Link, not attachment — avoids recipient attachment scanners flagging it.
       await sender.send({ to: ctx.userEmail, subject, html, text });
     } catch (err) {

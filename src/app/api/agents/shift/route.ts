@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   if (!auth.ok) return json({ error: auth.error }, auth.status);
   const { ctx } = auth;
 
-  const gate = rateLimit(`agent-shift:${ctx.userId}`, RATE);
+  const gate = (await rateLimit(`agent-shift:${ctx.userId}`, RATE));
   if (!gate.allowed) {
     return json({ error: 'יותר מדי בקשות — נסו שוב בעוד רגע' }, 429);
   }

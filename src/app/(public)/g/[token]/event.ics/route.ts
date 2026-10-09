@@ -36,8 +36,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const requestHeaders = await headers();
   const ip = getClientIp(requestHeaders.get.bind(requestHeaders));
   const fp = tokenFingerprint(token);
-  const perToken = rateLimit(`gift:ics:${fp}:${ip}`, GIFT_ICS_RATE);
-  const perIp = rateLimit(`gift:ics:ip:${ip}`, GIFT_ICS_RATE);
+  const perToken = (await rateLimit(`gift:ics:${fp}:${ip}`, GIFT_ICS_RATE));
+  const perIp = (await rateLimit(`gift:ics:ip:${ip}`, GIFT_ICS_RATE));
   if (!perToken.allowed || !perIp.allowed) return new Response(null, { status: 429 });
 
   // getGiftByToken already collapses every failure to null (generic 404).

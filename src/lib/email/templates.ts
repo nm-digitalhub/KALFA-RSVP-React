@@ -1,4 +1,6 @@
-// Pure Hebrew (RTL) HTML email templates. Inline styles for email-client
+import { createElement } from 'react';
+import { Html, Body, Heading, Text, Link, Hr, Img, render } from 'react-email';
+// Pure Hebrew (RTL) React Email templates. Inline styles for email-client
 // compatibility. No I/O — unit-testable.
 //
 // `lang`/`dir` are set on BOTH <html> and <body> deliberately: some email
@@ -7,16 +9,14 @@
 // mangled punctuation and reversed line alignment, not a cosmetic difference.
 // (react-email's Html/Body component docs give the same instruction, for the
 // same reason.)
-
 import { escapeHtml as esc } from '@/lib/html';
 import { cancellationReference } from '@/lib/data/cancellation-reference';
-
 // Email notifying the customer their agreement is signed (or, for `kind:
 // 'approved'`, that the package terms were approved), with a SECURE LINK to
 // view/download the PDF (not an attachment — avoids recipient attachment
 // scanners flagging it). Satisfies §14ג(ב): the document is provided + saveable.
 // Returns a plain-text alternative too (multipart improves inbox placement).
-export function agreementEmail(input: {
+export async function agreementEmail(input: {
   signerName: string;
   eventName: string;
   companyName: string;
@@ -24,10 +24,16 @@ export function agreementEmail(input: {
   // 'signed' (default): a signed agreement. 'approved': the fixed-price package, whose terms the customer approved
   // by ticking the box — the mail must not say it was signed.
   kind?: 'signed' | 'approved';
-}): { subject: string; html: string; text: string } {
+}): Promise<{
+  subject: string;
+  html: string;
+  text: string;
+}> {
   const company = input.companyName.trim() || 'KALFA';
   const approved = input.kind === 'approved';
-  const subject = approved ? `תנאי החבילה אושרו — ${input.eventName}` : `ההסכם החתום שלך — ${input.eventName}`;
+  const subject = approved
+    ? `תנאי החבילה אושרו — ${input.eventName}`
+    : `ההסכם החתום שלך — ${input.eventName}`;
   const text = approved
     ? `שלום ${input.signerName},
 
@@ -45,29 +51,120 @@ ${input.downloadUrl}
 (הקישור מאובטח ודורש התחברות לחשבון.) אנא שמרו עותק לרשומותיכם.
 
 ${company}`;
-  const html = `<!doctype html>
-<html lang="he" dir="rtl">
-<body lang="he" dir="rtl" style="font-family:Arial,Helvetica,sans-serif;direction:rtl;color:#1a1a1a;line-height:1.7;margin:0;padding:24px;background:#f5f5f7">
-  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:10px;padding:24px;border:1px solid #e3e3e8">
-    <h1 style="font-size:20px;margin:0 0 12px">${approved ? 'תנאי החבילה אושרו בהצלחה ✓' : 'ההסכם נחתם בהצלחה ✓'}</h1>
-    <p style="margin:8px 0">שלום ${esc(input.signerName)},</p>
-    <p style="margin:8px 0">${approved ? 'התנאים שאישרת' : 'ההסכם החתום'} עבור האירוע <strong>${esc(input.eventName)}</strong> ${approved ? 'מוכנים' : 'מוכן'}.</p>
-    <p style="margin:20px 0"><a href="${esc(input.downloadUrl)}" style="display:inline-block;background:#4338ca;color:#ffffff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:600">${approved ? 'צפייה והורדת התנאים שאושרו' : 'צפייה והורדת ההסכם החתום'}</a></p>
-    <p style="margin:8px 0;color:#555;font-size:13px">הקישור מאובטח ודורש התחברות לחשבון. אנא שמרו עותק לרשומותיכם.</p>
-    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
-    <p style="margin:0;color:#888;font-size:12px">${esc(company)}</p>
-  </div>
-</body>
-</html>`;
+  const html = await render(
+    createElement(
+      Html,
+      { lang: 'he', dir: 'rtl' },
+      createElement(
+        Body,
+        {
+          lang: 'he',
+          dir: 'rtl',
+          style: {
+            fontFamily: 'Arial,Helvetica,sans-serif',
+            direction: 'rtl',
+            color: '#1a1a1a',
+            lineHeight: '1.7',
+            margin: '0',
+            padding: '24px',
+            background: '#f5f5f7',
+          },
+        },
+        createElement(
+          'div',
+          {
+            style: {
+              maxWidth: '560px',
+              margin: '0 auto',
+              background: '#ffffff',
+              borderRadius: '10px',
+              padding: '24px',
+              border: '1px solid #e3e3e8',
+            },
+          },
+          createElement(
+            Heading,
+            { as: 'h1', style: { fontSize: '20px', margin: '0 0 12px' } },
+            approved ? 'תנאי החבילה אושרו בהצלחה ✓' : 'ההסכם נחתם בהצלחה ✓',
+          ),
+          createElement(
+            Text,
+            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
+            'שלום ' + input.signerName + ',',
+          ),
+          createElement(
+            Text,
+            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
+            (approved ? 'התנאים שאישרת' : 'ההסכם החתום') + ' עבור האירוע ',
+            createElement('strong', {}, input.eventName),
+            ' ' + (approved ? 'מוכנים' : 'מוכן') + '.',
+          ),
+          createElement(
+            Text,
+            {
+              style: { fontSize: '16px', lineHeight: '1.7', margin: '20px 0' },
+            },
+            createElement(
+              Link,
+              {
+                href: input.downloadUrl,
+                style: {
+                  display: 'inline-block',
+                  background: '#4338ca',
+                  color: '#ffffff',
+                  padding: '11px 20px',
+                  borderRadius: '8px',
+                  textDecoration: 'none',
+                  fontWeight: '600',
+                },
+              },
+              approved
+                ? 'צפייה והורדת התנאים שאושרו'
+                : 'צפייה והורדת ההסכם החתום',
+            ),
+          ),
+          createElement(
+            Text,
+            {
+              style: {
+                fontSize: '13px',
+                lineHeight: '1.7',
+                margin: '8px 0',
+                color: '#555',
+              },
+            },
+            'הקישור מאובטח ודורש התחברות לחשבון. אנא שמרו עותק לרשומותיכם.',
+          ),
+          createElement(Hr, {
+            style: {
+              border: 'none',
+              borderTop: '1px solid #eee',
+              margin: '18px 0',
+            },
+          }),
+          createElement(
+            Text,
+            {
+              style: {
+                fontSize: '12px',
+                lineHeight: '1.7',
+                margin: '0',
+                color: '#888',
+              },
+            },
+            company,
+          ),
+        ),
+      ),
+    ),
+  );
   return { subject, html, text };
 }
-
 // A human (admin) reply to a customer inquiry submitted via /contact. The reply
 // body is authored by staff; we only wrap it in the branded RTL shell and
 // preserve its line breaks (white-space:pre-line + escapeHtml, never raw HTML
 // from the textarea). Transactional/responsive — the recipient initiated the
 // conversation by submitting the form.
-
 // The drafter writes plain Hebrew with markdown-style emphasis (`**כותרת**`),
 // because that is how a person writes a structured reply. Rendering it raw put
 // literal asterisks in front of a customer — observed in a delivered message.
@@ -85,7 +182,6 @@ ${company}`;
 // both verbatim. Our body is authored by an AI drafter — precisely the input
 // class that must not reach an unsanitized path. Escape-first plus the two
 // narrow conversions below is STRICTER than the library, not lazier than it.
-
 // A link target is a same-origin PATH, never a full URL. No scheme is accepted
 // at all, so `javascript:` and `data:` cannot be expressed — the reason
 // path-only beats a scheme allowlist. `(?!\/)` rejects `//host`, which a URL
@@ -95,7 +191,6 @@ ${company}`;
 // and `;` are permitted only so an escaped query separator (`&amp;`) survives —
 // a raw `&` cannot exist here, escapeHtml ran first.
 const MD_LINK = /\[([^\]\n]+)\]\((\/(?!\/)[A-Za-z0-9\-._~/?#=&;%+,:@!$'*]*)\)/g;
-
 // Links convert BEFORE bold, and the link text excludes `]`: with bold first,
 // `[**הרשמה**](/auth/signup)` would already contain a `<strong>` tag by the time
 // the link pattern ran, and the pattern would have to tolerate markup.
@@ -108,7 +203,6 @@ function inlineMarkdownToHtml(escaped: string, origin: string): string {
     )
     .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
 }
-
 // The plain-text alternative has to resolve links too. Without this the
 // customer receives the literal `[הרשמה](/auth/signup)` — markdown source, in
 // their inbox — whenever their client prefers text/plain.
@@ -124,7 +218,6 @@ function inlineMarkdownToText(body: string, origin: string): string {
     (_m, text: string, path: string) => `${text} (${origin}${path})`,
   );
 }
-
 // The email template owns the sign-off — it is the branded footer under the
 // rule. A drafter that signs the body too produces two of them, one directly
 // above the other, which is what a delivered reply actually looked like.
@@ -132,7 +225,6 @@ function inlineMarkdownToText(body: string, origin: string): string {
 // on everyone remembering.
 const TRAILING_SIGNOFF =
   /\s*(?:בברכה|בכבוד רב|תודה)\s*,?\s*\n+\s*(?:צוות\s+)?KALFA\s*$/;
-
 // The symmetric case, and it shipped: the template already renders a heading
 // AND `שלום {name},`, so a drafter that opens with its own greeting produces two
 // of them. Matching requires a LINE BREAK after the greeting, so a real
@@ -140,17 +232,17 @@ const TRAILING_SIGNOFF =
 // line) is left alone — only a standalone greeting line is removed.
 const LEADING_GREETING =
   /^\s*(?:שלום|היי|הי|אהלן)(?:[ \t]+[^\n,]{1,30})?[ \t]*,?[ \t]*\r?\n+/;
-
 function stripDuplicateFraming(body: string): string {
-  return body.replace(LEADING_GREETING, '').replace(TRAILING_SIGNOFF, '').trim();
+  return body
+    .replace(LEADING_GREETING, '')
+    .replace(TRAILING_SIGNOFF, '')
+    .trim();
 }
-
 // Shared subject builder for every outbound send on an inquiry thread (admin
 // reply, reminder, closing warning, rating request). `[KLF-XXXXXXXX]` is the
 // contact_messages.ref_code matching token intakeMailAsInquiry parses out of a
 // reply's subject (docs/inquiry-email-threading-fix-plan-2026-08-25.md §2.1/§2.3).
 const THREAD_SUBJECT = 'תגובה לפנייתך — KALFA';
-
 function threadSubject(refCode: string, isFirst: boolean): string {
   const tag = `[KLF-${refCode}]`;
   // `Re:` at the very front, not after the tag — matches Resend's own documented
@@ -159,8 +251,7 @@ function threadSubject(refCode: string, isFirst: boolean): string {
   // reply (§2.2).
   return isFirst ? `${tag} ${THREAD_SUBJECT}` : `Re: ${tag} ${THREAD_SUBJECT}`;
 }
-
-export function inquiryReplyEmail(input: {
+export async function inquiryReplyEmail(input: {
   recipientName: string;
   replyText: string;
   /**
@@ -177,7 +268,11 @@ export function inquiryReplyEmail(input: {
    * reply sent before the customer has replied even once.
    */
   isFirst: boolean;
-}): { subject: string; html: string; text: string } {
+}): Promise<{
+  subject: string;
+  html: string;
+  text: string;
+}> {
   const name = input.recipientName.trim() || 'לקוח יקר';
   const subject = threadSubject(input.refCode, input.isFirst);
   const body = stripDuplicateFraming(input.replyText);
@@ -191,30 +286,104 @@ ${inlineMarkdownToText(body, input.origin)}
 
 בברכה,
 צוות KALFA`;
-  const html = `<!doctype html>
-<html lang="he" dir="rtl">
-<body lang="he" dir="rtl" style="font-family:Arial,Helvetica,sans-serif;direction:rtl;color:#1a1a1a;line-height:1.7;margin:0;padding:24px;background:#f5f5f7">
-  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:10px;padding:24px;border:1px solid #e3e3e8">
-    <h1 style="font-size:20px;margin:0 0 12px">תודה שפנית אלינו</h1>
-    <p style="margin:8px 0">שלום ${esc(name)},</p>
-    <div style="margin:12px 0;white-space:pre-line">${inlineMarkdownToHtml(esc(body), esc(input.origin))}</div>
-    <hr style="border:none;border-top:1px solid #eee;margin:18px 0 14px">
-    <p style="margin:0 0 6px;color:#888;font-size:12px">בברכה,</p>
-    <img src="${esc(input.origin)}/brand/kalfa-signature.png" width="200" height="63"
-         alt="נתנאל ק׳ — KALFA"
-         style="display:block;width:200px;height:63px;border:0;outline:none;max-width:100%">
-  </div>
-</body>
-</html>`;
+  const html = await render(
+    createElement(
+      Html,
+      { lang: 'he', dir: 'rtl' },
+      createElement(
+        Body,
+        {
+          lang: 'he',
+          dir: 'rtl',
+          style: {
+            fontFamily: 'Arial,Helvetica,sans-serif',
+            direction: 'rtl',
+            color: '#1a1a1a',
+            lineHeight: '1.7',
+            margin: '0',
+            padding: '24px',
+            background: '#f5f5f7',
+          },
+        },
+        createElement(
+          'div',
+          {
+            style: {
+              maxWidth: '560px',
+              margin: '0 auto',
+              background: '#ffffff',
+              borderRadius: '10px',
+              padding: '24px',
+              border: '1px solid #e3e3e8',
+            },
+          },
+          createElement(
+            Heading,
+            { as: 'h1', style: { fontSize: '20px', margin: '0 0 12px' } },
+            'תודה שפנית אלינו',
+          ),
+          createElement(
+            Text,
+            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
+            'שלום ' + name + ',',
+          ),
+          createElement('div', {
+            style: { margin: '12px 0', whiteSpace: 'pre-line' },
+            dangerouslySetInnerHTML: {
+              __html: inlineMarkdownToHtml(esc(body), esc(input.origin)),
+            },
+          }),
+          createElement(Hr, {
+            style: {
+              border: 'none',
+              borderTop: '1px solid #eee',
+              margin: '18px 0 14px',
+            },
+          }),
+          createElement(
+            Text,
+            {
+              style: {
+                fontSize: '12px',
+                lineHeight: '1.7',
+                margin: '0 0 6px',
+                color: '#888',
+              },
+            },
+            'בברכה,',
+          ),
+          createElement(Img, {
+            src: input.origin + '/brand/kalfa-signature.png',
+            width: '200',
+            height: '63',
+            alt: 'נתנאל ק׳ — KALFA',
+            style: {
+              display: 'block',
+              width: '200px',
+              height: '63px',
+              border: '0',
+              outline: 'none',
+              maxWidth: '100%',
+            },
+          }),
+        ),
+      ),
+    ),
+  );
   return { subject, html, text };
 }
-
 // `refunded` is money that was ALREADY returned to the customer's card when the e-mail is built (a fixed-price package:
 // resolveCancellationRequest sends this e-mail only after the refund is confirmed). Without it the wording is the one
 // for a request that moved no money back ("ללא חיוב" / a partial charge for service already given).
 const CANCELLATION_RESOLUTION_COPY: Record<
   'full_cancellation' | 'partial_charge' | 'declined',
-  (amount?: number, refunded?: number) => { subjectSuffix: string; opening: string }
+  (
+    amount?: number,
+    refunded?: number,
+  ) => {
+    subjectSuffix: string;
+    opening: string;
+  }
 > = {
   full_cancellation: (_amount, refunded) => ({
     subjectSuffix: 'בקשתך אושרה',
@@ -223,7 +392,9 @@ const CANCELLATION_RESOLUTION_COPY: Record<
       : 'בקשתך לביטול האירוע אושרה — הביטול בוצע במלואו, ללא חיוב.',
   }),
   partial_charge: (amount, refunded) => ({
-    subjectSuffix: refunded ? 'בקשתך אושרה בניכוי דמי ביטול' : 'בקשתך אושרה עם חיוב חלקי',
+    subjectSuffix: refunded
+      ? 'בקשתך אושרה בניכוי דמי ביטול'
+      : 'בקשתך אושרה עם חיוב חלקי',
     opening: refunded
       ? `בקשתך לביטול האירוע אושרה. דמי ביטול של ₪${amount} נשארו לתשלום, ו-₪${refunded} הוחזרו לכרטיס האשראי שלך.`
       : `בקשתך לביטול האירוע אושרה, עם חיוב חלקי של ₪${amount} עבור שירות שכבר סופק.`,
@@ -233,8 +404,7 @@ const CANCELLATION_RESOLUTION_COPY: Record<
     opening: 'בדקנו את בקשתך לביטול האירוע — לא ניתן לאשר את הביטול בשלב זה.',
   }),
 };
-
-export function cancellationRequestResponseEmail(input: {
+export async function cancellationRequestResponseEmail(input: {
   recipientName: string;
   requestCode: string;
   resolution: 'full_cancellation' | 'partial_charge' | 'declined';
@@ -243,9 +413,16 @@ export function cancellationRequestResponseEmail(input: {
   refundedAmount?: number;
   resolutionNote: string;
   origin: string;
-}): { subject: string; html: string; text: string } {
+}): Promise<{
+  subject: string;
+  html: string;
+  text: string;
+}> {
   const name = input.recipientName.trim() || 'לקוח יקר';
-  const copy = CANCELLATION_RESOLUTION_COPY[input.resolution](input.resolutionAmount, input.refundedAmount);
+  const copy = CANCELLATION_RESOLUTION_COPY[input.resolution](
+    input.resolutionAmount,
+    input.refundedAmount,
+  );
   const subject = `בקשת ביטול ${cancellationReference(input.requestCode)} — ${copy.subjectSuffix}`;
   const note = stripDuplicateFraming(input.resolutionNote);
   const text = `שלום ${name},
@@ -256,25 +433,98 @@ ${inlineMarkdownToText(note, input.origin)}
 
 בברכה,
 צוות KALFA`;
-  const html = `<!doctype html>
-<html lang="he" dir="rtl">
-<body lang="he" dir="rtl" style="font-family:Arial,Helvetica,sans-serif;direction:rtl;color:#1a1a1a;line-height:1.7;margin:0;padding:24px;background:#f5f5f7">
-  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:10px;padding:24px;border:1px solid #e3e3e8">
-    <h1 style="font-size:20px;margin:0 0 12px">בקשת ביטול <bdi>${cancellationReference(input.requestCode)}</bdi></h1>
-    <p style="margin:8px 0">שלום ${esc(name)},</p>
-    <p style="margin:8px 0">${esc(copy.opening)}</p>
-    <div style="margin:12px 0;white-space:pre-line">${inlineMarkdownToHtml(esc(note), esc(input.origin))}</div>
-    <hr style="border:none;border-top:1px solid #eee;margin:18px 0 14px">
-    <p style="margin:0 0 6px;color:#888;font-size:12px">בברכה,</p>
-    <img src="${esc(input.origin)}/brand/kalfa-signature.png" width="200" height="63"
-         alt="נתנאל ק׳ — KALFA"
-         style="display:block;width:200px;height:63px;border:0;outline:none;max-width:100%">
-  </div>
-</body>
-</html>`;
+  const html = await render(
+    createElement(
+      Html,
+      { lang: 'he', dir: 'rtl' },
+      createElement(
+        Body,
+        {
+          lang: 'he',
+          dir: 'rtl',
+          style: {
+            fontFamily: 'Arial,Helvetica,sans-serif',
+            direction: 'rtl',
+            color: '#1a1a1a',
+            lineHeight: '1.7',
+            margin: '0',
+            padding: '24px',
+            background: '#f5f5f7',
+          },
+        },
+        createElement(
+          'div',
+          {
+            style: {
+              maxWidth: '560px',
+              margin: '0 auto',
+              background: '#ffffff',
+              borderRadius: '10px',
+              padding: '24px',
+              border: '1px solid #e3e3e8',
+            },
+          },
+          createElement(
+            Heading,
+            { as: 'h1', style: { fontSize: '20px', margin: '0 0 12px' } },
+            'בקשת ביטול ',
+            createElement('bdi', {}, cancellationReference(input.requestCode)),
+          ),
+          createElement(
+            Text,
+            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
+            'שלום ' + name + ',',
+          ),
+          createElement(
+            Text,
+            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
+            copy.opening,
+          ),
+          createElement('div', {
+            style: { margin: '12px 0', whiteSpace: 'pre-line' },
+            dangerouslySetInnerHTML: {
+              __html: inlineMarkdownToHtml(esc(note), esc(input.origin)),
+            },
+          }),
+          createElement(Hr, {
+            style: {
+              border: 'none',
+              borderTop: '1px solid #eee',
+              margin: '18px 0 14px',
+            },
+          }),
+          createElement(
+            Text,
+            {
+              style: {
+                fontSize: '12px',
+                lineHeight: '1.7',
+                margin: '0 0 6px',
+                color: '#888',
+              },
+            },
+            'בברכה,',
+          ),
+          createElement(Img, {
+            src: input.origin + '/brand/kalfa-signature.png',
+            width: '200',
+            height: '63',
+            alt: 'נתנאל ק׳ — KALFA',
+            style: {
+              display: 'block',
+              width: '200px',
+              height: '63px',
+              border: '0',
+              outline: 'none',
+              maxWidth: '100%',
+            },
+          }),
+        ),
+      ),
+    ),
+  );
   return { subject, html, text };
 }
-
 // Two-stage silence follow-up on an inquiry the admin already replied to and
 // the customer went quiet on (inquiry-followup.ts's sweep). Both are
 // transactional/responsive on the SAME reasoning `inquiryReplyEmail` already
@@ -282,11 +532,15 @@ ${inlineMarkdownToText(note, input.origin)}
 // is a continuation of it, not new outreach. Neither offers a self-service
 // "close this" link on purpose — replying is the only action either asks for,
 // and the sweep decides the outcome either way.
-export function inquiryReminderEmail(input: {
+export async function inquiryReminderEmail(input: {
   recipientName: string;
   origin: string;
   refCode: string;
-}): { subject: string; html: string; text: string } {
+}): Promise<{
+  subject: string;
+  html: string;
+  text: string;
+}> {
   const name = input.recipientName.trim() || 'לקוח יקר';
   // Always a reply on an existing thread by definition — never the first
   // message (§2.2).
@@ -299,30 +553,105 @@ export function inquiryReminderEmail(input: {
 
 בברכה,
 צוות KALFA`;
-  const html = `<!doctype html>
-<html lang="he" dir="rtl">
-<body lang="he" dir="rtl" style="font-family:Arial,Helvetica,sans-serif;direction:rtl;color:#1a1a1a;line-height:1.7;margin:0;padding:24px;background:#f5f5f7">
-  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:10px;padding:24px;border:1px solid #e3e3e8">
-    <h1 style="font-size:20px;margin:0 0 12px">עדיין צריך עזרה?</h1>
-    <p style="margin:8px 0">שלום ${esc(name)},</p>
-    <p style="margin:8px 0">לפני כמה ימים ענינו לפנייה שלך. רצינו לוודא שהכול הסתדר.</p>
-    <p style="margin:8px 0">אם עדיין צריך עזרה — פשוט השיבו למייל הזה. אם הכול טופל, אין צורך לעשות דבר.</p>
-    <hr style="border:none;border-top:1px solid #eee;margin:18px 0 14px">
-    <p style="margin:0 0 6px;color:#888;font-size:12px">בברכה,</p>
-    <img src="${esc(input.origin)}/brand/kalfa-signature.png" width="200" height="63"
-         alt="נתנאל ק׳ — KALFA"
-         style="display:block;width:200px;height:63px;border:0;outline:none;max-width:100%">
-  </div>
-</body>
-</html>`;
+  const html = await render(
+    createElement(
+      Html,
+      { lang: 'he', dir: 'rtl' },
+      createElement(
+        Body,
+        {
+          lang: 'he',
+          dir: 'rtl',
+          style: {
+            fontFamily: 'Arial,Helvetica,sans-serif',
+            direction: 'rtl',
+            color: '#1a1a1a',
+            lineHeight: '1.7',
+            margin: '0',
+            padding: '24px',
+            background: '#f5f5f7',
+          },
+        },
+        createElement(
+          'div',
+          {
+            style: {
+              maxWidth: '560px',
+              margin: '0 auto',
+              background: '#ffffff',
+              borderRadius: '10px',
+              padding: '24px',
+              border: '1px solid #e3e3e8',
+            },
+          },
+          createElement(
+            Heading,
+            { as: 'h1', style: { fontSize: '20px', margin: '0 0 12px' } },
+            'עדיין צריך עזרה?',
+          ),
+          createElement(
+            Text,
+            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
+            'שלום ' + name + ',',
+          ),
+          createElement(
+            Text,
+            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
+            'לפני כמה ימים ענינו לפנייה שלך. רצינו לוודא שהכול הסתדר.',
+          ),
+          createElement(
+            Text,
+            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
+            'אם עדיין צריך עזרה — פשוט השיבו למייל הזה. אם הכול טופל, אין צורך לעשות דבר.',
+          ),
+          createElement(Hr, {
+            style: {
+              border: 'none',
+              borderTop: '1px solid #eee',
+              margin: '18px 0 14px',
+            },
+          }),
+          createElement(
+            Text,
+            {
+              style: {
+                fontSize: '12px',
+                lineHeight: '1.7',
+                margin: '0 0 6px',
+                color: '#888',
+              },
+            },
+            'בברכה,',
+          ),
+          createElement(Img, {
+            src: input.origin + '/brand/kalfa-signature.png',
+            width: '200',
+            height: '63',
+            alt: 'נתנאל ק׳ — KALFA',
+            style: {
+              display: 'block',
+              width: '200px',
+              height: '63px',
+              border: '0',
+              outline: 'none',
+              maxWidth: '100%',
+            },
+          }),
+        ),
+      ),
+    ),
+  );
   return { subject, html, text };
 }
-
-export function inquiryClosingWarningEmail(input: {
+export async function inquiryClosingWarningEmail(input: {
   recipientName: string;
   origin: string;
   refCode: string;
-}): { subject: string; html: string; text: string } {
+}): Promise<{
+  subject: string;
+  html: string;
+  text: string;
+}> {
   const name = input.recipientName.trim() || 'לקוח יקר';
   const subject = threadSubject(input.refCode, /* isFirst */ false);
   const text = `שלום ${name},
@@ -333,25 +662,96 @@ export function inquiryClosingWarningEmail(input: {
 
 בברכה,
 צוות KALFA`;
-  const html = `<!doctype html>
-<html lang="he" dir="rtl">
-<body lang="he" dir="rtl" style="font-family:Arial,Helvetica,sans-serif;direction:rtl;color:#1a1a1a;line-height:1.7;margin:0;padding:24px;background:#f5f5f7">
-  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:10px;padding:24px;border:1px solid #e3e3e8">
-    <h1 style="font-size:20px;margin:0 0 12px">הפנייה שלך תיסגר בקרוב</h1>
-    <p style="margin:8px 0">שלום ${esc(name)},</p>
-    <p style="margin:8px 0">לא שמענו ממך זמן רב לגבי הפנייה שענינו לה. פניות שלא נענות זמן רב מסומנות אצלנו כטופלות.</p>
-    <p style="margin:8px 0">אם עדיין צריך עזרה — פשוט השיבו למייל הזה, ונחזור לטפל בזה.</p>
-    <hr style="border:none;border-top:1px solid #eee;margin:18px 0 14px">
-    <p style="margin:0 0 6px;color:#888;font-size:12px">בברכה,</p>
-    <img src="${esc(input.origin)}/brand/kalfa-signature.png" width="200" height="63"
-         alt="נתנאל ק׳ — KALFA"
-         style="display:block;width:200px;height:63px;border:0;outline:none;max-width:100%">
-  </div>
-</body>
-</html>`;
+  const html = await render(
+    createElement(
+      Html,
+      { lang: 'he', dir: 'rtl' },
+      createElement(
+        Body,
+        {
+          lang: 'he',
+          dir: 'rtl',
+          style: {
+            fontFamily: 'Arial,Helvetica,sans-serif',
+            direction: 'rtl',
+            color: '#1a1a1a',
+            lineHeight: '1.7',
+            margin: '0',
+            padding: '24px',
+            background: '#f5f5f7',
+          },
+        },
+        createElement(
+          'div',
+          {
+            style: {
+              maxWidth: '560px',
+              margin: '0 auto',
+              background: '#ffffff',
+              borderRadius: '10px',
+              padding: '24px',
+              border: '1px solid #e3e3e8',
+            },
+          },
+          createElement(
+            Heading,
+            { as: 'h1', style: { fontSize: '20px', margin: '0 0 12px' } },
+            'הפנייה שלך תיסגר בקרוב',
+          ),
+          createElement(
+            Text,
+            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
+            'שלום ' + name + ',',
+          ),
+          createElement(
+            Text,
+            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
+            'לא שמענו ממך זמן רב לגבי הפנייה שענינו לה. פניות שלא נענות זמן רב מסומנות אצלנו כטופלות.',
+          ),
+          createElement(
+            Text,
+            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
+            'אם עדיין צריך עזרה — פשוט השיבו למייל הזה, ונחזור לטפל בזה.',
+          ),
+          createElement(Hr, {
+            style: {
+              border: 'none',
+              borderTop: '1px solid #eee',
+              margin: '18px 0 14px',
+            },
+          }),
+          createElement(
+            Text,
+            {
+              style: {
+                fontSize: '12px',
+                lineHeight: '1.7',
+                margin: '0 0 6px',
+                color: '#888',
+              },
+            },
+            'בברכה,',
+          ),
+          createElement(Img, {
+            src: input.origin + '/brand/kalfa-signature.png',
+            width: '200',
+            height: '63',
+            alt: 'נתנאל ק׳ — KALFA',
+            style: {
+              display: 'block',
+              width: '200px',
+              height: '63px',
+              border: '0',
+              outline: 'none',
+              maxWidth: '100%',
+            },
+          }),
+        ),
+      ),
+    ),
+  );
   return { subject, html, text };
 }
-
 // CSAT request sent once the followup sweep auto-closes an inquiry on
 // sustained silence (inquiry-followup.ts). Three emoji LINKS, not buttons —
 // each takes the customer straight to /rate/{token}?score=N with that score
@@ -362,12 +762,16 @@ export function inquiryClosingWarningEmail(input: {
 // design mockup built for this feature) — the public PAGE itself uses real
 // lucide icons instead, since a real web page doesn't have email's rendering
 // constraints.
-export function inquiryRatingRequestEmail(input: {
+export async function inquiryRatingRequestEmail(input: {
   recipientName: string;
   ratingToken: string;
   origin: string;
   refCode: string;
-}): { subject: string; html: string; text: string } {
+}): Promise<{
+  subject: string;
+  html: string;
+  text: string;
+}> {
   const name = input.recipientName.trim() || 'לקוח יקר';
   const subject = threadSubject(input.refCode, /* isFirst */ false);
   const rateUrl = (score: 1 | 2 | 3) =>
@@ -382,36 +786,201 @@ export function inquiryRatingRequestEmail(input: {
 
 בברכה,
 צוות KALFA`;
-  const html = `<!doctype html>
-<html lang="he" dir="rtl">
-<body lang="he" dir="rtl" style="font-family:Arial,Helvetica,sans-serif;direction:rtl;color:#1a1a1a;line-height:1.7;margin:0;padding:24px;background:#f5f5f7">
-  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:10px;padding:24px;border:1px solid #e3e3e8">
-    <h1 style="font-size:20px;margin:0 0 12px">תודה שפנית אלינו 🙂</h1>
-    <p style="margin:8px 0">שלום ${esc(name)},</p>
-    <p style="margin:8px 0">הפנייה שלך סומנה כטופלה. נשמח לדעת איך היה — לחיצה אחת מספיקה:</p>
-    <table role="presentation" style="margin:20px auto 6px;border-collapse:collapse">
-      <tr>
-        <td style="padding:0 8px;text-align:center">
-          <a href="${esc(rateUrl(1))}" style="display:block;width:52px;height:52px;line-height:52px;border-radius:14px;border:2px solid #e3e3e8;background:#f8f8fb;font-size:26px;text-decoration:none">😕</a>
-          <span style="display:block;margin-top:6px;font-size:11px;color:#4b4b55">לא היה טוב</span>
-        </td>
-        <td style="padding:0 8px;text-align:center">
-          <a href="${esc(rateUrl(2))}" style="display:block;width:52px;height:52px;line-height:52px;border-radius:14px;border:2px solid #e3e3e8;background:#f8f8fb;font-size:26px;text-decoration:none">😐</a>
-          <span style="display:block;margin-top:6px;font-size:11px;color:#4b4b55">בסדר</span>
-        </td>
-        <td style="padding:0 8px;text-align:center">
-          <a href="${esc(rateUrl(3))}" style="display:block;width:52px;height:52px;line-height:52px;border-radius:14px;border:2px solid #e3e3e8;background:#f8f8fb;font-size:26px;text-decoration:none">😊</a>
-          <span style="display:block;margin-top:6px;font-size:11px;color:#4b4b55">מצוין</span>
-        </td>
-      </tr>
-    </table>
-    <hr style="border:none;border-top:1px solid #eee;margin:18px 0 14px">
-    <p style="margin:0 0 6px;color:#888;font-size:12px">בברכה,</p>
-    <img src="${esc(input.origin)}/brand/kalfa-signature.png" width="200" height="63"
-         alt="נתנאל ק׳ — KALFA"
-         style="display:block;width:200px;height:63px;border:0;outline:none;max-width:100%">
-  </div>
-</body>
-</html>`;
+  const html = await render(
+    createElement(
+      Html,
+      { lang: 'he', dir: 'rtl' },
+      createElement(
+        Body,
+        {
+          lang: 'he',
+          dir: 'rtl',
+          style: {
+            fontFamily: 'Arial,Helvetica,sans-serif',
+            direction: 'rtl',
+            color: '#1a1a1a',
+            lineHeight: '1.7',
+            margin: '0',
+            padding: '24px',
+            background: '#f5f5f7',
+          },
+        },
+        createElement(
+          'div',
+          {
+            style: {
+              maxWidth: '560px',
+              margin: '0 auto',
+              background: '#ffffff',
+              borderRadius: '10px',
+              padding: '24px',
+              border: '1px solid #e3e3e8',
+            },
+          },
+          createElement(
+            Heading,
+            { as: 'h1', style: { fontSize: '20px', margin: '0 0 12px' } },
+            'תודה שפנית אלינו 🙂',
+          ),
+          createElement(
+            Text,
+            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
+            'שלום ' + name + ',',
+          ),
+          createElement(
+            Text,
+            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
+            'הפנייה שלך סומנה כטופלה. נשמח לדעת איך היה — לחיצה אחת מספיקה:',
+          ),
+          createElement(
+            'table',
+            {
+              role: 'presentation',
+              style: { margin: '20px auto 6px', borderCollapse: 'collapse' },
+            },
+            createElement(
+              'tr',
+              {},
+              createElement(
+                'td',
+                { style: { padding: '0 8px', textAlign: 'center' } },
+                createElement(
+                  Link,
+                  {
+                    href: rateUrl(1),
+                    style: {
+                      display: 'block',
+                      width: '52px',
+                      height: '52px',
+                      lineHeight: '52px',
+                      borderRadius: '14px',
+                      border: '2px solid #e3e3e8',
+                      background: '#f8f8fb',
+                      fontSize: '26px',
+                      textDecoration: 'none',
+                    },
+                  },
+                  '😕',
+                ),
+                createElement(
+                  'span',
+                  {
+                    style: {
+                      display: 'block',
+                      marginTop: '6px',
+                      fontSize: '11px',
+                      color: '#4b4b55',
+                    },
+                  },
+                  'לא היה טוב',
+                ),
+              ),
+              createElement(
+                'td',
+                { style: { padding: '0 8px', textAlign: 'center' } },
+                createElement(
+                  Link,
+                  {
+                    href: rateUrl(2),
+                    style: {
+                      display: 'block',
+                      width: '52px',
+                      height: '52px',
+                      lineHeight: '52px',
+                      borderRadius: '14px',
+                      border: '2px solid #e3e3e8',
+                      background: '#f8f8fb',
+                      fontSize: '26px',
+                      textDecoration: 'none',
+                    },
+                  },
+                  '😐',
+                ),
+                createElement(
+                  'span',
+                  {
+                    style: {
+                      display: 'block',
+                      marginTop: '6px',
+                      fontSize: '11px',
+                      color: '#4b4b55',
+                    },
+                  },
+                  'בסדר',
+                ),
+              ),
+              createElement(
+                'td',
+                { style: { padding: '0 8px', textAlign: 'center' } },
+                createElement(
+                  Link,
+                  {
+                    href: rateUrl(3),
+                    style: {
+                      display: 'block',
+                      width: '52px',
+                      height: '52px',
+                      lineHeight: '52px',
+                      borderRadius: '14px',
+                      border: '2px solid #e3e3e8',
+                      background: '#f8f8fb',
+                      fontSize: '26px',
+                      textDecoration: 'none',
+                    },
+                  },
+                  '😊',
+                ),
+                createElement(
+                  'span',
+                  {
+                    style: {
+                      display: 'block',
+                      marginTop: '6px',
+                      fontSize: '11px',
+                      color: '#4b4b55',
+                    },
+                  },
+                  'מצוין',
+                ),
+              ),
+            ),
+          ),
+          createElement(Hr, {
+            style: {
+              border: 'none',
+              borderTop: '1px solid #eee',
+              margin: '18px 0 14px',
+            },
+          }),
+          createElement(
+            Text,
+            {
+              style: {
+                fontSize: '12px',
+                lineHeight: '1.7',
+                margin: '0 0 6px',
+                color: '#888',
+              },
+            },
+            'בברכה,',
+          ),
+          createElement(Img, {
+            src: input.origin + '/brand/kalfa-signature.png',
+            width: '200',
+            height: '63',
+            alt: 'נתנאל ק׳ — KALFA',
+            style: {
+              display: 'block',
+              width: '200px',
+              height: '63px',
+              border: '0',
+              outline: 'none',
+              maxWidth: '100%',
+            },
+          }),
+        ),
+      ),
+    ),
+  );
   return { subject, html, text };
 }

@@ -47,7 +47,7 @@ export default async function RatingPage({
   // pattern as every other public token surface (r/[token]/page.tsx,
   // g/[token]/page.tsx).
   const fp = tokenFingerprint(token);
-  const gate = rateLimit(`rating:view:${fp}:${ip}`, RATING_VIEW_RATE);
+  const gate = (await rateLimit(`rating:view:${fp}:${ip}`, RATING_VIEW_RATE));
   if (!gate.allowed) {
     return (
       <GuestShell>

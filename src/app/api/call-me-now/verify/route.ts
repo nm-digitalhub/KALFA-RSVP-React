@@ -97,7 +97,7 @@ const REFUSED = { ok: false as const };
 
 export async function POST(request: Request) {
   const ip = getClientIp(request.headers.get.bind(request.headers));
-  if (!rateLimit(`call-me-now-verify:${ip}`, FLOOD_RATE).allowed) {
+  if (!(await rateLimit(`call-me-now-verify:${ip}`, FLOOD_RATE)).allowed) {
     return json(REFUSED, 429);
   }
 

@@ -64,7 +64,7 @@ const REFUSED = { ok: false as const };
 
 export async function POST(request: Request) {
   const ip = getClientIp(request.headers.get.bind(request.headers));
-  if (!rateLimit(`vox-widget-authorize:${ip}`, RATE).allowed) {
+  if (!(await rateLimit(`vox-widget-authorize:${ip}`, RATE)).allowed) {
     return json(REFUSED, 429);
   }
 

@@ -60,7 +60,7 @@ export async function POST(request: Request): Promise<Response> {
   if (!user) return failure('unauthorized');
   if (!(await hasPlatformPermission('rdp.request'))) return failure('forbidden');
 
-  if (!rateLimit(`rdp-file:${user.id}`, PER_USER_LIMIT).allowed) return failure('rate_limited');
+  if (!(await rateLimit(`rdp-file:${user.id}`, PER_USER_LIMIT)).allowed) return failure('rate_limited');
 
   let issued: Awaited<ReturnType<typeof issueMyRdpFile>>;
   try {

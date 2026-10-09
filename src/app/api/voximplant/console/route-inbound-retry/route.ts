@@ -66,7 +66,7 @@ function json(body: unknown, status: number) {
 
 export async function POST(request: Request) {
   const ip = getClientIp(request.headers.get.bind(request.headers));
-  if (!rateLimit(`vox-console-route-inbound-retry:${ip}`, RATE).allowed) {
+  if (!(await rateLimit(`vox-console-route-inbound-retry:${ip}`, RATE)).allowed) {
     return json(EMPTY, 200);
   }
 

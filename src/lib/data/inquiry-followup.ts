@@ -153,14 +153,14 @@ async function sendStageEmail(
   row: DueRow,
   inReplyTo: string | undefined,
   stage: 'reminder' | 'warning',
-  build: (input: { recipientName: string; origin: string; refCode: string }) => {
+  build: (input: { recipientName: string; origin: string; refCode: string }) => Promise<{
     subject: string;
     html: string;
     text: string;
-  },
+  }>,
 ): Promise<void> {
   const origin = await getAppOrigin();
-  const { subject, html, text } = build({ recipientName: row.name, origin, refCode: row.ref_code });
+  const { subject, html, text } = await build({ recipientName: row.name, origin, refCode: row.ref_code });
   const sender = await getEmailSender();
   await sender.send({
     to: row.email,
@@ -294,12 +294,12 @@ export async function runInquiryFollowupSweep(nowMs: number = Date.now()): Promi
       }
 
       const origin = await getAppOrigin();
-      const { subject, html, text } = inquiryRatingRequestEmail({
+      const { subject, html, text } = (await inquiryRatingRequestEmail({
         recipientName: row.name,
         ratingToken,
         origin,
         refCode: row.ref_code,
-      });
+      }));
       const sender = await getEmailSender();
       const inReplyTo = autoCloseInReplyTo.get(row.id);
       await sender.send({

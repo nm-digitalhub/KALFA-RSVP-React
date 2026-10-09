@@ -379,7 +379,7 @@ export async function sendSlackAlert(input: SlackAlertInput): Promise<string | n
     const { send, suppressedFromPrev } = dedupCheck(key, now);
     if (!send) return null; // Duplicate within the dedup window → suppressed.
 
-    if (!rateLimit(GLOBAL_RATE_KEY, { limit: GLOBAL_MAX_PER_MIN, windowMs: 60_000 }).allowed) {
+    if (!(await rateLimit(GLOBAL_RATE_KEY, { limit: GLOBAL_MAX_PER_MIN, windowMs: 60_000 })).allowed) {
       return null; // Global per-minute cap reached → drop silently.
     }
 

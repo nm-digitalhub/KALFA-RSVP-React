@@ -1,3 +1,5 @@
+import ipaddr from 'ipaddr.js';
+
 // Is a hostname one that must never be reached from a server-side fetch?
 //
 // Shared by `voximplant/recording-url.ts` (written against the OWASP SSRF
@@ -6,7 +8,7 @@
 // It is one list rather than a copy per caller, because two lists of private
 // ranges would drift apart.
 //
-// Pure, and imports nothing: it is read by the pg-boss worker.
+// Pure; also used by the pg-boss worker.
 //
 // ⚠️ NAME RESOLUTION IS NOT CHECKED HERE, and cannot be. This tests the STRING.
 // A hostname that resolves to 127.0.0.1 (a DNS rebind, or simply an internal
@@ -33,17 +35,9 @@ const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
 export function isPrivateOrLocalHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, ''); // strip IPv6 brackets
   if (h === 'localhost' || h.endsWith('.local') || h.endsWith('.internal')) return true;
-  // IPv6 loopback / unique-local / link-local
-  if (h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80:')) {
-    return true;
-  }
-  if (IPV4_RE.test(h)) {
-    const [a, b] = h.split('.').map(Number);
-    if (a === 127 || a === 10 || a === 0) return true; // loopback / private / this-host
-    if (a === 192 && b === 168) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 169 && b === 254) return true; // link-local incl. 169.254.169.254 metadata
-    return true; // any bare IPv4 literal — see the note above
-  }
-  return false;
+  if (IPV4_RE.test(h)) return true; // Preserve the ban on every bare IPv4 literal.
+  if (!ipaddr.isValid(h)) return false;
+  const address = ipaddr.process(h); // Normalize IPv4-mapped IPv6 before classification.
+  if (address.kind() === 'ipv4') return true;
+  return address.range() !== 'unicast';
 }

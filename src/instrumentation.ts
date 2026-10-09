@@ -176,7 +176,7 @@ async function recordOpsError(
   context: { routeType: string; routePath: string },
   runtime: string,
 ): Promise<void> {
-  if (!rateLimit(OPS_ERROR_RATE_KEY, { limit: OPS_ERROR_MAX_PER_MIN, windowMs: 60_000 }).allowed) return;
+  if (!(await rateLimit(OPS_ERROR_RATE_KEY, { limit: OPS_ERROR_MAX_PER_MIN, windowMs: 60_000 })).allowed) return;
   try {
     const [{ createAdminClient }, { readDeployId }] = await Promise.all([
       import('@/lib/supabase/admin'),

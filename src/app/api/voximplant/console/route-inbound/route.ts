@@ -81,7 +81,7 @@ function withChannel(label: string | null, channel: 'pstn' | 'whatsapp' | undefi
 
 export async function POST(request: Request) {
   const ip = getClientIp(request.headers.get.bind(request.headers));
-  if (!rateLimit(`vox-console-route-inbound:${ip}`, RATE).allowed) {
+  if (!(await rateLimit(`vox-console-route-inbound:${ip}`, RATE)).allowed) {
     return json(REJECT, 429);
   }
 
@@ -185,7 +185,7 @@ export async function POST(request: Request) {
     // re-announced hourly while it persists, and the breaker itself is
     // completely unaffected (this gates only the notification).
     if (decision.reason === 'daily_breaker') {
-      if (rateLimit('console-inbound-breaker-alert', { limit: 1, windowMs: 3_600_000 }).allowed) {
+      if ((await rateLimit('console-inbound-breaker-alert', { limit: 1, windowMs: 3_600_000 })).allowed) {
         void sendSlackAlert({
           level: 'error',
           category: 'send_health',
@@ -202,7 +202,7 @@ export async function POST(request: Request) {
     // per_cli_rate, deliberately silent): this reason means the account is
     // actively being probed by callers this account has never talked to.
     if (decision.reason === 'unidentified_flood') {
-      if (rateLimit('console-inbound-unidentified-alert', { limit: 1, windowMs: 3_600_000 }).allowed) {
+      if ((await rateLimit('console-inbound-unidentified-alert', { limit: 1, windowMs: 3_600_000 })).allowed) {
         void sendSlackAlert({
           level: 'warn',
           category: 'send_health',

@@ -67,10 +67,17 @@ describe('isPrivateIp (gate 2 — pure)', () => {
     'fd12::2',
     'fe80::1',
     '::ffff:10.0.0.1',
+    '::ffff:a00:1',
+    '0:0:0:0:0:ffff:7f00:1',
+    'ff02::1',
+    '192.0.2.1',
+    '2001:db8::1',
+    '999.999.999.999',
+    'not-an-address',
   ])('flags %s as private/reserved', (ip) => {
     expect(isPrivateIp(ip)).toBe(true);
   });
-  it.each(['84.201.130.55', '8.8.8.8', '2a01:4f8::1', '172.32.0.1'])(
+  it.each(['84.201.130.55', '8.8.8.8', '2a01:4f8::1', '172.32.0.1', '::ffff:8.8.8.8'])(
     'allows public %s',
     (ip) => {
       expect(isPrivateIp(ip)).toBe(false);

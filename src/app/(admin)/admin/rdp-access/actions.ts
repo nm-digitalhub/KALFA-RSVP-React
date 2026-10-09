@@ -35,13 +35,13 @@ const PER_USER_LIMIT = { limit: 5, windowMs: 60_000 } as const;
 
 const cancelFormSchema = z.object({ requestId: z.uuid() });
 
-function limited(userId: string, action: string): boolean {
-  return !rateLimit(`rdp-${action}:${userId}`, PER_USER_LIMIT).allowed;
+async function limited(userId: string, action: string): Promise<boolean> {
+  return !(await rateLimit(`rdp-${action}:${userId}`, PER_USER_LIMIT)).allowed;
 }
 
 export async function requestRdpAccessAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requirePlatformPermission('rdp.request');
-  if (limited(user.id, 'request')) return { error: TOO_MANY_ATTEMPTS_TEXT };
+  if ((await limited(user.id, 'request'))) return { error: TOO_MANY_ATTEMPTS_TEXT };
 
   const parsed = rdpRequestFormSchema.safeParse({
     reason: formData.get('reason'),
@@ -84,7 +84,7 @@ export async function requestRdpAccessAction(_prev: FormState, formData: FormDat
 
 export async function cancelRdpRequestAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requirePlatformPermission('rdp.request');
-  if (limited(user.id, 'cancel')) return { error: TOO_MANY_ATTEMPTS_TEXT };
+  if ((await limited(user.id, 'cancel'))) return { error: TOO_MANY_ATTEMPTS_TEXT };
 
   const parsed = cancelFormSchema.safeParse({ requestId: formData.get('requestId') });
   if (!parsed.success) return { error: GENERIC_FAILURE_TEXT };
@@ -105,7 +105,7 @@ export async function cancelRdpRequestAction(_prev: FormState, formData: FormDat
 
 export async function endRdpGrantAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const user = await requirePlatformPermission('rdp.request');
-  if (limited(user.id, 'end')) return { error: TOO_MANY_ATTEMPTS_TEXT };
+  if ((await limited(user.id, 'end'))) return { error: TOO_MANY_ATTEMPTS_TEXT };
 
   let outcome: Awaited<ReturnType<typeof endMyRdpGrant>>['outcome'];
   try {

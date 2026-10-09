@@ -54,7 +54,7 @@ function json(body: unknown, status: number) {
 
 export async function POST(request: Request) {
   const ip = getClientIp(request.headers.get.bind(request.headers));
-  const gate = rateLimit(`widget-sdk-auth:${ip}`, RATE);
+  const gate = (await rateLimit(`widget-sdk-auth:${ip}`, RATE));
   if (!gate.allowed) {
     return json({ error: 'יותר מדי בקשות — נסו שוב בעוד רגע' }, 429);
   }

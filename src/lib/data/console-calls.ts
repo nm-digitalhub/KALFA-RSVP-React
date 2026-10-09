@@ -1618,7 +1618,7 @@ export async function resolveExternalDialTarget(
     return { ok: false, reason: 'not_allowed_country' };
   }
 
-  if (!rateLimit(`console-external-dial:${requestingAgentId}`, EXTERNAL_DIAL_RATE).allowed) {
+  if (!(await rateLimit(`console-external-dial:${requestingAgentId}`, EXTERNAL_DIAL_RATE)).allowed) {
     return { ok: false, reason: 'rate_limited' };
   }
 
