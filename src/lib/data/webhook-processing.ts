@@ -63,6 +63,8 @@ import {
 } from '@/lib/data/outreach-config';
 import { classifyInboundChannel } from '@/lib/whatsapp/channel-routing';
 import type { WebhookInboxRow } from '@/lib/data/webhooks';
+import { processCardcomDocumentRow } from '@/lib/data/cardcom-document-processing';
+import { CARDCOM_DOCUMENT_KIND } from '@/lib/data/cardcom-document-intake';
 // RSVP quick-reply button.payload -> RsvpStatus. Single source of truth SHARED
 // with the OUTBOUND send-time payload injection (client.ts via sendOneWhatsApp),
 // so the ids we send and the ids we resolve can never drift. Only these three ids
@@ -227,6 +229,10 @@ export async function processWebhookEvent(
   }
   if (row.event_kind === 'phone_number_quality_update') {
     await processPhoneNumberQualityRow(row);
+    return;
+  }
+  if (row.event_kind === CARDCOM_DOCUMENT_KIND) {
+    await processCardcomDocumentRow(row);
     return;
   }
   // Unknown kind — nothing to do; caller marks it processed (no retry storm).

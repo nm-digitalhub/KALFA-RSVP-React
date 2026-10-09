@@ -4,7 +4,6 @@ import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { PackagePaymentScreen } from '@/lib/payments/package-payment-screen';
-import { PACKAGE_NO_CONTACTS_ERROR } from '@/lib/data/package-activation-errors';
 import { PURCHASE_ERROR_MESSAGES } from '@/lib/payments/package-purchase-errors';
 
 // The card form itself needs payments.js, jQuery and next/script; here it is a marker that records what it was given.
@@ -94,6 +93,33 @@ describe('PackagePaymentView — a payment that exists, or may exist, never offe
   });
 });
 
+// Test money is said out loud on the two screens where a person could mistake it for a real payment. (Staff only in practice: a
+// customer is never offered the test terminal.)
+describe('PackagePaymentView — test money is said out loud', () => {
+  it('the form on the test terminal says no real card will be charged, and is still the form', () => {
+    render(view({ kind: 'form', amount: 120, testTerminal: true }));
+    expect(screen.getByRole('status').textContent).toBe('מסוף בדיקה — לא יחויב כרטיס אמיתי.');
+    expect(screen.getByTestId('card-form')).toBeTruthy();
+  });
+
+  it('the form on any other terminal says nothing of the kind', () => {
+    render(view({ kind: 'form', amount: 120 }));
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('the paid screen of test money says nothing was collected and that it is not counted - and the flow still works as paid', () => {
+    const { container } = render(view({ kind: 'paid', amount: 120, activation: 'unavailable', testMoney: true }));
+    expect(screen.getByRole('status').textContent).toBe('תשלום בדיקה — לא נגבה כסף ולא נספר בהכנסות.');
+    expect(container.textContent).toContain('התשלום התקבל');
+    expect(screen.getByRole('link', { name: 'מעבר לניהול הקמפיין' })).toBeTruthy();
+  });
+
+  it('the paid screen of real money has no such note', () => {
+    render(view({ kind: 'paid', amount: 120, activation: 'unavailable' }));
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
 describe('PackagePaymentView — unavailable', () => {
   it.each([
     ['ledger', PURCHASE_ERROR_MESSAGES.purchase_failed],
@@ -108,25 +134,19 @@ describe('PackagePaymentView — unavailable', () => {
   });
 });
 
-describe('PackagePaymentView — paid: the way to start, and why the automatic start did not happen', () => {
+describe('PackagePaymentView — paid: the way to start, and a notice when the automatic start did not happen', () => {
   const activate = vi.fn();
   const ready: PackagePaymentScreen = { kind: 'paid', amount: 120, activation: 'ready' };
 
-  it('ready: shows the start button, with the reason when the list was empty, and a way to add guests', () => {
-    render(<PackagePaymentView {...base} screen={ready} errorMessage={null} activateAction={activate} activateReason="no_contacts" />);
+  it('ready, the automatic start was refused: a neutral sentence, the start button and a way to add guests', () => {
+    render(<PackagePaymentView {...base} screen={ready} errorMessage={null} activateAction={activate} activateReason="failed" />);
     expect(screen.getByText('התשלום התקבל')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toContain('עוד לא הופעל אוטומטית');
     expect(screen.getByTestId('activate-form')).toBeTruthy();
-    expect(screen.getByRole('alert').textContent).toBe(PACKAGE_NO_CONTACTS_ERROR);
     expect(screen.getByRole('link', { name: 'הוספת מוזמנים' })).toBeTruthy();
   });
 
-  it('ready, refused for another reason: a neutral sentence and the start button', () => {
-    render(<PackagePaymentView {...base} screen={ready} errorMessage={null} activateAction={activate} activateReason="failed" />);
-    expect(screen.getByRole('alert').textContent).toContain('עוד לא הופעל אוטומטית');
-    expect(screen.getByTestId('activate-form')).toBeTruthy();
-  });
-
-  it('ready without a reason (the customer simply came back): the button, and no alert', () => {
+  it('ready, no refused start (the customer simply came back): the button, and no alert', () => {
     render(<PackagePaymentView {...base} screen={ready} errorMessage={null} activateAction={activate} />);
     expect(screen.getByTestId('activate-form')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();

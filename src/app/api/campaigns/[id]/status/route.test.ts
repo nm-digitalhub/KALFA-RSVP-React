@@ -22,9 +22,7 @@ import { activateCampaign, pauseCampaign } from '@/lib/data/campaigns';
 import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import {
   PACKAGE_NOT_PAID_ERROR,
-  PACKAGE_NO_CONTACTS_ERROR,
   PACKAGE_PAYMENT_UNVERIFIED_ERROR,
-  PACKAGE_SUPPORT_ERROR,
 } from '@/lib/data/package-activation-errors';
 import { createAdminClient } from '@/lib/supabase/admin';
 
@@ -147,8 +145,6 @@ describe('POST /api/campaigns/[id]/status', () => {
     'יש לאשר את פרטי האירוע לפני אישורי הגעה',
     PACKAGE_NOT_PAID_ERROR,
     PACKAGE_PAYMENT_UNVERIFIED_ERROR,
-    PACKAGE_NO_CONTACTS_ERROR,
-    PACKAGE_SUPPORT_ERROR,
   ])('maps "%s" to 409 with the reason intact', async (message) => {
     authOk();
     campaignRow(FOUND);

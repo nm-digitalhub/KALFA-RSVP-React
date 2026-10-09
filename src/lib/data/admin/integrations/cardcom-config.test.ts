@@ -13,9 +13,9 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => fake.client })
 
 import { readCardcomAdminConfig, saveCardcomConfig, UNCONFIGURED_CARDCOM } from './cardcom-config';
 
-// The admin side of the CardCom connection: one read for the settings page, one write for its form. The secret never
-// leaves in either direction as a value: the read answers "is a password stored" as a boolean, and the write hands the
-// password to the vault function and logs only that one was submitted.
+// The admin side of the CardCom connection: one read for the settings page, one write for its form. Neither secret (the
+// API password, the document report secret) leaves in either direction as a value: the read answers "is one stored" as a
+// boolean, and the write hands each to its vault function and logs only that one was submitted.
 
 const SECRET_ID = '99999999-8888-4777-8666-555555555555';
 const row = (over: TableRow = {}): TableRow => ({
@@ -31,6 +31,7 @@ const input = (over: Partial<Parameters<typeof saveCardcomConfig>[0]> = {}) => (
   terminalNumber: 1001,
   apiName: 'kalfa-api',
   apiPassword: 'new-password',
+  documentReportSecret: '',
   enabled: true,
   ...over,
 });
@@ -55,10 +56,17 @@ describe('readCardcomAdminConfig', () => {
       apiName: 'kalfa-api',
       enabled: true,
       hasPassword: true,
+      hasDocumentReportSecret: false,
       isTestTerminal: false,
       updatedAt: '2026-10-07T10:00:00.000Z',
     });
     expect(JSON.stringify(view)).not.toContain(SECRET_ID);
+  });
+
+  it('says whether the document report secret is saved, from a boolean the database answers', async () => {
+    fake = createFakeTableClient({ cardcom_config: [row()] }, { cardcom_document_report_secret_exists: () => ({ data: true }) });
+    expect((await readCardcomAdminConfig()).hasDocumentReportSecret).toBe(true);
+    expect(fake.rpcCalls).toEqual([{ fn: 'cardcom_document_report_secret_exists', args: undefined }]);
   });
 
   it('marks the published test terminal', async () => {
@@ -119,9 +127,27 @@ describe('saveCardcomConfig', () => {
     await saveCardcomConfig(input({ apiPassword: 'super-secret' }));
     expect(logActivityMock).toHaveBeenCalledWith({
       action: 'admin.cardcom_config.saved',
-      meta: { terminalNumber: 1001, enabled: true, passwordSubmitted: true },
+      meta: { terminalNumber: 1001, enabled: true, passwordSubmitted: true, documentReportSecretSubmitted: false },
     });
     expect(JSON.stringify(logActivityMock.mock.calls)).not.toContain('super-secret');
+  });
+
+  it('saves a typed document report secret through its vault function, and logs only that one was submitted', async () => {
+    fake = createFakeTableClient(
+      { cardcom_config: [row()] },
+      { cardcom_config_save: () => ({ data: null }), cardcom_document_report_secret_save: () => ({ data: null }) },
+    );
+    const secret = 'A1b2C3d4E5f6G7h8I9j0K1l2';
+    await expect(saveCardcomConfig(input({ documentReportSecret: secret }))).resolves.toEqual({ ok: true });
+    expect(fake.rpcCalls.map((c) => c.fn)).toEqual(['cardcom_config_save', 'cardcom_document_report_secret_save']);
+    expect(fake.rpcCalls[1].args).toEqual({ p_secret: secret });
+    expect(logActivityMock.mock.calls[0][0].meta).toMatchObject({ documentReportSecretSubmitted: true });
+    expect(JSON.stringify(logActivityMock.mock.calls)).not.toContain(secret);
+  });
+
+  it('a blank document report secret keeps the stored one: its vault function is not called', async () => {
+    await saveCardcomConfig(input({ documentReportSecret: '' }));
+    expect(fake.rpcCalls.map((c) => c.fn)).toEqual(['cardcom_config_save']);
   });
 
   it('throws when the save fails, so the form can say so', async () => {

@@ -225,6 +225,27 @@ describe('a pay-per-result campaign keeps its screen', () => {
   });
 });
 
+// An event with no LIVE campaign - it never had one, or every campaign was cancelled (each reset test run leaves one) - has nothing the
+// resolver can charge or refund. The screen must say that, not "not charged yet / will charge the card now".
+describe('an event with no live campaign', () => {
+  it('says no money moves and the event closes, and tells the form so', async () => {
+    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(null);
+    const html = await render();
+    expect(html).toContain('לאירוע אין קמפיין פעיל');
+    expect(html).toContain('לא יזיז כסף');
+    expect(html).not.toContain('הקמפיין טרם חויב');
+    expect(html).not.toContain('חיוב אמיתי');
+    expect(form(html)).toMatchObject({ present: true, outcome: 'no_campaign', base: '0', suggested: '0' });
+  });
+
+  it('never looks up billing or a suggested amount for a campaign that is not there', async () => {
+    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(null);
+    await render();
+    expect(getCampaignBillingSummary).not.toHaveBeenCalled();
+    expect(computeSuggestedCancellationAmount).not.toHaveBeenCalled();
+  });
+});
+
 describe('a request that was already resolved', () => {
   it('shows the result and the credit document, and no form', async () => {
     vi.mocked(getCancellationRequestForAdmin).mockResolvedValue(

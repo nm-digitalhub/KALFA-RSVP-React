@@ -63,13 +63,17 @@ export default async function AdminCancellationDetailPage({
         refundedForRequest: campaign.packageRefundedForRequest,
       })
     : null;
+  // An event with no live campaign (it never had one, or every campaign was cancelled): the resolver moves no money for it.
+  const noLiveCampaign = campaign === null;
   const moneyOutcome: MoneyOutcome = packageState
     ? PACKAGE_MONEY_OUTCOME[packageState]
-    : isPreCharge
-      ? 'capture'
-      : campaign?.hasCardOnFile
-        ? 'credit'
-        : 'manual';
+    : noLiveCampaign
+      ? 'no_campaign'
+      : isPreCharge
+        ? 'capture'
+        : campaign?.hasCardOnFile
+          ? 'credit'
+          : 'manual';
   const billingSummary = campaign && !isPackage ? await getCampaignBillingSummary(campaign.id) : null;
   const suggestedAmount = campaign
     ? await computeSuggestedCancellationAmount(campaign.id, isPackage ? (packagePaid ?? 0) : undefined)
@@ -162,6 +166,10 @@ export default async function AdminCancellationDetailPage({
             <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
               בקמפיין החבילה לא שולם דבר (או שהכול כבר הוחזר) — אין מה להחזיר. אישור &quot;ביטול מלא&quot; יסגור את הקמפיין
               והאירוע בלי תנועה כספית.
+            </div>
+          ) : noLiveCampaign ? (
+            <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
+              לאירוע אין קמפיין פעיל (ייתכן שהקמפיין בוטל) — אישור הבקשה לא יזיז כסף, והאירוע ייסגר.
             </div>
           ) : isPreCharge ? (
             <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">

@@ -72,12 +72,13 @@ export async function getEventForStaffView(eventId: string): Promise<StaffEventV
     eventId,
   });
 
-  const [{ data, error }, { data: campaign }] = await Promise.all([
+  const [{ data, error }, { data: campaigns }] = await Promise.all([
     admin.from('events').select(STAFF_EVENT_COLUMNS).eq('id', eventId).maybeSingle(),
-    // id only. Not the status, not the money — whether a campaign EXISTS is
-    // structural, and the link built from this id is rendered only for a
-    // viewer holding manage_billing.
-    admin.from('campaigns').select('id').eq('event_id', eventId).maybeSingle(),
+    // id only. Not the status, not the money — whether a campaign EXISTS is structural, and the link built from this id is rendered
+    // only for a viewer holding manage_billing. An event can have SEVERAL campaigns (a cancelled one for every reset test run, at most
+    // one live: campaigns_event_noncancelled_uidx) and a new one can only be created while none is live, so the NEWEST is the live one
+    // when there is one, and the last one otherwise. Never maybeSingle(): it fails the moment a second campaign exists.
+    admin.from('campaigns').select('id').eq('event_id', eventId).order('created_at', { ascending: false }).limit(1),
   ]);
   if (error) {
     throw new Error('טעינת האירוע נכשלה');
@@ -97,6 +98,6 @@ export async function getEventForStaffView(eventId: string): Promise<StaffEventV
     statusLabel: EVENT_STATUS_LABELS[data.status] ?? data.status,
     venueName: data.venue_name,
     ownerId: data.owner_id,
-    campaignId: campaign?.id ?? null,
+    campaignId: campaigns?.[0]?.id ?? null,
   };
 }

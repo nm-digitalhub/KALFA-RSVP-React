@@ -19,11 +19,14 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { probeSumitCharge, type ProbeResult } from '@/lib/sumit/probe';
 import { createFakeTableClient, type TableRow } from '@/test/fake-table-client';
 
+import { TERMINAL_CONFLICT_NOTICE } from '@/lib/payments/terminal-conflict-copy';
+
 import { recordStaffAccess } from './access-log';
 import {
   listPaymentReviews,
   PaymentReviewError,
   probePaymentReview,
+  reportedTerminalConflicts,
   resolvePaymentReview,
   resolvePaymentReviewSchema,
 } from './payment-review';
@@ -336,5 +339,159 @@ describe('messages that are safe to show to the staff member', () => {
         expect(issue.message, `${issue.path.join('.')}: ${issue.message}`).toMatch(/[\u0590-\u05FF]/);
       }
     }
+  });
+});
+
+// A CardCom payment in review is checked in CardCom's own panel, never in SUMIT's list: "not found" in SUMIT would read as "no
+// payment" about money that lives elsewhere. The queue shows where the payment was opened and where CardCom says it went, and the
+// server refuses to approve a payment CardCom places on another terminal than the one it was opened on.
+describe('CardCom rows in the review queue', () => {
+  const cardcomRow = (over: TableRow = {}): TableRow =>
+    reviewRow({
+      provider: 'cardcom', provider_terminal: 1001, provider_terminal_echo: null, is_test: false,
+      provider_document_id: 9001, provider_document_number: 77, provider_document_url: 'https://cardcom.example/doc/77',
+      provider_auth_ref: '0123456', provider_payment_id: 555,
+      meta: { provider: 'cardcom', payerUserId: 'payer-1' },
+      ...over,
+    });
+
+  it('lists the provider, the class, both terminals and the references a person finds the payment by', async () => {
+    wire([cardcomRow({ provider_terminal: 1000, provider_terminal_echo: 1001, is_test: true })]);
+    const [item] = await listPaymentReviews();
+    expect(item).toMatchObject({
+      provider: 'cardcom', isTest: true, terminalOpenedOn: 1000, terminalReported: 1001,
+      documentNumber: 77, authRef: '0123456', paymentId: 555,
+    });
+  });
+
+  it('says "not reported" as null, never as a made-up number', async () => {
+    wire([cardcomRow({ provider_terminal_echo: null, provider_document_number: null, provider_auth_ref: null, provider_payment_id: null })]);
+    const [item] = await listPaymentReviews();
+    expect(item).toMatchObject({ terminalReported: null, documentNumber: null, authRef: null, paymentId: null });
+  });
+
+  it('a CardCom payment recorded before the provider column was set is recognised by its meta', async () => {
+    wire([reviewRow({ provider: 'sumit', meta: { provider: 'cardcom', payerUserId: 'payer-1' } })]);
+    const [item] = await listPaymentReviews();
+    expect(item.provider).toBe('cardcom');
+  });
+
+  it('a SUMIT row stays SUMIT, with no terminal and no reference it does not have', async () => {
+    wire([reviewRow()]);
+    const [item] = await listPaymentReviews();
+    expect(item).toMatchObject({ provider: 'sumit', isTest: false, terminalOpenedOn: null, terminalReported: null, documentNumber: null, authRef: null, paymentId: null });
+  });
+
+  it('is never looked up in SUMIT: the answer is "unsupported", SUMIT is not asked, and the access is still audited first', async () => {
+    wire([cardcomRow()]);
+    expect(await probePaymentReview(OP)).toEqual({ kind: 'unavailable', reason: 'unsupported' });
+    expect(probeSumitCharge).not.toHaveBeenCalled();
+    expect(getSumitServerConfig).not.toHaveBeenCalled();
+    expect(recordStaffAccess).toHaveBeenCalledTimes(1);
+  });
+
+  describe('approving it as a collection', () => {
+    const approve = () => resolvePaymentReview({ operationId: OP, outcome: 'succeeded', documentNumber: 77, note: 'נבדק בלוח של CardCom: החיוב בוצע, מסמך 77' });
+
+    it('is refused when CardCom reports ANOTHER terminal than the one it was opened on: nothing is written, nothing is audited as decided', async () => {
+      const db = wire([cardcomRow({ provider_terminal: 1000, provider_terminal_echo: 1001 })]);
+      const attempt = approve();
+      await expect(attempt).rejects.toBeInstanceOf(PaymentReviewError);
+      await expect(attempt).rejects.toThrow('המסוף ש-CardCom דיווחה שונה');
+      expect(db.rows('payment_operations')[0].outcome).toBe('review');
+      expect(logActivity).not.toHaveBeenCalled();
+      expect(sendSlackAlert).not.toHaveBeenCalled();
+    });
+
+    it('the refusal is the one shared notice - the same words the card shows - including what to do with money that was really taken', async () => {
+      wire([cardcomRow({ provider_terminal: 1000, provider_terminal_echo: 1001 })]);
+      await expect(approve()).rejects.toThrow(TERMINAL_CONFLICT_NOTICE);
+      // Return a charge in CardCom BEFORE marking failed: after "failed" the customer can pay again and the system cannot refund that row.
+      expect(TERMINAL_CONFLICT_NOTICE.indexOf('להחזיר אותו ידנית בלוח של CardCom')).toBeGreaterThan(-1);
+      expect(TERMINAL_CONFLICT_NOTICE.indexOf('להחזיר אותו ידנית בלוח של CardCom')).toBeLessThan(TERMINAL_CONFLICT_NOTICE.indexOf('סמנו ככושלת'));
+    });
+
+    it('is allowed when CardCom reports the same terminal', async () => {
+      const db = wire([cardcomRow({ provider_terminal_echo: 1001 })]);
+      await expect(approve()).resolves.toEqual({ outcome: 'succeeded' });
+      expect(db.rows('payment_operations')[0]).toMatchObject({ outcome: 'succeeded', provider_document_number: 77 });
+    });
+
+    it('is allowed when CardCom reported none (a person checks the panel and says what they found)', async () => {
+      wire([cardcomRow({ provider_terminal_echo: null })]);
+      await expect(approve()).resolves.toEqual({ outcome: 'succeeded' });
+    });
+
+    it('is allowed for a row with no recorded terminal: there is nothing to conflict with', async () => {
+      // From before the stamp existed: provider 'sumit' (the default) with the CardCom marker in the meta.
+      wire([cardcomRow({ provider: 'sumit', provider_terminal: null, provider_terminal_echo: 1000 })]);
+      await expect(approve()).resolves.toEqual({ outcome: 'succeeded' });
+    });
+
+    // The row already holds the document CardCom gave (id, number and the link). Confirming the SAME number must not wipe the link or
+    // the id; a completed row is frozen, so whatever is written here can never be put back.
+    it('confirming the document number the row already holds keeps its id and its link exactly as they are', async () => {
+      const db = wire([cardcomRow()]);
+      await approve();
+      expect(db.rows('payment_operations')[0]).toMatchObject({
+        outcome: 'succeeded', provider_document_id: 9001, provider_document_number: 77, provider_document_url: 'https://cardcom.example/doc/77',
+      });
+    });
+
+    it('a DIFFERENT document number replaces the document - and the old link, which belongs to the old document, goes with it', async () => {
+      const db = wire([cardcomRow()]);
+      await resolvePaymentReview({ operationId: OP, outcome: 'succeeded', documentNumber: 78, note: 'נבדק בלוח של CardCom: המסמך הנכון הוא 78' });
+      expect(db.rows('payment_operations')[0]).toMatchObject({
+        outcome: 'succeeded', provider_document_id: null, provider_document_number: 78, provider_document_url: null,
+      });
+    });
+
+    it('a row that holds no document yet gets the number a person read off the panel', async () => {
+      const db = wire([cardcomRow({ provider_document_id: null, provider_document_number: null, provider_document_url: null })]);
+      await approve();
+      expect(db.rows('payment_operations')[0]).toMatchObject({
+        outcome: 'succeeded', provider_document_id: null, provider_document_number: 77, provider_document_url: null,
+      });
+    });
+  });
+
+  // A test payment is a test at every place staff read it: the alert title, and the audit row.
+  describe('a payment on the test terminal', () => {
+    const decide = () => resolvePaymentReview({ operationId: OP, outcome: 'succeeded', documentNumber: 77, note: 'נבדק בלוח של CardCom: החיוב בוצע, מסמך 77' });
+
+    it('is labelled in the Slack alert and in the audit row', async () => {
+      wire([cardcomRow({ provider_terminal: 1000, provider_terminal_echo: 1000, is_test: true })]);
+      await decide();
+      expect(vi.mocked(sendSlackAlert).mock.calls[0][0].title).toMatch(/^\[בדיקה\] /);
+      expect(logActivity).toHaveBeenCalledWith(expect.objectContaining({ meta: expect.objectContaining({ operationId: OP, outcome: 'succeeded', testMoney: true }) }));
+    });
+
+    it('a real payment is labelled nowhere: no prefix, no testMoney key', async () => {
+      wire([cardcomRow({ provider_terminal_echo: 1001 })]);
+      await decide();
+      expect(vi.mocked(sendSlackAlert).mock.calls[0][0].title).not.toContain('[בדיקה]');
+      expect(vi.mocked(logActivity).mock.calls[0][0].meta).not.toHaveProperty('testMoney');
+    });
+
+    it('marking it failed is labelled the same way', async () => {
+      wire([cardcomRow({ provider_terminal: 1000, provider_terminal_echo: 1000, is_test: true })]);
+      await resolvePaymentReview({ operationId: OP, outcome: 'failed', note: 'נבדק בלוח של CardCom: לא נגבה' });
+      expect(vi.mocked(sendSlackAlert).mock.calls[0][0].title).toMatch(/^\[בדיקה\] .*ככושלת/);
+    });
+  });
+
+  it('marking a payment failed is never held up by a terminal conflict: that is exactly the decision such a row needs', async () => {
+    const db = wire([cardcomRow({ provider_terminal: 1000, provider_terminal_echo: 1001 })]);
+    await resolvePaymentReview({ operationId: OP, outcome: 'failed', note: 'נבדק בלוח של CardCom: הכסף הגיע למסוף אחר' });
+    expect(db.rows('payment_operations')[0].outcome).toBe('failed');
+  });
+
+  it('reportedTerminalConflicts: only a CardCom row with both terminals known and different', () => {
+    const base = { provider: 'cardcom' as const, terminalOpenedOn: 1000, terminalReported: 1001 };
+    expect(reportedTerminalConflicts(base)).toBe(true);
+    expect(reportedTerminalConflicts({ ...base, terminalReported: 1000 })).toBe(false);
+    expect(reportedTerminalConflicts({ ...base, terminalReported: null })).toBe(false);
+    expect(reportedTerminalConflicts({ ...base, terminalOpenedOn: null })).toBe(false);
+    expect(reportedTerminalConflicts({ ...base, provider: 'sumit' as never })).toBe(false);
   });
 });

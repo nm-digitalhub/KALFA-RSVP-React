@@ -5,6 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ScheduleStepOption } from '@/lib/data/schedule-picker';
 import { PackageForm, type PackageFormInitial, type PricingModelStatus, type ScheduleSeed } from './package-form';
 
+// The description and includes fields call a Server Action to rewrite their text. The real one needs the server (server-only, the
+// Claude process), so the form is rendered here with a stand-in; the field itself has its own tests (package-copy-field.test.tsx).
+vi.mock('./rewrite-action', () => ({ rewritePackageCopyAction: vi.fn() }));
+
 // The package form edits two kinds of package. The pay-per-result package carries the per-reached formula (a price per
 // contact, a base fee, an included count) and the card-hold floor and buffer. The fixed-price package carries ONE
 // number instead — its contact quota — and none of those: its price is the package's own price, charged once. The form
@@ -212,13 +216,14 @@ describe('PackageForm — a new package does not start with an empty schedule', 
     const { container } = createForm(SEED);
     expect(submitted(container)).toEqual(SEED.schedule);
     expect((container.querySelectorAll('[name="channels"]:checked')).length).toBe(2);
-    expect(screen.getByRole('status').textContent).toContain('חבילת הדגל');
+    // The notice itself, by its words: the description and includes fields keep their own (empty, screen-reader-only) live regions.
+    expect(screen.getByText(/הלוח והערוצים הועתקו מהחבילה/).textContent).toContain('חבילת הדגל');
   });
 
   it('with nothing to suggest the form is empty, as before, and says nothing', () => {
     const { container } = createForm(null);
     expect(submitted(container)).toEqual([]);
-    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(screen.queryByText(/הלוח והערוצים הועתקו מהחבילה/)).toBeNull();
   });
 
   it('is only for creating: an edited package keeps its own schedule and is never overwritten by a suggestion', () => {
@@ -235,7 +240,7 @@ describe('PackageForm — a new package does not start with an empty schedule', 
       />,
     );
     expect(submitted(container)).toEqual([{ days_before: 5, channel: 'whatsapp', message_key: 'final' }]);
-    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(screen.queryByText(/הלוח והערוצים הועתקו מהחבילה/)).toBeNull();
   });
 
   it('every step can still be removed or changed', () => {

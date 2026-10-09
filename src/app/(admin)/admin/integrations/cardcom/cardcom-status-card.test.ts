@@ -15,7 +15,7 @@ function textOf(node: unknown): string {
 }
 
 const config = (over = {}) => ({
-  exists: true, terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, hasPassword: true, isTestTerminal: false,
+  exists: true, terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, hasPassword: true, hasDocumentReportSecret: true, isTestTerminal: false,
   updatedAt: '2026-10-07T10:00:00.000Z', ...over,
 });
 

@@ -56,7 +56,7 @@ export function PackageChoiceForm({
                   <span dir="ltr">{formatAmount(offer.price)}</span>
                 </label>
                 <p className="text-sm text-muted-foreground">עד {offer.contact_quota} אנשי קשר</p>
-                {offer.description ? <p className="text-sm">{offer.description}</p> : null}
+                {offer.description ? <p className="text-sm whitespace-pre-line">{offer.description}</p> : null}
                 {offer.includes.length > 0 ? (
                   <ul className="list-disc ps-5 text-sm text-muted-foreground">
                     {offer.includes.map((item) => (

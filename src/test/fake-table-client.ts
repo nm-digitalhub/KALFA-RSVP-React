@@ -44,9 +44,10 @@ export interface FakeTableOptions {
   uniqueIndexes?: UniqueIndex[];
   /**
    * What a BEFORE INSERT trigger does in the database: it can set or rewrite columns (a derived event_id, a
-   * `once_slot` snapshot) BEFORE the unique indexes look at the row. Returns the row to store.
+   * `once_slot` snapshot) BEFORE the unique indexes look at the row. Returns the row to store. `rows` are the rows already in
+   * the table (a trigger can look at other rows, e.g. a refund reading its parent); the row being inserted is not among them.
    */
-  beforeInsert?: (table: string, row: TableRow) => TableRow;
+  beforeInsert?: (table: string, row: TableRow, rows: readonly TableRow[]) => TableRow;
 }
 
 export interface FakeTableClient {
@@ -160,7 +161,7 @@ export function createFakeTableClient(
       if (rec.op === 'insert') {
         const added = (inserts ?? []).map((r) => {
           const row = { id: nextId(), ...r };
-          return options.beforeInsert ? options.beforeInsert(table, row) : row;
+          return options.beforeInsert ? options.beforeInsert(table, row, rows) : row;
         });
         if (violatesUnique(uniqueIndexes, table, added, rows)) {
           return { data: null, count: null, error: UNIQUE_VIOLATION };

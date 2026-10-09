@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFakeTableClient, type FakeTableClient, type TableRow } from '@/test/fake-table-client';
+import { withLedgerStamp } from '@/test/ledger-stamp-trigger';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
@@ -118,7 +119,7 @@ let db: FakeTableClient;
 let errorLog: ReturnType<typeof vi.spyOn>;
 
 function useDb(seed: TableRow[] = []) {
-  db = createFakeTableClient({ payment_operations: seed }, {}, { beforeInsert: trigger, uniqueIndexes: INDEXES });
+  db = createFakeTableClient({ payment_operations: seed }, {}, { beforeInsert: withLedgerStamp(trigger), uniqueIndexes: INDEXES });
   vi.mocked(createAdminClient).mockReturnValue(db.client as never);
 }
 

@@ -17,7 +17,8 @@ type FeeMode = 'amount' | 'percent';
 // package adds three: 'none' (nothing was paid, so no money moves), 'blocked' (something was paid but it cannot be
 // refunded by itself, so the server refuses any approval that has money to return) and 'resume' (an earlier resolve of
 // this request already sent money back and stopped at a later step: an approval finishes it without refunding again).
-export type MoneyOutcome = 'capture' | 'credit' | 'manual' | 'none' | 'blocked' | 'resume';
+// 'no_campaign' is the event with no live campaign at all (it never had one, or every campaign was cancelled): no money moves.
+export type MoneyOutcome = 'capture' | 'credit' | 'manual' | 'none' | 'blocked' | 'resume' | 'no_campaign';
 
 const BLOCKED_TEXT =
   'לא ניתן להחזיר כסף אוטומטית בקמפיין הזה (אין כרטיס שמור, או שנתוני התשלום לא נקראו). אם יש סכום להחזרה — האישור ייכשל בהודעה ושום דבר לא ישתנה. להמשיך?';
@@ -32,6 +33,7 @@ const FULL_CANCELLATION_TEXT: Record<MoneyOutcome, string> = {
   none: 'לאשר ביטול מלא? לא שולם דבר בחבילה (או שהכול כבר הוחזר) — לא תהיה תנועה כספית. הקמפיין והאירוע ייסגרו.',
   blocked: BLOCKED_TEXT,
   resume: RESUME_TEXT,
+  no_campaign: 'לאשר ביטול מלא? לאירוע אין קמפיין פעיל — לא תהיה תנועה כספית, והאירוע ייסגר.',
 };
 
 const PARTIAL_CHARGE_TEXT: Record<MoneyOutcome, string> = {
@@ -41,6 +43,7 @@ const PARTIAL_CHARGE_TEXT: Record<MoneyOutcome, string> = {
   none: 'לאשר חיוב חלקי? לא שולם דבר בחבילה, ולכן אין סכום להשאיר אצלנו — האישור ייכשל בהודעה ושום דבר לא ישתנה.',
   blocked: BLOCKED_TEXT,
   resume: RESUME_TEXT,
+  no_campaign: 'לאשר חיוב חלקי? לאירוע אין קמפיין פעיל — לא יחויב דבר, אבל הלקוח יקבל הודעה על חיוב בסכום שהוזן. כדי לסגור בלי חיוב בחרו ביטול מלא.',
 };
 
 const CONFIRM_TEXT: Record<Resolution, (outcome: MoneyOutcome) => string> = {

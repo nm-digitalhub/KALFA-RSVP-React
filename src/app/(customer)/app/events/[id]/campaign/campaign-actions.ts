@@ -303,7 +303,8 @@ export async function signAgreementAction(
 // The fixed-price package is APPROVED, not signed: the customer reads the terms and ticks two boxes (the terms and
 // the privacy policy). No drawn signature and no phone code. The browser sends which version of the terms it showed
 // (`terms_version`); recordPackageApproval compares it with the approved package document, derives everything else on the
-// server, and records who, when, from where and which version.
+// server, and records who, when, from where and which version. The approval is the step right before paying, so the
+// customer lands straight on the payment page, not back on the setup steps.
 export async function approvePackageTermsAction(
   eventId: string,
   campaignId: string,
@@ -340,7 +341,7 @@ export async function approvePackageTermsAction(
 
   revalidatePath(`/app/events/${eventId}`);
   revalidatePath(`/app/events/${eventId}/campaign`);
-  redirect(`/app/events/${eventId}/setup`);
+  redirect(`/app/events/${eventId}/campaign/${campaignId}/payment`);
 }
 
 // --- Campaign lifecycle (§9) ----------------------------------------------------

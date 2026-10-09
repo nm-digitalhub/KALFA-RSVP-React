@@ -1,0 +1,3 @@
+# Design
+
+A shared controlled field calls an authorized Server Action. The action validates both input and output using the existing package schemas. A text-only runner reuses the owner-agent process seam, pinned login environment, and timeout handling. It loads no MCP tools or hooks. Each field previews the result before application. Edit revisions discard stale suggestions. The runner allows at most two simultaneous requests per process and one per user per process. This is not a cross-process rate limit. Real Claude authentication and production UI still require verification on the target server.

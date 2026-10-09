@@ -8,6 +8,10 @@ vi.mock('@/lib/data/admin/integrations/cardcom-config', () => ({ readCardcomAdmi
 
 import CardcomPage from './page';
 
+// The report address is built by the real getAppUrl, from APP_ORIGIN — the same source production uses.
+const APP_ORIGIN = 'https://kalfa.test';
+process.env.APP_ORIGIN = APP_ORIGIN;
+
 function collect(node: unknown, out: Array<Record<string, unknown>> = []) {
   if (!node || typeof node !== 'object') return out;
   if (Array.isArray(node)) {
@@ -32,10 +36,10 @@ const find = (tree: unknown, name: string) =>
   collect(tree).find((p) => (p.__type as { name?: string } | undefined)?.name === name);
 
 const CONFIG = {
-  exists: true, terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, hasPassword: true, isTestTerminal: false,
+  exists: true, terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, hasPassword: true, hasDocumentReportSecret: true, isTestTerminal: false,
   updatedAt: '2026-10-07T10:00:00.000Z',
 };
-const EMPTY = { exists: false, terminalNumber: null, apiName: null, enabled: false, hasPassword: false, isTestTerminal: false, updatedAt: null };
+const EMPTY = { exists: false, terminalNumber: null, apiName: null, enabled: false, hasPassword: false, hasDocumentReportSecret: false, isTestTerminal: false, updatedAt: null };
 
 async function render(config: Record<string, unknown> = CONFIG) {
   permMock.mockResolvedValue({ id: 'u1' });
@@ -55,14 +59,20 @@ describe('/admin/integrations/cardcom', () => {
     expect(names).toContain('CardcomConfigForm');
   });
 
-  it('hands the form the saved values, and only whether a password is stored — never the password', async () => {
+  it('hands the form the saved values, the report address, and only whether each secret is stored — never a secret', async () => {
     const form = find(await render(), 'CardcomConfigForm');
-    expect(form?.values).toEqual({ terminal_number: '1001', api_name: 'kalfa-api', enabled: true, has_password: true });
+    expect(form?.values).toEqual({
+      terminal_number: '1001', api_name: 'kalfa-api', enabled: true, has_password: true, has_document_report_secret: true,
+      document_report_url: `${APP_ORIGIN}/api/cardcom/document-webhook`,
+    });
   });
 
   it('shows an empty form when nothing was ever saved', async () => {
     const form = find(await render(EMPTY), 'CardcomConfigForm');
-    expect(form?.values).toEqual({ terminal_number: '', api_name: '', enabled: false, has_password: false });
+    expect(form?.values).toEqual({
+      terminal_number: '', api_name: '', enabled: false, has_password: false, has_document_report_secret: false,
+      document_report_url: `${APP_ORIGIN}/api/cardcom/document-webhook`,
+    });
   });
 
   it('links back to the index and to the money switches in settings', async () => {

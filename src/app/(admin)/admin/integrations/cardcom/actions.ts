@@ -11,7 +11,7 @@ import type { FormState } from '@/lib/validation/result';
 // Thin by design: validate, hand off, revalidate. The gate lives in saveCardcomConfig
 // (requirePlatformPermission('integrations.manage')).
 //
-// A blank password is not an error: it means "keep the stored one", so an operator can switch the pilot on or correct
+// A blank password (or document report secret) is not an error: it means "keep the stored one", so an operator can switch the pilot on or correct
 // the terminal number without typing a secret they may not have kept. Whether the pilot may be switched on is decided
 // in saveCardcomConfig, which knows whether a password is stored.
 export async function updateCardcomConfigAction(
@@ -22,6 +22,7 @@ export async function updateCardcomConfigAction(
     terminal_number: formData.get('terminal_number') ?? '',
     api_name: formData.get('api_name') ?? '',
     api_password: formData.get('api_password') ?? '',
+    document_report_secret: formData.get('document_report_secret') ?? '',
     enabled: formData.get('enabled') === 'on',
   });
   if (!parsed.success) {
@@ -32,6 +33,7 @@ export async function updateCardcomConfigAction(
       terminalNumber: Number(parsed.data.terminal_number),
       apiName: parsed.data.api_name,
       apiPassword: parsed.data.api_password,
+      documentReportSecret: parsed.data.document_report_secret,
       enabled: parsed.data.enabled,
     });
     if (!result.ok) {

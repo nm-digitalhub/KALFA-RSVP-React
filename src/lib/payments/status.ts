@@ -19,6 +19,10 @@ export interface OperationRow {
   credit: number;
   occurredAt: string;
   recordedAt: string;
+  // True when the row was opened on a no-money (test) terminal. The DATABASE decides it, once, when the row is born
+  // (payment_operations.is_test); nothing here ever derives it. Absent = false: a row written by older code, and every row
+  // of another provider, is real money.
+  isTest?: boolean;
 }
 
 export interface PaymentState {
@@ -27,6 +31,9 @@ export interface PaymentState {
   // Credit applied by succeeded collects. Never netted by a return: a refund gives money back to the card, not credit.
   credit: number;
   committed: number;
+  // Present (true) ONLY when the money that settled is all test money: at least one succeeded collect or return exists and
+  // every one of them is a test row. Absent = false, so a state built without it - and all real money - reads as before.
+  testMoney?: boolean;
 }
 
 // Replay in time order. occurredAt first; recordedAt breaks ties (a backfilled release whose real time is unknown
@@ -43,8 +50,15 @@ export function deriveStatus(ops: readonly OperationRow[]): PaymentState {
   let credit = 0;
   let committed = 0;
   let everCollected = false;
+  // The settled money, counted by class: the cancel rule and the staff labels need to know whether ANY of it is real.
+  let settledMoneyRows = 0;
+  let settledTestRows = 0;
   for (const o of sorted) {
     if (o.outcome !== 'succeeded' || o.effect === 'none') continue;
+    if (o.effect === 'collect' || o.effect === 'return') {
+      settledMoneyRows += 1;
+      if (o.isTest) settledTestRows += 1;
+    }
     // "committed" is informational (what the customer approved), never netted by a later void/return, and nothing
     // in the system caps billing on it: the final charge is a fresh charge on the saved token, and the recipient
     // set is bounded by the list, not by an amount.
@@ -54,18 +68,20 @@ export function deriveStatus(ops: readonly OperationRow[]): PaymentState {
     if (o.effect === 'void' && !everCollected) status = 'released';
     if (o.effect === 'return') { collected = Math.max(0, collected - o.amount); status = collected > 0 ? 'collected' : 'refunded'; }
   }
-  if (inFlight) return { status: inFlight, collected, credit, committed };
+  // Only ever added when true, so every state of real money keeps exactly the shape it always had.
+  const testMoney = settledMoneyRows > 0 && settledTestRows === settledMoneyRows ? { testMoney: true } : {};
+  if (inFlight) return { status: inFlight, collected, credit, committed, ...testMoney };
   // A declined final charge on a live hold must not read as "אושר — ממתין לגבייה": today that state is "החיוב נכשל"
   // (admin/campaigns/page.tsx:25) and the owner agent counts it (cores/billing.ts:136). The latest collect decides.
   const lastCollect = [...sorted].reverse().find((o) => o.effect === 'collect');
-  if (status === 'committed' && lastCollect?.outcome === 'failed') return { status: 'declined', collected, credit, committed };
+  if (status === 'committed' && lastCollect?.outcome === 'failed') return { status: 'declined', collected, credit, committed, ...testMoney };
   // Nothing with a money effect succeeded. If something was ATTEMPTED (a failed commit/collect) → declined; if the
   // only rows are informational (effect 'none' — no such kind today) → none, not declined.
   if (status === 'none') {
     const attempted = sorted.some((o) => o.effect !== 'none');
-    return { status: attempted ? 'declined' : 'none', collected, credit, committed };
+    return { status: attempted ? 'declined' : 'none', collected, credit, committed, ...testMoney };
   }
-  return { status, collected, credit, committed };
+  return { status, collected, credit, committed, ...testMoney };
 }
 
 // How much can still go back to the card: what the card actually paid (a collect's `amount` — the part settled from

@@ -27,7 +27,7 @@ vi.mock('./activate-now-form', () => ({ ActivateNowForm: () => <div data-marker=
 vi.mock('./_held-analytics', () => ({ HeldAnalytics: () => <div data-marker="held-analytics" /> }));
 vi.mock('./package-payment-view', () => ({
   PackagePaymentView: (props: {
-    screen: { kind: string; activation?: string };
+    screen: { kind: string; activation?: string; testTerminal?: boolean; testMoney?: boolean };
     errorMessage: string | null;
     formConfig: unknown;
     provider?: string;
@@ -40,6 +40,8 @@ vi.mock('./package-payment-view', () => ({
       data-marker="package-view"
       data-screen={props.screen.kind}
       data-activation={props.screen.activation ?? ''}
+      data-test-terminal={props.screen.testTerminal ? 'yes' : 'no'}
+      data-test-money={props.screen.testMoney ? 'yes' : 'no'}
       data-error={props.errorMessage ?? ''}
       data-config={props.formConfig ? 'yes' : 'no'}
       data-provider={props.provider ?? ''}
@@ -139,17 +141,17 @@ describe('payment page — a package campaign', () => {
     expect(await render({ paid: '1' })).toContain('data-screen="form"');
   });
 
-  it('a paid, approved package campaign can be started from here, and the page says why the automatic start did not happen', async () => {
+  it('a paid, approved package campaign can be started from here, and the page says the automatic start did not happen', async () => {
     vi.mocked(getCampaign).mockResolvedValue(campaign({ package_price: 120, status: 'approved' }) as never);
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0 });
-    const html = await render({ paid: '1', activate: 'no_contacts' });
+    const html = await render({ paid: '1', activate: 'failed' });
     expect(html).toContain('data-screen="paid"');
     expect(html).toContain('data-activation="ready"');
     expect(html).toContain('data-can-activate="yes"');
-    expect(html).toContain('data-activate-reason="no_contacts"');
-    expect(await render({ activate: 'failed' })).toContain('data-activate-reason="failed"');
-    // an `?activate=` value the page does not know is ignored, never echoed
+    expect(html).toContain('data-activate-reason="failed"');
+    // an `?activate=` value the page does not know is ignored, never echoed — including the retired `no_contacts`
     expect(await render({ activate: '<script>' })).toContain('data-activate-reason=""');
+    expect(await render({ activate: 'no_contacts' })).toContain('data-activate-reason=""');
   });
 
   it('a paid package campaign that is already running says so', async () => {
@@ -261,6 +263,27 @@ describe('payment page — the CardCom pilot', () => {
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'none', collected: 0, credit: 0, committed: 0 });
     await render();
     expect(isCardcomPurchasePending).not.toHaveBeenCalled();
+  });
+
+  it('says so on the form only when the connection is CardCom\'s TEST terminal', async () => {
+    vi.mocked(hasPlatformPermission).mockResolvedValue(true);
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ terminalNumber: 1000 }) as never);
+    expect(await render()).toContain('data-test-terminal="yes"');
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom() as never);
+    expect(await render()).toContain('data-test-terminal="no"');
+  });
+
+  it('never says it for SUMIT\'s form, whatever terminal CardCom is configured with', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ terminalNumber: 1000, enabled: false }) as never);
+    expect(await render()).toContain('data-test-terminal="no"');
+  });
+
+  it('a payment that is test money says so on the paid screen; real money does not', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom() as never);
+    vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0, testMoney: true });
+    expect(await render()).toContain('data-test-money="yes"');
+    vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0 });
+    expect(await render()).toContain('data-test-money="no"');
   });
 
   it('a closed gate still closes the CardCom form', async () => {

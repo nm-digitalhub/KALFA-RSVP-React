@@ -10,7 +10,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: replaceMock, re
 
 import { CardcomOpenFieldsForm } from './cardcom-open-fields-form';
 
-// The buyer's side of a CardCom purchase. What is defended here: the form opens a session only when the buyer asks; the card
+// The buyer's side of a CardCom purchase. What is defended here: the form opens ONE session by itself when it is shown; the card
 // fields are CardCom's frames (our page never holds a card number); we speak to the frames only at CardCom's origin and
 // listen only to it; and what the buyer is told comes from the SERVER's answer after it asked CardCom — never from what the
 // iframe claims.
@@ -53,8 +53,8 @@ afterEach(() => {
 const callsTo = (url: string) => fetchMock.mock.calls.filter((c) => c[0] === url);
 const frame = (id: string) => document.getElementById(id) as HTMLIFrameElement | null;
 
+// The form opens its session by itself when it is first shown; wait for CardCom's frames.
 async function openSession() {
-  fireEvent.click(screen.getByRole('button', { name: 'המשך לתשלום' }));
   await waitFor(() => expect(frame(OPEN_FIELDS_FRAME_ID.master)).not.toBeNull());
   // The frames are in the DOM before the effects that listen for their messages have run; a real frame needs time to load,
   // so a message can never arrive that early. Let the effects run before the test plays CardCom's part.
@@ -80,11 +80,11 @@ function fillDetails() {
 }
 
 describe('CardcomOpenFieldsForm', () => {
-  it('shows the price and a button first: no session is opened, and no card field exists, until the buyer asks', () => {
+  it('opens exactly one session by itself when shown, so the buyer lands on the card fields without a click', async () => {
     render(<CardcomOpenFieldsForm {...props} />);
-    expect(screen.getByRole('button', { name: 'המשך לתשלום' })).toBeTruthy();
-    expect(document.querySelector('iframe')).toBeNull();
-    expect(fetchMock).not.toHaveBeenCalled();
+    await openSession();
+    expect(callsTo(START_URL)).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'המשך לתשלום' })).toBeNull();
   });
 
   it('asks the server for a session with a bare POST — no price, no card — and then shows CardCom\'s frames, hidden master included', async () => {
@@ -325,12 +325,12 @@ describe('CardcomOpenFieldsForm', () => {
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1'));
   });
 
-  it('passes on why the automatic start was refused, so the page can show the reason and the start button', async () => {
-    answerWith(SETTLE_URL, { state: 'paid', activation: 'no_contacts' });
+  it('passes on that the automatic start was refused, so the page can show a notice and the start button', async () => {
+    answerWith(SETTLE_URL, { state: 'paid', activation: 'failed' });
     render(<CardcomOpenFieldsForm {...props} />);
     await openSession();
     cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true } });
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1&activate=no_contacts'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1&activate=failed'));
   });
 
   it('settles only once for one submit, however many messages arrive', async () => {
@@ -380,6 +380,8 @@ describe('CardcomOpenFieldsForm', () => {
     cardcomMessage({ action: 'HandleError' });
     expect((await screen.findByRole('alert')).textContent).toBe(PURCHASE_ERROR_MESSAGES.purchase_review);
     await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    // While a person must look at it, paying again is not offered.
+    expect(screen.queryByRole('button')).toBeNull();
   });
 
   it.each([
@@ -392,7 +394,6 @@ describe('CardcomOpenFieldsForm', () => {
   ])('when the server will not open a session (%s) it says so in its own words and shows no card fields', async (status, key) => {
     answerWith(START_URL, { status });
     render(<CardcomOpenFieldsForm {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: 'המשך לתשלום' }));
     expect((await screen.findByRole('alert')).textContent).toBe(PURCHASE_ERROR_MESSAGES[key as keyof typeof PURCHASE_ERROR_MESSAGES]);
     expect(document.querySelector('iframe')).toBeNull();
   });
@@ -400,15 +401,15 @@ describe('CardcomOpenFieldsForm', () => {
   it('an already-paid answer refreshes the page to the paid screen', async () => {
     answerWith(START_URL, { status: 'already_paid' });
     render(<CardcomOpenFieldsForm {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: 'המשך לתשלום' }));
     await waitFor(() => expect(refreshMock).toHaveBeenCalled());
   });
 
   it('a network failure is the generic error, not a crash', async () => {
     fetchMock.mockRejectedValueOnce(new Error('offline'));
     render(<CardcomOpenFieldsForm {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: 'המשך לתשלום' }));
     expect((await screen.findByRole('alert')).textContent).toBe(PURCHASE_ERROR_MESSAGES.purchase_failed);
+    // ...and the buyer can try again from the same screen.
+    expect(screen.getByRole('button', { name: 'ניסיון נוסף' })).toBeTruthy();
   });
 
   it('stops listening for messages when it goes away', async () => {

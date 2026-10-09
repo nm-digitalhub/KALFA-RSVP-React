@@ -328,7 +328,7 @@ describe('recordPackageApproval — the customer approves the package terms (no 
     expect(vi.mocked(approveCampaign).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(fillAuthorizedSet).mock.invocationCallOrder[0]);
   });
 
-  it('a failed fill never undoes the approval — activation fills again', async () => {
+  it('a failed fill never undoes the approval', async () => {
     wire();
     vi.mocked(fillAuthorizedSet).mockRejectedValue(new Error('מילוי רשימת אנשי הקשר נכשל'));
     vi.spyOn(console, 'error').mockImplementation(() => {});

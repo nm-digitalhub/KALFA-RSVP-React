@@ -109,11 +109,10 @@ export async function POST(
   if (outcome === 'already_paid') return r303(payUrl('paid=1'));
 
   if (outcome === 'paid') {
-    // The payment was the customer's last real decision (D6: charged → list filled → activated), so the campaign
-    // starts now instead of asking for one more click. FAIL-SAFE: see activateAfterPayment — the payment is recorded
-    // whatever happens, and a refused start lands the customer on the paid page with the reason and a start button.
+    // The payment was the customer's last real decision, so the campaign starts now instead of asking for one more
+    // click. FAIL-SAFE: see activateAfterPayment — the payment is recorded whatever happens, and a refused start lands
+    // the customer on the paid page with a notice and a start button.
     const activation = await activateAfterPayment(campaignId, campaign.event_id);
-    if (activation === 'no_contacts') return r303(payUrl('paid=1&activate=no_contacts'));
     if (activation === 'failed') return r303(payUrl('paid=1&activate=failed'));
     return r303(payUrl('paid=1'));
   }

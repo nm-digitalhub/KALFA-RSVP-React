@@ -309,3 +309,206 @@ describe('settleCardcomSession: when it cannot tell', () => {
     expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'error' }));
   });
 });
+
+// THE TERMINAL. A row is born stamped with the terminal its session was opened on (`provider_terminal`) and the database gives it its
+// class (`is_test`) from that; settle keeps CardCom's own report of the terminal and compares the two. The table (plan section 2):
+//   no stamp                       -> as before, whatever CardCom reports
+//   test terminal, same report     -> succeeded (test money)        test terminal, no report / another -> review
+//   real terminal, same or no report -> succeeded (real money)       real terminal, another report      -> review
+// and a session is asked about only on the terminal it was opened on.
+describe('settleCardcomSession: the terminal of the payment', () => {
+  const stamped = (terminal: number | null, over: TableRow = {}) => {
+    fake = createFakeTableClient({
+      // A row with no terminal is one from BEFORE the stamp existed: provider 'sumit' (the default) with the CardCom marker in its meta -
+      // the database cannot hold provider 'cardcom' without a terminal (payment_operations_provider_stamp_coherent).
+      payment_operations: [op({ provider: terminal === null ? 'sumit' : 'cardcom', provider_terminal: terminal, is_test: terminal === 1000, ...over })],
+      cardcom_payment_sessions: [session()],
+      activity_log: [],
+    });
+  };
+  const connectedTo = (terminalNumber: number) => vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber, apiName: 'kalfa-api', enabled: true });
+  const paidReporting = (terminal: unknown) => answer({ ...PAID, TerminalNumber: terminal });
+  const alertsSent = () => vi.mocked(sendSlackAlert).mock.calls.map(([a]) => a);
+
+  describe('on a real terminal (1001)', () => {
+    beforeEach(() => stamped(1001));
+
+    it('a payment that reports the terminal it was opened on is recorded as succeeded, and the report is kept', async () => {
+      paidReporting(1001);
+      await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
+      expect(ledger()).toMatchObject({ outcome: 'succeeded', provider_terminal: 1001, provider_terminal_echo: 1001 });
+      expect(checkOsekPaturCeilingAfterCharge).toHaveBeenCalledTimes(1);
+      expect(fake.rows('activity_log')[0].meta).not.toHaveProperty('testMoney');
+    });
+
+    it('a payment that reports no terminal is believed, as before; nothing is written to the report column', async () => {
+      await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
+      expect(ledger().provider_terminal_echo ?? null).toBeNull();
+      expect(fake.ops.filter((o) => o.op === 'update')[0].patch).not.toHaveProperty('provider_terminal_echo');
+    });
+
+    it.each([['a string', '1001'], ['zero', 0], ['a negative number', -1001], ['an object', { n: 1001 }], ['a number the 32-bit column cannot hold', 5_000_000_000]])(
+      'a report that is %s counts as not reported: the answer is still readable and the payment is recorded',
+      async (_label, odd) => {
+        paidReporting(odd);
+        await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
+        expect(ledger().provider_terminal_echo ?? null).toBeNull();
+      },
+    );
+
+    it('a payment that reports ANOTHER terminal (even the test one) is not counted: it goes to review with everything a person needs, and an error alert names both terminals', async () => {
+      paidReporting(1000);
+      await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'review', alreadyDone: false });
+      expect(ledger()).toMatchObject({
+        outcome: 'review', provider_terminal_echo: 1000, provider_payment_id: 555, provider_auth_ref: '0123456', provider_document_number: 77,
+        meta: { provider: 'cardcom', cardcom_document_type: 'Receipt' },
+      });
+      expect(String(ledger().note)).toContain('1000');
+      expect(String(ledger().note)).toContain('1001');
+      expect(alertsSent()).toEqual([expect.objectContaining({ level: 'error', fields: expect.objectContaining({ operation_id: 'op1', terminal_opened_on: 1001, terminal_reported: 1000 }) })]);
+      expect(fake.rows('activity_log')).toHaveLength(0);
+      expect(checkOsekPaturCeilingAfterCharge).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('on the test terminal (1000)', () => {
+    beforeEach(() => {
+      stamped(1000);
+      connectedTo(1000);
+    });
+
+    it('a payment that reports the test terminal is recorded as succeeded: test money, so no tax-ceiling check, and the activity row says so', async () => {
+      paidReporting(1000);
+      await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
+      expect(ledger()).toMatchObject({ outcome: 'succeeded', provider_terminal: 1000, provider_terminal_echo: 1000, is_test: true });
+      expect(checkOsekPaturCeilingAfterCharge).not.toHaveBeenCalled();
+      expect(fake.rows('activity_log')).toMatchObject([{ action: 'campaign.package_purchased', meta: { testMoney: true } }]);
+    });
+
+    it('says in the alert what really happened: a report that is missing is not worded as a report that differs', async () => {
+      await settleCardcomSession(LP);
+      expect(alertsSent()[0]?.title).toContain('לא דיווח');
+      expect(alertsSent()[0]?.title).not.toContain('המסוף שדווח');
+      vi.clearAllMocks();
+      stamped(1000);
+      connectedTo(1000);
+      paidReporting(1001);
+      await settleCardcomSession(LP);
+      expect(alertsSent()[0]?.title).toContain('המסוף שדווח אינו המסוף שבו נפתח');
+    });
+
+    it('a payment that reports no terminal must prove where it went: review, with an error alert marked as a test', async () => {
+      await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'review', alreadyDone: false });
+      expect(ledger()).toMatchObject({ outcome: 'review', provider_payment_id: 555, provider_document_number: 77 });
+      expect(ledger().provider_terminal_echo ?? null).toBeNull();
+      expect(String(ledger().note)).toContain('did not report');
+      expect(alertsSent()).toEqual([expect.objectContaining({ level: 'error', title: expect.stringMatching(/^\[בדיקה\] /) })]);
+      expect(fake.rows('activity_log')).toHaveLength(0);
+    });
+
+    it('a payment that reports another terminal goes to review too, with that report kept', async () => {
+      paidReporting(1001);
+      await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'review', alreadyDone: false });
+      expect(ledger()).toMatchObject({ outcome: 'review', provider_terminal_echo: 1001 });
+    });
+
+    it('a decline is information, not a warning, and is marked as a test', async () => {
+      answer(DECLINED);
+      await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'failed', alreadyDone: false });
+      expect(alertsSent()).toEqual([expect.objectContaining({ level: 'info', title: expect.stringMatching(/^\[בדיקה\] /) })]);
+    });
+  });
+
+  it('a decline on a real terminal is still a warning, with no test mark', async () => {
+    stamped(1001);
+    answer(DECLINED);
+    await settleCardcomSession(LP);
+    expect(alertsSent()).toEqual([expect.objectContaining({ level: 'warn', title: expect.not.stringMatching(/^\[בדיקה\]/) })]);
+  });
+
+  describe('a row with no stamp (written before the stamp existed)', () => {
+    it('is believed whatever CardCom reports, and the report is kept when it came', async () => {
+      stamped(null);
+      paidReporting(1000);
+      await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
+      expect(ledger()).toMatchObject({ outcome: 'succeeded', provider_terminal_echo: 1000 });
+    });
+
+    it('is real money even while the connection points at the test terminal: the class comes from the ROW, never from the connection', async () => {
+      stamped(null);
+      connectedTo(1000);
+      paidReporting(1000);
+      await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
+      expect(checkOsekPaturCeilingAfterCharge).toHaveBeenCalledTimes(1);
+      expect(fake.rows('activity_log')[0].meta).not.toHaveProperty('testMoney');
+    });
+
+    it('is asked about on whatever terminal the connection uses, as before', async () => {
+      stamped(null);
+      connectedTo(1234);
+      await settleCardcomSession(LP);
+      expect(lowProfileGetLpResult).toHaveBeenCalledWith({ TerminalNumber: 1234, ApiName: 'kalfa-api', LowProfileId: LP }, expect.anything());
+    });
+  });
+
+  describe('what CardCom reports is kept on every close', () => {
+    beforeEach(() => stamped(1001));
+
+    it('a decline that carries the terminal keeps it', async () => {
+      answer({ ...DECLINED, TerminalNumber: 1001 });
+      await settleCardcomSession(LP);
+      expect(ledger()).toMatchObject({ outcome: 'failed', provider_terminal_echo: 1001 });
+    });
+
+    it('a success that is not a charge (so it goes to review) keeps it', async () => {
+      answer({ ...PAID, Operation: 'CreateTokenOnly', TerminalNumber: 1001 });
+      await settleCardcomSession(LP);
+      expect(ledger()).toMatchObject({ outcome: 'review', provider_terminal_echo: 1001 });
+    });
+
+    it('a confirmed payment that cannot be recorded as succeeded is parked in review with it', async () => {
+      paidReporting(1001);
+      fake.fail('payment_operations', 'XX000', 'update');
+      await settleCardcomSession(LP);
+      expect(ledger()).toMatchObject({ outcome: 'review', provider_payment_id: 555, provider_terminal_echo: 1001 });
+    });
+  });
+
+  describe('a session is asked about only on the terminal it was opened on', () => {
+    it('a pending row opened on another terminal than the connection uses is NOT asked about, is NOT closed as failed, and goes to a person', async () => {
+      stamped(1000);
+      await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'review', alreadyDone: false });
+      expect(lowProfileGetLpResult).not.toHaveBeenCalled();
+      expect(ledger().outcome).toBe('review');
+      expect(String(ledger().note)).toContain('1000');
+      expect(String(ledger().note)).toContain('1001');
+      expect(alertsSent()).toEqual([
+        expect.objectContaining({ level: 'error', title: expect.stringMatching(/^\[בדיקה\] /), fields: expect.objectContaining({ terminal_opened_on: 1000, terminal_now: 1001 }) }),
+      ]);
+    });
+
+    it('also for a caller that would only leave an unpaid row alone (the sweeper): the row cannot be judged at all', async () => {
+      stamped(1001);
+      connectedTo(1000);
+      await expect(settleCardcomSession(LP, { finalizeUnpaid: false })).resolves.toEqual({ status: 'settled', outcome: 'review', alreadyDone: false });
+      expect(lowProfileGetLpResult).not.toHaveBeenCalled();
+    });
+
+    it('a row already closed as failed on another terminal is not asked about either: a person hears, the ledger is untouched', async () => {
+      stamped(1000, { outcome: 'failed' });
+      await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'failed', alreadyDone: true });
+      expect(lowProfileGetLpResult).not.toHaveBeenCalled();
+      expect(ledger().outcome).toBe('failed');
+      expect(alertsSent()).toEqual([expect.objectContaining({ level: 'error', fields: expect.objectContaining({ terminal_opened_on: 1000, terminal_now: 1001 }) })]);
+    });
+
+    it('a row already closed as failed on the same terminal is asked about, and a payment found is marked as a test when the row is one', async () => {
+      stamped(1000, { outcome: 'failed' });
+      connectedTo(1000);
+      await settleCardcomSession(LP);
+      expect(lowProfileGetLpResult).toHaveBeenCalledTimes(1);
+      expect(alertsSent()).toEqual([expect.objectContaining({ level: 'error', title: expect.stringMatching(/^\[בדיקה\] /) })]);
+    });
+  });
+});
+

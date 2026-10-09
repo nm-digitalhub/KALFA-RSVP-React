@@ -7,9 +7,13 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { getSumitServerConfig } from '@/lib/data/payments';
 import { getSumitCustomerId } from '@/lib/data/sumit-customers';
+import { terminalsConflict } from '@/lib/payments/cardcom-terminal-echo';
 import { completeOperation, OperationStateError } from '@/lib/payments/ledger';
+import { TERMINAL_CONFLICT_NOTICE } from '@/lib/payments/terminal-conflict-copy';
+import { labelTestMoney } from '@/lib/payments/test-money-label';
 import { probeSumitCharge, type ProbeResult } from '@/lib/sumit/probe';
 import { createAdminClient } from '@/lib/supabase/admin';
+import type { Json } from '@/lib/supabase/types';
 
 import { recordStaffAccess } from './access-log';
 
@@ -39,6 +43,24 @@ const ALREADY_DECIDED = 'הפעולה כבר הוכרעה על ידי מישהו
 const LOAD_FAILED = 'טעינת פעולות התשלום נכשלה';
 const AMOUNT_CONFLICTS_WITH_LINES = 'הסכום שהוזן שונה מפירוט הפעולה, ואת הפירוט אי אפשר לשנות. השאירו את שדה הסכום ריק.';
 
+type Provider = 'sumit' | 'cardcom';
+
+// Whose row it is. The column is authoritative; a CardCom payment recorded before the column was set carries the marker in its meta.
+function providerOf(row: { provider?: unknown; meta?: Json }): Provider {
+  if (row.provider === 'cardcom') return 'cardcom';
+  const meta = row.meta;
+  return meta !== null && meta !== undefined && typeof meta === 'object' && !Array.isArray(meta) && meta['provider'] === 'cardcom' ? 'cardcom' : 'sumit';
+}
+
+const numberOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+// A CardCom payment whose terminal, as CardCom reported it, is not the terminal it was opened on. Nobody can say where that money is,
+// so it can never be APPROVED as a collection from here - only marked failed, after someone looked in CardCom's own panel. (A row
+// that has no recorded terminal, or one CardCom reported none for, has nothing to conflict with.)
+export function reportedTerminalConflicts(row: { provider: Provider; terminalOpenedOn: number | null; terminalReported: number | null }): boolean {
+  return row.provider === 'cardcom' && terminalsConflict(row.terminalOpenedOn, row.terminalReported);
+}
+
 export interface PaymentReviewItem {
   operationId: string;
   campaignId: string;
@@ -49,6 +71,17 @@ export interface PaymentReviewItem {
   amount: number;
   recordedAt: string;
   note: string | null;
+  // Which clearing company's row it is: a CardCom payment is checked in CardCom's own panel, never in SUMIT's.
+  provider: Provider;
+  // The database's class for the row: it was opened on a no-money (test) terminal.
+  isTest: boolean;
+  // CardCom rows: the terminal the payment was opened on, the terminal CardCom reported (null = it reported none), and the references a
+  // person finds the payment by in CardCom's panel (the document, the approval, the transaction). All null for a row that has none.
+  terminalOpenedOn: number | null;
+  terminalReported: number | null;
+  documentNumber: number | null;
+  authRef: string | null;
+  paymentId: number | null;
 }
 
 export async function listPaymentReviews(): Promise<PaymentReviewItem[]> {
@@ -56,7 +89,7 @@ export async function listPaymentReviews(): Promise<PaymentReviewItem[]> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('payment_operations')
-    .select('id, campaign_id, event_id, kind, amount, recorded_at, note, payment_operation_kinds!inner(label_he), events!inner(name)')
+    .select('id, campaign_id, event_id, kind, amount, recorded_at, note, meta, provider, provider_terminal, provider_terminal_echo, is_test, provider_document_number, provider_auth_ref, provider_payment_id, payment_operation_kinds!inner(label_he), events!inner(name)')
     .eq('outcome', 'review')
     .order('recorded_at', { ascending: true });
   // Thrown, not "nothing to review": an empty list that is really a failed read would hide a possibly-charged card.
@@ -71,6 +104,13 @@ export async function listPaymentReviews(): Promise<PaymentReviewItem[]> {
     amount: Number(row.amount),
     recordedAt: row.recorded_at,
     note: row.note,
+    provider: providerOf(row),
+    isTest: row.is_test === true,
+    terminalOpenedOn: numberOrNull(row.provider_terminal),
+    terminalReported: numberOrNull(row.provider_terminal_echo),
+    documentNumber: numberOrNull(row.provider_document_number),
+    authRef: row.provider_auth_ref ?? null,
+    paymentId: numberOrNull(row.provider_payment_id),
   }));
 }
 
@@ -85,6 +125,12 @@ type ReviewTarget = {
   recordedAt: string;
   note: string | null;
   payerUserId: string | null;
+  provider: Provider;
+  terminalOpenedOn: number | null;
+  terminalReported: number | null;
+  // The document the row already holds (CardCom's answer keeps it when it parks a payment), and the class the database gave the row.
+  documentNumber: number | null;
+  isTest: boolean;
 };
 
 // Loads one operation and refuses anything that is not waiting for a decision. The admin client reads across tenants,
@@ -93,7 +139,7 @@ async function loadReviewTarget(operationId: string): Promise<ReviewTarget> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('payment_operations')
-    .select('id, campaign_id, event_id, kind, outcome, amount, recorded_at, note, meta, payment_operation_kinds!inner(effect), events!inner(owner_id)')
+    .select('id, campaign_id, event_id, kind, outcome, amount, recorded_at, note, meta, provider, provider_terminal, provider_terminal_echo, provider_document_number, is_test, payment_operation_kinds!inner(effect), events!inner(owner_id)')
     .eq('id', operationId)
     .maybeSingle();
   if (error) throw new PaymentReviewError(LOAD_FAILED);
@@ -117,6 +163,11 @@ async function loadReviewTarget(operationId: string): Promise<ReviewTarget> {
     recordedAt: data.recorded_at,
     note: data.note,
     payerUserId: typeof payer === 'string' ? payer : null,
+    provider: providerOf(data),
+    terminalOpenedOn: numberOrNull(data.provider_terminal),
+    terminalReported: numberOrNull(data.provider_terminal_echo),
+    documentNumber: numberOrNull(data.provider_document_number),
+    isTest: data.is_test === true,
   };
 }
 
@@ -146,6 +197,10 @@ export async function probePaymentReview(operationId: string): Promise<PaymentRe
   await requirePlatformPermission('manage_billing');
   const { target } = await auditedReviewAccess(operationId);
 
+  // A CardCom payment is never looked up in SUMIT's list: "not found" there would read as "no payment" about money that lives
+  // somewhere else. Its row is checked in CardCom's own panel.
+  if (target.provider === 'cardcom') return { kind: 'unavailable', reason: 'unsupported' };
+
   // The provider's payment list shows money TAKEN. Looking a refund or a hold up in it would answer a different
   // question, so those are left to the admin's own check in the provider's screen.
   if (target.effect !== 'collect') return { kind: 'unavailable', reason: 'unsupported' };
@@ -167,11 +222,12 @@ export const resolvePaymentReviewSchema = z
   .object({
     operationId: z.uuid({ error: 'מזהה הפעולה אינו תקין' }),
     outcome: z.enum(['succeeded', 'failed'], { error: 'יש לבחור אישור גבייה או סימון ככושלת' }),
-    // The receipt number printed in the provider's screen. The payment list does not return it, so it is typed by hand.
+    // The receipt (or document) number printed in the provider's screen. SUMIT's payment list does not return it, so it is typed by
+    // hand; a CardCom row shows the one it already holds, to be confirmed.
     documentNumber: z
-      .number({ error: 'מספר הקבלה אינו תקין' })
-      .int('מספר הקבלה אינו תקין')
-      .positive('מספר הקבלה אינו תקין')
+      .number({ error: 'מספר המסמך אינו תקין' })
+      .int('מספר המסמך אינו תקין')
+      .positive('מספר המסמך אינו תקין')
       .optional(),
     // What the provider actually charged, when it differs from what we intended.
     amount: z
@@ -180,14 +236,14 @@ export const resolvePaymentReviewSchema = z
       .max(1_000_000, 'הסכום אינו תקין')
       .optional(),
     note: z
-      .string({ error: 'נדרש לציין מה נבדק ב-SUMIT' })
+      .string({ error: 'נדרש לציין מה נבדק אצל חברת הסליקה' })
       .trim()
-      .min(10, 'נדרש לציין מה נבדק ב-SUMIT (לפחות 10 תווים)')
+      .min(10, 'נדרש לציין מה נבדק אצל חברת הסליקה (לפחות 10 תווים)')
       .max(500, 'ההערה ארוכה מדי (עד 500 תווים)'),
   })
   .refine((v) => v.outcome !== 'succeeded' || v.documentNumber !== undefined, {
     path: ['documentNumber'],
-    message: 'לאישור גבייה נדרש מספר הקבלה מ-SUMIT',
+    message: 'לאישור גבייה נדרש מספר המסמך מחברת הסליקה',
   });
 
 export type ResolvePaymentReviewInput = z.input<typeof resolvePaymentReviewSchema>;
@@ -204,6 +260,10 @@ export async function resolvePaymentReview(input: ResolvePaymentReviewInput): Pr
 
   const admin = createAdminClient();
 
+  // A CardCom payment that CardCom places on another terminal than the one it was opened on is not approved from here, whatever the
+  // browser sent: the card does not offer the button, and this is the server saying it too.
+  if (parsed.outcome === 'succeeded' && reportedTerminalConflicts(target)) throw new PaymentReviewError(TERMINAL_CONFLICT_NOTICE);
+
   // An operation whose price is itemised (payment_operation_lines) is closed only at the amount its lines add up to: the
   // database refuses anything else, and the lines are append-only. Say so here, in plain words, instead of letting the
   // admin meet a generic "try again" for a decision that can never succeed.
@@ -216,6 +276,10 @@ export async function resolvePaymentReview(input: ResolvePaymentReviewInput): Pr
     if ((count ?? 0) > 0) throw new PaymentReviewError(AMOUNT_CONFLICTS_WITH_LINES);
   }
 
+  // Confirming the number the row already holds leaves its document exactly as it is - id, number and the link CardCom gave. Only a
+  // DIFFERENT number replaces it, and then without the old link, which belongs to the old document. (A completed row is frozen, so a
+  // link written over here could never be put back.)
+  const keepsStoredDocument = parsed.documentNumber !== undefined && parsed.documentNumber === target.documentNumber;
   try {
     await completeOperation(admin, target.id, {
       from: 'review',
@@ -223,7 +287,7 @@ export async function resolvePaymentReview(input: ResolvePaymentReviewInput): Pr
       ...(parsed.outcome === 'succeeded'
         ? {
             amount: parsed.amount ?? target.amount,
-            providerDocument: { id: null, number: parsed.documentNumber ?? null, url: null },
+            ...(keepsStoredDocument ? {} : { providerDocument: { id: null, number: parsed.documentNumber ?? null, url: null } }),
           }
         : {}),
       // Keep the earlier note (why it landed in review); the decision is added to it, never written over it.
@@ -239,7 +303,7 @@ export async function resolvePaymentReview(input: ResolvePaymentReviewInput): Pr
     await logActivity({
       eventId: target.eventId,
       action: 'payment.review_resolved',
-      meta: { operationId: target.id, campaignId: target.campaignId, outcome: parsed.outcome },
+      meta: { operationId: target.id, campaignId: target.campaignId, outcome: parsed.outcome, ...(target.isTest ? { testMoney: true } : {}) },
     });
   } catch (err) {
     console.error('[payment-review] logActivity failed (non-fatal)', { operationId: target.id, err });
@@ -248,10 +312,12 @@ export async function resolvePaymentReview(input: ResolvePaymentReviewInput): Pr
     level: 'info',
     category: 'campaign_billing',
     source: 'payment-review',
-    title:
+    title: labelTestMoney(
       parsed.outcome === 'succeeded'
         ? 'פעולת תשלום שנתקעה אושרה ידנית כחיוב שבוצע'
         : 'פעולת תשלום שנתקעה סומנה ידנית ככושלת',
+      target.isTest,
+    ),
     fields: {
       operation_id: target.id,
       campaign_id: target.campaignId,

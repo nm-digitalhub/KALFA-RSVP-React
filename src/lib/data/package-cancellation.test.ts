@@ -62,8 +62,8 @@ describe('packageRefundMessage — what the admin is told when the refund did no
     expect(packageRefundMessage({ status: 'review' })).toContain('אל תנסו שוב');
   });
 
-  it('no card / no customer / no document / a partial CardCom refund send the admin to refund by hand', () => {
-    for (const reason of ['no_card', 'no_customer', 'no_document', 'partial_unsupported'] as const) {
+  it('no card / no customer / no document / a partial CardCom refund / a payment from another terminal send the admin to refund by hand', () => {
+    for (const reason of ['no_card', 'no_customer', 'no_document', 'partial_unsupported', 'terminal_changed'] as const) {
       expect(packageRefundMessage({ status: 'refused', reason })).toContain('ידנית');
     }
   });
@@ -73,7 +73,7 @@ describe('packageRefundMessage — what the admin is told when the refund did no
   });
 
   it('names no clearing company: the same sentences serve every provider', () => {
-    const reasons = ['disabled', 'invalid_amount', 'no_payment', 'exceeds_refundable', 'no_customer', 'no_card', 'no_document', 'partial_unsupported'] as const;
+    const reasons = ['disabled', 'invalid_amount', 'no_payment', 'exceeds_refundable', 'no_customer', 'no_card', 'no_document', 'partial_unsupported', 'terminal_changed'] as const;
     const all = [
       ...reasons.map((reason) => packageRefundMessage({ status: 'refused', reason })),
       ...(['declined', 'review', 'in_progress', 'error'] as const).map((status) => packageRefundMessage({ status })),
@@ -128,13 +128,19 @@ describe('packageCancellationState', () => {
 // The same sentences serve a refund through either clearing company, so none of them may name one — and every refusal a
 // refund can give has a sentence (a missing one would show the admin an empty banner).
 describe('packageRefundMessage: every refusal has a provider-neutral sentence', () => {
-  const REASONS = ['disabled', 'invalid_amount', 'no_payment', 'exceeds_refundable', 'no_customer', 'no_card', 'no_document', 'partial_unsupported'] as const;
+  const REASONS = ['disabled', 'invalid_amount', 'no_payment', 'exceeds_refundable', 'no_customer', 'no_card', 'no_document', 'partial_unsupported', 'terminal_changed'] as const;
 
   it.each(REASONS)('%s says what happened, that nothing was done, and names no company', (reason) => {
     const message = packageRefundMessage({ status: 'refused', reason });
     expect(message.length).toBeGreaterThan(10);
     expect(message).toContain('לא בוצעה פעולה');
     expect(message).not.toMatch(/sumit|cardcom|סאמיט|קארדקום/i);
+  });
+
+  it('a payment made on another terminal than the connection uses now says it cannot be refunded automatically and to refund by hand', () => {
+    const message = packageRefundMessage({ status: 'refused', reason: 'terminal_changed' });
+    expect(message).toContain('מסוף');
+    expect(message).toContain('ידנית');
   });
 
   it('a partial refund on the alternative provider tells the admin what to do instead', () => {

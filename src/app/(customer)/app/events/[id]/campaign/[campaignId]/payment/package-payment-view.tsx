@@ -1,7 +1,7 @@
 import Link from 'next/link';
 
 import { buttonVariants } from '@/components/ui/button';
-import { PACKAGE_NO_CONTACTS_ERROR } from '@/lib/data/package-activation-errors';
+import type { ActivationResult } from '@/lib/payments/activate-after-payment';
 import type { PackagePaymentScreen } from '@/lib/payments/package-payment-screen';
 import { PURCHASE_ERROR_MESSAGES } from '@/lib/payments/package-purchase-errors';
 
@@ -27,6 +27,10 @@ const UNAVAILABLE_MESSAGE = {
 } as const;
 
 const NOTICE_CLASS = 'rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning';
+
+// Staff only in practice: a customer is never offered the test terminal, and test money exists only where it was paid.
+const TEST_TERMINAL_NOTICE = 'מסוף בדיקה — לא יחויב כרטיס אמיתי.';
+const TEST_MONEY_PAID_NOTICE = 'תשלום בדיקה — לא נגבה כסף ולא נספר בהכנסות.';
 
 export function PackagePaymentView({
   screen,
@@ -57,8 +61,9 @@ export function PackagePaymentView({
   // Starts the campaign from here: the fallback for a payment whose automatic start was refused (the same Server Action
   // as the manage page). Only used when the campaign can be started from this screen.
   activateAction?: (prev: FormState, formData: FormData) => Promise<FormState>;
-  // Why the automatic start after the payment was refused (the purchase route's `?activate=`); null = it was not.
-  activateReason?: 'no_contacts' | 'failed' | null;
+  // How the automatic start after the payment ended, when it did not start (`?activate=`, set by the purchase route and by
+  // the CardCom form after settling); null = it was not refused. Derived from activateAfterPayment's own result type.
+  activateReason?: Exclude<ActivationResult, 'started'> | null;
 }) {
   switch (screen.kind) {
     case 'paid':
@@ -66,6 +71,11 @@ export function PackagePaymentView({
         <section className="space-y-4 rounded-lg border border-success/40 bg-success/10 p-6 text-center">
           <p className="text-2xl font-bold text-success">התשלום התקבל</p>
           <p className="text-sm">שולם {formatAmount(screen.amount)} עבור החבילה.</p>
+          {screen.testMoney ? (
+            <p role="status" className={NOTICE_CLASS}>
+              {TEST_MONEY_PAID_NOTICE}
+            </p>
+          ) : null}
           {screen.activation === 'active' ? (
             <p className="text-sm">הקמפיין פעיל. הפניות לאורחים יישלחו לפי לוח הזמנים.</p>
           ) : null}
@@ -73,9 +83,7 @@ export function PackagePaymentView({
             <div className="space-y-3 text-start">
               {activateReason ? (
                 <p role="alert" className={NOTICE_CLASS}>
-                  {activateReason === 'no_contacts'
-                    ? PACKAGE_NO_CONTACTS_ERROR
-                    : 'הקמפיין עוד לא הופעל אוטומטית. אפשר להפעיל אותו כעת.'}
+                  הקמפיין עוד לא הופעל אוטומטית. אפשר להפעיל אותו כעת.
                 </p>
               ) : null}
               <ActivateNowForm action={activateAction} />
@@ -148,6 +156,11 @@ export function PackagePaymentView({
 
           <section className="space-y-4 rounded-lg border border-border bg-card p-4">
             <h2 className="text-sm font-semibold">פרטי כרטיס אשראי</h2>
+            {screen.testTerminal ? (
+              <p role="status" className={NOTICE_CLASS}>
+                {TEST_TERMINAL_NOTICE}
+              </p>
+            ) : null}
             {provider === 'cardcom' ? (
               <CardcomOpenFieldsForm
                 eventId={eventId}

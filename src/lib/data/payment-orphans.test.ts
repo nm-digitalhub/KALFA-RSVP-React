@@ -13,6 +13,7 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 import { settleCardcomSession } from '@/lib/payments/cardcom-settle';
 import { beginOperation, completeOperation, OperationStateError } from '@/lib/payments/ledger';
 import { createFakeTableClient, type TableRow } from '@/test/fake-table-client';
+import { withLedgerStamp } from '@/test/ledger-stamp-trigger';
 
 import { runPaymentOrphanSweep } from './payment-orphans';
 
@@ -25,7 +26,7 @@ const ago = (minutes: number) => new Date(NOW.getTime() - minutes * 60_000).toIS
 
 // The database facts the ledger relies on, as the double must reproduce them.
 const ONCE_KINDS = new Set(['authorize', 'charge', 'package_purchase']);
-const trigger = { beforeInsert: (_table: string, row: TableRow) => ({ ...row, once_slot: ONCE_KINDS.has(String(row.kind)) }) };
+const trigger = { beforeInsert: withLedgerStamp((_table: string, row: TableRow) => ({ ...row, once_slot: ONCE_KINDS.has(String(row.kind)) })) };
 const INDEXES = [
   { columns: ['campaign_id', 'kind'], where: { once_slot: true, outcome: ['pending', 'review', 'succeeded'] } },
   { columns: ['campaign_id', 'kind'], where: { outcome: 'pending' } },

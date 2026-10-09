@@ -255,6 +255,24 @@ describe('ResolveForm — confirmation text for a package', () => {
     expect(text).not.toContain('5%');
   });
 
+  // An event with no live campaign (it never had one, or every campaign was cancelled): there is nothing to refund and nothing to charge.
+  it('no live campaign: a full cancellation says no money moves and the event closes', async () => {
+    const text = await approve(setup({ moneyOutcome: 'no_campaign' }), 'full');
+    expect(text).toContain('אין קמפיין פעיל');
+    expect(text).toContain('לא תהיה תנועה כספית');
+    expect(text).not.toContain('יבוצע זיכוי');
+    expect(text).not.toContain('יש להחזיר ידנית');
+  });
+
+  it('no live campaign: a partial charge says plainly that nothing is charged but the customer is still told of the fee typed', async () => {
+    const text = await approve(setup({ moneyOutcome: 'no_campaign' }), 'partial');
+    expect(text).toContain('אין קמפיין פעיל');
+    expect(text).toContain('לא יחויב דבר');
+    expect(text).toContain('הלקוח יקבל הודעה על חיוב');
+    expect(text).toContain('ביטול מלא');
+    expect(text).not.toContain('יבוצע חיוב אמיתי');
+  });
+
   it('declining a request says the same thing whatever the money state', async () => {
     const user = setup({ moneyOutcome: 'blocked' });
     await user.click(screen.getByRole('radio', { name: 'דחיית הבקשה' }));

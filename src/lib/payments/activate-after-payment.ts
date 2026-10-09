@@ -2,16 +2,15 @@ import 'server-only';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { activateCampaign } from '@/lib/data/campaigns';
-import { PACKAGE_NO_CONTACTS_ERROR } from '@/lib/data/package-activation-errors';
 
-// Starts a package campaign right after its payment was recorded (plan D6: charged → list filled → activated), so the
-// buyer's last real decision is the payment and not one more click. Shared by every path that records a package payment
-// in the buyer's own session — the SUMIT purchase route and the CardCom settle route.
+// Starts a package campaign right after its payment was recorded, so the buyer's last real decision is the payment and
+// not one more click. Shared by every path that records a package payment in the buyer's own session — the SUMIT
+// purchase route and the CardCom settle route.
 //
-// FAIL-SAFE: the payment is recorded whatever happens here. If the start is refused (nobody on the list, a ledger that
-// cannot be read right now, a concurrent change) the caller shows the buyer the reason and the explicit start button.
+// FAIL-SAFE: the payment is recorded whatever happens here. If the start is refused (a ledger that cannot be read right
+// now, a concurrent change) the caller tells the buyer and shows the explicit start button.
 // Status is written ONLY by activateCampaign. Reported, never thrown.
-export type ActivationResult = 'started' | 'no_contacts' | 'failed';
+export type ActivationResult = 'started' | 'failed';
 
 export async function activateAfterPayment(campaignId: string, eventId: string): Promise<ActivationResult> {
   try {
@@ -27,6 +26,6 @@ export async function activateAfterPayment(campaignId: string, eventId: string):
       title: 'חבילה שולמה אך ההפעלה האוטומטית נדחתה',
       fields: { campaign_id: campaignId, event_id: eventId },
     });
-    return message === PACKAGE_NO_CONTACTS_ERROR ? 'no_contacts' : 'failed';
+    return 'failed';
   }
 }

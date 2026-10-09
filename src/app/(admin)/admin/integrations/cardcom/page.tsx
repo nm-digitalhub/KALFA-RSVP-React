@@ -4,6 +4,7 @@ import { ChevronRight } from 'lucide-react';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { readCardcomAdminConfig } from '@/lib/data/admin/integrations/cardcom-config';
+import { getAppUrl } from '@/lib/url';
 
 import { PageHeading } from '../../_components';
 import { CardcomConfigForm } from './cardcom-config-form';
@@ -23,6 +24,8 @@ export default async function CardcomPage() {
   await requirePlatformPermission('integrations.manage');
 
   const config = await readCardcomAdminConfig();
+  // The address CardCom posts each issued document to (its "כתובת URL לדיווח" field).
+  const documentReportUrl = await getAppUrl('/api/cardcom/document-webhook');
 
   return (
     <div className="space-y-6">
@@ -56,6 +59,8 @@ export default async function CardcomPage() {
             api_name: config.apiName ?? '',
             enabled: config.enabled,
             has_password: config.hasPassword,
+            has_document_report_secret: config.hasDocumentReportSecret,
+            document_report_url: documentReportUrl,
           }}
         />
       </section>

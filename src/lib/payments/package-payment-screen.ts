@@ -9,11 +9,13 @@ import type { PaymentState } from './status';
 
 export type PackagePaymentScreen =
   // `activation`: what the customer can do next — the campaign is already running, it can be started from here, or
-  // it cannot be started (the event passed, or the campaign moved on).
-  | { kind: 'paid'; amount: number; activation: 'active' | 'ready' | 'unavailable' }
+  // it cannot be started (the event passed, or the campaign moved on). `testMoney`: what was paid is test money (a payment on the
+  // no-money test terminal), which the screen says; present only when true.
+  | { kind: 'paid'; amount: number; activation: 'active' | 'ready' | 'unavailable'; testMoney?: true }
   | { kind: 'in_progress' }
   | { kind: 'review' }
-  | { kind: 'form'; amount: number }
+  // `testTerminal`: the form will take the payment on the no-money test terminal, which the screen says; present only when true.
+  | { kind: 'form'; amount: number; testTerminal?: true }
   | { kind: 'unavailable'; reason: 'ledger' | 'bad_state' | 'past' | 'not_active' | 'disabled' };
 
 export interface PackagePaymentScreenInput {
@@ -30,6 +32,9 @@ export interface PackagePaymentScreenInput {
   // tab). The form is shown and asks the server for the same session. A SUMIT charge in flight is never resumable — its
   // card may already have been charged — so it stays "in progress". Defaults to false.
   pendingIsResumable?: boolean;
+  // The form would take the payment on CardCom's no-money test terminal (only someone who may configure the integration is ever
+  // offered it). Defaults to false.
+  testTerminal?: boolean;
 }
 
 function activationOf(i: PackagePaymentScreenInput): 'active' | 'ready' | 'unavailable' {
@@ -43,7 +48,7 @@ export function packagePaymentScreen(i: PackagePaymentScreenInput): PackagePayme
 
   switch (i.payment.status) {
     case 'collected':
-      return { kind: 'paid', amount: i.payment.collected, activation: activationOf(i) };
+      return { kind: 'paid', amount: i.payment.collected, activation: activationOf(i), ...(i.payment.testMoney ? { testMoney: true as const } : {}) };
     case 'pending':
       if (!i.pendingIsResumable) return { kind: 'in_progress' };
       break;
@@ -63,5 +68,5 @@ export function packagePaymentScreen(i: PackagePaymentScreenInput): PackagePayme
   if (i.eventPast) return { kind: 'unavailable', reason: 'past' };
   if (!i.eventActive) return { kind: 'unavailable', reason: 'not_active' };
   if (!i.gatesOpen) return { kind: 'unavailable', reason: 'disabled' };
-  return { kind: 'form', amount: i.price };
+  return { kind: 'form', amount: i.price, ...(i.testTerminal ? { testTerminal: true as const } : {}) };
 }

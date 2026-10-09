@@ -554,7 +554,7 @@ describe('approvePackageTermsAction — the customer approves the package terms'
     vi.mocked(recordPackageApproval).mockResolvedValue({ ok: true });
   });
 
-  it('records the approval with the version shown, the caller\'s address and browser — then returns to the setup flow', async () => {
+  it('records the approval with the version shown, the caller\'s address and browser — then goes straight to the payment page', async () => {
     await expect(approvePackageTermsAction('e1', CAMPAIGN, null, form())).rejects.toThrow('NEXT_REDIRECT');
 
     expect(recordPackageApproval).toHaveBeenCalledWith({
@@ -563,7 +563,7 @@ describe('approvePackageTermsAction — the customer approves the package terms'
       ip: '203.0.113.5',
       userAgent: 'UA/1',
     });
-    expect(redirect).toHaveBeenCalledWith('/app/events/e1/setup');
+    expect(redirect).toHaveBeenCalledWith(`/app/events/e1/campaign/${CAMPAIGN}/payment`);
   });
 
   it.each([

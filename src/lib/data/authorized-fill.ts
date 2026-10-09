@@ -4,8 +4,10 @@ import { z } from 'zod';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 
-// The first fill of a quota campaign's authorized list (SQL: fill_authorized_set). Service-role and request-free: the
-// caller has already authorized the campaign. Request-free so the worker can import it too.
+// The fill of a quota campaign's authorized list with the guests added before the package terms were approved (SQL:
+// fill_authorized_set), called once, at that approval (agreements.ts). A guest added later is admitted by
+// reconcileCampaignSetForContact (contacts.ts). Service-role and request-free: the caller has already authorized the
+// campaign.
 
 const count = z.number().int().nonnegative();
 

@@ -13,6 +13,7 @@ import type { Json } from '@/lib/supabase/types';
 import { beginOperation, completeOperation, loadOperations, refundsOfRequest, type ProviderDocument } from './ledger';
 import type { PackageRefundInput, PackageRefundRefusal, PackageRefundResult } from './package-refund-types';
 import { refundableAmount, refundableCents } from './status';
+import { labelTestMoney } from './test-money-label';
 
 // Giving a customer's money back for a package paid through CardCom (docs/superpowers/plans/2026-10-07-cardcom-pilot-plan.md,
 // 4.8). The counterpart of package-refund.ts (SUMIT), with the same safety argument in the same order:
@@ -35,6 +36,9 @@ import { refundableAmount, refundableCents } from './status';
 //   - what is cancelled is identified by the document NUMBER and TYPE the payment issued (kept on its ledger row), and the
 //     document CardCom answers with must be the refund counterpart of it (cardcom/document-types.ts) — otherwise the refund is
 //     not believed;
+//   - CancelDoc sends no terminal: it names the company only by the API name and password of the CURRENT connection. A payment made
+//     on another terminal than the connection uses now - or on one that was never recorded - is refused as `terminal_changed` before
+//     anything is written or sent, and is refunded by hand;
 //   - it needs no saved card and no customer number: the API password (a vault secret) is the only credential;
 //   - a refund goes back through the company that was PAID, so it needs the connection to exist but not the pilot switch.
 // Never logs the API password. Never puts CardCom's own text in front of an admin except through the ledger row.
@@ -72,19 +76,28 @@ async function settle(admin: AdminClient, operationId: string, campaignId: strin
   }
 }
 
-type PurchaseRow = { id: string; amount: number | string; provider_document_number: number | null; meta: Json };
+type PurchaseRow = {
+  id: string; amount: number | string; provider_document_number: number | null; meta: Json;
+  // The terminal the payment was opened on (null = a row from before the stamp existed) and the class the database gave it.
+  provider_terminal: number | null; is_test: boolean;
+};
 async function succeededPurchase(admin: AdminClient, campaignId: string): Promise<PurchaseRow | null> {
   const { data, error } = await admin
     .from('payment_operations')
-    .select('id, amount, provider_document_number, meta')
+    .select('id, amount, provider_document_number, meta, provider_terminal, is_test')
     .eq('campaign_id', campaignId)
     .eq('kind', 'package_purchase')
     .eq('outcome', 'succeeded')
     .limit(1)
     .maybeSingle();
   if (error) throw new Error('טעינת פעולות התשלום נכשלה');
-  return data;
+  // Normalised: a row that says nothing is "no recorded terminal" and real money.
+  return data ? { ...data, provider_terminal: typeof data.provider_terminal === 'number' ? data.provider_terminal : null, is_test: data.is_test === true } : null;
 }
+
+// Can the CURRENT connection refund this payment? Only when the payment was opened on the terminal the connection uses now: the
+// refund names the company by the connection's credentials alone. A payment with no recorded terminal cannot be vouched for.
+const refundableOnThisConnection = (purchase: PurchaseRow, terminalNumber: number): boolean => purchase.provider_terminal === terminalNumber;
 
 // The document that can be cancelled for a payment, or null when there is none we can name.
 function documentOf(purchase: PurchaseRow): { number: number; type: number; refundType: number } | null {
@@ -125,6 +138,8 @@ async function prepare(input: PackageRefundInput): Promise<Prepared> {
     const refundable = refundableAmount(await loadOperations(admin, campaignId));
     if (!purchase || refundable <= 0) return stop(refused('no_payment'));
     if (toCents(amount) > toCents(refundable)) return stop(refused('exceeds_refundable'));
+    // Before anything else that says "this could be done": if the connection cannot refund this payment at all, say so.
+    if (!refundableOnThisConnection(purchase, config.terminalNumber)) return stop(refused('terminal_changed'));
 
     // CancelDoc cancels the document, and with it the whole card payment: only a refund of everything the card paid, with
     // nothing refunded before, is a refund it can make.
@@ -154,13 +169,17 @@ export async function cardcomRefundSummary(
   cancellationRequestId?: string,
 ): Promise<{ refundable: number; refundedForRequest: number; hasCard: boolean }> {
   const admin = createAdminClient();
-  const [ops, purchase, earlier] = await Promise.all([
+  const [ops, purchase, earlier, config] = await Promise.all([
     loadOperations(admin, campaignId),
     succeededPurchase(admin, campaignId),
     cancellationRequestId ? refundsOfRequest(admin, campaignId, cancellationRequestId) : Promise.resolve([]),
+    getCardcomServerConfig(),
   ]);
   const refundedCents = earlier.filter((op) => op.outcome === 'succeeded').reduce((sum, op) => sum + toCents(op.amount), 0);
-  return { refundable: refundableAmount(ops), refundedForRequest: refundedCents / 100, hasCard: !!purchase && documentOf(purchase) !== null };
+  // The screen must not promise an automatic refund that refundCardcomPayment will refuse: a payment the connection cannot refund
+  // (another terminal, or none recorded) reads as "no card", which sends the admin to refund by hand.
+  const hasCard = !!purchase && !!config && documentOf(purchase) !== null && refundableOnThisConnection(purchase, config.terminalNumber);
+  return { refundable: refundableAmount(ops), refundedForRequest: refundedCents / 100, hasCard };
 }
 
 export async function refundCardcomPayment(input: PackageRefundInput): Promise<PackageRefundResult> {
@@ -200,8 +219,10 @@ export async function refundCardcomPayment(input: PackageRefundInput): Promise<P
     return { status: 'error' };
   }
 
+  // The refund of a TEST payment (the child takes its class from the parent) says so in every alert.
+  const isTest = purchase.is_test;
   const alert = (level: 'error' | 'warn' | 'info', title: string, extra: Record<string, string | number> = {}) =>
-    void sendSlackAlert({ level, category: CATEGORY, source: SOURCE, title, fields: { campaign_id: campaignId, event_id: eventId, operation_id: operationId, ...extra } });
+    void sendSlackAlert({ level, category: CATEGORY, source: SOURCE, title: labelTestMoney(title, isTest), fields: { campaign_id: campaignId, event_id: eventId, operation_id: operationId, ...extra } });
 
   // The cancellation.
   let answer: Awaited<ReturnType<typeof documentsCancelDoc>>;
@@ -261,7 +282,7 @@ export async function refundCardcomPayment(input: PackageRefundInput): Promise<P
 
   // Follow-ups, each best-effort: the refund is recorded and must not be affected by any of them.
   try {
-    await logActivity({ eventId, action: 'campaign.package_refunded', meta: { campaignId, operationId, amount, documentNumber: newDocument.number, provider: 'cardcom' } });
+    await logActivity({ eventId, action: 'campaign.package_refunded', meta: { campaignId, operationId, amount, documentNumber: newDocument.number, provider: 'cardcom', ...(isTest ? { testMoney: true } : {}) } });
   } catch {
     console.error('[cardcom-refund] logActivity failed (non-fatal)', { campaignId });
   }

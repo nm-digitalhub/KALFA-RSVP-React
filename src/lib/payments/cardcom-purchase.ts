@@ -167,6 +167,11 @@ export async function startCardcomPurchase(input: CardcomStartInput): Promise<Ca
       kind: 'package_purchase',
       amount: price,
       lines,
+      // The terminal this session is ASKED to open on, taken from the very configuration object that builds the request below, so the
+      // stamp and the request cannot disagree. The database gives the row its class from it (a no-money terminal) once, and freezes
+      // both. `meta.provider` stays until its readers move to the column (plan section 9).
+      provider: 'cardcom',
+      providerTerminal: config.terminalNumber,
       meta: { payerUserId: payer.userId, provider: 'cardcom' },
     });
     if ('alreadyInProgress' in begun) return { status: 'in_progress' };
