@@ -209,6 +209,14 @@ export default async function AdminCancellationDetailPage({
             <span className="font-medium">תנועה כספית: </span>
             {CAPTURE_OUTCOME_LABELS[request.captureOutcome ?? ''] ?? request.captureOutcome}
           </p>
+          {/* A package refund's credit document is read from the ledger: CardCom answers only its number (no link), and the
+              request row keeps a SUMIT link only. */}
+          {campaign?.packageRefundDocument?.number != null && !request.sumitDocumentUrl ? (
+            <p>
+              <span className="font-medium">מסמך זיכוי: </span>
+              {`מס׳ ${campaign.packageRefundDocument.number}`}
+            </p>
+          ) : null}
           {request.sumitDocumentUrl ? (
             <p>
               <a href={request.sumitDocumentUrl} className="text-primary hover:underline" target="_blank" rel="noreferrer">

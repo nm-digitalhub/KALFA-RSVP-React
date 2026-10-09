@@ -266,4 +266,18 @@ describe('a request that was already resolved', () => {
     expect(html).toContain('בוצע זיכוי');
     expect(html).toContain('href="https://example.test/doc/1"');
   });
+
+  // A CardCom refund leaves no link on the request, only a credit document number in the ledger.
+  it('a refund with no link shows the credit document number the ledger recorded', async () => {
+    vi.mocked(getCancellationRequestForAdmin).mockResolvedValue(
+      request({ status: 'resolved', resolution: 'full_cancellation', resolutionAmount: 1, captureOutcome: 'refunded' }) as never,
+    );
+    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(
+      pkg({ packageRefundable: 0, packageRefundDocument: { id: null, number: 2491, url: null } }) as never,
+    );
+    const html = await render();
+    expect(html).toContain('מסמך זיכוי');
+    expect(html).toContain('מס׳ 2491');
+    expect(html).not.toContain('קבלה / תעודת זיכוי');
+  });
 });

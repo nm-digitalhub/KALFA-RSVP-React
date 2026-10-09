@@ -489,20 +489,24 @@ describe('checkPackageRefund — the look before the promise', () => {
 // What the admin screen and the resolution need to know about a package campaign's money.
 describe('packageRefundSummary', () => {
   it('what can still go back, whether a card is on file, and nothing refunded for a request yet', async () => {
-    expect(await packageRefundSummary('c1', 'req1')).toEqual({ refundable: 120, refundedForRequest: 0, hasCard: true });
+    expect(await packageRefundSummary('c1', 'req1')).toEqual({ refundable: 120, refundedForRequest: 0, hasCard: true, refundDocument: null });
   });
 
   it('what was refunded for THIS request, apart from other refunds', async () => {
     useDb([
       PURCHASE,
-      seed('refund', 'succeeded', { id: 'r1', amount: 50, meta: { cancellation_request_id: 'req1' }, parent_operation_id: 'pur1' }),
+      seed('refund', 'succeeded', { id: 'r1', amount: 50, meta: { cancellation_request_id: 'req1' }, parent_operation_id: 'pur1', provider_document_id: 7001, provider_document_number: 5001, provider_document_url: 'https://example.test/doc/7001' }),
       seed('refund', 'succeeded', { id: 'r2', amount: 10, meta: { cancellation_request_id: 'other' }, parent_operation_id: 'pur1' }),
     ]);
-    expect(await packageRefundSummary('c1', 'req1')).toEqual({ refundable: 60, refundedForRequest: 50, hasCard: true });
+    // The credit document is THIS request's refund, never the other request's.
+    expect(await packageRefundSummary('c1', 'req1')).toEqual({
+      refundable: 60, refundedForRequest: 50, hasCard: true,
+      refundDocument: { id: 7001, number: 5001, url: 'https://example.test/doc/7001' },
+    });
   });
 
   it('without a request id it only reports the refundable amount', async () => {
-    expect(await packageRefundSummary('c1')).toEqual({ refundable: 120, refundedForRequest: 0, hasCard: true });
+    expect(await packageRefundSummary('c1')).toEqual({ refundable: 120, refundedForRequest: 0, hasCard: true, refundDocument: null });
   });
 
   it('no usable card → hasCard false', async () => {
@@ -514,7 +518,7 @@ describe('packageRefundSummary', () => {
 
   it('a campaign that never paid: nothing refundable, no card', async () => {
     useDb([]);
-    expect(await packageRefundSummary('c1')).toEqual({ refundable: 0, refundedForRequest: 0, hasCard: false });
+    expect(await packageRefundSummary('c1')).toEqual({ refundable: 0, refundedForRequest: 0, hasCard: false, refundDocument: null });
   });
 
   it('throws when the ledger cannot be read — a screen must not show "nothing to refund" on a failed read', async () => {
@@ -554,9 +558,9 @@ describe('which clearing company a refund goes to', () => {
   it('the look before the promise and the summary follow the same rule', async () => {
     useDb([CARDCOM_PURCHASE]);
     vi.mocked(checkCardcomRefund).mockResolvedValue(null);
-    vi.mocked(cardcomRefundSummary).mockResolvedValue({ refundable: 120, refundedForRequest: 0, hasCard: true });
+    vi.mocked(cardcomRefundSummary).mockResolvedValue({ refundable: 120, refundedForRequest: 0, hasCard: true, refundDocument: null });
     await expect(checkPackageRefund(asked)).resolves.toBeNull();
-    await expect(packageRefundSummary('c1', 'req1')).resolves.toEqual({ refundable: 120, refundedForRequest: 0, hasCard: true });
+    await expect(packageRefundSummary('c1', 'req1')).resolves.toEqual({ refundable: 120, refundedForRequest: 0, hasCard: true, refundDocument: null });
     expect(checkCardcomRefund).toHaveBeenCalledWith(asked);
     expect(cardcomRefundSummary).toHaveBeenCalledWith('c1', 'req1');
   });

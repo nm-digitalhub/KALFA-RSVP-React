@@ -11,7 +11,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import type { Json } from '@/lib/supabase/types';
 
 import { beginOperation, completeOperation, loadOperations, refundsOfRequest, type ProviderDocument } from './ledger';
-import type { PackageRefundInput, PackageRefundRefusal, PackageRefundResult } from './package-refund-types';
+import type { PackageRefundInput, PackageRefundRefusal, PackageRefundResult, PackageRefundSummary } from './package-refund-types';
 import { refundableAmount, refundableCents } from './status';
 import { labelTestMoney } from './test-money-label';
 
@@ -167,7 +167,7 @@ export async function checkCardcomRefund(input: PackageRefundInput): Promise<Pac
 export async function cardcomRefundSummary(
   campaignId: string,
   cancellationRequestId?: string,
-): Promise<{ refundable: number; refundedForRequest: number; hasCard: boolean }> {
+): Promise<PackageRefundSummary> {
   const admin = createAdminClient();
   const [ops, purchase, earlier, config] = await Promise.all([
     loadOperations(admin, campaignId),
@@ -175,11 +175,13 @@ export async function cardcomRefundSummary(
     cancellationRequestId ? refundsOfRequest(admin, campaignId, cancellationRequestId) : Promise.resolve([]),
     getCardcomServerConfig(),
   ]);
-  const refundedCents = earlier.filter((op) => op.outcome === 'succeeded').reduce((sum, op) => sum + toCents(op.amount), 0);
+  const succeeded = earlier.filter((op) => op.outcome === 'succeeded');
+  const refundedCents = succeeded.reduce((sum, op) => sum + toCents(op.amount), 0);
   // The screen must not promise an automatic refund that refundCardcomPayment will refuse: a payment the connection cannot refund
   // (another terminal, or none recorded) reads as "no card", which sends the admin to refund by hand.
   const hasCard = !!purchase && !!config && documentOf(purchase) !== null && refundableOnThisConnection(purchase, config.terminalNumber);
-  return { refundable: refundableAmount(ops), refundedForRequest: refundedCents / 100, hasCard };
+  // The refund's credit document: CancelDoc answers only its number and type (no id, no link), and the ledger row keeps it.
+  return { refundable: refundableAmount(ops), refundedForRequest: refundedCents / 100, hasCard, refundDocument: succeeded[0]?.document ?? null };
 }
 
 export async function refundCardcomPayment(input: PackageRefundInput): Promise<PackageRefundResult> {

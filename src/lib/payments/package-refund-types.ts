@@ -32,3 +32,13 @@ export type PackageRefundResult =
   | { status: 'refused'; reason: PackageRefundRefusal } // checked BEFORE anything was written or sent
   | { status: 'error' }; // something failed BEFORE anything was sent
 
+// What a screen and the cancellation resolution need to know about a package's money (packageRefundSummary, for either
+// clearing company). `refundDocument` is the credit document of THIS request's confirmed refund, as the ledger recorded it
+// (the request row itself keeps only a SUMIT document id and url, never a CardCom document number) — null when the
+// request refunded nothing yet, or no request was named.
+export type PackageRefundSummary = {
+  refundable: number;
+  refundedForRequest: number;
+  hasCard: boolean;
+  refundDocument: ProviderDocument | null;
+};

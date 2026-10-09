@@ -223,6 +223,25 @@ describe('cancellationRequestResponseEmail', () => {
     });
     expect(text).toContain('50');
   });
+  // A package refund is confirmed before the e-mail is built, so the e-mail can say what went back — never "ללא חיוב"
+  // to a customer who paid.
+  it('full_cancellation with a refund says the amount went back to the card, not "no charge"', () => {
+    const { text } = cancellationRequestResponseEmail({
+      recipientName: 'דנה', requestNumber: 42, resolution: 'full_cancellation', refundedAmount: 120,
+      resolutionNote: 'בוטל', origin: ORIGIN,
+    });
+    expect(text).toContain('₪120) הוחזר לכרטיס');
+    expect(text).not.toContain('ללא חיוב');
+  });
+  it('partial_charge with a refund names the fee kept and the amount that went back', () => {
+    const { text } = cancellationRequestResponseEmail({
+      recipientName: 'דנה', requestNumber: 42, resolution: 'partial_charge', resolutionAmount: 15, refundedAmount: 105,
+      resolutionNote: 'דמי ביטול', origin: ORIGIN,
+    });
+    expect(text).toContain('דמי ביטול של ₪15');
+    expect(text).toContain('₪105 הוחזרו לכרטיס');
+    expect(text).not.toContain('שירות שכבר סופק');
+  });
   it('declined body includes the staff note', () => {
     const { text } = cancellationRequestResponseEmail({
       recipientName: 'דנה', requestNumber: 42, resolution: 'declined',

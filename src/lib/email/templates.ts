@@ -208,17 +208,24 @@ ${inlineMarkdownToText(body, input.origin)}
   return { subject, html, text };
 }
 
+// `refunded` is money that was ALREADY returned to the customer's card when the e-mail is built (a fixed-price package:
+// resolveCancellationRequest sends this e-mail only after the refund is confirmed). Without it the wording is the one
+// for a request that moved no money back ("ללא חיוב" / a partial charge for service already given).
 const CANCELLATION_RESOLUTION_COPY: Record<
   'full_cancellation' | 'partial_charge' | 'declined',
-  (amount?: number) => { subjectSuffix: string; opening: string }
+  (amount?: number, refunded?: number) => { subjectSuffix: string; opening: string }
 > = {
-  full_cancellation: () => ({
+  full_cancellation: (_amount, refunded) => ({
     subjectSuffix: 'בקשתך אושרה',
-    opening: 'בקשתך לביטול האירוע אושרה — הביטול בוצע במלואו, ללא חיוב.',
+    opening: refunded
+      ? `בקשתך לביטול האירוע אושרה — הביטול בוצע במלואו, והסכום ששילמת (₪${refunded}) הוחזר לכרטיס האשראי שלך.`
+      : 'בקשתך לביטול האירוע אושרה — הביטול בוצע במלואו, ללא חיוב.',
   }),
-  partial_charge: (amount) => ({
+  partial_charge: (amount, refunded) => ({
     subjectSuffix: 'בקשתך אושרה עם חיוב חלקי',
-    opening: `בקשתך לביטול האירוע אושרה, עם חיוב חלקי של ₪${amount} עבור שירות שכבר סופק.`,
+    opening: refunded
+      ? `בקשתך לביטול האירוע אושרה. דמי ביטול של ₪${amount} נשארו לתשלום, ו-₪${refunded} הוחזרו לכרטיס האשראי שלך.`
+      : `בקשתך לביטול האירוע אושרה, עם חיוב חלקי של ₪${amount} עבור שירות שכבר סופק.`,
   }),
   declined: () => ({
     subjectSuffix: 'עדכון לגבי בקשתך',
@@ -231,11 +238,13 @@ export function cancellationRequestResponseEmail(input: {
   requestNumber: number;
   resolution: 'full_cancellation' | 'partial_charge' | 'declined';
   resolutionAmount?: number;
+  // What already went back to the card (see CANCELLATION_RESOLUTION_COPY); omitted when no money was returned.
+  refundedAmount?: number;
   resolutionNote: string;
   origin: string;
 }): { subject: string; html: string; text: string } {
   const name = input.recipientName.trim() || 'לקוח יקר';
-  const copy = CANCELLATION_RESOLUTION_COPY[input.resolution](input.resolutionAmount);
+  const copy = CANCELLATION_RESOLUTION_COPY[input.resolution](input.resolutionAmount, input.refundedAmount);
   const subject = `בקשת ביטול #${input.requestNumber} — ${copy.subjectSuffix}`;
   const note = stripDuplicateFraming(input.resolutionNote);
   const text = `שלום ${name},

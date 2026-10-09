@@ -16,6 +16,7 @@ import { packageRefundMessage, planPackageRefund } from '@/lib/data/package-canc
 import { closeCampaign } from '@/lib/data/campaigns';
 import { CLOSEABLE_CAMPAIGN_STATUSES, liveCampaignOf } from '@/lib/data/campaign-status';
 import { checkPackageRefund, packageRefundSummary, refundPackagePayment } from '@/lib/payments/package-refund';
+import type { ProviderDocument } from '@/lib/payments/ledger';
 import { getAppOrigin } from '@/lib/url';
 import { logActivity } from '@/lib/data/activity';
 import type {
@@ -226,6 +227,10 @@ export type CampaignForCancellationAdmin = {
   packageRefundable: number | null;
   packageRefundedForRequest: number | null;
   packageUnreadable: boolean;
+  // The credit document of THIS request's confirmed refund, from the ledger — the only place a CardCom credit document
+  // number is kept (the request row has a SUMIT document id and url only). Null when nothing was refunded, when it is not a
+  // package, or when the ledger could not be read.
+  packageRefundDocument: ProviderDocument | null;
   // Whether resolveCancellationRequest can actually attempt a SUMIT
   // capture/credit for this campaign (same 4-field check it uses internally)
   // — lets the admin UI state the outcome definitively instead of hedging
@@ -271,6 +276,7 @@ export async function getCampaignForEventAdmin(
   let packageRefundedForRequest: number | null = null;
   let packageCard = false;
   let packageUnreadable = false;
+  let packageRefundDocument: ProviderDocument | null = null;
   if (isPackage) {
     try {
       const summary = await packageRefundSummary(data.id, cancellationRequestId);
@@ -278,6 +284,7 @@ export async function getCampaignForEventAdmin(
       packageRefundedForRequest = summary.refundedForRequest;
       packagePaid = Math.round((summary.refundable + summary.refundedForRequest) * 100) / 100;
       packageCard = summary.hasCard;
+      packageRefundDocument = summary.refundDocument;
     } catch {
       packageUnreadable = true;
     }
@@ -292,6 +299,7 @@ export async function getCampaignForEventAdmin(
     packageRefundable,
     packageRefundedForRequest,
     packageUnreadable,
+    packageRefundDocument,
     tosVersion: data.tos_version,
     hasCardOnFile: isPackage
       ? packageCard
@@ -371,14 +379,17 @@ export async function computeSuggestedCancellationAmount(campaignId: string, bas
 //   - fixed-price PACKAGE (campaigns.package_price set; it has no charge_status): paid once at purchase, so money only
 //     goes BACK, through the payment ledger (refundPackagePayment, src/lib/payments/package-refund.ts) — all of what
 //     the card paid for full_cancellation, what is beyond the amount that STAYS with us for partial_charge. It is
-//     decided BEFORE the e-mail (checkPackageRefund): a refund that cannot be made (no saved card, payments off, ledger
-//     unreadable) stops here and the customer is told nothing. When nothing was paid (or it all went back already)
-//     there is no refund to make: the request is approved and no money moves. After the e-mail a refund that does not
-//     go through is an error the admin sees and the request stays open; a refund already made for THIS request is
-//     resumed, never repeated. The campaign and the event are closed afterwards. A declined request moves no money.
-// EMAIL IS CHECKED FIRST, before any SUMIT call — same send-then-persist
-// contract as sendInquiryReply (contacts.ts), extended so a broken mail
-// server can't leave a charge/credit executed with no notification sent. SMS
+//     checked first (checkPackageRefund): a refund that cannot be made (no saved card or cancellable document, payments
+//     off, ledger unreadable) stops here and the customer is told nothing. When nothing was paid (or it all went back
+//     already) there is no refund to make: the request is approved and no money moves. A refund that CAN be made is made
+//     BEFORE the e-mail, and the e-mail says what went back: a refund that does not go through is an error the admin
+//     sees, the request stays open and the customer is told nothing. A refund already made for THIS request is resumed,
+//     never repeated — which is what makes refund-then-e-mail safe: when the e-mail fails after the refund, approving
+//     again sends it without a second refund. The campaign and the event are closed afterwards. A declined request moves
+//     no money.
+// For everything that is NOT a package refund the EMAIL IS CHECKED FIRST, before any SUMIT call — same send-then-persist
+// contract as sendInquiryReply (contacts.ts), extended so a broken mail server can't leave a charge/credit executed with
+// no notification sent (a per-result charge or credit has no once-per-request guard, so it must not be retried). SMS
 // is best-effort AFTER a successful email/capture/credit — see
 // sendNoContactSms (callback-scheduling.ts) for the "never block the core
 // outcome" contract.
@@ -441,7 +452,7 @@ export async function resolveCancellationRequest(
   const campaign = liveCampaignOf([...event.campaigns].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? '')));
   // A fixed-price package was paid at purchase and has no settlement: neither money branch below fits it
   // (closeCampaignAndCharge refuses it). Resolving its request means giving money BACK through the payment ledger
-  // (package-refund.ts); the pieces for that are decided here, before the customer is e-mailed.
+  // (package-refund.ts); the pieces for that are decided here, before any money moves or the customer is e-mailed.
   const isPackage = campaign?.package_price != null;
   const hasCardOnFile = !!(
     campaign?.card_token_ref &&
@@ -504,9 +515,9 @@ export async function resolveCancellationRequest(
   const ownerPhone = prof?.phone ?? null;
   if (!ownerEmail) throw new Error('לא נמצאה כתובת אימייל לבעל האירוע — לא ניתן לשלוח עדכון');
 
-  // A package: how much goes back, and whether the refund CAN go ahead — decided now, because the e-mail below
-  // promises the customer an outcome and must never be sent for a refund that cannot be made. A request whose refund
-  // already went back (a retry after a half-finished resolve) passes this check and resumes instead of refunding twice.
+  // A package: how much goes back, and whether the refund CAN go ahead — decided now, before anything is sent or moved,
+  // so a refund that cannot be made stops the resolve with nothing changed. A request whose refund already went back (a
+  // retry after a half-finished resolve) passes this check and resumes instead of refunding twice.
   let packagePlan: { kept: number; refund: number } | null = null;
   if (isPackage && campaign && resolution !== 'declined') {
     packagePlan = planPackageRefund({ paid: packagePaid ?? 0, resolution, resolutionAmount });
@@ -553,39 +564,53 @@ export async function resolveCancellationRequest(
     captureOutcome = 'not_applicable'; // no campaign was ever authorized — nothing to move
   }
 
-  const { subject, html, text } = cancellationRequestResponseEmail({
-    recipientName: ownerName,
-    requestNumber: reqRow.request_number,
-    resolution,
-    resolutionAmount: captureOutcome === 'manual_refund_required' ? finalAmount : resolutionAmount,
-    resolutionNote: input.resolutionNote,
-    origin: await getAppOrigin(),
-  });
-
-  try {
+  const origin = await getAppOrigin();
+  // The customer's e-mail, built and sent in one place for both orders below. `refundedAmount` is passed only when the
+  // money ALREADY went back, so the e-mail can say so (and never "ללא חיוב" to a customer who paid).
+  const emailCustomer = async (refundedAmount?: number): Promise<void> => {
+    const { subject, html, text } = cancellationRequestResponseEmail({
+      recipientName: ownerName,
+      requestNumber: reqRow.request_number,
+      resolution,
+      resolutionAmount: captureOutcome === 'manual_refund_required' ? finalAmount : resolutionAmount,
+      refundedAmount,
+      resolutionNote: input.resolutionNote,
+      origin,
+    });
     const sender = await getEmailSender();
     await sender.send({ to: ownerEmail, subject, html, text });
-  } catch (err) {
-    const name = err instanceof Error ? err.name : '';
-    if (name === 'EmailConfigError') {
-      throw new Error('שירות הדואר אינו מוגדר — הגדירו SMTP במסך ההגדרות ונסו שוב.');
+  };
+
+  // A package refund goes FIRST and the e-mail after it; everything else keeps the e-mail first. The difference is
+  // whether a retry is safe: a package refund is made once per request (the ledger returns an earlier refund of the same
+  // request instead of refunding again), so a refund followed by a failed e-mail is finished by approving again, and the
+  // customer is never told of a refund that was declined or is in doubt. The per-result charge and credit below have no
+  // such guard — a retry could charge or credit twice — so for them the e-mail stays the gate before any money moves.
+  const refundFirst = !!(isPackage && campaign && packagePlan && packagePlan.refund > 0);
+
+  if (!refundFirst) {
+    try {
+      await emailCustomer();
+    } catch (err) {
+      const name = err instanceof Error ? err.name : '';
+      if (name === 'EmailConfigError') {
+        throw new Error('שירות הדואר אינו מוגדר — הגדירו SMTP במסך ההגדרות ונסו שוב.');
+      }
+      if (name === 'EmailSendError') {
+        throw new Error('שליחת הדואר נכשלה — הבקשה לא עודכנה, שום חיוב/זיכוי לא בוצע; אפשר לנסות שוב.');
+      }
+      throw err;
     }
-    if (name === 'EmailSendError') {
-      throw new Error('שליחת הדואר נכשלה — הבקשה לא עודכנה, שום חיוב/זיכוי לא בוצע; אפשר לנסות שוב.');
-    }
-    throw err;
   }
 
-  // NOW execute the actual money movement. Any SumitDeclinedError/
-  // SumitNetworkError propagates — the customer already got an email
-  // promising an outcome the charge/credit then failed to deliver;
-  // surfacing the error to the admin (rather than silently persisting a
-  // mismatched resolution) is the least-bad option, matching close-charge.ts's
-  // own "never silently settle a wrong amount" discipline.
-  if (isPackage && campaign && packagePlan && packagePlan.refund > 0) {
-    // The money goes back through the ledger: a pending row first, SUMIT second, the outcome recorded third. The
-    // customer already has the e-mail, so anything but a confirmed refund is an error the admin sees, with the request
-    // left open — the refund is made once per request, so trying again is safe where the module says so.
+  // NOW execute the actual money movement. For the per-result branches any SumitDeclinedError/SumitNetworkError
+  // propagates — the customer already got an email promising an outcome the charge/credit then failed to deliver;
+  // surfacing the error to the admin (rather than silently persisting a mismatched resolution) is the least-bad option,
+  // matching close-charge.ts's own "never silently settle a wrong amount" discipline.
+  if (refundFirst && campaign && packagePlan) {
+    // The money goes back through the ledger: a pending row first, the clearing company second, the outcome recorded
+    // third. Anything but a confirmed refund is an error the admin sees, with the request left open and NO e-mail sent —
+    // the refund is made once per request, so trying again is safe where the module says so.
     const refund = await refundPackagePayment({
       campaignId: campaign.id,
       eventId: event.id,
@@ -597,6 +622,19 @@ export async function resolveCancellationRequest(
     finalAmount = refund.amount;
     sumitDocumentId = refund.document?.id ?? null;
     sumitDocumentUrl = refund.document?.url ?? null;
+    // The customer is told only now, and of what really went back. If the e-mail fails the money is already back: the
+    // request stays open, and approving it again resumes it (no second refund) and sends the e-mail.
+    try {
+      await emailCustomer(refund.amount);
+    } catch (err) {
+      console.error('[event-cancellation] refund confirmed but the customer e-mail failed; the request stays open', {
+        requestId,
+        error: err instanceof Error ? err.name : typeof err,
+      });
+      throw new Error(
+        'הכסף הוחזר ללקוח, אך שליחת המייל נכשלה — הבקשה נשארה פתוחה. אשרו שוב כדי לשלוח את המייל; הכסף לא יוחזר פעמיים.',
+      );
+    }
   } else if (captureOutcome === 'captured') {
     const overrideAmount = resolution === 'full_cancellation' ? 0 : (resolutionAmount ?? 0);
     const result = await closeCampaignAndCharge(campaign!.id, {

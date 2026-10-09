@@ -21,7 +21,7 @@ import {
   type ProviderDocument,
 } from './ledger';
 import { refundableAmount, refundableCents } from './status';
-import type { PackageRefundInput, PackageRefundRefusal, PackageRefundResult } from './package-refund-types';
+import type { PackageRefundInput, PackageRefundRefusal, PackageRefundResult, PackageRefundSummary } from './package-refund-types';
 import { cardcomRefundSummary, checkCardcomRefund, refundCardcomPayment } from './cardcom-refund';
 import { purchaseProviderOf } from './purchase-provider';
 
@@ -57,7 +57,7 @@ const SOURCE = 'package-refund';
 type AdminClient = ReturnType<typeof createAdminClient>;
 
 // The shapes every refund path shares (SUMIT here, CardCom in cardcom-refund.ts) live in package-refund-types.ts.
-export type { PackageRefundInput, PackageRefundRefusal, PackageRefundResult } from './package-refund-types';
+export type { PackageRefundInput, PackageRefundRefusal, PackageRefundResult, PackageRefundSummary } from './package-refund-types';
 
 const toCents = (n: number) => Math.round(n * 100);
 const isMoney = (n: number) => Number.isFinite(n) && n > 0 && Math.abs(n * 100 - Math.round(n * 100)) < 1e-6;
@@ -164,7 +164,7 @@ export async function checkPackageRefund(input: PackageRefundInput): Promise<Pac
 export async function packageRefundSummary(
   campaignId: string,
   cancellationRequestId?: string,
-): Promise<{ refundable: number; refundedForRequest: number; hasCard: boolean }> {
+): Promise<PackageRefundSummary> {
   if ((await purchaseProviderOf(campaignId)) === 'cardcom') return cardcomRefundSummary(campaignId, cancellationRequestId);
   const admin = createAdminClient();
   const [ops, card, earlier] = await Promise.all([
@@ -172,10 +172,12 @@ export async function packageRefundSummary(
     currentCard(admin, campaignId),
     cancellationRequestId ? refundsOfRequest(admin, campaignId, cancellationRequestId) : Promise.resolve([]),
   ]);
-  const refundedCents = earlier.filter((op) => op.outcome === 'succeeded').reduce((sum, op) => sum + toCents(op.amount), 0);
+  const succeeded = earlier.filter((op) => op.outcome === 'succeeded');
+  const refundedCents = succeeded.reduce((sum, op) => sum + toCents(op.amount), 0);
   return {
     refundable: refundableAmount(ops),
     refundedForRequest: refundedCents / 100,
+    refundDocument: succeeded[0]?.document ?? null,
     // A card is usable when the saved row carries the expiry and the id of the vault secret that holds the holder id.
     hasCard: !!(card && card.expMonth && card.expYear && card.citizenSecretId),
   };

@@ -324,9 +324,12 @@ describe('checkCardcomRefund: the look before the promise', () => {
 
 describe('cardcomRefundSummary', () => {
   it('reports what is refundable, what this request already returned, and whether the payment can be refunded', async () => {
-    await expect(cardcomRefundSummary('c1', 'req1')).resolves.toEqual({ refundable: 149, refundedForRequest: 0, hasCard: true });
+    await expect(cardcomRefundSummary('c1', 'req1')).resolves.toEqual({ refundable: 149, refundedForRequest: 0, hasCard: true, refundDocument: null });
     await refundCardcomPayment({ ...REQ, amount: 149 });
-    await expect(cardcomRefundSummary('c1', 'req1')).resolves.toEqual({ refundable: 0, refundedForRequest: 149, hasCard: true });
+    // CancelDoc answers the credit document's number only: that is what the screen can show.
+    await expect(cardcomRefundSummary('c1', 'req1')).resolves.toEqual({
+      refundable: 0, refundedForRequest: 149, hasCard: true, refundDocument: { id: null, number: 78, url: null },
+    });
   });
 
   it('says a payment with no cancellable document cannot be refunded (the screen\'s "no card" state)', async () => {
