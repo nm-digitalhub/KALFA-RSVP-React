@@ -6,7 +6,9 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 // CardCom's document report (support.cardcom.solutions, article 360007138014): every document the terminal issues is POSTed
 // to /api/cardcom/document-webhook as Name=Value pairs. With "הוסף את פרטי המסמך ב-POST" on, the post carries the whole
-// document and the card data (owner 8.10.2026: stored as received, ID included).
+// document and the card data (owner 8.10.2026: stored as received, ID included). The field names are dotted
+// (ExtReadInvoiceHead.TerminalNumber, ExtShvaParams.…), as the first real report (8.10.2026, document 3:6) showed; the
+// article renders them with underscores.
 //
 // The post is NOT signed. What proves it is CardCom's is the secret we put in the terminal's "מחרוזת תוספת לפנייה"
 // (secret=...), which CardCom appends to every report; it is kept in Vault (cardcom:document_report_secret). The secret is
@@ -44,8 +46,8 @@ export function secretMatches(fields: Record<string, string>, stored: string | n
  * type, so a receipt and a refund can share one). Null when the report names no document.
  */
 export function documentDedupeKey(fields: Record<string, string>): string | null {
-  const number = fields.DocNumber || fields.ExtReadInvoiceHead_InvoiceNumber || '';
-  const type = fields.DocType || fields.ExtReadInvoiceHead_InvoiceType || '';
+  const number = fields.DocNumber || fields['ExtReadInvoiceHead.InvoiceNumber'] || '';
+  const type = fields.DocType || fields['ExtReadInvoiceHead.InvoiceType'] || '';
   if (!/^\d{1,18}$/.test(number) || !/^\d{1,6}$/.test(type)) return null;
   return `${type}:${number}`;
 }

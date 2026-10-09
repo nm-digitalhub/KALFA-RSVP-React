@@ -27,9 +27,9 @@ export async function processCardcomDocumentRow(row: WebhookInboxRow): Promise<v
   const fields: ReportFields =
     row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload) ? (row.payload as ReportFields) : {};
 
-  const documentNumber = integer(text(fields, 'DocNumber') ?? text(fields, 'ExtReadInvoiceHead_InvoiceNumber'));
-  const documentType = text(fields, 'DocType') ?? text(fields, 'ExtReadInvoiceHead_InvoiceType');
-  const terminal = integer(text(fields, 'ExtReadInvoiceHead_TerminalNumber'));
+  const documentNumber = integer(text(fields, 'DocNumber') ?? text(fields, 'ExtReadInvoiceHead.InvoiceNumber'));
+  const documentType = text(fields, 'DocType') ?? text(fields, 'ExtReadInvoiceHead.InvoiceType');
+  const terminal = integer(text(fields, 'ExtReadInvoiceHead.TerminalNumber'));
 
   if (documentNumber !== null) {
     const admin = createAdminClient();
@@ -55,7 +55,7 @@ export async function processCardcomDocumentRow(row: WebhookInboxRow): Promise<v
       document_type: documentType ?? '',
       document_number: documentNumber === null ? '' : String(documentNumber),
       terminal: terminal === null ? '' : String(terminal),
-      total: text(fields, 'ExtReadInvoiceHead_TotalIncludeVAT') ?? '',
+      total: text(fields, 'ExtReadInvoiceHead.TotalIncludeVAT') ?? '',
       created_by_user: text(fields, 'InvoiceCreatorUserID') ?? '',
       bill_location: text(fields, 'BillLocation') ?? '',
       inbox_id: row.id,

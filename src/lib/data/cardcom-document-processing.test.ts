@@ -26,9 +26,10 @@ const inboxRow = (payload: Record<string, string>): WebhookInboxRow =>
 const REPORT = {
   DocType: '3',
   DocNumber: '1006',
-  ExtReadInvoiceHead_TerminalNumber: '172204',
-  ExtReadInvoiceHead_TotalIncludeVAT: '1',
-  ExtReadInvoiceHead_CustName: 'ישראל ישראלי',
+  // Dotted names, as CardCom actually sends them (the first real report, 8.10.2026).
+  'ExtReadInvoiceHead.TerminalNumber': '172204',
+  'ExtReadInvoiceHead.TotalIncludeVAT': '1',
+  'ExtReadInvoiceHead.CustName': 'ישראל ישראלי',
   'ExtShvaParams.CardHolderIdentityNumber': '040000000',
   InvoiceCreatorUserID: '83',
 };
@@ -56,7 +57,7 @@ describe('processCardcomDocumentRow', () => {
   });
 
   it('a document of another terminal with the same number is not ours', async () => {
-    await processCardcomDocumentRow(inboxRow({ ...REPORT, ExtReadInvoiceHead_TerminalNumber: '1000' }));
+    await processCardcomDocumentRow(inboxRow({ ...REPORT, 'ExtReadInvoiceHead.TerminalNumber': '1000' }));
     expect(slackMock).toHaveBeenCalledTimes(1);
   });
 

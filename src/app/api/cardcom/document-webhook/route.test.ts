@@ -25,7 +25,7 @@ const REPORT = {
   BillGoldCompID: 'b31cff41-4f38-433a-b8bc-cf5461e9ae5e',
   DocType: '3',
   DocNumber: '1006',
-  ExtReadInvoiceHead_TotalIncludeVAT: '1',
+  'ExtReadInvoiceHead.TotalIncludeVAT': '1',
   'ExtShvaParams.CardHolderIdentityNumber': '040000000',
 };
 
@@ -88,7 +88,7 @@ describe('POST /api/cardcom/document-webhook', () => {
   });
 
   it('falls back to the document head fields for the duplicate key', async () => {
-    await post({ ExtReadInvoiceHead_InvoiceType: '4', ExtReadInvoiceHead_InvoiceNumber: '77', secret: SECRET });
+    await post({ 'ExtReadInvoiceHead.InvoiceType': '4', 'ExtReadInvoiceHead.InvoiceNumber': '77', secret: SECRET });
     expect(eventsMock.mock.calls[0][0][0].dedupe_key).toBe('4:77');
   });
 
