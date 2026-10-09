@@ -57,6 +57,7 @@ const PURCHASE = seed('package_purchase', 'succeeded', {
   id: 'pur1', provider_payment_id: 555, provider_document_number: 77,
   meta: { provider: 'cardcom', payerUserId: 'u1', cardcom_document_type: 'Receipt' },
   card_token_ref: TOKEN, card_exp_month: 9, card_exp_year: 2031, card_owner_name: 'דנה כהן', card_owner_email: 'dana@example.test',
+  citizen_id_secret: 'vault-secret-1',
 });
 const DOC_URL = 'https://secure.cardcom.solutions/api/v11/documents/DownloadDoc/?c=1&code=x';
 const okAnswer = (over: Record<string, unknown> = {}) => ({
@@ -88,6 +89,16 @@ beforeEach(() => {
   vi.mocked(getCardcomApiPassword).mockResolvedValue(PASSWORD);
   vi.mocked(logActivity).mockResolvedValue(undefined);
   vi.mocked(transactionsTransaction).mockResolvedValue(okAnswer() as never);
+});
+
+// The whole of CardCom's answer to a refund, as Do Transaction (TransactionInfo) returns it — every field it sends is kept.
+const FULL_ANSWER = okAnswer({
+  TerminalNumber: 1001, Amount: 149, CoinId: 1, CouponNumber: '38024607', CreateDate: '2026-10-09T17:40:12',
+  Last4CardDigits: 8, Last4CardDigitsString: '0008', FirstCardDigits: 458028, JParameter: '0', CardMonth: 9, CardYear: 31,
+  ApprovalNumber: '0123456', NumberOfPayments: 1, CardInfo: 'Israeli', CardOwnerName: 'דנה כהן', CardOwnerPhone: '0500000000',
+  CardOwnerEmail: 'dana@example.test', CardOwnerIdentityNumber: '040000000', Token: TOKEN, CardName: 'ויזה רגיל',
+  Uid: '26100917401200000001', Rrn: '500301575449', Brand: 'Visa', Acquire: 'CAL', Issuer: 'CAL', PaymentType: 'Standard',
+  CardNumberEntryMode: 'Internet', DealType: 'Refund', IsAbroadCard: false, IssuerAuthCodeDescription: 'אושר', AccountId: 0,
 });
 
 describe('refundCardcomPayment: a refund', () => {
@@ -124,6 +135,44 @@ describe('refundCardcomPayment: a refund', () => {
       },
       { cardcom: { timeoutMs: 30_000 } },
     );
+  });
+
+  // Owner 8.10.2026: nothing CardCom returns is dropped. The refund's answer goes to the row through the same field-by-field
+  // mappers the purchase uses; the cardholder's ID is not stored again — the row points at the purchase's Vault secret.
+  it('records EVERYTHING CardCom answered about the refund: references, terminal, card, cardholder, and when it happened', async () => {
+    vi.mocked(transactionsTransaction).mockResolvedValue(FULL_ANSWER as never);
+    await refundCardcomPayment({ ...REQ, amount: 149 });
+    expect(refundRows()[0]).toMatchObject({
+      outcome: 'succeeded', provider_payment_id: 777, provider_auth_ref: '0123456', provider_terminal_echo: 1001,
+      provider_coupon_number: '38024607', provider_unique_id: '26100917401200000001', provider_rrn: '500301575449',
+      provider_acquirer: 'CAL', provider_payment_type: 'Standard', provider_entry_mode: 'Internet', provider_deal_type: 'Refund',
+      provider_auth_description: 'אושר', number_of_payments: 1,
+      card_last4: '0008', card_exp_month: 9, card_exp_year: 2031, card_brand: 'Visa', card_issuer: 'CAL', card_token_ref: TOKEN,
+      card_owner_name: 'דנה כהן', card_owner_email: 'dana@example.test', card_owner_phone: '0500000000', card_name: 'ויזה רגיל',
+      card_info: 'Israeli', card_first_digits: '458028', card_is_abroad: false,
+      citizen_id_secret: 'vault-secret-1',
+      occurred_at: '2026-10-09T14:40:12.000Z',
+      provider_document_number: 78, provider_document_url: DOC_URL,
+      meta: { cancellation_request_id: 'req1', provider: 'cardcom', cardcom_document_type: 'ReceiptRefund' },
+    });
+    expect(JSON.stringify(refundRows()[0])).not.toContain('040000000');
+    // ...and none of it reaches a log line or an alert
+    expect(everythingLogged()).not.toContain('040000000');
+    expect(everythingLogged()).not.toContain('דנה');
+  });
+
+  it('a field CardCom sends malformed is left empty and never keeps the refund from being recorded', async () => {
+    vi.mocked(transactionsTransaction).mockResolvedValue(okAnswer({ CardMonth: 13, Last4CardDigitsString: 'abcd', CreateDate: 'not a date', TerminalNumber: '1001' }) as never);
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toMatchObject({ status: 'refunded' });
+    expect(refundRows()[0]).toMatchObject({ outcome: 'succeeded' });
+    expect(refundRows()[0].provider_terminal_echo ?? null).toBeNull();
+  });
+
+  it('a document link that is not CardCom\'s own https address is not kept', async () => {
+    vi.mocked(transactionsTransaction).mockResolvedValue(okAnswer({ DocumentUrl: 'https://evil.example/doc' }) as never);
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({
+      status: 'refunded', amount: 149, document: { id: null, number: 78, url: null }, alreadyDone: false,
+    });
   });
 
   it('a PARTIAL refund (a cancellation fee stays with us) goes back as its own amount, with a credit document for it', async () => {

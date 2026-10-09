@@ -5,6 +5,9 @@ import { refundDocumentFor, type RefundDocument } from '@/lib/cardcom/document-t
 import { transactionsTransaction } from '@/lib/cardcom/generated/transactions/transactions';
 import { CardcomError, cardcomFailureFacts } from '@/lib/cardcom/mutator';
 import { buildRefundTransaction, expiryMMYY } from '@/lib/cardcom/refund-request';
+import { cardFactsFromCardcom, documentUrlFromCardcom, occurredAtFromCardcom } from './cardcom-card-facts';
+import { paymentFactsFromCardcom } from './cardcom-payment-facts';
+import { terminalEchoFromCardcom } from './cardcom-terminal-echo';
 import { logActivity } from '@/lib/data/activity';
 import { getCardcomApiPassword, getCardcomServerConfig } from '@/lib/data/cardcom-config';
 import { getPaymentsEnabled } from '@/lib/data/payments';
@@ -86,11 +89,14 @@ type PurchaseRow = {
   // What a token refund needs, as CardCom recorded it on the payment. The token is read only here and passed only to the request.
   card_token_ref: string | null; card_exp_month: number | null; card_exp_year: number | null;
   card_owner_name: string | null; card_owner_email: string | null;
+  // The Vault secret holding the cardholder's ID, kept by the purchase: the refund row points at the same one (the refund is to
+  // the same card and holder) instead of storing the ID a second time.
+  citizen_id_secret: string | null;
 };
 async function succeededPurchase(admin: AdminClient, campaignId: string): Promise<PurchaseRow | null> {
   const { data, error } = await admin
     .from('payment_operations')
-    .select('id, amount, meta, provider_terminal, is_test, card_token_ref, card_exp_month, card_exp_year, card_owner_name, card_owner_email')
+    .select('id, amount, meta, provider_terminal, is_test, card_token_ref, card_exp_month, card_exp_year, card_owner_name, card_owner_email, citizen_id_secret')
     .eq('campaign_id', campaignId)
     .eq('kind', 'package_purchase')
     .eq('outcome', 'succeeded')
@@ -303,14 +309,19 @@ export async function refundCardcomPayment(input: PackageRefundInput): Promise<P
 
   // ResponseCode 0 is not yet "the money is back with its credit document": the answer must be a REFUND that created the
   // document type we asked for, with its number. Anything else is not believed.
+  // The link carries an access code: kept only when it is plainly CardCom's own https address (documentUrlFromCardcom).
   const newDocument: ProviderDocument | null =
-    typeof answer.DocumentNumber === 'number' ? { id: null, number: answer.DocumentNumber, url: answer.DocumentUrl ?? null } : null;
+    typeof answer.DocumentNumber === 'number' ? { id: null, number: answer.DocumentNumber, url: documentUrlFromCardcom(answer.DocumentUrl) } : null;
+  // The terminal CardCom names in its answer, kept whatever the outcome below (the same column the purchase's settle fills).
+  const echo = terminalEchoFromCardcom(answer.TerminalNumber);
   // The type CardCom says it created goes in meta.cardcom_document_type, like the purchase's own (cardcom-settle.ts): the
   // ledger's generated column provider_document_type reads it from there, and the document report matches by it. meta is
   // REPLACED on completion, so the row's own keys are written again with it.
   const refs = {
     providerStatus: '0', providerStatusDescription: answer.Description ?? null, providerDocument: newDocument,
     providerPaymentId: typeof answer.TranzactionId === 'number' ? answer.TranzactionId : null,
+    providerAuthRef: answer.ApprovalNumber ?? null,
+    ...(echo === null ? {} : { providerTerminalEcho: echo }),
     meta: {
       cancellation_request_id: cancellationRequestId, provider: 'cardcom',
       ...(typeof answer.DocumentType === 'string' ? { cardcom_document_type: answer.DocumentType } : {}),
@@ -323,9 +334,17 @@ export async function refundCardcomPayment(input: PackageRefundInput): Promise<P
     return { status: 'review' };
   }
 
-  // The refund is confirmed. Record it; from here nothing may undo it.
+  // The refund is confirmed. Record it — with everything else CardCom answered about it (owner 8.10.2026: nothing it returns
+  // is dropped), through the same field-by-field mappers the purchase uses, so a field CardCom sends malformed becomes null
+  // and never keeps a confirmed refund from being recorded. Those facts are not in `refs`: refs is what a parked review row keeps.
+  const occurredAt = occurredAtFromCardcom(answer.CreateDate);
   try {
-    await completeOperation(admin, operationId, { from: 'pending', outcome: 'succeeded', amount, ...refs });
+    await completeOperation(admin, operationId, {
+      from: 'pending', outcome: 'succeeded', amount, ...refs,
+      cardFacts: cardFactsFromCardcom(answer, purchase.citizen_id_secret),
+      paymentFacts: paymentFactsFromCardcom(answer, null),
+      ...(occurredAt === null ? {} : { occurredAt }),
+    });
   } catch {
     console.error('[cardcom-refund] CONFIRMED refund could not be recorded — manual reconciliation required', {
       campaignId, operationId, documentNumber: newDocument.number,
