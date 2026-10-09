@@ -71,6 +71,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 dist/
+# voxengine-ci keeps each deployed scenario's id in scenarios/dist/*.metadata.config.json — not a build output.
+# The relocation tool and its test read these ids, so they are tracked like application.metadata.config.json.
+!voxfiles/.voxengine-ci/applications/*/scenarios/dist/
 # Server-side secret files (GA4 service-account key etc. — private keys inside)
 .secrets/
 
