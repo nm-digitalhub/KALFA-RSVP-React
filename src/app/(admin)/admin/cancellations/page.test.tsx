@@ -15,6 +15,12 @@ const { permMock, listMock, countMock, moneyMock } = vi.hoisted(() => ({
   moneyMock: vi.fn(),
 }));
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: permMock }));
+// The sort menu is a client component with its own test; here it reports the links it was handed.
+vi.mock('./sort-menu', () => ({
+  SortMenu: ({ sort, hrefs }: { sort: string; hrefs: Record<string, string> }) => (
+    <div data-marker="sort" data-sort={sort} data-oldest={hrefs.oldest} data-newest={hrefs.newest} />
+  ),
+}));
 vi.mock('@/lib/data/admin/cancellation-money', () => ({ cancellationMoneyForAdmin: moneyMock }));
 vi.mock('@/lib/data/event-cancellation', () => ({
   listCancellationRequestsForAdmin: listMock,
@@ -83,25 +89,27 @@ describe('/admin/cancellations', () => {
     expect(html).not.toMatch(/>active</);
   });
 
-  // The page opens on "ממתינות": a waiting request is the work.
+  // The page opens on "הכל" (owner 9.10.2026).
   it.each([
-    [undefined, 'pending'],
+    [undefined, undefined],
+    ['all', undefined],
     ['pending', 'pending'],
     ['resolved', 'resolved'],
-    ['all', undefined],
-    ['anything-else', 'pending'],
+    ['anything-else', undefined],
   ])('?status=%s asks the database for %s', async (param, asked) => {
     listMock.mockResolvedValue([]);
     await render(param);
     expect(listMock).toHaveBeenCalledWith(asked, null, 'oldest');
   });
 
-  it('marks the current filter, and shows the counts the database gave on each tab', async () => {
+  it('tabs read הכל · טופלו · ממתינות, mark the current one, and show the counts the database gave', async () => {
     listMock.mockResolvedValue([row()]);
     const html = await render();
-    expect(html).toMatch(/href="\/admin\/cancellations" aria-current="page"[^>]*>.*?ממתינות<span[^>]*>1<\/span>/);
+    expect(html).toMatch(/href="\/admin\/cancellations" aria-current="page"[^>]*>.*?הכל<span[^>]*>4<\/span>/);
     expect(html).toMatch(/href="\/admin\/cancellations\?status=resolved"[^>]*>.*?טופלו<span[^>]*>3<\/span>/);
-    expect(html).toMatch(/href="\/admin\/cancellations\?status=all"[^>]*>.*?הכל<span[^>]*>4<\/span>/);
+    expect(html).toMatch(/href="\/admin\/cancellations\?status=pending"[^>]*>.*?ממתינות<span[^>]*>1<\/span>/);
+    const order = ['>הכל<', '>טופלו<', '>ממתינות<'].map((t) => html.indexOf(t.replace('>', '</svg>')));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
   it('searches in the database, keeps the search on the tabs, and keeps the tab on the search', async () => {
@@ -109,22 +117,24 @@ describe('/admin/cancellations', () => {
     const html = await render('resolved', 'cx-yefz');
     expect(listMock).toHaveBeenCalledWith('resolved', { likeCode: 'YEFZ', likeText: 'cx-yefz' }, 'oldest');
     expect(html).toContain('href="/admin/cancellations?q=cx-yefz"');
+    expect(html).toContain('href="/admin/cancellations?status=pending&amp;q=cx-yefz"');
     expect(html).toContain('<input type="hidden" name="status" value="resolved"/>');
     expect(html).toContain('value="cx-yefz"');
   });
 
   it('sorts by submission time in the database; the header flips the order and keeps the filter and the search', async () => {
     listMock.mockResolvedValue([row()]);
-    let html = await render(undefined, 'חתונה');
+    let html = await render('pending', 'חתונה');
     expect(listMock).toHaveBeenLastCalledWith('pending', expect.anything(), 'oldest');
     expect(html).toContain('aria-sort="ascending"');
-    expect(html).toContain('href="/admin/cancellations?q=%D7%97%D7%AA%D7%95%D7%A0%D7%94&amp;sort=newest"');
-    html = renderToStaticMarkup(
-      await AdminCancellationsPage({ searchParams: Promise.resolve({ status: 'all', sort: 'newest' }) }),
-    );
+    expect(html).toContain('href="/admin/cancellations?status=pending&amp;q=%D7%97%D7%AA%D7%95%D7%A0%D7%94&amp;sort=newest"');
+    // The sort button gets a link per order, each keeping the filter and the search.
+    expect(html).toContain('data-sort="oldest"');
+    expect(html).toContain('data-newest="/admin/cancellations?status=pending&amp;q=%D7%97%D7%AA%D7%95%D7%A0%D7%94&amp;sort=newest"');
+    html = renderToStaticMarkup(await AdminCancellationsPage({ searchParams: Promise.resolve({ sort: 'newest' }) }));
     expect(listMock).toHaveBeenLastCalledWith(undefined, null, 'newest');
     expect(html).toContain('aria-sort="descending"');
-    expect(html).toContain('href="/admin/cancellations?status=all"');
+    expect(html).toContain('data-oldest="/admin/cancellations"');
   });
 
   it('shows the money of each request, and says so when it could not be read', async () => {

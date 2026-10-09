@@ -43,6 +43,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge, type BadgeVariant, formatDateTime, firstParam } from '../_components';
+import { SortMenu } from './sort-menu';
 
 export const metadata: Metadata = { title: 'בקשות ביטול' };
 
@@ -56,16 +57,16 @@ const STATUS_LOOK: Record<Status, { label: string; variant: BadgeVariant; Icon: 
   resolved: { label: 'טופלה', variant: 'success', Icon: Check },
 };
 
-// The ?status= the server reads, so the list is filtered in the database. "ממתינות" comes first and is where the page
-// opens: a waiting request is the work. Anything else in the URL is "ממתינות" too.
+// The ?status= the server reads, so the list is filtered in the database. The page opens on "הכל" (owner 9.10.2026), and
+// the tabs read הכל · טופלו · ממתינות. Anything else in the URL is "הכל" too.
 const FILTERS: ReadonlyArray<{ value: Filter; label: string; Icon: LucideIcon }> = [
-  { value: 'pending', label: 'ממתינות', Icon: Clock },
-  { value: 'resolved', label: 'טופלו', Icon: CircleCheck },
   { value: 'all', label: 'הכל', Icon: List },
+  { value: 'resolved', label: 'טופלו', Icon: CircleCheck },
+  { value: 'pending', label: 'ממתינות', Icon: Clock },
 ];
 
 function parseFilter(raw: string | undefined): Filter {
-  return FILTERS.find((f) => f.value === raw)?.value ?? 'pending';
+  return FILTERS.find((f) => f.value === raw)?.value ?? 'all';
 }
 
 // ?sort=newest; anything else is the default, oldest first.
@@ -75,15 +76,15 @@ function parseSort(raw: string | undefined): CancellationListSort {
 
 function listHref(filter: Filter, q: string | null, sort: CancellationListSort): string {
   const params = new URLSearchParams();
-  if (filter !== 'pending') params.set('status', filter);
+  if (filter !== 'all') params.set('status', filter);
   if (q) params.set('q', q);
   if (sort !== 'oldest') params.set('sort', sort);
   const query = params.toString();
   return query ? `${BASE_PATH}?${query}` : BASE_PATH;
 }
 
-// The submission-time order as a link that flips it: on the "הוגשה" column header, and beside the search on a phone or
-// a tablet, where there is no table. The icon shows the current order.
+// The submission-time order as a link that flips it, on the "הוגשה" column header; the icon shows the current order.
+// The sort button beside the search (SortMenu) opens the list of orders to choose from.
 function SortLink({
   sort,
   filter,
@@ -253,7 +254,7 @@ export default async function AdminCancellationsPage({
 
         <div className="flex items-center gap-2 sm:w-auto">
         <form action={BASE_PATH} method="get" role="search" className="relative w-full flex-1 sm:w-72 sm:flex-none">
-          {filter !== 'pending' ? <input type="hidden" name="status" value={filter} /> : null}
+          {filter !== 'all' ? <input type="hidden" name="status" value={filter} /> : null}
           <label htmlFor="cancellations-q" className="sr-only">
             חיפוש לפי קוד בקשה או שם אירוע
           </label>
@@ -269,14 +270,7 @@ export default async function AdminCancellationsPage({
           />
           {sort !== 'oldest' ? <input type="hidden" name="sort" value={sort} /> : null}
         </form>
-        <SortLink
-          sort={sort}
-          filter={filter}
-          q={query}
-          className="min-h-11 shrink-0 rounded-[10px] border border-input bg-card px-3 text-sm font-medium text-foreground/80 lg:hidden"
-        >
-          <span className="max-sm:sr-only">{sort === 'oldest' ? 'הישנות קודם' : 'החדשות קודם'}</span>
-        </SortLink>
+        <SortMenu sort={sort} hrefs={{ oldest: listHref(filter, query, 'oldest'), newest: listHref(filter, query, 'newest') }} />
         </div>
       </div>
 
