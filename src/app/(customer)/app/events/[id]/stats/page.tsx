@@ -12,6 +12,7 @@ import {
   EVENT_STATUS_LABELS,
   campaignStage,
 } from '@/lib/data/event-labels';
+import { OPERATION_OUTCOME_LABELS } from '@/lib/payments/operation-labels';
 import { StatsRefreshButton } from './stats-refresh-button';
 
 export const dynamic = 'force-dynamic';
@@ -207,10 +208,24 @@ export default async function EventStatsPage({
                   {campaignDisplayStage ? CAMPAIGN_STAGE_LABELS[campaignDisplayStage] : '—'}
                 </dd>
               </div>
-              <div>
-                <dt className="text-muted-foreground">מגעים מקסימליים</dt>
-                <dd className="font-medium">{stats.campaign.maxContacts ?? '—'}</dd>
-              </div>
+              {/* Each figure only when the campaign's record holds it: a package
+                  stores 0 in max_contacts and has a quota instead. */}
+              {stats.campaign.quota ? (
+                <div>
+                  <dt className="text-muted-foreground">מכסת אנשי קשר</dt>
+                  <dd className="font-medium">
+                    {stats.campaign.quota.used === null
+                      ? stats.campaign.quota.quota
+                      : `${stats.campaign.quota.used} מתוך ${stats.campaign.quota.quota}`}
+                  </dd>
+                </div>
+              ) : null}
+              {Number(stats.campaign.maxContacts ?? 0) > 0 ? (
+                <div>
+                  <dt className="text-muted-foreground">מגעים מקסימליים</dt>
+                  <dd className="font-medium">{stats.campaign.maxContacts}</dd>
+                </div>
+              ) : null}
               {stats.campaign.reachedCount != null ? (
                 <div>
                   <dt className="text-muted-foreground">נוצר קשר (הגעה)</dt>
@@ -246,7 +261,35 @@ export default async function EventStatsPage({
                 </div>
               </dl>
             ) : null}
-            {stats.campaign.billing ? (
+            {/* The money that moved, from the payment ledger (behind billing.view). */}
+            {stats.campaign.moneyFailed ? (
+              <p className="text-sm text-muted-foreground">לא ניתן לטעון כרגע את נתוני התשלומים.</p>
+            ) : stats.campaign.money &&
+              (stats.campaign.money.paid > 0 || stats.campaign.money.refunded > 0 || stats.campaign.money.inFlight) ? (
+              <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+                {stats.campaign.money.paid > 0 ? (
+                  <div>
+                    <dt className="text-muted-foreground">שולם</dt>
+                    <dd className="font-medium">{formatCurrency(stats.campaign.money.paid)}</dd>
+                  </div>
+                ) : null}
+                {stats.campaign.money.refunded > 0 ? (
+                  <div>
+                    <dt className="text-muted-foreground">הוחזר</dt>
+                    <dd className="font-medium">{formatCurrency(stats.campaign.money.refunded)}</dd>
+                  </div>
+                ) : null}
+                {stats.campaign.money.inFlight ? (
+                  <div>
+                    <dt className="text-muted-foreground">תשלום פתוח</dt>
+                    <dd className="font-medium">{OPERATION_OUTCOME_LABELS[stats.campaign.money.inFlight].label}</dd>
+                  </div>
+                ) : null}
+              </dl>
+            ) : null}
+            {/* The per-reached figures only for a campaign priced that way: for a
+                package they are all zeros. */}
+            {stats.campaign.billing && stats.campaign.billingDetail?.chargesPerReached ? (
               <dl className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <dt className="text-muted-foreground">נוצר קשר (לחיוב)</dt>
@@ -262,10 +305,12 @@ export default async function EventStatsPage({
                     <dd className="font-medium">{formatCurrency(stats.campaign.billing.ceiling)}</dd>
                   </div>
                 ) : null}
-                <div>
-                  <dt className="text-muted-foreground">מגעים מקסימליים</dt>
-                  <dd className="font-medium">{stats.campaign.billing.maxContacts}</dd>
-                </div>
+                {stats.campaign.billing.maxContacts > 0 ? (
+                  <div>
+                    <dt className="text-muted-foreground">מגעים מקסימליים</dt>
+                    <dd className="font-medium">{stats.campaign.billing.maxContacts}</dd>
+                  </div>
+                ) : null}
               </dl>
             ) : null}
           </div>

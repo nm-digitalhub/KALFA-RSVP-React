@@ -18,7 +18,12 @@ import {
 import { getCampaignBillingSummary, type BillingSummary } from '@/lib/data/billing';
 import { campaignStage } from '@/lib/data/event-labels';
 import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
+import { chargesPerReached } from '@/lib/data/close-charge-amount';
+import { countAuthorizedContacts } from '@/lib/data/contacts';
+import { loadOperations } from '@/lib/payments/ledger';
 import { packagePaymentOf } from '@/lib/payments/package-paid';
+import { ledgerMoney, type LedgerMoney } from '@/lib/payments/status';
+import { createAdminClient } from '@/lib/supabase/admin';
 import type { Enums } from '@/lib/supabase/types';
 type EventStatus = Enums<'event_status'>;
 
@@ -58,6 +63,9 @@ export type EventStatsResult = {
     packagePrice: number | null;
     paymentStatus: string | null;
     maxContacts: number | null;
+    // The contact quota and how much of it is taken (the campaign's authorized list); null when the campaign has no quota.
+    // `used` is null when the count could not be read.
+    quota: { quota: number; used: number | null } | null;
     reachedCount: number | null; // operational, from delivery aggregation
     delivery: {
       sent: number;
@@ -83,7 +91,14 @@ export type EventStatsResult = {
     // exactly four columns and can legitimately come back null. Both sit behind
     // the same billing.view gate; null here means "no campaign, or no
     // billing.view", exactly like `billing`.
+    // What the payment ledger recorded: paid and refunded, each from succeeded operations (ledgerMoney). Behind billing.view
+    // like the rest of the money; null without it, with no campaign, or when the ledger could not be read (`moneyFailed`).
+    money: LedgerMoney | null;
+    moneyFailed: boolean;
     billingDetail: {
+      // The campaign prices per contact who answered (chargesPerReached): only then do the figures below and `billing`
+      // mean anything — a package campaign stores zeros in them.
+      chargesPerReached: boolean;
       basePrice: number | null;
       includedReached: number | null;
       pricePerReached: number | null;
@@ -140,6 +155,9 @@ export function deriveStatsAlerts(input: {
     status: CampaignStatus | null;
     captureStatus?: string | null;
     finalChargeAmount: number | null;
+    // Is a final charge expected at close at all? Only for a campaign priced per contact who answered
+    // (chargesPerReached): a fixed-price package is paid up front and never has one, so "not settled" would be false.
+    settlesAtClose: boolean;
   } | null;
 }): EventStatsAlert[] {
   const alerts: EventStatsAlert[] = [];
@@ -173,7 +191,7 @@ export function deriveStatsAlerts(input: {
       alerts.push({ id: 'ceiling_near_usage', label: 'קירבה לתקרת החיוב' });
     }
   }
-  if (input.campaign && input.campaign.finalChargeAmount == null) {
+  if (input.campaign && input.campaign.settlesAtClose && input.campaign.finalChargeAmount == null) {
     const stage = campaignStage(
       input.campaign.status
         ? {
@@ -244,9 +262,12 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
     packagePrice: null,
     paymentStatus: null,
     maxContacts: null,
+    quota: null,
     reachedCount: null,
     delivery: null,
     billing: null,
+    money: null,
+    moneyFailed: false,
     billingDetail: null,
   };
   const campaignsOk = await canAccessEvent(eventId, 'campaigns', 'view');
@@ -266,6 +287,15 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
       campaign.packagePrice = c.package_price ?? null;
       campaign.paymentStatus = (await packagePaymentOf(c))?.status ?? null;
       campaign.maxContacts = c.max_contacts ?? null;
+      if (c.contact_quota != null) {
+        let used: number | null = null;
+        try {
+          used = await countAuthorizedContacts(c.id);
+        } catch {
+          used = null;
+        }
+        campaign.quota = { quota: c.contact_quota, used };
+      }
       campaign.state = 'visible';
       // delivery
       try {
@@ -307,6 +337,7 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
         // never reach the DTO. Assigned OUTSIDE the try below because it needs
         // no query and must survive an RPC failure.
         campaign.billingDetail = {
+          chargesPerReached: chargesPerReached(c),
           basePrice: c.base_price,
           includedReached: c.included_reached,
           pricePerReached: c.price_per_reached,
@@ -314,6 +345,11 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
           creditApplied: c.credit_applied,
           chargeStatus: c.charge_status,
         };
+        try {
+          campaign.money = ledgerMoney(await loadOperations(createAdminClient(), c.id));
+        } catch {
+          campaign.moneyFailed = true;
+        }
         try {
           const b: BillingSummary | null = await getCampaignBillingSummary(c.id);
           if (b)
@@ -351,6 +387,7 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
           status: campaign.status,
           captureStatus: campaign.captureStatus,
           finalChargeAmount: c?.final_charge_amount ?? null,
+          settlesAtClose: c ? chargesPerReached(c) : false,
         }
       : null,
   });

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useActionState, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import {
@@ -29,7 +29,7 @@ import type { GaActionEvent } from '@/lib/analytics/ga-event-contracts';
 import type { CampaignStatus } from '@/lib/data/campaigns';
 import { cancelActionCopy, isCampaignCancellable } from '@/lib/data/campaign-status';
 import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
-import { computeChargeAmount } from '@/lib/data/close-charge-amount';
+import { chargesPerReached, computeChargeAmount } from '@/lib/data/close-charge-amount';
 import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
 import {
   CAMPAIGN_STAGE_LABELS,
@@ -60,6 +60,8 @@ type Campaign = {
   // A fixed-price package campaign is funded by its payment (the ledger), not by a card hold: its price, and the ledger
   // state the page derived for it (null for the other model, or when the ledger could not be read).
   package_price: number | null;
+  // How many contacts the campaign may approach (null = the campaign has no quota). Used: its authorized list.
+  contact_quota: number | null;
   payment_status: string | null;
   // Everything that settled on the payment is test money (a payment on the no-money test terminal). Absent = false.
   payment_test_money?: boolean;
@@ -308,6 +310,7 @@ function CampaignStatusAndBilling({
   overageRate,
   finalCharge,
   creditApplied,
+  authorizedCount,
 }: {
   campaign: Campaign;
   status: CampaignStatus;
@@ -321,6 +324,7 @@ function CampaignStatusAndBilling({
   overageRate: number;
   finalCharge: number | null;
   creditApplied: number | null;
+  authorizedCount: number | null;
 }) {
   const stage = campaignStage({
     status,
@@ -328,6 +332,11 @@ function CampaignStatusAndBilling({
     package_price: campaign.package_price,
     payment: paymentOf(campaign),
   });
+  // Each part below is shown only when the campaign's own record holds it, never because of which billing model it
+  // belongs to: pricing per contact who answered (chargesPerReached), a contact quota, a settled final charge. The money
+  // that actually moved is the payments list (ledger).
+  const hasReachPricing = chargesPerReached(campaign);
+  const quota = campaign.contact_quota;
   const primaryChargeLabel = reached === 0 && basePrice > 0 ? 'דמי הפעלה' : 'חיוב נוכחי';
   const percentage = ceiling !== null && ceiling > 0 ? Math.min(100, Math.round((accrued / ceiling) * 100)) : 0;
   const pricingExplanation =
@@ -384,68 +393,87 @@ function CampaignStatusAndBilling({
           inline-start — the RIGHT side in Hebrew — which drew a stray rule on
           the outer edge of the first metric ("הושגו"). Verified against the
           compiled stylesheet, not assumed. */}
-      <dl className="grid grid-cols-3 divide-x divide-border p-5 sm:p-6">
-        <SummaryMetric label="הושגו" value={reached.toLocaleString('he-IL')} />
-        <SummaryMetric label={primaryChargeLabel} value={nis(accrued)} emphasized />
-        {ceiling !== null && <SummaryMetric label="תקרת חיוב" value={nis(ceiling)} />}
-      </dl>
+      {hasReachPricing ? (
+        <dl className="grid grid-cols-3 divide-x divide-border p-5 sm:p-6">
+          <SummaryMetric label="הושגו" value={reached.toLocaleString('he-IL')} />
+          <SummaryMetric label={primaryChargeLabel} value={nis(accrued)} emphasized />
+          {ceiling !== null && <SummaryMetric label="תקרת חיוב" value={nis(ceiling)} />}
+        </dl>
+      ) : null}
 
       {/* The bar sits directly on the card, with no tinted, rounded panel of its
           own — that would be a frame around a frame, whose only content is a
           number the metric row above already shows. */}
-      <div className="border-t border-border px-5 pb-5 pt-4 sm:px-6 sm:pb-6">
-        {ceiling !== null && balance !== null && (
-          <>
-            <div
-              role="progressbar"
-              aria-label="ניצול מסגרת החיוב"
-              aria-valuemin={0}
-              aria-valuemax={ceiling}
-              aria-valuenow={Math.min(accrued, ceiling)}
-              className="h-2.5 overflow-hidden rounded-full bg-primary/15"
-            >
+      {hasReachPricing || quota !== null ? (
+        <div className="border-t border-border px-5 pb-5 pt-4 sm:px-6 sm:pb-6">
+          {hasReachPricing && ceiling !== null && balance !== null && (
+            <>
               <div
-                className="h-full rounded-full bg-primary transition-[inline-size]"
-                style={{ inlineSize: `${percentage}%` }}
+                role="progressbar"
+                aria-label="ניצול מסגרת החיוב"
+                aria-valuemin={0}
+                aria-valuemax={ceiling}
+                aria-valuenow={Math.min(accrued, ceiling)}
+                className="h-2.5 overflow-hidden rounded-full bg-primary/15"
+              >
+                <div
+                  className="h-full rounded-full bg-primary transition-[inline-size]"
+                  style={{ inlineSize: `${percentage}%` }}
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                <span>{percentage}% מהמסגרת</span>
+                <span>נותרו {nis(balance)}</span>
+              </div>
+            </>
+          )}
+
+          <dl className={`divide-y divide-border${hasReachPricing ? ' mt-4' : ''}`}>
+            {quota !== null ? (
+              <DetailRow
+                label="מכסת אנשי קשר"
+                value={
+                  authorizedCount === null
+                    ? quota.toLocaleString('he-IL')
+                    : `${authorizedCount.toLocaleString('he-IL')} מתוך ${quota.toLocaleString('he-IL')}`
+                }
               />
-            </div>
-            <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-              <span>{percentage}% מהמסגרת</span>
-              <span>נותרו {nis(balance)}</span>
-            </div>
-          </>
-        )}
+            ) : null}
+            {basePrice > 0 && <DetailRow label="דמי הפעלה" value={nis(basePrice)} />}
+            {includedReached > 0 && (
+              <DetailRow label="כלולים במחיר" value={includedReached.toLocaleString('he-IL')} />
+            )}
+            {overageRate > 0 && (
+              <DetailRow
+                label={basePrice > 0 ? 'עלות לכל מענה נוסף' : 'מחיר לכל מענה'}
+                value={nis(overageRate)}
+              />
+            )}
+            {hasReachPricing && Number(campaign.max_contacts ?? 0) > 0 && (
+              <DetailRow
+                label="מכסת אנשי קשר"
+                value={Number(campaign.max_contacts).toLocaleString('he-IL')}
+              />
+            )}
+            {hasReachPricing && balance !== null && <DetailRow label="יתרה עד התקרה" value={nis(balance)} />}
+          </dl>
 
-        <dl className="mt-4 divide-y divide-border">
-          <DetailRow label="דמי הפעלה" value={nis(basePrice)} />
-          <DetailRow
-            label="כלולים במחיר"
-            value={includedReached.toLocaleString('he-IL')}
-          />
-          <DetailRow
-            label={basePrice > 0 ? 'עלות לכל מענה נוסף' : 'מחיר לכל מענה'}
-            value={nis(overageRate)}
-          />
-          <DetailRow
-            label="מכסת אנשי קשר"
-            value={campaign.max_contacts?.toLocaleString('he-IL') ?? '—'}
-          />
-          {balance !== null && <DetailRow label="יתרה עד התקרה" value={nis(balance)} />}
-        </dl>
-
-        <details className="group mt-2 border-t border-border pt-3">
-          <summary className="cursor-pointer list-none text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            איך מחושב החיוב
-          </summary>
-          <div className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
-            <p>{pricingExplanation}</p>
-            <p>
-              אין חיוב על הודעה שנקראה בלבד, ניסיון ללא מענה, תא קולי, מספר שגוי או
-              תגובה כפולה. כל איש קשר ייחודי מחויב פעם אחת בלבד לאחר שהשיב בפועל.
-            </p>
-          </div>
-        </details>
-      </div>
+          {hasReachPricing ? (
+            <details className="group mt-2 border-t border-border pt-3">
+              <summary className="cursor-pointer list-none text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                איך מחושב החיוב
+              </summary>
+              <div className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
+                <p>{pricingExplanation}</p>
+                <p>
+                  אין חיוב על הודעה שנקראה בלבד, ניסיון ללא מענה, תא קולי, מספר שגוי או
+                  תגובה כפולה. כל איש קשר ייחודי מחויב פעם אחת בלבד לאחר שהשיב בפועל.
+                </p>
+              </div>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -967,6 +995,7 @@ export function ManageClient({
   summary,
   delivery,
   summaryFailed = false,
+  payments = null,
   deliveryFailed = false,
   thankyou,
   thankyouFailed = false,
@@ -984,6 +1013,8 @@ export function ManageClient({
   summary: Summary;
   /** The read failed or was not permitted — NOT "the campaign has no activity". */
   summaryFailed?: boolean;
+  /** The payments list (ledger), rendered by the server page for THIS viewer; null when it is not theirs to see. */
+  payments?: ReactNode;
   delivery: Delivery;
   deliveryFailed?: boolean;
   thankyou?: ThankyouSchedule;
@@ -1071,6 +1102,7 @@ export function ManageClient({
         overageRate={overageRate}
         finalCharge={campaign.final_charge_amount}
         creditApplied={campaign.credit_applied}
+        authorizedCount={authorizedCount}
       />
 
       {showLifecycleWarning ? (
@@ -1130,6 +1162,8 @@ export function ManageClient({
           numbers. */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
         <div className="space-y-6">
+          {payments}
+
           {/* The figures below default to 0 when the summary is missing, and a
               zeroed bill reads as a fact. Say the read failed instead. */}
           {summaryFailed ? (

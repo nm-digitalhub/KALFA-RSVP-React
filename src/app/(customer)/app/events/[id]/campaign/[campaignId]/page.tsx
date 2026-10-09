@@ -22,6 +22,8 @@ import {
 } from '@/lib/data/campaigns';
 import { countAuthorizedContacts, countUniqueContactsForEvent } from '@/lib/data/contacts';
 import { isPastEventDay } from '@/lib/data/event-date';
+import { CampaignPayments } from '@/components/payments/campaign-payments';
+import { campaignPaymentsView } from '@/lib/payments/campaign-payments-view';
 import { packagePaymentOf } from '@/lib/payments/package-paid';
 import { requireEventAccess } from '@/lib/data/events';
 import {
@@ -135,6 +137,11 @@ export default async function CampaignManagePage({
   // A package campaign is funded by its payment, which only the ledger knows (null for the other model).
   const payment = await packagePaymentOf(campaign);
 
+  // The payments list, from the ledger: staff see every attempt with the provider's references, a viewer with
+  // billing:view sees what a customer is shown, anyone else sees nothing (campaignPaymentsView decides, server-side).
+  const paymentsView = await campaignPaymentsView(eventId, campaignId);
+  const payments = paymentsView ? <CampaignPayments {...paymentsView} /> : null;
+
   const activate = activateCampaignAction.bind(null, eventId, campaignId);
   const pause = pauseCampaignAction.bind(null, eventId, campaignId);
   const close = closeCampaignAction.bind(null, eventId, campaignId);
@@ -185,11 +192,13 @@ export default async function CampaignManagePage({
           base_price: campaign.base_price,
           included_reached: campaign.included_reached,
           package_price: campaign.package_price,
+          contact_quota: campaign.contact_quota,
           payment_status: payment?.status ?? null,
           payment_test_money: payment?.testMoney === true,
         }}
         summary={summary}
         summaryFailed={summaryFailed}
+        payments={payments}
         delivery={delivery}
         deliveryFailed={deliveryFailed}
         thankyou={thankyou}

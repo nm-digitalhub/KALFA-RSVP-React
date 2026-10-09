@@ -49,7 +49,8 @@ export const CAPTURE_STATUS_LABELS: Record<string, HoldBadge> = {
 // tests: a capture beats a release mark (a captured hold has nothing left to
 // release), and a release mark beats "closed, awaiting release".
 export const HOLD_CHARGED_BADGE: HoldBadge = { label: 'חויב', variant: 'neutral' };
-export const HOLD_RELEASED_BADGE: HoldBadge = { label: 'שוחרר', variant: 'neutral' };
+// Says WHAT was released: only a campaign that had a card hold reaches this badge (holdBadge returns null without one).
+export const HOLD_RELEASED_BADGE: HoldBadge = { label: 'מסגרת האשראי שוחררה', variant: 'neutral' };
 // Closed with nothing to charge and the release not yet seen in SUMIT: the
 // customer's card may still be blocked, so this is the one authorized state
 // that stays warm — it is what an admin must go and release (or backfill).

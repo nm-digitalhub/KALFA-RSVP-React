@@ -648,6 +648,9 @@ export async function getEventClosureReasons(
 // HARD USAGE BOUNDARY: call ONLY after the `reports.view` page gate has passed, and ONLY
 // for optional-section visibility — never for page access, server actions, mutations,
 // service-role writes, billing/payment ops, or any decision that must tell denied from error.
+// Display-only money sections are visibility, and use it the same fail-closed way (a denied or errored check HIDES the
+// section, it never shows a "could not load" note): event-stats.ts behind reports.view, and campaignPaymentsView
+// (payments/campaign-payments-view.ts) on the campaign page, behind that page's own campaigns:view gate.
 export const canAccessEvent = cache(
   async (eventId: string, resource: string, action: string = 'view'): Promise<boolean> => {
     const user = await getUser();

@@ -1,7 +1,9 @@
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 
-import { listCampaignsForAdmin } from '@/lib/data/admin/campaigns';
+import { ledgerMoneyForAdmin, listCampaignsForAdmin } from '@/lib/data/admin/campaigns';
+import { ledgerMoneyParts } from '@/lib/payments/operation-labels';
+import type { LedgerMoney } from '@/lib/payments/status';
 import { holdBadge } from '@/lib/data/admin/campaign-hold-badge';
 import { CAMPAIGN_STATUS_LABELS } from '@/lib/data/event-labels';
 import { formatIsraelDate } from '@/lib/date';
@@ -72,6 +74,35 @@ function HoldCell(c: {
   return <Badge variant={variant}>{label}</Badge>;
 }
 
+// The payments-and-refunds cell: ONE column for whatever moved on the campaign, each part only when the record holds it. First what
+// the payment ledger recorded (paid / refunded / unresolved, by each kind's effect — any kind, any model), then the
+// campaign's own hold and final-charge columns, which only a campaign that used them has.
+function MoneyCell({
+  c,
+  money,
+  ledgerFailed,
+}: {
+  c: Parameters<typeof HoldCell>[0] & { finalChargeAmount: number | null; creditApplied: number };
+  money: LedgerMoney | undefined;
+  ledgerFailed: boolean;
+}) {
+  const ledger = money ? ledgerMoneyParts(money) : [];
+  const charge = c.chargeStatus ? chargeCell(c) : null;
+  const nothing = !ledgerFailed && ledger.length === 0 && !c.captureStatus && !charge && c.creditApplied <= 0;
+  if (nothing) return <span className="text-muted-foreground">—</span>;
+  return (
+    <div className="flex flex-col items-start gap-1">
+      {ledgerFailed ? <span className="text-xs text-destructive">ספר החיובים לא נטען</span> : null}
+      {ledger.length > 0 ? <span className="whitespace-nowrap">{ledger.join(' · ')}</span> : null}
+      {c.captureStatus ? <HoldCell {...c} /> : null}
+      {charge ? <span className="whitespace-nowrap text-xs">סכום החיוב הסופי: {charge}</span> : null}
+      {c.creditApplied > 0 ? (
+        <span className="whitespace-nowrap text-xs text-muted-foreground">זיכוי שקוזז {formatCurrency(c.creditApplied)}</span>
+      ) : null}
+    </div>
+  );
+}
+
 // Admin campaign wind-down list. The four lifecycle controls (close/pause/
 // settle/cancel) are platform-admin-only, so this surface lets an admin REACH
 // campaigns of events they do not own and click through to manage them.
@@ -82,6 +113,7 @@ export default async function AdminCampaignsPage() {
   // real enforcement is per-function in the DAL.
   await requirePlatformPermission('manage_billing');
   const items = await listCampaignsForAdmin();
+  const money = await ledgerMoneyForAdmin(items.map((c) => c.id));
 
   return (
     <div className="space-y-6">
@@ -99,15 +131,11 @@ export default async function AdminCampaignsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>אירוע</TableHead>
+                <TableHead>שם האירוע</TableHead>
                 <TableHead>תאריך האירוע</TableHead>
-                <TableHead>מצב</TableHead>
-                <TableHead>תפיסה</TableHead>
-                <TableHead>חיוב סופי</TableHead>
-                <TableHead>זיכוי שקוזז</TableHead>
-                <TableHead>
-                  <span className="sr-only">פעולות</span>
-                </TableHead>
+                <TableHead>סטטוס הקמפיין</TableHead>
+                <TableHead>תשלומים והחזרים</TableHead>
+                <TableHead>פעולות</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -128,24 +156,14 @@ export default async function AdminCampaignsPage() {
                     <Badge>{CAMPAIGN_STATUS_LABELS[c.status]}</Badge>
                   </TableCell>
                   <TableCell>
-                    <HoldCell
-                      captureStatus={c.captureStatus}
-                      releaseStatus={c.releaseStatus}
-                      chargeStatus={c.chargeStatus}
-                      holdOrderDocumentNumber={c.holdOrderDocumentNumber}
-                      holdOrderDocumentUrl={c.holdOrderDocumentUrl}
-                    />
-                  </TableCell>
-                  <TableCell>{chargeCell(c)}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {c.creditApplied > 0 ? formatCurrency(c.creditApplied) : '—'}
+                    <MoneyCell c={c} money={money?.get(c.id)} ledgerFailed={money === null} />
                   </TableCell>
                   <TableCell>
                     <Link
                       href={`/app/events/${c.eventId}/campaign/${c.id}`}
                       className="text-sm font-medium text-primary hover:underline"
                     >
-                      ניהול
+                      ניהול הקמפיין
                     </Link>
                   </TableCell>
                 </TableRow>

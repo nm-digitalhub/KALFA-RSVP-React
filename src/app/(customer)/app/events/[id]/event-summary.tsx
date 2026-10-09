@@ -3,6 +3,7 @@ import type { ThankyouSchedule } from '@/lib/data/campaigns';
 import { ilTimeInputValue } from '@/lib/data/event-date';
 import { eventStatusLabel, type EventClosureReason } from '@/lib/data/event-labels';
 import type { EventStatsResult } from '@/lib/data/event-stats';
+import { OPERATION_OUTCOME_LABELS } from '@/lib/payments/operation-labels';
 import { formatIsraelDate, formatIsraelDateTime } from '@/lib/date';
 import { formatCurrency } from '@/lib/format';
 
@@ -65,6 +66,47 @@ function chargeStatusLabel(
   // No status recorded yet: "בעיבוד" only while there is genuinely no final
   // amount — the same condition the processing banner uses, so the two agree.
   return finalChargeAmount == null ? 'בעיבוד' : '—';
+}
+
+// The rows of the billing summary, each only when the record holds it (see section 6 below). Pure.
+export function summaryBillingRows(
+  detail: NonNullable<EventStatsResult['campaign']['billingDetail']>,
+  money: EventStatsResult['campaign']['money'],
+  moneyFailed: boolean,
+  quota: EventStatsResult['campaign']['quota'],
+): { label: string; value: string }[] {
+  const rows: { label: string; value: string }[] = [];
+  if (moneyFailed) rows.push({ label: 'תשלומים', value: 'לא ניתן לטעון כרגע' });
+  if (money) {
+    if (money.paid > 0) rows.push({ label: 'שולם', value: formatCurrency(money.paid) });
+    if (money.refunded > 0) rows.push({ label: 'הוחזר', value: formatCurrency(money.refunded) });
+    if (money.inFlight) rows.push({ label: 'תשלום פתוח', value: OPERATION_OUTCOME_LABELS[money.inFlight].label });
+  }
+  if (quota) {
+    rows.push({
+      label: 'מכסת אנשי קשר',
+      value: quota.used === null ? count(quota.quota) : `${count(quota.used)} מתוך ${count(quota.quota)}`,
+    });
+  }
+  if (Number(detail.basePrice ?? 0) > 0) rows.push({ label: 'דמי הפעלה', value: formatCurrency(Number(detail.basePrice)) });
+  if (Number(detail.includedReached ?? 0) > 0) {
+    rows.push({ label: 'מכסה כלולה', value: `${count(Number(detail.includedReached))} מענים` });
+  }
+  if (Number(detail.pricePerReached ?? 0) > 0) {
+    rows.push({ label: 'עלות לכל מענה נוסף', value: formatCurrency(Number(detail.pricePerReached)) });
+  }
+  if (detail.chargesPerReached) {
+    // Never formatCurrency(x ?? 0): a null final charge means "not settled yet", and ₪0.00 would state the opposite.
+    rows.push({
+      label: 'חיוב סופי',
+      value: detail.finalChargeAmount == null ? 'בעיבוד' : formatCurrency(detail.finalChargeAmount),
+    });
+  }
+  if (Number(detail.creditApplied) > 0) rows.push({ label: 'זיכוי שקוזז', value: formatCurrency(Number(detail.creditApplied)) });
+  if (detail.chargesPerReached || detail.chargeStatus) {
+    rows.push({ label: 'מצב החיוב הסופי', value: chargeStatusLabel(detail.chargeStatus, detail.finalChargeAmount) });
+  }
+  return rows;
 }
 
 function count(value: number): string {
@@ -158,6 +200,9 @@ export function EventSummary({
   const campaignVisible = campaign.state === 'visible' && campaign.id !== null;
   const delivery = campaignVisible ? campaign.delivery : null;
   const billingDetail = campaignVisible ? campaign.billingDetail : null;
+  const billingRows = billingDetail
+    ? summaryBillingRows(billingDetail, campaign.money, campaign.moneyFailed, campaign.quota)
+    : [];
 
   return (
     <div className="space-y-6">
@@ -279,10 +324,13 @@ export function EventSummary({
 
       {/* 6 — billing summary. Behind billing.view upstream: billingDetail is
           null both for "no campaign" and for "no billing.view", and in either
-          case this section simply does not exist. There is no receipt link:
-          final_invoice_document_id is never written by any code path, and a
-          nothing_to_charge settlement produces no SUMIT document at all. */}
-      {billingDetail ? (
+          case this section simply does not exist. Every row is shown only when
+          the campaign's own record holds it: the money that moved comes from
+          the payment ledger (paid, refunded, still unresolved); the per-reached
+          terms and the final charge only for a campaign priced that way
+          (chargesPerReached) — a package stores zeros there; the quota only
+          when the campaign has one. */}
+      {billingRows.length > 0 ? (
         <section
           aria-labelledby="event-summary-billing-title"
           className="space-y-3 rounded-2xl border border-border bg-card p-5 sm:p-6"
@@ -291,41 +339,9 @@ export function EventSummary({
             סיכום החיוב
           </h2>
           <dl>
-            {billingDetail.basePrice != null ? (
-              <BillingRow label="דמי הפעלה" value={formatCurrency(billingDetail.basePrice)} />
-            ) : null}
-            {billingDetail.includedReached != null ? (
-              <BillingRow
-                label="מכסה כלולה"
-                value={`${count(billingDetail.includedReached)} מענים`}
-              />
-            ) : null}
-            {billingDetail.pricePerReached != null ? (
-              <BillingRow
-                label="עלות לכל מענה נוסף"
-                value={formatCurrency(billingDetail.pricePerReached)}
-              />
-            ) : null}
-            {/* Never formatCurrency(x ?? 0): a null final charge means "not
-                settled yet", and ₪0.00 would state the opposite. */}
-            <BillingRow
-              label="חיוב סופי"
-              value={
-                billingDetail.finalChargeAmount == null
-                  ? 'בעיבוד'
-                  : formatCurrency(billingDetail.finalChargeAmount)
-              }
-            />
-            {billingDetail.creditApplied > 0 ? (
-              <BillingRow label="זיכוי שקוזז" value={formatCurrency(billingDetail.creditApplied)} />
-            ) : null}
-            <BillingRow
-              label="מצב התשלום"
-              value={chargeStatusLabel(
-                billingDetail.chargeStatus,
-                billingDetail.finalChargeAmount,
-              )}
-            />
+            {billingRows.map((r) => (
+              <BillingRow key={r.label} label={r.label} value={r.value} />
+            ))}
           </dl>
         </section>
       ) : null}

@@ -402,23 +402,34 @@ function isEffect(v: unknown): v is OperationEffect {
   return typeof v === 'string' && (EFFECTS as readonly string[]).includes(v);
 }
 
+const OPERATION_ROW_COLUMNS =
+  'campaign_id, kind, outcome, amount, credit_applied, is_test, occurred_at, recorded_at, payment_operation_kinds!inner(effect), payment_operation_lines(line_total)';
+
 // Every row of a campaign with the registry's `effect` joined in — exactly what deriveStatus needs. An effect the code
 // does not know is an error: guessing "no money effect" for an unknown kind would show a charged campaign as unpaid.
 export async function loadOperations(admin: AdminClient, campaignId: string): Promise<OperationRow[]> {
+  return (await loadOperationsOf(admin, [campaignId])).get(campaignId) ?? [];
+}
+
+// The same rows for several campaigns in ONE query (a list screen must not read the ledger once per row), grouped by
+// campaign. A campaign with no rows has no entry.
+export async function loadOperationsOf(admin: AdminClient, campaignIds: readonly string[]): Promise<Map<string, OperationRow[]>> {
+  const out = new Map<string, OperationRow[]>();
+  if (campaignIds.length === 0) return out;
   const { data, error } = await admin
     .from('payment_operations')
-    .select('kind, outcome, amount, credit_applied, is_test, occurred_at, recorded_at, payment_operation_kinds!inner(effect), payment_operation_lines(line_total)')
-    .eq('campaign_id', campaignId)
+    .select(OPERATION_ROW_COLUMNS)
+    .in('campaign_id', [...campaignIds])
     .order('occurred_at', { ascending: true })
     .order('recorded_at', { ascending: true });
   if (error) throw new Error(READ_FAILED);
-  return (data ?? []).map((row) => {
+  for (const row of data ?? []) {
     const effect = row.payment_operation_kinds?.effect;
     if (!isEffect(effect)) throw new Error(READ_FAILED);
     // An operation with lines says what part was deduction through its negative lines; one without (everything written
     // before the lines existed) keeps the credit_applied column as its only record.
     const lines = row.payment_operation_lines ?? [];
-    return {
+    const op: OperationRow = {
       kind: row.kind,
       effect,
       outcome: row.outcome,
@@ -431,7 +442,150 @@ export async function loadOperations(admin: AdminClient, campaignId: string): Pr
       occurredAt: row.occurred_at,
       recordedAt: row.recorded_at,
     };
-  });
+    const list = out.get(row.campaign_id);
+    if (list) list.push(op);
+    else out.set(row.campaign_id, [op]);
+  }
+  return out;
+}
+
+// One operation as a SCREEN shows it: the kind's name from the registry (payment_operation_kinds.label_he — a new kind
+// shows under its own name with no code change), how it ended, the money, when, and what the customer may see of the card
+// and the document. Card data beyond the last four digits, the token, the citizen-id secret and the card owner's contact
+// details are never selected.
+export type DisplayedOperation = {
+  id: string;
+  kindLabel: string;
+  effect: OperationEffect;
+  outcome: OperationOutcome;
+  amount: number;
+  occurredAt: string;
+  isTest: boolean;
+  cardLast4: string | null;
+  document: { number: number | null; url: string | null } | null;
+};
+
+// What only staff see beside it: the provider's own references and answer, for reconciling with the provider's screens.
+export type OperationStaffFacts = {
+  provider: string;
+  terminal: number | null;
+  terminalEcho: number | null;
+  paymentId: number | null;
+  authRef: string | null;
+  providerStatus: string | null;
+  providerStatusDescription: string | null;
+  authDescription: string | null;
+  documentType: string | null;
+  dealType: string | null;
+  paymentType: string | null;
+  acquirer: string | null;
+  uniqueId: string | null;
+  rrn: string | null;
+  couponNumber: string | null;
+  cardBrand: string | null;
+  cardIssuer: string | null;
+  cardIsAbroad: boolean | null;
+  numberOfPayments: number | null;
+  creditApplied: number;
+  source: string;
+  note: string | null;
+  recordedAt: string;
+};
+
+export type StaffDisplayedOperation = DisplayedOperation & { staff: OperationStaffFacts };
+
+const DISPLAY_COLUMNS =
+  'id, kind, outcome, amount, occurred_at, is_test, card_last4, provider_document_number, provider_document_url, payment_operation_kinds!inner(label_he, effect)';
+const STAFF_COLUMNS =
+  `${DISPLAY_COLUMNS}, provider, provider_terminal, provider_terminal_echo, provider_payment_id, provider_auth_ref, provider_status, provider_status_description, provider_auth_description, provider_document_type, provider_deal_type, provider_payment_type, provider_acquirer, provider_unique_id, provider_rrn, provider_coupon_number, card_brand, card_issuer, card_is_abroad, number_of_payments, credit_applied, source, note, recorded_at`;
+
+type DisplayDbRow = {
+  id: string;
+  kind: string;
+  outcome: OperationOutcome;
+  amount: number | string;
+  occurred_at: string;
+  is_test: boolean;
+  card_last4: string | null;
+  provider_document_number: number | null;
+  provider_document_url: string | null;
+  payment_operation_kinds: { label_he: string; effect: string } | null;
+};
+
+function toDisplayed(row: DisplayDbRow): DisplayedOperation {
+  const effect = row.payment_operation_kinds?.effect;
+  if (!isEffect(effect)) throw new Error(READ_FAILED);
+  const hasDocument = row.provider_document_number != null || row.provider_document_url != null;
+  return {
+    id: row.id,
+    // The registry's name; the code only falls back to the kind key itself if a row was ever stored without one.
+    kindLabel: row.payment_operation_kinds?.label_he?.trim() || row.kind,
+    effect,
+    outcome: row.outcome,
+    amount: Number(row.amount),
+    occurredAt: row.occurred_at,
+    isTest: row.is_test === true,
+    cardLast4: row.card_last4,
+    document: hasDocument ? { number: row.provider_document_number, url: row.provider_document_url } : null,
+  };
+}
+
+// A campaign's operations for its owner, oldest first: only those whose outcome is in `outcomes` (the caller passes the
+// outcomes a customer is shown). The CALLER has verified the viewer may see this campaign's money.
+export async function displayedOperations(
+  admin: AdminClient,
+  campaignId: string,
+  outcomes: readonly OperationOutcome[],
+): Promise<DisplayedOperation[]> {
+  const { data, error } = await admin
+    .from('payment_operations')
+    .select(DISPLAY_COLUMNS)
+    .eq('campaign_id', campaignId)
+    .in('outcome', [...outcomes])
+    .order('occurred_at', { ascending: true })
+    .order('recorded_at', { ascending: true });
+  if (error) throw new Error(READ_FAILED);
+  return (data ?? []).map(toDisplayed);
+}
+
+// Every operation of a campaign, failed attempts included, with the provider facts staff reconcile by. Staff only: the
+// CALLER has checked the viewer's platform permission before calling this.
+export async function staffDisplayedOperations(admin: AdminClient, campaignId: string): Promise<StaffDisplayedOperation[]> {
+  const { data, error } = await admin
+    .from('payment_operations')
+    .select(STAFF_COLUMNS)
+    .eq('campaign_id', campaignId)
+    .order('occurred_at', { ascending: true })
+    .order('recorded_at', { ascending: true });
+  if (error) throw new Error(READ_FAILED);
+  return (data ?? []).map((row) => ({
+    ...toDisplayed(row),
+    staff: {
+      provider: row.provider,
+      terminal: row.provider_terminal,
+      terminalEcho: row.provider_terminal_echo,
+      paymentId: row.provider_payment_id,
+      authRef: row.provider_auth_ref,
+      providerStatus: row.provider_status,
+      providerStatusDescription: row.provider_status_description,
+      authDescription: row.provider_auth_description,
+      documentType: row.provider_document_type,
+      dealType: row.provider_deal_type,
+      paymentType: row.provider_payment_type,
+      acquirer: row.provider_acquirer,
+      uniqueId: row.provider_unique_id,
+      rrn: row.provider_rrn,
+      couponNumber: row.provider_coupon_number,
+      cardBrand: row.card_brand,
+      cardIssuer: row.card_issuer,
+      cardIsAbroad: row.card_is_abroad,
+      numberOfPayments: row.number_of_payments,
+      creditApplied: Number(row.credit_applied),
+      source: row.source,
+      note: row.note,
+      recordedAt: row.recorded_at,
+    },
+  }));
 }
 
 // The card to charge again: the latest SUCCEEDED operation that holds a reusable token, whatever its kind (a package

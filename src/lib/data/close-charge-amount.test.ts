@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeChargeAmount } from './close-charge-amount';
+import { chargesPerReached, computeChargeAmount } from './close-charge-amount';
 
 const NEW = { base: 200, included: 200, overage: 4, credits: 0 };
 const OLD_UNCAPPED = { base: 0, included: 0, overage: 4, credits: 0 };
@@ -79,5 +79,18 @@ describe('computeChargeAmount — agorot rounding', () => {
   it('rounds the final amount to two decimals', () => {
     const r = computeChargeAmount({ base: 0, included: 0, overage: 3.335, reached: 1, ceiling: 100, credits: 0 });
     expect(r.amount).toBe(3.34);
+  });
+});
+
+// The five live campaigns of 9.10.2026, by their billing columns (numeric arrives as a string).
+describe('chargesPerReached — decided by the campaign\'s own values', () => {
+  it.each([
+    ['package ₪1 (closed)', { base_price: '0', price_per_reached: '0' }, false],
+    ['package ₪200 (approved)', { base_price: '0', price_per_reached: '0' }, false],
+    ['base ₪200 + ₪4 per reached', { base_price: '200', price_per_reached: '4' }, true],
+    ['₪4 per reached, no base', { base_price: '0', price_per_reached: '4' }, true],
+    ['nothing recorded', { base_price: null, price_per_reached: null }, false],
+  ])('%s → %s', (_label, c, expected) => {
+    expect(chargesPerReached(c)).toBe(expected);
   });
 });

@@ -102,6 +102,39 @@ export function refundableCents(ops: readonly OperationRow[]): number {
   return cents;
 }
 
+// What a screen says about a campaign's money: what the card paid and what went back, each counted from SUCCEEDED rows
+// only and never netted against the other (deriveStatus().collected is net; refundableCents counts an unresolved refund as
+// gone). Decided by each kind's `effect`, never by its name, so a kind added to the registry is counted without a code
+// change. `inFlight` names the unresolved outcome when some row is still pending or in review (review wins: a person must
+// act): the sums may still change. `testMoney` follows deriveStatus: every settled collect/return is a no-money (test
+// terminal) row.
+export interface LedgerMoney {
+  paid: number;
+  refunded: number;
+  inFlight: 'review' | 'pending' | null;
+  testMoney: boolean;
+}
+
+export function ledgerMoney(ops: readonly Pick<OperationRow, 'effect' | 'outcome' | 'amount' | 'isTest'>[]): LedgerMoney {
+  let paidCents = 0;
+  let refundedCents = 0;
+  let settled = 0;
+  let settledTest = 0;
+  let review = false;
+  let pending = false;
+  for (const o of ops) {
+    if (o.outcome === 'review') review = true;
+    if (o.outcome === 'pending') pending = true;
+    if (o.outcome !== 'succeeded' || (o.effect !== 'collect' && o.effect !== 'return')) continue;
+    settled += 1;
+    if (o.isTest) settledTest += 1;
+    if (o.effect === 'collect') paidCents += Math.round(o.amount * 100);
+    else refundedCents += Math.round(o.amount * 100);
+  }
+  const inFlight = review ? 'review' : pending ? 'pending' : null;
+  return { paid: paidCents / 100, refunded: refundedCents / 100, inFlight, testMoney: settled > 0 && settledTest === settled };
+}
+
 const LABELS: Record<Exclude<PaymentStatus, 'none'>, { label: string; variant: BadgeVariant }> = {
   pending: { label: 'בתהליך', variant: 'warning' },
   review: { label: 'נדרשת בדיקה ידנית', variant: 'destructive' },

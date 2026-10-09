@@ -25,7 +25,7 @@ describe('holdBadge — an authorized hold', () => {
     expect(authorized({ chargeStatus: 'charged' })).toBe(HOLD_CHARGED_BADGE);
   });
 
-  it('released in SUMIT and synced: שוחרר', () => {
+  it('released in SUMIT and synced: מסגרת האשראי שוחררה', () => {
     expect(authorized({ releaseStatus: 'released' })).toBe(HOLD_RELEASED_BADGE);
   });
 
@@ -33,7 +33,7 @@ describe('holdBadge — an authorized hold', () => {
     expect(authorized({ chargeStatus: 'nothing_to_charge' })).toBe(HOLD_AWAITING_RELEASE_BADGE);
   });
 
-  it('closed with nothing to charge AND the release synced: שוחרר', () => {
+  it('closed with nothing to charge AND the release synced: מסגרת האשראי שוחררה', () => {
     expect(authorized({ chargeStatus: 'nothing_to_charge', releaseStatus: 'released' })).toBe(
       HOLD_RELEASED_BADGE,
     );

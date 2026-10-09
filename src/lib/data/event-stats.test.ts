@@ -17,6 +17,9 @@ vi.mock('@/lib/data/campaign-delivery', () => ({
   getCampaignDeliveryBreakdown: vi.fn(),
 }));
 vi.mock('@/lib/data/billing', () => ({ getCampaignBillingSummary: vi.fn() }));
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn(() => ({})) }));
+vi.mock('@/lib/payments/ledger', () => ({ loadOperations: vi.fn(async () => []) }));
+vi.mock('@/lib/data/contacts', () => ({ countAuthorizedContacts: vi.fn() }));
 
 import {
   derivePercentages,
@@ -24,6 +27,8 @@ import {
   getEventStats,
 } from '@/lib/data/event-stats';
 import type { GuestTotals } from '@/lib/data/guests';
+import { countAuthorizedContacts } from '@/lib/data/contacts';
+import { loadOperations } from '@/lib/payments/ledger';
 import {
   canAccessEvent,
   getEvent,
@@ -137,7 +142,7 @@ describe('deriveStatsAlerts (pure)', () => {
     'campaign_closed_not_settled when status=%s (stage closed) && finalChargeAmount==null',
     (status) => {
       const alerts = deriveStatsAlerts({
-        campaign: { status, captureStatus: null, finalChargeAmount: null },
+        campaign: { status, captureStatus: null, finalChargeAmount: null, settlesAtClose: true },
       });
       expect(alerts.map((a) => a.id)).toContain('campaign_closed_not_settled');
     },
@@ -145,20 +150,29 @@ describe('deriveStatsAlerts (pure)', () => {
 
   it('no campaign_closed_not_settled when settled', () => {
     const alerts = deriveStatsAlerts({
-      campaign: { status: 'closed', captureStatus: null, finalChargeAmount: 50 },
+      campaign: { status: 'closed', captureStatus: null, finalChargeAmount: 50, settlesAtClose: true },
     });
     expect(alerts.map((a) => a.id)).not.toContain('campaign_closed_not_settled');
   });
 
   it('no campaign_closed_not_settled while the campaign is still operational', () => {
     const alerts = deriveStatsAlerts({
-      campaign: { status: 'active', captureStatus: 'authorized', finalChargeAmount: null },
+      campaign: { status: 'active', captureStatus: 'authorized', finalChargeAmount: null, settlesAtClose: true },
+    });
+    expect(alerts.map((a) => a.id)).not.toContain('campaign_closed_not_settled');
+  });
+
+  // A fixed-price package is paid up front and never has a final charge: closed with none is its normal end
+  // (live campaign c94ae98e, 9.10.2026), not "billing still open".
+  it('no campaign_closed_not_settled for a campaign that does not settle at close', () => {
+    const alerts = deriveStatsAlerts({
+      campaign: { status: 'closed', captureStatus: null, finalChargeAmount: null, settlesAtClose: false },
     });
     expect(alerts.map((a) => a.id)).not.toContain('campaign_closed_not_settled');
   });
 
   it('no campaign_closed_not_settled without a campaign status', () => {
-    const alerts = deriveStatsAlerts({ campaign: { status: null, finalChargeAmount: null } });
+    const alerts = deriveStatsAlerts({ campaign: { status: null, finalChargeAmount: null, settlesAtClose: true } });
     expect(alerts.map((a) => a.id)).not.toContain('campaign_closed_not_settled');
   });
 });
@@ -225,6 +239,9 @@ describe('getEventStats orchestration', () => {
     // the zero-query billing breakdown sits behind the SAME billing.view gate
     expect(r.campaign.billingDetail).toBeNull();
     expect(getCampaignBillingSummary).not.toHaveBeenCalled();
+    // the ledger is money too: not read, not shown
+    expect(loadOperations).not.toHaveBeenCalled();
+    expect(r.campaign.money).toBeNull();
     // operational reached still derived from delivery (campaigns.view only)
     expect(r.campaign.reachedCount).toBe(1);
   });
@@ -252,6 +269,7 @@ describe('getEventStats orchestration', () => {
     expect(r.campaign.billing).toEqual({ reachedCount: 2, accrued: 90, ceiling: 100, maxContacts: 100 });
     // the six-field breakdown comes off the already-loaded campaign row
     expect(r.campaign.billingDetail).toEqual({
+      chargesPerReached: true,
       basePrice: 350,
       includedReached: 100,
       pricePerReached: 2.5,
@@ -259,6 +277,56 @@ describe('getEventStats orchestration', () => {
       creditApplied: 0,
       chargeStatus: 'nothing_to_charge',
     });
+  });
+
+  // A fixed-price package (live campaign c94ae98e, 9.10.2026): its money is the ledger, its terms a quota. The old
+  // per-reached columns hold zeros and must not be presented, and closing without a final charge is its normal end.
+  it('package campaign: money from the ledger, quota with its usage, no false "not settled"', async () => {
+    vi.mocked(canAccessEvent).mockResolvedValue(true);
+    getEventMock.mockResolvedValue({ id: 'evt-1', name: 'E', event_type: 'wedding', event_date: null, rsvp_deadline: null, status: 'closed' });
+    getGuestTotalsMock.mockResolvedValue(mkTotals({ rows: 4 }));
+    getCampaignForEventMock.mockResolvedValue({
+      id: 'c-9',
+      status: 'closed',
+      capture_status: null,
+      max_contacts: 0,
+      base_price: '0',
+      included_reached: 0,
+      price_per_reached: '0',
+      final_charge_amount: null,
+      credit_applied: '0',
+      charge_status: null,
+      package_price: '1.00',
+      contact_quota: 1,
+    });
+    getCampaignDeliveryBreakdownMock.mockResolvedValue({ delivery: { sent: 1, delivered: 1, read: 1, failed: 0 }, outcome: { reached: 1, wrongNumber: 0, optedOut: 0 } });
+    getCampaignBillingSummaryMock.mockResolvedValue({ reachedCount: 0, accrued: 0, ceiling: 0, maxContacts: 0 });
+    vi.mocked(countAuthorizedContacts).mockResolvedValue(1);
+    vi.mocked(loadOperations).mockResolvedValue([
+      { kind: 'package_purchase', effect: 'collect', outcome: 'succeeded', amount: 1, credit: 0, occurredAt: '2026-10-09T10:00:00Z', recordedAt: '2026-10-09T10:00:00Z' },
+      { kind: 'refund', effect: 'return', outcome: 'succeeded', amount: 1, credit: 0, occurredAt: '2026-10-09T15:00:00Z', recordedAt: '2026-10-09T15:00:00Z' },
+    ]);
+    const r = await getEventStats('evt-1');
+    expect(r.campaign.money).toEqual({ paid: 1, refunded: 1, inFlight: null, testMoney: false });
+    expect(r.campaign.quota).toEqual({ quota: 1, used: 1 });
+    expect(r.campaign.billingDetail?.chargesPerReached).toBe(false);
+    expect(r.alerts.map((a) => a.id)).not.toContain('campaign_closed_not_settled');
+  });
+
+  it('an unreadable ledger is reported as such, never as "nothing paid"', async () => {
+    vi.mocked(canAccessEvent).mockResolvedValue(true);
+    getEventMock.mockResolvedValue(null);
+    getGuestTotalsMock.mockResolvedValue(mkTotals({ rows: 1 }));
+    getCampaignForEventMock.mockResolvedValue({ id: 'c-9', status: 'active', capture_status: null, max_contacts: 0, final_charge_amount: null, contact_quota: null });
+    getCampaignDeliveryBreakdownMock.mockResolvedValue(null);
+    getCampaignBillingSummaryMock.mockResolvedValue(null);
+    vi.mocked(loadOperations).mockRejectedValueOnce(new Error('down'));
+    const r = await getEventStats('evt-1');
+    expect(r.campaign.money).toBeNull();
+    expect(r.campaign.moneyFailed).toBe(true);
+    // no quota on this campaign: nothing counted, nothing shown
+    expect(r.campaign.quota).toBeNull();
+    expect(countAuthorizedContacts).not.toHaveBeenCalled();
   });
 
   // ח2 end-to-end: an event that closed legally with the campaign still in

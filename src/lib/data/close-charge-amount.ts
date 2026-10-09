@@ -47,3 +47,11 @@ export function computeChargeAmount(input: ChargeAmountInput): ChargeAmountResul
   const creditApplied = Math.max(0, agorot(capped - amount));
   return { amount, creditApplied };
 }
+
+// Does this campaign's own record price it per contact who answered? True when its snapshot holds a base fee or a
+// per-contact rate above zero. A screen shows the reached / accrued / ceiling figures, and expects a final charge at
+// close, only then: a fixed-price package stores zeros in both columns, so those figures would all read ₪0 for it.
+// Decided by the values, never by which model a campaign belongs to.
+export function chargesPerReached(c: { base_price: number | string | null; price_per_reached: number | string | null }): boolean {
+  return Number(c.base_price ?? 0) > 0 || Number(c.price_per_reached ?? 0) > 0;
+}

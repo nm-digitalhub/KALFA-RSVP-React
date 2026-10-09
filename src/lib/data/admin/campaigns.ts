@@ -15,6 +15,8 @@ import {
   type ThankyouSchedule,
 } from '@/lib/data/campaigns';
 import type { OwnedEvent } from '@/lib/data/events';
+import { loadOperationsOf } from '@/lib/payments/ledger';
+import { ledgerMoney, type LedgerMoney } from '@/lib/payments/status';
 import type { CampaignStatus } from '@/lib/data/campaign-status';
 import {
   ADMIN_ATTENTION_FILTER,
@@ -274,4 +276,20 @@ export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> 
     holdOrderDocumentNumber: c.hold_order_document_number,
     holdOrderDocumentUrl: c.hold_order_document_url,
   }));
+}
+
+// What the payment ledger recorded for each listed campaign (paid, refunded, still unresolved), read in ONE query for the
+// whole list and folded per campaign by each kind's effect (ledgerMoney). A campaign with no ledger rows has no entry.
+// null = the ledger could not be read: the list says so instead of showing every campaign as unpaid.
+export async function ledgerMoneyForAdmin(campaignIds: readonly string[]): Promise<Map<string, LedgerMoney> | null> {
+  await requirePlatformPermission('manage_billing');
+  try {
+    const rows = await loadOperationsOf(createAdminClient(), campaignIds);
+    return new Map([...rows].map(([id, ops]) => [id, ledgerMoney(ops)]));
+  } catch (err) {
+    console.error('[admin-campaigns] the payment ledger could not be read', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
 }

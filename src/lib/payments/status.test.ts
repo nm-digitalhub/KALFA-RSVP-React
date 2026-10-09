@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveStatus, paymentBadge, refundableAmount, refundableCents, type OperationRow, type PaymentState } from './status';
+import { deriveStatus, ledgerMoney, paymentBadge, refundableAmount, refundableCents, type OperationRow, type PaymentState } from './status';
 
 const op = (kind: string, effect: OperationRow['effect'], outcome: OperationRow['outcome'], amount = 0, t = '2026-09-01T00:00:00Z', r = t, credit = 0): OperationRow =>
   ({ kind, effect, outcome, amount, credit, occurredAt: t, recordedAt: r });
@@ -197,5 +197,30 @@ describe('paymentBadge — never the word תפוס', () => {
     const b = paymentBadge(st(status, collected, credit));
     expect(b?.label ?? null).toBe(label);
     if (b) expect(b.label).not.toContain('תפוס');
+  });
+});
+
+describe('ledgerMoney — paid and refunded, each from succeeded rows, by effect', () => {
+  const T2 = '2026-09-02T00:00:00Z';
+  it('no rows → nothing paid, nothing refunded, nothing in flight', () =>
+    expect(ledgerMoney([])).toEqual({ paid: 0, refunded: 0, inFlight: null, testMoney: false }));
+  it('a hold (commit) is not a payment, and a release returns nothing', () =>
+    expect(ledgerMoney([AUTH, op('release', 'void', 'succeeded', 0, T2)])).toEqual({ paid: 0, refunded: 0, inFlight: null, testMoney: false }));
+  it('a package purchase and a partial refund: both shown, never netted', () =>
+    expect(ledgerMoney([op('package_purchase', 'collect', 'succeeded', 105), op('refund', 'return', 'succeeded', 1, T2)])).toMatchObject({ paid: 105, refunded: 1 }));
+  it('a kind the code never named is counted by its effect', () =>
+    expect(ledgerMoney([op('some_future_kind', 'collect', 'succeeded', 40)]).paid).toBe(40));
+  it('failed rows count for nothing', () =>
+    expect(ledgerMoney([op('package_purchase', 'collect', 'failed', 105), op('refund', 'return', 'failed', 5, T2)])).toEqual({ paid: 0, refunded: 0, inFlight: null, testMoney: false }));
+  it.each(['pending', 'review'] as const)('a %s row is in flight and not counted yet', (outcome) =>
+    expect(ledgerMoney([op('package_purchase', 'collect', 'succeeded', 105), op('refund', 'return', outcome, 5, T2)])).toEqual({ paid: 105, refunded: 0, inFlight: outcome, testMoney: false }));
+  it('review beats pending', () =>
+    expect(ledgerMoney([op('charge', 'collect', 'pending', 5), op('refund', 'return', 'review', 5, T2)]).inFlight).toBe('review'));
+  it('sums in whole agorot', () =>
+    expect(ledgerMoney([0.1, 0.1, 0.1].map((a) => op('charge', 'collect', 'succeeded', a))).paid).toBe(0.3));
+  it('test money: only when every settled collect/return is a test row', () => {
+    const test = { ...op('package_purchase', 'collect', 'succeeded', 1), isTest: true };
+    expect(ledgerMoney([test]).testMoney).toBe(true);
+    expect(ledgerMoney([test, op('charge', 'collect', 'succeeded', 5, T2)]).testMoney).toBe(false);
   });
 });
