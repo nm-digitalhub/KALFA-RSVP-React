@@ -305,9 +305,16 @@ export async function refundCardcomPayment(input: PackageRefundInput): Promise<P
   // document type we asked for, with its number. Anything else is not believed.
   const newDocument: ProviderDocument | null =
     typeof answer.DocumentNumber === 'number' ? { id: null, number: answer.DocumentNumber, url: answer.DocumentUrl ?? null } : null;
+  // The type CardCom says it created goes in meta.cardcom_document_type, like the purchase's own (cardcom-settle.ts): the
+  // ledger's generated column provider_document_type reads it from there, and the document report matches by it. meta is
+  // REPLACED on completion, so the row's own keys are written again with it.
   const refs = {
     providerStatus: '0', providerStatusDescription: answer.Description ?? null, providerDocument: newDocument,
     providerPaymentId: typeof answer.TranzactionId === 'number' ? answer.TranzactionId : null,
+    meta: {
+      cancellation_request_id: cancellationRequestId, provider: 'cardcom',
+      ...(typeof answer.DocumentType === 'string' ? { cardcom_document_type: answer.DocumentType } : {}),
+    },
   };
   if (!newDocument || answer.IsRefund !== true || answer.DocumentType !== document.answered) {
     console.error('[cardcom-refund] the answer does not look like the refund that was asked for', { campaignId, operationId });

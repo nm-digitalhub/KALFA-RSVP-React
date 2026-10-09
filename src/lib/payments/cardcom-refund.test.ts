@@ -100,9 +100,12 @@ describe('refundCardcomPayment: a refund', () => {
     const result = await refundCardcomPayment({ ...REQ, amount: 149 });
     expect(pendingWhenAsked).toBe(1);
     expect(result).toEqual({ status: 'refunded', amount: 149, document: { id: null, number: 78, url: DOC_URL }, alreadyDone: false });
+    // The credit document's type is recorded with the row's own keys (meta is replaced on completion), so the ledger's
+    // generated provider_document_type column and the document report can tell it from a receipt with the same number.
     expect(refundRows()).toMatchObject([{
       outcome: 'succeeded', amount: 149, parent_operation_id: 'pur1', provider_payment_id: 777,
-      provider_document_number: 78, provider_document_url: DOC_URL, meta: { cancellation_request_id: 'req1', provider: 'cardcom' },
+      provider_document_number: 78, provider_document_url: DOC_URL,
+      meta: { cancellation_request_id: 'req1', provider: 'cardcom', cardcom_document_type: 'ReceiptRefund' },
     }]);
   });
 
@@ -344,7 +347,7 @@ describe('refundCardcomPayment: what CardCom answers', () => {
   ])('success with %s is not believed: the row goes to review WITH what CardCom said, and an admin is told', async (_label, answer) => {
     vi.mocked(transactionsTransaction).mockResolvedValue(answer as never);
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'review' });
-    expect(refundRows()[0]).toMatchObject({ outcome: 'review', provider_status: '0' });
+    expect(refundRows()[0]).toMatchObject({ outcome: 'review', provider_status: '0', meta: { cancellation_request_id: 'req1', provider: 'cardcom' } });
     expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'error' }));
   });
 

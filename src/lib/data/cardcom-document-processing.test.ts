@@ -13,11 +13,13 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => fake.client })
 import type { WebhookInboxRow } from '@/lib/data/webhooks';
 import { processCardcomDocumentRow } from './cardcom-document-processing';
 
-// The worker's half of the CardCom document report: a document that is on a CardCom row of our payment ledger needs
-// nothing; any other document is reported to staff (owner 8.10.2026), with ids and amounts only.
+// The worker's half of the CardCom document report: a document that is on a CardCom row of our payment ledger — same
+// number, same TYPE, same terminal — needs nothing; any other document is reported to staff (owner 8.10.2026), with ids and
+// amounts only. CardCom numbers each document type on its own, so a number alone never proves a document is ours.
 
 const ledgerRow = (over: TableRow = {}): TableRow => ({
-  id: 'op-1', provider: 'cardcom', provider_document_number: 1006, provider_terminal: 172204, ...over,
+  id: 'op-1', kind: 'package_purchase', provider: 'cardcom', provider_document_number: 1006, provider_document_type: 'Receipt',
+  provider_terminal: 172204, parent_operation_id: null, ...over,
 });
 
 const inboxRow = (payload: Record<string, string>): WebhookInboxRow =>
@@ -71,6 +73,53 @@ describe('processCardcomDocumentRow', () => {
     await processCardcomDocumentRow(inboxRow({ DocType: '3' }));
     expect(slackMock).toHaveBeenCalledTimes(1);
     expect(slackMock.mock.calls[0][0].fields.document_number).toBe('');
+  });
+
+  it('the same number of ANOTHER document type is not ours: a credit receipt 1006 is not receipt 1006', async () => {
+    await processCardcomDocumentRow(inboxRow({ ...REPORT, DocType: '4' }));
+    expect(slackMock).toHaveBeenCalledTimes(1);
+    expect(slackMock.mock.calls[0][0].title).toContain('סוג 4');
+  });
+
+  it('our refund\'s credit receipt (type 4) matches the refund row that recorded it', async () => {
+    fake = createFakeTableClient({
+      payment_operations: [ledgerRow({ id: 'ref-1', kind: 'refund', provider_document_number: 2, provider_document_type: 'ReceiptRefund', parent_operation_id: 'op-1' })],
+    });
+    await processCardcomDocumentRow(inboxRow({ ...REPORT, DocType: '4', DocNumber: '2' }));
+    expect(slackMock).not.toHaveBeenCalled();
+  });
+
+  // The refund of 9.10.2026 17:40 was recorded before the refund wrote its document type: its type is the credit
+  // counterpart of its purchase's.
+  it('a refund row recorded without a type is read as the credit counterpart of its purchase', async () => {
+    fake = createFakeTableClient({
+      payment_operations: [
+        ledgerRow({ id: 'op-1', provider_document_number: 6 }),
+        ledgerRow({ id: 'ref-1', kind: 'refund', provider_document_number: 2, provider_document_type: null, parent_operation_id: 'op-1' }),
+      ],
+    });
+    await processCardcomDocumentRow(inboxRow({ ...REPORT, DocType: '4', DocNumber: '2' }));
+    expect(slackMock).not.toHaveBeenCalled();
+    // ...and that derivation never makes it a receipt
+    await processCardcomDocumentRow(inboxRow({ ...REPORT, DocType: '3', DocNumber: '2' }));
+    expect(slackMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('a purchase row with no type is not guessed: the report is sent to staff', async () => {
+    fake = createFakeTableClient({ payment_operations: [ledgerRow({ provider_document_type: null })] });
+    await processCardcomDocumentRow(inboxRow(REPORT));
+    expect(slackMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['101', '303', '999', ''])('a document type number we cannot name (%s) is reported, never matched by number alone', async (type) => {
+    await processCardcomDocumentRow(inboxRow({ ...REPORT, DocType: type }));
+    expect(slackMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('the type is read from ExtReadInvoiceHead.InvoiceType when DocType is missing', async () => {
+    const { DocType: _omit, ...rest } = REPORT;
+    await processCardcomDocumentRow(inboxRow({ ...rest, 'ExtReadInvoiceHead.InvoiceType': '3' }));
+    expect(slackMock).not.toHaveBeenCalled();
   });
 
   it('throws when the ledger cannot be read, so the worker tries again', async () => {

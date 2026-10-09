@@ -5221,6 +5221,7 @@ export type Database = {
           provider_deal_type: string | null
           provider_document_id: number | null
           provider_document_number: number | null
+          provider_document_type: string | null
           provider_document_url: string | null
           provider_entry_mode: string | null
           provider_payment_id: number | null
@@ -5275,6 +5276,7 @@ export type Database = {
           provider_deal_type?: string | null
           provider_document_id?: number | null
           provider_document_number?: number | null
+          provider_document_type?: string | null
           provider_document_url?: string | null
           provider_entry_mode?: string | null
           provider_payment_id?: number | null
@@ -5329,6 +5331,7 @@ export type Database = {
           provider_deal_type?: string | null
           provider_document_id?: number | null
           provider_document_number?: number | null
+          provider_document_type?: string | null
           provider_document_url?: string | null
           provider_entry_mode?: string | null
           provider_payment_id?: number | null

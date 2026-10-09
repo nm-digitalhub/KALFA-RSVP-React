@@ -22,3 +22,35 @@ export type RefundDocument = (typeof REFUND_OF)[keyof typeof REFUND_OF];
 export function refundDocumentFor(issued: unknown): RefundDocument | null {
   return typeof issued === 'string' && Object.hasOwn(REFUND_OF, issued) ? REFUND_OF[issued as keyof typeof REFUND_OF] : null;
 }
+
+// The NUMBER CardCom's document report gives a document type (its "DocType" / "ExtReadInvoiceHead.InvoiceType" fields), as
+// the generated DocumentType name. The numbers are CardCom's own list in its "ביטול מסמך" article (support.cardcom.solutions
+// 25537411371026, DocumentType table); each is paired with its name through the Hebrew label both that article and the
+// "Do Transaction" article (25269208059282) give it. Confirmed by real reports: 3 (receipt 6, "Receipt") and 4 (credit receipt
+// 2, "ReceiptRefund"), 8–9.10.2026. Left out on purpose: 101/102 ("אישור הזמנה - מאתר" and its refund), whose name the
+// articles give as OrderConfirmation while the generated answer enum calls it SiteCustomerOrder, and 303/304 ("חשבון קבלה"),
+// which has no name in the answer enum — a number not here is "unknown", never guessed.
+const BY_REPORT_NUMBER: Readonly<Record<string, DocumentType>> = {
+  '1': DocumentType.TaxInvoiceAndReceipt,
+  '2': DocumentType.TaxInvoiceAndReceiptRefund,
+  '3': DocumentType.Receipt,
+  '4': DocumentType.ReceiptRefund,
+  '50': DocumentType.Quote,
+  '100': DocumentType.Order,
+  '200': DocumentType.DeliveryNote,
+  '210': DocumentType.DeliveryNoteRefund,
+  '300': DocumentType.ProformaInvoice,
+  '301': DocumentType.DemandForPayment,
+  '302': DocumentType.DemandForPaymentRefund,
+  '305': DocumentType.TaxInvoice,
+  '330': DocumentType.TaxInvoiceRefund,
+  '400': DocumentType.ReceiptForTaxInvoice,
+  '405': DocumentType.DonationReceipt,
+  '406': DocumentType.DonationReceiptRefund,
+  '410': DocumentType.ReceiptForTaxInvoiceRefund,
+};
+
+// The name of the document type a report gives as a number, or null when the number is not one we can name.
+export function documentTypeOfReportNumber(reported: string | null): DocumentType | null {
+  return reported !== null && Object.hasOwn(BY_REPORT_NUMBER, reported) ? BY_REPORT_NUMBER[reported] : null;
+}

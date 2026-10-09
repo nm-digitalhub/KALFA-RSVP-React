@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { refundDocumentFor } from './document-types';
+import { documentTypeOfReportNumber, refundDocumentFor } from './document-types';
 import { buildRefundTransaction, expiryMMYY, type CardcomRefundInput } from './refund-request';
 
 // The refund request (Do Transaction with Advanced.IsRefund) and the credit document it issues. Pure: every rule from
@@ -34,6 +34,23 @@ describe('refundDocumentFor — the credit document of a payment\'s document, by
       expect(refundDocumentFor(issued)).toBeNull();
     },
   );
+});
+
+describe('documentTypeOfReportNumber — the report\'s type number, by CardCom\'s documented list', () => {
+  it.each([
+    ['1', 'TaxInvoiceAndReceipt'],
+    ['2', 'TaxInvoiceAndReceiptRefund'],
+    ['3', 'Receipt'],
+    ['4', 'ReceiptRefund'],
+    ['305', 'TaxInvoice'],
+    ['410', 'ReceiptForTaxInvoiceRefund'],
+  ])('%s is %s', (n, name) => {
+    expect(documentTypeOfReportNumber(n)).toBe(name);
+  });
+
+  it.each([null, '', '0', '101', '102', '303', '304', '3 ', 'toString'])('%s is not a type we can name', (n) => {
+    expect(documentTypeOfReportNumber(n)).toBeNull();
+  });
 });
 
 describe('expiryMMYY', () => {
