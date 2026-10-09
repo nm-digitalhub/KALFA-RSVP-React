@@ -23,7 +23,7 @@ export async function GET(
 
   const requestHeaders = await headers();
   const ip = getClientIp(requestHeaders.get.bind(requestHeaders));
-  const gate = (await rateLimit(`gift:redirect:${ip}`, GIFT_REDIRECT_RATE));
+  const gate = await rateLimit(`gift:redirect:${ip}`, GIFT_REDIRECT_RATE);
   if (!gate.allowed) return new NextResponse(null, { status: 429 });
 
   const admin = createAdminClient();

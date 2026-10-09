@@ -50,7 +50,7 @@ export async function POST(request: Request) {
   const auth = await requireConsoleAgent(request);
   if (!auth.ok) return json({ error: auth.error }, auth.status);
 
-  const gate = (await rateLimit(`sdk-auth:${auth.ctx.userId}`, RATE));
+  const gate = await rateLimit(`sdk-auth:${auth.ctx.userId}`, RATE);
   if (!gate.allowed) {
     return json({ error: 'יותר מדי בקשות — נסו שוב בעוד רגע' }, 429);
   }

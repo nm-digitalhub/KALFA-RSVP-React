@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     return json({ error: 'ערוץ האבחון כבוי' }, 503);
   }
 
-  const gate = (await rateLimit(`agent-telemetry:${ctx.userId}`, RATE));
+  const gate = await rateLimit(`agent-telemetry:${ctx.userId}`, RATE);
   if (!gate.allowed) {
     return json({ error: 'יותר מדי בקשות — נסו שוב בעוד רגע' }, 429);
   }

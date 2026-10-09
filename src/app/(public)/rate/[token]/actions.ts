@@ -24,7 +24,7 @@ export async function submitRatingAction(
   // Bucket key uses a token FINGERPRINT, never the raw bearer token — same
   // reasoning as every other public token surface (r/[token]/actions.ts).
   const fp = tokenFingerprint(token);
-  const gate = (await rateLimit(`rating:submit:${fp}:${ip}`, RATING_SUBMIT_RATE));
+  const gate = await rateLimit(`rating:submit:${fp}:${ip}`, RATING_SUBMIT_RATE);
   if (!gate.allowed) {
     return { error: 'נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.' };
   }

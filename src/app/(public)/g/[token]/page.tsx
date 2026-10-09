@@ -38,7 +38,7 @@ export default async function GiftPage({
   // tokens in in-memory keys can surface in diagnostics; same pattern as
   // r/[token]/page.tsx).
   const fp = tokenFingerprint(token);
-  const gate = (await rateLimit(`gift:view:${fp}:${ip}`, GIFT_VIEW_RATE));
+  const gate = await rateLimit(`gift:view:${fp}:${ip}`, GIFT_VIEW_RATE);
   if (!gate.allowed) {
     return (
       <GuestShell>

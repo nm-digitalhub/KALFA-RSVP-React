@@ -109,7 +109,7 @@ export async function importGuestsAction(
   try {
     grid = parseCsv(text);
   } catch {
-    return { error: "\u05e4\u05d5\u05e8\u05de\u05d8 CSV \u05d0\u05d9\u05e0\u05d5 \u05ea\u05e7\u05d9\u05df. \u05e9\u05de\u05e8\u05d5 \u05de\u05d7\u05d3\u05e9 \u05db-CSV UTF-8 \u05d5\u05e0\u05e1\u05d5 \u05e9\u05d5\u05d1." };
+    return { error: "פורמט CSV אינו תקין. שמרו מחדש כ-CSV UTF-8 ונסו שוב." };
   }
   if (grid.length < 2) {
     return { error: 'הקובץ ריק או חסר שורות נתונים.' };

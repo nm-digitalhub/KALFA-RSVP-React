@@ -55,15 +55,15 @@ describe('rateLimit', () => {
     const key = 'within-limit';
     const opts = { limit: 3, windowMs: 1000 };
 
-    const first = (await rateLimit(key, opts));
+    const first = await rateLimit(key, opts);
     expect(first.allowed).toBe(true);
     expect(first.remaining).toBe(2);
 
-    const second = (await rateLimit(key, opts));
+    const second = await rateLimit(key, opts);
     expect(second.allowed).toBe(true);
     expect(second.remaining).toBe(1);
 
-    const third = (await rateLimit(key, opts));
+    const third = await rateLimit(key, opts);
     expect(third.allowed).toBe(true);
     expect(third.remaining).toBe(0);
   });
@@ -75,7 +75,7 @@ describe('rateLimit', () => {
     expect((await rateLimit(key, opts)).allowed).toBe(true);
     expect((await rateLimit(key, opts)).allowed).toBe(true);
 
-    const blocked = (await rateLimit(key, opts));
+    const blocked = await rateLimit(key, opts);
     expect(blocked.allowed).toBe(false);
     expect(blocked.remaining).toBe(0);
   });
@@ -84,11 +84,11 @@ describe('rateLimit', () => {
     const key = 'stable-reset';
     const opts = { limit: 5, windowMs: 1000 };
 
-    const first = (await rateLimit(key, opts));
+    const first = await rateLimit(key, opts);
     expect(first.resetAt).toBe(Date.now() + opts.windowMs);
 
     vi.advanceTimersByTime(300);
-    const second = (await rateLimit(key, opts));
+    const second = await rateLimit(key, opts);
     expect(second.resetAt).toBe(first.resetAt);
   });
 
@@ -96,7 +96,7 @@ describe('rateLimit', () => {
     const key = 'window-reset';
     const opts = { limit: 1, windowMs: 1000 };
 
-    const first = (await rateLimit(key, opts));
+    const first = await rateLimit(key, opts);
     expect(first.allowed).toBe(true);
 
     // Second request in the same window is blocked.
@@ -104,7 +104,7 @@ describe('rateLimit', () => {
 
     // Advance past the window: a fresh window opens and the request is allowed.
     vi.advanceTimersByTime(1001);
-    const afterReset = (await rateLimit(key, opts));
+    const afterReset = await rateLimit(key, opts);
     expect(afterReset.allowed).toBe(true);
     expect(afterReset.remaining).toBe(0);
     expect(afterReset.resetAt).toBe(Date.now() + opts.windowMs);
