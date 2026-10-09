@@ -373,6 +373,12 @@
       "skillPath": "skills/follow-up-discipline/SKILL.md",
       "computedHash": "0d20f91f61871acc010f1a375f1f2edb66505ba1958478e638e2e4acd12f9791"
     },
+    "frontend-design": {
+      "source": "anthropics/claude-code",
+      "sourceType": "github",
+      "skillPath": "plugins/frontend-design/skills/frontend-design/SKILL.md",
+      "computedHash": "b8c8329ad9b98fa57f4a279e37bdf4a0d55743140e54bb7da3e340d754d75b43"
+    },
     "general-video": {
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
