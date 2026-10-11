@@ -209,6 +209,7 @@ function detailColumns(d: OperationDetails): TablesUpdate<'payment_operations'> 
     out.provider_deal_type = f.dealType;
     out.provider_account_id = f.accountId;
     out.provider_auth_description = f.authDescription;
+    out.provider_payment_vector = f.paymentVector;
   }
   if (d.occurredAt !== undefined) out.occurred_at = d.occurredAt;
   if (d.note !== undefined) out.note = d.note;

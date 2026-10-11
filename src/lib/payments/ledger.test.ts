@@ -80,12 +80,13 @@ describe('ledger writes', () => {
     const db = createFakeTableClient({ payment_operations: [{ id: 'p3', campaign_id: 'c1', kind: 'package_purchase', outcome: 'pending', provider_rrn: 'kept' }] });
     await completeOperation(db.client as never, 'p3', {
       from: 'pending', outcome: 'succeeded', amount: 200,
-      paymentFacts: { cardOwnerName: 'Dana', cardOwnerEmail: 'd@example.com', cardOwnerPhone: '050', cardName: 'Gold', cardInfo: 'Israeli', cardFirstDigits: '458028', cardIsAbroad: false, numberOfPayments: 1, couponNumber: '74', uniqueId: 'u-1', rrn: null, acquirer: 'Laumicard', paymentType: 'Standard', entryMode: 'Phone', dealType: 'Debit', accountId: null, authDescription: 'ok' },
+      paymentFacts: { cardOwnerName: 'Dana', cardOwnerEmail: 'd@example.com', cardOwnerPhone: '050', cardName: 'Gold', cardInfo: 'Israeli', cardFirstDigits: '458028', cardIsAbroad: false, numberOfPayments: 1, couponNumber: '74', uniqueId: 'u-1', rrn: null, acquirer: 'Laumicard', paymentType: 'Standard', entryMode: 'Phone', dealType: 'Debit', accountId: null, authDescription: 'ok', paymentVector: '_3DS' },
     });
     expect(db.rows('payment_operations')[0]).toMatchObject({
       card_owner_name: 'Dana', card_owner_email: 'd@example.com', card_owner_phone: '050', card_name: 'Gold', card_info: 'Israeli', card_first_digits: '458028',
       card_is_abroad: false, number_of_payments: 1, provider_coupon_number: '74', provider_unique_id: 'u-1', provider_acquirer: 'Laumicard',
       provider_payment_type: 'Standard', provider_entry_mode: 'Phone', provider_deal_type: 'Debit', provider_auth_description: 'ok',
+      provider_payment_vector: '_3DS',
     });
     const other = createFakeTableClient({ payment_operations: [{ id: 'p4', campaign_id: 'c1', kind: 'package_purchase', outcome: 'pending', card_owner_name: 'Kept' }] });
     await completeOperation(other.client as never, 'p4', { from: 'pending', outcome: 'succeeded', amount: 200, paymentFacts: null });

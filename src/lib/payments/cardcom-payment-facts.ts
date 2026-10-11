@@ -27,6 +27,8 @@ export type PaymentFacts = {
   dealType: string | null;
   accountId: number | null;
   authDescription: string | null;
+  /** GetLpResult's top-level ExternalPaymentVector: the channel (NoneOrUnknown, _3DS, ApplePay, GooglePay, PayPal, Bit...). */
+  paymentVector: string | null;
 };
 
 // TranzactionInfo, as far as this module reads it. `unknown` on purpose: a shape CardCom changes must not break a payment.
@@ -48,6 +50,11 @@ export type CardcomTransactionFacts = {
   DealType?: unknown;
   AccountId?: unknown;
   IssuerAuthCodeDescription?: unknown;
+};
+
+// What GetLpResult says at its TOP level, outside TranzactionInfo. A refund's answer (Transactions/Transaction) has none of it.
+export type CardcomTopLevelFacts = {
+  ExternalPaymentVector?: unknown;
 };
 
 // UIValues repeats the cardholder (CardCom's own answer has it twice); it is the fallback when TranzactionInfo lacks a field.
@@ -78,7 +85,11 @@ function firstDigits(value: unknown): string | null {
   return digits === null ? null : String(digits);
 }
 
-export function paymentFactsFromCardcom(info: CardcomTransactionFacts | null | undefined, ui: CardcomUiValues | null | undefined): PaymentFacts | null {
+export function paymentFactsFromCardcom(
+  info: CardcomTransactionFacts | null | undefined,
+  ui: CardcomUiValues | null | undefined,
+  top?: CardcomTopLevelFacts | null,
+): PaymentFacts | null {
   const facts: PaymentFacts = {
     cardOwnerName: text(info?.CardOwnerName, ui?.CardOwnerName),
     cardOwnerEmail: text(info?.CardOwnerEmail, ui?.CardOwnerEmail),
@@ -98,6 +109,7 @@ export function paymentFactsFromCardcom(info: CardcomTransactionFacts | null | u
     // 0 is how CardCom says "no customer card was opened or matched": there is nothing to keep.
     accountId: whole(info?.AccountId, 1, 2_147_483_647),
     authDescription: text(info?.IssuerAuthCodeDescription),
+    paymentVector: text(top?.ExternalPaymentVector),
   };
   return Object.values(facts).every((v) => v === null) ? null : facts;
 }

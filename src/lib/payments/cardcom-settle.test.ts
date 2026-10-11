@@ -81,6 +81,12 @@ describe('settleCardcomSession: a paid session', () => {
     expect(ledger().card_last4 ?? null).toBeNull();
   });
 
+  it('keeps the channel CardCom reports for the payment (`_3DS` when it passed 3-D Secure)', async () => {
+    answer({ ...PAID, ExternalPaymentVector: '_3DS' });
+    await settleCardcomSession(LP);
+    expect(ledger()).toMatchObject({ outcome: 'succeeded', provider_payment_vector: '_3DS' });
+  });
+
   it('keeps what the card looks like and the link to the document, so an admin screen can show them', async () => {
     answer(PAID_WITH_CARD);
     await settleCardcomSession(LP);

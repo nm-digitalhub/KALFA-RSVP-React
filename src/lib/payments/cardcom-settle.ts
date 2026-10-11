@@ -65,6 +65,8 @@ const lpResultSchema = z.object({
   // TranzactionInfo). Read as `unknown` on purpose, like the card facts: a shape CardCom changes here must not make a confirmed
   // payment unreadable. terminalEchoFromCardcom keeps it only when it is a positive whole number.
   TerminalNumber: z.unknown().optional(),
+  // The channel the payment went through (`_3DS` when it passed 3-D Secure). `unknown` for the same reason as the card facts.
+  ExternalPaymentVector: z.unknown().optional(),
   // DocumentUrl and the card facts are display-only and read as `unknown` on purpose (cardcom-card-facts.ts checks each one):
   // a shape CardCom changes there must not make the whole answer unreadable, which would turn a confirmed payment into
   // "could not tell".
@@ -331,7 +333,7 @@ export async function settleCardcomSession(lowProfileId: string, options: Settle
       outcome: 'succeeded',
       ...references,
       cardFacts: cardFactsFromCardcom(result.TranzactionInfo, citizenSecretId),
-      paymentFacts: paymentFactsFromCardcom(result.TranzactionInfo, result.UIValues),
+      paymentFacts: paymentFactsFromCardcom(result.TranzactionInfo, result.UIValues, result),
       ...(occurredAt === null ? {} : { occurredAt }),
       ...echoColumn,
       meta,

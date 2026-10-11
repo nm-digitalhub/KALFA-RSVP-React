@@ -17,9 +17,15 @@ const MAPPED = {
   cardName: 'ויזה זהב', cardInfo: 'Israeli', cardFirstDigits: '458028', cardIsAbroad: false, numberOfPayments: 1,
   couponNumber: '74002281', uniqueId: '21121517002429612920744', rrn: null, acquirer: 'Laumicard', paymentType: 'Standard',
   entryMode: 'Phone', dealType: 'Debit', accountId: null, authDescription: 'אושר ע"י החברה המנפיקה',
+  paymentVector: null,
 };
 
 describe('paymentFactsFromCardcom', () => {
+  it('keeps the channel CardCom reports at the top level (`_3DS` = passed 3-D Secure, measured 11.10.2026)', () => {
+    expect(paymentFactsFromCardcom(MEASURED, null, { ExternalPaymentVector: '_3DS' })?.paymentVector).toBe('_3DS');
+    expect(paymentFactsFromCardcom(MEASURED, null, { ExternalPaymentVector: 13 })?.paymentVector).toBeNull();
+  });
+
   it('maps the answer CardCom really gave, field by field', () => {
     expect(paymentFactsFromCardcom(MEASURED, null)).toEqual(MAPPED);
   });
