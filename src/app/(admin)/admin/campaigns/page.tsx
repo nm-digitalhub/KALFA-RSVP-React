@@ -34,7 +34,7 @@ function PaymentStatusCell({
   status: CampaignPaymentStatus | null;
   ledgerFailed: boolean;
 }) {
-  // An unreadable ledger is said as such: the hold columns alone would show a package as "nothing happened".
+  // An unreadable ledger is said as such, never as "nothing happened".
   const entry = ledgerFailed
     ? { label: 'לא ניתן לטעון', variant: 'destructive' as const }
     : status
@@ -69,8 +69,7 @@ export default async function AdminCampaignsPage() {
       <PageHeading>קמפיינים</PageHeading>
 
       <p className="text-sm text-muted-foreground">
-        קמפיינים פעילים, מושהים או סגורים — לניהול סגירה, השהיה, גמר חשבון או ביטול —
-        וקמפיינים עם תפיסת מסגרת תקועה שדורשת בדיקה.
+        קמפיינים פעילים, מושהים או סגורים — לניהול סגירה, השהיה או ביטול.
       </p>
 
       {items.length === 0 ? (
@@ -107,7 +106,7 @@ export default async function AdminCampaignsPage() {
                   <TableCell>
                     <PaymentStatusCell
                       href={`/app/events/${c.eventId}/campaign/${c.id}#campaign-payments-title`}
-                      status={campaignPaymentStatus(ledger?.get(c.id) ?? null, c)}
+                      status={campaignPaymentStatus(ledger?.get(c.id) ?? null)}
                       ledgerFailed={ledger === null}
                     />
                   </TableCell>

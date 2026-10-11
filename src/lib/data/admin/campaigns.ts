@@ -16,7 +16,8 @@ import {
 } from '@/lib/data/campaigns';
 import type { OwnedEvent } from '@/lib/data/events';
 import { loadOperationsOf } from '@/lib/payments/ledger';
-import { deriveStatus, ledgerMoney, type LedgerMoney, type PaymentState } from '@/lib/payments/status';
+import { deriveStatus, ledgerMoney } from '@/lib/payments/status';
+import type { CampaignLedger } from './campaign-payment-status';
 import type { CampaignStatus } from '@/lib/data/campaign-status';
 import {
   ADMIN_ATTENTION_FILTER,
@@ -207,53 +208,32 @@ export async function getThankyouScheduleForAdminView(
   };
 }
 
-// A campaign row for the admin wind-down list: the campaign, its status, the
-// owning event's name/date, and the hold/charge columns its single payment
-// status is derived from (campaign-payment-status.ts). Amounts and documents are
-// not listed: they are on the campaign page's payments list.
+// A campaign row for the admin wind-down list: the campaign, its status and the
+// owning event's name/date. Its single payment status comes from the ledger
+// (ledgerForAdmin → campaign-payment-status.ts). Amounts and documents are not
+// listed: they are on the campaign page's payments list.
 export interface AdminCampaignListItem {
   id: string;
   status: CampaignStatus;
   eventId: string;
   eventName: string;
   eventDate: string | null;
-  chargeStatus: string | null;
-  finalChargeAmount: number | null;
-  // Hold-tracking: a stuck hold (pending/hold_failed/hold_review) never even
-  // reaches status='active', so it would never appear in WINDDOWN_STATUSES-
-  // filtered results — see ADMIN_ATTENTION_FILTER / STUCK_CAPTURE_STATUSES
-  // below. captureStatus itself is text, not a typed enum (types.generated.ts
-  // reflects capture_status as bare string — no DB enum backs it).
-  captureStatus: string | null;
-  // 'released' once the (retired) hold-release reconciler
-  // has seen SUMIT mark the hold released. capture_status stays 'authorized'
-  // for the campaign's whole life, so without this the screen kept saying
-  // "תפוס" for holds SUMIT had long released (verified live 2026-09-24: all
-  // three "תפוס" rows were released in SUMIT's holds folder).
-  releaseStatus: string | null;
 }
 
-// WINDDOWN_STATUSES (wind-down actions: close/pause/settle/cancel) and
-// STUCK_CAPTURE_STATUSES (a hold that never went through, so the campaign
-// never leaves status='approved') live in the request-free campaigns core
-// (src/lib/owner-agent/cores/campaigns.ts), together with
-// ADMIN_ATTENTION_FILTER — the exact `or` filter this list uses. The core's
-// needsAttention count uses the same string, so the owner agent's number is
-// the length of this list by construction. See the core for the reasoning
-// behind each status set.
+// WINDDOWN_STATUSES (wind-down actions: close/pause/cancel) live in the request-free campaigns core
+// (src/lib/owner-agent/cores/campaigns.ts), together with ADMIN_ATTENTION_FILTER — the exact filter this list uses.
+// The core's needsAttention count uses the same string, so the owner agent's number is the length of this list by
+// construction.
 
-// List campaigns that may need admin attention — either a wind-down action
-// (close/pause/settle/cancel) or a stuck hold that never activated. Reads via
-// the service-role client under
-// requirePlatformPermission('manage_billing'). Returns only what the list needs — charge/hold OUTCOME
-// fields, never card/token fields.
+// List campaigns that may need a wind-down action (close/pause/cancel). Reads via the service-role client under
+// requirePlatformPermission('manage_billing'). Returns only what the list needs — never money, card or token fields.
 export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> {
   await requirePlatformPermission('manage_billing');
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('campaigns')
     .select(
-      'id, status, event_id, created_at, charge_status, final_charge_amount, capture_status, release_status, events(name, event_date)',
+      'id, status, event_id, created_at, events(name, event_date)',
     )
     .or(ADMIN_ATTENTION_FILTER)
     .order('created_at', { ascending: false });
@@ -266,23 +246,29 @@ export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> 
     eventId: c.event_id,
     eventName: c.events?.name ?? '—',
     eventDate: c.events?.event_date ?? null,
-    chargeStatus: c.charge_status,
-    finalChargeAmount: c.final_charge_amount,
-    captureStatus: c.capture_status,
-    releaseStatus: c.release_status,
   }));
 }
 
-// What the payment ledger says about each listed campaign — its derived state and its paid / refunded sums — read in
-// ONE query for the whole list and folded per campaign by each kind's effect. A campaign with no ledger rows has no
-// entry. null = the ledger could not be read: the list says so instead of showing every campaign as unpaid.
+// What the payment ledger says about each listed campaign — its derived state, its paid / refunded sums and whether a
+// card guarantee was released — read in ONE query for the whole list and folded per campaign by each kind's effect. A
+// campaign with no ledger rows has no entry. null = the ledger could not be read: the list says so instead of showing
+// every campaign as unpaid.
 export async function ledgerForAdmin(
   campaignIds: readonly string[],
-): Promise<Map<string, { state: PaymentState; money: LedgerMoney }> | null> {
+): Promise<Map<string, CampaignLedger> | null> {
   await requirePlatformPermission('manage_billing');
   try {
     const rows = await loadOperationsOf(createAdminClient(), campaignIds);
-    return new Map([...rows].map(([id, ops]) => [id, { state: deriveStatus(ops), money: ledgerMoney(ops) }]));
+    return new Map(
+      [...rows].map(([id, ops]) => [
+        id,
+        {
+          state: deriveStatus(ops),
+          money: ledgerMoney(ops),
+          released: ops.some((o) => o.effect === 'void' && o.outcome === 'succeeded'),
+        },
+      ]),
+    );
   } catch (err) {
     console.error('[admin-campaigns] the payment ledger could not be read', {
       error: err instanceof Error ? err.message : String(err),

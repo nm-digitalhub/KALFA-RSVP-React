@@ -166,10 +166,9 @@ export type SalesCallCrmSummary = {
   elConversationId: string | null;
   outcomeRecordedAt: string | null;
   /**
-   * The agreement was signed and the campaign approved. Written by
+   * The package terms were approved and the campaign with them. Written by
    * agreements.ts, NOT at account creation — an owner ruling (2026-08-22):
-   * "'signup completed' … means a signed, approved agreement, not bare
-   * account creation".
+   * "'signup completed' … means approved terms, not bare account creation".
    */
   signupCompletedAt: string | null;
   /**
@@ -184,12 +183,13 @@ export type SalesCallCrmSummary = {
   signedUpAt: string | null;
   firstCampaignAt: string | null;
   /**
-   * The J5 hold cleared (campaigns.authorized_at). The step AFTER signing, and
-   * the one that can still fail on its own — a declined card leaves a signed
-   * agreement, an approved campaign, and no money held. Without this the lead
-   * reads as fully converted while it is actually stuck at the till.
+   * The package was paid: the earliest succeeded collection of real money in
+   * the payment ledger. The step AFTER approving the terms, and the one that can
+   * still fail on its own — a declined card leaves approved terms and nothing
+   * paid. Without this the lead reads as fully converted while it is actually
+   * stuck at the till.
    */
-  holdAuthorizedAt: string | null;
+  paidAt: string | null;
   /**
    * A signup link reached Meta and was accepted (wa_message_id is set). The id
    * itself stays server-side — the screen only needs the fact, and a provider
@@ -393,7 +393,7 @@ function mapAiCall(
     // "unknown": a lead with no attributed profile has no funnel to report.
     signedUpAt: null,
     firstCampaignAt: null,
-    holdAuthorizedAt: null,
+    paidAt: null,
     // Sales-only. A confirmation call sends no signup link, so this is false
     // there because it genuinely did not happen — not because we failed to look.
     linkSent: Boolean(attempt.wa_message_id),
@@ -592,15 +592,14 @@ async function loadCallbackAudit(
  *
  *   attempt.id → profiles.sales_referral_attempt_id   (created an account)
  *              → events.owner_id                       (their events)
- *              → campaigns.event_id                    (built a campaign,
- *                                                       and authorized_at =
- *                                                       the J5 hold cleared)
+ *              → campaigns.event_id                    (chose a package)
+ *              → payment_operations.event_id           (paid for it)
  *
- * Three set-based queries, never one per row: the fan-out is bounded by the
+ * Four set-based queries, never one per row: the fan-out is bounded by the
  * attempts of a SINGLE callback request (in practice one or two).
  *
  * Best-effort throughout — the call itself is the load-bearing part of the
- * page, and an unreadable profiles/events/campaigns table must leave the
+ * page, and an unreadable profiles/events/campaigns/ledger table must leave the
  * timeline standing rather than blank it.
  *
  * Deliberately NOT matched on phone or email: a lead who called and later
@@ -641,33 +640,40 @@ async function loadSalesFunnel(
     if (attemptId) attemptByEvent.set(e.id, attemptId);
   }
 
-  // EARLIEST campaign and EARLIEST cleared hold per attempt: the funnel asks
-  // "did they get this far, and when", so a later campaign never moves the
-  // milestone backwards.
+  // EARLIEST campaign and EARLIEST payment per attempt: the funnel asks "did
+  // they get this far, and when", so a later campaign never moves the milestone
+  // backwards.
   const firstCampaign = new Map<string, string>();
-  const firstHold = new Map<string, string>();
+  const firstPayment = new Map<string, string>();
+  const earlier = (map: Map<string, string>, attemptId: string | undefined, at: string | null) => {
+    if (!attemptId || !at) return;
+    const cur = map.get(attemptId);
+    if (!cur || Date.parse(at) < Date.parse(cur)) map.set(attemptId, at);
+  };
   if (attemptByEvent.size > 0) {
-    const { data: campaigns } = await supabase
-      .from('campaigns')
-      .select('event_id, created_at, authorized_at')
-      .in('event_id', [...attemptByEvent.keys()]);
-    for (const c of campaigns ?? []) {
-      const attemptId = attemptByEvent.get(c.event_id);
-      if (!attemptId) continue;
-      const earlier = (map: Map<string, string>, at: string | null) => {
-        if (!at) return;
-        const cur = map.get(attemptId);
-        if (!cur || Date.parse(at) < Date.parse(cur)) map.set(attemptId, at);
-      };
-      earlier(firstCampaign, c.created_at);
-      earlier(firstHold, c.authorized_at);
+    const eventIds = [...attemptByEvent.keys()];
+    const [{ data: campaigns }, { data: payments }] = await Promise.all([
+      supabase.from('campaigns').select('event_id, created_at').in('event_id', eventIds),
+      // Real money that was collected (a purchase, by the kind's EFFECT); test money is not a closed deal.
+      supabase
+        .from('payment_operations')
+        .select('event_id, occurred_at, payment_operation_kinds!inner(effect)')
+        .in('event_id', eventIds)
+        .eq('payment_operation_kinds.effect', 'collect')
+        .eq('outcome', 'succeeded')
+        .eq('is_test', false)
+        .gt('amount', 0),
+    ]);
+    for (const c of campaigns ?? []) earlier(firstCampaign, attemptByEvent.get(c.event_id), c.created_at);
+    for (const p of payments ?? []) {
+      if (p.event_id) earlier(firstPayment, attemptByEvent.get(p.event_id), p.occurred_at);
     }
   }
 
   for (const call of calls) {
     call.signedUpAt = signedUpByAttempt.get(call.attemptId) ?? null;
     call.firstCampaignAt = firstCampaign.get(call.attemptId) ?? null;
-    call.holdAuthorizedAt = firstHold.get(call.attemptId) ?? null;
+    call.paidAt = firstPayment.get(call.attemptId) ?? null;
   }
 }
 

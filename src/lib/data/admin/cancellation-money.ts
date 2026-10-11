@@ -26,7 +26,7 @@ export async function cancellationMoneyForAdmin(
     const eventIds = [...new Set(requests.map((r) => r.eventId))];
     const { data: campaigns, error } = await admin
       .from('campaigns')
-      .select('id, event_id, status, created_at, capture_status, charge_status, release_status, final_charge_amount')
+      .select('id, event_id, status, created_at')
       .in('event_id', eventIds)
       .order('created_at', { ascending: false });
     if (error) throw new Error('campaigns');
@@ -60,14 +60,7 @@ export async function cancellationMoneyForAdmin(
     return new Map(
       requests.map((req) => {
         const campaign = live.get(req.eventId) ?? null;
-        const status = campaign
-          ? campaignPaymentStatus(ledger.get(campaign.id) ?? null, {
-              captureStatus: campaign.capture_status,
-              chargeStatus: campaign.charge_status,
-              releaseStatus: campaign.release_status,
-              finalChargeAmount: campaign.final_charge_amount,
-            })
-          : null;
+        const status = campaign ? campaignPaymentStatus(ledger.get(campaign.id) ?? null) : null;
         return [
           req.id,
           cancellationListMoney({

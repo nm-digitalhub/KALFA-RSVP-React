@@ -15,7 +15,7 @@ function salesCall(overrides: Partial<TimelineSalesCall> = {}): TimelineSalesCal
     signupCompletedAt: null,
     signedUpAt: null,
     firstCampaignAt: null,
-    holdAuthorizedAt: null,
+    paidAt: null,
     outcomeRecordedAt: null,
     hasAnalysis: false,
     callSuccessful: 'unknown',
@@ -158,12 +158,12 @@ describe('buildCallbackActivity', () => {
           signedUpAt: '2026-09-01T12:00:00+00:00',
           firstCampaignAt: '2026-09-02T09:00:00+00:00',
           signupCompletedAt: '2026-09-02T10:00:00+00:00',
-          holdAuthorizedAt: '2026-09-02T10:05:00+00:00',
+          paidAt: '2026-09-02T10:05:00+00:00',
         }),
       ],
     });
     expect(entries.map((e) => e.key)).toEqual([
-      'a1:hold',
+      'a1:paid',
       'a1:signup',
       'a1:campaign',
       'a1:signed-up',
@@ -172,9 +172,9 @@ describe('buildCallbackActivity', () => {
     ]);
   });
 
-  // The lead this exists to catch: agreement signed, card declined. Nothing
+  // The lead this exists to catch: terms approved, card declined. Nothing
   // else on the page distinguishes it from a completed sale.
-  it('shows a signature with no hold as exactly that — not as converted', () => {
+  it('shows approved terms with no payment as exactly that — not as converted', () => {
     const entries = buildCallbackActivity({
       createdAt: '2026-09-01T08:00:00+00:00',
       scheduledAt: null,
@@ -184,12 +184,12 @@ describe('buildCallbackActivity', () => {
           attemptId: 'a1',
           signedUpAt: '2026-09-01T12:00:00+00:00',
           signupCompletedAt: '2026-09-02T10:00:00+00:00',
-          holdAuthorizedAt: null,
+          paidAt: null,
         }),
       ],
     });
     expect(entries.some((e) => e.key === 'a1:signup')).toBe(true);
-    expect(entries.some((e) => e.key === 'a1:hold')).toBe(false);
+    expect(entries.some((e) => e.key === 'a1:paid')).toBe(false);
   });
 
   it('reports no funnel at all for a lead that never signed up', () => {

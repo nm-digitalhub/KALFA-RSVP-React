@@ -80,14 +80,14 @@ function signupLinkLabel(salesCall: SalesCall): string {
 // The ONE stage a lead has reached — the furthest milestone with a real
 // instant behind it, phrased as what is still missing so the row answers
 // "what do I say when I call". Read top-down so a later step always wins: a
-// cleared hold IS the closed deal, whatever the steps below it look like.
+// paid package IS the closed deal, whatever the steps below it look like.
 //
 // Sales only. A meeting-confirmation call sends no link and has no deal to
 // close, so it never reaches this row.
 function leadStageLabel(call: SalesCall): string {
-  if (call.holdAuthorizedAt) return 'עסקה נסגרה';
-  if (call.signupCompletedAt) return 'ההסכם נחתם — ממתין לתפיסת מסגרת';
-  if (call.firstCampaignAt) return 'הוקם קמפיין — ממתין לחתימה';
+  if (call.paidAt) return 'עסקה נסגרה';
+  if (call.signupCompletedAt) return 'התנאים אושרו — ממתין לתשלום';
+  if (call.firstCampaignAt) return 'נבחרה חבילה — ממתין לאישור התנאים';
   if (call.signedUpAt) return 'נפתח חשבון — ממתין להקמת קמפיין';
   if (call.linkSent) return 'קישור נשלח — ממתין לפתיחת חשבון';
   // The call is what this row hangs off, so "no link yet" is only meaningful
@@ -113,8 +113,8 @@ function SalesFunnel({ salesCall }: { salesCall: SalesCall }) {
     { label: 'קישור נשלח', at: salesCall.linkSent ? (salesCall.waStatusAt ?? salesCall.attemptUpdatedAt) : null },
     { label: 'נרשם', at: salesCall.signedUpAt },
     { label: 'קמפיין', at: salesCall.firstCampaignAt },
-    { label: 'חתם', at: salesCall.signupCompletedAt },
-    { label: 'מסגרת', at: salesCall.holdAuthorizedAt },
+    { label: 'אישר תנאים', at: salesCall.signupCompletedAt },
+    { label: 'שילם', at: salesCall.paidAt },
   ];
   const reached = steps.filter((s) => s.at).length;
 
@@ -251,9 +251,9 @@ function SalesCallCard({ salesCall, index }: { salesCall: SalesCall; index: numb
               <dd>{formatNullableDateTime(salesCall.outcomeRecordedAt)}</dd>
             </div>
             {/* The stage the lead has actually reached, not signupCompletedAt
-                printed as a date: that column is stamped at AGREEMENT
-                SIGNING, not at account creation, so a lead who had just opened
-                an account would read as not-registered. */}
+                printed as a date: that column is stamped when the package
+                terms are APPROVED, not at account creation, so a lead who had
+                just opened an account would read as not-registered. */}
             <div>
               <dt className="text-xs font-medium text-muted-foreground">שלב הליד</dt>
               <dd>{leadStageLabel(salesCall)}</dd>

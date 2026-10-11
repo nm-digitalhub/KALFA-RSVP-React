@@ -69,6 +69,7 @@ function chainResult<Row>(result: { data: Row | null; error: { message: string }
     select: vi.fn(() => builder),
     eq: vi.fn(() => builder),
     in: vi.fn(() => builder),
+    gt: vi.fn(() => builder),
     order: vi.fn(() => builder),
     range: vi.fn(() => builder),
     limit: vi.fn(() => builder),
@@ -90,10 +91,11 @@ function mockCallbackSalesClient(args: {
   aiCalls?: unknown[];
   /** activity_log rows for the detail timeline. */
   audit?: unknown[];
-  /** The post-call funnel chain (loadSalesFunnel): profiles → events → campaigns. */
+  /** The post-call funnel chain (loadSalesFunnel): profiles → events → campaigns, and the ledger's payments. */
   funnelProfiles?: unknown[];
   funnelEvents?: unknown[];
   funnelCampaigns?: unknown[];
+  funnelPayments?: unknown[];
 }) {
   const callbacksBuilder = chainResult({
     data: args.callbacks,
@@ -112,6 +114,7 @@ function mockCallbackSalesClient(args: {
     profiles: chainResult({ data: args.funnelProfiles ?? [], error: null }),
     events: chainResult({ data: args.funnelEvents ?? [], error: null }),
     campaigns: chainResult({ data: args.funnelCampaigns ?? [], error: null }),
+    payment_operations: chainResult({ data: args.funnelPayments ?? [], error: null }),
   };
   let callbackSelects = 0;
   const client = {
@@ -371,10 +374,14 @@ describe('getCallbackRequest', () => {
       ],
       funnelEvents: [{ id: 'ev-1', owner_id: 'prof-1' }],
       funnelCampaigns: [
-        // Two campaigns on purpose: the funnel reports the EARLIEST of each
-        // milestone, so a later campaign never drags the date forward.
-        { event_id: 'ev-1', created_at: '2026-09-03T09:00:00.000Z', authorized_at: null },
-        { event_id: 'ev-1', created_at: '2026-09-02T09:00:00.000Z', authorized_at: '2026-09-02T10:05:00.000Z' },
+        // Two campaigns and two payments on purpose: the funnel reports the
+        // EARLIEST of each milestone, so a later one never drags the date forward.
+        { event_id: 'ev-1', created_at: '2026-09-03T09:00:00.000Z' },
+        { event_id: 'ev-1', created_at: '2026-09-02T09:00:00.000Z' },
+      ],
+      funnelPayments: [
+        { event_id: 'ev-1', occurred_at: '2026-09-04T10:00:00.000Z' },
+        { event_id: 'ev-1', occurred_at: '2026-09-02T10:05:00.000Z' },
       ],
     });
 
@@ -382,7 +389,7 @@ describe('getCallbackRequest', () => {
     expect(detail?.salesCalls[0]).toMatchObject({
       signedUpAt: '2026-09-01T12:00:00.000Z',
       firstCampaignAt: '2026-09-02T09:00:00.000Z',
-      holdAuthorizedAt: '2026-09-02T10:05:00.000Z',
+      paidAt: '2026-09-02T10:05:00.000Z',
     });
   });
 
@@ -415,7 +422,7 @@ describe('getCallbackRequest', () => {
     expect(detail?.salesCalls[0]).toMatchObject({
       signedUpAt: null,
       firstCampaignAt: null,
-      holdAuthorizedAt: null,
+      paidAt: null,
     });
   });
 

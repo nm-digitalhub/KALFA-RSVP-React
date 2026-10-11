@@ -4,12 +4,10 @@ import type { LedgerMoney, PaymentState } from '@/lib/payments/status';
 // amounts, the order number and every operation with its date and outcome stay on the campaign page's payments list,
 // which the badge opens. Pure: the page passes what the gated readers already fetched.
 //
-// Two sources, because a campaign's money lives in one of them or both:
-//   - the payment ledger (payment_operations): the package purchase, every refund, and anything written there later —
-//     read through deriveStatus/ledgerMoney, by each kind's EFFECT, so a new kind needs no change here;
-//   - the campaign's own hold columns (capture_status, charge_status, release_status), which only a pay-per-result
-//     campaign with a card hold has — its hold and final-charge paths never wrote the ledger.
-// An unresolved row wins (money may be moving), then a refund, then a payment, then what became of a hold.
+// One source: the payment ledger (payment_operations) — the package purchase, every refund, and the card holds of the
+// retired pay-per-result campaigns (their authorize, release and charge rows) — read through deriveStatus/ledgerMoney,
+// by each kind's EFFECT, so a new kind needs no change here. An unresolved row wins (money may be moving), then a refund,
+// then a payment, then what became of a hold.
 
 export type CampaignPaymentStatus =
   | 'review'
@@ -18,8 +16,8 @@ export type CampaignPaymentStatus =
   | 'refunded_partial'
   | 'paid'
   | 'failed'
-  | 'hold_released'
-  | 'hold_awaiting_release';
+  // History: a pay-per-result campaign's card hold that ended with nothing paid. No new campaign holds a card.
+  | 'hold_released';
 
 export const CAMPAIGN_PAYMENT_STATUS_LABELS: Record<
   CampaignPaymentStatus,
@@ -32,56 +30,35 @@ export const CAMPAIGN_PAYMENT_STATUS_LABELS: Record<
   paid: { label: 'שולם', variant: 'success' },
   failed: { label: 'התשלום נכשל', variant: 'destructive' },
   hold_released: { label: 'המסגרת שוחררה', variant: 'neutral' },
-  // Closed with nothing to charge and the release not seen yet: the customer's card may still be blocked, so an admin
-  // must see it apart from "released".
-  hold_awaiting_release: { label: 'המסגרת ממתינה לשחרור', variant: 'warning' },
 };
 
-export interface HoldColumns {
-  captureStatus: string | null;
-  chargeStatus: string | null;
-  releaseStatus: string | null;
-  finalChargeAmount: number | null;
+/** What the admin readers fold from a campaign's ledger rows (ledgerForAdmin). */
+export interface CampaignLedger {
+  state: PaymentState;
+  money: LedgerMoney;
+  /** A card guarantee was released (a succeeded `void` row) — the end of a retired pay-per-result hold. */
+  released: boolean;
 }
 
 const toCents = (n: number) => Math.round(n * 100);
 
 /** null = nothing ever happened to this campaign's money (the cell shows "—"). */
-export function campaignPaymentStatus(
-  ledger: { state: PaymentState; money: LedgerMoney } | null,
-  hold: HoldColumns,
-): CampaignPaymentStatus | null {
-  const state = ledger?.state.status ?? 'none';
-  const money = ledger?.money;
+export function campaignPaymentStatus(ledger: CampaignLedger | null): CampaignPaymentStatus | null {
+  if (!ledger) return null;
+  const { state, money, released } = ledger;
 
-  if (state === 'review' || hold.captureStatus === 'hold_review' || hold.chargeStatus === 'charge_review') return 'review';
-  if (state === 'pending') return 'pending';
+  if (state.status === 'review') return 'review';
+  if (state.status === 'pending') return 'pending';
 
-  if (money && money.refunded > 0) {
-    // What was paid: the ledger's own payments, or — for a hold campaign whose charge never reached the ledger — its
-    // final charge.
-    const paid = money.paid > 0 ? money.paid : hold.chargeStatus === 'charged' ? Number(hold.finalChargeAmount ?? 0) : 0;
-    return paid > 0 && toCents(money.refunded) < toCents(paid) ? 'refunded_partial' : 'refunded_full';
+  if (money.refunded > 0) {
+    return money.paid > 0 && toCents(money.refunded) < toCents(money.paid) ? 'refunded_partial' : 'refunded_full';
   }
-  if (money && money.paid > 0) return 'paid';
+  if (money.paid > 0) return 'paid';
 
-  if (hold.captureStatus === 'hold_failed') return 'failed';
-  if (hold.captureStatus === 'pending') return 'pending';
-  if (hold.captureStatus === 'authorized') {
-    // capture_status stays 'authorized' for the campaign's whole life; the charge and release columns say what became of
-    // the money. A capture beats a stray release mark: charged money cannot be "released".
-    if (hold.chargeStatus === 'charged') return 'paid';
-    if (hold.chargeStatus === 'charge_failed') return 'failed';
-    if (hold.releaseStatus === 'released') return 'hold_released';
-    if (hold.chargeStatus === 'nothing_to_charge') return 'hold_awaiting_release';
-    // Held, or the final charge in flight: nothing has been paid yet.
-    return 'pending';
-  }
-  // A hold state this code does not know: a person should look, never a guessed "paid" or "nothing".
-  if (hold.captureStatus) return 'review';
-
-  if (state === 'declined') return 'failed';
-  if (state === 'released') return 'hold_released';
-  if (state === 'committed') return 'pending';
+  if (state.status === 'declined') return 'failed';
+  // Nothing paid and the guarantee released: a pay-per-result hold that settled at ₪0 (its ₪0 charge row makes the
+  // derived state "collected", so the release row is what tells it apart).
+  if (released || state.status === 'released') return 'hold_released';
+  if (state.status === 'committed') return 'pending';
   return null;
 }

@@ -61,7 +61,7 @@ export type TimelineSalesCall = Pick<
   | 'signupCompletedAt'
   | 'signedUpAt'
   | 'firstCampaignAt'
-  | 'holdAuthorizedAt'
+  | 'paidAt'
   | 'outcomeRecordedAt'
   | 'hasAnalysis'
   | 'callSuccessful'
@@ -195,17 +195,17 @@ export function buildCallbackActivity(input: TimelineInput): ActivityEntry[] {
       push({
         key: `${call.attemptId}:signup`,
         at: call.signupCompletedAt,
-        title: `ההסכם נחתם והקמפיין אושר`,
+        title: `תנאי החבילה אושרו`,
       });
     }
 
-    // Separate from the signature on purpose: a declined card leaves the
-    // agreement signed and nothing held, and that lead needs a call TODAY.
-    if (call.holdAuthorizedAt) {
+    // Separate from the approval on purpose: a declined card leaves the terms
+    // approved and nothing paid, and that lead needs a call TODAY.
+    if (call.paidAt) {
       push({
-        key: `${call.attemptId}:hold`,
-        at: call.holdAuthorizedAt,
-        title: `מסגרת אשראי נתפסה`,
+        key: `${call.attemptId}:paid`,
+        at: call.paidAt,
+        title: `החבילה שולמה`,
       });
     }
 
