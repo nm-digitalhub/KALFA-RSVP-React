@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>אישור תנאי החבילה עם הטבה</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#ffffff}
+a{color:#4f39f6;text-decoration:none}a:hover{color:#3a28c4;text-decoration:underline}
+</style>
+</helmet>
+<div dir="rtl" style="width: 760px; height: 1500px; box-sizing: border-box; padding: 32px 44px; font-family: Heebo, system-ui, sans-serif; color: #0a0a0a; background: #ffffff; display: flex; flex-direction: column; gap: 24px">
+
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px">
+    <h1 style="margin: 0; font-size: 24px; font-weight: 700">הקמת אישורי הגעה</h1>
+    <a href="#event" style="display: flex; align-items: center; gap: 4px; font-size: 14px; color: #737373"><span aria-hidden="true">→</span>חזרה לאירוע</a>
+  </div>
+  <p style="margin: -12px 0 0; font-size: 14px; color: #737373">[שם האירוע]</p>
+
+  <section style="border: 1px solid #e5e5e5; border-radius: 10px; padding: 24px; background: #ffffff; display: flex; flex-direction: column; gap: 16px">
+    <h2 style="margin: 0; font-size: 18px; font-weight: 600">אישור תנאי החבילה</h2>
+
+    <div style="display: flex; flex-direction: column; gap: 24px">
+      <p style="margin: 0; font-size: 14px; color: #737373; line-height: 1.6">אלו עיקרי התנאים. קראו את התנאים המלאים לפני האישור. האישור נעשה בסימון התיבות, והתשלום בשלב הבא.</p>
+
+      <section style="display: flex; flex-direction: column; gap: 12px; border: 1px solid #e5e5e5; border-radius: 10px; padding: 16px; background: #ffffff; font-size: 14px">
+        <h3 style="margin: 0; font-size: 14px; font-weight: 600">עיקרי התנאים</h3>
+        <dl style="margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 6px; column-gap: 12px">
+          <dt style="color: #737373">חבילה</dt>
+          <dd style="margin: 0">אישורי הגעה — וואטסאפ + שיחות AI</dd>
+          <dt style="color: #737373">מחיר רגיל</dt>
+          <dd style="margin: 0"><span dir="ltr">₪200</span></dd>
+          <dt style="color: #737373">הטבה אישית</dt>
+          <dd style="margin: 0"><span dir="ltr">−₪10</span> (5%)</dd>
+          <dt style="color: #737373">מחיר החבילה</dt>
+          <dd style="margin: 0"><strong dir="ltr">₪190</strong> — תשלום אחד, מחיר סופי; לא נגבה מע״מ</dd>
+          <dt style="color: #737373">מכסת אנשי קשר</dt>
+          <dd style="margin: 0">עד 200 אנשי קשר</dd>
+          <dt style="color: #737373">ערוצים</dt>
+          <dd style="margin: 0">וואטסאפ, שיחות AI</dd>
+          <dt style="color: #737373">חלון</dt>
+          <dd style="margin: 0">[תאריך התחלה] – [תאריך סיום]</dd>
+        </dl>
+        <p style="margin: 0; border-radius: 4px; background: #f9f9f9; padding: 8px; font-size: 12px; color: #737373; line-height: 1.6">המחיר קבוע ואינו תלוי במספר אנשי הקשר שהשיבו. אנשי קשר מעבר למכסה ממתינים ואינם מקבלים פנייה.</p>
+        <button type="button" style="width: 100%; height: 40px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #e5e5e5; border-radius: 10px; background: #ffffff; font: 500 14px Heebo, system-ui, sans-serif; color: #0a0a0a">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg>
+          קריאת ההסכם המלא
+        </button>
+      </section>
+
+      <form style="display: flex; flex-direction: column; gap: 16px; margin: 0">
+        <fieldset style="display: flex; flex-direction: column; gap: 8px; border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px; margin: 0">
+          <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 14px; line-height: 1.6">
+            <input type="checkbox" name="terms_accepted" style="margin-top: 4px">
+            <span>קראתי ואני מאשר/ת את תנאי החבילה ואת <a href="#terms" style="font-weight: 500">תנאי השירות</a>, לרבות התשלום החד‑פעמי.</span>
+          </label>
+          <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 14px; line-height: 1.6">
+            <input type="checkbox" name="privacy_accepted" style="margin-top: 4px">
+            <span>אני מאשר/ת את <a href="#privacy" style="font-weight: 500">מדיניות הפרטיות</a>.</span>
+          </label>
+        </fieldset>
+        <button type="button" style="width: 100%; height: 40px; border: 0; border-radius: 10px; background: #4f39f6; color: #ffffff; font: 500 14px Heebo, system-ui, sans-serif">אישור והמשך לתשלום</button>
+      </form>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 10px">
+    <div style="font-size: 13px; font-weight: 600; color: #737373">בתוך "קריאת ההסכם המלא" · סעיף המחיר בהסכם (הצעת נוסח, טעון אישור)</div>
+    <div style="padding: 22px 26px; background: #ffffff; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 14px; line-height: 1.8">
+      <p style="margin: 0 0 8px; font-weight: 600">התמורה</p>
+      <p style="margin: 0 0 8px">מחיר החבילה הוא <span dir="ltr">₪190</span>, תשלום אחד. המחיר כולל הטבה אישית של <span dir="ltr">₪10</span> (5%) ממחירה הרגיל של החבילה, <span dir="ltr">₪200</span>.</p>
+      <p style="margin: 0 0 8px">ההטבה ניתנה ללקוח באופן אישי, לרכישה אחת בלבד. היא אינה ניתנת להעברה, אינה ניתנת להמרה בכסף ואינה יוצרת זיכוי.</p>
+      <p style="margin: 0">החזר כספי, ככל שיינתן, יחושב לפי הסכום ששולם בפועל.</p>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":760,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

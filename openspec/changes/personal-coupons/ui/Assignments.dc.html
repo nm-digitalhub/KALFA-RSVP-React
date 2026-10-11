@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>הטבות אישיות</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#ffffff}
+a{color:#4f39f6}a:hover{opacity:.8}
+</style>
+</helmet>
+<div dir="rtl" style="box-sizing: border-box; padding: 32px; font-family: Heebo, system-ui, sans-serif; color: #0a0a0a; background: #ffffff; display: flex; flex-direction: column; gap: 24px">
+
+  <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <h1 style="margin: 0; font-size: 24px; font-weight: 700">הטבות אישיות</h1>
+      <p style="margin: 0; font-size: 14px; color: #737373">הטבות שהוקצו ללקוחות בשיחה עם עומר או על ידי הצוות. כל הטבה משמשת לרכישה אחת.</p>
+    </div>
+    <div style="display: flex; gap: 8px">
+      <a href="Offers.dc.html" style="border-radius: 6px; border: 1px solid #e5e5e5; padding: 8px 16px; font-size: 14px; font-weight: 500; color: #0a0a0a; text-decoration: none">הגדרת הצעות</a>
+      <a href="AssignNew.dc.html" style="border-radius: 6px; background: #4f39f6; padding: 8px 16px; font-size: 14px; font-weight: 500; color: #ffffff; text-decoration: none">הקצאת הטבה</a>
+    </div>
+  </div>
+
+  <p role="status" style="margin: 0; border-radius: 6px; border: 1px solid #c4e3d2; background: #ecf6f0; padding: 8px 12px; font-size: 14px; color: #0a7a45">אין תשלום שהצליח בלי שההטבה שלו סומנה כמומשה.</p>
+
+  <nav aria-label="סינון לפי מצב" style="display: flex; flex-wrap: wrap; gap: 8px">
+    <a href="#all" aria-current="page" style="display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #4f39f6; background: #f6f5ff; font-size: 13px; font-weight: 500; color: #4f39f6; text-decoration: none">הכול</a>
+    <a href="#assigned" style="display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #e5e5e5; font-size: 13px; font-weight: 500; color: #0a0a0a; text-decoration: none">ממתינה לשימוש</a>
+    <a href="#bound" style="display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #e5e5e5; font-size: 13px; font-weight: 500; color: #0a0a0a; text-decoration: none">קשורה לאירוע</a>
+    <a href="#consumed" style="display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #e5e5e5; font-size: 13px; font-weight: 500; color: #0a0a0a; text-decoration: none">מומשה</a>
+    <a href="#void" style="display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #e5e5e5; font-size: 13px; font-weight: 500; color: #0a0a0a; text-decoration: none">בוטלה או פגה</a>
+  </nav>
+
+  <div style="overflow-x: auto; border: 1px solid #e5e5e5; border-radius: 10px">
+    <table style="width: 100%; min-width: 1080px; border-collapse: collapse; font-size: 14px; text-align: start">
+      <thead style="border-bottom: 1px solid #e5e5e5; background: #ffffff; font-size: 12px; color: #737373">
+        <tr>
+          <th style="padding: 12px 16px; text-align: start; font-weight: 500">מועד</th>
+          <th style="padding: 12px 16px; text-align: start; font-weight: 500">מקבל ההטבה</th>
+          <th style="padding: 12px 16px; text-align: start; font-weight: 500">מקור</th>
+          <th style="padding: 12px 16px; text-align: start; font-weight: 500">חבילות ומחירים</th>
+          <th style="padding: 12px 16px; text-align: start; font-weight: 500">מצב</th>
+          <th style="padding: 12px 16px; text-align: start; font-weight: 500">אירוע וחבילה</th>
+          <th style="padding: 12px 16px; text-align: start; font-weight: 500">תשלום</th>
+          <th style="padding: 12px 16px; text-align: start; font-weight: 500"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">פעולות</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom: 1px solid #e5e5e5">
+          <td style="padding: 12px 16px; font-variant-numeric: tabular-nums">[תאריך ושעה]</td>
+          <td style="padding: 12px 16px"><span dir="ltr">+972 5•-•••-•123</span><div style="font-size: 12px; color: #737373">טרם נתבעה</div></td>
+          <td style="padding: 12px 16px">שיחה עם עומר</td>
+          <td style="padding: 12px 16px; line-height: 1.6">Kalfa RSVP 100 WIN · <span dir="ltr">₪95</span><br>אישורי הגעה — וואטסאפ + שיחות AI · <span dir="ltr">₪190</span></td>
+          <td style="padding: 12px 16px"><span style="display: inline-flex; height: 20px; align-items: center; padding: 0 8px; border-radius: 999px; border: 1px solid #e5e5e5; font-size: 12px; font-weight: 500; color: #737373">ממתינה לשימוש</span></td>
+          <td style="padding: 12px 16px; color: #737373">—</td>
+          <td style="padding: 12px 16px; color: #737373">—</td>
+          <td style="padding: 12px 16px"><button type="button" style="height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #e5e5e5; background: #ffffff; font: 500 13px Heebo, system-ui, sans-serif; color: #c4161c">ביטול</button></td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e5e5e5">
+          <td style="padding: 12px 16px; font-variant-numeric: tabular-nums">[תאריך ושעה]</td>
+          <td style="padding: 12px 16px">[שם הלקוח]<div style="font-size: 12px; color: #737373">[אימייל]</div></td>
+          <td style="padding: 12px 16px">שיחה עם עומר</td>
+          <td style="padding: 12px 16px; line-height: 1.6">Kalfa RSVP 100 WIN · <span dir="ltr">₪95</span><br>אישורי הגעה — וואטסאפ + שיחות AI · <span dir="ltr">₪190</span></td>
+          <td style="padding: 12px 16px"><span style="display: inline-flex; height: 20px; align-items: center; padding: 0 8px; border-radius: 999px; border: 1px solid #c9d8f7; background: #eef3fd; font-size: 12px; font-weight: 500; color: #2453c4">קשורה לאירוע</span></td>
+          <td style="padding: 12px 16px"><a href="#event" style="font-weight: 500; text-decoration: underline; text-underline-offset: 2px">[שם האירוע]</a><div style="font-size: 12px; color: #737373">אישורי הגעה — וואטסאפ + שיחות AI · <span dir="ltr">₪190</span></div></td>
+          <td style="padding: 12px 16px"><span style="display: inline-flex; height: 20px; align-items: center; padding: 0 8px; border-radius: 999px; border: 1px solid #ecdcb9; background: #f7f1e4; font-size: 12px; font-weight: 500; color: #7a5600">בבדיקה</span><div style="font-size: 12px; color: #7a5600; margin-top: 4px">ההטבה מוחזקת עד סיום הבדיקה</div></td>
+          <td style="padding: 12px 16px; color: #737373">—</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e5e5e5">
+          <td style="padding: 12px 16px; font-variant-numeric: tabular-nums">[תאריך ושעה]</td>
+          <td style="padding: 12px 16px">[שם הלקוח]<div style="font-size: 12px; color: #737373">[אימייל]</div></td>
+          <td style="padding: 12px 16px">צוות: [שם איש הצוות]</td>
+          <td style="padding: 12px 16px; line-height: 1.6">אישורי הגעה — וואטסאפ + שיחות AI · <span dir="ltr">₪180</span></td>
+          <td style="padding: 12px 16px"><span style="display: inline-flex; height: 20px; align-items: center; padding: 0 8px; border-radius: 999px; border: 1px solid #c4e3d2; background: #ecf6f0; font-size: 12px; font-weight: 500; color: #0a7a45">מומשה</span></td>
+          <td style="padding: 12px 16px"><a href="#event" style="font-weight: 500; text-decoration: underline; text-underline-offset: 2px">[שם האירוע]</a><div style="font-size: 12px; color: #737373">אישורי הגעה — וואטסאפ + שיחות AI · <span dir="ltr">₪180</span></div></td>
+          <td style="padding: 12px 16px"><span style="display: inline-flex; height: 20px; align-items: center; padding: 0 8px; border-radius: 999px; border: 1px solid #c4e3d2; background: #ecf6f0; font-size: 12px; font-weight: 500; color: #0a7a45">שולם</span></td>
+          <td style="padding: 12px 16px; color: #737373">—</td>
+        </tr>
+        <tr>
+          <td style="padding: 12px 16px; font-variant-numeric: tabular-nums">[תאריך ושעה]</td>
+          <td style="padding: 12px 16px"><span dir="ltr">+972 5•-•••-•456</span><div style="font-size: 12px; color: #737373">טרם נתבעה</div></td>
+          <td style="padding: 12px 16px">שיחה עם עומר</td>
+          <td style="padding: 12px 16px; line-height: 1.6">Kalfa RSVP 100 WIN · <span dir="ltr">₪95</span><br>אישורי הגעה — וואטסאפ + שיחות AI · <span dir="ltr">₪190</span></td>
+          <td style="padding: 12px 16px"><span style="display: inline-flex; height: 20px; align-items: center; padding: 0 8px; border-radius: 999px; border: 1px solid #e5e5e5; font-size: 12px; font-weight: 500; color: #737373">פגה ב-[תאריך]</span></td>
+          <td style="padding: 12px 16px; color: #737373">—</td>
+          <td style="padding: 12px 16px; color: #737373">—</td>
+          <td style="padding: 12px 16px; color: #737373">—</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

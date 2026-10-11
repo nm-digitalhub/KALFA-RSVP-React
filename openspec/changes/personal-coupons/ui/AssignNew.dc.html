@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>הקצאת הטבה</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#ffffff}
+a{color:#4f39f6}a:hover{opacity:.8}
+</style>
+</helmet>
+<div dir="rtl" style="width: 760px; height: 900px; box-sizing: border-box; padding: 32px 44px; font-family: Heebo, system-ui, sans-serif; color: #0a0a0a; background: #ffffff; display: flex; flex-direction: column; gap: 24px">
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <h1 style="margin: 0; font-size: 24px; font-weight: 700">הקצאת הטבה</h1>
+    <a href="Assignments.dc.html" style="font-size: 14px; color: #737373; text-decoration: none"><span aria-hidden="true">→</span> חזרה להטבות אישיות</a>
+  </div>
+
+  <form style="display: flex; flex-direction: column; gap: 16px; margin: 0">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <label for="account" style="display: block; font-size: 14px; font-weight: 500">חשבון הלקוח</label>
+      <input id="account" type="search" placeholder="חיפוש לפי אימייל" style="width: 100%; box-sizing: border-box; border-radius: 6px; border: 1px solid #e5e5e5; background: #ffffff; padding: 8px 12px; font: 400 14px Heebo, system-ui, sans-serif">
+      <p style="margin: 0; font-size: 12px; color: #737373">ההטבה ניתנת לחשבון עצמו, בלי צורך באימות טלפון.</p>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <label for="offer" style="display: block; font-size: 14px; font-weight: 500">הצעה</label>
+      <select id="offer" style="width: 100%; box-sizing: border-box; border-radius: 6px; border: 1px solid #e5e5e5; background: #ffffff; padding: 8px 12px; font: 400 14px Heebo, system-ui, sans-serif">
+        <option>[שם ההצעה] · 5%</option>
+      </select>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px; border-radius: 6px; border: 1px solid #e5e5e5; padding: 12px">
+      <p style="margin: 0; font-size: 14px; font-weight: 600">הלקוח יקבל</p>
+      <ul style="margin: 0; padding-inline-start: 20px; font-size: 14px; line-height: 1.7">
+        <li>Kalfa RSVP 100 WIN: <span dir="ltr">₪95</span> במקום <span dir="ltr">₪100</span></li>
+        <li>אישורי הגעה — וואטסאפ + שיחות AI: <span dir="ltr">₪190</span> במקום <span dir="ltr">₪200</span></li>
+      </ul>
+      <p style="margin: 0; font-size: 12px; color: #737373">בתוקף עד [תאריך סיום ההטבה]. המחירים נשמרים בהטבה, ושינוי מחיר או הצעה בהמשך לא ישנה אותה.</p>
+    </div>
+
+    <button type="button" style="width: 100%; height: 40px; border: 0; border-radius: 10px; background: #4f39f6; color: #ffffff; font: 500 14px Heebo, system-ui, sans-serif">הקצאה</button>
+  </form>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":760,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

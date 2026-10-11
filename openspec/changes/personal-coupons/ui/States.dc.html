@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>אימות טלפון ומצבי ההטבה</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#ffffff}
+a{color:#4f39f6;text-decoration:none}a:hover{color:#3a28c4;text-decoration:underline}
+</style>
+</helmet>
+<div dir="rtl" style="width: 760px; height: 1500px; box-sizing: border-box; padding: 32px 44px; font-family: Heebo, system-ui, sans-serif; color: #0a0a0a; background: #ffffff; display: flex; flex-direction: column; gap: 28px">
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <div style="font-size: 13px; font-weight: 600; color: #737373">בשיחה · מה עומר אומר אחרי שהשרת שמר את ההטבה</div>
+    <div style="padding: 16px; border: 1px solid #e5e5e5; border-radius: 10px; font-size: 15px; line-height: 1.7">"שמרתי עבורכם הטבה אישית של 5 אחוז. החבילה של 100 אנשי קשר יוצאת 95 שקל במקום 100, והחבילה של 200 יוצאת 190 במקום 200. ההטבה שמורה על המספר הזה, שאליו התקשרתי. אחרי ההרשמה ואימות המספר, ההטבה תופיע באתר ותוכלו לבחור את החבילה שמתאימה לכם."</div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <div style="font-size: 13px; font-weight: 600; color: #737373">בחירת חבילה · חשבון בלי טלפון מאומת (לא מגלה אם קיימת הטבה)</div>
+    <section style="border: 1px solid #e5e5e5; border-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 16px">
+      <h2 style="margin: 0; font-size: 18px; font-weight: 600">בחירת חבילה</h2>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; border-radius: 6px; border: 1px solid #e5e5e5; background: #f9f9f9; padding: 10px 12px; font-size: 14px; line-height: 1.55">
+        <span>דיברתם עם נציג של KALFA? אמתו את מספר הטלפון, ואם נשמרה עבורכם הצעה בשיחה היא תופיע כאן.</span>
+        <a href="#verify" style="display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border: 1px solid #e5e5e5; border-radius: 8px; background: #ffffff; color: #0a0a0a; font-size: 13px; font-weight: 500; white-space: nowrap">אימות מספר הטלפון</a>
+      </div>
+      <p style="margin: 0; font-size: 13px; color: #737373">ומתחת: רשימת החבילות כרגיל, במחירים הרגילים.</p>
+    </section>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <div style="font-size: 13px; font-weight: 600; color: #737373">בחירת חבילה · ההטבה הסתיימה, בוטלה או משמשת לאירוע אחר (רק לבעל ההטבה)</div>
+    <section style="border: 1px solid #e5e5e5; border-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 12px">
+      <h2 style="margin: 0; font-size: 18px; font-weight: 600">בחירת חבילה</h2>
+      <p role="status" style="margin: 0; border-radius: 6px; border: 1px solid #d6c39b; background: #f7f1e4; padding: 8px 12px; font-size: 14px; color: #7a5600">ההטבה האישית שלכם הסתיימה ב-[תאריך]. המחירים המוצגים הם המחירים הרגילים.</p>
+      <p role="status" style="margin: 0; border-radius: 6px; border: 1px solid #d6c39b; background: #f7f1e4; padding: 8px 12px; font-size: 14px; color: #7a5600">ההטבה האישית שלכם אינה זמינה עוד. לשאלות אפשר לפנות אלינו.</p>
+      <p role="status" style="margin: 0; border-radius: 6px; border: 1px solid #d6c39b; background: #f7f1e4; padding: 8px 12px; font-size: 14px; color: #7a5600">ההטבה האישית שלכם כבר משמשת לאירוע "[שם האירוע]". היא תקפה לרכישה אחת.</p>
+    </section>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <div style="font-size: 13px; font-weight: 600; color: #737373">אישור תנאי החבילה · המחיר השתנה בזמן שהתנאים היו פתוחים (שגיאת הטופס הקיימת)</div>
+    <section style="border: 1px solid #e5e5e5; border-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 16px">
+      <fieldset style="display: flex; flex-direction: column; gap: 8px; border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px; margin: 0">
+        <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 14px"><input type="checkbox" checked style="margin-top: 4px"><span>קראתי ואני מאשר/ת את תנאי החבילה ואת <a href="#terms" style="font-weight: 500">תנאי השירות</a>, לרבות התשלום החד‑פעמי.</span></label>
+        <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 14px"><input type="checkbox" checked style="margin-top: 4px"><span>אני מאשר/ת את <a href="#privacy" style="font-weight: 500">מדיניות הפרטיות</a>.</span></label>
+      </fieldset>
+      <p role="alert" style="margin: 0; border-radius: 6px; background: #fbe8e8; padding: 8px 12px; font-size: 14px; color: #b3131b">המחיר עודכן מאז שפתחתם את התנאים. קראו שוב את התנאים המעודכנים ואשרו.</p>
+      <button type="button" style="width: 100%; height: 40px; border: 0; border-radius: 10px; background: #4f39f6; color: #ffffff; font: 500 14px Heebo, system-ui, sans-serif">אישור והמשך לתשלום</button>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":760,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

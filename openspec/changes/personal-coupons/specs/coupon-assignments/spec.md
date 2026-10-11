@@ -1,6 +1,6 @@
 ## Purpose
 
-How a personal offer is assigned to one customer for one package, by the sales agent or by staff; what proves the customer may use it; and how it is bound to, consumed by, or released from a campaign. A coupon is a price agreement, never a credit balance.
+How one personal benefit is assigned to one customer, valid for the packages its offer allows, by the sales agent or by staff; what proves the customer may use it; and how it is bound to, consumed by, or released from a campaign. A coupon is a price agreement, never a credit balance.
 
 ## ADDED Requirements
 
@@ -9,21 +9,29 @@ How a personal offer is assigned to one customer for one package, by the sales a
 The system SHALL compute the discount and the resulting final price on the server, from an offer defined in the system's offer source. It SHALL NOT accept a discount, a percentage or a price from the sales agent or the browser. When no offer is defined, nothing SHALL be assigned.
 
 #### Scenario: Agent asks for the configured discount
-- **WHEN** the sales agent's discount tool is called for an offered package, during a call that is allowed an offer
-- **THEN** the server returns the offer, the package, its list price and the final price it computed
+- **WHEN** the sales agent's discount tool is called during a call that is allowed an offer
+- **THEN** the server returns the offer and, for each package the offer allows, its list price and the final price it computed
 - **AND** the response contains no field the agent is expected to calculate
 
 #### Scenario: A discount value is submitted
-- **WHEN** a request carries a discount, a percentage or a price chosen by the caller
+- **WHEN** a request carries a discount, a percentage, a price or a package chosen by the caller
 - **THEN** the value is ignored and the defined offer decides
 
-### Requirement: An assignment is for one package
+### Requirement: One assignment carries options for the allowed packages, and is used once
 
-Each assignment SHALL name exactly one package, together with the list price and the final price promised for it. It SHALL be bound only to a campaign for that package.
+An assignment SHALL be one personal benefit. It SHALL carry one option for each package its offer allows, each with the package, its list price, the discount and the final price. Only the offer decides which packages are included. At most one option SHALL be bound to a campaign, and the assignment SHALL be used for at most one purchase.
 
-#### Scenario: The customer chooses another package
-- **WHEN** a customer with an assignment for package A chooses package B
-- **THEN** no discount is applied to B, and the customer is told the offer is for package A
+#### Scenario: The benefit covers two packages
+- **WHEN** the agent assigns a benefit whose offer allows the small and the large package
+- **THEN** one assignment exists, with an option and a final price for each of the two packages
+
+#### Scenario: The customer chooses a package outside the benefit
+- **WHEN** a customer with a benefit chooses a package that has no option in it
+- **THEN** no discount is applied to that package
+
+#### Scenario: The customer switches package before approval
+- **WHEN** a customer whose benefit is bound to an unapproved campaign changes the package to another allowed one
+- **THEN** the pricing moves to the new package's option in one transaction, and no second assignment is created
 
 ### Requirement: An offer is promised only after it is saved
 
@@ -36,21 +44,20 @@ The system SHALL return an offer to the sales agent only after the assignment is
 ### Requirement: A repeated request never creates a second assignment
 
 Assigning an offer SHALL be idempotent per source:
-- one per sales call and package for the agent;
+- one per sales call for the agent, whatever package is discussed;
 - one per staff request key for staff.
 
 A repeated or retried request returns the existing assignment.
 
 #### Scenario: The tool is called twice in one call
-- **WHEN** the discount tool is called again for the same package during the same sales call
-- **THEN** the same assignment is returned, with the same final price, and no second row exists
+- **WHEN** the discount tool is called again during the same sales call
+- **THEN** the same assignment is returned, with the same options and final prices, and no second assignment exists
 
 ### Requirement: Assigned terms are frozen
 
 An assignment SHALL keep its own copy of the offer's terms:
 - kind and value;
-- the package;
-- list price and final price at assignment time;
+- the options: each package with its list price and final price at assignment time;
 - expiry.
 
 A later change to the offer or the package price SHALL NOT change an assignment already made. Only the assignment's state, its account (once, on claim) and its campaign binding may change, and only through the defined operations.
@@ -70,12 +77,12 @@ A personal assignment SHALL be usable only by the customer it belongs to. A link
 - **THEN** no offer is applied or revealed
 
 #### Scenario: The customer verifies the assigned phone
-- **WHEN** an account verifies the phone the offer was assigned to and chooses the offer's package
+- **WHEN** an account verifies the phone the benefit was assigned to and chooses a package the benefit allows
 - **THEN** the offer is applied and the assignment is tied to that account
 
 ### Requirement: Binding is atomic and exclusive
 
-Binding an assignment SHALL, in one database transaction, write the discount and the final price into the campaign's pricing record and mark the assignment bound. A database constraint SHALL prevent the same assignment from being bound to two campaigns, or twice by concurrent requests. Binding SHALL be refused when the campaign's pricing is locked.
+Binding an assignment SHALL, in one database transaction and after locking the campaign, its pricing record and the assignment in that order, write the chosen option's discount and final price into the campaign's pricing record and mark the assignment bound. A database constraint SHALL prevent the same assignment from being bound to two campaigns, or twice by concurrent requests. Binding SHALL be refused when the campaign's pricing is locked.
 
 #### Scenario: Two campaigns try to use one assignment
 - **WHEN** two concurrent transactions bind the same assignment to two different campaigns
@@ -124,7 +131,7 @@ A coupon SHALL NOT create, consume or appear as credit balance. It SHALL NOT be 
 
 ### Requirement: The customer can find and understand an offer
 
-The package choice SHALL show an eligible offer on its package, with the list price, the discount and the final price. An account without a verified phone SHALL be invited to verify its phone without being told whether an offer exists. The owner of an offer SHALL be told when it is for another package or has ended.
+The package choice SHALL show, on every package the benefit allows, the list price, the discount and the final price. An account without a verified phone SHALL be invited to verify its phone without being told whether a benefit exists. The owner of a benefit SHALL be told when it has ended.
 
 #### Scenario: An unverified account
 - **WHEN** an account without a verified phone opens the package choice
@@ -136,7 +143,7 @@ The package choice SHALL show an eligible offer on its package, with the list pr
 
 ### Requirement: Staff can follow every assignment
 
-Staff with `manage_billing` SHALL see each assignment's source, target, package, prices, state and bound campaign, and that campaign's package payment outcome. They SHALL be able to assign and void an assignment.
+Staff with `manage_billing` SHALL see each assignment's source, target, options, state, bound campaign and chosen package, and that campaign's package payment outcome. They SHALL be able to assign and void an assignment.
 
 #### Scenario: An assignment held by a payment in review
 - **WHEN** an assignment's campaign has a package payment in review
@@ -152,4 +159,4 @@ The objection reason given to the agent SHALL be kept. These records SHALL NOT s
 
 #### Scenario: The agent assigns an offer
 - **WHEN** the agent's tool records an assignment
-- **THEN** an activity record names the sales call, the offer, the package and the objection reason
+- **THEN** an activity record names the sales call, the offer, its packages and the objection reason

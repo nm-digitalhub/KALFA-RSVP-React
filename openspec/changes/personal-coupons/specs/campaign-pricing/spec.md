@@ -26,13 +26,7 @@ The approved terms, the payment request and every screen SHALL read the price fr
 
 ### Requirement: Approval is atomic and bound to the rendered version
 
-The terms document SHALL be rendered from one version of the pricing record. Approving it SHALL, in one database transaction:
-- confirm that this version is still current and the campaign is still awaiting approval;
-- store the signed agreement;
-- approve the campaign;
-- lock the price.
-
-When the version is no longer current, or the campaign is no longer awaiting approval, nothing SHALL be stored and the approval SHALL be refused.
+The terms document SHALL be rendered from one version of the pricing record. Approving it SHALL, in one database transaction, confirm that this version is still current and the campaign is awaiting approval, store the signed agreement, approve the campaign and lock the price. Otherwise nothing SHALL be stored and the approval SHALL be refused.
 
 #### Scenario: The price changes while the customer reads the terms
 - **WHEN** the pricing record changes after the terms document was rendered and before the customer approves
@@ -41,6 +35,22 @@ When the version is no longer current, or the campaign is no longer awaiting app
 #### Scenario: Two approvals race
 - **WHEN** two approval requests for the same campaign run at the same time
 - **THEN** exactly one stores an agreement and approves; the other is refused and stores nothing
+
+### Requirement: Price operations lock rows in one order
+
+Every operation that reads and then changes a campaign's price SHALL lock the campaign, then its pricing record, then any coupon assignment, before its checks.
+
+#### Scenario: Approval and a price change at the same time
+- **WHEN** an approval and a binding run concurrently on one campaign
+- **THEN** one waits for the other, and the approval checks the version only after holding both locks
+
+### Requirement: An unknown approval outcome is resolved before cleanup
+
+When the approval call's outcome is unknown, the server SHALL determine it from the stored agreement for that approval request id. A rendered document SHALL be removed only after it is confirmed that no agreement refers to it.
+
+#### Scenario: The answer is lost
+- **WHEN** the approval call times out after the database committed it
+- **THEN** the rendered document is kept, and the lookup by request id finds the stored agreement and reports the campaign approved
 
 ### Requirement: The approved terms show the price as agreed
 
@@ -90,6 +100,10 @@ The payment request SHALL carry the final price as a positive amount. A discount
 
 While `campaigns.package_price` exists, the database SHALL keep it equal to the pricing record's final price, in whichever direction the current phase writes. The old column SHALL be removed only after no reader uses it, and a check finds no campaign whose two copies differ and no approved campaign whose succeeded payment differs from its approved price.
 
+#### Scenario: Old code approves a campaign during the transition
+- **WHEN** code that does not know the pricing record approves a campaign
+- **THEN** the database locks that campaign's pricing record in the same transaction
+
 #### Scenario: Old code sets a price during the transition
 - **WHEN** code that still writes `campaigns.package_price` sets the price of an unlocked campaign without an assignment
 - **THEN** the pricing record holds the same price
@@ -97,3 +111,11 @@ While `campaigns.package_price` exists, the database SHALL keep it equal to the 
 #### Scenario: The check finds a difference
 - **WHEN** the equality check returns any campaign
 - **THEN** the old column is not removed
+
+### Requirement: Rollback to code without coupons closes once a discount exists
+
+Returning to code that does not know the pricing record SHALL be allowed only while no campaign carries a coupon assignment. A query SHALL list the campaigns that block it.
+
+#### Scenario: A discounted campaign exists
+- **WHEN** a rollback to the previous code is considered and a campaign carries an assignment
+- **THEN** the query lists that campaign and the rollback is not performed

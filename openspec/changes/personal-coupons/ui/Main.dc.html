@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>בחירת חבילה עם הטבה</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#ffffff}
+a{color:#4f39f6}a:hover{color:#3a28c4}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:3px solid rgba(79,57,246,.5);outline-offset:1px}
+</style>
+</helmet>
+<div dir="rtl" style="width: 760px; height: 1500px; box-sizing: border-box; padding: 32px 44px; font-family: Heebo, system-ui, sans-serif; color: #0a0a0a; background: #ffffff; display: flex; flex-direction: column; gap: 24px">
+
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px">
+    <h1 style="margin: 0; font-size: 24px; font-weight: 700">הקמת אישורי הגעה</h1>
+    <a href="#event" style="display: flex; align-items: center; gap: 4px; font-size: 14px; color: #737373; text-decoration: none"><span aria-hidden="true">→</span>חזרה לאירוע</a>
+  </div>
+  <p style="margin: -12px 0 0; font-size: 14px; color: #737373">[שם האירוע]</p>
+
+  <section style="border: 1px solid #e5e5e5; border-radius: 10px; padding: 24px; background: #ffffff">
+    <ol role="list" aria-label="שלבי ההקמה" style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px">
+      <li style="display: flex; gap: 12px; align-items: flex-start; padding: 8px; border-radius: 6px">
+        <span aria-hidden="true" style="margin-top: 2px; width: 24px; height: 24px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: #e1f2e9; color: #0a7a45"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+        <p style="margin: 0; font-size: 14px; font-weight: 500">1. פרטי האירוע</p>
+      </li>
+      <li style="display: flex; gap: 12px; align-items: flex-start; padding: 8px; border-radius: 6px">
+        <span aria-hidden="true" style="margin-top: 2px; width: 24px; height: 24px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: #e1f2e9; color: #0a7a45"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+        <p style="margin: 0; font-size: 14px; font-weight: 500">2. אישור פרטי האירוע</p>
+      </li>
+      <li aria-current="step" style="display: flex; gap: 12px; align-items: flex-start; padding: 8px; border-radius: 6px; background: #f6f5ff">
+        <span aria-hidden="true" style="margin-top: 2px; width: 24px; height: 24px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: #edeafe; color: #4f39f6"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg></span>
+        <p style="margin: 0; font-size: 14px; font-weight: 500">3. בחירת חבילה</p>
+      </li>
+      <li style="display: flex; gap: 12px; align-items: flex-start; padding: 8px; border-radius: 6px">
+        <span aria-hidden="true" style="margin-top: 2px; width: 24px; height: 24px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: #f5f5f5; color: #737373"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle></svg></span>
+        <p style="margin: 0; font-size: 14px; font-weight: 500; color: #737373">4. אישור תנאי החבילה</p>
+      </li>
+      <li style="display: flex; gap: 12px; align-items: flex-start; padding: 8px; border-radius: 6px">
+        <span aria-hidden="true" style="margin-top: 2px; width: 24px; height: 24px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: #f5f5f5; color: #737373"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle></svg></span>
+        <p style="margin: 0; font-size: 14px; font-weight: 500; color: #737373">5. תשלום החבילה</p>
+      </li>
+      <li style="display: flex; gap: 12px; align-items: flex-start; padding: 8px; border-radius: 6px">
+        <span aria-hidden="true" style="margin-top: 2px; width: 24px; height: 24px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: #f5f5f5; color: #737373"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle></svg></span>
+        <p style="margin: 0; font-size: 14px; font-weight: 500; color: #737373">6. הקמפיין פעיל</p>
+      </li>
+    </ol>
+    <button type="button" style="margin-top: 12px; height: 28px; padding: 0 10px; border: 1px solid #e5e5e5; border-radius: 8px; background: #ffffff; font: 500 13px Heebo, system-ui, sans-serif; color: #0a0a0a"><span aria-hidden="true">→</span> חזרה: אישור פרטי האירוע</button>
+  </section>
+
+  <section style="border: 1px solid #e5e5e5; border-radius: 10px; padding: 24px; background: #ffffff; display: flex; flex-direction: column; gap: 16px">
+    <h2 style="margin: 0; font-size: 18px; font-weight: 600">בחירת חבילה</h2>
+
+    <div role="status" style="display: flex; gap: 10px; align-items: flex-start; border-radius: 6px; border: 1px solid #cdc5fc; background: #f6f5ff; padding: 10px 12px; font-size: 14px; line-height: 1.55">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4f39f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex: none; margin-top: 3px"><path d="M20 12v9H4v-9"></path><path d="M2 7h20v5H2z"></path><path d="M12 22V7"></path><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"></path><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"></path></svg>
+      <span><strong style="font-weight: 600">יש לכם הטבה אישית של {{pct}}%</strong> על החבילות המסומנות, לרכישה אחת. ההטבה בתוקף עד [תאריך סיום ההטבה].</span>
+    </div>
+
+    <form style="display: flex; flex-direction: column; gap: 16px; margin: 0">
+      <fieldset style="border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px">
+        <legend style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">בחירת חבילה</legend>
+        <sc-for list="{{packages}}" as="p" hint-placeholder-count="3">
+          <div style="{{p.cardStyle}}">
+            <div style="display: flex; align-items: flex-start; gap: 12px">
+              <input id="{{p.inputId}}" type="radio" name="package_id" value="{{p.id}}" checked="{{p.selected}}" onChange="{{p.pick}}" required style="margin: 4px 0 0; width: 16px; height: 16px; accent-color: #4f39f6; flex: none">
+              <div style="min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px">
+                <label for="{{p.inputId}}" style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; font-weight: 500; font-size: 15px">
+                  <span>{{p.name}}</span>
+                  <sc-if value="{{p.hasBenefit}}" hint-placeholder-val="{{true}}">
+                    <span style="display: flex; align-items: baseline; gap: 8px">
+                      <span dir="ltr" aria-hidden="true" style="font-size: 13px; font-weight: 400; color: #737373; text-decoration: line-through">{{p.listLabel}}</span>
+                      <span dir="ltr" aria-hidden="true">{{p.finalLabel}}</span>
+                      <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">{{p.srPrice}}</span>
+                    </span>
+                  </sc-if>
+                  <sc-if value="{{p.noBenefit}}" hint-placeholder-val="{{false}}">
+                    <span dir="ltr">{{p.listLabel}}</span>
+                  </sc-if>
+                </label>
+                <p style="margin: 0; font-size: 14px; color: #737373">עד {{p.quota}} אנשי קשר</p>
+                <sc-if value="{{p.hasBenefit}}" hint-placeholder-val="{{true}}">
+                  <p style="margin: 0; font-size: 14px; color: #0a7a45">הטבה אישית: <span dir="ltr">−{{p.saveLabel}}</span> מהמחיר הרגיל</p>
+                </sc-if>
+                <sc-if value="{{p.noBenefit}}" hint-placeholder-val="{{false}}">
+                  <p style="margin: 0; font-size: 14px; color: #737373">ההטבה האישית אינה חלה על חבילה זו.</p>
+                </sc-if>
+              </div>
+            </div>
+          </div>
+        </sc-for>
+      </fieldset>
+      <p style="margin: 0; font-size: 12px; color: #737373; line-height: 1.6">
+        אפשר להחליף חבילה עד שתאשרו את התנאים, וההטבה עוברת לחבילה שתבחרו. אחרי הבחירה תקראו את ההסכם ותחתמו עליו. התשלום נעשה פעם אחת, בשלב הבא.
+      </p>
+      <button type="button" style="width: 100%; height: 40px; border: 0; border-radius: 10px; background: #4f39f6; color: #ffffff; font: 500 14px Heebo, system-ui, sans-serif; cursor: pointer">בחירה והמשך להסכם</button>
+    </form>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"discountPct":{"editor":"int","default":5,"min":1,"max":50,"unit":"%"},"$preview":{"width":760,"height":1500}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { picked: 'large' }; }
+  renderVals() {
+    const pct = this.props.discountPct ?? 5;
+    const fmt = (n) => '₪' + (Math.round(n * 100) / 100).toLocaleString('he-IL');
+    const base = [
+      { id: 'small', name: 'Kalfa RSVP 100 WIN', price: 100, quota: 100, benefit: true },
+      { id: 'large', name: 'אישורי הגעה — וואטסאפ + שיחות AI', price: 200, quota: 200, benefit: true },
+      { id: 'other', name: '[דוגמה: חבילה שההצעה אינה כוללת]', price: 150, quota: 150, benefit: false },
+    ];
+    const packages = base.map((p) => {
+      const discount = p.benefit ? Math.round(p.price * pct) / 100 : 0;
+      const final = p.price - discount;
+      const selected = this.state.picked === p.id;
+      return {
+        ...p,
+        inputId: 'package-' + p.id,
+        selected,
+        hasBenefit: p.benefit,
+        noBenefit: !p.benefit,
+        listLabel: fmt(p.price),
+        finalLabel: fmt(final),
+        saveLabel: fmt(discount),
+        srPrice: 'מחיר רגיל ' + fmt(p.price) + ', אחרי ההטבה ' + fmt(final),
+        cardStyle: 'border-radius: 10px; padding: 16px; border: 1px solid ' + (selected ? '#4f39f6' : '#e5e5e5') + '; background: ' + (selected ? '#f6f5ff' : '#ffffff'),
+        pick: () => this.setState({ picked: p.id }),
+      };
+    });
+    return { packages, pct };
+  }
+}
+</script>
+</body>
+</html>
