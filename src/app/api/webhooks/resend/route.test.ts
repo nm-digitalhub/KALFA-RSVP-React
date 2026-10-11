@@ -112,6 +112,24 @@ describe('POST /api/webhooks/resend', () => {
     expect(insertWebhookEvents).not.toHaveBeenCalled();
   });
 
+  it('stores a signed contact.updated as a marketing_contact row, keyed by the delivery id', async () => {
+    const updated = JSON.stringify({
+      type: 'contact.updated',
+      data: { id: 'c1', email: 'dana@example.com', unsubscribed: true, updated_at: '2026-10-11T09:00:00Z' },
+    });
+    const res = await POST(request(updated, { id: 'msg_contact_1' }));
+    expect(res.status).toBe(200);
+    const [row] = vi.mocked(insertWebhookEvents).mock.calls[0][0] as WebhookInboxInsert[];
+    expect(row).toMatchObject({ provider: 'resend', event_kind: 'marketing_contact', dedupe_key: 'msg_contact_1' });
+  });
+
+  it('rejects an unsigned contact.updated before storing anything', async () => {
+    const updated = JSON.stringify({ type: 'contact.updated', data: { email: 'dana@example.com', unsubscribed: true } });
+    const res = await POST(request(updated, { signature: 'v1,invalid' }));
+    expect(res.status).toBe(401);
+    expect(insertWebhookEvents).not.toHaveBeenCalled();
+  });
+
   it('is a no-op 200 when the secret is unconfigured', async () => {
     // 200 so an unconfigured deployment never trips the retry ladder.
     vi.stubEnv('RESEND_WEBHOOK_SECRET', '');

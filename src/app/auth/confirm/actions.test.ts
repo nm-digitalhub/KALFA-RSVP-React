@@ -19,6 +19,9 @@ const { createClient, verifyOtp } = vi.hoisted(() => ({
   verifyOtp: vi.fn(),
 }));
 vi.mock('@/lib/supabase/server', () => ({ createClient }));
+const { consentEnabled, enqueueSync } = vi.hoisted(() => ({ consentEnabled: vi.fn(), enqueueSync: vi.fn() }));
+vi.mock('@/lib/data/marketing-consent', () => ({ isMarketingConsentEnabled: consentEnabled }));
+vi.mock('@/lib/data/marketing-contact-sync', () => ({ enqueueMarketingContactSync: enqueueSync }));
 
 import { confirmOtp } from './actions';
 
@@ -34,7 +37,10 @@ beforeEach(() => {
   vi.stubEnv('APP_ORIGIN', ORIGIN);
   vi.clearAllMocks();
   createClient.mockResolvedValue({ auth: { verifyOtp } });
-  verifyOtp.mockResolvedValue({ error: null });
+  // The shape GoTrue returns on success: data always present, user set.
+  verifyOtp.mockResolvedValue({ data: { user: { id: 'u-1' }, session: null }, error: null });
+  consentEnabled.mockResolvedValue(true);
+  enqueueSync.mockResolvedValue(undefined);
 });
 
 describe('confirmOtp — POST verification', () => {
@@ -94,5 +100,45 @@ describe('confirmOtp — POST verification', () => {
       confirmOtp(fd({ token_hash: 'good', type: 'email_change', next: '/app' })),
     ).rejects.toMatchObject({ digest: expect.stringContaining('replace;/app;') });
     expect(verifyOtp).toHaveBeenCalledWith({ token_hash: 'good', type: 'email_change' });
+  });
+});
+
+describe('confirmOtp — marketing contact sync', () => {
+  const confirm = (type: string) =>
+    expect(confirmOtp(fd({ token_hash: 'good', type, next: '/app' }))).rejects.toMatchObject({
+      digest: expect.stringContaining('NEXT_REDIRECT'),
+    });
+
+  it('a confirmed signup queues a resubscribe sync for that user', async () => {
+    await confirm('signup');
+    expect(enqueueSync).toHaveBeenCalledWith({ userId: 'u-1', resubscribe: true });
+  });
+
+  it('a confirmed email change queues a plain sync', async () => {
+    await confirm('email_change');
+    expect(enqueueSync).toHaveBeenCalledWith({ userId: 'u-1' });
+  });
+
+  it('recovery and magic links queue nothing', async () => {
+    await confirm('recovery');
+    await confirm('magiclink');
+    expect(enqueueSync).not.toHaveBeenCalled();
+  });
+
+  it('nothing is queued while the feature is off, or when the code failed', async () => {
+    consentEnabled.mockResolvedValue(false);
+    await confirm('signup');
+    consentEnabled.mockResolvedValue(true);
+    verifyOtp.mockResolvedValue({ data: { user: null, session: null }, error: { message: 'expired' } });
+    await confirm('signup');
+    expect(enqueueSync).not.toHaveBeenCalled();
+  });
+
+  it('a queue failure never changes the redirect', async () => {
+    enqueueSync.mockRejectedValue(new Error('pgboss down'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(confirmOtp(fd({ token_hash: 'good', type: 'signup', next: '/app' }))).rejects.toMatchObject({
+      digest: expect.stringContaining('replace;/app;'),
+    });
   });
 });

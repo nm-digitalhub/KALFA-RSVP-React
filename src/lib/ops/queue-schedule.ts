@@ -73,6 +73,7 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   'agreement-archive-sweep': 3 * 24 * 60,
   'signup-reminder-sweep': 3 * 24 * 60,
   'unconfirmed-cleanup-sweep': 3 * 24 * 60,
+  'marketing-contact-reconcile': 3 * 24 * 60,
   // Weekly (Monday 09:00 IL): flag only after a whole missed week plus slack.
   'seo-technical-watch': 10 * 24 * 60,
   // Weekly (Sunday 05:20 IL). Same 10-day allowance as the other weekly jobs:

@@ -35,6 +35,10 @@ const HANDLED_EVENTS = new Set([
   'email.bounced',
   'email.complained',
   'email.failed',
+  // A contact's subscription changed — an unsubscribe through a Resend email becomes a marketing-consent withdrawal
+  // (openspec change marketing-email-consent, design D6). Requires the endpoint's subscription to contact.updated in
+  // the Resend dashboard.
+  'contact.updated',
 ]);
 
 /**
@@ -73,7 +77,7 @@ export async function POST(request: NextRequest) {
   // explicitly (resend.com/docs/webhooks/emails/*, read 2026-08-26):
   //   email_id   — "Unique identifier for the specific email"  (Resend's UUID)
   //   message_id — "RFC Message-ID header value for the email"
-  // Both are present on all six events we subscribe to.
+  // Both are present on all six email.* events; contact.updated carries neither.
   let event: { type?: string; data?: { email_id?: string; message_id?: string } };
   try {
     // A placeholder key, not RESEND_API_KEY: verified against resend/dist's own
@@ -113,7 +117,7 @@ export async function POST(request: NextRequest) {
     {
       provider: 'resend',
       dedupe_key: deliveryId,
-      event_kind: 'email_delivery',
+      event_kind: event.type.startsWith('contact.') ? 'marketing_contact' : 'email_delivery',
       // The RFC 5322 Message-ID, NOT Resend's email_id. This column means "the
       // provider's message identifier we correlate on" everywhere else in
       // webhook_inbox, and for mail that is the Message-ID header — the value

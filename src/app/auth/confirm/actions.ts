@@ -2,6 +2,8 @@
 
 import { redirect } from 'next/navigation';
 
+import { isMarketingConsentEnabled } from '@/lib/data/marketing-consent';
+import { enqueueMarketingContactSync } from '@/lib/data/marketing-contact-sync';
 import { createClient } from '@/lib/supabase/server';
 import { resolveAppRedirectPath } from '@/lib/url';
 import { isConfirmOtpType } from './otp-types';
@@ -32,7 +34,7 @@ export async function confirmOtp(formData: FormData): Promise<void> {
 
   const supabase = await createClient();
   // `type` is narrowed to ConfirmOtpType by isConfirmOtpType above — no cast.
-  const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
+  const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
   if (error) {
     // Expired / used / invalid link. /auth/login would tell the visitor nothing —
     // they would have no way to learn the link had simply aged out. `type`
@@ -40,6 +42,19 @@ export async function confirmOtp(formData: FormData): Promise<void> {
     // the visitor already held, so it discloses nothing about them, and the page
     // itself stays enumeration-safe.
     redirect(`/auth/confirm/expired?type=${encodeURIComponent(type)}`);
+  }
+
+  // A proved address is what the marketing list waits for (openspec change marketing-email-consent, design D5): queue
+  // the customer's contact sync. A signup confirmation may resubscribe — the grant was the customer's choice on the
+  // form that created this address; an email change may not. Never blocks the redirect.
+  if ((type === 'signup' || type === 'email_change') && data.user && (await isMarketingConsentEnabled())) {
+    try {
+      await enqueueMarketingContactSync({ userId: data.user.id, ...(type === 'signup' ? { resubscribe: true } : {}) });
+    } catch (err) {
+      console.error('[confirm] marketing contact sync was not queued', {
+        message: err instanceof Error ? err.message : 'unknown',
+      });
+    }
   }
 
   redirect(next);

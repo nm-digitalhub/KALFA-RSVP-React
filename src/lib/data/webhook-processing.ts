@@ -64,6 +64,7 @@ import {
 import { classifyInboundChannel } from '@/lib/whatsapp/channel-routing';
 import type { WebhookInboxRow } from '@/lib/data/webhooks';
 import { processCardcomDocumentRow } from '@/lib/data/cardcom-document-processing';
+import { recordProviderComplaint, recordProviderUnsubscribe } from '@/lib/data/marketing-contact-sync';
 import { CARDCOM_DOCUMENT_KIND } from '@/lib/data/cardcom-document-intake';
 // RSVP quick-reply button.payload -> RsvpStatus. Single source of truth SHARED
 // with the OUTBOUND send-time payload injection (client.ts via sendOneWhatsApp),
@@ -195,6 +196,10 @@ export async function processWebhookEvent(
   }
   if (row.event_kind === 'email_delivery') {
     await processEmailDelivery(row);
+    return;
+  }
+  if (row.event_kind === 'marketing_contact') {
+    await processMarketingContact(row);
     return;
   }
   if (row.event_kind === 'template_status') {
@@ -521,11 +526,11 @@ async function recordOwnerAgentDeliveryQuietly(
 // the cascade, an `email_undeliverable_at` column, per-address or per-person
 // suppression, send-time tagging to join events back to an inquiry.
 //
-// `email.complained` is stored and otherwise IGNORED on purpose. Its payload
-// carries no feedback type, no source, and nothing else that would show whether
-// a person deliberately reported the mail or a filter classified it — and every
-// mail in this flow concerns an inquiry the person opened themselves, so there
-// is no unsolicited list to remove anyone from.
+// `email.complained` raises no alert. Its payload carries no feedback type and
+// nothing that shows whether a person reported the mail or a filter classified
+// it — so it is treated conservatively: a complaint from a customer who consents
+// to marketing email ends that consent (openspec change marketing-email-consent,
+// design D7). Anyone else's complaint is stored and otherwise ignored.
 type BouncePayload = {
   type?: string;
   data?: {
@@ -546,9 +551,15 @@ type BouncePayload = {
 const NON_ACTIONABLE_BOUNCE_TYPES = new Set(['Transient', 'Temporary', 'Undetermined']);
 
 async function processEmailDelivery(row: WebhookInboxRow): Promise<void> {
-  const payload = (row.payload ?? {}) as BouncePayload;
-  // sent / delivered / delivery_delayed / complained / failed are recorded by the
-  // route and acted on by nobody. Only a bounce raises an alert.
+  const payload = (row.payload ?? {}) as BouncePayload & { data?: { to?: string[] } };
+  if (payload.type === 'email.complained') {
+    for (const email of payload.data?.to ?? []) {
+      await recordProviderComplaint({ email, eventId: `${row.dedupe_key}:${email.toLowerCase()}` });
+    }
+    return;
+  }
+  // sent / delivered / delivery_delayed / failed are recorded by the route and
+  // acted on by nobody. Only a bounce raises an alert.
   if (payload.type !== 'email.bounced') return;
 
   const bounceType = payload.data?.bounce?.type;
@@ -581,5 +592,23 @@ async function processEmailDelivery(row: WebhookInboxRow): Promise<void> {
       bounceType: bounceType ?? 'missing',
       ...(payload.data?.bounce?.subType ? { subType: payload.data.bounce.subType } : {}),
     },
+  });
+}
+
+// contact.updated from Resend: an unsubscribe becomes a marketing-consent withdrawal (design D6). The payload shape is
+// Resend's documented one (resend.com/docs/webhooks/contacts/updated): email, unsubscribed, updated_at.
+type ContactUpdatedPayload = {
+  type?: string;
+  data?: { email?: string; unsubscribed?: boolean; updated_at?: string };
+};
+
+async function processMarketingContact(row: WebhookInboxRow): Promise<void> {
+  const payload = (row.payload ?? {}) as ContactUpdatedPayload;
+  if (payload.type !== 'contact.updated' || !payload.data?.email) return;
+  await recordProviderUnsubscribe({
+    email: payload.data.email,
+    unsubscribed: payload.data.unsubscribed === true,
+    updatedAt: payload.data.updated_at ?? null,
+    eventId: row.dedupe_key,
   });
 }

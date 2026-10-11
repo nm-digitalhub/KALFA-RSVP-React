@@ -77,6 +77,8 @@ import {
   runSignupReminderSweep,
   getSignupReminderEnabled,
 } from '@/lib/data/signup-confirmation-reminder';
+import { runMarketingContactReconcile, syncMarketingContact } from '@/lib/data/marketing-contact-sync';
+import type { MarketingContactSyncJob } from '@/lib/queue/queues';
 import {
   runUnconfirmedCleanupSweep,
   getUnconfirmedCleanupEnabled,
@@ -1086,6 +1088,9 @@ async function main(): Promise<void> {
       // Singleton too: two overlapping ticks would read the same candidates and
       // race on deleting them, turning a benign duplicate into a failed run.
       q === QUEUES.unconfirmedCleanupSweep ||
+      // Singleton too: two overlapping runs would read the same grants and both write an account_removed withdrawal
+      // for the same deleted account (the second would be 'unchanged', but the overlap has no value).
+      q === QUEUES.marketingContactReconcile ||
       // Singleton: two overlapping runs would both diff against the same saved
       // crawl and both spend URL Inspection quota on the same sitemap URLs.
       q === QUEUES.seoTechnicalWatch ||
@@ -1317,6 +1322,23 @@ async function main(): Promise<void> {
   // never throws and posts to Slack only when the version actually moved or the
   // run failed — a weekly "still current" message would just train people to
   // ignore the channel.
+  // One customer's Resend contact made to match the consent ledger. A throw is retried by pg-boss
+  // (MARKETING_CONTACT_SYNC_RETRY at send time); the daily reconcile below catches one that ran out of retries.
+  await boss.work(
+    QUEUES.marketingContactSync,
+    guardedWorker(QUEUES.marketingContactSync, async (jobs: Job<MarketingContactSyncJob>[]) => {
+      for (const job of jobs) await syncMarketingContact(job.data);
+    }),
+  );
+  // Gated inside by app_settings.marketing_consent_enabled, read fresh on every tick.
+  await boss.work(
+    QUEUES.marketingContactReconcile,
+    POLL_SLOW_CRON,
+    guardedWorker(QUEUES.marketingContactReconcile, async () => {
+      const result = await runMarketingContactReconcile();
+      if (result.failed > 0) throw new Error(`marketing-contact-reconcile: ${result.failed} customer(s) failed`);
+    }),
+  );
   await boss.work(
     QUEUES.supabaseCliUpdate,
     POLL_SLOW_CRON,
@@ -1627,6 +1649,9 @@ async function main(): Promise<void> {
   // Daily at 04:50 IL — off-peak, and after the nightly jobs above rather than
   // alongside them, so a deletion never races a sweep still reading those rows.
   await boss.schedule(QUEUES.unconfirmedCleanupSweep, '50 4 * * *', null, { tz: SCHEDULE_TZ });
+  // Daily at 05:10 IL — after the unconfirmed-signup cleanup (04:50), so an account it deleted is already gone and
+  // its grant becomes an account_removed withdrawal in the same night.
+  await boss.schedule(QUEUES.marketingContactReconcile, '10 5 * * *', null, { tz: SCHEDULE_TZ });
   // Weekly, Monday 09:00 IL — a working hour on purpose: an SEO regression
   // alert is something a person acts on, not an overnight batch.
   await boss.schedule(QUEUES.seoTechnicalWatch, '0 9 * * 1', null, { tz: SCHEDULE_TZ });

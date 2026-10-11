@@ -19,6 +19,10 @@ vi.mock('@/lib/data/interactions', () => ({
 vi.mock('@/lib/data/billing', () => ({ recordReached: vi.fn() }));
 vi.mock('@/lib/data/rsvp', () => ({ submitRsvp: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
+vi.mock('@/lib/data/marketing-contact-sync', () => ({
+  recordProviderComplaint: vi.fn(),
+  recordProviderUnsubscribe: vi.fn(),
+}));
 vi.mock('@/lib/owner-agent/delivery', () => ({ recordOwnerAgentDelivery: vi.fn() }));
 vi.mock('@/lib/data/whatsapp-import', () => ({
   stageWhatsAppImport: vi.fn(async () => false),
@@ -38,6 +42,7 @@ vi.mock('@/lib/whatsapp/embedded-signup/connected-numbers', () => ({
   isEsConnectedPhoneNumber: vi.fn(async () => false),
 }));
 
+import { recordProviderComplaint, recordProviderUnsubscribe } from '@/lib/data/marketing-contact-sync';
 import {
   createWebhookBatchContext,
   processWebhookEvent,
@@ -648,9 +653,8 @@ describe('email_delivery (Resend)', () => {
     expect(alert.fields).not.toHaveProperty('refCode');
   });
 
-  // Deliberate no-ops. A complaint carries no evidence of who or what triggered
-  // it, and every mail in this flow is about an inquiry the person opened, so it
-  // is recorded and nothing more.
+  // No alert for any of these. A complaint raises no alert either — its only
+  // effect is on marketing consent (tested below).
   it.each(['email.sent', 'email.delivered', 'email.delivery_delayed', 'email.complained'])(
     'records %s without alerting',
     async (type) => {
@@ -658,6 +662,55 @@ describe('email_delivery (Resend)', () => {
       expect(sendSlackAlert).not.toHaveBeenCalled();
     },
   );
+
+  it('a complaint is handed to marketing consent, once per recipient, keyed by the delivery id', async () => {
+    const row = deliveryRow({ type: 'email.complained', data: { to: ['A@example.com', 'b@example.com'] } });
+    await processWebhookEvent(row);
+    expect(vi.mocked(recordProviderComplaint).mock.calls.map((c) => c[0])).toEqual([
+      { email: 'A@example.com', eventId: `${row.dedupe_key}:a@example.com` },
+      { email: 'b@example.com', eventId: `${row.dedupe_key}:b@example.com` },
+    ]);
+  });
+
+  it('a bounce or delivery never touches marketing consent', async () => {
+    await processWebhookEvent(deliveryRow({ type: 'email.delivered', data: { to: [RECIPIENT] } }));
+    expect(recordProviderComplaint).not.toHaveBeenCalled();
+  });
+});
+
+describe('marketing_contact (Resend contact.updated)', () => {
+  const contactRow = (data: Record<string, unknown>): WebhookInboxRow => ({
+    id: 'row-c',
+    provider: 'resend',
+    event_kind: 'marketing_contact',
+    dedupe_key: 'msg_contact',
+    message_id: null,
+    context_message_id: null,
+    phone_number_id: null,
+    event_at: null,
+    payload: { type: 'contact.updated', data } as WebhookInboxRow['payload'],
+    received_at: '2026-10-11T09:00:00Z',
+    processed_at: null,
+    attempts: 0,
+    last_error: null,
+    delivery_id: null,
+  });
+
+  it('passes the address, the flag, the time and the delivery id', async () => {
+    const row = contactRow({ email: 'dana@example.com', unsubscribed: true, updated_at: '2026-10-11T09:00:00Z' });
+    await processWebhookEvent(row);
+    expect(recordProviderUnsubscribe).toHaveBeenCalledWith({
+      email: 'dana@example.com',
+      unsubscribed: true,
+      updatedAt: '2026-10-11T09:00:00Z',
+      eventId: row.dedupe_key,
+    });
+  });
+
+  it('a payload without an address does nothing', async () => {
+    await processWebhookEvent(contactRow({ unsubscribed: true }));
+    expect(recordProviderUnsubscribe).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------

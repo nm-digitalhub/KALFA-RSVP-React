@@ -195,6 +195,14 @@ export const QUEUES = {
   // app_settings.unconfirmed_cleanup_enabled (own switch, off by default).
   // See src/lib/data/unconfirmed-signup-cleanup.ts.
   unconfirmedCleanupSweep: 'unconfirmed-cleanup-sweep',
+  // One customer's marketing-email contact at Resend made to match their recorded consent
+  // (openspec change marketing-email-consent, design D5). Enqueued on every consent change and email
+  // confirmation; the payload is the user id only. Retried by pg-boss, so the customer's action never
+  // waits on Resend. See src/lib/data/marketing-contact-sync.ts.
+  marketingContactSync: 'marketing-contact-sync',
+  // Daily catch-up for the above: accounts deleted outside the app, and any sync that ran out of retries.
+  // Gated by app_settings.marketing_consent_enabled. See src/lib/data/marketing-contact-sync.ts.
+  marketingContactReconcile: 'marketing-contact-reconcile',
   // SUMIT hold-release reconciler — every 30m, read-only against SUMIT's CRM
   // (crm/data/listentities on the "תפיסות מסגרת" folder), syncs
   // campaigns.release_status for holds SUMIT reports as released (manual
@@ -300,6 +308,24 @@ export const QUEUES = {
 export type OwnerAgentReplyJob = {
   intakeId: string;
 };
+
+// The marketing-contact-sync job payload. The user id ONLY — the email address and the consent are re-read from Auth
+// and the ledger when the job runs, so no address sits in pg-boss's job table.
+export type MarketingContactSyncJob = {
+  userId: string;
+  // Set only by a fresh grant the customer just made (signup confirmation or settings). Only such a job may turn a
+  // contact Resend holds as unsubscribed back to subscribed; any other job treats Resend's unsubscribe as the
+  // customer's latest word.
+  resubscribe?: boolean;
+};
+
+// marketing-contact-sync retry policy: Resend outages are retried with backoff; the daily reconcile catches a job that
+// ran out of retries. No deadLetter — QUEUES.dead's consumer expects an outreach step.
+export const MARKETING_CONTACT_SYNC_RETRY = {
+  retryLimit: 5,
+  retryBackoff: true,
+  retryDelayMax: 3600,
+} as const;
 
 // The owner-agent-report job payload. The run id ONLY — never a phone, never
 // report content.
