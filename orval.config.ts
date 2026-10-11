@@ -62,10 +62,13 @@ export default defineConfig({
       schemas: 'src/lib/dnc/generated/models',
       clean: true,
       target: 'src/lib/dnc/generated/api.ts',
-      baseUrl: 'https://pverification.fta.gov.il',
+      // No baseUrl: the two services live on different hosts (path-level `servers` in the spec, which Orval does not
+      // read), so each mutator owns its host. Both add the name/token headers from the server environment and throw
+      // DncError on a failed call.
       override: {
-        // The mutator adds the name/token headers from the server environment and throws DncError on a failed call.
         mutator: { path: 'src/lib/dnc/mutator.ts', name: 'dncFetch' },
+        // Phone-Query: another host, and a sorted gzip body (the key is the spec's operationId).
+        operations: { queryPhones: { mutator: { path: 'src/lib/dnc/mutator.ts', name: 'dncQueryFetch' } } },
         fetch: { includeHttpResponseReturnType: false },
       },
     },

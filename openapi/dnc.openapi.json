@@ -1,17 +1,38 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "אל תתקשר אליי (DNC) — Phone-List-Verification",
+    "title": "אל תתקשר אליי (DNC) — Phone-List-Verification and Phone-Query",
     "version": "5",
-    "description": "The Consumer Protection and Fair Trade Authority's Do-Not-Call registry API for telemarketing companies (document \"מסמך ממשקי API לחברות הטלמרקטינג\", Version 5, 26.11.2023, openapi/DNC-API/DNC_POSTMAN.pdf; Postman collection openapi/DNC-API/DNC.postman_collection.json). Written from REAL responses captured on 11.10.2026 (openapi/DNC-API/samples/), not from the document alone: the document names the result field `code` (section 2.2) while the live service returns `statusCode`, and the live service rejects numbers that keep their leading 0. Only Phone-List-Verification is described; the large Phone-Query service (dnc-api.fta.gov.il, gzip, up to 1M numbers) is not in the collection and is not described here."
+    "description": "The Consumer Protection and Fair Trade Authority's Do-Not-Call registry API for telemarketing companies (document \"מסמך ממשקי API לחברות הטלמרקטינג\", Version 5, 26.11.2023, openapi/DNC-API/DNC_POSTMAN.pdf; Postman collection openapi/DNC-API/DNC.postman_collection.json). Written from REAL responses captured on 11.10.2026 (openapi/DNC-API/samples/), not from the document alone: the document names the result field `code` (section 2.2) while the live service returns `statusCode`, the live services reject numbers that keep their leading 0, and Phone-Query fails (500, empty body) when its gzip body is announced with `Content-Encoding: gzip` as section 3.2.9 instructs. The two services live on DIFFERENT hosts (each path carries its own `servers`). Orval reads only the document-level `servers`, so the generated client has no base URL: each operation's mutator (src/lib/dnc/mutator.ts) owns its host."
   },
-  "servers": [{ "url": "https://pverification.fta.gov.il" }],
-  "security": [{ "dncName": [], "dncToken": [] }],
-  "tags": [{ "name": "dnc", "description": "Do-Not-Call registry checks" }],
+  "servers": [
+    {
+      "url": "https://pverification.fta.gov.il",
+      "description": "Phone-List-Verification"
+    },
+    {
+      "url": "https://dnc-api.fta.gov.il",
+      "description": "Phone-Query"
+    }
+  ],
+  "security": [
+    {
+      "dncName": [],
+      "dncToken": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "dnc",
+      "description": "Do-Not-Call registry checks"
+    }
+  ],
   "paths": {
     "/restricted/phone-list-verification": {
       "post": {
-        "tags": ["dnc"],
+        "tags": [
+          "dnc"
+        ],
         "operationId": "verifyPhoneList",
         "summary": "Check up to 100K phone numbers against the Do-Not-Call registry",
         "description": "Returns the numbers that are NOT registered (calling them for telemarketing is allowed) as strings, and the numbers that could not be checked as objects with an errorCode. Numbers that ARE registered are simply absent from `data`. Send digits only, WITHOUT the leading 0 (e.g. 501111111, 35648888): measured 11.10.2026, `0500000000`, `972501111111`, `+972501111111` and `50-1111111` all come back with errorCode 1, while `500000000` comes back as \"0500000000\". Returned numbers carry the leading 0. A JSON number item is also accepted (538232216 → \"0538232216\"). The document limits a request to 100K numbers and 6 MB.",
@@ -19,8 +40,15 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/DncVerificationRequest" },
-              "example": { "data": ["500000000", "123"] }
+              "schema": {
+                "$ref": "#/components/schemas/DncVerificationRequest"
+              },
+              "example": {
+                "data": [
+                  "500000000",
+                  "123"
+                ]
+              }
             }
           }
         },
@@ -29,12 +57,22 @@
             "description": "The check ran. `statusCode` repeats 200.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/DncVerificationResponse" },
+                "schema": {
+                  "$ref": "#/components/schemas/DncVerificationResponse"
+                },
                 "example": {
                   "statusCode": 200,
                   "message": "הפעולה הסתיימה בהצלחה",
                   "transactionId": "5a482afe-d832-4d6b-a0d8-5aaf73439c66",
-                  "data": ["035648888", "0501111111", "0538232216", { "phone": "972501111111", "errorCode": 1 }]
+                  "data": [
+                    "035648888",
+                    "0501111111",
+                    "0538232216",
+                    {
+                      "phone": "972501111111",
+                      "errorCode": 1
+                    }
+                  ]
                 }
               }
             }
@@ -43,8 +81,14 @@
             "description": "Invalid input (measured: an empty `data` list).",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/DncErrorResponse" },
-                "example": { "statusCode": 400, "message": "קלט לא תקין", "transactionId": "fc39330c-7cb2-4a02-bfbe-d9f0a2f9b2d9" }
+                "schema": {
+                  "$ref": "#/components/schemas/DncErrorResponse"
+                },
+                "example": {
+                  "statusCode": 400,
+                  "message": "קלט לא תקין",
+                  "transactionId": "fc39330c-7cb2-4a02-bfbe-d9f0a2f9b2d9"
+                }
               }
             }
           },
@@ -52,8 +96,14 @@
             "description": "Not authorized (measured: empty `name` and `token` headers).",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/DncErrorResponse" },
-                "example": { "statusCode": 401, "message": "אינך מורשה לגשת לשירות זה", "transactionId": "f7c936cc-a081-4a24-8609-f1dbca9aa9a4" }
+                "schema": {
+                  "$ref": "#/components/schemas/DncErrorResponse"
+                },
+                "example": {
+                  "statusCode": 401,
+                  "message": "אינך מורשה לגשת לשירות זה",
+                  "transactionId": "f7c936cc-a081-4a24-8609-f1dbca9aa9a4"
+                }
               }
             }
           },
@@ -61,10 +111,119 @@
             "description": "Internal error; quote the transactionId to support (measured: a body that is not valid JSON).",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/DncErrorResponse" },
-                "example": { "statusCode": 500, "message": ".שגיאה פנימית - אנא פנה לתמיכה עם מזהה הבקשה", "transactionId": "045a5e0e-4443-4396-b5df-1530c9afc8fe" }
+                "schema": {
+                  "$ref": "#/components/schemas/DncErrorResponse"
+                },
+                "example": {
+                  "statusCode": 500,
+                  "message": ".שגיאה פנימית - אנא פנה לתמיכה עם מזהה הבקשה",
+                  "transactionId": "045a5e0e-4443-4396-b5df-1530c9afc8fe"
+                }
               }
             }
+          }
+        }
+      },
+      "servers": [
+        {
+          "url": "https://pverification.fta.gov.il"
+        }
+      ]
+    },
+    "/restricted/phone-query": {
+      "servers": [
+        {
+          "url": "https://dnc-api.fta.gov.il"
+        }
+      ],
+      "post": {
+        "tags": [
+          "dnc"
+        ],
+        "operationId": "queryPhones",
+        "summary": "Check up to 1M phone numbers against the Do-Not-Call registry (gzip-compressed request)",
+        "description": "The large query (document section 3.2). Same answer as Phone-List-Verification: numbers NOT registered come back as strings with their leading 0, numbers that could not be checked come back as {phone, errorCode}, registered numbers are absent. WIRE FORMAT, measured 11.10.2026 (openapi/DNC-API/samples/phone-query.cases.json): the body is the JSON below COMPRESSED WITH GZIP and sent with `Content-Type: application/json` and NO `Content-Encoding` header — with `Content-Encoding: gzip` the service answers 500 or 415 with an empty body, and an uncompressed body also answers 500 (errortype NullReferenceException, empty body). The document (3.2.1) requires sorting the numbers before compressing; an unsorted list was also answered, in request order. Digits only, WITHOUT the leading 0. Unlike Phone-List-Verification: a JSON number item is refused (400), an empty list is answered 200 with an empty `data`, and duplicates are answered once per occurrence. The document limits a message to 6 MB (section 1.3.2).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DncPhoneQueryRequest"
+              },
+              "example": {
+                "data": [
+                  "35648888",
+                  "500000000",
+                  "538232216"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The check ran. `statusCode` repeats 200.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DncVerificationResponse"
+                },
+                "example": {
+                  "statusCode": 200,
+                  "message": "הפעולה הסתיימה בהצלחה",
+                  "transactionId": "dc168d4a-5ff1-4009-9d1d-c778bb38d192",
+                  "data": [
+                    "035648888",
+                    "0500000000",
+                    "0501111111",
+                    "0538232216",
+                    {
+                      "phone": "123",
+                      "errorCode": 1
+                    },
+                    {
+                      "phone": "972501111111",
+                      "errorCode": 1
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input (measured: an item that is a JSON number, or a body that is not valid JSON). `transactionId` is null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DncErrorResponse"
+                },
+                "example": {
+                  "statusCode": 400,
+                  "message": "אנא וודא כי סוג הקלט תקין",
+                  "transactionId": null,
+                  "data": null
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authorized (measured: empty `name` and `token` headers).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DncErrorResponse"
+                },
+                "example": {
+                  "statusCode": 401,
+                  "message": "אינך מורשה לגשת לשירות זה",
+                  "transactionId": "d4e17803-340b-40a9-b3a6-75406853b6dc",
+                  "data": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error with an EMPTY body (measured: a body that is not gzip-compressed, or one sent with Content-Encoding: gzip). The response header `errortype` names the server exception."
           }
         }
       }
@@ -88,22 +247,32 @@
     "schemas": {
       "DncVerificationRequest": {
         "type": "object",
-        "required": ["data"],
+        "required": [
+          "data"
+        ],
         "properties": {
           "data": {
             "type": "array",
             "minItems": 1,
             "maxItems": 100000,
-            "description": "Phone numbers, digits only, without the leading 0.",
-            "items": { "type": "string" }
+            "description": "Phone numbers, digits only, without the leading 0. A JSON number item is also accepted by this service.",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
       "DncUncheckedPhone": {
         "type": "object",
-        "required": ["phone", "errorCode"],
+        "required": [
+          "phone",
+          "errorCode"
+        ],
         "properties": {
-          "phone": { "type": "string", "description": "The number exactly as it was sent." },
+          "phone": {
+            "type": "string",
+            "description": "The number exactly as it was sent."
+          },
           "errorCode": {
             "type": "integer",
             "description": "Document section 3.1.7: 1 = the number is not in a valid format; 400 general error; 500 internal error; 401 not authorized. Only 1 was observed."
@@ -112,27 +281,86 @@
       },
       "DncVerificationItem": {
         "oneOf": [
-          { "type": "string", "description": "A number that is NOT registered in the registry, normalized with its leading 0." },
-          { "$ref": "#/components/schemas/DncUncheckedPhone" }
+          {
+            "type": "string",
+            "description": "A number that is NOT registered in the registry, normalized with its leading 0."
+          },
+          {
+            "$ref": "#/components/schemas/DncUncheckedPhone"
+          }
         ]
       },
       "DncVerificationResponse": {
         "type": "object",
-        "required": ["statusCode", "message", "transactionId", "data"],
+        "required": [
+          "statusCode",
+          "message",
+          "transactionId",
+          "data"
+        ],
         "properties": {
-          "statusCode": { "type": "integer" },
-          "message": { "type": "string" },
-          "transactionId": { "type": "string", "format": "uuid" },
-          "data": { "type": "array", "items": { "$ref": "#/components/schemas/DncVerificationItem" } }
+          "statusCode": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "transactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DncVerificationItem"
+            }
+          }
         }
       },
       "DncErrorResponse": {
         "type": "object",
-        "required": ["statusCode", "message", "transactionId"],
+        "required": [
+          "statusCode",
+          "message",
+          "transactionId"
+        ],
         "properties": {
-          "statusCode": { "type": "integer" },
-          "message": { "type": "string" },
-          "transactionId": { "type": "string", "format": "uuid" }
+          "statusCode": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "transactionId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null on Phone-Query's 400 answers (measured)."
+          },
+          "data": {
+            "nullable": true,
+            "description": "Phone-Query only: present and null on its error answers (measured).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DncVerificationItem"
+            }
+          }
+        }
+      },
+      "DncPhoneQueryRequest": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "maxItems": 1000000,
+            "description": "Phone numbers, digits only, without the leading 0, sorted (document 3.2.1). Strings only: a JSON number item is refused with 400.",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       }
     }

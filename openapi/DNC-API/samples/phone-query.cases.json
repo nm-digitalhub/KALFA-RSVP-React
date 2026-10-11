@@ -1,0 +1,164 @@
+{
+  "capturedAt": "2026-10-11T12:14:01.416Z",
+  "url": "https://dnc-api.fta.gov.il/restricted/phone-query",
+  "note": "Body is gzip-compressed JSON sent WITHOUT a Content-Encoding header (Content-Type: application/json, Accept-Encoding: gzip, deflate). With Content-Encoding: gzip the service answers 500/415 with an empty body. Phone numbers are fake; no credentials are recorded.",
+  "results": {
+    "success_mixed_sorted": {
+      "request": {
+        "data": [
+          "",
+          "0500000000",
+          "123",
+          "35648888",
+          "500000000",
+          "501111111",
+          "538232216",
+          "972501111111",
+          "test"
+        ]
+      },
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "ms": 228,
+      "body": {
+        "statusCode": 200,
+        "message": "הפעולה הסתיימה בהצלחה",
+        "transactionId": "dc168d4a-5ff1-4009-9d1d-c778bb38d192",
+        "data": [
+          "035648888",
+          "0500000000",
+          "0501111111",
+          "0538232216",
+          {
+            "phone": "",
+            "errorCode": 1
+          },
+          {
+            "phone": "0500000000",
+            "errorCode": 1
+          },
+          {
+            "phone": "123",
+            "errorCode": 1
+          },
+          {
+            "phone": "972501111111",
+            "errorCode": 1
+          },
+          {
+            "phone": "test",
+            "errorCode": 1
+          }
+        ]
+      }
+    },
+    "success_unsorted": {
+      "request": {
+        "data": [
+          "538232216",
+          "500000000",
+          "35648888"
+        ]
+      },
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "ms": 99,
+      "body": {
+        "statusCode": 200,
+        "message": "הפעולה הסתיימה בהצלחה",
+        "transactionId": "33d304ec-b45f-4882-ac5e-a935b86069b5",
+        "data": [
+          "0538232216",
+          "0500000000",
+          "035648888"
+        ]
+      }
+    },
+    "success_duplicates": {
+      "request": {
+        "data": [
+          "500000000",
+          "500000000"
+        ]
+      },
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "ms": 91,
+      "body": {
+        "statusCode": 200,
+        "message": "הפעולה הסתיימה בהצלחה",
+        "transactionId": "e05b9fe8-ad2f-4ddb-8d31-0ee184e319b8",
+        "data": [
+          "0500000000",
+          "0500000000"
+        ]
+      }
+    },
+    "success_json_number": {
+      "request": {
+        "data": [
+          538232216
+        ]
+      },
+      "status": 400,
+      "contentType": "application/json",
+      "ms": 70,
+      "body": {
+        "statusCode": 400,
+        "message": "אנא וודא כי סוג הקלט תקין",
+        "transactionId": null,
+        "data": null
+      }
+    },
+    "error_empty_list": {
+      "request": {
+        "data": []
+      },
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "ms": 79,
+      "body": {
+        "statusCode": 200,
+        "message": "הפעולה הסתיימה בהצלחה",
+        "transactionId": "e262b5cf-3b95-4b28-a7ae-623a1c724403",
+        "data": []
+      }
+    },
+    "error_no_auth": {
+      "request": {
+        "data": [
+          "500000000"
+        ]
+      },
+      "status": 401,
+      "contentType": "application/json",
+      "ms": 54,
+      "body": {
+        "statusCode": 401,
+        "message": "אינך מורשה לגשת לשירות זה",
+        "transactionId": "d4e17803-340b-40a9-b3a6-75406853b6dc",
+        "data": null
+      }
+    },
+    "error_bad_json": {
+      "request": "{\"data\":['0540000000']} (gzip)",
+      "status": 400,
+      "contentType": "application/json",
+      "ms": 54,
+      "body": {
+        "statusCode": 400,
+        "message": "אנא וודא כי סוג הקלט תקין",
+        "transactionId": null,
+        "data": null
+      }
+    },
+    "error_not_gzipped": {
+      "request": "{\"data\":[\"500000000\"]} (plain, not gzip)",
+      "status": 500,
+      "contentType": null,
+      "errortype": "NullReferenceException",
+      "ms": 60,
+      "body": ""
+    }
+  }
+}
