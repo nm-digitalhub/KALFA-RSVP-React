@@ -210,21 +210,10 @@ export const LEAD_SOURCE_LABELS: Record<string, string> = {
   callback_request: 'בקשת חזרה',
 };
 
-export const BILLING_MODEL_LABELS: Record<string, string> = {
-  base_overage: 'בסיס + חריגה',
-  per_reached: 'לפי אנשי קשר שהושגו',
-};
-
 export interface LabeledCountRow {
   key: string;
   label: string;
   count: number;
-}
-
-export interface BillingModelRow {
-  key: string;
-  label: string;
-  revenue: number;
 }
 
 // Campaign performance (sessionCampaignName), for owner-run paid
@@ -272,7 +261,6 @@ export interface AnalyticsDashboard {
   interests: Sectioned<DemographicRow[]>; // Signals
   landingPages: Sectioned<LandingPageRow[]>;
   leadSources: Sectioned<LabeledCountRow[]>; // customEvent:lead_source
-  billingModels: Sectioned<BillingModelRow[]>; // customEvent:billing_model
   campaigns: Sectioned<CampaignRow[]>; // sessionCampaignName + generate_lead attribution
   kalfaChannels: Sectioned<LabeledCountRow[]>; // sessionCustomChannelGroup
   coreQuota: QuotaSnapshot | null; // core and realtime pools are separate

@@ -51,13 +51,6 @@ export function parseFlagCookieValue(raw: string | undefined | null): GaActionEv
   return Object.keys(params).length > 0 ? { name, params } : { name };
 }
 
-// Billing-model label for the purchase event — a coarse label only, NEVER an
-// amount (compliance ruling 27.7.2026: financial figures stay out of params;
-// the standard ecommerce `value` is the single approved exception). Named
-// billing_model (not payment_plan) — the values describe the billing MODEL
-// applied at settlement, not an installment plan.
-export type BillingModelLabel = 'base_overage' | 'per_reached';
-
 // Analytics payload a Server Action may attach to its returned form state for
 // no-redirect flows (useActionState); fired client-side exactly once per
 // returned state object.
@@ -72,43 +65,3 @@ export const LEAD_SOURCES = {
   contact: 'contact_form',
   callback: 'callback_request',
 } as const;
-
-// purchase params (official schema, per the approved events plan): real
-// per-charge transaction id (the SUMIT payment id — NEVER the campaign id,
-// which repeats across retries/refunds and would poison GA's transaction
-// de-duplication) + currency/value + the single service items[] line.
-// transaction_id is omitted when the provider did not return an id.
-// context: the billing-model label (registered as a custom dimension); the
-// UUID fields exist but are HELD — no call site passes them (minimization
-// ruling 27.7) pending the legal decision.
-export type PurchaseParams = Record<string, string | number | object[]>;
-
-export function buildPurchaseParams(
-  amount: number,
-  paymentId: number | string | null | undefined,
-  context?: {
-    eventId?: string;
-    campaignId?: string;
-    billingModel?: BillingModelLabel;
-  },
-): PurchaseParams {
-  const params: PurchaseParams = {
-    currency: 'ILS',
-    value: amount,
-    items: [
-      {
-        item_id: 'rsvp_outreach',
-        item_name: 'RSVP outreach service',
-        price: amount,
-        quantity: 1,
-      },
-    ],
-  };
-  if (paymentId !== null && paymentId !== undefined && `${paymentId}`.trim() !== '') {
-    params.transaction_id = String(paymentId);
-  }
-  if (context?.eventId) params.event_id = context.eventId;
-  if (context?.campaignId) params.campaign_id = context.campaignId;
-  if (context?.billingModel) params.billing_model = context.billingModel;
-  return params;
-}

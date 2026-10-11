@@ -17,7 +17,6 @@ import {
   mapDevices,
   mapEvents,
   mapFunnel,
-  mapBillingModels,
   mapGenders,
   mapKalfaChannels,
   mapLandingPages,
@@ -225,7 +224,6 @@ export async function loadAnalyticsDashboard(
       interests: notConfigured(),
       landingPages: notConfigured(),
       leadSources: notConfigured(),
-      billingModels: notConfigured(),
       campaigns: notConfigured(),
       kalfaChannels: notConfigured(),
       coreQuota: null,
@@ -270,12 +268,11 @@ export async function loadAnalyticsDashboard(
     genders: sectioned(c, (d) => mapGenders(d.responses[1])),
     interests: sectioned(c, (d) => mapDemographic(d.responses[2])),
     landingPages: sectioned(c, (d) => mapLandingPages(d.responses[3])),
-    // Batch D report order contract: [leadSources, billingModels, campaigns, campaignLeads, kalfaChannels?]
+    // Batch D report order contract: [leadSources, campaigns, campaignLeads, kalfaChannels?]
     leadSources: sectioned(dBatch, (d) => mapLeadSources(d.responses[0])),
-    billingModels: sectioned(dBatch, (d) => mapBillingModels(d.responses[1])),
-    campaigns: sectioned(dBatch, (d) => mapCampaigns(d.responses[2], d.responses[3])),
+    campaigns: sectioned(dBatch, (d) => mapCampaigns(d.responses[1], d.responses[2])),
     kalfaChannels: channelGroupId
-      ? sectioned(dBatch, (d) => mapKalfaChannels(d.responses[4]))
+      ? sectioned(dBatch, (d) => mapKalfaChannels(d.responses[3]))
       : notConfigured(),
     coreQuota: a.data?.quota ?? b.data?.quota ?? c.data?.quota ?? dBatch.data?.quota ?? null,
   };

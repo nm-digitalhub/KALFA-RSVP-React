@@ -185,20 +185,23 @@ describe('buildCoreBatchC', () => {
   });
 });
 
-describe('buildCoreBatchD — custom-dimension breakdowns + campaigns + KALFA channel group', () => {
-  it('without a channel-group id: exactly 4 reports, quota on the first only', () => {
+describe('buildCoreBatchD — custom-dimension breakdown + campaigns + KALFA channel group', () => {
+  it('without a channel-group id: exactly 3 reports, quota on the first only', () => {
     const reqs = buildCoreBatchD('30d');
-    expect(reqs).toHaveLength(4);
+    expect(reqs).toHaveLength(3);
     expect(reqs[0].returnPropertyQuota).toBe(true);
     expect(reqs[0].dimensions?.map((d) => d.name)).toEqual(['customEvent:lead_source']);
     expect(reqs[0].metrics?.map((m) => m.name)).toEqual(['eventCount']);
     expect(reqs[1].returnPropertyQuota).toBeUndefined();
-    expect(reqs[1].dimensions?.map((d) => d.name)).toEqual(['customEvent:billing_model']);
-    expect(reqs[1].metrics?.map((m) => m.name)).toEqual(['purchaseRevenue']);
+  });
+
+  it('no billing-model report: the retired pay-per-result breakdown is gone', () => {
+    const dims = buildCoreBatchD('30d', undefined, '15331180408').flatMap((r) => r.dimensions?.map((d) => d.name) ?? []);
+    expect(dims).not.toContain('customEvent:billing_model');
   });
 
   it('campaigns report: sessionCampaignName/source/medium with sessions/users/engagement', () => {
-    const campaigns = buildCoreBatchD('30d')[2];
+    const campaigns = buildCoreBatchD('30d')[1];
     expect(campaigns.dimensions?.map((d) => d.name)).toEqual([
       'sessionCampaignName',
       'sessionSource',
@@ -212,7 +215,7 @@ describe('buildCoreBatchD — custom-dimension breakdowns + campaigns + KALFA ch
   });
 
   it('campaign leads report: same [campaignName, source, medium] triple as the campaigns report, filtered to eventName=generate_lead', () => {
-    const campaignLeads = buildCoreBatchD('30d')[3];
+    const campaignLeads = buildCoreBatchD('30d')[2];
     // Must match the campaigns report's dimension triple exactly — mapCampaigns
     // joins on the full triple, not campaignName alone, to avoid double-
     // counting leads onto every row that shares a campaign name.
@@ -229,13 +232,13 @@ describe('buildCoreBatchD — custom-dimension breakdowns + campaigns + KALFA ch
     });
   });
 
-  it('with a channel-group id: a 5th report on sessionCustomChannelGroup:<id>', () => {
+  it('with a channel-group id: a 4th report on sessionCustomChannelGroup:<id>', () => {
     const reqs = buildCoreBatchD('30d', undefined, '15331180408');
-    expect(reqs).toHaveLength(5);
-    expect(reqs[4].dimensions?.map((d) => d.name)).toEqual([
+    expect(reqs).toHaveLength(4);
+    expect(reqs[3].dimensions?.map((d) => d.name)).toEqual([
       'sessionCustomChannelGroup:15331180408',
     ]);
-    expect(reqs[4].metrics?.map((m) => m.name)).toEqual(['sessions']);
+    expect(reqs[3].metrics?.map((m) => m.name)).toEqual(['sessions']);
   });
 
   it('stream scoping applies to every batch-D report', () => {

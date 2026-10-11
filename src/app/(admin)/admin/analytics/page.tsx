@@ -97,7 +97,6 @@ export default async function AdminAnalyticsPage({
     dash.interests,
     dash.landingPages,
     dash.leadSources,
-    dash.billingModels,
     dash.campaigns,
     dash.kalfaChannels,
     realtime.section,
@@ -339,17 +338,6 @@ export default async function AdminAnalyticsPage({
             ״לידים״ נספר רק כאשר generate_lead קרה באותו ביקור שנשא את הקמפיין — ביקור חוזר
             בלי UTM (למשל כניסה ישירה ביום אחר) לא משויך לקמפיין המקורי.
           </p>
-        </SectionCard>
-
-        <SectionCard title="הכנסות לפי מודל חיוב" section={dash.billingModels}>
-          <DataTable
-            headers={['מודל חיוב', 'הכנסות']}
-            rows={(dash.billingModels.data ?? []).map((r) => ({
-              key: r.key,
-              cells: [r.label, formatCurrency(r.revenue)],
-            }))}
-            emptyText="אין עדיין חיובים בטווח הזה — הפילוח יתמלא מגמר-החשבון הראשון."
-          />
         </SectionCard>
 
         <SectionCard title="ערוצי KALFA" section={dash.kalfaChannels}>

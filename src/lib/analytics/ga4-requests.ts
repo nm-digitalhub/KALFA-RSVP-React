@@ -247,20 +247,19 @@ export function buildLandingPagesRequest(
   ];
 }
 
-// Batch D order: [leadSources, billingModels, campaigns, campaignLeads,
-// kalfaChannels?] — the two custom-dimension breakdowns (live-verified 27.7:
-// `customEvent:<param>` is the documented Data API syntax and accepted by the
-// property), the campaign-performance pair (owner-run paid campaigns,
+// Batch D order: [leadSources, campaigns, campaignLeads, kalfaChannels?] — the
+// custom-dimension breakdown (live-verified 27.7: `customEvent:<param>` is the
+// documented Data API syntax and accepted by the property), the
+// campaign-performance pair (owner-run paid campaigns,
 // e.g. Instagram UTM tests: `campaigns` carries sessions/users/engagement per
 // sessionCampaignName+source+medium; `campaignLeads` is a SEPARATE
 // eventName='generate_lead'-filtered report over the same
 // campaignName+source+medium triple, joined client-side by mapCampaigns — a single report can't mix
 // an eventName restriction with unfiltered session metrics), plus, ONLY when
 // a channel-group id is configured, traffic by the custom "ערוצי KALFA" group
-// (`sessionCustomChannelGroup:<id>` — syntax live-verified as well). 5 reports
-// is the batchRunReports cap (confirmed against the official Data API
-// reference: "Each batch request is allowed up to 5 requests") — exactly hit
-// when channelGroupId is set.
+// (`sessionCustomChannelGroup:<id>` — syntax live-verified as well). At most 4
+// reports, under the batchRunReports cap of 5 (official Data API reference:
+// "Each batch request is allowed up to 5 requests").
 export function buildCoreBatchD(
   range: AnalyticsRange,
   streamId?: string,
@@ -275,14 +274,6 @@ export function buildCoreBatchD(
       metrics: [{ name: 'eventCount' }],
       dimensionFilter: withStreamFilter(streamId),
       orderBys: metricDesc('eventCount'),
-      limit: TABLE_ROW_LIMIT,
-    },
-    {
-      dateRanges,
-      dimensions: [{ name: 'customEvent:billing_model' }],
-      metrics: [{ name: 'purchaseRevenue' }],
-      dimensionFilter: withStreamFilter(streamId),
-      orderBys: metricDesc('purchaseRevenue'),
       limit: TABLE_ROW_LIMIT,
     },
     {

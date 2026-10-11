@@ -2,7 +2,6 @@
 // (missing rows → [], metric values arrive as strings → Number with a 0
 // fallback). No I/O; everything here is unit-testable in the node env.
 import {
-  BILLING_MODEL_LABELS,
   CHANNEL_GROUP_LABELS,
   DEVICE_LABELS,
   FUNNEL_EVENTS,
@@ -20,7 +19,6 @@ import {
   type EventCountRow,
   type FunnelStep,
   type LabeledCountRow,
-  type BillingModelRow,
   type LandingPageRow,
   type NotFoundRow,
   type OverviewMetrics,
@@ -251,15 +249,6 @@ export function mapLeadSources(resp: RunReportResponse | null | undefined): Labe
     .map((row) => {
       const key = dim(row, 0);
       return { key, label: LEAD_SOURCE_LABELS[key] ?? key, count: met(row, 0) };
-    })
-    .filter((r) => r.key && r.key !== '(not set)');
-}
-
-export function mapBillingModels(resp: RunReportResponse | null | undefined): BillingModelRow[] {
-  return rows(resp)
-    .map((row) => {
-      const key = dim(row, 0);
-      return { key, label: BILLING_MODEL_LABELS[key] ?? key, revenue: met(row, 0) };
     })
     .filter((r) => r.key && r.key !== '(not set)');
 }

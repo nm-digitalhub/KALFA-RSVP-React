@@ -9,7 +9,6 @@ import {
   mapDemographic,
   mapEvents,
   mapFunnel,
-  mapBillingModels,
   mapGenders,
   mapKalfaChannels,
   mapLandingPages,
@@ -269,17 +268,6 @@ describe('v4 custom-dimension mappers', () => {
       { key: 'contact_form', label: 'טופס יצירת קשר', count: 1 },
       { key: 'callback_request', label: 'בקשת חזרה', count: 2 },
     ]);
-  });
-
-  it('billing models: labels + revenue, unknown keys pass through raw', () => {
-    const rows = mapBillingModels({
-      rows: [
-        { dimensionValues: [{ value: 'base_overage' }], metricValues: [{ value: '204' }] },
-        { dimensionValues: [{ value: 'legacy' }], metricValues: [{ value: '12' }] },
-      ],
-    } as never);
-    expect(rows[0]).toEqual({ key: 'base_overage', label: 'בסיס + חריגה', revenue: 204 });
-    expect(rows[1].label).toBe('legacy');
   });
 
   it('kalfa channels: default channels translated, custom Hebrew names pass through', () => {
