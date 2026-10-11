@@ -27,8 +27,8 @@ describe.skipIf(!RUN)('fill_authorized_set — rollback-isolated', () => {
     try {
       await q('set local session_replication_role = replica');
       await q(
-        `insert into public.campaigns (id, event_id, status, max_contacts, price_per_reached, base_price, included_reached, contact_quota)
-         values ($1,$2,$3,0,0,0,0,$4)`,
+        `insert into public.campaigns (id, event_id, status, max_contacts, contact_quota)
+         values ($1,$2,$3,0,$4)`,
         [campaign, event, cfg.status ?? 'approved', cfg.quota],
       );
       // contacts.normalized_phone and guests.full_name are NOT NULL without a default (checked on the live schema).

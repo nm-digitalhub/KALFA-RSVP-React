@@ -346,8 +346,8 @@ describe('getCallbackRequest', () => {
   // The funnel is the ONLY way the page can tell a lead that signed up from
   // one that vanished — nothing on sales_call_attempts records any of it. This
   // walks the real chain: the attempt is referenced by a profile, that profile
-  // owns an event, that event has a campaign, and the campaign's authorized_at
-  // is the cleared J5 hold.
+  // owns an event, that event has a campaign, and the ledger records its
+  // package payment.
   it('reconstructs what the lead did after the call, from three linked tables', async () => {
     mockCallbackSalesClient({
       callbacks: detailRow({ id: 'cb-1' }),

@@ -43,19 +43,18 @@ async function main() {
   const { data: c, error } = await admin
     .from('campaigns')
     .select(
-      'id, capture_status, card_token_ref, card_exp_month, card_exp_year, card_citizen_id',
+      'id, card_token_ref, card_exp_month, card_exp_year, card_citizen_id',
     )
     .eq('id', CAMPAIGN_ID)
     .maybeSingle();
   if (error || !c) throw new Error('campaign not found');
   if (
-    c.capture_status !== 'authorized' ||
     !c.card_token_ref ||
     c.card_exp_month == null ||
     c.card_exp_year == null ||
     !c.card_citizen_id
   ) {
-    throw new Error('campaign has no complete saved card (capture_status/token/expiry/citizen_id)');
+    throw new Error('campaign has no complete saved card (token/expiry/citizen_id)');
   }
 
   const config = await getSumitServerConfig();

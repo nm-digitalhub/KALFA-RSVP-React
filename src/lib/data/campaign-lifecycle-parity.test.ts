@@ -5,8 +5,7 @@ import { join } from 'node:path';
 // Regression guard: the campaign lifecycle has exactly ONE implementation.
 //
 // WHY THIS EXISTS. `campaigns.status` is guarded by more than the from/to pair.
-// activateCampaign additionally enforces the J5 hold (capture_status =
-// 'authorized', or a recorded payment for a package), refuses a past event
+// activateCampaign additionally enforces the package payment, refuses a past event
 // (L1), requires a published event (R9), fires the ops alert, and seeds the
 // auto-thankyou schedule. Only two of those are visible at the call site; the
 // rest live inside activateCampaign and transitionCampaignStatus.
@@ -51,8 +50,7 @@ describe('campaign status transitions have a single implementation', () => {
       const body = readFileSync(file, 'utf8');
       const touchesCampaigns = /\.from\(\s*['"]campaigns['"]\s*\)/.test(body);
       // A status write is an update whose payload names `status`. Reads and
-      // updates of other columns (capture_status on the hold path, charge_status
-      // on close-charge) are legitimate and must not trip this.
+      // updates of other columns are legitimate and must not trip this.
       const writesStatus = /\.update\(\s*\{[^}]*\bstatus\s*:/.test(body);
       expect(
         touchesCampaigns && writesStatus,

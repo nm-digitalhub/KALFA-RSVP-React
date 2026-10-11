@@ -162,23 +162,18 @@ export type Database = {
       }
       app_settings: {
         Row: {
-          agr_charge_window_days: string | null
-          agr_hold_release_days: string | null
           agr_liability_cap: string | null
           agr_offer_validity_days: string | null
           agr_record_retention_months: string | null
           agr_retention_days: string | null
           agr_service_activation_window: string | null
           agreement_archive_enabled: boolean
-          base_overage_pricing_enabled: boolean
           billing_exposure_gate: boolean
           callback_intake_sms_daily_cap: number
           callback_intake_sms_enabled: boolean
-          campaign_holds_enabled: boolean
           cancellation_fee_cap: number
           cancellation_fee_percent: number
           cancellation_refund_days: number
-          close_charge_enabled: boolean
           company_contact_email: string | null
           company_contact_phone: string | null
           company_instagram_url: string | null
@@ -201,7 +196,6 @@ export type Database = {
           exchange_connection_mode: string
           extra_sms_sender: string | null
           extra_sms_token: string | null
-          extreme_threshold_contacts: number
           handoff_enabled: boolean
           id: boolean
           inbound_ai_answer_enabled: boolean
@@ -222,7 +216,6 @@ export type Database = {
           package_model_enabled: boolean
           payments_enabled: boolean
           privacy_url: string | null
-          reasonable_coverage_contacts: number
           signup_reminder_enabled: boolean
           slack_alert_campaign_billing: boolean
           slack_alert_channel_id: string | null
@@ -278,23 +271,18 @@ export type Database = {
           whatsapp_waba_id: string | null
         }
         Insert: {
-          agr_charge_window_days?: string | null
-          agr_hold_release_days?: string | null
           agr_liability_cap?: string | null
           agr_offer_validity_days?: string | null
           agr_record_retention_months?: string | null
           agr_retention_days?: string | null
           agr_service_activation_window?: string | null
           agreement_archive_enabled?: boolean
-          base_overage_pricing_enabled?: boolean
           billing_exposure_gate?: boolean
           callback_intake_sms_daily_cap?: number
           callback_intake_sms_enabled?: boolean
-          campaign_holds_enabled?: boolean
           cancellation_fee_cap?: number
           cancellation_fee_percent?: number
           cancellation_refund_days?: number
-          close_charge_enabled?: boolean
           company_contact_email?: string | null
           company_contact_phone?: string | null
           company_instagram_url?: string | null
@@ -317,7 +305,6 @@ export type Database = {
           exchange_connection_mode?: string
           extra_sms_sender?: string | null
           extra_sms_token?: string | null
-          extreme_threshold_contacts?: number
           handoff_enabled?: boolean
           id?: boolean
           inbound_ai_answer_enabled?: boolean
@@ -338,7 +325,6 @@ export type Database = {
           package_model_enabled?: boolean
           payments_enabled?: boolean
           privacy_url?: string | null
-          reasonable_coverage_contacts?: number
           signup_reminder_enabled?: boolean
           slack_alert_campaign_billing?: boolean
           slack_alert_channel_id?: string | null
@@ -394,23 +380,18 @@ export type Database = {
           whatsapp_waba_id?: string | null
         }
         Update: {
-          agr_charge_window_days?: string | null
-          agr_hold_release_days?: string | null
           agr_liability_cap?: string | null
           agr_offer_validity_days?: string | null
           agr_record_retention_months?: string | null
           agr_retention_days?: string | null
           agr_service_activation_window?: string | null
           agreement_archive_enabled?: boolean
-          base_overage_pricing_enabled?: boolean
           billing_exposure_gate?: boolean
           callback_intake_sms_daily_cap?: number
           callback_intake_sms_enabled?: boolean
-          campaign_holds_enabled?: boolean
           cancellation_fee_cap?: number
           cancellation_fee_percent?: number
           cancellation_refund_days?: number
-          close_charge_enabled?: boolean
           company_contact_email?: string | null
           company_contact_phone?: string | null
           company_instagram_url?: string | null
@@ -433,7 +414,6 @@ export type Database = {
           exchange_connection_mode?: string
           extra_sms_sender?: string | null
           extra_sms_token?: string | null
-          extreme_threshold_contacts?: number
           handoff_enabled?: boolean
           id?: boolean
           inbound_ai_answer_enabled?: boolean
@@ -454,7 +434,6 @@ export type Database = {
           package_model_enabled?: boolean
           payments_enabled?: boolean
           privacy_url?: string | null
-          reasonable_coverage_contacts?: number
           signup_reminder_enabled?: boolean
           slack_alert_campaign_billing?: boolean
           slack_alert_channel_id?: string | null
@@ -1663,42 +1642,19 @@ export type Database = {
           allowed_channels: Database["public"]["Enums"]["campaign_channel"][]
           approved_at: string | null
           approved_by: string | null
-          auth_amount: number | null
-          auth_external_ref: string | null
-          auth_number: string | null
-          authorized_at: string | null
-          base_price: number | null
-          billing_route: Database["public"]["Enums"]["billing_route"] | null
-          capture_status: string | null
           card_citizen_id: string | null
           card_exp_month: number | null
           card_exp_year: number | null
           card_token_ref: string | null
-          charge_auth_number: string | null
-          charge_document_number: number | null
-          charge_document_url: string | null
-          charge_payment_id: number | null
-          charge_status: string | null
-          charged_at: string | null
           close_at: string | null
           contact_quota: number | null
           created_at: string
-          credit_applied: number
           enabled: boolean
           event_id: string
-          final_charge_amount: number | null
-          final_invoice_document_id: number | null
-          hold_order_document_id: number | null
-          hold_order_document_number: number | null
-          hold_order_document_url: string | null
           id: string
-          included_reached: number | null
-          max_charge_ceiling: number | null
           max_contacts: number
           outreach_schedule: Json | null
           package_price: number | null
-          price_per_reached: number | null
-          release_status: string | null
           start_at: string | null
           status: Database["public"]["Enums"]["campaign_status"]
           steps: Json
@@ -1716,42 +1672,19 @@ export type Database = {
           allowed_channels?: Database["public"]["Enums"]["campaign_channel"][]
           approved_at?: string | null
           approved_by?: string | null
-          auth_amount?: number | null
-          auth_external_ref?: string | null
-          auth_number?: string | null
-          authorized_at?: string | null
-          base_price?: number | null
-          billing_route?: Database["public"]["Enums"]["billing_route"] | null
-          capture_status?: string | null
           card_citizen_id?: string | null
           card_exp_month?: number | null
           card_exp_year?: number | null
           card_token_ref?: string | null
-          charge_auth_number?: string | null
-          charge_document_number?: number | null
-          charge_document_url?: string | null
-          charge_payment_id?: number | null
-          charge_status?: string | null
-          charged_at?: string | null
           close_at?: string | null
           contact_quota?: number | null
           created_at?: string
-          credit_applied?: number
           enabled?: boolean
           event_id: string
-          final_charge_amount?: number | null
-          final_invoice_document_id?: number | null
-          hold_order_document_id?: number | null
-          hold_order_document_number?: number | null
-          hold_order_document_url?: string | null
           id?: string
-          included_reached?: number | null
-          max_charge_ceiling?: number | null
           max_contacts: number
           outreach_schedule?: Json | null
           package_price?: number | null
-          price_per_reached?: number | null
-          release_status?: string | null
           start_at?: string | null
           status?: Database["public"]["Enums"]["campaign_status"]
           steps?: Json
@@ -1769,42 +1702,19 @@ export type Database = {
           allowed_channels?: Database["public"]["Enums"]["campaign_channel"][]
           approved_at?: string | null
           approved_by?: string | null
-          auth_amount?: number | null
-          auth_external_ref?: string | null
-          auth_number?: string | null
-          authorized_at?: string | null
-          base_price?: number | null
-          billing_route?: Database["public"]["Enums"]["billing_route"] | null
-          capture_status?: string | null
           card_citizen_id?: string | null
           card_exp_month?: number | null
           card_exp_year?: number | null
           card_token_ref?: string | null
-          charge_auth_number?: string | null
-          charge_document_number?: number | null
-          charge_document_url?: string | null
-          charge_payment_id?: number | null
-          charge_status?: string | null
-          charged_at?: string | null
           close_at?: string | null
           contact_quota?: number | null
           created_at?: string
-          credit_applied?: number
           enabled?: boolean
           event_id?: string
-          final_charge_amount?: number | null
-          final_invoice_document_id?: number | null
-          hold_order_document_id?: number | null
-          hold_order_document_number?: number | null
-          hold_order_document_url?: string | null
           id?: string
-          included_reached?: number | null
-          max_charge_ceiling?: number | null
           max_contacts?: number
           outreach_schedule?: Json | null
           package_price?: number | null
-          price_per_reached?: number | null
-          release_status?: string | null
           start_at?: string | null
           status?: Database["public"]["Enums"]["campaign_status"]
           steps?: Json
@@ -5165,60 +5075,45 @@ export type Database = {
       packages: {
         Row: {
           active: boolean
-          base_price: number | null
           category: string
           channels: Database["public"]["Enums"]["campaign_channel"][] | null
           contact_quota: number | null
           created_at: string
           description: string | null
-          hold_buffer_pct: number
           id: string
-          included_reached: number | null
           includes: Json
-          min_hold_floor: number
           name: string
           outreach_schedule: Json | null
-          price_per_reached: number | null
           price_with_vat: number
           sort_order: number
           tier: string
         }
         Insert: {
           active?: boolean
-          base_price?: number | null
           category?: string
           channels?: Database["public"]["Enums"]["campaign_channel"][] | null
           contact_quota?: number | null
           created_at?: string
           description?: string | null
-          hold_buffer_pct?: number
           id?: string
-          included_reached?: number | null
           includes?: Json
-          min_hold_floor?: number
           name: string
           outreach_schedule?: Json | null
-          price_per_reached?: number | null
           price_with_vat: number
           sort_order?: number
           tier: string
         }
         Update: {
           active?: boolean
-          base_price?: number | null
           category?: string
           channels?: Database["public"]["Enums"]["campaign_channel"][] | null
           contact_quota?: number | null
           created_at?: string
           description?: string | null
-          hold_buffer_pct?: number
           id?: string
-          included_reached?: number | null
           includes?: Json
-          min_hold_floor?: number
           name?: string
           outreach_schedule?: Json | null
-          price_per_reached?: number | null
           price_with_vat?: number
           sort_order?: number
           tier?: string
@@ -8597,7 +8492,6 @@ export type Database = {
     Enums: {
       agreement_status: "draft" | "approved"
       app_role: "admin" | "user"
-      billing_route: "saved_token" | "hold_j5"
       campaign_channel: "whatsapp" | "call"
       campaign_status:
         | "draft"
@@ -8800,7 +8694,6 @@ export const Constants = {
     Enums: {
       agreement_status: ["draft", "approved"],
       app_role: ["admin", "user"],
-      billing_route: ["saved_token", "hold_j5"],
       campaign_channel: ["whatsapp", "call"],
       campaign_status: [
         "draft",

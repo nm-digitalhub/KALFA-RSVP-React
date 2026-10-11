@@ -42,14 +42,8 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
   async function withCampaign(
     cfg: {
       max: number;
-      auth: number | null;
-      price: number | null;
       status?: string;
-      // Since 2026-09-25 the RPC reads none of auth/price/base/included: there
-      // is no funded_cap. They stay here only to shape realistic campaign rows.
-      base?: number;
-      included?: number;
-      // campaigns.contact_quota (package model). Omitted → NULL → no limit.
+      // campaigns.contact_quota (the package quota). Omitted → NULL → no limit.
       quota?: number;
     },
     fn: (ctx: {
@@ -65,18 +59,13 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
     try {
       await q('set local session_replication_role = replica');
       await q(
-        `insert into public.campaigns
-           (id, event_id, status, max_contacts, auth_amount, price_per_reached, base_price, included_reached, contact_quota)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        `insert into public.campaigns (id, event_id, status, max_contacts, contact_quota)
+         values ($1,$2,$3,$4,$5)`,
         [
           campaign,
           event,
           cfg.status ?? 'active',
           cfg.max,
-          cfg.auth,
-          cfg.price,
-          cfg.base ?? null,
-          cfg.included ?? null,
           cfg.quota ?? null,
         ],
       );
@@ -125,7 +114,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
     ).then((r) => Number(r.rows[0].c));
 
   it('add: a contact with no live guest → not_eligible, never admitted', async () => {
-    await withCampaign({ max: 10, auth: 40, price: 4 }, async ({ event, campaign, q }) => {
+    await withCampaign({ max: 10 }, async ({ event, campaign, q }) => {
       const contact = randomUUID();
       await q(
         `insert into public.contacts (id, event_id, normalized_phone, removal_requested)
@@ -140,7 +129,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
   });
 
   it('add: eligible contact → added + one in/add audit row', async () => {
-    await withCampaign({ max: 10, auth: 40, price: 4 }, async ({ event, campaign, q }) => {
+    await withCampaign({ max: 10 }, async ({ event, campaign, q }) => {
       const contact = await eligibleContact(q, event);
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', contact, null, null])).toBe(
         'added',
@@ -155,9 +144,8 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
     });
   });
 
-  it('add: beyond max_contacts AND beyond the hold → still added (the funded cap was retired 2026-09-25)', async () => {
-    // Old cap: min(1, floor(4/4)) = 1 → the second add returned 'ceiling_full'.
-    await withCampaign({ max: 1, auth: 4, price: 4 }, async ({ event, campaign, q }) => {
+  it('add: beyond max_contacts → still added (max_contacts caps nothing)', async () => {
+    await withCampaign({ max: 1 }, async ({ event, campaign, q }) => {
       const c1 = await eligibleContact(q, event);
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c1, null, null])).toBe('added');
       const c2 = await eligibleContact(q, event);
@@ -168,94 +156,16 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
     });
   });
 
-  it('base+overage: the first contact beyond `included` is admitted (no ceiling)', async () => {
-    // base=200, included=200, price=4, auth=200 (a fully-funded hold with zero
-    // overage headroom). The retired cap would have stopped the set at 200
-    // (200 + floor(max(0,200-200)/4)); now the first contact beyond `included`
-    // is admitted too.
-    await withCampaign(
-      { max: 1000, auth: 200, price: 4, base: 200, included: 200 },
-      async ({ event, campaign, q }) => {
-        // Admit 200 contacts — every one must succeed.
-        for (let i = 0; i < 200; i++) {
-          const c = await eligibleContact(q, event);
-          expect(
-            await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c, null, null]),
-          ).toBe('added');
-        }
-        expect(await setSize(q, campaign)).toBe(200);
-        const over = await eligibleContact(q, event);
-        expect(
-          await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', over, null, null]),
-        ).toBe('added');
-        expect(await setSize(q, campaign)).toBe(201);
-      },
-    );
-  });
-
-  it('base+overage: nothing about the hold amount bounds the set', async () => {
-    // Fixture: a hold with some headroom above the base. Under the old cap that
-    // headroom bought a fixed number of extra contacts; now nothing bounds the set.
-    await withCampaign(
-      { max: 1000, auth: 240, price: 4, base: 200, included: 200 },
-      async ({ event, campaign, q }) => {
-        for (let i = 0; i < 210; i++) {
-          const c = await eligibleContact(q, event);
-          expect(
-            await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c, null, null]),
-          ).toBe('added');
-        }
-        const over = await eligibleContact(q, event);
-        expect(
-          await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', over, null, null]),
-        ).toBe('added');
-      },
-    );
-  });
-
-  it('base+overage: max_contacts frozen at 0 (signed before adding guests) still admits up to `included`', async () => {
-    // max_contacts is persisted at HOLD time as the unique-contact count. A
-    // customer who signs + holds before adding guests (allowed since 26.7)
-    // therefore gets max_contacts=0, and a cap derived from it rejected EVERY
-    // later guest — an "active" campaign that never sends (one live campaign
-    // was in exactly this state). Such a campaign must still admit its guests.
-    await withCampaign(
-      { max: 0, auth: 200, price: 4, base: 200, included: 200 },
-      async ({ event, campaign, q }) => {
-        const c = await eligibleContact(q, event);
-        expect(
-          await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c, null, null]),
-        ).toBe('added');
-        expect(await setSize(q, campaign)).toBe(1);
-      },
-    );
-  });
-
-  it('legacy (base=0/included=0): max_contacts no longer caps either', async () => {
-    await withCampaign({ max: 1, auth: 40, price: 4 }, async ({ event, campaign, q }) => {
-      const c1 = await eligibleContact(q, event);
-      expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c1, null, null])).toBe(
-        'added',
-      );
-      const c2 = await eligibleContact(q, event);
-      expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c2, null, null])).toBe(
-        'added',
-      );
-      expect(await setSize(q, campaign)).toBe(2);
-    });
-  });
-
-  it('a null price no longer blocks admission (the fail-closed cap is gone)', async () => {
-    await withCampaign({ max: 10, auth: 40, price: null }, async ({ event, campaign, q }) => {
+  it('max_contacts frozen at 0 (terms approved before adding guests) still admits', async () => {
+    await withCampaign({ max: 0 }, async ({ event, campaign, q }) => {
       const c = await eligibleContact(q, event);
-      expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c, null, null])).toBe(
-        'added',
-      );
+      expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c, null, null])).toBe('added');
+      expect(await setSize(q, campaign)).toBe(1);
     });
   });
 
   it('repoint to the SAME contact → noop (fast-path, no set/audit churn)', async () => {
-    await withCampaign({ max: 10, auth: 40, price: 4 }, async ({ event, campaign, q }) => {
+    await withCampaign({ max: 10 }, async ({ event, campaign, q }) => {
       const c = await eligibleContact(q, event);
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'repoint', c, c, null])).toBe('noop');
       expect(await setSize(q, campaign)).toBe(0);
@@ -263,7 +173,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
   });
 
   it('delete: not-exposed member → removed; exposed member → pinned_kept (stays in set)', async () => {
-    await withCampaign({ max: 10, auth: 40, price: 4 }, async ({ event, campaign, q }) => {
+    await withCampaign({ max: 10 }, async ({ event, campaign, q }) => {
       const c = await eligibleContact(q, event);
       await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c, null, null]);
 
@@ -288,7 +198,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
   });
 
   it('repoint A→B, A not-exposed → swap (A out, B in, size constant)', async () => {
-    await withCampaign({ max: 10, auth: 40, price: 4 }, async ({ event, campaign, q }) => {
+    await withCampaign({ max: 10 }, async ({ event, campaign, q }) => {
       const a = await eligibleContact(q, event);
       const b = await eligibleContact(q, event);
       await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', a, null, null]);
@@ -310,7 +220,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
   // (quota omitted → NULL).
 
   it('quota: the list fills to the quota, then the next add → quota_full (no row, no audit)', async () => {
-    await withCampaign({ max: 10, auth: 40, price: 4, quota: 2 }, async ({ event, campaign, q }) => {
+    await withCampaign({ max: 10, quota: 2 }, async ({ event, campaign, q }) => {
       const [c1, c2, c3] = [
         await eligibleContact(q, event),
         await eligibleContact(q, event),
@@ -331,7 +241,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
   });
 
   it('quota: a contact already on a full list → noop, not quota_full', async () => {
-    await withCampaign({ max: 10, auth: 40, price: 4, quota: 1 }, async ({ event, campaign, q }) => {
+    await withCampaign({ max: 10, quota: 1 }, async ({ event, campaign, q }) => {
       const c1 = await eligibleContact(q, event);
       await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c1, null, null]);
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c1, null, null])).toBe('noop');
@@ -339,7 +249,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
   });
 
   it('quota: an ineligible contact is not_eligible even when the list is full (eligibility is checked first)', async () => {
-    await withCampaign({ max: 10, auth: 40, price: 4, quota: 1 }, async ({ event, campaign, q }) => {
+    await withCampaign({ max: 10, quota: 1 }, async ({ event, campaign, q }) => {
       const c1 = await eligibleContact(q, event);
       await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c1, null, null]);
       const orphan = randomUUID();
@@ -355,7 +265,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
   });
 
   it('quota: removing a not-exposed member frees the seat for the next add', async () => {
-    await withCampaign({ max: 10, auth: 40, price: 4, quota: 1 }, async ({ event, campaign, q }) => {
+    await withCampaign({ max: 10, quota: 1 }, async ({ event, campaign, q }) => {
       const [c1, c2] = [await eligibleContact(q, event), await eligibleContact(q, event)];
       await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c1, null, null]);
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c2, null, null])).toBe(
@@ -370,7 +280,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
   });
 
   it('quota: repoint where the old contact was never on a full list → quota_full', async () => {
-    await withCampaign({ max: 10, auth: 40, price: 4, quota: 1 }, async ({ event, campaign, q }) => {
+    await withCampaign({ max: 10, quota: 1 }, async ({ event, campaign, q }) => {
       const [onList, oldC, newC] = [
         await eligibleContact(q, event),
         await eligibleContact(q, event),
@@ -385,7 +295,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
   });
 
   it('quota: a swap that removes the not-exposed old contact is NOT capped (size stays constant)', async () => {
-    await withCampaign({ max: 10, auth: 40, price: 4, quota: 1 }, async ({ event, campaign, q }) => {
+    await withCampaign({ max: 10, quota: 1 }, async ({ event, campaign, q }) => {
       const [a, b] = [await eligibleContact(q, event), await eligibleContact(q, event)];
       await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', a, null, null]);
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'repoint', b, a, null])).toBe('swapped');
@@ -394,7 +304,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
   });
 
   it('quota: repoint with an EXPOSED old contact on a full list → quota_full, old stays, old audited as kept_exposed', async () => {
-    await withCampaign({ max: 10, auth: 40, price: 4, quota: 1 }, async ({ event, campaign, q }) => {
+    await withCampaign({ max: 10, quota: 1 }, async ({ event, campaign, q }) => {
       const [a, b] = [await eligibleContact(q, event), await eligibleContact(q, event)];
       await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', a, null, null]);
       await q(
@@ -417,7 +327,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
   });
 
   it('quota: a quota of 0 admits nobody', async () => {
-    await withCampaign({ max: 10, auth: 40, price: 4, quota: 0 }, async ({ event, campaign, q }) => {
+    await withCampaign({ max: 10, quota: 0 }, async ({ event, campaign, q }) => {
       const c = await eligibleContact(q, event);
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c, null, null])).toBe('quota_full');
       expect(await setSize(q, campaign)).toBe(0);

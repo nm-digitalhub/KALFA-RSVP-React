@@ -180,7 +180,7 @@ describe('getEventStats orchestration', () => {
     vi.mocked(canAccessEvent).mockImplementation(async (_e, resource) => resource !== 'billing');
     getEventMock.mockResolvedValue({ id: 'evt-1', name: 'E', event_type: 'wedding', event_date: null, rsvp_deadline: null, status: 'active' });
     getGuestTotalsMock.mockResolvedValue(mkTotals({ rows: 4 }));
-    getCampaignForEventMock.mockResolvedValue({ id: 'c-1', status: 'active', capture_status: 'captured', max_contacts: 100, final_charge_amount: null });
+    getCampaignForEventMock.mockResolvedValue({ id: 'c-1', status: 'active', max_contacts: 100 });
     getCampaignDeliveryBreakdownMock.mockResolvedValue({ delivery: { sent: 1, delivered: 1, read: 1, failed: 0 }, outcome: { reached: 1, wrongNumber: 0, optedOut: 0 } });
     const r = await getEventStats('evt-1');
     expect(r.campaign.state).toBe('visible');
@@ -199,14 +199,7 @@ describe('getEventStats orchestration', () => {
     getCampaignForEventMock.mockResolvedValue({
       id: 'c-9',
       status: 'closed',
-      capture_status: null,
       max_contacts: 0,
-      base_price: '0',
-      included_reached: 0,
-      price_per_reached: '0',
-      final_charge_amount: null,
-      credit_applied: '0',
-      charge_status: null,
       package_price: '1.00',
       contact_quota: 1,
     });
@@ -225,7 +218,7 @@ describe('getEventStats orchestration', () => {
     vi.mocked(canAccessEvent).mockResolvedValue(true);
     getEventMock.mockResolvedValue(null);
     getGuestTotalsMock.mockResolvedValue(mkTotals({ rows: 1 }));
-    getCampaignForEventMock.mockResolvedValue({ id: 'c-9', status: 'active', capture_status: null, max_contacts: 0, final_charge_amount: null, contact_quota: null });
+    getCampaignForEventMock.mockResolvedValue({ id: 'c-9', status: 'active', max_contacts: 0, contact_quota: null });
     getCampaignDeliveryBreakdownMock.mockResolvedValue(null);
     vi.mocked(loadOperations).mockRejectedValueOnce(new Error('down'));
     const r = await getEventStats('evt-1');
@@ -266,9 +259,7 @@ describe('getEventStats orchestration', () => {
     getCampaignForEventMock.mockResolvedValue({
       id: 'c-1',
       status: 'closed',
-      capture_status: 'captured',
       max_contacts: 100,
-      final_charge_amount: 50,
       card_token_ref: 'card-ref',
       card_citizen_id: '123456789',
       charge_document_url: 'https://x/y',

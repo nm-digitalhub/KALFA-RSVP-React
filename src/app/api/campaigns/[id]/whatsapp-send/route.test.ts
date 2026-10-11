@@ -56,8 +56,6 @@ describe('POST /api/campaigns/[id]/whatsapp-send — CSRF origin gate', () => {
       id: CAMPAIGN_ID,
       event_id: EVENT_ID,
       status: 'active',
-      max_charge_ceiling: 100,
-      capture_status: 'authorized',
     } as never);
     vi.mocked(requireOwnedEvent).mockResolvedValue({
       id: EVENT_ID,

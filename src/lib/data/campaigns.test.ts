@@ -1226,7 +1226,7 @@ describe('getCampaignStageForEvent — a package campaign is funded by its payme
   it('reads the ledger for a package campaign: paid + approved is "awaiting activation"', async () => {
     const { packagePaymentOf } = await import('@/lib/payments/package-paid');
     vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
-    const server = createMockSupabase<unknown>({ data: { id: 'c1', status: 'approved', capture_status: null, package_price: 150 }, error: null });
+    const server = createMockSupabase<unknown>({ data: { id: 'c1', status: 'approved', package_price: 150 }, error: null });
     server.client.rpc.mockResolvedValue({ data: true, error: null });
     vi.mocked(createClient).mockResolvedValue(server.client as never);
     vi.mocked(packagePaymentOf).mockResolvedValue({ status: 'collected', collected: 150, credit: 0, committed: 0 });
@@ -1237,7 +1237,7 @@ describe('getCampaignStageForEvent — a package campaign is funded by its payme
   it('an unpaid package campaign is still "awaiting payment"', async () => {
     const { packagePaymentOf } = await import('@/lib/payments/package-paid');
     vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
-    const server = createMockSupabase<unknown>({ data: { id: 'c1', status: 'approved', capture_status: null, package_price: 150 }, error: null });
+    const server = createMockSupabase<unknown>({ data: { id: 'c1', status: 'approved', package_price: 150 }, error: null });
     server.client.rpc.mockResolvedValue({ data: true, error: null });
     vi.mocked(createClient).mockResolvedValue(server.client as never);
     vi.mocked(packagePaymentOf).mockResolvedValue(null);

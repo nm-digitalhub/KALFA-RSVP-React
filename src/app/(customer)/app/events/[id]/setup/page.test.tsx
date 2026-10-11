@@ -94,7 +94,7 @@ describe('setup page — nothing on offer (the package switch is off)', () => {
   });
 
   it('a campaign that already exists never triggers a catalogue read', async () => {
-    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'pending_approval', capture_status: null, package_price: 150 } as never);
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'pending_approval', package_price: 150 } as never);
     const html = await render();
     expect(listPackageOffers).not.toHaveBeenCalled();
     expect(html).toContain('data-marker="package-terms"');
@@ -125,7 +125,7 @@ describe('setup page — a package is on offer', () => {
   });
 
   it('after the choice (a package campaign exists) → the terms are approved, not signed: no signature step, no signing form', async () => {
-    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'pending_approval', capture_status: null, package_price: 150 } as never);
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'pending_approval', package_price: 150 } as never);
     const html = await render();
     expect(html).toContain('package:done');
     expect(html).toContain('sign:current');
@@ -184,7 +184,7 @@ describe('setup page — the way back', () => {
 
   it('once the campaign exists there is no back: the choice, the approval and the payment are not undone from here', async () => {
     vi.mocked(listPackageOffers).mockResolvedValue([OFFER as never]);
-    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'pending_approval', capture_status: null, package_price: 150 } as never);
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'pending_approval', package_price: 150 } as never);
     expect(backOf(await render())).toEqual({ href: null, label: null });
   });
 });

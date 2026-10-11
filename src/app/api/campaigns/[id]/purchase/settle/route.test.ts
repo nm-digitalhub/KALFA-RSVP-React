@@ -27,7 +27,7 @@ import { POST } from './route';
 const APP_ORIGIN = 'https://kalfa.test';
 const CAMPAIGN_ID = '11111111-1111-4111-8111-111111111111';
 const EVENT_ID = '22222222-2222-4222-8222-222222222222';
-const CAMPAIGN = { id: CAMPAIGN_ID, event_id: EVENT_ID, status: 'approved', package_price: 149, capture_status: null, charge_status: null };
+const CAMPAIGN = { id: CAMPAIGN_ID, event_id: EVENT_ID, status: 'approved', package_price: 149 };
 
 const call = (body: unknown = { submitted: true }, headers: Record<string, string> = { Origin: APP_ORIGIN }) =>
   POST(new Request(`${APP_ORIGIN}/api/campaigns/${CAMPAIGN_ID}/purchase/settle`, { method: 'POST', headers, body: typeof body === 'string' ? body : JSON.stringify(body) }) as unknown as NextRequest, {
