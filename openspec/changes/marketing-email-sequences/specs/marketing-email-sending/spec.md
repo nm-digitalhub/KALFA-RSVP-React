@@ -84,14 +84,22 @@ Marketing email SHALL be sent only Sunday to Thursday 09:00–20:30 and Friday 0
 - **THEN** it is not sent that day
 
 ### Requirement: An uncertain send is never repeated
-A send whose hand-off to the provider failed in transport SHALL be recorded as unknown outcome, SHALL NOT be retried, and SHALL be resolved only by a later provider event for that send.
+A send SHALL be recorded as failed only when the provider definitely refused it. A transport failure, a server error or an idempotency conflict SHALL be recorded as unknown outcome, SHALL NOT be retried, and SHALL be resolved only by a later provider event for that send.
+
+#### Scenario: Provider server error
+- **WHEN** the provider answers the send with a 5xx error
+- **THEN** the send is unknown outcome, not failed, and no second email is sent
 
 #### Scenario: Timeout after the request left
 - **WHEN** the provider call times out after the request was sent
 - **THEN** the send is unknown outcome, no second email is sent, and a later delivery event marks it delivered
 
 ### Requirement: Provider results apply in order
-A provider event SHALL update a send only if it is newer than the last event applied, and SHALL never move a send backwards; an event that arrives before the send's provider id was saved SHALL still find its send.
+A provider event SHALL update a send only if it is newer than the last event applied, and SHALL never move a send backwards; an event that arrives before the send's provider id was saved SHALL still find its send. The sender and the event processing SHALL each update a send in one atomic conditional write, so neither overwrites the other.
+
+#### Scenario: Delivery recorded before the send call returns
+- **WHEN** a delivery event marks a send delivered and the send call returns afterwards
+- **THEN** the send stays delivered
 
 #### Scenario: An older event processed late
 - **WHEN** a delivered event was applied and an older accepted-type event is processed afterwards
@@ -103,6 +111,20 @@ Marketing email SHALL be sent only while the configured email provider is Resend
 #### Scenario: SMTP configured
 - **WHEN** the configured provider is SMTP
 - **THEN** no marketing email is sent and the readiness check shows sending blocked
+
+### Requirement: No reminder without a recorded setup action
+A setup reminder SHALL be sent only when an owner setup action is recorded for the event; with no record, no reminder SHALL be sent.
+
+#### Scenario: Setup action not recorded
+- **WHEN** an event has no recorded owner setup action
+- **THEN** no reminder is sent for it
+
+### Requirement: A failing readiness gate stops sending while switched on
+Sending SHALL stop whenever a technical readiness gate fails or cannot be verified, even while the sending switch is on, and a template whose current version is not approved SHALL not be sent.
+
+#### Scenario: Secret removed while sending is on
+- **WHEN** the webhook secret is removed while sending is on
+- **THEN** no marketing email is sent until it is restored
 
 ### Requirement: A separate switch for sending
 Marketing email SHALL be sent only while the sending switch is on, independently of the consent switch.

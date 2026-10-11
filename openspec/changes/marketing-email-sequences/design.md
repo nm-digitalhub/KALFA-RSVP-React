@@ -33,9 +33,10 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
 
 **D2. Marketing mail is Resend-only, through the existing wrapper.**
 - *Sender changes.* `EmailSender.send` gains optional `headers` and `tags`, and returns `{providerMessageId}`. The SMTP path returns its Message-ID.
-- *Error classes.* It reports one of two failure classes:
-  - **rejected:** Resend answered with an error. Nothing was sent.
-  - **unknown:** a transport or timeout failure after the request left. Resend may or may not have accepted it.
+- *Error classes.* It reports one of two failure classes, by Resend's documented error codes (resend.com/docs/api-reference/errors):
+  - **rejected:** only a definite refusal, where Resend did not send. That is HTTP 400, 401, 403, 404, 405, 422 and 429 (validation, key, domain, quota, rate limit).
+  - **unknown:** everything else. That covers 5xx (`application_error`, `service_unavailable`), 409 (`concurrent_idempotent_requests`: another request with the same key is in flight; `invalid_idempotent_request`: the key was already used, so the first one may have been sent), and no status at all (network or timeout). Resend may have accepted the mail.
+  The split is a conservative reading of the error list, not a promise by Resend about what a server error did.
 - *Transactional callers.* Unchanged: they keep treating any throw as a failure.
 - *Headers.* The marketing path passes:
   - `List-Unsubscribe: <https://…/api/marketing/unsubscribe?t=…>`. HTTPS only: Reply-To is the owner's own inbox (`netanel.kalfa@kalfa.me`, the live `smtp_from`), which nothing processes automatically, so a `mailto:` unsubscribe would be lost.
@@ -49,7 +50,7 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
 - *Columns.*
   - Identity: `id`, `user_id`, `email`, `template`, `template_version`, `event_id` (setup reminder only).
   - State: `status`, `skip_reason`, `failure_class`.
-  - Provider: `provider_message_id`, `provider_status_at` (the `created_at` of the newest provider event applied).
+  - Provider: `provider_message_id`, `provider_status_at` (the `created_at` of the newest provider event applied), `provider_accepted_at` (the `created_at` of the first `email.sent` or `email.delivered` event).
   - Times: `eligible_since` (when the rule became true, from the definition, D11), `claimed_at`, `handed_off_at` (when the send call returned with an id).
 - *Statuses.*
   - `claimed`: pending.
@@ -78,7 +79,7 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
 - The ledger's `source` CHECK is dropped in this change's migration rather than widened (same owner rule). `ConsentSource` in `marketing-consent.ts` stays the one list of allowed values, and the server write path is the only writer.
 
 **D6. One sweep, every 15 minutes, gated by `marketing_emails_enabled`.**
-- *Stops.* The sweep returns at once when sending is off, the provider is not Resend (D2), or it is outside the window (D7).
+- *Stops.* The sweep returns at once when sending is off, when any technical readiness gate fails (D10, evaluated on every run, not only when sending is turned on), or when it is outside the window (D7). A template whose current version has no approval is skipped on its own, while the others still send.
 - *Inside the window,* it asks each definition (D11) for its due customers. It reads consent from the ledger (latest row per user is a grant), confirmation and the email from `auth.users` via the admin API, and events, campaigns and the activity log for the reminder.
 - *Per customer, in order:*
   1. Re-check the definition's gates.
@@ -86,9 +87,9 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
   3. Render.
   4. Send.
   5. Mark the row:
-     - a success becomes `accepted`, with `provider_message_id` and `handed_off_at`;
+     - a success becomes `accepted`, with `provider_message_id` and `handed_off_at`. This is a single conditional UPDATE (`where id = … and status in ('claimed','unknown')`), so a `delivered` or `failed` that a webhook already wrote is never overwritten;
      - a rejection becomes `failed` (`failure_class = rejected`);
-     - a transport failure becomes `unknown` (`failure_class = unknown`), because Resend may have accepted it, and a later webhook resolves it by tag (D9).
+     - any other failure becomes `unknown` (`failure_class = unknown`), because Resend may have accepted it, and a later webhook resolves it by tag (D9). Both are conditional on `status = 'claimed'` for the same reason.
 - *No automatic retry* of a `failed` or `unknown` row: a lost marketing email is acceptable, a duplicate is not. `sendSlackAlert` reports both with ids only.
 - *Rules per template* (the values the owner can change, defined once in D11):
   - **welcome:**
@@ -101,11 +102,12 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
     - setup not finished (`live` step not done);
     - the latest **owner setup action** on it is ≥ 24 hours old.
     The owner setup action is the newest `activity_log` row for that `event_id` by the event's owner, with an action in the definition's setup-action list. `updated_at` is not used, because background writes move it. `eligible_since` is that action's time plus 24 hours. The email names the event and the label of the current step from `computeSetupSteps`.
+    `logActivity` is best-effort: a failed audit write is logged and the setup action still succeeds (`src/lib/data/activity.ts`). So **no recorded setup action means no reminder**. The definition skips the event with `skip_reason = 'no_setup_record'` and never infers that the owner stopped.
   - **how_it_works:**
     - the customer's `welcome` row is `accepted` or `delivered`;
-    - its `handed_off_at` is ≥ 3 days ago;
+    - its start time is ≥ 3 days ago. The start time is `handed_off_at`, or, when the send call never returned and a later event resolved the row, `provider_accepted_at`. That is the `created_at` of the first `email.sent` or `email.delivered` event for it. A time is never invented;
     - no event of the customer has a finished setup.
-    A `failed`, `unknown` or `skipped` welcome does not start the clock.
+    A `failed`, `skipped`, or still `unknown` welcome does not start the clock.
 
 **D7. The window is the outreach policy plus the marketing blackout days.**
 - `DEFAULT_SEND_POLICY` hours, with `buildJewishCalendar` for Shabbat and Yom Tov.
@@ -120,9 +122,12 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
 - *Accessibility.* The CTA is a link, the logo an inline `<img>` from the site's `/icons/icon.svg` URL with `alt`, and Arial/Tahoma is the fallback after Heebo.
 
 **D9. Provider results arrive through the existing inbox, by our own tag.**
-- *Route.* Resend `email.delivered`, `email.bounced`, `email.failed` and `email.suppressed` already reach `webhook_inbox` through the existing route. `email.suppressed` is added to the handled events.
-- *Matching.* The drain (`processEmailDelivery`) matches a marketing row by `data.tags.mkt_send`, our row id. It does not use `email_id`. This means an event that arrives before `provider_message_id` was saved, or after a transport failure left the row `unknown`, still finds its row.
-- *Monotonic.* An event applies only if its `created_at` is newer than the row's `provider_status_at`, and it never moves a row backwards (`delivered` stays `delivered`). An older event processed late changes nothing. Redelivery is already deduped by the inbox's `svix-id` key.
+- *Route.* Resend `email.sent`, `email.delivered`, `email.bounced`, `email.failed` and `email.suppressed` reach `webhook_inbox` through the existing route. `email.suppressed` is added to the handled events. `email.sent` ("the API request was successful") is the earliest proof of hand-off, and it resolves an `unknown` row to `accepted`.
+- *Matching.* The drain (`processEmailDelivery`) matches a marketing row by `data.tags.mkt_send`, our row id. It does not use `email_id` as the primary key.
+  - *Source.* resend.com/docs/llms-full.txt (read 11.10.2026): the `email.sent`, `email.delivered`, `email.bounced`, `email.failed` and `email.suppressed` payload examples all carry `data.tags` as an object keyed by tag name. A tag name and value may contain only ASCII letters, digits, `_` and `-`, up to 256 characters, so `mkt_send` and a UUID row id are valid.
+  - *Fallback.* An event with no `mkt_send` tag is matched by `data.email_id` against `provider_message_id`. If neither matches, the event is a non-marketing email and is left alone. This means an event that arrives before `provider_message_id` was saved, or after a transport failure left the row `unknown`, still finds its row.
+- *Order is not guaranteed.* Resend's FAQ says delivery is at-least-once and "delivery order is not guaranteed", and recommends sorting by the payload's `created_at` and deduping on `svix-id`. That is what this design does.
+- *Monotonic and atomic.* An event is applied with one conditional UPDATE. The `where` clause requires that its `created_at` is newer than `provider_status_at` (or that one is null) and that the row's current status ranks below the new one (`claimed`/`unknown` < `accepted` < `delivered`/`failed`). So an older event processed late changes nothing, a row never moves backwards, and two concurrent writers (the sweep's own UPDATE in D6 and the drain) cannot overwrite each other. A read followed by a separate write is not used. `provider_accepted_at` is set only when it is null. Redelivery is already deduped by the inbox's `svix-id` key.
 - *Who it touches.* Non-marketing mail is untouched, since it has no tag.
 - *Unknown outcome.* A row in `unknown`, or in `claimed` for more than 15 minutes, is shown as unknown outcome until an event resolves it.
 
@@ -132,13 +137,17 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
   - A test send needs `manage_settings`.
   - Turning sending on or off needs `requirePlatformOwner` and is recorded with `logActivity`.
 - *One state, no "paused".* Sending is on or off; the page says which, and when the next window opens. A separate "paused" state would need a second stored fact. One switch plus the activity log (who turned it off, and when) says the same thing without one.
-- *Readiness is computed, not ticked.* Technical gates are evaluated live on every view:
+- *Readiness is computed, not ticked.* Technical gates are evaluated live on every view and on every sweep run (D6). Turning sending on is not the only time they are checked: a gate that fails later stops sending while the switch stays on, and the page says so.
   - the unsubscribe keys are present and sign and verify;
   - `EMAIL_PROVIDER` is `resend` with an API key;
-  - the Resend webhook is subscribed to the delivery events and `contact.updated` (`webhooks.get`);
+  - **webhook intake works:**
+    - `RESEND_WEBHOOK_SECRET` is set. Without it the route answers 200 and stores nothing (`route.ts`), so subscriptions alone prove nothing;
+    - the Resend webhook (`webhooks.get`) is `enabled`, points at this deployment's `/api/webhooks/resend`, and is subscribed to `email.sent`, `email.delivered`, `email.bounced`, `email.failed`, `email.suppressed` and `contact.updated`;
+    - a signed event from a test send (tag `mkt_test=<id>`, D10 test send) was stored in `webhook_inbox` after the latest change to the keys or the secret;
   - the company name, address, phone and email are present;
   - the consent switch is on;
   - the sweep queue is scheduled and has run within its staleness limit (the existing `QUEUE_EXPECTED_MAX_MINUTES` check).
+  A gate whose check itself fails (Resend unreachable, a read error) is shown as **unverifiable**, never as passed, and it blocks like an open gate.
 - *Approvals are records, not flags.* Human decisions are append-only rows in `marketing_email_approvals`, each with the approver, the time, the kind, the template key and version, and a free-text note:
   - each template approved at its version;
   - one-click unsubscribe tested;
@@ -172,7 +181,8 @@ The sweep, the admin forecast, the recipient eligibility reason and the test sen
 - [The reminder reads setup state that the in-flight change `separate-event-setup-from-management` is reshaping.] → The reminder uses only `computeSetupSteps` and the `live` step, not step names, and its test builds the input through the same function. The setup-action list lives in one definition and is updated with that change.
 - [An owner action missing from the setup-action list leaves a reminder early.] → The list is tested against the actions the setup flow actually logs.
 - [A signing key could leak.] → Anyone holding it could unsubscribe any customer, but nothing more: the action only withdraws. Rotation adds a key; old links keep working.
-- [A transport failure after hand-off leaves the outcome open.] → The row is `unknown`, never `failed` and never retried. A later tagged event resolves it.
+- [A transport failure or a non-definitive Resend error after hand-off leaves the outcome open.] → The row is `unknown`, never `failed` and never retried. A later tagged `email.sent` or `email.delivered` resolves it and records `provider_accepted_at`.
+- [Setup actions are logged best-effort, so a lost audit row hides progress.] → No record means no reminder (`no_setup_record`). A missed nudge is the safe failure.
 - [Low volume: Gmail bulk-sender rules (5,000 a day) do not apply yet.] → One-click headers are included anyway, because Yahoo requires them regardless of volume.
 
 ## Migration Plan

@@ -62,6 +62,14 @@ Each send SHALL show one of: pending, accepted by the provider, delivered, faile
 ### Requirement: Readiness is computed and approvals are recorded
 Technical readiness gates SHALL be evaluated live on every view, never stored as ticks. Human approvals SHALL be append-only records naming the approver, the time and the approved template version, and a template approval SHALL count only for the version currently in code.
 
+#### Scenario: Webhook secret missing
+- **WHEN** the webhook subscriptions are correct but the webhook secret is not set
+- **THEN** the intake gate is open, because events would be acknowledged and not stored
+
+#### Scenario: A check cannot run
+- **WHEN** the provider cannot be reached during the readiness check
+- **THEN** that gate is shown as unverifiable, not passed, and enabling is refused
+
 #### Scenario: Approval recorded
 - **WHEN** the owner approves the welcome email
 - **THEN** a record names the owner, the time and the welcome email's current version
