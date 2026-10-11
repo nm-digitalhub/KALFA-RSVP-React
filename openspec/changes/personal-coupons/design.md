@@ -46,7 +46,6 @@ What exists today was verified on main at f45af75 and against the live database 
 
 **Non-Goals:**
 - Public codes typed at checkout (a later change; they will create an assignment of the same kind).
-- Removing SUMIT-era columns from `campaigns`. That belongs to the SUMIT retirement change; see "Neighbouring cleanup".
 - Moving `contact_quota`. It also limits contacts and activity, so moving it would widen this change.
 - A new CardCom client, mutator or ledger.
 
@@ -106,12 +105,25 @@ The phone target is the callback request's phone. The ElevenLabs configuration c
 
 **D9. Staff assignment.** A new admin action, gated on `manage_billing`, the same as packages. It is audited with `logActivity` and needs no phone claim: staff name the account.
 
+**D10. SUMIT columns retire into the existing ledger, not a new table.** Only 2 of 7 live campaigns hold SUMIT values (read-only check, 11.10.2026). Both already have matching ledger rows in `payment_operations` (provider `sumit`): authorize (152 and 200, with the auth reference; one with its document), release, and a zero charge with `credit_applied` 84 and 200. These match `auth_amount`, `release_status`, `final_charge_amount` and `campaigns.credit_applied`. The ledger already has columns for the rest (`card_token_ref`, `card_exp_*`, `citizen_id_secret`, `provider_document_*`), so no archive table is created. What is not yet in the ledger:
+- `card_token_ref`, `card_citizen_id` and `card_exp_*` on both campaigns;
+- `sumit_customer_id` on one campaign.
+
+The card values are not copied (owner, 11.10.2026); the SUMIT customer id stays D-open 8. Before any drop, the copied values are compared field by field with the ledger.
+
+Order:
+1. Move code readers to the ledger.
+2. Update the four database functions (`campaigns_guard_cancel`, `cancel_campaign`, `owner_agent_billing_sums`, `test_event_purge_blocker`).
+3. Compare with the ledger.
+4. Drop, one approved group per migration.
+
 ## Risks / Trade-offs
 
 - **The price moves to a new table while the old column still exists.** Mitigation: expand → migrate → contract (see Migration Plan), plus a check that the approved price equals the price sent to payment before the old column is dropped.
 - **A phone-targeted offer depends on the customer verifying the phone.** Only 1 of 6 accounts has done so. This adds a step for the customer, and is the cost of real proof.
 - **The agent's spoken promise can still differ from its configuration.** Mitigation: the tool returns the final price and the prompt quotes it, and verification is done by transcribing real calls (CLAUDE.md voice-agent rule).
 - **Settlement now refuses on a missing amount.** If CardCom omits `Amount` on some answer type, real payments go to review. Mitigation: measure on the test terminal before go-live.
+- **A SUMIT reader is missed and breaks after a drop.** Mitigation: the drop happens only after a source search and a live search of functions and views both find nothing, and after deploy of the code that stopped reading it.
 - **The agreement template gains tokens.** Wording is the owner's call; existing approved PDFs are unaffected.
 
 ## Migration Plan
@@ -139,11 +151,11 @@ These change what is built. They are recorded open, not assumed, and the tasks t
 5. **After a refund.** Whether a refunded campaign's assignment is spent or returned.
 6. **An offer that expires or is voided during an open payment session.** Honour it until the session closes, or cancel the session.
 7. **Already-approved campaigns.** Can an offer be added to a campaign whose terms are approved? The recommendation is no, because it would need new approval.
+8. **SUMIT values the ledger does not hold.** Decided by the owner on 11.10.2026: the card token, card expiry and citizen ID of the 2 historical campaigns are **not** copied; they go when their columns are dropped (both authorisations were released and nothing was charged). Still open: whether the one `sumit_customer_id` value is copied into the ledger.
+9. **`billing_route`.** It is empty on every campaign and has no reader. Drop it with the SUMIT groups, or separately.
 
 ## Neighbouring cleanup (separate changes, not in this one)
 
 - **The old per-result model's terms** (`price_per_reached`, `base_price`, `included_reached`, `max_charge_ceiling`): check historical readers before moving or removing.
-- **SUMIT remnants** (`auth_*`, `capture_status`, `release_status`, `card_*`, `sumit_*`): finish the SUMIT retirement and remove what is no longer read, rather than moving it.
-- **`charge_status`, `charged_at`, `final_charge_amount`, document fields:** read the ledger instead, so there is no second source of the same fact.
 - **`tos_version`, `approved_by`, `approved_at`:** compare with `signed_agreements` before removing anything.
 - **`profiles.sales_referral_attempt_id`:** the owner can write it. Narrow the grant, and read it as a hint only.

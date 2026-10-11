@@ -51,3 +51,10 @@ Tasks marked **[needs D-open n]** wait for that owner decision (design.md, "Deci
 
 - [ ] 6.1 Run a live check: every campaign's approved price equals `campaign_pricing.package_price` and the amount of its succeeded payment. Verify: query output recorded in this change.
 - [ ] 6.2 After the deploy of groups 1–5: `npx supabase migration new drop_campaigns_package_price`, then regenerate types. Verify: tsc and the full suite pass; nothing reads the old column.
+
+## 7. SUMIT-era columns retire into the ledger (D10)
+
+- [ ] 7.1 Map every reader and writer of the 25 SUMIT-era `campaigns` columns in `src` (for example `capture_status` in about 22 files, `charge_status` in about 16) and move each to the ledger (`payment_operations`), or remove it where the SUMIT path is gated. Do not route any SUMIT refund, capture or release through CardCom. Verify: tests per moved reader; `grep` finds no reader of the retired columns outside the generated types.
+- [ ] 7.2 `npx supabase migration new`: update `campaigns_guard_cancel`, `cancel_campaign`, `owner_agent_billing_sums` and `test_event_purge_blocker` to stop reading the columns, reading the ledger where a fact is still needed. Verify: in a rolled-back live block, cancelling a campaign and the owner billing sums behave as before for the 2 historical campaigns.
+- [ ] 7.3 **[needs D-open 8 for `sumit_customer_id`]** The card token, expiry and citizen ID are not copied (owner, 11.10.2026). Then compare, field by field, every SUMIT column of the 2 historical campaigns with their ledger rows. Verify: the comparison output is recorded in this change, with no unexplained difference other than the card values deliberately left.
+- [ ] 7.4 After the deploy of 7.1–7.2 and with the owner's approval for each group, create one drop migration per column group (`auth_*`/`authorized_at`, `capture_status`/`release_status`, `card_*`, `charge_*`/`charged_at`/`final_*`, `hold_order_*`, `sumit_*`; `billing_route` per **D-open 9**). Regenerate the types. Verify: tsc and the full suite pass; a live search of functions and views finds no reference.
