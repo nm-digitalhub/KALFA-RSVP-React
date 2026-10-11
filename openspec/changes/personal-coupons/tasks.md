@@ -2,59 +2,72 @@
 
 Tasks marked **[needs D-open n]** wait for that owner decision (design.md, "Decisions pending"); they are not built on an assumption.
 
-## 1. Pricing record (expand)
+Database checks re-measure the live state; none assumes a fixed count. Every concurrency test runs two transactions in parallel, on two connections, against a local or branch database. A single rolled-back block does not count as proof.
 
-- [ ] 1.1 `npx supabase migration new campaign_pricing`. Create `campaign_pricing` per design D2:
-  - RLS on; `revoke all` from anon and authenticated; server-only writes;
-  - copy `campaigns.package_price` into it, with list price = price, discount 0, and `locked_at` = `approved_at` for approved campaigns;
-  - a lock trigger refusing any change to prices, discount or assignment once `locked_at` is set.
+## 1. Schema (phase 1 of D8)
 
-  Verify, in a rolled-back live block: 4 rows copied, equal to `campaigns.package_price`; an update after lock refused; a customer can neither read nor write the table.
-- [ ] 1.2 `approveCampaign` sets `locked_at` in the same transaction as the approval (D6). Verify: a test proves an approved campaign's pricing is locked, and that a second approval does not move `locked_at`.
-- [ ] 1.3 `createCampaign` writes the `campaign_pricing` row with the package's list price, and keeps writing `campaigns.package_price` until the contract step. Verify: unit tests for a new package campaign.
+- [ ] 1.1 `npx supabase migration new coupons_and_campaign_pricing`. In dependency order (D4), create:
+  - `coupon_assignments` with the frozen-terms trigger and the idempotency key unique per source (D3);
+  - `coupon_assignment_events`, insert-only;
+  - `campaign_pricing` with its FK to `coupon_assignments`, the unique assignment, the price check constraint, and the `version` trigger (D2).
 
-## 2. Readers and writers move to the pricing record
+  All three tables: RLS on, no grants to anon or authenticated, writes only through the functions in 1.2. Verify on live (read-only after push): no grant to anon or authenticated; every FK exists.
+- [ ] 1.2 In the same change set: `bind_coupon_assignment` and `release_coupon_assignment` (D5), and `approve_package_terms` (D7). All are `SECURITY DEFINER`, executable by the service role only. Verify: two parallel binds of one assignment, exactly one succeeds; two parallel approvals, exactly one stores an agreement; an approval with a stale version stores nothing; a release on a locked or paid campaign is refused.
+- [ ] 1.3 The lock trigger (D6) and the phase-1 sync trigger (`campaigns.package_price` → `campaign_pricing`, D8). Copy the price of every campaign that has one, with `locked_at` = `approved_at` for approved campaigns. Verify:
+  - the equality query (D8) returns no rows;
+  - each of update, unlock, re-key and delete of a locked row is refused;
+  - a phase-1 price change on an unlocked row without an assignment is mirrored.
+- [ ] 1.4 Check how campaigns and their events are deleted today (the test-event purge and `test_event_purge_blocker`) against the lock trigger. Record the result in this change. Verify: a purge of an unpaid test campaign still works; deleting a locked row is refused.
 
-- [ ] 2.1 Move the purchase paths (`cardcom-purchase`, `package-purchase`, `getCampaignForPurchase`) to the locked final price, and refuse an unlocked price. Verify: tests for locked, unlocked, and a price that differs from the approved one.
-- [ ] 2.2 Move package approval and agreement rendering to `campaign_pricing`, adding list-price and discount tokens to the package terms template. Verify: a rendered document shows all three values when a discount applies. **The wording is the owner's.**
-- [ ] 2.3 Move the remaining readers (screens, stats, labels, cancellation, package-paid, payment screen; the 20 files found by `grep package_price`). Verify: `grep package_price src` finds only the pricing module and the contract-step note; tsc and the full suite pass.
+## 2. Writers and approval (phase 2 of D8)
 
-## 3. Settlement verifies the amount
+- [ ] 2.1 `createCampaign` writes the pricing through the database, and the phase-2 mirror trigger (`campaign_pricing` → `campaigns.package_price`) replaces the phase-1 sync. Verify: unit tests for a new package campaign; the equality query returns no rows.
+- [ ] 2.2 `recordPackageApproval` renders from the pricing row and its `version`, and calls `approve_package_terms`. On refusal it removes the uploaded PDF and asks for re-approval. `approveCampaign` stops being the package approval path. (Already done outside this change: `approveCampaign` refuses when its guarded update changes no row.) Verify: tests for a stale version, a lost race, and a successful approval that is locked in the same transaction.
+- [ ] 2.3 Add list-price and discount tokens to the package terms template. Verify: a rendered document shows all three values when a discount applies. **The wording is the owner's.**
+- [ ] 2.4 The purchase paths (`cardcom-purchase`, `package-purchase`, `getCampaignForPurchase`) use the locked final price and refuse an unlocked one. Verify: tests for locked and unlocked.
 
-- [ ] 3.1 `settleCardcomSession` reads `TranzactionInfo.Amount` and `CoinId`, and records succeeded only on an equal amount in shekels. Otherwise it goes to review with an alert (D8). Verify: tests for equal, different and missing values; a read-only GetLpResult on terminal 172204 shows both fields present.
+## 3. Settlement
 
-## 4. Coupon assignments
+- [ ] 3.1 `settleCardcomSession` keeps its existing checks and adds `TranzactionInfo.Amount` and `CoinId` (D11). Verify:
+  - tests for equal, different and missing values;
+  - a test that an existing check still fails when the amount matches;
+  - a read-only GetLpResult on terminal 172204 shows both fields present.
+- [ ] 3.2 The consume trigger on `payment_operations` (D10). Verify: in one transaction, a package payment moving to succeeded consumes the bound assignment; pending, review and failed leave it bound; the ledger row is never changed by the trigger.
 
-- [ ] 4.1 `npx supabase migration new coupon_assignments`. Create the table per D3:
-  - frozen-terms trigger;
-  - unique idempotency key per source;
-  - the atomic binding function (D4) that writes `campaign_pricing.coupon_assignment_id` under `unique`.
+## 4. Readers move to the pricing record
 
-  Verify, in a rolled-back live block: two concurrent binds of one assignment, exactly one succeeds; a terms update refused; a customer has no access.
-- [ ] 4.2 Apply an eligible assignment when a package is chosen: discount and final price into `campaign_pricing`, state `bound`, all in one transaction. Eligibility is either a staff assignment to the account, or an assignment to a phone equal to the account's verified phone (claimed once). Verify: tests that a shared link or a profile referral never applies an offer, and that a verified matching phone does.
-- [ ] 4.3 **[needs D-open 1, 3, 4, 7]** Expiry, release of a bound assignment on an abandoned campaign, the choice among several offers, and refusal after approval. Verify: tests per decided rule.
-- [ ] 4.4 On a succeeded payment, set the assignment to `consumed`; pending, review and unknown leave it `bound`. Verify: tests for each payment outcome.
-- [ ] 4.5 **[needs D-open 5, 6]** The assignment after a refund, and an offer that ends during an open session. Verify: tests per decided rule.
+- [ ] 4.1 Move the remaining readers (screens, stats, labels, cancellation, package-paid, payment screen; every file `grep package_price src` finds). Verify: the grep finds only the pricing module and the contract note; tsc and the full suite pass.
 
-## 5. Sales agent and staff
+## 5. Offers and assignments (coupon switch)
 
-- [ ] 5.1 **[needs D-open 2]** `apply_discount_tier` (D7):
-  - resolves the call, checks the limits, writes or returns the assignment (idempotent per call) targeted at the callback request's phone;
-  - returns `{offer, list_price, final_price}`;
-  - records the objection reason and the outcome via a service-role activity insert.
+- [ ] 5.1 **[needs D-open 8]** The offer source and its staff screen under `manage_billing`. Verify: tests for permission, audit, and that an assignment freezes the offer's terms.
+- [ ] 5.2 Eligibility and claim. The binding is applied at package choice for:
+  - a staff assignment to the account;
+  - an assignment to a phone equal to the account's verified phone, claimed once.
 
-  Verify: route tests — a repeat call returns the same assignment; a failed write returns "no offer"; no caller-sent value is used.
-- [ ] 5.2 Update the agent's prompt so it quotes the returned final price and promises only after the tool answers. Use the sanctioned flow: `agents pull --update` → edit → `agents push` → `pull --update`. Verify: the pulled config matches; a real test call is transcribed (CLAUDE.md voice-agent rule).
-- [ ] 5.3 Staff action to assign and void an offer for an account, gated on `manage_billing`, audited with `logActivity` (D9). Verify: tests for permission, audit and idempotency.
+  Verify: tests that a shared link or a profile referral never applies or reveals an offer, and that a verified matching phone does.
+- [ ] 5.3 **[needs D-open 1, 3, 4, 7]** Expiry, when release runs, the choice among several offers, and refusal after approval. Verify: tests per decided rule.
+- [ ] 5.4 **[needs D-open 5, 6]** The assignment after a refund, and an offer that ends during an open session. Verify: tests per decided rule.
 
-## 6. Contract
+## 6. Sales agent
 
-- [ ] 6.1 Run a live check: every campaign's approved price equals `campaign_pricing.package_price` and the amount of its succeeded payment. Verify: query output recorded in this change.
-- [ ] 6.2 After the deploy of groups 1–5: `npx supabase migration new drop_campaigns_package_price`, then regenerate types. Verify: tsc and the full suite pass; nothing reads the old column.
+- [x] 6.1 `get_pricing` adds `package_id`. Verify: route test.
+- [ ] 6.2 **[needs D-open 2, 8]** `apply_discount_tier` (D9):
+  - it takes `package_id`, checks the package is offered and the call's limits;
+  - it writes or returns the assignment (idempotent per call and package) for the callback request's phone;
+  - it returns `{offer, package_id, list_price, final_price}`;
+  - it records the objection reason and the outcome through a service-role activity insert.
 
-## 7. SUMIT-era columns retire into the ledger (D10)
+  Verify: route tests — a repeat call returns the same assignment; a failed write returns "no offer"; no caller-sent price is used; an unknown package is refused.
+- [ ] 6.3 Update the agent's prompt so it calls `get_pricing`, passes the package, quotes the returned final price, promises only after the tool answers, and tells the caller the offer waits for the phone it was called on. Use the sanctioned flow: `agents pull --update` → edit → `agents push` → `pull --update`. Verify: the pulled config matches; a real test call is transcribed (CLAUDE.md voice-agent rule).
 
-- [ ] 7.1 Map every reader and writer of the 25 SUMIT-era `campaigns` columns in `src` (for example `capture_status` in about 22 files, `charge_status` in about 16) and move each to the ledger (`payment_operations`), or remove it where the SUMIT path is gated. Do not route any SUMIT refund, capture or release through CardCom. Verify: tests per moved reader; `grep` finds no reader of the retired columns outside the generated types.
-- [ ] 7.2 `npx supabase migration new`: update `campaigns_guard_cancel`, `cancel_campaign`, `owner_agent_billing_sums` and `test_event_purge_blocker` to stop reading the columns, reading the ledger where a fact is still needed. Verify: in a rolled-back live block, cancelling a campaign and the owner billing sums behave as before for the 2 historical campaigns.
-- [ ] 7.3 The card token, expiry and citizen ID are not copied; the SUMIT customer id is copied by migration `20261011161441` (owner, 11.10.2026). Then compare, field by field, every SUMIT column of the 2 historical campaigns with their ledger rows. Verify: the comparison output is recorded in this change, with no unexplained difference other than the card values deliberately left.
-- [ ] 7.4 After the deploy of 7.1–7.2 and with the owner's approval for each group, create one drop migration per column group (`auth_*`/`authorized_at`, `capture_status`/`release_status`, `card_*`, `charge_*`/`charged_at`/`final_*`, `hold_order_*`, `sumit_*`; `billing_route` per **D-open 9**). Regenerate the types. Verify: tsc and the full suite pass; a live search of functions and views finds no reference.
+## 7. Screens (D12)
+
+- [ ] 7.1 Package choice: the offer on its package (list price, discount, final price), and the messages for another package and for an ended offer. **The wording is the owner's.** Verify: component tests per state; RTL and keyboard check; a runtime check in the browser.
+- [ ] 7.2 A neutral invitation to verify the phone for an account without a verified phone. It reveals nothing about offers. Verify: a test that the response is identical whether or not an offer exists for any phone.
+- [ ] 7.3 Staff assignment list: state, package, prices, source, bound campaign and its payment outcome, plus assign and void, and the guard row for a succeeded payment whose assignment was not consumed (D10). Verify: permission tests; an assignment held by a payment in review is shown as such.
+
+## 8. Contract (phase 3 of D8)
+
+- [ ] 8.1 Run the equality query (D8) on live. Verify: it returns no rows; the output is recorded in this change.
+- [ ] 8.2 After the deploy of groups 1–7: `npx supabase migration new drop_campaigns_package_price`. It drops the mirror trigger and the column; then regenerate the types. Verify: tsc and the full suite pass; nothing reads the old column.

@@ -2,143 +2,187 @@
 
 ## Context
 
-What exists today was verified on main at f45af75 and against the live database (read-only, 11.10.2026); see proposal.md for why.
+Verified on main at 17635b2 and, where marked, against the live database (read-only, 11.10.2026). Live counts are a snapshot. Verification steps re-measure them instead of assuming them.
 
-**The sales agent's discount tool**
+**The sales agent's tools**
 - `apply_discount_tier` returns a constant `{tier:'tier_1', amount_or_pct:5}` and discards the objection reason (`discount/[token]/route.ts:21,52-63`).
+- `get_pricing` returns every offered package, with name, price, quota, channels and includes, but no id (`pricing/[token]/route.ts:66-72`). `listPackageOffers` does read the id (`campaigns.ts:224,239`).
 - `log_outcome` accepts `discount_tier_applied` but does not persist it.
-- `get_pricing` reads the package catalogue (`listPackageOffers`) and writes nothing.
 - Tool identity is the resolved `sales_call_attempts` row, through `guardSalesToolRequest`. There is no user session.
 
 **Identity**
 - `callback_requests` has no `user_id`.
-- The only link from a call to an account is `profiles.sales_referral_attempt_id`, which the account owner can set (grants plus `own_profile_write`). It is not proof.
-- A verified phone (`auth.users.phone` with `phone_confirmed_at`, unique) proves control of the number. Read it with `verifiedPhoneOf` / `readVerifiedPhone`. Live, 1 of 6 accounts has one, and purchase does not require it.
+- The only link from a call to an account is `profiles.sales_referral_attempt_id`, which the account owner can set. It is not proof.
+- A verified phone (`auth.users.phone` with `phone_confirmed_at`, unique) proves control of the number. Live, 1 of 6 accounts had one, and purchase does not require it.
 
-**Price**
+**Price and approval**
 - `createCampaign` copies `packages.price_with_vat` into `campaigns.package_price` and sets `template_id`.
-- `recordPackageApproval` renders that price into the package terms (a PDF with `content_hash`) and calls `approveCampaign`.
-- No trigger locks the price afterwards.
-- `campaigns` has broad table grants for anon and authenticated, but RLS allows SELECT only. The remaining risk is a privileged server path, not the browser.
-- `package_price` is read or written in 20 source files. No database function or view reads it (live).
+- `recordPackageApproval` (`agreements.ts:364-457`) reads the price, renders and uploads the PDF, inserts `signed_agreements`, then calls `approveCampaign`. These are separate steps with no shared transaction.
+- `approveCampaign` (`campaigns.ts:549-559`) updates with `.eq('status','pending_approval')` but does not check that a row changed. A lost race returns success.
+- No trigger locks the price after approval.
+- `package_price` is read or written in 20 source files. Live, no database function or view read it.
 
 **Payment**
 - `startCardcomPurchase` writes the PENDING ledger row and its line before `LowProfile/Create`.
 - `buildCreateLowProfile` refuses a non-positive product line. That is our builder's rule, not a proven CardCom limit.
-- A pending session is resumed with the amount it was opened with.
-- `settleCardcomSession` checks success, `ChargeOnly`, the transaction id and the terminal. It does not check the charged amount.
-- GetLpResult carries `TranzactionInfo.Amount` and `CoinId` (seen live on 11.10.2026).
+- `settleCardcomSession` checks success, `ChargeOnly`, the transaction id and the terminal. It updates the ledger row through the service-role client (`cardcom-settle.ts:230`). It does not check the charged amount.
+- GetLpResult carries `TranzactionInfo.Amount` and `CoinId` (seen live).
 
 **Ledger**
-- `payment_operations` and `payment_operation_lines` have no grants for anon or authenticated (live).
+- `payment_operations` has no grants for anon or authenticated (live).
 - `payment_operations_check_lines` forces `credit_applied = -sum(negative lines)`, so any negative line is credit.
+- `payment_operations.campaign_id` is `on delete restrict`.
 
-**Audit**
-- `logActivity` needs a user session. Session-less paths insert with the service role (`recordSalesDialAudit`, `afterPaid`).
-- Packages are managed under `manage_billing`; credits under `manage_staff`.
+**Audit and permissions**
+- `logActivity` needs a user session. Session-less paths insert with the service role.
+- Packages are managed under `manage_billing`.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- A discount that the server computes, that is saved before it is promised, and that reaches the approved terms and the charge unchanged.
-- One guarded home for the campaign price, locked at approval.
+- A discount that the server computes for one package, that is saved before it is promised, and that reaches the approved terms and the charge unchanged.
+- One guarded home for the campaign price, approved atomically and locked.
 - A payment is recorded as paid only when CardCom confirms the amount we asked for.
 
 **Non-Goals:**
 - Public codes typed at checkout (a later change; they will create an assignment of the same kind).
-- Moving `contact_quota`. It also limits contacts and activity, so moving it would widen this change.
+- SUMIT-era `campaigns` columns (`retire-sumit-campaign-columns`).
+- Moving `contact_quota`.
 - A new CardCom client, mutator or ledger.
 
 ## Decisions
 
-**D1. The discount is fixed when the package is chosen, before the terms are approved.** Doing it at payment time would charge a price other than the one in the approved, hashed terms. Doing it after approval would need a second approval. Alternatives:
-- a negative ledger line at payment: rejected, because it is counted as credit;
-- adjusting the CardCom amount only: rejected, because the approved price would differ.
+**D1. The discount is fixed when the package is chosen, before the terms are approved.** Alternatives:
+- discounting at payment time: rejected, because it would charge a price other than the approved one;
+- a negative ledger line: rejected, because it is counted as credit.
 
 **D2. `campaign_pricing`, one row per campaign.** Columns:
-- `campaign_id` (PK and FK)
-- `package_price` (the final price, moved from `campaigns`)
+- `campaign_id` (PK, FK to `campaigns`)
 - `list_price`
 - `discount_amount`
-- `coupon_assignment_id` (nullable, unique)
+- `package_price` (the final price)
+- `coupon_assignment_id` (nullable, unique, FK to `coupon_assignments`)
+- `version` (integer, raised by trigger on every change)
 - `locked_at`
 
-It gives the price-lock rule a table of its own, and keeps discount fields out of the 51-column `campaigns`. Splitting `campaigns` further is not done here. It brings no performance benefit by itself; the gain is separation and protection.
+`list_price - discount_amount = package_price`, with all three non-negative, is a check constraint.
 
-**D3. `coupon_assignments` stays separate.** An offer exists before any campaign, for example promised on a call before signup. It holds:
-- the source (`sales_call_attempt_id` or `assigned_by` staff user)
-- the target (`user_id`, or `phone_e164` until claimed)
-- the frozen terms (kind, value, package scope, list price and final price at assignment, `expires_at`)
-- `state`, `bound_campaign_id`
-- an idempotency key, unique per source
+**D3. `coupon_assignments`, plus an append-only history table.** An offer exists before any campaign. An assignment holds:
+- the source: `sales_call_attempt_id`, or the `assigned_by` staff user;
+- the target: `user_id`, or `phone_e164` until claimed;
+- the offer it came from (D-open 8);
+- the frozen terms: kind, value, `package_id`, the list price and promised final price for that package, and `expires_at`;
+- `state` and `bound_campaign_id`;
+- an idempotency key, unique per source.
 
-The terms are frozen by trigger. Only `state`, `user_id` (once, on claim) and `bound_campaign_id` change, and only along the transitions in D5.
+A trigger freezes the terms. Every state change is written to `coupon_assignment_events`, which is insert-only.
 
-**D4. Binding is atomic and exclusive.** One database function binds an assignment to a campaign and writes the `campaign_pricing` row in the same transaction. It is guarded by:
-- `unique(coupon_assignment_id)` on `campaign_pricing`
-- a state predicate on the update
+**D4. One migration creates the tables in dependency order.** It creates `coupon_assignments`, then `coupon_assignment_events`, then `campaign_pricing` with its foreign key. No reference is left without a constraint.
 
-The once-per-campaign payment index is not relied on for this.
-
-**D5. Assignment states.**
+**D5. States, and the only operations that change them.** Each operation is a database function, run in one transaction, called by the server only.
 
 ```
- assigned --bind--> bound --paid--> consumed
-    |                 |
-    |                 +--(campaign abandoned before approval: D-open 3)--> assigned
-    +--expire/void--> void
- bound --payment pending/review/unknown--> (stays bound)
+           bind                     package payment succeeded (D10)
+ assigned ------> bound ---------------------------------------> consumed
+   |   ^            |
+   |   +- release --+   only while the pricing is unlocked and the
+   |                     campaign has no package payment pending,
+   |                     in review or succeeded (D-open 3 decides when)
+   +-- void / expire (D-open 1) --> void
 ```
 
-**D6. The lock.** `approveCampaign` sets `campaign_pricing.locked_at` in the same transaction as the approval. A trigger then refuses any change to prices, discount or assignment. The purchase refuses a campaign whose pricing is not locked.
+- **`bind_coupon_assignment(assignment, campaign)`** requires all of the following:
+  - the assignment is `assigned`;
+  - it is eligible for the account;
+  - its package equals the campaign's package;
+  - it has not expired;
+  - the campaign is not yet approved and its pricing is unlocked.
 
-**D7. The agent tool.** `apply_discount_tier`:
-- resolves the call;
-- checks the agent's limits (D-open 2);
-- writes or returns the assignment (idempotent on the call);
-- returns `{offer, list_price, final_price}`;
-- records the objection reason and the outcome through a service-role activity insert.
+  It then writes the discount and final price into `campaign_pricing`, and sets the assignment to `bound`.
+- **`release_coupon_assignment(assignment, reason)`** runs under the same conditions as the release rule above. It restores the pricing (discount 0, final price equals list price, no assignment), sets the assignment back to `assigned` (or `void` if expired), and writes the history row. Once the pricing is locked, release is refused until D-open 3 defines a rule for it.
+- **Consumption** is D10.
 
-The phone target is the callback request's phone. The ElevenLabs configuration changes only through `agents pull --update` → edit → `agents push` → `pull --update`.
+**D6. The lock forbids every way of undoing it.** Once `locked_at` is set, a trigger refuses each of the following:
+- any update of the row, including clearing `locked_at` or changing `campaign_id`;
+- deleting the row. A cascade from deleting the campaign is refused the same way. Task 1.4 checks the existing test-event purge path against this.
 
-**D8. Settlement checks amount and currency.** `lpResultSchema` reads `TranzactionInfo.Amount` and `CoinId` as `unknown`. Equal amount (in agorot) and shekels lead to succeeded. Anything else, including missing values, leads to review with an alert.
+**D7. Versioned, atomic approval.**
+1. `recordPackageApproval` reads the pricing row with its `version`, renders the PDF from it and uploads it.
+2. It then calls `approve_package_terms(campaign, version, agreement fields)`. In one transaction, this function:
+   - locks the campaign row;
+   - checks that the status is `pending_approval` and the version is current;
+   - inserts `signed_agreements`;
+   - sets the campaign to `approved`;
+   - sets `locked_at`.
 
-**D9. Staff assignment.** A new admin action, gated on `manage_billing`, the same as packages. It is audited with `logActivity` and needs no phone claim: staff name the account.
+On a version mismatch it raises, nothing is stored, and the customer is shown the new terms to approve. The uploaded PDF is removed; if removing it fails, the orphaned file is left without any agreement row pointing to it.
 
-**D10. SUMIT columns retire into the existing ledger, not a new table.** Only 2 of 7 live campaigns hold SUMIT values (read-only check, 11.10.2026). Both already have matching ledger rows in `payment_operations` (provider `sumit`): authorize (152 and 200, with the auth reference; one with its document), release, and a zero charge with `credit_applied` 84 and 200. These match `auth_amount`, `release_status`, `final_charge_amount` and `campaigns.credit_applied`. The ledger already has columns for the rest (`card_token_ref`, `card_exp_*`, `citizen_id_secret`, `provider_document_*`), so no archive table is created. What is not yet in the ledger:
-- `card_token_ref`, `card_citizen_id` and `card_exp_*` on both campaigns;
-- `sumit_customer_id` on one campaign.
+This also closes the `approveCampaign` race, because the function fails when the status guard matches no row.
 
-The card values are not copied; the SUMIT customer id is copied into the authorize row's `meta` (owner, 11.10.2026; D-open 8, decided). Before any drop, the copied values are compared field by field with the ledger.
+**D8. The price migration: one source of truth per phase.**
 
-Order:
-1. Move code readers to the ledger.
-2. Update the four database functions (`campaigns_guard_cancel`, `cancel_campaign`, `owner_agent_billing_sums`, `test_event_purge_blocker`).
-3. Compare with the ledger.
-4. Drop, one approved group per migration.
+| Phase | Source of truth | How the other copy stays equal |
+|---|---|---|
+| 1. Migration only, old code running | `campaigns.package_price` | A trigger on `campaigns` upserts `campaign_pricing` (list price = final price, discount 0) when `package_price` is set or changed. It is refused when the pricing row is locked or carries an assignment. |
+| 2. New code deployed | `campaign_pricing` | New writers write only `campaign_pricing`, through the functions. A trigger on `campaign_pricing` mirrors the final price to `campaigns.package_price`. Readers move one by one; each reads the same number. |
+| 3. Contract | `campaign_pricing` | After every reader has moved and the equality check finds no row that differs, one migration drops the two sync triggers and `campaigns.package_price`. |
+
+The equality check is a query that returns every campaign where the two copies differ, or where an approved campaign's price differs from its succeeded payment amount. It must return no rows; it does not compare against a fixed count.
+
+Coupons are switched on only in phase 2. Rolling back to phase-1 code is safe only while the coupon switch is off: old code would charge the mirrored final price correctly, but would render terms without the discount lines.
+
+**D9. The agent tool is bound to a package.**
+- `get_pricing` adds `package_id` to each package.
+- `apply_discount_tier` takes `package_id` and the objection reason. It checks that the package is currently offered and that the call is allowed an offer (D-open 2). It then writes or returns the assignment (idempotent per call and package) for the callback request's phone, and returns `{offer, package_id, list_price, final_price}` computed from the offer definition (D-open 8).
+- Any discount, percentage or price sent by the caller is ignored.
+- The ElevenLabs configuration changes only through `agents pull --update` → edit → `agents push` → `pull --update`.
+
+**D10. Consumption happens in the payment's own transaction.** An `AFTER UPDATE` trigger on `payment_operations` handles the moment a package-purchase row moves to `succeeded`. In the same transaction as the settlement write, it sets that campaign's bound assignment to `consumed` and writes the history row. Nothing is left half done to recover, and no repair ever charges again. The staff view also shows any succeeded payment whose campaign's assignment is not `consumed`, as a guard that should stay empty.
+
+**D11. Settlement adds amount and currency to its existing checks.** It keeps success, `ChargeOnly`, the transaction id and the terminal. It adds: `TranzactionInfo.Amount` equal to the ledger amount (in agorot), and `CoinId` meaning shekels. Anything else, including a missing value, goes to review with an alert.
+
+**D12. Screens.** The wording is the owner's.
+- **Package choice (customer):**
+  - On the package an eligible offer is for, the screen shows the list price, the discount and the final price.
+  - Every other package shows its list price.
+  - An offer bound to another campaign of the same account is not shown.
+- **Reaching the offer (customer):**
+  - The agent tells the caller that the offer waits for the phone number it called.
+  - An account without a verified phone sees a neutral prompt to verify its phone. It does not reveal whether any offer exists, because an unverified account has not proved the number.
+  - After verification, the offer appears on the package choice.
+- **An offer that does not apply (customer, owner of the offer only):**
+  - an offer for another package: "this offer is for package X";
+  - an expired or voided offer: "the offer ended on …";
+  - an offer already used: nothing.
+- **Several eligible offers:** D-open 4.
+- **Staff (admin, `manage_billing`):**
+  - a list of assignments with source, target, package, prices, state, bound campaign, and that campaign's package payment outcome (pending, review or succeeded) read from the ledger;
+  - assign and void actions;
+  - no release action until D-open 3 defines it.
+  - An assignment whose payment is in review is shown as held by that review.
+
+**D13. Staff assignment** is gated on `manage_billing` and audited with `logActivity`. It needs no phone claim, because staff name the account.
 
 ## Risks / Trade-offs
 
-- **The price moves to a new table while the old column still exists.** Mitigation: expand → migrate → contract (see Migration Plan), plus a check that the approved price equals the price sent to payment before the old column is dropped.
-- **A phone-targeted offer depends on the customer verifying the phone.** Only 1 of 6 accounts has done so. This adds a step for the customer, and is the cost of real proof.
+- **Two copies of the price during the transition.** Mitigation: the database keeps them equal in both phases (D8), and the contract waits for an equality check that returns no rows.
+- **A rejected approval leaves an uploaded PDF behind.** Mitigation: it is removed. Any file left over has no agreement row, so it binds no one.
+- **A phone-targeted offer depends on the customer verifying the phone.** This adds a step for the customer, and is the cost of real proof.
 - **The agent's spoken promise can still differ from its configuration.** Mitigation: the tool returns the final price and the prompt quotes it, and verification is done by transcribing real calls (CLAUDE.md voice-agent rule).
 - **Settlement now refuses on a missing amount.** If CardCom omits `Amount` on some answer type, real payments go to review. Mitigation: measure on the test terminal before go-live.
-- **A SUMIT reader is missed and breaks after a drop.** Mitigation: the drop happens only after a source search and a live search of functions and views both find nothing, and after deploy of the code that stopped reading it.
-- **The agreement template gains tokens.** Wording is the owner's call; existing approved PDFs are unaffected.
+- **The consume trigger couples the ledger to coupons.** Mitigation: it only reads `coupon_assignments` and writes its state and history. It never changes the ledger row, and its own tests cover each outcome.
 
 ## Migration Plan
 
-1. `supabase migration new`: create `coupon_assignments` and `campaign_pricing`, with RLS, server-only writes, freeze and lock triggers, and the binding function. Copy `campaigns.package_price` into `campaign_pricing`:
-   - `list_price = package_price`
-   - discount 0
-   - `locked_at` = `approved_at` for approved campaigns
-   Live: 7 campaigns, 4 priced.
-2. Move every writer and reader (20 files) to `campaign_pricing`: createCampaign, approval and agreement rendering, both purchases, package-paid, the payment screen and the other screens.
-3. Settlement amount check; the agent tool; the staff action.
-4. Verify that every campaign's approved price equals its `campaign_pricing.package_price` and the amount of its payment.
-5. A separate migration, after deploy, drops `campaigns.package_price`.
+As D8. In order:
+1. The tables, functions and triggers. The price is copied for every campaign that has one.
+2. New code: writers, approval, purchase and settlement. The coupon switch stays off.
+3. Readers move, one by one.
+4. The coupon switch turns on: the agent tool, staff and customer screens.
+5. The equality check returns no rows.
+6. The contract migration.
 
-Rollback before step 5: the old column is still the source for any un-moved reader.
+Rollback before step 6 is safe only with the coupon switch off (D8).
 
 ## Decisions pending (owner)
 
@@ -146,16 +190,16 @@ These change what is built. They are recorded open, not assumed, and the tasks t
 
 1. **Expiry.** How long an offer lasts, and which step it must be used by: choosing the package, approving the terms, or paying.
 2. **Agent limits.** Tier 1 (5%) only? Only after a price objection? At most one offer per call, and per phone?
-3. **Release.** What happens to a bound assignment when the campaign is abandoned before approval, or approved but never paid.
+3. **Release.** When an unlocked bound assignment is released: the campaign abandoned before approval, after how long, by whom. Whether anything may ever release one after approval when no payment has started.
 4. **Several eligible offers.** The highest automatically, or the customer chooses.
-5. **After a refund.** Whether a refunded campaign's assignment is spent or returned.
+5. **After a refund.** Whether a refunded campaign's consumed assignment stays spent or is returned.
 6. **An offer that expires or is voided during an open payment session.** Honour it until the session closes, or cancel the session.
 7. **Already-approved campaigns.** Can an offer be added to a campaign whose terms are approved? The recommendation is no, because it would need new approval.
-8. **SUMIT values the ledger does not hold.** Decided by the owner on 11.10.2026: the card token, card expiry and citizen ID of the 2 historical campaigns are **not** copied; they go when their columns are dropped (both authorisations were released and nothing was charged). The one `sumit_customer_id` value is copied into `meta.sumit_customer_id` of that campaign's SUMIT authorize row (owner, 11.10.2026; migration `20261011161441`). `provider_account_id` is `integer` and too small for it.
-9. **`billing_route`.** It is empty on every campaign and has no reader. Drop it with the SUMIT groups, or separately.
+8. **Where offers are defined.** A staff-managed offers table (kind, value, packages, validity, who may assign it), or fixed values in code. The server computes every discount from this source, and nothing can be assigned until it exists. The recommendation is a table under `manage_billing`.
 
 ## Neighbouring cleanup (separate changes, not in this one)
 
-- **The old per-result model's terms** (`price_per_reached`, `base_price`, `included_reached`, `max_charge_ceiling`): check historical readers before moving or removing.
-- **`tos_version`, `approved_by`, `approved_at`:** compare with `signed_agreements` before removing anything.
-- **`profiles.sales_referral_attempt_id`:** the owner can write it. Narrow the grant, and read it as a hint only.
+- The old per-result model's terms (`price_per_reached`, `base_price`, `included_reached`, `max_charge_ceiling`): check historical readers before moving or removing.
+- `tos_version`, `approved_by`, `approved_at`: compare with `signed_agreements` before removing anything.
+- `profiles.sales_referral_attempt_id`: the owner can write it. Narrow the grant, and read it as a hint only.
+- SUMIT-era columns: `retire-sumit-campaign-columns`.
