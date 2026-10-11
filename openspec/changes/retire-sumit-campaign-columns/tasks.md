@@ -13,7 +13,7 @@ Every verification re-measures the live state; none assumes a fixed count. After
 - [x] 2.2 Close-charge and capture/release: the `close-charge` route, `close-charge.ts`, `close-charge-amount.ts`, `sumit/capture`, the queue job and schedule, and their tests. Verify: no reference left; the queue starts without the job.
 - [x] 2.3 The signature agreement: `recordSignedAgreement`, `AgreementStep`, the phone-code step, and the outcome agreement document and admin page parts. Verify: the package terms approval still works; the 3 old campaigns' agreement records remain readable.
 - [x] 2.4 The switches: the pricing-model and base+overage toggles, and the hold switch in code and admin settings. Verify: settings save; no reader of the switches left.
-- [ ] 2.5 Old-model branches in shared code: setup steps, campaign status and labels, event stats and summary, the manage page, cancellation money, admin campaigns and callbacks, the owner agent, the FAQ and public business facts. Verify: tests per screen for a package campaign and for an old campaign shown from the ledger (D6).
+- [x] 2.5 Old-model branches in shared code: setup steps, campaign status and labels, event stats and summary, the manage page, cancellation money, admin campaigns and callbacks, the owner agent, the FAQ and public business facts. Verify: tests per screen for a package campaign and for an old campaign shown from the ledger (D6).
 - [ ] 2.6 Comments and docs that describe the old model. Verify: a search for the old model's terms finds only history notes and this change.
 
 ## 3. Reached recording without old inputs (D3)
