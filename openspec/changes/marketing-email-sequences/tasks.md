@@ -14,7 +14,7 @@
 ## 3. Templates
 
 - [ ] 3.1 `src/lib/email/marketing-templates.ts`: welcome, setup_reminder (event name + current step label), how_it_works, per the approved canvas; shared footer from company details; subject helper adds "פרסומת | "; plain-text alternative; `version` per template. Verify: tests that every template's subject and body start with "פרסומת", the footer has name/address/phone/email and the unsubscribe URL, `lang`/`dir` on html and body, and missing company details throw.
-- [ ] 3.2 Render each template to HTML files in the scratchpad and compare with the canvas. Verify: the owner sees the three rendered emails (sent to the owner's address in 6.2).
+- [ ] 3.2 Render each template to HTML files in the scratchpad and compare with the canvas. Verify: the owner sees the three rendered emails (sent to the owner's address through 6.0).
 
 ## 4. Unsubscribe surface
 
