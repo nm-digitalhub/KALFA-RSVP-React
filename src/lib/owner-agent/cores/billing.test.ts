@@ -12,16 +12,17 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 // 7d = 2026-09-17T22:30Z, rolling 30d = 2026-08-25T22:30Z.
 const NOW = Date.parse('2026-09-24T22:30:00Z');
 
-// Every campaign row carries the card/token/document columns the core must
-// never select, and every credit its free-text reason.
+// Every ledger row carries the card/token/document columns the core must never
+// select, and every credit its free-text reason.
 const secret = {
   card_token_ref: 'tok_live_123',
-  card_citizen_id: '123456789',
-  auth_external_ref: 'ext-1',
-  charge_document_url: 'https://doc/receipt',
-  final_charge_amount: 450,
-  credit_applied: 50,
+  citizen_id_secret: '123456789',
+  provider_document_url: 'https://doc/receipt',
+  amount: 450,
 };
+const collect = { payment_operation_kinds: { effect: 'collect' } };
+const giveBack = { payment_operation_kinds: { effect: 'return' } };
+const hold = { payment_operation_kinds: { effect: 'commit' } };
 // What owner_agent_billing_sums returns: ONE row (PostgREST hands a
 // table-returning function back as an array). Non-integer shekels on purpose.
 const SUMS_ROW = {
@@ -35,23 +36,24 @@ const sumsOk: SumsHandler = () => ({ data: [SUMS_ROW], error: null });
 
 function db(sums: SumsHandler = sumsOk) {
   return createFakeCountClient({
-    campaigns: [
-      // charged after Israel midnight
-      { id: 'c1', ...secret, charge_status: 'charged', charged_at: '2026-09-24T21:30:00Z', capture_status: 'captured', release_status: null },
-      // charged earlier this week (before Israel midnight, inside 7d)
-      { id: 'c2', ...secret, charge_status: 'charged', charged_at: '2026-09-20T10:00:00Z', capture_status: 'captured', release_status: null },
-      // charged outside 7d, inside 30d
-      { id: 'c3', ...secret, charge_status: 'charged', charged_at: '2026-09-01T10:00:00Z', capture_status: 'captured', release_status: null },
-      { id: 'c4', ...secret, charge_status: 'nothing_to_charge', charged_at: '2026-09-24T22:00:00Z', capture_status: 'authorized', release_status: 'released' },
-      { id: 'c5', ...secret, charge_status: 'pending', charged_at: null, capture_status: 'authorized', release_status: null },
-      { id: 'c6', ...secret, charge_status: 'charge_failed', charged_at: null, capture_status: 'authorized', release_status: null },
-      { id: 'c7', ...secret, charge_status: 'charge_review', charged_at: null, capture_status: 'authorized', release_status: null },
-      // hold in place, no charge outcome yet → awaiting charge
-      { id: 'c8', ...secret, charge_status: null, charged_at: null, capture_status: 'authorized', release_status: null },
-      // hold authorized but released in SUMIT → not awaiting
-      { id: 'c9', ...secret, charge_status: null, charged_at: null, capture_status: 'authorized', release_status: 'released' },
-      // no hold yet
-      { id: 'c10', ...secret, charge_status: null, charged_at: null, capture_status: null, release_status: null },
+    payment_operations: [
+      // collected after Israel midnight
+      { id: 'o1', ...secret, ...collect, outcome: 'succeeded', is_test: false, occurred_at: '2026-09-24T21:30:00Z' },
+      // collected earlier this week (before Israel midnight, inside 7d)
+      { id: 'o2', ...secret, ...collect, outcome: 'succeeded', is_test: false, occurred_at: '2026-09-20T10:00:00Z' },
+      // collected outside 7d, inside 30d
+      { id: 'o3', ...secret, ...collect, outcome: 'succeeded', is_test: false, occurred_at: '2026-09-01T10:00:00Z' },
+      // test money is never counted
+      { id: 'o4', ...secret, ...collect, outcome: 'succeeded', is_test: true, occurred_at: '2026-09-24T21:40:00Z' },
+      // a refund after Israel midnight
+      { id: 'o5', ...secret, ...giveBack, outcome: 'succeeded', is_test: false, occurred_at: '2026-09-24T22:00:00Z' },
+      // a declined purchase after Israel midnight
+      { id: 'o6', ...secret, ...collect, outcome: 'failed', is_test: false, occurred_at: '2026-09-24T21:50:00Z' },
+      // outcome not known yet, and one a person must resolve (current state)
+      { id: 'o7', ...secret, ...collect, outcome: 'pending', is_test: false, occurred_at: '2026-08-01T10:00:00Z' },
+      { id: 'o8', ...secret, ...giveBack, outcome: 'review', is_test: false, occurred_at: '2026-08-01T10:00:00Z' },
+      // a pay-per-result hold (history): neither a payment nor a refund
+      { id: 'o9', ...secret, ...hold, outcome: 'succeeded', is_test: false, occurred_at: '2026-09-24T21:35:00Z' },
     ],
     billing_credits: [
       { id: 'b1', amount: 100, reason: 'פיצוי ללקוחה דנה', created_at: '2026-09-24T21:10:00Z', voided_at: null },
@@ -63,16 +65,15 @@ function db(sums: SumsHandler = sumsOk) {
 }
 
 describe('getBillingSummary (core)', () => {
-  it("'today' counts charges and credits from Israel midnight", async () => {
+  it("'today' counts payments and credits from Israel midnight", async () => {
     const { client } = db();
     const s = await getBillingSummary(client as unknown as AdminClient, 'today', NOW);
     expect(s).toEqual({
-      chargedInRange: 1, // c1
-      nothingToChargeInRange: 1, // c4
-      chargesPending: 1,
-      chargesFailed: 1,
-      chargesInReview: 1,
-      holdsAwaitingCharge: 1, // c8 only: c9 released, c5–c7 have an outcome
+      paymentsInRange: 1, // o1; o4 is test money, o9 a hold
+      refundsInRange: 1, // o5
+      paymentsFailedInRange: 1, // o6
+      operationsPending: 1, // o7
+      operationsInReview: 1, // o8
       creditsActive: 3, // b1, b2, b4
       creditsGrantedInRange: 1, // b1
       creditsVoidedInRange: 1, // b3
@@ -86,29 +87,31 @@ describe('getBillingSummary (core)', () => {
   it("'7d' and '30d' widen only the range-bound counts", async () => {
     const { client } = db();
     const s7 = await getBillingSummary(client as unknown as AdminClient, '7d', NOW);
-    expect(s7.chargedInRange).toBe(2); // c1, c2
+    expect(s7.paymentsInRange).toBe(2); // o1, o2
     expect(s7.creditsGrantedInRange).toBe(2); // b1, b2 (b3 voided)
     const s30 = await getBillingSummary(client as unknown as AdminClient, '30d', NOW);
-    expect(s30.chargedInRange).toBe(3);
+    expect(s30.paymentsInRange).toBe(3);
     expect(s30.creditsGrantedInRange).toBe(2); // b4 is older than 30d
-    expect(s30.holdsAwaitingCharge).toBe(1); // current state, not range-bound
+    expect(s30.operationsPending).toBe(1); // current state, not range-bound
   });
 
-  it('every query is a head-only exact count selecting only id', async () => {
+  it('every query is a head-only exact count selecting only id (and, on the ledger, the kind it filters on)', async () => {
     const { client, calls } = db();
     await getBillingSummary(client as unknown as AdminClient, '7d', NOW);
-    expect(calls).toHaveLength(9);
+    expect(calls).toHaveLength(8);
     for (const c of calls) {
-      expect(['campaigns', 'billing_credits']).toContain(c.table);
-      expect(c.columns).toBe('id');
+      expect(['payment_operations', 'billing_credits']).toContain(c.table);
+      expect(c.columns).toBe(c.table === 'payment_operations' ? 'id, payment_operation_kinds!inner(effect)' : 'id');
       expect(c.selectOptions).toEqual({ count: 'exact', head: true });
     }
     expect(calls).toContainEqual(
       expect.objectContaining({
-        table: 'campaigns',
+        table: 'payment_operations',
         filters: [
-          { op: 'eq', args: ['charge_status', 'charged'] },
-          { op: 'gte', args: ['charged_at', '2026-09-17T22:30:00.000Z'] },
+          { op: 'eq', args: ['is_test', false] },
+          { op: 'eq', args: ['payment_operation_kinds.effect', 'collect'] },
+          { op: 'eq', args: ['outcome', 'succeeded'] },
+          { op: 'gte', args: ['occurred_at', '2026-09-17T22:30:00.000Z'] },
         ],
       }),
     );
@@ -154,7 +157,7 @@ describe('getBillingSummary (core)', () => {
   });
 });
 
-// A closed window (cores/window.ts) that holds c2 (charged 20.9) and b2
+// A closed window (cores/window.ts) that holds o2 (collected 20.9) and b2
 // (granted 19.9) and ends before everything dated 24.9 21:00Z or later.
 const WINDOW = { sinceIso: '2026-09-19T00:00:00.000Z', untilIso: '2026-09-24T21:00:00.000Z' };
 
@@ -162,12 +165,12 @@ describe('getBillingSummary with a window', () => {
   it('bounds the in-range counts and passes _until to the sums rpc', async () => {
     const { client, rpcCalls } = db();
     const s = await getBillingSummary(client as unknown as AdminClient, 'today', NOW, WINDOW);
-    expect(s.chargedInRange).toBe(1); // c2; c1 (21:30Z) is after the until bound
-    expect(s.nothingToChargeInRange).toBe(0); // c4 at 22:00Z is after it
+    expect(s.paymentsInRange).toBe(1); // o2; o1 (21:30Z) is after the until bound
+    expect(s.refundsInRange).toBe(0); // o5 at 22:00Z is after it
     expect(s.creditsGrantedInRange).toBe(1); // b2
     expect(s.creditsVoidedInRange).toBe(0); // b3 voided at 21:20Z, after it
     // Current state ignores the window.
-    expect(s.chargesPending).toBe(1);
+    expect(s.operationsPending).toBe(1);
     expect(s.creditsActive).toBe(3);
     expect(rpcCalls).toEqual([
       { fn: 'owner_agent_billing_sums', args: { _since: WINDOW.sinceIso, _until: WINDOW.untilIso } },

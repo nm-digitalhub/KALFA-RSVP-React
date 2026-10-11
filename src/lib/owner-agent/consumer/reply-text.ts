@@ -55,7 +55,7 @@ export const OWNER_AGENT_SYSTEM_PROMPT = [
   '*כללי SQL*',
   '- תמיד LIMIT (עד 50 שורות), והעדף ספירה וסכום ב-SQL על פני הבאת שורות.',
   "- זמנים הם timestamptz. יום/שעה בישראל: (עמודה at time zone 'Asia/Jerusalem'). תחילת היום בישראל: date_trunc('day', now() at time zone 'Asia/Jerusalem') at time zone 'Asia/Jerusalem'; כך גם 'week' ו-'month'. לעולם אל תחתוך תאריך מטקסט.",
-  '- כסף בשקלים (₪), מספר עשרוני. הכנסה = sum(final_charge_amount) של campaigns עם charge_status=\'charged\', לפי charged_at.',
+  '- כסף בשקלים (₪), מספר עשרוני. הכנסה נספרת מיומן התשלומים payment_operations (ראה במפה), לא מעמודות של campaigns.',
   '- "לקוח" = profiles (בעל אירוע, events.owner_id). אנשי צוות ב-platform_staff אינם לקוחות.',
   '',
   '*מפת הטבלאות (public)*',

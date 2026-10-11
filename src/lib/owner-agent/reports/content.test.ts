@@ -48,8 +48,9 @@ function db() {
         { id: 'r1', created_at: IN_DAY, events: { status: 'active' } },
         { id: 'r2', created_at: IN_DAY, events: { status: 'active' } },
       ],
-      campaigns: [
-        { id: 'k1', status: 'active', capture_status: 'authorized', charge_status: 'charged', charged_at: IN_DAY, created_at: IN_DAY, release_status: null },
+      campaigns: [{ id: 'k1', status: 'active', created_at: IN_DAY }],
+      payment_operations: [
+        { id: 'o1', payment_operation_kinds: { effect: 'collect' }, outcome: 'succeeded', is_test: false, occurred_at: IN_DAY },
       ],
       billing_credits: [],
       contact_messages: [{ id: 'c1', ...pii, status: 'new', created_at: IN_DAY }],
@@ -100,7 +101,7 @@ describe('buildReportContent', () => {
       '',
       'אירועים חדשים: 1', // e1; e2 was created on the 28th
       'אישורי הגעה חדשים: 2',
-      'הכנסות: 1,350.5 ₪ (1 חיובים)',
+      'הכנסות: 1,350.5 ₪ (1 תשלומים)',
       'פניות חדשות: 1, בקשות חזרה: 0',
       'קמפיינים חדשים: 1',
       'שיחות AI: 1 (הושלמו 1)',

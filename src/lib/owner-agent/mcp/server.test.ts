@@ -39,12 +39,11 @@ const events: EventsPipelineSummary = {
   createdInRange: 3,
 };
 const billing: BillingSummary = {
-  chargedInRange: 2,
-  nothingToChargeInRange: 1,
-  chargesPending: 0,
-  chargesFailed: 1,
-  chargesInReview: 0,
-  holdsAwaitingCharge: 3,
+  paymentsInRange: 2,
+  refundsInRange: 1,
+  paymentsFailedInRange: 1,
+  operationsPending: 0,
+  operationsInReview: 3,
   creditsActive: 5,
   creditsGrantedInRange: 1,
   creditsVoidedInRange: 0,

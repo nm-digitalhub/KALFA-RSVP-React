@@ -32,21 +32,22 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 
 const NOW = Date.parse('2026-09-24T22:30:00Z'); // 01:30 Israel on the 25th
 
-// Each row carries the text the admin list shows (event name, document URL):
-// the core must count past it and return none of it.
+// Each row carries the text the admin list shows (the event name): the core
+// must count past it and return none of it.
 const ev = { name: 'החתונה של דנה ויוסי', event_date: '2026-10-01T17:00:00Z' };
 function db() {
   return createFakeCountClient({
     campaigns: [
-      { id: 'k1', status: 'active', capture_status: 'authorized', created_at: '2026-09-24T21:10:00Z', hold_order_document_url: 'https://doc/1', events: ev },
-      { id: 'k2', status: 'active', capture_status: 'authorized', created_at: '2026-09-10T10:00:00Z', hold_order_document_url: null, events: ev },
-      { id: 'k3', status: 'paused', capture_status: 'authorized', created_at: '2026-09-20T10:00:00Z', hold_order_document_url: null, events: ev },
-      { id: 'k4', status: 'closed', capture_status: 'captured', created_at: '2026-08-01T10:00:00Z', hold_order_document_url: null, events: ev },
-      { id: 'k5', status: 'approved', capture_status: 'hold_failed', created_at: '2026-09-24T20:00:00Z', hold_order_document_url: null, events: ev },
-      { id: 'k6', status: 'approved', capture_status: 'pending', created_at: '2026-09-23T10:00:00Z', hold_order_document_url: null, events: ev },
-      { id: 'k7', status: 'approved', capture_status: 'authorized', created_at: '2026-09-23T10:00:00Z', hold_order_document_url: null, events: ev },
-      { id: 'k8', status: 'paid', capture_status: 'captured', created_at: '2026-09-22T10:00:00Z', hold_order_document_url: null, events: ev },
-      { id: 'k9', status: 'draft', capture_status: null, created_at: '2026-09-24T22:00:00Z', hold_order_document_url: null, events: ev },
+      { id: 'k1', status: 'active', created_at: '2026-09-24T21:10:00Z', events: ev },
+      { id: 'k2', status: 'active', created_at: '2026-09-10T10:00:00Z', events: ev },
+      { id: 'k3', status: 'paused', created_at: '2026-09-20T10:00:00Z', events: ev },
+      { id: 'k4', status: 'closed', created_at: '2026-08-01T10:00:00Z', events: ev },
+      // approved: the terms are approved and the package is not paid — not a wind-down row
+      { id: 'k5', status: 'approved', created_at: '2026-09-24T20:00:00Z', events: ev },
+      { id: 'k6', status: 'approved', created_at: '2026-09-23T10:00:00Z', events: ev },
+      { id: 'k7', status: 'approved', created_at: '2026-09-23T10:00:00Z', events: ev },
+      { id: 'k8', status: 'paid', created_at: '2026-09-22T10:00:00Z', events: ev },
+      { id: 'k9', status: 'draft', created_at: '2026-09-24T22:00:00Z', events: ev },
     ],
   });
 }
@@ -67,8 +68,7 @@ describe('getCampaignsStatusSummary (core)', () => {
       paused: 1,
       closed: 1,
       winddown: 4,
-      stuckHolds: 2, // k5 hold_failed, k6 pending; k7 authorized is not stuck
-      needsAttention: 6,
+      needsAttention: 4,
       createdInRange: 2, // k1 21:10Z and k9 22:00Z; k5 20:00Z is 23:00 Israel on the 24th
     });
     const s30 = await getCampaignsStatusSummary(client as unknown as AdminClient, '30d', NOW);
@@ -78,7 +78,7 @@ describe('getCampaignsStatusSummary (core)', () => {
   it('every query is a head-only exact count on campaigns', async () => {
     const { client, calls } = db();
     await getCampaignsStatusSummary(client as unknown as AdminClient, '7d', NOW);
-    expect(calls).toHaveLength(7);
+    expect(calls).toHaveLength(6);
     for (const c of calls) {
       expect(c.table).toBe('campaigns');
       expect(c.columns).toBe('id');
@@ -90,11 +90,11 @@ describe('getCampaignsStatusSummary (core)', () => {
     ).toBe(true);
   });
 
-  it('result is numbers only — no event name, no document URL', async () => {
+  it('result is numbers only — no event name', async () => {
     const { client } = db();
     const s = await getCampaignsStatusSummary(client as unknown as AdminClient, '30d', NOW);
     expect(nonNumericLeaves(s)).toEqual([]);
-    expect(JSON.stringify(s)).not.toContain('https://');
+    expect(JSON.stringify(s)).not.toContain('דנה');
   });
 
   it('throws on a query error', async () => {
@@ -117,7 +117,7 @@ describe('wrapper ↔ core parity (same data, same number)', () => {
     const list = await listCampaignsForAdmin();
     const core = await getCampaignsStatusSummary(client as unknown as AdminClient, 'today', NOW);
     expect(list).toHaveLength(core.needsAttention);
-    expect(list.map((r) => r.id).sort()).toEqual(['k1', 'k2', 'k3', 'k4', 'k5', 'k6']);
+    expect(list.map((r) => r.id).sort()).toEqual(['k1', 'k2', 'k3', 'k4']);
     // The list and the count use the one shared filter string.
     expect(calls[0].filters).toContainEqual({ op: 'or', args: [ADMIN_ATTENTION_FILTER] });
   });
@@ -150,8 +150,7 @@ describe('getCampaignsStatusSummary with a window', () => {
       paused: 1,
       closed: 1,
       winddown: 4,
-      stuckHolds: 2,
-      needsAttention: 6,
+      needsAttention: 4,
       createdInRange: 1, // k5 (20:00Z); k1 and k9 are after the until bound
     });
   });

@@ -24,12 +24,11 @@ export const BILLING_SUMMARY_ID = 'billing_summary';
 export const BILLING_SUMMARY_PERMISSION = 'view_billing' satisfies OwnerAgentPermission;
 
 export const billingSummaryOutput = z.object({
-  chargedInRange: count,
-  nothingToChargeInRange: count,
-  chargesPending: count,
-  chargesFailed: count,
-  chargesInReview: count,
-  holdsAwaitingCharge: count,
+  paymentsInRange: count,
+  refundsInRange: count,
+  paymentsFailedInRange: count,
+  operationsPending: count,
+  operationsInReview: count,
   creditsActive: count,
   creditsGrantedInRange: count,
   creditsVoidedInRange: count,
@@ -42,7 +41,7 @@ export const billingSummaryOutput = z.object({
 export const billingSummaryTool = createTool({
   id: BILLING_SUMMARY_ID,
   description:
-    'חיוב: ספירות וסכומים בשקלים. בטווח: chargedInRange ו-chargedAmountIls (חיובים סופיים שנגבו), nothingToChargeInRange, creditAppliedAmountIls (זיכוי שנוצל בחיובים), creditsGrantedInRange ו-creditGrantedAmountIls (זיכויים שניתנו ולא בוטלו), creditsVoidedInRange. מצב נוכחי: chargesPending, chargesFailed, chargesInReview, holdsAwaitingCharge (מסגרות שאושרו וממתינות לחיוב), creditsActive ו-creditUnvoidedAmountIls (כל הזיכויים שלא בוטלו).',
+    'חיוב: ספירות וסכומים בשקלים, מיומן התשלומים, בלי כסף בדיקה. בטווח: paymentsInRange ו-chargedAmountIls (תשלומים שנגבו, נטו מהחזרים), refundsInRange (החזרים), paymentsFailedInRange (תשלומים שנדחו), creditAppliedAmountIls (זיכוי שנוצל בתשלומים), creditsGrantedInRange ו-creditGrantedAmountIls (זיכויים שניתנו ולא בוטלו), creditsVoidedInRange. מצב נוכחי: operationsPending (תשלומים והחזרים שתוצאתם עוד לא ידועה), operationsInReview (דורשים בדיקה ידנית), creditsActive ו-creditUnvoidedAmountIls (כל הזיכויים שלא בוטלו).',
   strict: true,
   mcp: READ_ONLY_TOOL_MCP,
   inputSchema: rangeInputSchema,

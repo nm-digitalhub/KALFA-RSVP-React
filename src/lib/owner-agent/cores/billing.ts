@@ -17,8 +17,12 @@ import { upTo, type CoreWindow } from './window';
 // `owner-agent-request-free` rule in .dependency-cruiser.cjs).
 //
 // Privacy: head-only counts (`head: true`), so no row leaves the database —
-// and in particular no card_token_ref, card_citizen_id, card_exp_*,
-// auth_external_ref, document URL or credit `reason` text is ever selected.
+// and in particular no card field, document URL or credit `reason` text is
+// ever selected.
+//
+// The counts read the payment ledger (payment_operations), the one record of
+// money: real money only (is_test = false, as the sums below), and by each
+// kind's EFFECT (payment_operation_kinds) so a new kind needs no change here.
 //
 // The money SUMS come from ONE rpc. Charged amount, credit applied and credit
 // granted are sums, and PostgREST aggregates are disabled on this project
@@ -27,23 +31,21 @@ import { upTo, type CoreWindow } from './window';
 // come from public.owner_agent_billing_sums(_since, _until), created in
 // supabase/migrations/20260924061630_owner_agent_read_aggregates.sql and
 // recreated with the optional _until in
-// 20260927011338_owner_agent_capabilities.sql — applied, with its types in
-// types.generated.ts; re-created with the payment ledger as a second source in
-// 20261006040156_payment_ledger_db_guards.sql (a campaign with ledger rows is
-// read from the ledger, one without from the old campaign columns — never both).
+// 20260927011338_owner_agent_capabilities.sql, and reading the payment ledger
+// only since 20261011190351_db_functions_stop_reading_retired_columns.sql.
 // Amounts are shekels (tax-ceiling.ts compares the same charged_amount against
 // OSEK_PATUR_YEARLY_CEILING_ILS), and are not integers.
 //
 // Errors THROW: a failed count or sum must not reach the owner as a confident 0.
-//
-// Stuck holds (approved with a pending/failed/review hold) are tool 2's
-// number (cores/campaigns.ts stuckHolds, manage_billing) and are not repeated
-// here.
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
-function campaigns(client: AdminClient) {
-  return client.from('campaigns').select('id', { count: 'exact', head: true });
+// Ledger rows of real money, joined to their kind so a filter can name the EFFECT.
+function operations(client: AdminClient) {
+  return client
+    .from('payment_operations')
+    .select('id, payment_operation_kinds!inner(effect)', { count: 'exact', head: true })
+    .eq('is_test', false);
 }
 
 function credits(client: AdminClient) {
@@ -83,26 +85,21 @@ async function billingSums(client: AdminClient, sinceIso: string, window: CoreWi
 }
 
 export interface BillingSummary {
-  // Close-charge outcomes dated by charged_at within the range. 'charged' is
-  // a final charge on the old per-result path (the package purchase is not counted
-  // here: it has no charge_status); 'nothing_to_charge' is a closed
-  // campaign whose accrued total was fully covered (credit, or nothing reached).
-  chargedInRange: number;
-  nothingToChargeInRange: number;
-  // Current state of the final charge (not range-bound): a claim in flight
-  // (or stuck mid-flight), a declined charge, a charge that needs a human.
-  chargesPending: number;
-  chargesFailed: number;
-  chargesInReview: number;
-  // Current: card hold authorized, no final-charge outcome yet, not released.
-  holdsAwaitingCharge: number;
+  // Ledger operations dated by occurred_at within the range: money collected (a package purchase or upgrade), money
+  // returned (a refund), and a collection that was declined.
+  paymentsInRange: number;
+  refundsInRange: number;
+  paymentsFailedInRange: number;
+  // Current state (not range-bound): operations whose outcome is not known yet, and operations a person must resolve.
+  operationsPending: number;
+  operationsInReview: number;
   // Credits (billing_credits) — current and within the range.
   creditsActive: number; // not voided
   creditsGrantedInRange: number; // granted in range and not voided
   creditsVoidedInRange: number;
-  // Sums in shekels (owner_agent_billing_sums). In range: money collected —
-  // final charges and package purchases, net of returns, by the date of each
-  // operation (tax-ceiling.ts's turnover) — the credit consumed by those charges,
+  // Sums in shekels (owner_agent_billing_sums). In range: money collected, net of
+  // returns, by the date of each operation (tax-ceiling.ts's turnover) — the
+  // credit consumed by those payments,
   // and credit granted and not voided. Current: all credit granted and not voided.
   chargedAmountIls: number;
   creditAppliedAmountIls: number;
@@ -120,42 +117,53 @@ export async function getBillingSummary(
   // sums; the current-state counts and creditUnvoidedAmountIls ignore it.
   const sinceIso = window?.sinceIso ?? rangeStartIso(range, nowMs);
   const [
-    chargedInRange,
-    nothingToChargeInRange,
-    chargesPending,
-    chargesFailed,
-    chargesInReview,
-    holdsAwaitingCharge,
+    paymentsInRange,
+    refundsInRange,
+    paymentsFailedInRange,
+    operationsPending,
+    operationsInReview,
     creditsActive,
     creditsGrantedInRange,
     creditsVoidedInRange,
     sums,
   ] = await Promise.all([
-    upTo(campaigns(client).eq('charge_status', 'charged').gte('charged_at', sinceIso), 'charged_at', window),
     upTo(
-      campaigns(client).eq('charge_status', 'nothing_to_charge').gte('charged_at', sinceIso),
-      'charged_at',
+      operations(client)
+        .eq('payment_operation_kinds.effect', 'collect')
+        .eq('outcome', 'succeeded')
+        .gte('occurred_at', sinceIso),
+      'occurred_at',
       window,
     ),
-    campaigns(client).eq('charge_status', 'pending'),
-    campaigns(client).eq('charge_status', 'charge_failed'),
-    campaigns(client).eq('charge_status', 'charge_review'),
-    campaigns(client)
-      .eq('capture_status', 'authorized')
-      .is('charge_status', null)
-      .is('release_status', null),
+    upTo(
+      operations(client)
+        .eq('payment_operation_kinds.effect', 'return')
+        .eq('outcome', 'succeeded')
+        .gte('occurred_at', sinceIso),
+      'occurred_at',
+      window,
+    ),
+    upTo(
+      operations(client)
+        .eq('payment_operation_kinds.effect', 'collect')
+        .eq('outcome', 'failed')
+        .gte('occurred_at', sinceIso),
+      'occurred_at',
+      window,
+    ),
+    operations(client).eq('outcome', 'pending'),
+    operations(client).eq('outcome', 'review'),
     credits(client).is('voided_at', null),
     upTo(credits(client).is('voided_at', null).gte('created_at', sinceIso), 'created_at', window),
     upTo(credits(client).gte('voided_at', sinceIso), 'voided_at', window),
     billingSums(client, sinceIso, window),
   ]);
   return {
-    chargedInRange: countOf(chargedInRange, 'count_charged_failed'),
-    nothingToChargeInRange: countOf(nothingToChargeInRange, 'count_nothing_to_charge_failed'),
-    chargesPending: countOf(chargesPending, 'count_charge_pending_failed'),
-    chargesFailed: countOf(chargesFailed, 'count_charge_failed_failed'),
-    chargesInReview: countOf(chargesInReview, 'count_charge_review_failed'),
-    holdsAwaitingCharge: countOf(holdsAwaitingCharge, 'count_holds_failed'),
+    paymentsInRange: countOf(paymentsInRange, 'count_payments_failed'),
+    refundsInRange: countOf(refundsInRange, 'count_refunds_failed'),
+    paymentsFailedInRange: countOf(paymentsFailedInRange, 'count_payments_declined_failed'),
+    operationsPending: countOf(operationsPending, 'count_pending_failed'),
+    operationsInReview: countOf(operationsInReview, 'count_review_failed'),
     creditsActive: countOf(creditsActive, 'count_credits_active_failed'),
     creditsGrantedInRange: countOf(creditsGrantedInRange, 'count_credits_granted_failed'),
     creditsVoidedInRange: countOf(creditsVoidedInRange, 'count_credits_voided_failed'),

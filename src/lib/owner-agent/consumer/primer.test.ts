@@ -22,18 +22,11 @@ const GENERATED = readFileSync(
 );
 
 // Status values that live in CHECK constraints, not enums — so the generated
-// types cannot vouch for them. Read from the live pg_constraint 2026-09-24,
-// and from cores/billing.ts and cores/campaigns.ts for the charge and capture
-// codes (text columns with no CHECK; written by the billing code).
+// types cannot vouch for them. Read from the live pg_constraint 2026-09-24.
 const CHECK_VALUES = new Set([
   'in_progress', // contact_messages.status
   'pending_schedule',
   'needs_reschedule', // callback_requests.status
-  'nothing_to_charge',
-  'charge_failed',
-  'charge_review', // campaigns.charge_status (cores/billing.ts)
-  'hold_failed',
-  'hold_review', // campaigns.capture_status (cores/campaigns.ts)
   // owner_agent_audit.outcome / owner_agent_intake.status: code-shaped
   // CHECKs, the values written by consumer/reply.ts and consumer/store.ts.
   'fallback_sent',

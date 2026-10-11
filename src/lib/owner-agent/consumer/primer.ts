@@ -36,12 +36,20 @@ export const PRIMER_TABLES = {
     columns: ['id', 'event_id', 'name'],
   },
   campaigns: {
-    note: 'max_charge_ceiling תוחם את החיוב רק כש-tos_version הוא 2026-07-v4 ומטה (ההסכם נוקב במספר); ב-2026-09-v5 ומעלה אין תקרה — מחויב כל איש קשר שהושג. אין מגבלה על מספר הנמענים. קמפיין אחד לאירוע (וואטסאפ ושיחות). status: draft|pending_approval|approved|scheduled|active|paused|closed|awaiting_invoice|billed|paid|cancelled. charge_status: pending|charged|nothing_to_charge|charge_failed|charge_review. capture_status (תפיסת מסגרת): authorized, או תקוע: pending|hold_failed|hold_review.',
-    columns: ['id', 'event_id', 'status', 'start_at', 'close_at', 'base_price', 'included_reached', 'price_per_reached', 'max_charge_ceiling', 'tos_version', 'auth_amount', 'capture_status', 'charge_status', 'final_charge_amount', 'credit_applied', 'charged_at', 'created_at'],
+    note: 'קמפיין אחד לאירוע (וואטסאפ ושיחות), נמכר כחבילה במחיר קבוע: package_price = המחיר ששולם פעם אחת ברכישה, contact_quota = כמה אנשי קשר מותר לפנות אליהם. status: draft|pending_approval|approved|scheduled|active|paused|closed|awaiting_invoice|billed|paid|cancelled. הכסף עצמו ביומן התשלומים payment_operations, לא בעמודות הקמפיין.',
+    columns: ['id', 'event_id', 'status', 'start_at', 'close_at', 'package_price', 'contact_quota', 'tos_version', 'created_at'],
   },
   billed_results: {
-    note: 'איש קשר שהושג (בסיס החיוב), locked_price לכל אחד.',
+    note: 'איש קשר שנענה (הושג), פעם אחת לאירוע. locked_price הוא היסטוריה של המודל הישן (חיוב לפי תוצאה) וריק בחבילות.',
     columns: ['campaign_id', 'event_id', 'contact_id', 'channel', 'reached_at', 'locked_price'],
+  },
+  payment_operations: {
+    note: 'יומן התשלומים — מקור האמת לכסף: רכישות חבילה, החזרים, וגם תפיסות המסגרת והחיובים של המודל הישן. ההשפעה של כל kind ב-payment_operation_kinds. outcome: succeeded|pending|review|failed. is_test = כסף בדיקה — לא לספור. הכנסה = sum(amount) של שורות שהצליחו ושאינן is_test, effect=collect פחות effect=return, לפי occurred_at.',
+    columns: ['campaign_id', 'event_id', 'kind', 'outcome', 'amount', 'credit_applied', 'is_test', 'provider', 'occurred_at'],
+  },
+  payment_operation_kinds: {
+    note: 'סוגי השורות ביומן התשלומים. effect: collect=גבייה, return=החזר, commit=תפיסת מסגרת (המודל הישן), void=שחרור מסגרת, none=מידע בלבד.',
+    columns: ['kind', 'effect', 'label_he'],
   },
   billing_credits: {
     note: 'זיכויים. voided_at לא ריק = זיכוי שבוטל — לא לספור אותו.',
@@ -72,8 +80,8 @@ export const PRIMER_TABLES = {
     columns: ['user_id', 'role_id'],
   },
   packages: {
-    note: 'חבילות מחיר.',
-    columns: ['name', 'base_price', 'included_reached', 'price_per_reached', 'active'],
+    note: 'חבילות. price_with_vat = המחיר הסופי (עוסק פטור: לא נגבה מע״מ), contact_quota = מכסת אנשי הקשר, active = מוצעת ללקוחות.',
+    columns: ['name', 'price_with_vat', 'contact_quota', 'channels', 'active'],
   },
   event_cancellation_requests: {
     note: 'בקשות ביטול אירוע. status: pending|resolved.',

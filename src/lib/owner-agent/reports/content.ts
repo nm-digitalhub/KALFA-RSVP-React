@@ -137,7 +137,7 @@ export async function buildReportContent(
   if (events) lines.push(`אירועים חדשים: ${count(events.createdInRange)}`);
   if (rsvp) lines.push(`אישורי הגעה חדשים: ${count(rsvp.responsesInRange)}`);
   if (billing) {
-    lines.push(`הכנסות: ${shekels(billing.chargedAmountIls)} (${count(billing.chargedInRange)} חיובים)`);
+    lines.push(`הכנסות: ${shekels(billing.chargedAmountIls)} (${count(billing.paymentsInRange)} תשלומים)`);
   }
   if (inquiries) {
     lines.push(
@@ -157,7 +157,7 @@ export async function buildReportContent(
     if (rsvp) snapshot.push(`אורחים שטרם ענו (באירועים פעילים): ${count(rsvp.pending)}`);
     if (billing) {
       snapshot.push(
-        `חיובים שנכשלו: ${count(billing.chargesFailed)}, ממתינים לחיוב: ${count(billing.holdsAwaitingCharge)}`,
+        `תשלומים בתהליך: ${count(billing.operationsPending)}, דורשים בדיקה: ${count(billing.operationsInReview)}`,
       );
     }
     if (inquiries) {
