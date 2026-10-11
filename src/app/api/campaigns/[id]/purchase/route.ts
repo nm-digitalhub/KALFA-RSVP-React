@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
-import { requireUser } from '@/lib/auth/dal';
+import { hasPlatformPermission, requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { getCampaignForPurchase } from '@/lib/data/campaigns';
@@ -94,6 +94,9 @@ export async function POST(
       campaign,
       payer: { userId: user.id, email: user.email ?? '', name },
       ogToken: parsed.data['og-token'],
+      // The same rule the payment page and the CardCom route apply: only someone who may configure the integration may
+      // buy on CardCom's test terminal.
+      mayUseTestTerminal: await hasPlatformPermission('integrations.manage').catch(() => false),
     });
   } catch (err) {
     // purchasePackage reports every failure as an outcome; a throw here is a bug. The message is logged server-side

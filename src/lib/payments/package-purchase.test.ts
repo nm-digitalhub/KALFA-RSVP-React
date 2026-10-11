@@ -12,6 +12,10 @@ vi.mock('@/lib/data/payments', () => ({
   getSumitServerConfig: vi.fn(),
 }));
 vi.mock('@/lib/data/billing', () => ({ getCampaignCreditTotal: vi.fn() }));
+vi.mock('@/lib/data/cardcom-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/data/cardcom-config')>()),
+  getCardcomServerConfig: vi.fn(),
+}));
 vi.mock('@/lib/data/sumit-customers', () => ({ getSumitCustomerId: vi.fn(), recordSumitCustomerId: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/data/tax-ceiling', () => ({ checkOsekPaturCeilingAfterCharge: vi.fn() }));
@@ -36,6 +40,7 @@ import { checkOsekPaturCeilingAfterCharge } from '@/lib/data/tax-ceiling';
 import { chargeSumit, SumitDeclinedError, SumitNetworkError, type SumitChargeResult } from '@/lib/sumit/charge';
 import { saveCitizenId } from '@/lib/payments/card';
 import type { CampaignPurchaseState } from '@/lib/data/campaigns';
+import { getCardcomServerConfig } from '@/lib/data/cardcom-config';
 import { getPackagePaymentState, purchasePackage, type PackagePurchaseInput } from './package-purchase';
 
 // The package purchase is the one place a customer's card is charged for the whole package, once. The properties
@@ -112,6 +117,7 @@ function input(over: { campaign?: Partial<CampaignPurchaseState> } = {}): Packag
     campaign: { ...CAMPAIGN, ...over.campaign },
     payer: { userId: 'u1', email: 'dana@example.com', name: 'דנה כהן' },
     ogToken: 'og-token-123',
+    mayUseTestTerminal: false,
   };
 }
 
@@ -135,6 +141,7 @@ beforeEach(() => {
   vi.mocked(getPaymentsEnabled).mockResolvedValue(true);
   vi.mocked(getPackageModelEnabled).mockResolvedValue(true);
   vi.mocked(getSumitServerConfig).mockResolvedValue({ companyId: 12345, apiKey: 'test-api-key' });
+  vi.mocked(getCardcomServerConfig).mockResolvedValue(null);
   vi.mocked(getCampaignCreditTotal).mockResolvedValue(0);
   vi.mocked(getSumitCustomerId).mockResolvedValue(null);
   vi.mocked(recordSumitCustomerId).mockResolvedValue(undefined);
@@ -511,5 +518,29 @@ describe('getPackagePaymentState', () => {
   it('an unreadable ledger throws — it must never look like "nothing paid"', async () => {
     db.fail('payment_operations', '57014', 'select');
     await expect(getPackagePaymentState('c1')).rejects.toThrow();
+  });
+});
+
+// While CardCom takes the purchase, SUMIT must refuse — whoever posts to the route (resolvePurchaseProvider).
+describe('purchasePackage — refuses while CardCom is the provider', () => {
+  it('CardCom switched on (a real terminal) → disabled, nothing written, SUMIT never asked', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 172204, apiName: 'kalfa', enabled: true });
+    expect(await purchasePackage(input())).toBe('disabled');
+    expect(chargeSumit).not.toHaveBeenCalled();
+    expect(db.rows('payment_operations')).toHaveLength(0);
+  });
+
+  it('CardCom on its test terminal: a customer stays on SUMIT, an integration admin does not', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'kalfa', enabled: true });
+    expect(await purchasePackage(input())).toBe('paid');
+    vi.mocked(chargeSumit).mockClear();
+    useDb();
+    expect(await purchasePackage({ ...input(), mayUseTestTerminal: true })).toBe('disabled');
+    expect(chargeSumit).not.toHaveBeenCalled();
+  });
+
+  it('CardCom configured but switched off → SUMIT charges as before', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 172204, apiName: 'kalfa', enabled: false });
+    expect(await purchasePackage(input())).toBe('paid');
   });
 });

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 
 vi.mock('server-only', () => ({}));
-vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn(), hasPlatformPermission: vi.fn(async () => false) }));
 vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
 vi.mock('@/lib/data/campaigns', () => ({ getCampaignForPurchase: vi.fn(), activateCampaign: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
@@ -112,6 +112,8 @@ describe('POST /api/campaigns/[id]/purchase — what is on the table', () => {
       campaign: CAMPAIGN,
       payer: { userId: 'user-1', email: 'user@test.com', name: 'ישראל ישראלי' },
       ogToken: 'og-123',
+      // Decided from the session, never from the form.
+      mayUseTestTerminal: false,
     });
   });
 

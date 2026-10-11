@@ -4,6 +4,7 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 import { logActivity } from '@/lib/data/activity';
 import { getCampaignCreditTotal } from '@/lib/data/billing';
 import type { CampaignPurchaseState } from '@/lib/data/campaigns';
+import { getCardcomServerConfig } from '@/lib/data/cardcom-config';
 import { getPackageModelEnabled, getPaymentsEnabled, getSumitServerConfig } from '@/lib/data/payments';
 import { getSumitCustomerId, recordSumitCustomerId } from '@/lib/data/sumit-customers';
 import { checkOsekPaturCeilingAfterCharge } from '@/lib/data/tax-ceiling';
@@ -14,6 +15,7 @@ import { cardFromSumit, saveCitizenId, type CardDetails } from './card';
 import { beginOperation, completeOperation, type ProviderDocument } from './ledger';
 import { getPackagePaymentState } from './package-paid';
 import { RECEIPT_DESCRIPTION } from './package-receipt';
+import { resolvePurchaseProvider } from './provider';
 
 // The fixed-price package PURCHASE (docs/superpowers/plans/2026-10-04-package-payment-plan.md, P-B): one real charge
 // for the whole package, recorded in the payment ledger. The caller (the purchase route) has already verified who the
@@ -55,6 +57,8 @@ export interface PackagePurchaseInput {
   payer: { userId: string; email: string; name: string };
   // The single-use token payments.js produced in the browser.
   ogToken: string;
+  /** True for someone who may configure the integration — the same rule the payment page and the CardCom route apply. */
+  mayUseTestTerminal: boolean;
 }
 
 const DECLINED_NOTE = 'declined by the card issuer or the provider; nothing was charged';
@@ -119,12 +123,20 @@ export async function purchasePackage(input: PackagePurchaseInput): Promise<Purc
   const campaignId = campaign.id;
 
   // 1. Gates. Each reader resolves to "off / not configured" on any error.
-  const [paymentsOn, packageOn, sumit] = await Promise.all([
+  const [paymentsOn, packageOn, sumit, cardcom] = await Promise.all([
     getPaymentsEnabled(),
     getPackageModelEnabled(),
     getSumitServerConfig(),
+    getCardcomServerConfig(),
   ]);
   if (!paymentsOn || !packageOn) return 'disabled';
+  // While CardCom takes this buyer's purchases, SUMIT must not charge — whoever posts to this route. The payment page only
+  // chooses which form to SHOW; this module is an entry point of its own and decides again, with the same resolver
+  // (Next.js data-security guide: a page-level check does not extend to another entry point).
+  if (resolvePurchaseProvider(cardcom, input.mayUseTestTerminal) !== 'sumit') {
+    console.error('[package-purchase] refused: CardCom takes this purchase, not SUMIT', { campaignId });
+    return 'disabled';
+  }
   if (!sumit) {
     console.error('[package-purchase] enabled but the provider configuration is missing', { campaignId });
     return 'disabled';
