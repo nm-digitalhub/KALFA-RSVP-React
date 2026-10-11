@@ -1,4 +1,6 @@
-import { generateKeyPairSync } from 'node:crypto';
+import { createPublicKey, generateKeyPairSync } from 'node:crypto';
+
+import jwt from 'jsonwebtoken';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -186,6 +188,12 @@ describe('signManagementJwt — claims without key exposure', () => {
       exp: 1_752_000_000 + 3600,
     });
     expect(sig.length).toBeGreaterThan(0);
+  });
+
+  it('is signed RS256 with the service account key (verifies with its public key)', () => {
+    const publicKey = createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString();
+    const token = signManagementJwt(cfg, Math.floor(Date.now() / 1000));
+    expect(jwt.verify(token, publicKey, { algorithms: ['RS256'] })).toMatchObject({ iss: '1' });
   });
 
   it('never embeds private-key material in the token', () => {

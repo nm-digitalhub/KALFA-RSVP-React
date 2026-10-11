@@ -1,4 +1,4 @@
-import { createSign } from 'node:crypto';
+import jwt from 'jsonwebtoken';
 
 // Voximplant Management API — runtime-agnostic core (no `server-only` guard, so
 // both the Next server module `./client` and the in-repo CLI
@@ -9,7 +9,7 @@ import { createSign } from 'node:crypto';
 // axios@0.21.4 + form-data@2.5.1 with ~22 unfixable advisories (verified
 // 2026-07-14). Voximplant's own agent-skill sanctions "Direct HTTPS requests
 // when the official client is too heavy" — so this is the DOCUMENTED path.
-// Zero dependencies: the JWT is signed with Node's built-in `crypto`.
+// The JWT is signed with `jsonwebtoken` (RS256).
 //
 // Auth (verified against docs.voximplant.ai/platform/management-api/authorization):
 //   service-account JSON → RS256 JWT → `Authorization: Bearer <jwt>`.
@@ -54,29 +54,18 @@ export class VoximplantNetworkError extends Error {
   }
 }
 
-function b64url(input: Buffer | string): string {
-  return Buffer.from(input).toString('base64url');
-}
-
-// Build a short-lived RS256 JWT for one request. Signed with node:crypto — no deps.
-// `now` is injectable for deterministic tests.
+// Build a short-lived RS256 JWT for one request. `now` is injectable for deterministic tests.
+// iat and exp are set explicitly (not via jsonwebtoken's expiresIn) so the token carries exactly the documented claims
+// for the given instant.
 export function signManagementJwt(
   config: VoximplantConfig,
   now: number = Math.floor(Date.now() / 1000),
 ): string {
-  const header = { typ: 'JWT', alg: 'RS256', kid: config.keyId };
-  const payload = {
-    iss: String(config.accountId),
-    iat: now,
-    exp: now + JWT_TTL_SECONDS,
-  };
-  const signingInput = `${b64url(JSON.stringify(header))}.${b64url(
-    JSON.stringify(payload),
-  )}`;
-  const signature = createSign('RSA-SHA256')
-    .update(signingInput)
-    .sign(config.privateKey);
-  return `${signingInput}.${b64url(signature)}`;
+  return jwt.sign(
+    { iss: String(config.accountId), iat: now, exp: now + JWT_TTL_SECONDS },
+    config.privateKey,
+    { algorithm: 'RS256', keyid: config.keyId, header: { alg: 'RS256', typ: 'JWT' } },
+  );
 }
 
 export type VoxParams = Record<
