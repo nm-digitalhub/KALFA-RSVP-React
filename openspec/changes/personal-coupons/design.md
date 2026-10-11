@@ -33,6 +33,10 @@ Verified on main at 10f32cf8 and, where marked, against the live database (read-
 - `payment_operations_check_lines` forces `credit_applied = -sum(negative lines)`, so any negative line is credit.
 - `payment_operations.campaign_id` is `on delete restrict`.
 
+**The two existing tables this change alters (verified live, 12.10.2026)**
+- `signed_agreements`: no unique constraint beyond the PK, so the unique `approval_request_id` and the pricing-round reference add cleanly (null on historical rows). Its `campaign_id` FK is **ON DELETE CASCADE** — deleting a campaign deletes its agreements today; the pricing lock trigger will refuse deleting a locked campaign, which shields approved campaigns' agreements, and task 1.4's purge check covers the rest.
+- `payment_operations`: 54 columns, 4 triggers (`before_insert`, `check_lines`, `check_refund_cap`, `guard_update`). The pricing-round reference is a real FK column (`pricing_round_id` → `campaign_pricing.id`, on delete restrict), not `meta`, written at INSERT by `open_package_payment` — so it never collides with `guard_update`; the consume trigger (D10) must coexist with these four.
+
 **Audit and permissions**
 - `logActivity` needs a user session. Session-less paths insert with the service role.
 - Packages are managed under `manage_billing`.
@@ -134,7 +138,7 @@ What happens next depends on the answer:
 | A definite refusal (stale version, wrong status) | Nothing was stored. The uploaded PDF is removed, and the customer is shown new terms to approve. |
 | No answer (timeout, broken connection) | The outcome is unknown. Nothing is removed. The server looks up `signed_agreements` by the request id: found means approved; **not found means still unknown** — the attempt may yet commit. It resolves by retrying the idempotent call, or concluding refusal only once that transaction can no longer commit. "Not found" is never, by itself, permission to delete the PDF. |
 
-A cleanup job removes a PDF only when no agreement row points to it AND the file is older than a defined safety window, so an in-flight approval can never lose its document. (`recordPackageApproval` is the only approval path; the signature path, `recordSignedAgreement`, was deleted on 12.10.2026.)
+Finality is a recorded fact, not a timer: every approval request is persisted (keyed by its request id, written before the PDF is uploaded) with a state — open, approved, refused. A retry reuses the same request id and gets the stored outcome; `signed_agreements`' unique request id means a second agreement can never be stored. Concluding a refusal takes the D6 campaign lock, re-checks that no agreement with this request id exists, and only then marks the request refused — the lock serializes it against any still-running approval, so nothing can commit afterwards. The cleanup job removes a PDF only for a request marked refused (and still referenced by no agreement); an open request's file is never touched, however old. (`recordPackageApproval` is the only approval path; the signature path, `recordSignedAgreement`, was deleted on 12.10.2026.)
 
 **D8. The price migration: one source of truth per phase.**
 
@@ -189,7 +193,7 @@ A cleanup job removes a PDF only when no agreement row points to it AND the file
   - an expired or voided benefit: "the benefit ended on …";
   - a benefit already used: nothing.
 - **Several benefits:** the best price applies automatically (D18).
-- **Three states decided on 12.10.2026 that the mockups do not show yet** (to design before building the screens):
+- **Three states decided on 12.10.2026, added to the mockups the same day** (canvas version 19):
   1. the acceptance banner (ש5/D21): the owner of a benefit whose terms are approved and unpaid sees "יש לך הטבה — לחץ לקבל", and accepting routes to approving the new terms at the discounted price;
   2. the payment-deadline line in the terms document (D15): "המחיר בתוקף לתשלום עד [תאריך]" (`ui/Terms.dc.html` lacks it);
   3. the staff list's held-by-payment state (D22), beside the existing held-by-review.
@@ -201,7 +205,7 @@ A cleanup job removes a PDF only when no agreement row points to it AND the file
 
 **D13. Staff assignment** is gated on `manage_billing` and audited with `logActivity`. It needs no phone claim, because staff name the account.
 
-**D14. Offers are defined in a staff-managed table** (owner, 12.10.2026 — "כן, מסך ניהול"). An offers table holds, per offer: kind (a percentage or a fixed amount — owner, 12.10.2026, ש1), value, the packages it allows, validity (a number of days from the moment the benefit is given — owner, 12.10.2026, ש2), and who may assign it. It is managed in the admin screens (`ui/Offers.dc.html`, `ui/OfferEdit.dc.html`) under `manage_billing`, like the packages. The server computes every discount, option and final price from this table only; the agent, the browser and the code carry no fixed discount values. Nothing can be assigned until an offer exists. The offers screen refuses an offer that would bring any allowed package's final price to zero or below — every option's final price must be positive, because the payment builder refuses a non-positive product line (Context). Fixed values in code were rejected: changing an offer must not require a deploy.
+**D14. Offers are defined in a staff-managed table** (owner, 12.10.2026 — "כן, מסך ניהול"). An offers table holds, per offer: kind (a percentage or a fixed amount — owner, 12.10.2026, ש1), value, the packages it allows — with an optional per-package value, so a pricier package may carry a larger discount (owner, 12.10.2026: "אם לקוח יבחר בחבילה יקרה יותר לאפשר הנחה קצת יותר גדולה") — validity (a number of days from the moment the benefit is given — owner, 12.10.2026, ש2), who may assign it, and its USAGE RULES for the agent (D23): when it may be offered (which objection it answers), and whether it may replace an earlier active offer. It is managed in the admin screens (`ui/Offers.dc.html`, `ui/OfferEdit.dc.html`) under `manage_billing`, like the packages. The server computes every discount, option and final price from this table only; the agent, the browser and the code carry no fixed discount values. Nothing can be assigned until an offer exists. The offers screen refuses an offer that would bring any allowed package's final price to zero or below — every option's final price must be positive, because the payment builder refuses a non-positive product line (Context). Fixed values in code were rejected: changing an offer must not require a deploy.
 
 **D15. Expiry: payment is the deciding step** (owner, 12.10.2026 — "כן, נכון", after rejecting approval-as-deadline: it would guarantee a price indefinitely). 
 - How long a benefit lasts is a per-offer field in the offers table (D14), frozen onto the assignment (D3). It is never a constant in code.
@@ -212,7 +216,7 @@ A cleanup job removes a PDF only when no agreement row points to it AND the file
 - The expiry falling during an open payment session: the session completes with its discount (D20).
 
 **D16. One active benefit per phone** (owner, 12.10.2026 — "כן, מאשר").
-- While a phone has an assignment that is not expired, consumed or void, any further call for that phone returns **that** assignment, with its existing options and expiry. No new assignment, no renewed validity.
+- While a phone has an assignment that is not expired, consumed or void, any further call for that phone returns **that** assignment, with its existing options and expiry. No new assignment, no renewed validity — except a controlled escalation the server approves under D23's rules.
 - Once it is consumed, void or expired, a later call may create a new assignment.
 - The limit binds the calls, not staff: staff may assign another benefit to an account that already holds one (owner, 12.10.2026, ש3); D18 then applies the best price, and an equal-value duplicate is voided (D18).
 - What the agent may give comes only from the offers table — D14's "who may assign it"; there is no tier constant in code.
@@ -233,7 +237,7 @@ A cleanup job removes a PDF only when no agreement row points to it AND the file
 
 **D19. A refund never returns a benefit** (owner, 12.10.2026 — "כן, מאשר", asked explicitly about a full cancellation). A consumed assignment stays consumed after any refund, full or partial. A repeat purchase after a full cancellation pays the list price. Compensation is never automatic: staff may assign a **new** benefit by hand (D13). Verified context: refunds exist and always pass through staff — the cancellation-request flow (full_cancellation / partial_charge / declined) records them in the payment ledger.
 
-**D20. An open payment session finishes with its discount** (owner, 12.10.2026 — "כן"). The moment that counts is the opening of the payment session: a session opened while the benefit was valid completes at its locked price, even if the expiry passes or staff void the benefit mid-session. A void takes effect from the next session. (The price is locked at approval — D7; D15 bounds how long the locked price is payable; the session is opened only on a locked price, D2/D6.)
+**D20. An open payment session finishes with its discount** (owner, 12.10.2026 — "כן"). The moment that counts is the opening of the payment session: a session opened while the benefit was valid completes at its locked price, even if the expiry passes mid-session. A void during an open session is refused outright (D22's open-payment guard); a void lands only while no session is open — and after approval, only through the supersede path back to the list price. (The price is locked at approval — D7; D15 bounds how long the locked price is payable; the session is opened only on a locked price, D2/D6.)
 
 **D21. A benefit can be applied after approval — through re-approval at the new price** (owner, 12.10.2026 — "כן, מאשר", reversing the earlier recommendation: this is the closing tool for a hesitating customer). A customer who approved terms but has not paid may receive a benefit, and it applies to that campaign:
 - allowed only while the campaign has no package payment pending, in review or succeeded;
@@ -255,11 +259,20 @@ A cleanup job removes a PDF only when no agreement row points to it AND the file
 Both D15's and D21's customer-facing flows are this one function with different reasons; there is no second mechanism.
 
 **D20 made mechanical — the open-payment guard.** Verified in code: `startCardcomPurchase` already writes the PENDING ledger row before CardCom is asked, under a database "one pending per campaign" rule (`cardcom-purchase.ts:26`). On top of that:
-- Opening a package payment becomes `open_package_payment(campaign, round_id, amount)` — a small SECDEF function in the same transaction as the PENDING insert. It takes the campaign lock (D6 order), then refuses unless the named round is the CURRENT row, locked, its amount equals the request, and any bound benefit is **unexpired at this moment**. This closes the race: a supersede and an open serialize on the campaign lock, so a session can never open on a superseded price, and a supersede can never slip under an opening session.
+- Opening a package payment becomes `open_package_payment(campaign, round_id, amount)` — a small SECDEF function in the same transaction as the PENDING insert. It takes the campaign lock (D6 order), then refuses unless the named round is the CURRENT row, locked, its amount equals the request, and — when the round carries an assignment — that assignment is still **bound to this campaign**, belongs to the paying account, and is not void, consumed or expired at this moment. A discounted locked price whose benefit was voided is not payable: the customer is routed to new terms at the current price (the supersede path). This closes the race: a supersede and an open serialize on the campaign lock, so a session can never open on a superseded price, and a supersede can never slip under an opening session.
 - **The PENDING row records the pricing round id it charges.** Settlement, the consume trigger, reach of a refund and any reconciliation read the price from the round the payment named — never from whichever row happens to be current when they run.
 - While that PENDING row (or a review, or a success) exists: `supersede_campaign_pricing`, a staff void of the bound assignment, and any bind are all refused by the same predicate. Staff see the assignment as held by the payment (D12 already shows held-by-review).
 - Once the session is open, settlement and the consume trigger (D10) ignore `expires_at` — validity was proven at open, which is exactly D20's rule.
 - An expired bound benefit with no open payment: `open_package_payment` refuses, and the customer is shown D15's path — approve new terms at the current price (`lapsed_reapproval`).
+
+**D23. The server chooses the offer; escalation is controlled** (owner, 12.10.2026 — the pasted mechanism: "הייתי מאפשר לעומר כמה מבצעים, עם כללים שקובעים מתי מותר להציע כל אחד", replacing a single agent default).
+- Several offers may be active for the agent at once. The agent only REPORTS the customer's words (the objection reason); the server picks the one allowed offer whose usage rules (D14) match, computes the prices, saves the assignment and returns it. The agent can promise only what the server answered. The reported reason is the agent's claim, recorded for audit — never proof, and never a price input.
+- **Controlled escalation replaces D16's always-return-the-same rule:** when the phone already holds an active assignment, a further call normally returns it unchanged; the server may REPLACE it only when a better offer explicitly allows replacing (its D14 rule), and then:
+  - the old assignment is closed into history (state void, reason `escalated`, its events kept);
+  - the new assignment must not worsen any price already promised: for every package both cover, the new final price is at most the old one;
+  - an assignment held by an open package payment (pending, in review or succeeded) is never replaced;
+  - if the terms are already approved, the customer receives the improvement through the acceptance path (D21/D22): new terms at the better price.
+- Escalation never happens implicitly: an offer that does not allow replacement cannot replace, so hesitation does not automatically become another discount.
 
 ## Risks / Trade-offs
 
@@ -298,5 +311,6 @@ All eight were decided by the owner on 12.10.2026 and recorded as D14–D21. Not
 
 - ~~The old per-result model's terms (`price_per_reached`, `base_price`, `included_reached`, `max_charge_ceiling`)~~ — dropped on 11.10.2026 by `retire-sumit-campaign-columns` (their historical values are recorded in its `comparison-5-1.md`).
 - `tos_version`, `approved_by`, `approved_at`: compare with `signed_agreements` before removing anything (still on `campaigns`, 12.10.2026).
+- The signature-era columns of `signed_agreements` (`signature_ref`, `otp_verified_at`, `verified_phone`, `id_document_ref`) — owner, 12.10.2026: record for a future cleanup. Measured: the only approval path writes them null (`agreements.ts:217-221`); 2 of 6 live rows hold historical values (`id_document_ref` empty everywhere); one real reader, the archive export (`agreement-archive.ts`), which a drop must update.
 - `profiles.sales_referral_attempt_id`: the owner can write it. Narrow the grant, and read it as a hint only.
 - SUMIT-era columns: `retire-sumit-campaign-columns` — mostly dropped on 11.10.2026; `card_*` and `sumit_*` remain on `campaigns` while the owner keeps the SUMIT test page.

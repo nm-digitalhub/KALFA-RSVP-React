@@ -47,7 +47,7 @@ Assigning an offer SHALL be idempotent per source:
 - one per sales call for the agent, whatever package is discussed;
 - one per staff request key for staff.
 
-A repeated or retried request returns the existing assignment.
+A repeated or retried request returns the existing assignment; only an escalation the server allows by rule may replace it (see the escalation requirement).
 
 #### Scenario: The tool is called twice in one call
 - **WHEN** the discount tool is called again during the same sales call
@@ -108,6 +108,14 @@ Releasing a bound assignment SHALL, in one database transaction, restore the pri
 - **WHEN** release is requested for a campaign whose pricing is locked
 - **THEN** the release is refused and nothing changes
 
+### Requirement: A cancelled campaign frees its assignment without touching history
+
+When a campaign is cancelled, its bound, unconsumed assignment SHALL be freed on the assignment side only — back to assigned, or void if expired — while the cancelled campaign's pricing record and stored agreement stay unchanged.
+
+#### Scenario: The campaign is cancelled after approval
+- **WHEN** a campaign with a locked, discounted price and no package payment is cancelled
+- **THEN** its assignment returns to assigned (or void if expired) and can serve the event's next campaign, and the cancelled campaign's pricing record and agreement are unchanged
+
 ### Requirement: Release runs only as part of moving the benefit
 
 Release SHALL run only as the internal step of moving the benefit to another package or campaign. There SHALL be no staff release action and no abandonment timer; a benefit ends only by expiry, void or consumption.
@@ -135,6 +143,38 @@ An assignment bound to a campaign whose payment is pending, in review or of unkn
 #### Scenario: Staff void during an open payment
 - **WHEN** staff try to void an assignment whose campaign has a pending package payment
 - **THEN** the void is refused and the assignment is shown as held by that payment
+
+### Requirement: With several benefits, the best price applies automatically
+
+When an account is eligible for more than one active assignment, the system SHALL bind, for the chosen package, the assignment whose option gives the lowest final price for it; when only one covers that package, that one SHALL be bound. There SHALL be no customer choice screen.
+
+#### Scenario: A call benefit and a larger staff benefit
+- **WHEN** a customer holding a 5% call benefit and a larger staff benefit chooses a package both cover
+- **THEN** the staff benefit's lower final price is bound, and the other assignment is unchanged
+
+### Requirement: An equal-value duplicate is voided
+
+When a new assignment would carry an option set identical to an active one's — the same packages with the same final price on each — the system SHALL void one of the two, keeping the one whose validity ends later, with an audited void naming the duplication. Any other overlap SHALL leave both active.
+
+#### Scenario: Staff assign what the call already gave
+- **WHEN** staff assign a benefit identical in packages and final prices to the customer's active one
+- **THEN** one of the two is voided with an audited reason, the longer-lived one remains, and the customer's prices are unchanged
+
+### Requirement: The server chooses the offer and escalates only by rule
+
+When several active offers are allowed, the server SHALL choose by the offers' own usage rules and the reported objection; the agent's report SHALL never set the discount. An existing active assignment SHALL be replaced only by an offer whose rule allows replacement, and then the old assignment SHALL be closed into history, no shared package's promised final price SHALL rise, and an assignment held by a package payment pending, in review or succeeded SHALL never be replaced.
+
+#### Scenario: The improved offer is allowed to replace
+- **WHEN** a repeat call reports an objection matching an offer marked as allowed to replace, better for every shared package
+- **THEN** the old assignment is closed with its history kept, and the new one carries the better prices
+
+#### Scenario: The improved offer would worsen a promised price
+- **WHEN** a candidate replacement gives a higher final price on a package the active assignment covers
+- **THEN** the replacement is refused and the active assignment stays
+
+#### Scenario: Escalation during payment
+- **WHEN** a replacement is requested while the assignment's campaign has a pending package payment
+- **THEN** the replacement is refused
 
 ### Requirement: A coupon is not credit
 

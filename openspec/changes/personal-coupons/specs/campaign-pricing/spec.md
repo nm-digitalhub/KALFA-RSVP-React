@@ -108,7 +108,7 @@ A locked price SHALL be replaced only by the defined supersede operation: in one
 
 ### Requirement: The charged price equals the approved price
 
-Opening a payment SHALL, in the same transaction that records the pending payment, verify that the named pricing record is the campaign's current one and locked, that the amount equals it, and that any bound benefit is unexpired at that moment. It SHALL refuse otherwise.
+Opening a payment SHALL, in the same transaction that records the pending payment, verify that the named pricing record is the campaign's current one and locked and that the amount equals it; when the record carries an assignment, it SHALL also verify that the assignment is still bound to this campaign, belongs to the paying account, and is not void, consumed or expired. It SHALL refuse otherwise.
 
 #### Scenario: The price is not locked
 - **WHEN** a payment is requested for a campaign whose pricing record is not locked
@@ -117,6 +117,10 @@ Opening a payment SHALL, in the same transaction that records the pending paymen
 #### Scenario: The benefit expired before the session opened
 - **WHEN** a payment is requested for a campaign whose bound benefit has expired
 - **THEN** no session is opened, and the customer is offered new terms at the current price
+
+#### Scenario: The benefit was voided before the session opened
+- **WHEN** a payment is requested for a discounted locked price whose assignment was voided
+- **THEN** no session is opened at that price, and the customer is offered new terms at the current price
 
 ### Requirement: A payment names its pricing record and settles by it
 

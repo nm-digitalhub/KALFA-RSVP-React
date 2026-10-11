@@ -25,7 +25,7 @@ The price can change between step 1 and step 4. Since ce5c98cb, `approveCampaign
   - The assignment freezes the offer's terms and, for each allowed package, the price promised for it.
   - The customer may switch between the allowed packages until the terms are approved; the benefit moves with the choice, without a new assignment.
   - A coupon is not credit, and never touches `billing_credits` or the ledger's `payment_operations.credit_applied` (the only `credit_applied` column since `campaigns.credit_applied` was dropped, 11.10.2026).
-- **`campaign_pricing`.** A new table, one row per campaign: list price, discount, final price, the bound assignment, a version and `locked_at`. Once locked, the database refuses any change, unlock, re-key or delete of the row.
+- **`campaign_pricing`.** A new table of append-only pricing rounds: one CURRENT record per campaign (a partial unique index) holding list price, discount, final price, the bound assignment, a version and `locked_at`, with superseded records kept as immutable history. Once locked, the database refuses any change, unlock, re-key or delete; the one path past a locked price is the supersede operation, which inserts a new current round and marks the old one superseded.
 - **Atomic, versioned approval.** The terms PDF is rendered from one pricing version, under an approval request id. One database function then does all of the following in a single transaction, after locking the campaign and then its pricing row:
   - checks that this version is still current;
   - stores the signed agreement;
@@ -62,7 +62,7 @@ None. `openspec/specs/` has no capabilities yet.
 ## Impact
 
 - **Database.** Each migration is created with `supabase migration new` and pushed only with the owner's approval:
-  - `coupon_assignments`, its package options, its history, and `campaign_pricing` with its foreign key to `coupon_assignments`, all in one migration;
+  - `coupon_assignments`, its package options, its history, and `campaign_pricing` (pricing rounds: the one-current-row partial unique index, `superseded_at`/`superseded_by` with its deferrable FK) with its foreign key to `coupon_assignments`, all in one migration;
   - the sync, version, lock and consume triggers;
   - the bind, release and approve functions;
   - a copy of the existing prices;
