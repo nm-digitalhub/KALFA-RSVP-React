@@ -33,7 +33,7 @@ A customer who granted consent at signup SHALL receive the welcome email once, a
 
 #### Scenario: New customer confirms
 - **WHEN** a customer who ticked the box at signup confirms their email
-- **THEN** the welcome email is sent at the next allowed send time, once
+- **THEN** the welcome email is sent once, by the first sweep (every 15 minutes) inside an allowed send window
 
 #### Scenario: Consent granted later in settings
 - **WHEN** an existing customer turns marketing email on in settings

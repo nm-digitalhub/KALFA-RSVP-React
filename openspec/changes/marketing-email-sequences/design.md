@@ -15,7 +15,7 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
 
 **Goals:** send exactly the three approved emails, only to consenting customers with confirmed addresses, never twice and never outside the window, and make unsubscribing work in one click from any client.
 
-**Non-Goals:** Resend Broadcasts or Automations, holiday campaigns, a marketing admin UI beyond the switch, analytics beyond Resend's own, and the database registration number required by Privacy Law §17ו (a release gate, task 7.2).
+**Non-Goals:** Resend Broadcasts or Automations, holiday campaigns, editing template content in the admin (templates stay in code; an editor with drafts and versions is a separate change), a resend control, analytics beyond Resend's own, and the database registration number required by Privacy Law §17ו (a release gate, task 7.2).
 
 ## Decisions
 
@@ -30,7 +30,7 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
 - *Constraint.* Transactional callers are unchanged.
 
 **D3. A send ledger, `marketing_email_sends`.**
-- *Columns.* `id`, `user_id`, `email`, `template` (`welcome | setup_reminder | how_it_works`), `template_version`, `event_id` (setup reminder only), `status` (`claimed | sent | failed | skipped`), `skip_reason`, `provider_message_id`, `created_at`, `sent_at`.
+- *Columns.* `id`, `user_id`, `email`, `template` (`welcome | setup_reminder | how_it_works`), `template_version`, `event_id` (setup reminder only), `status` (`claimed | accepted | delivered | failed | skipped`, design D9), `skip_reason`, `provider_message_id`, `created_at`, `sent_at`.
 - *No closed lists in the database.* `template` and `status` are plain text, validated in code (a TS union plus Zod at the write), not DB CHECKs — the owner's rule against closed schemas (memory `no-rigid-schemas-broaden-scope`). A new template is a code change only.
 - *Uniqueness.* A unique index on `(user_id, template)` where `event_id is null`, and one on `(user_id, template, event_id)` where `event_id is not null`. The sweep **claims** a row by INSERT before sending, so a second sweep's insert fails with 23505 and it moves on. This follows the same claim pattern as `contact_interactions`.
 - *Access.* Server-only: RLS on with no policy, and grants of SELECT, INSERT and UPDATE (status only) to service_role.
@@ -58,7 +58,7 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
   2. Claim a row.
   3. Render.
   4. Send.
-  5. Mark the row `sent` with the message id, or `failed`.
+  5. Mark the row `accepted` with the message id, or `failed`.
 - *A failed send* stays `failed` and is not retried automatically. A marketing email that is late or lost is acceptable, and a duplicate is not. The failure is alerted through `sendSlackAlert` with ids only.
 - *Rules per template* (the values the owner can change):
   - **welcome:** the latest grant has `source = 'signup'` and the email is confirmed.
@@ -80,6 +80,16 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
 - *Shared footer.* One component, fed by `getCompanyLegal()`. The phone is formatted for display from the stored digits (033301505 → 03-3301505); the address is shown as stored, so the owner corrects "זוהר 23,זוהר" in the company settings to match the approved design. If the name or address is missing, the send is skipped with `skip_reason = 'company_details_missing'`.
 - *Legal marking.* The subject is built as `'פרסומת | ' + …` in one helper so no template can drop it. A test asserts the prefix and the body marker for every template.
 - *Accessibility.* The CTA is a link, the logo an inline `<img>` from the site's `/icons/icon.svg` URL with `alt`, and Arial/Tahoma is the fallback after Heebo.
+
+**D9. Send states and delivery tracking.** `marketing_email_sends.status` holds `claimed` (ממתין לעיבוד), `accepted` (הועבר לספק: Resend returned an id), `delivered` (Resend `email.delivered`), `failed` (send error, or `email.bounced`/`email.failed`), and `skipped` (stopped, with `skip_reason`). "Unknown outcome" is not stored: the admin shows it for a `claimed` row older than 15 minutes. `EmailSender.send` returns the provider's message id (it returns nothing today), and the sweep stores it as `provider_message_id`. The existing Resend webhook drain (`processEmailDelivery`) moves a matching row to `delivered` or `failed` by `data.email_id`, for marketing rows only.
+
+**D10. The admin page.** It lives at `/admin/marketing-email` in the "קמפיינים ושליחה" group (`src/components/admin-shell.tsx`). Every read goes through a server data layer with `requirePlatformPermission`, never the browser:
+- *Permissions.* Viewing needs `view_customer_data`, because consent and emails are personal data. A test send needs `manage_settings`. Enabling and pausing need `requirePlatformOwner`, are recorded with `logActivity`, and enabling is refused while a readiness gate is open.
+- *Readiness.* The gates are the release gates of task 7.2, shown as done or open with a link. Each gate's state is stored in `app_settings`, and the page records the §17ו decision as text. The page does not decide on its own whether registration is required.
+- *Candidates.* They come from the same selection functions as the sweep, run read-only, and are labelled as a forecast.
+- *Lists.* All lists are paginated on the server.
+- *Recipients.* The side panel reads the consent ledger, Auth confirmation, the Resend contact (one read when the panel opens) and the sends. It has no control that grants consent.
+- *Look.* It reuses the admin shell's tables and side sheet, in RTL, with every state written in text.
 
 ## Risks / Trade-offs
 

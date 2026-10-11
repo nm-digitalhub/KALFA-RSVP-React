@@ -19,6 +19,13 @@ Customers can now consent to KALFA marketing email (change `marketing-email-cons
   - `List-Unsubscribe` with `List-Unsubscribe-Post` (RFC 8058 one-click: POST, no login);
   - the footer link, where GET shows a confirm page and POST records.
   An unsubscribe records a `withdraw` in the consent ledger and queues the existing Resend sync.
+- **An admin page, "מיילים שיווקיים", in the "קמפיינים ושליחה" group** (owner request, 11.10.2026). It has five views:
+  - an overview with the sending status in words, the next window, candidates (marked as a forecast), sends, failures and readiness;
+  - the three automatic emails, each with a preview, its condition, its stop rules, its version and a test send to the staff member's own address;
+  - recipients, with consent, confirmation, sync and eligibility, and no way to grant consent for a customer;
+  - send history, with explicit states and a timeline, and no resend;
+  - settings and readiness, where the owner enables or pauses sending (recorded in the activity log).
+  Templates stay in code. A content editor is a separate future change.
 - **A separate switch.** `app_settings.marketing_emails_enabled` defaults to off, apart from `marketing_consent_enabled`, so the owner can collect consent without sending.
 
 ## Capabilities
@@ -26,13 +33,14 @@ Customers can now consent to KALFA marketing email (change `marketing-email-cons
 ### New Capabilities
 - `marketing-email-sending`: which marketing email a consenting customer receives, when, and the checks every send passes.
 - `marketing-unsubscribe`: how a recipient leaves the marketing list from an email, with one click or through a confirm page, and how that is recorded.
+- `marketing-email-admin`: the staff page for seeing, testing and controlling marketing email.
 
 ### Modified Capabilities
 None. The consent capabilities are still in the unarchived change `marketing-email-consent`, and this change uses them without changing their requirements.
 
 ## Impact
 
-- **Database:** one migration created with `supabase migration new`. It adds `marketing_email_sends` (server-only, unique per customer + template [+ event]) and `app_settings.marketing_emails_enabled`. It is pushed only with approval.
+- **Database:** one migration created with `supabase migration new`. It adds `marketing_email_sends` (server-only, unique per customer + template [+ event]), `app_settings.marketing_emails_enabled`, and the readiness gate fields in `app_settings` (including the §17ו decision text). It is pushed only with approval.
 - **Code:**
   - a new `src/lib/email/marketing-templates.ts`;
   - a new `src/lib/data/marketing-email-sweep.ts`;
