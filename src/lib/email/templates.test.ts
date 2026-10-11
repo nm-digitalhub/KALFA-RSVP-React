@@ -107,10 +107,16 @@ describe('inquiryReplyEmail', () => {
 
   it('keeps bold working, and bold INSIDE a link (links convert first)', async () => {
     const { html } = await reply('**חשוב:** [**הרשמה**](/auth/signup)');
-    expect(html).toContain('<strong>חשוב:</strong>');
+    expect(html).toContain('<strong data-md="">חשוב:</strong>');
     expect(html).toContain(
-      `<a href="${ORIGIN}/auth/signup" style="color:#4338ca;text-decoration:underline;font-weight:600"><strong>הרשמה</strong></a>`,
+      `<a href="${ORIGIN}/auth/signup" style="color:#4338ca;text-decoration:underline;font-weight:600"><strong data-md="">הרשמה</strong></a>`,
     );
+  });
+
+  it('derives the plain text from the HTML: drafter emphasis kept, links as label (url), line breaks kept', async () => {
+    const { text } = await reply('**חשוב:** [הרשמה](/auth/signup)\nשורה שנייה');
+    expect(text).toContain(`**חשוב:** הרשמה (${ORIGIN}/auth/signup)\nשורה שנייה`);
+    expect(text).not.toContain('](/');
   });
 
   it('preserves an escaped query separator in the path', async () => {

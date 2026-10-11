@@ -1,5 +1,5 @@
 import { createElement } from 'react';
-import { Html, Body, Heading, Text, Link, Hr, Img, render } from 'react-email';
+import { Html, Body, Heading, Text, Link, Hr, Img, render, toPlainText } from 'react-email';
 // Pure Hebrew (RTL) React Email templates. Inline styles for email-client
 // compatibility. No I/O — unit-testable.
 //
@@ -11,11 +11,49 @@ import { Html, Body, Heading, Text, Link, Hr, Img, render } from 'react-email';
 // same reason.)
 import { escapeHtml as esc } from '@/lib/html';
 import { cancellationReference } from '@/lib/data/cancellation-reference';
+
+// The plain-text alternative is DERIVED from the rendered HTML (react-email's toPlainText, i.e. html-to-text), so a
+// wording change is made once and the two parts cannot drift — they had: the HTML said "השיבו" while the hand-written
+// text said "השב/י". Three choices the hand-written texts made on purpose are kept through formatter options:
+//   - links read `label (url)`: a colon cut a Hebrew sentence in half mid-clause, and a bare URL that ends a sentence
+//     swallows its full stop into the autolink most clients build (observed while rendering real replies);
+//   - `**emphasis**` written by the drafter stays visible (strong[data-md]): its structure reads fine in a text-only
+//     client. Emphasis the template itself adds (the event name) is plain text;
+//   - line breaks inside a staff-written body survive (the HTML keeps them with white-space:pre-line).
+// An image appears as its alt text (the signature reads "נתנאל ק׳ — KALFA"); one without alt is skipped.
+type PlainTextOptions = NonNullable<Parameters<typeof toPlainText>[1]>;
+const PLAIN_TEXT_OPTIONS: PlainTextOptions = {
+  preserveNewlines: true,
+  formatters: {
+    emphasis: (elem, walk, builder) => {
+      builder.addInline('**');
+      walk(elem.children, builder);
+      builder.addInline('**');
+    },
+    altText: (elem, _walk, builder) => {
+      builder.addInline(String(elem.attribs?.alt ?? ''));
+    },
+  },
+  selectors: [
+    { selector: 'a', options: { linkBrackets: ['(', ')'], hideLinkHrefIfSameAsText: true } },
+    { selector: 'strong[data-md]', format: 'emphasis' },
+    { selector: 'img[alt]', format: 'altText' },
+    { selector: 'h1', options: { uppercase: false } },
+    { selector: 'hr', format: 'skip' },
+    // The rating choices: one per line, the emoji link and its label side by side.
+    { selector: 'td', format: 'block' },
+    { selector: 'span', format: 'inlineSurround', options: { prefix: ' — ' } },
+  ],
+};
+
+function emailText(html: string): string {
+  return toPlainText(html, PLAIN_TEXT_OPTIONS).trim();
+}
 // Email notifying the customer their agreement is signed (or, for `kind:
 // 'approved'`, that the package terms were approved), with a SECURE LINK to
 // view/download the PDF (not an attachment — avoids recipient attachment
 // scanners flagging it). Satisfies §14ג(ב): the document is provided + saveable.
-// Returns a plain-text alternative too (multipart improves inbox placement).
+// Returns a plain-text alternative too (multipart improves inbox placement), derived from the HTML (emailText).
 export async function agreementEmail(input: {
   signerName: string;
   eventName: string;
@@ -34,23 +72,6 @@ export async function agreementEmail(input: {
   const subject = approved
     ? `תנאי החבילה אושרו — ${input.eventName}`
     : `ההסכם החתום שלך — ${input.eventName}`;
-  const text = approved
-    ? `שלום ${input.signerName},
-
-תנאי החבילה אושרו בהצלחה עבור האירוע "${input.eventName}".
-לצפייה ולהורדת התנאים שאושרו:
-${input.downloadUrl}
-(הקישור מאובטח ודורש התחברות לחשבון.) אנא שמרו עותק לרשומותיכם.
-
-${company}`
-    : `שלום ${input.signerName},
-
-ההסכם נחתם בהצלחה עבור האירוע "${input.eventName}".
-לצפייה ולהורדת ההסכם החתום:
-${input.downloadUrl}
-(הקישור מאובטח ודורש התחברות לחשבון.) אנא שמרו עותק לרשומותיכם.
-
-${company}`;
   const html = await render(
     createElement(
       Html,
@@ -158,7 +179,7 @@ ${company}`;
       ),
     ),
   );
-  return { subject, html, text };
+  return { subject, html, text: emailText(html) };
 }
 // A human (admin) reply to a customer inquiry submitted via /contact. The reply
 // body is authored by staff; we only wrap it in the branded RTL shell and
@@ -201,22 +222,7 @@ function inlineMarkdownToHtml(escaped: string, origin: string): string {
       (_m, text: string, path: string) =>
         `<a href="${origin}${path}" style="color:#4338ca;text-decoration:underline;font-weight:600">${text}</a>`,
     )
-    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
-}
-// The plain-text alternative has to resolve links too. Without this the
-// customer receives the literal `[הרשמה](/auth/signup)` — markdown source, in
-// their inbox — whenever their client prefers text/plain.
-//
-// Parenthesised, not `text: url`. Two reasons, both observed while rendering a
-// real reply: a colon cuts the Hebrew sentence in half when the link sits
-// mid-clause ("פתיחת חשבון: https://… היא בחינם"), and a URL that ends a
-// sentence swallows the following full stop into the autolink most clients
-// build. Parentheses close before the punctuation, so neither happens.
-function inlineMarkdownToText(body: string, origin: string): string {
-  return body.replace(
-    MD_LINK,
-    (_m, text: string, path: string) => `${text} (${origin}${path})`,
-  );
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong data-md="">$1</strong>');
 }
 // The email template owns the sign-off — it is the branded footer under the
 // rule. A drafter that signs the body too produces two of them, one directly
@@ -276,16 +282,6 @@ export async function inquiryReplyEmail(input: {
   const name = input.recipientName.trim() || 'לקוח יקר';
   const subject = threadSubject(input.refCode, input.isFirst);
   const body = stripDuplicateFraming(input.replyText);
-  // Plain-text alternative: emphasis markers are left as-is. `**` reads fine as
-  // emphasis in a text-only client, and stripping it would lose the structure
-  // the drafter meant. Links, however, MUST be resolved — markdown source in a
-  // customer's inbox is not a fallback, it is a bug.
-  const text = `שלום ${name},
-
-${inlineMarkdownToText(body, input.origin)}
-
-בברכה,
-צוות KALFA`;
   const html = await render(
     createElement(
       Html,
@@ -370,7 +366,7 @@ ${inlineMarkdownToText(body, input.origin)}
       ),
     ),
   );
-  return { subject, html, text };
+  return { subject, html, text: emailText(html) };
 }
 // `refunded` is money that was ALREADY returned to the customer's card when the e-mail is built (a fixed-price package:
 // resolveCancellationRequest sends this e-mail only after the refund is confirmed). Without it the wording is the one
@@ -425,14 +421,6 @@ export async function cancellationRequestResponseEmail(input: {
   );
   const subject = `בקשת ביטול ${cancellationReference(input.requestCode)} — ${copy.subjectSuffix}`;
   const note = stripDuplicateFraming(input.resolutionNote);
-  const text = `שלום ${name},
-
-בקשת ביטול ${cancellationReference(input.requestCode)}: ${copy.opening}
-
-${inlineMarkdownToText(note, input.origin)}
-
-בברכה,
-צוות KALFA`;
   const html = await render(
     createElement(
       Html,
@@ -523,7 +511,7 @@ ${inlineMarkdownToText(note, input.origin)}
       ),
     ),
   );
-  return { subject, html, text };
+  return { subject, html, text: emailText(html) };
 }
 // Two-stage silence follow-up on an inquiry the admin already replied to and
 // the customer went quiet on (inquiry-followup.ts's sweep). Both are
@@ -545,14 +533,6 @@ export async function inquiryReminderEmail(input: {
   // Always a reply on an existing thread by definition — never the first
   // message (§2.2).
   const subject = threadSubject(input.refCode, /* isFirst */ false);
-  const text = `שלום ${name},
-
-לפני כמה ימים ענינו לפנייה שלך. רצינו לוודא שהכול הסתדר.
-
-אם עדיין צריך עזרה — פשוט השב/י למייל הזה. אם הכול טופל, אין צורך לעשות דבר.
-
-בברכה,
-צוות KALFA`;
   const html = await render(
     createElement(
       Html,
@@ -641,7 +621,7 @@ export async function inquiryReminderEmail(input: {
       ),
     ),
   );
-  return { subject, html, text };
+  return { subject, html, text: emailText(html) };
 }
 export async function inquiryClosingWarningEmail(input: {
   recipientName: string;
@@ -654,14 +634,6 @@ export async function inquiryClosingWarningEmail(input: {
 }> {
   const name = input.recipientName.trim() || 'לקוח יקר';
   const subject = threadSubject(input.refCode, /* isFirst */ false);
-  const text = `שלום ${name},
-
-לא שמענו ממך זמן רב לגבי הפנייה שענינו לה. פניות שלא נענות זמן רב מסומנות אצלנו כטופלות.
-
-אם עדיין צריך עזרה — פשוט השב/י למייל הזה, ונחזור לטפל בזה.
-
-בברכה,
-צוות KALFA`;
   const html = await render(
     createElement(
       Html,
@@ -750,7 +722,7 @@ export async function inquiryClosingWarningEmail(input: {
       ),
     ),
   );
-  return { subject, html, text };
+  return { subject, html, text: emailText(html) };
 }
 // CSAT request sent once the followup sweep auto-closes an inquiry on
 // sustained silence (inquiry-followup.ts). Three emoji LINKS, not buttons —
@@ -776,16 +748,6 @@ export async function inquiryRatingRequestEmail(input: {
   const subject = threadSubject(input.refCode, /* isFirst */ false);
   const rateUrl = (score: 1 | 2 | 3) =>
     `${input.origin}/rate/${encodeURIComponent(input.ratingToken)}?score=${score}`;
-  const text = `שלום ${name},
-
-הפנייה שלך סומנה כטופלה. נשמח לדעת איך היה — לחיצה אחת מספיקה:
-
-לא היה טוב: ${rateUrl(1)}
-בסדר: ${rateUrl(2)}
-מצוין: ${rateUrl(3)}
-
-בברכה,
-צוות KALFA`;
   const html = await render(
     createElement(
       Html,
@@ -982,5 +944,5 @@ export async function inquiryRatingRequestEmail(input: {
       ),
     ),
   );
-  return { subject, html, text };
+  return { subject, html, text: emailText(html) };
 }
