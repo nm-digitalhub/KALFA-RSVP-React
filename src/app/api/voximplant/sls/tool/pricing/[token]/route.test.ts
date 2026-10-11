@@ -66,6 +66,7 @@ describe('sls tool pricing POST', () => {
       available: true,
       packages: [
         {
+          package_id: OFFER_100.id,
           package_name: 'חבילה קטנה',
           price: 100,
           contact_quota: 100,
@@ -73,6 +74,7 @@ describe('sls tool pricing POST', () => {
           includes: ['הודעות וואטסאפ', 'שיחות AI'],
         },
         {
+          package_id: OFFER_200.id,
           package_name: 'חבילה גדולה',
           price: 200,
           contact_quota: 200,

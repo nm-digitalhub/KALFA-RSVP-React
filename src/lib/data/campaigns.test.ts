@@ -2001,3 +2001,45 @@ describe('getCampaignStageForEvent — a package campaign is funded by its payme
     expect(await getCampaignStageForEvent('e1')).toBe('awaiting_payment');
   });
 });
+
+describe('approveCampaign update result', () => {
+  it.each([
+    {
+      label: 'zero updated rows',
+      error: null,
+      message: 'מצב הקמפיין השתנה. יש לרענן ולבדוק את האישור',
+    },
+    {
+      label: 'database error',
+      error: { message: 'DB failure' },
+      message: 'אישור הקמפיין נכשל',
+    },
+  ])('rejects on $label', async ({ error, message }) => {
+    vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+
+    const result: QueryResult<Record<string, unknown>> = {
+      data: {
+        id: 'c1',
+        event_id: 'e1',
+        status: 'pending_approval',
+        package_price: 150,
+      },
+      error: null,
+    };
+
+    const { builder } = adminWith(result);
+
+    builder.update.mockImplementation(() => {
+      result.data = null;
+      result.error = error;
+      return builder;
+    });
+
+    await expect(
+      approveCampaign('c1', '2026-10-v6'),
+    ).rejects.toThrow(message);
+
+    expect(builder.select).toHaveBeenCalledWith('id');
+  });
+});

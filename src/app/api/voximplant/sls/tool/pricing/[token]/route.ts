@@ -62,6 +62,7 @@ export async function POST(
     {
       available: true,
       packages: offers.map((offer) => ({
+        package_id: offer.id,
         package_name: offer.name,
         price: offer.price,
         contact_quota: offer.contact_quota,

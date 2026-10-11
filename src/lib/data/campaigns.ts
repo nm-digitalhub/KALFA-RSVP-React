@@ -546,7 +546,7 @@ export async function approveCampaign(
     throw new Error('ניתן לאשר רק קמפיין הממתין לאישור');
   }
 
-  const { error: upErr } = await admin
+  const { data: updated, error: upErr } = await admin
     .from('campaigns')
     .update({
       status: 'approved',
@@ -555,8 +555,15 @@ export async function approveCampaign(
       tos_version: tosVersion,
     })
     .eq('id', campaignId)
-    .eq('status', 'pending_approval'); // race-safe optimistic guard
+    .eq('status', 'pending_approval')
+    .select('id')
+    .maybeSingle();
+
   if (upErr) throw new Error('אישור הקמפיין נכשל');
+
+  if (!updated) {
+    throw new Error('מצב הקמפיין השתנה. יש לרענן ולבדוק את האישור');
+  }
 }
 
 // --- Route A: J5 authorization hold (card capture at approval) ---------------
