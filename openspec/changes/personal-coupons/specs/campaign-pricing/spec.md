@@ -6,7 +6,7 @@ The price agreed for one campaign: its list price, any discount, and the final p
 
 ### Requirement: One source of the campaign price
 
-Each priced campaign SHALL have exactly one pricing record holding:
+Each priced campaign SHALL have exactly one CURRENT pricing record; superseded records are kept as immutable history. The current record holds:
 - the list price;
 - the discount amount;
 - the final price, equal to the list price minus the discount;
@@ -14,7 +14,7 @@ Each priced campaign SHALL have exactly one pricing record holding:
 - a version that changes on every change of the record;
 - the time the price was locked.
 
-The approved terms, the payment request and every screen SHALL read the price from this record.
+The approved terms, the payment request and every screen SHALL read the price from the current record.
 
 #### Scenario: A package is chosen with an eligible offer
 - **WHEN** a customer with an eligible personal offer for that package chooses it
@@ -24,13 +24,17 @@ The approved terms, the payment request and every screen SHALL read the price fr
 - **WHEN** a customer without an offer chooses a package
 - **THEN** the list price equals the final price and the discount is zero
 
-### Requirement: Approval is atomic and bound to the rendered version
+### Requirement: Approval is atomic and bound to the rendered record and version
 
-The terms document SHALL be rendered from one version of the pricing record. Approving it SHALL, in one database transaction, confirm that this version is still current and the campaign is awaiting approval, store the signed agreement, approve the campaign and lock the price. Otherwise nothing SHALL be stored and the approval SHALL be refused.
+The terms document SHALL be rendered from one version of one pricing record. Approving it SHALL, in one database transaction, confirm that this exact record is still the campaign's current one and its version unchanged, and that the campaign is awaiting approval; then store the signed agreement with the record it was rendered from, approve the campaign and lock the price. Otherwise nothing SHALL be stored and the approval SHALL be refused.
 
 #### Scenario: The price changes while the customer reads the terms
 - **WHEN** the pricing record changes after the terms document was rendered and before the customer approves
 - **THEN** the approval is refused, no agreement is stored, and the customer is shown terms rendered from the current price
+
+#### Scenario: A document from a superseded record carries a matching version number
+- **WHEN** an approval names a superseded pricing record whose version number equals the current record's
+- **THEN** the approval is refused, because the record itself is no longer current
 
 #### Scenario: Two approvals race
 - **WHEN** two approval requests for the same campaign run at the same time
@@ -46,11 +50,15 @@ Every operation that reads and then changes a campaign's price SHALL lock the ca
 
 ### Requirement: An unknown approval outcome is resolved before cleanup
 
-When the approval call's outcome is unknown, the server SHALL determine it from the stored agreement for that approval request id. A rendered document SHALL be removed only after it is confirmed that no agreement refers to it.
+When the approval call's outcome is unknown, the server SHALL determine it from the stored agreement for that approval request id: an agreement found means approved; none found leaves the outcome unknown until that attempt can no longer commit. A rendered document SHALL be removed only when no agreement refers to it and the attempt that produced it is concluded.
 
 #### Scenario: The answer is lost
 - **WHEN** the approval call times out after the database committed it
 - **THEN** the rendered document is kept, and the lookup by request id finds the stored agreement and reports the campaign approved
+
+#### Scenario: The lookup finds nothing while the attempt may still commit
+- **WHEN** the lookup by request id finds no agreement right after a timeout
+- **THEN** the outcome stays unknown, the document is kept, and refusal is concluded only once the attempt can no longer commit
 
 ### Requirement: The approved terms show the price as agreed
 
@@ -100,7 +108,7 @@ A locked price SHALL be replaced only by the defined supersede operation: in one
 
 ### Requirement: The charged price equals the approved price
 
-Opening a payment SHALL, in the same transaction that records the pending payment, verify that the named pricing record is the campaign's current one and locked, that the amount equals it, and that any bound benefit is unexpired at that moment. It SHALL refuse otherwise. A session opened this way SHALL settle at that price even if the benefit expires or is voided while it is open.
+Opening a payment SHALL, in the same transaction that records the pending payment, verify that the named pricing record is the campaign's current one and locked, that the amount equals it, and that any bound benefit is unexpired at that moment. It SHALL refuse otherwise.
 
 #### Scenario: The price is not locked
 - **WHEN** a payment is requested for a campaign whose pricing record is not locked
@@ -110,9 +118,17 @@ Opening a payment SHALL, in the same transaction that records the pending paymen
 - **WHEN** a payment is requested for a campaign whose bound benefit has expired
 - **THEN** no session is opened, and the customer is offered new terms at the current price
 
+### Requirement: A payment names its pricing record and settles by it
+
+The pending payment SHALL record which pricing record it charges. Settlement, consumption and refunds SHALL read the price from that record — never from whichever record is current when they run — so a session opened in validity settles at its price even if the benefit expires, is voided or is superseded while it is open.
+
 #### Scenario: The benefit expires while the session is open
 - **WHEN** the benefit's expiry passes after the session opened in validity
 - **THEN** the payment settles at the session's price and consumes the assignment
+
+#### Scenario: A refund after a supersede
+- **WHEN** a refund runs for a payment whose pricing record was later superseded
+- **THEN** the refundable amount is computed from the record the payment named
 
 ### Requirement: The discount is a lower price, not a deduction line
 

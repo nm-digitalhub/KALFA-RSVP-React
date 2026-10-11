@@ -10,14 +10,16 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
   - `coupon_assignments` with the frozen-terms trigger and the idempotency key unique per source (one per sales call) (D3), and the D16 constraint: at most one active (not consumed, void or expired) assignment per phone;
   - `coupon_assignment_options`, unique per assignment and package, frozen with the assignment;
   - `coupon_assignment_events`, insert-only;
-  - `campaign_pricing` as append-only pricing rounds (D2): `id` PK, the one-current-row partial unique index on `(campaign_id) where superseded_at is null`, the same partial uniqueness for `coupon_assignment_id`, the FK to `coupon_assignments`, `superseded_at`/`superseded_by`, the price check constraint, and the `version` trigger.
+  - `campaign_pricing` as append-only pricing rounds (D2): `id` PK, the one-current-row partial unique index on `(campaign_id) where superseded_at is null`, the FK to `coupon_assignments` (assignment exclusivity lives on `coupon_assignments.bound_campaign_id`, not on a pricing index — D2/D17), `superseded_at`/`superseded_by` with the FK `deferrable initially deferred` (D22's replace order), the price check constraint, and the `version` trigger.
 
   All four tables: RLS on, no grants to anon or authenticated, writes only through the functions in 1.2. Verify on live (read-only after push): no grant to anon or authenticated; every FK exists.
-- [ ] 1.2 In the same change set: `bind_coupon_assignment` (including moving the option), `release_coupon_assignment` (D5), `approve_package_terms` with its request id (D7), `supersede_campaign_pricing` (D22: reasons `benefit_accepted`/`lapsed_reapproval`, refused on any pending/review/succeeded package payment, one-way superseded mark, campaign back to `pending_approval`), and `open_package_payment` (D22: current+locked round, amount equal, bound benefit unexpired at open, in the PENDING insert's transaction). `signed_agreements` gains a unique approval request id and the pricing round it was rendered from. All take row locks in the D6 order and are `SECURITY DEFINER`, executable by the service role only. Verify:
+- [ ] 1.2 In the same change set: `bind_coupon_assignment` (including moving the option), `release_coupon_assignment` (D5), `approve_package_terms(request_id, campaign, pricing_round_id, expected_version, …)` (D7 — the round id, not the per-row version alone), `supersede_campaign_pricing` (D22: reasons `benefit_accepted`/`lapsed_reapproval`, refused on any pending/review/succeeded package payment, one-way superseded mark, campaign back to `pending_approval`), and `open_package_payment` (D22: current+locked round, amount equal, bound benefit unexpired at open, in the PENDING insert's transaction). `signed_agreements` gains a unique approval request id and the pricing round it was rendered from. All take row locks in the D6 order and are `SECURITY DEFINER`, executable by the service role only. Verify:
   - two parallel binds of one assignment: exactly one succeeds;
   - two parallel approvals: exactly one stores an agreement;
   - an approval in parallel with a bind: the approval sees the bound price or refuses on version, never a mix;
   - an approval with a stale version stores nothing;
+  - an approval naming a superseded round is refused even when the version numbers coincide;
+  - the supersede replace order holds the one-current-row index at every statement (mark old first, insert successor with the pre-allocated id; the deferred FK checks at commit);
   - a release on a locked or paid campaign is refused;
   - moving to a package without an option returns the list price and leaves one assignment;
   - a supersede in parallel with an open: they serialize on the campaign lock — the session opens on the new round or the supersede is refused by the pending row, never a session on a superseded price;
@@ -35,7 +37,7 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
 - [ ] 2.1 `createCampaign` writes the pricing through the database, and the phase-2 mirror trigger (`campaign_pricing` → `campaigns.package_price`) replaces the phase-1 sync. Verify: unit tests for a new package campaign; the equality query returns no rows.
 - [ ] 2.2 `recordPackageApproval` (the only approval path — `recordSignedAgreement` was deleted on 12.10.2026) creates an approval request id, renders from the pricing row and its `version`, and calls `approve_package_terms`. On a definite refusal it removes the uploaded PDF and asks for re-approval. On an unknown outcome it keeps the PDF and resolves it by request id (D7). A cleanup job removes only PDFs that no agreement references. `approveCampaign` stops being the package approval path. (Already done outside this change: `approveCampaign` refuses when its guarded update changes no row.) Verify: tests for a stale version, a lost race, a timeout after commit (resolved as approved, PDF kept), and a successful approval that is locked in the same transaction.
 - [ ] 2.3 Add list-price and discount tokens to the package terms: new token keys in `src/lib/agreements/template.ts` (`AgreementContent`, `agreementTokens`), and the lines in the admin-managed document body (the body lives in the admin agreement page since 12.10.2026; `renderAgreementBody` refuses an empty body). Mockup and proposed clause: `ui/Terms.dc.html`. Verify: a rendered document shows all three values when a discount applies. **The wording is the owner's.**
-- [ ] 2.4 The purchase paths (`cardcom-purchase`, `package-purchase`, `getCampaignForPurchase`) open through `open_package_payment` (D22): the current locked round's final price, refusing an unlocked or superseded round and an expired bound benefit (the lapse answer routes to re-approval, D15). Verify: tests for locked, unlocked, superseded, and expired-benefit-at-open; a session already open settles even when the expiry passed after opening (D20).
+- [ ] 2.4 The purchase paths (`cardcom-purchase`, `package-purchase`, `getCampaignForPurchase`) open through `open_package_payment` (D22): the current locked round's final price, refusing an unlocked or superseded round and an expired bound benefit (the lapse answer routes to re-approval, D15). The PENDING operation records the pricing round id, and settlement/refund/consume read it (D22). Verify: tests for locked, unlocked, superseded, and expired-benefit-at-open; a session already open settles at its recorded round even when the expiry passed or a supersede ran after opening (D20).
 
 ## 3. Settlement
 
@@ -51,7 +53,7 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
 
 ## 5. Offers and assignments (coupon switch)
 
-- [ ] 5.1 The offers table (D14) and its staff screens under `manage_billing` (`ui/Offers.dc.html`, `ui/OfferEdit.dc.html`). Verify: tests for permission, audit, and that an assignment freezes the offer's terms.
+- [ ] 5.1 The offers table (D14) and its staff screens under `manage_billing` (`ui/Offers.dc.html`, `ui/OfferEdit.dc.html`), refusing an offer that floors any allowed package's final price at zero or below (D14). Verify: tests for permission, audit, the positive-price refusal, and that an assignment freezes the offer's terms.
 - [ ] 5.2 Eligibility and claim. The binding is applied at package choice for:
   - a staff assignment to the account;
   - an assignment to a phone equal to the account's verified phone, claimed once.
@@ -69,6 +71,8 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
   - it writes or returns the one assignment for this call, with an option per package the offer allows, for the callback request's phone;
   - it returns `{offer, options:[{package_id, package_name, list_price, final_price}]}`, or a defined no-offer response;
   - it records the objection reason and the outcome through a service-role activity insert.
+
+  The tool's ElevenLabs definition (parameters and result shape) is updated with `tools add`/`tools push` (an inline `tools[]` edit is silently dropped — CLAUDE.md §6).
 
   The call scenario (`SalesCloseAgent.voxengine.js`):
   - its discount result mapper forwards `offer` and `options`, and keeps accepting the legacy `{tier, amount_or_pct}` response during the deploy. Already done outside this change and uploaded with `npm run vox:upload:salesclose` (11.10.2026, scenario 920396);
