@@ -104,7 +104,7 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
     The last setup progress is the latest of these recorded times (design D12):
     - `events.created_at`;
     - the newest `signed_agreements.signed_at` for the event (terms approved or agreement signed, server-written);
-    - the newest `payment_operations.created_at` for the event's campaign (a payment opened, server-written);
+    - the newest `payment_operations.recorded_at` for the event's campaign (a payment opened: `startCardcomPurchase` writes a pending operation row first). The table has no `created_at`; `recorded_at` is "when we wrote it" and a trigger forbids changing it (`20261004105957_payment_operations_expand.sql:201`), checked against the live schema on 11.10.2026;
     - the newest setup-action row in `activity_log` for the event: `event.updated`, `event.setup_confirmed`, `campaign.package_chosen`, and the three added in D12.
     `events.updated_at` and `campaigns.updated_at` are not used, because background writes move them. `eligible_since` is the last progress plus 24 hours. The email names the event and the label of the current step from `computeSetupSteps`.
     The audit rows are best-effort (`src/lib/data/activity.ts`), but they are one source of four, and three of those are server-written tables. If no source has a time at all (it cannot happen while `events.created_at` exists), the definition skips the event with `skip_reason = 'no_setup_record'` and never infers that the owner stopped.
