@@ -1,8 +1,37 @@
 ## Purpose
 
-The SUMIT-era columns of `campaigns` (the old authorise-and-capture payment model) stop being read and written, their history is preserved, and only then are they removed, so `campaigns` holds no second, stale record of payment facts.
+The pay-per-result model (a SUMIT card hold, a signed agreement and a charge at close) can no longer be created, and its code and comments are removed. The SUMIT-era columns of `campaigns` stop being read and written, their history is preserved, and only then are they removed, so `campaigns` holds no second, stale record of payment facts. The CardCom package flow keeps working unchanged.
 
 ## ADDED Requirements
+
+### Requirement: A pay-per-result campaign cannot be created
+
+The system SHALL NOT allow staff to save a package with a per-result price, and SHALL NOT create a campaign without a fixed-price package.
+
+#### Scenario: Staff try to save a per-result package
+- **WHEN** a package is saved with a per-result price
+- **THEN** the save is refused
+
+#### Scenario: No package is on offer
+- **WHEN** a customer confirms the event details and no package is on offer
+- **THEN** no campaign is created and the customer is told no package is available
+
+### Requirement: The old model's code is removed
+
+No source file SHALL contain a code path, switch or comment for the card hold, the charge at close, the signed per-result agreement, or per-result pricing. Notes that explain the history of an existing record are allowed.
+
+#### Scenario: A search after removal
+- **WHEN** the source is searched for the old model's names
+- **THEN** only history notes and generated provider models match
+
+### Requirement: The package flow and reached recording keep working
+
+Removing the old model SHALL NOT change the CardCom package purchase, settlement or refund, or the recording of reached contacts for package campaigns.
+
+#### Scenario: A package campaign reaches a contact
+- **WHEN** a guest of a package campaign is reached after the removal
+- **THEN** the reach is recorded and the guest is shown as reached, as before
+
 
 ### Requirement: No code or database object reads a retired column
 

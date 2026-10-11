@@ -2,55 +2,106 @@
 
 ## Context
 
-Read-only checks against the live database on 11.10.2026:
-- Of the 7 campaigns live that day, 2 held SUMIT values. Both have matching ledger rows (provider `sumit`, succeeded):
-  - an authorize row (152 and 200, with the auth reference; one with its document);
-  - a release row;
-  - a zero charge with `credit_applied` 84 and 200.
-- These match `auth_amount`, `release_status`, `final_charge_amount` and `campaigns.credit_applied`.
-- Not in the ledger:
-  - `card_token_ref`, `card_exp_*` and `card_citizen_id` on both campaigns;
-  - `sumit_customer_id` on one. It has since been copied (`20261011161441`).
-- Columns empty on every campaign that day: `final_invoice_document_id`, `sumit_order_document_id`, `sumit_charge_document_id`, `charge_payment_id`, `charge_document_number`, `billing_route`.
-- Database objects reading the columns: `campaigns_guard_cancel` and `cancel_campaign` (`capture_status`, `charge_status`); `owner_agent_billing_sums` (`charge_status`, `charged_at`, `final_charge_amount`); `test_event_purge_blocker` (several). No view reads them.
+Read-only checks against the live database and main at 2741b04d, on 11.10.2026. Counts are a snapshot; every verification step re-measures them.
 
-These counts are a snapshot. Every verification step re-measures them instead of assuming them.
+**The old model cannot start**
+- `packages`: 3 active, 0 with `price_per_reached`. `listCampaignTemplates` filters `active` and `price_per_reached is not null`, so `resolveCanonicalTemplate` throws, and `createCampaign` without a package fails.
+- `createCampaign` reaches the old branch only when `listPackageOffers()` is empty (`campaign-actions.ts:103-104`).
+- The hold route refuses `package_price != null` before anything is locked (`authorize/route.ts:96-100`).
+- Campaigns without a package: 2 `closed` (hold `authorized`, charge `nothing_to_charge`, release `released`) and 1 `cancelled`.
+- Switches still on: `payments_enabled`, `campaign_holds_enabled`.
+
+**What packages share with the old model**
+- `recordReached` (`billing.ts`) is called by the outreach engine and the webhook processing for every campaign. It calls `try_record_billed_result`, which writes `billed_results` (with `locked_price` copied from `price_per_reached`, 0 for packages) and sets the contact to `reached_billed`.
+- `reached_billed` is read by the guest list, the delivery view and the manage page.
+- `billed_results`: 23 rows, all on old campaigns; none yet on package campaigns.
+- `getCampaignCreditTotal` (`billing.ts`) is used by both CardCom and SUMIT package purchase.
+
+**Database objects reading old-model columns**
+
+| Function | Columns |
+|---|---|
+| `campaign_billing_summary` | `billed_results`, `max_charge_ceiling` |
+| `campaigns_guard_cancel`, `cancel_campaign` | `billed_results`, `capture_status`, `charge_status` |
+| `owner_agent_billing_sums` | `charge_status`, `final_charge_amount` |
+| `test_event_purge_blocker` | several SUMIT columns |
+| `try_record_billed_result` | `price_per_reached` |
+| `exposed_for_billing`, `has_service_exposure`, `purge_test_event` | `billed_results` |
+| `integrations_configured_flags` | SUMIT settings |
+
+**Code footprint:** 111 non-test source files and 76 test files match the old model's names. The match list is in the scratch inventory, to be re-run in task 1.1. They group as:
+- removable whole files: hold, close-charge, capture, crm-holds, hold-status, hold reconcile, the hold form, the agreement step, the SUMIT test page, the pricing-model toggle;
+- branches inside shared files: setup steps, labels, stats, payment page, manage page, cancellation, owner agent, FAQ, settings, package form;
+- comments only;
+- false matches: generated CardCom, SUMIT and WhatsApp models.
+
+**Already done:** `20261011161441` copied the one `sumit_customer_id` into the ledger.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- One source of payment facts: the ledger.
-- No history lost beyond the owner's named card exception.
+- No way, in code or admin, to create or bill a pay-per-result campaign.
+- No old-model code or comment left, except history read from the ledger.
+- The CardCom package flow, reached-contact recording and the ledger keep working unchanged.
+- The SUMIT-era columns are dropped, with their history kept as the spec requires.
 
 **Non-Goals:**
-- Changing `payment_operations` columns.
-- `campaigns.credit_applied`, `contact_quota`, the old per-result terms (`price_per_reached`, `base_price`, `included_reached`, `max_charge_ceiling`), and `tos_version`/`approved_*`. Each is checked in its own change.
+- Changing the CardCom flow beyond the retired columns it reads.
+- Deleting `billed_results` or `reached_billed` while package campaigns use them (D3).
+- SUMIT features that are not campaign payment, until Open Question 2 is answered.
 
 ## Decisions
 
-**D1. Retire into the existing ledger, not a new table.** The ledger already holds the authorize, release and charge facts, and has columns for the rest. An archive table would be a third copy.
+**D1. Close the door first.** Before any removal:
+- the package form loses `model_outcome`;
+- the packages action refuses `price_per_reached`;
+- `createCampaign` requires a package.
 
-**D2. The card exception.** The card token, expiry and citizen ID are not copied (owner, 11.10.2026). Both authorisations were released and nothing was charged, and these are sensitive personal data. The spec states this exception and limits it to those columns.
+The old path then cannot be reached, even while its code still exists.
 
-**D3. The SUMIT customer id goes to `meta.sumit_customer_id`** of the campaign's SUMIT authorize row. `provider_account_id` is `integer`, and the value does not fit. Done in `20261011161441`.
+**D2. Remove by group, each group shipped and tested on its own:**
+1. the hold (route, preparation, reconcile, CRM holds, hold status, hold form);
+2. close-charge and capture/release (route, job, amount, queue schedule);
+3. the signature agreement and the outcome agreement document;
+4. the pricing-model and base+overage switches, and the hold switch;
+5. old-model branches in shared screens and data;
+6. comments and docs.
 
-**D4. Order.**
-1. Move code readers to the ledger, and deploy.
-2. Update the four database functions.
-3. Compare every campaign's SUMIT values with its ledger rows.
-4. Drop one approved group per migration.
+After each group: tsc, lint, the full suite, and the CardCom package tests.
 
-A group is dropped only after a source search and a live search of functions and views both find no reference.
+**D3. Reached-contact recording stays, without old-model inputs.**
+- `try_record_billed_result` stops copying `price_per_reached`, and records reach only.
+- `billed_results` and `reached_billed` keep their names in this change. Renaming them is a separate change.
+
+**D4. Database functions move off old columns before any drop.**
+- `cancel_campaign` and its guard decide by the ledger and the campaign status.
+- `campaign_billing_summary` returns reach without a ceiling.
+- `owner_agent_billing_sums` reads the ledger.
+- The purge blocker checks the ledger.
+
+Each is verified before and after, on a historical campaign and on a CardCom campaign.
+
+**D5. Drops are last, per group, approved.** The group list is in tasks 5.1. The card exception is limited, as the spec states. The old terms columns (`price_per_reached`, `base_price`, `included_reached`, `max_charge_ceiling`) are dropped after `try_record_billed_result` and every reader stop using them.
+
+**D6. History.** The old campaigns' payment facts are read from the ledger. A screen that showed them from `campaigns` either reads the ledger or stops showing them.
 
 ## Risks / Trade-offs
 
-- **A reader is missed and breaks after a drop.** Mitigation: both searches in D4, and the drop follows the deploy of the code that stopped reading the column.
-- **A cancellation path changes behaviour.** `cancel_campaign` and its guard read `capture_status` and `charge_status`. Mitigation: before-and-after tests on a historical SUMIT campaign and on a CardCom campaign.
+- **A shared path breaks.** Mitigation: D3 keeps reached recording, and the CardCom and outreach tests run after every group.
+- **An old campaign's page breaks.** Mitigation: the 3 old campaigns are opened in a test after each group, and their screens read the ledger.
+- **A large change.** Mitigation: the D2 groups are separate commits; nothing is dropped until the code that read a column is deployed.
 
 ## Migration Plan
 
-As D4. Rollback before a drop: revert the code; the columns still hold their values. After a drop, a group is restored from the ledger, apart from the named card values.
+D1, then the D2 groups, then D4, then the ledger comparison, then the D5 drops. Rollback before a drop: revert the code. After a drop: restore from the ledger, except the named card values.
 
 ## Open Questions
 
-1. **`billing_route`.** It is empty on every campaign and has no reader. Drop it with the SUMIT groups, or separately?
+1. **`billing_route`.** It is empty on every campaign and has no reader. Drop it with the SUMIT groups (recommended), or separately?
+2. **SUMIT outside campaign payment.** These are not part of the pay-per-result model:
+   - the gated SUMIT package purchase and refund (`purchase/route.ts`, `package-purchase.ts`, `package-refund.ts`);
+   - the SUMIT integration page and health check;
+   - the SUMIT customers table;
+   - the workflow nodes that create SUMIT documents and react to SUMIT card events.
+
+   Remove them too, now that CardCom is the provider, or keep them?
