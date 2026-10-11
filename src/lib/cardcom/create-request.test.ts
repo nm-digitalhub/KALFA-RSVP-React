@@ -33,6 +33,10 @@ describe('buildCreateLowProfile', () => {
     });
   });
 
+  it('forces 3-D Secure on every payment', () => {
+    expect(buildCreateLowProfile(input()).AdvancedDefinition).toEqual({ ThreeDSecureState: 'Enabled' });
+  });
+
   it('sends the buyer back to the payment page whatever the outcome', () => {
     const r = buildCreateLowProfile(input());
     expect(r.SuccessRedirectUrl).toBe('https://beta.kalfa.me/app/events/e1/campaign/c1/payment');
