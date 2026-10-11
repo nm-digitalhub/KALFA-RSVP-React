@@ -1,7 +1,7 @@
 'use client';
 
-// Admin client form for the 7 agreement-config values that the signed agreement
-// reads live (close-charge windows, offer validity, liability cap, retention).
+// Admin client form for the agreement-config values that the package terms read
+// live (activation window, offer validity, liability cap, retention).
 // Rendered as a section INSIDE the existing /admin/agreement page (not a separate
 // route). Follows the established admin-form pattern (useActionState + FormState +
 // FieldError/FormError/FormNotice/SubmitButton), mirroring company-form.tsx.
@@ -24,14 +24,12 @@ import {
 import { saveAgreementConfigAction } from './config-actions';
 import { HelpTip } from '@/components/help-tip';
 
-// The 7 raw string values, keyed exactly as getAgreementConfigForAdmin() returns
+// The raw string values, keyed exactly as getAgreementConfigForAdmin() returns
 // them. All values are plain strings (form-friendly); validation/coercion lives
 // server-side in config-actions.ts.
 export type AgreementConfigValues = {
   serviceActivationWindow: string;
   offerValidityDays: string;
-  chargeWindowDays: string;
-  holdReleaseDays: string;
   liabilityCap: string;
   retentionDays: string;
   recordRetentionMonths: string;
@@ -98,7 +96,7 @@ export function AgreementConfigForm({
           name="serviceActivationWindow"
           label="חלון הפעלת שירות"
           defaultValue={values.serviceActivationWindow}
-          help="כמה זמן אחרי שהלקוח מאשר וחותם על ההסכם הקמפיין מתחיל לפנות לאורחים — למשל ״5 ימי עסקים״. מופיע בהסכם כגילוי מועד תחילת אספקת השירות (חוק הגנת הצרכן §14ג)."
+          help="כמה זמן אחרי שהלקוח מאשר את תנאי החבילה הקמפיין מתחיל לפנות לאורחים — למשל ״5 ימי עסקים״. מופיע בהסכם כגילוי מועד תחילת אספקת השירות (חוק הגנת הצרכן §14ג)."
           errors={e?.serviceActivationWindow}
         />
 
@@ -107,31 +105,10 @@ export function AgreementConfigForm({
             name="offerValidityDays"
             label="תוקף הצעה (ימים)"
             defaultValue={values.offerValidityDays}
-            help="כמה ימים תנאי ההצעה שהוצגו ללקוח (המחיר לאיש קשר, ההיקף והתקרה) נשארים בתוקף. בתום התקופה החברה רשאית לעדכן את ההצעה."
+            help="כמה ימים תנאי ההצעה שהוצגו ללקוח (מחיר החבילה ומכסת אנשי הקשר) נשארים בתוקף. בתום התקופה החברה רשאית לעדכן את ההצעה."
             dir="ltr"
             inputMode="numeric"
             errors={e?.offerValidityDays}
-          />
-          <Field
-            name="chargeWindowDays"
-            label="חלון גבייה (ימים)"
-            defaultValue={values.chargeWindowDays}
-            help="כמה ימים לאחר סגירת הקמפיין מתבצע החיוב בפועל (capture) על הכרטיס, לפי מספר אנשי הקשר שהושגו בפועל. ברירת מחדל מקובלת: 30."
-            dir="ltr"
-            inputMode="numeric"
-            errors={e?.chargeWindowDays}
-          />
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field
-            name="holdReleaseDays"
-            label="חלון שחרור מסגרת (ימים)"
-            defaultValue={values.holdReleaseDays}
-            help="כמה ימים עד שתפיסת המסגרת (ה‑hold) משוחררת כאשר אין חיוב, או כשהחיוב בפועל נמוך מהסכום שנתפס. השלמת השחרור בפועל תלויה גם בנהלי חברת האשראי של הלקוח."
-            dir="ltr"
-            inputMode="numeric"
-            errors={e?.holdReleaseDays}
           />
           <Field
             name="liabilityCap"
@@ -156,7 +133,7 @@ export function AgreementConfigForm({
             name="recordRetentionMonths"
             label="שמירת ראיות (חודשים)"
             defaultValue={values.recordRetentionMonths}
-            help="כמה זמן נשמרות ראיות החתימה (אימות OTP, כתובת IP, חתימה אלקטרונית, חותמת‑זמן ו‑hash) להוכחת ההסכמה. 84 חודשים = 7 שנים (תקופת התיישנות / שמירת מסמכים בישראל)."
+            help="כמה זמן נשמרות ראיות האישור (כתובת IP, מזהה הדפדפן, חותמת‑זמן ו‑hash של המסמך) להוכחת ההסכמה. 84 חודשים = 7 שנים (תקופת התיישנות / שמירת מסמכים בישראל)."
             dir="ltr"
             inputMode="numeric"
             errors={e?.recordRetentionMonths}

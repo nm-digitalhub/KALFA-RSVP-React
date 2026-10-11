@@ -15,10 +15,6 @@ import {
   getCampaignDeliveryBreakdown,
   type CampaignDeliveryBreakdown,
 } from '@/lib/data/campaign-delivery';
-import { getCampaignBillingSummary, type BillingSummary } from '@/lib/data/billing';
-import { campaignStage } from '@/lib/data/event-labels';
-import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
-import { chargesPerReached } from '@/lib/data/close-charge-amount';
 import { countAuthorizedContacts } from '@/lib/data/contacts';
 import { loadOperations } from '@/lib/payments/ledger';
 import { packagePaymentOf } from '@/lib/payments/package-paid';
@@ -78,34 +74,10 @@ export type EventStatsResult = {
       /** Any evidence of outbound contact, message OR call. */
       outreachStarted: boolean;
     } | null;
-    billing: {
-      reachedCount: number;
-      accrued: number;
-      /** null = open-ceiling agreement (v5+): the price is a formula, nothing caps it. */
-      ceiling: number | null;
-      maxContacts: number;
-    } | null;
-    // The commercial terms + settlement outcome, read off the campaign row that
-    // is ALREADY in memory (zero extra queries). Separate from `billing` above
-    // because that one is the campaign_billing_summary RPC, which returns
-    // exactly four columns and can legitimately come back null. Both sit behind
-    // the same billing.view gate; null here means "no campaign, or no
-    // billing.view", exactly like `billing`.
     // What the payment ledger recorded: paid and refunded, each from succeeded operations (ledgerMoney). Behind billing.view
     // like the rest of the money; null without it, with no campaign, or when the ledger could not be read (`moneyFailed`).
     money: LedgerMoney | null;
     moneyFailed: boolean;
-    billingDetail: {
-      // The campaign prices per contact who answered (chargesPerReached): only then do the figures below and `billing`
-      // mean anything — a package campaign stores zeros in them.
-      chargesPerReached: boolean;
-      basePrice: number | null;
-      includedReached: number | null;
-      pricePerReached: number | null;
-      finalChargeAmount: number | null;
-      creditApplied: number;
-      chargeStatus: string | null;
-    } | null;
   };
   alerts: EventStatsAlert[];
 };
@@ -145,20 +117,6 @@ export function deriveStatsAlerts(input: {
     // fresh campaign is already 100% pending.
     outreachStarted: boolean;
   } | null;
-  billing?: { accrued: number; ceiling: number | null } | null;
-  // The raw status cannot answer "is this campaign over": campaignStage() folds
-  // awaiting_invoice | billed | paid into the same 'closed' stage, and the DB
-  // close guard (events_guard_update) does not list those three — so an event
-  // can legally close while the campaign sits in one of them with no final
-  // charge. captureStatus rides along so the STAGE, not the raw status, decides.
-  campaign?: {
-    status: CampaignStatus | null;
-    captureStatus?: string | null;
-    finalChargeAmount: number | null;
-    // Is a final charge expected at close at all? Only for a campaign priced per contact who answered
-    // (chargesPerReached): a fixed-price package is paid up front and never has one, so "not settled" would be false.
-    settlesAtClose: boolean;
-  } | null;
 }): EventStatsAlert[] {
   const alerts: EventStatsAlert[] = [];
   const t = input.totals;
@@ -185,24 +143,6 @@ export function deriveStatsAlerts(input: {
       alerts.push({ id: 'failed_deliveries', label: 'שליחות שנכשלו' });
     if (input.delivery.wrongNumber > 0)
       alerts.push({ id: 'wrong_numbers', label: 'מספרי טלפון שגויים' });
-  }
-  if (input.billing && input.billing.ceiling !== null && input.billing.ceiling > 0) {
-    if (input.billing.accrued / input.billing.ceiling >= 0.9) {
-      alerts.push({ id: 'ceiling_near_usage', label: 'קירבה לתקרת החיוב' });
-    }
-  }
-  if (input.campaign && input.campaign.settlesAtClose && input.campaign.finalChargeAmount == null) {
-    const stage = campaignStage(
-      input.campaign.status
-        ? {
-            status: input.campaign.status,
-            capture_status: input.campaign.captureStatus ?? null,
-          }
-        : null,
-    );
-    if (stage === 'closed') {
-      alerts.push({ id: 'campaign_closed_not_settled', label: 'קמפיין סגור וטרם נסגר חשבונית' });
-    }
   }
   return alerts;
 }
@@ -265,10 +205,8 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
     quota: null,
     reachedCount: null,
     delivery: null,
-    billing: null,
     money: null,
     moneyFailed: false,
-    billingDetail: null,
   };
   const campaignsOk = await canAccessEvent(eventId, 'campaigns', 'view');
   let c: OwnerCampaign | null = null;
@@ -332,35 +270,10 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
       // 5) billing (campaigns.view AND billing.view)
       const billingOk = await canAccessEvent(eventId, 'billing', 'view');
       if (billingOk) {
-        // Field-by-field, never a spread of `c`: the campaign row also carries
-        // card_token_ref / card_citizen_id / charge_document_url, which must
-        // never reach the DTO. Assigned OUTSIDE the try below because it needs
-        // no query and must survive an RPC failure.
-        campaign.billingDetail = {
-          chargesPerReached: chargesPerReached(c),
-          basePrice: c.base_price,
-          includedReached: c.included_reached,
-          pricePerReached: c.price_per_reached,
-          finalChargeAmount: c.final_charge_amount,
-          creditApplied: c.credit_applied,
-          chargeStatus: c.charge_status,
-        };
         try {
           campaign.money = ledgerMoney(await loadOperations(createAdminClient(), c.id));
         } catch {
           campaign.moneyFailed = true;
-        }
-        try {
-          const b: BillingSummary | null = await getCampaignBillingSummary(c.id);
-          if (b)
-            campaign.billing = {
-              reachedCount: b.reachedCount,
-              accrued: b.accrued,
-              ceiling: isOpenCeilingAgreementVersion(c.tos_version) ? null : b.ceiling,
-              maxContacts: b.maxContacts,
-            };
-        } catch {
-          campaign.state = 'error';
         }
       }
     }
@@ -374,20 +287,6 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
           failed: campaign.delivery.failed,
           wrongNumber: campaign.delivery.wrongNumber,
           outreachStarted: campaign.delivery.outreachStarted,
-        }
-      : null,
-    billing: campaign.billing
-      ? { accrued: campaign.billing.accrued, ceiling: campaign.billing.ceiling }
-      : null,
-    // finalChargeAmount stays sourced from `c` (campaigns.view), NOT from
-    // campaign.billingDetail — that one is behind billing.view, and reading it
-    // here would silently mute the banner for a member without billing.view.
-    campaign: campaign.id
-      ? {
-          status: campaign.status,
-          captureStatus: campaign.captureStatus,
-          finalChargeAmount: c?.final_charge_amount ?? null,
-          settlesAtClose: c ? chargesPerReached(c) : false,
         }
       : null,
   });

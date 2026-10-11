@@ -47,7 +47,6 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   'payment-orphans': 30,
   // Every 30 minutes.
   'voximplant-balance-check': 90,
-  'sumit-hold-reconcile': 90,
   // Runs hourly; flagged only after four missed runs, because a Meta blip should
   // not turn the badge red on its own.
   'whatsapp-health-check': 4 * 60,

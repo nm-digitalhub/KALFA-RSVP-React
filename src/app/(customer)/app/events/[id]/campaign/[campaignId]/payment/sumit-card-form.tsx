@@ -17,12 +17,11 @@ import { Progress } from '@/components/ui/progress';
 import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
-// SUMIT payments.js card form. It serves two flows with one tokenization path: the legacy route-A J5 hold
-// (purpose 'hold' → authorize route) and the fixed-price package purchase (purpose 'purchase' → purchase route).
+// SUMIT payments.js card form for the package purchase (→ the purchase route).
 // jQuery and payments.js both load (in either order — see bind() below), then
 // payments.js binds form[data-og=form], tokenizes the card fields, injects a
 // hidden `og-token`, and (with our ResponseCallback) hands control back to us so
-// we submit natively to that purpose's Route Handler. Card fields carry no `name`
+// we submit natively to the purchase Route Handler. Card fields carry no `name`
 // (the library reads them via data-og and strips names before submit); CitizenID
 // is required by the gateway and reaches SUMIT via the tokenize AJAX only — it is
 // NEVER given a `name`, so it is never POSTed to our server (do not add one).
@@ -45,34 +44,13 @@ declare global {
   }
 }
 
-// What differs between the two flows: where the form posts, and the words around the amount. The purchase charges
-// the customer, so none of its wording speaks of a hold. Wording that touches what is charged is reviewed for
-// compliance before it goes live.
-export type FormPurpose = 'hold' | 'purchase';
-export const FORM_PURPOSE: Record<
-  FormPurpose,
-  {
-    action: (campaignId: string) => string;
-    submit: string;
-    dialogTitle: string;
-    progressLabel: string;
-    placing: (amount: string) => string;
-  }
-> = {
-  hold: {
-    action: (campaignId) => `/api/campaigns/${campaignId}/authorize`,
-    submit: 'אישור ותפיסת מסגרת',
-    dialogTitle: 'מאשרים ותופסים את המסגרת',
-    progressLabel: 'התקדמות אישור ותפיסת המסגרת',
-    placing: (amount) => `תופסים מסגרת אשראי בסך ${amount}`,
-  },
-  purchase: {
-    action: (campaignId) => `/api/campaigns/${campaignId}/purchase`,
-    submit: 'אישור ותשלום',
-    dialogTitle: 'מאשרים ומשלמים',
-    progressLabel: 'התקדמות התשלום',
-    placing: (amount) => `מחייבים את הכרטיס בסך ${amount}`,
-  },
+// The words around the amount. Wording that touches what is charged is reviewed for compliance before it goes live.
+export const PURCHASE_COPY = {
+  action: (campaignId: string) => `/api/campaigns/${campaignId}/purchase`,
+  submit: 'אישור ותשלום',
+  dialogTitle: 'מאשרים ומשלמים',
+  progressLabel: 'התקדמות התשלום',
+  placing: (amount: string) => `מחייבים את הכרטיס בסך ${amount}`,
 };
 
 const JQUERY_SRC = 'https://code.jquery.com/jquery-3.7.1.min.js';
@@ -99,10 +77,10 @@ export function formatCardholderName(fullName: string): string {
 // instant the form is submitted (tokenization AJAX to SUMIT is in flight);
 // 'placing' starts the instant we call formRef.current.submit() — the browser
 // is now genuinely sending that native POST. There is no third client-visible
-// stage: the actual hold or charge happens server-side during that POST, and
+// stage: the actual charge happens server-side during that POST, and
 // the page navigates away (redirect) before any further client state could
 // ever observe it completing — showing it as "done" here would be a lie.
-type HoldStage = 'idle' | 'verifying' | 'placing';
+type PaymentStage = 'idle' | 'verifying' | 'placing';
 
 const STAGE_STATE_LABEL = {
   done: ' (הושלם)',
@@ -147,23 +125,18 @@ function StageRow({
   );
 }
 
-export function CampaignHoldForm({
+export function SumitCardForm({
   campaignId,
   companyId,
   apiPublicKey,
   amount,
   signerName,
-  purpose = 'hold',
 }: {
   campaignId: string;
   companyId: number;
   apiPublicKey: string;
-  // Display only — the server never reads it. For a hold: the J5 amount that will
-  // actually be held (previewCampaignHoldSizing), NOT the charge ceiling, which can
-  // be larger once the list exceeds coverage. For a purchase: the campaign's fixed
-  // package price, which the purchase route reads itself.
+  // Display only — the server never reads it: the campaign's fixed package price, which the purchase route reads itself.
   amount: number;
-  purpose?: FormPurpose;
   // Read-only, for the card preview only — SUMIT never needs a name-on-card
   // field (customerName is sent server-side from the profile), so this adds
   // no new input and collects nothing new from the user.
@@ -179,7 +152,7 @@ export function CampaignHoldForm({
   // the inline icon only — reading the DOM value on change never touches what
   // payments.js itself reads via data-og, so it can't affect tokenization.
   const [cardType, setCardType] = useState<PaymentType>('Generic');
-  const [stage, setStage] = useState<HoldStage>('idle');
+  const [stage, setStage] = useState<PaymentStage>('idle');
   // Live visual preview (react-credit-cards-library) — reads the same
   // uncontrolled fields via onChange/onFocus, same as cardType above: no
   // value= on the underlying inputs, so payments.js's data-og read is
@@ -192,7 +165,7 @@ export function CampaignHoldForm({
   const [previewFocus, setPreviewFocus] = useState<Focused>('');
   const previewExpiry = expMonth && expYear ? `${expMonth.padStart(2, '0')}/${expYear.slice(-2)}` : '';
   const formRef = useRef<HTMLFormElement>(null);
-  const copy = FORM_PURPOSE[purpose];
+  const copy = PURCHASE_COPY;
   const formattedAmount = formatAmount(amount);
 
   // Bind once BOTH jQuery and payments.js are available. Driven from the
@@ -223,7 +196,7 @@ export function CampaignHoldForm({
               setStage('idle');
             } else {
               // Genuinely true the instant this fires — the browser is now
-              // actually sending the real hold or charge request, not a guess.
+              // actually sending the real charge request, not a guess.
               setStage('placing');
               formRef.current?.submit();
             }

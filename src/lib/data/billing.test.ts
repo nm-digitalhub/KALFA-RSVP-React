@@ -75,20 +75,17 @@ describe('recordReached', () => {
 });
 
 describe('getCampaignBillingSummary', () => {
-  it('maps the RPC row to the summary B4 consumes', async () => {
-    mockRpc({
-      data: [{ reached_count: 3, accrued: 12, ceiling: 88, max_contacts: 22 }],
-      error: null,
-    });
-    await expect(getCampaignBillingSummary('c1')).resolves.toEqual({
-      reachedCount: 3,
-      accrued: 12,
-      ceiling: 88,
-      maxContacts: 22,
-    });
+  it('maps the RPC row to the reach count', async () => {
+    mockRpc({ data: [{ reached_count: 3 }], error: null });
+    await expect(getCampaignBillingSummary('c1')).resolves.toEqual({ reachedCount: 3 });
   });
 
-  it('THROWS on a real RPC error (so close-charge routes to review, never zero-bills)', async () => {
+  it('reads only the reach count, whatever else an older function returns', async () => {
+    mockRpc({ data: [{ reached_count: 3, accrued: 12, ceiling: 88, max_contacts: 22 }], error: null });
+    await expect(getCampaignBillingSummary('c1')).resolves.toEqual({ reachedCount: 3 });
+  });
+
+  it('THROWS on a real RPC error (never shows 0 reached)', async () => {
     mockRpc({ data: null, error: { message: 'x' } });
     await expect(getCampaignBillingSummary('c1')).rejects.toThrow();
   });

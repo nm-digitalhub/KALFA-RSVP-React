@@ -6,13 +6,9 @@ import { unstable_rethrow } from 'next/navigation';
 
 import {
   updateAppSettings,
-  setBaseOveragePricingEnabled,
   setExchangeConnectionMode,
   type ExchangeConnectionMode,
 } from '@/lib/data/admin/settings';
-import { getActiveAgreementDoc } from '@/lib/data/agreements-doc';
-import { BASE_FEE_AGREEMENT_VERSION } from '@/lib/agreements/template';
-import { sendSlackAlert } from '@/lib/alerts/slack';
 import { appSettingsSchema } from '@/lib/validation/admin';
 import type { FormState } from '@/lib/validation/result';
 
@@ -23,12 +19,10 @@ export async function updateSettingsAction(
   const parsed = appSettingsSchema.safeParse({
     // A checkbox is present ('on') only when checked; absent means off.
     payments_enabled: formData.get('payments_enabled') === 'on',
-    close_charge_enabled: formData.get('close_charge_enabled') === 'on',
     inquiry_followup_enabled: formData.get('inquiry_followup_enabled') === 'on',
     agreement_archive_enabled: formData.get('agreement_archive_enabled') === 'on',
     signup_reminder_enabled: formData.get('signup_reminder_enabled') === 'on',
     unconfirmed_cleanup_enabled: formData.get('unconfirmed_cleanup_enabled') === 'on',
-    campaign_holds_enabled: formData.get('campaign_holds_enabled') === 'on',
     billing_exposure_gate: formData.get('billing_exposure_gate') === 'on',
     monitor_enabled: formData.get('monitor_enabled') === 'on',
     inbound_calls_enabled: formData.get('inbound_calls_enabled') === 'on',
@@ -40,11 +34,6 @@ export async function updateSettingsAction(
     console_call_me_now_enabled: formData.get('console_call_me_now_enabled') === 'on',
     console_consult_conference_enabled: formData.get('console_consult_conference_enabled') === 'on',
     console_dtmf_handoff_enabled: formData.get('console_dtmf_handoff_enabled') === 'on',
-    // The one non-checkbox field: passed through raw so Zod coerces and bounds
-    // it. Deliberately NOT given a fallback here — an absent or blank value must
-    // surface as a field error, never silently rewrite a number that resizes
-    // credit holds on live campaigns.
-    reasonable_coverage_contacts: formData.get('reasonable_coverage_contacts'),
   });
 
   if (!parsed.success) {
@@ -60,49 +49,6 @@ export async function updateSettingsAction(
 
   revalidatePath('/admin/settings');
   return { notice: 'ההגדרות נשמרו' };
-}
-
-// The base+overage pricing gate toggle. Enabling turns on real ₪200 activation-
-// fee billing for NEW campaigns, so it is FAIL-CLOSED: refuse to enable unless the
-// ACTIVE agreement is the APPROVED v4 base-fee contract — so new signers actually
-// agree to the base fee and the close-charge D5 guard has a matching signature to
-// honor. A security audit is emitted on every flip. (Disabling is always allowed.)
-export async function updateBaseOveragePricingAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const enabled = formData.get('base_overage_pricing_enabled') === 'on';
-  if (enabled) {
-    const doc = await getActiveAgreementDoc();
-    if (doc.version !== BASE_FEE_AGREEMENT_VERSION || doc.status !== 'approved') {
-      return {
-        error:
-          'לא ניתן להפעיל את התמחור המדורג עד שהסכם דמי-ההפעלה (v4) פעיל ומאושר תחת /admin/agreement.',
-      };
-    }
-  }
-  try {
-    await setBaseOveragePricingEnabled(enabled);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'עדכון מתג התמחור המדורג נכשל. נסו שוב.' };
-  }
-  // Security audit on every flip (fire-and-forget, never throws).
-  void sendSlackAlert({
-    level: enabled ? 'warn' : 'info',
-    category: 'security',
-    source: 'base-overage-pricing-toggle',
-    title: enabled
-      ? 'Base+overage pricing ENABLED — ₪200 activation fee now billed on new campaigns'
-      : 'Base+overage pricing disabled — back to per-reached',
-    fields: { enabled: String(enabled) },
-  });
-  revalidatePath('/admin/settings');
-  return {
-    notice: enabled
-      ? 'התמחור המדורג הופעל — קמפיינים חדשים יחויבו בדמי הפעלה ₪200'
-      : 'התמחור המדורג כובה — חזרה לחיוב לפי-תוצאה',
-  };
 }
 
 // Ownership-model switch for Exchange connections (plan §3.1). Does NOT

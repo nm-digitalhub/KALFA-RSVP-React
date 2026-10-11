@@ -1,7 +1,7 @@
 'use server';
 
 // Server Action for the agreement-config section of the /admin/agreement page.
-// Validates the 7 values with an inline Zod schema (all trimmed strings — these
+// Validates the values with an inline Zod schema (all trimmed strings — these
 // are free-form config the agreement reads live, so coercion is intentionally
 // avoided here) and writes them to the singleton app_settings row.
 //
@@ -25,13 +25,11 @@ import type { FormState } from '@/lib/validation/result';
 // src/lib/data/admin/settings.ts).
 const SETTINGS_ID = true;
 
-// All 7 values are trimmed strings. Empty is allowed (an intentional unset →
+// All values are trimmed strings. Empty is allowed (an intentional unset →
 // stored as NULL below), matching the company/app-settings save behaviour.
 const agreementConfigSchema = z.object({
   serviceActivationWindow: z.string().trim(),
   offerValidityDays: z.string().trim(),
-  chargeWindowDays: z.string().trim(),
-  holdReleaseDays: z.string().trim(),
   liabilityCap: z.string().trim(),
   retentionDays: z.string().trim(),
   recordRetentionMonths: z.string().trim(),
@@ -57,8 +55,6 @@ export async function saveAgreementConfigAction(
   const parsed = agreementConfigSchema.safeParse({
     serviceActivationWindow: formData.get('serviceActivationWindow') ?? '',
     offerValidityDays: formData.get('offerValidityDays') ?? '',
-    chargeWindowDays: formData.get('chargeWindowDays') ?? '',
-    holdReleaseDays: formData.get('holdReleaseDays') ?? '',
     liabilityCap: formData.get('liabilityCap') ?? '',
     retentionDays: formData.get('retentionDays') ?? '',
     recordRetentionMonths: formData.get('recordRetentionMonths') ?? '',
@@ -70,19 +66,17 @@ export async function saveAgreementConfigAction(
 
   try {
     // `manage_settings`, not `requireAdmin()`. The agreement config decides the
-// terms a customer signs.
-  await requirePlatformPermission('manage_settings');
+    // terms a customer approves.
+    await requirePlatformPermission('manage_settings');
     const supabase = await createClient();
 
-    // The form is prefilled with current values, so every save submits all 7
-    // fields. Empty → null (intentional unset).
+    // The form is prefilled with current values, so every save submits every
+    // field. Empty → null (intentional unset).
     const { error } = await supabase
       .from('app_settings')
       .update({
         agr_service_activation_window: parsed.data.serviceActivationWindow || null,
         agr_offer_validity_days: parsed.data.offerValidityDays || null,
-        agr_charge_window_days: parsed.data.chargeWindowDays || null,
-        agr_hold_release_days: parsed.data.holdReleaseDays || null,
         agr_liability_cap: parsed.data.liabilityCap || null,
         agr_retention_days: parsed.data.retentionDays || null,
         agr_record_retention_months: parsed.data.recordRetentionMonths || null,

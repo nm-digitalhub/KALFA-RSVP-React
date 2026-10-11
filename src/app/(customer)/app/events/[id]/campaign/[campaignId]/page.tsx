@@ -35,7 +35,6 @@ import {
   sendEventDayReminderAction,
   sendGiftReminderAction,
   sendThankyouAction,
-  settleCampaignAction,
   updateThankyouScheduleAction,
 } from '../campaign-actions';
 import { ManageClient } from './manage-client';
@@ -134,7 +133,7 @@ export default async function CampaignManagePage({
     uniqueContacts = null;
   }
 
-  // A package campaign is funded by its payment, which only the ledger knows (null for the other model).
+  // A package campaign is funded by its payment, which only the ledger knows (null for a campaign without a package).
   const payment = await packagePaymentOf(campaign);
 
   // The payments list, from the ledger: staff see every attempt with the provider's references, a viewer with
@@ -145,7 +144,6 @@ export default async function CampaignManagePage({
   const activate = activateCampaignAction.bind(null, eventId, campaignId);
   const pause = pauseCampaignAction.bind(null, eventId, campaignId);
   const close = closeCampaignAction.bind(null, eventId, campaignId);
-  const settle = settleCampaignAction.bind(null, eventId, campaignId);
   const cancel = cancelCampaignAction.bind(null, eventId, campaignId);
   const sendGift = sendGiftReminderAction.bind(null, eventId, campaignId);
   const sendEventDay = sendEventDayReminderAction.bind(null, eventId, campaignId);
@@ -181,16 +179,7 @@ export default async function CampaignManagePage({
         campaign={{
           id: campaign.id,
           status: campaign.status,
-          price_per_reached: campaign.price_per_reached,
-          max_contacts: campaign.max_contacts,
-          max_charge_ceiling: campaign.max_charge_ceiling,
-          tos_version: campaign.tos_version,
-          final_charge_amount: campaign.final_charge_amount,
-          credit_applied: campaign.credit_applied,
           capture_status: campaign.capture_status,
-          charge_status: campaign.charge_status,
-          base_price: campaign.base_price,
-          included_reached: campaign.included_reached,
           package_price: campaign.package_price,
           contact_quota: campaign.contact_quota,
           payment_status: payment?.status ?? null,
@@ -208,7 +197,6 @@ export default async function CampaignManagePage({
           activate,
           pause,
           close,
-          settle,
           cancel,
           sendGift,
           sendEventDay,

@@ -50,14 +50,9 @@ function readOperationalForm(formData: FormData) {
     }
   }
   return {
-    price_per_reached: formData.get('price_per_reached'),
-    base_price: formData.get('base_price'),
-    included_reached: formData.get('included_reached'),
     contact_quota: formData.get('contact_quota'),
     channels,
     outreach_schedule,
-    min_hold_floor: formData.get('min_hold_floor'),
-    hold_buffer_pct: formData.get('hold_buffer_pct'),
   };
 }
 
@@ -73,10 +68,10 @@ function fixedPriceErrors(
   return null;
 }
 
-// Whether the package is campaign-enabled (a per-reached price, or a contact quota): only then are its outreach
-// templates validated, so a draft of a non-campaign package may name templates that do not exist yet.
+// Whether the package is campaign-enabled (it has a contact quota): only then are its outreach templates validated,
+// so a draft of a non-campaign package may name templates that do not exist yet.
 function isCampaignEnabled(operational: OperationalFieldsInput): boolean {
-  return operational.price_per_reached !== null || operational.contact_quota !== null;
+  return operational.contact_quota !== null;
 }
 
 export async function createPackageAction(
@@ -97,10 +92,9 @@ export async function createPackageAction(
   const priceErrors = fixedPriceErrors(parsed.data, operationalParsed.data);
   if (priceErrors) return { fieldErrors: priceErrors };
 
-  // Template validation runs only for a campaign-enabled package
-  // (a per-reached price, or a contact quota) — campaign-field requirements are never
-  // enforced on a non-campaign package (plan §5.3/§2), e.g. a future package
-  // drafted with touchpoints whose templates don't exist yet.
+  // Template validation runs only for a campaign-enabled package (one with a contact quota) — campaign-field
+  // requirements are never enforced on a non-campaign package, e.g. a future package drafted with touchpoints whose
+  // templates don't exist yet.
   const templateErrors = isCampaignEnabled(operationalParsed.data)
     ? await validateOutreachScheduleForPackage(operationalParsed.data.outreach_schedule)
     : [];
@@ -142,7 +136,7 @@ export async function updatePackageAction(
   const priceErrors = fixedPriceErrors(parsed.data, operationalParsed.data);
   if (priceErrors) return { fieldErrors: priceErrors };
 
-  // Same campaign-enabled gate as createPackageAction (plan §5.3/§2).
+  // Same campaign-enabled gate as createPackageAction.
   const templateErrors = isCampaignEnabled(operationalParsed.data)
     ? await validateOutreachScheduleForPackage(operationalParsed.data.outreach_schedule)
     : [];

@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
-import { getCampaignForHold } from '@/lib/data/campaigns';
+import { getCampaignRef } from '@/lib/data/campaigns';
 import { getOutreachEnabled, getWhatsAppConfig } from '@/lib/data/outreach-config';
 import { sendCampaignWhatsApp } from '@/lib/data/outreach';
 import { whatsappSendSchema } from '@/lib/validation/campaigns';
@@ -36,7 +36,7 @@ export async function POST(
     return r303(new URL('/auth/login', origin));
   }
 
-  const campaign = await getCampaignForHold(campaignId);
+  const campaign = await getCampaignRef(campaignId);
   if (!campaign) return r303(new URL('/app', origin));
   let event: Awaited<ReturnType<typeof requireOwnedEvent>>;
   try {

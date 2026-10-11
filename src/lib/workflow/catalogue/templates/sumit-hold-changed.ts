@@ -12,9 +12,8 @@ const HOLD_ALERT_ID = 'tmpl-sumit-hold-alert';
 /**
  * SUMIT tells us a frame hold changed; a person is told.
  *
- * WHY THIS ONE EXISTS. `sumit-hold-reconcile.ts` discovers a manually released
- * hold by POLLING the "תפיסות מסגרת" folder (1076735289), because its header
- * comment believed SUMIT could not notify. It can: its trigger
+ * WHY THIS ONE EXISTS. A hold released manually in SUMIT's "תפיסות מסגרת" folder (1076735289) was once found by
+ * polling (the retired sumit-hold-reconcile job), on the belief that SUMIT could not notify. It can: its trigger
  * module posts to a URL on a card change (`/triggers/triggers/subscribe/`,
  * "usually done by make.com/zapier, but can also be used directly"). This is
  * that notification, landing in the team channel.

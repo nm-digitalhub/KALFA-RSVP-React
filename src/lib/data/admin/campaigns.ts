@@ -225,7 +225,7 @@ export interface AdminCampaignListItem {
   // below. captureStatus itself is text, not a typed enum (types.generated.ts
   // reflects capture_status as bare string — no DB enum backs it).
   captureStatus: string | null;
-  // 'released' once the hold-release reconciler (sumit-hold-reconcile.ts)
+  // 'released' once the (retired) hold-release reconciler
   // has seen SUMIT mark the hold released. capture_status stays 'authorized'
   // for the campaign's whole life, so without this the screen kept saying
   // "תפוס" for holds SUMIT had long released (verified live 2026-09-24: all

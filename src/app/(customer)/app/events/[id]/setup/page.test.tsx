@@ -10,9 +10,7 @@ vi.mock('@/lib/data/campaigns', () => ({ getCampaignForEvent: vi.fn(), listPacka
 vi.mock('@/lib/data/events', () => ({ getEvent: vi.fn() }));
 vi.mock('@/lib/storage/event-media', () => ({ signedInviteImageUrl: vi.fn() }));
 vi.mock('../campaign/campaign-actions', () => ({ setupCampaignAction: vi.fn(), choosePackageAction: vi.fn() }));
-vi.mock('../campaign/[campaignId]/approve/agreement-step', () => ({ AgreementStep: () => <div data-marker="agreement" /> }));
 vi.mock('../campaign/[campaignId]/approve/package-terms-step', () => ({ PackageTermsStep: () => <div data-marker="package-terms" /> }));
-vi.mock('../campaign-setup-form', () => ({ CampaignSetupForm: () => <div data-marker="create-campaign" /> }));
 vi.mock('../edit-event-form', () => ({ EditEventForm: () => <div data-marker="details-form" /> }));
 vi.mock('../setup-confirm-form', () => ({ SetupConfirmForm: () => <div data-marker="confirm-form" /> }));
 vi.mock('../setup-stepper', () => ({
@@ -86,21 +84,20 @@ beforeEach(() => {
 });
 
 describe('setup page — nothing on offer (the package switch is off)', () => {
-  it('is the five steps it always was: confirmed, no campaign → the create-campaign form for signing', async () => {
+  it('confirmed, no campaign → the package step is current, and its form says no package is available', async () => {
     const html = await render();
-    expect(stepsOf(html)).toEqual(['details', 'confirm', 'sign', 'pay', 'live']);
-    expect(html).toContain('data-marker="create-campaign"');
-    expect(html).not.toContain('data-marker="package-form"');
-    // the pay-per-result flow still signs
-    expect(html).toContain('קריאת ההסכם וחתימה');
+    expect(stepsOf(html)).toEqual(['details', 'confirm', 'package', 'sign', 'pay', 'live']);
+    expect(html).toContain('package:current');
+    // PackageChoiceForm itself shows the "no package" text for an empty list.
+    expect(html).toContain('data-marker="package-form"');
+    expect(html).toContain('data-offers="[]"');
   });
 
   it('a campaign that already exists never triggers a catalogue read', async () => {
-    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'pending_approval', capture_status: null, package_price: null } as never);
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'pending_approval', capture_status: null, package_price: 150 } as never);
     const html = await render();
     expect(listPackageOffers).not.toHaveBeenCalled();
-    expect(html).toContain('data-marker="agreement"');
-    expect(stepsOf(html)).toEqual(['details', 'confirm', 'sign', 'pay', 'live']);
+    expect(html).toContain('data-marker="package-terms"');
   });
 });
 
@@ -114,8 +111,7 @@ describe('setup page — a package is on offer', () => {
     expect(stepsOf(html)).toEqual(['details', 'confirm', 'package', 'sign', 'pay', 'live']);
     expect(html).toContain('package:current');
     expect(html).toContain('data-marker="package-form"');
-    expect(html).not.toContain('data-marker="create-campaign"');
-    expect(html).not.toContain('data-marker="agreement"');
+    expect(html).not.toContain('data-marker="package-terms"');
   });
 
   it('hands the form only what the owner reads — never the channels or the outreach schedule', async () => {
@@ -134,7 +130,6 @@ describe('setup page — a package is on offer', () => {
     expect(html).toContain('package:done');
     expect(html).toContain('sign:current');
     expect(html).toContain('data-marker="package-terms"');
-    expect(html).not.toContain('data-marker="agreement"');
     expect(html).not.toContain('data-marker="package-form"');
     // the step is named for what the owner does
     expect(html).toContain('אישור תנאי החבילה');

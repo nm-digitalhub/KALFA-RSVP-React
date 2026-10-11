@@ -11,7 +11,7 @@ import {
   SETUP_LOCK_WARNING,
   computeSetupSteps,
   setupBackTarget,
-  setupStepLabels,
+  SETUP_STEP_LABELS,
   toSetupEvent,
 } from '@/lib/data/setup-steps';
 import { formatIsraelDate, formatIsraelDateTime } from '@/lib/date';
@@ -19,9 +19,7 @@ import { packagePaymentOf } from '@/lib/payments/package-paid';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 
 import { choosePackageAction, setupCampaignAction } from '../campaign/campaign-actions';
-import { AgreementStep } from '../campaign/[campaignId]/approve/agreement-step';
 import { PackageTermsStep } from '../campaign/[campaignId]/approve/package-terms-step';
-import { CampaignSetupForm } from '../campaign-setup-form';
 import { EditEventForm } from '../edit-event-form';
 import { PackageChoiceForm } from '../package-choice-form';
 import { SetupConfirmForm } from '../setup-confirm-form';
@@ -57,10 +55,10 @@ export default async function SetupPage({
   const campaign = await getCampaignForEvent(id);
   const isPast = isPastEventDay(event.event_date);
 
-  // Fixed-price packages on offer. Only needed while there is no campaign yet: the choice is what creates it, and a
-  // campaign that already exists (either model) keeps its own flow. With the package switch off this is an empty list
-  // without a database read. A catalogue that cannot be read must not take the whole page down: the page falls back to
-  // the flow without the choice step, and the action that would create the campaign refuses on its own.
+  // The packages on offer. Only needed while there is no campaign yet: the choice is what creates it. With the package
+  // switch off this is an empty list without a database read, and the choice step says no package is available. A
+  // catalogue that cannot be read must not take the whole page down: it is shown as empty, and the action that would
+  // create the campaign refuses on its own.
   let offers: PackageOffer[] = [];
   if (!campaign) {
     try {
@@ -83,11 +81,9 @@ export default async function SetupPage({
       payment,
     },
     isPast,
-    packageOffered: offers.length > 0,
   });
   const base = campaign ? `/app/events/${id}/campaign/${campaign.id}` : null;
-  // The step names for THIS flow: in the package flow "signing" is the approval of the package terms.
-  const labels = setupStepLabels(steps);
+  const labels = SETUP_STEP_LABELS;
 
   if (POST_ACTIVATION_STAGES.includes(stage) && base) redirect(base);
 
@@ -215,20 +211,9 @@ export default async function SetupPage({
             <>
               <h2 className="text-lg font-semibold">{labels.sign}</h2>
               {campaign && campaign.status === 'pending_approval' ? (
-                // A fixed-price package is APPROVED (two boxes), not signed: no signature, no phone code.
-                campaign.package_price != null ? (
-                  <PackageTermsStep eventId={id} campaign={campaign} event={event} />
-                ) : (
-                  <AgreementStep eventId={id} campaign={campaign} event={event} />
-                )
-              ) : (
-                // Confirmed, but no campaign yet (or one still a draft): create-or-continue
-                // it; the flow then shows the agreement right here.
-                <CampaignSetupForm
-                  action={setupCampaignAction.bind(null, id)}
-                  label="המשך לקריאת ההסכם וחתימה"
-                />
-              )}
+                // The package terms are APPROVED (two boxes), not signed: no signature, no phone code.
+                <PackageTermsStep eventId={id} campaign={campaign} event={event} />
+              ) : null}
             </>
           ) : null}
 
@@ -236,7 +221,7 @@ export default async function SetupPage({
             <>
               <h2 className="text-lg font-semibold">{labels.pay}</h2>
               <Link href={`${base}/payment`} className={buttonVariants()}>
-                המשך לאמצעי תשלום
+                המשך לתשלום החבילה
               </Link>
             </>
           ) : null}

@@ -9,9 +9,6 @@ vi.mock('@/lib/data/events', () => ({
 }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
-vi.mock('@/lib/data/close-charge', () => ({ closeCampaignAndCharge: vi.fn() }));
-vi.mock('@/lib/sumit/capture', () => ({ creditHeldCardSumit: vi.fn() }));
-vi.mock('@/lib/data/payments', () => ({ getSumitServerConfig: vi.fn() }));
 vi.mock('@/lib/email/sender', () => ({ getEmailSender: vi.fn() }));
 vi.mock('@/lib/sms/sender', () => ({ getSmsSender: vi.fn() }));
 vi.mock('@/lib/email/templates', () => ({ cancellationRequestResponseEmail: vi.fn() }));
@@ -30,9 +27,6 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { closeCampaignAndCharge } from '@/lib/data/close-charge';
-import { creditHeldCardSumit } from '@/lib/sumit/capture';
-import { getSumitServerConfig } from '@/lib/data/payments';
 import { getEmailSender } from '@/lib/email/sender';
 import { getSmsSender } from '@/lib/sms/sender';
 import { cancellationRequestResponseEmail } from '@/lib/email/templates';
@@ -151,147 +145,50 @@ describe('createCancellationRequest', () => {
 describe('computeSuggestedCancellationAmount', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('suggests min(5% of ceiling, cap), never the accrued service-already-rendered amount', async () => {
+  // The base of the fee is what the card paid for the package, handed in by the caller.
+  function settings(percent: number, cap: number) {
     (createAdminClient as unknown as Mock).mockReturnValue({
-      from: (table: string) => {
-        if (table === 'app_settings') {
-          return {
-            select: () => ({
-              eq: () => ({
-                maybeSingle: async () => ({
-                  data: { cancellation_fee_percent: 5, cancellation_fee_cap: 100 },
-                  error: null,
-                }),
-              }),
-            }),
-          };
-        }
-        return {
-          select: () => ({ eq: () => ({ single: async () => ({ data: { max_charge_ceiling: 88 }, error: null }) }) }),
-        };
-      },
-    });
-    // fee = min(5% of 88, 100) = 4.4
-    const amount = await computeSuggestedCancellationAmount('c1');
-    expect(amount).toBeCloseTo(4.4, 2);
-  });
-
-  it('never suggests more than the campaign ceiling even with a very high fee_cap', async () => {
-    (createAdminClient as unknown as Mock).mockReturnValue({
-      from: (table: string) => {
-        if (table === 'app_settings') {
-          return {
-            select: () => ({
-              eq: () => ({
-                maybeSingle: async () => ({
-                  data: { cancellation_fee_percent: 5, cancellation_fee_cap: 100000 },
-                  error: null,
-                }),
-              }),
-            }),
-          };
-        }
-        return {
-          select: () => ({ eq: () => ({ single: async () => ({ data: { max_charge_ceiling: 12 }, error: null }) }) }),
-        };
-      },
-    });
-    const amount = await computeSuggestedCancellationAmount('c1');
-    expect(amount).toBeLessThanOrEqual(12);
-  });
-
-  // A package has no ceiling: the base of the fee is what the card paid, handed in by the caller.
-  function settings(percent: number, cap: number, ceiling: number | null = null) {
-    (createAdminClient as unknown as Mock).mockReturnValue({
-      from: (table: string) =>
-        table === 'app_settings'
-          ? { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { cancellation_fee_percent: percent, cancellation_fee_cap: cap }, error: null }) }) }) }
-          : { select: () => ({ eq: () => ({ single: async () => ({ data: { max_charge_ceiling: ceiling }, error: null }) }) }) },
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: { cancellation_fee_percent: percent, cancellation_fee_cap: cap }, error: null }),
+          }),
+        }),
+      }),
     });
   }
 
-  it('with a base (a package: what the card paid) it is taken of that base, not of the missing ceiling', async () => {
-    settings(5, 100, null);
-    expect(await computeSuggestedCancellationAmount('c1', 120)).toBeCloseTo(6, 2);
+  it('is the configured percentage of what the card paid', async () => {
+    settings(5, 100);
+    expect(await computeSuggestedCancellationAmount(120)).toBeCloseTo(6, 2);
   });
 
-  it('with a base it is still capped, and never more than the base', async () => {
-    settings(5, 2, null);
-    expect(await computeSuggestedCancellationAmount('c1', 120)).toBeCloseTo(2, 2);
-    settings(100, 100000, null);
-    expect(await computeSuggestedCancellationAmount('c1', 120)).toBeLessThanOrEqual(120);
+  it('is capped, and never more than what was paid', async () => {
+    settings(5, 2);
+    expect(await computeSuggestedCancellationAmount(120)).toBeCloseTo(2, 2);
+    settings(100, 100000);
+    expect(await computeSuggestedCancellationAmount(120)).toBeLessThanOrEqual(120);
   });
 
-  it('without a base and without a ceiling the suggestion is 0, as before', async () => {
-    settings(5, 100, null);
-    expect(await computeSuggestedCancellationAmount('c1')).toBe(0);
+  it('with nothing paid the suggestion is 0', async () => {
+    settings(5, 100);
+    expect(await computeSuggestedCancellationAmount(0)).toBe(0);
   });
 });
 
 describe('getCampaignForEventAdmin', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('returns the latest campaign for the event with hasCardOnFile=true when all 4 card fields are present', async () => {
-    (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
-    const maybeSingle = vi.fn().mockResolvedValue({
-      data: {
-        id: 'camp1', charge_status: 'charged', max_charge_ceiling: 88, final_charge_amount: 84,
-        card_token_ref: 'tok-abc', card_exp_month: 7, card_exp_year: 2031, card_citizen_id: '316125434',
-      },
-      error: null,
-    });
-    (createAdminClient as unknown as Mock).mockReturnValue({
-      from: () => ({ select: () => ({ eq: () => ({ neq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }) }),
-    });
-    const r = await getCampaignForEventAdmin('e1');
-    expect(r).toEqual({
-      id: 'camp1',
-      chargeStatus: 'charged',
-      maxChargeCeiling: 88,
-      finalChargeAmount: 84,
-      isPackage: false,
-      packagePaid: null,
-      packageRefundable: null,
-      packageRefundedForRequest: null,
-      packageUnreadable: false,
-      packageRefundDocument: null,
-      packageRecord: null,
-      hasCardOnFile: true,
-      basePrice: 0,
-      includedReached: 0,
-      pricePerReached: 0,
-    });
-  });
-
-  it('returns hasCardOnFile=false when any of the 4 card fields is missing', async () => {
-    (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
-    const maybeSingle = vi.fn().mockResolvedValue({
-      data: {
-        id: 'camp1', charge_status: 'charged', max_charge_ceiling: 88,
-        card_token_ref: null, card_exp_month: null, card_exp_year: null, card_citizen_id: null,
-      },
-      error: null,
-    });
-    (createAdminClient as unknown as Mock).mockReturnValue({
-      from: () => ({ select: () => ({ eq: () => ({ neq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }) }),
-    });
-    const r = await getCampaignForEventAdmin('e1');
-    expect(r?.hasCardOnFile).toBe(false);
-  });
-
-  // A fixed-price package keeps no charge status, ceiling or card on the campaign: its money is in the payment ledger.
+  // A fixed-price package's money is in the payment ledger.
   function adminClientFor(row: Record<string, unknown>) {
     const maybeSingle = vi.fn().mockResolvedValue({ data: row, error: null });
     (createAdminClient as unknown as Mock).mockReturnValue({
       from: () => ({ select: () => ({ eq: () => ({ neq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }) }),
     });
   }
-  const PKG_ROW = {
-    id: 'camp1', charge_status: null, max_charge_ceiling: null, final_charge_amount: 0, package_price: 120,
-    card_token_ref: null, card_exp_month: null, card_exp_year: null, card_citizen_id: null,
-  };
+  const PKG_ROW = { id: 'camp1', package_price: 120, contact_quota: 100 };
 
-  it('a package campaign: what the card paid and whether a card is on file come from the ledger, not the old columns', async () => {
+  it('a package campaign: what the card paid and whether a card is on file come from the ledger', async () => {
     (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
     adminClientFor(PKG_ROW);
     (packageRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 70, refundedForRequest: 50, hasCard: true });
@@ -338,10 +235,21 @@ describe('getCampaignForEventAdmin', () => {
 
   it('a campaign that is not a package never touches the ledger', async () => {
     (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
-    adminClientFor({ ...PKG_ROW, package_price: null, charge_status: 'charged', final_charge_amount: 84 });
+    adminClientFor({ ...PKG_ROW, package_price: null, contact_quota: null });
     const r = await getCampaignForEventAdmin('e1', 'req1');
     expect(packageRefundSummary).not.toHaveBeenCalled();
-    expect(r).toMatchObject({ isPackage: false, packagePaid: null, packageRefundable: null, packageRefundedForRequest: null, packageUnreadable: false });
+    expect(r).toEqual({
+      id: 'camp1',
+      contactQuota: null,
+      isPackage: false,
+      packagePaid: null,
+      packageRefundable: null,
+      packageRefundedForRequest: null,
+      packageUnreadable: false,
+      packageRefundDocument: null,
+      packageRecord: null,
+      hasCardOnFile: false,
+    });
   });
 
   it('asks only for the LIVE campaign: a cancelled one is never what a cancellation request is about, so the screen cannot promise what the resolver will not do', async () => {
@@ -379,28 +287,19 @@ describe('resolveCancellationRequest', () => {
   // The embed lists an event's campaigns in no promised order. A cancelled one (older, with its own id) put before or after the live one.
   function withCancelled<T extends Record<string, unknown>>(where: 'before' | 'after' | undefined, live: T[]): Array<T | Record<string, unknown>> {
     if (!where) return live;
-    const cancelled = { id: 'camp0', status: 'cancelled', created_at: '2026-10-08T08:00:00+00:00', charge_status: null, final_charge_amount: null, max_charge_ceiling: null, auth_external_ref: null, package_price: 120, card_token_ref: null, card_exp_month: null, card_exp_year: null, card_citizen_id: null };
+    const cancelled = { id: 'camp0', status: 'cancelled', created_at: '2026-10-08T08:00:00+00:00', package_price: 120 };
     return where === 'before' ? [cancelled, ...live] : [...live, cancelled];
   }
 
-  // `chargeStatus` controls which branch fires: null/failed/review/nothing_to_charge
-  // ⇒ campaign is still pre-charge ⇒ closeCampaignAndCharge IS called; 'charged'
-  // ⇒ post-charge ⇒ creditHeldCardSumit is called instead (if a card is on file).
+  // `packagePrice` null is a campaign created under the earlier pay-per-result model: no money moves for it.
   function happy(opts: {
-    chargeStatus: string | null;
     smsConsent?: boolean;
-    finalChargeAmount?: number;
-    noCard?: boolean;
     packagePrice?: number | null;
-    maxChargeCeiling?: number | null;
     campaignStatus?: string;
     // The event also has a CANCELLED campaign (a reset test run leaves one), listed before or after the live one.
     cancelledCampaign?: 'before' | 'after';
   }) {
     (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
-    const cardFields = opts.noCard
-      ? { card_token_ref: null, card_exp_month: null, card_exp_year: null, card_citizen_id: null }
-      : { card_token_ref: 'tok-abc', card_exp_month: 7, card_exp_year: 2031, card_citizen_id: '316125434' };
     const single = vi.fn().mockResolvedValue({
       data: {
         id: 'r1',
@@ -418,30 +317,22 @@ describe('resolveCancellationRequest', () => {
               id: 'camp1',
               status: opts.campaignStatus ?? 'active',
               created_at: '2026-10-08T10:00:00+00:00',
-              charge_status: opts.chargeStatus,
-              final_charge_amount: opts.finalChargeAmount ?? 0,
-              max_charge_ceiling: opts.maxChargeCeiling ?? null,
-              auth_external_ref: 'ext-1',
               package_price: opts.packagePrice ?? null,
-              ...cardFields,
             },
           ]),
         },
       },
       error: null,
     });
-    // The final write: .eq('id').eq('status','pending').select('id') — one row back means this resolve won. Other updates
-    // (campaigns.final_charge_amount) end at .eq('id').
+    // The final write: .eq('id').eq('status','pending').select('id') — one row back means this resolve won.
     const resolvedRows = vi.fn().mockResolvedValue({ data: [{ id: 'r1' }], error: null });
     const update = vi.fn().mockReturnValue({ eq: () => ({ error: null, eq: () => ({ select: resolvedRows }) }) });
     const profileSingle = vi.fn().mockResolvedValue({
       data: { full_name: 'דנה', phone: '+972500000000' },
       error: null,
     });
-    // adminCloseEvent's own live-status check (events.status via maybeSingle) —
-    // the event is still 'active' at this point since closeCampaignAndCharge/
-    // creditHeldCardSumit are mocked out (their real event-closing side effect
-    // never runs here), so adminCloseEvent must proceed to actually close it.
+    // adminCloseEvent's own live-status check (events.status via maybeSingle): the event is still 'active', so
+    // adminCloseEvent must proceed to actually close it.
     const eventStatusMaybeSingle = vi.fn().mockResolvedValue({
       data: { status: 'active' },
       error: null,
@@ -464,13 +355,6 @@ describe('resolveCancellationRequest', () => {
     (getEmailSender as unknown as Mock).mockResolvedValue({ send });
     const smsSend = vi.fn().mockResolvedValue({ id: 'sms1' });
     (getSmsSender as unknown as Mock).mockResolvedValue({ send: smsSend });
-    (closeCampaignAndCharge as unknown as Mock).mockResolvedValue({
-      outcome: 'charged', amount: 24.4, paymentId: 999, documentId: 601, documentUrl: 'https://pay.sumit.co.il/x?download=601',
-    });
-    (getSumitServerConfig as unknown as Mock).mockResolvedValue({ companyId: 1, apiKey: 'k' });
-    (creditHeldCardSumit as unknown as Mock).mockResolvedValue({
-      documentId: 701, documentNumber: 1, documentUrl: 'https://pay.sumit.co.il/x?download=701', authNumber: 'a1', paymentId: 555,
-    });
     return { send, smsSend, update, eventStatusMaybeSingle, resolvedRows };
   }
 
@@ -481,7 +365,7 @@ describe('resolveCancellationRequest', () => {
   describe('a fixed-price package campaign', () => {
     const DOC = { id: 9001, number: 4023, url: 'https://example.test/doc/9001' };
     function pkg(over: { status?: string; paid?: number; refundedForRequest?: number } = {}) {
-      const h = happy({ chargeStatus: null, packagePrice: 120, campaignStatus: over.status ?? 'active' });
+      const h = happy({ packagePrice: 120, campaignStatus: over.status ?? 'active' });
       (packageRefundSummary as unknown as Mock).mockResolvedValue({
         refundable: over.paid ?? 120,
         refundedForRequest: over.refundedForRequest ?? 0,
@@ -496,7 +380,7 @@ describe('resolveCancellationRequest', () => {
     const order = (m: unknown) => (m as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0];
 
     it.each(['before', 'after'] as const)('with a cancelled campaign listed %s the live one, the refund is made for the LIVE campaign, never the cancelled one', async (where) => {
-      const h = happy({ chargeStatus: null, packagePrice: 120, campaignStatus: 'active', cancelledCampaign: where });
+      const h = happy({ packagePrice: 120, campaignStatus: 'active', cancelledCampaign: where });
       (packageRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 120, refundedForRequest: 0, hasCard: true });
       (checkPackageRefund as unknown as Mock).mockResolvedValue(null);
       (refundPackagePayment as unknown as Mock).mockImplementation(async (i: { amount: number }) => ({ status: 'refunded', amount: i.amount, document: DOC, alreadyDone: false }));
@@ -515,9 +399,6 @@ describe('resolveCancellationRequest', () => {
       expect(update).toHaveBeenCalledWith(expect.objectContaining({
         capture_outcome: 'refunded', resolution_amount: 120, sumit_document_id: 9001, sumit_document_url: DOC.url, status: 'resolved',
       }));
-      // never the old per-result money paths
-      expect(closeCampaignAndCharge).not.toHaveBeenCalled();
-      expect(creditHeldCardSumit).not.toHaveBeenCalled();
     });
 
     it('the order is the safety: the refund is CHECKED, then the money goes back, then the customer is e-mailed, then the campaign is closed', async () => {
@@ -732,159 +613,66 @@ describe('resolveCancellationRequest', () => {
     });
   });
 
-  it('pre-charge campaign: calls closeCampaignAndCharge with overrideAmount=0 for full_cancellation', async () => {
-    happy({ chargeStatus: null });
-    await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל במלואו' });
-    expect(closeCampaignAndCharge).toHaveBeenCalledWith('camp1', { overrideAmount: 0, overrideReason: 'cancellation_full' });
-    expect(creditHeldCardSumit).not.toHaveBeenCalled();
-  });
-
-  it('pre-charge campaign: calls closeCampaignAndCharge with the confirmed amount for partial_charge', async () => {
-    happy({ chargeStatus: 'charge_failed' });
-    await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionAmount: 24.4, resolutionNote: 'עבור שירות שסופק' });
-    expect(closeCampaignAndCharge).toHaveBeenCalledWith('camp1', { overrideAmount: 24.4, overrideReason: 'cancellation_partial_charge' });
-  });
-
-  it('post-charge campaign WITH a card on file: calls creditHeldCardSumit for the full charged amount (full_cancellation)', async () => {
-    const { update } = happy({ chargeStatus: 'charged', finalChargeAmount: 84 });
-    await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' });
-    expect(closeCampaignAndCharge).not.toHaveBeenCalled();
-    expect(creditHeldCardSumit).toHaveBeenCalledWith(expect.objectContaining({ amount: '84' }));
-    expect(update).toHaveBeenCalledWith(expect.objectContaining({ capture_outcome: 'refunded' }));
-    // The campaigns row must reflect the net amount after the SUMIT credit, or
-    // the customer's own page and the admin campaigns list keep showing the
-    // stale pre-refund gross forever.
-    // full refund of the entire ₪84 charge ⇒ net final_charge_amount = 0.
-    expect(update).toHaveBeenCalledWith({ final_charge_amount: 0 });
-  });
-
-  it('post-charge campaign WITH a card on file: credits only the difference for partial_charge', async () => {
-    const { update } = happy({ chargeStatus: 'charged', finalChargeAmount: 84 });
-    await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionAmount: 30, resolutionNote: 'חלק נשאר' });
-    // credit = charged(84) - keep(30) = 54
-    expect(creditHeldCardSumit).toHaveBeenCalledWith(expect.objectContaining({ amount: '54' }));
-    // net final_charge_amount after a ₪54 credit off the original ₪84 = 30 —
-    // matches the amount the customer was told they'd keep being charged.
-    expect(update).toHaveBeenCalledWith({ final_charge_amount: 30 });
-  });
-
-  // The fee chosen as a PERCENTAGE: the server computes the amount from a base it determines (what was charged, or the
-  // frozen ceiling); the browser never submits a computed amount in this mode.
-  describe('a fee chosen as a percentage', () => {
-    it('post-charge: 5% of the ₪300 that was charged is ₪15 kept, ₪285 credited back, and the customer email carries ₪15', async () => {
-      const { update } = happy({ chargeStatus: 'charged', finalChargeAmount: 300 });
-      await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 5, resolutionNote: 'דמי ביטול 5%' });
-      expect(creditHeldCardSumit).toHaveBeenCalledWith(expect.objectContaining({ amount: '285' }));
-      expect(update).toHaveBeenCalledWith({ final_charge_amount: 15 });
-      expect(cancellationRequestResponseEmail).toHaveBeenCalledWith(expect.objectContaining({ resolution: 'partial_charge', resolutionAmount: 15 }));
+  // A campaign created under the earlier pay-per-result model: the resolve moves no money, sends the e-mail first and
+  // closes the event.
+  describe('a campaign without a package', () => {
+    it('full cancellation: no money moves, recorded as not_applicable, the event is closed', async () => {
+      const { update } = happy({});
+      await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל במלואו' });
+      expect(refundPackagePayment).not.toHaveBeenCalled();
+      expect(packageRefundSummary).not.toHaveBeenCalled();
+      expect(update).toHaveBeenCalledWith(expect.objectContaining({ capture_outcome: 'not_applicable', status: 'resolved' }));
+      expect(logActivity).toHaveBeenCalledWith({ eventId: 'e1', action: 'event.closed_by_admin', meta: {} });
     });
 
-    it('rounds to whole agorot: 12.5% of ₪84 is ₪10.50', async () => {
-      happy({ chargeStatus: 'charged', finalChargeAmount: 84 });
-      await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 12.5, resolutionNote: 'דמי ביטול' });
-      expect(creditHeldCardSumit).toHaveBeenCalledWith(expect.objectContaining({ amount: '73.5' }));
-    });
-
-    it('100% keeps everything: nothing is credited', async () => {
-      happy({ chargeStatus: 'charged', finalChargeAmount: 84 });
-      await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 100, resolutionNote: 'ללא החזר' });
-      expect(creditHeldCardSumit).not.toHaveBeenCalled();
-    });
-
-    it('pre-charge: the base is the frozen ceiling — 5% of ₪400 is a real ₪20 charge', async () => {
-      happy({ chargeStatus: null, maxChargeCeiling: 400 });
-      await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 5, resolutionNote: 'דמי ביטול 5%' });
-      expect(closeCampaignAndCharge).toHaveBeenCalledWith('camp1', { overrideAmount: 20, overrideReason: 'cancellation_partial_charge' });
-    });
-
-    it('pre-charge with NO ceiling (an open-ceiling agreement): no base, refused BEFORE the email or any money', async () => {
-      const { send, smsSend } = happy({ chargeStatus: null, maxChargeCeiling: null });
+    it('a fee as a percentage has no base and is refused BEFORE the e-mail', async () => {
+      const { send } = happy({});
       await expect(
         resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 5, resolutionNote: 'דמי ביטול 5%' }),
       ).rejects.toThrow('סכום בסיס');
       expect(send).not.toHaveBeenCalled();
-      expect(smsSend).not.toHaveBeenCalled();
-      expect(closeCampaignAndCharge).not.toHaveBeenCalled();
-      expect(creditHeldCardSumit).not.toHaveBeenCalled();
     });
 
-    it('a percentage that rounds to nothing is refused before the email or any money', async () => {
-      const { send } = happy({ chargeStatus: 'charged', finalChargeAmount: 0.1 });
-      await expect(
-        resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 1, resolutionNote: 'דמי ביטול' }),
-      ).rejects.toThrow();
-      expect(send).not.toHaveBeenCalled();
-      expect(creditHeldCardSumit).not.toHaveBeenCalled();
+    it('declined: records not_applicable', async () => {
+      const { update } = happy({});
+      await resolveCancellationRequest('r1', { resolution: 'declined', resolutionNote: 'האירוע כבר בעיצומו' });
+      expect(update).toHaveBeenCalledWith(expect.objectContaining({ capture_outcome: 'not_applicable' }));
     });
-
-    it('a post-charge campaign with nothing left charged has no base either', async () => {
-      const { send } = happy({ chargeStatus: 'charged', finalChargeAmount: 0 });
-      await expect(
-        resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 5, resolutionNote: 'דמי ביטול' }),
-      ).rejects.toThrow('סכום בסיס');
-      expect(send).not.toHaveBeenCalled();
-    });
-
-    it('an amount in shekels still works exactly as before', async () => {
-      happy({ chargeStatus: 'charged', finalChargeAmount: 84 });
-      await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionAmount: 30, resolutionNote: 'סכום' });
-      expect(creditHeldCardSumit).toHaveBeenCalledWith(expect.objectContaining({ amount: '54' }));
-    });
-  });
-
-  it('post-charge campaign WITHOUT a card on file: falls back to manual_refund_required, never calls creditHeldCardSumit', async () => {
-    const { update } = happy({ chargeStatus: 'charged', finalChargeAmount: 84, noCard: true });
-    await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, יש להחזיר ידנית' });
-    expect(creditHeldCardSumit).not.toHaveBeenCalled();
-    expect(closeCampaignAndCharge).not.toHaveBeenCalled();
-    expect(update).toHaveBeenCalledWith(expect.objectContaining({ capture_outcome: 'manual_refund_required' }));
-  });
-
-  it('declined: never calls closeCampaignAndCharge or creditHeldCardSumit regardless of charge_status, records not_applicable', async () => {
-    const { update } = happy({ chargeStatus: 'charged', finalChargeAmount: 84 });
-    await resolveCancellationRequest('r1', { resolution: 'declined', resolutionNote: 'האירוע כבר בעיצומו' });
-    expect(closeCampaignAndCharge).not.toHaveBeenCalled();
-    expect(creditHeldCardSumit).not.toHaveBeenCalled();
-    expect(update).toHaveBeenCalledWith(expect.objectContaining({ capture_outcome: 'not_applicable' }));
   });
 
   it('sends email THEN SMS (consent=true) THEN persists, in that order', async () => {
-    const { send, smsSend } = happy({ chargeStatus: null });
+    const { send, smsSend } = happy({});
     await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל במלואו' });
     expect(send).toHaveBeenCalled();
     expect(smsSend).toHaveBeenCalled();
   });
 
   it('does NOT send SMS when sms_consent is false', async () => {
-    const { smsSend } = happy({ chargeStatus: null, smsConsent: false });
+    const { smsSend } = happy({ smsConsent: false });
     await resolveCancellationRequest('r1', { resolution: 'declined', resolutionNote: 'לא ניתן' });
     expect(smsSend).not.toHaveBeenCalled();
   });
 
-  it('throws and persists NOTHING when the email send fails (checked BEFORE any SUMIT capture)', async () => {
-    const { update } = happy({ chargeStatus: null });
+  it('throws and persists NOTHING when the email send fails', async () => {
+    const { update } = happy({});
     (getEmailSender as unknown as Mock).mockResolvedValue({ send: vi.fn().mockRejectedValue(new Error('boom')) });
     await expect(
       resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'x' }),
     ).rejects.toThrow();
-    expect(closeCampaignAndCharge).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });
 
   it('adminCloseEvent closes the event and logs it when still active', async () => {
-    happy({ chargeStatus: null });
+    happy({});
     await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל במלואו' });
     expect(logActivity).toHaveBeenCalledWith({ eventId: 'e1', action: 'event.closed_by_admin', meta: {} });
   });
 
-  // closeCampaignAndCharge (real implementation, mocked out here) can ITSELF
-  // close the event on a terminal settlement outcome — resolveCancellationRequest
-  // then calls adminCloseEvent afterward, gated on its own `event.status`
-  // snapshot (read once, before closeCampaignAndCharge runs, so it can't see
-  // that). adminCloseEvent must re-check the LIVE status and no-op rather than
-  // write status='closed' again and log a second, misleading activity entry.
+  // resolveCancellationRequest calls adminCloseEvent gated on its own `event.status` snapshot, read once at the top.
+  // adminCloseEvent must re-check the LIVE status and no-op rather than write status='closed' again and log a second,
+  // misleading activity entry.
   it('adminCloseEvent no-ops (no duplicate write/log) when the event is already closed', async () => {
-    const { eventStatusMaybeSingle } = happy({ chargeStatus: null });
+    const { eventStatusMaybeSingle } = happy({});
     eventStatusMaybeSingle.mockResolvedValue({ data: { status: 'closed' }, error: null });
     await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל במלואו' });
     expect(logActivity).not.toHaveBeenCalledWith(
@@ -895,7 +683,7 @@ describe('resolveCancellationRequest', () => {
   // Two resolves of the same request both pass the "still pending" check at the top. Only one may record it: the final
   // write is filtered on status='pending', and a write that matched no row is reported, never taken as success.
   it('the final write is only for a request that is still pending, and a lost race is reported', async () => {
-    const { update, resolvedRows } = happy({ chargeStatus: null });
+    const { update, resolvedRows } = happy({});
     resolvedRows.mockResolvedValue({ data: [], error: null });
     await expect(
       resolveCancellationRequest('r1', { resolution: 'declined', resolutionNote: 'לא ניתן' }),

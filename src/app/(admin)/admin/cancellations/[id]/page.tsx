@@ -38,15 +38,12 @@ import {
   type CampaignForCancellationAdmin,
   type CancellationRequestForAdmin,
 } from '@/lib/data/event-cancellation';
-import { getCampaignBillingSummary } from '@/lib/data/billing';
 import { cancellationFeeBase } from '@/lib/data/cancellation-fee';
 import { cancellationReference } from '@/lib/data/cancellation-reference';
 import { EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
 import { packageCancellationState, type PackageCancellationState } from '@/lib/data/package-cancellation';
 import { campaignPaymentsView, type CampaignPaymentsView } from '@/lib/payments/campaign-payments-view';
 import type { PackageRefundAttempt } from '@/lib/payments/package-refund-types';
-import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
-import { computeChargeAmount } from '@/lib/data/close-charge-amount';
 import { formatIsraelDate } from '@/lib/date';
 import { cn } from '@/lib/utils';
 import { Badge, formatCurrency, formatDateTime } from '../../_components';
@@ -71,7 +68,8 @@ const PACKAGE_MONEY_OUTCOME: Record<PackageCancellationState, MoneyOutcome> = {
   resume: 'resume',
 };
 
-// No clearing company is named: the same words serve a SUMIT and a CardCom payment.
+// No clearing company is named: the same words serve a SUMIT and a CardCom payment. 'captured' and
+// 'manual_refund_required' are kept for requests resolved under the earlier pay-per-result model.
 const CAPTURE_OUTCOME_LABELS: Record<string, string> = {
   captured: 'בוצע חיוב',
   refunded: 'בוצע זיכוי',
@@ -342,10 +340,8 @@ export default async function AdminCancellationDetailPage({
   }
   const paymentsView = campaign ? await campaignPaymentsView(request.eventId, campaign.id) : null;
 
-  // A fixed-price package was paid once, at purchase: resolving the request gives money BACK from the payment ledger. It
-  // has no per-result charge, so none of the "not charged yet" logic below applies to it.
+  // A fixed-price package was paid once, at purchase: resolving the request gives money BACK from the payment ledger.
   const isPackage = campaign?.isPackage === true;
-  const isPreCharge = !isPackage && (!campaign || campaign.chargeStatus !== 'charged');
   const packagePaid = isPackage ? (campaign?.packagePaid ?? 0) : null;
   const packageState = isPackage && campaign
     ? packageCancellationState({
@@ -361,41 +357,12 @@ export default async function AdminCancellationDetailPage({
     ? PACKAGE_MONEY_OUTCOME[packageState]
     : noLiveCampaign
       ? 'no_campaign'
-      : isPreCharge
-        ? 'capture'
-        : campaign?.hasCardOnFile
-          ? 'credit'
-          : 'manual';
-  const billingSummary = campaign && !isPackage ? await getCampaignBillingSummary(campaign.id) : null;
-  const suggestedAmount = campaign
-    ? await computeSuggestedCancellationAmount(campaign.id, isPackage ? (packagePaid ?? 0) : undefined)
-    : 0;
-  // What a percentage fee is taken of — decided here on the server; 0 = none (an open-ceiling agreement that was not
-  // charged yet), and then the form offers only an amount in shekels.
-  const feeBase = campaign
-    ? cancellationFeeBase({
-        chargeStatus: campaign.chargeStatus,
-        finalChargeAmount: campaign.finalChargeAmount,
-        maxChargeCeiling: campaign.maxChargeCeiling,
-        packagePaid,
-      })
-    : 0;
-  const feeBaseLabel = isPackage ? 'הסכום ששולם' : campaign?.chargeStatus === 'charged' ? 'הסכום שחויב' : 'תקרת הקמפיין';
-  // The RPC's own `accrued` is base/overage-blind (verified gap, 2026-08-28) —
-  // fold in the campaign's actual base/included/overage terms via the same
-  // pure formula close-charge.ts uses at settlement, same fix as the
-  // customer's campaign-manage page.
-  const accrued =
-    billingSummary && campaign
-      ? computeChargeAmount({
-          base: campaign.basePrice,
-          included: campaign.includedReached,
-          overage: campaign.pricePerReached,
-          reached: billingSummary.reachedCount,
-          ceiling: isOpenCeilingAgreementVersion(campaign.tosVersion) ? null : billingSummary.ceiling,
-          credits: 0,
-        }).amount
-      : 0;
+      : 'legacy';
+  const suggestedAmount = campaign ? await computeSuggestedCancellationAmount(packagePaid ?? 0) : 0;
+  // What a percentage fee is taken of — decided here on the server; 0 = none, and then the form offers only an amount in
+  // shekels.
+  const feeBase = cancellationFeeBase({ packagePaid });
+  const feeBaseLabel = 'הסכום ששולם';
   const pending = request.status === 'pending';
   // From the ledger: how THIS request's last refund attempt ended. A refused refund shows the clearing company's own reason
   // here (staff only), so the admin knows what to fix before approving again.
@@ -453,19 +420,6 @@ export default async function AdminCancellationDetailPage({
         <aside className="flex min-w-0 flex-[1_1_20rem] flex-col gap-4 max-lg:flex-[1_1_100%] max-lg:md:grid max-lg:md:grid-cols-2 max-lg:md:items-start">
           <RequestDetails request={request} />
           <Payments view={paymentsView} refundable={isPackage ? (campaign?.packageRefundable ?? null) : null} campaignHref={campaignHref} />
-          {billingSummary ? (
-            <section aria-labelledby="billing-h" className={cn(CARD, 'space-y-2')}>
-              <SectionTitle icon={CreditCard} id="billing-h">
-                חיוב לפי תוצאה
-              </SectionTitle>
-              <p className="text-sm text-muted-foreground">
-                {billingSummary.reachedCount} אנשי קשר הושגו · נצבר {formatCurrency(accrued)}
-                {campaign && !isOpenCeilingAgreementVersion(campaign.tosVersion)
-                  ? ` מתוך תקרה ${formatCurrency(billingSummary.ceiling)}`
-                  : ''}
-              </p>
-            </section>
-          ) : null}
         </aside>
 
         <main className="flex min-w-0 flex-[999_1_32rem] flex-col gap-4">
@@ -526,23 +480,9 @@ export default async function AdminCancellationDetailPage({
                 <MoneyNote tone="muted" title="לאירוע אין קמפיין פעיל">
                   <p>ייתכן שהקמפיין בוטל. אישור הבקשה לא יזיז כסף, והאירוע ייסגר.</p>
                 </MoneyNote>
-              ) : isPreCharge ? (
-                <MoneyNote tone="warning" title="האישור יחייב את הכרטיס מיד">
-                  <p>
-                    הקמפיין טרם חויב — אישור &quot;ביטול מלא&quot; או &quot;ביטול עם דמי ביטול&quot; כאן יבצע חיוב אמיתי בכרטיס
-                    מיד.
-                  </p>
-                </MoneyNote>
-              ) : campaign?.hasCardOnFile ? (
-                <MoneyNote tone="warning" title="האישור יחזיר כסף לכרטיס מיד">
-                  <p>קמפיין זה כבר חויב ויש פרטי כרטיס שמורים, אז אישור כאן יבצע זיכוי אוטומטי לכרטיס מיד, לא חיוב.</p>
-                </MoneyNote>
               ) : (
-                <MoneyNote tone="destructive" title="אין כרטיס שמור — נדרש זיכוי ידני">
-                  <p>
-                    קמפיין זה כבר חויב ואין פרטי כרטיס שמורים. אישור כאן ירשום &quot;נדרש זיכוי ידני&quot; בלבד; את ההחזר בפועל
-                    מבצעים ידנית במסוף הסליקה.
-                  </p>
+                <MoneyNote tone="muted" title="קמפיין משיטת התשלום הקודמת">
+                  <p>אישור הבקשה לא יזיז כסף מכאן, והאירוע ייסגר. החזר, אם נדרש, נעשה ידנית במסוף הסליקה.</p>
                 </MoneyNote>
               )}
               <ResolveForm

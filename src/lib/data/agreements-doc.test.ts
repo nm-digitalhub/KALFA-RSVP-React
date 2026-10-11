@@ -4,9 +4,8 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { DEFAULT_AGREEMENT_DOC } from '@/lib/agreements/template';
 import { createMockSupabase } from '@/test/supabase-mock';
-import { getActiveAgreementDoc, getApprovedPackageAgreementDoc } from './agreements-doc';
+import { getApprovedPackageAgreementDoc } from './agreements-doc';
 
 const GOOD_BODY = '<h1>חבילה</h1><p>{{packagePrice}} · עד {{contactQuota}} אנשי קשר</p>';
 
@@ -18,20 +17,6 @@ function wire(row: Record<string, unknown> | null) {
 
 beforeEach(() => {
   vi.mocked(createAdminClient).mockReset();
-});
-
-describe('getActiveAgreementDoc — the pay-per-result contract', () => {
-  it('reads the ACTIVE row of the pay-per-result model only, never the package document', async () => {
-    const { builder } = wire({ version: '2026-07-v4', body_html: null, status: 'approved' });
-    expect(await getActiveAgreementDoc()).toEqual({ version: '2026-07-v4', status: 'approved', bodyHtml: null });
-    expect(builder.eq).toHaveBeenCalledWith('model', 'per_result');
-    expect(builder.eq).toHaveBeenCalledWith('is_active', true);
-  });
-
-  it('falls back to the in-code default when there is no active row', async () => {
-    wire(null);
-    expect(await getActiveAgreementDoc()).toBe(DEFAULT_AGREEMENT_DOC);
-  });
 });
 
 describe('getApprovedPackageAgreementDoc — the package contract a customer may be offered', () => {

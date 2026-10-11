@@ -28,8 +28,6 @@ import { buttonVariants } from '@/components/ui/button';
 import type { GaActionEvent } from '@/lib/analytics/ga-event-contracts';
 import type { CampaignStatus } from '@/lib/data/campaigns';
 import { cancelActionCopy, isCampaignCancellable } from '@/lib/data/campaign-status';
-import { isOpenCeilingAgreementVersion } from '@/lib/agreements/template';
-import { chargesPerReached, computeChargeAmount } from '@/lib/data/close-charge-amount';
 import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
 import {
   CAMPAIGN_STAGE_LABELS,
@@ -47,18 +45,9 @@ type BoundAction = (
 type Campaign = {
   id: string;
   status: CampaignStatus;
-  price_per_reached: number | null;
-  max_contacts: number | null;
-  max_charge_ceiling: number | null;
-  tos_version: string | null;
-  final_charge_amount: number | null;
-  credit_applied: number | null;
   capture_status: string | null;
-  charge_status: string | null;
-  base_price: number | null;
-  included_reached: number | null;
-  // A fixed-price package campaign is funded by its payment (the ledger), not by a card hold: its price, and the ledger
-  // state the page derived for it (null for the other model, or when the ledger could not be read).
+  // A package campaign is funded by its payment (the ledger): its price, and the ledger state the page derived for it
+  // (null for a campaign without a package, or when the ledger could not be read).
   package_price: number | null;
   // How many contacts the campaign may approach (null = the campaign has no quota). Used: its authorized list.
   contact_quota: number | null;
@@ -71,11 +60,9 @@ type Campaign = {
 const paymentOf = (c: Pick<Campaign, 'payment_status' | 'payment_test_money'>) =>
   c.payment_status ? { status: c.payment_status, ...(c.payment_test_money ? { testMoney: true } : {}) } : null;
 
+// How many contacts were reached (billing.ts getCampaignBillingSummary).
 type Summary = {
   reachedCount: number;
-  accrued: number;
-  ceiling: number;
-  maxContacts: number;
 } | null;
 
 type Delivery = {
@@ -109,7 +96,6 @@ type Actions = {
   activate: BoundAction;
   pause: BoundAction;
   close: BoundAction;
-  settle: BoundAction;
   cancel: BoundAction;
   sendGift: BoundAction;
   sendEventDay: BoundAction;
@@ -117,10 +103,6 @@ type Actions = {
   updateThankyouSchedule: BoundAction;
   rescheduleEvent: BoundAction;
 };
-
-function nis(value: number | null | undefined): string {
-  return value == null ? '—' : `₪${Number(value).toLocaleString('he-IL')}`;
-}
 
 function useGaFromState(state: unknown) {
   const fired = useRef<unknown>(null);
@@ -222,29 +204,6 @@ function ActionButton({
   );
 }
 
-function SummaryMetric({
-  label,
-  value,
-  emphasized = false,
-}: {
-  label: string;
-  value: string;
-  emphasized?: boolean;
-}) {
-  return (
-    <div className="min-w-0 px-3 first:ps-0 last:pe-0 sm:px-5">
-      <dt className="truncate text-xs text-muted-foreground sm:text-sm">{label}</dt>
-      <dd
-        className={`mt-1 truncate font-bold tabular-nums ${
-          emphasized ? 'text-2xl text-primary sm:text-3xl' : 'text-xl sm:text-2xl'
-        }`}
-      >
-        {value}
-      </dd>
-    </div>
-  );
-}
-
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4 py-3">
@@ -290,189 +249,52 @@ function DeliveryBar({
   );
 }
 
-// Status and money in ONE card, because they are one question: what state is
-// this campaign in and what will it cost.
-//
-// The rows below are a plain list, NOT tiles: figures each in its own rounded
-// box inside a rounded box would stack, at mobile width, into a column of nested
-// frames with a couple of words in each. A list of label/value pairs says the
-// same thing and reads faster.
-function CampaignStatusAndBilling({
+// The campaign's stage and its contact quota, as a plain list. The money that actually moved is the payments list (ledger).
+function CampaignStatusCard({
   campaign,
   status,
-  captureStatus,
-  reached,
-  accrued,
-  ceiling,
-  balance,
-  basePrice,
-  includedReached,
-  overageRate,
-  finalCharge,
-  creditApplied,
   authorizedCount,
 }: {
   campaign: Campaign;
   status: CampaignStatus;
-  captureStatus: string | null;
-  reached: number;
-  accrued: number;
-  ceiling: number | null; // null = open-ceiling agreement (v5+): no cap, no balance
-  balance: number | null;
-  basePrice: number;
-  includedReached: number;
-  overageRate: number;
-  finalCharge: number | null;
-  creditApplied: number | null;
   authorizedCount: number | null;
 }) {
   const stage = campaignStage({
     status,
-    capture_status: captureStatus,
+    capture_status: campaign.capture_status,
     package_price: campaign.package_price,
     payment: paymentOf(campaign),
   });
-  // Each part below is shown only when the campaign's own record holds it, never because of which billing model it
-  // belongs to: pricing per contact who answered (chargesPerReached), a contact quota, a settled final charge. The money
-  // that actually moved is the payments list (ledger).
-  const hasReachPricing = chargesPerReached(campaign);
   const quota = campaign.contact_quota;
-  const primaryChargeLabel = reached === 0 && basePrice > 0 ? 'דמי הפעלה' : 'חיוב נוכחי';
-  const percentage = ceiling !== null && ceiling > 0 ? Math.min(100, Math.round((accrued / ceiling) * 100)) : 0;
-  const pricingExplanation =
-    basePrice > 0
-      ? `דמי הפעלה קבועים של ${nis(basePrice)}. ${includedReached.toLocaleString('he-IL')} אנשי הקשר הראשונים שהשיבו כלולים בדמי ההפעלה. לאחר מכן נוסף ${nis(overageRate)} לכל איש קשר נוסף שהשיב${ceiling === null ? '' : `, עד לתקרה של ${nis(ceiling)}`}.`
-      : `החיוב הוא ${nis(overageRate)} לכל איש קשר ייחודי שהשיב בפועל${ceiling === null ? '' : `, עד לתקרה של ${nis(ceiling)}`}.`;
 
   return (
     <section
       aria-labelledby="campaign-summary-title"
       className="overflow-hidden rounded-2xl border border-border bg-card"
     >
-      {/* justify-between only earns its place when the second child exists.
-          finalCharge is null for every campaign before settlement, and
-          spreading a lone status badge left a wide empty gap beside it. */}
-      <div
-        className={`flex flex-col gap-3 border-b border-border p-5 sm:flex-row sm:items-center sm:p-6${
-          finalCharge != null ? ' sm:justify-between' : ''
-        }`}
-      >
-        {/* Label and badge on ONE line. Stacked, this pair was two lines tall
-            while filling about a fifth of the row, which read as a large empty
-            panel next to it — the metric row below only looks right because
-            three items fill the width. */}
-        <div className="flex items-center gap-3">
-          <h2 id="campaign-summary-title" className="text-sm text-muted-foreground">
-            מצב הקמפיין וחיוב
-          </h2>
-          <Badge
-            variant={CAMPAIGN_STAGE_VARIANTS[stage]}
-            className="h-8 px-3 text-sm font-semibold"
-          >
-            {CAMPAIGN_STAGE_LABELS[stage]}
-          </Badge>
-        </div>
-
-        {finalCharge != null ? (
-          <p className="text-sm text-muted-foreground">
-            חיוב סופי: <strong className="text-foreground">{nis(finalCharge)}</strong>
-            {Number(creditApplied ?? 0) > 0 ? (
-              <>
-                {' '}
-                לאחר קיזוז זיכוי של{' '}
-                <strong className="text-foreground">{nis(creditApplied)}</strong>
-              </>
-            ) : null}
-          </p>
-        ) : null}
+      <div className="flex items-center gap-3 border-b border-border p-5 sm:p-6">
+        <h2 id="campaign-summary-title" className="text-sm text-muted-foreground">
+          מצב הקמפיין
+        </h2>
+        <Badge
+          variant={CAMPAIGN_STAGE_VARIANTS[stage]}
+          className="h-8 px-3 text-sm font-semibold"
+        >
+          {CAMPAIGN_STAGE_LABELS[stage]}
+        </Badge>
       </div>
 
-      {/* No `divide-x-reverse`: Tailwind 4 compiles divide-x to border-inline-*,
-          which is already direction-aware, so the divider lands between the
-          items on its own. Adding the v3 RTL work-around flips it to
-          inline-start — the RIGHT side in Hebrew — which drew a stray rule on
-          the outer edge of the first metric ("הושגו"). Verified against the
-          compiled stylesheet, not assumed. */}
-      {hasReachPricing ? (
-        <dl className="grid grid-cols-3 divide-x divide-border p-5 sm:p-6">
-          <SummaryMetric label="הושגו" value={reached.toLocaleString('he-IL')} />
-          <SummaryMetric label={primaryChargeLabel} value={nis(accrued)} emphasized />
-          {ceiling !== null && <SummaryMetric label="תקרת חיוב" value={nis(ceiling)} />}
+      {quota !== null ? (
+        <dl className="divide-y divide-border px-5 sm:px-6">
+          <DetailRow
+            label="מכסת אנשי קשר"
+            value={
+              authorizedCount === null
+                ? quota.toLocaleString('he-IL')
+                : `${authorizedCount.toLocaleString('he-IL')} מתוך ${quota.toLocaleString('he-IL')}`
+            }
+          />
         </dl>
-      ) : null}
-
-      {/* The bar sits directly on the card, with no tinted, rounded panel of its
-          own — that would be a frame around a frame, whose only content is a
-          number the metric row above already shows. */}
-      {hasReachPricing || quota !== null ? (
-        <div className="border-t border-border px-5 pb-5 pt-4 sm:px-6 sm:pb-6">
-          {hasReachPricing && ceiling !== null && balance !== null && (
-            <>
-              <div
-                role="progressbar"
-                aria-label="ניצול מסגרת החיוב"
-                aria-valuemin={0}
-                aria-valuemax={ceiling}
-                aria-valuenow={Math.min(accrued, ceiling)}
-                className="h-2.5 overflow-hidden rounded-full bg-primary/15"
-              >
-                <div
-                  className="h-full rounded-full bg-primary transition-[inline-size]"
-                  style={{ inlineSize: `${percentage}%` }}
-                />
-              </div>
-              <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                <span>{percentage}% מהמסגרת</span>
-                <span>נותרו {nis(balance)}</span>
-              </div>
-            </>
-          )}
-
-          <dl className={`divide-y divide-border${hasReachPricing ? ' mt-4' : ''}`}>
-            {quota !== null ? (
-              <DetailRow
-                label="מכסת אנשי קשר"
-                value={
-                  authorizedCount === null
-                    ? quota.toLocaleString('he-IL')
-                    : `${authorizedCount.toLocaleString('he-IL')} מתוך ${quota.toLocaleString('he-IL')}`
-                }
-              />
-            ) : null}
-            {basePrice > 0 && <DetailRow label="דמי הפעלה" value={nis(basePrice)} />}
-            {includedReached > 0 && (
-              <DetailRow label="כלולים במחיר" value={includedReached.toLocaleString('he-IL')} />
-            )}
-            {overageRate > 0 && (
-              <DetailRow
-                label={basePrice > 0 ? 'עלות לכל מענה נוסף' : 'מחיר לכל מענה'}
-                value={nis(overageRate)}
-              />
-            )}
-            {hasReachPricing && Number(campaign.max_contacts ?? 0) > 0 && (
-              <DetailRow
-                label="מכסת אנשי קשר"
-                value={Number(campaign.max_contacts).toLocaleString('he-IL')}
-              />
-            )}
-            {hasReachPricing && balance !== null && <DetailRow label="יתרה עד התקרה" value={nis(balance)} />}
-          </dl>
-
-          {hasReachPricing ? (
-            <details className="group mt-2 border-t border-border pt-3">
-              <summary className="cursor-pointer list-none text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                איך מחושב החיוב
-              </summary>
-              <div className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
-                <p>{pricingExplanation}</p>
-                <p>
-                  אין חיוב על הודעה שנקראה בלבד, ניסיון ללא מענה, תא קולי, מספר שגוי או
-                  תגובה כפולה. כל איש קשר ייחודי מחויב פעם אחת בלבד לאחר שהשיב בפועל.
-                </p>
-              </div>
-            </details>
-          ) : null}
-        </div>
       ) : null}
     </section>
   );
@@ -814,7 +636,7 @@ function FieldErrors({ errors }: { errors?: string[] }) {
 // stack into a column of frames.
 //
 // They are kept apart WITHIN the card, by a rule and a heading, because the
-// distinction is real: the admin group ends a campaign's life and settles money.
+// distinction is real: the admin group ends a campaign's life.
 // What it does not need is a second border around it. The destructive buttons
 // keep their own red outline, which is what actually marks them.
 function ActionsPanel({
@@ -826,7 +648,6 @@ function ActionsPanel({
   isPast,
   canPause,
   canClose,
-  canSettle,
   canCancel,
   thankyou,
   thankyouRelevant,
@@ -845,7 +666,6 @@ function ActionsPanel({
   isPast: boolean;
   canPause: boolean;
   canClose: boolean;
-  canSettle: boolean;
   canCancel: boolean;
   thankyou?: ThankyouSchedule;
   thankyouRelevant: boolean;
@@ -861,7 +681,7 @@ function ActionsPanel({
   // A campaign whose only money is test money is reset, not "cancelled": the button says which.
   const cancelCopy = cancelActionCopy(paymentOf(campaign));
   const hasOwnerActions = canActivate || needsPayment || isActive;
-  const hasAdminActions = canPause || canClose || canSettle || canCancel;
+  const hasAdminActions = canPause || canClose || canCancel;
   const showThankyou = Boolean(thankyou) && thankyouRelevant;
   const showThankyouFailure = thankyouFailed && thankyouRelevant;
   const showAdminSection = hasAdminActions || canReschedule;
@@ -891,7 +711,7 @@ function ActionsPanel({
               href={`/app/events/${eventId}/campaign/${campaign.id}/payment`}
               className={`${buttonVariants()} min-h-11 w-full justify-center rounded-lg`}
             >
-              המשך לאמצעי תשלום
+              המשך לתשלום החבילה
             </Link>
           ) : null}
 
@@ -958,15 +778,6 @@ function ActionsPanel({
               />
             ) : null}
 
-            {canSettle ? (
-              <ActionButton
-                action={actions.settle}
-                label="גמר חשבון וחיוב"
-                variant="primary"
-                confirm="לבצע גמר חשבון ולחייב את הכרטיס עבור אנשי הקשר שהושגו?"
-              />
-            ) : null}
-
             {canCancel ? (
               <ActionButton
                 action={actions.cancel}
@@ -1011,7 +822,7 @@ export function ManageClient({
 }: {
   campaign: Campaign;
   summary: Summary;
-  /** The read failed or was not permitted — NOT "the campaign has no activity". */
+  /** The reached count could not be read — NOT "nobody was reached". */
   summaryFailed?: boolean;
   /** The payments list (ledger), rendered by the server page for THIS viewer; null when it is not theirs to see. */
   payments?: ReactNode;
@@ -1033,25 +844,9 @@ export function ManageClient({
 }) {
   const status = campaign.status;
   const reached = summary?.reachedCount ?? 0;
-  // An open-ceiling agreement (v5+) states the price as a formula: no cap, no
-  // "balance up to the ceiling". A v4-and-earlier PDF states a frozen number.
-  const openCeiling = isOpenCeilingAgreementVersion(campaign.tos_version);
-  const ceiling = openCeiling ? null : Number(campaign.max_charge_ceiling ?? summary?.ceiling ?? 0);
-  const basePrice = Number(campaign.base_price ?? 0);
-  const includedReached = Number(campaign.included_reached ?? 0);
-  const overageRate = Number(campaign.price_per_reached ?? 0);
-  const accrued = computeChargeAmount({
-    base: basePrice,
-    included: includedReached,
-    overage: overageRate,
-    reached,
-    ceiling,
-    credits: 0,
-  }).amount;
-  const balance = ceiling === null ? null : Math.max(0, ceiling - accrued);
 
-  // Funded = a confirmed card hold (pay-per-result) or a payment in full (package, from the ledger).
-  const funded = campaign.capture_status === 'authorized' || (campaign.package_price != null && campaign.payment_status === 'collected');
+  // Funded = the package was paid in full (from the ledger).
+  const funded = campaign.package_price != null && campaign.payment_status === 'collected';
   const heldOrLive =
     funded &&
     ['approved', 'scheduled', 'active', 'paused'].includes(status);
@@ -1068,17 +863,8 @@ export function ManageClient({
   const canClose =
     viewerIsAdmin &&
     ['active', 'paused', 'approved', 'scheduled'].includes(status);
-  const settled =
-    campaign.charge_status === 'charged' ||
-    campaign.charge_status === 'nothing_to_charge';
-  const canSettle =
-    viewerIsAdmin &&
-    status === 'closed' &&
-    campaign.capture_status === 'authorized' &&
-    !settled;
-  // Only where the cancel_campaign RPC would accept it (pre-money). A campaign
-  // with a hold, a charge or a billed reach is settled or refunded through the
-  // cancellation-request flow instead.
+  // Only where the cancel_campaign RPC would accept it (pre-money). A campaign with a payment or a reached contact is
+  // refunded through the cancellation-request flow instead.
   const canCancel = viewerIsAdmin && isCampaignCancellable({ ...campaign, payment: paymentOf(campaign) }, reached);
   const showLifecycleWarning = isPast && activatableState;
   // Split from showThankyou so a failed load only warns where the panel would
@@ -1089,21 +875,7 @@ export function ManageClient({
 
   return (
     <div className="space-y-6 pb-6">
-      <CampaignStatusAndBilling
-        campaign={campaign}
-        status={status}
-        captureStatus={campaign.capture_status}
-        reached={reached}
-        accrued={accrued}
-        ceiling={ceiling}
-        balance={balance}
-        basePrice={basePrice}
-        includedReached={includedReached}
-        overageRate={overageRate}
-        finalCharge={campaign.final_charge_amount}
-        creditApplied={campaign.credit_applied}
-        authorizedCount={authorizedCount}
-      />
+      <CampaignStatusCard campaign={campaign} status={status} authorizedCount={authorizedCount} />
 
       {showLifecycleWarning ? (
         <p
@@ -1111,7 +883,7 @@ export function ManageClient({
           className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm leading-6 text-warning"
         >
           מועד האירוע חלף ולכן לא ניתן להפעיל את הקמפיין. מנהל המערכת עדיין יכול
-          לסגור אותו ולבצע גמר חשבון עבור אנשי הקשר שכבר הושגו.
+          לסגור אותו.
         </p>
       ) : null}
 
@@ -1164,10 +936,9 @@ export function ManageClient({
         <div className="space-y-6">
           {payments}
 
-          {/* The figures below default to 0 when the summary is missing, and a
-              zeroed bill reads as a fact. Say the read failed instead. */}
+          {/* The reached count defaults to 0 when it is missing, and a zero reads as a fact. Say the read failed instead. */}
           {summaryFailed ? (
-            <LoadFailureNotice title="סיכום החיוב" what="נתוני החיוב המעודכנים" />
+            <LoadFailureNotice title="אנשי קשר שהושגו" what="מספר אנשי הקשר שהושגו" />
           ) : null}
 
           {deliveryFailed ? (
@@ -1201,7 +972,6 @@ export function ManageClient({
             isPast={isPast}
             canPause={canPause}
             canClose={canClose}
-            canSettle={canSettle}
             canCancel={canCancel}
             thankyou={thankyou}
             thankyouRelevant={thankyouRelevant}

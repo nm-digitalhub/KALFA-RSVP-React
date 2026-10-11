@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  renderAgreementBody,
-  OPEN_CEILING_AGREEMENT_VERSION,
-  PACKAGE_AGREEMENT_VERSION,
-  type AgreementContent,
-} from '@/lib/agreements/template';
+import { renderAgreementBody, PACKAGE_AGREEMENT_VERSION, type AgreementContent } from '@/lib/agreements/template';
 import { AGREEMENT_MODEL_MIGRATION_FILE, AGREEMENT_MODEL_SQL, PACKAGE_SEED_BODY } from '@/test/agreement-seed';
 
 // The package contract is DATA: the migration seeds it as a draft document, and /admin/agreement edits it from there.
@@ -29,16 +24,17 @@ const content: AgreementContent = {
     warrantyText: 'השירות ניתן כפי שהוא.',
   },
   eventName: 'החתונה של דנה ויוסי',
-  pricePerReached: 0,
-  maxContacts: 0,
-  ceiling: 0,
   channels: ['whatsapp', 'call'],
   windowText: '1.11.2026 – 19.11.2026',
-  baseFee: 0,
-  includedReached: 0,
   packagePrice: 150,
   contactQuota: 100,
 };
+
+// §5 as the earlier agreements stated it. The package contract carries it unchanged.
+const CANCELLATION_TERMS = `<h2>5. זכות ביטול (חוק הגנת הצרכן §14ג)</h2>
+  <p>הלקוח רשאי לבטל את העסקה בכתב (לפרטי הקשר בסעיף 1) בתוך <strong>14 ימים</strong> ממועד ההתקשרות או מקבלת מסמך זה, לפי המאוחר; ובכל מקרה עד <strong>שני ימים (שאינם ימי מנוחה) לפני מועד הפעלת הקמפיין</strong> — שכן הפעלת הקמפיין מהווה תחילת מתן השירות.</p>
+  <p><strong>הארכה:</strong> אדם עם מוגבלות, אזרח ותיק (גיל 65+) או עולה חדש (פחות מ‑5 שנים בישראל) רשאי לבטל בתוך <strong>4 חודשים</strong>, בכפוף לתנאי החוק.</p>
+  <p>דמי ביטול: עד 5% מערך העסקה או ₪100.00, לפי הנמוך. החזר כספי יבוצע בתוך 14 ימים מקבלת הודעת הביטול, באמצעי התשלום המקורי. לאחר תחילת מתן השירות, ניתן לחייב על שירות שכבר ניתן.</p>`;
 
 const render = () =>
   renderAgreementBody(content, { version: PACKAGE_AGREEMENT_VERSION, status: 'approved', bodyHtml: SEED_BODY });
@@ -115,11 +111,9 @@ describe('the seeded package contract, rendered', () => {
     expect(html).not.toContain('KALFA אינה שומרת את פרטי הכרטיס');
   });
 
-  it('keeps the cancellation terms of the current agreement (§5) and defines when the service starts', () => {
+  it('keeps the cancellation terms (§5) word for word and defines when the service starts', () => {
     const html = render();
-    const perResult = renderAgreementBody(content, { version: OPEN_CEILING_AGREEMENT_VERSION, status: 'approved', bodyHtml: null });
-    const cancellation = perResult.slice(perResult.indexOf('<h2>5.'), perResult.indexOf('<h2>6.')).trimEnd();
-    expect(html).toContain(cancellation);
+    expect(html).toContain(CANCELLATION_TERMS);
     expect(html).toContain('תחילת מתן השירות היא שליחת ההודעה או ביצוע השיחה הראשונה לאורחים');
   });
 

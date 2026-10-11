@@ -17,8 +17,8 @@ const sectionClass = 'space-y-3';
 // The payment connection: three credentials, whether they currently resolve, and where
 // everything else about billing lives.
 //
-// ⚠️ THE MONEY SWITCHES ARE NOT HERE, DELIBERATELY. payments_enabled,
-// close_charge_enabled, campaign_holds_enabled and billing_exposure_gate stay in
+// ⚠️ THE MONEY SWITCHES ARE NOT HERE, DELIBERATELY. payments_enabled and
+// billing_exposure_gate stay in
 // /admin/settings (plan D8). "Can we reach the payment provider" and "should we charge
 // anyone" are different questions, and putting them on one page invites answering the
 // second while meaning the first.

@@ -92,10 +92,10 @@ export async function POST(
   // ?ref=<attemptId> — a plain UUID, not a credential (grants no access to
   // anything by itself; only correlates a later signup back to this call).
   // Captured at signup (see profiles.sales_referral_attempt_id) and resolved
-  // to a real conversion signal when the resulting user signs a campaign
-  // agreement (recordSignedAgreement) — owner decision 2026-08-22: "signup
-  // completed" for tracking purposes means agreement signed + package
-  // chosen, not bare account creation. Deliberately does NOT feed
+  // to a real conversion signal when the resulting user approves the package
+  // terms (recordPackageApproval) — owner decision 2026-08-22: "signup
+  // completed" for tracking purposes means terms approved + package chosen,
+  // not bare account creation. Deliberately does NOT feed
   // callback_requests.call_outcome — that stays scoped to the AGENT's own
   // job (a link was sent), a separate concern from downstream conversion.
   const signupUrl = `${await getAppOrigin()}/auth/signup?ref=${attemptId}`;

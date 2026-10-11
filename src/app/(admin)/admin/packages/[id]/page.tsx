@@ -5,15 +5,11 @@ import Link from 'next/link';
 import { getPackage, getScheduleStepOptions } from '@/lib/data/admin/packages';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { getChannelCatalog } from '@/lib/data/channel-catalog';
-import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
-import { buildBusinessFacts } from '@/lib/fleet/business-facts';
-import { holdBufferFractionToPercent } from '@/lib/validation/admin';
 import { PageHeading } from '../../_components';
 import {
   PackageForm,
   type PackageFormInitial,
   type CallChannelStatus,
-  type PricingModelStatus,
 } from '../package-form';
 import { updatePackageAction } from '../actions';
 import { DeletePackageForm } from './delete-package-form';
@@ -46,8 +42,6 @@ export default async function EditPackagePage({
 
   // outreach_schedule is stored as Json; the column holds an array of
   // touchpoint objects by contract (locked to what packages.ts writes).
-  // Declared before the pricing status below, which now feeds the cadence into
-  // buildBusinessFacts as well as into the form.
   const outreachSchedule = Array.isArray(pkg.outreach_schedule)
     ? (pkg.outreach_schedule as unknown as {
         days_before: number;
@@ -55,40 +49,6 @@ export default async function EditPackagePage({
         message_key: string;
       }[])
     : [];
-
-  // Gate-aware effective pricing model for THIS package, so the base/included
-  // fields don't mislead while the base+overage gate is off. Numbers come from
-  // buildBusinessFacts (the same source the support-drafter quotes) — never
-  // hardcoded. Only campaign packages (a per-reached price) have an effective
-  // price to summarise.
-  const gateActive = await getBaseOveragePricingEnabled();
-  // The headline `price_with_vat` and the activation fee `base_price` are
-  // independent columns (no DB constraint relates them, verified live). Both are
-  // returned to the AI sales agent's get_pricing tool, so a divergence under the
-  // base+overage model gives it two contradictory headline prices. Only compared
-  // when that model is the effective one — under pure per-reached there is no
-  // base fee for the headline to agree with.
-  const basePriceNum = Number(pkg.base_price ?? 0);
-  const headlineMismatch =
-    gateActive && pkg.price_per_reached != null && basePriceNum > 0 &&
-    Number(pkg.price_with_vat) !== basePriceNum
-      ? { priceWithVat: Number(pkg.price_with_vat), basePrice: basePriceNum }
-      : null;
-  const pricingModelStatus: PricingModelStatus = {
-    gateActive,
-    headlineMismatch,
-    effectiveSummaryHe:
-      pkg.price_per_reached != null
-        ? (buildBusinessFacts(gateActive, {
-            name: pkg.name,
-            price_per_reached: Number(pkg.price_per_reached),
-            base_price: Number(pkg.base_price ?? 0),
-            included_reached: pkg.included_reached ?? 0,
-            channels: pkg.channels ?? [],
-            outreach_schedule: outreachSchedule,
-          }).summary_he ?? null)
-        : null,
-  };
 
   // `includes` is stored as Json; the column holds a string[] by contract. Coerce
   // defensively for display (non-string entries are dropped).
@@ -105,15 +65,9 @@ export default async function EditPackagePage({
     includes,
     active: pkg.active,
     sort_order: pkg.sort_order ?? 0,
-    price_per_reached: pkg.price_per_reached ?? '',
-    base_price: pkg.base_price ?? '',
-    included_reached: pkg.included_reached ?? '',
     contact_quota: pkg.contact_quota ?? '',
     channels: pkg.channels ?? [],
     outreach_schedule: outreachSchedule,
-    min_hold_floor: pkg.min_hold_floor,
-    // Stored as a fraction (0.1); the form displays/accepts a percent (10).
-    hold_buffer_pct_percent: holdBufferFractionToPercent(pkg.hold_buffer_pct),
   };
 
   // Bind the id so the client form receives the (prevState, formData) signature.
@@ -137,7 +91,6 @@ export default async function EditPackagePage({
         submitLabel="שמירת שינויים"
         callChannelStatus={callChannelStatus}
         channelOptions={channelOptions}
-        pricingModelStatus={pricingModelStatus}
         scheduleOptions={scheduleOptions}
       />
 

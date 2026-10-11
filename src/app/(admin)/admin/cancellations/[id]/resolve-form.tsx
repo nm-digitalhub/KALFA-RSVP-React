@@ -26,13 +26,16 @@ import { resolveCancellationRequestAction } from '../actions';
 type Resolution = 'full_cancellation' | 'partial_charge' | 'declined';
 type FeeMode = 'amount' | 'percent';
 // What the server will do with the money when the request is approved — the page decides it from the same facts
-// resolveCancellationRequest uses: 'capture' (pre-charge, a real charge), 'credit' (money was paid and it can go back to
-// the card by itself), 'manual' (post-charge, no card on file — nothing automatic). A fixed-price package adds three:
-// 'none' (nothing was paid, so no money moves), 'blocked' (something was paid but it cannot be refunded by itself, so the
-// server refuses any approval that has money to return) and 'resume' (an earlier resolve of this request already sent
-// money back and stopped at a later step: an approval finishes it without refunding again). 'no_campaign' is the event
-// with no live campaign at all (it never had one, or every campaign was cancelled): no money moves.
-export type MoneyOutcome = 'capture' | 'credit' | 'manual' | 'none' | 'blocked' | 'resume' | 'no_campaign';
+// resolveCancellationRequest uses: 'credit' (the package was paid and it can go back to the card by itself), 'none'
+// (nothing was paid, so no money moves), 'blocked' (something was paid but it cannot be refunded by itself, so the server
+// refuses any approval that has money to return), 'resume' (an earlier resolve of this request already sent money back
+// and stopped at a later step: an approval finishes it without refunding again), 'legacy' (a campaign created under the
+// earlier pay-per-result model: no money moves from here) and 'no_campaign' (the event has no live campaign at all: no
+// money moves).
+export type MoneyOutcome = 'credit' | 'none' | 'blocked' | 'resume' | 'legacy' | 'no_campaign';
+
+const LEGACY_FULL_TEXT =
+  'לאשר ביטול מלא? הקמפיין נוצר בשיטת התשלום הקודמת — לא תהיה תנועה כספית מכאן; החזר, אם נדרש, נעשה ידנית במסוף הסליקה.';
 
 const BLOCKED_TEXT =
   'לא ניתן להחזיר כסף אוטומטית בקמפיין הזה (אין כרטיס שמור, אין מסמך זיכוי אוטומטי לסוג המסמך, או שנתוני התשלום לא נקראו). אם יש סכום להחזרה — האישור ייכשל בהודעה ושום דבר לא ישתנה. להמשיך?';
@@ -41,9 +44,8 @@ const RESUME_TEXT =
   'כבר הוחזר כסף בבקשה הזו (טיפול קודם שנקטע) — האישור ישלים את הטיפול בלי להחזיר שוב, והלקוח יקבל הודעה לפי מה שהוחזר בפועל, לא לפי מה שהוזן כאן. להמשיך?';
 
 const FULL_CANCELLATION_TEXT: Record<MoneyOutcome, string> = {
-  capture: 'לאשר ביטול מלא? לא יבוצע חיוב על הכרטיס.',
   credit: 'לאשר ביטול מלא? יבוצע זיכוי אוטומטי מלא לכרטיס, והלקוח יקבל מייל אחרי שהזיכוי אושר.',
-  manual: 'לאשר ביטול מלא? אין פרטי כרטיס שמורים — לא יבוצע זיכוי אוטומטי, יש להחזיר ידנית במסוף הסליקה.',
+  legacy: LEGACY_FULL_TEXT,
   none: 'לאשר ביטול מלא? לא שולם דבר בחבילה (או שהכול כבר הוחזר) — לא תהיה תנועה כספית. הקמפיין והאירוע ייסגרו.',
   blocked: BLOCKED_TEXT,
   resume: RESUME_TEXT,
@@ -51,9 +53,9 @@ const FULL_CANCELLATION_TEXT: Record<MoneyOutcome, string> = {
 };
 
 const PARTIAL_CHARGE_TEXT: Record<MoneyOutcome, string> = {
-  capture: 'לאשר ביטול עם דמי ביטול? יבוצע חיוב אמיתי בסכום שהוזן.',
   credit: 'לאשר ביטול עם דמי ביטול? יבוצע זיכוי אוטומטי של ההפרש לכרטיס, והלקוח יקבל מייל אחרי שהזיכוי אושר.',
-  manual: 'לאשר ביטול עם דמי ביטול? אין פרטי כרטיס שמורים — לא יבוצע זיכוי אוטומטי, יש להחזיר ידנית במסוף הסליקה.',
+  legacy:
+    'לאשר ביטול עם דמי ביטול? הקמפיין נוצר בשיטת התשלום הקודמת — לא ייגבה ולא יוחזר דבר מכאן, אבל הלקוח יקבל הודעה על הסכום שהוזן. כדי לסגור בלי סכום בחרו ביטול מלא.',
   none: 'לאשר ביטול עם דמי ביטול? לא שולם דבר בחבילה, ולכן אין סכום להשאיר אצלנו — האישור ייכשל בהודעה ושום דבר לא ישתנה.',
   blocked: BLOCKED_TEXT,
   resume: RESUME_TEXT,
@@ -73,9 +75,8 @@ const CHOICES: ReadonlyArray<{ value: Resolution; label: string; hint: string; I
   { value: 'declined', label: 'דחיית הבקשה', hint: 'שום דבר לא משתנה. הלקוח מקבל את ההודעה שלכם.', Icon: Ban },
 ];
 
-// The fee's three amounts beside the field — shown only where money goes BACK (a refund, or a credit of a charged
-// campaign): what was paid, the fee that stays, and what returns to the card. For a pre-charge capture the typed amount is
-// a charge, and "returns to the card" would be false, so they are not shown there.
+// The fee's three amounts beside the field — shown only where money goes BACK: what was paid, the fee that stays, and what
+// returns to the card.
 function FeeCubes({ paid, fee }: { paid: number; fee: number | null }) {
   const refund = fee == null ? null : Math.round((paid - fee) * 100) / 100;
   return (
@@ -131,7 +132,7 @@ export function ResolveForm({
   suggestedAmount: number;
   moneyOutcome: MoneyOutcome;
   // What a percentage fee is taken of — decided by the server (cancellationFeeBase), 0 when there is none, in which case
-  // only an amount can be typed. The label says what the base is ("הסכום שחויב" / "תקרת הקמפיין").
+  // only an amount can be typed. The label says what the base is ("הסכום ששולם").
   feeBase: number;
   feeBaseLabel: string;
 }) {
@@ -291,9 +292,7 @@ export function ResolveForm({
           ) : (
             <div>
               <label htmlFor="resolutionAmount" className="mb-1 block text-sm font-medium">
-                {moneyOutcome === 'capture'
-                  ? 'סכום לחיוב (₪) — מוצע לפי מדיניות דמי הביטול, ניתן לעריכה'
-                  : 'סכום שנשאר אצלנו (₪) — ההפרש יוחזר ללקוח; מוצע לפי מדיניות דמי הביטול, ניתן לעריכה'}
+                סכום שנשאר אצלנו (₪) — ההפרש יוחזר ללקוח; מוצע לפי מדיניות דמי הביטול, ניתן לעריכה
               </label>
               <input
                 id="resolutionAmount"

@@ -287,32 +287,6 @@ export default async function EventStatsPage({
                 ) : null}
               </dl>
             ) : null}
-            {/* The per-reached figures only for a campaign priced that way: for a
-                package they are all zeros. */}
-            {stats.campaign.billing && stats.campaign.billingDetail?.chargesPerReached ? (
-              <dl className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <dt className="text-muted-foreground">נוצר קשר (לחיוב)</dt>
-                  <dd className="font-medium">{stats.campaign.billing.reachedCount}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">נצבר</dt>
-                  <dd className="font-medium">{formatCurrency(stats.campaign.billing.accrued)}</dd>
-                </div>
-                {stats.campaign.billing.ceiling !== null ? (
-                  <div>
-                    <dt className="text-muted-foreground">תקרה</dt>
-                    <dd className="font-medium">{formatCurrency(stats.campaign.billing.ceiling)}</dd>
-                  </div>
-                ) : null}
-                {stats.campaign.billing.maxContacts > 0 ? (
-                  <div>
-                    <dt className="text-muted-foreground">מגעים מקסימליים</dt>
-                    <dd className="font-medium">{stats.campaign.billing.maxContacts}</dd>
-                  </div>
-                ) : null}
-              </dl>
-            ) : null}
           </div>
         ) : null}
       </SectionCard>

@@ -27,7 +27,7 @@ describe('SetupStepper', () => {
     const items = screen.getAllByRole('listitem');
     expect(items).toHaveLength(5);
     expect(items[0].textContent).toContain('1. פרטי האירוע');
-    expect(items[3].textContent).toContain('4. אמצעי תשלום');
+    expect(items[3].textContent).toContain('4. תשלום החבילה');
   });
 
   it('marks exactly the current step with aria-current and speaks every state', () => {
@@ -63,7 +63,7 @@ describe('SetupStepper', () => {
   });
 });
 
-describe('SetupStepper — the optional package step', () => {
+describe('SetupStepper — the package step', () => {
   const withPackage = (states: SetupStep['state'][]): SetupStepView[] =>
     (['details', 'confirm', 'package', 'sign', 'pay', 'live'] as const).map((key, i) => ({
       key,
@@ -76,7 +76,7 @@ describe('SetupStepper — the optional package step', () => {
     const items = screen.getAllByRole('listitem');
     expect(items).toHaveLength(6);
     expect(items[2].textContent).toContain('3. בחירת חבילה');
-    expect(items[3].textContent).toContain('4. קריאת ההסכם וחתימה');
+    expect(items[3].textContent).toContain('4. אישור תנאי החבילה');
     expect(items[2].getAttribute('aria-current')).toBe('step');
   });
 

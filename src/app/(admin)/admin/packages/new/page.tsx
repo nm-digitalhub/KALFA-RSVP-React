@@ -6,12 +6,10 @@ import { unstable_rethrow } from 'next/navigation';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { getChannelCatalog } from '@/lib/data/channel-catalog';
 import { getScheduleStepOptions, getSuggestedSchedule } from '@/lib/data/admin/packages';
-import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
 import { PageHeading } from '../../_components';
 import {
   PackageForm,
   type CallChannelStatus,
-  type PricingModelStatus,
 } from '../package-form';
 import { createPackageAction } from '../actions';
 
@@ -43,15 +41,6 @@ export default async function NewPackagePage() {
       error: err instanceof Error ? err.message : String(err),
     });
   }
-  // No saved package yet on the create page — surface only the gate state (the
-  // per-package effective price appears once the package is saved and edited).
-  const pricingModelStatus: PricingModelStatus = {
-    gateActive: await getBaseOveragePricingEnabled(),
-    effectiveSummaryHe: null,
-    // Nothing saved yet, so there are no two stored numbers to disagree — the
-    // headline/base comparison only has meaning once the package exists.
-    headlineMismatch: null,
-  };
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="space-y-1">
@@ -69,7 +58,6 @@ export default async function NewPackagePage() {
         submitLabel="יצירת חבילה"
         callChannelStatus={callChannelStatus}
         channelOptions={channelOptions}
-        pricingModelStatus={pricingModelStatus}
         scheduleOptions={scheduleOptions}
         scheduleSeed={
           scheduleSeed

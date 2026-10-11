@@ -11,12 +11,11 @@ import type { FormState } from '@/lib/validation/result';
 
 import { ActivateNowForm } from './activate-now-form';
 import { CardcomOpenFieldsForm } from './cardcom-open-fields-form';
-import { CampaignHoldForm } from './hold-form';
+import { SumitCardForm } from './sumit-card-form';
 
 // The payment step of a fixed-price package campaign. Presentational: the page decides WHICH screen
-// (packagePaymentScreen, from the ledger) and this only draws it. It never renders the legacy hold summary or the hold
-// form wording — a package campaign has no hold. The only start control is the "activate now" fallback for a paid
-// campaign whose automatic start was refused.
+// (packagePaymentScreen, from the ledger) and this only draws it. The only start control is the "activate now" fallback
+// for a paid campaign whose automatic start was refused.
 
 const UNAVAILABLE_MESSAGE = {
   ledger: PURCHASE_ERROR_MESSAGES.purchase_failed,
@@ -171,8 +170,7 @@ export function PackagePaymentView({
                 defaultPhone={signerPhone}
               />
             ) : formConfig ? (
-              <CampaignHoldForm
-                purpose="purchase"
+              <SumitCardForm
                 campaignId={campaignId}
                 companyId={formConfig.companyId}
                 apiPublicKey={formConfig.apiPublicKey}

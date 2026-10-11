@@ -47,23 +47,15 @@ vi.mock('@/lib/data/campaigns', () => ({
   pauseCampaign: vi.fn(),
   closeCampaign: vi.fn(),
   cancelCampaign: vi.fn(),
-  getCampaignForHold: vi.fn(),
+  getCampaignRef: vi.fn(),
 }));
-vi.mock('@/lib/data/close-charge', () => ({ closeCampaignAndCharge: vi.fn() }));
-vi.mock('@/lib/data/agreements', () => ({ recordSignedAgreement: vi.fn(), recordPackageApproval: vi.fn() }));
-vi.mock('@/lib/data/profiles', () => ({ getProfile: vi.fn() }));
-vi.mock('@/lib/data/otp', () => ({ requestOtp: vi.fn(), verifyOtp: vi.fn() }));
-vi.mock('@/lib/data/agreements-doc', () => ({ getActiveAgreementDoc: vi.fn() }));
+vi.mock('@/lib/data/agreements', () => ({ recordPackageApproval: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 
 import { publishEvent, closeEvent, requireOwnedEvent, getEvent } from '@/lib/data/events';
 import { syncEventToExchange, markEventExchangeCancelled } from '@/lib/data/event-exchange-sync';
-import { cancelCampaign, createCampaign, getCampaignForHold, listPackageOffers } from '@/lib/data/campaigns';
+import { cancelCampaign, createCampaign, listPackageOffers } from '@/lib/data/campaigns';
 import { redirect } from 'next/navigation';
-import { closeCampaignAndCharge } from '@/lib/data/close-charge';
-import { getProfile } from '@/lib/data/profiles';
-import { verifyOtp } from '@/lib/data/otp';
-import { requireUser } from '@/lib/auth/dal';
 import { recordPackageApproval } from '@/lib/data/agreements';
 import { logActivity } from '@/lib/data/activity';
 import {
@@ -72,8 +64,6 @@ import {
   approvePackageTermsAction,
   closeEventAction,
   cancelCampaignAction,
-  settleCampaignAction,
-  verifySigningOtpAction,
 } from './campaign-actions';
 
 // Real notFound() digest format (verified against node_modules/next/dist/client/
@@ -81,9 +71,6 @@ import {
 // string 'NEXT_NOT_FOUND'.
 const NEXT_NOT_FOUND = Object.assign(new Error('NEXT_NOT_FOUND'), {
   digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
-});
-const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
-  digest: 'NEXT_REDIRECT;replace;/auth/login;307;',
 });
 
 beforeEach(() => vi.clearAllMocks());
@@ -162,149 +149,6 @@ describe('cancelCampaignAction', () => {
   });
 });
 
-describe('settleCampaignAction', () => {
-  // Authorization lives in closeCampaignAndCharge (platform staff only). The
-  // action does no getCampaignForHold + requireOwnedEvent pre-check of its
-  // own — it delegates straight to the self-gating data-layer call.
-  it('delegates to closeCampaignAndCharge without any ownership pre-check', async () => {
-    vi.mocked(closeCampaignAndCharge).mockResolvedValue({ outcome: 'charged', amount: 12 });
-
-    const result = await settleCampaignAction('e1', 'c1', null, new FormData());
-
-    expect(closeCampaignAndCharge).toHaveBeenCalledWith('c1');
-    expect(getCampaignForHold).not.toHaveBeenCalled();
-    expect(requireOwnedEvent).not.toHaveBeenCalled();
-    expect(result?.notice).toContain('12');
-  });
-
-  it('re-throws a Next.js control-flow signal (the admin gate redirect) instead of swallowing it', async () => {
-    vi.mocked(closeCampaignAndCharge).mockRejectedValue(NEXT_REDIRECT);
-
-    await expect(
-      settleCampaignAction('e1', 'c1', null, new FormData()),
-    ).rejects.toThrow('NEXT_REDIRECT');
-  });
-
-  it('surfaces a safe Hebrew error for a disabled feature outcome', async () => {
-    vi.mocked(closeCampaignAndCharge).mockResolvedValue({ outcome: 'disabled', amount: 0 });
-
-    const result = await settleCampaignAction('e1', 'c1', null, new FormData());
-
-    expect(result?.error).toBeDefined();
-  });
-
-  it('tells the admin a package campaign has no settlement (its money was taken at purchase)', async () => {
-    vi.mocked(closeCampaignAndCharge).mockResolvedValue({ outcome: 'not_applicable', amount: 0 });
-
-    const result = await settleCampaignAction('e1', 'c1', null, new FormData());
-
-    expect(result?.error).toBe('בקמפיין חבילה אין גמר חשבון — התשלום בוצע ברכישה.');
-    expect(result?.notice).toBeUndefined();
-  });
-
-  // amount===0 does NOT mean nobody was reached — credits can fully cover a
-  // nonzero reached total (production case: campaign 15a8730e, 21 reached,
-  // ₪84 owed, ₪84 credit applied). The notice must not claim "no contacts
-  // reached" when contacts WERE reached.
-  it('reports zero reached when nothing_to_charge is a true zero-reach settle', async () => {
-    vi.mocked(closeCampaignAndCharge).mockResolvedValue({
-      outcome: 'nothing_to_charge',
-      amount: 0,
-      reachedCount: 0,
-      creditApplied: 0,
-    });
-
-    const result = await settleCampaignAction('e1', 'c1', null, new FormData());
-
-    expect(result?.notice).toBe('גמר חשבון הושלם — אין אנשי קשר שהושגו, אין חיוב.');
-  });
-
-  it('reports the reached count and credit coverage when credits fully offset a nonzero reach', async () => {
-    vi.mocked(closeCampaignAndCharge).mockResolvedValue({
-      outcome: 'nothing_to_charge',
-      amount: 0,
-      reachedCount: 21,
-      creditApplied: 84,
-    });
-
-    const result = await settleCampaignAction('e1', 'c1', null, new FormData());
-
-    expect(result?.notice).toContain('21');
-    expect(result?.notice).toContain('84');
-    expect(result?.notice).not.toContain('אין אנשי קשר שהושגו');
-  });
-
-  it('reports the reached count without a credit claim when no credit was applied', async () => {
-    vi.mocked(closeCampaignAndCharge).mockResolvedValue({
-      outcome: 'nothing_to_charge',
-      amount: 0,
-      reachedCount: 5,
-      creditApplied: 0,
-    });
-
-    const result = await settleCampaignAction('e1', 'c1', null, new FormData());
-
-    expect(result?.notice).toContain('5');
-    expect(result?.notice).not.toContain('קרדיט');
-    expect(result?.notice).not.toContain('אין אנשי קשר שהושגו');
-  });
-});
-
-describe('verifySigningOtpAction', () => {
-  beforeEach(() => {
-    vi.mocked(requireUser).mockResolvedValue(
-      { id: 'u1', email: 'u@x.co' } as unknown as Awaited<ReturnType<typeof requireUser>>,
-    );
-    vi.mocked(getProfile).mockResolvedValue(
-      { phone: '0501234567' } as unknown as Awaited<ReturnType<typeof getProfile>>,
-    );
-  });
-
-  function fd(otp_code: string) {
-    const f = new FormData();
-    f.set('otp_code', otp_code);
-    return f;
-  }
-
-  it('rejects a malformed code before ever calling verifyOtp', async () => {
-    const result = await verifySigningOtpAction(null, fd('12ab'));
-
-    expect(result?.fieldErrors?.otp_code).toBeTruthy();
-    expect(verifyOtp).not.toHaveBeenCalled();
-  });
-
-  it('calls verifyOtp with consume:false and returns verified:true on a correct code', async () => {
-    vi.mocked(verifyOtp).mockResolvedValue(true);
-
-    const result = await verifySigningOtpAction(null, fd('123456'));
-
-    expect(verifyOtp).toHaveBeenCalledWith('0501234567', 'agreement_signing', '123456', {
-      consume: false,
-    });
-    expect(result?.verified).toBe(true);
-  });
-
-  it('surfaces a field error and no verified flag on a wrong/expired code', async () => {
-    vi.mocked(verifyOtp).mockResolvedValue(false);
-
-    const result = await verifySigningOtpAction(null, fd('123456'));
-
-    expect(result?.verified).toBeUndefined();
-    expect(result?.fieldErrors?.otp_code).toBeTruthy();
-  });
-
-  it('requires a profile phone', async () => {
-    vi.mocked(getProfile).mockResolvedValue(
-      { phone: null } as unknown as Awaited<ReturnType<typeof getProfile>>,
-    );
-
-    const result = await verifySigningOtpAction(null, fd('123456'));
-
-    expect(result?.error).toBeTruthy();
-    expect(verifyOtp).not.toHaveBeenCalled();
-  });
-});
-
 describe('setupCampaignAction — "אישור פרטי האירוע והמשך" (audit §2)', () => {
   const e1 = {
     id: 'e1',
@@ -325,20 +169,17 @@ describe('setupCampaignAction — "אישור פרטי האירוע והמשך" 
     return fd;
   };
 
-  it('on a DRAFT event: confirms (publishEvent), syncs Exchange, creates the campaign, returns to the setup flow', async () => {
+  it('on a DRAFT event: confirms (publishEvent), syncs Exchange, creates no campaign, returns to the setup flow', async () => {
     vi.mocked(requireOwnedEvent).mockResolvedValue(e1 as never);
     vi.mocked(getEvent).mockResolvedValue(e1 as never);
     vi.mocked(publishEvent).mockResolvedValue(undefined);
-    vi.mocked(createCampaign).mockResolvedValue({ id: 'c1' });
 
     await expect(setupCampaignAction('e1', null, acked())).rejects.toThrow('NEXT_REDIRECT');
 
     expect(publishEvent).toHaveBeenCalledWith('e1');
     expect(syncEventToExchange).toHaveBeenCalledWith('e1');
-    expect(createCampaign).toHaveBeenCalledWith('e1');
-    expect(vi.mocked(publishEvent).mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(createCampaign).mock.invocationCallOrder[0],
-    );
+    // The campaign is created by the package choice, in the next step.
+    expect(createCampaign).not.toHaveBeenCalled();
     expect(redirect).toHaveBeenCalledWith('/app/events/e1/setup');
   });
 
@@ -383,14 +224,13 @@ describe('setupCampaignAction — "אישור פרטי האירוע והמשך" 
     expect(createCampaign).not.toHaveBeenCalled();
   });
 
-  it('on an already-confirmed (active) event: skips publish, creates-or-continues, redirects', async () => {
+  it('on an already-confirmed (active) event: skips publish and redirects to the package choice', async () => {
     vi.mocked(requireOwnedEvent).mockResolvedValue({ ...e1, status: 'active' } as never);
-    vi.mocked(createCampaign).mockResolvedValue({ id: 'c1' });
 
     await expect(setupCampaignAction('e1', null, new FormData())).rejects.toThrow('NEXT_REDIRECT');
 
     expect(publishEvent).not.toHaveBeenCalled();
-    expect(createCampaign).toHaveBeenCalledWith('e1');
+    expect(createCampaign).not.toHaveBeenCalled();
   });
 
   it("surfaces the data layer's Hebrew message when confirming fails, and never creates a campaign", async () => {
@@ -406,20 +246,6 @@ describe('setupCampaignAction — "אישור פרטי האירוע והמשך" 
     expect(createCampaign).not.toHaveBeenCalled();
   });
 
-  it("surfaces createCampaign's own gate message (e.g. celebrants) without redirecting", async () => {
-    vi.mocked(requireOwnedEvent).mockResolvedValue({ ...e1, status: 'active' } as never);
-    vi.mocked(createCampaign).mockRejectedValue(
-      new Error('יש למלא את פרטי בעלי השמחה בעריכת האירוע לפני הפעלת אישורי הגעה'),
-    );
-
-    const result = await setupCampaignAction('e1', null, new FormData());
-
-    expect(result?.error).toBe(
-      'יש למלא את פרטי בעלי השמחה בעריכת האירוע לפני הפעלת אישורי הגעה',
-    );
-    expect(redirect).not.toHaveBeenCalled();
-  });
-
   it('re-throws a Next.js control-flow signal from the ownership gate', async () => {
     vi.mocked(requireOwnedEvent).mockRejectedValue(NEXT_NOT_FOUND);
 
@@ -429,8 +255,7 @@ describe('setupCampaignAction — "אישור פרטי האירוע והמשך" 
   });
 });
 
-// With a fixed-price package on offer, the owner CHOOSES the package and that choice creates the campaign (so its
-// price and quota are the ones chosen). Confirming the event must therefore not create a pay-per-result campaign first.
+// The owner CHOOSES the package and that choice creates the campaign (so its price and quota are the ones chosen).
 // Earlier suites leave rejected/resolved implementations behind (clearAllMocks keeps them), so these start clean.
 function resetPackageMocks() {
   vi.mocked(createCampaign).mockReset();
@@ -438,50 +263,6 @@ function resetPackageMocks() {
   vi.mocked(listPackageOffers).mockResolvedValue([]);
   vi.mocked(logActivity).mockReset();
 }
-
-describe('setupCampaignAction — while a package is on offer', () => {
-  beforeEach(resetPackageMocks);
-  const confirmed = {
-    id: 'e1',
-    name: 'x',
-    status: 'active',
-    event_type: 'wedding',
-    event_date: '2999-01-01T16:00:00Z',
-    rsvp_deadline: null,
-    venue_name: 'אולם',
-    venue_address: 'הרצל 1, תל אביב',
-    celebrants: { groom: 'דני', bride: 'דנה' },
-  } as const;
-
-  it('creates NO campaign: the package choice does, and the flow returns to the setup page', async () => {
-    vi.mocked(requireOwnedEvent).mockResolvedValue(confirmed as never);
-    vi.mocked(listPackageOffers).mockResolvedValueOnce([{ id: 'pkg-1' } as never]);
-
-    await expect(setupCampaignAction('e1', null, new FormData())).rejects.toThrow('NEXT_REDIRECT');
-
-    expect(createCampaign).not.toHaveBeenCalled();
-    expect(redirect).toHaveBeenCalledWith('/app/events/e1/setup');
-  });
-
-  it('with no package on offer it creates the campaign exactly as before', async () => {
-    vi.mocked(requireOwnedEvent).mockResolvedValue(confirmed as never);
-    vi.mocked(createCampaign).mockResolvedValue({ id: 'c1' });
-
-    await expect(setupCampaignAction('e1', null, new FormData())).rejects.toThrow('NEXT_REDIRECT');
-
-    expect(createCampaign).toHaveBeenCalledWith('e1');
-  });
-
-  it('a catalogue that cannot be read refuses — it never falls back to a pay-per-result campaign', async () => {
-    vi.mocked(requireOwnedEvent).mockResolvedValue(confirmed as never);
-    vi.mocked(listPackageOffers).mockRejectedValueOnce(new Error('טעינת החבילות נכשלה'));
-
-    const result = await setupCampaignAction('e1', null, new FormData());
-
-    expect(result).toEqual({ error: 'טעינת החבילות נכשלה' });
-    expect(createCampaign).not.toHaveBeenCalled();
-  });
-});
 
 describe('choosePackageAction — the owner picks a fixed-price package', () => {
   beforeEach(resetPackageMocks);

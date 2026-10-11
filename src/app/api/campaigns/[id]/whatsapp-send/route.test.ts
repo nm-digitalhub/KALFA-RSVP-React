@@ -4,7 +4,7 @@ import type { NextRequest } from 'next/server';
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
 vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
-vi.mock('@/lib/data/campaigns', () => ({ getCampaignForHold: vi.fn() }));
+vi.mock('@/lib/data/campaigns', () => ({ getCampaignRef: vi.fn() }));
 vi.mock('@/lib/data/outreach-config', () => ({
   getOutreachEnabled: vi.fn(),
   getWhatsAppConfig: vi.fn(),
@@ -14,7 +14,7 @@ vi.mock('@/lib/data/outreach', () => ({ sendCampaignWhatsApp: vi.fn() }));
 import { POST } from './route';
 import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
-import { getCampaignForHold } from '@/lib/data/campaigns';
+import { getCampaignRef } from '@/lib/data/campaigns';
 import {
   getOutreachEnabled,
   getWhatsAppConfig,
@@ -52,7 +52,7 @@ describe('POST /api/campaigns/[id]/whatsapp-send — CSRF origin gate', () => {
     vi.clearAllMocks();
     process.env.APP_ORIGIN = APP_ORIGIN;
     vi.mocked(requireUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getCampaignForHold).mockResolvedValue({
+    vi.mocked(getCampaignRef).mockResolvedValue({
       id: CAMPAIGN_ID,
       event_id: EVENT_ID,
       status: 'active',

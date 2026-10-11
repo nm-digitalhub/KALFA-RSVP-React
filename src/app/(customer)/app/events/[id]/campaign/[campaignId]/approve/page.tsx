@@ -5,10 +5,10 @@ import { notFound, redirect } from 'next/navigation';
 import { getCampaign } from '@/lib/data/campaigns';
 import { requireOwnedEvent } from '@/lib/data/events';
 
-export const metadata: Metadata = { title: 'חתימה על ההסכם' };
+export const metadata: Metadata = { title: 'אישור תנאי החבילה' };
 
-// Signing now happens INSIDE the setup flow (/setup, the "קריאת ההסכם וחתימה" step),
-// so a campaign that is waiting for a signature sends the owner there — old links
+// The terms are approved INSIDE the setup flow (/setup, the "אישור תנאי החבילה" step),
+// so a campaign that is waiting for approval sends the owner there — old links
 // keep working. What stays here is the page for a campaign that is NOT waiting.
 export default async function ApproveCampaignPage({
   params,
@@ -25,7 +25,7 @@ export default async function ApproveCampaignPage({
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">חתימה על ההסכם</h1>
+        <h1 className="text-2xl font-bold">אישור תנאי החבילה</h1>
         <Link
           href={`/app/events/${id}`}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -36,15 +36,15 @@ export default async function ApproveCampaignPage({
       </div>
       <p className="rounded-md bg-success/10 px-3 py-2 text-sm text-success">
         {campaign.status === 'approved'
-          ? 'ההסכם נחתם בהצלחה. כעת יש להשלים אמצעי תשלום.'
-          : 'הקמפיין אינו ממתין לאישור ולכן לא ניתן לחתום עליו כעת.'}
+          ? 'תנאי החבילה אושרו. כעת יש לשלם עבור החבילה.'
+          : 'הקמפיין אינו ממתין לאישור ולכן לא ניתן לאשר את התנאים כעת.'}
       </p>
       {campaign.status === 'approved' ? (
         <Link
           href={`/app/events/${id}/campaign/${campaignId}/payment`}
           className="inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
         >
-          המשך לאמצעי התשלום
+          המשך לתשלום החבילה
         </Link>
       ) : null}
     </div>

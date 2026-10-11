@@ -12,9 +12,8 @@ import { approvePackageTermsAction } from '../../campaign-actions';
 import { AgreementSheet } from './agreement-sheet';
 import { ApprovePackageTermsForm } from './approve-package-terms-form';
 
-// The setup flow's "אישור תנאי החבילה" step for a fixed-price package campaign: the key terms, the full terms in a
-// sheet, and the two-box approval. It replaces the signing step (AgreementStep) for this model — there is no signature
-// and no phone code. The caller has already proven ownership and that the campaign is waiting for approval.
+// The setup flow's "אישור תנאי החבילה" step: the key terms, the full terms in a sheet, and the two-box approval. The
+// caller has already proven ownership and that the campaign is waiting for approval.
 //
 // Every figure comes from the campaign SNAPSHOT (never the live package), so the summary can never disagree with the
 // document that is recorded. No approval is offered unless the package contract is approved by the admin.
@@ -46,14 +45,9 @@ export async function PackageTermsStep({
 
   const termsHtml = renderAgreementBody(
     agreementContent(company, event.name, {
-      pricePerReached: 0,
-      maxContacts: campaign.max_contacts ?? 0,
-      ceiling: 0,
       channels: campaign.allowed_channels,
       startAt: campaign.start_at,
       closeAt: campaign.close_at,
-      baseFee: 0,
-      includedReached: 0,
       packagePrice: campaign.package_price,
       contactQuota: campaign.contact_quota,
     }),

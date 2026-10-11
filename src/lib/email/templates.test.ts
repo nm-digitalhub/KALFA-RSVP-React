@@ -67,7 +67,7 @@ describe('agreementEmail — package terms approved (no signature)', () => {
   const base = { signerName: 'דנה כהן', eventName: 'החתונה', companyName: 'קאלפא', downloadUrl: URL };
 
   it('says the terms were APPROVED, never that anything was signed', async () => {
-    const { subject, html, text } = await agreementEmail({ ...base, kind: 'approved' });
+    const { subject, html, text } = await agreementEmail(base);
     for (const out of [subject, html, text]) {
       expect(out).toContain('אושר');
       expect(out).not.toContain('חתום');
@@ -75,15 +75,6 @@ describe('agreementEmail — package terms approved (no signature)', () => {
     }
     expect(html).toContain(`href="${URL}"`);
     expect(text).toContain(URL);
-  });
-
-  it('the signed wording is the default and is unchanged', async () => {
-    for (const input of [base, { ...base, kind: 'signed' as const }]) {
-      const { subject, html } = await agreementEmail(input);
-      expect(subject).toBe('ההסכם החתום שלך — החתונה');
-      expect(html).toContain('ההסכם נחתם בהצלחה');
-      expect(html).toContain('ההסכם החתום עבור האירוע <strong>החתונה</strong> מוכן.');
-    }
   });
 });
 

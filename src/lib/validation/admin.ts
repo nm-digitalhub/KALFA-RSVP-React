@@ -9,7 +9,6 @@ import { z } from 'zod';
 // `LABELS[s] ?? s` fallback so legacy/foreign values never break the UI.
 
 import { Constants, type Enums } from '@/lib/supabase/types';
-import { AGREEMENT_MODELS } from '@/lib/agreements/model';
 import { wallClockToDate } from '@/lib/data/event-date';
 import { ISRAEL_TIME_ZONE } from '@/lib/date';
 
@@ -280,26 +279,14 @@ export const packageBaseSchema = z.object({
 export type PackageInput = z.infer<typeof packageBaseSchema>;
 
 // --- packages: operational (campaign) fields ---
-// A package is "campaign-enabled" when it has a price per reached contact (the pay-per-result model,
-// plans/admin-packages-operational-fields-plan.md §2) OR a contact quota (the fixed-price package model,
-// docs/superpowers/plans/2026-10-04-package-payment-plan.md, P-F). A package with neither is a valid, non-campaign
-// package — never forced through the campaign-only requirements below.
-//
-// The two models are exclusive. A quota package is paid once at its own price_with_vat and has no per-reached formula
-// and no card hold, so the server refuses any formula or hold value alongside a quota, whatever the form sent.
+// A package is "campaign-enabled" when it has a contact quota: it is sold once at its own price_with_vat
+// (docs/superpowers/plans/2026-10-04-package-payment-plan.md, P-F). A package without a quota is a valid,
+// non-campaign package — never forced through the campaign-only requirements below.
 
 const MESSAGE_KEY_MAX = 100;
 const OUTREACH_SCHEDULE_MAX_ITEMS = 50;
 
-const pricePerReachedField = z.preprocess(
-  (v) => (v === undefined || v === null || v === '' ? null : v),
-  z.union([
-    z.null(),
-    z.coerce.number({ error: 'נא להזין מחיר לאיש קשר תקין' }),
-  ]),
-);
-
-// Whole contacts, at least one. Blank = no quota (the pay-per-result packages that predate the package model). The
+// Whole contacts, at least one. Blank = no quota (a package that is not sold as a campaign). The
 // message sits on the union itself: when every branch fails Zod reports the union's own text, which would otherwise
 // be its English default.
 const CONTACT_QUOTA_ERROR = 'נא להזין מכסה תקינה (מספר שלם, 1 ומעלה)';
@@ -337,90 +324,14 @@ const outreachScheduleField = z
   .array(outreachTouchpointSchema)
   .max(OUTREACH_SCHEDULE_MAX_ITEMS, { error: 'יותר מדי שלבים בלוח הפניות' });
 
-// Form input is a percent ("10" = +10%); stored value is the fraction (0.1)
-// that computeHoldAmount (campaigns.ts) multiplies by directly. The
-// conversion happens here, once, so nothing downstream needs to know about
-// the percent representation.
-const holdBufferPctPercent = z.coerce
-  .number({ error: 'נא להזין אחוז buffer תקין (לדוגמה: 10 = תוספת 10%)' })
-  .nonnegative({ error: 'האחוז לא יכול להיות שלילי' });
-const holdBufferPctField = holdBufferPctPercent.transform((percent) => percent / 100);
-
-// Inverse of holdBufferPctField, for the edit form: stored fraction → percent
-// for display. Naive `fraction * 100` leaks IEEE-754 noise for common values
-// (0.07 * 100 === 7.000000000000001), so round to 6 decimals — far finer than
-// the form's step (0.1) while restoring exactly the percent the admin entered.
-export function holdBufferFractionToPercent(fraction: number): number {
-  return Math.round(fraction * 100 * 1e6) / 1e6;
-}
-
-const minHoldFloorField = z.coerce
-  .number({ error: 'נא להזין רצפת hold תקינה' })
-  .nonnegative({ error: 'רצפת ה-hold לא יכולה להיות שלילית' });
-
-// Base+overage. Nullable like price_per_reached; non-negative, and
-// included_reached is a whole count. 0 is valid (base-fee-only tier).
-const basePriceField = z.preprocess(
-  (v) => (v === undefined || v === null || v === '' ? null : v),
-  z.union([
-    z.null(),
-    z.coerce
-      .number({ error: 'נא להזין מחיר בסיס תקין' })
-      .nonnegative({ error: 'מחיר הבסיס לא יכול להיות שלילי' }),
-  ]),
-);
-
-const includedReachedField = z.preprocess(
-  (v) => (v === undefined || v === null || v === '' ? null : v),
-  z.union([
-    z.null(),
-    z.coerce
-      .number({ error: 'נא להזין כמות כלולה תקינה' })
-      .int({ error: 'הכמות הכלולה חייבת להיות מספר שלם' })
-      .nonnegative({ error: 'הכמות הכלולה לא יכולה להיות שלילית' }),
-  ]),
-);
-
 export const operationalFieldsSchema = z
   .object({
-    price_per_reached: pricePerReachedField,
-    base_price: basePriceField,
-    included_reached: includedReachedField,
     contact_quota: contactQuotaField,
     channels: channelsField,
     outreach_schedule: outreachScheduleField,
-    min_hold_floor: minHoldFloorField,
-    hold_buffer_pct: holdBufferPctField,
   })
   .superRefine((val, ctx) => {
-    // base+overage is all-or-nothing: a base with no included tier (or vice
-    // versa) is a misconfiguration. Both empty = pure per-reached (fine).
-    if ((val.base_price !== null) !== (val.included_reached !== null)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: [val.base_price !== null ? 'included_reached' : 'base_price'],
-        message: 'מחיר בסיס וכמות כלולה חייבים להיות מוגדרים יחד (או שניהם ריקים)',
-      });
-    }
-    // A fixed-price quota package: the pay-per-result formula and the card hold do not exist for it.
-    if (val.contact_quota !== null) {
-      const noFormula = 'חבילה עם מכסה אינה משתמשת בתמחור לפי מענה — השאירו ריק';
-      const noHold = 'שדה זה שייך לתפיסת מסגרת ואינו בשימוש בחבילה עם מכסה';
-      if (val.price_per_reached !== null) ctx.addIssue({ code: 'custom', path: ['price_per_reached'], message: noFormula });
-      if (val.base_price !== null) ctx.addIssue({ code: 'custom', path: ['base_price'], message: noFormula });
-      if (val.included_reached !== null) ctx.addIssue({ code: 'custom', path: ['included_reached'], message: noFormula });
-      if (val.min_hold_floor !== 0) ctx.addIssue({ code: 'custom', path: ['min_hold_floor'], message: noHold });
-      if (val.hold_buffer_pct !== 0) ctx.addIssue({ code: 'custom', path: ['hold_buffer_pct'], message: noHold });
-    }
-    const campaignEnabled = val.price_per_reached !== null || val.contact_quota !== null;
-    if (!campaignEnabled) return;
-    if (val.price_per_reached !== null && val.price_per_reached <= 0) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['price_per_reached'],
-        message: 'המחיר לאיש קשר חייב להיות חיובי',
-      });
-    }
+    if (val.contact_quota === null) return;
     if (val.channels.length === 0) {
       ctx.addIssue({
         code: 'custom',
@@ -453,10 +364,9 @@ export const appRoleEnum = z.enum(Constants.public.Enums.app_role, {
 });
 export type AppRole = Enums<'app_role'>;
 
-// --- app_settings (admin: feature switches + the hold-coverage cap) ---
+// --- app_settings (admin: feature switches) ---
 export const appSettingsSchema = z.object({
   payments_enabled: z.boolean(),
-  close_charge_enabled: z.boolean(),
   // Inquiry silence follow-up sweep (reminder → warning → auto-close on an
   // inquiry the admin replied to and the customer went quiet on) — its OWN
   // switch, deliberately not sharing outreach_enabled (campaign/WhatsApp
@@ -471,7 +381,6 @@ export const appSettingsSchema = z.object({
   agreement_archive_enabled: z.boolean().default(false),
   signup_reminder_enabled: z.boolean().default(false),
   unconfirmed_cleanup_enabled: z.boolean().default(false),
-  campaign_holds_enabled: z.boolean().default(false),
   billing_exposure_gate: z.boolean().default(false),
   monitor_enabled: z.boolean().default(false),
   inbound_calls_enabled: z.boolean().default(false),
@@ -483,17 +392,6 @@ export const appSettingsSchema = z.object({
   console_call_me_now_enabled: z.boolean().default(false),
   console_consult_conference_enabled: z.boolean().default(false),
   console_dtmf_handoff_enabled: z.boolean().default(false),
-  // The only NON-boolean setting on this form. It caps how many contacts count
-  // toward the J5 hold: covered = min(full_unique_contacts, this). Deliberately
-  // NOT `.default(...)` like the booleans above — a default would let an absent
-  // field silently rewrite a money-path number. Required instead, so an absent
-  // or blank value fails loudly and nothing is written. Upper bound mirrors the
-  // existing app_settings cap precedent (callback_intake_sms_daily_cap <= 10000).
-  reasonable_coverage_contacts: z.coerce
-    .number({ error: 'נא להזין מספר אנשי קשר תקין' })
-    .int({ error: 'מספר אנשי הקשר חייב להיות מספר שלם' })
-    .positive({ error: 'מספר אנשי הקשר חייב להיות גדול מאפס' })
-    .max(10000, { error: 'מספר אנשי הקשר גבוה מדי' }),
 });
 
 // ---------------------------------------------------------------------------
@@ -687,25 +585,18 @@ export const supportViewSchema = z.object({
 export type SupportViewInput = z.infer<typeof supportViewSchema>;
 
 // --- agreement (contract) document management ---
-// Which contract a form edits: one document per pricing model. Absent = the pay-per-result contract (the original one).
-const agreementModelField = z
-  .enum(AGREEMENT_MODELS, { error: 'מודל חוזה לא מוכר' })
-  .default('per_result');
-
 export const agreementEditSchema = z.object({
-  model: agreementModelField,
   version: z
     .string()
     .trim()
     .min(1, { error: 'נא להזין גרסה' })
     .max(80, { error: 'הגרסה ארוכה מדי' }),
-  // The full custom body (HTML with {{tokens}}); empty → use the in-code default.
+  // The full body (HTML with {{tokens}}). Required: the contract has no in-code text (checked when saving).
   body_html: z.string().optional(),
 });
 export type AgreementEditInput = z.infer<typeof agreementEditSchema>;
 
 export const agreementApproveSchema = z.object({
-  model: agreementModelField,
   version: z
     .string()
     .trim()

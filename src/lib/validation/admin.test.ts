@@ -15,7 +15,6 @@ import {
   updateContactStatusSchema,
   packageBaseSchema,
   operationalFieldsSchema,
-  holdBufferFractionToPercent,
   appRoleEnum,
 } from './admin';
 
@@ -238,220 +237,6 @@ describe('packageBaseSchema', () => {
   });
 });
 
-describe('operationalFieldsSchema', () => {
-  // A valid campaign-enabled package (price present ⇒ campaign rules apply),
-  // shaped like the form input: numbers arrive as strings.
-  const campaignBase = {
-    price_per_reached: '4',
-    channels: ['whatsapp'],
-    outreach_schedule: [{ days_before: '7', channel: 'whatsapp', message_key: 'rsvp_1' }],
-    min_hold_floor: '0',
-    hold_buffer_pct: '0',
-  };
-
-  it('rejects a negative price_per_reached on a campaign-enabled package', () => {
-    const result = operationalFieldsSchema.safeParse({
-      ...campaignBase,
-      price_per_reached: '-1',
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      // -1 !== null, so the package counts as campaign-enabled and hits the
-      // superRefine `<= 0` branch.
-      const issue = result.error.issues.find(
-        (i) => i.path.join('.') === 'price_per_reached',
-      );
-      expect(issue?.message).toBe('המחיר לאיש קשר חייב להיות חיובי');
-    }
-  });
-
-  it('rejects a negative min_hold_floor', () => {
-    const result = operationalFieldsSchema.safeParse({
-      ...campaignBase,
-      min_hold_floor: '-1',
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const issue = result.error.issues.find(
-        (i) => i.path.join('.') === 'min_hold_floor',
-      );
-      expect(issue?.message).toBe('רצפת ה-hold לא יכולה להיות שלילית');
-    }
-  });
-
-  it('rejects a negative hold_buffer_pct', () => {
-    const result = operationalFieldsSchema.safeParse({
-      ...campaignBase,
-      hold_buffer_pct: '-1',
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const issue = result.error.issues.find(
-        (i) => i.path.join('.') === 'hold_buffer_pct',
-      );
-      expect(issue?.message).toBe('האחוז לא יכול להיות שלילי');
-    }
-  });
-
-  it('accepts base_price + included_reached set together (base+overage, S4)', () => {
-    const result = operationalFieldsSchema.safeParse({
-      ...campaignBase,
-      base_price: '200',
-      included_reached: '200',
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.base_price).toBe(200);
-      expect(result.data.included_reached).toBe(200);
-    }
-  });
-
-  it('coerces empty base_price/included_reached to null (pure per-reached, NOT 0)', () => {
-    const result = operationalFieldsSchema.safeParse({
-      ...campaignBase,
-      base_price: '',
-      included_reached: '',
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.base_price).toBeNull();
-      expect(result.data.included_reached).toBeNull();
-    }
-  });
-
-  it('rejects a base_price without an included_reached (all-or-nothing)', () => {
-    const result = operationalFieldsSchema.safeParse({
-      ...campaignBase,
-      base_price: '200',
-      included_reached: '',
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const issue = result.error.issues.find(
-        (i) => i.path.join('.') === 'included_reached',
-      );
-      expect(issue?.message).toBe(
-        'מחיר בסיס וכמות כלולה חייבים להיות מוגדרים יחד (או שניהם ריקים)',
-      );
-    }
-  });
-
-  it('rejects a negative base_price and a non-integer included_reached', () => {
-    expect(
-      operationalFieldsSchema.safeParse({
-        ...campaignBase,
-        base_price: '-1',
-        included_reached: '10',
-      }).success,
-    ).toBe(false);
-    expect(
-      operationalFieldsSchema.safeParse({
-        ...campaignBase,
-        base_price: '200',
-        included_reached: '10.5',
-      }).success,
-    ).toBe(false);
-  });
-
-  it('converts the hold_buffer_pct percent input to a stored fraction', () => {
-    // The form takes percent ("10" = +10%); the schema stores the fraction
-    // that computeHoldAmount multiplies by directly.
-    const ten = operationalFieldsSchema.safeParse({
-      ...campaignBase,
-      hold_buffer_pct: '10',
-    });
-    expect(ten.success).toBe(true);
-    if (ten.success) {
-      expect(ten.data.hold_buffer_pct).toBe(0.1);
-    }
-
-    const zero = operationalFieldsSchema.safeParse(campaignBase);
-    expect(zero.success).toBe(true);
-    if (zero.success) {
-      expect(zero.data.hold_buffer_pct).toBe(0);
-    }
-  });
-
-  it('completes the hold_buffer_pct round-trip: percent input → stored fraction → displayed percent', () => {
-    // Plan §5.4 "טסטים חובה (א)": entered 10 → stored 0.1 → edit form shows 10
-    // again (holdBufferFractionToPercent is what [id]/page.tsx renders). '7'
-    // additionally pins the float-noise case (0.07 * 100 !== 7 in raw floats).
-    for (const percent of ['10', '7', '0.5']) {
-      const parsed = operationalFieldsSchema.safeParse({
-        ...campaignBase,
-        hold_buffer_pct: percent,
-      });
-      expect(parsed.success).toBe(true);
-      if (parsed.success) {
-        expect(holdBufferFractionToPercent(parsed.data.hold_buffer_pct)).toBe(
-          Number(percent),
-        );
-      }
-    }
-  });
-
-  it('treats an empty price_per_reached as a valid non-campaign package', () => {
-    // Empty string preprocesses to null; superRefine short-circuits, so the
-    // campaign-only requirements (channels, schedule) do not apply.
-    const result = operationalFieldsSchema.safeParse({
-      price_per_reached: '',
-      channels: [],
-      outreach_schedule: [],
-      min_hold_floor: '0',
-      hold_buffer_pct: '0',
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.price_per_reached).toBeNull();
-    }
-  });
-
-  it('treats an absent price_per_reached as a valid non-campaign package', () => {
-    const result = operationalFieldsSchema.safeParse({
-      channels: [],
-      outreach_schedule: [],
-      min_hold_floor: '0',
-      hold_buffer_pct: '0',
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.price_per_reached).toBeNull();
-    }
-  });
-
-  it('rejects a campaign-enabled package with no channels', () => {
-    const result = operationalFieldsSchema.safeParse({
-      ...campaignBase,
-      channels: [],
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      // The same input also produces a per-touchpoint channel-mismatch issue
-      // (outreach_schedule.0.channel), so assert on the channels-path issue
-      // specifically rather than on issues.length.
-      const issue = result.error.issues.find((i) => i.path.join('.') === 'channels');
-      expect(issue?.message).toBe('יש לבחור לפחות ערוץ אחד למסלול קמפיין');
-    }
-  });
-});
-
-describe('holdBufferFractionToPercent', () => {
-  // Display half of the hold_buffer_pct round-trip (plan §5.4/§5.5): the edit
-  // form must re-show the percent the admin entered, not the stored fraction.
-  it('maps the stored fraction back to the percent for the edit form', () => {
-    expect(holdBufferFractionToPercent(0.1)).toBe(10);
-    expect(holdBufferFractionToPercent(0)).toBe(0);
-    expect(holdBufferFractionToPercent(1)).toBe(100);
-  });
-
-  it('rounds away IEEE-754 noise for common fractions', () => {
-    // Naive *100 gives 7.000000000000001 / 28.999999999999996 / 56.99999999999999.
-    expect(holdBufferFractionToPercent(0.07)).toBe(7);
-    expect(holdBufferFractionToPercent(0.29)).toBe(29);
-    expect(holdBufferFractionToPercent(0.57)).toBe(57);
-  });
-});
-
 describe('appRoleEnum', () => {
   it('accepts admin and user, rejects others', () => {
     expect(appRoleEnum.safeParse('admin').success).toBe(true);
@@ -460,41 +245,27 @@ describe('appRoleEnum', () => {
   });
 });
 
-// A fixed-price package with a contact quota (docs/superpowers/plans/2026-10-04-package-payment-plan.md, P-F): the
-// price is the package's own price_with_vat, charged once; the quota is how many contacts the campaign may approach.
-// The per-reached formula and the card hold do not exist for it — so the server refuses a mix, whatever the form sent.
-describe('operationalFieldsSchema — fixed-price package with a contact quota', () => {
-  // Shaped like readOperationalForm's output for a fixed-price package: the formula and hold inputs are not rendered
-  // in the browser, so formData.get() yields null for them.
+// A package with a contact quota is sold once at its own price_with_vat; the quota is how many contacts the campaign
+// may approach. A package without a quota is a valid non-campaign package.
+describe('operationalFieldsSchema', () => {
+  // Shaped like readOperationalForm's output.
   const quotaBase = {
     contact_quota: '40',
-    price_per_reached: null,
-    base_price: null,
-    included_reached: null,
-    min_hold_floor: null,
-    hold_buffer_pct: null,
     channels: ['whatsapp'],
     outreach_schedule: [{ days_before: '7', channel: 'whatsapp', message_key: 'rsvp_1' }],
   };
   const issue = (r: ReturnType<typeof operationalFieldsSchema.safeParse>, path: string) =>
     r.success ? undefined : r.error.issues.find((i) => i.path.join('.') === path)?.message;
 
-  it('accepts a quota with channels and a schedule and no formula fields (hold fields absent → 0)', () => {
+  it('accepts a quota with channels and a schedule', () => {
     const r = operationalFieldsSchema.safeParse(quotaBase);
     expect(r.success).toBe(true);
-    if (r.success) {
-      expect(r.data.contact_quota).toBe(40);
-      expect(r.data.price_per_reached).toBeNull();
-      expect(r.data.base_price).toBeNull();
-      expect(r.data.included_reached).toBeNull();
-      expect(r.data.min_hold_floor).toBe(0);
-      expect(r.data.hold_buffer_pct).toBe(0);
-    }
+    if (r.success) expect(r.data.contact_quota).toBe(40);
   });
 
-  it('a blank or absent quota is "no quota" (null), exactly as before', () => {
+  it('a blank or absent quota is a valid non-campaign package (null), with no campaign requirements', () => {
     for (const contact_quota of ['', undefined, null]) {
-      const r = operationalFieldsSchema.safeParse({ ...quotaBase, contact_quota, price_per_reached: '4' });
+      const r = operationalFieldsSchema.safeParse({ contact_quota, channels: [], outreach_schedule: [] });
       expect(r.success).toBe(true);
       if (r.success) expect(r.data.contact_quota).toBeNull();
     }
@@ -506,7 +277,7 @@ describe('operationalFieldsSchema — fixed-price package with a contact quota',
     expect(issue(r, 'contact_quota')).toBe('נא להזין מכסה תקינה (מספר שלם, 1 ומעלה)');
   });
 
-  it('a quota package is campaign-enabled: it needs a channel and a schedule even with no price per reached', () => {
+  it('a quota package needs a channel and a schedule, on the channels it names', () => {
     const noChannels = operationalFieldsSchema.safeParse({ ...quotaBase, channels: [] });
     expect(issue(noChannels, 'channels')).toBe('יש לבחור לפחות ערוץ אחד למסלול קמפיין');
     const noSchedule = operationalFieldsSchema.safeParse({ ...quotaBase, outreach_schedule: [] });
@@ -518,18 +289,21 @@ describe('operationalFieldsSchema — fixed-price package with a contact quota',
     expect(issue(wrongChannel, 'outreach_schedule.0.channel')).toBe('הערוץ אינו נכלל בערוצי החבילה');
   });
 
-  it('refuses a mix with the per-reached formula — on every formula field', () => {
-    const msg = 'חבילה עם מכסה אינה משתמשת בתמחור לפי מענה — השאירו ריק';
-    expect(issue(operationalFieldsSchema.safeParse({ ...quotaBase, price_per_reached: '4' }), 'price_per_reached')).toBe(msg);
-    const base = operationalFieldsSchema.safeParse({ ...quotaBase, base_price: '200', included_reached: '200' });
-    expect(issue(base, 'base_price')).toBe(msg);
-    expect(issue(base, 'included_reached')).toBe(msg);
-  });
-
-  it('refuses a card-hold floor or buffer — a hold does not exist in this model', () => {
-    const msg = 'שדה זה שייך לתפיסת מסגרת ואינו בשימוש בחבילה עם מכסה';
-    expect(issue(operationalFieldsSchema.safeParse({ ...quotaBase, min_hold_floor: '50' }), 'min_hold_floor')).toBe(msg);
-    expect(issue(operationalFieldsSchema.safeParse({ ...quotaBase, hold_buffer_pct: '10' }), 'hold_buffer_pct')).toBe(msg);
+  it('carries no per-result or card-hold field: a submitted one is dropped, never stored', () => {
+    const r = operationalFieldsSchema.safeParse({
+      ...quotaBase,
+      price_per_reached: '4',
+      base_price: '200',
+      included_reached: '200',
+      min_hold_floor: '50',
+      hold_buffer_pct: '10',
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      for (const old of ['price_per_reached', 'base_price', 'included_reached', 'min_hold_floor', 'hold_buffer_pct']) {
+        expect(r.data, old).not.toHaveProperty(old);
+      }
+    }
   });
 });
 

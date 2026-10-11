@@ -4,9 +4,6 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { closeCampaignAndCharge } from '@/lib/data/close-charge';
-import { creditHeldCardSumit } from '@/lib/sumit/capture';
-import { getSumitServerConfig } from '@/lib/data/payments';
 import { getEmailSender } from '@/lib/email/sender';
 import { getSmsSender } from '@/lib/sms/sender';
 import { cancellationRequestResponseEmail } from '@/lib/email/templates';
@@ -317,19 +314,14 @@ export async function getCancellationRequestForAdmin(
 }
 
 // Admin-scoped campaign lookup for the cancellation-request detail page —
-// tells the admin UI whether resolving will CAPTURE (pre-charge) or CREDIT
-// (post-charge) money, and feeds computeSuggestedCancellationAmount /
-// getCampaignBillingSummary. No owner-scoping (admin cross-customer reach,
-// same as every other function in this file gated by manage_billing).
+// tells the admin UI what resolving does with the package payment, and feeds
+// computeSuggestedCancellationAmount. No owner-scoping (admin cross-customer
+// reach, same as every other function in this file gated by manage_billing).
 export type CampaignForCancellationAdmin = {
   id: string;
   // How many contacts the package covers; null when the campaign has no quota (not a package).
   contactQuota: number | null;
-  chargeStatus: string | null;
-  maxChargeCeiling: number | null;
-  // What the campaign was charged, net of credits already given back — the base of a percentage fee once charged.
-  finalChargeAmount: number;
-  // A fixed-price package keeps no charge status, ceiling or card on the campaign: its money is in the payment ledger.
+  // A fixed-price package's money is in the payment ledger.
   // `packagePaid` is what the card paid before THIS request refunded anything (the base of a percentage fee),
   // `packageRefundable` what can still go back now, `packageRefundedForRequest` what THIS request already sent back (above
   // zero means an earlier resolve stopped halfway and the next one resumes it). All three are null when it is not a
@@ -347,20 +339,9 @@ export type CampaignForCancellationAdmin = {
   // The purchase's document (the receipt a refund credits) and THIS request's latest refund attempt with the provider's own
   // answer — so a refused refund shows why. Null when it is not a package or the ledger could not be read.
   packageRecord: PackagePaymentRecord | null;
-  // Whether resolveCancellationRequest can actually attempt a SUMIT
-  // capture/credit for this campaign (same 4-field check it uses internally)
-  // — lets the admin UI state the outcome definitively instead of hedging
-  // with "if card details are on file".
+  // Whether the package's payment can be refunded by itself (a saved card and a cancellable document, from the ledger) —
+  // lets the admin UI state the outcome definitively. False for a campaign without a package.
   hasCardOnFile: boolean;
-  // Signed/approved agreement version — an open-ceiling version (v5+) means the
-  // accrued preview is not capped at maxChargeCeiling.
-  tosVersion: string | null;
-  // Needed to compute the live accrued preview with computeChargeAmount —
-  // the campaign_billing_summary RPC's own `accrued` is base/overage-blind
-  // (verified gap, 2026-08-28), so callers must fold these in themselves.
-  basePrice: number;
-  includedReached: number;
-  pricePerReached: number;
 };
 
 export async function getCampaignForEventAdmin(
@@ -372,7 +353,7 @@ export async function getCampaignForEventAdmin(
   const { data, error } = await admin
     .from('campaigns')
     .select(
-      'id, charge_status, max_charge_ceiling, final_charge_amount, package_price, contact_quota, tos_version, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, base_price, included_reached, price_per_reached',
+      'id, package_price, contact_quota',
     )
     .eq('event_id', eventId)
     // The LIVE campaign: the one resolveCancellationRequest acts on (liveCampaignOf), so the screen never promises what the resolver will
@@ -414,9 +395,6 @@ export async function getCampaignForEventAdmin(
   }
   return {
     id: data.id,
-    chargeStatus: data.charge_status,
-    maxChargeCeiling: data.max_charge_ceiling,
-    finalChargeAmount: Number(data.final_charge_amount ?? 0),
     isPackage,
     packagePaid,
     packageRefundable,
@@ -424,13 +402,7 @@ export async function getCampaignForEventAdmin(
     packageUnreadable,
     packageRefundDocument,
     packageRecord,
-    tosVersion: data.tos_version,
-    hasCardOnFile: isPackage
-      ? packageCard
-      : !!(data.card_token_ref && data.card_exp_month && data.card_exp_year && data.card_citizen_id),
-    basePrice: Number(data.base_price ?? 0),
-    includedReached: Number(data.included_reached ?? 0),
-    pricePerReached: Number(data.price_per_reached ?? 0),
+    hasCardOnFile: packageCard,
     contactQuota: data.contact_quota,
   };
 }
@@ -439,14 +411,8 @@ export async function getCampaignForEventAdmin(
 // instead of ownership — mirrors campaigns.ts cancelCampaign's admin-only
 // wind-down pattern. Same R7 DB trigger applies (operational-campaign guard).
 // Re-checks the LIVE status first (rather than trusting a caller-supplied
-// snapshot) so a redundant call is a true no-op: the caller here
-// (resolveCancellationRequest) reads the event once at the top of its run,
-// then may call closeCampaignAndCharge — which, on a terminal settlement
-// outcome, already closes the event itself. Without this check that stale
-// snapshot would make this function re-write status='closed' (harmless — the
-// DB trigger only validates real transitions) but ALSO log a second,
-// misleading 'event.closed_by_admin' activity entry right after the real
-// 'event.closed_by_settlement' one for the same closure.
+// snapshot) so a redundant call is a true no-op and logs no second
+// 'event.closed_by_admin' entry.
 export async function adminCloseEvent(eventId: string): Promise<void> {
   await requirePlatformPermission('manage_billing');
   const admin = createAdminClient();
@@ -463,60 +429,37 @@ export async function adminCloseEvent(eventId: string): Promise<void> {
   await logActivity({ eventId, action: 'event.closed_by_admin', meta: {} });
 }
 
-// Suggested amount ONLY — the admin UI shows this pre-filled but editable;
-// the actual charged amount is whatever the admin confirms in
-// resolveCancellationRequest's input, never this value directly. Deliberately
-// EXCLUDES service-already-rendered (campaign_billing_summary.accrued) — the
-// right to charge for it (14ה(ב1)) applies only to a "continuous transaction",
-// not yet confirmed for KALFA campaigns (see the plan's legal-research note).
-export async function computeSuggestedCancellationAmount(campaignId: string, base?: number): Promise<number> {
+// Suggested amount ONLY — the admin UI shows this pre-filled but editable; the amount that stays with us is whatever the
+// admin confirms in resolveCancellationRequest's input, never this value directly. `base` is what the card paid for the
+// package (0 when nothing was paid or there is no package).
+export async function computeSuggestedCancellationAmount(base: number): Promise<number> {
   const admin = createAdminClient();
-  const [settingsRes, campaignRes] = await Promise.all([
-    admin
-      .from('app_settings')
-      .select('cancellation_fee_percent, cancellation_fee_cap')
-      .eq('id', true)
-      .maybeSingle(),
-    admin.from('campaigns').select('max_charge_ceiling').eq('id', campaignId).single(),
-  ]);
-  const feePercent = settingsRes.data?.cancellation_fee_percent ?? 0;
-  const feeCap = settingsRes.data?.cancellation_fee_cap ?? 0;
-  // `base` is handed in for a package (what the card paid): it has no ceiling to take the fee of.
-  const ceiling = base ?? campaignRes.data?.max_charge_ceiling ?? 0;
-  const fee = Math.min((ceiling * feePercent) / 100, feeCap);
-  return Math.min(fee, ceiling);
+  const { data } = await admin
+    .from('app_settings')
+    .select('cancellation_fee_percent, cancellation_fee_cap')
+    .eq('id', true)
+    .maybeSingle();
+  const feePercent = data?.cancellation_fee_percent ?? 0;
+  const feeCap = data?.cancellation_fee_cap ?? 0;
+  const fee = Math.min((base * feePercent) / 100, feeCap);
+  return Math.min(fee, base);
 }
 
-// Money is decided and MOVED here (when there's still something to move),
-// then notified, then persisted. Three sub-cases per campaign.charge_status
-// (a fixed-price package is a fourth case of its own, below the three):
-//   - pre-charge (null/charge_failed/charge_review/nothing_to_charge): calls
-//     closeCampaignAndCharge with an override amount — a REAL SUMIT capture
-//     for partial_charge, or the existing nothing_to_charge branch (no SUMIT
-//     call at all) for full_cancellation. A declined request moves no money.
-//   - post-charge ('charged'): calls creditHeldCardSumit — a REAL SUMIT
-//     credit for the amount being refunded. Falls back to
-//     capture_outcome='manual_refund_required' ONLY if the campaign is
-//     missing the card fields needed to even attempt it (very old data) —
-//     a declined/network error from the credit call itself PROPAGATES
-//     instead, it does not silently downgrade to "manual" — staff sees the
-//     real failure and decides what to do.
-//   - fixed-price PACKAGE (campaigns.package_price set; it has no charge_status): paid once at purchase, so money only
-//     goes BACK, through the payment ledger (refundPackagePayment, src/lib/payments/package-refund.ts) — all of what
-//     the card paid for full_cancellation, what is beyond the amount that STAYS with us for partial_charge. It is
-//     checked first (checkPackageRefund): a refund that cannot be made (no saved card or cancellable document, payments
-//     off, ledger unreadable) stops here and the customer is told nothing. When nothing was paid (or it all went back
-//     already) there is no refund to make: the request is approved and no money moves. A refund that CAN be made is made
-//     BEFORE the e-mail, and the e-mail says what went back: a refund that does not go through is an error the admin
-//     sees, the request stays open and the customer is told nothing. A refund already made for THIS request is resumed,
-//     never repeated — which is what makes refund-then-e-mail safe: when the e-mail fails after the refund, approving
-//     again sends it without a second refund. The campaign and the event are closed afterwards. A declined request moves
-//     no money.
-// For everything that is NOT a package refund the EMAIL IS CHECKED FIRST, before any SUMIT call — same send-then-persist
-// contract as sendInquiryReply (contacts.ts), extended so a broken mail server can't leave a charge/credit executed with
-// no notification sent (a per-result charge or credit has no once-per-request guard, so it must not be retried). SMS
-// is best-effort AFTER a successful email/capture/credit — see
-// sendNoContactSms (callback-scheduling.ts) for the "never block the core
+// Money is decided and MOVED here (when there's still something to move), then notified, then persisted.
+//   - A fixed-price PACKAGE: paid once at purchase, so money only goes BACK, through the payment ledger
+//     (refundPackagePayment, src/lib/payments/package-refund.ts) — all of what the card paid for full_cancellation, what
+//     is beyond the amount that STAYS with us for partial_charge. It is checked first (checkPackageRefund): a refund that
+//     cannot be made (no saved card or cancellable document, payments off, ledger unreadable) stops here and the customer
+//     is told nothing. When nothing was paid (or it all went back already) there is no refund to make: the request is
+//     approved and no money moves. A refund that CAN be made is made BEFORE the e-mail, and the e-mail says what went
+//     back: a refund that does not go through is an error the admin sees, the request stays open and the customer is told
+//     nothing. A refund already made for THIS request is resumed, never repeated — which is what makes refund-then-e-mail
+//     safe: when the e-mail fails after the refund, approving again sends it without a second refund. The campaign and the
+//     event are closed afterwards.
+//   - A campaign without a package (created under the earlier pay-per-result model): no money moves here.
+//   - A declined request moves no money.
+// When no refund is made the e-mail is sent first, so a broken mail server leaves the request open and nothing changed.
+// SMS is best-effort AFTER the e-mail — see sendNoContactSms (callback-scheduling.ts) for the "never block the core
 // outcome" contract.
 export async function resolveCancellationRequest(
   requestId: string,
@@ -542,14 +485,6 @@ export async function resolveCancellationRequest(
         id: string;
         status: string;
         created_at: string;
-        charge_status: string | null;
-        final_charge_amount: number | null;
-        max_charge_ceiling: number | null;
-        card_token_ref: string | null;
-        card_exp_month: number | null;
-        card_exp_year: number | null;
-        card_citizen_id: string | null;
-        auth_external_ref: string | null;
         package_price: number | null;
       }[];
     } | null;
@@ -559,8 +494,7 @@ export async function resolveCancellationRequest(
     .from('event_cancellation_requests')
     .select(
       'id, request_code, event_id, sms_consent, status, ' +
-        'events(id, status, owner_id, campaigns(id, status, created_at, charge_status, final_charge_amount, max_charge_ceiling, ' +
-        'card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, package_price))',
+        'events(id, status, owner_id, campaigns(id, status, created_at, package_price))',
     )
     .eq('id', requestId)
     .single();
@@ -575,16 +509,9 @@ export async function resolveCancellationRequest(
   // test run leaves one), and the embed promises no order. The campaign a cancellation request is about is the live one: money is
   // never refunded from, and a charge never taken on, a cancelled campaign. Newest first, then the live one.
   const campaign = liveCampaignOf([...event.campaigns].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? '')));
-  // A fixed-price package was paid at purchase and has no settlement: neither money branch below fits it
-  // (closeCampaignAndCharge refuses it). Resolving its request means giving money BACK through the payment ledger
+  // A fixed-price package was paid at purchase. Resolving its request means giving money BACK through the payment ledger
   // (package-refund.ts); the pieces for that are decided here, before any money moves or the customer is e-mailed.
   const isPackage = campaign?.package_price != null;
-  const hasCardOnFile = !!(
-    campaign?.card_token_ref &&
-    campaign.card_exp_month &&
-    campaign.card_exp_year &&
-    campaign.card_citizen_id
-  );
 
   // A fixed-price package: what the card paid BEFORE this request refunded anything (the base of a percentage fee) comes
   // from the ledger, never from the old campaign columns (a package has none of them) — and so does what an earlier
@@ -618,12 +545,7 @@ export async function resolveCancellationRequest(
     // A fee chosen as a PERCENTAGE becomes an amount here, on the server, from a base the server decides
     // (cancellationFeeBase) — never from anything the browser computed. Refused BEFORE the customer email and before any
     // money moves; from here on the amount below is the only one used.
-    const base = cancellationFeeBase({
-      chargeStatus: campaign?.charge_status ?? null,
-      finalChargeAmount: campaign?.final_charge_amount ?? null,
-      maxChargeCeiling: campaign?.max_charge_ceiling ?? null,
-      packagePaid,
-    });
+    const base = cancellationFeeBase({ packagePaid });
     if (base <= 0) throw new Error('אין סכום בסיס לחישוב אחוזים בקמפיין הזה — הזינו סכום בשקלים');
     resolutionAmount = feeFromPercent(base, input.resolutionPercent);
     if (resolutionAmount <= 0) throw new Error('הסכום שחושב מהאחוז קטן מדי — הזינו אחוז גבוה יותר או סכום בשקלים');
@@ -657,36 +579,16 @@ export async function resolveCancellationRequest(
     }
   }
 
-  // Decide WHICH BRANCH before sending anything (not the final amount yet for
-  // the credit branch — that depends on what was actually charged, read from
-  // `campaign.final_charge_amount`, already available here).
-  let captureOutcome: 'captured' | 'refunded' | 'manual_refund_required' | 'not_applicable';
+  // Which money outcome this resolve has, decided before anything is sent.
+  let captureOutcome: 'refunded' | 'not_applicable';
   let finalAmount = 0;
   let sumitDocumentId: number | null = null;
   let sumitDocumentUrl: string | null = null;
 
-  const isPreCharge = campaign && campaign.charge_status !== 'charged';
-  const isPostCharge = campaign?.charge_status === 'charged';
-
-  if (resolution === 'declined') {
-    captureOutcome = 'not_applicable';
-  } else if (isPackage) {
-    captureOutcome = packagePlan && packagePlan.refund > 0 ? 'refunded' : 'not_applicable';
-  } else if (isPostCharge) {
-    if (!hasCardOnFile) {
-      captureOutcome = 'manual_refund_required';
-      const charged = campaign?.final_charge_amount ?? 0;
-      finalAmount =
-        resolution === 'full_cancellation'
-          ? charged
-          : Math.max(0, charged - (resolutionAmount ?? 0));
-    } else {
-      captureOutcome = 'refunded'; // executed below, after the email send succeeds
-    }
-  } else if (isPreCharge) {
-    captureOutcome = 'captured'; // executed below, after the email send succeeds
+  if (resolution !== 'declined' && isPackage && packagePlan && packagePlan.refund > 0) {
+    captureOutcome = 'refunded';
   } else {
-    captureOutcome = 'not_applicable'; // no campaign was ever authorized — nothing to move
+    captureOutcome = 'not_applicable';
   }
 
   const origin = await getAppOrigin();
@@ -697,7 +599,7 @@ export async function resolveCancellationRequest(
       recipientName: ownerName,
       requestCode: reqRow.request_code,
       resolution,
-      resolutionAmount: captureOutcome === 'manual_refund_required' ? finalAmount : resolutionAmount,
+      resolutionAmount,
       refundedAmount,
       resolutionNote: input.resolutionNote,
       origin,
@@ -706,12 +608,10 @@ export async function resolveCancellationRequest(
     await sender.send({ to: ownerEmail, subject, html, text });
   };
 
-  // A package refund goes FIRST and the e-mail after it; everything else keeps the e-mail first. The difference is
-  // whether a retry is safe: a package refund is made once per request (the ledger returns an earlier refund of the same
-  // request instead of refunding again), so a refund followed by a failed e-mail is finished by approving again, and the
-  // customer is never told of a refund that was declined or is in doubt. The per-result charge and credit below have no
-  // such guard — a retry could charge or credit twice — so for them the e-mail stays the gate before any money moves.
-  const refundFirst = !!(isPackage && campaign && packagePlan && packagePlan.refund > 0);
+  // A package refund goes FIRST and the e-mail after it: a package refund is made once per request (the ledger returns
+  // an earlier refund of the same request instead of refunding again), so a refund followed by a failed e-mail is finished
+  // by approving again, and the customer is never told of a refund that was declined or is in doubt.
+  const refundFirst = captureOutcome === 'refunded';
 
   if (!refundFirst) {
     try {
@@ -722,16 +622,13 @@ export async function resolveCancellationRequest(
         throw new Error('שירות הדואר אינו מוגדר — הגדירו SMTP במסך ההגדרות ונסו שוב.');
       }
       if (name === 'EmailSendError') {
-        throw new Error('שליחת הדואר נכשלה — הבקשה לא עודכנה, שום חיוב/זיכוי לא בוצע; אפשר לנסות שוב.');
+        throw new Error('שליחת הדואר נכשלה — הבקשה לא עודכנה, ושום כסף לא הועבר; אפשר לנסות שוב.');
       }
       throw err;
     }
   }
 
-  // NOW execute the actual money movement. For the per-result branches any SumitDeclinedError/SumitNetworkError
-  // propagates — the customer already got an email promising an outcome the charge/credit then failed to deliver;
-  // surfacing the error to the admin (rather than silently persisting a mismatched resolution) is the least-bad option,
-  // matching close-charge.ts's own "never silently settle a wrong amount" discipline.
+  // NOW the refund itself.
   if (refundFirst && campaign && packagePlan) {
     // The money goes back through the ledger: a pending row first, the clearing company second, the outcome recorded
     // third. Anything but a confirmed refund is an error the admin sees, with the request left open and NO e-mail sent —
@@ -761,63 +658,6 @@ export async function resolveCancellationRequest(
         'allowed',
       );
     }
-  } else if (captureOutcome === 'captured') {
-    const overrideAmount = resolution === 'full_cancellation' ? 0 : (resolutionAmount ?? 0);
-    const result = await closeCampaignAndCharge(campaign!.id, {
-      overrideAmount,
-      overrideReason:
-        resolution === 'full_cancellation' ? 'cancellation_full' : 'cancellation_partial_charge',
-    });
-    finalAmount = result.amount;
-    if (result.outcome === 'charged') {
-      sumitDocumentId = result.documentId ?? null;
-      sumitDocumentUrl = result.documentUrl ?? null;
-    }
-  } else if (captureOutcome === 'refunded') {
-    const charged = campaign!.final_charge_amount ?? 0;
-    const creditAmount =
-      resolution === 'full_cancellation'
-        ? charged
-        : Math.max(0, charged - (resolutionAmount ?? 0));
-    finalAmount = creditAmount;
-    if (creditAmount > 0) {
-      const sumit = await getSumitServerConfig();
-      if (!sumit) throw new Error('הגדרות SUMIT חסרות — לא ניתן לבצע זיכוי');
-      const result = await creditHeldCardSumit({
-        companyId: sumit.companyId,
-        apiKey: sumit.apiKey,
-        cardToken: campaign!.card_token_ref!,
-        expMonth: campaign!.card_exp_month!,
-        expYear: campaign!.card_exp_year!,
-        citizenId: campaign!.card_citizen_id!,
-        externalRef: campaign!.auth_external_ref ?? '',
-        amount: creditAmount.toString(),
-        customerEmail: ownerEmail,
-        customerName: ownerName,
-      });
-      sumitDocumentId = result.documentId;
-      sumitDocumentUrl = result.documentUrl;
-
-      // The SUMIT credit above already moved real money back to the customer's
-      // card — campaigns.final_charge_amount must reflect that net amount too,
-      // or the customer's own campaign page and the admin campaigns list keep
-      // showing the pre-refund gross forever (verified gap, 2026-08-28).
-      // charge_status/credit_applied are deliberately left untouched: the
-      // original charge is still a historical fact (charge_status stays
-      // 'charged', preserving the settle-guard's terminal-state check), and
-      // credit_applied is a distinct pre-charge concept (credit netted in at
-      // the ORIGINAL charge, per close-charge.ts) — reusing it for a post-charge
-      // refund would corrupt that figure.
-      const { error: refundSyncError } = await admin
-        .from('campaigns')
-        .update({ final_charge_amount: charged - creditAmount })
-        .eq('id', campaign!.id);
-      if (refundSyncError) {
-        throw new Error(
-          'הזיכוי בוצע בפועל מול SUMIT, אך עדכון הסכום בכרטיס הקמפיין נכשל — נא לתעד ידנית ולבדוק שוב',
-        );
-      }
-    }
   }
 
   // Best-effort, never blocks: a failed/skipped SMS must not undo the email
@@ -825,7 +665,7 @@ export async function resolveCancellationRequest(
   if (reqRow.sms_consent && ownerPhone) {
     try {
       const smsSender = await getSmsSender();
-      // A package refund: the fee that stayed and what went back, as in the e-mail. Everything else keeps its wording.
+      // A package refund: the fee that stayed and what went back, as in the e-mail.
       const smsText = buildCancellationSmsText({
         fullName: ownerName,
         requestCode: reqRow.request_code,
@@ -880,7 +720,7 @@ export async function resolveCancellationRequest(
   }
   if (updateError) {
     throw new Error(
-      'העדכון נשלח ללקוח (והחיוב, אם היה, בוצע), אך שמירת הרשומה נכשלה — נא לרענן ולתעד ידנית לפני פעולה נוספת',
+      'העדכון נשלח ללקוח (וההחזר, אם היה, בוצע), אך שמירת הרשומה נכשלה — נא לרענן ולתעד ידנית לפני פעולה נוספת',
     );
   }
 

@@ -2,16 +2,11 @@
 import { Editor } from '@tiptap/core';
 import { describe, expect, it } from 'vitest';
 
-import {
-  BASE_FEE_AGREEMENT_VERSION,
-  OPEN_CEILING_AGREEMENT_VERSION,
-  defaultBodyAsTemplate,
-} from '@/lib/agreements/template';
 import { PACKAGE_SEED_BODY } from '@/test/agreement-seed';
 import { canEditVisually, contractExtensions, normalizeContractHtml, serializeContractHtml } from './contract-editor-extensions';
 
-// The editor must never change a contract by loading it. Every body the system itself produces — the seeded package
-// contract and the three pay-per-result templates — has to come back out of the editor unchanged.
+// The editor must never change a contract by loading it. The body the system itself produces — the seeded package
+// contract — has to come back out of the editor unchanged.
 
 function roundTrip(html: string): string {
   const editor = new Editor({ extensions: contractExtensions(), content: html });
@@ -22,12 +17,7 @@ function roundTrip(html: string): string {
   }
 }
 
-const BODIES: Array<[string, string]> = [
-  ['the seeded package contract', PACKAGE_SEED_BODY],
-  ['pay-per-result v3', defaultBodyAsTemplate('draft-2026-07-v3')],
-  ['base-fee v4', defaultBodyAsTemplate(BASE_FEE_AGREEMENT_VERSION)],
-  ['open-ceiling v5', defaultBodyAsTemplate(OPEN_CEILING_AGREEMENT_VERSION)],
-];
+const BODIES: Array<[string, string]> = [['the seeded package contract', PACKAGE_SEED_BODY]];
 
 describe('the visual editor keeps the contract exactly', () => {
   it.each(BODIES)('%s: nothing is lost on the way through the editor', (_name, body) => {

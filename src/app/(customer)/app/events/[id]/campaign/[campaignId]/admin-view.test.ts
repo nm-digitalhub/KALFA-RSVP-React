@@ -138,7 +138,7 @@ describe('campaign page — a failed read must never read as an empty campaign',
 
 // The form must render exactly where the write can succeed — no wider, no
 // narrower. updateThankyouSchedule accepts the event's owner OR platform staff
-// holding manage_billing (the same permission behind close/settle/cancel on this
+// holding manage_billing (the same permission behind close/cancel on this
 // page); an org member with campaigns:view is neither, and would get a control
 // whose submit is guaranteed to be refused.
 describe('thank-you schedule — form only where the write can succeed', () => {
@@ -189,7 +189,7 @@ describe('page structure — three cards, no nesting', () => {
   const manage = readFileSync(join(__dirname, 'manage-client.tsx'), 'utf8');
 
   it('has one card per subject', () => {
-    for (const merged of ['CampaignStatusAndBilling', 'DeliveryBreakdown', 'ActionsPanel']) {
+    for (const merged of ['CampaignStatusCard', 'DeliveryBreakdown', 'ActionsPanel']) {
       expect(manage, merged).toContain(`function ${merged}(`);
     }
     // The cards these replaced must not come back alongside them.

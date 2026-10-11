@@ -51,19 +51,12 @@ export async function recordReached(args: ReachedArgs): Promise<string> {
 
 export type BillingSummary = {
   reachedCount: number;
-  accrued: number;
-  ceiling: number;
-  maxContacts: number;
 };
 
-// What B4 close-charge consumes: how many reached (billable) and the accrued sum
-// (Σ locked_price), against the ceiling.
+// How many contacts of the campaign were reached (billed_results), for the campaign page.
 //
-// THROWS on a real RPC error (transient DB/RPC failure) so close-charge can route
-// to `review` — NEVER swallow it to a 0 that would permanently settle the campaign
-// at ₪0 (the zero-bill bug). An EMPTY result (no row) is benign: it only happens
-// for a nonexistent campaign, which close-charge already pre-validates via
-// getCampaignForCharge → return null (treated as nothing reached, not an error).
+// THROWS on a real RPC error (transient DB/RPC failure) rather than showing 0 reached. An EMPTY result (no row) only
+// happens for a nonexistent campaign → null.
 export async function getCampaignBillingSummary(
   campaignId: string,
 ): Promise<BillingSummary | null> {
@@ -77,12 +70,7 @@ export async function getCampaignBillingSummary(
     | Record<string, unknown>
     | undefined;
   if (!row) return null;
-  return {
-    reachedCount: Number(row.reached_count ?? 0),
-    accrued: Number(row.accrued ?? 0),
-    ceiling: Number(row.ceiling ?? 0),
-    maxContacts: Number(row.max_contacts ?? 0),
-  };
+  return { reachedCount: Number(row.reached_count ?? 0) };
 }
 
 // Credit available to THIS campaign's close-charge (§14/§16/D5, gross to match

@@ -11,7 +11,6 @@ vi.mock('@/lib/data/event-cancellation', () => ({
 }));
 // The payments list is its own component with its own tests; here the page only has to hand it this campaign's view.
 vi.mock('@/lib/payments/campaign-payments-view', () => ({ campaignPaymentsView: vi.fn(async () => null) }));
-vi.mock('@/lib/data/billing', () => ({ getCampaignBillingSummary: vi.fn() }));
 vi.mock('../../_components', () => ({
   PageHeading: ({ children }: { children: React.ReactNode }) => <h1>{children}</h1>,
   Badge: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
@@ -32,7 +31,6 @@ vi.mock('./resolve-form', () => ({
 }));
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
-import { getCampaignBillingSummary } from '@/lib/data/billing';
 import {
   computeSuggestedCancellationAmount,
   getCampaignForEventAdmin,
@@ -42,9 +40,9 @@ import { campaignPaymentsView } from '@/lib/payments/campaign-payments-view';
 import AdminCancellationDetailPage from './page';
 
 // /admin/cancellations/[id] — what the admin reads before resolving a request, and what the form is told the money will
-// do. A fixed-price package is refunded from the payment ledger; it has no "not charged yet" state and no per-result
-// accrual, and every state the model can hold (paid with a card, paid without one, nothing paid, unreadable) says its own
-// true thing. The pay-per-result campaigns keep exactly the screen they had.
+// do. A fixed-price package is refunded from the payment ledger, and every state the model can hold (paid with a card,
+// paid without one, nothing paid, unreadable) says its own true thing. A campaign created under the earlier
+// pay-per-result model moves no money from here.
 
 const request = (over: Record<string, unknown> = {}) => ({
   id: 'r1',
@@ -63,26 +61,22 @@ const request = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-const perResult = (over: Record<string, unknown> = {}) => ({
+const legacy = (over: Record<string, unknown> = {}) => ({
   id: 'c1',
-  chargeStatus: null,
-  maxChargeCeiling: 400,
-  finalChargeAmount: 0,
+  contactQuota: null,
   isPackage: false,
   packagePaid: null,
   packageRefundable: null,
   packageRefundedForRequest: null,
   packageUnreadable: false,
-  tosVersion: '2026-07-v4',
+  packageRefundDocument: null,
+  packageRecord: null,
   hasCardOnFile: false,
-  basePrice: 0,
-  includedReached: 0,
-  pricePerReached: 1,
   ...over,
 });
 
 const pkg = (over: Record<string, unknown> = {}) =>
-  perResult({ isPackage: true, maxChargeCeiling: null, packagePaid: 120, packageRefundable: 120, hasCardOnFile: true, ...over });
+  legacy({ isPackage: true, contactQuota: 100, packagePaid: 120, packageRefundable: 120, hasCardOnFile: true, ...over });
 
 const REQUEST_ID = '3f0b9a52-6c1e-4d8a-9b7e-2a4c5d6e7f80';
 
@@ -104,13 +98,12 @@ const form = (html: string) => {
 };
 
 beforeEach(() => {
-  for (const m of [requirePlatformPermission, getCancellationRequestForAdmin, getCampaignForEventAdmin, computeSuggestedCancellationAmount, getCampaignBillingSummary]) {
+  for (const m of [requirePlatformPermission, getCancellationRequestForAdmin, getCampaignForEventAdmin, computeSuggestedCancellationAmount]) {
     vi.mocked(m).mockReset();
   }
   vi.mocked(getCancellationRequestForAdmin).mockResolvedValue(request() as never);
-  vi.mocked(getCampaignForEventAdmin).mockResolvedValue(perResult() as never);
+  vi.mocked(getCampaignForEventAdmin).mockResolvedValue(pkg() as never);
   vi.mocked(computeSuggestedCancellationAmount).mockResolvedValue(5);
-  vi.mocked(getCampaignBillingSummary).mockResolvedValue({ reachedCount: 3, ceiling: 400 } as never);
 });
 
 describe('/admin/cancellations/[id]', () => {
@@ -128,7 +121,7 @@ describe('/admin/cancellations/[id]', () => {
   });
 
   it('names no clearing company anywhere on the screen', async () => {
-    for (const c of [perResult(), perResult({ chargeStatus: 'charged', finalChargeAmount: 300 }), pkg(), pkg({ hasCardOnFile: false })]) {
+    for (const c of [legacy(), pkg(), pkg({ hasCardOnFile: false })]) {
       vi.mocked(getCampaignForEventAdmin).mockResolvedValue(c as never);
       expect(await render()).not.toMatch(/SUMIT|CardCom/i);
     }
@@ -173,19 +166,18 @@ describe('a fixed-price package', () => {
     expect(form(html)).toMatchObject({ outcome: 'credit', base: '120', baseLabel: 'הסכום ששולם' });
   });
 
-  it('never shows the pay-per-result screen: no "not charged yet", no reached-contacts accrual, no billing lookup', async () => {
+  it('never shows the pay-per-result screen: no "not charged yet", no reached-contacts accrual', async () => {
     vi.mocked(getCampaignForEventAdmin).mockResolvedValue(pkg() as never);
     const html = await render();
     expect(html).not.toContain('טרם חויב');
     expect(html).not.toContain('אנשי קשר הושגו');
     expect(html).not.toContain('חיוב אמיתי');
-    expect(getCampaignBillingSummary).not.toHaveBeenCalled();
   });
 
   it('the suggested fee is taken of what the card paid, not of a ceiling the package does not have', async () => {
     vi.mocked(getCampaignForEventAdmin).mockResolvedValue(pkg() as never);
     await render();
-    expect(computeSuggestedCancellationAmount).toHaveBeenCalledWith('c1', 120);
+    expect(computeSuggestedCancellationAmount).toHaveBeenCalledWith(120);
   });
 
   // A paid package can be refunded in part by either clearing company: the screen says a credit document is issued, and
@@ -299,30 +291,14 @@ describe('a fixed-price package', () => {
   });
 });
 
-describe('a pay-per-result campaign keeps its screen', () => {
-  it('not charged yet: "טרם חויב", the form charges, the base is the ceiling', async () => {
+describe('a campaign from the earlier pay-per-result model', () => {
+  it('says no money moves from here, and the form moves none', async () => {
+    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(legacy() as never);
     const html = await render();
-    expect(html).toContain('טרם חויב');
-    expect(form(html)).toMatchObject({ outcome: 'capture', base: '400', baseLabel: 'תקרת הקמפיין' });
-    expect(computeSuggestedCancellationAmount).toHaveBeenCalledWith('c1', undefined);
-    expect(getCampaignBillingSummary).toHaveBeenCalledWith('c1');
-    expect(html).toContain('אנשי קשר הושגו');
-  });
-
-  it('charged, with a saved card: the form credits automatically, the base is what was charged', async () => {
-    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(
-      perResult({ chargeStatus: 'charged', finalChargeAmount: 300, hasCardOnFile: true }) as never,
-    );
-    const html = await render();
-    expect(html).toContain('זיכוי אוטומטי');
-    expect(form(html)).toMatchObject({ outcome: 'credit', base: '300', baseLabel: 'הסכום שחויב' });
-  });
-
-  it('charged, with no saved card: only a manual refund is recorded', async () => {
-    vi.mocked(getCampaignForEventAdmin).mockResolvedValue(perResult({ chargeStatus: 'charged', finalChargeAmount: 300 }) as never);
-    const html = await render();
-    expect(html).toContain('נדרש זיכוי');
-    expect(form(html).outcome).toBe('manual');
+    expect(html).toContain('קמפיין משיטת התשלום הקודמת');
+    expect(html).not.toContain('טרם חויב');
+    expect(form(html)).toMatchObject({ outcome: 'legacy', base: '0', baseLabel: 'הסכום ששולם' });
+    expect(computeSuggestedCancellationAmount).toHaveBeenCalledWith(0);
   });
 });
 
@@ -342,7 +318,6 @@ describe('an event with no live campaign', () => {
   it('never looks up billing or a suggested amount for a campaign that is not there', async () => {
     vi.mocked(getCampaignForEventAdmin).mockResolvedValue(null);
     await render();
-    expect(getCampaignBillingSummary).not.toHaveBeenCalled();
     expect(computeSuggestedCancellationAmount).not.toHaveBeenCalled();
   });
 });

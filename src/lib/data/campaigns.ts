@@ -4,16 +4,13 @@ import { requireUser, requirePlatformPermission } from '@/lib/auth/dal';
 import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import { requireOwnedEvent, requireEventAccess } from '@/lib/data/events';
 import { assertEventNotPast, defaultThankyouSendAt } from '@/lib/data/event-date';
-import {
-  countUniqueContactsForEvent,
-  snapshotAuthorizedSet,
-} from '@/lib/data/contacts';
+import { countUniqueContactsForEvent } from '@/lib/data/contacts';
 import { campaignStage, type CampaignStage } from '@/lib/data/event-labels';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { logActivity } from '@/lib/data/activity';
-import { getBaseOveragePricingEnabled, getPackageModelEnabled } from '@/lib/data/payments';
+import { getPackageModelEnabled } from '@/lib/data/payments';
 import {
   PACKAGE_NOT_PAID_ERROR,
   PACKAGE_PAYMENT_UNVERIFIED_ERROR,
@@ -75,74 +72,8 @@ export const CAMPAIGN_COLUMNS =
 // classify it as a 409 without duplicating the string.
 export const EVENT_NOT_CONFIRMED_ERROR = 'יש לאשר את פרטי האירוע לפני אישורי הגעה';
 
-// Pure: the approved charge ceiling = price-per-reached × max contacts, rounded
-// to agorot. The ceiling is the maximum the system may bill under an agreement
-// that quotes a frozen figure (v4 and earlier; close-charge.ts leaves an
-// open-ceiling agreement uncapped) (§7); it is derived server-side and never
-// accepted from the client.
-export function computeCeiling(pricePerReached: number, maxContacts: number): number {
-  return Math.round(pricePerReached * maxContacts * 100) / 100;
-}
-
-// Pure: the COVERED contact count = min(full_unique, reasonable_coverage). It is
-// the cap the authorized SET is snapshotted to at the hold and the basis for the
-// J5 hold. The CHARGE CEILING (full×price) is NOT lowered to this.
-export function computeCovered(
-  fullUnique: number,
-  reasonableCoverage: number,
-): number {
-  return Math.max(0, Math.min(fullUnique, reasonableCoverage));
-}
-
-// Pure: the J5 hold (authorization) amount = covered × price × (1 + buffer),
-// rounded to agorot, but never below the package's min_hold_floor. The hold is
-// SECURITY only and is sized to `covered` (NOT the full ceiling); it is a card
-// guarantee, not a billing bound (the authorized set no longer caps `reached`).
-// `holdBufferPct` is a FRACTION, not a percent
-// number (0.1 = +10%); it stays 0 while pricing is uniform. The floor never
-// raises the final charge — that settles from contacts actually reached.
-export function computeHoldAmount(
-  covered: number,
-  pricePerReached: number,
-  minHoldFloor: number,
-  holdBufferPct: number,
-): number {
-  const sized =
-    Math.round(covered * pricePerReached * (1 + holdBufferPct) * 100) / 100;
-  return Math.max(minHoldFloor, sized);
-}
-
-// Pure: the flat-base + included + overage charge ceiling = base + max(0,
-// maxContacts − included) × overage, rounded to agorot. With base=0 & included=0
-// this equals the legacy computeCeiling(overage, maxContacts) — so a gated-OFF
-// campaign (base/included snapshotted 0) keeps the legacy ceiling exactly.
-export function computeCeilingBaseOverage(
-  base: number,
-  included: number,
-  overage: number,
-  maxContacts: number,
-): number {
-  const gross = base + Math.max(0, maxContacts - included) * overage;
-  return Math.round(gross * 100) / 100;
-}
-
-// Pure: the flat-base + included + overage J5 hold = (base + max(0, covered −
-// included) × overage) × (1 + buffer), rounded to agorot, floored at
-// min_hold_floor. With base=0 & included=0 this equals the legacy
-// computeHoldAmount(covered, overage, floor, buffer) — behaviour-neutral for the
-// gated-OFF path. The base term makes the hold cover the always-charged fee.
-export function computeHoldAmountBaseOverage(
-  base: number,
-  included: number,
-  overage: number,
-  covered: number,
-  minHoldFloor: number,
-  holdBufferPct: number,
-): number {
-  const gross = base + Math.max(0, covered - included) * overage;
-  const sized = Math.round(gross * (1 + holdBufferPct) * 100) / 100;
-  return Math.max(minHoldFloor, sized);
-}
+// A campaign created under the earlier pay-per-result model cannot be started: it has no package payment.
+export const NO_PACKAGE_ERROR = 'לא ניתן להפעיל קמפיין שלא נרכשה עבורו חבילה';
 
 // A single touchpoint in the event-anchored outreach schedule (§10) — a friendly
 // drip leading up to the event to maximize reached contacts.
@@ -152,54 +83,8 @@ export type OutreachTouchpoint = {
   message_key: string; // references an approved WhatsApp template / call script
 };
 
-// Commercial templates (§17) — active packages that carry a recommended
-// price-per-reached, the channels, and the outreach schedule. KALFA (admin)
-// defines these; the owner chooses one (or, with one, just sees it).
-export type CampaignTemplate = {
-  id: string;
-  name: string;
-  price_per_reached: number;
-  // Flat-base + included tier. 0 when the package has no base set.
-  // price_per_reached is the per-reached OVERAGE rate above `included_reached`.
-  base_price: number;
-  included_reached: number;
-  description: string | null;
-  channels: Channel[];
-  outreach_schedule: OutreachTouchpoint[];
-};
-
-export async function listCampaignTemplates(): Promise<CampaignTemplate[]> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('packages')
-    .select(
-      'id, name, price_per_reached, base_price, included_reached, description, channels, outreach_schedule',
-    )
-    .eq('active', true)
-    .not('price_per_reached', 'is', null)
-    .order('sort_order', { ascending: true });
-  if (error) throw new Error('טעינת מסלולי השירות נכשלה');
-  return (data ?? [])
-    .filter((p): p is typeof p & { price_per_reached: number } =>
-      p.price_per_reached != null,
-    )
-    .map((p) => ({
-      id: p.id,
-      name: p.name,
-      price_per_reached: Number(p.price_per_reached),
-      base_price: Number(p.base_price ?? 0),
-      included_reached: Number(p.included_reached ?? 0),
-      description: p.description,
-      channels: p.channels ?? [],
-      outreach_schedule:
-        (p.outreach_schedule as OutreachTouchpoint[] | null) ?? [],
-    }));
-}
-
 // The fixed-price package catalogue (docs/superpowers/plans/2026-10-04-package-payment-plan.md, P-F): active packages
-// that carry a contact quota. A package is EITHER pay-per-result (a price per reached contact — listCampaignTemplates
-// above, unchanged) OR fixed-price (a quota); the admin form refuses a mix, and a row that is both is not an offer here
-// either, so it can never be sold under the wrong model.
+// that carry a contact quota. A legacy row that still carries a per-reached price is not an offer.
 //
 // The whole catalogue is behind the package switch: while it is off this is empty without a read, so nothing can be
 // offered, and createCampaign below cannot snapshot one. Fail-closed like every money switch.
@@ -249,7 +134,7 @@ export async function listPackageOffers(): Promise<PackageOffer[]> {
     }));
 }
 
-// One offer by id; null when it is not an offer (the switch is off, inactive, pay-per-result, not sellable).
+// One offer by id; null when it is not an offer (the switch is off, inactive, legacy, not sellable).
 export async function getPackageOffer(packageId: string): Promise<PackageOffer | null> {
   return (await listPackageOffers()).find((o) => o.id === packageId) ?? null;
 }
@@ -257,19 +142,15 @@ export async function getPackageOffer(packageId: string): Promise<PackageOffer |
 // Create-or-continue the event's SINGLE "RSVP confirmations" campaign in
 // `pending_approval`. Idempotent: if a non-cancelled campaign already exists for
 // the event it is returned unchanged (one campaign per event — entered via the
-// "הפעלת אישורי הגעה" CTA, never a repeatable "new campaign"). Price, channels
-// and the outreach schedule are copied+locked from the CANONICAL template
-// (§17/§18.7) — the owner chooses nothing. The activity window is derived from
-// the event date: outreach closes at the event; the post-event charge is a
-// separate settle step.
+// "הפעלת אישורי הגעה" CTA, never a repeatable "new campaign"). The campaign snapshots the chosen package's price
+// (`package_price`), quota (`contact_quota`), channels and outreach schedule. The activity window is derived from the
+// event date: outreach closes at the event.
 //
-// `packageId` selects the FIXED-PRICE package model instead: the campaign snapshots that package's price
-// (`package_price`) and quota (`contact_quota`) and carries no per-reached formula. Without it everything is exactly as
-// before — the canonical pay-per-result template. The package path is refused unless the package switch is on, the
-// package is an offer, and the ACTIVE agreement is the package contract (so the customer approves the terms they bought).
+// Refused unless the package switch is on, the package is an offer, and the ACTIVE agreement is the package contract
+// (so the customer approves the terms they bought).
 export async function createCampaign(
   eventId: string,
-  packageId?: string,
+  packageId: string,
 ): Promise<{ id: string }> {
   const event = await requireOwnedEvent(eventId);
   // L1: block the entry point — never create OR continue a campaign for an event
@@ -318,88 +199,36 @@ export async function createCampaign(
   const existing = await getCampaignForEvent(eventId);
   if (existing) return { id: existing.id };
 
-  // max_contacts is DERIVED from the unique-contact count, not owner input (§7).
-  // May be 0 at creation — the base+overage flat fee prices a 0-contact campaign
-  // just fine (ceiling = base_price), and prepareCampaignHold re-derives the real
-  // count (and the authorize route refuses a ₪0 hold) before any money moves.
-  // Letting creation proceed lets the owner sign the agreement before finishing
-  // their guest list, instead of being blocked at the very first step.
+  // max_contacts is DERIVED from the unique-contact count, not owner input (§7). It may be 0 at creation: the owner
+  // can choose a package and approve its terms before finishing the guest list.
   const maxContacts = await countUniqueContactsForEvent(eventId);
 
+  // The offer is read server-side by id — the browser submits only the choice.
+  const offer = await getPackageOffer(packageId);
+  if (!offer) throw new Error('החבילה שנבחרה אינה זמינה');
+  // A package campaign is approved under the package contract — a separate, admin-managed document that must be
+  // approved before any customer is offered it. Without it there would be no terms to approve and the customer would
+  // be stuck at the first step; refusing here avoids that dead end (approveCampaign refuses the version mismatch too).
+  if (!(await getApprovedPackageAgreementDoc())) {
+    throw new Error('הסכם החבילה טרם הופעל — פנו לתמיכה');
+  }
   const admin = createAdminClient();
-
-  if (packageId !== undefined) {
-    // The fixed-price package path. The offer is read server-side by id — the browser submits only the choice.
-    const offer = await getPackageOffer(packageId);
-    if (!offer) throw new Error('החבילה שנבחרה אינה זמינה');
-    // A package campaign is approved under the package contract — a separate, admin-managed document that must be
-    // approved before any customer is offered it. Without it there would be no terms to approve and the customer would
-    // be stuck at the first step; refusing here avoids that dead end (approveCampaign refuses the version mismatch too).
-    if (!(await getApprovedPackageAgreementDoc())) {
-      throw new Error('הסכם החבילה טרם הופעל — פנו לתמיכה');
-    }
-    const { data, error } = await admin
-      .from('campaigns')
-      .insert({
-        event_id: eventId,
-        status: 'pending_approval',
-        template_id: offer.id,
-        package_price: offer.price, // locked copy of the package price
-        contact_quota: offer.contact_quota, // locked copy of the quota
-        // No per-reached formula in this model. 0 and not NULL on purpose: billed_results.locked_price is NOT NULL
-        // (try_record_billed_result copies price_per_reached into it), so a NULL here would make the first reached
-        // contact fail to record; and recordSignedAgreement refuses a campaign whose terms are NULL.
-        price_per_reached: 0,
-        base_price: 0,
-        included_reached: 0,
-        max_contacts: maxContacts, // derived from the unique-contact count (§7)
-        max_charge_ceiling: 0, // nothing is billed by reach, so there is no ceiling to cap
-        allowed_channels: offer.channels,
-        start_at: null,
-        close_at: event.event_date, // window closes at the event date
-        outreach_schedule: offer.outreach_schedule as unknown as Json,
-      })
-      .select('id')
-      .single();
-    if (error || !data) throw new Error('יצירת הקמפיין נכשלה');
-    return { id: data.id };
-  }
-
-  // The single active commercial template (the owner does not choose).
-  const template = await resolveCanonicalTemplate();
-  if (template.channels.length === 0) {
-    throw new Error('למסלול השירות לא הוגדרו ערוצי פנייה');
-  }
-  const price = template.price_per_reached;
-  // Base+overage gate: OFF (default) ⇒ snapshot base/included = 0 ⇒
-  // the close-charge formula reduces to pure per-reached (the legacy behaviour).
-  // ON ⇒ snapshot the package's base/included, activating base charging for this
-  // NEW campaign. The snapshot pins the terms the customer signs against.
-  const useBaseOverage = await getBaseOveragePricingEnabled();
-  const base = useBaseOverage ? template.base_price : 0;
-  const included = useBaseOverage ? template.included_reached : 0;
-
   const { data, error } = await admin
     .from('campaigns')
     .insert({
       event_id: eventId,
       status: 'pending_approval',
-      template_id: template.id,
-      price_per_reached: price, // locked copy from the canonical template
-      base_price: base, // 0 unless the base+overage gate is on
-      included_reached: included, // 0 unless the base+overage gate is on
+      template_id: offer.id,
+      package_price: offer.price, // locked copy of the package price
+      contact_quota: offer.contact_quota, // locked copy of the quota
       max_contacts: maxContacts, // derived from the unique-contact count (§7)
-      max_charge_ceiling: computeCeilingBaseOverage(base, included, price, maxContacts),
-      allowed_channels: template.channels, // from the template, not owner choice
+      allowed_channels: offer.channels,
       start_at: null,
       close_at: event.event_date, // window closes at the event date
-      // Outreach schedule copied + locked from the template (§10/§17).
-      outreach_schedule: template.outreach_schedule as unknown as Json,
-      // steps ('[]') and enabled (false) use their column defaults.
+      outreach_schedule: offer.outreach_schedule as unknown as Json,
     })
     .select('id')
     .single();
-
   if (error || !data) throw new Error('יצירת הקמפיין נכשלה');
   return { id: data.id };
 }
@@ -493,21 +322,10 @@ export async function getCampaignStageForEvent(
   return campaignStage(data ? { ...data, payment: await packagePaymentOf(data) } : null);
 }
 
-// The single active commercial template ("canonical") — the owner no longer
-// chooses one. Reuses listCampaignTemplates' filter (active + priced); takes the
-// first by sort_order. Throws a safe error when none is configured.
-export async function resolveCanonicalTemplate(): Promise<CampaignTemplate> {
-  const templates = await listCampaignTemplates();
-  const template = templates[0];
-  if (!template) {
-    throw new Error('שירות אישורי ההגעה אינו מוגדר כעת — פנו לתמיכה');
-  }
-  return template;
-}
 
 // Transition a campaign pending_approval → approved. Guarded so a campaign can
 // only be approved once (§18.7 — terms lock on approval; no re-approval). The
-// signed agreement must already be recorded by the caller before this runs.
+// approval record must already be stored by the caller before this runs.
 // Ownership is verified; the write goes through the service-role admin client
 // with an optimistic status guard to be race-safe.
 export async function approveCampaign(
@@ -528,10 +346,8 @@ export async function approveCampaign(
     return notFound();
   }
 
-  // The contract must match the campaign's pricing model: a fixed-price package campaign is approved under the package
-  // contract and a pay-per-result one is signed under the pay-per-result contract, never the other way round. The money follows
-  // the signed version (close-charge), so a mismatch would bind the customer to terms they did not buy.
-  if (isPackageAgreementVersion(tosVersion) !== (campaign.package_price != null)) {
+  // A campaign is approved only under the package contract, and only when it carries a package.
+  if (!isPackageAgreementVersion(tosVersion) || campaign.package_price == null) {
     throw new Error('ההסכם אינו תואם למודל התמחור של הקמפיין');
   }
 
@@ -566,28 +382,15 @@ export async function approveCampaign(
   }
 }
 
-// --- Route A: J5 authorization hold (card capture at approval) ---------------
-// capture_status is a free-text column; the working vocabulary is:
-//   null         no hold yet
-//   pending      a hold attempt is in flight (the atomic lock below)
-//   authorized   a hold succeeded (auth_number/card_token_ref stored)
-//   hold_failed  a definitive decline — retryable
-//   hold_review  an ambiguous provider outcome — retryable / needs reconciliation
+// The campaign's identity for an owner action: which event it belongs to, so the caller can verify ownership.
+// Service-role read; the caller checks ownership with requireOwnedEvent.
+export type CampaignRef = Pick<CampaignRow, 'id' | 'event_id' | 'status'>;
 
-export type CampaignHoldState = Pick<
-  CampaignRow,
-  'id' | 'event_id' | 'status' | 'max_charge_ceiling' | 'capture_status' | 'package_price'
->;
-
-// Read the hold-relevant fields. Service-role (the hold writes bypass RLS); the
-// caller (the Route Handler) has already verified ownership.
-export async function getCampaignForHold(
-  campaignId: string,
-): Promise<CampaignHoldState | null> {
+export async function getCampaignRef(campaignId: string): Promise<CampaignRef | null> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('campaigns')
-    .select('id, event_id, status, max_charge_ceiling, capture_status, package_price')
+    .select('id, event_id, status')
     .eq('id', campaignId)
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
@@ -623,414 +426,8 @@ export async function getCampaignForPurchase(
   return { ...campaign, package_name: pkg?.name ?? null };
 }
 
-// Atomically claim the hold slot. The guarded UPDATE only matches when there is
-// no hold yet (null) or a prior attempt is retryable (hold_failed/hold_review),
-// so two concurrent submits can never both place a hold (§13 anti-double-charge
-// in spirit). Returns true only for the caller that won the slot.
-export async function lockCampaignForHold(campaignId: string): Promise<boolean> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('campaigns')
-    .update({ capture_status: 'pending' })
-    .eq('id', campaignId)
-    .or('capture_status.is.null,capture_status.in.(hold_failed,hold_review)')
-    .select('id')
-    .maybeSingle();
-  if (error) throw new Error('נעילת הקמפיין לחיוב נכשלה');
-  return data !== null;
-}
-
-// Persist a successful hold. auth_amount is the server-derived hold amount (numeric),
-// never client input. Card token + auth number are evidence for the later capture.
-export async function recordCampaignHold(
-  campaignId: string,
-  hold: {
-    authNumber: string;
-    authAmount: number;
-    // The reusable CreditCard_Token + its expiry + the holder CitizenID — all
-    // REQUIRED at capture (SUMIT validates the token's expiry + CitizenID).
-    cardToken: string | null;
-    expMonth: number | null;
-    expYear: number | null;
-    citizenId: string | null;
-    // SUMIT Customer.ExternalIdentifier — reconciliation anchor on the charge.
-    authExternalRef: string;
-    // The draft "Order" document SUMIT creates for this hold — traceable in the
-    // SUMIT "תפיסות מסגרת" screen. Null if SUMIT omitted it (never blocks the hold).
-    orderDocumentId: number | null;
-    orderDocumentNumber: number | null; // human-readable ("הזמנה / 1002")
-    orderDocumentUrl: string | null; // direct download link
-    // SUMIT numeric Customer.ID — passed back at close-charge so it reuses the
-    // SAME customer instead of creating a new one.
-    sumitCustomerId: number | null;
-  },
-): Promise<void> {
-  // Only reached behind the payments config gate.
-  const admin = createAdminClient();
-  const { error } = await admin
-    .from('campaigns')
-    .update({
-      capture_status: 'authorized',
-      auth_number: hold.authNumber,
-      auth_amount: hold.authAmount,
-      card_token_ref: hold.cardToken, // the saved card token, used at capture
-      card_exp_month: hold.expMonth, // card expiry month — required at capture
-      card_exp_year: hold.expYear, // card expiry year — required at capture
-      card_citizen_id: hold.citizenId, // holder CitizenID — required at capture (PII)
-      auth_external_ref: hold.authExternalRef, // reconciliation anchor
-      hold_order_document_id: hold.orderDocumentId,
-      hold_order_document_number: hold.orderDocumentNumber,
-      hold_order_document_url: hold.orderDocumentUrl,
-      sumit_customer_id: hold.sumitCustomerId,
-      authorized_at: new Date().toISOString(),
-    })
-    .eq('id', campaignId);
-  if (error) throw new Error('שמירת תפיסת המסגרת נכשלה');
-}
-
-// Release the lock to a retryable state after a failed/ambiguous hold. Never
-// touches status — the agreement stays signed and the campaign stays approved.
-export async function markCampaignHoldFailed(
-  campaignId: string,
-  status: 'hold_failed' | 'hold_review',
-): Promise<void> {
-  const admin = createAdminClient();
-  const { error } = await admin
-    .from('campaigns')
-    .update({ capture_status: status })
-    .eq('id', campaignId);
-  if (error) throw new Error('עדכון מצב התפיסה נכשל');
-}
-
-// --- Authorized SET snapshot + hold sizing -----------------------------------
-// The hold (J5 auth amount) is sized to the COVERED contacts, NOT the full
-// ceiling. The authorized SET is snapshotted to the covered contacts at the hold,
-// but it is the membership boundary for outreach + billing, not a cap on how many
-// contacts may be reached: reconcile_authorized_set admits every later eligible
-// guest (the funded cap was retired, see
-// supabase/migrations/20260925003335_retire_funded_cap.sql). The hold is a card
-// guarantee. See supabase/migrations/202606290024_billing_authorized_set.sql.
-
-// Resolve the admin-managed hold-sizing knobs, each falling back FAIL-SAFE
-// (toward the highest / safest hold): a missing global coverage falls back to
-// `fullUnique` (covered = full → hold = ceiling), and missing per-package
-// economics fall back to 0 (no artificial floor, no buffer). Reads go through the
-// service-role client (app_settings + packages are admin-only under RLS).
-async function getHoldSizingKnobs(
-  templateId: string | null,
-  fullUnique: number,
-): Promise<{
-  reasonableCoverage: number;
-  minHoldFloor: number;
-  holdBufferPct: number;
-}> {
-  const admin = createAdminClient();
-
-  let reasonableCoverage = fullUnique; // fail-safe: never silently lower the hold
-  try {
-    const { data } = await admin
-      .from('app_settings')
-      .select('reasonable_coverage_contacts')
-      .eq('id', true)
-      .maybeSingle();
-    const r = Number(data?.reasonable_coverage_contacts);
-    if (Number.isFinite(r) && r > 0) reasonableCoverage = r;
-  } catch {
-    // keep the fail-safe default (covered = full → hold = ceiling)
-  }
-
-  let minHoldFloor = 0;
-  let holdBufferPct = 0;
-  if (templateId) {
-    try {
-      const { data } = await admin
-        .from('packages')
-        .select('min_hold_floor, hold_buffer_pct')
-        .eq('id', templateId)
-        .maybeSingle();
-      const f = Number(data?.min_hold_floor);
-      const b = Number(data?.hold_buffer_pct);
-      if (Number.isFinite(f) && f >= 0) minHoldFloor = f;
-      if (Number.isFinite(b) && b >= 0) holdBufferPct = b;
-    } catch {
-      // keep 0 / 0
-    }
-  }
-
-  return { reasonableCoverage, minHoldFloor, holdBufferPct };
-}
-
-export type CampaignHoldSizing = {
-  holdAmount: number; // J5 auth amount = max(floor, covered × price × (1+buffer))
-  ceiling: number; // charge ceiling = full × price (caps the charge only under frozen-figure agreements, v4 and earlier)
-  full: number; // current unique-contact count
-  covered: number; // min(full, reasonable_coverage) — the set + hold basis
-};
-
-// Everything hold sizing depends on, read ONCE and shared by the read-only
-// PREVIEW (payment page, before the card) and the real prepareCampaignHold
-// (after the lock). One code path ⇒ the number the customer sees before
-// entering a card is the number the route will hold, barring a guest-list
-// change in between. Throws short, PII-free Hebrew strings.
-async function loadHoldSizingInputs(campaignId: string): Promise<{
-  eventId: string;
-  price: number;
-  base: number;
-  included: number;
-  full: number;
-  covered: number;
-  minHoldFloor: number;
-  holdBufferPct: number;
-}> {
-  const admin = createAdminClient();
-  const { data: campaign, error } = await admin
-    .from('campaigns')
-    .select('event_id, price_per_reached, template_id, base_price, included_reached')
-    .eq('id', campaignId)
-    .maybeSingle();
-  if (error) throw new Error('טעינת הקמפיין נכשלה');
-  if (!campaign) throw new Error('הקמפיין לא נמצא');
-
-  const price = Number(campaign.price_per_reached);
-  if (!Number.isFinite(price) || price <= 0) {
-    throw new Error('מחיר לאיש קשר אינו תקין');
-  }
-  // Base+overage snapshot frozen at create; 0/0 = pre-model campaign.
-  const base = Number(campaign.base_price ?? 0);
-  const included = Number(campaign.included_reached ?? 0);
-
-  // full = the CURRENT unique-contact count (verifies ownership server-side).
-  // May be 0 — same reasoning as createCampaign: the flat base fee prices a
-  // 0-contact hold just fine. A legacy (base=0) campaign still can't place a
-  // ₪0 hold — route.ts's own `holdAmount <= 0` check is the guard for that.
-  const full = await countUniqueContactsForEvent(campaign.event_id);
-  const { reasonableCoverage, minHoldFloor, holdBufferPct } =
-    await getHoldSizingKnobs(campaign.template_id, full);
-  const covered = computeCovered(full, reasonableCoverage);
-
-  return {
-    eventId: campaign.event_id,
-    price,
-    base,
-    included,
-    full,
-    covered,
-    minHoldFloor,
-    holdBufferPct,
-  };
-}
-
-// Read-only preview for the payment page (audit §6 — "סכום תפיסת המסגרת כעת").
-// No snapshot, no write. The basis is `covered`; prepareCampaignHold uses
-// max(covered, frozenSetSize), which equals covered on the happy path.
-export async function previewCampaignHoldSizing(
-  campaignId: string,
-): Promise<CampaignHoldSizing> {
-  const i = await loadHoldSizingInputs(campaignId);
-  return {
-    holdAmount: computeHoldAmountBaseOverage(
-      i.base,
-      i.included,
-      i.price,
-      i.covered,
-      i.minHoldFloor,
-      i.holdBufferPct,
-    ),
-    ceiling: computeCeilingBaseOverage(i.base, i.included, i.price, i.full),
-    full: i.full,
-    covered: i.covered,
-  };
-}
-
-// Phase-2 hold preparation. Run at the J5 step AFTER the hold slot is locked and
-// BEFORE the card hold is placed. In one coherent step it:
-//   1. recomputes `full` = the CURRENT unique-contact count (the guest list may
-//      have grown since create) and resolves the admin knobs,
-//   2. SNAPSHOTS the authorized SET to the COVERED contacts (min(full, reasonable))
-//      — reached ⊆ set by construction (outreach + billing are bound to set
-//      membership); the set MUST exist before any billing, so this precedes the hold,
-//   3. recomputes + persists max_contacts = full (NON-NULL — closes the nullable-
-//      uncapped flag) and max_charge_ceiling = full × price (D1=No — closes the
-//      create→approval growth gap; the ceiling is NEVER lowered to covered),
-//   4. returns holdAmount = max(min_hold_floor, covered × price × (1 + buffer)).
-// The hold may be < ceiling. The SET no longer caps reached (the funded cap was
-// retired 2026-09-25); the hold is a card guarantee, not a billing bound.
-// CROSS-AGENT CONTRACT: snapshotAuthorizedSet MUST yield set == the current
-// top-`covered` contacts (REPLACE semantics), so a retry after the list / coverage
-// shrinks cannot leave a stale, larger set above the lowered hold.
-// NOTE: the set is no longer a hard freeze — reconcile_authorized_set admits every
-// later eligible guest (no cap since 2026-09-25).
-export async function prepareCampaignHold(
-  campaignId: string,
-): Promise<CampaignHoldSizing> {
-  const admin = createAdminClient();
-  const i = await loadHoldSizingInputs(campaignId);
-
-  // Snapshot the authorized set BEFORE any billing — outreach and billing only
-  // reach set members.
-  // snapshotAuthorizedSet has REPLACE semantics (set == current top-`covered`
-  // contacts; stale/orphan members pruned), and returns the RESULTING set size —
-  // on the happy path == `covered`. We STILL size the hold to
-  // max(covered, frozenSetSize) as belt-and-suspenders: the hold always covers the
-  // actual snapshotted set even if they ever diverge.
-  const frozenSetSize = await snapshotAuthorizedSet(i.eventId, campaignId, i.covered);
-  const holdBasis = Math.max(i.covered, frozenSetSize);
-
-  // Recompute + persist the ceiling and max_contacts (= full, NON-NULL) from the
-  // CURRENT full count. Base+overage ceiling = base + max(0, full − included) ×
-  // overage (with base/included 0 this is full × price — unchanged); never
-  // lowered to covered, and always ≥ base so the flat fee is never capped away.
-  const ceiling = computeCeilingBaseOverage(i.base, i.included, i.price, i.full);
-  const { error: upErr } = await admin
-    .from('campaigns')
-    .update({ max_contacts: i.full, max_charge_ceiling: ceiling })
-    .eq('id', campaignId);
-  if (upErr) throw new Error('עדכון תקרת החיוב נכשל');
-
-  const holdAmount = computeHoldAmountBaseOverage(
-    i.base,
-    i.included,
-    i.price,
-    holdBasis,
-    i.minHoldFloor,
-    i.holdBufferPct,
-  );
-  return { holdAmount, ceiling, full: i.full, covered: i.covered };
-}
-
-// --- B4 close-charge data layer ---------------------------------------------
-// auth_external_ref is the SUMIT Customer.ExternalIdentifier persisted at the J5
-// hold (recordCampaignHold); it is the ONLY anchor a later capture can reference
-// (capture.ts). Only ever reached behind getCloseChargeEnabled() (false until
-// enabled).
-
-export type CampaignChargeState = Pick<
-  CampaignRow,
-  | 'id'
-  | 'event_id'
-  | 'status'
-  | 'capture_status'
-  | 'charge_status'
-  | 'card_token_ref'
-  | 'card_exp_month'
-  | 'card_exp_year'
-  | 'card_citizen_id'
-  | 'auth_external_ref'
-  | 'sumit_customer_id'
-  // The J5 hold itself — close-charge captures it by AuthNumber when the
-  // amount fits and the hold was not released.
-  | 'auth_number'
-  | 'auth_amount'
-  | 'release_status'
-  | 'max_charge_ceiling'
-  // Flat-base + included + overage snapshot (populated at campaign creation).
-  // price_per_reached is the per-reached overage rate.
-  | 'base_price'
-  | 'included_reached'
-  | 'price_per_reached'
-  // Fixed package price agreed at approval (NULL = a pay-per-result campaign). When set, the
-  // campaign has no settlement: close-charge refuses it.
-  | 'package_price'
->;
-
-const CHARGE_COLUMNS =
-  'id, event_id, status, capture_status, charge_status, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, sumit_customer_id, auth_number, auth_amount, release_status, max_charge_ceiling, base_price, included_reached, price_per_reached, package_price';
-
-// Read the charge-relevant fields. Service-role (the charge writes bypass RLS);
-// the caller (the Route Handler) has already verified ownership.
-export async function getCampaignForCharge(
-  campaignId: string,
-): Promise<CampaignChargeState | null> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('campaigns')
-    .select(CHARGE_COLUMNS)
-    .eq('id', campaignId)
-    .maybeSingle();
-  if (error) throw new Error('טעינת הקמפיין נכשלה');
-  return data;
-}
-
-// Atomically claim the charge slot (idempotency for the final charge). Matches
-// only when no charge yet (null) or a prior attempt is retryable
-// (charge_failed/charge_review) — a 'charged' campaign can never be re-charged.
-export async function lockCampaignForCharge(
-  campaignId: string,
-): Promise<boolean> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('campaigns')
-    .update({ charge_status: 'pending' })
-    .eq('id', campaignId)
-    .or('charge_status.is.null,charge_status.in.(charge_failed,charge_review)')
-    .select('id')
-    .maybeSingle();
-  if (error) throw new Error('נעילת הקמפיין לחיוב הסופי נכשלה');
-  return data !== null;
-}
-
-export async function recordCampaignCharge(
-  campaignId: string,
-  charge: {
-    amount: number;
-    creditApplied: number; // slice of min(accrued, ceiling) covered by credit
-    documentId: number;
-    documentNumber: number | null;
-    documentUrl: string | null; // the receipt download link
-    authNumber: string | null;
-    paymentId: number | null;
-  },
-): Promise<void> {
-  const admin = createAdminClient();
-  const { error } = await admin
-    .from('campaigns')
-    .update({
-      charge_status: 'charged',
-      final_charge_amount: charge.amount,
-      credit_applied: charge.creditApplied,
-      sumit_charge_document_id: charge.documentId,
-      charge_document_number: charge.documentNumber,
-      charge_document_url: charge.documentUrl,
-      charge_auth_number: charge.authNumber,
-      charge_payment_id: charge.paymentId,
-      charged_at: new Date().toISOString(),
-    })
-    .eq('id', campaignId);
-  if (error) throw new Error('שמירת החיוב הסופי נכשלה');
-}
-
-export async function markCampaignChargeOutcome(
-  campaignId: string,
-  outcome: 'charge_failed' | 'charge_review' | 'nothing_to_charge',
-  creditApplied?: number,
-): Promise<void> {
-  const admin = createAdminClient();
-  const payload: TablesUpdate<'campaigns'> = {
-    charge_status: outcome,
-  };
-  if (outcome === 'nothing_to_charge') {
-    payload.final_charge_amount = 0;
-    payload.credit_applied = creditApplied ?? 0;
-    payload.charged_at = new Date().toISOString();
-  }
-  // Guarded like lockCampaignForCharge: a terminal outcome (charged /
-  // nothing_to_charge) can never be overwritten — a late re-invocation after a
-  // real charge (e.g. a credit granted afterwards) must not zero the recorded
-  // charge. Zero rows matched = benign no-op, not an error.
-  const { error } = await admin
-    .from('campaigns')
-    .update(payload)
-    .eq('id', campaignId)
-    .or(
-      'charge_status.is.null,charge_status.in.(pending,charge_failed,charge_review)',
-    );
-  if (error) throw new Error('עדכון מצב החיוב נכשל');
-}
-
-// --- Campaign lifecycle (B4 foundation; no money) ---------------------------
-// Status transitions. The actual close-CHARGE (capturing the held card for the
-// final reached-contact total) is intentionally NOT here — it depends on
-// billed_results (B2) and is a separate, gated step.
+// --- Campaign lifecycle (no money) ------------------------------------------
+// Status transitions. A package campaign is paid once, at purchase (src/lib/payments).
 
 export type CampaignStatus = Enums<'campaign_status'>;
 
@@ -1059,9 +456,8 @@ async function transitionCampaignStatus(
   campaignId: string,
   from: CampaignStatus[],
   to: CampaignStatus,
-  // 'by_model': the funding precondition depends on the campaign's pricing model — a confirmed card hold
-  // (capture_status='authorized') for pay-per-result, a recorded payment (verified by preparePackage) for a package.
-  funding?: 'by_model',
+  // 'package': the campaign must be a package campaign with a recorded payment (verified by preparePackage).
+  funding?: 'package',
   // L1/R9: only forward transitions that BEGIN outreach/billing (activate)
   // reject a past event AND require an active event. pause/close must stay
   // allowed for a past/non-active event (cleanup + wind-down paths, per R9's
@@ -1069,8 +465,8 @@ async function transitionCampaignStatus(
   opts?: {
     rejectPastEvent?: boolean;
     requireActiveEvent?: boolean;
-    // Package campaigns only: the funding precondition (the payment, from the ledger). Runs after the
-    // identity and event checks, before the status write.
+    // The funding precondition (the payment, from the ledger). Runs after the identity and event checks, before the
+    // status write.
     preparePackage?: (campaign: { id: string; event_id: string }) => Promise<void>;
   },
   // Returns the event's date so a caller (activateCampaign) can seed
@@ -1126,8 +522,9 @@ async function transitionCampaignStatus(
     eventDate = event.event_date;
   }
 
-  const isPackage = campaign.package_price != null;
-  if (funding === 'by_model' && isPackage) {
+  if (funding === 'package') {
+    // Only a package campaign is ever funded: one created under the earlier model has no payment to start from.
+    if (campaign.package_price == null) throw new Error(NO_PACKAGE_ERROR);
     await opts?.preparePackage?.({ id: campaign.id, event_id: campaign.event_id });
   }
 
@@ -1136,10 +533,8 @@ async function transitionCampaignStatus(
     .update({ status: to })
     .eq('id', campaignId)
     .in('status', from);
-  if (funding === 'by_model') {
-    query = isPackage
-      ? query.not('package_price', 'is', null).is('capture_status', null).is('charge_status', null)
-      : query.eq('capture_status', 'authorized');
+  if (funding === 'package') {
+    query = query.not('package_price', 'is', null);
   }
   const { data: updated, error: upErr } = await query
     .select('id')
@@ -1166,9 +561,8 @@ async function requirePackageFunding(campaignId: string): Promise<void> {
   if (!paid) throw new Error(PACKAGE_NOT_PAID_ERROR);
 }
 
-// Activate (begin outreach). Requires an approved/scheduled/paused campaign that
-// already has a card hold (capture_status='authorized') — or, for a fixed-price package, a
-// recorded payment — no outreach without a secured payment.
+// Activate (begin outreach). Requires an approved/scheduled/paused package campaign with a recorded payment — no
+// outreach without a secured payment.
 //
 // `actor` narrows WHICH activations are reachable. An owner may activate from
 // any pre-send status; a console agent may only REVIVE, i.e. `paused → active`.
@@ -1178,8 +572,7 @@ async function requirePackageFunding(campaignId: string): Promise<void> {
 // `active` (pauseCampaign is the sole writer of that status, and it accepts only
 // `['active']`), so a paused campaign is PROOF the owner already activated it.
 // Staff therefore restore a commitment the owner made; they can never create
-// one. The funding (J5 hold or package payment) is likewise already present on
-// anything that was live.
+// one. The package payment is likewise already present on anything that was live.
 export async function activateCampaign(
   campaignId: string,
   actor: CampaignActor = { kind: 'owner' },
@@ -1191,7 +584,7 @@ export async function activateCampaign(
     campaignId,
     from,
     'active',
-    'by_model',
+    'package',
     // L1: never begin outreach for a past event. R9: requires an active event.
     {
       rejectPastEvent: true,
@@ -1426,11 +819,11 @@ export async function closeCampaign(campaignId: string): Promise<void> {
 // itself is service_role-only with NO caller-identity check, so authorization is
 // entirely this function's job, BEFORE the RPC is ever called. Cancel is a
 // wind-down operation restricted to holders of `campaigns.runstate` — not the
-// event owner. The campaign is still loaded via getCampaignForHold because
+// event owner. The campaign is loaded via getCampaignRef because
 // campaign.event_id feeds the success Slack alert below. campaignId is NEVER
 // trusted from the browser to imply authorization.
 export async function cancelCampaign(campaignId: string): Promise<void> {
-  const campaign = await getCampaignForHold(campaignId);
+  const campaign = await getCampaignRef(campaignId);
   if (!campaign) {
     const { notFound } = await import('next/navigation');
     return notFound();

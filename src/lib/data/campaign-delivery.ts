@@ -16,8 +16,8 @@ import type { Database, Enums } from '@/lib/supabase/types';
 // Owner-scoped: the owner path reads through the cookie client (org-aware RLS,
 // can_access_event) and the caller's access to the campaign's event is
 // re-asserted (defense-in-depth); staff reads go through
-// getCampaignDeliveryForAdminView. The billing summary
-// (reached/accrued/ceiling) is a separate RPC and is untouched.
+// getCampaignDeliveryForAdminView. The reach count
+// (campaign_billing_summary) is a separate RPC.
 
 type OpStatus = Enums<'contact_op_status'>;
 

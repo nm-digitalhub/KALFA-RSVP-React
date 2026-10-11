@@ -118,7 +118,7 @@ export async function runPaymentOrphanSweep(
     }
     sweptRows.push(row);
 
-    // Ids only. A direct admin insert, as in sumit-hold-reconcile.ts: the worker has no session for logActivity.
+    // Ids only. A direct admin insert: the worker has no session for logActivity.
     const { error: auditError } = await admin.from('activity_log').insert({
       event_id: row.event_id,
       user_id: null,

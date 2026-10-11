@@ -52,13 +52,8 @@ function row(overrides: Partial<AdminPackage> = {}): AdminPackage {
     active: true,
     sort_order: 0,
     created_at: '2026-06-20T10:00:00.000Z',
-    price_per_reached: null,
-    base_price: null,
-    included_reached: null,
     channels: [],
     outreach_schedule: [],
-    min_hold_floor: 0,
-    hold_buffer_pct: 0,
     contact_quota: null,
     ...overrides,
   };
@@ -75,17 +70,11 @@ const input: PackageInput = {
   sort_order: 0,
 };
 
-// Non-campaign-enabled by default (price_per_reached: null) — the common
-// case for §1.6's "package that isn't a campaign template" state.
+// Non-campaign-enabled by default (no contact quota) — a package that is not sold as a campaign.
 const operational: OperationalFieldsInput = {
-  price_per_reached: null,
-  base_price: null,
-  included_reached: null,
   contact_quota: null,
   channels: [],
   outreach_schedule: [],
-  min_hold_floor: 0,
-  hold_buffer_pct: 0,
 };
 
 // Fully-populated campaign-enabled shape (plan §5.5#1/#3). A distinctive
@@ -98,14 +87,9 @@ const fullSchedule = [
 ] satisfies OutreachTouchpointInput[];
 
 const fullOperational: OperationalFieldsInput = {
-  price_per_reached: 4,
-  base_price: 200,
-  included_reached: 200,
   channels: ['whatsapp', 'call'],
   outreach_schedule: fullSchedule,
-  min_hold_floor: 50,
-  hold_buffer_pct: 0.1,
-  contact_quota: null,
+  contact_quota: 40,
 };
 
 beforeEach(() => {
@@ -163,13 +147,11 @@ describe('getPackage', () => {
     expect(pkg.id).toBe('p-1');
   });
 
-  it('returns the 5 operational fields unchanged (round-trip shape guard, plan §5.5#1/#3)', async () => {
+  it('returns the operational fields unchanged (round-trip shape guard)', async () => {
     const stored = row({
-      price_per_reached: 4,
+      contact_quota: 40,
       channels: ['whatsapp', 'call'],
       outreach_schedule: fullSchedule,
-      min_hold_floor: 50,
-      hold_buffer_pct: 0.1,
     });
     const { client } = createMockSupabase<AdminPackage>({
       data: stored,
@@ -181,13 +163,11 @@ describe('getPackage', () => {
 
     const pkg = await getPackage('p-1');
 
-    expect(pkg.price_per_reached).toBe(4);
+    expect(pkg.contact_quota).toBe(40);
     // Exact deep equality on both arrays: same order, same keys, no
     // wrapping/stringification anywhere on the read path.
     expect(pkg.channels).toEqual(['whatsapp', 'call']);
     expect(pkg.outreach_schedule).toEqual(fullSchedule);
-    expect(pkg.min_hold_floor).toBe(50);
-    expect(pkg.hold_buffer_pct).toBe(0.1);
   });
 
   it('calls notFound() when the package is missing', async () => {
@@ -235,7 +215,7 @@ describe('createPackage', () => {
     );
   });
 
-  it('persists all 5 operational fields with exact array shapes (plan §5.5#1/#3)', async () => {
+  it('persists the operational fields with exact array shapes, and no per-result or hold column', async () => {
     const { client, builder } = createMockSupabase<{ id: string }>({
       data: { id: 'new-id' },
       error: null,
@@ -250,11 +230,12 @@ describe('createPackage', () => {
     // Json casts untouched — exact toEqual, not objectContaining, so any
     // wrapping/stringification regression fails here.
     const payload = builder.insert.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(payload.price_per_reached).toBe(4);
+    expect(payload.contact_quota).toBe(40);
     expect(payload.channels).toEqual(['whatsapp', 'call']);
     expect(payload.outreach_schedule).toEqual(fullSchedule);
-    expect(payload.min_hold_floor).toBe(50);
-    expect(payload.hold_buffer_pct).toBe(0.1);
+    for (const old of ['price_per_reached', 'base_price', 'included_reached', 'min_hold_floor', 'hold_buffer_pct']) {
+      expect(payload, old).not.toHaveProperty(old);
+    }
   });
 
   it('throws a safe error when the insert fails', async () => {
@@ -337,7 +318,7 @@ describe('updatePackage', () => {
     );
   });
 
-  it('persists all 5 operational fields in the update payload (plan §5.5#1/#3)', async () => {
+  it('persists the operational fields in the update payload, and no per-result or hold column', async () => {
     // The shared result serves both awaits in sequence: updatePackage first
     // awaits getPackage (select → row()), then the update itself (error: null).
     const { client, builder } = createMockSupabase<AdminPackage>({
@@ -352,11 +333,12 @@ describe('updatePackage', () => {
 
     // Same exact-shape contract as the createPackage twin above.
     const payload = builder.update.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(payload.price_per_reached).toBe(4);
+    expect(payload.contact_quota).toBe(40);
     expect(payload.channels).toEqual(['whatsapp', 'call']);
     expect(payload.outreach_schedule).toEqual(fullSchedule);
-    expect(payload.min_hold_floor).toBe(50);
-    expect(payload.hold_buffer_pct).toBe(0.1);
+    for (const old of ['price_per_reached', 'base_price', 'included_reached', 'min_hold_floor', 'hold_buffer_pct']) {
+      expect(payload, old).not.toHaveProperty(old);
+    }
   });
 });
 

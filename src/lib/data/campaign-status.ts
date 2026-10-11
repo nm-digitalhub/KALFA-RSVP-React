@@ -44,9 +44,9 @@ export function hasAnyOperationalCampaign(
 }
 
 // When a campaign may still be CANCELLED (cancelCampaign → cancel_campaign RPC).
-// Cancel is a pre-money wind-down only: once a card hold, a charge or a billed
-// reach exists, money has to be settled or refunded instead (the cancellation-
-// request flow), never erased by flipping the status. This mirrors the RPC's own
+// Cancel is a pre-money wind-down only: once a payment or a reached contact
+// exists, money has to be refunded instead (the cancellation-request flow),
+// never erased by flipping the status. This mirrors the RPC's own
 // predicate so the staff button is never shown where the RPC would refuse. The
 // RPC DOES look at the payment ledger (campaign_has_payment_activity): a payment
 // that is in flight (pending, in review) blocks it, so does any succeeded REAL
@@ -60,7 +60,7 @@ export const CANCELLABLE_CAMPAIGN_STATUSES = [
   'approved',
 ] as const satisfies readonly CampaignStatus[];
 
-// The statuses a campaign may be CLOSED from (closeCampaign in campaigns.ts and close-charge.ts use the same four).
+// The statuses a campaign may be CLOSED from (closeCampaign in campaigns.ts).
 export const CLOSEABLE_CAMPAIGN_STATUSES = [
   'active',
   'paused',
@@ -68,8 +68,7 @@ export const CLOSEABLE_CAMPAIGN_STATUSES = [
   'scheduled',
 ] as const satisfies readonly CampaignStatus[];
 
-const BLOCKING_CAPTURE_STATUSES = new Set(['authorized', 'pending', 'hold_review']);
-// A package campaign has no hold: money is in the ledger. Paid, refunded, or a payment still in flight is not "pre-money" - unless
+// A package campaign's money is in the ledger. Paid, refunded, or a payment still in flight is not "pre-money" - unless
 // what settled is test money only (`testMoney`, from deriveStatus), which the RPC ignores once it has settled. A REFUND does not
 // erase the payment it returned: the ledger is append-only, the database still sees the real collect and its real refund, and
 // refuses. A payment still in flight blocks whatever its class: it may become real money or a row someone must resolve first.
@@ -84,18 +83,14 @@ function paymentBlocksCancel(payment: { status: string; testMoney?: boolean } | 
 export function isCampaignCancellable(
   campaign: {
     status: CampaignStatus;
-    capture_status: string | null;
-    charge_status: string | null;
-    // The ledger state of a package campaign; absent for the other model. `testMoney`: everything that settled is test money.
+    // The ledger state of the package campaign. `testMoney`: everything that settled is test money.
     payment?: { status: string; testMoney?: boolean } | null;
   },
   reachedCount: number,
 ): boolean {
   return (
     (CANCELLABLE_CAMPAIGN_STATUSES as readonly CampaignStatus[]).includes(campaign.status) &&
-    !BLOCKING_CAPTURE_STATUSES.has(campaign.capture_status ?? '') &&
     !paymentBlocksCancel(campaign.payment) &&
-    campaign.charge_status === null &&
     reachedCount === 0
   );
 }

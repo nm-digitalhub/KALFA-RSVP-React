@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
-import { listPackageOffers, type OwnerCampaign } from '@/lib/data/campaigns';
+import type { OwnerCampaign } from '@/lib/data/campaigns';
 import type { EventDetail } from '@/lib/data/events';
 import {
   CAMPAIGN_STAGE_LABELS,
@@ -11,7 +11,7 @@ import {
 import {
   POST_ACTIVATION_STAGES,
   computeSetupSteps,
-  setupStepLabels,
+  SETUP_STEP_LABELS,
   toSetupEvent,
 } from '@/lib/data/setup-steps';
 import { packagePaymentOf } from '@/lib/payments/package-paid';
@@ -32,20 +32,6 @@ export async function SetupSteps({
   campaign: OwnerCampaign | null;
   isPast: boolean;
 }) {
-  // The same list the setup page shows: with a fixed-price package on offer and no campaign yet, the flow has a
-  // package-choice step, and this card must not claim a shorter one. Informational only, so a catalogue that cannot be
-  // read simply leaves the step out (the setup page and its actions enforce the real rules).
-  let packageOffered = false;
-  if (!campaign) {
-    try {
-      packageOffered = (await listPackageOffers()).length > 0;
-    } catch (err) {
-      console.error('[event] package catalogue could not be read', {
-        eventId: event.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
   const payment = campaign ? await packagePaymentOf(campaign) : null;
   const { steps, stage } = computeSetupSteps({
     event: toSetupEvent(event),
@@ -56,10 +42,9 @@ export async function SetupSteps({
       payment,
     },
     isPast,
-    packageOffered,
   });
   const base = campaign ? `/app/events/${event.id}/campaign/${campaign.id}` : null;
-  const labels = setupStepLabels(steps);
+  const labels = SETUP_STEP_LABELS;
 
   if (POST_ACTIVATION_STAGES.includes(stage) && base) {
     return (

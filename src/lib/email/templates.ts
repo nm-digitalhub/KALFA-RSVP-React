@@ -59,19 +59,14 @@ export async function agreementEmail(input: {
   eventName: string;
   companyName: string;
   downloadUrl: string;
-  // 'signed' (default): a signed agreement. 'approved': the fixed-price package, whose terms the customer approved
-  // by ticking the box — the mail must not say it was signed.
-  kind?: 'signed' | 'approved';
 }): Promise<{
   subject: string;
   html: string;
   text: string;
 }> {
   const company = input.companyName.trim() || 'KALFA';
-  const approved = input.kind === 'approved';
-  const subject = approved
-    ? `תנאי החבילה אושרו — ${input.eventName}`
-    : `ההסכם החתום שלך — ${input.eventName}`;
+  // The package terms are approved by ticking the box, never signed: the mail does not say "signed".
+  const subject = `תנאי החבילה אושרו — ${input.eventName}`;
   const html = await render(
     createElement(
       Html,
@@ -106,7 +101,7 @@ export async function agreementEmail(input: {
           createElement(
             Heading,
             { as: 'h1', style: { fontSize: '20px', margin: '0 0 12px' } },
-            approved ? 'תנאי החבילה אושרו בהצלחה ✓' : 'ההסכם נחתם בהצלחה ✓',
+            'תנאי החבילה אושרו בהצלחה ✓',
           ),
           createElement(
             Text,
@@ -116,9 +111,9 @@ export async function agreementEmail(input: {
           createElement(
             Text,
             { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
-            (approved ? 'התנאים שאישרת' : 'ההסכם החתום') + ' עבור האירוע ',
+            'התנאים שאישרת עבור האירוע ',
             createElement('strong', {}, input.eventName),
-            ' ' + (approved ? 'מוכנים' : 'מוכן') + '.',
+            ' מוכנים.',
           ),
           createElement(
             Text,
@@ -139,9 +134,7 @@ export async function agreementEmail(input: {
                   fontWeight: '600',
                 },
               },
-              approved
-                ? 'צפייה והורדת התנאים שאושרו'
-                : 'צפייה והורדת ההסכם החתום',
+              'צפייה והורדת התנאים שאושרו',
             ),
           ),
           createElement(

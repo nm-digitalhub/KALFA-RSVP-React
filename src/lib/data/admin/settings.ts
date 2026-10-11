@@ -16,12 +16,10 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 
 export type AppSettings = {
   payments_enabled: boolean;
-  close_charge_enabled: boolean; // master switch for the final close-charge (real money)
   inquiry_followup_enabled: boolean; // reminder → warning → auto-close sweep on quiet inquiries
   agreement_archive_enabled: boolean; // nightly SharePoint archive of signed customer agreements
   signup_reminder_enabled: boolean; // daily one-shot "confirm your email" reminder to unconfirmed signups
   unconfirmed_cleanup_enabled: boolean; // daily deletion of signups still unconfirmed after 30 days
-  campaign_holds_enabled: boolean;
   billing_exposure_gate: boolean;
   monitor_enabled: boolean;
   inbound_calls_enabled: boolean;
@@ -33,20 +31,6 @@ export type AppSettings = {
   console_call_me_now_enabled: boolean;
   console_consult_conference_enabled: boolean;
   console_dtmf_handoff_enabled: boolean;
-  /**
-   * The only non-boolean setting this form owns. Caps how many contacts count
-   * toward the J5 hold: covered = min(full_unique_contacts, this), so it sets
-   * the hold SIZE without touching what is ultimately charged (the close-charge
-   * is capped independently, by the signed ceiling, and only under a
-   * frozen-figure agreement — v4 and earlier).
-   *
-   * Read LIVE at hold time by getHoldSizingKnobs (data/campaigns.ts) rather than
-   * snapshotted onto the campaign — so an edit here resizes the hold of every
-   * signed campaign that has not yet held, exactly like min_hold_floor and
-   * hold_buffer_pct on the package. Integer, NOT NULL, DB default 300 (verified
-   * against the live schema).
-   */
-  reasonable_coverage_contacts: number;
   updated_at: string;
 };
 
@@ -59,7 +43,7 @@ export async function getAppSettings(): Promise<AppSettings> {
   const { data, error } = await supabase
     .from('app_settings')
     .select(
-      'payments_enabled, close_charge_enabled, inquiry_followup_enabled, agreement_archive_enabled, signup_reminder_enabled, unconfirmed_cleanup_enabled, campaign_holds_enabled, billing_exposure_gate, monitor_enabled, inbound_calls_enabled, handoff_enabled, console_softphone_enabled, console_widget_enabled, console_manual_dial_enabled, console_wake_enabled, console_call_me_now_enabled, console_consult_conference_enabled, console_dtmf_handoff_enabled, reasonable_coverage_contacts, updated_at',
+      'payments_enabled, inquiry_followup_enabled, agreement_archive_enabled, signup_reminder_enabled, unconfirmed_cleanup_enabled, billing_exposure_gate, monitor_enabled, inbound_calls_enabled, handoff_enabled, console_softphone_enabled, console_widget_enabled, console_manual_dial_enabled, console_wake_enabled, console_call_me_now_enabled, console_consult_conference_enabled, console_dtmf_handoff_enabled, updated_at',
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
@@ -70,12 +54,10 @@ export async function getAppSettings(): Promise<AppSettings> {
 
   return {
     payments_enabled: data?.payments_enabled ?? false,
-    close_charge_enabled: data?.close_charge_enabled ?? false,
     inquiry_followup_enabled: data?.inquiry_followup_enabled ?? false,
     agreement_archive_enabled: data?.agreement_archive_enabled ?? false,
     signup_reminder_enabled: data?.signup_reminder_enabled ?? false,
     unconfirmed_cleanup_enabled: data?.unconfirmed_cleanup_enabled ?? false,
-    campaign_holds_enabled: data?.campaign_holds_enabled ?? false,
     billing_exposure_gate: data?.billing_exposure_gate ?? false,
     monitor_enabled: data?.monitor_enabled ?? false,
     inbound_calls_enabled: data?.inbound_calls_enabled ?? false,
@@ -87,22 +69,16 @@ export async function getAppSettings(): Promise<AppSettings> {
     console_call_me_now_enabled: data?.console_call_me_now_enabled ?? false,
     console_consult_conference_enabled: data?.console_consult_conference_enabled ?? false,
     console_dtmf_handoff_enabled: data?.console_dtmf_handoff_enabled ?? false,
-    // Falls back to the column's OWN DB default (300), not 0: the column is
-    // NOT NULL so this is unreachable in practice, and 0 would render an
-    // invalid value into the form that the schema then refuses to save.
-    reasonable_coverage_contacts: data?.reasonable_coverage_contacts ?? 300,
     updated_at: data?.updated_at ?? '',
   };
 }
 
 export type UpdateAppSettingsInput = {
   payments_enabled: boolean;
-  close_charge_enabled: boolean;
   inquiry_followup_enabled: boolean;
   agreement_archive_enabled: boolean;
   signup_reminder_enabled: boolean;
   unconfirmed_cleanup_enabled: boolean;
-  campaign_holds_enabled: boolean;
   billing_exposure_gate: boolean;
   monitor_enabled: boolean;
   inbound_calls_enabled: boolean;
@@ -114,7 +90,6 @@ export type UpdateAppSettingsInput = {
   console_call_me_now_enabled: boolean;
   console_consult_conference_enabled: boolean;
   console_dtmf_handoff_enabled: boolean;
-  reasonable_coverage_contacts: number;
 };
 
 export async function updateAppSettings(
@@ -130,12 +105,10 @@ export async function updateAppSettings(
     .from('app_settings')
     .update({
       payments_enabled: input.payments_enabled,
-      close_charge_enabled: input.close_charge_enabled,
       inquiry_followup_enabled: input.inquiry_followup_enabled,
       agreement_archive_enabled: input.agreement_archive_enabled,
       signup_reminder_enabled: input.signup_reminder_enabled,
       unconfirmed_cleanup_enabled: input.unconfirmed_cleanup_enabled,
-      campaign_holds_enabled: input.campaign_holds_enabled,
       billing_exposure_gate: input.billing_exposure_gate,
       monitor_enabled: input.monitor_enabled,
       inbound_calls_enabled: input.inbound_calls_enabled,
@@ -147,7 +120,6 @@ export async function updateAppSettings(
       console_call_me_now_enabled: input.console_call_me_now_enabled,
       console_consult_conference_enabled: input.console_consult_conference_enabled,
       console_dtmf_handoff_enabled: input.console_dtmf_handoff_enabled,
-      reasonable_coverage_contacts: input.reasonable_coverage_contacts,
     })
     .eq('id', SETTINGS_ID);
 
@@ -156,24 +128,7 @@ export async function updateAppSettings(
   }
 }
 
-// The base+overage pricing gate (app_settings.base_overage_pricing_enabled).
-// Enabling turns on real ₪200 activation-fee billing for NEW campaigns — a
-// money-path switch, so the ACTION layer fail-closes on the active agreement
-// version + emits a security audit. This DAL is the gated writer only; the read
-// for display goes through the fail-safe payments reader (getBaseOveragePricingEnabled).
-export async function setBaseOveragePricingEnabled(
-  enabled: boolean,
-): Promise<void> {
-  await requirePlatformPermission('manage_settings');
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from('app_settings')
-    .update({ base_overage_pricing_enabled: enabled })
-    .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון מתג התמחור המדורג נכשל');
-}
-
-// --- Company / legal details (for the signed agreement) ---
+// --- Company / legal details (for the package terms) ---
 // Admin-managed via the dedicated /admin/company screen; the agreement reads
 // these live (§14ג mandatory disclosures + privacy/warranty). Not secret.
 export type CompanySettings = {

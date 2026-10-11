@@ -17,20 +17,13 @@ import { firstSelectableKey, type ScheduleStepOption } from '@/lib/data/schedule
 // Action (create, or update with the id pre-bound) and passes initial values
 // for edit mode. `includes` (a JSON string[]) is edited as one item per line.
 //
-// Two pricing models, chosen with the radio group below (client state only — the server derives the model from the
-// quota alone, never from a submitted flag):
-//   - 'outcome' (חיוב לפי תוצאה): the per-reached formula (`price_per_reached`, `base_price`, `included_reached`) and
-//     the card-hold floor and buffer. `price_per_reached` empty = the package is NOT campaign-enabled (a valid state,
-//     not an error — see plans/admin-packages-operational-fields-plan.md §1.6/§2).
-//   - 'fixed' (חבילה במחיר קבוע): ONE number, `contact_quota`, beside the package's own price. The formula and hold
-//     fields are not rendered, so they are not submitted; the server also refuses them alongside a quota
-//     (operationalFieldsSchema), so a forged request cannot mix the two.
+// A package is sold at ONE fixed price (`price_with_vat`, charged once) with a `contact_quota`: how many contacts its
+// campaign may approach.
 // `channels` is a checkbox group, one box per channel in the admin-managed catalog
 // (channelOptions); the storable values are the campaign_channel enum (whatsapp/call).
 // `outreach_schedule` is edited as a structured row list (never raw JSON
 // typed by the admin) and synced into one hidden `outreach_schedule_json`
-// field before submit. `hold_buffer_pct` is entered/displayed as a PERCENT
-// (10 = +10%); the server converts to the stored fraction (0.1) — see §5.1.
+// field before submit.
 // A `call` touchpoint dials the live Voximplant AI-voice bridge (RSVPAgent,
 // rule 1520915). The row shows the REAL channel state, derived server-side from
 // getVoximplantConfig() (env + app_settings, no manage_voice needed) and passed
@@ -41,29 +34,6 @@ import { firstSelectableKey, type ScheduleStepOption } from '@/lib/data/schedule
 //   'live'           → liveCallsEnabled === true (a real call will fire, subject to
 //                      consent/DNC/quiet-hours/balance/quotas)
 export type CallChannelStatus = 'not_configured' | 'configured_off' | 'live';
-
-// Gate-aware pricing-model status, computed server-side by the page. `gateActive`
-// = app_settings.base_overage_pricing_enabled. `effectiveSummaryHe` is the live,
-// data-driven price phrasing from buildBusinessFacts (the SAME source the
-// support-drafter quotes) — never a number hardcoded here; null when there is no
-// saved campaign package yet (the create page), where only the gate state shows.
-export type PricingModelStatus = {
-  gateActive: boolean;
-  effectiveSummaryHe: string | null;
-  /**
-   * Set when this package's headline `price_with_vat` disagrees with the
-   * activation fee `base_price` while the base+overage model is the effective
-   * one. Both numbers are handed to the AI sales agent by the `get_pricing`
-   * tool (src/app/api/voximplant/sls/tool/pricing/[token]/route.ts), which
-   * reads `price_with_vat` verbatim — deliberately, since the owner is an
-   * עוסק פטור and deriving VAT would assert a charge that does not apply.
-   * Nothing tells the agent which of the two to quote, so a divergence lets it
-   * speak one number on a live call while the agreement is signed at the other.
-   * Advisory only: the form never blocks the save, because the two columns are
-   * independent by design and only the admin knows which one is stale.
-   */
-  headlineMismatch: { priceWithVat: number; basePrice: number } | null;
-};
 
 // `channel` is a plain string: the storable set comes from the admin-managed
 // channel catalog (public.channels), and the server (z.enum in validation/admin.ts)
@@ -83,17 +53,9 @@ export interface PackageFormInitial {
   includes: string[];
   active: boolean;
   sort_order: number | '';
-  price_per_reached: number | '';
-  base_price: number | '';
-  included_reached: number | '';
-  // Set = the fixed-price package model (see above); '' = a package without a quota.
   contact_quota: number | '';
   channels: string[];
   outreach_schedule: OutreachTouchpointFormValue[];
-  min_hold_floor: number | '';
-  // Percent, for display — already converted from the stored fraction by the
-  // caller (page.tsx), e.g. stored 0.1 → 10 here.
-  hold_buffer_pct_percent: number | '';
 }
 
 const EMPTY: PackageFormInitial = {
@@ -105,14 +67,9 @@ const EMPTY: PackageFormInitial = {
   includes: [],
   active: true,
   sort_order: '',
-  price_per_reached: '',
-  base_price: '',
-  included_reached: '',
   contact_quota: '',
   channels: [],
   outreach_schedule: [],
-  min_hold_floor: '',
-  hold_buffer_pct_percent: '',
 };
 
 type FormAction = (state: FormState, formData: FormData) => Promise<FormState>;
@@ -273,7 +230,6 @@ export function PackageForm({
   submitLabel,
   callChannelStatus,
   channelOptions,
-  pricingModelStatus,
   scheduleOptions,
   scheduleSeed = null,
 }: {
@@ -286,9 +242,6 @@ export function PackageForm({
   // Admin-managed channel catalog (public.channels) — the source of the channel
   // list + labels. Fetched by the page.
   channelOptions: ChannelCatalogEntry[];
-  // Gate-aware effective pricing model, so the base/included fields don't
-  // mislead (they are inert while the base+overage gate is off).
-  pricingModelStatus: PricingModelStatus;
   // Every step that may be put on the outreach schedule, so the admin picks instead of typing a key.
   scheduleOptions: ScheduleStepOption[];
   // Create page only: the schedule of an existing package, so a new package does not start empty. Ignored when the
@@ -297,13 +250,6 @@ export function PackageForm({
 }) {
   const [state, formAction] = useActionState(action, null);
   const seed = initial === EMPTY ? scheduleSeed : null;
-  // Which pricing model is being edited. It decides which fields exist in the DOM, so a hidden field is never sent.
-  // A NEW package starts as a fixed-price package: that is the model new packages are sold under, and it keeps the
-  // pay-per-result formula, the card-hold fields and their warning out of sight until the admin asks for them with the
-  // radio. An existing package opens in the model it already has.
-  const [model, setModel] = useState<'outcome' | 'fixed'>(
-    initial === EMPTY ? 'fixed' : initial.contact_quota === '' ? 'outcome' : 'fixed',
-  );
   const [channels, setChannels] = useState<string[]>(seed?.channels ?? initial.channels);
   const [schedule, setSchedule] = useState<OutreachTouchpointFormValue[]>(
     seed?.schedule ?? initial.outreach_schedule,
@@ -456,180 +402,31 @@ export function PackageForm({
       </div>
 
       <hr className="border-border" />
-      <fieldset className="space-y-2">
-        <legend className="text-sm font-semibold">מודל התמחור</legend>
-        <div className="flex items-center gap-2">
-          <input
-            id="model_outcome"
-            name="pricing_model"
-            type="radio"
-            value="outcome"
-            checked={model === 'outcome'}
-            onChange={() => setModel('outcome')}
-            className="size-4"
-          />
-          <label htmlFor="model_outcome" className="text-sm font-medium">
-            חיוב לפי תוצאה
-          </label>
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            id="model_fixed"
-            name="pricing_model"
-            type="radio"
-            value="fixed"
-            checked={model === 'fixed'}
-            onChange={() => setModel('fixed')}
-            className="size-4"
-          />
-          <label htmlFor="model_fixed" className="text-sm font-medium">
-            חבילה במחיר קבוע עם מכסה
-          </label>
-        </div>
-      </fieldset>
-
-      {model === 'outcome' ? (
-        <>
-          <h2 className="text-sm font-semibold">תצורת קמפיין (אופציונלי)</h2>
-          <p className="text-xs text-muted-foreground">
-            השאירו את מחיר-לאיש-קשר ריק אם החבילה אינה מסלול קמפיין.
-          </p>
-
-          <div className="space-y-1">
-            <label htmlFor="price_per_reached" className={labelClass}>
-              מחיר לכל מושג מעבר לכמות הכלולה (חריגה, ₪)
-            </label>
-            <input
-              id="price_per_reached"
-              name="price_per_reached"
-              type="number"
-              min="0"
-              step="0.01"
-              inputMode="decimal"
-              dir="ltr"
-              defaultValue={initial.price_per_reached}
-              className={inputClass}
-              placeholder="ריק = לא מסלול קמפיין"
-            />
-            <FieldError errors={state?.fieldErrors?.price_per_reached} />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label htmlFor="base_price" className={labelClass}>
-                מחיר בסיס (₪)
-              </label>
-              <input
-                id="base_price"
-                name="base_price"
-                type="number"
-                min="0"
-                step="0.01"
-                inputMode="decimal"
-                dir="ltr"
-                defaultValue={initial.base_price}
-                className={inputClass}
-                placeholder="ריק = בלי דמי בסיס (לפי תוצאה בלבד)"
-              />
-              <FieldError errors={state?.fieldErrors?.base_price} />
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="included_reached" className={labelClass}>
-                כמות מושגים כלולה בבסיס
-              </label>
-              <input
-                id="included_reached"
-                name="included_reached"
-                type="number"
-                min="0"
-                step="1"
-                inputMode="numeric"
-                dir="ltr"
-                defaultValue={initial.included_reached}
-                className={inputClass}
-                placeholder="מספר המושגים הכלול במחיר הבסיס"
-              />
-              <FieldError errors={state?.fieldErrors?.included_reached} />
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            מחיר בסיס + כמות כלולה מפעילים תמחור מדורג (בסיס + חריגה): הבסיס נגבה עד
-            הכמות הכלולה, ומעבר לה מחיר החריגה לכל מושג נוסף. השאירו את שניהם ריקים
-            לתמחור לפי-תוצאה בלבד. התמחור החדש נכנס לתוקף רק כשהוא מודלק במערכת.
-          </p>
-
-          {/* Gate-aware effective-model status. Numbers come from the data-driven
-              effectiveSummaryHe (buildBusinessFacts) — never hardcoded here. */}
-          <div
-            className={`rounded-md border p-3 text-xs ${
-              pricingModelStatus.gateActive
-                ? 'border-border text-muted-foreground'
-                : 'border-amber-300 text-amber-700'
-            }`}
-          >
-            {pricingModelStatus.gateActive ? (
-              <p>
-                המודל המדורג (בסיס + חריגה) פעיל במערכת — קמפיינים חדשים יחויבו לפיו.
-              </p>
-            ) : (
-              <p>
-                המודל המדורג (בסיס + חריגה) מוגדר אך כבוי כרגע — המחיר האפקטיבי הוא
-                לפי-תוצאה בלבד. שדות מחיר הבסיס והכמות הכלולה נשמרים אך אינם פעילים
-                עד שהמודל יודלק במערכת.
-              </p>
-            )}
-            {pricingModelStatus.effectiveSummaryHe ? (
-              <p className="mt-1 font-medium">
-                המחיר האפקטיבי כעת: {pricingModelStatus.effectiveSummaryHe}
-              </p>
-            ) : null}
-          </div>
-
-          {pricingModelStatus.headlineMismatch ? (
-            <div className="rounded-md border border-amber-300 p-3 text-xs text-amber-700">
-              <p className="font-medium">
-                שדה המחיר בראש הטופס (
-                {pricingModelStatus.headlineMismatch.priceWithVat.toLocaleString('he-IL')}{' '}
-                ₪) שונה ממחיר הבסיס (
-                {pricingModelStatus.headlineMismatch.basePrice.toLocaleString('he-IL')} ₪).
-              </p>
-              <p className="mt-1">
-                סוכן המכירות הטלפוני מקבל את שני המספרים ואינו יודע במי לבחור — הוא
-                עלול לנקוב במספר אחד בשיחה חיה בזמן שההסכם נחתם על השני. עדכנו את שני
-                השדות יחד, או ודאו שההפרש מכוון.
-              </p>
-            </div>
-          ) : null}
-        </>
-      ) : (
-        <>
-          <h2 className="text-sm font-semibold">תצורת קמפיין</h2>
-          <p className="text-xs text-muted-foreground">
-            המחיר הקבוע הוא שדה &quot;מחיר&quot; בראש הטופס, והוא נגבה פעם אחת ברכישה. מכסת אנשי קשר היא מספר אנשי
-            הקשר שהקמפיין רשאי לפנות אליהם, גם אם לא ענו; אנשי קשר שמעבר למכסה ימתינו. שמירה כאן לא פותחת את החבילה
-            למכירה: הצגתה ללקוחות ורכישתה מופעלות בנפרד.
-          </p>
-          <div className="space-y-1">
-            <label htmlFor="contact_quota" className={labelClass}>
-              מכסת אנשי קשר
-            </label>
-            <input
-              id="contact_quota"
-              name="contact_quota"
-              type="number"
-              min="1"
-              step="1"
-              inputMode="numeric"
-              dir="ltr"
-              defaultValue={initial.contact_quota}
-              className={inputClass}
-              required
-              placeholder="מספר שלם, 1 ומעלה"
-            />
-            <FieldError errors={state?.fieldErrors?.contact_quota} />
-          </div>
-        </>
-      )}
+      <h2 className="text-sm font-semibold">תצורת קמפיין</h2>
+      <p className="text-xs text-muted-foreground">
+        המחיר הקבוע הוא שדה &quot;מחיר&quot; בראש הטופס, והוא נגבה פעם אחת ברכישה. מכסת אנשי קשר היא מספר אנשי
+        הקשר שהקמפיין רשאי לפנות אליהם, גם אם לא ענו; אנשי קשר שמעבר למכסה ימתינו. שמירה כאן לא פותחת את החבילה
+        למכירה: הצגתה ללקוחות ורכישתה מופעלות בנפרד.
+      </p>
+      <div className="space-y-1">
+        <label htmlFor="contact_quota" className={labelClass}>
+          מכסת אנשי קשר
+        </label>
+        <input
+          id="contact_quota"
+          name="contact_quota"
+          type="number"
+          min="1"
+          step="1"
+          inputMode="numeric"
+          dir="ltr"
+          defaultValue={initial.contact_quota}
+          className={inputClass}
+          required
+          placeholder="מספר שלם, 1 ומעלה"
+        />
+        <FieldError errors={state?.fieldErrors?.contact_quota} />
+      </div>
 
       <div className="space-y-1">
         <span className={labelClass}>ערוצים</span>
@@ -697,52 +494,6 @@ export function PackageForm({
           value={JSON.stringify(schedule)}
         />
       </div>
-
-      {model === 'outcome' ? (
-        <>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label htmlFor="min_hold_floor" className={labelClass}>
-                רצפת hold (₪)
-              </label>
-              <input
-                id="min_hold_floor"
-                name="min_hold_floor"
-                type="number"
-                min="0"
-                step="0.01"
-                inputMode="decimal"
-                dir="ltr"
-                defaultValue={initial.min_hold_floor}
-                className={inputClass}
-              />
-              <FieldError errors={state?.fieldErrors?.min_hold_floor} />
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="hold_buffer_pct" className={labelClass}>
-                Buffer (%)
-              </label>
-              <input
-                id="hold_buffer_pct"
-                name="hold_buffer_pct"
-                type="number"
-                min="0"
-                step="0.1"
-                inputMode="decimal"
-                dir="ltr"
-                defaultValue={initial.hold_buffer_pct_percent}
-                className={inputClass}
-                placeholder="לדוגמה: 10 = תוספת 10%"
-              />
-              <FieldError errors={state?.fieldErrors?.hold_buffer_pct} />
-            </div>
-          </div>
-          <p className="text-xs text-amber-600">
-            אזהרה: שינוי כאן משפיע על קמפיינים שכבר אושרו אך טרם ביצעו חיוב-מקדים
-            (J5 hold) — לא רק על קמפיינים חדשים.
-          </p>
-        </>
-      ) : null}
 
       <SubmitButton>{submitLabel}</SubmitButton>
     </form>

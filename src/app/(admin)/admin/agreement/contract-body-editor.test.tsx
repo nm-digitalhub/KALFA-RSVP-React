@@ -24,8 +24,8 @@ function field(container: HTMLElement): HTMLInputElement | HTMLTextAreaElement {
   return container.querySelector<HTMLInputElement | HTMLTextAreaElement>('[name="body_html"]') as HTMLInputElement;
 }
 
-async function visual(initialHtml: string, model: 'package' | 'per_result' = 'package') {
-  const view = render(<ContractBodyEditor name="body_html" initialHtml={initialHtml} tokens={TOKENS} model={model} />);
+async function visual(initialHtml: string) {
+  const view = render(<ContractBodyEditor name="body_html" initialHtml={initialHtml} tokens={TOKENS} />);
   await waitFor(() => expect(view.container.querySelector('.ProseMirror')).not.toBeNull());
   return view;
 }
@@ -52,7 +52,7 @@ describe('ContractBodyEditor — a body the visual editor reproduces exactly', (
     expect(field(container).value).toMatch(/^<p>(?=.*שלום)(?=.*\{\{eventName\}\}).*<\/p>$/);
   });
 
-  it('an empty editor submits the empty string ("no custom body"), not <p></p>', async () => {
+  it('an empty editor submits the empty string, not <p></p>', async () => {
     const { container } = await visual('');
     expect(field(container).value).toBe('');
   });
@@ -73,14 +73,10 @@ describe('ContractBodyEditor — a body the visual editor reproduces exactly', (
     expect(container.textContent).toContain('חוזה החבילה חייב לכלול');
   });
 
-  it('warns when a package contract quotes a pay-per-result figure', async () => {
+  it('a retired pay-per-result figure is an unknown token', async () => {
     const { container } = await visual('<p>{{packagePrice}} {{contactQuota}} {{pricePerReached}}</p>');
-    expect(container.textContent).toContain('אינו יכול לצטט נתוני חיוב לפי תוצאה');
-  });
-
-  it('does not warn about the package tokens on a pay-per-result contract', async () => {
-    const { container } = await visual('<p>{{eventName}}</p>', 'per_result');
-    expect(container.textContent).not.toContain('חוזה החבילה חייב לכלול');
+    expect(container.textContent).toContain('תחליפים שאינם מוכרים');
+    expect(container.textContent).toContain('{{pricePerReached}}');
   });
 });
 
@@ -88,7 +84,7 @@ describe('ContractBodyEditor — a body it cannot reproduce exactly', () => {
   const EXOTIC = '<p>טקסט</p><table><tr><td>{{packagePrice}}</td></tr></table>';
 
   it('is edited as plain HTML, unchanged, with a note saying why', async () => {
-    const { container } = render(<ContractBodyEditor name="body_html" initialHtml={EXOTIC} tokens={TOKENS} model="package" />);
+    const { container } = render(<ContractBodyEditor name="body_html" initialHtml={EXOTIC} tokens={TOKENS} />);
     await waitFor(() => expect(container.querySelector('textarea')).not.toBeNull());
     const ta = field(container) as HTMLTextAreaElement;
     expect(ta.value).toBe(EXOTIC);
@@ -97,7 +93,7 @@ describe('ContractBodyEditor — a body it cannot reproduce exactly', () => {
   });
 
   it('keeps what the admin types in the HTML field', async () => {
-    const { container } = render(<ContractBodyEditor name="body_html" initialHtml={EXOTIC} tokens={TOKENS} model="package" />);
+    const { container } = render(<ContractBodyEditor name="body_html" initialHtml={EXOTIC} tokens={TOKENS} />);
     await waitFor(() => expect(container.querySelector('textarea')).not.toBeNull());
     fireEvent.change(field(container), { target: { value: `${EXOTIC}<p>עוד</p>` } });
     expect((field(container) as HTMLTextAreaElement).value).toBe(`${EXOTIC}<p>עוד</p>`);

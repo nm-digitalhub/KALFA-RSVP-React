@@ -14,8 +14,8 @@ vi.mock('../_components', () => ({
   Badge: ({ children }: { children: React.ReactNode }) => <span data-marker="badge">{children}</span>,
 }));
 vi.mock('./agreement-client', () => ({
-  AgreementEditor: (props: { model: string; version: string; tokens: string[] }) => (
-    <div data-marker="editor" data-model={props.model} data-version={props.version} data-tokens={props.tokens.join(',')} />
+  AgreementEditor: (props: { version: string; tokens: string[] }) => (
+    <div data-marker="editor" data-version={props.version} data-tokens={props.tokens.join(',')} />
   ),
 }));
 vi.mock('./agreement-config-form', () => ({ AgreementConfigForm: () => <div data-marker="config-form" /> }));
@@ -30,13 +30,12 @@ const company = {
   name: 'קאלפא', id: '51-1', address: 'הרצל 1', contactPhone: '03', contactEmail: 'a@b.c', privacyUrl: '', termsUrl: '', warrantyText: 'w',
 };
 
-async function render(model?: string | string[]) {
-  const tree = await AdminAgreementPage({ searchParams: Promise.resolve(model === undefined ? {} : { model }) });
-  return renderToStaticMarkup(tree);
+async function render() {
+  return renderToStaticMarkup(await AdminAgreementPage());
 }
 
 const doc = (over: Record<string, unknown>) => ({
-  model: 'per_result', version: '2026-07-v4', status: 'approved', bodyHtml: null, approvedAt: null, ...over,
+  version: 'draft-2026-10-v6', status: 'draft', bodyHtml: '<h1>חבילה</h1><p>{{packagePrice}} · {{contactQuota}}</p>', approvedAt: null, ...over,
 });
 
 beforeEach(() => {
@@ -55,56 +54,32 @@ describe('/admin/agreement', () => {
     expect(requirePlatformPermission).toHaveBeenCalledWith('manage_settings');
   });
 
-  it('shows the pay-per-result contract by default, and a tab to the package contract', async () => {
+  it('shows the package contract, with no tab to another contract, and offers its tokens', async () => {
     const html = await render();
-    expect(getAgreementForAdmin).toHaveBeenCalledWith('per_result');
-    expect(html).toContain('data-model="per_result"');
-    expect(html).toContain('חיוב לפי תוצאה');
-    expect(html).toContain('href="/admin/agreement?model=package"');
-    expect(html).toContain('תבנית ברירת מחדל');
-  });
-
-  it('an unknown model falls back to the pay-per-result contract rather than failing', async () => {
-    const html = await render('subscription');
-    expect(getAgreementForAdmin).toHaveBeenCalledWith('per_result');
-    expect(html).toContain('data-model="per_result"');
-  });
-
-  it('the package tab loads the package document, offers its tokens and none of the pay-per-result figures', async () => {
-    vi.mocked(getAgreementForAdmin).mockResolvedValue(
-      doc({ model: 'package', version: 'draft-2026-10-v6', status: 'draft', bodyHtml: '<h1>חבילה</h1><p>{{packagePrice}} · {{contactQuota}}</p>' }) as never,
-    );
-    const html = await render('package');
-    expect(getAgreementForAdmin).toHaveBeenCalledWith('package');
-    expect(html).toContain('data-model="package"');
+    expect(getAgreementForAdmin).toHaveBeenCalledWith();
+    expect(html).not.toContain('חיוב לפי תוצאה');
+    expect(html).not.toContain('?model=');
     const tokens = /data-tokens="([^"]*)"/.exec(html)?.[1].split(',') ?? [];
     expect(tokens).toEqual(expect.arrayContaining(['packagePrice', 'contactQuota', 'liabilityCap']));
     expect(tokens).not.toContain('pricePerReached');
     expect(tokens).not.toContain('baseFee');
   });
 
-  it('previews the package contract with the sample package figures', async () => {
-    vi.mocked(getAgreementForAdmin).mockResolvedValue(
-      doc({ model: 'package', version: 'draft-2026-10-v6', status: 'draft', bodyHtml: '<p>{{packagePrice}} · {{contactQuota}}</p>' }) as never,
-    );
-    const html = await render('package');
+  it('previews the contract with the sample package figures', async () => {
+    vi.mocked(getAgreementForAdmin).mockResolvedValue(doc({ bodyHtml: '<p>{{packagePrice}} · {{contactQuota}}</p>' }) as never);
+    const html = await render();
     expect(html).toContain('₪150.00');
     expect(html).toContain('100');
   });
 
-  it('with no package text there is nothing to preview — a notice, not an error and not another contract', async () => {
-    vi.mocked(getAgreementForAdmin).mockResolvedValue(
-      doc({ model: 'package', version: 'draft-2026-10-v6', status: 'draft', bodyHtml: '' }) as never,
-    );
-    const html = await render('package');
+  it('with no text there is nothing to preview — a notice, not an error', async () => {
+    vi.mocked(getAgreementForAdmin).mockResolvedValue(doc({ bodyHtml: '' }) as never);
+    const html = await render();
     expect(html).toContain('עדיין אין נוסח לחוזה החבילה');
     expect(html).not.toContain('class="agreement-doc"');
   });
 
-  it('a package document is not labelled "default template" (it has none)', async () => {
-    vi.mocked(getAgreementForAdmin).mockResolvedValue(
-      doc({ model: 'package', version: 'draft-2026-10-v6', status: 'draft', bodyHtml: '<p>{{packagePrice}} {{contactQuota}}</p>' }) as never,
-    );
-    expect(await render('package')).not.toContain('תבנית ברירת מחדל');
+  it('is not labelled "default template" (there is none)', async () => {
+    expect(await render()).not.toContain('תבנית ברירת מחדל');
   });
 });

@@ -1,16 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-// recordSignedAgreement pulls in PDF/email/storage; mock the whole import graph so
-// the suite loads, and configure only the pre-guard path (the L1 past-event check
-// sits right after the ownership read, BEFORE OTP/PDF/storage).
+// recordPackageApproval pulls in PDF/email/storage; mock the whole import graph so the suite loads.
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
 vi.mock('@/lib/data/campaigns', () => ({ approveCampaign: vi.fn() }));
 vi.mock('@/lib/data/company', () => ({ getCompanyLegal: vi.fn() }));
 vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
 vi.mock('@/lib/data/profiles', () => ({ getProfile: vi.fn() }));
-vi.mock('@/lib/data/otp', () => ({ verifyOtp: vi.fn() }));
-vi.mock('@/lib/phone', () => ({ normalizePhone: vi.fn(() => '+972501234567') }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 // The real contract-model predicate (the model↔contract check is what is under test), a fake renderer.
 vi.mock('@/lib/agreements/template', async (importOriginal) => ({
@@ -18,7 +14,6 @@ vi.mock('@/lib/agreements/template', async (importOriginal) => ({
   renderAgreementDocument: vi.fn().mockReturnValue('<html>agreement</html>'),
 }));
 vi.mock('@/lib/data/agreements-doc', () => ({
-  getActiveAgreementDoc: vi.fn(),
   getApprovedPackageAgreementDoc: vi.fn(),
 }));
 vi.mock('@/lib/data/agreement-config', () => ({ getAgreementConfigTokens: vi.fn() }));
@@ -38,8 +33,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { getProfile } from '@/lib/data/profiles';
-import { verifyOtp } from '@/lib/data/otp';
-import { getActiveAgreementDoc, getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
+import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
 import { fillAuthorizedSet } from '@/lib/data/authorized-fill';
 import { approveCampaign } from '@/lib/data/campaigns';
 import { getCompanyLegal } from '@/lib/data/company';
@@ -49,142 +43,10 @@ import { renderAgreementPdf, sha256Hex } from '@/lib/agreements/pdf';
 import { uploadLegalDoc } from '@/lib/storage/legal-docs';
 import { getEmailSender } from '@/lib/email/sender';
 import { agreementEmail } from '@/lib/email/templates';
-import { recordPackageApproval, recordSignedAgreement } from '@/lib/data/agreements';
+import { recordPackageApproval } from '@/lib/data/agreements';
 
 beforeEach(() => vi.clearAllMocks());
 
-const PNG_DATA_URL = 'data:image/png;base64,aGVsbG8=';
-
-const input = {
-  campaignId: 'c1',
-  otpCode: '123456',
-  signatureDataUrl: PNG_DATA_URL,
-  tosVersion: 'v1',
-  ip: null,
-  userAgent: null,
-};
-
-function wireCampaign(packagePrice: number | null = null) {
-  const { client } = createMockSupabase({
-    data: {
-      id: 'c1',
-      event_id: 'e1',
-      status: 'pending_approval',
-      package_price: packagePrice,
-      price_per_reached: 1,
-      max_contacts: 1,
-      max_charge_ceiling: 1,
-      allowed_channels: ['whatsapp'],
-      start_at: null,
-      close_at: null,
-    },
-    error: null,
-  });
-  vi.mocked(createAdminClient).mockReturnValue(
-    client as unknown as ReturnType<typeof createAdminClient>,
-  );
-  vi.mocked(requireUser).mockResolvedValue(
-    { id: 'u1', email: 'u@x.co' } as unknown as Awaited<
-      ReturnType<typeof requireUser>
-    >,
-  );
-  vi.mocked(getProfile).mockResolvedValue({
-    full_name: 'Test Signer',
-    phone: '0501234567',
-  } as unknown as Awaited<ReturnType<typeof getProfile>>);
-}
-
-describe('recordSignedAgreement — L1 past-event guard', () => {
-  it('rejects a past event BEFORE OTP/PDF (no otp verification)', async () => {
-    wireCampaign();
-    vi.mocked(requireOwnedEvent).mockResolvedValue({
-      id: 'e1',
-      name: 'Past Event',
-      status: 'active',
-      event_type: 'birthday',
-      event_date: '2020-01-01T00:00:00+00:00',
-      rsvp_deadline: null,
-    });
-
-    const result = await recordSignedAgreement(input);
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toContain('האירוע כבר חלף');
-    // Proves the guard short-circuits before the expensive, side-effecting work.
-    expect(verifyOtp).not.toHaveBeenCalled();
-  });
-});
-
-// R9: every commercial campaign action requires event.status='active'.
-describe('recordSignedAgreement — R9 active-event guard', () => {
-  it('rejects a draft event BEFORE OTP/PDF (no otp verification)', async () => {
-    wireCampaign();
-    vi.mocked(requireOwnedEvent).mockResolvedValue({
-      id: 'e1',
-      name: 'Draft Event',
-      status: 'draft',
-      event_type: 'birthday',
-      event_date: '2999-01-01T00:00:00+00:00',
-      rsvp_deadline: null,
-    });
-
-    const result = await recordSignedAgreement(input);
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toContain('טרם אושרו');
-    expect(verifyOtp).not.toHaveBeenCalled();
-  });
-});
-
-// The contract a customer signs must be the one for the campaign's pricing model: a fixed-price package campaign under
-// the package contract, a pay-per-result campaign under the pay-per-result one. The money follows the SIGNED version
-// (close-charge), and a package contract's text states a different price — so a mismatch is refused BEFORE the OTP is
-// burned and before anything is rendered or stored.
-describe('recordSignedAgreement — the contract matches the campaign\'s pricing model', () => {
-  const futureEvent = {
-    id: 'e1',
-    name: 'Event',
-    status: 'active' as const,
-    event_type: 'wedding' as const,
-    event_date: '2999-01-01T00:00:00+00:00',
-    rsvp_deadline: null,
-  };
-  const doc = (version: string) => ({ version, status: 'approved' as const, bodyHtml: null });
-
-  function setup(packagePrice: number | null, version: string) {
-    wireCampaign(packagePrice);
-    vi.mocked(requireOwnedEvent).mockResolvedValue(futureEvent);
-    vi.mocked(getActiveAgreementDoc).mockResolvedValue(doc(version));
-    vi.mocked(verifyOtp).mockResolvedValue(false); // stops the flow right after the OTP when it is reached
-  }
-
-  it('a pay-per-result campaign is refused under the package contract, before the OTP', async () => {
-    setup(null, '2026-10-v6');
-    const result = await recordSignedAgreement(input);
-    expect(result).toEqual({ ok: false, error: 'ההסכם הפעיל אינו מתאים למודל התמחור של הקמפיין — פנו לתמיכה' });
-    expect(verifyOtp).not.toHaveBeenCalled();
-  });
-
-  it('a pay-per-result campaign under a pay-per-result contract proceeds to the OTP', async () => {
-    setup(null, '2026-09-v5');
-    await recordSignedAgreement(input);
-    expect(verifyOtp).toHaveBeenCalledTimes(1);
-  });
-
-  // A fixed-price package is APPROVED by ticking the box (recordPackageApproval), never signed: the signature path
-  // refuses it outright, whichever contract is active, before any code is burned or anything is rendered.
-  it.each(['2026-10-v6', 'draft-2026-10-v6', '2026-09-v5'])(
-    'a package campaign never takes the signature path (active contract %s)',
-    async (version) => {
-      setup(150, version);
-      const result = await recordSignedAgreement(input);
-      expect(result).toEqual({ ok: false, error: 'קמפיין חבילה מאושר באישור התנאים ולא בחתימה' });
-      expect(verifyOtp).not.toHaveBeenCalled();
-    },
-  );
-});
-
-// ---- the fixed-price package: approved by ticking the box ------------------------------------------------------------
 describe('recordPackageApproval — the customer approves the package terms (no signature, no phone code)', () => {
   const futureEvent = {
     id: 'e1',
@@ -205,7 +67,6 @@ describe('recordPackageApproval — the customer approves the package terms (no 
         status: 'pending_approval',
         package_price: 150,
         contact_quota: 100,
-        max_contacts: 0,
         allowed_channels: ['whatsapp'],
         start_at: null,
         close_at: '2999-01-01T00:00:00+00:00',
@@ -237,11 +98,10 @@ describe('recordPackageApproval — the customer approves the package terms (no 
     const result = await recordPackageApproval(approvalInput);
 
     expect(result).toEqual({ ok: true });
-    expect(verifyOtp).not.toHaveBeenCalled();
     // the document carries the package figures and an APPROVAL block (no signature image)
-    const [content, sig, doc] = vi.mocked(renderAgreementDocument).mock.calls[0];
+    const [content, approval, doc] = vi.mocked(renderAgreementDocument).mock.calls[0];
     expect(content).toMatchObject({ packagePrice: 150, contactQuota: 100, eventName: 'Event' });
-    expect(sig).toMatchObject({ signerName: 'דנה כהן', signatureDataUrl: null, verifiedPhone: null, ip: '203.0.113.5' });
+    expect(approval).toEqual({ approverName: 'דנה כהן', approvedDateText: expect.any(String), ip: '203.0.113.5' });
     expect(doc?.version).toBe('2026-10-v6');
     // only the PDF is stored — there is no signature image
     expect(uploadLegalDoc).toHaveBeenCalledTimes(1);
@@ -265,10 +125,10 @@ describe('recordPackageApproval — the customer approves the package terms (no 
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: 'dana@example.com' }));
   });
 
-  it('a pay-per-result campaign is refused: it is signed, not approved by a click', async () => {
+  it('a campaign without a package is refused: there are no terms to approve', async () => {
     wire({ package_price: null, contact_quota: null });
     const result = await recordPackageApproval(approvalInput);
-    expect(result).toEqual({ ok: false, error: 'קמפיין זה נחתם בחתימה ואינו מאושר באישור תנאים' });
+    expect(result).toEqual({ ok: false, error: 'תנאי הקמפיין חסרים' });
     expect(uploadLegalDoc).not.toHaveBeenCalled();
     expect(approveCampaign).not.toHaveBeenCalled();
   });
@@ -277,7 +137,6 @@ describe('recordPackageApproval — the customer approves the package terms (no 
     wire({}, null);
     const result = await recordPackageApproval(approvalInput);
     expect(result).toEqual({ ok: false, error: 'הסכם החבילה טרם הופעל — פנו לתמיכה' });
-    expect(getActiveAgreementDoc).not.toHaveBeenCalled();
     expect(approveCampaign).not.toHaveBeenCalled();
   });
 
@@ -311,7 +170,7 @@ describe('recordPackageApproval — the customer approves the package terms (no 
   it('when the evidence cannot be stored the campaign is NOT approved', async () => {
     const { builder } = wire();
     vi.spyOn(builder, 'then')
-      .mockImplementationOnce((f) => f({ data: { id: 'c1', event_id: 'e1', status: 'pending_approval', package_price: 150, contact_quota: 100, max_contacts: 0, allowed_channels: ['whatsapp'], start_at: null, close_at: null } as never, error: null }))
+      .mockImplementationOnce((f) => f({ data: { id: 'c1', event_id: 'e1', status: 'pending_approval', package_price: 150, contact_quota: 100, allowed_channels: ['whatsapp'], start_at: null, close_at: null } as never, error: null }))
       .mockImplementationOnce((f) => f({ data: null, error: { message: 'boom' } }));
 
     const result = await recordPackageApproval(approvalInput);

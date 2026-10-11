@@ -14,10 +14,13 @@
 //   three table checks. Their alert dedup stays independent: it lives in one
 //   makeStuckAlerter closure per table (voximplant-reconcile.ts), never in the
 //   queue. Retired 2026-09-30 (576 rows/day).
+//   sumit-hold-reconcile — synced SUMIT card-hold releases into campaigns.release_status for the pay-per-result model,
+//   which was retired 11.10.2026 (no hold can be placed any more). Retired 11.10.2026.
 export const RETIRED_QUEUES = [
   'outreach-sweeper',
   'voximplant-callback-dispatch-reconcile',
   'voximplant-sales-dispatch-reconcile',
+  'sumit-hold-reconcile',
 ] as const;
 
 export const QUEUES = {
@@ -203,18 +206,6 @@ export const QUEUES = {
   // Daily catch-up for the above: accounts deleted outside the app, and any sync that ran out of retries.
   // Gated by app_settings.marketing_consent_enabled. See src/lib/data/marketing-contact-sync.ts.
   marketingContactReconcile: 'marketing-contact-reconcile',
-  // SUMIT hold-release reconciler — every 30m, read-only against SUMIT's CRM
-  // (crm/data/listentities on the "תפיסות מסגרת" folder), syncs
-  // campaigns.release_status for holds SUMIT reports as released (manual
-  // dashboard release, since SUMIT exposes no release API) but our own DB
-  // still shows open. Correlates by campaigns.hold_order_document_id ↔
-  // Billing_OrderDocument.ID — only covers holds authorized after 2026-08-30
-  // (when authorize.ts started persisting that id); earlier rows need a
-  // one-time manual backfill. Ignores Billing_Status=2 (charged elsewhere) by
-  // design — charging always goes through closeCampaignAndCharge, never
-  // discovered after the fact from SUMIT. See
-  // src/lib/data/sumit-hold-reconcile.ts.
-  sumitHoldReconcile: 'sumit-hold-reconcile',
   // Payment operations stuck in flight — every 10 minutes. A payment row is written PENDING before SUMIT is called
   // and completed right after; a process that dies in between (a deploy restart, an out-of-memory kill) leaves it
   // pending, holding the "pay once" lock with SUMIT's answer unknown. This moves rows older than 10 minutes to REVIEW

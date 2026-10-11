@@ -8,9 +8,9 @@ import { PURCHASE_ERROR_MESSAGES } from '@/lib/payments/package-purchase-errors'
 
 // The card form itself needs payments.js, jQuery and next/script; here it is a marker that records what it was given.
 const formProps = vi.fn();
-vi.mock('./hold-form', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./hold-form')>()),
-  CampaignHoldForm: (props: Record<string, unknown>) => {
+vi.mock('./sumit-card-form', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./sumit-card-form')>()),
+  SumitCardForm: (props: Record<string, unknown>) => {
     formProps(props);
     return <div data-testid="card-form" />;
   },
@@ -51,7 +51,7 @@ describe('PackagePaymentView — the card form', () => {
     render(view({ kind: 'form', amount: 120 }));
     expect(screen.getByTestId('card-form')).toBeTruthy();
     expect(formProps).toHaveBeenCalledWith(
-      expect.objectContaining({ purpose: 'purchase', campaignId: 'c1', companyId: 12345, apiPublicKey: 'pub-key', amount: 120, signerName: 'דנה כהן' }),
+      expect.objectContaining({ campaignId: 'c1', companyId: 12345, apiPublicKey: 'pub-key', amount: 120, signerName: 'דנה כהן' }),
     );
     expect(screen.getByText(/120/)).toBeTruthy();
   });

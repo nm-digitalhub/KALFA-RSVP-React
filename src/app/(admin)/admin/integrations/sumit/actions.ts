@@ -11,8 +11,8 @@ import type { FormState } from '@/lib/validation/result';
 // Thin by design: validate, hand off, revalidate. The gate lives in
 // updateSumitCredentials (requirePlatformPermission('manage_settings')).
 //
-// Deliberately NOT here: payments_enabled, close_charge_enabled, campaign_holds_enabled
-// and billing_exposure_gate. Those are the money switches and they stay in
+// Deliberately NOT here: payments_enabled and billing_exposure_gate. Those are
+// the money switches and they stay in
 // /admin/settings (plan D8). This page holds the CONNECTION; deciding whether to charge
 // is a different question from being able to.
 export async function updateSumitCredentialsAction(

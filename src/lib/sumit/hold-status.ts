@@ -1,7 +1,6 @@
 // The "תפיסות מסגרת" (frame holds) folder in KALFA's SUMIT account, and what its
-// `Billing_Status` and `Billing_Currency` codes mean. PURE — no fetch, no `server-only` — so both the
-// CRM reader (`crm-holds.ts`, worker/server) and the workflow step that labels a
-// SUMIT webhook (`workflow/nodes/trigger-sumit-card/runtime.ts`) read ONE definition.
+// `Billing_Status` and `Billing_Currency` codes mean. PURE — no fetch, no `server-only`. Read by the workflow step
+// that labels a SUMIT webhook (`workflow/nodes/trigger-sumit-card/runtime.ts`).
 //
 // ⚠️ SUMIT SENDS THE CODE, NEVER ITS NAME. `Billing_Status` is an enum property:
 // the webhook and `listentities` both carry `[3]`, and `/crm/schema/getfolder/`
@@ -19,9 +18,8 @@ export const SUMIT_HOLD_STATUS_OPEN = 1;
  */
 export const SUMIT_HOLD_STATUS_RELEASED = 3;
 
-// ⚠️ 2 IS WEAKER EVIDENCE, and deliberately not a named export (see
-// `crm-holds.ts`): "charged" comes from the reconciler's design notes, not from
-// a hold observed in that state. It is labelled because a person reading an
+// ⚠️ 2 IS WEAKER EVIDENCE, and deliberately not a named export: "charged" comes from the retired hold reconciler's
+// design notes, not from a hold observed in that state. It is labelled because a person reading an
 // alert is better served by the likely meaning than by a bare digit — and the
 // code is always shown next to it, so the claim can be checked.
 const STATUS_LABELS: Record<number, string> = {

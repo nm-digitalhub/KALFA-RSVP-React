@@ -2,12 +2,7 @@
 
 import { useActionState } from 'react';
 
-import {
-  FieldError,
-  FormError,
-  FormNotice,
-  SubmitButton,
-} from '@/components/forms';
+import { FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { Tabs, TabsList, TabsTab, TabsPanel } from '@/components/ui/tabs';
 import type { AppSettings } from '@/lib/data/admin/settings';
 import { updateSettingsAction } from './actions';
@@ -38,53 +33,6 @@ function Toggle({
         <span className="block text-xs text-muted-foreground">{children}</span>
       </span>
     </label>
-  );
-}
-
-// The one NUMERIC control on this form. Kept separate from Toggle rather than
-// overloading it: a checkbox absent from the FormData reads as `false`, which is
-// a deliberate fail-closed default for a switch — but for a number there is no
-// safe default, so the schema requires this field and refuses a blank instead of
-// writing one. `required` + min/max mirror the server bounds so the browser
-// catches the common mistake before a round-trip; the server stays the authority.
-function NumberField({
-  name,
-  label,
-  value,
-  min,
-  max,
-  errors,
-  children,
-}: {
-  name: string;
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  errors?: string[];
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1">
-      <label htmlFor={name} className="block text-sm font-medium">
-        {label}
-      </label>
-      <input
-        id={name}
-        name={name}
-        type="number"
-        min={min}
-        max={max}
-        step="1"
-        inputMode="numeric"
-        dir="ltr"
-        defaultValue={value}
-        required
-        className="w-full max-w-40 rounded-md border border-border bg-background px-3 py-2 text-sm"
-      />
-      <span className="block text-xs text-muted-foreground">{children}</span>
-      <FieldError errors={errors} />
-    </div>
   );
 }
 
@@ -144,23 +92,6 @@ export function SettingsForm({
             כשכבוי — כפתור התשלום מוסתר מהלקוחות וה-endpoint דוחה כל ניסיון חיוב.
           </Toggle>
 
-          <Toggle
-            name="close_charge_enabled"
-            label="הפעלת חיוב סופי בסגירת קמפיין"
-            checked={settings.close_charge_enabled}
-          >
-            כסף אמיתי — סגירת קמפיין מחייבת את הכרטיס השמור לפי אנשי־קשר שהושגו.
-          </Toggle>
-
-          <Toggle
-            name="campaign_holds_enabled"
-            label="תפיסת מסגרת אשראי בפתיחת קמפיין"
-            checked={settings.campaign_holds_enabled}
-          >
-            כסף אמיתי — כשמופעל, פתיחת קמפיין תופסת מסגרת בכרטיס הלקוח כדי
-            להבטיח את החיוב בסגירה. כשכבוי — לא נתפסת מסגרת.
-          </Toggle>
-
           {/* Not a feature flag — it selects WHICH billing model
               try_record_billed_result runs. Described in full because an admin
               flipping this changes who gets charged and by how much. */}
@@ -171,23 +102,6 @@ export function SettingsForm({
           >
             מופעל: מחויב כל אורח ששורת בפועל. כבוי: רק אורחים מהרשימה שהוקפאה בפתיחה.
           </Toggle>
-
-          {/* Lives here, not in /admin/packages: the package screen owns the
-              PRICE knobs (base, included, overage, floor, buffer), each stored
-              per package row. This one is a single global app_settings value —
-              putting it on a package screen would read as per-package and
-              silently change every package at once. */}
-          <NumberField
-            name="reasonable_coverage_contacts"
-            label="תקרת אנשי קשר לחישוב תפיסת המסגרת"
-            value={settings.reasonable_coverage_contacts}
-            min={1}
-            max={10000}
-            errors={state?.fieldErrors?.reasonable_coverage_contacts}
-          >
-            משפיע על גודל תפיסת המסגרת בכרטיס בלבד, לא על מי מקבל הזמנה ולא על החיוב.
-          </NumberField>
-
         </Panel>
 
         <Panel value="automations">

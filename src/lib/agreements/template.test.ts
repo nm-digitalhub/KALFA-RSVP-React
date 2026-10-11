@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AGREEMENT_TOKEN_KEYS,
+  PACKAGE_AGREEMENT_VERSION,
+  PACKAGE_BODY_MANAGED_IN_ADMIN,
+  agreementTokens,
+  findUnknownTokens,
   renderAgreementBody,
   renderAgreementDocument,
-  AGREEMENT_VERSION,
-  BASE_FEE_AGREEMENT_VERSION,
+  type AgreementApproval,
   type AgreementContent,
-  type AgreementSignature,
+  type AgreementDoc,
 } from '@/lib/agreements/template';
 
 const company = {
@@ -23,127 +27,66 @@ const company = {
 const content: AgreementContent = {
   company,
   eventName: 'החתונה של דנה ויוסי',
-  pricePerReached: 4,
-  maxContacts: 100,
-  ceiling: 400,
   channels: ['whatsapp', 'call'],
   windowText: '1.7.2026 – 15.7.2026',
-  baseFee: 0, // per-reached (v3) content
-  includedReached: 0,
+  packagePrice: 150,
+  contactQuota: 100,
 };
 
-const sig: AgreementSignature = {
-  signerName: 'דנה כהן',
-  verifiedPhone: '+972501234567',
-  signedDateText: '25.6.2026',
-  ip: '203.0.113.5',
-  signatureDataUrl: 'data:image/png;base64,AAAA',
-};
-
-describe('base-fee (v4) body — version-selected §3-4', () => {
-  const v4Content: AgreementContent = {
-    ...content,
-    baseFee: 200,
-    includedReached: 200,
-    ceiling: 600,
-  };
-  const v4 = renderAgreementBody(v4Content, {
-    version: BASE_FEE_AGREEMENT_VERSION,
-    status: 'draft',
-    bodyHtml: null,
-  });
-
-  it('renders the base-fee clauses with data-driven figures (no hardcoded price)', () => {
-    expect(v4).toContain('דמי הפעלת שירות');
-    expect(v4).toContain('₪200.00'); // baseFee, from data
-    expect(v4).toContain('₪4.00'); // overage, from data
-    expect(v4).toContain('₪600.00'); // ceiling, from data
-    expect(v4).toContain('200 אנשי קשר שהושגו'); // includedReached, from data
-  });
-
-  it('discloses the activation fee is charged even at 0 results (§2 / חוזים אחידים)', () => {
-    expect(v4).toContain('0 תוצאות');
-    expect(v4).toContain('דמי ההפעלה');
-  });
-
-  it('does NOT show the per-reached "0 → no charge" wording', () => {
-    expect(v4).not.toContain('חיוב 0 אנשי קשר → אין חיוב');
-  });
-
-  it('the per-reached (v3) default still shows its own §3-4, not the base fee', () => {
-    const v3 = renderAgreementBody(content); // baseFee 0 → per-reached
-    expect(v3).toContain('מחיר לאיש קשר שהושג');
-    expect(v3).not.toContain('דמי הפעלת שירות');
-  });
+const doc = (bodyHtml: string | null, status: AgreementDoc['status'] = 'approved'): AgreementDoc => ({
+  version: PACKAGE_AGREEMENT_VERSION,
+  status,
+  bodyHtml,
 });
 
-describe('renderAgreementBody', () => {
-  const html = renderAgreementBody(content);
+const approval: AgreementApproval = {
+  approverName: 'דנה כהן',
+  approvedDateText: '25.6.2026',
+  ip: '203.0.113.5',
+};
 
-  it('discloses the seller identity (§14ג)', () => {
+describe('renderAgreementBody', () => {
+  it('substitutes the built-in tokens: the seller identity (§14ג), the event and the package figures', () => {
+    const html = renderAgreementBody(
+      content,
+      doc('<p>{{company.name}} {{company.id}} {{company.address}} {{company.contactEmail}}</p><p>{{eventName}} {{packagePrice}} {{contactQuota}} {{channels}} {{version}}</p>'),
+    );
     expect(html).toContain('קאלפא בע״מ');
     expect(html).toContain('51-1234567');
     expect(html).toContain('הרצל 1, תל אביב');
     expect(html).toContain('support@kalfa.me');
-  });
-
-  it('shows final prices with the osek-patur no-VAT disclosure', () => {
-    expect(html).toContain('₪4.00');
-    expect(html).toContain('לא נגבה מע"מ');
-    expect(html).toContain('₪400.00');
-    // The business is an עוסק פטור — a "VAT included" claim would be false.
-    expect(html).not.toContain('כולל מע"מ');
-  });
-
-  it('includes the "not billed" clause', () => {
-    expect(html).toContain('לא יחויבו');
-    expect(html).toContain('משיבון');
-  });
-
-  it('discloses the §14ג cancellation right incl. the 4-month extension', () => {
-    expect(html).toContain('14 ימים');
-    expect(html).toContain('4 חודשים');
-  });
-
-  it('includes the §30א owner declaration + indemnity', () => {
-    expect(html).toContain('משפה');
-  });
-
-  it('includes the evidentiary anchor (signature / OTP / IP / device)', () => {
-    expect(html).toContain('OTP');
-    expect(html).toContain('IP');
-    expect(html).toContain('User');
-    expect(html).toContain('SHA');
+    expect(html).toContain('החתונה של דנה ויוסי');
+    expect(html).toContain('₪150.00');
+    expect(html).toContain('100');
+    expect(html).toContain('וואטסאפ, שיחה טלפונית (AI)');
+    expect(html).toContain(PACKAGE_AGREEMENT_VERSION);
   });
 
   it('marks missing company fields as [יושלם] rather than blank', () => {
-    const partial = renderAgreementBody({
-      ...content,
-      company: { ...company, name: '', id: '' },
-    });
-    expect(partial).toContain('[יושלם]');
+    const html = renderAgreementBody({ ...content, company: { ...company, name: '', id: '' } }, doc('<p>{{company.name}} {{company.id}}</p>'));
+    expect(html).toContain('[יושלם]');
   });
 
   it('escapes HTML in the event name (no injection)', () => {
-    const injected = renderAgreementBody({
-      ...content,
-      eventName: '<script>alert(1)</script>',
-    });
-    expect(injected).not.toContain('<script>alert(1)</script>');
-    expect(injected).toContain('&lt;script&gt;');
+    const html = renderAgreementBody({ ...content, eventName: '<script>alert(1)</script>' }, doc('<p>{{eventName}}</p>'));
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('has no in-code text: an empty body is never rendered', () => {
+    expect(() => renderAgreementBody(content, doc(null))).toThrow(PACKAGE_BODY_MANAGED_IN_ADMIN);
+    expect(() => renderAgreementBody(content, doc('   '))).toThrow(PACKAGE_BODY_MANAGED_IN_ADMIN);
+  });
+
+  it('appends the draft marker only while the document is a draft', () => {
+    expect(renderAgreementBody(content, doc('<p>x</p>', 'draft'))).toContain('טיוטה — נוסח משפטי');
+    expect(renderAgreementBody(content, doc('<p>x</p>'))).not.toContain('טיוטה');
   });
 });
 
-describe('renderAgreementBody custom body + injected config tokens', () => {
-  const customDoc = {
-    version: 'custom-v1',
-    status: 'approved' as const,
-    bodyHtml:
-      '<p>תקרת אחריות: {{liabilityCap}} · תוקף הצעה: {{offerValidityDays}} ימים</p>',
-  };
-
-  it('substitutes injected admin-config tokens into a custom body', () => {
-    const html = renderAgreementBody(content, customDoc, {
+describe('renderAgreementBody + injected config tokens', () => {
+  it('substitutes injected admin-config tokens', () => {
+    const html = renderAgreementBody(content, doc('<p>תקרת אחריות: {{liabilityCap}} · תוקף הצעה: {{offerValidityDays}} ימים</p>'), {
       liabilityCap: '₪10,000',
       offerValidityDays: '14',
     });
@@ -152,55 +95,63 @@ describe('renderAgreementBody custom body + injected config tokens', () => {
   });
 
   it('escapes injected config values (no HTML/entity injection)', () => {
-    const html = renderAgreementBody(
-      content,
-      { ...customDoc, bodyHtml: '<p>{{liabilityCap}}</p>' },
-      { liabilityCap: '<script>&"x"' },
-    );
+    const html = renderAgreementBody(content, doc('<p>{{liabilityCap}}</p>'), { liabilityCap: '<script>&"x"' });
     expect(html).not.toContain('<script>&"x"');
     expect(html).toContain('&lt;script&gt;');
     expect(html).toContain('&amp;');
   });
 
   it('built-in tokens win over a same-named injected token (precedence)', () => {
-    const html = renderAgreementBody(
-      content,
-      { ...customDoc, bodyHtml: '<p>{{eventName}}</p>' },
-      { eventName: 'HACKED' },
-    );
+    const html = renderAgreementBody(content, doc('<p>{{eventName}}</p>'), { eventName: 'HACKED' });
     expect(html).toContain(content.eventName);
     expect(html).not.toContain('HACKED');
   });
 
   it('leaves unknown tokens literal', () => {
-    const html = renderAgreementBody(
-      content,
-      { ...customDoc, bodyHtml: '<p>{{nope}}</p>' },
-      {},
-    );
-    expect(html).toContain('{{nope}}');
+    expect(renderAgreementBody(content, doc('<p>{{nope}}</p>'))).toContain('{{nope}}');
+  });
+});
+
+describe('the token list', () => {
+  it('offers the package figures and none of the earlier pay-per-result ones', () => {
+    expect(AGREEMENT_TOKEN_KEYS).toContain('packagePrice');
+    expect(AGREEMENT_TOKEN_KEYS).toContain('contactQuota');
+    for (const retired of ['pricePerReached', 'maxContacts', 'ceiling', 'baseFee', 'includedReached']) {
+      expect(AGREEMENT_TOKEN_KEYS).not.toContain(retired);
+    }
+  });
+
+  it('adds the admin-config tokens after the built-in ones', () => {
+    expect(agreementTokens(['liabilityCap'])).toEqual([...AGREEMENT_TOKEN_KEYS, 'liabilityCap']);
+  });
+
+  it('a body quoting a retired pay-per-result figure has an unknown token, so approval refuses it', () => {
+    expect(findUnknownTokens('<p>{{packagePrice}} {{pricePerReached}}</p>')).toEqual(['pricePerReached']);
   });
 });
 
 describe('renderAgreementDocument', () => {
-  const doc = renderAgreementDocument(content, sig);
+  const html = renderAgreementDocument(content, approval, doc('<p>{{company.name}} {{packagePrice}}</p>'));
 
-  it('is a full RTL Hebrew document with the body + signature block', () => {
-    expect(doc).toContain('<html lang="he" dir="rtl">');
-    expect(doc).toContain('קאלפא בע״מ'); // body included
-    expect(doc).toContain('דנה כהן'); // signer
-    expect(doc).toContain('+972501234567'); // verified phone
-    expect(doc).toContain('203.0.113.5'); // ip in signature meta
-    expect(doc).toContain('src="data:image/png;base64,AAAA"');
-    expect(doc).toContain(AGREEMENT_VERSION);
+  it('is a full RTL Hebrew document with the body and the approval: who, when, from where, which version', () => {
+    expect(html).toContain('<html lang="he" dir="rtl">');
+    expect(html).toContain('קאלפא בע״מ');
+    expect(html).toContain('אישור תנאי החבילה');
+    expect(html).toContain('דנה כהן');
+    expect(html).toContain('25.6.2026');
+    expect(html).toContain('203.0.113.5');
+    expect(html).toContain(PACKAGE_AGREEMENT_VERSION);
+    expect(html).toContain('בסימון תיבת האישור');
   });
 
-  it('escapes HTML in the signer name', () => {
-    const doc2 = renderAgreementDocument(content, {
-      ...sig,
-      signerName: '<b>x</b>',
-    });
-    expect(doc2).not.toContain('<b>x</b>');
-    expect(doc2).toContain('&lt;b&gt;');
+  it('has no signature image and no verified phone', () => {
+    expect(html).not.toContain('<img');
+    expect(html).not.toContain('טלפון מאומת');
+  });
+
+  it('escapes HTML in the approver name', () => {
+    const escaped = renderAgreementDocument(content, { ...approval, approverName: '<b>x</b>' }, doc('<p>x</p>'));
+    expect(escaped).not.toContain('<b>x</b>');
+    expect(escaped).toContain('&lt;b&gt;');
   });
 });

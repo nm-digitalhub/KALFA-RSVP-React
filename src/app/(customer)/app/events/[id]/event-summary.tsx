@@ -46,31 +46,8 @@ function formatEventDate(value: string | null): string | null {
   return (hasTime ? formatIsraelDateTime(value) : formatIsraelDate(value)) || null;
 }
 
-// charge_status is TEXT and nullable; the writers in campaigns.ts use exactly
-// this vocabulary (lockCampaignForCharge → 'pending', recordCampaignCharge →
-// 'charged', markCampaignChargeOutcome → the other three). An unknown value
-// falls back to '—' — a raw DB token must never reach the owner's screen.
-const CHARGE_STATUS_LABELS: Record<string, string | undefined> = {
-  pending: 'בעיבוד',
-  charged: 'חויב',
-  nothing_to_charge: 'לא בוצע חיוב',
-  charge_failed: 'החיוב לא הושלם',
-  charge_review: 'החיוב בבדיקה',
-};
-
-function chargeStatusLabel(
-  chargeStatus: string | null,
-  finalChargeAmount: number | null,
-): string {
-  if (chargeStatus) return CHARGE_STATUS_LABELS[chargeStatus] ?? '—';
-  // No status recorded yet: "בעיבוד" only while there is genuinely no final
-  // amount — the same condition the processing banner uses, so the two agree.
-  return finalChargeAmount == null ? 'בעיבוד' : '—';
-}
-
 // The rows of the billing summary, each only when the record holds it (see section 6 below). Pure.
 export function summaryBillingRows(
-  detail: NonNullable<EventStatsResult['campaign']['billingDetail']>,
   money: EventStatsResult['campaign']['money'],
   moneyFailed: boolean,
   quota: EventStatsResult['campaign']['quota'],
@@ -87,24 +64,6 @@ export function summaryBillingRows(
       label: 'מכסת אנשי קשר',
       value: quota.used === null ? count(quota.quota) : `${count(quota.used)} מתוך ${count(quota.quota)}`,
     });
-  }
-  if (Number(detail.basePrice ?? 0) > 0) rows.push({ label: 'דמי הפעלה', value: formatCurrency(Number(detail.basePrice)) });
-  if (Number(detail.includedReached ?? 0) > 0) {
-    rows.push({ label: 'מכסה כלולה', value: `${count(Number(detail.includedReached))} מענים` });
-  }
-  if (Number(detail.pricePerReached ?? 0) > 0) {
-    rows.push({ label: 'עלות לכל מענה נוסף', value: formatCurrency(Number(detail.pricePerReached)) });
-  }
-  if (detail.chargesPerReached) {
-    // Never formatCurrency(x ?? 0): a null final charge means "not settled yet", and ₪0.00 would state the opposite.
-    rows.push({
-      label: 'חיוב סופי',
-      value: detail.finalChargeAmount == null ? 'בעיבוד' : formatCurrency(detail.finalChargeAmount),
-    });
-  }
-  if (Number(detail.creditApplied) > 0) rows.push({ label: 'זיכוי שקוזז', value: formatCurrency(Number(detail.creditApplied)) });
-  if (detail.chargesPerReached || detail.chargeStatus) {
-    rows.push({ label: 'מצב החיוב הסופי', value: chargeStatusLabel(detail.chargeStatus, detail.finalChargeAmount) });
   }
   return rows;
 }
@@ -199,10 +158,10 @@ export function EventSummary({
   // here — never a row of zeros, which would read as "we contacted no one".
   const campaignVisible = campaign.state === 'visible' && campaign.id !== null;
   const delivery = campaignVisible ? campaign.delivery : null;
-  const billingDetail = campaignVisible ? campaign.billingDetail : null;
-  const billingRows = billingDetail
-    ? summaryBillingRows(billingDetail, campaign.money, campaign.moneyFailed, campaign.quota)
-    : [];
+  // The money is read only with billing.view: without it `money` is null and `moneyFailed` false, and this section does
+  // not exist.
+  const hasBilling = campaignVisible && (campaign.money !== null || campaign.moneyFailed);
+  const billingRows = hasBilling ? summaryBillingRows(campaign.money, campaign.moneyFailed, campaign.quota) : [];
 
   return (
     <div className="space-y-6">
@@ -322,14 +281,8 @@ export function EventSummary({
         </section>
       ) : null}
 
-      {/* 6 — billing summary. Behind billing.view upstream: billingDetail is
-          null both for "no campaign" and for "no billing.view", and in either
-          case this section simply does not exist. Every row is shown only when
-          the campaign's own record holds it: the money that moved comes from
-          the payment ledger (paid, refunded, still unresolved); the per-reached
-          terms and the final charge only for a campaign priced that way
-          (chargesPerReached) — a package stores zeros there; the quota only
-          when the campaign has one. */}
+      {/* 6 — billing summary, behind billing.view upstream. The money that moved comes from the payment ledger (paid,
+          refunded, still unresolved); the quota only when the campaign has one. */}
       {billingRows.length > 0 ? (
         <section
           aria-labelledby="event-summary-billing-title"

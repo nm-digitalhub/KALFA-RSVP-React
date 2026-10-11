@@ -4,13 +4,7 @@ import { useState, useSyncExternalStore } from 'react';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 
 import { Button } from '@/components/ui/button';
-import {
-  AGREEMENT_CSS,
-  findUnknownTokens,
-  missingPackageTokens,
-  perResultTokensIn,
-  type AgreementModel,
-} from '@/lib/agreements/template';
+import { AGREEMENT_CSS, findUnknownTokens, missingPackageTokens } from '@/lib/agreements/template';
 import { cn } from '@/lib/utils';
 
 import {
@@ -21,7 +15,7 @@ import {
 
 // The contract body field of the admin form. A visual editor (TipTap) when the body survives a round trip through it
 // unchanged; otherwise the plain HTML field, so that opening a contract can never rewrite it. Either way the form
-// receives the body as ONE field, `name`, holding the contract HTML ('' = no custom body).
+// receives the body as ONE field, `name`, holding the contract HTML.
 
 const inputClass = 'w-full rounded-md border border-border bg-background px-3 py-2 text-sm';
 
@@ -43,13 +37,11 @@ export function ContractBodyEditor({
   name,
   initialHtml,
   tokens,
-  model,
 }: {
   name: string;
   initialHtml: string;
   /** Every token the body may use (built-in and admin-config), for the insert buttons and the typo check. */
   tokens: readonly string[];
-  model: AgreementModel;
 }) {
   // The check needs the browser (DOMParser): the server renders the 'pending' state and the client takes over.
   const mode = useSyncExternalStore<Mode>(subscribeNothing, () => modeFor(initialHtml), () => 'pending');
@@ -66,25 +58,22 @@ export function ContractBodyEditor({
     );
   }
   return mode === 'visual' ? (
-    <VisualEditor name={name} initialHtml={initialHtml} tokens={tokens} model={model} />
+    <VisualEditor name={name} initialHtml={initialHtml} tokens={tokens} />
   ) : (
-    <HtmlEditor name={name} initialHtml={initialHtml} tokens={tokens} model={model} />
+    <HtmlEditor name={name} initialHtml={initialHtml} tokens={tokens} />
   );
 }
 
 function TokenWarnings({
   html,
   tokens,
-  model,
 }: {
   html: string;
   tokens: readonly string[];
-  model: AgreementModel;
 }) {
   const unknown = findUnknownTokens(html, tokens);
-  const missing = model === 'package' ? missingPackageTokens(html) : [];
-  const quoted = model === 'package' ? perResultTokensIn(html) : [];
-  if (unknown.length === 0 && missing.length === 0 && quoted.length === 0) return null;
+  const missing = missingPackageTokens(html);
+  if (unknown.length === 0 && missing.length === 0) return null;
   return (
     <div role="status" className="space-y-1 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
       {unknown.length > 0 ? (
@@ -103,14 +92,6 @@ function TokenWarnings({
           ))}
         </p>
       ) : null}
-      {quoted.length > 0 ? (
-        <p>
-          חוזה החבילה אינו יכול לצטט נתוני חיוב לפי תוצאה (בחבילה הם מוצגים כ-₪0.00):{' '}
-          {quoted.map((t) => (
-            <code key={t} className="me-1">{`{{${t}}}`}</code>
-          ))}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -119,12 +100,10 @@ function VisualEditor({
   name,
   initialHtml,
   tokens,
-  model,
 }: {
   name: string;
   initialHtml: string;
   tokens: readonly string[];
-  model: AgreementModel;
 }) {
   const [html, setHtml] = useState(initialHtml);
 
@@ -202,7 +181,7 @@ function VisualEditor({
           ))}
         </div>
       </div>
-      <TokenWarnings html={html} tokens={tokens} model={model} />
+      <TokenWarnings html={html} tokens={tokens} />
     </div>
   );
 }
@@ -237,12 +216,10 @@ function HtmlEditor({
   name,
   initialHtml,
   tokens,
-  model,
 }: {
   name: string;
   initialHtml: string;
   tokens: readonly string[];
-  model: AgreementModel;
 }) {
   const [html, setHtml] = useState(initialHtml);
   return (
@@ -259,7 +236,7 @@ function HtmlEditor({
         aria-label="נוסח החוזה (HTML)"
         className={`${inputClass} font-mono`}
       />
-      <TokenWarnings html={html} tokens={tokens} model={model} />
+      <TokenWarnings html={html} tokens={tokens} />
     </div>
   );
 }

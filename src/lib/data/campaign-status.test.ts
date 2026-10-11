@@ -128,14 +128,12 @@ function liveFunctionDefinition(name: string): string {
 }
 
 describe('isCampaignCancellable mirrors the cancel_campaign RPC', () => {
-  const base = { status: 'approved' as CampaignStatus, capture_status: null, charge_status: null };
+  const base = { status: 'approved' as CampaignStatus };
 
   it('allows a pre-money campaign in draft / pending_approval / approved', () => {
     for (const status of ['draft', 'pending_approval', 'approved'] as CampaignStatus[]) {
       expect(isCampaignCancellable({ ...base, status }, 0)).toBe(true);
     }
-    // A failed hold left no money behind.
-    expect(isCampaignCancellable({ ...base, capture_status: 'hold_failed' }, 0)).toBe(true);
   });
 
   it('refuses every later status, including closed', () => {
@@ -144,11 +142,7 @@ describe('isCampaignCancellable mirrors the cancel_campaign RPC', () => {
     }
   });
 
-  it('refuses once money is involved', () => {
-    for (const capture_status of ['authorized', 'pending', 'hold_review']) {
-      expect(isCampaignCancellable({ ...base, capture_status }, 0)).toBe(false);
-    }
-    expect(isCampaignCancellable({ ...base, charge_status: 'nothing_to_charge' }, 0)).toBe(false);
+  it('refuses once a contact was reached', () => {
     expect(isCampaignCancellable(base, 1)).toBe(false);
   });
 
@@ -156,10 +150,15 @@ describe('isCampaignCancellable mirrors the cancel_campaign RPC', () => {
     const fn = liveCancelCampaignDefinition();
     expect(fn).toContain("v.status in ('draft','pending_approval','approved')");
     expect([...CANCELLABLE_CAMPAIGN_STATUSES]).toEqual(['draft', 'pending_approval', 'approved']);
-    for (const s of ['authorized', 'pending', 'hold_review']) {
-      expect(fn).toContain(`v.capture_status is distinct from '${s}'`);
+    // A reached contact blocks it, as isCampaignCancellable's `reached` does.
+    expect(fn).toContain('not exists (select 1 from public.billed_results b where b.campaign_id=v.id)');
+  });
+
+  it('reads no retired pay-per-result column: money comes from the payment ledger only', () => {
+    const fn = liveCancelCampaignDefinition();
+    for (const retired of ['capture_status', 'charge_status', 'release_status', 'final_charge_amount']) {
+      expect(fn).not.toContain(retired);
     }
-    expect(fn).toContain('v.charge_status is null');
   });
 
   it('the RPC looks at the payment ledger, which is why a payment in flight blocks the staff button as well', () => {
@@ -183,7 +182,7 @@ describe('isCampaignCancellable mirrors the cancel_campaign RPC', () => {
 });
 
 describe('isCampaignCancellable — a paid package is not erased by flipping its status', () => {
-  const approved = { status: 'approved' as CampaignStatus, capture_status: null, charge_status: null };
+  const approved = { status: 'approved' as CampaignStatus };
 
   it.each(['collected', 'refunded', 'pending', 'review'])('is false while the payment is %s (a refund does not erase the real payment it returned)', (status) => {
     expect(isCampaignCancellable({ ...approved, payment: { status } }, 0)).toBe(false);
@@ -202,7 +201,7 @@ describe('isCampaignCancellable — a paid package is not erased by flipping its
 // SUCCEEDED test payment (campaign_has_payment_activity), so the staff button is offered. A payment still in flight blocks whatever
 // its class, and so does real money - testMoney is only ever true when every settled row is a test row.
 describe('isCampaignCancellable - test money', () => {
-  const approved = { status: 'approved' as CampaignStatus, capture_status: null, charge_status: null };
+  const approved = { status: 'approved' as CampaignStatus };
 
   it('a collected payment that is test money does not block: the run can be reset and paid again', () => {
     expect(isCampaignCancellable({ ...approved, payment: { status: 'collected', testMoney: true } }, 0)).toBe(true);
@@ -221,10 +220,8 @@ describe('isCampaignCancellable - test money', () => {
     expect(isCampaignCancellable({ ...approved, payment: { status: 'refunded', testMoney: true } }, 0)).toBe(true);
   });
 
-  it('test money does not open any other door: a hold, a charge, a reached contact or a later status still refuse', () => {
+  it('test money does not open any other door: a reached contact or a later status still refuse', () => {
     const payment = { status: 'collected', testMoney: true };
-    expect(isCampaignCancellable({ ...approved, capture_status: 'authorized', payment }, 0)).toBe(false);
-    expect(isCampaignCancellable({ ...approved, charge_status: 'charged', payment }, 0)).toBe(false);
     expect(isCampaignCancellable({ ...approved, payment }, 1)).toBe(false);
     expect(isCampaignCancellable({ ...approved, status: 'active', payment }, 0)).toBe(false);
   });

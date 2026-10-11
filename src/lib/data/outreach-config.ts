@@ -12,8 +12,7 @@ import {
 // singleton with ADMIN-ONLY RLS). Fail-safe: `select('*')` reads each column
 // defensively out of the row, so a missing column, a missing row or a read error
 // resolves to off / null (fail-closed — outreach stays off).
-// Mirrors getCampaignHoldsEnabled. The access token / app secret never leave the
-// server and are never logged.
+// The access token / app secret never leave the server and are never logged.
 
 export type WhatsAppConfig = {
   phoneNumberId: string;

@@ -119,7 +119,6 @@ import { runInstagramTokenRefresh } from '@/lib/data/instagram-token-refresh';
 import { runConsoleAgentCalendarPresenceSync } from '@/lib/data/console-agent-calendar-presence';
 import { runFleetExpireSweep } from '@/lib/fleet/expire';
 import { runRdpAccessSweep } from '@/lib/rdp-access/sweep';
-import { runSumitHoldReconcile } from '@/lib/data/sumit-hold-reconcile';
 import { runPaymentOrphanSweep } from '@/lib/data/payment-orphans';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
@@ -1584,19 +1583,6 @@ async function main(): Promise<void> {
     }),
   );
 
-  // SUMIT has no release API, and the card-change trigger it can POST is
-  // unsigned (enough for an alert, not for a status write — see the
-  // sumit-hold-changed workflow template), so this poll is the only thing that
-  // records a hold released manually in their dashboard. Read-only against
-  // SUMIT; the only write is release_status on our own campaigns.
-  await boss.work(
-    QUEUES.sumitHoldReconcile,
-    POLL_SLOW_CRON,
-    guardedWorker(QUEUES.sumitHoldReconcile, async () => {
-      await runSumitHoldReconcile();
-    }),
-  );
-
   // A payment row left PENDING by a process that died mid-call: moves it to review and alerts a person. It never
   // retries or settles a charge — whether SUMIT charged is unknown until an admin checks.
   await boss.work(
@@ -1693,7 +1679,6 @@ async function main(): Promise<void> {
   // Every 30 minutes — a manual dashboard release is not time-sensitive to
   // detect; this only exists to stop it going unnoticed forever, not to catch
   // it within seconds.
-  await boss.schedule(QUEUES.sumitHoldReconcile, '*/30 * * * *');
   // Every 10 minutes. The age threshold inside the sweep (10 minutes, 10x the SUMIT call timeout) is what protects a
   // slow-but-alive call; the cron period only sets how long a dead process's row waits before a person is told.
   await boss.schedule(QUEUES.paymentOrphans, '*/10 * * * *');

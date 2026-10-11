@@ -178,16 +178,8 @@ describe('ResolveForm — fee as a percentage', () => {
     expect(resolveCancellationRequestAction).not.toHaveBeenCalled();
   });
 
-  // The amount typed under "חיוב חלקי" means two different things. Before the campaign was charged it is what gets
-  // CHARGED; once money was paid (a charged campaign, or a fixed-price package) it is what STAYS with us and the rest
-  // goes back. The label says which, so the admin never reads "סכום לחיוב" on a screen that is about to refund.
-  it('before anything was charged the amount is "סכום לחיוב"', async () => {
-    const user = setup({ moneyOutcome: 'capture' });
-    await choosePartial(user);
-    expect(document.querySelector('label[for="resolutionAmount"]')?.textContent).toContain('סכום לחיוב');
-  });
-
-  it.each(['credit', 'manual', 'none', 'blocked'] as const)('once money was paid (%s) the amount is "סכום שנשאר אצלנו" — the rest goes back', async (moneyOutcome) => {
+  // The amount typed under "חיוב חלקי" is what STAYS with us; the rest goes back. The admin never reads "סכום לחיוב".
+  it.each(['credit', 'none', 'blocked', 'legacy'] as const)('once money was paid (%s) the amount is "סכום שנשאר אצלנו" — the rest goes back', async (moneyOutcome) => {
     const user = setup({ moneyOutcome });
     await choosePartial(user);
     const label = document.querySelector('label[for="resolutionAmount"]')?.textContent ?? '';
@@ -297,7 +289,7 @@ describe('ResolveForm — confirmation text for a package', () => {
   });
 
   it('no clearing company is named in any confirmation', async () => {
-    for (const moneyOutcome of ['capture', 'credit', 'manual', 'none', 'blocked', 'resume', 'no_campaign'] as const) {
+    for (const moneyOutcome of ['credit', 'none', 'blocked', 'resume', 'legacy', 'no_campaign'] as const) {
       for (const resolution of ['full', 'partial'] as const) {
         expect(await approve(setup({ moneyOutcome }), resolution)).not.toMatch(/SUMIT|CardCom/i);
         cleanup();
@@ -400,8 +392,8 @@ describe('ResolveForm — the fee beside the money that goes back', () => {
     expect(screen.getByText('דמי הביטול חייבים להיות גדולים מ-0 וקטנים ממה ששולם.')).toBeTruthy();
   });
 
-  it('before anything was charged the amount is a charge: no "returns to the card"', async () => {
-    const user = setup({ moneyOutcome: 'capture', feeBase: 300 });
+  it('a campaign from the earlier model moves no money: no "returns to the card"', async () => {
+    const user = setup({ moneyOutcome: 'legacy', feeBase: 0 });
     await choosePartial(user);
     expect(screen.queryByText('יוחזר לכרטיס')).toBeNull();
   });

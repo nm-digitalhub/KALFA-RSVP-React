@@ -20,18 +20,13 @@ import {
 } from './settings';
 
 /**
- * The nineteen fields updateAppSettings owns AFTER the provider split — the four
- * business toggles, the four automation toggles, the ten console toggles and the
- * one numeric hold-sizing cap. Every toggle must be present: an absent checkbox
- * is `false`, and a fixture that omits one would prove nothing about the field
- * it omitted. `reasonable_coverage_contacts` is the lone non-boolean; it is held
- * to a REAL number here so the all-true sweep below cannot quietly turn a
- * money-path integer into `true`.
+ * The sixteen toggles updateAppSettings owns AFTER the provider split — the two
+ * business toggles, the four automation toggles and the ten console toggles.
+ * Every toggle must be present: an absent checkbox is `false`, and a fixture
+ * that omits one would prove nothing about the field it omitted.
  */
 const BASE_SETTINGS_INPUT = {
   payments_enabled: false,
-  close_charge_enabled: false,
-  campaign_holds_enabled: false,
   billing_exposure_gate: false,
   inquiry_followup_enabled: true,
   agreement_archive_enabled: false,
@@ -47,7 +42,6 @@ const BASE_SETTINGS_INPUT = {
   console_call_me_now_enabled: false,
   console_consult_conference_enabled: false,
   console_dtmf_handoff_enabled: false,
-  reasonable_coverage_contacts: 300,
 };
 
 const ORIGINAL_ENV = { ...process.env };
@@ -83,13 +77,10 @@ describe('getAppSettings / updateAppSettings — inquiry_followup_enabled', () =
     // The provider fields belong to their own writers — passing them here would
     // not compile, which is the point.
     // Every toggle true, so the assertion below proves each one is carried rather
-    // than matching a shared default. The numeric field keeps a number (and a
-    // DISTINCT one, 777, so the assertion cannot pass on the fixture default).
+    // than matching a shared default.
     await updateAppSettings(
       Object.fromEntries(
-        Object.entries(BASE_SETTINGS_INPUT).map(([k, v]) =>
-          typeof v === 'boolean' ? [k, true] : [k, 777],
-        ),
+        Object.keys(BASE_SETTINGS_INPUT).map((k) => [k, true]),
       ) as typeof BASE_SETTINGS_INPUT,
     );
     expect(builder.update).toHaveBeenCalledWith(
@@ -98,7 +89,6 @@ describe('getAppSettings / updateAppSettings — inquiry_followup_enabled', () =
         agreement_archive_enabled: true,
         signup_reminder_enabled: true,
         unconfirmed_cleanup_enabled: true,
-        campaign_holds_enabled: true,
         billing_exposure_gate: true,
         monitor_enabled: true,
         inbound_calls_enabled: true,
@@ -110,8 +100,6 @@ describe('getAppSettings / updateAppSettings — inquiry_followup_enabled', () =
         console_call_me_now_enabled: true,
         console_consult_conference_enabled: true,
         console_dtmf_handoff_enabled: true,
-        // Carried as the number it is, not coerced to a boolean by the sweep.
-        reasonable_coverage_contacts: 777,
       }),
     );
   });
@@ -211,17 +199,21 @@ describe('updateAppSettings no longer owns provider credentials', () => {
     const patch = patchOf(builder);
     for (const column of [
       'payments_enabled',
-      'close_charge_enabled',
-      'campaign_holds_enabled',
       'billing_exposure_gate',
       'inquiry_followup_enabled',
       'console_softphone_enabled',
       'console_dtmf_handoff_enabled',
-      // The hold-sizing cap is in this list so it cannot be dropped back out
-      // silently.
-      'reasonable_coverage_contacts',
     ]) {
       expect(patch).toHaveProperty(column);
+    }
+  });
+
+  it('writes none of the retired pay-per-result switches', async () => {
+    const builder = mockWrite();
+    await updateAppSettings(BASE_SETTINGS_INPUT);
+    const patch = patchOf(builder);
+    for (const column of ['close_charge_enabled', 'campaign_holds_enabled', 'reasonable_coverage_contacts']) {
+      expect(patch).not.toHaveProperty(column);
     }
   });
 });

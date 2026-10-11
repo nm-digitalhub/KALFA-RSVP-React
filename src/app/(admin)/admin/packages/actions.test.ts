@@ -49,8 +49,8 @@ function fd(entries: Record<string, string>): FormData {
 
 beforeEach(() => vi.clearAllMocks());
 
-describe('createPackageAction — campaign-enabled gating of template validation (plan §5.3/§2)', () => {
-  it('skips template validation for a non-campaign package (price_per_reached empty) even when touchpoints exist', async () => {
+describe('createPackageAction — campaign-enabled gating of template validation ', () => {
+  it('skips template validation for a non-campaign package (no quota) even when touchpoints exist', async () => {
     await createPackageAction(
       null,
       fd({
@@ -67,12 +67,12 @@ describe('createPackageAction — campaign-enabled gating of template validation
     expect(vi.mocked(redirect)).toHaveBeenCalledWith('/admin/packages');
   });
 
-  it('runs template validation when the package is campaign-enabled (price_per_reached set)', async () => {
+  it('runs template validation when the package is campaign-enabled (a quota is set)', async () => {
     await createPackageAction(
       null,
       fd({
         ...FIELDS,
-        price_per_reached: '5',
+        contact_quota: '40',
         channels: 'whatsapp',
         outreach_schedule_json: JSON.stringify([
           { days_before: 3, channel: 'whatsapp', message_key: 'rsvp_reminder' },
@@ -87,8 +87,8 @@ describe('createPackageAction — campaign-enabled gating of template validation
   });
 });
 
-describe('updatePackageAction — campaign-enabled gating of template validation (plan §5.3/§2)', () => {
-  it('skips template validation for a non-campaign package (price_per_reached empty) even when touchpoints exist', async () => {
+describe('updatePackageAction — campaign-enabled gating of template validation ', () => {
+  it('skips template validation for a non-campaign package (no quota) even when touchpoints exist', async () => {
     const result = await updatePackageAction(
       'p-1',
       null,
@@ -105,10 +105,10 @@ describe('updatePackageAction — campaign-enabled gating of template validation
     expect(result).toEqual({ notice: 'החבילה נשמרה' });
   });
 
-  it('runs template validation when the package is campaign-enabled (price_per_reached set)', async () => {
+  it('runs template validation when the package is campaign-enabled (a quota is set)', async () => {
     const f = fd({
       ...FIELDS,
-      price_per_reached: '5',
+      contact_quota: '40',
       channels: 'whatsapp',
       outreach_schedule_json: JSON.stringify([
         { days_before: 3, channel: 'whatsapp', message_key: 'rsvp_reminder' },
@@ -125,19 +125,12 @@ describe('updatePackageAction — campaign-enabled gating of template validation
   });
 });
 
-describe('updatePackageAction — negative operational numerics rejected before the data layer (plan §5.5#2)', () => {
-  it('returns a min_hold_floor field error for "-1" and never calls updatePackage', async () => {
-    const result = await updatePackageAction(
-      'p-1',
-      null,
-      fd({ ...FIELDS, min_hold_floor: '-1' }),
-    );
+describe('updatePackageAction — an invalid quota is rejected before the data layer', () => {
+  it('returns a contact_quota field error for "-1" and never calls updatePackage', async () => {
+    const result = await updatePackageAction('p-1', null, fd({ ...FIELDS, contact_quota: '-1' }));
 
-    expect(result?.fieldErrors?.min_hold_floor).toEqual([
-      'רצפת ה-hold לא יכולה להיות שלילית',
-    ]);
-    // Zod rejects before any DB work: neither the write nor the
-    // template-validation query is ever reached.
+    expect(result?.fieldErrors?.contact_quota).toEqual(['נא להזין מכסה תקינה (מספר שלם, 1 ומעלה)']);
+    // Zod rejects before any DB work: neither the write nor the template-validation query is ever reached.
     expect(updatePackage).not.toHaveBeenCalled();
     expect(validateOutreachScheduleForPackage).not.toHaveBeenCalled();
   });
@@ -184,7 +177,7 @@ describe('fixed-price package with a contact quota', () => {
     ]),
   };
 
-  it('is campaign-enabled without a price per reached: its schedule is validated, and the quota is saved', async () => {
+  it('is campaign-enabled: its schedule is validated, and the quota is saved', async () => {
     await createPackageAction(null, fd({ ...FIELDS, ...quota }));
 
     expect(validateOutreachScheduleForPackage).toHaveBeenCalledWith([
@@ -192,8 +185,12 @@ describe('fixed-price package with a contact quota', () => {
     ]);
     expect(createPackage).toHaveBeenCalledWith(
       expect.objectContaining({ price_with_vat: 1000 }),
-      expect.objectContaining({ contact_quota: 40, price_per_reached: null, min_hold_floor: 0, hold_buffer_pct: 0 }),
+      expect.objectContaining({ contact_quota: 40 }),
     );
+    const operational = vi.mocked(createPackage).mock.calls[0][1] as Record<string, unknown>;
+    for (const old of ['price_per_reached', 'base_price', 'included_reached', 'min_hold_floor', 'hold_buffer_pct']) {
+      expect(operational, old).not.toHaveProperty(old);
+    }
   });
 
   it('the same on update', async () => {
@@ -219,12 +216,16 @@ describe('fixed-price package with a contact quota', () => {
     expect(updatePackage).not.toHaveBeenCalled();
   });
 
-  it('a mix with the per-reached formula is refused before the data layer', async () => {
-    const result = await createPackageAction(null, fd({ ...FIELDS, ...quota, price_per_reached: '5' }));
+  it('a submitted per-result price or hold field never reaches the data layer', async () => {
+    await createPackageAction(
+      null,
+      fd({ ...FIELDS, ...quota, price_per_reached: '5', base_price: '200', min_hold_floor: '50', hold_buffer_pct: '10' }),
+    );
 
-    expect(result?.fieldErrors?.price_per_reached).toBeDefined();
-    expect(createPackage).not.toHaveBeenCalled();
-    expect(validateOutreachScheduleForPackage).not.toHaveBeenCalled();
+    const operational = vi.mocked(createPackage).mock.calls[0][1] as Record<string, unknown>;
+    for (const old of ['price_per_reached', 'base_price', 'included_reached', 'min_hold_floor', 'hold_buffer_pct']) {
+      expect(operational, old).not.toHaveProperty(old);
+    }
   });
 
   it('a package without a quota still skips template validation (nothing changed for it)', async () => {

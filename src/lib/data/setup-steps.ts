@@ -41,33 +41,18 @@ export interface SetupInput {
     payment?: { status: string } | null;
   } | null;
   isPast: boolean;
-  // A fixed-price package is on offer (the package model is on and the catalogue is not empty). Adds the
-  // package-choice step; absent/false leaves the flow exactly as it was.
-  packageOffered?: boolean;
 }
 
 export const SETUP_STEP_LABELS: Record<SetupStepKey, string> = {
   details: 'פרטי האירוע',
   confirm: 'אישור פרטי האירוע',
   package: 'בחירת חבילה',
-  sign: 'קריאת ההסכם וחתימה',
-  // Deliberately mechanism-neutral: how the card is used (hold, immediate
-  // charge, …) is a property of the payment mode, not of the step's name.
-  pay: 'אמצעי תשלום',
+  // The package terms are APPROVED, not signed (no drawn signature, no phone code).
+  sign: 'אישור תנאי החבילה',
+  // A single purchase of the package.
+  pay: 'תשלום החבילה',
   live: 'הקמפיין פעיל',
 };
-
-// The fixed-price package is APPROVED, not signed (no drawn signature, no phone code), so in its flow the signing step
-// is named for what the owner actually does.
-export const PACKAGE_SIGN_LABEL = 'אישור תנאי החבילה';
-// …and the payment step is a single purchase, not "a payment method".
-export const PACKAGE_PAY_LABEL = 'תשלום החבילה';
-
-/** The labels for the steps of THIS flow: the standard ones, with the signing and payment steps renamed in the package flow. */
-export function setupStepLabels(steps: readonly SetupStep[]): Record<SetupStepKey, string> {
-  const packageFlow = steps.some((s) => s.key === 'package');
-  return packageFlow ? { ...SETUP_STEP_LABELS, sign: PACKAGE_SIGN_LABEL, pay: PACKAGE_PAY_LABEL } : SETUP_STEP_LABELS;
-}
 
 export const PAST_EVENT_HINT = 'מועד האירוע חלף — לא ניתן להמשיך בהקמה';
 
@@ -164,14 +149,11 @@ export function computeSetupSteps(input: SetupInput): {
   const live = stage === 'active' || stage === 'closed';
   const missing = confirmed ? [] : missingEventPrerequisites(input.event);
 
-  // The package-choice step sits between confirming the event and signing, because the choice is what CREATES the
-  // campaign (its price and quota are snapshotted on it) and the agreement is signed for that campaign. It exists
-  // while a package is on offer and nothing is chosen yet, and for as long as the campaign is a package campaign. A
-  // pay-per-result campaign already in flight keeps its own five-step flow.
-  const isPackageCampaign = (input.campaign?.package_price ?? null) != null;
-  const hasPackageStep = isPackageCampaign || (input.packageOffered === true && input.campaign === null);
-  const packageChosen = isPackageCampaign;
-  const canSign = confirmed && (!hasPackageStep || packageChosen);
+  // The package-choice step sits between confirming the event and approving the terms, because the choice is what
+  // CREATES the campaign (its price and quota are snapshotted on it) and the terms are approved for that campaign. With
+  // no package on offer the step stays current and says so (PackageChoiceForm).
+  const packageChosen = input.campaign !== null;
+  const canSign = confirmed && packageChosen;
 
   const steps: SetupStep[] = [
     {
@@ -181,9 +163,7 @@ export function computeSetupSteps(input: SetupInput): {
       hint: !confirmed && missing.length > 0 ? `יש להשלים: ${missing.join(', ')}` : undefined,
     },
     { key: 'confirm', state: confirmed ? 'done' : missing.length > 0 ? 'pending' : 'current' },
-    ...(hasPackageStep
-      ? [{ key: 'package' as const, state: (packageChosen ? 'done' : confirmed ? 'current' : 'pending') as SetupStepState }]
-      : []),
+    { key: 'package', state: packageChosen ? 'done' : confirmed ? 'current' : 'pending' },
     { key: 'sign', state: signed ? 'done' : canSign ? 'current' : 'pending' },
     { key: 'pay', state: held ? 'done' : signed ? 'current' : 'pending' },
     {
