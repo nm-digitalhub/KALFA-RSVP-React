@@ -52,7 +52,7 @@ const isCodeCollision = (error: { code?: string; message?: string } | null): boo
 
 // Owner-initiated: request to cancel an active/closed event. Uses the
 // owner-scoped cookie client (RLS-enforced ecr_owner_insert), NOT the admin
-// client — mirrors how callback_requests customer-facing inserts work.
+// client, so the owner's own RLS decides what they may request.
 // Refuses while the event already has a pending request (a double click, a second tab).
 export async function createCancellationRequest(
   eventId: string,

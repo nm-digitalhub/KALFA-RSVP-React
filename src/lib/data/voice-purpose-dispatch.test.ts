@@ -13,7 +13,7 @@ vi.mock('@/lib/data/voice-purposes', () => ({ getVoicePurpose: purposeMock }));
 vi.mock('@/lib/data/voximplant-config', () => ({ getVoximplantConfig: configMock }));
 vi.mock('@/lib/data/console-calls', () => ({
   evaluateSharedConsentGates: gatesMock,
-  DIAL_GATE_POLICY: { guest_service: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'apply' } },
+  DIAL_GATE_POLICY: { guest_service: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'apply', nationalRegistry: 'not_applicable' } },
 }));
 vi.mock('@/lib/data/voximplant-concurrency', () => ({ countActiveCallsAllSurfaces: concurrencyMock }));
 vi.mock('@/lib/voximplant/core', () => ({
@@ -134,7 +134,8 @@ describe('dispatchVoicePurposeCall', () => {
   it('⚠️ uses the STRICTEST consent policy — a guest asked for nothing', async () => {
     await call();
     expect(gatesMock.mock.calls[0]![3]).toEqual({
-      policy: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'apply' },
+      policy: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'apply', nationalRegistry: 'required' },
+      registry: { dialPath: expect.stringMatching(/^voice_purpose:/) },
     });
   });
 

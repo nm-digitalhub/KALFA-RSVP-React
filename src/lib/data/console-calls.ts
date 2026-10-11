@@ -6,6 +6,11 @@ import { armCallbackIntake } from '@/lib/callbacks/intake-dispatch';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { normalizePhone } from '@/lib/phone';
 import { isDncListed } from '@/lib/data/outreach-engine';
+import {
+  evaluateRegistryGate,
+  type NationalRegistryPolicy,
+  type RegistryGateContext,
+} from '@/lib/dnc/registry-gate';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { buildJewishCalendar } from '@/lib/outreach/jewish-calendar';
 import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
@@ -412,16 +417,25 @@ export interface DialGatePolicy {
   shabbat: boolean;
   /** 'apply' | 'overridable' (agent confirms) | 'skip'. */
   dailyWindow: 'apply' | 'overridable' | 'skip';
+  /**
+   * Whether the call is MARKETING under Consumer Protection Law 16ב(א), and so subject to the national Do-Not-Call
+   * registry ("אל תתקשר אליי"). Enforced by evaluateRegistryGate (src/lib/dnc/registry-gate.ts) only while
+   * call_compliance_settings.dnc_registry_gate_enabled is on. openspec/changes/dnc-registry-dial-gate D2.
+   */
+  nationalRegistry: NationalRegistryPolicy;
 }
 
 export const DIAL_GATE_POLICY: Record<DialTargetInput['kind'], DialGatePolicy> = {
   // Someone asked us to call them back. Consent to be called is the request
   // itself; the timing rules still protect them.
-  callback: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'overridable' },
+  //   nationalRegistry  exempt_if_requested: the request itself is the Sixth Schedule item 1 exemption when the person
+  //                     made it (callback_requests.origin); a request a workflow created is checked.
+  callback: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'overridable', nationalRegistry: 'exempt_if_requested' },
 
   // WE initiate, to a guest who asked for nothing. Every gate applies — this is
   // the scenario all of them were written for.
-  guest_service: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'apply' },
+  //   nationalRegistry  not_applicable: a call to a guest about their event is not marketing (owner ruling 11.10.2026).
+  guest_service: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'apply', nationalRegistry: 'not_applicable' },
 
   // They rang us and we did not answer. Returning it is a RESPONSE, and the
   // owner ruled on this directly: "לקוח שחייג אליי ואני חוזר אליו לא מהווה שום
@@ -436,7 +450,8 @@ export const DIAL_GATE_POLICY: Record<DialTargetInput['kind'], DialGatePolicy> =
   //            Ringing back somebody who dialled us is not soliciting.
   //   window   DROPPED. Same reasoning; and blocking it was the concrete failure
   //            the owner hit — a missed call at 20:15 that could not be returned.
-  returned_call: { dnc: true, optOut: false, shabbat: false, dailyWindow: 'skip' },
+  //   nationalRegistry  not_applicable: the person initiated the contact (owner ruling 11.10.2026).
+  returned_call: { dnc: true, optOut: false, shabbat: false, dailyWindow: 'skip', nationalRegistry: 'not_applicable' },
 
   // A HUMAN dialling a number they typed, on the business's own phone.
   //
@@ -451,7 +466,8 @@ export const DIAL_GATE_POLICY: Record<DialTargetInput['kind'], DialGatePolicy> =
   //
   // Every manual dial is audited (see recordConsoleDialAudit), which is the accountability
   // that replaces a gate here: who called which number, and when.
-  manual: { dnc: true, optOut: false, shabbat: false, dailyWindow: 'skip' },
+  //   nationalRegistry  required: a number typed by hand may be anyone's, so a manual dial is checked as a sales call.
+  manual: { dnc: true, optOut: false, shabbat: false, dailyWindow: 'skip', nationalRegistry: 'required' },
 };
 
 export type DialTargetFailureReason =
@@ -465,6 +481,11 @@ export type DialTargetFailureReason =
   | 'past_event_day'
   | 'invalid_phone'
   | 'dnc'
+  // The national Do-Not-Call registry (evaluateRegistryGate). 'registry_pending' is the only temporary one: the
+  // check could not be completed or recorded, and the dial waits rather than being refused for good.
+  | 'registry_listed'
+  | 'registry_unchecked'
+  | 'registry_pending'
   | 'opted_out'
   | 'quiet_hours'
   // The DAILY window only (default 08:00–19:00 Sun–Thu, 08:00–13:00 Fri; admin-editable), and separated from
@@ -586,6 +607,11 @@ export async function evaluateSharedConsentGates(
      * forgets to declare one is over-protected rather than under-protected.
      */
     policy?: DialGatePolicy;
+    /**
+     * Who is dialling and on what record, for the national-registry gate and its decision record. Only read when the
+     * policy's nationalRegistry is not 'not_applicable'; a caller that omits it is recorded as 'unspecified'.
+     */
+    registry?: RegistryGateContext;
   } = {},
 ): Promise<{ ok: true } | { ok: false; reason: DialTargetFailureReason }> {
   const policy = opts.policy ?? DIAL_GATE_POLICY.guest_service;
@@ -623,7 +649,7 @@ export async function evaluateSharedConsentGates(
   if (policy.shabbat && isShabbatOrYomTovBlocked(nowMs)) {
     return { ok: false, reason: 'quiet_hours' };
   }
-  if (policy.dailyWindow === 'skip') return { ok: true };
+  if (policy.dailyWindow === 'skip') return evaluateRegistryLast(admin, phone, policy, opts.registry);
 
   // The daily window — SKIPPED for call-me-now's immediate leg (hoursGate
   // 'skip_consumer_initiated'; compliance ruling, 12.8; see
@@ -652,7 +678,19 @@ export async function evaluateSharedConsentGates(
     }
   }
 
-  return { ok: true };
+  return evaluateRegistryLast(admin, phone, policy, opts.registry);
+}
+
+// The national Do-Not-Call registry — LAST, because it is the only gate here that calls an outside service: a dial
+// already refused for DNC, opt-out, Shabbat or the hours never costs a registry request. It protects the person
+// called, so like DNC and opt-out it cannot be waived by allowOutsideHours.
+async function evaluateRegistryLast(
+  admin: AdminClient,
+  phone: string,
+  policy: DialGatePolicy,
+  registry: RegistryGateContext | undefined,
+): Promise<{ ok: true } | { ok: false; reason: DialTargetFailureReason }> {
+  return evaluateRegistryGate(admin, phone, policy.nationalRegistry, registry ?? { dialPath: 'unspecified' });
 }
 
 async function countRecentCallbackDialAttempts(
@@ -717,7 +755,7 @@ export async function resolveDialTarget(
     const { data, error } = await admin
       .from('callback_requests')
       .select(
-        'id, phone, status, requested_at, created_at, not_before_min, not_after_min, excluded_dates',
+        'id, phone, status, requested_at, created_at, not_before_min, not_after_min, excluded_dates, origin',
       )
       .eq('id', input.id)
       .maybeSingle();
@@ -751,6 +789,10 @@ export async function resolveDialTarget(
     const shared = await evaluateSharedConsentGates(admin, phone, nowMs, {
       allowOutsideHours: opts.allowOutsideHours,
       policy: DIAL_GATE_POLICY.callback,
+      registry: {
+        dialPath: 'console_callback',
+        exemption: { origin: data.origin, ref: `callback_requests:${data.id}` },
+      },
     });
     if (!shared.ok) return shared;
 
@@ -836,6 +878,7 @@ export async function resolveDialTarget(
     const shared = await evaluateSharedConsentGates(admin, phone, nowMs, {
       allowOutsideHours: opts.allowOutsideHours,
       policy: DIAL_GATE_POLICY.manual,
+      registry: { dialPath: 'console_manual' },
     });
     if (!shared.ok) return shared;
 
@@ -963,7 +1006,12 @@ export async function evaluateCallMeNowConsent(
   nowMs: number = Date.now(),
 ): Promise<{ ok: true } | { ok: false; reason: DialTargetFailureReason }> {
   const admin = createAdminClient();
-  return evaluateSharedConsentGates(admin, phone, nowMs, { hoursGate: 'skip_consumer_initiated' });
+  return evaluateSharedConsentGates(admin, phone, nowMs, {
+    hoursGate: 'skip_consumer_initiated',
+    // The visitor asked, OTP-verified, to be called NOW: the Sixth Schedule item 1 exemption, recorded as such.
+    policy: { ...DIAL_GATE_POLICY.guest_service, nationalRegistry: 'exempt_if_requested' },
+    registry: { dialPath: 'call_me_now', exemption: { origin: 'person_request', ref: 'call_me_now:otp_verified' } },
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1623,10 +1671,9 @@ export async function resolveExternalDialTarget(
   }
 
   // Fail CLOSED on a DNC lookup error, unlike most best-effort checks in this file:
-  // isDncListed already swallows its own errors to `false`, so this call cannot
-  // distinguish "not listed" from "could not check" — which is why the DNC list is
-  // the last gate rather than the only one, and why the country allowlist above
-  // carries the weight it does.
+  // isDncListed itself returns true (listed) on any lookup error (outreach-engine.ts),
+  // so a failed lookup refuses the leg. It cannot tell "listed" from "could not
+  // check", which is why the country allowlist above still carries real weight.
   if (await isDncListed(phone)) return { ok: false, reason: 'dnc' };
 
   return { ok: true, phone };
@@ -3427,6 +3474,9 @@ export async function recordMissedCallCallback(input: {
       requested_at: null,
       requested_rank: 'earliest',
       note: `נוצר אוטומטית משיחה נכנסת ${input.consoleCallId}`,
+      // The person called us and nobody answered: they initiated the contact, so returning the call is exempt from the
+      // national Do-Not-Call registry check (owner ruling 11.10.2026; openspec dnc-registry-dial-gate D7).
+      origin: 'missed_call',
     })
       .select('id')
       .maybeSingle();
@@ -3498,6 +3548,7 @@ export async function offerCallbackForCallMeNow(phone: string): Promise<void> {
       requested_at: null,
       requested_rank: 'earliest',
       note: 'נוצר אוטומטית מבקשת "התקשרו אליי עכשיו" (capability A, 12.8) — לא נמצא נציג זמין בזמן הבקשה',
+      origin: 'person_request', // they asked to be called (Sixth Schedule item 1)
     })
       .select('id')
       .maybeSingle();

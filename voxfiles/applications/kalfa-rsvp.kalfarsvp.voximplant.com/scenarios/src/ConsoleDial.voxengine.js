@@ -13,9 +13,10 @@
 // customer on the line are never recorded).
 //
 // Outbound branch: this scenario is NEVER the authority. It resolves the
-// dial-token against KALFA's authorize endpoint (consent/DNC/live_calls/caps —
-// all server-side, plan "החלטות היקף" gate D) and only then places the PSTN
-// call. The guest leg is disclosed + recording-started BEFORE it is bridged to
+// dial-token against KALFA's authorize endpoint and only then places the PSTN
+// call. Consent, DNC and the hours are checked server-side when the token is
+// minted (dial-intent); authorize re-checks only the live-calls switch. The
+// guest leg is disclosed + recording-started BEFORE it is bridged to
 // the operator, so the disclosure itself is on tape.
 //
 // Plan: /var/www/vhosts/kalfa.me/.claude/plans/shimmering-snuggling-neumann.md

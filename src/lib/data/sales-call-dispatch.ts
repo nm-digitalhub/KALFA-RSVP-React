@@ -221,7 +221,7 @@ export async function dispatchSalesCall(
   const admin = createAdminClient();
   const { data: row, error: rowErr } = await admin
     .from('callback_requests')
-    .select('id, phone, status, scheduled_at')
+    .select('id, phone, status, scheduled_at, origin')
     .eq('id', callbackRequestId)
     .maybeSingle();
   if (rowErr) throw new Error('טעינת בקשת שיחה חוזרת נכשלה');
@@ -252,6 +252,12 @@ export async function dispatchSalesCall(
   //    window, so no hoursGate override or allowOutsideHours is used.
   const shared = await evaluateSharedConsentGates(admin, phone, Date.now(), {
     policy: DIAL_GATE_POLICY.callback,
+    // A sales call: exempt from the national Do-Not-Call registry only when the person made this request
+    // (callback_requests.origin), and checked otherwise.
+    registry: {
+      dialPath: 'sales_call',
+      exemption: { origin: row.origin, ref: `callback_requests:${row.id}` },
+    },
   });
   if (!shared.ok) return { kind: 'skipped', reason: shared.reason };
 
@@ -259,7 +265,7 @@ export async function dispatchSalesCall(
   //    Voximplant dispatch surfaces (voximplant-concurrency.ts).
   const active = await countActiveCallsAllSurfaces();
   if (active >= config.maxConcurrentCalls) {
-    await alert('warn', 'Voximplant max concurrency reached — deferring sales-closing call', {
+    await alert('warn', 'Voximplant max concurrency reached — sales-closing call skipped', {
       callbackRequestId, active, cap: config.maxConcurrentCalls,
     });
     return { kind: 'max_concurrency' };

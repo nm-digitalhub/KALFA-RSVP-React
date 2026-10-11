@@ -136,7 +136,10 @@ export async function dispatchVoicePurposeCall(input: {
   // 3. Consent, DNC, opt-out, Shabbat and the daily window — one call, the same
   //    shared evaluator every other dial surface goes through.
   const gates = await evaluateSharedConsentGates(admin, phone, nowMs, {
-    policy: DIAL_GATE_POLICY.guest_service,
+    // A custom voice purpose is an admin-written script whose content the code cannot see (the one live today,
+    // purchase_callback, is a sales follow-up), so it is checked against the national Do-Not-Call registry.
+    policy: { ...DIAL_GATE_POLICY.guest_service, nationalRegistry: 'required' },
+    registry: { dialPath: `voice_purpose:${purpose.key}` },
   });
   if (!gates.ok) return { kind: 'skipped', reason: gates.reason };
 
@@ -146,7 +149,7 @@ export async function dispatchVoicePurposeCall(input: {
   if (active >= config.maxConcurrentCalls) {
     await sendSlackAlert({
       level: 'warn',
-      title: 'Voximplant max concurrency reached — deferring voice-purpose call',
+      title: 'Voximplant max concurrency reached — voice-purpose call skipped',
       source: 'voice-purpose-dispatch',
       category: 'send_health',
       fields: { purpose: purpose.key, active, cap: config.maxConcurrentCalls },

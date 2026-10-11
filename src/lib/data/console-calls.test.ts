@@ -3,11 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/data/outreach-engine', () => ({ isDncListed: vi.fn() }));
+// The registry gate is tested on its own (src/lib/dnc/registry-gate.test.ts); here only that it is asked, with what.
+vi.mock('@/lib/dnc/registry-gate', () => ({ evaluateRegistryGate: vi.fn(async () => ({ ok: true })) }));
 vi.mock('@/lib/data/push-delivery', () => ({ sendPushToUser: vi.fn() }));
 vi.mock('@/lib/data/console-monitor', () => ({ monitorEnabled: vi.fn() }));
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isDncListed } from '@/lib/data/outreach-engine';
+import { evaluateRegistryGate } from '@/lib/dnc/registry-gate';
 import { sendPushToUser } from '@/lib/data/push-delivery';
 import { monitorEnabled } from '@/lib/data/console-monitor';
 import {
@@ -882,6 +885,42 @@ describe('resolveDialTarget — kind: callback', () => {
     const result = await resolveDialTarget({ kind: 'callback', id: 'cb-1' }, NOW);
     expect(result).toMatchObject({ ok: true, callbackRequestId: 'cb-1' });
     if (result.ok) expect(result.phone).toMatch(/^\+972/);
+  });
+
+  it('asks the national-registry gate with the request\'s origin as exemption evidence, and honours its refusal', async () => {
+    const row = {
+      id: 'cb-7', phone: '0501234567', status: 'new', origin: 'workflow',
+      requested_at: null, created_at: new Date(NOW - 60_000).toISOString(),
+    };
+    wireAdmin({
+      callback_requests: [{ data: row, error: null }],
+      activity_log: [{ data: null, error: null, count: 0 } as unknown as QueryResult],
+      contacts: [{ data: null, error: null }],
+    });
+    vi.mocked(isDncListed).mockResolvedValue(false);
+    vi.mocked(evaluateRegistryGate).mockResolvedValueOnce({ ok: false, reason: 'registry_listed' });
+
+    const result = await resolveDialTarget({ kind: 'callback', id: 'cb-7' }, NOW);
+    expect(result).toEqual({ ok: false, reason: 'registry_listed' });
+    expect(evaluateRegistryGate).toHaveBeenCalledWith(expect.anything(), '+972501234567', 'exempt_if_requested', {
+      dialPath: 'console_callback',
+      exemption: { origin: 'workflow', ref: 'callback_requests:cb-7' },
+    });
+  });
+
+  it('never reaches the registry when an earlier gate already refused', async () => {
+    wireAdmin({
+      callback_requests: [{
+        data: { id: 'cb-8', phone: '0501234567', status: 'new', requested_at: null, created_at: new Date(NOW - 60_000).toISOString() },
+        error: null,
+      }],
+      activity_log: [{ data: null, error: null, count: 0 } as unknown as QueryResult],
+    });
+    vi.mocked(isDncListed).mockResolvedValue(true);
+    vi.mocked(evaluateRegistryGate).mockClear();
+
+    expect(await resolveDialTarget({ kind: 'callback', id: 'cb-8' }, NOW)).toEqual({ ok: false, reason: 'dnc' });
+    expect(evaluateRegistryGate).not.toHaveBeenCalled();
   });
 
   it('NO-GO: a closed callback (status not in new/in_progress) is refused', async () => {
@@ -1978,6 +2017,7 @@ describe('DIAL_GATE_POLICY', () => {
       optOut: true,
       shabbat: true,
       dailyWindow: 'apply',
+      nationalRegistry: 'not_applicable',
     });
   });
 
@@ -1995,6 +2035,7 @@ describe('DIAL_GATE_POLICY', () => {
       optOut: false,
       shabbat: false,
       dailyWindow: 'skip',
+      nationalRegistry: 'not_applicable',
     });
   });
 

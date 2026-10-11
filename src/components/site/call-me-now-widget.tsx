@@ -57,6 +57,9 @@ const REFUSAL_MESSAGE: Record<string, string> = {
   // basis.
   quiet_hours: 'לא ניתן לבצע שיחה בשבת ובחג. נסו שוב לאחר צאת החג.',
   otp: 'קוד האימות שגוי או שפג תוקפו.',
+  // A call-me-now request is exempt from the national Do-Not-Call registry (the visitor asked to be called), so the
+  // only registry outcome this flow can meet is a decision record that could not be written.
+  registry_pending: 'לא ניתן לבצע שיחה כעת. נסו שוב בעוד מספר דקות.',
 };
 
 // Same wording NO_AGENT_LINE_HE uses in ConsoleInbound.voxengine.js — reused

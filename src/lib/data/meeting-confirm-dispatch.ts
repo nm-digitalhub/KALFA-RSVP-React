@@ -234,7 +234,10 @@ export async function dispatchMeetingConfirmCall(
   //    tighter window by construction, so the general daily window is
   //    satisfied as a matter of course, never by an explicit bypass.
   const shared = await evaluateSharedConsentGates(admin, phone, nowMs, {
-    policy: DIAL_GATE_POLICY.callback,
+    // Confirming a booked SALES meeting is treated as a marketing call and checked against the national Do-Not-Call
+    // registry, until an attorney rules otherwise (openspec dnc-registry-dial-gate D1/D2).
+    policy: { ...DIAL_GATE_POLICY.callback, nationalRegistry: 'required' },
+    registry: { dialPath: 'meeting_confirm' },
   });
   if (!shared.ok) return { kind: 'skipped', reason: shared.reason };
 
@@ -243,7 +246,7 @@ export async function dispatchMeetingConfirmCall(
   //    counted alone: both tables share one Voximplant account/balance.
   const active = await countActiveCallsAllSurfaces();
   if (active >= config.maxConcurrentCalls) {
-    await alert('warn', 'Voximplant max concurrency reached — deferring meeting-confirm call', {
+    await alert('warn', 'Voximplant max concurrency reached — meeting-confirm call skipped', {
       callbackRequestId, active, cap: config.maxConcurrentCalls,
     });
     return { kind: 'max_concurrency' };

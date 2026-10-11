@@ -25,6 +25,7 @@ import { runEmailHealthCheck } from '@/lib/email/run-health-check';
 import { runExtraKeyCheck } from '@/lib/sms/run-key-check';
 import { runSumitHealthCheck } from '@/lib/sumit/run-health-check';
 import { dispatchOutreachCall } from '@/lib/data/outreach-calls';
+import { deferForRegistry } from '@/lib/dnc/registry-wait';
 import {
   listActiveCampaigns,
   listActiveOutreach,
@@ -160,8 +161,8 @@ const SCHEDULE_TZ = 'Asia/Jerusalem';
 
 type StepJob = { id: string; data: OutreachStepJob };
 type CallJob = { id: string; data: OutreachCallRequest };
-type MeetingConfirmJob = { id: string; data: MeetingConfirmDispatchJob };
-type SalesCallJob = { id: string; data: SalesCallDispatchJob };
+type MeetingConfirmJob = { id: string; data: MeetingConfirmDispatchJob & { registryWaits?: number } };
+type SalesCallJob = { id: string; data: SalesCallDispatchJob & { registryWaits?: number } };
 
 // Outbound AI-call dispatch (C2). dispatchOutreachCall is fully fail-safe: only a
 // pre-dial balance-check transport failure is retryable — every other outcome
@@ -205,10 +206,12 @@ async function handleCallRequest(job: CallJob): Promise<void> {
   // throws; settleManualDispatch (the app's Realtime status channel keyed by
   // the dispatch_id from the 202 — call_attempts itself was never app-readable)
   // is STRICT — its failure throws, failing the job so pg-boss redelivers and
-  // the answer is retried. The redelivery is dial-safe: the attempt row already
-  // exists, so the dispatcher reconciles (already_dispatched) instead of
-  // placing a second call. A job may therefore never complete with its
-  // dispatch row stuck 'accepted'.
+  // the answer is retried, so a job never completes with its dispatch row stuck
+  // 'accepted'.
+  // ⚠️ NOT dial-safe for isManual jobs (checked 11.10.2026): each delivery takes a
+  // NEW touchpoint index (nextManualTouchpoint, outreach-calls.ts) and nothing looks
+  // the attempt up by dispatch_id, so a redelivery after a confirmed start can dial
+  // again. Tracked as its own fix (openspec dnc-registry-dial-gate, design D12).
   if (job.data.isManual) {
     await recordManualDialOutcome({
       eventId: job.data.eventId,
@@ -240,7 +243,7 @@ async function handleCallRequest(job: CallJob): Promise<void> {
 // getMeetingConfirmDispatchConfig() re-reads app_settings fresh on every
 // firing — the kill switch and rule_id are never stale-cached across a job
 // that may sit queued for up to 24h.
-async function handleMeetingConfirmDispatch(job: MeetingConfirmJob): Promise<void> {
+async function handleMeetingConfirmDispatch(boss: PgBoss, job: MeetingConfirmJob): Promise<void> {
   const config = await getMeetingConfirmDispatchConfig();
   if (!config) {
     // Not configured (no rule_id / caller_id / service account yet) or the
@@ -254,6 +257,11 @@ async function handleMeetingConfirmDispatch(job: MeetingConfirmJob): Promise<voi
   if (result.kind === 'transient_error') {
     throw new Error(`voximplant balance check failed: ${result.reason}`);
   }
+  // The Do-Not-Call registry could not be checked: nothing was dialled, so wait and try again instead of dropping the
+  // call (src/lib/dnc/registry-wait.ts). After the last wait the job completes as this skip.
+  if (result.kind === 'skipped' && result.reason === 'registry_pending') {
+    if (await deferForRegistry(boss, QUEUES.meetingConfirmDispatch, job.data.callbackRequestId, job.data)) return;
+  }
   console.log('[kalfa-worker] meeting-confirm dispatch resolved', {
     jobId: job.id,
     callbackRequestId: job.data.callbackRequestId,
@@ -266,7 +274,7 @@ async function handleMeetingConfirmDispatch(job: MeetingConfirmJob): Promise<voi
 // scheduled_at itself (not 24h ahead, unlike the meeting-confirm job above).
 // Same fail-safe contract as handleMeetingConfirmDispatch: only a transport-
 // level balance-check failure is retryable.
-async function handleSalesCallDispatch(job: SalesCallJob): Promise<void> {
+async function handleSalesCallDispatch(boss: PgBoss, job: SalesCallJob): Promise<void> {
   const config = await getSalesCallDispatchConfig();
   if (!config) {
     // Channel off / unconfigured — normal steady state pre-launch, not an
@@ -278,6 +286,10 @@ async function handleSalesCallDispatch(job: SalesCallJob): Promise<void> {
   const result = await dispatchSalesCall(job.data.callbackRequestId, config, appOrigin);
   if (result.kind === 'transient_error') {
     throw new Error(`voximplant balance check failed: ${result.reason}`);
+  }
+  // Same wait as handleMeetingConfirmDispatch: the registry check failed before any dial.
+  if (result.kind === 'skipped' && result.reason === 'registry_pending') {
+    if (await deferForRegistry(boss, QUEUES.salesCallDispatch, job.data.callbackRequestId, job.data)) return;
   }
   console.log('[kalfa-worker] sales-call dispatch resolved', {
     jobId: job.id,
@@ -1166,13 +1178,13 @@ async function main(): Promise<void> {
   await boss.work(
     QUEUES.meetingConfirmDispatch,
     guardedWorker(QUEUES.meetingConfirmDispatch, async (jobs: MeetingConfirmJob[]) => {
-      for (const job of jobs) await handleMeetingConfirmDispatch(job);
+      for (const job of jobs) await handleMeetingConfirmDispatch(boss, job);
     }),
   );
   await boss.work(
     QUEUES.salesCallDispatch,
     guardedWorker(QUEUES.salesCallDispatch, async (jobs: SalesCallJob[]) => {
-      for (const job of jobs) await handleSalesCallDispatch(job);
+      for (const job of jobs) await handleSalesCallDispatch(boss, job);
     }),
   );
   // The clock's half of the workflow engine. Cheap by construction: it reads the

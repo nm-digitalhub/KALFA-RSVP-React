@@ -11,7 +11,7 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/data/console-calls', () => ({
   evaluateSharedConsentGates: vi.fn(),
   DIAL_GATE_POLICY: {
-    callback: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'overridable' },
+    callback: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'overridable', nationalRegistry: 'exempt_if_requested' },
   },
 }));
 
@@ -177,13 +177,16 @@ describe('gates (no dial)', () => {
     expect(startScenarios).not.toHaveBeenCalled();
   });
 
-  it('consent gate is evaluated with DIAL_GATE_POLICY.callback and no hours override', async () => {
+  it('consent gate is evaluated with DIAL_GATE_POLICY.callback, the registry required, and no hours override', async () => {
     await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS);
     expect(evaluateSharedConsentGates).toHaveBeenCalledWith(
       expect.anything(),
       '+972501234567',
       expect.any(Number),
-      expect.objectContaining({ policy: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'overridable' } }),
+      {
+        policy: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'overridable', nationalRegistry: 'required' },
+        registry: { dialPath: 'meeting_confirm' },
+      },
     );
   });
 });

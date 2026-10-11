@@ -8,7 +8,7 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/data/console-calls', () => ({
   evaluateSharedConsentGates: vi.fn(),
   DIAL_GATE_POLICY: {
-    callback: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'overridable' },
+    callback: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'overridable', nationalRegistry: 'exempt_if_requested' },
   },
 }));
 
@@ -151,6 +151,22 @@ describe('gates (no dial)', () => {
     vi.mocked(countRecentSalesAuditedAttempts).mockResolvedValue(3);
     expect(await dispatchSalesCall(REQ_ID, CONFIG, ORIGIN)).toEqual({ kind: 'skipped', reason: 'attempt_cap' });
     expect(getAccountInfo).not.toHaveBeenCalled();
+    expect(startScenarios).not.toHaveBeenCalled();
+  });
+
+  it('passes the request\'s origin to the registry gate as its exemption evidence', async () => {
+    mockedAdmin({ ...SCHEDULED_ROW, origin: 'person_request' });
+    await dispatchSalesCall(REQ_ID, CONFIG, ORIGIN);
+    expect(vi.mocked(evaluateSharedConsentGates).mock.calls[0]![3]).toMatchObject({
+      policy: { nationalRegistry: 'exempt_if_requested' },
+      registry: { dialPath: 'sales_call', exemption: { origin: 'person_request', ref: `callback_requests:${REQ_ID}` } },
+    });
+  });
+
+  it('registry unavailable → skipped registry_pending, before any attempt or provider call', async () => {
+    vi.mocked(evaluateSharedConsentGates).mockResolvedValue({ ok: false, reason: 'registry_pending' });
+    expect(await dispatchSalesCall(REQ_ID, CONFIG, ORIGIN)).toEqual({ kind: 'skipped', reason: 'registry_pending' });
+    expect(createSalesDispatchAttempt).not.toHaveBeenCalled();
     expect(startScenarios).not.toHaveBeenCalled();
   });
 

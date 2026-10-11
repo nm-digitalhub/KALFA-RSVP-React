@@ -251,7 +251,7 @@ export async function dispatchOutreachCall(
   //     while the other two are also dialing.
   const active = await countActiveCallsAllSurfaces();
   if (active >= config.maxConcurrentCalls) {
-    await alert('warn', 'Voximplant max concurrency reached — deferring', {
+    await alert('warn', 'Voximplant max concurrency reached — call skipped', {
       campaignId, active, cap: config.maxConcurrentCalls,
     });
     return { kind: 'skipped', reason: 'max_concurrency' };
