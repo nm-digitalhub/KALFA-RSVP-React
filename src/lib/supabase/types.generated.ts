@@ -522,7 +522,7 @@ export type Database = {
           event_id: string
           evidence_source: string
           id: string
-          locked_price: number
+          locked_price: number | null
           manual_adjustment: Json | null
           provider_ref: string | null
           reached_at: string
@@ -537,7 +537,7 @@ export type Database = {
           event_id: string
           evidence_source: string
           id?: string
-          locked_price: number
+          locked_price?: number | null
           manual_adjustment?: Json | null
           provider_ref?: string | null
           reached_at?: string
@@ -552,7 +552,7 @@ export type Database = {
           event_id?: string
           evidence_source?: string
           id?: string
-          locked_price?: number
+          locked_price?: number | null
           manual_adjustment?: Json | null
           provider_ref?: string | null
           reached_at?: string
@@ -7851,9 +7851,6 @@ export type Database = {
       campaign_billing_summary: {
         Args: { p_campaign: string }
         Returns: {
-          accrued: number
-          ceiling: number
-          max_contacts: number
           reached_count: number
         }[]
       }
