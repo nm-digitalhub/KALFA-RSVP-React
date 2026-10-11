@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
@@ -123,5 +123,41 @@ describe('the system prompt carries the free-read rules', () => {
 
   it('holds no changing value (a resumed session replays it)', () => {
     expect(OWNER_AGENT_SYSTEM_PROMPT).not.toMatch(/20\d\d-\d\d-\d\d|\d{1,2}[./]\d{1,2}[./]20\d\d/);
+  });
+});
+
+// The agent's execute_sql runs as supabase_read_only_user (runner.ts, `--read-only`). A public function the prompt
+// tells it to call must be executable by that role, and the project revokes EXECUTE from PUBLIC on functions it
+// hardens — which also takes it from this role (measured 11.10.2026: the 08:30 report got 42501 on
+// guest_effective_attending). So every function the prompt names needs an explicit grant in a migration.
+describe('functions the prompt tells the agent to call', () => {
+  const publicFunctions = (() => {
+    const start = GENERATED.indexOf('\n  public: {');
+    const fnStart = GENERATED.indexOf('\n    Functions: {', start);
+    const fnEnd = GENERATED.indexOf('\n    Enums: {', fnStart);
+    const section = GENERATED.slice(fnStart, fnEnd);
+    return new Set([...section.matchAll(/\n {6}([a-z][a-z0-9_]*): \{/g)].map((m) => m[1]));
+  })();
+
+  const migrationsDir = path.join(import.meta.dirname, '../../../../supabase/migrations');
+  const migrations = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith('.sql'))
+    .map((f) => readFileSync(path.join(migrationsDir, f), 'utf8').replace(/--[^\n]*/g, ''))
+    .join('\n');
+
+  const named = [...(OWNER_AGENT_SYSTEM_PROMPT.match(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g) ?? [])].filter((id) =>
+    publicFunctions.has(id),
+  );
+
+  it('the prompt names at least the headcount function (the scan is not empty)', () => {
+    expect(named).toContain('guest_effective_attending');
+  });
+
+  it.each([...new Set(named)])('%s is granted to supabase_read_only_user by a migration', (fn) => {
+    const grant = new RegExp(
+      `grant\\s+execute\\s+on\\s+function\\s+public\\.${fn}\\b[^;]*\\bto\\b[^;]*\\bsupabase_read_only_user\\b`,
+      'i',
+    );
+    expect(migrations).toMatch(grant);
   });
 });
