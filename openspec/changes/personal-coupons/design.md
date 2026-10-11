@@ -56,16 +56,18 @@ Verified on main at 10f32cf8 and, where marked, against the live database (read-
 - discounting at payment time: rejected, because it would charge a price other than the approved one;
 - a negative ledger line: rejected, because it is counted as credit.
 
-**D2. `campaign_pricing`, one row per campaign.** Columns:
-- `campaign_id` (PK, FK to `campaigns`)
+**D2. `campaign_pricing`: append-only pricing rounds, one CURRENT row per campaign** (reshaped on 12.10.2026 to make D15's lapse and D21's acceptance implementable without ever updating a locked row). Columns:
+- `id` (PK)
+- `campaign_id` (FK to `campaigns`)
 - `list_price`
 - `discount_amount`
 - `package_price` (the final price)
-- `coupon_assignment_id` (nullable, unique, FK to `coupon_assignments`)
-- `version` (integer, raised by trigger on every change)
+- `coupon_assignment_id` (nullable, FK to `coupon_assignments`; unique among current rows)
+- `version` (integer, raised by trigger on every change of the unlocked current row)
 - `locked_at`
+- `superseded_at`, `superseded_by` (FK to the successor round; both null on the current row)
 
-`list_price - discount_amount = package_price`, with all three non-negative, is a check constraint.
+One current row per campaign is a database fact, not a convention: a partial unique index on `(campaign_id) where superseded_at is null` (the Supabase partial-index rule), and the same partial uniqueness for `coupon_assignment_id`. Every reader reads the current row; a superseded row is immutable history. `list_price - discount_amount = package_price`, with all three non-negative, is a check constraint on every row.
 
 **D3. One assignment, with package options** (owner, 11.10.2026). An assignment is one personal benefit. It carries one option for each package the offer allows (D14). Only one option can ever be bound to a campaign and paid.
 
@@ -101,7 +103,7 @@ Neither the agent nor the customer adds a package or raises a value. The options
   - it is eligible for the account;
   - it has an option for the campaign's package;
   - it has not expired;
-  - the campaign is not yet approved and its pricing is unlocked — or the campaign is approved with no package payment started, and the bind runs through the supersede-and-re-approve operation (D21).
+  - the campaign is not yet approved and its pricing is unlocked — or the campaign is approved with no package payment started, and the bind runs through D22's supersede operation (reason `benefit_accepted`, D21).
 
   It then writes that option's prices into `campaign_pricing`, and sets the assignment to `bound`.
 - **Moving the option.** When the customer changes the package of an unapproved campaign, the same function re-points the pricing to the matching option in one transaction. No new assignment is created. If the new package has no option, the pricing returns to its list price and the assignment returns to `assigned`.
@@ -113,6 +115,7 @@ Neither the agent nor the customer adds a package or raises a value. The options
 - Once `locked_at` is set, a trigger refuses each of the following:
   - any update of the row, including clearing `locked_at` or changing `campaign_id`;
   - deleting the row. A cascade from deleting the campaign is refused the same way. Task 1.4 checks the existing test-event purge path against this.
+- **The one exception** is the one-way superseded mark (D22): an update that only sets `superseded_at` (from null) and `superseded_by` (to the new round's id), leaving every other column exactly as it was. Any update of a row whose `superseded_at` is set is refused outright, so history can never change twice. The mark hides nothing and undoes nothing: the row keeps its prices, its lock and its agreement reference forever.
 
 **D7. Versioned, atomic approval with a request id.**
 1. `recordPackageApproval` creates an approval request id. It reads the pricing row with its `version`, renders the PDF from it, and uploads it under a path that contains the request id.
@@ -138,7 +141,7 @@ A cleanup job removes a PDF only after it has confirmed that no agreement row po
 | Phase | Source of truth | How the other copy stays equal |
 |---|---|---|
 | 1. Migration only, old code running | `campaigns.package_price` | A trigger on `campaigns` upserts `campaign_pricing` (list price = final price, discount 0) when `package_price` is set or changed. It is refused when the pricing row is locked or carries an assignment. A second trigger locks the pricing row whenever a campaign moves to `approved`, so an approval by old code also locks the price. |
-| 2. New code deployed | `campaign_pricing` | New writers write only `campaign_pricing`, through the functions. A trigger on `campaign_pricing` mirrors the final price to `campaigns.package_price`. Readers move one by one; each reads the same number. |
+| 2. New code deployed | `campaign_pricing` | New writers write only `campaign_pricing`, through the functions. A trigger on `campaign_pricing` mirrors the CURRENT round's final price (D2) to `campaigns.package_price`, including when a supersede changes which row is current. Readers move one by one; each reads the same number. |
 | 3. Contract | `campaign_pricing` | After every reader has moved and the equality check finds no row that differs, one migration drops the sync triggers and `campaigns.package_price`. |
 
 - **The initial copy** covers every campaign that has a price. A campaign that was approved at any time is locked, whatever its status is now (`approved_at` is set, or its `signed_agreements` row exists), with `locked_at` taken from the approval time.
@@ -200,7 +203,7 @@ A cleanup job removes a PDF only after it has confirmed that no agreement row po
 - The benefit counts only if the campaign's package payment **succeeded** before the expiry. Approving the terms in time is not enough.
 - The approved terms document states the deadline explicitly: the price is valid for payment until that date.
 - Passed the deadline without payment — even with approved terms — the benefit lapses. A customer who wants to continue approves **new terms at the then-current price** (the list price, or whatever offer then applies).
-- Engineering consequence for D6/D7: an approved-but-expired discounted campaign needs a defined database operation that supersedes the locked pricing and opens a new approval round. A locked row is still never updated or deleted by a plain write; the operation and its exact mechanics are specified with the D7 function, and the lock's guarantees (the paid history and the signed document stay immutable) hold.
+- The mechanics are D22's supersede operation with reason `lapsed_reapproval`.
 - The expiry falling during an open payment session: the session completes with its discount (D20).
 
 **D16. One active benefit per phone** (owner, 12.10.2026 — "כן, מאשר").
@@ -230,9 +233,27 @@ A cleanup job removes a PDF only after it has confirmed that no agreement row po
 **D21. A benefit can be applied after approval — through re-approval at the new price** (owner, 12.10.2026 — "כן, מאשר", reversing the earlier recommendation: this is the closing tool for a hesitating customer). A customer who approved terms but has not paid may receive a benefit, and it applies to that campaign:
 - allowed only while the campaign has no package payment pending, in review or succeeded;
 - **the trigger is the customer's explicit acceptance** (owner, 12.10.2026, ש5): the site shows "יש לך הטבה — לחץ לקבל"; until the customer accepts, nothing changes and the earlier approved price stays payable. Accepting resets the prior terms-approval and immediately opens the new approval at the discounted price. The agent and staff only create the benefit — the customer is always the one who applies it;
-- the reset-and-re-approve runs through the defined supersede operation (the same one D15's lapse path uses): the locked pricing is superseded and a new pricing version carries the discount;
+- the reset-and-re-approve is D22's supersede operation with reason `benefit_accepted`: a new pricing round carries the discount;
 - the charge opens only on the latest approved, locked price; the earlier signed document stays archived;
 - a plain update of a locked row remains forbidden (D6) — the supersede operation is the only path, and it never alters the paid history or a stored document.
+
+**D22. The supersede operation — the one path past a locked price** (translates D15's lapse and D21's acceptance into database terms; 12.10.2026). `supersede_campaign_pricing(campaign, reason, new_terms)` is a `SECURITY DEFINER` function, service-role only, one transaction:
+1. Locks in the D6 order: the campaign (`for update`), its current pricing row (`for update`), then the assignments involved.
+2. Refuses unless all of the following hold, checked after the locks:
+   - the current pricing row is locked (an unlocked price needs no superseding — it is edited in place);
+   - the campaign has **no package payment pending, in review or succeeded** (the one shared predicate, read from `payment_operations` inside the transaction);
+   - the reason is one of the two defined ones: `benefit_accepted` (D21 — the customer pressed "קבל את ההטבה") or `lapsed_reapproval` (D15 — the benefit expired unpaid and the customer asked to continue).
+3. Inserts the new current round — unlocked, carrying the new prices (the accepted option's discount for `benefit_accepted`; the then-current list or offer price for `lapsed_reapproval`) — and sets the old row's one-way superseded mark (D6's exception).
+4. Resets the approval: the campaign returns to `pending_approval` (ש5 — "איפוס של הסכמה לתנאי ההסכם"). The old `signed_agreements` row stays archived untouched; each agreement references the pricing round id and version it was rendered from (D7), so the history reads cleanly: round 1 approved at ₪200, superseded; round 2 approved at ₪190, paid.
+5. Writes the assignment event and the activity log row with the reason and who triggered it (always the customer's own action; the agent and staff only create benefits — D21).
+
+Both D15's and D21's customer-facing flows are this one function with different reasons; there is no second mechanism.
+
+**D20 made mechanical — the open-payment guard.** Verified in code: `startCardcomPurchase` already writes the PENDING ledger row before CardCom is asked, under a database "one pending per campaign" rule (`cardcom-purchase.ts:26`). On top of that:
+- Opening a package payment becomes `open_package_payment(campaign, round_id, amount)` — a small SECDEF function in the same transaction as the PENDING insert. It takes the campaign lock (D6 order), then refuses unless the named round is the CURRENT row, locked, its amount equals the request, and any bound benefit is **unexpired at this moment**. This closes the race: a supersede and an open serialize on the campaign lock, so a session can never open on a superseded price, and a supersede can never slip under an opening session.
+- While that PENDING row (or a review, or a success) exists: `supersede_campaign_pricing`, a staff void of the bound assignment, and any bind are all refused by the same predicate. Staff see the assignment as held by the payment (D12 already shows held-by-review).
+- Once the session is open, settlement and the consume trigger (D10) ignore `expires_at` — validity was proven at open, which is exactly D20's rule.
+- An expired bound benefit with no open payment: `open_package_payment` refuses, and the customer is shown D15's path — approve new terms at the current price (`lapsed_reapproval`).
 
 ## Risks / Trade-offs
 

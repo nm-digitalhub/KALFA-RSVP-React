@@ -132,6 +132,10 @@ An assignment bound to a campaign whose payment is pending, in review or of unkn
 - **WHEN** the campaign's package payment is moved to review
 - **THEN** the assignment stays bound to that campaign and cannot be used elsewhere
 
+#### Scenario: Staff void during an open payment
+- **WHEN** staff try to void an assignment whose campaign has a pending package payment
+- **THEN** the void is refused and the assignment is shown as held by that payment
+
 ### Requirement: A coupon is not credit
 
 A coupon SHALL NOT create, consume or appear as credit balance. It SHALL NOT be written as a negative ledger line, nor counted in the ledger's `payment_operations.credit_applied`.

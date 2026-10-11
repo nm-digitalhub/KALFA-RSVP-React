@@ -10,16 +10,19 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
   - `coupon_assignments` with the frozen-terms trigger and the idempotency key unique per source (one per sales call) (D3), and the D16 constraint: at most one active (not consumed, void or expired) assignment per phone;
   - `coupon_assignment_options`, unique per assignment and package, frozen with the assignment;
   - `coupon_assignment_events`, insert-only;
-  - `campaign_pricing` with its FK to `coupon_assignments`, the unique assignment, the price check constraint, and the `version` trigger (D2).
+  - `campaign_pricing` as append-only pricing rounds (D2): `id` PK, the one-current-row partial unique index on `(campaign_id) where superseded_at is null`, the same partial uniqueness for `coupon_assignment_id`, the FK to `coupon_assignments`, `superseded_at`/`superseded_by`, the price check constraint, and the `version` trigger.
 
   All four tables: RLS on, no grants to anon or authenticated, writes only through the functions in 1.2. Verify on live (read-only after push): no grant to anon or authenticated; every FK exists.
-- [ ] 1.2 In the same change set: `bind_coupon_assignment` (including moving the option), `release_coupon_assignment` (D5), and `approve_package_terms` with its request id (D7). `signed_agreements` gains a unique approval request id. All take row locks in the D6 order and are `SECURITY DEFINER`, executable by the service role only. Verify:
+- [ ] 1.2 In the same change set: `bind_coupon_assignment` (including moving the option), `release_coupon_assignment` (D5), `approve_package_terms` with its request id (D7), `supersede_campaign_pricing` (D22: reasons `benefit_accepted`/`lapsed_reapproval`, refused on any pending/review/succeeded package payment, one-way superseded mark, campaign back to `pending_approval`), and `open_package_payment` (D22: current+locked round, amount equal, bound benefit unexpired at open, in the PENDING insert's transaction). `signed_agreements` gains a unique approval request id and the pricing round it was rendered from. All take row locks in the D6 order and are `SECURITY DEFINER`, executable by the service role only. Verify:
   - two parallel binds of one assignment: exactly one succeeds;
   - two parallel approvals: exactly one stores an agreement;
   - an approval in parallel with a bind: the approval sees the bound price or refuses on version, never a mix;
   - an approval with a stale version stores nothing;
   - a release on a locked or paid campaign is refused;
-  - moving to a package without an option returns the list price and leaves one assignment.
+  - moving to a package without an option returns the list price and leaves one assignment;
+  - a supersede in parallel with an open: they serialize on the campaign lock — the session opens on the new round or the supersede is refused by the pending row, never a session on a superseded price;
+  - a supersede while a payment is pending, in review or succeeded is refused;
+  - a superseded row refuses every further update.
 - [ ] 1.3 The lock trigger (D6), the phase-1 sync trigger (`campaigns.package_price` → `campaign_pricing`), and the phase-1 approval-lock trigger (D8). Copy the price of every campaign that has one. Lock every campaign that was ever approved, whatever its status now (`approved_at` set or a `signed_agreements` row), at its approval time. Verify:
   - the equality query (D8) returns no rows, including no approved campaign with an unlocked price;
   - each of update, unlock, re-key and delete of a locked row is refused;
@@ -32,7 +35,7 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
 - [ ] 2.1 `createCampaign` writes the pricing through the database, and the phase-2 mirror trigger (`campaign_pricing` → `campaigns.package_price`) replaces the phase-1 sync. Verify: unit tests for a new package campaign; the equality query returns no rows.
 - [ ] 2.2 `recordPackageApproval` (the only approval path — `recordSignedAgreement` was deleted on 12.10.2026) creates an approval request id, renders from the pricing row and its `version`, and calls `approve_package_terms`. On a definite refusal it removes the uploaded PDF and asks for re-approval. On an unknown outcome it keeps the PDF and resolves it by request id (D7). A cleanup job removes only PDFs that no agreement references. `approveCampaign` stops being the package approval path. (Already done outside this change: `approveCampaign` refuses when its guarded update changes no row.) Verify: tests for a stale version, a lost race, a timeout after commit (resolved as approved, PDF kept), and a successful approval that is locked in the same transaction.
 - [ ] 2.3 Add list-price and discount tokens to the package terms: new token keys in `src/lib/agreements/template.ts` (`AgreementContent`, `agreementTokens`), and the lines in the admin-managed document body (the body lives in the admin agreement page since 12.10.2026; `renderAgreementBody` refuses an empty body). Mockup and proposed clause: `ui/Terms.dc.html`. Verify: a rendered document shows all three values when a discount applies. **The wording is the owner's.**
-- [ ] 2.4 The purchase paths (`cardcom-purchase`, `package-purchase`, `getCampaignForPurchase`) use the locked final price and refuse an unlocked one. Verify: tests for locked and unlocked.
+- [ ] 2.4 The purchase paths (`cardcom-purchase`, `package-purchase`, `getCampaignForPurchase`) open through `open_package_payment` (D22): the current locked round's final price, refusing an unlocked or superseded round and an expired bound benefit (the lapse answer routes to re-approval, D15). Verify: tests for locked, unlocked, superseded, and expired-benefit-at-open; a session already open settles even when the expiry passed after opening (D20).
 
 ## 3. Settlement
 
@@ -55,7 +58,8 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
 
   Verify: tests that a shared link or a profile referral never applies or reveals an offer, and that a verified matching phone does.
 - [ ] 5.3 Expiry (D15), automatic-move-only release (D17), the best-price choice among several benefits (D18), and the post-approval path: a benefit on an approved unpaid campaign supersedes the locked pricing and requires re-approval at the discounted price (D21) — all decided. Verify: tests per rule, including that payment opens only on the latest approved price.
-- [ ] 5.4 The assignment after a refund stays consumed (D19), and a session opened in validity completes with its discount (D20) — both decided. Verify: tests per rule.
+- [ ] 5.4 The assignment after a refund stays consumed (D19), and a session opened in validity completes with its discount (D20) — both decided. Verify: tests per rule, including the consume trigger consuming an assignment whose expiry passed mid-session.
+- [ ] 5.5 The acceptance flow (ש5/D21/D22): the owner of a benefit with approved, unpaid terms sees "יש לך הטבה — לחץ לקבל"; accepting runs `supersede_campaign_pricing(benefit_accepted)` and routes to approving the new terms; not accepting leaves the approved price payable. Staff void during a pending payment is refused and the row shows held-by-payment. Verify: tests for accept, ignore-and-pay-old, and the refused void.
 
 ## 6. Sales agent
 

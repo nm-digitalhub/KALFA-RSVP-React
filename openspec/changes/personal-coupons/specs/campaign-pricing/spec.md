@@ -68,6 +68,8 @@ After the lock, the database SHALL refuse, from any role:
 - changing which campaign the record belongs to;
 - deleting the record, directly or by deleting its campaign.
 
+The single exception SHALL be the one-way superseded mark set by the defined supersede operation; a superseded record SHALL refuse every further change.
+
 #### Scenario: A server path tries to change an approved price
 - **WHEN** any update tries to change the final price of a locked record
 - **THEN** the database refuses the update
@@ -80,13 +82,37 @@ After the lock, the database SHALL refuse, from any role:
 - **WHEN** a delete reaches a locked record, directly or through its campaign
 - **THEN** the database refuses the delete
 
+### Requirement: Superseding opens a new pricing round without touching history
+
+A locked price SHALL be replaced only by the defined supersede operation: in one transaction it creates a new current pricing record, marks the old one superseded, and returns the campaign to awaiting approval. It SHALL run only on the customer's own action and only while the campaign has no package payment pending, in review or succeeded. Each stored agreement SHALL reference the pricing record it was rendered from.
+
+#### Scenario: The customer accepts a benefit after approving full-price terms
+- **WHEN** a customer with approved, unpaid terms accepts an offered benefit
+- **THEN** a new pricing record carries the discounted price, the old record is marked superseded and keeps its values, and the campaign awaits approval of the new terms
+
+#### Scenario: A payment is already pending
+- **WHEN** the supersede operation runs while the campaign has a pending package payment
+- **THEN** it is refused and nothing changes
+
+#### Scenario: A superseded record is edited
+- **WHEN** any update reaches a superseded pricing record
+- **THEN** the database refuses it
+
 ### Requirement: The charged price equals the approved price
 
-Opening a payment SHALL use the locked final price. It SHALL refuse to open one when the price is not locked.
+Opening a payment SHALL, in the same transaction that records the pending payment, verify that the named pricing record is the campaign's current one and locked, that the amount equals it, and that any bound benefit is unexpired at that moment. It SHALL refuse otherwise. A session opened this way SHALL settle at that price even if the benefit expires or is voided while it is open.
 
 #### Scenario: The price is not locked
 - **WHEN** a payment is requested for a campaign whose pricing record is not locked
 - **THEN** no payment session is opened
+
+#### Scenario: The benefit expired before the session opened
+- **WHEN** a payment is requested for a campaign whose bound benefit has expired
+- **THEN** no session is opened, and the customer is offered new terms at the current price
+
+#### Scenario: The benefit expires while the session is open
+- **WHEN** the benefit's expiry passes after the session opened in validity
+- **THEN** the payment settles at the session's price and consumes the assignment
 
 ### Requirement: The discount is a lower price, not a deduction line
 
