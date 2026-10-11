@@ -12,7 +12,12 @@ import { cancellationListMoney, type CancellationListMoney } from './cancellatio
 // whole list (never one per row): the events' live campaigns, their ledger (ledgerForAdmin), and the refunds that name a
 // listed request. null = the money could not be read; the list then says so instead of guessing.
 export async function cancellationMoneyForAdmin(
-  requests: readonly { id: string; eventId: string; status: 'pending' | 'resolved' }[],
+  requests: readonly {
+    id: string;
+    eventId: string;
+    status: 'pending' | 'resolved';
+    resolution: 'full_cancellation' | 'partial_charge' | 'declined' | null;
+  }[],
 ): Promise<Map<string, CancellationListMoney | null> | null> {
   await requirePlatformPermission('manage_billing');
   if (requests.length === 0) return new Map();
@@ -41,11 +46,15 @@ export async function cancellationMoneyForAdmin(
       .in('meta->>cancellation_request_id', requests.map((r) => r.id))
       .order('recorded_at', { ascending: true });
     if (refundsError) throw new Error('refunds');
-    // The latest refund attempt of each request (oldest first, so the last one written wins).
+    // The latest refund attempt of each request (oldest first, so the last one written wins), and which requests had
+    // one that succeeded.
     const lastRefund = new Map<string, string>();
+    const refundSucceeded = new Set<string>();
     for (const r of refunds ?? []) {
       const requestId = (r as { cancellation_request_id: string | null }).cancellation_request_id;
-      if (requestId) lastRefund.set(requestId, r.outcome);
+      if (!requestId) continue;
+      lastRefund.set(requestId, r.outcome);
+      if (r.outcome === 'succeeded') refundSucceeded.add(requestId);
     }
 
     return new Map(
@@ -63,8 +72,10 @@ export async function cancellationMoneyForAdmin(
           req.id,
           cancellationListMoney({
             pending: req.status === 'pending',
+            resolution: req.resolution,
             hasCampaign: campaign !== null,
             lastRefundOutcome: lastRefund.get(req.id) ?? null,
+            refundSucceeded: refundSucceeded.has(req.id),
             campaignStatus: status,
           }),
         ];
