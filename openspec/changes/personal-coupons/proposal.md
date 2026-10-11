@@ -8,13 +8,13 @@ The sales agent ("Omer") offers a discount today, but nothing carries it into th
 - `createCampaign` and the CardCom purchase know nothing of a discount.
 - So a promised discount cannot be honoured, and nothing proves who was promised what.
 
-The price itself also has no guarded home. It lives in `campaigns.package_price`, one of 51 columns, and its approval is not atomic. `recordPackageApproval` (`src/lib/data/agreements.ts:364-457`):
+The price itself also has no guarded home. It lives in `campaigns.package_price`, one of 28 columns (after `retire-sumit-campaign-columns` dropped the pay-per-result and SUMIT payment columns, 11.10.2026), and its approval is not atomic. `recordPackageApproval` (`src/lib/data/agreements.ts:135`, the only approval path since the signature path was deleted on 12.10.2026):
 1. reads the price;
 2. renders and uploads the terms PDF;
 3. inserts the `signed_agreements` row;
 4. only then calls `approveCampaign`.
 
-The price can change between step 1 and step 4. `recordSignedAgreement` has the same order. Since ce5c98cb, `approveCampaign` refuses when its guarded update changes no row, so a lost race no longer returns success; but the agreement row stored just before it remains.
+The price can change between step 1 and step 4. Since ce5c98cb, `approveCampaign` refuses when its guarded update changes no row, so a lost race no longer returns success; but the agreement row stored just before it remains.
 
 ## What Changes
 
@@ -24,7 +24,7 @@ The price can change between step 1 and step 4. `recordSignedAgreement` has the 
   - Repeating the same request never creates a second assignment.
   - The assignment freezes the offer's terms and, for each allowed package, the price promised for it.
   - The customer may switch between the allowed packages until the terms are approved; the benefit moves with the choice, without a new assignment.
-  - A coupon is not credit, and never touches `billing_credits` or `credit_applied`.
+  - A coupon is not credit, and never touches `billing_credits` or the ledger's `payment_operations.credit_applied` (the only `credit_applied` column since `campaigns.credit_applied` was dropped, 11.10.2026).
 - **`campaign_pricing`.** A new table, one row per campaign: list price, discount, final price, the bound assignment, a version and `locked_at`. Once locked, the database refuses any change, unlock, re-key or delete of the row.
 - **Atomic, versioned approval.** The terms PDF is rendered from one pricing version, under an approval request id. One database function then does all of the following in a single transaction, after locking the campaign and then its pricing row:
   - checks that this version is still current;
@@ -69,7 +69,7 @@ None. `openspec/specs/` has no capabilities yet.
   - a later migration that drops `campaigns.package_price` and the sync.
 - **Code:**
   - `src/lib/data/campaigns.ts` (createCampaign, getCampaignForPurchase, approveCampaign, listPackageOffers)
-  - `src/lib/data/agreements.ts` (recordPackageApproval) and the package agreement template (tokens for list price and discount)
+  - `src/lib/data/agreements.ts` (recordPackageApproval) and the package agreement tokens (`src/lib/agreements/template.ts` — `AgreementContent` + `agreementTokens`; the document body itself is managed in the admin agreement page since 12.10.2026, so the list-price and discount lines are added there)
   - `src/lib/payments/` (cardcom-purchase, cardcom-settle, package-purchase, package-paid, package-payment-screen)
   - the screens and readers that read `package_price` (20 files today)
   - the sales tools `src/app/api/voximplant/sls/tool/discount|pricing/[token]/route.ts`

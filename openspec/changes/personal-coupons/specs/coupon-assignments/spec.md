@@ -82,20 +82,23 @@ A personal assignment SHALL be usable only by the customer it belongs to. A link
 
 ### Requirement: Binding is atomic and exclusive
 
-Binding an assignment SHALL, in one database transaction and after locking the campaign, its pricing record and the assignment in that order, write the chosen option's discount and final price into the campaign's pricing record and mark the assignment bound. A database constraint SHALL prevent the same assignment from being bound to two campaigns, or twice by concurrent requests. Binding SHALL be refused when the campaign's pricing is locked.
+Binding an assignment SHALL, in one database transaction and after locking the campaign, its pricing record and the assignment in that order, write the chosen option's discount and final price into the campaign's pricing record and mark the assignment bound. A database constraint SHALL prevent the same assignment from being bound to two campaigns, or twice by concurrent requests.
 
 #### Scenario: Two campaigns try to use one assignment
 - **WHEN** two concurrent transactions bind the same assignment to two different campaigns
 - **THEN** exactly one binding succeeds and the other is refused
 
+### Requirement: Binding after approval requires fresh approval at the new price
+
+Binding to a campaign whose pricing is locked SHALL run only through the defined supersede operation, which requires a fresh approval of the terms at the new final price before any payment. It SHALL be refused when the campaign has a package payment pending, in review or succeeded.
+
+#### Scenario: A discount is given after the terms were approved
+- **WHEN** a benefit is bound to an approved campaign that has no package payment
+- **THEN** the customer must approve new terms at the discounted price, and the charge opens only on that newly approved price
+
 ### Requirement: Release is atomic and limited
 
-Releasing a bound assignment SHALL, in one database transaction:
-- restore the pricing record to the list price, with no discount and no assignment;
-- return the assignment to assigned, or to void if it has expired;
-- record the release in the assignment's history.
-
-Release SHALL be refused when the pricing is locked, or when the campaign has a package payment that is pending, in review or succeeded, unless a rule decided by the owner allows it.
+Releasing a bound assignment SHALL, in one database transaction, restore the pricing record to the list price with no discount and no assignment, return the assignment to assigned (or to void if expired), and record the release in its history. It SHALL be refused when the pricing is locked or the campaign has a package payment pending, in review or succeeded.
 
 #### Scenario: A campaign is abandoned before approval
 - **WHEN** a bound assignment is released for an unapproved campaign with no package payment
@@ -104,6 +107,14 @@ Release SHALL be refused when the pricing is locked, or when the campaign has a 
 #### Scenario: Release after approval
 - **WHEN** release is requested for a campaign whose pricing is locked
 - **THEN** the release is refused and nothing changes
+
+### Requirement: Release runs only as part of moving the benefit
+
+Release SHALL run only as the internal step of moving the benefit to another package or campaign. There SHALL be no staff release action and no abandonment timer; a benefit ends only by expiry, void or consumption.
+
+#### Scenario: Staff look for a release action
+- **WHEN** staff view a bound assignment whose campaign was abandoned before approval
+- **THEN** no release action is offered; the benefit stays bound until it moves with the customer's next choice, is voided, or expires
 
 ### Requirement: Consumption is recorded with the payment
 
@@ -123,7 +134,7 @@ An assignment bound to a campaign whose payment is pending, in review or of unkn
 
 ### Requirement: A coupon is not credit
 
-A coupon SHALL NOT create, consume or appear as credit balance. It SHALL NOT be written as a negative ledger line, nor counted in `credit_applied`.
+A coupon SHALL NOT create, consume or appear as credit balance. It SHALL NOT be written as a negative ledger line, nor counted in the ledger's `payment_operations.credit_applied`.
 
 #### Scenario: A discounted package is paid
 - **WHEN** a campaign with a bound assignment is paid

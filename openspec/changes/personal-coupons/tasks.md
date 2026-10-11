@@ -7,7 +7,7 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
 ## 1. Schema (phase 1 of D8)
 
 - [ ] 1.1 `npx supabase migration new coupons_and_campaign_pricing`. In dependency order (D4), create:
-  - `coupon_assignments` with the frozen-terms trigger and the idempotency key unique per source (one per sales call) (D3);
+  - `coupon_assignments` with the frozen-terms trigger and the idempotency key unique per source (one per sales call) (D3), and the D16 constraint: at most one active (not consumed, void or expired) assignment per phone;
   - `coupon_assignment_options`, unique per assignment and package, frozen with the assignment;
   - `coupon_assignment_events`, insert-only;
   - `campaign_pricing` with its FK to `coupon_assignments`, the unique assignment, the price check constraint, and the `version` trigger (D2).
@@ -30,8 +30,8 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
 ## 2. Writers and approval (phase 2 of D8)
 
 - [ ] 2.1 `createCampaign` writes the pricing through the database, and the phase-2 mirror trigger (`campaign_pricing` → `campaigns.package_price`) replaces the phase-1 sync. Verify: unit tests for a new package campaign; the equality query returns no rows.
-- [ ] 2.2 `recordPackageApproval` and `recordSignedAgreement` create an approval request id, render from the pricing row and its `version`, and call `approve_package_terms`. On a definite refusal they remove the uploaded PDF and ask for re-approval. On an unknown outcome they keep the PDF and resolve it by request id (D7). A cleanup job removes only PDFs that no agreement references. `approveCampaign` stops being the package approval path. (Already done outside this change: `approveCampaign` refuses when its guarded update changes no row.) Verify: tests for a stale version, a lost race, a timeout after commit (resolved as approved, PDF kept), and a successful approval that is locked in the same transaction.
-- [ ] 2.3 Add list-price and discount tokens to the package terms template (mockup and proposed clause: `ui/Terms.dc.html`). Verify: a rendered document shows all three values when a discount applies. **The wording is the owner's.**
+- [ ] 2.2 `recordPackageApproval` (the only approval path — `recordSignedAgreement` was deleted on 12.10.2026) creates an approval request id, renders from the pricing row and its `version`, and calls `approve_package_terms`. On a definite refusal it removes the uploaded PDF and asks for re-approval. On an unknown outcome it keeps the PDF and resolves it by request id (D7). A cleanup job removes only PDFs that no agreement references. `approveCampaign` stops being the package approval path. (Already done outside this change: `approveCampaign` refuses when its guarded update changes no row.) Verify: tests for a stale version, a lost race, a timeout after commit (resolved as approved, PDF kept), and a successful approval that is locked in the same transaction.
+- [ ] 2.3 Add list-price and discount tokens to the package terms: new token keys in `src/lib/agreements/template.ts` (`AgreementContent`, `agreementTokens`), and the lines in the admin-managed document body (the body lives in the admin agreement page since 12.10.2026; `renderAgreementBody` refuses an empty body). Mockup and proposed clause: `ui/Terms.dc.html`. Verify: a rendered document shows all three values when a discount applies. **The wording is the owner's.**
 - [ ] 2.4 The purchase paths (`cardcom-purchase`, `package-purchase`, `getCampaignForPurchase`) use the locked final price and refuse an unlocked one. Verify: tests for locked and unlocked.
 
 ## 3. Settlement
@@ -48,19 +48,19 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
 
 ## 5. Offers and assignments (coupon switch)
 
-- [ ] 5.1 **[needs D-open 8]** The offer source and its staff screens under `manage_billing` (`ui/Offers.dc.html`, `ui/OfferEdit.dc.html`). Verify: tests for permission, audit, and that an assignment freezes the offer's terms.
+- [ ] 5.1 The offers table (D14) and its staff screens under `manage_billing` (`ui/Offers.dc.html`, `ui/OfferEdit.dc.html`). Verify: tests for permission, audit, and that an assignment freezes the offer's terms.
 - [ ] 5.2 Eligibility and claim. The binding is applied at package choice for:
   - a staff assignment to the account;
   - an assignment to a phone equal to the account's verified phone, claimed once.
 
   Verify: tests that a shared link or a profile referral never applies or reveals an offer, and that a verified matching phone does.
-- [ ] 5.3 **[needs D-open 1, 3, 4, 7]** Expiry, when release runs, the choice among several offers, and refusal after approval. Verify: tests per decided rule.
-- [ ] 5.4 **[needs D-open 5, 6]** The assignment after a refund, and an offer that ends during an open session. Verify: tests per decided rule.
+- [ ] 5.3 Expiry (D15), automatic-move-only release (D17), the best-price choice among several benefits (D18), and the post-approval path: a benefit on an approved unpaid campaign supersedes the locked pricing and requires re-approval at the discounted price (D21) — all decided. Verify: tests per rule, including that payment opens only on the latest approved price.
+- [ ] 5.4 The assignment after a refund stays consumed (D19), and a session opened in validity completes with its discount (D20) — both decided. Verify: tests per rule.
 
 ## 6. Sales agent
 
 - [x] 6.1 `get_pricing` adds `package_id`. Verify: route test.
-- [ ] 6.2 **[needs D-open 2, 8]** `apply_discount_tier` (D9):
+- [ ] 6.2 (D14, D16 decided) `apply_discount_tier` (D9):
   - it takes the objection reason only, and checks the call's limits;
   - it writes or returns the one assignment for this call, with an option per package the offer allows, for the callback request's phone;
   - it returns `{offer, options:[{package_id, package_name, list_price, final_price}]}`, or a defined no-offer response;
