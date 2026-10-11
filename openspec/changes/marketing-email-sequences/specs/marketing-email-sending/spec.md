@@ -112,12 +112,16 @@ Marketing email SHALL be sent only while the configured email provider is Resend
 - **WHEN** the configured provider is SMTP
 - **THEN** no marketing email is sent and the readiness check shows sending blocked
 
-### Requirement: No reminder without a recorded setup action
-A setup reminder SHALL be sent only when an owner setup action is recorded for the event; with no record, no reminder SHALL be sent.
+### Requirement: Setup progress comes from records the customer cannot forge
+The time of the last setup progress SHALL be the latest of the event's creation, a terms approval or agreement signature, an opened payment, and a recorded setup action; background updates SHALL NOT count, and when no source has a time no reminder SHALL be sent.
 
-#### Scenario: Setup action not recorded
-- **WHEN** an event has no recorded owner setup action
-- **THEN** no reminder is sent for it
+#### Scenario: Terms approved, payment not made
+- **WHEN** the owner approved the package terms 10 hours ago and paid nothing
+- **THEN** no reminder is sent yet, and one is due 24 hours after the approval
+
+#### Scenario: Audit row lost
+- **WHEN** a setup step succeeded but its audit row failed to write
+- **THEN** the reminder still counts the step from its server-written record
 
 ### Requirement: A failing readiness gate stops sending while switched on
 Sending SHALL stop whenever a technical readiness gate fails or cannot be verified, even while the sending switch is on, and a template whose current version is not approved SHALL not be sent.

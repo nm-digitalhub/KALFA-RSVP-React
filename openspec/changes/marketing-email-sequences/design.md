@@ -101,8 +101,13 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
     - not past;
     - setup not finished (`live` step not done);
     - the latest **owner setup action** on it is ≥ 24 hours old.
-    The owner setup action is the newest `activity_log` row for that `event_id` by the event's owner, with an action in the definition's setup-action list. `updated_at` is not used, because background writes move it. `eligible_since` is that action's time plus 24 hours. The email names the event and the label of the current step from `computeSetupSteps`.
-    `logActivity` is best-effort: a failed audit write is logged and the setup action still succeeds (`src/lib/data/activity.ts`). So **no recorded setup action means no reminder**. The definition skips the event with `skip_reason = 'no_setup_record'` and never infers that the owner stopped.
+    The last setup progress is the latest of these recorded times (design D12):
+    - `events.created_at`;
+    - the newest `signed_agreements.signed_at` for the event (terms approved or agreement signed, server-written);
+    - the newest `payment_operations.created_at` for the event's campaign (a payment opened, server-written);
+    - the newest setup-action row in `activity_log` for the event: `event.updated`, `event.setup_confirmed`, `campaign.package_chosen`, and the three added in D12.
+    `events.updated_at` and `campaigns.updated_at` are not used, because background writes move them. `eligible_since` is the last progress plus 24 hours. The email names the event and the label of the current step from `computeSetupSteps`.
+    The audit rows are best-effort (`src/lib/data/activity.ts`), but they are one source of four, and three of those are server-written tables. If no source has a time at all (it cannot happen while `events.created_at` exists), the definition skips the event with `skip_reason = 'no_setup_record'` and never infers that the owner stopped.
   - **how_it_works:**
     - the customer's `welcome` row is `accepted` or `delivered`;
     - its start time is ≥ 3 days ago. The start time is `handed_off_at`, or, when the send call never returned and a later event resolved the row, `provider_accepted_at`. That is the `created_at` of the first `email.sent` or `email.delivered` event for it. A time is never invented;
@@ -175,6 +180,20 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
 
 The sweep, the admin forecast, the recipient eligibility reason and the test send all use these, so nothing is listed or worded twice.
 
+**D12. Activity log: the missing setup entries, and only real access may write.**
+- *Measured 11.10.2026.* These setup steps write an `activity_log` row: `event.created`, `event.updated`, `event.setup_confirmed`, `campaign.package_chosen`, `campaign.activated`, and `campaign.package_purchased` (written by the CardCom webhook path with `user_id = null`). These do not: approving the package terms (`approvePackageTermsAction` → `recordPackageApproval`), signing the agreement (`signAgreementAction` → `recordSignedAgreement`), and opening the payment page (`startCardcomPurchase`). In the live data all 5 events have `event.created`, and no setup row has a user other than the event owner.
+- *Add three entries.* Each is written after the step succeeded, through the existing `logActivity` (session user) with ids only in `meta`:
+  - `campaign.terms_approved`, after `recordPackageApproval` succeeds;
+  - `campaign.agreement_signed`, after `recordSignedAgreement` succeeds;
+  - `campaign.payment_started`, after `startCardcomPurchase` creates the session.
+  They are audit and progress signals only. The reminder's authoritative times for the same steps come from `signed_agreements` and `payment_operations` (D6), so a lost audit row does not hide progress.
+- *Close the write hole.* `activity_log` policy `al_owner_insert` checks only `user_id = auth.uid()`. Any signed-in customer can therefore insert a row, such as `event.updated`, for an event they have no access to (measured: the policy's WITH CHECK). The new policy WITH CHECK is `user_id = (select auth.uid()) and (event_id is null or public.can_access_event(event_id) or public.is_platform_staff())`. That covers:
+  - customers and org members on their own events (`can_access_event`: owner, or org permission);
+  - staff `admin.*` rows on customer events (`is_platform_staff`);
+  - rows without an event.
+  Service-role writes (webhooks, the worker, the CardCom path) bypass RLS and are unchanged.
+- *Before pushing.* A read-only query lists existing rows the new rule would have refused, which must be none or explained. The `logActivity` callers that write with a session and an `event_id` are listed and each one is checked against the rule. A refused insert only logs an error (best-effort), so a missed caller would lose its audit row silently: the test suite asserts the policy for owner, org member, staff and stranger.
+
 ## Risks / Trade-offs
 
 - [A Shabbat or holiday computed wrong could send at a forbidden time.] → The pure window function is tested against fixed dates (a Friday 12:30, a Saturday, 2027 Yom HaZikaron), and the hours reuse the outreach policy that is already in production.
@@ -182,7 +201,8 @@ The sweep, the admin forecast, the recipient eligibility reason and the test sen
 - [An owner action missing from the setup-action list leaves a reminder early.] → The list is tested against the actions the setup flow actually logs.
 - [A signing key could leak.] → Anyone holding it could unsubscribe any customer, but nothing more: the action only withdraws. Rotation adds a key; old links keep working.
 - [A transport failure or a non-definitive Resend error after hand-off leaves the outcome open.] → The row is `unknown`, never `failed` and never retried. A later tagged `email.sent` or `email.delivered` resolves it and records `provider_accepted_at`.
-- [Setup actions are logged best-effort, so a lost audit row hides progress.] → No record means no reminder (`no_setup_record`). A missed nudge is the safe failure.
+- [Setup actions are logged best-effort.] → The reminder reads three server-written sources besides the audit log (D6, D12), so a lost audit row does not hide progress. No record at all means no reminder (`no_setup_record`).
+- [Tightening `al_owner_insert` could refuse a legitimate audit row we did not foresee.] → Before the push, existing rows are checked against the new rule and every session caller with an `event_id` is listed. Policy tests cover owner, org member, staff and stranger. A refused row is logged with its action name, so a miss is visible in the server log.
 - [Low volume: Gmail bulk-sender rules (5,000 a day) do not apply yet.] → One-click headers are included anyway, because Yahoo requires them regardless of volume.
 
 ## Migration Plan
@@ -191,6 +211,7 @@ The sweep, the admin forecast, the recipient eligibility reason and the test sen
    - creates `marketing_email_sends` (D3) and `marketing_email_approvals` (D10, append-only, server-only), with their indexes, RLS and grants;
    - adds `app_settings.marketing_emails_enabled` (default false);
    - drops the `source` CHECK on `marketing_consent_events`.
+   A separate migration, `supabase migration new activity_log_insert_scope`, replaces `al_owner_insert` (D12). It is pushed only with approval, after the read-only check of existing rows.
    Dry-run it, push with approval, then run `gen:types` and `types:check`.
 2. Add `MARKETING_UNSUBSCRIBE_KEYS` to `.env.local` on the server. The owner generates it, or approves my generating it.
 3. Add `email.suppressed` to the Resend webhook subscription, through the API with the owner's approval, as was done for `contact.updated`.

@@ -26,6 +26,7 @@ Customers can now consent to KALFA marketing email (change `marketing-email-cons
   - send history, with explicit states and a timeline, and no resend;
   - settings and readiness, where the owner enables or pauses sending (recorded in the activity log).
   Templates stay in code. A content editor is a separate future change.
+- **Activity log fixes** (design D12). Three setup steps write no audit entry today: approving the package terms, signing the agreement and opening the payment page. They gain one. The `al_owner_insert` policy lets any signed-in user write an entry for any event, and it is narrowed to events the user can access (or staff). The setup reminder counts progress from server-written records (`signed_agreements`, `payment_operations`, `events.created_at`) as well as the audit log.
 - **A separate switch.** `app_settings.marketing_emails_enabled` defaults to off, apart from `marketing_consent_enabled`, so the owner can collect consent without sending.
 
 ## Capabilities
@@ -34,13 +35,14 @@ Customers can now consent to KALFA marketing email (change `marketing-email-cons
 - `marketing-email-sending`: which marketing email a consenting customer receives, when, and the checks every send passes.
 - `marketing-unsubscribe`: how a recipient leaves the marketing list from an email, with one click or through a confirm page, and how that is recorded.
 - `marketing-email-admin`: the staff page for seeing, testing and controlling marketing email.
+- `activity-log`: every setup step is recorded, and only users with access to an event may write its history (found while checking the reminder's progress signal, 11.10.2026).
 
 ### Modified Capabilities
 None. The consent capabilities are still in the unarchived change `marketing-email-consent`, and this change uses them without changing their requirements.
 
 ## Impact
 
-- **Database:** one migration created with `supabase migration new`. It adds `marketing_email_sends` (server-only, unique per customer + template [+ event]), `marketing_email_approvals` (append-only human approvals, including the §17ו decision), and `app_settings.marketing_emails_enabled`. Technical readiness is computed live, not stored. It is pushed only with approval.
+- **Database:** one migration created with `supabase migration new`. It adds `marketing_email_sends` (server-only, unique per customer + template [+ event]), `marketing_email_approvals` (append-only human approvals, including the §17ו decision), and `app_settings.marketing_emails_enabled`. Technical readiness is computed live, not stored. It is pushed only with approval. A second migration narrows the `activity_log` insert policy (D12).
 - **Code:**
   - a new `src/lib/marketing/email-definitions.ts` (one definition per email, read by the sweep and the admin) and `src/lib/email/marketing-templates.ts` (one render for preview and send; text via react-email `toPlainText`);
   - a new `src/lib/data/marketing-email-sweep.ts`;
