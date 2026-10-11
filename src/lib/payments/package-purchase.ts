@@ -187,6 +187,7 @@ export async function purchasePackage(input: PackagePurchaseInput): Promise<Purc
       // What the price is made of, on record before the provider is asked. One line today; a credit that comes off the
       // price will be a second, negative line (see 'credit_unsupported' above).
       lines: [{ description: RECEIPT_DESCRIPTION, unitPrice: price }],
+      provider: 'sumit',
       meta: { payerUserId: payer.userId },
     });
     if ('alreadyInProgress' in begun) return 'in_progress';

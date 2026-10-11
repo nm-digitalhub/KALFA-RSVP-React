@@ -73,8 +73,10 @@ export type NewOperation = OperationDetails & {
   // Which clearing company the row belongs to, and the terminal its payment session was ASKED to open on (the same configuration
   // object that builds the request). Written when the row is born and never changed: the database freezes both and derives
   // `is_test` from the terminal, once. Only a NEW row carries them - a completion cannot, by type and by detailColumns - and a
-  // refund or a release takes them from its parent whatever is sent here. Absent = the database default (sumit, no terminal).
-  provider?: 'sumit' | 'cardcom';
+  // refund or a release takes them from its parent whatever is sent here.
+  // REQUIRED, and always written: the column's old `default 'sumit'` silently named four CardCom pilot rows SUMIT on 7.10.2026,
+  // when the CardCom purchase passed none (restamped by 20261011143109_payment_operations_restamp_pilot_rows.sql).
+  provider: 'sumit' | 'cardcom';
   providerTerminal?: number | null;
   source?: 'app' | 'provider_sync' | 'manual_backfill';
   // Non-sensitive extras only — never card data, a citizen id or a raw provider body.
@@ -227,7 +229,7 @@ function insertRow(op: NewOperation): TablesInsert<'payment_operations'> {
     credit_applied: 0,
     // The stamp is written here and ONLY here (detailColumns is shared with completions, which must never touch it). `is_test` is
     // not written by anyone: the database sets it from the terminal when the row is inserted.
-    ...(op.provider === undefined ? {} : { provider: op.provider }),
+    provider: op.provider,
     ...(op.providerTerminal === undefined ? {} : { provider_terminal: op.providerTerminal }),
     ...detailColumns(op),
   };

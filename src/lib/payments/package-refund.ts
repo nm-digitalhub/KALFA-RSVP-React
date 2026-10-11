@@ -222,6 +222,9 @@ export async function refundPackagePayment(input: PackageRefundInput): Promise<P
       kind: 'refund',
       amount,
       parentOperationId,
+      // A refund takes provider and terminal from the payment it reverses (the insert trigger); named here because the
+      // ledger requires every new row to say it.
+      provider: 'sumit',
       meta: { cancellation_request_id: cancellationRequestId },
       lines: [{ description: REFUND_LINE, unitPrice: amount }],
     });

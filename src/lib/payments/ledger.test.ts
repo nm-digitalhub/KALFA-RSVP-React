@@ -16,25 +16,25 @@ const trigger = { beforeInsert: withLedgerStamp((_table: string, row: TableRow) 
 describe('ledger writes', () => {
   it('recordOperation inserts one row and returns its id', async () => {
     const db = createFakeTableClient({ payment_operations: [] });
-    const id = await recordOperation(db.client as never, { campaignId: 'c1', eventId: 'e1', kind: 'authorize', outcome: 'succeeded', amount: 200, providerAuthRef: '055528' });
+    const id = await recordOperation(db.client as never, { campaignId: 'c1', eventId: 'e1', provider: 'sumit', kind: 'authorize', outcome: 'succeeded', amount: 200, providerAuthRef: '055528' });
     expect(id).toBeTruthy();
     expect(db.rows('payment_operations')).toMatchObject([{ campaign_id: 'c1', kind: 'authorize', outcome: 'succeeded', amount: 200, source: 'app' }]);
   });
   it('a charge after a succeeded charge is rejected by once_uq', async () => {
     const db = createFakeTableClient({ payment_operations: [{ id: 'b', campaign_id: 'c1', kind: 'charge', outcome: 'succeeded', once_slot: true }] }, {}, { ...trigger, uniqueIndexes: [{ columns: ['campaign_id', 'kind'], where: { once_slot: true, outcome: ['pending', 'review', 'succeeded'] } }] });
-    expect(await beginOperation(db.client as never, { campaignId: 'c1', eventId: 'e1', kind: 'charge', amount: 120 })).toEqual({ alreadyInProgress: true });
+    expect(await beginOperation(db.client as never, { campaignId: 'c1', eventId: 'e1', provider: 'sumit', kind: 'charge', amount: 120 })).toEqual({ alreadyInProgress: true });
   });
   it('a charge after a REVIEW charge is rejected too (SUMIT may have charged); after a failed one it is allowed', async () => {
     const idx = { ...trigger, uniqueIndexes: [{ columns: ['campaign_id', 'kind'], where: { once_slot: true, outcome: ['pending', 'review', 'succeeded'] } }] };
     const reviewed = createFakeTableClient({ payment_operations: [{ id: 'r', campaign_id: 'c1', kind: 'charge', outcome: 'review', once_slot: true }] }, {}, idx);
-    expect(await beginOperation(reviewed.client as never, { campaignId: 'c1', eventId: 'e1', kind: 'charge', amount: 120 })).toEqual({ alreadyInProgress: true });
+    expect(await beginOperation(reviewed.client as never, { campaignId: 'c1', eventId: 'e1', provider: 'sumit', kind: 'charge', amount: 120 })).toEqual({ alreadyInProgress: true });
     const failed = createFakeTableClient({ payment_operations: [{ id: 'f', campaign_id: 'c1', kind: 'charge', outcome: 'failed', once_slot: true }] }, {}, idx);
-    expect('id' in (await beginOperation(failed.client as never, { campaignId: 'c1', eventId: 'e1', kind: 'charge', amount: 120 }))).toBe(true);
+    expect('id' in (await beginOperation(failed.client as never, { campaignId: 'c1', eventId: 'e1', provider: 'sumit', kind: 'charge', amount: 120 }))).toBe(true);
   });
   it('beginOperation acquires the lock; a second begin for the same campaign+kind reports alreadyInProgress (23505)', async () => {
     const db = createFakeTableClient({ payment_operations: [] }, {}, { uniqueIndexes: [{ columns: ['campaign_id', 'kind'], where: { outcome: 'pending' } }] });
-    const a = await beginOperation(db.client as never, { campaignId: 'c1', eventId: 'e1', kind: 'charge', amount: 120 });
-    const b = await beginOperation(db.client as never, { campaignId: 'c1', eventId: 'e1', kind: 'charge', amount: 120 });
+    const a = await beginOperation(db.client as never, { campaignId: 'c1', eventId: 'e1', provider: 'sumit', kind: 'charge', amount: 120 });
+    const b = await beginOperation(db.client as never, { campaignId: 'c1', eventId: 'e1', provider: 'sumit', kind: 'charge', amount: 120 });
     expect('id' in a).toBe(true);
     expect(b).toEqual({ alreadyInProgress: true });
   });
@@ -114,7 +114,7 @@ describe('ledger writes', () => {
 // terminal, and freezes both; CardCom's own report of the terminal (the echo) is written when the row is completed. The application
 // writes the stamp in exactly one place - the insert - and never writes the class at all.
 describe('the stamp: provider and terminal at birth, the class from the database, the echo at completion', () => {
-  const BORN = { campaignId: 'c1', eventId: 'e1', kind: 'package_purchase', amount: 100 } as const;
+  const BORN = { campaignId: 'c1', eventId: 'e1', provider: 'sumit', kind: 'package_purchase', amount: 100 } as const;
   const empty = () => createFakeTableClient({ payment_operations: [] }, {}, trigger);
 
   it('a new CardCom row carries the provider and the terminal it was asked to open on', async () => {
@@ -124,10 +124,10 @@ describe('the stamp: provider and terminal at birth, the class from the database
     expect(db.rows('payment_operations')[0]).toMatchObject({ provider: 'cardcom', provider_terminal: 1001 });
   });
 
-  it('a row that says nothing about them writes neither column, so the database default applies', async () => {
+  it('the provider is always written (no database default decides it); a row without a terminal writes none', async () => {
     const db = empty();
     await beginOperation(db.client as never, { ...BORN });
-    expect(db.ops[0].patch).not.toHaveProperty('provider');
+    expect(db.ops[0].patch).toHaveProperty('provider', 'sumit');
     expect(db.ops[0].patch).not.toHaveProperty('provider_terminal');
     expect(db.ops[0].patch).not.toHaveProperty('provider_terminal_echo');
   });
@@ -202,7 +202,7 @@ describe('the stamp: provider and terminal at birth, the class from the database
 });
 
 describe('operation lines — how the money of one operation is composed', () => {
-  const OP = { campaignId: 'c1', eventId: 'e1', kind: 'package_purchase' } as const;
+  const OP = { campaignId: 'c1', eventId: 'e1', provider: 'sumit', kind: 'package_purchase' } as const;
   const empty = () => createFakeTableClient({ payment_operations: [], payment_operation_lines: [] });
 
   it('beginOperation writes the pending operation first, then its lines numbered in order; credit is the negative lines', async () => {
@@ -397,11 +397,11 @@ describe('card and lookup helpers', () => {
   it('beginOperation: only 23505 means "already in progress" — any other database error is thrown', async () => {
     const db = createFakeTableClient({ payment_operations: [] });
     db.fail('payment_operations', '40001', 'insert');
-    await expect(beginOperation(db.client as never, { campaignId: 'c1', eventId: 'e1', kind: 'charge', amount: 1 })).rejects.toThrow('רישום פעולת התשלום נכשל');
+    await expect(beginOperation(db.client as never, { campaignId: 'c1', eventId: 'e1', provider: 'sumit', kind: 'charge', amount: 1 })).rejects.toThrow('רישום פעולת התשלום נכשל');
   });
   it('recordOperation on a duplicate also throws: a one-shot write that cannot be recorded must not look recorded', async () => {
     const db = createFakeTableClient({ payment_operations: [{ id: 'a', campaign_id: 'c1', kind: 'charge', outcome: 'succeeded', once_slot: true }] }, {}, { ...trigger, uniqueIndexes: [{ columns: ['campaign_id', 'kind'], where: { once_slot: true, outcome: ['pending', 'review', 'succeeded'] } }] });
-    await expect(recordOperation(db.client as never, { campaignId: 'c1', eventId: 'e1', kind: 'charge', outcome: 'succeeded', amount: 1 })).rejects.toThrow();
+    await expect(recordOperation(db.client as never, { campaignId: 'c1', eventId: 'e1', provider: 'sumit', kind: 'charge', outcome: 'succeeded', amount: 1 })).rejects.toThrow();
   });
 });
 

@@ -572,7 +572,8 @@ describe('refundPackagePayment — nothing secret is ever logged or alerted', ()
 
 // The money goes back through the company that was PAID — read from the purchase itself, never from today's switch.
 describe('which clearing company a refund goes to', () => {
-  const CARDCOM_PURCHASE = { ...PURCHASE, meta: { provider: 'cardcom', payerUserId: 'u1' } };
+  // The router reads the row's `provider` column (purchase-provider.ts).
+  const CARDCOM_PURCHASE = { ...PURCHASE, provider: 'cardcom', provider_terminal: 172204, meta: { provider: 'cardcom', payerUserId: 'u1' } };
   const asked = { ...REQ, amount: 120 };
 
   it('a CardCom purchase is refunded by the CardCom path — and SUMIT is never asked', async () => {
@@ -594,7 +595,7 @@ describe('which clearing company a refund goes to', () => {
     expect(cardcomRefundSummary).toHaveBeenCalledWith('c1', 'req1');
   });
 
-  it('a purchase with no provider in its meta (everything before the pilot) stays a SUMIT refund', async () => {
+  it('a purchase whose provider column says sumit stays a SUMIT refund', async () => {
     useDb([PURCHASE]);
     await refundPackagePayment({ ...REQ, amount: 120 });
     expect(refundCardcomPayment).not.toHaveBeenCalled();

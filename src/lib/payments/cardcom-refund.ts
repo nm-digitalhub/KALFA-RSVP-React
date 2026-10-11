@@ -222,6 +222,7 @@ export async function refundCardcomPayment(input: PackageRefundInput): Promise<P
       kind: 'refund',
       amount,
       parentOperationId: purchase.id,
+      provider: 'cardcom',
       meta: { cancellation_request_id: cancellationRequestId, provider: 'cardcom' },
       lines: [{ description: REFUND_LINE, unitPrice: amount }],
     });
