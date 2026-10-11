@@ -26,17 +26,18 @@ Every verification re-measures the live state; none assumes a fixed count. After
 
 ## 5. Compare and drop (D5)
 
-- [ ] 5.1 For every campaign that holds a value in any retired column at the time of the run, compare each value with its ledger rows. Differences are allowed only for the named card exception. Verify: the output is recorded in this change; the run stops if a campaign outside the exception holds a card value.
+- [x] 5.1 For every campaign that holds a value in any retired column at the time of the run, compare each value with its ledger rows. Differences are allowed only for the named card exception. Verify: the output is recorded in this change (`comparison-5-1.md`); the run stops if a campaign outside the exception holds a card value.
 - [ ] 5.2 After the deploy of groups 1–4, and with the owner's approval for each group, create one drop migration per group, then regenerate the types:
-  - `auth_*`, `authorized_at`
-  - `capture_status`, `release_status`
-  - `card_*`
-  - `charge_*`, `charged_at`, `final_*`
-  - `hold_order_*`
-  - `sumit_*`
-  - the old terms: `price_per_reached`, `base_price`, `included_reached`, `max_charge_ceiling` (on `campaigns` and `packages`), and `min_hold_floor`, `hold_buffer_pct` (on `packages`)
-  - the switches and hold settings: `campaign_holds_enabled`, `base_overage_pricing_enabled`, `close_charge_enabled`, `reasonable_coverage_contacts`, `extreme_threshold_contacts`, `agr_charge_window_days`, `agr_hold_release_days` (on `app_settings`)
-  - `billing_route` (Open Question 1)
+  - `auth_*`, `authorized_at` — `20261011201543`
+  - `capture_status`, `release_status` — `20261011201545`
+  - `card_*` — waits for Open Question 2 (the SUMIT test page and `scripts/sumit-doc-check.ts` read them)
+  - `charge_*`, `charged_at`, `final_*` — `20261011201547`
+  - `hold_order_*` — `20261011201549`
+  - `sumit_*` — waits for Open Question 2 (the SUMIT test page reads `sumit_customer_id`)
+  - the old terms: `price_per_reached`, `base_price`, `included_reached`, `max_charge_ceiling` (on `campaigns` and `packages`), and `min_hold_floor`, `hold_buffer_pct` (on `packages`) — `20261011201551`
+  - the switches and hold settings: `campaign_holds_enabled`, `base_overage_pricing_enabled`, `close_charge_enabled`, `reasonable_coverage_contacts`, `extreme_threshold_contacts`, `agr_charge_window_days`, `agr_hold_release_days` (on `app_settings`) — `20261011201553`
+  - `billing_route` (Open Question 1) and its enum type — `20261011201555`
+  - `credit_applied` (on `campaigns`; added by the owner 11.10.2026) — `20261011203216`, pushed only after the deploy of the ledger-only credit reader (`creditConsumedByCampaign`); the ledger holds the same credit for the two SUMIT campaigns
 
   Verify: tsc and the full suite pass; a live search of functions and views finds no reference.
 
