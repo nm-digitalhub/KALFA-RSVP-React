@@ -490,6 +490,61 @@ export type Database = {
         }
         Relationships: []
       }
+      approval_requests: {
+        Row: {
+          campaign_id: string
+          concluded_at: string | null
+          created_at: string
+          expected_version: number
+          id: string
+          pdf_ref: string
+          pricing_round_id: string
+          state: string
+        }
+        Insert: {
+          campaign_id: string
+          concluded_at?: string | null
+          created_at?: string
+          expected_version: number
+          id: string
+          pdf_ref: string
+          pricing_round_id: string
+          state?: string
+        }
+        Update: {
+          campaign_id?: string
+          concluded_at?: string | null
+          created_at?: string
+          expected_version?: number
+          id?: string
+          pdf_ref?: string
+          pricing_round_id?: string
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "approval_requests_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "approval_requests_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "approval_requests_pricing_round_id_fkey"
+            columns: ["pricing_round_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_pricing"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       billed_results: {
         Row: {
           attempt_id: string | null
@@ -1500,6 +1555,77 @@ export type Database = {
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_pricing: {
+        Row: {
+          campaign_id: string
+          coupon_assignment_id: string | null
+          created_at: string
+          discount_amount: number
+          id: string
+          list_price: number
+          locked_at: string | null
+          package_price: number
+          superseded_at: string | null
+          superseded_by: string | null
+          version: number
+        }
+        Insert: {
+          campaign_id: string
+          coupon_assignment_id?: string | null
+          created_at?: string
+          discount_amount: number
+          id?: string
+          list_price: number
+          locked_at?: string | null
+          package_price: number
+          superseded_at?: string | null
+          superseded_by?: string | null
+          version?: number
+        }
+        Update: {
+          campaign_id?: string
+          coupon_assignment_id?: string | null
+          created_at?: string
+          discount_amount?: number
+          id?: string
+          list_price?: number
+          locked_at?: string | null
+          package_price?: number
+          superseded_at?: string | null
+          superseded_by?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_pricing_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_pricing_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_pricing_coupon_assignment_id_fkey"
+            columns: ["coupon_assignment_id"]
+            isOneToOne: false
+            referencedRelation: "coupon_assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_pricing_superseded_by_fkey"
+            columns: ["superseded_by"]
+            isOneToOne: false
+            referencedRelation: "campaign_pricing"
             referencedColumns: ["id"]
           },
         ]
@@ -2777,6 +2903,166 @@ export type Database = {
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coupon_assignment_events: {
+        Row: {
+          action: string
+          actor_user_id: string | null
+          assignment_id: string
+          at: string
+          id: string
+          meta: Json
+          reason: string | null
+        }
+        Insert: {
+          action: string
+          actor_user_id?: string | null
+          assignment_id: string
+          at?: string
+          id?: string
+          meta?: Json
+          reason?: string | null
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string | null
+          assignment_id?: string
+          at?: string
+          id?: string
+          meta?: Json
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coupon_assignment_events_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "coupon_assignments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coupon_assignment_options: {
+        Row: {
+          assignment_id: string
+          discount_amount: number
+          final_price: number
+          id: string
+          list_price: number
+          package_id: string
+        }
+        Insert: {
+          assignment_id: string
+          discount_amount: number
+          final_price: number
+          id?: string
+          list_price: number
+          package_id: string
+        }
+        Update: {
+          assignment_id?: string
+          discount_amount?: number
+          final_price?: number
+          id?: string
+          list_price?: number
+          package_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coupon_assignment_options_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "coupon_assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coupon_assignment_options_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coupon_assignments: {
+        Row: {
+          assigned_by: string | null
+          bound_campaign_id: string | null
+          claimed_at: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          idempotency_key: string
+          kind: string
+          offer_id: string
+          phone_e164: string | null
+          sales_call_attempt_id: string | null
+          state: string
+          user_id: string | null
+          value: number
+        }
+        Insert: {
+          assigned_by?: string | null
+          bound_campaign_id?: string | null
+          claimed_at?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          idempotency_key: string
+          kind: string
+          offer_id: string
+          phone_e164?: string | null
+          sales_call_attempt_id?: string | null
+          state?: string
+          user_id?: string | null
+          value: number
+        }
+        Update: {
+          assigned_by?: string | null
+          bound_campaign_id?: string | null
+          claimed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          idempotency_key?: string
+          kind?: string
+          offer_id?: string
+          phone_e164?: string | null
+          sales_call_attempt_id?: string | null
+          state?: string
+          user_id?: string | null
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coupon_assignments_bound_campaign_id_fkey"
+            columns: ["bound_campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coupon_assignments_bound_campaign_id_fkey"
+            columns: ["bound_campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coupon_assignments_offer_id_fkey"
+            columns: ["offer_id"]
+            isOneToOne: false
+            referencedRelation: "offers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coupon_assignments_sales_call_attempt_id_fkey"
+            columns: ["sales_call_attempt_id"]
+            isOneToOne: false
+            referencedRelation: "sales_call_attempts"
             referencedColumns: ["id"]
           },
         ]
@@ -4170,6 +4456,87 @@ export type Database = {
         }
         Relationships: []
       }
+      offer_packages: {
+        Row: {
+          offer_id: string
+          package_id: string
+          value_override: number | null
+        }
+        Insert: {
+          offer_id: string
+          package_id: string
+          value_override?: number | null
+        }
+        Update: {
+          offer_id?: string
+          package_id?: string
+          value_override?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "offer_packages_offer_id_fkey"
+            columns: ["offer_id"]
+            isOneToOne: false
+            referencedRelation: "offers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offer_packages_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      offers: {
+        Row: {
+          agent_objections: string[]
+          allow_agent: boolean
+          allow_staff: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          kind: string
+          may_replace: boolean
+          title: string
+          updated_at: string
+          validity_days: number
+          value: number
+        }
+        Insert: {
+          agent_objections?: string[]
+          allow_agent?: boolean
+          allow_staff?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          kind: string
+          may_replace?: boolean
+          title: string
+          updated_at?: string
+          validity_days: number
+          value: number
+        }
+        Update: {
+          agent_objections?: string[]
+          allow_agent?: boolean
+          allow_staff?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          kind?: string
+          may_replace?: boolean
+          title?: string
+          updated_at?: string
+          validity_days?: number
+          value?: number
+        }
+        Relationships: []
+      }
       ops_alerts: {
         Row: {
           category: string | null
@@ -5224,6 +5591,7 @@ export type Database = {
           parent_operation_id: string | null
           parent_slot: boolean
           payment_method_type: string | null
+          pricing_round_id: string | null
           provider: string
           provider_account_id: number | null
           provider_acquirer: string | null
@@ -5280,6 +5648,7 @@ export type Database = {
           parent_operation_id?: string | null
           parent_slot?: boolean
           payment_method_type?: string | null
+          pricing_round_id?: string | null
           provider?: string
           provider_account_id?: number | null
           provider_acquirer?: string | null
@@ -5336,6 +5705,7 @@ export type Database = {
           parent_operation_id?: string | null
           parent_slot?: boolean
           payment_method_type?: string | null
+          pricing_round_id?: string | null
           provider?: string
           provider_account_id?: number | null
           provider_acquirer?: string | null
@@ -5401,6 +5771,13 @@ export type Database = {
             columns: ["parent_operation_id"]
             isOneToOne: false
             referencedRelation: "payment_operations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_operations_pricing_round_id_fkey"
+            columns: ["pricing_round_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_pricing"
             referencedColumns: ["id"]
           },
         ]
@@ -6230,6 +6607,7 @@ export type Database = {
       signed_agreements: {
         Row: {
           agreement_version: string
+          approval_request_id: string | null
           campaign_id: string
           content_hash: string
           created_at: string
@@ -6238,6 +6616,7 @@ export type Database = {
           ip: string | null
           otp_verified_at: string | null
           pdf_ref: string | null
+          pricing_round_id: string | null
           sharepoint_exported_at: string | null
           sharepoint_item_id: string | null
           signature_ref: string | null
@@ -6248,6 +6627,7 @@ export type Database = {
         }
         Insert: {
           agreement_version: string
+          approval_request_id?: string | null
           campaign_id: string
           content_hash: string
           created_at?: string
@@ -6256,6 +6636,7 @@ export type Database = {
           ip?: string | null
           otp_verified_at?: string | null
           pdf_ref?: string | null
+          pricing_round_id?: string | null
           sharepoint_exported_at?: string | null
           sharepoint_item_id?: string | null
           signature_ref?: string | null
@@ -6266,6 +6647,7 @@ export type Database = {
         }
         Update: {
           agreement_version?: string
+          approval_request_id?: string | null
           campaign_id?: string
           content_hash?: string
           created_at?: string
@@ -6274,6 +6656,7 @@ export type Database = {
           ip?: string | null
           otp_verified_at?: string | null
           pdf_ref?: string | null
+          pricing_round_id?: string | null
           sharepoint_exported_at?: string | null
           sharepoint_item_id?: string | null
           signature_ref?: string | null
@@ -6283,6 +6666,13 @@ export type Database = {
           verified_phone?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "signed_agreements_approval_request_id_fkey"
+            columns: ["approval_request_id"]
+            isOneToOne: true
+            referencedRelation: "approval_requests"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "signed_agreements_campaign_id_fkey"
             columns: ["campaign_id"]
@@ -6309,6 +6699,13 @@ export type Database = {
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "signed_agreements_pricing_round_id_fkey"
+            columns: ["pricing_round_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_pricing"
             referencedColumns: ["id"]
           },
         ]
@@ -7655,6 +8052,29 @@ export type Database = {
         Args: { _event_date: string; _event_id: string }
         Returns: string
       }
+      approve_package_terms: {
+        Args: {
+          _agreement_version: string
+          _campaign_id: string
+          _content_hash: string
+          _expected_version: number
+          _ip: string
+          _pdf_ref: string
+          _pricing_round_id: string
+          _request_id: string
+          _signer_user_id: string
+          _user_agent: string
+        }
+        Returns: undefined
+      }
+      bind_coupon_assignment: {
+        Args: {
+          _actor_user_id?: string
+          _assignment_id: string
+          _campaign_id: string
+        }
+        Returns: string
+      }
       call_analysis:
         | {
             Args: {
@@ -8354,6 +8774,14 @@ export type Database = {
         }
         Returns: string
       }
+      release_coupon_assignment: {
+        Args: {
+          _actor_user_id?: string
+          _assignment_id: string
+          _reason: string
+        }
+        Returns: undefined
+      }
       release_outreach_reservation: {
         Args: {
           p_campaign: string
@@ -8451,6 +8879,17 @@ export type Database = {
           _token: string
         }
         Returns: Json
+      }
+      supersede_campaign_pricing: {
+        Args: {
+          _actor_user_id?: string
+          _assignment_id?: string
+          _campaign_id: string
+          _discount_amount: number
+          _list_price: number
+          _reason: string
+        }
+        Returns: string
       }
       test_event_purge_blocker: { Args: { p_event: string }; Returns: string }
       try_record_billed_result: {
