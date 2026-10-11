@@ -945,6 +945,27 @@ export type Database = {
           },
         ]
       }
+      call_compliance_settings: {
+        Row: {
+          call_consent_required: boolean
+          dnc_registry_gate_enabled: boolean
+          id: boolean
+          updated_at: string
+        }
+        Insert: {
+          call_consent_required?: boolean
+          dnc_registry_gate_enabled?: boolean
+          id?: boolean
+          updated_at?: string
+        }
+        Update: {
+          call_consent_required?: boolean
+          dnc_registry_gate_enabled?: boolean
+          id?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       call_dispatch_status: {
         Row: {
           call_attempt_id: string | null
@@ -1146,6 +1167,7 @@ export type Database = {
           not_after_min: number | null
           not_before_min: number | null
           note: string | null
+          origin: string
           phone: string
           requested_at: string | null
           requested_rank: string | null
@@ -1185,6 +1207,7 @@ export type Database = {
           not_after_min?: number | null
           not_before_min?: number | null
           note?: string | null
+          origin?: string
           phone: string
           requested_at?: string | null
           requested_rank?: string | null
@@ -1224,6 +1247,7 @@ export type Database = {
           not_after_min?: number | null
           not_before_min?: number | null
           note?: string | null
+          origin?: string
           phone?: string
           requested_at?: string | null
           requested_rank?: string | null
@@ -2849,6 +2873,54 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      dnc_registry_checks: {
+        Row: {
+          attempt_id: string | null
+          checked_at: string
+          dial_path: string
+          error_code: number | null
+          exemption_ref: string | null
+          failure: string | null
+          id: string
+          job_id: string | null
+          phone_e164: string
+          purpose: string
+          result: string
+          source: string
+          transaction_id: string | null
+        }
+        Insert: {
+          attempt_id?: string | null
+          checked_at?: string
+          dial_path: string
+          error_code?: number | null
+          exemption_ref?: string | null
+          failure?: string | null
+          id?: string
+          job_id?: string | null
+          phone_e164: string
+          purpose: string
+          result: string
+          source: string
+          transaction_id?: string | null
+        }
+        Update: {
+          attempt_id?: string | null
+          checked_at?: string
+          dial_path?: string
+          error_code?: number | null
+          exemption_ref?: string | null
+          failure?: string | null
+          id?: string
+          job_id?: string | null
+          phone_e164?: string
+          purpose?: string
+          result?: string
+          source?: string
+          transaction_id?: string | null
+        }
+        Relationships: []
       }
       event_cancellation_requests: {
         Row: {
@@ -7840,6 +7912,7 @@ export type Database = {
           not_after_min: number | null
           not_before_min: number | null
           note: string | null
+          origin: string
           phone: string
           requested_at: string | null
           requested_rank: string | null

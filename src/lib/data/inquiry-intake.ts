@@ -155,6 +155,7 @@ export async function insertCallbackRequest(
       note: input.note ?? null,
       requested_at: requestedAtIso,
       requested_rank: requestedRank,
+      origin: 'person_request', // they asked to be called (Sixth Schedule item 1)
     })
     .select('id')
     .single();

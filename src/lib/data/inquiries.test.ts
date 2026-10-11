@@ -139,6 +139,7 @@ describe('createCallbackRequest', () => {
       // cannot express it — recorded so a taken slot can still be resolved the
       // way the caller asked for.
       requested_rank: 'earliest',
+      origin: 'person_request',
     });
     expect(sendSlackAlert).toHaveBeenCalledWith(
       expect.objectContaining({

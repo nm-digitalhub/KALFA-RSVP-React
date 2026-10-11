@@ -310,7 +310,7 @@ export async function updateVoximplantLiveCallsAction(
   };
 }
 
-// Admin toggle for the AI-call CONSENT gate (app_settings.call_consent_required).
+// Admin toggle for the AI-call CONSENT gate (call_compliance_settings.call_consent_required).
 // The checkbox is "require explicit consent"; DEFAULT is on (SAFE). Turning it OFF
 // permits AI dials to contacts with NO recorded prior consent — spam-law exposure,
 // an owner/legal decision. opt-out + DNC + fail-closed still apply. Emits a

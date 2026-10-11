@@ -322,6 +322,8 @@ export function createGuestActions(): GuestActionsPort {
         requested_at: null,
         requested_rank: 'earliest',
         note,
+        // A workflow, not the person, created this request: it does not exempt a call from the Do-Not-Call registry.
+        origin: 'workflow',
       });
       if (error) return { ok: false, created: false, reason: 'insert_failed' };
       return { ok: true, created: true };

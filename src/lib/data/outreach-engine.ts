@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { callConsentRequired } from '@/lib/data/call-compliance-settings';
 import {
   getOutreachEnabled,
   getWhatsAppConfig,
@@ -180,30 +181,11 @@ export async function isContactReached(
   return (count ?? 0) > 0;
 }
 
-// Call-consent gate for the AI-call channel (C2). The dispatcher is the FIRST and
-// ONLY enforcement point (nothing upstream checks it — only allowed_channels).
-// Whether the AI-call channel still requires a recorded prior consent. The admin
-// switch app_settings.call_consent_required (channels UI) governs it. FAIL-SAFE:
-// anything but an explicit false — including a read error — reads as "required",
-// so a hiccup can never silently drop the consent requirement.
-async function callConsentRequired(): Promise<boolean> {
-  try {
-    const admin = createAdminClient();
-    const { data } = await admin
-      .from('app_settings')
-      .select('call_consent_required')
-      .eq('id', true)
-      .maybeSingle();
-    return data?.call_consent_required !== false;
-  } catch {
-    return true;
-  }
-}
-
 // Call-consent gate for the AI-call channel (C2). True when the contact exists,
 // is not opted out (removal_requested), AND — WHEN the admin switch requires it
 // (the default) — has a recorded call_consent_at. An admin may lift the explicit
-// prior-consent requirement from the channels UI (call_consent_required=false),
+// prior-consent requirement from the channels UI (call_compliance_settings.call_consent_required=false,
+// read by callConsentRequired, which fails safe to "required"),
 // which skips ONLY the call_consent_at check; opt-out and fail-closed are never
 // affected. Fail-CLOSED: any read error → false (no call).
 export async function hasCallConsent(contactId: string): Promise<boolean> {

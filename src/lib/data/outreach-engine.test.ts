@@ -537,13 +537,13 @@ describe('executeStep — send-time parameter binding', () => {
 });
 
 // hasCallConsent is the ONLY gate that blocks an AI dial for a contact without
-// recorded prior consent, and app_settings.call_consent_required can lift that
+// recorded prior consent, and call_compliance_settings.call_consent_required can lift that
 // check at runtime. Because turning it off has LEGAL weight, these tests pin the
 // exact truth table — especially that opt-out and fail-closed are NEVER lifted.
 describe('hasCallConsent — AI-call consent gate', () => {
   type Row = Record<string, unknown> | null;
 
-  // Two tables, two results: contacts and app_settings. A thrown app_settings
+  // Two tables, two results: contacts and call_compliance_settings. A thrown settings
   // read simulates a flag-read failure (must fail SAFE = "consent required").
   function mockAdmin(contacts: Row, settings: Row | 'throw') {
     const contactsB = createMockSupabase({ data: contacts, error: null }).builder;
@@ -554,7 +554,7 @@ describe('hasCallConsent — AI-call consent gate', () => {
       };
     }
     vi.mocked(createAdminClient).mockReturnValue({
-      from: (table: string) => (table === 'app_settings' ? settingsB : contactsB),
+      from: (table: string) => (table === 'call_compliance_settings' ? settingsB : contactsB),
       rpc: vi.fn(),
     } as unknown as ReturnType<typeof createAdminClient>);
   }
