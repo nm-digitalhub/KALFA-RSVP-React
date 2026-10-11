@@ -3,6 +3,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { BarChart3, CircleCheck, Send } from 'lucide-react';
 
+import { getConsentWording, isMarketingConsentEnabled } from '@/lib/data/marketing-consent';
+
 import { SignupForm } from './signup-form';
 
 export const metadata: Metadata = {
@@ -24,6 +26,9 @@ export default async function SignupPage({
   searchParams: Promise<{ ref?: string }>;
 }) {
   const { ref } = await searchParams;
+  // The marketing-email box is offered only once the feature is switched on (after the wording is approved), and its
+  // text is the same server wording the action records with a grant.
+  const marketingConsentText = (await isMarketingConsentEnabled()) ? (await getConsentWording()).text : null;
 
   return (
     <div className="grid min-h-dvh lg:grid-cols-[1fr_minmax(420px,560px)]">
@@ -92,7 +97,10 @@ export default async function SignupPage({
               <p className="text-sm text-muted-foreground">צרו חשבון כדי להתחיל לנהל אירועים</p>
             </div>
 
-            <SignupForm salesRef={typeof ref === 'string' ? ref : undefined} />
+            <SignupForm
+              salesRef={typeof ref === 'string' ? ref : undefined}
+              marketingConsentText={marketingConsentText}
+            />
           </div>
 
           <p className="mt-5 text-center text-sm text-muted-foreground">

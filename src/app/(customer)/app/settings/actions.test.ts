@@ -16,14 +16,21 @@ vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/data/profiles', () => ({ updateProfile: vi.fn() }));
 vi.mock('@/lib/data/user-settings', () => ({ updateUserSettings: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
+const { requestHeaders } = vi.hoisted(() => ({ requestHeaders: { current: new Headers() } }));
+vi.mock('next/headers', () => ({ headers: vi.fn(async () => requestHeaders.current) }));
+vi.mock('@/lib/data/marketing-consent', () => ({ isMarketingConsentEnabled: vi.fn(), recordConsent: vi.fn() }));
+vi.mock('@/lib/data/marketing-contact-sync', () => ({ enqueueMarketingContactSync: vi.fn() }));
 
 import { logActivity } from '@/lib/data/activity';
 import { updateProfile } from '@/lib/data/profiles';
 import { createClient } from '@/lib/supabase/server';
 import { getAppUrl } from '@/lib/url';
 import { requireUser } from '@/lib/auth/dal';
+import { isMarketingConsentEnabled, recordConsent } from '@/lib/data/marketing-consent';
+import { enqueueMarketingContactSync } from '@/lib/data/marketing-contact-sync';
 import {
   requestEmailChangeAction,
+  updateMarketingConsentAction,
   requestPhoneChangeAction,
   updateProfileAction,
   verifyPhoneChangeAction,
@@ -169,5 +176,55 @@ describe('phone verification — the proof stays in Auth, profiles gets only the
     expect(updateUser).toHaveBeenCalledWith({ phone: '+972529998888' });
     expect(from).not.toHaveBeenCalled();
     expect(res).toEqual({ notice: 'קוד אימות נשלח בהודעת SMS למספר שהוזן.' });
+  });
+});
+
+describe('updateMarketingConsentAction', () => {
+  beforeEach(() => {
+    vi.mocked(requireUser).mockResolvedValue({ id: 'u-1', email: 'dana@example.com' } as never);
+    vi.mocked(isMarketingConsentEnabled).mockResolvedValue(true);
+    vi.mocked(recordConsent).mockResolvedValue('recorded');
+    vi.mocked(enqueueMarketingContactSync).mockResolvedValue(undefined);
+    requestHeaders.current = new Headers({ 'x-real-ip': '203.0.113.7', 'user-agent': 'UA/1' });
+  });
+
+  it('turned on → a grant for the session user, and a resubscribe sync', async () => {
+    const res = await updateMarketingConsentAction(null, fd({ marketing_opt_in: 'on' }));
+    expect(recordConsent).toHaveBeenCalledWith({
+      userId: 'u-1',
+      email: 'dana@example.com',
+      action: 'grant',
+      source: 'settings',
+      ip: '203.0.113.7',
+      userAgent: 'UA/1',
+    });
+    expect(enqueueMarketingContactSync).toHaveBeenCalledWith({ userId: 'u-1', resubscribe: true });
+    expect(res?.notice).toBeTruthy();
+  });
+
+  it('turned off → a withdrawal, and a plain sync', async () => {
+    await updateMarketingConsentAction(null, fd({}));
+    expect(vi.mocked(recordConsent).mock.calls[0][0]).toMatchObject({ action: 'withdraw', source: 'settings' });
+    expect(enqueueMarketingContactSync).toHaveBeenCalledWith({ userId: 'u-1' });
+  });
+
+  it('no change → nothing queued', async () => {
+    vi.mocked(recordConsent).mockResolvedValue('unchanged');
+    await updateMarketingConsentAction(null, fd({ marketing_opt_in: 'on' }));
+    expect(enqueueMarketingContactSync).not.toHaveBeenCalled();
+  });
+
+  it('a queue failure still reports success — the reconcile catches it', async () => {
+    vi.mocked(enqueueMarketingContactSync).mockRejectedValue(new Error('pgboss down'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await updateMarketingConsentAction(null, fd({}));
+    expect(res?.notice).toBeTruthy();
+  });
+
+  it('switched off → refused, nothing recorded', async () => {
+    vi.mocked(isMarketingConsentEnabled).mockResolvedValue(false);
+    const res = await updateMarketingConsentAction(null, fd({ marketing_opt_in: 'on' }));
+    expect(res?.error).toBeTruthy();
+    expect(recordConsent).not.toHaveBeenCalled();
   });
 });

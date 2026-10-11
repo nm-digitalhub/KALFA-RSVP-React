@@ -7,7 +7,14 @@ import { signup } from '../actions';
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { PasswordField } from './password-field';
 
-export function SignupForm({ salesRef }: { salesRef?: string }) {
+export function SignupForm({
+  salesRef,
+  marketingConsentText,
+}: {
+  salesRef?: string;
+  // The server's consent wording, or null while marketing consent is switched off.
+  marketingConsentText: string | null;
+}) {
   // The sales-attribution ref travels via `bind`, NOT a hidden input. Both put
   // the value in the client bundle, but only bind protects its INTEGRITY:
   // "Variables captured by an inline action are encrypted before being sent to
@@ -100,6 +107,14 @@ export function SignupForm({ salesRef }: { salesRef?: string }) {
         </label>
         <FieldError errors={state?.fieldErrors?.terms_accepted} />
       </div>
+
+      {/* Optional and unchecked by default — consent to marketing email is never a condition of signing up. */}
+      {marketingConsentText ? (
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="marketing_opt_in" className="mt-0.5 size-4 rounded border-input" />
+          <span>{marketingConsentText}</span>
+        </label>
+      ) : null}
 
       <SubmitButton size="lg">הרשמה</SubmitButton>
     </form>

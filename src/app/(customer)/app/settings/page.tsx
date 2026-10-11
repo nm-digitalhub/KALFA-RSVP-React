@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { unstable_rethrow } from 'next/navigation';
 import { requireUser } from '@/lib/auth/dal';
 import { getProfile, isProfilePhoneVerified, type ProfileDTO } from '@/lib/data/profiles';
+import { currentConsent, getConsentWording, isMarketingConsentEnabled } from '@/lib/data/marketing-consent';
 import { readSumitCustomerNumber } from '@/lib/data/sumit-customers';
 import {
   DEFAULT_USER_SETTINGS,
@@ -33,6 +34,9 @@ export default async function SettingsPage() {
   // Decided here, against the Auth session user — the client never sees the
   // proof, only the answer.
   let phoneVerified = false;
+  // null while marketing consent is switched off; otherwise the current state read from the ledger (never from the
+  // browser) and the server wording the toggle shows.
+  let marketingConsent: { granted: boolean; wording: string } | null = null;
   let loadError = false;
 
   try {
@@ -44,6 +48,10 @@ export default async function SettingsPage() {
       readSumitCustomerNumber(user.id),
     ]);
     phoneVerified = isProfilePhoneVerified(profile, user);
+    if (await isMarketingConsentEnabled()) {
+      const [consent, wording] = await Promise.all([currentConsent(user.id), getConsentWording()]);
+      marketingConsent = { granted: consent === 'granted', wording: wording.text };
+    }
   } catch (err) {
     unstable_rethrow(err);
     loadError = true;
@@ -54,6 +62,7 @@ export default async function SettingsPage() {
       userEmail={userEmail}
       profile={profile}
       phoneVerified={phoneVerified}
+      marketingConsent={marketingConsent}
       customerNumber={customerNumber}
       settings={settingsWithDefaults(settings)}
       loadError={loadError}

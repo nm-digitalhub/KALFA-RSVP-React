@@ -14,19 +14,32 @@ vi.mock('next/navigation', () => ({
   }),
 }));
 
-const { getUser, updateUser, signInWithPassword, resend } = vi.hoisted(() => ({
-  getUser: vi.fn(),
-  updateUser: vi.fn(),
-  signInWithPassword: vi.fn(),
-  resend: vi.fn(),
-}));
+const { getUser, updateUser, signInWithPassword, resend, signUp, requestHeaders, recordConsent, consentEnabled } =
+  vi.hoisted(() => ({
+    getUser: vi.fn(),
+    updateUser: vi.fn(),
+    signInWithPassword: vi.fn(),
+    resend: vi.fn(),
+    signUp: vi.fn(),
+    requestHeaders: { current: new Headers() },
+    recordConsent: vi.fn(),
+    consentEnabled: vi.fn(),
+  }));
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(async () => ({
-    auth: { getUser, updateUser, signInWithPassword, resend, resetPasswordForEmail: vi.fn() },
+    auth: { getUser, updateUser, signInWithPassword, resend, signUp, resetPasswordForEmail: vi.fn() },
   })),
 }));
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => ({ set: vi.fn() })),
+  headers: vi.fn(async () => requestHeaders.current),
+}));
+vi.mock('@/lib/data/marketing-consent', () => ({
+  recordConsent,
+  isMarketingConsentEnabled: consentEnabled,
+}));
 
-import { login, resendConfirmationEmail, updatePassword } from './actions';
+import { login, resendConfirmationEmail, signup, updatePassword } from './actions';
 
 function fd(fields: Record<string, string>): FormData {
   const f = new FormData();
@@ -176,5 +189,75 @@ describe('updatePassword', () => {
       digest: expect.stringContaining('NEXT_REDIRECT;replace;/app;'),
     });
     expect(updateUser).toHaveBeenCalledWith({ password: VALID.password });
+  });
+});
+
+// signup() records marketing-email consent only for a genuine new account whose owner ticked the box, after the
+// duplicate check, with the server's wording (recordConsent) and the socket IP — never a client-supplied value.
+describe('signup — marketing consent', () => {
+  const FORM = {
+    email: 'dana@example.com',
+    password: 'aVeryGoodPass1!',
+    full_name: 'דנה כהן',
+    phone: '',
+    terms_accepted: 'on',
+  };
+  const NEW_USER = { id: 'new-user', email: 'dana@example.com', identities: [{ id: 'i1' }] };
+
+  beforeEach(() => {
+    consentEnabled.mockResolvedValue(true);
+    recordConsent.mockResolvedValue('recorded');
+    signUp.mockResolvedValue({ data: { user: NEW_USER, session: null }, error: null });
+    requestHeaders.current = new Headers({
+      'x-real-ip': '203.0.113.7',
+      'x-forwarded-for': '198.51.100.9',
+      'user-agent': 'UA/1',
+    });
+  });
+
+  const run = (fields: Record<string, string>) => expect(signup(undefined, null, fd(fields))).rejects.toThrow('NEXT_REDIRECT');
+
+  it('ticked → one grant for the new user, socket IP, user agent', async () => {
+    await run({ ...FORM, marketing_opt_in: 'on' });
+    expect(recordConsent).toHaveBeenCalledTimes(1);
+    expect(recordConsent).toHaveBeenCalledWith({
+      userId: 'new-user',
+      email: 'dana@example.com',
+      action: 'grant',
+      source: 'signup',
+      ip: '203.0.113.7',
+      userAgent: 'UA/1',
+    });
+  });
+
+  it('unticked → nothing recorded', async () => {
+    await run(FORM);
+    expect(recordConsent).not.toHaveBeenCalled();
+  });
+
+  it('switched off → nothing recorded even when ticked', async () => {
+    consentEnabled.mockResolvedValue(false);
+    await run({ ...FORM, marketing_opt_in: 'on' });
+    expect(recordConsent).not.toHaveBeenCalled();
+  });
+
+  it('an address that already has an account → nothing recorded', async () => {
+    signUp.mockResolvedValue({ data: { user: { ...NEW_USER, identities: [] }, session: null }, error: null });
+    const res = await signup(undefined, null, fd({ ...FORM, marketing_opt_in: 'on' }));
+    expect(res?.error).toContain('כבר רשומה');
+    expect(recordConsent).not.toHaveBeenCalled();
+  });
+
+  it('a forged wording field is never passed on', async () => {
+    await run({ ...FORM, marketing_opt_in: 'on', wording: 'זיוף', wording_version: '999' });
+    const arg = recordConsent.mock.calls[0][0] as Record<string, unknown>;
+    expect(Object.keys(arg)).not.toContain('wording');
+    expect(Object.keys(arg)).not.toContain('wording_version');
+  });
+
+  it('a ledger failure does not fail the signup', async () => {
+    recordConsent.mockRejectedValue(new Error('marketing_consent_write_failed'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await run({ ...FORM, marketing_opt_in: 'on' });
   });
 });

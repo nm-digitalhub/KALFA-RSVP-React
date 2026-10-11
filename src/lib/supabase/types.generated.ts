@@ -208,6 +208,7 @@ export type Database = {
           inbound_ai_answer_enabled: boolean
           inbound_calls_enabled: boolean
           inquiry_followup_enabled: boolean
+          marketing_consent_enabled: boolean
           monitor_enabled: boolean
           outreach_enabled: boolean
           owner_agent_burst_ms: number
@@ -324,6 +325,7 @@ export type Database = {
           inbound_ai_answer_enabled?: boolean
           inbound_calls_enabled?: boolean
           inquiry_followup_enabled?: boolean
+          marketing_consent_enabled?: boolean
           monitor_enabled?: boolean
           outreach_enabled?: boolean
           owner_agent_burst_ms?: number
@@ -440,6 +442,7 @@ export type Database = {
           inbound_ai_answer_enabled?: boolean
           inbound_calls_enabled?: boolean
           inquiry_followup_enabled?: boolean
+          marketing_consent_enabled?: boolean
           monitor_enabled?: boolean
           outreach_enabled?: boolean
           owner_agent_burst_ms?: number
@@ -4029,6 +4032,48 @@ export type Database = {
           provider?: string
           updated_at?: string
           vault_secret_id?: string | null
+        }
+        Relationships: []
+      }
+      marketing_consent_events: {
+        Row: {
+          action: string
+          email: string
+          id: string
+          ip: unknown
+          occurred_at: string
+          provider_event_id: string | null
+          source: string
+          user_agent: string | null
+          user_id: string | null
+          wording: string | null
+          wording_version: string | null
+        }
+        Insert: {
+          action: string
+          email: string
+          id?: string
+          ip?: unknown
+          occurred_at?: string
+          provider_event_id?: string | null
+          source: string
+          user_agent?: string | null
+          user_id?: string | null
+          wording?: string | null
+          wording_version?: string | null
+        }
+        Update: {
+          action?: string
+          email?: string
+          id?: string
+          ip?: unknown
+          occurred_at?: string
+          provider_event_id?: string | null
+          source?: string
+          user_agent?: string | null
+          user_id?: string | null
+          wording?: string | null
+          wording_version?: string | null
         }
         Relationships: []
       }

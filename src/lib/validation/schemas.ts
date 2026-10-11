@@ -72,6 +72,13 @@ export const signupSchema = z.object({
     .refine((v) => v === 'on', {
       error: 'יש לאשר את תנאי השימוש ומדיניות הפרטיות כדי להמשיך',
     }),
+  // Consent to KALFA marketing email: optional and separate from the terms. The checkbox sends 'on' when ticked and
+  // nothing when not. Only the choice travels — the wording and its version are the server's
+  // (src/lib/marketing/consent-wording.ts), so no such field exists here.
+  marketing_opt_in: z
+    .literal('on')
+    .optional()
+    .transform((v) => v === 'on'),
 });
 
 // Password reset (forgot-password → recovery email → set new password), built

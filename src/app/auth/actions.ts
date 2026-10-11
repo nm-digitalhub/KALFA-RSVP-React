@@ -1,7 +1,7 @@
 'use server';
 
 import { z } from 'zod';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import {
@@ -11,6 +11,8 @@ import {
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isExistingUserSignup } from '@/lib/auth/signup-helpers';
+import { isMarketingConsentEnabled, recordConsent } from '@/lib/data/marketing-consent';
+import { socketClientIp } from '@/lib/security/client-ip';
 import {
   forgotPasswordSchema,
   loginSchema,
@@ -129,13 +131,14 @@ export async function signup(
     phone: formData.get('phone'),
     ref: salesRef ?? '',
     terms_accepted: formData.get('terms_accepted'),
+    marketing_opt_in: formData.get('marketing_opt_in') ?? undefined,
   });
 
   if (!parsed.success) {
     return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
-  const { email, password, full_name, phone, ref } = parsed.data;
+  const { email, password, full_name, phone, ref, marketing_opt_in } = parsed.data;
 
   // Sales-closing-agent conversion tracking: re-verify the ref actually
   // resolves to a real sales_call_attempts row BEFORE it ever reaches
@@ -210,6 +213,28 @@ export async function signup(
   // and sends no email. Detect that case and block it with a clear message.
   if (isExistingUserSignup(data)) {
     return { error: 'כתובת המייל כבר רשומה. אנא היכנסו לחשבון הקיים.' };
+  }
+
+  // Marketing-email consent, recorded only now: after the duplicate check, so an existing address never gets a row
+  // against the fake user Supabase returns for it. The wording and version are the server's (recordConsent). The
+  // address is not proved yet — the contact sync waits for the email confirmation. A failed write is logged and never
+  // fails the signup; the customer can grant again in settings.
+  if (marketing_opt_in && data.user && (await isMarketingConsentEnabled())) {
+    try {
+      const requestHeaders = await headers();
+      await recordConsent({
+        userId: data.user.id,
+        email: data.user.email ?? email,
+        action: 'grant',
+        source: 'signup',
+        ip: socketClientIp((name) => requestHeaders.get(name)),
+        userAgent: requestHeaders.get('user-agent'),
+      });
+    } catch (err) {
+      console.error('[signup] marketing consent was not recorded', {
+        message: err instanceof Error ? err.message : 'unknown',
+      });
+    }
   }
 
   // Analytics flag (phase-1 events plan): a one-shot, short-lived cookie the

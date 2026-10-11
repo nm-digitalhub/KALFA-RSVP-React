@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { getCompanyLegal } from '@/lib/data/company';
+import { isMarketingConsentEnabled } from '@/lib/data/marketing-consent';
 import { ManageCookiesButton } from '@/components/consent/manage-cookies-button';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 import { LegalShell, LegalSection, CategoryStatusBadge } from '../_legal';
@@ -29,16 +30,24 @@ export const dynamic = 'force-dynamic';
 // Public privacy policy (beta.kalfa.me/privacy). Hebrew, RTL, reads company
 // identity from config. Legal wording per Privacy Protection Law §11 +
 // Amendment 13 — reviewed and approved (no draft banner, 2026-08-30).
+//
+// The marketing-email passages (sections 2, 3, 5, 9 and the update date) were
+// approved by the owner on 11.10.2026, with no lawyer review needed (openspec
+// change marketing-email-consent, task 7.1). They render only while
+// app_settings.marketing_consent_enabled is on — the same switch that shows the
+// consent box — so the published policy never describes a practice that is not
+// running, and never omits one that is.
 export default async function PrivacyPage() {
-  const [company, consentAdmin] = await Promise.all([
+  const [company, consentAdmin, marketingEmail] = await Promise.all([
     getCompanyLegal(),
     getCookieConsentPublicConfig(),
+    isMarketingConsentEnabled(),
   ]);
 
   return (
     <LegalShell
       title="מדיניות פרטיות"
-      updatedText="עודכן לאחרונה: יוני 2026"
+      updatedText={marketingEmail ? 'עודכן לאחרונה: אוקטובר 2026' : 'עודכן לאחרונה: יוני 2026'}
       company={company}
     >
       <LegalSection title="1. כללי">
@@ -76,15 +85,32 @@ export default async function PrivacyPage() {
             נפרדת מהאנליטיקה, ואינה פועלת בדפי אישורי-ההגעה של אורחים. פירוט מלא
             במדיניות העוגיות.
           </li>
+          {marketingEmail ? (
+            <li>
+              <strong>הסכמה לדיוור בדוא״ל (בעלי אירוע בלבד, בהסכמה נפרדת):</strong>{' '}
+              אם אישרתם לקבל מאיתנו עדכונים והצעות בדוא״ל, אנו שומרים את כתובת
+              האימייל, מועד ההסכמה או הסרתה, הנוסח שהוצג לכם, כתובת ה‑IP וסוג הדפדפן
+              — כראיה להסכמה.
+            </li>
+          ) : null}
         </ul>
       </LegalSection>
 
       <LegalSection title="3. מטרות העיבוד">
-        <p>
-          המידע משמש אך ורק לאספקת השירות: יצירת קשר עם אנשי הקשר בערוצים המאושרים,
-          איסוף תגובות RSVP, חישוב חיוב לפי תוצאה, אבטחת זהות החותם, ושמירת ראיות
-          להסכמה. איננו מוכרים מידע אישי.
-        </p>
+        {marketingEmail ? (
+          <p>
+            המידע משמש לאספקת השירות: יצירת קשר עם אנשי הקשר בערוצים המאושרים,
+            איסוף תגובות RSVP, חישוב חיוב לפי תוצאה, אבטחת זהות החותם, ושמירת ראיות
+            להסכמה. בנוסף, ורק לבעלי אירוע שהסכימו לכך במפורש, אנו שולחים בדוא״ל
+            עדכונים, טיפים והצעות של KALFA. איננו מוכרים מידע אישי.
+          </p>
+        ) : (
+          <p>
+            המידע משמש אך ורק לאספקת השירות: יצירת קשר עם אנשי הקשר בערוצים המאושרים,
+            איסוף תגובות RSVP, חישוב חיוב לפי תוצאה, אבטחת זהות החותם, ושמירת ראיות
+            להסכמה. איננו מוכרים מידע אישי.
+          </p>
+        )}
       </LegalSection>
 
       <LegalSection title="4. בסיס חוקי וחלוקת תפקידים">
@@ -99,7 +125,7 @@ export default async function PrivacyPage() {
         <p>
           לצורך מתן השירות אנו נעזרים בספקי תקשורת וסליקה הפועלים בשמנו: Meta
           (WhatsApp Cloud API), Voximplant (שיחות), ספק סליקה לתשלומים, וספק SMS
-          לאימות. ספקים אלה מעבדים מידע בהתאם להוראותינו ולמטרת השירות בלבד. בנוסף,
+          לאימות{marketingEmail ? ', ו-Resend לשליחת דוא״ל ולניהול רשימת הדיוור' : ''}. ספקים אלה מעבדים מידע בהתאם להוראותינו ולמטרת השירות בלבד. בנוסף,
           ורק בהסכמתכם המפורשת (opt-in) לקטגוריות הרלוונטיות בהודעת העוגיות, אנו
           משתפים עם Google מידע לצורך מדידת שימוש (אנליטיקה) ו/או קהלי רימרקטינג
           לצורך פרסום (Google Ads) — לפירוט המלא ראו את מדיניות העוגיות.
@@ -133,6 +159,14 @@ export default async function PrivacyPage() {
           פנייה לאנשי קשר נעשית עבור בעל האירוע ועל אחריותו, כהזמנת RSVP אישית
           ללא תוכן פרסומי של KALFA. כל בקשת הסרה תכובד בכל ערוץ.
         </p>
+        {marketingEmail ? (
+          <p>
+            לאורחים ולאנשי קשר של אירועים איננו שולחים דיוור של KALFA בשום מקרה.
+            דיוור בדוא״ל נשלח רק לבעלי אירוע שנתנו הסכמה מפורשת. כל הודעה כזו מסומנת
+            ״פרסומת״ וכוללת דרך פשוטה להסרה; ניתן גם לבטל את ההסכמה בכל עת בהגדרות
+            החשבון. ההסרה נרשמת מיד ואינה מותנית בדבר.
+          </p>
+        ) : null}
       </LegalSection>
 
       <LegalSection

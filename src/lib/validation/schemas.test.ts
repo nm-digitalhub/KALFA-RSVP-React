@@ -254,6 +254,34 @@ describe('signupSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('marketing_opt_in is optional and false when the box is absent', () => {
+    const result = signupSchema.safeParse({
+      email: 'user@example.com',
+      password: 'Aa123456!',
+      full_name: 'ישראל ישראלי',
+      terms_accepted: 'on',
+    });
+    expect(result.success && result.data.marketing_opt_in).toBe(false);
+  });
+
+  it('marketing_opt_in is true when the box sends "on"', () => {
+    const result = signupSchema.safeParse({
+      email: 'user@example.com',
+      password: 'Aa123456!',
+      full_name: 'ישראל ישראלי',
+      terms_accepted: 'on',
+      marketing_opt_in: 'on',
+    });
+    expect(result.success && result.data.marketing_opt_in).toBe(true);
+  });
+
+  it('rejects a marketing_opt_in value other than "on", and drops any wording field', () => {
+    const base = { email: 'user@example.com', password: 'Aa123456!', full_name: 'ישראל ישראלי', terms_accepted: 'on' };
+    expect(signupSchema.safeParse({ ...base, marketing_opt_in: 'true' }).success).toBe(false);
+    const forged = signupSchema.safeParse({ ...base, marketing_opt_in: 'on', wording: 'x', wording_version: 'y' });
+    expect(forged.success && Object.keys(forged.data)).not.toContain('wording');
+  });
+
   it('rejects a terms_accepted value other than "on"', () => {
     const result = signupSchema.safeParse({
       email: 'user@example.com',

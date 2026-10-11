@@ -31,6 +31,7 @@ import {
   requestEmailChangeAction,
   requestPhoneChangeAction,
   sendPasswordResetAction,
+  updateMarketingConsentAction,
   updateProfileAction,
   updateSettingsAction,
   verifyPhoneChangeAction,
@@ -51,6 +52,9 @@ interface SettingsPageClientProps {
   // Whether profile.phone is the number proved to Supabase Auth — decided on
   // the server (page.tsx), never from a profiles column.
   phoneVerified: boolean;
+  // Marketing-email consent: null while the feature is off; otherwise the ledger's current state and the server
+  // wording (page.tsx).
+  marketingConsent: { granted: boolean; wording: string } | null;
   // The SUMIT customer number; null until the first payment.
   customerNumber: number | null;
   settings: UserSettingsDTO;
@@ -158,7 +162,32 @@ function ToggleField({
   );
 }
 
-function NotificationsSection({ settings }: { settings: UserSettingsDTO }) {
+function MarketingConsentForm({ consent }: { consent: { granted: boolean; wording: string } }) {
+  const [state, action] = useActionState(updateMarketingConsentAction, null);
+  return (
+    <form action={action} className="space-y-4 border-t border-border pt-4">
+      <FormNotice message={state?.notice} />
+      <FormError message={state?.error} />
+      <ToggleField
+        label="עדכונים והצעות בדוא״ל"
+        description={consent.wording}
+        name="marketing_opt_in"
+        defaultChecked={consent.granted}
+      />
+      <div className="max-w-44">
+        <SubmitButton>שמירת העדפה</SubmitButton>
+      </div>
+    </form>
+  );
+}
+
+function NotificationsSection({
+  settings,
+  marketingConsent,
+}: {
+  settings: UserSettingsDTO;
+  marketingConsent: { granted: boolean; wording: string } | null;
+}) {
   const [state, action] = useActionState(updateSettingsAction, null);
 
   return (
@@ -193,6 +222,8 @@ function NotificationsSection({ settings }: { settings: UserSettingsDTO }) {
           <SubmitButton>שמירת התראות</SubmitButton>
         </div>
       </form>
+
+      {marketingConsent ? <MarketingConsentForm consent={marketingConsent} /> : null}
 
       <PushNotificationManager />
     </section>
@@ -595,6 +626,7 @@ export function SettingsPageClient({
   userEmail,
   profile,
   phoneVerified,
+  marketingConsent,
   customerNumber,
   settings,
   loadError,
@@ -648,7 +680,7 @@ export function SettingsPageClient({
         <div className="space-y-5">
           <ProfileSection profile={profile} customerNumber={customerNumber} />
           <PhoneVerification profile={profile} phoneVerified={phoneVerified} />
-          <NotificationsSection settings={settings} />
+          <NotificationsSection settings={settings} marketingConsent={marketingConsent} />
           <SummarySection profile={profile} settings={settings} />
           <SecuritySection />
           <AccountSection

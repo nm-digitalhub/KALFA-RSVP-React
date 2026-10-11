@@ -13,6 +13,11 @@ vi.mock('@/lib/data/profiles', async (importOriginal) => ({
   getProfile: vi.fn(),
 }));
 vi.mock('@/lib/data/sumit-customers', () => ({ readSumitCustomerNumber: vi.fn() }));
+vi.mock('@/lib/data/marketing-consent', () => ({
+  isMarketingConsentEnabled: vi.fn(async () => false),
+  currentConsent: vi.fn(),
+  getConsentWording: vi.fn(),
+}));
 vi.mock('@/lib/data/user-settings', () => ({
   DEFAULT_USER_SETTINGS: {
     event_updates: true,
@@ -32,6 +37,7 @@ import { requireUser } from '@/lib/auth/dal';
 import { getProfile } from '@/lib/data/profiles';
 import { readSumitCustomerNumber } from '@/lib/data/sumit-customers';
 import { getUserSettings } from '@/lib/data/user-settings';
+import { currentConsent, getConsentWording, isMarketingConsentEnabled } from '@/lib/data/marketing-consent';
 import SettingsPage from './page';
 
 const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
@@ -120,5 +126,33 @@ describe('SettingsPage — verified phone badge', () => {
     const tree = (await SettingsPage()) as ReactElement<Props>;
     expect(tree.props.phoneVerified).toBe(false);
     expect(tree.props.loadError).toBe(false);
+  });
+});
+
+describe('SettingsPage — marketing consent', () => {
+  type Props = { marketingConsent: { granted: boolean; wording: string } | null };
+
+  function signedIn() {
+    vi.mocked(requireUser).mockResolvedValue({ id: 'u-1', email: 'dana@example.com' } as never);
+    vi.mocked(getProfile).mockResolvedValue(null);
+    vi.mocked(getUserSettings).mockResolvedValue(null);
+    vi.mocked(readSumitCustomerNumber).mockResolvedValue(null);
+  }
+
+  it('is absent while the feature is off', async () => {
+    signedIn();
+    vi.mocked(isMarketingConsentEnabled).mockResolvedValue(false);
+    const tree = (await SettingsPage()) as ReactElement<Props>;
+    expect(tree.props.marketingConsent).toBeNull();
+  });
+
+  it('comes from the ledger for the session user, with the server wording', async () => {
+    signedIn();
+    vi.mocked(isMarketingConsentEnabled).mockResolvedValue(true);
+    vi.mocked(currentConsent).mockResolvedValue('granted');
+    vi.mocked(getConsentWording).mockResolvedValue({ text: 'נוסח', version: 'v' });
+    const tree = (await SettingsPage()) as ReactElement<Props>;
+    expect(currentConsent).toHaveBeenCalledWith('u-1');
+    expect(tree.props.marketingConsent).toEqual({ granted: true, wording: 'נוסח' });
   });
 });

@@ -1,11 +1,15 @@
 'use server';
 
 import { z } from 'zod';
+import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 
 import { requireUser } from '@/lib/auth/dal';
 import { verifiedPhoneOf } from '@/lib/auth/verified-phone';
+import { isMarketingConsentEnabled, recordConsent } from '@/lib/data/marketing-consent';
+import { enqueueMarketingContactSync } from '@/lib/data/marketing-contact-sync';
+import { socketClientIp } from '@/lib/security/client-ip';
 import { logActivity } from '@/lib/data/activity';
 import { normalizePhone } from '@/lib/phone';
 import { updateProfile } from '@/lib/data/profiles';
@@ -267,4 +271,50 @@ export async function sendPasswordResetAction(
   }
 
   return { notice: 'נשלח קישור איפוס סיסמה לאימייל שלכם.' };
+}
+
+// Marketing-email consent from settings (openspec change marketing-email-consent, spec marketing-consent).
+//
+// Only the choice comes from the form; the user is the verified session user, and the wording recorded with a grant
+// is the server's (recordConsent). Saving without a change writes nothing. The Resend contact follows through a
+// queued job, so a Resend outage never fails this action; a grant carries `resubscribe`, the only job allowed to turn
+// a contact Resend holds as unsubscribed back on.
+export async function updateMarketingConsentAction(
+  _prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const user = await requireUser();
+  if (!(await isMarketingConsentEnabled())) return { error: 'האפשרות אינה זמינה כרגע.' };
+  if (!user.email) return { error: 'לחשבון אין כתובת אימייל.' };
+
+  const wantsMarketing = formData.get('marketing_opt_in') === 'on';
+  const requestHeaders = await headers();
+  let result;
+  try {
+    result = await recordConsent({
+      userId: user.id,
+      email: user.email,
+      action: wantsMarketing ? 'grant' : 'withdraw',
+      source: 'settings',
+      ip: socketClientIp((name) => requestHeaders.get(name)),
+      userAgent: requestHeaders.get('user-agent'),
+    });
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: 'שמירת ההעדפה נכשלה. נסו שוב.' };
+  }
+
+  if (result === 'recorded') {
+    try {
+      await enqueueMarketingContactSync({ userId: user.id, ...(wantsMarketing ? { resubscribe: true } : {}) });
+    } catch (err) {
+      // Recorded; the daily reconcile brings Resend in line.
+      console.error('[settings] marketing contact sync was not queued', {
+        message: err instanceof Error ? err.message : 'unknown',
+      });
+    }
+  }
+
+  revalidatePath('/app/settings');
+  return { notice: wantsMarketing ? 'נרשמתם לעדכונים בדוא״ל.' : 'הוסרתם מעדכונים בדוא״ל.' };
 }
