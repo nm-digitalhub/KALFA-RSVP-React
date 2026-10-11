@@ -40,11 +40,11 @@ None. The consent capabilities are still in the unarchived change `marketing-ema
 
 ## Impact
 
-- **Database:** one migration created with `supabase migration new`. It adds `marketing_email_sends` (server-only, unique per customer + template [+ event]), `app_settings.marketing_emails_enabled`, and the readiness gate fields in `app_settings` (including the §17ו decision text). It is pushed only with approval.
+- **Database:** one migration created with `supabase migration new`. It adds `marketing_email_sends` (server-only, unique per customer + template [+ event]), `marketing_email_approvals` (append-only human approvals, including the §17ו decision), and `app_settings.marketing_emails_enabled`. Technical readiness is computed live, not stored. It is pushed only with approval.
 - **Code:**
-  - a new `src/lib/email/marketing-templates.ts`;
+  - a new `src/lib/marketing/email-definitions.ts` (one definition per email, read by the sweep and the admin) and `src/lib/email/marketing-templates.ts` (one render for preview and send; text via react-email `toPlainText`);
   - a new `src/lib/data/marketing-email-sweep.ts`;
-  - `src/lib/email/sender.ts`, which gains optional `headers`;
+  - `src/lib/email/sender.ts`, which gains optional `headers` and `tags`, returns the provider id and classifies failures; marketing mail is Resend-only;
   - a new public route `src/app/api/marketing/unsubscribe/route.ts` and page `src/app/(public)/unsubscribe/`;
   - `src/lib/queue/queues.ts`, `worker/main.ts` and `src/lib/ops/queue-schedule.ts`.
 - **Secrets:** one new server-only env var for signing unsubscribe tokens.

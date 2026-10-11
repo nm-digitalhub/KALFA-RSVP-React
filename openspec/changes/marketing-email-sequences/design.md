@@ -5,35 +5,62 @@
 Motivation: proposal.md - Why. Facts measured on 11.10.2026:
 
 - **Consent is live.** `marketing_consent_events` is append-only and readable only by service_role. `currentConsent(userId)`, `latestConsentForEmail` and `recordConsent` live in `src/lib/data/marketing-consent.ts`, and `enqueueMarketingContactSync` lives in `marketing-contact-sync.ts`. The ledger's `source` CHECK allows `signup | settings | provider_unsubscribe | provider_complaint | account_removed`.
-- **Templates.** `src/lib/email/templates.ts` builds Hebrew RTL mail with `react-email` (6.11.1) through `createElement` + `render`. It sets `lang`/`dir` on both `<Html>` and `<Body>`, returns `{subject, html, text}`, and does no I/O.
-- **Sending.** `EmailSender.send` (`src/lib/email/sender.ts`) calls `resend.emails.send` with `idempotencyKey` and threading headers. It has no way to pass arbitrary headers. Resend's docs (via ctx7) show `headers: {'List-Unsubscribe': …}` on `emails.send`. Resend's own `{{{RESEND_UNSUBSCRIBE_URL}}}` works only in Broadcasts and Automations.
+- **Templates.** `src/lib/email/templates.ts` builds Hebrew RTL mail with `react-email` (6.11.1) through `createElement` + `render`. It sets `lang`/`dir` on both `<Html>` and `<Body>`, returns `{subject, html, text}`, writes the text version by hand, and does no I/O. `toPlainText` is exported by the installed `react-email` (checked at runtime); react.email/docs/utilities/render documents `toPlainText(html)` and `data-skip-in-text`.
+- **Sending.** `EmailSender.send` (`src/lib/email/sender.ts`) has a Resend path and an SMTP path, chosen by `EMAIL_PROVIDER` (`selectedEmailProvider()`). The Resend path passes `idempotencyKey`. It returns nothing, and it throws `EmailSendError` on every `error`, without distinguishing a definite rejection from a transport failure. It cannot pass arbitrary headers or tags. Resend's docs show `headers` (`List-Unsubscribe`) and `tags` on `emails.send`. Resend keeps idempotency keys for 24 hours only (resend.com/docs/dashboard/emails/idempotency-keys). Its own `{{{RESEND_UNSUBSCRIBE_URL}}}` works only in Broadcasts and Automations.
+- **Resend webhooks** (resend.com/docs/webhooks/*):
+  - The retry schedule runs from immediately up to 10 hours. Replays are possible, and an endpoint that keeps failing is disabled.
+  - The docs do not promise in-order delivery.
+  - `email.delivered` carries the event's `created_at` plus `data.email_id`, `data.created_at` and `data.tags`.
+  - Our route persists every event to `webhook_inbox` and a drain processes it (`processWebhookEvent`). No code in `src` deletes `webhook_inbox` rows (checked).
 - **Calendar.** `buildJewishCalendar` (`src/lib/outreach/jewish-calendar.ts`) blocks Shabbat and Yom Tov from candle-lighting to havdalah (Yom Kippur is included). `DEFAULT_SEND_POLICY` (`send-policy.ts`) is Sun–Thu 09:00–20:30 and Fri 09:00–12:00. `@hebcal/core` reports Yom HaShoah and Yom HaZikaron (MODERN_HOLIDAY) and Tisha B'Av; I checked this for 2027.
-- **Setup.** `computeSetupSteps` (`src/lib/data/setup-steps.ts`) is pure. The step `live` is done once the campaign is `active` or `closed`. `events` and `campaigns` both have `created_at` and `updated_at`.
+- **Setup.** `computeSetupSteps` (`src/lib/data/setup-steps.ts`) is pure. The step `live` is done once the campaign is `active` or `closed`.
+  - `events.updated_at` and `campaigns.updated_at` also move on background writes, such as admin and exchange actions.
+  - Owner setup actions are recorded in `activity_log` with the `event_id`. The live data includes `event.created`, `event.updated`, `event.setup_confirmed` and `campaign.package_chosen`.
 - **Company details.** These come from `getCompanyLegal()`. The live values are name "נתנאל מבורך קלפה - KALFA RSVP", address "זוהר 23,זוהר", phone "033301505" and email "netanel.kalfa@kalfa.me".
 
 ## Goals / Non-Goals
 
 **Goals:** send exactly the three approved emails, only to consenting customers with confirmed addresses, never twice and never outside the window, and make unsubscribing work in one click from any client.
 
-**Non-Goals:** Resend Broadcasts or Automations, holiday campaigns, editing template content in the admin (templates stay in code; an editor with drafts and versions is a separate change), a resend control, analytics beyond Resend's own, and the database registration number required by Privacy Law §17ו (a release gate, task 7.2).
+**Non-Goals:** Resend Broadcasts or Automations, holiday campaigns, editing template content in the admin (templates stay in code; an editor with drafts and versions is a separate change), a resend control, the SMTP path for marketing (D2), analytics beyond Resend's own, and the database registration number required by Privacy Law §17ו (a release gate, task 7.2).
 
 ## Decisions
 
 **D1. We send through our own path, not Resend Automations.**
 - *Why.* Gating has to happen at the moment of sending: the latest consent from our ledger, a confirmed address, the Israeli calendar, and setup state that only our database knows. The templates should also stay in the codebase, next to the transactional ones, and be tested.
 - *Alternative rejected.* Resend Automations would move the templates and the timing out of the repo, and would need every gate mirrored into Resend properties.
-- *Cost.* We build our own unsubscribe endpoint (D4).
+- *Cost.* We build our own unsubscribe endpoint (D4) and our own delivery tracking (D9).
 
-**D2. `EmailSender.send` gains optional `headers`.**
-- *Why.* It is the existing wrapper, with idempotency and error handling already in place.
-- *How.* The marketing path passes `List-Unsubscribe: <https://…/api/marketing/unsubscribe?t=…>` (HTTPS only: Reply-To is the owner's own inbox, `netanel.kalfa@kalfa.me` per the live `smtp_from`, which nothing processes automatically, so a `mailto:` unsubscribe would be lost) and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. `idempotencyKey` is the send-ledger row id, so a retried job cannot send twice at Resend either.
-- *Constraint.* Transactional callers are unchanged.
+**D2. Marketing mail is Resend-only, through the existing wrapper.**
+- *Sender changes.* `EmailSender.send` gains optional `headers` and `tags`, and returns `{providerMessageId}`. The SMTP path returns its Message-ID.
+- *Error classes.* It reports one of two failure classes:
+  - **rejected:** Resend answered with an error. Nothing was sent.
+  - **unknown:** a transport or timeout failure after the request left. Resend may or may not have accepted it.
+- *Transactional callers.* Unchanged: they keep treating any throw as a failure.
+- *Headers.* The marketing path passes:
+  - `List-Unsubscribe: <https://…/api/marketing/unsubscribe?t=…>`. HTTPS only: Reply-To is the owner's own inbox (`netanel.kalfa@kalfa.me`, the live `smtp_from`), which nothing processes automatically, so a `mailto:` unsubscribe would be lost.
+  - `List-Unsubscribe-Post: List-Unsubscribe=One-Click`.
+  - A tag `mkt_send=<send row id>`.
+  - `idempotencyKey = marketing/<send row id>`.
+- *Resend required.* The SMTP path has no delivery events and no tags. If `EMAIL_PROVIDER` is not `resend`, the sweep sends nothing and the readiness check shows sending as blocked.
+- *Resend's idempotency* lasts 24 hours, so it does not replace our ledger. The ledger's unique claim (D3) is what prevents duplicates.
 
 **D3. A send ledger, `marketing_email_sends`.**
-- *Columns.* `id`, `user_id`, `email`, `template` (`welcome | setup_reminder | how_it_works`), `template_version`, `event_id` (setup reminder only), `status` (`claimed | accepted | delivered | failed | skipped`, design D9), `skip_reason`, `provider_message_id`, `created_at`, `sent_at`.
-- *No closed lists in the database.* `template` and `status` are plain text, validated in code (a TS union plus Zod at the write), not DB CHECKs — the owner's rule against closed schemas (memory `no-rigid-schemas-broaden-scope`). A new template is a code change only.
-- *Uniqueness.* A unique index on `(user_id, template)` where `event_id is null`, and one on `(user_id, template, event_id)` where `event_id is not null`. The sweep **claims** a row by INSERT before sending, so a second sweep's insert fails with 23505 and it moves on. This follows the same claim pattern as `contact_interactions`.
-- *Access.* Server-only: RLS on with no policy, and grants of SELECT, INSERT and UPDATE (status only) to service_role.
+- *Columns.*
+  - Identity: `id`, `user_id`, `email`, `template`, `template_version`, `event_id` (setup reminder only).
+  - State: `status`, `skip_reason`, `failure_class`.
+  - Provider: `provider_message_id`, `provider_status_at` (the `created_at` of the newest provider event applied).
+  - Times: `eligible_since` (when the rule became true, from the definition, D11), `claimed_at`, `handed_off_at` (when the send call returned with an id).
+- *Statuses.*
+  - `claimed`: pending.
+  - `accepted`: handed to the provider.
+  - `delivered`.
+  - `failed`.
+  - `unknown`: the outcome after hand-off is uncertain.
+  - `skipped`: stopped, with a reason.
+- *No closed lists in the database.* `template`, `status` and `skip_reason` are plain text, validated in code (a TS union plus Zod at the write), not DB CHECKs — the owner's rule against closed schemas (memory `no-rigid-schemas-broaden-scope`). A new template is a code change only.
+- *Uniqueness.* A unique index on `(user_id, template)` where `event_id is null`, and one on `(user_id, template, event_id)` where `event_id is not null`. The sweep claims a row by INSERT before sending, so a second sweep's insert fails with 23505 and it moves on. This follows the same claim pattern as `contact_interactions`.
+- *Access.* Server-only: RLS on with no policy. service_role gets SELECT and INSERT, plus UPDATE on the state, provider and time columns only.
 - *Alternative rejected.* A flag on `profiles`. It is user-writable, and that is the earlier lesson.
 
 **D4. The unsubscribe token is an HMAC with a key id, not a stored secret.**
@@ -51,63 +78,117 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
 - The ledger's `source` CHECK is dropped in this change's migration rather than widened (same owner rule). `ConsentSource` in `marketing-consent.ts` stays the one list of allowed values, and the server write path is the only writer.
 
 **D6. One sweep, every 15 minutes, gated by `marketing_emails_enabled`.**
-- *Outside the window* (D7), the sweep returns at once.
-- *Inside the window,* it finds the due customers. It reads consent from the ledger (latest row per user is a grant), confirmation and the email from `auth.users` via the admin API, and events and campaigns for the reminder.
+- *Stops.* The sweep returns at once when sending is off, the provider is not Resend (D2), or it is outside the window (D7).
+- *Inside the window,* it asks each definition (D11) for its due customers. It reads consent from the ledger (latest row per user is a grant), confirmation and the email from `auth.users` via the admin API, and events, campaigns and the activity log for the reminder.
 - *Per customer, in order:*
-  1. Re-check the gates.
-  2. Claim a row.
+  1. Re-check the definition's gates.
+  2. Claim a row with `eligible_since`.
   3. Render.
   4. Send.
-  5. Mark the row `accepted` with the message id, or `failed`.
-- *A failed send* stays `failed` and is not retried automatically. A marketing email that is late or lost is acceptable, and a duplicate is not. The failure is alerted through `sendSlackAlert` with ids only.
-- *Rules per template* (the values the owner can change):
-  - **welcome:** the latest grant has `source = 'signup'` and the email is confirmed.
+  5. Mark the row:
+     - a success becomes `accepted`, with `provider_message_id` and `handed_off_at`;
+     - a rejection becomes `failed` (`failure_class = rejected`);
+     - a transport failure becomes `unknown` (`failure_class = unknown`), because Resend may have accepted it, and a later webhook resolves it by tag (D9).
+- *No automatic retry* of a `failed` or `unknown` row: a lost marketing email is acceptable, a duplicate is not. `sendSlackAlert` reports both with ids only.
+- *Rules per template* (the values the owner can change, defined once in D11):
+  - **welcome:**
+    - the latest grant has `source = 'signup'`;
+    - the address is confirmed;
+    - `eligible_since` is the later of the grant time and the confirmation time.
   - **setup_reminder:** applies to each event of the customer that meets all of these:
     - created ≤ 14 days ago;
     - not past;
     - setup not finished (`live` step not done);
-    - `greatest(events.updated_at, campaigns.updated_at)` ≥ 24 h ago.
-    The email names the event and the label of the current step from `computeSetupSteps`.
-  - **how_it_works:** a `welcome` was sent ≥ 3 days ago, and no event of the customer has a finished setup.
+    - the latest **owner setup action** on it is ≥ 24 hours old.
+    The owner setup action is the newest `activity_log` row for that `event_id` by the event's owner, with an action in the definition's setup-action list. `updated_at` is not used, because background writes move it. `eligible_since` is that action's time plus 24 hours. The email names the event and the label of the current step from `computeSetupSteps`.
+  - **how_it_works:**
+    - the customer's `welcome` row is `accepted` or `delivered`;
+    - its `handed_off_at` is ≥ 3 days ago;
+    - no event of the customer has a finished setup.
+    A `failed`, `unknown` or `skipped` welcome does not start the clock.
 
 **D7. The window is the outreach policy plus the marketing blackout days.**
 - `DEFAULT_SEND_POLICY` hours, with `buildJewishCalendar` for Shabbat and Yom Tov.
 - Add the whole Israel-time day of Yom HaZikaron, Yom HaShoah and Tisha B'Av from `@hebcal/core`, plus the eve from sunset. These days come from hebcal each year and are never hard-coded.
-- This lives in a pure `isMarketingSendAllowed(ms)` with tests that pin known dates.
+- This lives in a pure `isMarketingSendAllowed(ms)` and `nextMarketingWindow(ms)` with tests that pin known dates.
 
-**D8. Templates live in `src/lib/email/marketing-templates.ts`.**
-- *Shape.* One function per template returning `{subject, html, text, version}`.
-- *Shared footer.* One component, fed by `getCompanyLegal()`. The phone is formatted for display from the stored digits (033301505 → 03-3301505); the address is shown as stored, so the owner corrects "זוהר 23,זוהר" in the company settings to match the approved design. If the name or address is missing, the send is skipped with `skip_reason = 'company_details_missing'`.
+**D8. Templates live in `src/lib/email/marketing-templates.ts`. One render serves the preview and the send.**
+- *Shape.* One React Email component per template.
+- *Render.* `renderMarketingEmail(template, data)` runs `render()` once and derives the text version with `toPlainText(html)`; it is never written twice. Decorative parts use `data-skip-in-text`. The admin preview calls the same function with sample data and shows its HTML in a sandboxed `<iframe srcdoc>`. No copy of the email exists in the admin.
+- *Shared footer.* One component, fed by `getCompanyLegal()`. The phone is formatted for display from the stored digits (033301505 → 03-3301505). The address is shown as stored, so the owner corrects "זוהר 23,זוהר" in the company settings to match the approved design. If the name or address is missing, the send is skipped with `skip_reason = 'company_details_missing'`.
 - *Legal marking.* The subject is built as `'פרסומת | ' + …` in one helper so no template can drop it. A test asserts the prefix and the body marker for every template.
 - *Accessibility.* The CTA is a link, the logo an inline `<img>` from the site's `/icons/icon.svg` URL with `alt`, and Arial/Tahoma is the fallback after Heebo.
 
-**D9. Send states and delivery tracking.** `marketing_email_sends.status` holds `claimed` (ממתין לעיבוד), `accepted` (הועבר לספק: Resend returned an id), `delivered` (Resend `email.delivered`), `failed` (send error, or `email.bounced`/`email.failed`), and `skipped` (stopped, with `skip_reason`). "Unknown outcome" is not stored: the admin shows it for a `claimed` row older than 15 minutes. `EmailSender.send` returns the provider's message id (it returns nothing today), and the sweep stores it as `provider_message_id`. The existing Resend webhook drain (`processEmailDelivery`) moves a matching row to `delivered` or `failed` by `data.email_id`, for marketing rows only.
+**D9. Provider results arrive through the existing inbox, by our own tag.**
+- *Route.* Resend `email.delivered`, `email.bounced`, `email.failed` and `email.suppressed` already reach `webhook_inbox` through the existing route. `email.suppressed` is added to the handled events.
+- *Matching.* The drain (`processEmailDelivery`) matches a marketing row by `data.tags.mkt_send`, our row id. It does not use `email_id`. This means an event that arrives before `provider_message_id` was saved, or after a transport failure left the row `unknown`, still finds its row.
+- *Monotonic.* An event applies only if its `created_at` is newer than the row's `provider_status_at`, and it never moves a row backwards (`delivered` stays `delivered`). An older event processed late changes nothing. Redelivery is already deduped by the inbox's `svix-id` key.
+- *Who it touches.* Non-marketing mail is untouched, since it has no tag.
+- *Unknown outcome.* A row in `unknown`, or in `claimed` for more than 15 minutes, is shown as unknown outcome until an event resolves it.
 
-**D10. The admin page.** It lives at `/admin/marketing-email` in the "קמפיינים ושליחה" group (`src/components/admin-shell.tsx`). Every read goes through a server data layer with `requirePlatformPermission`, never the browser:
-- *Permissions.* Viewing needs `view_customer_data`, because consent and emails are personal data. A test send needs `manage_settings`. Enabling and pausing need `requirePlatformOwner`, are recorded with `logActivity`, and enabling is refused while a readiness gate is open.
-- *Readiness.* The gates are the release gates of task 7.2, shown as done or open with a link. Each gate's state is stored in `app_settings`, and the page records the §17ו decision as text. The page does not decide on its own whether registration is required.
-- *Candidates.* They come from the same selection functions as the sweep, run read-only, and are labelled as a forecast.
+**D10. The admin page.** It lives at `/admin/marketing-email` in the "קמפיינים ושליחה" group (`src/components/admin-shell.tsx`). Every read goes through a server data layer with `requirePlatformPermission`, never the browser.
+- *Permissions.*
+  - Viewing needs `view_customer_data`, because consent and emails are personal data.
+  - A test send needs `manage_settings`.
+  - Turning sending on or off needs `requirePlatformOwner` and is recorded with `logActivity`.
+- *One state, no "paused".* Sending is on or off; the page says which, and when the next window opens. A separate "paused" state would need a second stored fact. One switch plus the activity log (who turned it off, and when) says the same thing without one.
+- *Readiness is computed, not ticked.* Technical gates are evaluated live on every view:
+  - the unsubscribe keys are present and sign and verify;
+  - `EMAIL_PROVIDER` is `resend` with an API key;
+  - the Resend webhook is subscribed to the delivery events and `contact.updated` (`webhooks.get`);
+  - the company name, address, phone and email are present;
+  - the consent switch is on;
+  - the sweep queue is scheduled and has run within its staleness limit (the existing `QUEUE_EXPECTED_MAX_MINUTES` check).
+- *Approvals are records, not flags.* Human decisions are append-only rows in `marketing_email_approvals`, each with the approver, the time, the kind, the template key and version, and a free-text note:
+  - each template approved at its version;
+  - one-click unsubscribe tested;
+  - the §17ו decision, as text.
+  A template approval counts only for the version currently in code. A new version reopens the gate.
+- *Enabling.* It is refused while any gate is open. It shows the current candidate count and the next sweep time before confirming.
+- *Candidates.* They come from the definitions' read-only selection (D11) and are labelled as a forecast.
 - *Lists.* All lists are paginated on the server.
 - *Recipients.* The side panel reads the consent ledger, Auth confirmation, the Resend contact (one read when the panel opens) and the sends. It has no control that grants consent.
+- *Timeline.* Each step shows only a recorded time:
+  - eligibility: `eligible_since`;
+  - claimed: `claimed_at`;
+  - handed off: `handed_off_at`;
+  - the provider events from `webhook_inbox`, matched by tag, with their own `created_at`.
+  A step with no recorded time is shown as not recorded, never estimated.
 - *Look.* It reuses the admin shell's tables and side sheet, in RTL, with every state written in text.
+
+**D11. One definition per email, read by the sweep and the admin.** `src/lib/marketing/email-definitions.ts` holds, for each template:
+- its key and version;
+- its plain-language condition and stop rules (the admin's copy);
+- `selectDue(ctx)`, a read-only query that returns candidates with `eligible_since`;
+- `check(customer)`, the send-time gate, which returns `eligible` or a `skip_reason`;
+- the setup-action list (reminder only);
+- its render function (D8).
+
+The sweep, the admin forecast, the recipient eligibility reason and the test send all use these, so nothing is listed or worded twice.
 
 ## Risks / Trade-offs
 
 - [A Shabbat or holiday computed wrong could send at a forbidden time.] → The pure window function is tested against fixed dates (a Friday 12:30, a Saturday, 2027 Yom HaZikaron), and the hours reuse the outreach policy that is already in production.
-- [The reminder reads setup state that the in-flight change `separate-event-setup-from-management` is reshaping.] → The reminder uses only `computeSetupSteps` and the `live` step, not step names, and its test builds the input through the same function.
+- [The reminder reads setup state that the in-flight change `separate-event-setup-from-management` is reshaping.] → The reminder uses only `computeSetupSteps` and the `live` step, not step names, and its test builds the input through the same function. The setup-action list lives in one definition and is updated with that change.
+- [An owner action missing from the setup-action list leaves a reminder early.] → The list is tested against the actions the setup flow actually logs.
 - [A signing key could leak.] → Anyone holding it could unsubscribe any customer, but nothing more: the action only withdraws. Rotation adds a key; old links keep working.
-- [A send that fails after the claim is not retried.] → Accepted (D6): a lost marketing email is the safe failure.
+- [A transport failure after hand-off leaves the outcome open.] → The row is `unknown`, never `failed` and never retried. A later tagged event resolves it.
 - [Low volume: Gmail bulk-sender rules (5,000 a day) do not apply yet.] → One-click headers are included anyway, because Yahoo requires them regardless of volume.
 
 ## Migration Plan
 
-1. Run `supabase migration new marketing_email_sends`. It creates the table, indexes, RLS, grants, the `app_settings.marketing_emails_enabled` column (default false), and drops the `source` CHECK on `marketing_consent_events`. Dry-run it, push with approval, then run `gen:types` and `types:check`.
+1. Run `supabase migration new marketing_email_sends`. It:
+   - creates `marketing_email_sends` (D3) and `marketing_email_approvals` (D10, append-only, server-only), with their indexes, RLS and grants;
+   - adds `app_settings.marketing_emails_enabled` (default false);
+   - drops the `source` CHECK on `marketing_consent_events`.
+   Dry-run it, push with approval, then run `gen:types` and `types:check`.
 2. Add `MARKETING_UNSUBSCRIBE_KEYS` to `.env.local` on the server. The owner generates it, or approves my generating it.
-3. Deploy with sending off. Send each template to the owner's address through a guarded admin-only test path, and the owner approves the rendered emails.
-4. The owner turns on `marketing_emails_enabled`.
+3. Add `email.suppressed` to the Resend webhook subscription, through the API with the owner's approval, as was done for `contact.updated`.
+4. Deploy with sending off. Send each template to the owner's address through the admin test send. The owner records the approvals.
+5. The owner turns sending on in the admin page.
 
-Rollback: turn the switch off. The sends ledger is kept as history.
+Rollback: turn the switch off. The sends ledger and the approvals are kept as history.
 
 ## Open Questions
 
-- None. The database registration number (Privacy Law §17ו) is a release gate in task 7.2: the owner decides before sending is switched on.
+- None. The database registration number (Privacy Law §17ו) is a release gate: the owner records the decision in the approvals before sending can be turned on.
