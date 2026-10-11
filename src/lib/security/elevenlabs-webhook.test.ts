@@ -1,11 +1,12 @@
 import { createHmac } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { verifyElevenLabsWebhook } from './elevenlabs-webhook';
 
 const SECRET = 'wsec_test_shared_secret';
-const NOW = 1_784_500_000_000; // fixed clock (ms)
-const body = JSON.stringify({ type: 'post_call_transcription', data: { conversation_id: 'c1' } });
+const NOW = 1_784_500_000_000; // fixed clock (ms) — the SDK reads Date.now()
+const event = { type: 'post_call_transcription', data: { conversation_id: 'c1' } };
+const body = JSON.stringify(event);
 
 // Build a valid `ElevenLabs-Signature` header for a given timestamp (unix seconds).
 function sign(tSeconds: number, rawBody: string, secret = SECRET): string {
@@ -13,52 +14,65 @@ function sign(tSeconds: number, rawBody: string, secret = SECRET): string {
   return `t=${tSeconds},v0=${v0}`;
 }
 
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(NOW);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('verifyElevenLabsWebhook', () => {
   const nowSec = Math.floor(NOW / 1000);
 
-  it('accepts a correctly-signed, fresh request', () => {
-    expect(verifyElevenLabsWebhook(body, sign(nowSec, body), SECRET, NOW)).toEqual({ valid: true });
+  it('accepts a correctly-signed, fresh request and returns the parsed body', async () => {
+    expect(await verifyElevenLabsWebhook(body, sign(nowSec, body), SECRET)).toEqual({ valid: true, event });
   });
 
-  it('accepts when the header parts are in reverse order (order-independent)', () => {
+  it('accepts when the header parts are in reverse order (order-independent)', async () => {
     const v0 = createHmac('sha256', SECRET).update(`${nowSec}.${body}`).digest('hex');
-    expect(verifyElevenLabsWebhook(body, `v0=${v0},t=${nowSec}`, SECRET, NOW)).toEqual({ valid: true });
+    expect(await verifyElevenLabsWebhook(body, `v0=${v0},t=${nowSec}`, SECRET)).toEqual({ valid: true, event });
   });
 
-  it('rejects a tampered body', () => {
+  it('a signed body that is not JSON is valid, with no event', async () => {
+    const raw = 'not json';
+    expect(await verifyElevenLabsWebhook(raw, sign(nowSec, raw), SECRET)).toEqual({ valid: true, event: undefined });
+  });
+
+  it('rejects a tampered body', async () => {
     const header = sign(nowSec, body);
-    const res = verifyElevenLabsWebhook(body + 'x', header, SECRET, NOW);
-    expect(res).toEqual({ valid: false, reason: 'bad_signature' });
+    expect(await verifyElevenLabsWebhook(body + 'x', header, SECRET)).toEqual({ valid: false, reason: 'bad_signature' });
   });
 
-  it('rejects a wrong secret', () => {
-    const res = verifyElevenLabsWebhook(body, sign(nowSec, body, 'other_secret'), SECRET, NOW);
-    expect(res).toEqual({ valid: false, reason: 'bad_signature' });
-  });
-
-  it('rejects a timestamp older than the 30-minute tolerance', () => {
-    const stale = nowSec - 31 * 60;
-    expect(verifyElevenLabsWebhook(body, sign(stale, body), SECRET, NOW)).toEqual({
+  it('rejects a wrong secret', async () => {
+    expect(await verifyElevenLabsWebhook(body, sign(nowSec, body, 'other_secret'), SECRET)).toEqual({
       valid: false,
-      reason: 'expired',
+      reason: 'bad_signature',
     });
   });
 
-  it('accepts a timestamp within the 30-minute tolerance', () => {
-    const recent = nowSec - 29 * 60;
-    expect(verifyElevenLabsWebhook(body, sign(recent, body), SECRET, NOW)).toEqual({ valid: true });
+  it('rejects a timestamp older than the 30-minute tolerance', async () => {
+    const stale = nowSec - 31 * 60;
+    expect(await verifyElevenLabsWebhook(body, sign(stale, body), SECRET)).toEqual({ valid: false, reason: 'expired' });
   });
 
-  it('rejects malformed headers (missing parts, non-numeric t, null)', () => {
-    for (const h of [null, undefined, '', 'garbage', `t=${nowSec}`, 'v0=abc', `t=abc,v0=def`]) {
-      expect(verifyElevenLabsWebhook(body, h, SECRET, NOW).reason).toBe('malformed_header');
+  it('accepts a timestamp within the 30-minute tolerance', async () => {
+    const recent = nowSec - 29 * 60;
+    expect(await verifyElevenLabsWebhook(body, sign(recent, body), SECRET)).toEqual({ valid: true, event });
+  });
+
+  it('rejects a header without both parts', async () => {
+    for (const h of [null, undefined, '', 'garbage', `t=${nowSec}`, 'v0=abc']) {
+      expect(await verifyElevenLabsWebhook(body, h, SECRET)).toEqual({ valid: false, reason: 'malformed_header' });
     }
   });
 
-  it('rejects when no secret is configured', () => {
-    expect(verifyElevenLabsWebhook(body, sign(nowSec, body), null, NOW)).toEqual({
-      valid: false,
-      reason: 'no_secret',
-    });
+  it('a non-numeric timestamp is refused (the SDK reaches the digest and reports a bad signature)', async () => {
+    expect(await verifyElevenLabsWebhook(body, 't=abc,v0=def', SECRET)).toEqual({ valid: false, reason: 'bad_signature' });
+  });
+
+  it('rejects when no secret is configured', async () => {
+    expect(await verifyElevenLabsWebhook(body, sign(nowSec, body), null)).toEqual({ valid: false, reason: 'no_secret' });
   });
 });

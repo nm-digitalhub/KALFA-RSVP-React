@@ -91,11 +91,10 @@ export async function POST(req: Request) {
   // 3. HMAC over the RAW bytes (before JSON.parse). Every failure reason —
   //    no_secret (dark) / malformed_header / expired / bad_signature —
   //    collapses to one uniform 401 with an empty body (no oracle).
-  const verified = verifyElevenLabsWebhook(
+  const verified = await verifyElevenLabsWebhook(
     raw,
     req.headers.get('elevenlabs-signature'),
     process.env.ELEVENLABS_SALES_WEBHOOK,
-    Date.now(),
   );
   if (!verified.valid) return resp(401);
 
@@ -106,7 +105,9 @@ export async function POST(req: Request) {
   //    Library Removal), so unrelated event types are the common case here.
   let row;
   try {
-    row = buildElevenLabsAnalysisRow(JSON.parse(raw), EL_ANALYSIS_SALES_KIND);
+    // The SDK already parsed the verified body; a signed body that is not JSON arrives as undefined.
+    if (verified.event === undefined) return resp(200, 'ok');
+    row = buildElevenLabsAnalysisRow(verified.event, EL_ANALYSIS_SALES_KIND);
   } catch {
     return resp(200, 'ok');
   }
