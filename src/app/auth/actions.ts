@@ -174,12 +174,13 @@ export async function signup(
 
   const supabase = await createClient();
   // full_name/phone/terms_accepted go into auth user_metadata; the
-  // handle_new_user() trigger copies them into the profiles row on insert
-  // (no separate write needed). terms_accepted is only ever sent here,
-  // already validated 'on' by the schema above — the trigger stamps
-  // terms_accepted_at from its mere presence, never unconditionally (see the
-  // migration's own comment on why: an admin-created user via
-  // auth.admin.createUser() must never be recorded as having consented).
+  // handle_new_user() trigger reads them on insert (no separate write needed):
+  // full_name/phone into the profiles row, and terms_accepted — only ever sent
+  // here, already validated 'on' by the schema above — into a row of
+  // signup_terms_acceptances, from its mere presence and never
+  // unconditionally, so a user created without it (e.g. auth.admin.createUser())
+  // is never recorded as having accepted. Only that trigger writes the table;
+  // no API role can (20261011062921_move_signup_terms_acceptance.sql).
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
