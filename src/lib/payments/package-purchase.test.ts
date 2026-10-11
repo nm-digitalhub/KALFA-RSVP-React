@@ -110,7 +110,7 @@ const GOOD: SumitChargeResult = {
 };
 
 // No package name: the receipt falls back to the general line (receiptLineFor).
-const CAMPAIGN: CampaignPurchaseState = { id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, capture_status: null, charge_status: null, package_name: null };
+const CAMPAIGN: CampaignPurchaseState = { id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, package_name: null };
 const SECRETS = ['og-token-123', 'test-api-key', 'tok-reusable', '316125434'];
 
 function input(over: { campaign?: Partial<CampaignPurchaseState> } = {}): PackagePurchaseInput {
@@ -177,20 +177,6 @@ describe('purchasePackage — only a signed package campaign with a real price c
 
   it.each([null, 0, -5, Number.NaN])('package_price %s (a pay-per-result campaign, or no usable amount) → not_purchasable', async (price) => {
     expect(await purchasePackage(input({ campaign: { package_price: price } }))).toBe('not_purchasable');
-    expect(chargeSumit).not.toHaveBeenCalled();
-    expect(db.rows('payment_operations')).toHaveLength(0);
-  });
-});
-
-describe('purchasePackage — a campaign that already carries an old-style payment is not a clean package campaign', () => {
-  it.each(['pending', 'authorized', 'hold_failed', 'hold_review'])('a card hold in state %s → not_purchasable', async (capture) => {
-    expect(await purchasePackage(input({ campaign: { capture_status: capture } }))).toBe('not_purchasable');
-    expect(chargeSumit).not.toHaveBeenCalled();
-    expect(db.rows('payment_operations')).toHaveLength(0);
-  });
-
-  it.each(['pending', 'charged', 'charge_failed', 'charge_review', 'nothing_to_charge'])('a final-charge state %s → not_purchasable', async (charge) => {
-    expect(await purchasePackage(input({ campaign: { charge_status: charge } }))).toBe('not_purchasable');
     expect(chargeSumit).not.toHaveBeenCalled();
     expect(db.rows('payment_operations')).toHaveLength(0);
   });

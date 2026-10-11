@@ -37,7 +37,6 @@ export async function SetupSteps({
     event: toSetupEvent(event),
     campaign: campaign && {
       status: campaign.status,
-      capture_status: campaign.capture_status,
       package_price: campaign.package_price,
       payment,
     },

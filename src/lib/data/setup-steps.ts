@@ -32,11 +32,10 @@ export interface SetupInput {
     venue_address: string | null;
     celebrants: unknown;
   };
-  // `package_price` set = a fixed-price package campaign (the package model); null/absent = pay-per-result.
-  // `payment` = the ledger state of a package campaign (see campaignStage); absent for the other model.
+  // `package_price` = the package price agreed at approval. `payment` = the ledger state of the package (see
+  // campaignStage).
   campaign: {
     status: CampaignStatus;
-    capture_status: string | null;
     package_price?: number | null;
     payment?: { status: string } | null;
   } | null;

@@ -12,10 +12,8 @@ import { guardSalesToolRequest } from '@/lib/voximplant/agent-tool-guard';
 // actually buy, each with its one-time price and its contact quota. The list is
 // listPackageOffers() — the SAME definition the purchase flow sells from (an
 // active package that carries a quota and a price, empty while the package
-// switch is off, and a package that also carries a per-reached rate is not an
-// offer) — so the agent can never quote a package the customer cannot buy. A
-// package is recognised by its fixed price and quota, never by a per-reached
-// rate.
+// switch is off) — so the agent can never quote a package the customer cannot
+// buy.
 //
 // `price` is packages.price_with_vat read as-is: KALFA's owner is an עוסק פטור,
 // the price is final and no VAT is added, so it is never derived from another

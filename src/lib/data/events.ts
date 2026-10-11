@@ -568,7 +568,7 @@ export type { EventClosureReason };
 
 const CLOSURE_ACTIONS: Record<string, EventClosureReason> = {
   'event.closed': 'owner',
-  'event.closed_by_settlement': 'settlement',
+  'event.closed_by_settlement': 'settlement', // history: the final charge of a pay-per-result campaign
   'event.closed_by_admin': 'cancellation',
 };
 

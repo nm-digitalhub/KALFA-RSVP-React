@@ -35,7 +35,7 @@ const NOW = new Date('2026-10-07T12:00:00Z');
 const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60_000).toISOString();
 
 const input = (over: Partial<CardcomStartInput> = {}): CardcomStartInput => ({
-  campaign: { id: 'c1', event_id: 'e1', status: 'approved', package_price: 149, capture_status: null, charge_status: null, package_name: 'אישורי הגעה — וואטסאפ + שיחות AI' },
+  campaign: { id: 'c1', event_id: 'e1', status: 'approved', package_price: 149, package_name: 'אישורי הגעה — וואטסאפ + שיחות AI' },
   payer: { userId: 'u1', email: 'dana@example.com', name: 'דנה כהן' },
   mayUseTestTerminal: false,
   ...over,
@@ -86,11 +86,9 @@ describe('startCardcomPurchase: gates (all fail closed)', () => {
   });
 
   it.each([
-    ['no price (a pay-per-result campaign)', { package_price: null }],
+    ['no price (a campaign of the retired pay-per-result model)', { package_price: null }],
     ['a zero price', { package_price: 0 }],
     ['a campaign that is not approved', { status: 'draft' }],
-    ['a campaign that already carries an old-style hold', { capture_status: 'authorized' }],
-    ['a campaign that already carries a final-charge state', { charge_status: 'charged' }],
   ])('refuses %s as not purchasable', async (_label, over) => {
     const base = input();
     await expect(startCardcomPurchase({ ...base, campaign: { ...base.campaign, ...over } as never })).resolves.toEqual({ status: 'not_purchasable' });

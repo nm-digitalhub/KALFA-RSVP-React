@@ -145,8 +145,8 @@ export async function startCardcomPurchase(input: CardcomStartInput): Promise<Ca
     return { status: 'error' };
   }
 
-  // The campaign itself: signed, and carrying no old-style payment.
-  if (campaign.status !== 'approved' || campaign.capture_status != null || campaign.charge_status != null) {
+  // The campaign itself: its terms approved.
+  if (campaign.status !== 'approved') {
     return { status: 'not_purchasable' };
   }
 

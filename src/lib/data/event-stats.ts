@@ -54,8 +54,7 @@ export type EventStatsResult = {
     state: SectionState;
     id: string | null;
     status: CampaignStatus | null;
-    captureStatus: string | null;
-    // A fixed-price package campaign is funded by its payment (the ledger), not by a hold: the stage needs both.
+    // The campaign is funded by its package payment (the ledger): the stage needs both.
     packagePrice: number | null;
     paymentStatus: string | null;
     maxContacts: number | null;
@@ -198,7 +197,6 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
     state: 'empty',
     id: null,
     status: null,
-    captureStatus: null,
     packagePrice: null,
     paymentStatus: null,
     maxContacts: null,
@@ -221,7 +219,6 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
     if (c) {
       campaign.id = c.id;
       campaign.status = c.status ?? null;
-      campaign.captureStatus = c.capture_status ?? null;
       campaign.packagePrice = c.package_price ?? null;
       campaign.paymentStatus = (await packagePaymentOf(c))?.status ?? null;
       campaign.maxContacts = c.max_contacts ?? null;

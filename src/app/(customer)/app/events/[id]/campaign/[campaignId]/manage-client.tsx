@@ -45,7 +45,6 @@ type BoundAction = (
 type Campaign = {
   id: string;
   status: CampaignStatus;
-  capture_status: string | null;
   // A package campaign is funded by its payment (the ledger): its price, and the ledger state the page derived for it
   // (null for a campaign without a package, or when the ledger could not be read).
   package_price: number | null;
@@ -261,7 +260,6 @@ function CampaignStatusCard({
 }) {
   const stage = campaignStage({
     status,
-    capture_status: campaign.capture_status,
     package_price: campaign.package_price,
     payment: paymentOf(campaign),
   });

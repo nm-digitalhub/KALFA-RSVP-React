@@ -6,8 +6,9 @@ import type { BadgeVariant } from '@/components/ui/badge';
 // LEAF the worker bundle reaches (template-spec.ts → event-labels.ts), and
 // dependency-cruiser treats even a type-only import of events.ts as a path to
 // next/headers (worker-no-request-scoped-next). events.ts re-exports this type.
-// 'owner' = the owner closed it; 'settlement' = closed with the final charge;
-// 'cancellation' = closed by an admin handling a cancellation request.
+// 'owner' = the owner closed it; 'cancellation' = closed by an admin handling a
+// cancellation request; 'settlement' = closed by the final charge of a pay-per-result
+// campaign — history only: two events carry it and nothing writes it any more.
 export type EventClosureReason = 'owner' | 'settlement' | 'cancellation';
 
 // Hebrew labels for the events-domain enums. Defined as EXHAUSTIVE
@@ -62,7 +63,7 @@ export function eventStatusLabel(
 // DERIVED campaignStage below instead.
 export const CAMPAIGN_STATUS_LABELS: Record<CampaignStatus, string> = {
   draft: 'טיוטה',
-  pending_approval: 'ממתין לחתימה', // audit §4: what is actually pending is the owner's signature
+  pending_approval: 'ממתין לאישור התנאים', // audit §4: what is actually pending is the owner's approval of the package terms
   approved: 'מאושר',
   scheduled: 'מתוזמן',
   active: 'פעיל',
@@ -92,15 +93,14 @@ export const CAMPAIGN_STATUS_VARIANTS: Record<CampaignStatus, BadgeVariant> = {
 
 // --- Owner-facing campaign STAGE (audit §3) -----------------------------------
 // The lifecycle enum alone cannot tell the owner what to do next: `approved`
-// means "signed" BEFORE the card hold and "ready to start" AFTER it. The stage
-// is derived from status + capture_status (plus the ledger payment for a package
-// campaign) — a pure function, no new enum value, no migration — and is the
-// ONLY campaign state owner screens show.
+// means "terms approved" BEFORE the package is paid and "ready to start" AFTER it.
+// The stage is derived from status + the ledger payment — a pure function, no new
+// enum value, no migration — and is the ONLY campaign state owner screens show.
 export type CampaignStage =
   | 'not_set' // no campaign yet
-  | 'awaiting_signature' // created, agreement not signed
-  | 'awaiting_payment' // signed, no confirmed card hold or collected package payment yet
-  | 'awaiting_activation' // funded (card hold or paid package); activation did not happen (auto-activation refused / pre-change campaign)
+  | 'awaiting_terms' // created, the package terms not approved yet
+  | 'awaiting_payment' // terms approved, the package not paid yet
+  | 'awaiting_activation' // the package is paid; activation did not happen (auto-activation refused)
   | 'active'
   | 'paused'
   | 'closed' // closed / awaiting_invoice / billed / paid
@@ -108,7 +108,7 @@ export type CampaignStage =
 
 export const CAMPAIGN_STAGE_LABELS: Record<CampaignStage, string> = {
   not_set: 'טרם הוגדר',
-  awaiting_signature: 'ממתין לחתימה',
+  awaiting_terms: 'ממתין לאישור התנאים',
   awaiting_payment: 'ממתין לתשלום',
   awaiting_activation: 'ממתין להפעלה',
   active: 'פעיל',
@@ -119,7 +119,7 @@ export const CAMPAIGN_STAGE_LABELS: Record<CampaignStage, string> = {
 
 export const CAMPAIGN_STAGE_VARIANTS: Record<CampaignStage, BadgeVariant> = {
   not_set: 'neutral',
-  awaiting_signature: 'warning',
+  awaiting_terms: 'warning',
   awaiting_payment: 'warning',
   awaiting_activation: 'warning',
   active: 'success',
@@ -130,17 +130,14 @@ export const CAMPAIGN_STAGE_VARIANTS: Record<CampaignStage, BadgeVariant> = {
 
 export type CampaignStageInput = {
   status: CampaignStatus;
-  capture_status: string | null;
-  // `package_price` set = a fixed-price package campaign, funded by its payment (the ledger) and not by a card hold.
+  // The package price agreed at approval; a campaign without one has nothing to pay and is never funded.
   package_price?: number | null;
-  // The ledger-derived payment state of a package campaign (status only, so this leaf module imports nothing).
+  // The ledger-derived payment state of the package (status only, so this leaf module imports nothing).
   payment?: { status: string } | null;
 };
 
-// Funded = ready to start. Pay-per-result: a confirmed card hold (the only `authorized` is a confirmed hold, see the
-// capture_status vocabulary in campaigns.ts). Package: paid in full according to the ledger.
+// Funded = ready to start: the package is paid in full according to the ledger.
 function isFunded(c: CampaignStageInput): boolean {
-  if (c.capture_status === 'authorized') return true;
   return (c.package_price ?? null) != null && c.payment?.status === 'collected';
 }
 
@@ -149,11 +146,9 @@ export function campaignStage(campaign: CampaignStageInput | null): CampaignStag
   switch (campaign.status) {
     case 'draft':
     case 'pending_approval':
-      return 'awaiting_signature';
+      return 'awaiting_terms';
     case 'approved':
     case 'scheduled':
-      // capture_status vocabulary (campaigns.ts): null | pending | authorized |
-      // hold_failed | hold_review — only `authorized` is a confirmed hold.
       return isFunded(campaign) ? 'awaiting_activation' : 'awaiting_payment';
     case 'active':
       return 'active';

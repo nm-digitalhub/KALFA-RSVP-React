@@ -172,9 +172,8 @@ export async function purchasePackage(input: PackagePurchaseInput): Promise<Purc
     return 'error';
   }
 
-  // The campaign itself: signed, and carrying no old-style payment. A card hold or a final-charge state on the same
-  // row means two money mechanisms on one campaign, and the ledger cannot see the old one.
-  if (campaign.status !== 'approved' || campaign.capture_status != null || campaign.charge_status != null) {
+  // The campaign itself: its terms approved.
+  if (campaign.status !== 'approved') {
     return 'not_purchasable';
   }
 

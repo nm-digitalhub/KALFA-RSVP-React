@@ -20,11 +20,11 @@ import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
 import { isPackageAgreementVersion } from '@/lib/agreements/template';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
 import type { Enums, Json, Tables, TablesUpdate } from '@/lib/supabase/types';
-// Campaign = "campaign approval for an event" (outcome-billing). The commercial
-// terms are copied from the service template (or the chosen package offer), never
-// accepted from the client; the charge ceiling is computed server-side. Reads are
-// scoped via RLS (can_access_event); writes go through the service-role admin
-// client after an explicit ownership check (no client-side billing writes, §18).
+// Campaign = the RSVP outreach of one event, sold as a fixed-price package. The
+// commercial terms are copied from the chosen package offer, never accepted from
+// the client. Reads are scoped via RLS (can_access_event); writes go through the
+// service-role admin client after an explicit ownership check (no client-side
+// money writes, §18).
 
 type CampaignRow = Tables<'campaigns'>;
 type Channel = Enums<'campaign_channel'>;
@@ -34,28 +34,15 @@ export type OwnerCampaign = Pick<
   | 'id'
   | 'event_id'
   | 'status'
-  | 'price_per_reached'
   | 'max_contacts'
-  | 'max_charge_ceiling'
-  | 'base_price'
-  | 'included_reached'
   | 'tos_version'
   | 'allowed_channels'
   | 'start_at'
   | 'close_at'
   | 'approved_at'
-  | 'final_charge_amount'
-  | 'credit_applied'
-  | 'capture_status'
-  | 'charge_status'
   | 'created_at'
-  // The REAL J5 hold amount, sized to `covered` (min(max_contacts,
-  // reasonable_coverage_contacts)) — NOT the same as max_charge_ceiling when
-  // max_contacts exceeds the reasonable-coverage cap (300 today). Needed to
-  // show what was actually authorized, not the (possibly larger) ceiling.
-  | 'auth_amount'
-  // Fixed package price agreed at approval (NULL = a pay-per-result campaign). The payment page branches on it:
-  // a package campaign is paid by one purchase, never by a card hold.
+  // Fixed package price agreed at approval, paid by one purchase. NULL only on a campaign of the retired
+  // pay-per-result model, which cannot be paid or started.
   | 'package_price'
   // How many contacts the campaign may approach (the fixed-price package model); NULL = no quota.
   | 'contact_quota'
@@ -65,7 +52,7 @@ export type OwnerCampaign = Pick<
 // selects the SAME shape — an admin viewing a campaign must see exactly what
 // the owner sees, and a second column list here would drift.
 export const CAMPAIGN_COLUMNS =
-  'id, event_id, status, price_per_reached, max_contacts, max_charge_ceiling, base_price, included_reached, tos_version, allowed_channels, start_at, close_at, approved_at, final_charge_amount, credit_applied, capture_status, charge_status, created_at, auth_amount, package_price, contact_quota';
+  'id, event_id, status, max_contacts, tos_version, allowed_channels, start_at, close_at, approved_at, created_at, package_price, contact_quota';
 
 // R9 refusal, in the owner's vocabulary (audit §2): the event step is
 // "אישור פרטי האירוע", never "פרסום". Exported so the console status route can
@@ -84,7 +71,7 @@ export type OutreachTouchpoint = {
 };
 
 // The fixed-price package catalogue (docs/superpowers/plans/2026-10-04-package-payment-plan.md, P-F): active packages
-// that carry a contact quota. A legacy row that still carries a per-reached price is not an offer.
+// that carry a contact quota (the packages action refuses a per-reached price, so no package carries one).
 //
 // The whole catalogue is behind the package switch: while it is off this is empty without a read, so nothing can be
 // offered, and createCampaign below cannot snapshot one. Fail-closed like every money switch.
@@ -109,7 +96,6 @@ export async function listPackageOffers(): Promise<PackageOffer[]> {
     .select('id, name, price_with_vat, contact_quota, description, includes, channels, outreach_schedule')
     .eq('active', true)
     .not('contact_quota', 'is', null)
-    .is('price_per_reached', null)
     .order('sort_order', { ascending: true });
   if (error) throw new Error('טעינת החבילות נכשלה');
   return (data ?? [])
@@ -311,7 +297,7 @@ export async function getCampaignStageForEvent(
   if (allowed !== true) return null;
   const { data, error } = await supabase
     .from('campaigns')
-    .select('id, status, capture_status, package_price')
+    .select('id, status, package_price')
     .eq('event_id', eventId)
     .neq('status', 'cancelled')
     .order('created_at', { ascending: false })
@@ -399,13 +385,8 @@ export async function getCampaignRef(campaignId: string): Promise<CampaignRef | 
 
 // The package purchase's view of a campaign: its status and the fixed price agreed at approval. The price is read here,
 // on the server, and is the ONLY source of the amount charged — the browser submits nothing but a card token.
-// `package_price` NULL means a pay-per-result campaign, which the purchase route must refuse. The two legacy payment
-// states are read so the purchase can refuse a campaign that already carries an old-style hold or final charge: two
-// money mechanisms on one campaign is never right.
-export type CampaignPurchaseState = Pick<
-  CampaignRow,
-  'id' | 'event_id' | 'status' | 'package_price' | 'capture_status' | 'charge_status'
-> & {
+// `package_price` NULL means a campaign of the retired pay-per-result model, which the purchase route must refuse.
+export type CampaignPurchaseState = Pick<CampaignRow, 'id' | 'event_id' | 'status' | 'package_price'> & {
   /** The name of the package the campaign was created from (campaigns.template_id → packages): the receipt line. */
   package_name: string | null;
 };
@@ -417,7 +398,7 @@ export async function getCampaignForPurchase(
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('campaigns')
-    .select('id, event_id, status, package_price, capture_status, charge_status, package:packages(name)')
+    .select('id, event_id, status, package_price, package:packages(name)')
     .eq('id', campaignId)
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
@@ -799,10 +780,8 @@ export async function updateThankyouSchedule(
   }
 }
 
-// Close the campaign (no new outreach/billing after this). Computing the final
-// charge and capturing the held card is a separate B4 step (needs billed_results).
-// Wind-down: platform-admin only. NOT opened to the console — closing ends the
-// campaign and leads into the close-charge flow, which stays owner/admin.
+// Close the campaign (no new outreach after this; the package was paid at purchase, so closing moves no money).
+// Wind-down: platform-admin only. NOT opened to the console — closing ends the campaign, which stays owner/admin.
 export async function closeCampaign(campaignId: string): Promise<void> {
   await transitionCampaignStatus(
     campaignId,

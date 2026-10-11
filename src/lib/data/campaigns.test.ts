@@ -94,7 +94,7 @@ import {
   PACKAGE_NOT_PAID_ERROR,
   PACKAGE_PAYMENT_UNVERIFIED_ERROR,
 } from '@/lib/data/package-activation-errors';
-import { getPackagePaymentState } from '@/lib/payments/package-paid';
+import { getPackagePaymentState, packagePaymentOf } from '@/lib/payments/package-paid';
 
 function adminWith<T>(result: QueryResult<T>) {
   const { client, builder } = createMockSupabase<T>(result);
@@ -271,7 +271,7 @@ describe('createCampaign — celebrants gate (בעלי השמחה)', () => {
 describe('getCampaignForPurchase', () => {
   it('selects only what the package purchase needs, via the admin client', async () => {
     const { client, builder } = adminWith({
-      data: { id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, capture_status: null, charge_status: null, package: { name: 'אישורי הגעה — וואטסאפ + שיחות AI' } },
+      data: { id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, package: { name: 'אישורי הגעה — וואטסאפ + שיחות AI' } },
       error: null,
     });
 
@@ -279,9 +279,9 @@ describe('getCampaignForPurchase', () => {
 
     expect(client.from).toHaveBeenCalledWith('campaigns');
     // The package the campaign was created from (template_id → packages): its name is the receipt line.
-    expect(builder.select).toHaveBeenCalledWith('id, event_id, status, package_price, capture_status, charge_status, package:packages(name)');
+    expect(builder.select).toHaveBeenCalledWith('id, event_id, status, package_price, package:packages(name)');
     expect(builder.eq).toHaveBeenCalledWith('id', 'c1');
-    expect(r).toEqual({ id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, capture_status: null, charge_status: null, package_name: 'אישורי הגעה — וואטסאפ + שיחות AI' });
+    expect(r).toEqual({ id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, package_name: 'אישורי הגעה — וואטסאפ + שיחות AI' });
   });
 
   it('returns null for a campaign that does not exist', async () => {
@@ -896,12 +896,13 @@ describe('getCampaignStageForEvent', () => {
   });
 
   it('derives the stage rather than returning the raw status', async () => {
-    // approved + an authorized hold is "ממתין להפעלה", not "מאושר".
+    // approved + the package paid is "ממתין להפעלה", not "מאושר".
     const { client } = serverWith({
-      data: { status: 'approved', capture_status: 'authorized' },
+      data: { id: 'c1', status: 'approved', package_price: 150 },
       error: null,
     });
     client.rpc.mockResolvedValue({ data: true, error: null });
+    vi.mocked(packagePaymentOf).mockResolvedValueOnce({ status: 'collected', collected: 150, credit: 0, committed: 0 });
 
     expect(await getCampaignStageForEvent('e1')).toBe('awaiting_activation');
   });
@@ -949,7 +950,7 @@ describe('listPackageOffers — the catalogue of fixed-price packages', () => {
     expect(client.from).not.toHaveBeenCalled();
   });
 
-  it('with the switch on, returns only active quota packages that carry no per-reached price', async () => {
+  it('with the switch on, returns only active packages that carry a quota', async () => {
     const { client, builder } = adminWith<unknown>({ data: [packageRow()], error: null });
     vi.mocked(getPackageModelEnabled).mockResolvedValueOnce(true);
 
@@ -958,7 +959,6 @@ describe('listPackageOffers — the catalogue of fixed-price packages', () => {
     expect(client.from).toHaveBeenCalledWith('packages');
     expect(builder.eq).toHaveBeenCalledWith('active', true);
     expect(builder.not).toHaveBeenCalledWith('contact_quota', 'is', null);
-    expect(builder.is).toHaveBeenCalledWith('price_per_reached', null);
     expect(offers).toEqual([
       {
         id: 'pkg-fixed',
