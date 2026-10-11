@@ -100,14 +100,15 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
     - created ≤ 14 days ago;
     - not past;
     - setup not finished (`live` step not done);
-    - the latest **owner setup action** on it is ≥ 24 hours old.
-    The last setup progress is the latest of these recorded times (design D12):
-    - `events.created_at`;
-    - the newest `signed_agreements.signed_at` for the event (terms approved or agreement signed, server-written). `campaigns.approved_at` was checked as an alternative on 11.10.2026 and is not added. `approveCampaign` (`campaigns.ts:554`) writes it once, guarded by `status = 'pending_approval'`, and it is called only from `recordSignedAgreement` and `recordPackageApproval` (`agreements.ts:324`, `:457`), right after the agreement row. In the live data it trails `signed_at` by under one second in all 4 approved campaigns. So it carries the same moment, and one source is enough. Both tables have RLS on with no customer write policy (`campaigns`: SELECT only; `signed_agreements`: no policy), so a customer cannot change either;
-    - the newest `payment_operations.recorded_at` for the event's campaign (a payment opened: `startCardcomPurchase` writes a pending operation row first). The table has no `created_at`; `recorded_at` is "when we wrote it" and a trigger forbids changing it (`20261004105957_payment_operations_expand.sql:201`), checked against the live schema on 11.10.2026;
-    - the newest setup-action row in `activity_log` for the event: `event.updated`, `event.setup_confirmed`, `campaign.package_chosen`, and the three added in D12.
-    `events.updated_at` and `campaigns.updated_at` are not used, because background writes move them. `eligible_since` is the last progress plus 24 hours. The email names the event and the label of the current step from `computeSetupSteps`.
-    The audit rows are best-effort (`src/lib/data/activity.ts`), but they are one source of four, and three of those are server-written tables. If no source has a time at all (it cannot happen while `events.created_at` exists), the definition skips the event with `skip_reason = 'no_setup_record'` and never infers that the owner stopped.
+    - the last setup progress (below) is ≥ 24 hours old.
+    The last setup progress is the latest of these times. Every one is written by the server, and a customer cannot change it (RLS on, no customer write policy, checked live on 11.10.2026):
+    - `events.created_at`: the event was created;
+    - `campaigns.created_at`: the campaign row was created, which happens when a package is chosen (`choosePackageAction` → `createCampaign`). Campaign writes go through the service-role client, and customers have SELECT only;
+    - the newest `signed_agreements.signed_at` for the event: terms approved or agreement signed. `campaigns.approved_at` was checked as an alternative and is not added. `approveCampaign` (`campaigns.ts:554`) writes it once, guarded by `status = 'pending_approval'`, and only `recordSignedAgreement`/`recordPackageApproval` call it (`agreements.ts:324`, `:457`), right after the agreement row. In all 4 approved campaigns it trails `signed_at` by under one second;
+    - the newest `payment_operations.recorded_at` for the event, **only** for `kind in ('package_purchase','authorize')` and `source = 'app'`: a purchase or card hold opened by the owner in the setup flow. The live table also holds `charge`, `refund` and `release` rows and `provider_sync`/`manual_backfill` sources. These are background or post-setup money, and they would otherwise push the reminder back. `recorded_at` is the write time, and a trigger keeps it unchanged (`20261004105957_payment_operations_expand.sql:201`). The table has no `created_at`.
+    **`activity_log` is not a timing source.** A signed-in user holds INSERT on every column, including `action` and `created_at` (column privileges, checked live). Even with the D12 policy, an owner could add a fabricated action and time to their own event. It stays the audit history and never decides when a reminder goes out.
+    `events.updated_at` and `campaigns.updated_at` are not used either, because background writes move them. Edits to event details therefore do not delay the reminder, and that is accepted: no server-written time records them.
+    `eligible_since` is the last progress plus 24 hours. The email names the event and the label of the current step from `computeSetupSteps`.
   - **how_it_works:**
     - the customer's `welcome` row is `accepted` or `delivered`;
     - its start time is ≥ 3 days ago. The start time is `handed_off_at`, or, when the send call never returned and a later event resolved the row, `provider_accepted_at`. That is the `created_at` of the first `email.sent` or `email.delivered` event for it. A time is never invented;
@@ -132,7 +133,19 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
   - *Source.* resend.com/docs/llms-full.txt (read 11.10.2026): the `email.sent`, `email.delivered`, `email.bounced`, `email.failed` and `email.suppressed` payload examples all carry `data.tags` as an object keyed by tag name. A tag name and value may contain only ASCII letters, digits, `_` and `-`, up to 256 characters, so `mkt_send` and a UUID row id are valid.
   - *Fallback.* An event with no `mkt_send` tag is matched by `data.email_id` against `provider_message_id`. If neither matches, the event is a non-marketing email and is left alone. This means an event that arrives before `provider_message_id` was saved, or after a transport failure left the row `unknown`, still finds its row.
 - *Order is not guaranteed.* Resend's FAQ says delivery is at-least-once and "delivery order is not guaranteed", and recommends sorting by the payload's `created_at` and deduping on `svix-id`. That is what this design does.
-- *Monotonic and atomic.* An event is applied with one conditional UPDATE. The `where` clause requires that its `created_at` is newer than `provider_status_at` (or that one is null) and that the row's current status ranks below the new one (`claimed`/`unknown` < `accepted` < `delivered`/`failed`). So an older event processed late changes nothing, a row never moves backwards, and two concurrent writers (the sweep's own UPDATE in D6 and the drain) cannot overwrite each other. A read followed by a separate write is not used. `provider_accepted_at` is set only when it is null. Redelivery is already deduped by the inbox's `svix-id` key.
+- *Explicit transitions, separate from data completion.* A provider event never jumps a status by rank. It applies only along these edges:
+
+  | from | event | to |
+  |---|---|---|
+  | `claimed`, `unknown` | `email.sent` | `accepted` |
+  | `claimed`, `unknown`, `accepted` | `email.delivered` | `delivered` |
+  | `claimed`, `unknown`, `accepted`, `delivered` | `email.bounced`, `email.failed`, `email.suppressed` | `failed` |
+
+  A bounce can follow a delivery, so `delivered` → `failed` is allowed. Nothing leaves `failed` or `skipped`, and `delivery_delayed` changes no status.
+  - *Atomic.* Each edge is one UPDATE whose `where` names the allowed `from` set, and also requires the event's `created_at` to be newer than `provider_status_at` (or that one to be null). An event older than the last one applied changes no status.
+  - *Data completion is separate.* `provider_message_id` (from `data.email_id`) and `provider_accepted_at` (the first `email.sent`/`delivered` time) are filled by a second UPDATE `where <column> is null`, whatever the status or the event's age. A late or same-status event still completes missing data and never overwrites it.
+  - *The sweep's own writes* (D6) are the edges `claimed` → `accepted` | `failed` | `unknown`, written the same way. Neither writer reads and then writes.
+  - *Duplicates.* Redelivery is already deduped by the inbox's `svix-id` key.
 - *Who it touches.* Non-marketing mail is untouched, since it has no tag.
 - *Unknown outcome.* A row in `unknown`, or in `claimed` for more than 15 minutes, is shown as unknown outcome until an event resolves it.
 
@@ -175,33 +188,31 @@ Motivation: proposal.md - Why. Facts measured on 11.10.2026:
 - its plain-language condition and stop rules (the admin's copy);
 - `selectDue(ctx)`, a read-only query that returns candidates with `eligible_since`;
 - `check(customer)`, the send-time gate, which returns `eligible` or a `skip_reason`;
-- the setup-action list (reminder only);
+- the progress sources and the payment kind/source filter (reminder only);
 - its render function (D8).
 
 The sweep, the admin forecast, the recipient eligibility reason and the test send all use these, so nothing is listed or worded twice.
 
 **D12. Activity log: the missing setup entries, and only real access may write.**
 - *Measured 11.10.2026.* These setup steps write an `activity_log` row: `event.created`, `event.updated`, `event.setup_confirmed`, `campaign.package_chosen`, `campaign.activated`, and `campaign.package_purchased` (written by the CardCom webhook path with `user_id = null`). These do not: approving the package terms (`approvePackageTermsAction` → `recordPackageApproval`), signing the agreement (`signAgreementAction` → `recordSignedAgreement`), and opening the payment page (`startCardcomPurchase`). In the live data all 5 events have `event.created`, and no setup row has a user other than the event owner.
-- *Add three entries.* Each is written after the step succeeded, through the existing `logActivity` (session user) with ids only in `meta`:
+- *Add three entries,* as audit history only (not a timing source, D6). Each is written after the step succeeded, with ids only in `meta`:
   - `campaign.terms_approved`, after `recordPackageApproval` succeeds;
   - `campaign.agreement_signed`, after `recordSignedAgreement` succeeds;
   - `campaign.payment_started`, after `startCardcomPurchase` creates the session.
-  They are audit and progress signals only. The reminder's authoritative times for the same steps come from `signed_agreements` and `payment_operations` (D6), so a lost audit row does not hide progress.
-- *Close the write hole.* `activity_log` policy `al_owner_insert` checks only `user_id = auth.uid()`. Any signed-in customer can therefore insert a row, such as `event.updated`, for an event they have no access to (measured: the policy's WITH CHECK). The new policy WITH CHECK is `user_id = (select auth.uid()) and (event_id is null or public.can_access_event(event_id) or public.is_platform_staff())`. That covers:
-  - customers and org members on their own events (`can_access_event`: owner, or org permission);
-  - staff `admin.*` rows on customer events (`is_platform_staff`);
-  - rows without an event.
-  Service-role writes (webhooks, the worker, the CardCom path) bypass RLS and are unchanged.
-- *Before pushing.* A read-only query lists existing rows the new rule would have refused, which must be none or explained. The `logActivity` callers that write with a session and an `event_id` are listed and each one is checked against the rule. A refused insert only logs an error (best-effort), so a missed caller would lose its audit row silently: the test suite asserts the policy for owner, org member, staff and stranger.
+- *Close the write hole.* `activity_log` policy `al_owner_insert` checks only `user_id = auth.uid()`. Any signed-in customer can therefore insert a row, such as `event.updated`, for an event they have no access to (measured: the policy's WITH CHECK). All 5 live events belong to an organization, and 3 memberships belong to users who do not own the event. So the rule must handle org roles, and view-only access is not enough.
+  - `can_access_event(event_id)` defaults to `events`/`view` (live definition). The new WITH CHECK is `user_id = (select auth.uid()) and (event_id is null or <writer may change this event> or public.is_platform_staff())`.
+  - *What "may change" means.* The event owner, or an org member holding any modifying permission on the event's resources: `can_access_event(event_id, r, 'edit')` for `r` in `events`, `guests`, `contacts`, `campaigns`, or `campaigns`/`manage`.
+  - *Why.* A view-only member does not change an event, so they do not write its history. The app's own logging always follows a change the same user was allowed to make.
+- *Not made authoritative.* The policy stops writes to someone else's event. It does not prove that an owner's row on their own event describes something that happened, which is why D6 does not use it for timing.
+- *Before pushing.* A read-only query lists existing rows the new rule would have refused (measured 0 on 11.10.2026 for the `can_access_event` form; to be re-run for the edit form). Every `logActivity` caller that passes an `eventId` under a session is listed, with the permission its action already required. A refused insert only logs an error (best-effort), so a missed caller would lose its audit row silently. Policy tests cover owner, an org editor, a view-only org member, staff and a stranger.
 
 ## Risks / Trade-offs
 
 - [A Shabbat or holiday computed wrong could send at a forbidden time.] → The pure window function is tested against fixed dates (a Friday 12:30, a Saturday, 2027 Yom HaZikaron), and the hours reuse the outreach policy that is already in production.
-- [The reminder reads setup state that the in-flight change `separate-event-setup-from-management` is reshaping.] → The reminder uses only `computeSetupSteps` and the `live` step, not step names, and its test builds the input through the same function. The setup-action list lives in one definition and is updated with that change.
-- [An owner action missing from the setup-action list leaves a reminder early.] → The list is tested against the actions the setup flow actually logs.
+- [The reminder reads setup state that the in-flight change `separate-event-setup-from-management` is reshaping.] → The reminder uses only `computeSetupSteps` and the `live` step, not step names, and its test builds the input through the same function. 
 - [A signing key could leak.] → Anyone holding it could unsubscribe any customer, but nothing more: the action only withdraws. Rotation adds a key; old links keep working.
 - [A transport failure or a non-definitive Resend error after hand-off leaves the outcome open.] → The row is `unknown`, never `failed` and never retried. A later tagged `email.sent` or `email.delivered` resolves it and records `provider_accepted_at`.
-- [Setup actions are logged best-effort.] → The reminder reads three server-written sources besides the audit log (D6, D12), so a lost audit row does not hide progress. No record at all means no reminder (`no_setup_record`).
+- [Setup timing ignores event-detail edits.] → Only server-written times count (D6). An owner who edits details but takes no other step gets the reminder 24 hours after their last server-recorded step. A missed nudge is acceptable; a forgeable timer is not.
 - [Tightening `al_owner_insert` could refuse a legitimate audit row we did not foresee.] → Before the push, existing rows are checked against the new rule and every session caller with an `event_id` is listed. Policy tests cover owner, org member, staff and stranger. A refused row is logged with its action name, so a miss is visible in the server log.
 - [Low volume: Gmail bulk-sender rules (5,000 a day) do not apply yet.] → One-click headers are included anyway, because Yahoo requires them regardless of volume.
 
@@ -211,7 +222,7 @@ The sweep, the admin forecast, the recipient eligibility reason and the test sen
    - creates `marketing_email_sends` (D3) and `marketing_email_approvals` (D10, append-only, server-only), with their indexes, RLS and grants;
    - adds `app_settings.marketing_emails_enabled` (default false);
    - drops the `source` CHECK on `marketing_consent_events`.
-   A separate migration, `supabase migration new activity_log_insert_scope`, replaces `al_owner_insert` (D12). It is pushed only with approval, after the read-only check of existing rows.
+   A separate migration, `supabase migration new activity_log_insert_scope`, replaces `al_owner_insert` (D12). So this change has two migrations, and each dry-run lists exactly the migrations not yet pushed. It is pushed only with approval, after the read-only check of existing rows.
    Dry-run it, push with approval, then run `gen:types` and `types:check`.
 2. Add `MARKETING_UNSUBSCRIBE_KEYS` to `.env.local` on the server. The owner generates it, or approves my generating it.
 3. Add `email.suppressed` to the Resend webhook subscription, through the API with the owner's approval, as was done for `contact.updated`.

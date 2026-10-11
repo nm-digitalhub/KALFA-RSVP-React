@@ -18,10 +18,14 @@ Approving the package terms, signing the agreement and opening the payment page 
 - **THEN** no `campaign.payment_started` entry is recorded
 
 ### Requirement: Only users with access may write an event's history
-A signed-in user SHALL be able to add an activity-log entry for an event only when they own it, have access to it through their organization, or are platform staff; entries without an event SHALL remain allowed for the user themselves.
+A signed-in user SHALL be able to add an activity-log entry for an event only when they own it, hold a permission through their organization that lets them change the event (edit on events, guests, contacts or campaigns, or manage on campaigns), or are platform staff; view-only access SHALL NOT be enough. Entries without an event SHALL remain allowed for the user themselves.
 
 #### Scenario: A stranger writes to another owner's event
 - **WHEN** a signed-in customer inserts an entry for an event they have no access to
+- **THEN** the database refuses it
+
+#### Scenario: A view-only organization member
+- **WHEN** an organization member who may only view the event inserts an entry for it
 - **THEN** the database refuses it
 
 #### Scenario: Staff action on a customer event

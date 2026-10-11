@@ -24,9 +24,9 @@ Customers can now consent to KALFA marketing email (change `marketing-email-cons
   - the three automatic emails, each with a preview, its condition, its stop rules, its version and a test send to the staff member's own address;
   - recipients, with consent, confirmation, sync and eligibility, and no way to grant consent for a customer;
   - send history, with explicit states and a timeline, and no resend;
-  - settings and readiness, where the owner enables or pauses sending (recorded in the activity log).
+  - settings and readiness, where the owner turns sending on or off (recorded in the activity log).
   Templates stay in code. A content editor is a separate future change.
-- **Activity log fixes** (design D12). Three setup steps write no audit entry today: approving the package terms, signing the agreement and opening the payment page. They gain one. The `al_owner_insert` policy lets any signed-in user write an entry for any event, and it is narrowed to events the user can access (or staff). The setup reminder counts progress from server-written records (`signed_agreements`, `payment_operations`, `events.created_at`) as well as the audit log.
+- **Activity log fixes** (design D12). Three setup steps write no audit entry today: approving the package terms, signing the agreement and opening the payment page. They gain one. The `al_owner_insert` policy lets any signed-in user write an entry for any event, and it is narrowed to events the user can access (or staff). The setup reminder counts progress only from server-written records (`events.created_at`, `campaigns.created_at`, `signed_agreements.signed_at`, filtered `payment_operations.recorded_at`); the audit log is history, not a timer, because a customer can write its `created_at`.
 - **A separate switch.** `app_settings.marketing_emails_enabled` defaults to off, apart from `marketing_consent_enabled`, so the owner can collect consent without sending.
 
 ## Capabilities

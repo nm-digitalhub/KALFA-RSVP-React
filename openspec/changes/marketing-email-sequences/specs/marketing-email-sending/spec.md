@@ -43,11 +43,11 @@ A customer who granted consent at signup SHALL receive the welcome email once, a
 A consenting customer whose event setup is not finished SHALL receive one reminder per event once 24 hours pass without setup progress, naming the event and its current setup step. No reminder SHALL be sent for an event created more than 14 days ago, a past event, or an event whose setup is finished.
 
 #### Scenario: Setup stalled for a day
-- **WHEN** a consenting customer's event has had no owner setup action for 24 hours and its setup is not finished
+- **WHEN** a consenting customer's event has had no recorded setup progress for 24 hours and its setup is not finished
 - **THEN** one reminder is sent for that event, naming its current step
 
 #### Scenario: Only a background update since the last setup action
-- **WHEN** the event's last owner setup action was 30 hours ago and a background process updated the event 2 hours ago
+- **WHEN** the event's last recorded setup progress was 30 hours ago and a background process updated the event 2 hours ago
 - **THEN** the reminder is due
 
 #### Scenario: Setup finished before the reminder
@@ -105,6 +105,14 @@ A provider event SHALL update a send only if it is newer than the last event app
 - **WHEN** a delivered event was applied and an older accepted-type event is processed afterwards
 - **THEN** the send stays delivered
 
+#### Scenario: A bounce after delivery
+- **WHEN** a send is delivered and the provider later reports a bounce for it
+- **THEN** the send becomes failed
+
+#### Scenario: Missing provider data filled late
+- **WHEN** a send is already delivered and a late sent event carries the provider id it lacks
+- **THEN** the provider id is filled and the status stays delivered
+
 ### Requirement: Marketing email goes through Resend only
 Marketing email SHALL be sent only while the configured email provider is Resend.
 
@@ -113,7 +121,7 @@ Marketing email SHALL be sent only while the configured email provider is Resend
 - **THEN** no marketing email is sent and the readiness check shows sending blocked
 
 ### Requirement: Setup progress comes from records the customer cannot forge
-The time of the last setup progress SHALL be the latest of the event's creation, a terms approval or agreement signature, an opened payment, and a recorded setup action; background updates SHALL NOT count, and when no source has a time no reminder SHALL be sent.
+The time of the last setup progress SHALL be the latest of the event's creation, the campaign's creation, a terms approval or agreement signature, and a purchase or card hold opened in the setup flow, all from server-written records. Activity-log entries, background updates, refunds, releases and provider syncs SHALL NOT count.
 
 #### Scenario: Terms approved, payment not made
 - **WHEN** the owner approved the package terms 10 hours ago and paid nothing
@@ -122,6 +130,14 @@ The time of the last setup progress SHALL be the latest of the event's creation,
 #### Scenario: Audit row lost
 - **WHEN** a setup step succeeded but its audit row failed to write
 - **THEN** the reminder still counts the step from its server-written record
+
+#### Scenario: A forged activity entry
+- **WHEN** an owner inserts an activity-log entry with a recent time on their own event
+- **THEN** the reminder's timing does not change
+
+#### Scenario: A refund after setup started
+- **WHEN** a refund row is recorded for the event's campaign
+- **THEN** the reminder's timing does not change
 
 ### Requirement: A failing readiness gate stops sending while switched on
 Sending SHALL stop whenever a technical readiness gate fails or cannot be verified, even while the sending switch is on, and a template whose current version is not approved SHALL not be sent.
