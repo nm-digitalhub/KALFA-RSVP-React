@@ -193,7 +193,7 @@ A cleanup job removes a PDF only after it has confirmed that no agreement row po
 
 **D13. Staff assignment** is gated on `manage_billing` and audited with `logActivity`. It needs no phone claim, because staff name the account.
 
-**D14. Offers are defined in a staff-managed table** (owner, 12.10.2026 — "כן, מסך ניהול"). An offers table holds, per offer: kind, value, the packages it allows, validity, and who may assign it. It is managed in the admin screens (`ui/Offers.dc.html`, `ui/OfferEdit.dc.html`) under `manage_billing`, like the packages. The server computes every discount, option and final price from this table only; the agent, the browser and the code carry no fixed discount values. Nothing can be assigned until an offer exists. Fixed values in code were rejected: changing an offer must not require a deploy.
+**D14. Offers are defined in a staff-managed table** (owner, 12.10.2026 — "כן, מסך ניהול"). An offers table holds, per offer: kind (a percentage or a fixed amount — owner, 12.10.2026, ש1), value, the packages it allows, validity (a number of days from the moment the benefit is given — owner, 12.10.2026, ש2), and who may assign it. It is managed in the admin screens (`ui/Offers.dc.html`, `ui/OfferEdit.dc.html`) under `manage_billing`, like the packages. The server computes every discount, option and final price from this table only; the agent, the browser and the code carry no fixed discount values. Nothing can be assigned until an offer exists. Fixed values in code were rejected: changing an offer must not require a deploy.
 
 **D15. Expiry: payment is the deciding step** (owner, 12.10.2026 — "כן, נכון", after rejecting approval-as-deadline: it would guarantee a price indefinitely). 
 - How long a benefit lasts is a per-offer field in the offers table (D14), frozen onto the assignment (D3). It is never a constant in code.
@@ -206,19 +206,22 @@ A cleanup job removes a PDF only after it has confirmed that no agreement row po
 **D16. One active benefit per phone** (owner, 12.10.2026 — "כן, מאשר").
 - While a phone has an assignment that is not expired, consumed or void, any further call for that phone returns **that** assignment, with its existing options and expiry. No new assignment, no renewed validity.
 - Once it is consumed, void or expired, a later call may create a new assignment.
+- The limit binds the calls, not staff: staff may assign another benefit to an account that already holds one (owner, 12.10.2026, ש3); D18 then applies the best price, and an equal-value duplicate is voided (D18).
 - What the agent may give comes only from the offers table — D14's "who may assign it"; there is no tier constant in code.
 - The objection reason stays required and recorded (D9). When the agent offers the benefit is the prompt's rule; the server cannot verify the conversation.
 
 **D17. No manual release, no abandonment timer** (owner, 12.10.2026 — "כן, מאשר"). The only thing that ends a benefit is its own expiry (D15), a void by staff, or consumption by payment.
 - Before approval, the benefit follows the account's live campaign automatically: it moves between packages (D5), and to a newer campaign of the same event when the previous one was cancelled — inside `bind_coupon_assignment`, never by hand.
 - After approval (locked pricing) there is no release at all: the campaign pays within the validity, or the benefit lapses (D15).
+- A cancelled campaign — approved or not — frees its bound, unconsumed assignment (owner, 12.10.2026, ש4): if the benefit is still within its validity it returns to assigned and applies to the event's next campaign; if expired it goes void.
 - Staff have no release action; `release_coupon_assignment` exists only as the internal step of the automatic move.
 - Verified context: a customer account holds one event (R10, `events.ts:161`), so "another campaign" can only be a newer campaign of that same event.
 
 **D18. Several benefits: the best price applies automatically** (owner, 12.10.2026 — "כן, מאשר"). When an account is eligible for more than one active assignment (for example one claimed by its verified phone and one assigned by staff):
 - for the package the customer chooses, the assignment whose option gives the **lowest final price** for that package is bound; if only one has an option for it, that one is bound;
 - there is no customer choice screen;
-- the other assignment stays as it is — active until its own expiry, void or a later use.
+- the other assignment stays as it is — active until its own expiry, void or a later use;
+- **an equal-value duplicate is not kept** (owner, 12.10.2026, ש6): when a new assignment would give the same final price as an existing active one, the system voids one of the two — keeping the one whose validity lasts longer — with an audited void (reason: duplicate). So two equal benefits never coexist.
 
 **D19. A refund never returns a benefit** (owner, 12.10.2026 — "כן, מאשר", asked explicitly about a full cancellation). A consumed assignment stays consumed after any refund, full or partial. A repeat purchase after a full cancellation pays the list price. Compensation is never automatic: staff may assign a **new** benefit by hand (D13). Verified context: refunds exist and always pass through staff — the cancellation-request flow (full_cancellation / partial_charge / declined) records them in the payment ledger.
 
@@ -226,7 +229,8 @@ A cleanup job removes a PDF only after it has confirmed that no agreement row po
 
 **D21. A benefit can be applied after approval — through re-approval at the new price** (owner, 12.10.2026 — "כן, מאשר", reversing the earlier recommendation: this is the closing tool for a hesitating customer). A customer who approved terms but has not paid may receive a benefit, and it applies to that campaign:
 - allowed only while the campaign has no package payment pending, in review or succeeded;
-- the binding runs through the defined supersede operation (the same one D15's lapse path uses): the locked pricing is superseded, a new pricing version carries the discount, and the customer approves **new terms at the discounted final price**;
+- **the trigger is the customer's explicit acceptance** (owner, 12.10.2026, ש5): the site shows "יש לך הטבה — לחץ לקבל"; until the customer accepts, nothing changes and the earlier approved price stays payable. Accepting resets the prior terms-approval and immediately opens the new approval at the discounted price. The agent and staff only create the benefit — the customer is always the one who applies it;
+- the reset-and-re-approve runs through the defined supersede operation (the same one D15's lapse path uses): the locked pricing is superseded and a new pricing version carries the discount;
 - the charge opens only on the latest approved, locked price; the earlier signed document stays archived;
 - a plain update of a locked row remains forbidden (D6) — the supersede operation is the only path, and it never alters the paid history or a stored document.
 
