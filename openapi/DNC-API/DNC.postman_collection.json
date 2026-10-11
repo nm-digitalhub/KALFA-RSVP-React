@@ -1,0 +1,206 @@
+{
+  "info": {
+    "_postman_id": "41a675ed-6b20-4a3c-bd83-5c91af922e22",
+    "name": "DNC",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "43701858",
+    "_collection_link": "https://go.postman.co/collection/28789115-41a675ed-6b20-4a3c-bd83-5c91af922e22?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Tests",
+      "item": [
+        {
+          "name": "Success",
+          "item": [
+            {
+              "name": "Phone-list-verification",
+              "request": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "name",
+                    "value": "insert tokens identifier",
+                    "type": "text"
+                  },
+                  {
+                    "key": "token",
+                    "value": "insert token",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"data\":[\"0500000000\",\"0500000001\",\"0500000002\",\"0500000003\",\"500000000\",\"123\",\"000\",\"\",\"test\"]\r\n}\r\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://pverification.fta.gov.il/restricted/phone-list-verification",
+                  "protocol": "https",
+                  "host": [
+                    "pverification",
+                    "fta",
+                    "gov",
+                    "il"
+                  ],
+                  "path": [
+                    "restricted",
+                    "phone-list-verification"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Fail",
+          "item": [
+            {
+              "name": "Error 401 Unauthorized",
+              "request": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "name",
+                    "value": "",
+                    "type": "text"
+                  },
+                  {
+                    "key": "token",
+                    "value": "",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"data\":[\"0500000000\",\"0500000001\",\"0500000002\",\"0500000003\",\"500000000\",\"123\",\"000\",\"\",\"test\"]\r\n}\r\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://pverification.fta.gov.il/restricted/phone-list-verification",
+                  "protocol": "https",
+                  "host": [
+                    "pverification",
+                    "fta",
+                    "gov",
+                    "il"
+                  ],
+                  "path": [
+                    "restricted",
+                    "phone-list-verification"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Error 500 Internal Server Error",
+              "request": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "name",
+                    "value": "insert tokens identifier",
+                    "type": "text"
+                  },
+                  {
+                    "key": "token",
+                    "value": "insert token",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"data\":['0540000000', '0540000001']\r\n}\r\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://pverification.fta.gov.il/restricted/phone-list-verification",
+                  "protocol": "https",
+                  "host": [
+                    "pverification",
+                    "fta",
+                    "gov",
+                    "il"
+                  ],
+                  "path": [
+                    "restricted",
+                    "phone-list-verification"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Error 400 Bad Request",
+              "request": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "name",
+                    "value": "insert tokens identifier",
+                    "type": "text"
+                  },
+                  {
+                    "key": "token",
+                    "value": "insert token",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"data\":[]\r\n}\r\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://pverification.fta.gov.il/restricted/phone-list-verification",
+                  "protocol": "https",
+                  "host": [
+                    "pverification",
+                    "fta",
+                    "gov",
+                    "il"
+                  ],
+                  "path": [
+                    "restricted",
+                    "phone-list-verification"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

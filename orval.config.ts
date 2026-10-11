@@ -1,10 +1,11 @@
 import { defineConfig } from 'orval';
 
-// Generates the typed SUMIT and CardCom clients from each vendor's OpenAPI document:
-//   npx orval --config orval.config.ts --project sumit      (or --project cardcom; run one at a time)
+// Generates the typed SUMIT, CardCom and DNC clients from each vendor's OpenAPI document:
+//   npx orval --config orval.config.ts --project sumit      (or --project cardcom / dnc; run one at a time)
 //
 //   openapi/sumit.openapi.json    --(transformer: known differences from the live API)-->  src/lib/sumit/generated/
 //   openapi/cardcom.openapi.json  --(no transformer: the vendor's whole document, split by tag)-->  src/lib/cardcom/generated/
+//   openapi/dnc.openapi.json      --(no transformer: written from real responses, see its description)-->  src/lib/dnc/generated/
 //
 // The output directories are Orval's: `clean` empties them on every run, so nothing hand-written may live there. The
 // hand-written parts are src/lib/<provider>/mutator.ts (every call goes through it) and src/lib/sumit/orval/transformer.ts.
@@ -45,6 +46,26 @@ export default defineConfig({
       override: {
         mutator: { path: 'src/lib/cardcom/mutator.ts', name: 'cardcomFetch' },
         // The functions resolve with CardCom's answer directly; failures of the CALL are thrown as CardcomError.
+        fetch: { includeHttpResponseReturnType: false },
+      },
+    },
+  },
+  // "אל תתקשר אליי" (the Do-Not-Call registry). No vendor OpenAPI exists: openapi/dnc.openapi.json was written from the
+  // authority's PDF and Postman collection and corrected by real responses (openapi/DNC-API/samples/).
+  dnc: {
+    input: {
+      target: './openapi/dnc.openapi.json',
+    },
+    output: {
+      client: 'fetch',
+      mode: 'split',
+      schemas: 'src/lib/dnc/generated/models',
+      clean: true,
+      target: 'src/lib/dnc/generated/api.ts',
+      baseUrl: 'https://pverification.fta.gov.il',
+      override: {
+        // The mutator adds the name/token headers from the server environment and throws DncError on a failed call.
+        mutator: { path: 'src/lib/dnc/mutator.ts', name: 'dncFetch' },
         fetch: { includeHttpResponseReturnType: false },
       },
     },

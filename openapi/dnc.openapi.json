@@ -1,0 +1,140 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "אל תתקשר אליי (DNC) — Phone-List-Verification",
+    "version": "5",
+    "description": "The Consumer Protection and Fair Trade Authority's Do-Not-Call registry API for telemarketing companies (document \"מסמך ממשקי API לחברות הטלמרקטינג\", Version 5, 26.11.2023, openapi/DNC-API/DNC_POSTMAN.pdf; Postman collection openapi/DNC-API/DNC.postman_collection.json). Written from REAL responses captured on 11.10.2026 (openapi/DNC-API/samples/), not from the document alone: the document names the result field `code` (section 2.2) while the live service returns `statusCode`, and the live service rejects numbers that keep their leading 0. Only Phone-List-Verification is described; the large Phone-Query service (dnc-api.fta.gov.il, gzip, up to 1M numbers) is not in the collection and is not described here."
+  },
+  "servers": [{ "url": "https://pverification.fta.gov.il" }],
+  "security": [{ "dncName": [], "dncToken": [] }],
+  "tags": [{ "name": "dnc", "description": "Do-Not-Call registry checks" }],
+  "paths": {
+    "/restricted/phone-list-verification": {
+      "post": {
+        "tags": ["dnc"],
+        "operationId": "verifyPhoneList",
+        "summary": "Check up to 100K phone numbers against the Do-Not-Call registry",
+        "description": "Returns the numbers that are NOT registered (calling them for telemarketing is allowed) as strings, and the numbers that could not be checked as objects with an errorCode. Numbers that ARE registered are simply absent from `data`. Send digits only, WITHOUT the leading 0 (e.g. 501111111, 35648888): measured 11.10.2026, `0500000000`, `972501111111`, `+972501111111` and `50-1111111` all come back with errorCode 1, while `500000000` comes back as \"0500000000\". Returned numbers carry the leading 0. A JSON number item is also accepted (538232216 → \"0538232216\"). The document limits a request to 100K numbers and 6 MB.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DncVerificationRequest" },
+              "example": { "data": ["500000000", "123"] }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The check ran. `statusCode` repeats 200.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DncVerificationResponse" },
+                "example": {
+                  "statusCode": 200,
+                  "message": "הפעולה הסתיימה בהצלחה",
+                  "transactionId": "5a482afe-d832-4d6b-a0d8-5aaf73439c66",
+                  "data": ["035648888", "0501111111", "0538232216", { "phone": "972501111111", "errorCode": 1 }]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input (measured: an empty `data` list).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DncErrorResponse" },
+                "example": { "statusCode": 400, "message": "קלט לא תקין", "transactionId": "fc39330c-7cb2-4a02-bfbe-d9f0a2f9b2d9" }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authorized (measured: empty `name` and `token` headers).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DncErrorResponse" },
+                "example": { "statusCode": 401, "message": "אינך מורשה לגשת לשירות זה", "transactionId": "f7c936cc-a081-4a24-8609-f1dbca9aa9a4" }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error; quote the transactionId to support (measured: a body that is not valid JSON).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DncErrorResponse" },
+                "example": { "statusCode": 500, "message": ".שגיאה פנימית - אנא פנה לתמיכה עם מזהה הבקשה", "transactionId": "045a5e0e-4443-4396-b5df-1530c9afc8fe" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "dncName": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "name",
+        "description": "The token's identifier, as shown in the business portal (dnc.fta.gov.il) next to the token. Server env DNC_API_NAME."
+      },
+      "dncToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "token",
+        "description": "The ACCESS TOKEN generated in the business portal. Server env DNC_API_TOKEN. Never logged."
+      }
+    },
+    "schemas": {
+      "DncVerificationRequest": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100000,
+            "description": "Phone numbers, digits only, without the leading 0.",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "DncUncheckedPhone": {
+        "type": "object",
+        "required": ["phone", "errorCode"],
+        "properties": {
+          "phone": { "type": "string", "description": "The number exactly as it was sent." },
+          "errorCode": {
+            "type": "integer",
+            "description": "Document section 3.1.7: 1 = the number is not in a valid format; 400 general error; 500 internal error; 401 not authorized. Only 1 was observed."
+          }
+        }
+      },
+      "DncVerificationItem": {
+        "oneOf": [
+          { "type": "string", "description": "A number that is NOT registered in the registry, normalized with its leading 0." },
+          { "$ref": "#/components/schemas/DncUncheckedPhone" }
+        ]
+      },
+      "DncVerificationResponse": {
+        "type": "object",
+        "required": ["statusCode", "message", "transactionId", "data"],
+        "properties": {
+          "statusCode": { "type": "integer" },
+          "message": { "type": "string" },
+          "transactionId": { "type": "string", "format": "uuid" },
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/DncVerificationItem" } }
+        }
+      },
+      "DncErrorResponse": {
+        "type": "object",
+        "required": ["statusCode", "message", "transactionId"],
+        "properties": {
+          "statusCode": { "type": "integer" },
+          "message": { "type": "string" },
+          "transactionId": { "type": "string", "format": "uuid" }
+        }
+      }
+    }
+  }
+}

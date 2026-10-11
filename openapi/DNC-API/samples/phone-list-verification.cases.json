@@ -1,0 +1,81 @@
+{
+  "capturedAt": "2026-10-11T11:48:52.764Z",
+  "url": "https://pverification.fta.gov.il/restricted/phone-list-verification",
+  "results": {
+    "success_collection": {
+      "status": 200,
+      "contentType": "application/json",
+      "ms": 556,
+      "body": {
+        "statusCode": 200,
+        "message": "הפעולה הסתיימה בהצלחה",
+        "transactionId": "871d18ef-7cfe-4cf9-8ce4-9def09668d96",
+        "data": [
+          "0500000000",
+          {
+            "phone": "0500000000",
+            "errorCode": 1
+          },
+          {
+            "phone": "0500000001",
+            "errorCode": 1
+          },
+          {
+            "phone": "0500000002",
+            "errorCode": 1
+          },
+          {
+            "phone": "0500000003",
+            "errorCode": 1
+          },
+          {
+            "phone": "123",
+            "errorCode": 1
+          },
+          {
+            "phone": "000",
+            "errorCode": 1
+          },
+          {
+            "phone": "",
+            "errorCode": 1
+          },
+          {
+            "phone": "test",
+            "errorCode": 1
+          }
+        ]
+      }
+    },
+    "unauthorized_empty_headers": {
+      "status": 401,
+      "contentType": "application/json",
+      "ms": 110,
+      "body": {
+        "statusCode": 401,
+        "message": "אינך מורשה לגשת לשירות זה",
+        "transactionId": "f7c936cc-a081-4a24-8609-f1dbca9aa9a4"
+      }
+    },
+    "bad_request_empty_list": {
+      "status": 400,
+      "contentType": "application/json",
+      "ms": 79,
+      "body": {
+        "statusCode": 400,
+        "message": "קלט לא תקין",
+        "transactionId": "fc39330c-7cb2-4a02-bfbe-d9f0a2f9b2d9"
+      }
+    },
+    "invalid_json_single_quotes": {
+      "status": 500,
+      "contentType": "application/json",
+      "ms": 64,
+      "body": {
+        "statusCode": 500,
+        "message": ".שגיאה פנימית - אנא פנה לתמיכה עם מזהה הבקשה",
+        "transactionId": "045a5e0e-4443-4396-b5df-1530c9afc8fe"
+      }
+    }
+  }
+}
