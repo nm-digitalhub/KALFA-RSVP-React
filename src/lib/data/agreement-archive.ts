@@ -127,7 +127,6 @@ export type ArchiveRow = {
   ip: string | null;
   user_agent: string | null;
   signature_ref: string | null;
-  id_document_ref: string | null;
 };
 
 export type ArchiveContext = {
@@ -164,7 +163,6 @@ export function archiveFields(row: ArchiveRow, ctx: ArchiveContext): Record<stri
     `content_hash=${row.content_hash}`,
     `pdf_ref=${row.pdf_ref ?? ''}`,
     `signature_ref=${row.signature_ref ?? ''}`,
-    `id_document_ref=${row.id_document_ref ?? ''}`,
     `campaign_id=${row.campaign_id}`,
     `event_id=${row.event_id}`,
     `event_name=${ctx.eventName ?? ''}`,
@@ -226,7 +224,6 @@ function narrowRow(raw: Record<string, unknown>): ArchiveRow | null {
     ip: str('ip'),
     user_agent: str('user_agent'),
     signature_ref: str('signature_ref'),
-    id_document_ref: str('id_document_ref'),
   };
 }
 

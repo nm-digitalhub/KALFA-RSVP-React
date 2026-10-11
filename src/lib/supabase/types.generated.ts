@@ -6235,7 +6235,6 @@ export type Database = {
           created_at: string
           event_id: string
           id: string
-          id_document_ref: string | null
           ip: string | null
           otp_verified_at: string | null
           pdf_ref: string | null
@@ -6254,7 +6253,6 @@ export type Database = {
           created_at?: string
           event_id: string
           id?: string
-          id_document_ref?: string | null
           ip?: string | null
           otp_verified_at?: string | null
           pdf_ref?: string | null
@@ -6273,7 +6271,6 @@ export type Database = {
           created_at?: string
           event_id?: string
           id?: string
-          id_document_ref?: string | null
           ip?: string | null
           otp_verified_at?: string | null
           pdf_ref?: string | null

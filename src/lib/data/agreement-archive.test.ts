@@ -118,7 +118,6 @@ const ROW: ArchiveRow = {
   ip: '203.0.113.5',
   user_agent: 'Mozilla/5.0 (iPhone) Safari',
   signature_ref: 'e0e0/c0ff/signature-x.png',
-  id_document_ref: null,
 };
 
 const CTX_FULL = {
@@ -155,7 +154,6 @@ describe('archiveFields', () => {
     expectKey('content_hash', ROW.content_hash);
     expectKey('pdf_ref', 'e0e0/c0ff/agreement-x.pdf');
     expectKey('signature_ref', 'e0e0/c0ff/signature-x.png');
-    expectKey('id_document_ref', '');
     expectKey('campaign_id', ROW.campaign_id);
     expectKey('event_id', ROW.event_id);
     expectKey('event_name', 'החתונה של דנה ויוסי');
@@ -169,7 +167,7 @@ describe('archiveFields', () => {
     expectKey('otp_verified_at', '2026-07-15T09:59:00Z');
     expectKey('ip', '203.0.113.5');
     expectKey('user_agent', 'Mozilla/5.0 (iPhone) Safari');
-    expect(notes).toHaveLength(20);
+    expect(notes).toHaveLength(19);
   });
 
   it('falls back to the signing date for retention and stays Active when the event is ahead', () => {
