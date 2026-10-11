@@ -23,8 +23,8 @@ file has ten. Counted from `paths` in the pinned document:
 
 | Method | Path | operationId | Used by KALFA |
 |---|---|---|---|
-| GET | `/auth/key/` | `getAuthKey` | ✅ health check — `src/lib/sms/extra-client.ts` |
-| POST | `/sms/send/` | `smsSend` | ✅ every SMS — `src/lib/sms/sender.ts` |
+| GET | `/auth/key/` | `getAuthKey` | ✅ health check — `src/lib/sms/extra-client.ts` (generated client) |
+| POST | `/sms/send/` | `smsSend` | ✅ every SMS — `src/lib/sms/sender.ts` (generated client) |
 | POST | `/calls/` | `getCallsHistory` | ⬜ Phase 1.3 — the only way to list account lines |
 | GET | `/calls/recording/` | `downloadCallRecording` | ⬜ Phase 6 |
 | POST | `/calls/get-recording-urls/` | `getRecordingUrls` | ⬜ Phase 6 |
@@ -35,6 +35,19 @@ file has ten. Counted from `paths` in the pinned document:
 | POST | `/when/bookings/cancel/` | `cancelWhenBooking` | ⬜ needs When Pro |
 
 Two of ten are implemented.
+
+## The generated client
+
+Since 11.10.2026 the requests come from Orval (`orval.config.ts`, project `extra`; run
+`npx orval --config orval.config.ts --project extra`) into `src/lib/sms/generated/`. The
+spec above is the input, unchanged. Orval's own `input.filters` keeps only the `Authorization`
+and `SMS` tags, so only `getAuthKey` and `smsSend` are generated, and `override.contentType`
+keeps the JSON body. There is no mutator: the caller passes `Authorization: Bearer <token>` in
+the call's options and reads `status`.
+
+Real answers, captured 11.10.2026 with the key and the account email redacted and no SMS sent,
+are in `samples-2026-10-11.json`. They match the spec, except that the key check also returns
+`is_active` and `times.last_use`, which KALFA does not read.
 
 ## The three things that catch people out
 
@@ -76,5 +89,5 @@ rather than offering a button that cannot exist.
 ## Servers
 
 `https://api.exm.co.il/v1` and `https://www.exm.co.il/api/v1`. Both are listed;
-`sender.ts` uses the second and `extra-client.ts` follows it, so one host change
-moves both.
+The generated client uses the second (`baseUrl` in `orval.config.ts`), so one
+change there moves both operations.

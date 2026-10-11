@@ -1,11 +1,12 @@
 import { defineConfig } from 'orval';
 
 // Generates the typed SUMIT, CardCom and DNC clients from each vendor's OpenAPI document:
-//   npx orval --config orval.config.ts --project sumit      (or --project cardcom / dnc; run one at a time)
+//   npx orval --config orval.config.ts --project sumit      (or --project cardcom / dnc / extra; run one at a time)
 //
 //   openapi/sumit.openapi.json    --(transformer: known differences from the live API)-->  src/lib/sumit/generated/
 //   openapi/cardcom.openapi.json  --(no transformer: the vendor's whole document, split by tag)-->  src/lib/cardcom/generated/
 //   openapi/dnc.openapi.json      --(no transformer: written from real responses, see its description)-->  src/lib/dnc/generated/
+//   docs/extra/openapi-extra-v1.json --(filtered to two operations by tag)-->  src/lib/sms/generated/
 //
 // The output directories are Orval's: `clean` empties them on every run, so nothing hand-written may live there. The
 // hand-written parts are src/lib/<provider>/mutator.ts (every call goes through it) and src/lib/sumit/orval/transformer.ts.
@@ -48,6 +49,25 @@ export default defineConfig({
         // The functions resolve with CardCom's answer directly; failures of the CALL are thrown as CardcomError.
         fetch: { includeHttpResponseReturnType: false },
       },
+    },
+  },
+  // ExtrA (exm.co.il) SMS. The vendor's own OpenAPI document, pinned unchanged (docs/extra/README.md); only the two
+  // operations KALFA calls are generated (getAuthKey, tag Authorization; smsSend, tag SMS). No mutator: the caller passes
+  // `Authorization: Bearer <token>` in the call's options, and reads `status` — a business error is HTTP 200 with
+  // `success:false`, a bad key is 401. Real answers: docs/extra/samples-2026-10-11.json.
+  extra: {
+    input: {
+      target: './docs/extra/openapi-extra-v1.json',
+      filters: { mode: 'include', tags: ['Authorization', 'SMS'] },
+    },
+    output: {
+      client: 'fetch',
+      mode: 'split',
+      schemas: 'src/lib/sms/generated/models',
+      clean: true,
+      target: 'src/lib/sms/generated/api.ts',
+      baseUrl: 'https://www.exm.co.il/api/v1',
+      override: { contentType: { include: ['application/json'] } },
     },
   },
   // "אל תתקשר אליי" (the Do-Not-Call registry). No vendor OpenAPI exists: openapi/dnc.openapi.json was written from the

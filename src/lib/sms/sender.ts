@@ -3,9 +3,11 @@ import 'server-only';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { createAdminClient } from '@/lib/supabase/admin';
 
+import { smsSend } from './generated/api';
+
 // SMS transport abstraction. The OTP logic is provider-agnostic; only this
 // adapter knows about ExtrA (exm.co.il). Swapping providers = a new adapter.
-const EXTRA_SMS_URL = 'https://www.exm.co.il/api/v1/sms/send/';
+// The request is the Orval-generated `smsSend` (src/lib/sms/generated; orval.config.ts, project `extra`).
 
 export interface SmsSender {
   send(params: { to: string; text: string }): Promise<{ id: string }>;
@@ -25,28 +27,31 @@ export class SmsSendError extends Error {
 }
 
 // ExtrA: POST /api/v1/sms/send/ with Bearer token; body { message, destination,
-// sender }; response { success, id, messages_count, errors[] }.
+// sender }; response { success, id, messages_count } or { success:false, errors[] } — both HTTP 200.
 export function createExtraSmsSender(config: {
   token: string;
   sender: string;
 }): SmsSender {
   return {
     async send({ to, text }) {
-      let res: Response;
+      let answer: Awaited<ReturnType<typeof smsSend>>;
       try {
-        res = await fetch(EXTRA_SMS_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${config.token}`,
-          },
-          body: JSON.stringify({
-            message: text,
-            destination: to,
-            sender: config.sender,
-          }),
-        });
-      } catch {
+        answer = await smsSend(
+          { message: text, destination: to, sender: config.sender },
+          { headers: { Authorization: `Bearer ${config.token}` } },
+        );
+      } catch (err) {
+        // The generated function parses the body: a SyntaxError is an answer that is not JSON.
+        if (err instanceof SyntaxError) {
+          void sendSlackAlert({
+            level: 'warn',
+            title: 'SMS send failed',
+            detail: 'invalid_response',
+            source: 'sms',
+            category: 'send_health',
+          });
+          throw new SmsSendError('תגובה לא תקינה מספק ה-SMS');
+        }
         // Fail-safe ops alert (non-throwing, no PII — no destination/token).
         void sendSlackAlert({
           level: 'warn',
@@ -61,35 +66,21 @@ export function createExtraSmsSender(config: {
       // the server can LOG why a send failed (the message is for server logs, not
       // shown to the user — callers map it to a generic notice). No token (it is
       // request-only) or PII destination is included here.
-      if (!res.ok) {
+      // Any status but 200 — the documented 401, or one the spec does not name — is a failed call.
+      if (answer.status !== 200) {
+        const status: number = answer.status;
         void sendSlackAlert({
           level: 'warn',
           title: 'SMS send failed',
-          detail: `http_${res.status}`,
+          detail: `http_${status}`,
           source: 'sms',
           category: 'send_health',
         });
-        throw new SmsSendError(`שליחת ההודעה נכשלה (HTTP ${res.status})`);
+        throw new SmsSendError(`שליחת ההודעה נכשלה (HTTP ${status})`);
       }
 
-      let json: { success?: boolean; id?: string; errors?: unknown };
-      try {
-        json = (await res.json()) as {
-          success?: boolean;
-          id?: string;
-          errors?: unknown;
-        };
-      } catch {
-        void sendSlackAlert({
-          level: 'warn',
-          title: 'SMS send failed',
-          detail: 'invalid_response',
-          source: 'sms',
-          category: 'send_health',
-        });
-        throw new SmsSendError('תגובה לא תקינה מספק ה-SMS');
-      }
-      if (!json.success || !json.id) {
+      const json = answer.data;
+      if (json.success !== true || !('id' in json) || !json.id) {
         // Provider rejected THIS destination (invalid/blocked number). This is a
         // routine per-destination business outcome — common for OTP — NOT a
         // transport/config/outage failure, so it is deliberately NOT alerted
@@ -97,7 +88,8 @@ export function createExtraSmsSender(config: {
         // ExtrA's error codes do separate config faults (9404/1214/1215/7521) from
         // bad destinations, but this path does not classify them, so no alert is
         // emitted.
-        const detail = json.errors ? ` (${JSON.stringify(json.errors)})` : '';
+        const errors = 'errors' in json ? json.errors : undefined;
+        const detail = errors ? ` (${JSON.stringify(errors)})` : '';
         throw new SmsSendError(`שליחת ההודעה נדחתה${detail}`);
       }
       return { id: json.id };

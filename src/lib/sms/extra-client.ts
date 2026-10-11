@@ -2,12 +2,15 @@ import 'server-only';
 
 import { daysUntil } from '@/lib/date';
 
+import { getAuthKey as getAuthKeyRequest } from './generated/api';
+import type { AuthKeySuccess } from './generated/models';
+
 // The read-only half of the ExtrA (exm.co.il) API: verify the key, and turn a
 // rejected send into something an operator can act on.
 //
-// Everything here is derived from the vendor's own OpenAPI document, pinned at
-// docs/extra/openapi-extra-v1.json. `sender.ts` implements the one operation that
-// sends; this file implements the one that asks questions. Two of the spec's ten.
+// The request itself is the Orval-generated `getAuthKey` (src/lib/sms/generated, from the vendor's own OpenAPI document
+// pinned at docs/extra/openapi-extra-v1.json; see orval.config.ts). `sender.ts` uses the one operation that sends;
+// this file wraps the one that asks questions, and maps the answers. Two of the spec's ten.
 //
 // ⚠️ getAuthKey ECHOES THE API KEY BACK. `key` is a REQUIRED property of its 200
 // response — "The API key this request authenticated with." So the response is
@@ -19,8 +22,6 @@ import { daysUntil } from '@/lib/date';
 // ⚠️ BUSINESS FAILURES COME BACK HTTP 200. Only a missing or invalid Bearer token
 // gives 401; everything else is `200` with `success:false` and an `errors[]` array.
 // Checking `res.ok` alone reports a rejected send as a success.
-
-const EXTRA_API_BASE = 'https://www.exm.co.il/api/v1';
 
 export interface ExtraKeyOk {
   ok: true;
@@ -66,42 +67,31 @@ const KEY_MESSAGES: Record<ExtraKeyFailure, string> = {
  * Nothing is sent, nothing is charged, and no customer data is touched.
  */
 export async function getAuthKey(token: string, now: Date = new Date()): Promise<ExtraKeyHealth> {
-  let res: Response;
+  let answer: Awaited<ReturnType<typeof getAuthKeyRequest>>;
   try {
-    res = await fetch(`${EXTRA_API_BASE}/auth/key/`, {
+    answer = await getAuthKeyRequest({
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(12_000),
       cache: 'no-store',
     });
-  } catch {
-    // Never surface the thrown message: a fetch failure can echo the request, and
-    // the request is where the key is.
-    return { ok: false, kind: 'unreachable', message: KEY_MESSAGES.unreachable };
+  } catch (err) {
+    // A body that is not JSON (the generated function parses it) vs no answer at all. Never surface the thrown
+    // message: a fetch failure can echo the request, and the request is where the key is.
+    return err instanceof SyntaxError
+      ? { ok: false, kind: 'unexpected_response', message: KEY_MESSAGES.unexpected_response }
+      : { ok: false, kind: 'unreachable', message: KEY_MESSAGES.unreachable };
   }
 
-  if (res.status === 401) {
+  if (answer.status === 401) {
     return { ok: false, kind: 'key_invalid', message: KEY_MESSAGES.key_invalid };
   }
-  if (!res.ok) {
+  // The generated type names only 200 and 401; any other status can still arrive at runtime.
+  if ((answer.status as number) !== 200) {
     return { ok: false, kind: 'unreachable', message: KEY_MESSAGES.unreachable };
   }
-
-  let body: unknown;
-  try {
-    body = await res.json();
-  } catch {
-    return { ok: false, kind: 'unexpected_response', message: KEY_MESSAGES.unexpected_response };
-  }
-
-  const row = (body ?? {}) as {
-    success?: boolean;
-    // `key` is declared here ONLY so the destructuring below is explicit about
-    // dropping it. It is never read.
-    key?: string;
-    scopes?: Record<string, unknown> | null;
-    times?: { created?: string; expire?: string };
-    user?: { id?: string; email_address?: string };
-  };
+  // The generated AuthKeySuccess carries `key` — it is never read below. Fields are still checked one by one: the
+  // type is the documented shape, not a guarantee about the bytes.
+  const row: Partial<AuthKeySuccess> = answer.data ?? {};
   if (row.success !== true) {
     return { ok: false, kind: 'unexpected_response', message: KEY_MESSAGES.unexpected_response };
   }
@@ -182,4 +172,3 @@ export function mapSmsErrors(errors: unknown): ExtraSmsError[] {
   return out;
 }
 
-export { EXTRA_API_BASE };

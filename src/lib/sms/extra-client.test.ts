@@ -13,11 +13,8 @@ const KEY = 'EXTRA-KEY-SECRET';
 function mockJson(status: number, body: unknown) {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => ({
-      ok: status >= 200 && status < 300,
-      status,
-      json: async () => body,
-    })),
+    // A real Response: the generated client reads the body with res.text().
+    vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })),
   );
 }
 

@@ -1,0 +1,73 @@
+{
+  "capturedAt": "2026-10-11T14:02:37.347Z",
+  "base": "https://www.exm.co.il/api/v1",
+  "note": "Real responses. The API key and the account email are redacted; no SMS was sent (the send probes carry no message and no destination).",
+  "results": [
+    {
+      "label": "getAuthKey_ok",
+      "status": 200,
+      "contentType": "application/json",
+      "body": {
+        "success": true,
+        "key": "<redacted: the API key>",
+        "scopes": null,
+        "times": {
+          "created": "2025-10-27",
+          "expire": "2027-10-27",
+          "last_use": "2026-10-11"
+        },
+        "is_active": true,
+        "user": {
+          "id": "f2rMeSqw",
+          "email_address": "<redacted: account email>"
+        }
+      }
+    },
+    {
+      "label": "getAuthKey_bad_token",
+      "status": 401,
+      "contentType": "application/json",
+      "body": {
+        "success": false,
+        "errors": {
+          "id": "HTTP_401",
+          "code": 401,
+          "description": "401 Unauthorized"
+        }
+      }
+    },
+    {
+      "label": "smsSend_empty_message_and_destination",
+      "status": 200,
+      "contentType": "application/json",
+      "body": {
+        "success": false,
+        "errors": [
+          {
+            "id": "message",
+            "code": 7321,
+            "description": "message body is missing"
+          },
+          {
+            "id": "destination",
+            "code": 7526,
+            "description": "Missing destination number, or invalid"
+          }
+        ]
+      }
+    },
+    {
+      "label": "smsSend_bad_token",
+      "status": 401,
+      "contentType": "application/json",
+      "body": {
+        "success": false,
+        "errors": {
+          "id": "HTTP_401",
+          "code": 401,
+          "description": "401 Unauthorized"
+        }
+      }
+    }
+  ]
+}
