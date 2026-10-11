@@ -597,6 +597,11 @@
       "skillPath": "israeli-ecommerce-compliance/SKILL.md",
       "computedHash": "8e98b81264f22f455f65953adbc01204a44336dcfc034a5ef31ee29009ce3fb7"
     },
+    "israeli-email-sequences": {
+      "source": "skills-il/marketing-growth",
+      "sourceType": "github",
+      "computedHash": "a26cdecac67d777223633fa16745a8c7f4e6c32ec91b09c6904494772d5482f3"
+    },
     "israeli-market-fit": {
       "source": "skills-il/marketing-growth",
       "sourceType": "github",
