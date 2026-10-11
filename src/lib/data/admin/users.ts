@@ -71,8 +71,8 @@ export interface AdminUserEvent {
   campaignId: string | null;
 }
 
-// Per-event credit ledger: granted − consumed (what each campaign used: the payment ledger, or campaigns.credit_applied
-// for a campaign with no ledger rows — creditConsumedByCampaign).
+// Per-event credit ledger: granted − consumed (what each campaign used, from the payment ledger —
+// creditConsumedByCampaign).
 export interface AdminUserCreditBalance {
   eventId: string;
   eventName: string;
@@ -283,7 +283,7 @@ export async function getUserDetail(
         .order('created_at', { ascending: false }),
       admin
         .from('campaigns')
-        .select('id, event_id, status, credit_applied')
+        .select('id, event_id, status')
         .in('event_id', eventIds),
     ]);
     credits = (creditsRes.data ?? []).map((c) => ({
@@ -296,9 +296,8 @@ export async function getUserDetail(
       voidedAt: c.voided_at,
       voidReason: c.void_reason,
     }));
-    // What each campaign has used up: the payment ledger when it has ledger rows (a package purchase), the old
-    // campaigns.credit_applied column otherwise (creditConsumedByCampaign). Throws if the ledger cannot be read.
-    const usedByCampaign = await creditConsumedByCampaign(admin, campaignsRes.data ?? []);
+    // What each campaign has used up, from the payment ledger (creditConsumedByCampaign). Throws if it cannot be read.
+    const usedByCampaign = await creditConsumedByCampaign(admin, (campaignsRes.data ?? []).map((c) => c.id));
     for (const c of campaignsRes.data ?? []) {
       // The grant form offers only the event's live campaign (one per event;
       // cancelled ones are not a valid credit scope).
@@ -484,9 +483,8 @@ export async function grantBillingCredit(input: {
 // Void (soft-reverse) a previously granted billing credit. Append-only is
 // preserved — the row is never deleted; voided_at/voided_by/void_reason are
 // stamped and the credit drops out of the event pool (getCampaignCreditTotal)
-// and the ledger. A credit already consumed into a settled campaign (its
-// credit_applied snapshot, or the credit of its payment-ledger collects) may NOT
-// be voided: the guard blocks any void that would pull the event's live ACTIVE
+// and the ledger. A credit already consumed into a settled campaign (the credit
+// of its payment-ledger collects) may NOT be voided: the guard blocks any void that would pull the event's live ACTIVE
 // pool below what its campaigns already consumed — that would falsify a
 // completed charge/receipt.
 export async function voidBillingCredit(input: {
@@ -519,9 +517,8 @@ export async function voidBillingCredit(input: {
 
   // Pool-invariant guard: after removing this credit the event's ACTIVE pool
   // must still cover what its campaigns already consumed — the payment ledger
-  // for a campaign that has ledger rows (a package purchase), the old
-  // credit_applied column otherwise (creditConsumedByCampaign) — otherwise the
-  // void would falsify a settled, receipted charge.
+  // (creditConsumedByCampaign) — otherwise the void would falsify a settled,
+  // receipted charge.
   const [poolRes, appliedRes] = await Promise.all([
     admin
       .from('billing_credits')
@@ -530,7 +527,7 @@ export async function voidBillingCredit(input: {
       .is('voided_at', null),
     admin
       .from('campaigns')
-      .select('id, credit_applied')
+      .select('id')
       .eq('event_id', credit.event_id),
   ]);
   if (poolRes.error || appliedRes.error) {
@@ -541,7 +538,7 @@ export async function voidBillingCredit(input: {
     0,
   );
   // Fails closed: when the ledger cannot be read the void is refused, never decided on a guess.
-  const consumed = [...(await creditConsumedByCampaign(admin, appliedRes.data ?? [])).values()].reduce(
+  const consumed = [...(await creditConsumedByCampaign(admin, (appliedRes.data ?? []).map((c) => c.id))).values()].reduce(
     (s, v) => s + v,
     0,
   );

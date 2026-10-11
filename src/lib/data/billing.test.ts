@@ -103,9 +103,8 @@ describe('getCampaignCreditTotal', () => {
 
   // Three parallel queries: campaign-scoped credits (billing_credits.eq.is),
   // event-level credits (billing_credits.is(null).eq.is), each excluding voided
-  // rows (.is('voided_at', null)), and sibling campaigns' id + credit_applied
-  // (campaigns.eq.neq); then ONE read of the payment ledger for those siblings
-  // (payment_operations.in) — a sibling that has ledger rows is read from there.
+  // rows (.is('voided_at', null)), and sibling campaigns' ids (campaigns.eq.neq);
+  // then ONE read of the payment ledger for those siblings (payment_operations.in).
   function mockCredits({
     own = empty,
     eventLevel = empty,
@@ -166,46 +165,31 @@ describe('getCampaignCreditTotal', () => {
     await expect(getCampaignCreditTotal('c1', 'e1')).resolves.toBe(165);
   });
 
-  it('subtracts credit already consumed by sibling campaigns, floored at 0', async () => {
+  it('subtracts the credit sibling campaigns used (the payment ledger), floored at 0', async () => {
     mockCredits({
       eventLevel: ok([{ amount: 100 }]),
-      siblings: ok([{ id: 's1', credit_applied: 30 }]),
+      siblings: ok([{ id: 's1' }]),
+      ledger: ok([{ campaign_id: 's1', outcome: 'succeeded', credit_applied: 40, payment_operation_kinds: { effect: 'collect' } }]),
     });
-    await expect(getCampaignCreditTotal('c1', 'e1')).resolves.toBe(70);
+    await expect(getCampaignCreditTotal('c1', 'e1')).resolves.toBe(60);
 
     mockCredits({
       eventLevel: ok([{ amount: 100 }]),
-      siblings: ok([{ id: 's1', credit_applied: 130 }]),
+      siblings: ok([{ id: 's1' }]),
+      ledger: ok([{ campaign_id: 's1', outcome: 'succeeded', credit_applied: 130, payment_operation_kinds: { effect: 'collect' } }]),
     });
     await expect(getCampaignCreditTotal('c1', 'e1')).resolves.toBe(0);
   });
 
-  it('subtracts credit a sibling used through the PAYMENT LEDGER (a package purchase), not only the old column', async () => {
-    mockCredits({
-      eventLevel: ok([{ amount: 100 }]),
-      siblings: ok([{ id: 's1', credit_applied: 0 }]),
-      ledger: ok([
-        { campaign_id: 's1', outcome: 'succeeded', credit_applied: 40, payment_operation_kinds: { effect: 'collect' } },
-      ]),
-    });
-    await expect(getCampaignCreditTotal('c1', 'e1')).resolves.toBe(60);
-  });
-
-  it('counts a sibling that is in both places once', async () => {
-    mockCredits({
-      eventLevel: ok([{ amount: 100 }]),
-      siblings: ok([{ id: 's1', credit_applied: 40 }]),
-      ledger: ok([
-        { campaign_id: 's1', outcome: 'succeeded', credit_applied: 40, payment_operation_kinds: { effect: 'collect' } },
-      ]),
-    });
-    await expect(getCampaignCreditTotal('c1', 'e1')).resolves.toBe(60);
+  it('a sibling with no ledger row has used no credit', async () => {
+    mockCredits({ eventLevel: ok([{ amount: 100 }]), siblings: ok([{ id: 's1' }]) });
+    await expect(getCampaignCreditTotal('c1', 'e1')).resolves.toBe(100);
   });
 
   it('THROWS when the ledger of the siblings cannot be read (never silently under-subtracts)', async () => {
     mockCredits({
       eventLevel: ok([{ amount: 100 }]),
-      siblings: ok([{ id: 's1', credit_applied: 0 }]),
+      siblings: ok([{ id: 's1' }]),
       ledger: { data: null, error: { message: 'x' } },
     });
     await expect(getCampaignCreditTotal('c1', 'e1')).rejects.toThrow();

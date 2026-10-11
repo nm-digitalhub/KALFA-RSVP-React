@@ -143,8 +143,7 @@ describe('getUserDetail — SUMIT customer number', () => {
   });
 });
 
-// How much of a granted credit is still available. What a campaign has already used comes from the payment ledger when
-// the campaign has ledger rows (a package purchase), from the old campaigns.credit_applied column otherwise.
+// How much of a granted credit is still available. What a campaign has already used comes from the payment ledger.
 describe('getUserDetail — the credit balance counts what the ledger says was used', () => {
   const UID = '44444444-4444-4444-8444-444444444444';
   const REASON = 'בירור פנייה בנושא חיוב עבור החשבון של המשתמש';
@@ -181,20 +180,20 @@ describe('getUserDetail — the credit balance counts what the ledger says was u
   }
 
   it('credit used through a package purchase is subtracted from what is left', async () => {
-    wireBalance([{ id: 'c1', event_id: 'e1', status: 'approved', credit_applied: 0 }], [usedByPurchase(40)]);
+    wireBalance([{ id: 'c1', event_id: 'e1', status: 'approved' }], [usedByPurchase(40)]);
     expect((await getUserDetail(UID, REASON))?.creditBalances).toEqual([
       { eventId: 'e1', eventName: 'החתונה', granted: 100, applied: 40, remaining: 60 },
     ]);
   });
 
-  it('a campaign from before the ledger is still read from the old column', async () => {
-    wireBalance([{ id: 'c1', event_id: 'e1', status: 'closed', credit_applied: 84 }], []);
+  it('a pay-per-result campaign counts the credit of its ₪0 charge row', async () => {
+    wireBalance([{ id: 'c1', event_id: 'e1', status: 'closed' }], [usedByPurchase(84)]);
     expect((await getUserDetail(UID, REASON))?.creditBalances).toMatchObject([{ applied: 84, remaining: 16 }]);
   });
 
-  it('a campaign recorded in both places is counted once', async () => {
-    wireBalance([{ id: 'c1', event_id: 'e1', status: 'closed', credit_applied: 84 }], [usedByPurchase(84)]);
-    expect((await getUserDetail(UID, REASON))?.creditBalances).toMatchObject([{ applied: 84, remaining: 16 }]);
+  it('a campaign with no ledger row has used no credit', async () => {
+    wireBalance([{ id: 'c1', event_id: 'e1', status: 'approved' }], []);
+    expect((await getUserDetail(UID, REASON))?.creditBalances).toMatchObject([{ applied: 0, remaining: 100 }]);
   });
 });
 
@@ -346,18 +345,19 @@ describe('voidBillingCredit — soft-void + pool-invariant guard', () => {
     wireVoid({
       credit: { id: 'cr1', event_id: 'e1', amount: 100, voided_at: null },
       pool: [{ amount: 100 }],
-      applied: [{ id: 'c1', credit_applied: 84 }], // poolAfterVoid 0 < consumed 84
+      applied: [{ id: 'c1' }],
+      ledger: [{ campaign_id: 'c1', outcome: 'succeeded', credit_applied: 84, payment_operation_kinds: { effect: 'collect' } }], // poolAfterVoid 0 < consumed 84
     });
     await expect(
       voidBillingCredit({ creditId: 'cr1', reason: REASON, ownerId: 'owner-1' }),
     ).rejects.toThrow('שכבר נוצל');
   });
 
-  it('blocks voiding a credit that a package PURCHASE already used (the old column says 0, the ledger says 50)', async () => {
+  it('blocks voiding a credit that a package PURCHASE already used', async () => {
     wireVoid({
       credit: { id: 'cr1', event_id: 'e1', amount: 100, voided_at: null },
       pool: [{ amount: 100 }],
-      applied: [{ id: 'c1', credit_applied: 0 }],
+      applied: [{ id: 'c1' }],
       ledger: [{ campaign_id: 'c1', outcome: 'succeeded', credit_applied: 50, payment_operation_kinds: { effect: 'collect' } }],
     });
     await expect(
@@ -369,7 +369,7 @@ describe('voidBillingCredit — soft-void + pool-invariant guard', () => {
     wireVoid({
       credit: { id: 'cr1', event_id: 'e1', amount: 100, voided_at: null },
       pool: [{ amount: 100 }],
-      applied: [{ id: 'c1', credit_applied: 0 }],
+      applied: [{ id: 'c1' }],
       ledgerError: true,
     });
     await expect(voidBillingCredit({ creditId: 'cr1', reason: REASON, ownerId: 'owner-1' })).rejects.toThrow();
@@ -380,7 +380,7 @@ describe('voidBillingCredit — soft-void + pool-invariant guard', () => {
     wireVoid({
       credit: { id: 'cr1', event_id: 'e1', amount: 160, voided_at: null },
       pool: [{ amount: 160 }],
-      applied: [{ id: 'c1', credit_applied: 0 }], // unsettled → poolAfterVoid 0 >= 0
+      applied: [{ id: 'c1' }], // unsettled → poolAfterVoid 0 >= 0
       updated: { id: 'cr1' },
     });
     await expect(
