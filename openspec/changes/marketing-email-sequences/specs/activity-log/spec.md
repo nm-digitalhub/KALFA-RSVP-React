@@ -31,3 +31,14 @@ A signed-in user SHALL be able to add an activity-log entry for an event only wh
 #### Scenario: Staff action on a customer event
 - **WHEN** a platform staff member's admin action records an entry on a customer's event
 - **THEN** the entry is accepted
+
+### Requirement: The log's time is set by the server
+An activity-log entry's time and id SHALL be set by the database; a signed-in user SHALL NOT be able to supply them, nor update or delete an entry.
+
+#### Scenario: A client sends its own time
+- **WHEN** a signed-in user inserts an entry that names a creation time
+- **THEN** the database refuses it
+
+#### Scenario: A normal entry
+- **WHEN** the application records an entry with the event, the user, the action and its details
+- **THEN** it is accepted and its time is the server's
