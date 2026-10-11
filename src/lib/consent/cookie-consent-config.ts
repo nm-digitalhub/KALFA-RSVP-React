@@ -144,7 +144,7 @@ export function buildCookieConsentConfig(
   const categories: CookieConsent.CookieConsentConfig['categories'] = {
     // Covers every cookie KALFA itself sets: Supabase auth/session (sb-*),
     // active_org tenant scoping, the version-skew reload guard, the sidebar
-    // UI-state cookie, and the SUMIT payment script loaded on checkout. All
+    // UI-state cookie, and the payment provider's components loaded on checkout. All
     // are required for the service to work and therefore cannot be disabled
     // — never gated by an admin flag.
     necessary: {
