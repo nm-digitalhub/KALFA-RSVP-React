@@ -595,7 +595,10 @@ export async function getCampaignForHold(
 export type CampaignPurchaseState = Pick<
   CampaignRow,
   'id' | 'event_id' | 'status' | 'package_price' | 'capture_status' | 'charge_status'
->;
+> & {
+  /** The name of the package the campaign was created from (campaigns.template_id → packages): the receipt line. */
+  package_name: string | null;
+};
 
 // Service-role read; the caller (the purchase Route Handler) verifies ownership.
 export async function getCampaignForPurchase(
@@ -604,11 +607,13 @@ export async function getCampaignForPurchase(
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('campaigns')
-    .select('id, event_id, status, package_price, capture_status, charge_status')
+    .select('id, event_id, status, package_price, capture_status, charge_status, package:packages(name)')
     .eq('id', campaignId)
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
-  return data;
+  if (!data) return null;
+  const { package: pkg, ...campaign } = data;
+  return { ...campaign, package_name: pkg?.name ?? null };
 }
 
 // Atomically claim the hold slot. The guarded UPDATE only matches when there is

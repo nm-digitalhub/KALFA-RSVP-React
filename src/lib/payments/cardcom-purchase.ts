@@ -15,7 +15,7 @@ import { getAppUrl } from '@/lib/url';
 import { CARDCOM_ABANDON_AFTER_MINUTES, settleCardcomSession } from './cardcom-settle';
 import { beginOperation, completeOperation } from './ledger';
 import { getPackagePaymentState } from './package-paid';
-import { RECEIPT_DESCRIPTION } from './package-receipt';
+import { receiptLineFor } from './package-receipt';
 import { resolvePurchaseProvider } from './provider';
 
 // Opens a CardCom Open Fields payment session for a fixed-price package purchase (docs/superpowers/plans/
@@ -159,7 +159,7 @@ export async function startCardcomPurchase(input: CardcomStartInput): Promise<Ca
   }
 
   // 3b. Take the lock: the PENDING row, before CardCom is asked for anything.
-  const lines = [{ description: RECEIPT_DESCRIPTION, unitPrice: price }];
+  const lines = [{ description: receiptLineFor(campaign.package_name), unitPrice: price }];
   let operationId: string;
   try {
     const begun = await beginOperation(admin, {

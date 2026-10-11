@@ -765,16 +765,17 @@ describe('getCampaignForHold', () => {
 describe('getCampaignForPurchase', () => {
   it('selects only what the package purchase needs, via the admin client', async () => {
     const { client, builder } = adminWith({
-      data: { id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, capture_status: null, charge_status: null },
+      data: { id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, capture_status: null, charge_status: null, package: { name: 'אישורי הגעה — וואטסאפ + שיחות AI' } },
       error: null,
     });
 
     const r = await getCampaignForPurchase('c1');
 
     expect(client.from).toHaveBeenCalledWith('campaigns');
-    expect(builder.select).toHaveBeenCalledWith('id, event_id, status, package_price, capture_status, charge_status');
+    // The package the campaign was created from (template_id → packages): its name is the receipt line.
+    expect(builder.select).toHaveBeenCalledWith('id, event_id, status, package_price, capture_status, charge_status, package:packages(name)');
     expect(builder.eq).toHaveBeenCalledWith('id', 'c1');
-    expect(r).toEqual({ id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, capture_status: null, charge_status: null });
+    expect(r).toEqual({ id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, capture_status: null, charge_status: null, package_name: 'אישורי הגעה — וואטסאפ + שיחות AI' });
   });
 
   it('returns null for a campaign that does not exist', async () => {

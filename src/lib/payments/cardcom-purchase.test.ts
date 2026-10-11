@@ -35,7 +35,7 @@ const NOW = new Date('2026-10-07T12:00:00Z');
 const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60_000).toISOString();
 
 const input = (over: Partial<CardcomStartInput> = {}): CardcomStartInput => ({
-  campaign: { id: 'c1', event_id: 'e1', status: 'approved', package_price: 149, capture_status: null, charge_status: null },
+  campaign: { id: 'c1', event_id: 'e1', status: 'approved', package_price: 149, capture_status: null, charge_status: null, package_name: 'אישורי הגעה — וואטסאפ + שיחות AI' },
   payer: { userId: 'u1', email: 'dana@example.com', name: 'דנה כהן' },
   mayUseTestTerminal: false,
   ...over,
@@ -188,7 +188,9 @@ describe('startCardcomPurchase: opening the session', () => {
     expect(JSON.stringify(out)).not.toContain('https://');
     expect(rowsWhenCardcomWasAsked).toBe(1);
     expect(ops()).toMatchObject([{ kind: 'package_purchase', outcome: 'pending', amount: 149, campaign_id: 'c1', meta: { provider: 'cardcom', payerUserId: 'u1' } }]);
-    expect(lineRows()).toMatchObject([{ description: expect.stringContaining('KALFA'), unit_price: 149 }]);
+    // The receipt line is the purchased package's own name.
+    expect(lineRows()).toMatchObject([{ description: 'אישורי הגעה — וואטסאפ + שיחות AI', unit_price: 149 }]);
+    expect(vi.mocked(lowProfileCreate).mock.calls[0]?.[0]?.Document?.Products).toEqual([{ Description: 'אישורי הגעה — וואטסאפ + שיחות AI', UnitCost: 149, Quantity: 1 }]);
     expect(fake.rows('cardcom_payment_sessions')).toMatchObject([{ low_profile_id: 'lp-new', operation_id: ops()[0].id }]);
   });
 

@@ -14,7 +14,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { cardFromSumit, saveCitizenId, type CardDetails } from './card';
 import { beginOperation, completeOperation, type ProviderDocument } from './ledger';
 import { getPackagePaymentState } from './package-paid';
-import { RECEIPT_DESCRIPTION } from './package-receipt';
+import { receiptLineFor } from './package-receipt';
 import { resolvePurchaseProvider } from './provider';
 
 // The fixed-price package PURCHASE (docs/superpowers/plans/2026-10-04-package-payment-plan.md, P-B): one real charge
@@ -198,7 +198,7 @@ export async function purchasePackage(input: PackagePurchaseInput): Promise<Purc
       amount: price,
       // What the price is made of, on record before the provider is asked. One line today; a credit that comes off the
       // price will be a second, negative line (see 'credit_unsupported' above).
-      lines: [{ description: RECEIPT_DESCRIPTION, unitPrice: price }],
+      lines: [{ description: receiptLineFor(campaign.package_name), unitPrice: price }],
       provider: 'sumit',
       meta: { payerUserId: payer.userId },
     });
@@ -217,7 +217,7 @@ export async function purchasePackage(input: PackagePurchaseInput): Promise<Purc
       apiKey: sumit.apiKey,
       ogToken,
       amount: price.toFixed(2), // numeric → string only at the SUMIT boundary
-      description: RECEIPT_DESCRIPTION,
+      description: receiptLineFor(campaign.package_name),
       externalRef: operationId,
       customerEmail: payer.email,
       customerName: payer.name,

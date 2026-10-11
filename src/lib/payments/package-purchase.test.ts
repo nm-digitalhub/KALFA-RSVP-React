@@ -109,7 +109,8 @@ const GOOD: SumitChargeResult = {
   },
 };
 
-const CAMPAIGN: CampaignPurchaseState = { id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, capture_status: null, charge_status: null };
+// No package name: the receipt falls back to the general line (receiptLineFor).
+const CAMPAIGN: CampaignPurchaseState = { id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, capture_status: null, charge_status: null, package_name: null };
 const SECRETS = ['og-token-123', 'test-api-key', 'tok-reusable', '316125434'];
 
 function input(over: { campaign?: Partial<CampaignPurchaseState> } = {}): PackagePurchaseInput {
