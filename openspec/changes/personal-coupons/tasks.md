@@ -12,7 +12,7 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
   - `coupon_assignment_events`, insert-only;
   - `campaign_pricing` with its FK to `coupon_assignments`, the unique assignment, the price check constraint, and the `version` trigger (D2).
 
-  All three tables: RLS on, no grants to anon or authenticated, writes only through the functions in 1.2. Verify on live (read-only after push): no grant to anon or authenticated; every FK exists.
+  All four tables: RLS on, no grants to anon or authenticated, writes only through the functions in 1.2. Verify on live (read-only after push): no grant to anon or authenticated; every FK exists.
 - [ ] 1.2 In the same change set: `bind_coupon_assignment` (including moving the option), `release_coupon_assignment` (D5), and `approve_package_terms` with its request id (D7). `signed_agreements` gains a unique approval request id. All take row locks in the D6 order and are `SECURITY DEFINER`, executable by the service role only. Verify:
   - two parallel binds of one assignment: exactly one succeeds;
   - two parallel approvals: exactly one stores an agreement;
@@ -63,10 +63,14 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
 - [ ] 6.2 **[needs D-open 2, 8]** `apply_discount_tier` (D9):
   - it takes the objection reason only, and checks the call's limits;
   - it writes or returns the one assignment for this call, with an option per package the offer allows, for the callback request's phone;
-  - it returns `{offer, options:[{package_id, package_name, list_price, final_price}]}`;
+  - it returns `{offer, options:[{package_id, package_name, list_price, final_price}]}`, or a defined no-offer response;
   - it records the objection reason and the outcome through a service-role activity insert.
 
-  Verify: route tests — a repeat call returns the same assignment and options; a failed write returns "no offer"; no caller-sent price, value or package is used.
+  The call scenario (`SalesCloseAgent.voxengine.js`):
+  - its discount result mapper forwards `offer` and `options`, and keeps accepting the legacy `{tier, amount_or_pct}` response during the deploy. Already done outside this change and uploaded with `npm run vox:upload:salesclose` (11.10.2026, scenario 920396);
+  - a communication failure keeps returning the existing "not configured" result, so the agent promises nothing.
+
+  Verify: route tests — a repeat call returns the same assignment and options; a failed write returns "no offer"; no caller-sent price, value or package is used. Scenario: tests or a recorded test call for an offer, no offer, and a communication failure.
 - [ ] 6.3 Update the agent's prompt so it quotes the returned final prices for the packages in the benefit, says the customer chooses at signup, promises only after the tool answers, and tells the caller the offer waits for the phone it was called on. Use the sanctioned flow: `agents pull --update` → edit → `agents push` → `pull --update`. Verify: the pulled config matches; a real test call is transcribed (CLAUDE.md voice-agent rule).
 
 ## 7. Screens (D12)

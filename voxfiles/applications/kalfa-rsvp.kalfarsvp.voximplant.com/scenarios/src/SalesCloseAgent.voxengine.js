@@ -487,7 +487,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                         path: 'pricing',
                         body: function () { return {}; },
                         // The fixed-price package catalogue: a list of
-                        // { package_name, price, contact_quota, channels, includes }.
+                        // { package_id, package_name, price, contact_quota, channels, includes }.
                         // Passed through whole — the figures are the server's, and
                         // the agent must read them, not rebuild them.
                         resultFrom: function (ok, body) {
@@ -503,6 +503,22 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             return { objection_reason: String(args.objection_reason || '').slice(0, 300) };
                         },
                         resultFrom: function (ok, body) {
+                            if (ok && body && Array.isArray(body.options)) {
+                                if (body.offer && body.options.length > 0) {
+                                    return {
+                                        offer: body.offer,
+                                        options: body.options.map(function (option) {
+                                            return {
+                                                package_id: option.package_id,
+                                                package_name: option.package_name,
+                                                list_price: option.list_price,
+                                                final_price: option.final_price
+                                            };
+                                        })
+                                    };
+                                }
+                                return { offer: null, options: [] };
+                            }
                             if (ok && body && body.tier) {
                                 return { tier: body.tier, amount_or_pct: body.amount_or_pct };
                             }

@@ -1,18 +1,20 @@
 {
-    "type": "client",
-    "name": "get_pricing",
-    "description": "קורא את חבילות המחיר הקבוע החיות מטבלת packages. לקרוא בכל פעם שעולה נושא מחיר/חבילה/מה כלול. לעולם לא לנחש בלי לקרוא, גם אם נדמה שזוכרים ממחיר קודם באותה שיחה. מחזיר available, ואם יש חבילות: packages, רשימה שבה לכל חבילה package_name, price (מחיר סופי בשקלים, תשלום חד-פעמי, ללא מע\"מ), contact_quota (מספר אנשי הקשר שהקמפיין רשאי לפנות אליהם, בין אם השיבו ובין אם לא), channels ו-includes. אם available=false אין מחיר זמין, ואין להמציא מספר.",
-    "response_timeout_secs": 28,
-    "disable_interruptions": true,
-    "interruption_mode": "disable_during_tool",
-    "force_pre_tool_speech": false,
-    "pre_tool_speech": "off",
     "assignments": [],
-    "tool_call_sound_behavior": "auto",
-    "tool_error_handling_mode": "auto",
-    "expects_response": true,
+    "description": "קורא את חבילות המחיר הקבוע החיות מטבלת packages. לקרוא בכל פעם שעולה נושא מחיר/חבילה/מה כלול. לעולם לא לנחש בלי לקרוא, גם אם נדמה שזוכרים ממחיר קודם באותה שיחה. מחזיר available, ואם יש חבילות: packages, רשימה שבה לכל חבילה package_id (מזהה החבילה), package_name, price (מחיר סופי בשקלים, תשלום חד-פעמי, ללא מע\"מ), contact_quota (מספר אנשי הקשר שהקמפיין רשאי לפנות אליהם, בין אם השיבו ובין אם לא), channels ו-includes. אם available=false אין מחיר זמין, ואין להמציא מספר.",
+    "disable_interruptions": true,
     "dynamic_variables": {
         "dynamic_variable_placeholders": {}
     },
-    "execution_mode": "immediate"
+    "execution_mode": "immediate",
+    "expects_response": true,
+    "force_pre_tool_speech": false,
+    "interruption_mode": "disable_during_tool",
+    "name": "get_pricing",
+    "parameters": null,
+    "pre_tool_speech": "off",
+    "response_timeout_secs": 28,
+    "tool_call_sound": null,
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "auto",
+    "type": "client"
 }
