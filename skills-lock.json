@@ -710,10 +710,11 @@
       "computedHash": "7ceca67d5dcc5b777b876f1fe44a4a02134f9f78b71f7356a8b7791ba251b8e1"
     },
     "music-to-video": {
-      "source": "heygen-com/hyperframes",
+      "source": "calesthio/OpenMontage",
+      "ref": "main",
       "sourceType": "github",
-      "skillPath": "skills/music-to-video/SKILL.md",
-      "computedHash": "056d0cfffaff61259a9d88aef7899def30d2fc46d0a1722765eac6eda578313e"
+      "skillPath": ".agents/skills/music-to-video/SKILL.md",
+      "computedHash": "e892ec28eeb3f2c4a9416cf3ba8eef9d2d6c2bf9e5fd8825d0dc4a3498be9f1a"
     },
     "negative-sentiment-de-escalation": {
       "source": "louisblythe/salesskills",
