@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { cancelMyRdpRequest, endMyRdpGrant, submitRdpAccessRequest } from '@/lib/data/admin/rdp-access';
-import { rdpClientIp } from '@/lib/rdp-access/client-ip';
+import { socketClientIp } from '@/lib/security/client-ip';
 import {
   CANCEL_GONE_TEXT,
   END_GONE_TEXT,
@@ -52,7 +52,7 @@ export async function requestRdpAccessAction(_prev: FormState, formData: FormDat
   const requestHeaders = await headers();
   let result: Awaited<ReturnType<typeof submitRdpAccessRequest>>;
   try {
-    result = await submitRdpAccessRequest(parsed.data, rdpClientIp((name) => requestHeaders.get(name)));
+    result = await submitRdpAccessRequest(parsed.data, socketClientIp((name) => requestHeaders.get(name)));
   } catch (err) {
     unstable_rethrow(err);
     console.error('rdp-access: the request action failed');

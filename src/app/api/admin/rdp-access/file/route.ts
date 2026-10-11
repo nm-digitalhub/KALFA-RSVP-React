@@ -1,6 +1,6 @@
 import { getUser, hasPlatformPermission } from '@/lib/auth/dal';
 import { issueMyRdpFile, type RdpFileIssueFailure } from '@/lib/data/admin/rdp-access';
-import { rdpClientIp } from '@/lib/rdp-access/client-ip';
+import { socketClientIp } from '@/lib/security/client-ip';
 import { rateLimit } from '@/lib/security/rate-limit';
 import { getAppOrigin } from '@/lib/url';
 
@@ -64,7 +64,7 @@ export async function POST(request: Request): Promise<Response> {
 
   let issued: Awaited<ReturnType<typeof issueMyRdpFile>>;
   try {
-    issued = await issueMyRdpFile(rdpClientIp((name) => request.headers.get(name)));
+    issued = await issueMyRdpFile(socketClientIp((name) => request.headers.get(name)));
   } catch {
     console.error('rdp-access: issuing the connection file failed');
     return failure('server_error');
