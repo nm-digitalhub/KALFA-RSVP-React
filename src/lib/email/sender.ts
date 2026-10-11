@@ -5,7 +5,7 @@ import { Resend } from 'resend';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 
-// Email transport for KALFA business emails (signed agreement, invoices, etc.).
+// Email transport for KALFA business emails (the approved package terms, invoices, etc.).
 //
 // Two transports, chosen by EMAIL_PROVIDER so a rollback needs no deploy and
 // does not depend on the database being reachable:

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   approveCampaignSchema,
-  authorizeHoldSchema,
   purchasePackageSchema,
   choosePackageSchema,
 } from '@/lib/validation/campaigns';
@@ -32,21 +31,6 @@ describe('approveCampaignSchema', () => {
     expect(
       approveCampaignSchema.safeParse({ ...base, campaign_id: 'not-a-uuid' }).success,
     ).toBe(false);
-  });
-});
-
-describe('authorizeHoldSchema', () => {
-  it('accepts a non-empty single-use card token', () => {
-    const r = authorizeHoldSchema.safeParse({ 'og-token': 'og_abc123' });
-    expect(r.success).toBe(true);
-  });
-
-  it('rejects a missing or empty og-token (no card → no hold)', () => {
-    expect(authorizeHoldSchema.safeParse({}).success).toBe(false);
-    expect(authorizeHoldSchema.safeParse({ 'og-token': '' }).success).toBe(false);
-    expect(authorizeHoldSchema.safeParse({ 'og-token': '   ' }).success).toBe(
-      false,
-    );
   });
 });
 

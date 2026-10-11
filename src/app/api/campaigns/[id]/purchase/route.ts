@@ -84,7 +84,7 @@ export async function POST(
   if (isPastEventDay(event.event_date)) return payError(PURCHASE_ERROR.EVENT_PAST);
   if (event.status !== 'active') return payError(PURCHASE_ERROR.EVENT_NOT_ACTIVE);
 
-  // Cardholder name on the receipt — same fallback chain as the hold and the signed agreement.
+  // Cardholder name on the receipt — same fallback chain as the package-terms approval.
   const profile = await getProfile();
   const name = profile?.full_name?.trim() || user.email || 'לקוח KALFA';
 

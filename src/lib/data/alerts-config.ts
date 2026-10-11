@@ -18,7 +18,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 // Alert categories, each gated by its own admin toggle. Emit sites: `errors`
 // (instrumentation + worker), `send_health` (whatsapp/sms/sumit provider
-// failures), `campaign_billing` (final charge / J5 hold / signed agreement /
+// failures), `campaign_billing` (package terms approval / payment /
 // campaign lifecycle), `security` (first-admin claim + admin-user
 // grant/revoke/suspend) and `customer_inquiry` (a new public/customer inquiry —
 // contact form or call-me-back — landed).

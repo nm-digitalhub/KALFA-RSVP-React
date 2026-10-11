@@ -13,7 +13,8 @@ import { listArchiveFiles } from '@/lib/data/archive-maintenance';
 //   - SharePoint: Contracts, Contracts-Working, Customer-Agreements.
 //     Supplier contracts live ONLY there, and SharePoint's only safety net is
 //     a 93-day recycle bin.
-//   - Supabase id-documents: the signed agreement PDFs and signature images.
+//   - Supabase id-documents: the package-terms approval PDFs, and the signed
+//     agreement PDFs and signature images of the retired pay-per-result model.
 //     Backed up too: the system of record is not assumed safe merely by
 //     being the system of record.
 //

@@ -70,7 +70,7 @@ export type AgentShiftBody = z.infer<typeof agentShiftSchema>;
 //     while the owner/admin lifecycle paths read the COOKIE session, so two
 //     concerns are kept separate — WHO is acting (a CampaignActor value, one
 //     variant per authentication path) and WHICH business guards apply (the
-//     funding precondition: J5 hold or package payment, the past-event refusal,
+//     funding precondition: the package payment, the past-event refusal,
 //     the active-event requirement), which run for every actor. The route calls
 //     the same activateCampaign / pauseCampaign the web Server Actions call; it
 //     does not reimplement them, and campaign-lifecycle-parity.test.ts fails if a

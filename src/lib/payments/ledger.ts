@@ -23,8 +23,8 @@ import type { OperationEffect, OperationOutcome, OperationRow } from './status';
 //     to its amount and credit_applied. An operation with no lines keeps those two columns as its only record.
 // Server-only, through the admin client and only AFTER the caller has verified ownership: the browser has no grant on
 // the table. Not built here, on purpose: filling the card brand/issuer after the charge (best effort, display only).
-// The old card-hold and final-charge paths do not write here (owner 4.10: the hold leaves the model); their state stays
-// in the campaigns columns until they are retired.
+// The card holds and final charges of the retired pay-per-result model were copied here as history (authorize, release,
+// charge rows); nothing writes them any more.
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 

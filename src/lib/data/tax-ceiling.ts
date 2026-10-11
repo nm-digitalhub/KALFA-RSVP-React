@@ -14,8 +14,7 @@ export const OSEK_PATUR_YEARLY_CEILING_ILS = 122_833;
 const WARN_AT = 0.8;
 const CRIT_AT = 0.95;
 
-// Fire-and-forget after every successful charge — a final charge on the old
-// per-result path (close-charge.ts) and a package purchase (package-purchase.ts):
+// Fire-and-forget after every successful package purchase (package-purchase.ts):
 // sum the calendar year's actually-collected revenue and alert when it
 // approaches the ceiling. The sum is owner_agent_billing_sums().charged_amount,
 // the one definition of "revenue" that reads both places money is recorded (the

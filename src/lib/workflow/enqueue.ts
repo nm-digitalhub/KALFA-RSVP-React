@@ -132,7 +132,7 @@ const AI_TIMEOUT_MS = 10 * 60 * 1000;
  *
  * ⚠️ CREDENTIALS ARE READ HERE, NOT PASSED THROUGH THE DIAGRAM. `getSumitServerConfig`
  * is the one reader every other SUMIT caller uses, so a workflow can no more
- * reach the API key than the close-charge can — the node names WHAT to issue,
+ * reach the API key than the package purchase can — the node names WHAT to issue,
  * never WITH WHAT. Missing configuration is a permanent failure with a Hebrew
  * message, not a silent no-op that would leave a workflow "completed" with no
  * document.

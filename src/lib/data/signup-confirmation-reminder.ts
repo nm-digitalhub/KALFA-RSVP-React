@@ -16,7 +16,7 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 //   • a second nudge to someone who ignored the first is spam-adjacent, and
 //   • "signed up a day ago, still unconfirmed" is exactly where typo'd and
 //     throwaway addresses concentrate, so every extra send is extra hard-bounce
-//     exposure on the same Resend domain that carries the signed agreements.
+//     exposure on the same Resend domain that carries the package terms.
 // The candidate query (signup_reminder_candidates) already excludes addresses
 // whose confirmation mail hard-bounced before.
 //

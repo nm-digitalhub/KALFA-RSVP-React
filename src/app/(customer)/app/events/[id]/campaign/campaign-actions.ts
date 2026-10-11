@@ -185,7 +185,7 @@ export async function activateCampaignAction(
       error:
         err instanceof Error
           ? err.message
-          : 'הפעלת הקמפיין נכשלה — נדרשת תפיסת מסגרת מאושרת.',
+          : 'הפעלת הקמפיין נכשלה. נסו שוב.',
     };
   }
   // The button lives on two screens (payment page, manage page) — refresh
@@ -225,7 +225,7 @@ export async function closeCampaignAction(
     return { error: 'סגירת הקמפיין נכשלה.' };
   }
   revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
-  return { notice: 'הקמפיין נסגר — אפשר לבצע גמר חשבון.' };
+  return { notice: 'הקמפיין נסגר.' };
 }
 
 // Manual gift-reminder send (message_key 'gift', kalfa_event_gift_v1).

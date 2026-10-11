@@ -32,8 +32,7 @@ export const requireUser = cache(async () => {
 // conditional UI (e.g. showing an admin nav link). Returns false for
 // anonymous users. Authorization for admin routes is enforced by
 // requirePlatformStaff in the admin layout and by a named permission in each
-// data-layer function; apart from the close-charge route's own check, this is
-// convenience only, never a gate.
+// data-layer function; this is convenience only, never a gate.
 // Memoized per render pass so repeated calls share one RPC round-trip.
 export const isAdmin = cache(async (): Promise<boolean> => {
   const user = await getUser();

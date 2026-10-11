@@ -287,7 +287,7 @@ export function AlertsClient({ view }: { view: SlackAlertsView }) {
           />
           <ToggleRow
             label="קמפיינים וחיוב"
-            hint="חתימת הסכם, הפעלה/ביטול קמפיין, וחיוב סופי (בוצע/נדחה)."
+            hint="אישור תנאי חבילה, הפעלה/ביטול קמפיין ותשלומים."
             defaultChecked={view.categories.campaignBilling}
             category="campaign_billing"
           />

@@ -9,8 +9,8 @@ import { sendCampaignWhatsApp } from '@/lib/data/outreach';
 import { whatsappSendSchema } from '@/lib/validation/campaigns';
 import { isAllowedOrigin } from '@/lib/http/allowed-origin';
 
-// Manual owner-triggered WhatsApp send for a campaign. Mirrors the J5
-// authorize route: CSRF + auth + ownership + fail-closed gate. The
+// Manual owner-triggered WhatsApp send for a campaign: CSRF + auth + ownership +
+// fail-closed gate. The
 // orchestrator re-checks every §8.3 precondition; this route only gates +
 // dispatches. Never log token/PII.
 
@@ -27,7 +27,7 @@ export async function POST(
   if (!isAllowedOrigin(request)) {
     return new NextResponse('Forbidden', { status: 403 });
   }
-  // Redirects use the PUBLIC origin, not request.url (proxy host), per the J5 fix.
+  // Redirects use the PUBLIC origin, not request.url (the proxy host).
   const origin = process.env.APP_ORIGIN as string;
 
   try {

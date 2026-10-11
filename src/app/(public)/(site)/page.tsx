@@ -206,7 +206,7 @@ export default async function HomePage() {
               },
             }
           : {}),
-        // The same address disclosed in the signed agreement (§14ג) —
+        // The same address disclosed in the package terms (§14ג) —
         // admin-managed via /admin/company, never invented here. Only
         // `streetAddress` is set: the DB stores one free-text field (no
         // separate locality/postal-code columns), and guessing a split would

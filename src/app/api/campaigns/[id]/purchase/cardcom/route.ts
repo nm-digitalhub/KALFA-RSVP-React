@@ -28,7 +28,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (isPastEventDay(event.event_date)) return noStoreJson({ status: 'event_past' }, 409);
   if (event.status !== 'active') return noStoreJson({ status: 'event_not_active' }, 409);
 
-  // Cardholder name for the receipt — the same fallback chain as the SUMIT purchase and the signed agreement.
+  // Cardholder name for the receipt — the same fallback chain as the SUMIT purchase and the package-terms approval.
   const profile = await getProfile();
   const name = profile?.full_name?.trim() || user.email || 'לקוח KALFA';
 

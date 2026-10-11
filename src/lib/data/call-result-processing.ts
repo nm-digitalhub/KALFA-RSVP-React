@@ -67,9 +67,8 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
   }
 
   if (body.call_status === 'completed' || body.call_status === 'handed_off') {
-    // Billing: a handed-off call is a reached human exactly like a completed AI
-    // call — "reached" in the signed agreement is channel-neutral
-    // ("מענה אנושי בשיחה"). Both statuses share
+    // Reach: a handed-off call is a reached human exactly like a completed AI
+    // call — "reached" is channel-neutral ("מענה אנושי בשיחה"). Both statuses share
     // this ONE branch (single writeReach call site) with a distinct evidence
     // string per status; terminalStatus()'s precedence in the scenario already
     // guarantees 'completed' wins whenever the AI conversation actually
@@ -194,8 +193,8 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
 // agent-tool route (so the agent gets a truthful ok/fail for its confirmation
 // wording) AND idempotently by the webhook drain (event_kind==='call_rsvp') as the
 // durable retry path. Writes ONLY the RSVP answer + real adult/child counts through
-// the same atomic submit_rsvp RPC the public form uses — it does NOT bill (billing
-// stays on the call-completed path, per-reached, once). Identity is the resolved
+// the same atomic submit_rsvp RPC the public form uses — it does NOT record a reach
+// (that stays on the call-completed path, once). Identity is the resolved
 // attempt (token-verified upstream), never the payload. submit_rsvp is
 // idempotent-by-value (last write wins), so a corrected count simply overwrites.
 /**

@@ -2,7 +2,8 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 
-// Private legal-document storage (signed agreement PDF, signature image). The
+// Private legal-document storage (the package-terms approval PDF; also the signed agreement PDFs and signature images
+// of the retired pay-per-result campaigns, kept as history). The
 // bucket has NO RLS policies → only the service-role client may touch it. Never
 // build public URLs; any viewer link must be a short-lived signed URL generated
 // here. Never log the bytes or the signed URL.

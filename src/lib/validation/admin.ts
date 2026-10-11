@@ -470,7 +470,7 @@ export const emailTransportSchema = z.object({
 
 export type AppSettingsInput = z.infer<typeof appSettingsSchema>;
 
-// --- company / legal details (for the signed agreement) ---
+// --- company / legal details (for the package terms) ---
 // All free strings; the agreement reads them. A lawyer confirms the wording.
 export const companySettingsSchema = z.object({
   company_legal_name: z.string().trim(),
@@ -515,8 +515,8 @@ export const adminUserViewSchema = z.object({
 export type AdminUserViewInput = z.infer<typeof adminUserViewSchema>;
 
 // Grant a benefit (billing credit) on one of the user's events. campaign_id is
-// optional: empty = event-level credit (consumed by the event's campaign at
-// close-charge); set = scoped to that specific campaign only.
+// optional: empty = event-level credit (consumed by the event's campaign at its
+// package purchase); set = scoped to that specific campaign only.
 export const grantCreditSchema = z.object({
   // The user the credit is granted to — the server re-checks the chosen event is
   // actually owned by them (never trust the submitted event id on its own).

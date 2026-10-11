@@ -17,7 +17,7 @@ import { formatCurrency } from '@/lib/format';
 // display it.
 //
 // Nothing in this file offers an ACTION — not a setup action (publish, sign,
-// card hold, activate, setup steps, edit form) and not a "next action" either:
+// package payment, activate, setup steps, edit form) and not a "next action" either:
 // the event is over, `closed` is terminal (events_guard_update permits no
 // closed → * transition, migration 20260630223635), and every send path is
 // gated on an ACTIVE event. Offering anything here would invite acting on a

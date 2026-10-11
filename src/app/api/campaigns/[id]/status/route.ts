@@ -20,7 +20,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 //
 // It does NOT re-implement the lifecycle. It resolves the actor, then calls the
 // same pauseCampaign / activateCampaign the web Server Actions call, passing a
-// `console` actor. Every guard those carry — the J5 hold, the past-event refusal,
+// `console` actor. Every guard those carry — the package payment, the past-event refusal,
 // the active-event requirement, the Slack ops alert, the auto-thankyou seed —
 // therefore applies here by construction rather than by remembering to copy it.
 // An earlier draft of this route did copy the logic, and silently lost the

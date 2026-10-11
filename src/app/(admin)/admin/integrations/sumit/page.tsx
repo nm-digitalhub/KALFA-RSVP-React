@@ -87,8 +87,8 @@ export default async function SumitPage() {
       <section className={sectionClass}>
         <h2 className="text-lg font-semibold">מה שאינו כאן</h2>
         <p className="text-sm text-muted-foreground">
-          מתגי הכסף — הפעלת סליקה, חיוב בסגירת קמפיין, תפיסת מסגרת ומודל החיוב —
-          נשארים בהגדרות המערכת. &quot;האם ניתן להגיע לספק&quot; ו&quot;האם לחייב
+          מתגי הכסף — הפעלת סליקה ומודל הספירה של אנשי הקשר שהושגו — נשארים
+          בהגדרות המערכת. &quot;האם ניתן להגיע לספק&quot; ו&quot;האם לחייב
           מישהו&quot; הן שתי שאלות נפרדות.
         </p>
         <div className="flex flex-wrap gap-4">

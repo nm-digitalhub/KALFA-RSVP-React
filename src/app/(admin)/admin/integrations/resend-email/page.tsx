@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: 'דואר יוצא — אינטגרצ
 
 const sectionClass = 'space-y-3';
 
-// Outgoing business mail: the signed agreement and the invoices. Two transports behind
+// Outgoing business mail: the approved package terms and the invoices. Two transports behind
 // one env switch, credentials for both, and the verdict the hourly check produces.
 //
 // ⚠️ WHICH TRANSPORT IS LIVE IS AN ENV DECISION, NOT A DATABASE ONE, and the page says

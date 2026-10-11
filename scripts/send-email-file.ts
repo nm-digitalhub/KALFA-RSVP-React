@@ -13,7 +13,7 @@
 //   node --env-file=.env.local dist/send-email-file.cjs
 //
 // SEND_PDF_HTML_FILE, when set, is rendered to an A4 PDF with the SAME
-// pipeline as the signed agreement (renderAgreementPdf — correct Hebrew BiDi)
+// pipeline as the package terms (renderAgreementPdf — correct Hebrew BiDi)
 // and attached as SEND_PDF_NAME.
 //
 // Bundle (matches the sync-voximplant-sa pattern in package.json):

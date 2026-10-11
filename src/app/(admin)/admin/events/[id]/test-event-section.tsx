@@ -60,7 +60,7 @@ export function TestEventSection({
         <div className="space-y-2 border-t border-border pt-3">
           {purgeBlocked ? (
             <p className="text-muted-foreground">
-              לא ניתן למחוק: באירוע יש פעילות כספית (חיוב, תפיסת מסגרת שלא שוחררה, מסמך SUMIT או גביית ביטול).
+              לא ניתן למחוק: באירוע יש פעילות כספית (תשלום או החזר ביומן התשלומים, מסמך SUMIT או גביית ביטול).
             </p>
           ) : !confirming ? (
             <Button type="button" variant="destructive" onClick={() => setConfirming(true)}>

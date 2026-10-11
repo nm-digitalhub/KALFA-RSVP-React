@@ -34,15 +34,8 @@ export const setupAcknowledgmentsSchema = z.object({
   ack_lock: z.literal('on'),
 });
 
-// Route A J5 hold: the browser submits ONLY the single-use card token (payments.js
-// injects the `og-token` hidden field). The campaign id is the route param and the
-// hold amount is derived on the server — neither is trusted from the form.
-export const authorizeHoldSchema = z.object({
-  'og-token': z.string().trim().min(1, { error: 'פרטי תשלום חסרים' }),
-});
-export type AuthorizeHoldInput = z.infer<typeof authorizeHoldSchema>;
-
-// Package purchase: the same single field. The price charged is the campaign's own `package_price`, read on the server
+// Package purchase: the browser submits ONLY the single-use card token (payments.js injects the `og-token` hidden
+// field). The price charged is the campaign's own `package_price`, read on the server
 // — the browser submits only the single-use card token, and any other field is dropped by the parse.
 export const purchasePackageSchema = z.object({
   'og-token': z.string({ error: 'פרטי תשלום חסרים' }).trim().min(1, { error: 'פרטי תשלום חסרים' }),

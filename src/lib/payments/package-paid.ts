@@ -13,8 +13,8 @@ export async function getPackagePaymentState(campaignId: string): Promise<Paymen
   return deriveStatus(await loadOperations(createAdminClient(), campaignId));
 }
 
-// The payment state a SCREEN needs to compute the stage of a campaign: only a package campaign has one (a
-// pay-per-result campaign is funded by its card hold, a column of the campaign). An unreadable ledger answers null —
+// The payment state a SCREEN needs to compute the stage of a campaign: only a campaign with a package has one (a
+// campaign of the retired pay-per-result model has nothing to pay and is never funded). An unreadable ledger answers null —
 // "not funded" — which is the safe direction for a display: the payment page, which fails closed on its own, then
 // tells the customer what is wrong.
 export async function packagePaymentOf(campaign: {

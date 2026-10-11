@@ -18,7 +18,7 @@ import type { FormState } from '@/lib/validation/result';
 const PURGE_ERRORS: Record<Exclude<PurgeOutcome, 'purged'>, string> = {
   not_marked: 'האירוע לא מסומן כאירוע בדיקה.',
   financial_activity:
-    'לא ניתן למחוק: באירוע יש פעילות כספית (חיוב, תפיסת מסגרת פתוחה, מסמך SUMIT או גביית ביטול).',
+    'לא ניתן למחוק: באירוע יש פעילות כספית (תשלום או החזר ביומן התשלומים, מסמך SUMIT או גביית ביטול).',
   not_staff: 'אין הרשאה לפעולה.',
   no_event: 'האירוע לא נמצא.',
 };

@@ -73,14 +73,14 @@ export async function getCampaignBillingSummary(
   return { reachedCount: Number(row.reached_count ?? 0) };
 }
 
-// Credit available to THIS campaign's close-charge (§14/§16/D5, gross to match
+// Credit available to THIS campaign's package purchase (§14/§16/D5, gross to match
 // the price basis) = this campaign's own credits + the event's unscoped credits
 // (campaign_id null) − whatever OTHER campaigns of the same event already
 // consumed (the payment ledger, or campaigns.credit_applied for a campaign that
 // has no ledger row — creditConsumedByCampaign). Under one-campaign-per-event the sibling
 // term is empty and this is simply the full pool; the sibling subtraction only
-// matters for the rare cancel-and-recreate case. THROWS on a real error (routes
-// close-charge to review, like the summary), never silently 0.
+// matters for the rare cancel-and-recreate case. THROWS on a real error, never
+// silently 0 (the purchase then refuses rather than overcharging).
 export async function getCampaignCreditTotal(
   campaignId: string,
   eventId: string,

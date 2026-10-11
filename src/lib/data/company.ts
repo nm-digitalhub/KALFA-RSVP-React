@@ -2,8 +2,8 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 
-// Company / legal details for embedding in the signed agreement. NOT secret —
-// these are disclosed in the agreement itself (§14ג). Read server-side (the
+// Company / legal details for embedding in the package terms. NOT secret —
+// these are disclosed in the terms themselves (§14ג). Read server-side (the
 // agreement is built/displayed in the owner's context, not admin). Admins edit
 // them via /admin/company (getCompanySettings/updateCompanySettings).
 export type CompanyLegal = {

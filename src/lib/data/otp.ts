@@ -6,7 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getSmsSender } from '@/lib/sms/sender';
 import { normalizePhone } from '@/lib/phone';
 
-// OTP identity verification (used at agreement signing). The code itself is
+// OTP identity verification (used by the "call me now" request). The code itself is
 // never stored — only sha256(code:phone). Short-lived (5 min), attempt-limited,
 // and rate-limited per phone+purpose. All server-managed via the service-role
 // client. Never log the code.

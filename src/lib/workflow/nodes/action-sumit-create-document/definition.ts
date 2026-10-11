@@ -49,7 +49,7 @@ export type SumitDocumentTypeOption = (typeof SUMIT_DOCUMENT_TYPES)[number];
  *
  * Every field mirrors a name in swagger.json's `Accounting_Documents_Create_Request`
  * chain; nothing here was invented. The node NEVER carries credentials: the port
- * reads them from `app_settings`, the same reader the close-charge uses.
+ * reads them from `app_settings`, the same reader the SUMIT package purchase uses.
  *
  * ⚠️ NO MONEY MOVES. This records a document; it does not charge a card. The
  * `Payments[]` array the API also accepts is deliberately NOT exposed — on a

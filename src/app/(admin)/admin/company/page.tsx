@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: 'פרטי חברה' };
 
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 
-// Admin: company / legal details embedded in the signed agreement (§14ג
+// Admin: company / legal details embedded in the package terms (§14ג
 // mandatory disclosures + privacy + warranty). requirePlatformPermission('manage_settings') is enforced in the
 // data layer. The agreement reads these values live.
 export default async function AdminCompanyPage() {

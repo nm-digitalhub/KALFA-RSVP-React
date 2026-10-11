@@ -48,7 +48,7 @@ export function SumitStatusCard({ health }: { health: SumitHealth | null }) {
             <TriangleAlert aria-hidden />
             <AlertTitle>סליקה מושבתת בפועל</AlertTitle>
             <AlertDescription>
-              חיוב סגירת קמפיין, תפיסת מסגרת וזיכויים עוברים כולם דרך אותם פרטים.
+              רכישות חבילה ב-SUMIT, החזרים ומסמכים חשבונאיים עוברים כולם דרך אותם פרטים.
             </AlertDescription>
           </Alert>
         )}

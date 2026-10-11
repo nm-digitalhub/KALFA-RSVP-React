@@ -441,7 +441,7 @@ export function UserActions({
         </section>
       ) : (
         // A credit is always scoped to one of the user's OWN events (it is
-        // consumed by that event's campaign at close-charge — there is no
+        // consumed by that event's campaign at its package purchase — there is no
         // account-level credit). A user who owns no event has nothing to credit,
         // so explain the absence instead of hiding the section silently.
         <section className={sectionClass}>
