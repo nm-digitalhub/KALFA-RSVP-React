@@ -23,7 +23,7 @@
 
 ## 5. Resend sync
 
-- [ ] 5.1 Verify in a Resend sandbox (owner-provided test key, test address) that `contacts.create` works without an audience in SDK 6.28.1, and that the unsubscribe link of a test broadcast sets `unsubscribed: true` and fires `contact.updated`. Record the result in the design. Verify: the recorded payloads.
+- [ ] 5.1 Verify in a Resend sandbox (owner-provided test key, test address) that `contacts.create` works without an audience in SDK 6.28.1, and that the unsubscribe link of a test broadcast sets `unsubscribed: true` and fires `contact.updated`. Record the result in the design. Verify: the recorded payloads. **Partly verified live 11.10.2026: `contacts.create` without an audience works, and an update fires `contact.updated`. Still open: the unsubscribe link inside a real broadcast.**
 - [x] 5.2 Add `src/lib/email/marketing-contacts.ts` (create/update `unsubscribed`, by email, email only) and the `marketing-contact-sync` pg-boss queue + handler per design D5 (current confirmed email from Auth, latest consent, older ledger addresses unsubscribed). Verify: handler tests with a fake Resend client for grant+confirmed, grant+unconfirmed, withdraw, email changed, Resend error rethrown for retry.
 - [x] 5.3 Enqueue the sync from `confirmOtp()` for `signup` and `email_change` after a successful verify, and from the settings action. Verify: tests that the job is enqueued with a deterministic id and that a queue failure does not change the redirect.
 - [x] 5.4 Add the daily reconcile sweep (deleted accounts → `account_removed` withdrawal + unsubscribe; drift between ledger and Resend contact state → resync). Verify: sweep tests, including that it reads only `auth.users`/`profiles`/the ledger.
@@ -39,8 +39,8 @@
 
 ## 8. Release
 
-- [ ] 8.1 Run `npm run lint`, `npx tsc --noEmit`, `npm run build` and the full test suite; run the runtime check of the signup form and settings toggle with the flag on in a test account. Verify: all green and screenshots of both screens.
-- [ ] 8.2 Owner: subscribe the Resend webhook to `contact.updated`, approve wording and privacy text, then turn `marketing_consent_enabled` on. Verify: a test signup with the box ticked shows a grant row and, after confirmation, a subscribed Resend contact.
+- [x] 8.1 Run `npm run lint`, `npx tsc --noEmit`, `npm run build` and the full test suite; run the runtime check of the signup form and settings toggle with the flag on in a test account. Verify: all green and screenshots of both screens. **Done 11.10.2026: lint/tsc clean, 12,427 tests pass, build passed in the owner's deploy. Live with the flag on: the signup page serves the `marketing_opt_in` box; the owner granted then withdrew in settings — two ledger rows (settings, version 2026-10-11.1, socket IP and user agent), two sync jobs completed, the Resend contact was created subscribed and then set unsubscribed, and Resend's contact.updated echo was stored and processed without adding a row.**
+- [ ] 8.2 Owner: subscribe the Resend webhook to `contact.updated`, approve wording and privacy text, then turn `marketing_consent_enabled` on. Verify: a test signup with the box ticked shows a grant row and, after confirmation, a subscribed Resend contact. **11.10.2026: webhook subscribed to contact.updated (via API, owner approved), wording approved, flag on. The test went through settings because the test address already had an account; a fresh signup has not been tested live.**
 
 ## Workflow follow-up
 
