@@ -14,7 +14,7 @@ body{margin:0;background:#ffffff}
 a{color:#4f39f6;text-decoration:none}a:hover{color:#3a28c4;text-decoration:underline}
 </style>
 </helmet>
-<div dir="rtl" style="width: 760px; height: 1500px; box-sizing: border-box; padding: 32px 44px; font-family: Heebo, system-ui, sans-serif; color: #0a0a0a; background: #ffffff; display: flex; flex-direction: column; gap: 28px">
+<div dir="rtl" style="width: 760px; height: 1800px; box-sizing: border-box; padding: 32px 44px; font-family: Heebo, system-ui, sans-serif; color: #0a0a0a; background: #ffffff; display: flex; flex-direction: column; gap: 28px">
 
   <div style="display: flex; flex-direction: column; gap: 8px">
     <div style="font-size: 13px; font-weight: 600; color: #737373">בשיחה · מה עומר אומר אחרי שהשרת שמר את ההטבה</div>
@@ -44,6 +44,21 @@ a{color:#4f39f6;text-decoration:none}a:hover{color:#3a28c4;text-decoration:under
   </div>
 
   <div style="display: flex; flex-direction: column; gap: 8px">
+    <div style="font-size: 13px; font-weight: 600; color: #737373">ההזמנה שלי · תנאים מאושרים וטרם שולם — התקבלה הטבה (הלקוח מחליט; ש5/D21)</div>
+    <section style="border: 1px solid #e5e5e5; border-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 12px">
+      <h2 style="margin: 0; font-size: 18px; font-weight: 600">ההזמנה שלכם</h2>
+      <div style="border: 1px solid #c9d8f7; background: #eef3fd; border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+        <p style="margin: 0; font-size: 15px; font-weight: 600; color: #2453c4">יש לכם הטבה אישית: 5% הנחה — <span dir="ltr">₪190</span> במקום <span dir="ltr">₪200</span></p>
+        <p style="margin: 0; font-size: 13px; line-height: 1.7; color: #0a0a0a">קבלת ההטבה תפתח אישור מחודש של התנאים במחיר המוזל. אם לא תקבלו אותה — התנאים שכבר אישרתם (<span dir="ltr">₪200</span>) נשארים בתוקף לתשלום.</p>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center">
+          <button type="button" style="height: 36px; padding: 0 14px; border: 0; border-radius: 10px; background: #4f39f6; color: #ffffff; font: 500 14px Heebo, system-ui, sans-serif">קבלת ההטבה ואישור תנאים מעודכנים</button>
+          <a href="#pay" style="font-size: 13px; font-weight: 500; color: #0a0a0a; text-decoration: underline; text-underline-offset: 2px">להמשיך לתשלום במחיר המאושר</a>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
     <div style="font-size: 13px; font-weight: 600; color: #737373">אישור תנאי החבילה · המחיר השתנה בזמן שהתנאים היו פתוחים (שגיאת הטופס הקיימת)</div>
     <section style="border: 1px solid #e5e5e5; border-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 16px">
       <fieldset style="display: flex; flex-direction: column; gap: 8px; border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px; margin: 0">
@@ -56,7 +71,7 @@ a{color:#4f39f6;text-decoration:none}a:hover{color:#3a28c4;text-decoration:under
   </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":760,"height":1500}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":760,"height":1800}}'>
 class Component extends DCLogic {
   renderVals() { return {}; }
 }

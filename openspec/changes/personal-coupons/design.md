@@ -189,6 +189,10 @@ A cleanup job removes a PDF only when no agreement row points to it AND the file
   - an expired or voided benefit: "the benefit ended on …";
   - a benefit already used: nothing.
 - **Several benefits:** the best price applies automatically (D18).
+- **Three states decided on 12.10.2026 that the mockups do not show yet** (to design before building the screens):
+  1. the acceptance banner (ש5/D21): the owner of a benefit whose terms are approved and unpaid sees "יש לך הטבה — לחץ לקבל", and accepting routes to approving the new terms at the discounted price;
+  2. the payment-deadline line in the terms document (D15): "המחיר בתוקף לתשלום עד [תאריך]" (`ui/Terms.dc.html` lacks it);
+  3. the staff list's held-by-payment state (D22), beside the existing held-by-review.
 - **Staff (admin, `manage_billing`):**
   - a list of assignments with source, target, options, state, bound campaign and chosen package, and that campaign's package payment outcome (pending, review or succeeded) read from the ledger;
   - assign and void actions;

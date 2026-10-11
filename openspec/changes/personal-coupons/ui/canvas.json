@@ -1,23 +1,99 @@
 {
   "v": 3,
-  "createdOnFiles": {"v": 1, "at": "2026-10-11T16:55:00Z"},
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-11T16:55:00Z"
+  },
   "title": "הטבות אישיות KALFA",
-  "launch": {"view": "canvas"},
+  "launch": {
+    "view": "canvas"
+  },
   "pages": [],
   "boards": {
-    "Main.dc.html": {"x": 0, "y": 0, "w": 760, "h": 1500, "title": "לקוח · בחירת חבילה עם הטבה", "is_interactive": true},
-    "Mobile.dc.html": {"x": 840, "y": 0, "w": 390, "h": 1500, "title": "לקוח · בחירת חבילה בטלפון"},
-    "States.dc.html": {"x": 1310, "y": 0, "w": 760, "h": 1500, "title": "לקוח · אימות טלפון ומצבי ההטבה"},
-    "Terms.dc.html": {"x": 2150, "y": 0, "w": 760, "h": 1500, "title": "לקוח · אישור תנאי החבילה"},
-    "Assignments.dc.html": {"x": 0, "y": 1920, "w": 1360, "h": 760, "title": "צוות · הטבות אישיות", "expand": "fill"},
-    "AssignNew.dc.html": {"x": 1440, "y": 1920, "w": 760, "h": 900, "title": "צוות · הקצאת הטבה"},
-    "Offers.dc.html": {"x": 2280, "y": 1920, "w": 760, "h": 900, "title": "צוות · הצעות להטבה"},
-    "OfferEdit.dc.html": {"x": 3120, "y": 1920, "w": 760, "h": 1100, "title": "צוות · עריכת הצעה"}
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 760,
+      "h": 1500,
+      "title": "לקוח · בחירת חבילה עם הטבה",
+      "is_interactive": true
+    },
+    "Mobile.dc.html": {
+      "x": 840,
+      "y": 0,
+      "w": 390,
+      "h": 1500,
+      "title": "לקוח · בחירת חבילה בטלפון"
+    },
+    "States.dc.html": {
+      "x": 1310,
+      "y": 0,
+      "w": 760,
+      "h": 1800,
+      "title": "לקוח · אימות טלפון ומצבי ההטבה"
+    },
+    "Terms.dc.html": {
+      "x": 2150,
+      "y": 0,
+      "w": 760,
+      "h": 1500,
+      "title": "לקוח · אישור תנאי החבילה"
+    },
+    "Assignments.dc.html": {
+      "x": 0,
+      "y": 1920,
+      "w": 1360,
+      "h": 840,
+      "title": "צוות · הטבות אישיות",
+      "expand": "fill"
+    },
+    "AssignNew.dc.html": {
+      "x": 1440,
+      "y": 1920,
+      "w": 760,
+      "h": 900,
+      "title": "צוות · הקצאת הטבה"
+    },
+    "Offers.dc.html": {
+      "x": 2280,
+      "y": 1920,
+      "w": 760,
+      "h": 900,
+      "title": "צוות · הצעות להטבה"
+    },
+    "OfferEdit.dc.html": {
+      "x": 3120,
+      "y": 1920,
+      "w": 760,
+      "h": 1100,
+      "title": "צוות · עריכת הצעה"
+    }
   },
-  "order": ["Main.dc.html", "Mobile.dc.html", "States.dc.html", "Terms.dc.html", "Assignments.dc.html", "AssignNew.dc.html", "Offers.dc.html", "OfferEdit.dc.html"],
+  "order": [
+    "Main.dc.html",
+    "Mobile.dc.html",
+    "States.dc.html",
+    "Terms.dc.html",
+    "Assignments.dc.html",
+    "AssignNew.dc.html",
+    "Offers.dc.html",
+    "OfferEdit.dc.html"
+  ],
   "notes": {
-    "customer": {"x": 0, "y": -300, "text": "לקוח: מהשיחה ועד אישור התנאים", "kind": "title1", "maxW": 2910},
-    "staff": {"x": 0, "y": 1620, "text": "צוות: מעקב, הקצאה והגדרת הצעות", "kind": "title1", "maxW": 3880}
+    "customer": {
+      "x": 0,
+      "y": -300,
+      "text": "לקוח: מהשיחה ועד אישור התנאים",
+      "kind": "title1",
+      "maxW": 2910
+    },
+    "staff": {
+      "x": 0,
+      "y": 1620,
+      "text": "צוות: מעקב, הקצאה והגדרת הצעות",
+      "kind": "title1",
+      "maxW": 3880
+    }
   },
   "designSystems": []
 }
