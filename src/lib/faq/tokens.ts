@@ -2,29 +2,20 @@
 // the SAME BusinessFacts the price card renders (buildBusinessFacts(), see
 // src/lib/fleet/business-facts.ts) so a live-data token inside an admin-typed
 // answer (e.g. "שולחים הזמנות ב־{{channels_list}}") is always resolved from
-// the canonical package row, never a value an admin typed and could later
-// strand.
+// the packages on sale, never a value an admin typed and could later strand.
 //
 // `{{double_brace}}` syntax and the replace mechanics are the SAME mechanism
 // the agreement template uses (src/lib/agreements/template.ts), via the
 // shared core in src/lib/text/substitute-tokens.ts — there is exactly one
 // `{{token}}` engine in the app, not two that could drift in escaping or
-// regex behavior. Token names are snake_case matching the `packages` columns
-// they read from (base_price, included_reached, price_per_reached), not the
-// agreement template's camelCase — chosen so whoever is typing FAQ content
-// can read the token name straight off the source column.
+// regex behavior. Token names are snake_case, not the agreement template's
+// camelCase.
 
 import { CHANNEL_LABELS } from '@/lib/agreements/template';
 import { substituteTokens } from '@/lib/text/substitute-tokens';
 import type { BusinessFacts } from '@/lib/fleet/business-facts';
 
-export const FAQ_TOKEN_NAMES = [
-  'base_price',
-  'included_reached',
-  'price_per_reached',
-  'channels_list',
-  'outreach_schedule',
-] as const;
+export const FAQ_TOKEN_NAMES = ['packages_list', 'channels_list', 'outreach_schedule'] as const;
 export type FaqTokenName = (typeof FAQ_TOKEN_NAMES)[number];
 
 // Hebrew has a DUAL form: one day is "יום", two is "יומיים" (not "2 ימים"),
@@ -37,7 +28,7 @@ function daysBeforeHe(days: number): string {
   return `${days.toLocaleString('he-IL')} ימים לפני`;
 }
 
-// Renders the cadence from the live package, using ONLY the channel label and
+// Renders the cadence from the packages on sale, using ONLY the channel label and
 // the day count. It deliberately does NOT name the touchpoints ("הזמנה",
 // "תזכורת"): that mapping would be a new hardcoded content table keyed on
 // message_key — reintroducing exactly the staleness this token exists to
@@ -51,19 +42,12 @@ export function formatOutreachScheduleHe(
 }
 
 // Every known token always resolves to SOME string (never left as a bare
-// "{{token}}", never renders a misleading "₪0"). `base_price`/`included_reached`
-// only mean something under the base+overage model — buildBusinessFacts()
-// itself zeroes them out while the gate is off, and quoting "₪0 activation
-// fee" there would be false, not merely stale — so under the per-reached
-// model (or when facts are unavailable) they resolve to '' and quietly drop
-// out of the sentence instead. `price_per_reached` and `channels_list` are
-// meaningful under either model (or '', only when facts are unavailable).
+// "{{token}}"). When the facts are unavailable — no package on sale, or the
+// catalogue could not be read — each resolves to '' and quietly drops out of the
+// sentence instead of showing a stale or made-up value.
 export function buildFaqTokenValues(facts: BusinessFacts): Record<FaqTokenName, string> {
-  const baseOverageActive = facts.available && facts.model === 'base_overage';
   return {
-    base_price: baseOverageActive ? `₪${facts.base_price ?? 0}` : '',
-    included_reached: baseOverageActive ? String(facts.included_reached ?? 0) : '',
-    price_per_reached: facts.available ? `₪${facts.per_reached_price ?? 0}` : '',
+    packages_list: facts.available ? (facts.packages_list_he ?? '') : '',
     channels_list:
       facts.available && facts.channels && facts.channels.length > 0
         ? facts.channels.map((ch) => CHANNEL_LABELS[ch] ?? ch).join(', ')

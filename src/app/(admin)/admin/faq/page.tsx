@@ -24,10 +24,9 @@ export default async function AdminFaqPage() {
     <div className="space-y-6">
       <PageHeading>שאלות נפוצות</PageHeading>
       <p className="max-w-prose text-sm text-muted-foreground">
-        התוכן המוצג בעמוד הציבורי <code>/faq</code>. מחיר, כמות כלולה, תוספת וערוצי הפנייה בתוך
-        תשובה מוזנים כטוקנים חיים — <code>{'{{base_price}}'}</code>,{' '}
-        <code>{'{{included_reached}}'}</code>, <code>{'{{price_per_reached}}'}</code>,{' '}
-        <code>{'{{channels_list}}'}</code> — ומוצבים אוטומטית מהחבילה הפעילה בכל טעינת עמוד; אין
+        התוכן המוצג בעמוד הציבורי <code>/faq</code>. החבילות ומחיריהן, ערוצי הפנייה ולוח השליחה בתוך
+        תשובה מוזנים כטוקנים חיים — <code>{'{{packages_list}}'}</code>, <code>{'{{channels_list}}'}</code>,{' '}
+        <code>{'{{outreach_schedule}}'}</code> — ומוצבים אוטומטית מהחבילות הפעילות בכל טעינת עמוד; אין
         להקליד ספרות מחיר או שמות ערוצים בעצמכם.
       </p>
       <FaqCatalogEditor items={items} protectedMandatorySentence={protectedMandatorySentence} />

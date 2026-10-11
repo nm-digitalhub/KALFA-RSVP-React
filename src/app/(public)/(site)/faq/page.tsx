@@ -28,9 +28,9 @@ export const metadata: Metadata = {
   alternates: { canonical: '/faq' },
 };
 
-// Content is DB-backed (admin-editable, /admin/faq) and gate-aware (the price
-// card and pricing tokens read app_settings.base_overage_pricing_enabled at
-// render time) — render per-request, same reasoning as /contact and /terms.
+// Content is DB-backed (admin-editable, /admin/faq) and the price card and
+// pricing tokens read the packages on sale at render time — render per-request,
+// same reasoning as /contact and /terms.
 export const dynamic = 'force-dynamic';
 
 // Presentational only (icon + short eyebrow label above each section's H2)
@@ -79,10 +79,9 @@ export default async function FaqPage() {
         </div>
 
         {/* Price card — always visible, before any question, never inside an
-            accordion (compliance requirement: the ₪200 activation fee must be
-            the first thing a reader sees, not something they opt into
-            revealing). Text is code-owned (buildBusinessFacts().summary_he),
-            never re-typed here. */}
+            accordion: the price is the first thing a reader sees, not something
+            they opt into revealing. Text is built from the packages on sale
+            (buildBusinessFacts().summary_he), never re-typed here. */}
         <div className="mt-8 rounded-xl border border-primary/30 bg-indigo-50 p-6">
           <h2 className="text-xl font-bold text-indigo-900">{model.priceCard.question}</h2>
           <p className="mt-2 leading-relaxed text-indigo-950/90">{model.priceCard.answer}</p>

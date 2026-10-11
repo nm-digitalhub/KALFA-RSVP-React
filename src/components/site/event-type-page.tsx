@@ -41,7 +41,7 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
   // is React-cache()d and the (site) layout's SiteHeader already called it for
   // this request — no extra round trip.
   //
-  // The send cadence is read live from the campaign package — the same
+  // The send cadence is read live from the packages on sale — the same
   // fail-safe reader the /faq page uses — so this page can never promise a
   // timetable the outreach engine would not run. On a read failure it resolves
   // to `available: false` and the cadence line simply does not render.

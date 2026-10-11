@@ -1,65 +1,37 @@
 import 'server-only';
 
-import { createAdminClient } from '@/lib/supabase/admin';
-import { buildBusinessFacts, type BusinessFacts, type PackageFacts } from '@/lib/fleet/business-facts';
-import { getBaseOveragePricingEnabled } from './payments';
+import { buildBusinessFacts, type BusinessFacts } from '@/lib/fleet/business-facts';
+import { listPackageOffers } from './campaigns';
 
-// PUBLIC-SAFE reader of the business facts the /faq page's price card (and
-// the {base_price}/{included_reached}/{price_per_reached}/{channels_list}/
-// {outreach_schedule} FAQ tokens, src/lib/faq/tokens.ts) quote. Mirrors
-// loadBusinessFacts() in scripts/fleet-agent-cli.ts exactly (same package
-// query, same gate read, same buildBusinessFacts() call); the CLI stays the
-// fleet-facing reader.
+// The ONE reader of the business facts: the /faq page's price card and its {{token}}s (src/lib/faq/tokens.ts), the
+// event-type pages' cadence line, /admin/faq's preview, and the support-drafter (scripts/fleet-agent-cli.ts
+// `business-facts` and `faq`). One read, so the site and a draft can never quote two different catalogues.
 //
-// Uses the SERVICE-ROLE client deliberately, for BOTH reads: `packages` does
-// have a public RLS policy (packages_public_read, verified live), but
-// `app_settings` (which holds the base_overage_pricing_enabled gate) does
-// not — it is has_role('admin') only, same as every other app_settings
-// reader (see payments.ts). One client for both keeps this in lockstep with
-// the CLI's logic instead of splitting into a public client for one query
-// and a service-role client for the other.
+// The packages are listPackageOffers() — the SAME definition the purchase flow sells from (active, with a price and a
+// quota, empty while the package switch is off) — so nothing is quoted that a customer cannot buy, and nothing is
+// typed into code: every figure is a column of `packages`.
 //
-// Fail-safe like every payments.ts reader: an error (including a missing/
-// placeholder service-role key) resolves to `{ available: false }` rather
-// than throwing — a public marketing page must never 500 because pricing
-// config is momentarily unreadable.
+// Fail-safe: an error (including a missing/placeholder service-role key) resolves to `{ available: false }` rather
+// than throwing — a public marketing page must never 500 because the catalogue is momentarily unreadable.
 export async function getPublicBusinessFacts(): Promise<BusinessFacts> {
   try {
-    const admin = createAdminClient();
-    const gateOn = await getBaseOveragePricingEnabled();
-    // The canonical campaign package — same selection as loadBusinessFacts()
-    // and resolveCanonicalTemplate (active, priced, lowest sort_order first).
-    const { data, error } = await admin
-      .from('packages')
-      .select('name, price_per_reached, base_price, included_reached, channels, outreach_schedule')
-      .eq('active', true)
-      .not('price_per_reached', 'is', null)
-      .order('sort_order', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-
-    const pkg: PackageFacts | null = data
-      ? {
-          name: data.name,
-          price_per_reached: Number(data.price_per_reached ?? 0),
-          base_price: Number(data.base_price ?? 0),
-          included_reached: Number(data.included_reached ?? 0),
-          channels: (data.channels ?? []) as string[],
-          // `outreach_schedule` is a Json column holding touchpoint objects by
-          // contract (locked to what admin/packages.ts writes). Narrow through
-          // unknown and keep only the two fields the facts expose, so a
-          // malformed row yields an empty cadence rather than leaking shape.
-          outreach_schedule: Array.isArray(data.outreach_schedule)
-            ? (data.outreach_schedule as unknown as {
-                days_before: number;
-                channel: string;
-              }[]).map((tp) => ({ days_before: tp.days_before, channel: tp.channel }))
-            : [],
-        }
-      : null;
-
-    return buildBusinessFacts(gateOn, pkg);
+    const offers = await listPackageOffers();
+    return buildBusinessFacts(
+      offers.map((offer) => ({
+        name: offer.name,
+        price: offer.price,
+        contact_quota: offer.contact_quota,
+        channels: offer.channels,
+        description: offer.description,
+        includes: offer.includes,
+        // `outreach_schedule` is a Json column holding touchpoint objects by contract (locked to what admin/packages.ts
+        // writes). Keep only the two fields the facts expose, so a malformed row yields an empty cadence rather than
+        // leaking shape.
+        outreach_schedule: Array.isArray(offer.outreach_schedule)
+          ? offer.outreach_schedule.map((tp) => ({ days_before: tp.days_before, channel: tp.channel }))
+          : [],
+      })),
+    );
   } catch {
     return { available: false, reason: 'business facts read failed' };
   }

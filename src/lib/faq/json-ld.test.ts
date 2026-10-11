@@ -6,10 +6,12 @@ import { buildBusinessFacts, type PackageFacts } from '@/lib/fleet/business-fact
 
 const pkg: PackageFacts = {
   name: 'אישורי הגעה',
-  price_per_reached: 4,
-  base_price: 200,
-  included_reached: 200,
+  price: 200,
+  contact_quota: 200,
   channels: ['whatsapp', 'call'],
+  description: null,
+  includes: [],
+  outreach_schedule: [],
 };
 
 describe('buildFaqJsonLd', () => {
@@ -17,7 +19,7 @@ describe('buildFaqJsonLd', () => {
     const items: FaqItemRow[] = [
       { item_key: null, category: 'about', question: 'מה זה KALFA?', answer: 'תשובה.', sort_order: 1 },
     ];
-    const model = buildFaqPageModel(items, buildBusinessFacts(true, pkg));
+    const model = buildFaqPageModel(items, buildBusinessFacts([pkg]));
     const flat = flattenFaqEntries(model);
     const jsonLd = buildFaqJsonLd(flat);
 

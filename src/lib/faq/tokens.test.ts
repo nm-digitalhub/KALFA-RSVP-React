@@ -9,12 +9,13 @@ import { buildBusinessFacts, type PackageFacts } from '@/lib/fleet/business-fact
 
 const pkg: PackageFacts = {
   name: 'אישורי הגעה — וואטסאפ + שיחות AI',
-  price_per_reached: 4,
-  base_price: 200,
-  included_reached: 200,
+  price: 200,
+  contact_quota: 200,
   channels: ['whatsapp', 'call'],
-  // The live cadence (queried from the canonical package): 10 / 6 / 3 days by
-  // WhatsApp, an AI call 2 days out, a final WhatsApp the day before.
+  description: null,
+  includes: [],
+  // The live cadence of the packages on sale: 10 / 6 / 3 days by WhatsApp, an
+  // AI call 2 days out, a final WhatsApp the day before.
   outreach_schedule: [
     { days_before: 10, channel: 'whatsapp' },
     { days_before: 6, channel: 'whatsapp' },
@@ -25,11 +26,9 @@ const pkg: PackageFacts = {
 };
 
 describe('buildFaqTokenValues', () => {
-  it('base+overage model: all four tokens resolve to real values', () => {
-    const values = buildFaqTokenValues(buildBusinessFacts(true, pkg));
-    expect(values.base_price).toBe('₪200');
-    expect(values.included_reached).toBe('200');
-    expect(values.price_per_reached).toBe('₪4');
+  it('every token resolves from the packages on sale', () => {
+    const values = buildFaqTokenValues(buildBusinessFacts([pkg]));
+    expect(values.packages_list).toBe('אישורי הגעה — וואטסאפ + שיחות AI — ₪200, עד 200 אנשי קשר.');
     expect(values.channels_list).toBe('וואטסאפ, שיחה טלפונית (AI)');
     expect(values.outreach_schedule).toBe(
       'וואטסאפ 10 ימים לפני, וואטסאפ 6 ימים לפני, וואטסאפ 3 ימים לפני, ' +
@@ -37,33 +36,21 @@ describe('buildFaqTokenValues', () => {
     );
   });
 
-  it('the cadence is NOT gate-dependent — the engine runs it under either pricing model', () => {
-    const on = buildFaqTokenValues(buildBusinessFacts(true, pkg));
-    const off = buildFaqTokenValues(buildBusinessFacts(false, pkg));
-    expect(off.outreach_schedule).toBe(on.outreach_schedule);
-    expect(off.outreach_schedule).not.toBe('');
-  });
-
-  it('a package whose schedule was never selected yields no cadence, never an invented one', () => {
-    const { outreach_schedule: _omitted, ...withoutSchedule } = pkg;
-    const values = buildFaqTokenValues(buildBusinessFacts(true, withoutSchedule));
+  it('a package with no schedule yields no cadence, never an invented one', () => {
+    const values = buildFaqTokenValues(buildBusinessFacts([{ ...pkg, outreach_schedule: [] }]));
     expect(values.outreach_schedule).toBe('');
   });
 
-  it('per-reached model (gate off): base/included blank out instead of showing ₪0', () => {
-    const values = buildFaqTokenValues(buildBusinessFacts(false, pkg));
-    expect(values.base_price).toBe('');
-    expect(values.included_reached).toBe('');
-    // price_per_reached and channels_list are meaningful under either model.
-    expect(values.price_per_reached).toBe('₪4');
-    expect(values.channels_list).toBe('וואטסאפ, שיחה טלפונית (AI)');
+  it('the pay-per-result tokens are gone', () => {
+    const values = buildFaqTokenValues(buildBusinessFacts([pkg]));
+    for (const retired of ['base_price', 'included_reached', 'price_per_reached']) {
+      expect(values).not.toHaveProperty(retired);
+    }
   });
 
   it('facts unavailable: every token blanks out, none show a stale/fabricated number', () => {
-    const values = buildFaqTokenValues(buildBusinessFacts(true, null));
-    expect(values.base_price).toBe('');
-    expect(values.included_reached).toBe('');
-    expect(values.price_per_reached).toBe('');
+    const values = buildFaqTokenValues(buildBusinessFacts([]));
+    expect(values.packages_list).toBe('');
     expect(values.channels_list).toBe('');
     expect(values.outreach_schedule).toBe('');
   });
@@ -114,13 +101,13 @@ describe('substituteFaqTokens ({{double_brace}} — the shared engine)', () => {
   });
 
   it('a known token resolved to "" cleanly disappears, never renders as-is', () => {
-    const out = substituteFaqTokens('דמי הפעלה {{base_price}}.', { base_price: '' });
-    expect(out).toBe('דמי הפעלה .');
-    expect(out).not.toContain('{{base_price}}');
+    const out = substituteFaqTokens('החבילות: {{packages_list}}', { packages_list: '' });
+    expect(out).toBe('החבילות: ');
+    expect(out).not.toContain('{{packages_list}}');
   });
 
   it('single braces are NOT treated as tokens (only {{double}} — matches the agreement template)', () => {
-    const out = substituteFaqTokens('מחיר {base_price} רגיל', { base_price: '₪200' });
-    expect(out).toBe('מחיר {base_price} רגיל');
+    const out = substituteFaqTokens('מחיר {packages_list} רגיל', { packages_list: '₪200' });
+    expect(out).toBe('מחיר {packages_list} רגיל');
   });
 });

@@ -28,63 +28,6 @@ export async function getPaymentsEnabled(): Promise<boolean> {
   }
 }
 
-// Independent kill-switch for the route-A J5 campaign hold path (separate from
-// the campaign payment switches). Fail-safe: reads the row with `select('*')`
-// and returns false (fail-closed — the hold form/route stay off) unless
-// `campaign_holds_enabled` is present AND explicitly on.
-export async function getCampaignHoldsEnabled(): Promise<boolean> {
-  try {
-    const admin = createAdminClient();
-    const { data, error } = await admin
-      .from('app_settings')
-      .select('*')
-      .eq('id', true)
-      .maybeSingle();
-    if (error || !data) return false;
-    return (data as Record<string, unknown>).campaign_holds_enabled === true;
-  } catch {
-    return false;
-  }
-}
-
-// Master switch for the final close-CHARGE (capturing the held card for the
-// accrued reached-contact total). Fail-closed — false unless `close_charge_enabled`
-// is explicitly on. Real money: charge only runs when this AND payments are on.
-export async function getCloseChargeEnabled(): Promise<boolean> {
-  try {
-    const admin = createAdminClient();
-    const { data, error } = await admin
-      .from('app_settings')
-      .select('*')
-      .eq('id', true)
-      .maybeSingle();
-    if (error || !data) return false;
-    return (data as Record<string, unknown>).close_charge_enabled === true;
-  } catch {
-    return false;
-  }
-}
-
-// Gate for the flat-base + included + overage pricing model. FALSE
-// (default) ⇒ new campaigns snapshot base/included = 0 (pure per-reached).
-// Flip to TRUE only after agreement v4 + attorney sign-off — it activates base
-// charging for NEW campaigns. Fail-closed: any read error ⇒ false (stay on the
-// legacy per-reached model).
-export async function getBaseOveragePricingEnabled(): Promise<boolean> {
-  try {
-    const admin = createAdminClient();
-    const { data, error } = await admin
-      .from('app_settings')
-      .select('*')
-      .eq('id', true)
-      .maybeSingle();
-    if (error || !data) return false;
-    return (data as Record<string, unknown>).base_overage_pricing_enabled === true;
-  } catch {
-    return false;
-  }
-}
-
 // Gate for the fixed-price PACKAGE purchase (plan 2026-10-04-package-payment-plan.md, D9): a real charge
 // at purchase, with no hold. FALSE (the column default) ⇒ the purchase route refuses every request.
 // Fail-closed: only an explicit `true` opens it — any read error, absent row or

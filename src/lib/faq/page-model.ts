@@ -6,16 +6,14 @@
 // JSON-LD is generated from the SAME data that renders the visible page,
 // never a second hardcoded copy).
 //
-// Of the platform's 14 FAQ questions, 2 are fully code-owned and never
-// become `faq_items` rows at all:
+// Two FAQ questions are fully code-owned and never become `faq_items` rows at
+// all, because their answers are built from the packages on sale:
 //   - "כמה עולה השירות?" → the price card, buildBusinessFacts().summary_he.
-//     Already passed compliance review (2026-07-26) for this exact wording —
-//     never re-worded here.
 //   - 'מה ההבדל בין "אורח", "איש קשר" ו"נענה"?' → buildBusinessFacts().billing_unit_he.
 // One more (`pricing_no_response`, the item_key below) is a DB row but only
 // PARTIALLY DB-owned: its `answer` column holds an optional supplementary
-// note only — the mandatory "yes/no, unconditional" sentence is composed
-// here from the SAME approved `summary_he`, never new legal wording.
+// note only — the mandatory sentence is composed here from the SAME
+// `pricing_rule_he` the price card states, never a second wording.
 
 import { buildFaqTokenValues, substituteFaqTokens } from './tokens';
 import type { BusinessFacts } from '@/lib/fleet/business-facts';
@@ -56,9 +54,8 @@ export type FaqPageModel = { priceCard: FaqEntry; sections: FaqSection[] };
 const PRICE_CARD_QUESTION = 'כמה עולה השירות?';
 const BILLING_UNIT_QUESTION = 'מה ההבדל בין "אורח", "איש קשר" ו"נענה"?';
 
-// Only reached when there is no active campaign package configured at all
-// (buildBusinessFacts's own `available: false` branch) — a misconfiguration,
-// not the normal state. Points the reader at a human instead of a stale or
+// Only reached when no package is on sale or the catalogue could not be read
+// (buildBusinessFacts's own `available: false` branch) — not the normal state. Points the reader at a human instead of a stale or
 // fabricated number.
 const FALLBACK_PRICING_ANSWER = 'פרטי התמחור המדויקים אינם זמינים כרגע. לבירור המחיר, צרו קשר.';
 
@@ -68,15 +65,12 @@ const FALLBACK_PRICING_ANSWER = 'פרטי התמחור המדויקים אינם
 // supplement field — one composition, two call sites, never two sentences
 // that can drift apart.
 //
-// "כן"/"לא" is mechanically derived from the model buildBusinessFacts()
-// already computed (base+overage: the base is charged regardless of
-// outcome, so the answer is "yes, you still pay" → כן; pure per-reached:
-// nothing is charged for zero responders → לא) — not a second legal
-// judgment, just a yes/no lead-in onto the one compliance-approved sentence.
+// The answer is "כן": every package on sale has one price paid at purchase,
+// whoever answers — that is what makes it a package (listPackageOffers sells
+// nothing without a price and a quota). The lead-in sits on the one
+// `pricing_rule_he` sentence, not a second legal wording.
 export function buildProtectedPricingMandatorySentence(facts: BusinessFacts): string {
-  return facts.available && facts.summary_he
-    ? `${facts.model === 'base_overage' ? 'כן.' : 'לא.'} ${facts.summary_he}`
-    : FALLBACK_PRICING_ANSWER;
+  return facts.available && facts.pricing_rule_he ? `כן. ${facts.pricing_rule_he}` : FALLBACK_PRICING_ANSWER;
 }
 
 function categoryRows(items: FaqItemRow[], category: FaqCategory): FaqItemRow[] {

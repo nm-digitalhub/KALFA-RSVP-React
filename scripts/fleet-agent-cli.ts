@@ -144,9 +144,9 @@
 //
 //   business-facts
 //     Stage-2 grounding: prints the read-only, PII/secret-free pricing facts the
-//     support-drafter quotes for a pricing inquiry (canonical package + the live
-//     base+overage gate → the EFFECTIVE model). Lets the drafter write the real
-//     price instead of a `[מחירים]` placeholder; a human still reviews the draft.
+//     support-drafter quotes for a pricing inquiry (every package on sale, its
+//     price and quota). Lets the drafter write the real price instead of a
+//     `[מחירים]` placeholder; a human still reviews the draft.
 //   triage-claim
 //     The callback-triage role's claim step: atomically leases the next
 //     pending callback_requests row via the claim_callback_triage RPC.
@@ -332,7 +332,7 @@ import {
   summarizeMetric,
   toRedactedExample,
 } from '@/lib/fleet/corrections';
-import { buildBusinessFacts, type BusinessFacts } from '@/lib/fleet/business-facts';
+import type { BusinessFacts } from '@/lib/fleet/business-facts';
 import { buildHebrewStyleGuide } from '@/lib/fleet/hebrew-style';
 import { buildFaqPageModel, flattenFaqEntries, type FaqItemRow } from '@/lib/faq/page-model';
 import {
@@ -393,7 +393,7 @@ import {
   type RunReportRequest,
   type RunReportResponse,
 } from '@/lib/analytics/ga4-types';
-import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
+import { getPublicBusinessFacts } from '@/lib/data/public-business-facts';
 import { renderHtmlToImage } from '@/lib/data/social-image-render';
 import { sendPushToUser } from '@/lib/data/push-delivery';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -1676,48 +1676,14 @@ async function cmdDistillCorrections(args: Record<string, string | undefined>): 
 
 // Stage-2 grounding: the read-only, PII/secret-free business facts the
 // support-drafter quotes for a pricing inquiry — so it writes the REAL price
-// instead of a `[מחירים]` placeholder. Reads the canonical active campaign
-// package + the live base+overage gate, and surfaces the EFFECTIVE model (pure
-// per-reached while the gate is off; base+overage when on). packages carries no
-// PII/secrets; the gate is read via the fail-closed accessor (a boolean, never
-// the raw app_settings row). A human still reviews every draft before it sends.
-// Shared by `business-facts` and `faq`. Extracted rather than duplicated
-// because the FAQ's live numbers and the price the drafter quotes MUST come
-// from one read — two copies of this could answer a customer with a price the
-// FAQ contradicts, in the same reply.
+// instead of a `[מחירים]` placeholder. The SAME reader the public /faq page uses
+// (getPublicBusinessFacts: the packages on sale, as the purchase flow sells
+// them), never a second query here — two copies could answer a customer with a
+// price the FAQ contradicts, in the same reply. packages carries no PII/secrets.
+// A human still reviews every draft before it sends. Shared by `business-facts`
+// and `faq`.
 async function loadBusinessFacts(): Promise<BusinessFacts> {
-  const admin = createAdminClient();
-  const gateOn = await getBaseOveragePricingEnabled();
-  // The canonical campaign package — the same row resolveCanonicalTemplate picks
-  // (active, campaign-enabled, lowest sort_order).
-  const { data, error } = await admin
-    .from('packages')
-    .select('name, price_per_reached, base_price, included_reached, channels, outreach_schedule')
-    .eq('active', true)
-    .not('price_per_reached', 'is', null)
-    .order('sort_order', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (error) fail(`business-facts read failed: ${error.message}`);
-
-  const pkg = data
-    ? {
-        name: data.name,
-        price_per_reached: Number(data.price_per_reached ?? 0),
-        base_price: Number(data.base_price ?? 0),
-        included_reached: Number(data.included_reached ?? 0),
-        channels: (data.channels ?? []) as string[],
-        // Same narrowing as getPublicBusinessFacts — the two readers must
-        // produce identical facts or the FAQ and the drafter can disagree.
-        outreach_schedule: Array.isArray(data.outreach_schedule)
-          ? (data.outreach_schedule as unknown as {
-              days_before: number;
-              channel: string;
-            }[]).map((tp) => ({ days_before: tp.days_before, channel: tp.channel }))
-          : [],
-      }
-    : null;
-  return buildBusinessFacts(gateOn, pkg);
+  return getPublicBusinessFacts();
 }
 
 async function cmdBusinessFacts(): Promise<void> {

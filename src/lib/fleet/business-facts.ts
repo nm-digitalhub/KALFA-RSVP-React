@@ -1,16 +1,10 @@
-// Grounding for the support-drafter: the pure shaping of the
-// business facts the drafter is allowed to quote when answering a pricing
-// inquiry — so it writes the REAL price instead of a `[מחירים]` placeholder.
+// The business facts the public site and the support-drafter quote: which packages are on sale, at what price, for how
+// many contacts, on which channels and on what cadence — so a page or a draft states the REAL catalogue instead of a
+// `[מחירים]` placeholder or a number typed into code.
 //
-// PURE + bundle-safe (imported by scripts/fleet-agent-cli.ts). No DB, no PII, no
-// secrets. The CLI reads the live gate + the canonical package and passes them
-// here; the drafter never touches app_settings (secrets) or the raw package.
-//
-// GATE-AWARE, so the drafter always tells the truth about what is ACTUALLY
-// billed: while the base+overage gate is OFF the effective model is pure
-// per-reached (base/included are 0 on new campaigns regardless of the package
-// row), so we surface per-reached; only when the gate is ON do we surface the
-// flat-base + included + overage model.
+// PURE + bundle-safe (imported by scripts/fleet-agent-cli.ts). No DB, no PII, no secrets. The caller reads the packages
+// on sale (getPublicBusinessFacts → listPackageOffers, the same definition the purchase flow sells from) and passes
+// them here. Every figure below comes from those rows; the code owns only the sentence around them.
 
 /**
  * One outreach touchpoint, reduced to the two fields that describe the CADENCE
@@ -22,45 +16,46 @@ export interface TouchpointFacts {
   channel: string;
 }
 
+/** One package on sale, as the purchase flow sells it. */
 export interface PackageFacts {
   name: string;
-  price_per_reached: number; // the per-reached rate (= overage rate above included)
-  base_price: number; // package base (may be pre-set while the gate is still off)
-  included_reached: number;
+  /** The one price, paid once at purchase (packages.price_with_vat — final, no VAT is added). */
+  price: number;
+  /** How many contacts the campaign may approach, whether or not they answer. */
+  contact_quota: number;
   channels: string[];
-  /**
-   * The package's `outreach_schedule`, so public copy can state the real
-   * cadence instead of a hand-typed one that goes stale the moment an admin
-   * edits the package. Optional: a caller that does not select the column
-   * simply yields no schedule, and the consuming token resolves to '' rather
-   * than inventing one.
-   */
-  outreach_schedule?: TouchpointFacts[];
+  /** The package's own admin-written text; null when it has none. */
+  description: string | null;
+  includes: string[];
+  outreach_schedule: TouchpointFacts[];
 }
 
 export interface BusinessFacts {
   available: boolean;
   reason?: string;
   currency?: string;
-  model?: 'base_overage' | 'per_reached';
-  package_name?: string;
-  channels?: string[];
-  per_reached_price?: number;
-  base_price?: number;
-  included_reached?: number;
+  /** Every package on sale, in the order the customer is offered them. */
+  packages?: PackageFacts[];
   /**
-   * The live outreach cadence, passed through unphrased. Rendering it into
-   * Hebrew needs channel LABELS, which live in the agreements template; this
-   * module is pure and import-free by contract (the fleet CLI bundles it), so
-   * the phrasing happens at the consumer (src/lib/faq/tokens.ts) and this stays
-   * data.
+   * The channels EVERY package on sale uses, so a sentence about "the channels" is true whatever the customer buys.
+   * Empty when the packages share none.
+   */
+  channels?: string[];
+  /**
+   * The live outreach cadence, passed through unphrased — present only when every package on sale runs the same one,
+   * so a page never promises a timetable that one of the packages would not run. Rendering it into Hebrew needs
+   * channel LABELS, which live in the agreements template; this module is pure and import-free by contract (the fleet
+   * CLI bundles it), so the phrasing happens at the consumer (src/lib/faq/tokens.ts).
    */
   outreach_schedule?: TouchpointFacts[];
+  /** One sentence per package: its name, price and quota. */
+  packages_list_he?: string;
+  /** How a package is paid, true of every package on sale. */
+  pricing_rule_he?: string;
   summary_he?: string; // a ready phrasing the drafter adapts; a human still reviews the draft
   /**
-   * What the price is counted PER. Present whenever a price is quoted, because
-   * every number above is per REACHED CONTACT and customers ask in GUESTS —
-   * three different units that are easy to read as one.
+   * What the quota is counted IN. Customers ask in GUESTS; a quota counts CONTACTS (phone numbers) — two units that are
+   * easy to read as one.
    */
   billing_unit_he?: string;
   /**
@@ -74,104 +69,69 @@ export interface BusinessFacts {
   billing_unit_drafter_note_he?: string;
 }
 
-export function buildBusinessFacts(
-  gateOn: boolean,
-  pkg: PackageFacts | null,
-): BusinessFacts {
-  if (!pkg) {
-    return { available: false, reason: 'no active campaign package configured' };
+function shekels(amount: number): string {
+  return `₪${amount.toLocaleString('he-IL', { maximumFractionDigits: 2 })}`;
+}
+
+// Hebrew counts one apart from the rest: "איש קשר אחד", "2 אנשי קשר".
+function contactsHe(count: number): string {
+  return count === 1 ? 'איש קשר אחד' : `${count.toLocaleString('he-IL')} אנשי קשר`;
+}
+
+function sameSchedule(a: TouchpointFacts[], b: TouchpointFacts[]): boolean {
+  return (
+    a.length === b.length && a.every((tp, i) => tp.days_before === b[i].days_before && tp.channel === b[i].channel)
+  );
+}
+
+// PUNCTUATION HERE IS NOT COSMETIC. MEASURED 16.08 across two live drafts: the
+// drafter reproduces these strings almost verbatim into customer replies, so
+// whatever punctuation they carry is the punctuation the customer reads. Per the
+// Academy of the Hebrew Language rules: no semicolon between fragments (two
+// sentences instead), gershayim (״) in מע״מ, and no comma before vav.
+export function buildBusinessFacts(packages: readonly PackageFacts[]): BusinessFacts {
+  if (packages.length === 0) {
+    return { available: false, reason: 'no package on sale' };
   }
-  const overage = pkg.price_per_reached;
-  // While the gate is off the base does NOT apply (new campaigns snapshot 0/0),
-  // so zero it out here too — quoting a base that isn't billed would mislead.
-  const base = gateOn ? pkg.base_price : 0;
-  const included = gateOn ? pkg.included_reached : 0;
-  const model: 'base_overage' | 'per_reached' =
-    gateOn && base > 0 ? 'base_overage' : 'per_reached';
 
-  // §2 (הגנת הצרכן) — the base fee must be presented as UNCONDITIONAL (charged
-  // regardless of outcome); the "pay only for responders" claim is TRUE ONLY of the
-  // overage above the included, never of the base. Framing the base as
-  // outcome-conditional is a price misrepresentation (compliance review 2026-07-26;
-  // attorney item 18). Balanced tone: the required disclosure is framed as the VALUE
-  // the fee buys (activation + included responses, no subscription) rather than a
-  // penalty — accurate AND not deal-deterring.
-  //
-  // PUNCTUATION HERE IS NOT COSMETIC. MEASURED 16.08 across two live drafts: the
-  // drafter reproduces these strings almost verbatim into customer replies, so
-  // whatever punctuation they carry is the punctuation the customer reads. Two
-  // faults shipped that way and are fixed below, per the Academy of the Hebrew
-  // Language rules:
-  //   - `ללא דמי מנוי; מחיר סופי` used a semicolon between two FRAGMENTS. That
-  //     mark joins closely-related full clauses; between noun phrases it is a
-  //     comma or a full stop. Now two sentences.
-  //   - `מע"מ` used a straight ASCII quote where Hebrew takes gershayim (״).
-  //     /terms already renders מע״מ, so the two surfaces disagreed on the same
-  //     word.
-  // Same rule drove `לא לפי X, ולא לפי Y` → no comma before vav in the
-  // billing_unit_he text below.
-  const summary_he =
-    model === 'base_overage'
-      ? `דמי הפעלה ₪${base} — עבור הפעלת השירות והפצת הפניות בערוצים — הכוללים כבר עד ${included} אנשי קשר שנענו בפועל, ללא תוספת. מעבר ל-${included}: ₪${overage} בלבד לכל איש קשר נוסף שנענה בפועל. דמי ההפעלה נגבים עם הפעלת הקמפיין ואינם מותנים בתוצאה — הם חלים על עצם הפעלת השירות, גם אם לא נענה אף איש קשר. ללא דמי מנוי. המחיר סופי, ללא מע״מ (עוסק פטור).`
-      : `₪${overage} לכל איש קשר שהושג (נענה בוואטסאפ או השלים שיחת AI). משלמים רק על מי שנענה בפועל — פנייה שלא נענתה אינה מחויבת.`;
+  const [first, ...rest] = packages;
+  const channels = first.channels.filter((ch) => rest.every((p) => p.channels.includes(ch)));
+  const outreach_schedule = rest.every((p) => sameSchedule(p.outreach_schedule, first.outreach_schedule))
+    ? first.outreach_schedule
+    : [];
 
-  // WHY THIS EXISTS — a measured drafting error, not a hypothetical.
-  //
-  // A customer asked about "150 אורחים". The draft answered that 150 "נכלל
-  // במלואו במכסה הכלולה (200 אנשי קשר)" — reading a guest count as a contact
-  // count, and a contact count as a reached count. Both are wrong, and the
-  // second one is what actually bills.
-  //
-  // The three units genuinely differ: one contact can cover several guests in a
-  // household (measured on live data: 46 guests across 43 contacts), and only
-  // contacts who ANSWER are charged. So a guest number cannot be converted into
-  // a price, in either direction — and the failure is not symmetric. Reading
-  // guests as contacts OVERSTATES the bill to a large customer, which loses the
-  // deal on a number we never would have charged.
-  //
-  // The drafter had no way to know any of this: nothing in these facts said the
-  // units were different. Saying it here fixes every future reply at once,
-  // rather than one example at a time.
-  // DERIVED, never a second fixed paragraph. Everything below is computed from
-  // `base` and `included`, so changing either in the admin package changes what
-  // the drafter says — the numbers and the rule can never drift apart.
-  //
-  // WHY THE RULE IS STATED THIS WAY. A customer asks in GUESTS; the price is
-  // counted in CONTACTS WHO ANSWERED. An earlier draft bridged that by treating
-  // 150 guests as 150 contacts — right by luck, but the same reasoning on 300
-  // guests would have overquoted and lost the deal on money we never charge.
-  //
-  // The bridge that always holds is simpler: nobody can answer who is not on the
-  // list. So a list at or under `included` can never produce more than
-  // `included` responders, and the price is exactly `base` no matter what
-  // happens. That turns an unanswerable question (how many will reply?) into one
-  // the customer can answer alone (how many numbers are on my list?), and it
-  // removes the guest/contact confusion instead of explaining it.
+  const packages_list_he = packages
+    .map((p) => `${p.name} — ${shekels(p.price)}, עד ${contactsHe(p.contact_quota)}.`)
+    .join(' ');
+  const pricing_rule_he =
+    'המחיר קבוע לכל חבילה ומשולם פעם אחת ברכישה, והוא אינו תלוי במספר האורחים שהשיבו. ' +
+    'המחיר סופי, ללא מע״מ (עוסק פטור).';
+
+  // WHY THE UNITS ARE SPELLED OUT — a measured drafting error, not a hypothetical. A customer asked about
+  // "150 אורחים" and a draft read the guest count as a contact count. One contact can cover several guests in a
+  // household (measured on live data: 46 guests across 43 contacts), so a guest number cannot be turned into a quota.
+  // Saying it here fixes every future reply at once.
   const billing_unit_he =
-    `החיוב נספר לפי אנשי קשר שנענו בפועל, כלומר כאלה שהשיבו בהודעת וואטסאפ או השלימו את שיחת ה-AI. ` +
-    `לא לפי מספר האורחים ולא לפי מספר ההודעות שנשלחו. ` +
-    `איש קשר הוא מספר טלפון אחד, והוא עשוי לייצג יותר מאורח אחד באותו בית, ולכן אי אפשר לגזור מחיר ממספר אורחים. ` +
-    `הכלל שתמיד נכון: לא ייתכן שיענו יותר אנשים ממספר הטלפונים שברשימה, ולכן ברשימה של עד ${included} מספרי טלפון ` +
-    `המחיר הוא ₪${base} תמיד, בלי קשר לכמה מהם יענו בפועל. ` +
-    `רק ברשימה גדולה מ-${included} ורק אם יותר מ-${included} מהם אכן ייענו, מתווספים ₪${overage} לכל נענה מעל ${included}.`;
+    'אורח הוא אדם ברשימת המוזמנים. ' +
+    'איש קשר הוא מספר טלפון אחד שהמערכת פונה אליו, והוא עשוי לייצג יותר מאורח אחד באותו בית. ' +
+    'נענה הוא איש קשר שהשיב לפנייה. ' +
+    'מכסת החבילה נספרת באנשי קשר ולא באורחים, ולכן מספר הטלפונים ברשימה הוא שקובע איזו חבילה מתאימה. ' +
+    'מספר הנענים אינו משנה את המחיר. ' +
+    'אנשי קשר מעבר למכסה ממתינים ואינם מקבלים פנייה.';
   // Addressed to the drafter/agent, NOT to the customer — see the field's
-  // doc comment. Customer-facing text above ends at the pricing rule.
+  // doc comment. Customer-facing text above ends at the quota rule.
   const billing_unit_drafter_note_he =
-    `כשלקוח נוקב במספר אורחים — הצג לו את הכלל הזה כדי שיוכל ליישם אותו על הרשימה שלו, במקום לאמוד עבורו.`;
+    'כשלקוח נוקב במספר אורחים — הצג לו את הכלל הזה כדי שיבחר חבילה לפי מספר הטלפונים ברשימה שלו, במקום לאמוד עבורו.';
 
   return {
     available: true,
     currency: '₪',
-    model,
-    package_name: pkg.name,
-    channels: pkg.channels,
-    per_reached_price: overage,
-    base_price: base,
-    included_reached: included,
-    // Not gate-dependent: the cadence is what the engine runs regardless of
-    // which pricing model is effective.
-    outreach_schedule: pkg.outreach_schedule,
-    summary_he,
+    packages: [...packages],
+    channels,
+    outreach_schedule,
+    packages_list_he,
+    pricing_rule_he,
+    summary_he: `${packages_list_he} ${pricing_rule_he}`,
     billing_unit_he,
     billing_unit_drafter_note_he,
   };
