@@ -24,7 +24,7 @@
 - [x] 2b.1 `npx supabase migration new call_compliance_settings`: a single-row `call_compliance_settings` table with `call_consent_required` (copied from `app_settings`) and `dnc_registry_gate_enabled` (default false). Same access model as `app_settings`. Verified live in a rolled-back block: the value was copied (false), and a non-staff customer can neither see, update nor insert a row.
 - [x] 2b.2 Read and write `call_consent_required` from the new table in `outreach-engine.ts` (`callConsentRequired`) and `admin/voximplant-channel.ts` (load and toggle), and update their tests.
 - [x] 2b.3 The registry gate reads `dnc_registry_gate_enabled` from the new table. A read error counts as enabled, because the check protects the person called.
-- [ ] 2b.4 After the code from 2b.2 is deployed: `npx supabase migration new drop_app_settings_call_consent_required` drops the old column. Comments that name `app_settings.call_consent_required` are updated.
+- [x] 2b.4 After the code from 2b.2 is deployed: `npx supabase migration new drop_app_settings_call_consent_required` drops the old column. Comments that name `app_settings.call_consent_required` are updated.
 
 ## 3. Shared component
 

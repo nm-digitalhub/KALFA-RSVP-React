@@ -172,7 +172,6 @@ export type Database = {
           agreement_archive_enabled: boolean
           base_overage_pricing_enabled: boolean
           billing_exposure_gate: boolean
-          call_consent_required: boolean
           callback_intake_sms_daily_cap: number
           callback_intake_sms_enabled: boolean
           campaign_holds_enabled: boolean
@@ -289,7 +288,6 @@ export type Database = {
           agreement_archive_enabled?: boolean
           base_overage_pricing_enabled?: boolean
           billing_exposure_gate?: boolean
-          call_consent_required?: boolean
           callback_intake_sms_daily_cap?: number
           callback_intake_sms_enabled?: boolean
           campaign_holds_enabled?: boolean
@@ -406,7 +404,6 @@ export type Database = {
           agreement_archive_enabled?: boolean
           base_overage_pricing_enabled?: boolean
           billing_exposure_gate?: boolean
-          call_consent_required?: boolean
           callback_intake_sms_daily_cap?: number
           callback_intake_sms_enabled?: boolean
           campaign_holds_enabled?: boolean
