@@ -18,10 +18,9 @@
 //     apply; a disabled channel refuses here exactly as it does in the worker.
 //   * Destination defaults to the callback_requests row's own phone; --to
 //     overrides it for an audio-path test against a different handset.
-//   * NOT gated on consent/DNC/Shabbat/hours/balance/concurrency — those live
-//     in dispatchMeetingConfirmCall, which this launcher deliberately
-//     bypasses for a one-off owner-authorized dial (same stance as
-//     bridge-call.ts: "Verify the destination yourself"). The dial audit IS
+//   * The row's own number goes through the same consent and Do-Not-Call gates as
+//     dispatchMeetingConfirmCall; a --to override must be on the VOX_TEST_NUMBERS
+//     allowlist. Balance and concurrency are NOT checked here. The dial audit IS
 //     still written, so the shared 3-attempt budget stays honest.
 //   * Refuses a row the mtg/ctx route would 404 (not scheduled / no calendar
 //     item / no scheduled_at) — a dial whose ctx fails never bridges (the
@@ -40,7 +39,9 @@ import {
 } from '@/lib/data/callback-request-attempts';
 import { buildMeetingConfirmCustomData } from '@/lib/data/meeting-confirm-dispatch';
 import { getMeetingConfirmDispatchConfig } from '@/lib/data/voximplant-config';
+import { DIAL_GATE_POLICY, evaluateSharedConsentGates } from '@/lib/data/console-calls';
 import { normalizePhone } from '@/lib/phone';
+import { allowedTestDestination } from '@/lib/voximplant/test-numbers';
 import { getAppOrigin } from '@/lib/url';
 import { startScenarios } from '@/lib/voximplant/mutations';
 
@@ -118,11 +119,33 @@ async function main(): Promise<void> {
     return;
   }
 
-  const to = val('to') ?? normalizePhone(row.phone);
-  if (!to) {
-    console.error('ERROR: no valid destination phone (row phone unparseable and no --to).');
-    process.exitCode = 1;
-    return;
+  // The destination: a --to override must be on the VOX_TEST_NUMBERS allowlist; the row's own number goes through the
+  // same consent and Do-Not-Call gates as the worker's dispatcher (openspec/changes/dnc-registry-dial-gate, D10).
+  const toOverride = val('to');
+  let to: string | null;
+  if (toOverride) {
+    to = allowedTestDestination(toOverride);
+    if (!to) {
+      console.error('ERROR: --to is not on the VOX_TEST_NUMBERS allowlist. Omit it to dial the row\'s own number.');
+      process.exitCode = 1;
+      return;
+    }
+  } else {
+    to = normalizePhone(row.phone);
+    if (!to) {
+      console.error('ERROR: the row\'s phone does not parse.');
+      process.exitCode = 1;
+      return;
+    }
+    const gates = await evaluateSharedConsentGates(admin, to, Date.now(), {
+      policy: { ...DIAL_GATE_POLICY.callback, nationalRegistry: 'required' },
+      registry: { dialPath: 'script_meeting_confirm', exemption: null },
+    });
+    if (!gates.ok) {
+      console.error(`ERROR: the dial gates refuse this number (${gates.reason}).`);
+      process.exitCode = 1;
+      return;
+    }
   }
 
   // Atomic create on the (request, slot) unique index — a re-run against the

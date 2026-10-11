@@ -7,7 +7,8 @@
  * behind a mandatory --confirm interlock, reusing `startScenarios` from the
  * mutations module (no hand-rolled JWT/fetch).
  *
- *   npx tsx scripts/voximplant/test-call.ts --to +9725XXXXXXXX --from 97237219347 --confirm
+ *   npx tsx scripts/voximplant/test-call.ts --to +9725XXXXXXXX --from 97237219347 --rule <rule id> --confirm
+ *   (--to must be on the VOX_TEST_NUMBERS allowlist)
  *
  * It places a REAL call and costs money. Nothing runs without --confirm. The
  * payload ({to,from,tok,u}) mirrors the deployed Branch B scenario; `tok`
@@ -19,6 +20,7 @@ import { readFileSync } from 'node:fs';
 
 import type { VoximplantConfig } from '../../src/lib/voximplant/core';
 import { startScenarios } from '../../src/lib/voximplant/mutations';
+import { allowedTestDestination } from '../../src/lib/voximplant/test-numbers';
 
 function flag(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -53,9 +55,24 @@ async function main(): Promise<void> {
   }
   const to = flag('to');
   const from = flag('from');
-  const ruleId = flag('rule') ?? '1494311';
-  if (!to || to === '__present__' || !from || from === '__present__') {
-    console.error('ERROR: --to and --from are required (non-empty).');
+  // No default rule: the old default was 1494311, the DTMF production OutCall rule that must never be driven from here.
+  const ruleId = flag('rule');
+  if (!to || to === '__present__' || !from || from === '__present__' || !ruleId || ruleId === '__present__') {
+    console.error('ERROR: --to, --from and --rule are required (non-empty).');
+    process.exitCode = 1;
+    return;
+  }
+  if (ruleId === '1494311') {
+    console.error('ERROR: refusing to run against the DTMF production OutCall rule (1494311).');
+    process.exitCode = 1;
+    return;
+  }
+  // Any number other than a product record's own is a TEST destination, and may be dialled only when it is on the
+  // VOX_TEST_NUMBERS allowlist: this script reaches the provider outside every consent and Do-Not-Call gate
+  // (openspec/changes/dnc-registry-dial-gate, D10).
+  const allowedTo = allowedTestDestination(to);
+  if (!allowedTo) {
+    console.error('ERROR: --to is not on the VOX_TEST_NUMBERS allowlist. This script dials test numbers only.');
     process.exitCode = 1;
     return;
   }
@@ -74,10 +91,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  const payload = JSON.stringify({ to, from, tok, u: origin });
+  const payload = JSON.stringify({ to: allowedTo, from, tok, u: origin });
   console.log('=== StartScenarios — LIVE TEST CALL ===');
   console.log(`rule_id                 : ${ruleId}`);
-  console.log(`to                      : ${to}`);
+  console.log(`to                      : ${allowedTo}`);
   console.log(`from                    : ${from}`);
   console.log(`script_custom_data bytes: ${Buffer.byteLength(payload, 'utf8')}`); // count only
 

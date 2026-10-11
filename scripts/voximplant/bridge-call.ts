@@ -1,9 +1,9 @@
 // Voximplant ↔ ElevenLabs BRIDGE — gated single outbound call (ops tool).
 //
-// This is a REAL dial path, not a test harness. Until a campaign is enabled and
-// the worker dispatcher runs, it is the ONLY path that places a bridged call —
-// so it records the same provider identity the worker does (see
-// recordDialConfirmed below). Treat its output as production data.
+// This is a REAL dial path, not a test harness: it records the same provider
+// identity the worker does (see recordDialConfirmed below), so treat its output
+// as production data. The worker dispatcher is the product path; this launcher
+// is for test numbers only.
 //
 // Places ONE controlled bridged call: it stamps a random, NON-authorizing
 // correlation nonce onto an EXISTING call_attempt, then StartScenarios the
@@ -26,9 +26,9 @@
 //     overrides it loudly, for audio-path testing only.
 //   * NEVER prints the access token, the nonce, or any secret — ids + byte count
 //     only.
-//   * NOT gated on consent / DNC / balance / concurrency: those live in
-//     dispatchOutreachCall, which this launcher bypasses. Verify the destination
-//     yourself before dialling — nothing here does it for you.
+//   * --to must be on the VOX_TEST_NUMBERS allowlist (server env); any other
+//     number is refused. Consent, DNC, balance and concurrency are not checked:
+//     they live in dispatchOutreachCall, and a test number needs none of them.
 //   * The nonce is stamped first-writer-wins (idempotent): a re-run reuses the
 //     existing nonce, so ctx and the injected dynamic variable stay in sync.
 //
@@ -51,6 +51,7 @@ import { closedEventRefusal } from '@/lib/voximplant/dial-preconditions';
 import { getAppOrigin } from '@/lib/url';
 import type { VoximplantConfig } from '@/lib/voximplant/core';
 import { startScenarios } from '@/lib/voximplant/mutations';
+import { allowedTestDestination } from '../../src/lib/voximplant/test-numbers';
 
 // The DTMF production OutCall rule — this launcher must NEVER touch it (its
 // scenario is RSVP.voxengine.js, not the bridge).
@@ -100,6 +101,15 @@ async function main(): Promise<void> {
 
   if (!attemptId || !to || !from) {
     console.error('ERROR: --attempt-id, --to and --from are required (non-empty).');
+    process.exitCode = 1;
+    return;
+  }
+  // Any number other than a product record's own is a TEST destination, and may be dialled only when it is on the
+  // VOX_TEST_NUMBERS allowlist: this script reaches the provider outside every consent and Do-Not-Call gate
+  // (openspec/changes/dnc-registry-dial-gate, D10).
+  const allowedTo = allowedTestDestination(to);
+  if (!allowedTo) {
+    console.error('ERROR: --to is not on the VOX_TEST_NUMBERS allowlist. This launcher dials test numbers only.');
     process.exitCode = 1;
     return;
   }
@@ -185,12 +195,12 @@ async function main(): Promise<void> {
 
   const origin = val('origin') ?? (await getAppOrigin());
   // Same tiny Branch B payload the scenario already parses ({to, from, tok, u}).
-  const payload = JSON.stringify({ to, from, tok: attempt.access_token, u: origin });
+  const payload = JSON.stringify({ to: allowedTo, from, tok: attempt.access_token, u: origin });
 
   console.log('=== StartScenarios — LIVE BRIDGE TEST CALL (RSVPAgent) ===');
   console.log(`rule_id                 : ${ruleId}`);
   console.log(`attempt_id              : ${attemptId}`);
-  console.log(`to                      : ${to}`);
+  console.log(`to                      : ${allowedTo}`);
   console.log(`from                    : ${from}`);
   console.log(`origin (u)              : ${origin}`);
   console.log(`correlation nonce       : stamped (value withheld)`);

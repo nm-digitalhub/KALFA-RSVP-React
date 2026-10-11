@@ -115,11 +115,15 @@ export const ENV_KEY_SPECS: readonly EnvKeySpec[] = [
     format: z.string().min(1),
     optional: true,
   },
-  // "אל תתקשר אליי" — the Do-Not-Call registry (src/lib/dnc). Optional: nothing calls it yet, and a deployment without
-  // it only loses the registry check (the mutator refuses with `not_configured`). Not probed: the only endpoint is the
-  // check itself, which is logged at the authority under the account.
+  // "אל תתקשר אליי" — the Do-Not-Call registry (src/lib/dnc). Optional: while call_compliance_settings
+  // .dnc_registry_gate_enabled is off nothing needs it, and once it is on a deployment without it holds marketing dials
+  // back as `registry_pending` (the mutator refuses with `not_configured`). Not probed: the only endpoint is the check
+  // itself, which is logged at the authority under the account.
   { key: "DNC_API_NAME", kind: "format", format: nonEmpty, optional: true },
   { key: "DNC_API_TOKEN", kind: "format", format: nonEmpty, optional: true },
+  // The numbers the ops scripts in scripts/voximplant/ may dial on their own say-so (src/lib/voximplant/test-numbers.ts).
+  // Optional: without it those scripts refuse every --to.
+  { key: "VOX_TEST_NUMBERS", kind: "format", format: nonEmpty, optional: true },
   // Workflow delegated OAuth — the deployment's own OAuth CLIENT, not a user's
   // connected account.
   //
