@@ -109,7 +109,7 @@ The phone target is the callback request's phone. The ElevenLabs configuration c
 - `card_token_ref`, `card_citizen_id` and `card_exp_*` on both campaigns;
 - `sumit_customer_id` on one campaign.
 
-The card values are not copied (owner, 11.10.2026); the SUMIT customer id stays D-open 8. Before any drop, the copied values are compared field by field with the ledger.
+The card values are not copied; the SUMIT customer id is copied into the authorize row's `meta` (owner, 11.10.2026; D-open 8, decided). Before any drop, the copied values are compared field by field with the ledger.
 
 Order:
 1. Move code readers to the ledger.
@@ -151,7 +151,7 @@ These change what is built. They are recorded open, not assumed, and the tasks t
 5. **After a refund.** Whether a refunded campaign's assignment is spent or returned.
 6. **An offer that expires or is voided during an open payment session.** Honour it until the session closes, or cancel the session.
 7. **Already-approved campaigns.** Can an offer be added to a campaign whose terms are approved? The recommendation is no, because it would need new approval.
-8. **SUMIT values the ledger does not hold.** Decided by the owner on 11.10.2026: the card token, card expiry and citizen ID of the 2 historical campaigns are **not** copied; they go when their columns are dropped (both authorisations were released and nothing was charged). Still open: whether the one `sumit_customer_id` value is copied into the ledger.
+8. **SUMIT values the ledger does not hold.** Decided by the owner on 11.10.2026: the card token, card expiry and citizen ID of the 2 historical campaigns are **not** copied; they go when their columns are dropped (both authorisations were released and nothing was charged). The one `sumit_customer_id` value is copied into `meta.sumit_customer_id` of that campaign's SUMIT authorize row (owner, 11.10.2026; migration `20261011161441`). `provider_account_id` is `integer` and too small for it.
 9. **`billing_route`.** It is empty on every campaign and has no reader. Drop it with the SUMIT groups, or separately.
 
 ## Neighbouring cleanup (separate changes, not in this one)
