@@ -104,7 +104,7 @@ describe('runPaymentOrphanSweep', () => {
     await runPaymentOrphanSweep(db.client as never, NOW);
 
     expect(db.rows('payment_operations')[0].outcome).toBe('review');
-    expect(await beginOperation(db.client as never, { campaignId: 'c1', eventId: 'e1', kind: 'package_purchase', amount: 120 })).toEqual({ alreadyInProgress: true });
+    expect(await beginOperation(db.client as never, { campaignId: 'c1', eventId: 'e1', provider: 'sumit', kind: 'package_purchase', amount: 120 })).toEqual({ alreadyInProgress: true });
   });
 
   it('losing the race to the original process is a skip, not an error and not an alert', async () => {
@@ -179,6 +179,17 @@ describe('runPaymentOrphanSweep: CardCom purchases', () => {
     vi.mocked(settleCardcomSession).mockResolvedValue({ status: 'error' });
     await runPaymentOrphanSweep(db.client as never, NOW);
     expect(db.rows('payment_operations')[0].outcome).toBe('pending');
+  });
+
+  it('moves a pending CardCom REFUND to review — never to failed: the money may already be back', async () => {
+    const db = createFakeTableClient({
+      payment_operations: [op({ kind: 'refund', meta: { provider: 'cardcom', cancellation_request_id: 'r1' } })],
+      cardcom_payment_sessions: [],
+      activity_log: [],
+    });
+    await runPaymentOrphanSweep(db.client as never, NOW);
+    expect(db.rows('payment_operations')[0].outcome).toBe('review');
+    expect(settleCardcomSession).not.toHaveBeenCalled();
   });
 
   it('still moves a SUMIT purchase (no provider in its meta) to review, as before', async () => {

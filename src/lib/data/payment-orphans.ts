@@ -95,7 +95,10 @@ export async function runPaymentOrphanSweep(
   let auditFailed = 0;
 
   for (const row of rows) {
-    if (isCardcom(row.meta)) {
+    // Only a CardCom PURCHASE can be settled from its session. A CardCom refund has no session: a pending one means the
+    // process died during the refund call, so the money may already be back — it goes to review like any other orphan,
+    // never to "failed" (which would let a retry refund twice).
+    if (row.kind === 'package_purchase' && isCardcom(row.meta)) {
       await sweepCardcomRow(admin, row, now);
       continue;
     }
@@ -139,7 +142,7 @@ export async function runPaymentOrphanSweep(
         sweptRows.length > 0 ? `הועברו לבדיקה ידנית: ${shown(sweptRows.map((r) => r.id))}` : null,
         failedIds.length > 0 ? `עדיין תקועות (שגיאת מסד נתונים): ${shown(failedIds)}` : null,
         auditFailed > 0 ? `רישום ביומן הפעילות נכשל ב-${auditFailed}` : null,
-        'לבדוק ב-SUMIT אם החיוב בוצע לפני ההכרעה.',
+        'לבדוק אצל חברת הסליקה (SUMIT או CardCom) אם הפעולה בוצעה לפני ההכרעה.',
       ]
         .filter((line): line is string => line !== null)
         .join('\n'),
