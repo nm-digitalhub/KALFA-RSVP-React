@@ -137,7 +137,8 @@ function world(opts: { intake?: Partial<TableRow>; settings?: Partial<TableRow>;
       owner_agent_allowlist: [
         { id: 'row-1', e164: PHONE, staff_user_id: STAFF, enabled: true, approval_kind: 'verified_staff' },
       ],
-      profiles: [{ id: STAFF, phone_verified_e164: PHONE }],
+      // Auth holds the proved number as bare digits.
+      'auth.users': [{ id: STAFF, phone: PHONE.replace(/^\+/, ''), phone_confirmed_at: iso(NOW - 86_400_000) }],
       owner_agent_intake: [
         {
           id: INTAKE,
@@ -263,8 +264,8 @@ describe('every gate failure is silence: no model run, no message, one audit row
     ['the chosen number moved', 'number_changed', (w) => (settingsRow(w).owner_agent_phone_number_id = OTHER_NUMBER)],
     ['no number is chosen any more', 'number_changed', (w) => (settingsRow(w).owner_agent_phone_number_id = null)],
     ['the sender is no longer staff', 'not_staff', (w) => w.staff.clear()],
-    ['the verified phone was cleared', 'phone_unverified', (w) => (w.db.tables.profiles[0].phone_verified_e164 = null)],
-    ['the profile is gone', 'phone_unverified', (w) => (w.db.tables.profiles = [])],
+    ['the verified phone was cleared', 'phone_unverified', (w) => (w.db.tables['auth.users'][0].phone_confirmed_at = null)],
+    ['the auth user is gone', 'phone_unverified', (w) => (w.db.tables['auth.users'] = [])],
     ['the allow-list row was disabled', 'not_allowlisted', (w) => (w.db.tables.owner_agent_allowlist[0].enabled = false)],
     ['the allow-list row was removed', 'not_allowlisted', (w) => (w.db.tables.owner_agent_allowlist = [])],
     [
@@ -275,7 +276,7 @@ describe('every gate failure is silence: no model run, no message, one audit row
     [
       'the verified phone is not the allow-listed one',
       'phone_unverified',
-      (w) => (w.db.tables.profiles[0].phone_verified_e164 = '+972529999999'),
+      (w) => (w.db.tables['auth.users'][0].phone = '972529999999'),
     ],
     ['the intake row has no allow-list row', 'not_allowlisted', (w) => (intakeRow(w)!.allowlist_entry_id = null)],
     [

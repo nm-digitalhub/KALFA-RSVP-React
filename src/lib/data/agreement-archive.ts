@@ -395,7 +395,7 @@ export async function runAgreementArchiveSweep(nowMs: number = Date.now()): Prom
     .in('id', eventIds);
   const { data: profiles } = await admin
     .from('profiles')
-    .select('id, full_name, phone, phone_verified_e164')
+    .select('id, full_name, phone')
     .in('id', signerIds);
   const eventById = new Map(
     (events ?? []).map(
@@ -404,7 +404,9 @@ export async function runAgreementArchiveSweep(nowMs: number = Date.now()): Prom
   );
   const signerById = new Map(
     (profiles ?? []).map(
-      (p) => [p.id, { name: p.full_name, phone: p.phone_verified_e164 ?? p.phone }] as const,
+      // The profile's typed phone, recorded as signer_profile_phone. The number
+      // proved at signing is the row's own verified_phone, written next to it.
+      (p) => [p.id, { name: p.full_name, phone: p.phone }] as const,
     ),
   );
   // The sign-in email lives in auth.users, not profiles — one admin read per

@@ -1,8 +1,11 @@
 import 'server-only';
 
+import type { User } from '@supabase/supabase-js';
+
 import { createClient } from '@/lib/supabase/server';
 import { normalizePhone } from '@/lib/phone';
 import { requireUser } from '@/lib/auth/dal';
+import { verifiedPhoneOf } from '@/lib/auth/verified-phone';
 import { logActivity } from '@/lib/data/activity';
 import type { Tables } from '@/lib/supabase/types';
 type ProfileRow = Tables<'profiles'>;
@@ -10,27 +13,28 @@ type ProfileRow = Tables<'profiles'>;
 // DTO: only the columns the account screen needs. The profile row is keyed by
 // the auth user id (profiles.id === auth.users.id); ownership is therefore the
 // id itself, derived server-side from the verified session.
-export type ProfileDTO = Pick<
-  ProfileRow,
-  'id' | 'full_name' | 'phone' | 'updated_at' | 'phone_verified_e164' | 'phone_verified_at'
->;
+export type ProfileDTO = Pick<ProfileRow, 'id' | 'full_name' | 'phone' | 'updated_at'>;
 
 /**
- * Whether the phone CURRENTLY on the profile is the one an OTP proved.
+ * Whether the phone CURRENTLY on the profile is the one the user proved to
+ * Supabase Auth.
  *
  * A comparison, not a stored flag: editing `phone` un-verifies it by
- * construction, so there is no flag to forget to clear. Both sides go through
- * the same normalizer, so 052-374-3588 and +972523743588 compare equal.
+ * construction. Both sides go through the same normalizer, so 052-374-3588 and
+ * +972523743588 compare equal. The proof side comes from Auth (`user` must be
+ * the verified session user, e.g. requireUser()), never from a profiles column.
  */
-export function isProfilePhoneVerified(profile: ProfileDTO | null): boolean {
-  const e164 = profile?.phone_verified_e164;
-  if (!e164 || !profile?.phone_verified_at) return false;
-  return normalizePhone(profile.phone ?? '') === e164;
+export function isProfilePhoneVerified(
+  profile: Pick<ProfileDTO, 'phone'> | null,
+  user: Pick<User, 'phone' | 'phone_confirmed_at'>,
+): boolean {
+  const proved = verifiedPhoneOf(user);
+  if (!proved) return false;
+  return normalizePhone(profile?.phone ?? '') === proved;
 }
 
 // This string IS the DTO contract — the data functions return rows as-is.
-const PROFILE_COLUMNS =
-  'id, full_name, phone, updated_at, phone_verified_e164, phone_verified_at';
+const PROFILE_COLUMNS = 'id, full_name, phone, updated_at';
 
 // Load the current user's profile. The row is created automatically at signup by
 // the `on_auth_user_created` trigger (`handle_new_user()`, SECURITY DEFINER), which

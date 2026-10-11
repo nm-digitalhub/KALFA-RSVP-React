@@ -5587,11 +5587,8 @@ export type Database = {
           full_name: string | null
           id: string
           phone: string | null
-          phone_verified_at: string | null
-          phone_verified_e164: string | null
           sales_referral_attempt_id: string | null
           signup_reminder_sent_at: string | null
-          terms_accepted_at: string | null
           updated_at: string
         }
         Insert: {
@@ -5599,11 +5596,8 @@ export type Database = {
           full_name?: string | null
           id: string
           phone?: string | null
-          phone_verified_at?: string | null
-          phone_verified_e164?: string | null
           sales_referral_attempt_id?: string | null
           signup_reminder_sent_at?: string | null
-          terms_accepted_at?: string | null
           updated_at?: string
         }
         Update: {
@@ -5611,11 +5605,8 @@ export type Database = {
           full_name?: string | null
           id?: string
           phone?: string | null
-          phone_verified_at?: string | null
-          phone_verified_e164?: string | null
           sales_referral_attempt_id?: string | null
           signup_reminder_sent_at?: string | null
-          terms_accepted_at?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -6312,6 +6303,21 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      signup_terms_acceptances: {
+        Row: {
+          accepted_at: string
+          user_id: string
+        }
+        Insert: {
+          accepted_at?: string
+          user_id: string
+        }
+        Update: {
+          accepted_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       sumit_customers: {
         Row: {

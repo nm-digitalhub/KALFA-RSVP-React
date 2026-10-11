@@ -389,7 +389,7 @@ describe('handleOwnerAgentMessages — the §3.1 route gate', () => {
 
   it.each([
     ['staff rpc', { staffError: { code: 'PGRST301', message: 'x' } }, 'gate_staff'],
-    ['profiles', { profilesError: { code: '57014', message: 'x' } }, 'gate_phone'],
+    ['auth user read', { authError: { status: 500, code: 'unexpected_failure', message: 'x' } }, 'gate_phone'],
     ['intake count', { intakeCountError: { code: '57014', message: 'x' } }, 'gate_daily_cap'],
     ['intake insert', { intakeInsertError: { code: '23514', message: `Failing row contains (${QUESTION}, +972508412345)` } }, 'intake'],
   ])('DB error at %s → failed/db_error audit, ONE ids-only alert, never throws', async (_l, override, step) => {
@@ -470,7 +470,7 @@ describe('manual approval on the route gate (plans/owner-agent-allowlist-overrid
     fake.admin.state.verifiedPhones.set(STAFF, null);
     await runKind('staff_unverified_override', STAFF);
     expect(auditRows().map((a) => [a.outcome, a.reason_code])).toEqual([['intake_queued', 'override_staff_unverified']]);
-    expect(fake.admin.reads.some((x) => x.table === 'profiles')).toBe(false);
+    expect(fake.admin.authReads).toEqual([]);
     expect(send).toHaveBeenCalledTimes(1);
   });
 

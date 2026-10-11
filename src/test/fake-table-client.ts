@@ -61,6 +61,19 @@ export interface FakeTableClient {
   client: {
     from: (table: string) => unknown;
     rpc: (fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: { code: string; message: string } | null }>;
+    /**
+     * Supabase Auth's admin API, served from the pseudo-table `auth.users` (rows shaped like the Auth user:
+     * `id`, `phone` as bare digits, `phone_confirmed_at`). An unknown id is Auth's 404 `user_not_found`;
+     * `fail('auth.users', code)` makes the next lookup fail with `code`.
+     */
+    auth: {
+      admin: {
+        getUserById: (id: string) => Promise<{
+          data: { user: TableRow | null };
+          error: { status: number; code: string; message: string } | null;
+        }>;
+      };
+    };
   };
 }
 
@@ -287,6 +300,21 @@ export function createFakeTableClient(
         if (!handler) return { data: null, error: { code: '42883', message: `no rpc ${fn}` } };
         const out = handler(args);
         return { data: out.data, error: out.error ?? null };
+      },
+      auth: {
+        admin: {
+          getUserById: async (id) => {
+            ops.push({ table: 'auth.users', op: 'select', filters: [['eq', 'id', id]] });
+            const failAt = failures.findIndex((f) => f.table === 'auth.users');
+            if (failAt >= 0) {
+              const [f] = failures.splice(failAt, 1);
+              return { data: { user: null }, error: { status: 500, code: f.code, message: `forced ${f.code}` } };
+            }
+            const user = (tables['auth.users'] ?? []).find((u) => u.id === id) ?? null;
+            if (!user) return { data: { user: null }, error: { status: 404, code: 'user_not_found', message: 'User not found' } };
+            return { data: { user }, error: null };
+          },
+        },
       },
     },
   };

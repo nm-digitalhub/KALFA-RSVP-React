@@ -59,7 +59,18 @@ function routedClient(tables: Record<string, Result>) {
   }
   const fallback = createMockSupabase({ data: null, error: null } as never).builder;
   const from = vi.fn((table: string) => builders[table] ?? fallback);
-  return { client: { from, rpc: vi.fn() }, builders, from };
+  // Supabase Auth's admin API: the proved phone of each user, as Auth stores it (bare digits).
+  const getUserById = vi.fn(async (id: string) => {
+    const e164 = AUTH_PHONES.get(id);
+    if (e164 === undefined) {
+      return { data: { user: null }, error: { status: 404, code: 'user_not_found', message: 'User not found' } };
+    }
+    return {
+      data: { user: { id, phone: e164?.replace(/^\+/, '') ?? '', phone_confirmed_at: e164 ? '2026-09-02T00:00:00Z' : null } },
+      error: null,
+    };
+  });
+  return { client: { from, rpc: vi.fn(), auth: { admin: { getUserById } } }, builders, from, getUserById };
 }
 
 function wireCookie(tables: Record<string, Result>) {
@@ -75,8 +86,9 @@ function wireAdmin(tables: Record<string, Result>) {
 }
 
 // platform_staff (with its platform_roles embed) is read through the owner's session;
-// only profiles needs service role. Kept as two maps so each test wires them to the
-// client that must serve them — a read on the wrong client then finds no table.
+// only profiles (names) and Auth (proved phones) need service role. Kept as separate
+// maps so each test wires them to the client that must serve them — a read on the
+// wrong client then finds no table.
 const STAFF_ROWS = {
   platform_staff: {
     data: [
@@ -90,13 +102,19 @@ const STAFF_ROWS = {
 const PROFILE_ROWS = {
   profiles: {
     data: [
-      { id: OWNER_ID, full_name: 'בעל המערכת', phone_verified_e164: OWNER_PHONE },
-      // Staff member whose verified phone differs from the one on the allow-list.
-      { id: STAFF_ID, full_name: null, phone_verified_e164: '+972539998877' },
+      { id: OWNER_ID, full_name: 'בעל המערכת' },
+      { id: STAFF_ID, full_name: null },
     ],
     error: null,
   },
 };
+
+// The number each staff member proved to Supabase Auth.
+const AUTH_PHONES = new Map<string, string | null>([
+  [OWNER_ID, OWNER_PHONE],
+  // Staff member whose verified phone differs from the one on the allow-list.
+  [STAFF_ID, '+972539998877'],
+]);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -298,14 +316,26 @@ describe('reads', () => {
     expect(json).not.toContain('+972539998877');
   });
 
-  it('reads the allow-list and platform_staff through the session; only profiles via service role', async () => {
+  it('reads the allow-list and platform_staff through the session; only profiles and Auth via service role', async () => {
     const cookie = wireCookie({ owner_agent_allowlist: { data: [], error: null }, ...STAFF_ROWS });
     const admin = wireAdmin(PROFILE_ROWS);
     await listOwnerAgentAllowlist();
     expect(cookie.from).toHaveBeenCalledWith('owner_agent_allowlist');
     expect(cookie.from).toHaveBeenCalledWith('platform_staff');
-    // Least privilege: service role touches profiles and nothing else.
+    // Least privilege: service role touches profiles and nothing else…
     expect(admin.from.mock.calls.map((c) => c[0])).toEqual(['profiles']);
+    // …and reads each staff member's proved phone from Auth, never from profiles.
+    expect(admin.getUserById.mock.calls.map((c) => c[0]).sort()).toEqual([OWNER_ID, STAFF_ID].sort());
+  });
+
+  it('a failed Auth read fails the directory instead of showing everyone unverified', async () => {
+    wireCookie(STAFF_ROWS);
+    const admin = wireAdmin(PROFILE_ROWS);
+    admin.getUserById.mockResolvedValueOnce({
+      data: { user: null },
+      error: { status: 500, code: 'unexpected_failure', message: 'x' },
+    });
+    await expect(listOwnerAgentStaff()).rejects.toThrow();
   });
 
   it('lists every staff member for the picker, with a verified-phone BOOLEAN only', async () => {

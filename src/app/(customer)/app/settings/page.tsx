@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { unstable_rethrow } from 'next/navigation';
 import { requireUser } from '@/lib/auth/dal';
-import { getProfile, type ProfileDTO } from '@/lib/data/profiles';
+import { getProfile, isProfilePhoneVerified, type ProfileDTO } from '@/lib/data/profiles';
 import { readSumitCustomerNumber } from '@/lib/data/sumit-customers';
 import {
   DEFAULT_USER_SETTINGS,
@@ -30,6 +30,9 @@ export default async function SettingsPage() {
   // The number SUMIT gave this account at its first payment. Read on the server for the VERIFIED user id; the
   // browser has no access to the table behind it.
   let customerNumber: number | null = null;
+  // Decided here, against the Auth session user — the client never sees the
+  // proof, only the answer.
+  let phoneVerified = false;
   let loadError = false;
 
   try {
@@ -40,6 +43,7 @@ export default async function SettingsPage() {
       getUserSettings(),
       readSumitCustomerNumber(user.id),
     ]);
+    phoneVerified = isProfilePhoneVerified(profile, user);
   } catch (err) {
     unstable_rethrow(err);
     loadError = true;
@@ -49,6 +53,7 @@ export default async function SettingsPage() {
     <SettingsPageClient
       userEmail={userEmail}
       profile={profile}
+      phoneVerified={phoneVerified}
       customerNumber={customerNumber}
       settings={settingsWithDefaults(settings)}
       loadError={loadError}

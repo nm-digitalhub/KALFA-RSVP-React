@@ -48,6 +48,9 @@ const sectionHeaderClass = 'flex items-start gap-3';
 interface SettingsPageClientProps {
   userEmail: string | undefined;
   profile: ProfileDTO | null;
+  // Whether profile.phone is the number proved to Supabase Auth — decided on
+  // the server (page.tsx), never from a profiles column.
+  phoneVerified: boolean;
   // The SUMIT customer number; null until the first payment.
   customerNumber: number | null;
   settings: UserSettingsDTO;
@@ -382,7 +385,13 @@ function AccountSection({
 // given the same number updateUser was, or Auth has no pending change to
 // match. Editing it after a code was sent resets the step, so a code can
 // never be redeemed against a number it was not sent to.
-function PhoneVerification({ profile }: { profile: ProfileDTO | null }) {
+function PhoneVerification({
+  profile,
+  phoneVerified,
+}: {
+  profile: ProfileDTO | null;
+  phoneVerified: boolean;
+}) {
   const [phone, setPhone] = useState(profile?.phone ?? '');
   const [sendState, sendAction] = useActionState(requestPhoneChangeAction, null);
   const [verifyState, verifyAction] = useActionState(verifyPhoneChangeAction, null);
@@ -399,7 +408,7 @@ function PhoneVerification({ profile }: { profile: ProfileDTO | null }) {
   const phoneInput = useRef<HTMLInputElement>(null);
 
   const justVerified = verifyState?.notice != null;
-  const storedVerified = Boolean(profile?.phone_verified_at);
+  const storedVerified = phoneVerified;
   // justVerified locks immediately, without waiting for the revalidated
   // profile to arrive — otherwise the field would sit unlocked and editable in
   // the moment right after the owner proved it.
@@ -585,6 +594,7 @@ function PhoneVerification({ profile }: { profile: ProfileDTO | null }) {
 export function SettingsPageClient({
   userEmail,
   profile,
+  phoneVerified,
   customerNumber,
   settings,
   loadError,
@@ -637,7 +647,7 @@ export function SettingsPageClient({
 
         <div className="space-y-5">
           <ProfileSection profile={profile} customerNumber={customerNumber} />
-          <PhoneVerification profile={profile} />
+          <PhoneVerification profile={profile} phoneVerified={phoneVerified} />
           <NotificationsSection settings={settings} />
           <SummarySection profile={profile} settings={settings} />
           <SecuritySection />

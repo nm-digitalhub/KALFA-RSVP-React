@@ -2,6 +2,7 @@ import 'server-only';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { requirePlatformOwner } from '@/lib/auth/dal';
+import { readVerifiedPhone } from '@/lib/auth/verified-phone';
 import { logActivity } from '@/lib/data/activity';
 import { isApprovalKind, type ApprovalKind } from '@/lib/owner-agent/approval';
 import { maskPhoneForDisplay } from '@/lib/phone';
@@ -37,8 +38,10 @@ import type { NumberRole } from '@/lib/validation/provider-numbers';
 // migration). The SERVICE-ROLE client only where RLS cannot serve:
 //   * owner_agent_allowlist WRITES — the table deliberately has no write policy, so
 //     service role is the only writer (migration §5);
-//   * profiles — readable by its own user only, and the verified-phone match needs
-//     every staff member's phone_verified_e164.
+//   * profiles — readable by its own user only, and the directory needs every staff
+//     member's name;
+//   * auth.users (auth.admin.getUserById) — the verified-phone match needs the number
+//     every staff member proved to Supabase Auth.
 //
 // PRIVACY. No raw phone number leaves this module. Numbers are masked here, and the
 // verified-phone match is returned as a boolean — the comparison happens server-side.
@@ -74,7 +77,7 @@ export interface OwnerAgentAllowlistEntry {
   enabled: boolean;
   label: string | null;
   createdAt: string;
-  /** e164 === that staff member's profiles.phone_verified_e164. The phone itself never leaves. */
+  /** e164 === the number that staff member proved to Supabase Auth. The phone itself never leaves. */
   verifiedMatch: boolean;
   /** How the row was approved (approval.ts). */
   approvalKind: ApprovalKind;
@@ -188,9 +191,10 @@ interface StaffDirectoryEntry {
 
 /**
  * Every platform staff member with name, role and verified phone. Module-private: the
- * verified phone is compared here and never returned. Two batched queries, no N+1 —
- * platform_staff and profiles both key on the auth user but have no FK between them,
- * so PostgREST cannot embed one in the other.
+ * verified phone is compared here and never returned. platform_staff and profiles are
+ * two batched queries — both key on the auth user but have no FK between them, so
+ * PostgREST cannot embed one in the other. The verified phone is one Auth read per
+ * staff member (see the comment at the read).
  */
 async function loadStaffDirectory(): Promise<Map<string, StaffDirectoryEntry>> {
   const supabase = await createClient();
@@ -200,27 +204,34 @@ async function loadStaffDirectory(): Promise<Map<string, StaffDirectoryEntry>> {
   if (error) throw new Error(E.staffReadFailed);
 
   const ids = (staff ?? []).map((s) => s.user_id);
-  const profiles = new Map<string, { full_name: string | null; phone_verified_e164: string | null }>();
+  const names = new Map<string, string | null>();
+  const verifiedPhones = new Map<string, string | null>();
   if (ids.length > 0) {
     const admin = createAdminClient();
     const { data: rows, error: profilesError } = await admin
       .from('profiles')
-      .select('id, full_name, phone_verified_e164')
+      .select('id, full_name')
       .in('id', ids);
     if (profilesError) throw new Error(E.staffReadFailed);
-    for (const p of rows ?? []) profiles.set(p.id, p);
+    for (const p of rows ?? []) names.set(p.id, p.full_name);
+    // One Auth read per staff member: Auth has no batch lookup by id, and the
+    // staff set is a handful of people.
+    const reads = await Promise.all(ids.map((id) => readVerifiedPhone(admin, id)));
+    for (const [i, read] of reads.entries()) {
+      if (read.error) throw new Error(E.staffReadFailed);
+      verifiedPhones.set(ids[i], read.phone);
+    }
   }
 
   const directory = new Map<string, StaffDirectoryEntry>();
   for (const s of staff ?? []) {
     const role = s.platform_roles as { label: string; is_owner_role: boolean } | null;
-    const profile = profiles.get(s.user_id);
     directory.set(s.user_id, {
       userId: s.user_id,
-      name: profile?.full_name ?? null,
+      name: names.get(s.user_id) ?? null,
       roleLabel: role?.label ?? null,
       isOwnerRole: role?.is_owner_role ?? false,
-      verifiedE164: profile?.phone_verified_e164 ?? null,
+      verifiedE164: verifiedPhones.get(s.user_id) ?? null,
     });
   }
   return directory;

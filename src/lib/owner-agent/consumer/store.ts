@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { readVerifiedPhone } from '@/lib/auth/verified-phone';
 import { isApprovalKind, type ApprovalKind } from '@/lib/owner-agent/approval';
 import { wamidSha256 } from '@/lib/owner-agent/intake';
 import type { createAdminClient } from '@/lib/supabase/admin';
@@ -216,6 +217,7 @@ export interface ReplyStore {
   transition(id: string, from: readonly IntakeStatus[], to: IntakeStatus): Promise<boolean>;
   readSettings(): Promise<AgentSettings | null>;
   isStaff(staffUserId: string): Promise<boolean>;
+  /** The number the staff member proved to Supabase Auth (auth.users), or null. */
   verifiedPhone(staffUserId: string): Promise<string | null>;
   /** The allow-list row, or null when it is gone (or its kind is unknown — fail closed). */
   loadEntry(entryId: string): Promise<AllowlistEntryRow | null>;
@@ -316,13 +318,9 @@ export function createReplyStore(client: AdminClient): ReplyStore {
     },
 
     async verifiedPhone(staffUserId) {
-      const { data, error } = await client
-        .from('profiles')
-        .select('phone_verified_e164')
-        .eq('id', staffUserId)
-        .maybeSingle();
+      const { phone, error } = await readVerifiedPhone(client, staffUserId);
       if (error) fail('verified_phone', error);
-      return data?.phone_verified_e164 ?? null;
+      return phone;
     },
 
     async loadEntry(entryId) {

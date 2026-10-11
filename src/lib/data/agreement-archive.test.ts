@@ -267,7 +267,7 @@ function sequence(builder: MockQueryBuilder<Row>, rows: Row[], updateResults: Ar
     )
     .mockImplementationOnce((f) =>
       (f as (v: unknown) => unknown)({
-        data: [{ id: ROW.signer_user_id, full_name: 'דנה כהן', phone: '0501234567', phone_verified_e164: '+972501234567' }],
+        data: [{ id: ROW.signer_user_id, full_name: 'דנה כהן', phone: '0501234567' }],
         error: null,
       }),
     );
@@ -338,7 +338,8 @@ describe('runAgreementArchiveSweep', () => {
     expect(body.Counterparty).toBe('דנה כהן');
     // Full evidence pack, including the auth email and the profile phone.
     expect(body.ArchiveNotes).toContain('signer_email=dana@example.com');
-    expect(body.ArchiveNotes).toContain('signer_profile_phone=+972501234567');
+    expect(body.ArchiveNotes).toContain('signer_profile_phone=0501234567');
+    expect(body.ArchiveNotes).toContain('verified_phone=+972501234567');
     expect(body.ArchiveNotes).toContain('event_venue=אולם');
     expect(body.ArchiveNotes).toContain(`pdf_ref=${ROW.pdf_ref}`);
     // Marked only after upload + metadata, and only if still unexported.

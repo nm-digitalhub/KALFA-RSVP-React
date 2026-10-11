@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server';
 import { requireUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import type { ProfileDTO } from '@/lib/data/profiles';
-import { getProfile, updateProfile } from '@/lib/data/profiles';
+import { getProfile, isProfilePhoneVerified, updateProfile } from '@/lib/data/profiles';
 
 // `profiles.ts` and `dal.ts` begin with `import 'server-only'`, which throws
 // outside Next's RSC context. Vitest does not set that export condition.
@@ -18,7 +18,7 @@ vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 
 // The exact column projection profiles.ts requests — this string IS the DTO
 // contract; the data functions return rows pass-through.
-const PROFILE_COLUMNS = 'id, full_name, phone, updated_at, phone_verified_e164, phone_verified_at';
+const PROFILE_COLUMNS = 'id, full_name, phone, updated_at';
 
 const USER_ID = 'user-123';
 
@@ -32,9 +32,6 @@ function sampleRow(overrides: Partial<ProfileDTO> = {}): ProfileDTO {
     full_name: 'דנה כהן',
     phone: '050-123-4567',
     updated_at: '2026-06-23T00:00:00.000Z',
-    // Unverified by default: the phone is free text until an OTP proves it.
-    phone_verified_e164: null,
-    phone_verified_at: null,
     ...overrides,
   };
 }
@@ -176,5 +173,28 @@ describe('updateProfile', () => {
     expect(builder.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ id: USER_ID, full_name: null, phone: null }),
     );
+  });
+});
+
+describe('isProfilePhoneVerified', () => {
+  // Auth stores the proved number as bare digits.
+  const proved = { phone: '972501234567', phone_confirmed_at: '2026-10-11T06:00:00Z' };
+
+  it('is true when the profile phone is the number proved to Auth, in any format', () => {
+    expect(isProfilePhoneVerified({ phone: '050-123-4567' }, proved)).toBe(true);
+    expect(isProfilePhoneVerified({ phone: '+972501234567' }, proved)).toBe(true);
+  });
+
+  it('is false once the profile phone was edited to another number', () => {
+    expect(isProfilePhoneVerified({ phone: '052-999-8888' }, proved)).toBe(false);
+  });
+
+  it('is false when Auth has no confirmed phone', () => {
+    expect(isProfilePhoneVerified({ phone: '050-123-4567' }, { phone: '972501234567', phone_confirmed_at: undefined })).toBe(false);
+    expect(isProfilePhoneVerified({ phone: '050-123-4567' }, { phone: undefined, phone_confirmed_at: undefined })).toBe(false);
+  });
+
+  it('is false with no profile', () => {
+    expect(isProfilePhoneVerified(null, proved)).toBe(false);
   });
 });

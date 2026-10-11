@@ -37,7 +37,7 @@ const ENTRY_ID = '9d8c7b6a-5f4e-4d3c-ab2a-1f0e9d8c7b6a';
 // Three distinct raw numbers, one per source the page draws from.
 const BUSINESS_E164 = '+97233301505'; // provider_numbers.e164
 const ALLOWED_E164 = '+972501234567'; // owner_agent_allowlist.e164
-const VERIFIED_E164 = '+972539998877'; // profiles.phone_verified_e164
+const VERIFIED_E164 = '+972539998877'; // auth.users.phone (the number the owner proved)
 
 function routed(tables: Record<string, QueryResult<unknown>>) {
   const builders = Object.fromEntries(
@@ -96,12 +96,22 @@ beforeEach(() => {
     }) as never,
   );
   vi.mocked(createAdminClient).mockReturnValue(
-    routed({
-      profiles: {
-        data: [{ id: OWNER_ID, full_name: 'בעל המערכת', phone_verified_e164: VERIFIED_E164 }],
-        error: null,
+    Object.assign(
+      routed({
+        profiles: { data: [{ id: OWNER_ID, full_name: 'בעל המערכת' }], error: null },
+      }),
+      {
+        auth: {
+          admin: {
+            // Auth stores the number as bare digits.
+            getUserById: async (id: string) => ({
+              data: { user: { id, phone: VERIFIED_E164.slice(1), phone_confirmed_at: '2026-09-02T00:00:00Z' } },
+              error: null,
+            }),
+          },
+        },
       },
-    }) as never,
+    ) as never,
   );
 });
 

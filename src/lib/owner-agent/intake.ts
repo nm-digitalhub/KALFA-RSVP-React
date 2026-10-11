@@ -3,6 +3,7 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { readVerifiedPhone } from '@/lib/auth/verified-phone';
 import type { WebhookInboxInsert } from '@/lib/data/webhooks';
 import { isApprovalKind, overrideReasonCode, type ApprovalKind } from '@/lib/owner-agent/approval';
 import { israelMidnightIso } from '@/lib/owner-agent/range';
@@ -702,17 +703,14 @@ async function handleOne(
       if (isStaff !== true) return await gated('not_staff');
     }
     if (approvalKind === 'verified_staff') {
-      // 3. The row's phone is that staff member's VERIFIED phone — a foreign number
-      //    cannot be mapped onto a staff identity by editing the allow-list alone.
+      // 3. The row's phone is the number that staff member PROVED to Supabase Auth
+      //    (auth.users, never a profiles column the user can write) — a foreign
+      //    number cannot be mapped onto a staff identity by editing the allow-list alone.
       step = 'gate_phone';
       if (!staffUserId) return await gated('not_staff');
-      const { data: profile, error: profileError } = await admin
-        .from('profiles')
-        .select('phone_verified_e164')
-        .eq('id', staffUserId)
-        .maybeSingle();
-      if (profileError) throw new OwnerAgentDbError(step, profileError.code ?? 'unknown');
-      if (!profile || profile.phone_verified_e164 !== message.entry.e164) {
+      const verified = await readVerifiedPhone(admin, staffUserId);
+      if (verified.error) throw new OwnerAgentDbError(step, verified.error.code);
+      if (verified.phone !== message.entry.e164) {
         return await gated('phone_unverified');
       }
     }

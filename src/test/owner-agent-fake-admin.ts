@@ -48,9 +48,14 @@ export interface FakeAdminState {
   /** user ids for which is_platform_staff_for_user returns true. */
   staff: Set<string>;
   staffError: FakeDbError | null;
-  /** user id -> profiles.phone_verified_e164 */
+  /**
+   * user id -> the E.164 number that user proved to Supabase Auth (null = Auth
+   * knows the user but holds no confirmed phone). A user id absent from the map
+   * is one Auth does not know. Served by auth.admin.getUserById.
+   */
   verifiedPhones: Map<string, string | null>;
-  profilesError: FakeDbError | null;
+  /** When set, auth.admin.getUserById fails with it. */
+  authError: { status: number; code: string; message: string } | null;
   /** Existing intake rows (wamid, staff_user_id, allowlist_entry_id, received_at). */
   intake: Array<{
     id: string;
@@ -89,7 +94,7 @@ export function unconfiguredState(): FakeAdminState {
     staff: new Set(),
     staffError: null,
     verifiedPhones: new Map(),
-    profilesError: null,
+    authError: null,
     intake: [],
     intakeCountError: null,
     intakeInsertError: null,
@@ -175,9 +180,19 @@ export interface FakeAdmin {
   writes: FakeWrite[];
   reads: FakeRead[];
   rpcCalls: Array<{ fn: string; args: Record<string, unknown> }>;
+  /** user ids passed to auth.admin.getUserById, in call order. */
+  authReads: string[];
   client: {
     from: (table: string) => unknown;
     rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: FakeDbError | null }>;
+    auth: {
+      admin: {
+        getUserById: (id: string) => Promise<{
+          data: { user: { id: string; phone: string; phone_confirmed_at: string | null } | null };
+          error: { status: number; code: string; message: string } | null;
+        }>;
+      };
+    };
   };
   reset: (state?: FakeAdminState) => void;
 }
@@ -188,6 +203,7 @@ export function createFakeAdmin(initial: FakeAdminState = unconfiguredState()): 
     writes: [],
     reads: [],
     rpcCalls: [],
+    authReads: [],
     client: {
       from: (table: string) => builder(fake, table),
       rpc: async (fn: string, args: Record<string, unknown>) => {
@@ -196,12 +212,37 @@ export function createFakeAdmin(initial: FakeAdminState = unconfiguredState()): 
         if (fake.state.staffError) return { data: null, error: fake.state.staffError };
         return { data: fake.state.staff.has(String(args._user_id)), error: null };
       },
+      auth: {
+        admin: {
+          getUserById: async (id: string) => {
+            fake.authReads.push(id);
+            const s = fake.state;
+            if (s.authError) return { data: { user: null }, error: s.authError };
+            if (!s.verifiedPhones.has(id)) {
+              return { data: { user: null }, error: { status: 404, code: 'user_not_found', message: 'User not found' } };
+            }
+            const e164 = s.verifiedPhones.get(id) ?? null;
+            // Auth stores the number as bare digits.
+            return {
+              data: {
+                user: {
+                  id,
+                  phone: e164 ? e164.replace(/^\+/, '') : '',
+                  phone_confirmed_at: e164 ? '2026-09-02T00:00:00Z' : null,
+                },
+              },
+              error: null,
+            };
+          },
+        },
+      },
     },
     reset: (state = unconfiguredState()) => {
       fake.state = state;
       fake.writes = [];
       fake.reads = [];
       fake.rpcCalls = [];
+      fake.authReads = [];
     },
   };
   return fake;
@@ -279,12 +320,6 @@ function builder(fake: FakeAdmin, table: string) {
           bound_from_e164: bound_from_e164 ?? null,
         }));
       return { data: rows, error: null };
-    }
-    if (table === 'profiles') {
-      if (s.profilesError) return { data: null, error: s.profilesError };
-      const id = filters.find(([c]) => c === 'id')?.[2];
-      if (typeof id !== 'string' || !s.verifiedPhones.has(id)) return { data: null, error: null };
-      return { data: { phone_verified_e164: s.verifiedPhones.get(id) ?? null }, error: null };
     }
     if (table === 'owner_agent_intake' && head) {
       if (s.intakeCountError) return { data: null, error: s.intakeCountError, count: null };

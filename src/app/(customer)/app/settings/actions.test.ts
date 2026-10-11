@@ -21,7 +21,13 @@ import { logActivity } from '@/lib/data/activity';
 import { updateProfile } from '@/lib/data/profiles';
 import { createClient } from '@/lib/supabase/server';
 import { getAppUrl } from '@/lib/url';
-import { requestEmailChangeAction, updateProfileAction } from './actions';
+import { requireUser } from '@/lib/auth/dal';
+import {
+  requestEmailChangeAction,
+  requestPhoneChangeAction,
+  updateProfileAction,
+  verifyPhoneChangeAction,
+} from './actions';
 
 const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
   digest: 'NEXT_REDIRECT;replace;/auth/login;307;',
@@ -105,5 +111,63 @@ describe('requestEmailChangeAction — routes the confirmation through /auth/con
 
     expect(logActivity).not.toHaveBeenCalled();
     expect(res).toEqual({ error: 'שליחת אישור המייל נכשלה. נסו שוב מאוחר יותר.' });
+  });
+});
+
+describe('phone verification — the proof stays in Auth, profiles gets only the display phone', () => {
+  const getUser = vi.fn();
+  const updateUser = vi.fn();
+  const verifyOtp = vi.fn();
+  const update = vi.fn();
+  const eq = vi.fn();
+  const from = vi.fn();
+
+  beforeEach(() => {
+    vi.mocked(requireUser).mockResolvedValue({ id: 'u-1' } as never);
+    eq.mockResolvedValue({ error: null });
+    update.mockReturnValue({ eq });
+    from.mockReturnValue({ update });
+    vi.mocked(createClient).mockResolvedValue({ auth: { getUser, updateUser, verifyOtp }, from } as never);
+    updateUser.mockResolvedValue({ error: null });
+    verifyOtp.mockResolvedValue({ error: null });
+  });
+
+  it('verify: Auth checks the code as a phone_change, then only profiles.phone is written', async () => {
+    const res = await verifyPhoneChangeAction(null, fd({ phone: '050-123-4567', otp_code: '123456' }));
+
+    expect(verifyOtp).toHaveBeenCalledWith({ phone: '+972501234567', token: '123456', type: 'phone_change' });
+    expect(from).toHaveBeenCalledWith('profiles');
+    expect(update).toHaveBeenCalledWith({ phone: '+972501234567' });
+    expect(eq).toHaveBeenCalledWith('id', 'u-1');
+    expect(res).toEqual({ notice: 'הטלפון אומת.' });
+  });
+
+  it('verify: a wrong code writes nothing', async () => {
+    verifyOtp.mockResolvedValue({ error: { status: 403, code: 'otp_expired', message: 'x' } });
+
+    const res = await verifyPhoneChangeAction(null, fd({ phone: '050-123-4567', otp_code: '123456' }));
+
+    expect(from).not.toHaveBeenCalled();
+    expect(res).toEqual({ fieldErrors: { otp_code: ['הקוד שגוי או פג תוקפו'] } });
+  });
+
+  it('request: a number Auth already holds as confirmed sends no code', async () => {
+    getUser.mockResolvedValue({ data: { user: { phone: '972501234567', phone_confirmed_at: '2026-09-02T00:00:00Z' } } });
+
+    const res = await requestPhoneChangeAction(null, fd({ phone: '050-123-4567' }));
+
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith({ phone: '+972501234567' });
+    expect(res).toEqual({ notice: 'המספר הזה כבר מאומת. לא נשלח קוד.' });
+  });
+
+  it('request: a new number asks Auth to send the code and writes nothing yet', async () => {
+    getUser.mockResolvedValue({ data: { user: { phone: '972501234567', phone_confirmed_at: '2026-09-02T00:00:00Z' } } });
+
+    const res = await requestPhoneChangeAction(null, fd({ phone: '052-999-8888' }));
+
+    expect(updateUser).toHaveBeenCalledWith({ phone: '+972529998888' });
+    expect(from).not.toHaveBeenCalled();
+    expect(res).toEqual({ notice: 'קוד אימות נשלח בהודעת SMS למספר שהוזן.' });
   });
 });

@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 
 import { requireUser } from '@/lib/auth/dal';
+import { verifiedPhoneOf } from '@/lib/auth/verified-phone';
 import { logActivity } from '@/lib/data/activity';
 import { normalizePhone } from '@/lib/phone';
 import { updateProfile } from '@/lib/data/profiles';
@@ -20,51 +21,31 @@ import type { FormState } from '@/lib/validation/result';
 
 // Phone-number ownership, proved by Supabase Auth itself.
 //
-// NO OTP mechanism of our own: Auth mints the code, sets its TTL and verifies
-// it. Our only part is DELIVERY — the send_sms Auth Hook (supabase/functions/
-// sms-hook) hands the code to ExtrA, the provider the rest of the product
-// already uses, because Auth's built-in senders do not include it.
+// Auth mints the code, sets its TTL and verifies it; this flow has no OTP of
+// its own. Our only part is DELIVERY — the send_sms Auth Hook (supabase/
+// functions/sms-hook) hands the code to ExtrA. (Agreement signing is a
+// different flow with its own OTP — src/lib/data/otp.ts.)
 //
-// The truth therefore lives in auth.users.phone / phone_confirmed_at, not in a
-// column of ours. profiles.phone stays what it always was — the display value
-// the owner typed.
+// The proof lives in auth.users.phone / phone_confirmed_at, read through
+// src/lib/auth/verified-phone.ts. profiles.phone is only the display value the
+// owner sees and edits; nothing reads it as proof.
 
-// Auth stores the phone as bare digits ("972501234567"); normalizePhone
-// returns E.164 with the plus ("+972501234567"). Every comparison against
-// auth.users MUST go through this or it silently never matches.
-function bareDigits(e164: string): string {
-  return e164.replace(/^\+/, '');
-}
-
-// Copy the proved number onto the profile. Two columns, not one flag: the
-// product asks "is the CURRENT phone verified?" as
-// normalizePhone(phone) === phone_verified_e164, so editing `phone` un-verifies
-// it by construction (see the migration's comment).
+// Show the proved number in the profile's display field, so the screen and
+// every place that prints profiles.phone show the number that was proved.
 //
 // A direct column write, NOT updateProfile(): that helper upserts the whole row
 // and would blank full_name, which these actions never receive.
-async function mirrorVerifiedPhone(
+async function syncDisplayPhone(
   supabase: Awaited<ReturnType<typeof createClient>>,
   phone: string,
-  verifiedAt: string,
 ): Promise<void> {
   const { id: userId } = await requireUser();
-  const { error } = await supabase
-    .from('profiles')
-    .update({
-      phone,
-      phone_verified_e164: phone,
-      phone_verified_at: verifiedAt,
-    })
-    .eq('id', userId);
+  const { error } = await supabase.from('profiles').update({ phone }).eq('id', userId);
 
-  // The USER is never told the mirror failed — auth.users already records the
-  // verification and that is the authority. But it is logged: an earlier
-  // version wrote only `phone`, so phone_verified_at stayed null forever and
-  // the "מאומת" badge could never appear, with nothing anywhere to show why
-  // (measured 2026-09-02).
+  // The user is not told this failed — auth.users already holds the proof. It
+  // is logged so a display field that did not follow can be traced.
   if (error) {
-    console.error('[settings] verified-phone mirror write failed', {
+    console.error('[settings] display phone sync failed', {
       code: error.code,
       message: error.message,
     });
@@ -90,13 +71,9 @@ export async function requestPhoneChangeAction(
   // an SMS that was never dispatched — a promise the user cannot act on.
   // Measured 2026-09-02: phone_change_sent_at never moved and no SMS arrived.
   const { data: authData } = await supabase.auth.getUser();
-  const authUser = authData.user;
-  if (
-    authUser?.phone_confirmed_at &&
-    authUser.phone === bareDigits(phone)
-  ) {
-    // Also reconciles a profile whose mirror is missing or stale.
-    await mirrorVerifiedPhone(supabase, phone, authUser.phone_confirmed_at);
+  if (verifiedPhoneOf(authData.user) === phone) {
+    // Also brings back a display field that drifted from the proved number.
+    await syncDisplayPhone(supabase, phone);
     revalidatePath('/app/settings');
     return { notice: 'המספר הזה כבר מאומת. לא נשלח קוד.' };
   }
@@ -148,7 +125,7 @@ export async function verifyPhoneChangeAction(
     return { fieldErrors: { otp_code: ['הקוד שגוי או פג תוקפו'] } };
   }
 
-  await mirrorVerifiedPhone(supabase, phone, new Date().toISOString());
+  await syncDisplayPhone(supabase, phone);
 
   await logActivity({ action: 'profile.phone_verified' });
   revalidatePath('/app/settings');

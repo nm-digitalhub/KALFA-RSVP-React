@@ -6,7 +6,12 @@ vi.mock('next/navigation', async (importOriginal) => {
   return { ...actual };
 });
 vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
-vi.mock('@/lib/data/profiles', () => ({ getProfile: vi.fn() }));
+vi.mock('server-only', () => ({}));
+// The real isProfilePhoneVerified: the page's verified badge is decided by it.
+vi.mock('@/lib/data/profiles', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/data/profiles')>()),
+  getProfile: vi.fn(),
+}));
 vi.mock('@/lib/data/sumit-customers', () => ({ readSumitCustomerNumber: vi.fn() }));
 vi.mock('@/lib/data/user-settings', () => ({
   DEFAULT_USER_SETTINGS: {
@@ -85,5 +90,35 @@ describe('SettingsPage — SUMIT customer number', () => {
     const tree = (await SettingsPage()) as ReactElement<Props>;
 
     expect(tree.props.loadError).toBe(true);
+  });
+});
+
+describe('SettingsPage — verified phone badge', () => {
+  type Props = { phoneVerified: boolean; loadError: boolean };
+
+  function signedIn(authPhone: { phone?: string; phone_confirmed_at?: string }, profilePhone: string | null) {
+    vi.mocked(requireUser).mockResolvedValue({ id: 'u-1', email: 'dana@example.com', ...authPhone } as never);
+    vi.mocked(getProfile).mockResolvedValue({ id: 'u-1', full_name: 'דנה', phone: profilePhone, updated_at: '' });
+    vi.mocked(getUserSettings).mockResolvedValue(null);
+    vi.mocked(readSumitCustomerNumber).mockResolvedValue(null);
+  }
+
+  it('is verified when the profile phone is the number the session user proved to Auth', async () => {
+    signedIn({ phone: '972501234567', phone_confirmed_at: '2026-10-11T06:00:00Z' }, '050-123-4567');
+    const tree = (await SettingsPage()) as ReactElement<Props>;
+    expect(tree.props.phoneVerified).toBe(true);
+  });
+
+  it('is not verified when the profile phone was changed to another number', async () => {
+    signedIn({ phone: '972501234567', phone_confirmed_at: '2026-10-11T06:00:00Z' }, '052-999-8888');
+    const tree = (await SettingsPage()) as ReactElement<Props>;
+    expect(tree.props.phoneVerified).toBe(false);
+  });
+
+  it('is not verified when Auth holds no confirmed phone', async () => {
+    signedIn({}, '050-123-4567');
+    const tree = (await SettingsPage()) as ReactElement<Props>;
+    expect(tree.props.phoneVerified).toBe(false);
+    expect(tree.props.loadError).toBe(false);
   });
 });
