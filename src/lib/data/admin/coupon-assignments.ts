@@ -5,6 +5,7 @@ import { listEligibleBenefits, type EligibleBenefit } from '@/lib/data/coupon-be
 import { computeOfferOption, type OfferKind } from '@/lib/offers/pricing';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { listOfferPackageChoices, listOffers } from './offers';
 
 // Staff assignment of a personal benefit (personal-coupons tasks 5.3/7.3, mockup ui/AssignNew.dc.html).
 // The STAFF source: an assignment to a specific ACCOUNT, no phone proof needed (D13; the mockup's
@@ -499,4 +500,63 @@ export async function findAccountByEmail(
     if (data.users.length < 200) break;
   }
   return null;
+}
+
+// ── The assign form's offer choices (task 7.3, mockup ui/AssignNew.dc.html) ──
+// Precomputed HERE, with the same computeOfferOption createStaffAssignment freezes, so the preview
+// the staff member reads is exactly what the customer gets. Shown: active, staff-allowed offers
+// with at least one allowed package — and, like the agent path, an offer that floors any package
+// at zero or below is not assignable.
+
+export type AssignableOffer = {
+  id: string;
+  title: string;
+  /** "5%" or the formatted amount — the select's label next to the title. */
+  valueLabel: string;
+  /** The expiry the assignment WOULD get if created now (now + validity days), pre-formatted. */
+  expiresLabel: string;
+  options: { name: string; listPrice: string; finalPrice: string }[];
+};
+
+export async function listAssignableOffers(
+  format: { currency: (amount: number) => string; date: (value: Date) => string },
+): Promise<AssignableOffer[]> {
+  const [offers, choices] = await Promise.all([listOffers(), listOfferPackageChoices()]);
+  const byPackage = new Map(choices.map((c) => [c.id, { name: c.name, price: c.price_with_vat }]));
+  const nowMs = Date.now();
+
+  const assignable: AssignableOffer[] = [];
+  for (const offer of offers) {
+    if (!offer.is_active || !offer.allow_staff || offer.packages.length === 0) continue;
+    const kind: OfferKind = offer.kind === 'amount' ? 'amount' : 'percent';
+    const options: AssignableOffer['options'] = [];
+    let honorable = true;
+    for (const allowed of offer.packages) {
+      const pkg = byPackage.get(allowed.package_id);
+      if (!pkg) {
+        honorable = false;
+        break;
+      }
+      const { finalPrice } = computeOfferOption(pkg.price, kind, Number(allowed.value_override ?? offer.value));
+      if (finalPrice <= 0) {
+        honorable = false;
+        break;
+      }
+      options.push({
+        name: pkg.name,
+        listPrice: format.currency(pkg.price),
+        finalPrice: format.currency(finalPrice),
+      });
+    }
+    if (!honorable || options.length === 0) continue;
+
+    assignable.push({
+      id: offer.id,
+      title: offer.title,
+      valueLabel: kind === 'percent' ? `${Number(offer.value)}%` : format.currency(Number(offer.value)),
+      expiresLabel: format.date(new Date(nowMs + offer.validity_days * 24 * 60 * 60 * 1000)),
+      options,
+    });
+  }
+  return assignable;
 }

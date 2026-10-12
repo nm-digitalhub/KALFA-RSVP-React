@@ -8,6 +8,7 @@ import {
   Activity,
   Ban,
   BadgePercent,
+  TicketPercent,
   Bot,
   Building2,
   CalendarClock,
@@ -143,6 +144,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/admin/packages', label: 'חבילות', icon: Package, permission: 'manage_billing' },
       // The staff-managed benefit offers (personal-coupons D14) — managed like the packages.
       { href: '/admin/offers', label: 'הצעות להטבה', icon: BadgePercent, permission: 'manage_billing' },
+      // Personal benefit assignments (task 7.3): who holds which benefit, assign and void.
+      { href: '/admin/assignments', label: 'הטבות אישיות', icon: TicketPercent, permission: 'manage_billing' },
       { href: '/admin/agreement', label: 'חוזה', icon: FileText, permission: 'manage_settings' },
       { href: '/admin/company', label: 'פרטי חברה', icon: Building2, permission: 'manage_settings' },
       { href: '/admin/faq', label: 'שאלות נפוצות', icon: CircleQuestionMark, permission: 'manage_settings' },

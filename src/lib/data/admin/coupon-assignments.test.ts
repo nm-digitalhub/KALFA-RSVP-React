@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { listEligibleBenefits } from '@/lib/data/coupon-benefits';
-import { createStaffAssignment, voidStaffAssignment } from './coupon-assignments';
+import { createStaffAssignment, listStaffAssignments, voidStaffAssignment } from './coupon-assignments';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
@@ -21,7 +21,7 @@ function tableClient(queues: Record<string, Result[]>) {
     from: vi.fn((table: string) => {
       const result = queues[table]?.shift() ?? { data: null, error: null };
       const builder: Record<string, unknown> = {};
-      for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'in', 'is', 'limit', 'single', 'maybeSingle']) {
+      for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'in', 'is', 'order', 'limit', 'single', 'maybeSingle']) {
         builder[m] = vi.fn(() => builder);
       }
       builder.then = (onFulfilled: (value: Result) => unknown) => onFulfilled(result);
@@ -252,5 +252,127 @@ describe('voidStaffAssignment (tasks 5.5/7.3)', () => {
     });
 
     expect(await voidStaffAssignment('a-1')).toEqual({ outcome: 'refused', reason: 'already_ended' });
+  });
+});
+
+describe('listStaffAssignments (task 7.3 — the screen reads held states and the D10 guard)', () => {
+  function listRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'a-1',
+      created_at: '2026-10-12T10:00:00.000Z',
+      expires_at: FUTURE,
+      state: 'bound',
+      user_id: null,
+      phone_e164: '+972501234567',
+      sales_call_attempt_id: 'call-1',
+      assigned_by: null,
+      bound_campaign_id: 'c-1',
+      offers: { title: 'הטבה' },
+      coupon_assignment_options: [{ final_price: 190, packages: { name: 'בסיס' } }],
+      ...overrides,
+    };
+  }
+
+  it('held by a PENDING payment, by a payment in REVIEW, and by APPROVED terms — each shown as such', async () => {
+    tableClient({
+      coupon_assignments: [
+        {
+          data: [
+            listRow({ id: 'a-pend', bound_campaign_id: 'c-pend' }),
+            listRow({ id: 'a-rev', bound_campaign_id: 'c-rev' }),
+            listRow({ id: 'a-lock', bound_campaign_id: 'c-lock' }),
+            listRow({ id: 'a-free', state: 'assigned', bound_campaign_id: null }),
+          ],
+          error: null,
+        },
+      ],
+      campaigns: [
+        {
+          data: [
+            { id: 'c-pend', template_id: 'p-1', events: { name: 'אירוע א' }, packages: { name: 'בסיס' } },
+            { id: 'c-rev', template_id: 'p-1', events: { name: 'אירוע ב' }, packages: { name: 'בסיס' } },
+            { id: 'c-lock', template_id: 'p-1', events: { name: 'אירוע ג' }, packages: { name: 'בסיס' } },
+          ],
+          error: null,
+        },
+      ],
+      campaign_pricing: [{ data: [{ campaign_id: 'c-lock', locked_at: '2026-10-12T11:00:00.000Z' }], error: null }],
+      payment_operations: [
+        {
+          data: [
+            { campaign_id: 'c-pend', outcome: 'pending' },
+            { campaign_id: 'c-rev', outcome: 'review' },
+          ],
+          error: null,
+        },
+      ],
+    });
+
+    const { rows, guardCount } = await listStaffAssignments();
+
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    expect(byId.get('a-pend')).toMatchObject({ payment: 'pending', heldBy: 'payment', guard: false });
+    expect(byId.get('a-rev')).toMatchObject({ payment: 'review', heldBy: 'review', guard: false });
+    expect(byId.get('a-lock')).toMatchObject({ payment: 'none', heldBy: 'approved_terms' });
+    // The unheld row offers the void (heldBy null), and nothing trips the guard.
+    expect(byId.get('a-free')).toMatchObject({ heldBy: null, source: { kind: 'agent' } });
+    expect(guardCount).toBe(0);
+  });
+
+  it('D10 guard: a SUCCEEDED payment whose assignment was not consumed is surfaced and counted', async () => {
+    const { client } = tableClient({
+      coupon_assignments: [
+        {
+          data: [
+            listRow({ id: 'a-bad', bound_campaign_id: 'c-paid', user_id: 'u-9' }),
+            listRow({ id: 'a-ok', state: 'consumed', bound_campaign_id: 'c-paid2' }),
+          ],
+          error: null,
+        },
+      ],
+      campaigns: [
+        {
+          data: [
+            { id: 'c-paid', template_id: 'p-1', events: { name: 'אירוע' }, packages: { name: 'בסיס' } },
+            { id: 'c-paid2', template_id: 'p-1', events: { name: 'אירוע 2' }, packages: { name: 'בסיס' } },
+          ],
+          error: null,
+        },
+      ],
+      campaign_pricing: [{ data: [], error: null }],
+      payment_operations: [
+        {
+          data: [
+            { campaign_id: 'c-paid', outcome: 'succeeded' },
+            { campaign_id: 'c-paid2', outcome: 'succeeded' },
+          ],
+          error: null,
+        },
+      ],
+    });
+    client.auth.admin.getUserById.mockResolvedValue({
+      data: { user: { id: 'u-9', email: 'owner@example.com' } },
+      error: null,
+    } as never);
+
+    const { rows, guardCount } = await listStaffAssignments();
+
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    // The damage row: paid but never consumed — flagged; the phone is masked, the claim shows the email.
+    expect(byId.get('a-bad')).toMatchObject({
+      guard: true,
+      target: { userEmail: 'owner@example.com', phoneMasked: '+9725…567', claimed: true },
+    });
+    // Consumed-and-paid is the HEALTHY shape — not a guard row.
+    expect(byId.get('a-ok')).toMatchObject({ guard: false, state: 'consumed' });
+    expect(guardCount).toBe(1);
+  });
+
+  it('gate: rejects without manage_billing and reads nothing', async () => {
+    const { client } = tableClient({});
+    vi.mocked(requirePlatformPermission).mockRejectedValue(new Error('redirect'));
+
+    await expect(listStaffAssignments()).rejects.toThrow('redirect');
+    expect(client.from).not.toHaveBeenCalled();
   });
 });

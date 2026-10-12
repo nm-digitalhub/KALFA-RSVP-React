@@ -85,8 +85,8 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
 ## 7. Screens (D12)
 
 - [ ] 7.1 Package choice (`ui/Main.dc.html`, `ui/Mobile.dc.html`, states in `ui/States.dc.html`): on every package the benefit allows, the list price, discount and final price; the benefit moving when the package changes before approval; the message for an ended benefit; the acceptance banner for approved-unpaid terms (ש5/D21 — mocked in `ui/States.dc.html` since 12.10.2026). **The wording is the owner's.** Verify: component tests per state; RTL and keyboard check; a runtime check in the browser.
-- [ ] 7.2 A neutral invitation to verify the phone (`ui/States.dc.html`) for an account without a verified phone. It reveals nothing about offers. Verify: a test that the response is identical whether or not an offer exists for any phone.
-- [ ] 7.3 Staff assignment list and assign form (`ui/Assignments.dc.html`, `ui/AssignNew.dc.html`): state, options, source, bound campaign, chosen package and its payment outcome, plus assign and void, and the guard row for a succeeded payment whose assignment was not consumed (D10). The held-by-payment state (D22, a pending package payment) joins held-by-review (mocked since 12.10.2026). Verify: permission tests; an assignment held by a payment in review or by a pending payment is shown as such, and its void is refused.
+- [x] 7.2 A neutral invitation to verify the phone (`ui/States.dc.html`) for an account without a verified phone. It reveals nothing about offers. Verify: a test that the response is identical whether or not an offer exists for any phone.
+- [x] 7.3 Staff assignment list and assign form (`ui/Assignments.dc.html`, `ui/AssignNew.dc.html`): state, options, source, bound campaign, chosen package and its payment outcome, plus assign and void, and the guard row for a succeeded payment whose assignment was not consumed (D10). The held-by-payment state (D22, a pending package payment) joins held-by-review (mocked since 12.10.2026). Verify: permission tests; an assignment held by a payment in review or by a pending payment is shown as such, and its void is refused.
 
 ## 8. Contract (phase 3 of D8)
 
