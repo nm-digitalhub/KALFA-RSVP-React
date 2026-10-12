@@ -16,6 +16,7 @@ import {
   PACKAGE_PAYMENT_UNVERIFIED_ERROR,
 } from '@/lib/data/package-activation-errors';
 import { getPackagePaymentState, packagePaymentOf } from '@/lib/payments/package-paid';
+import { getCurrentPricing, getCurrentPricingByCampaign } from '@/lib/data/campaign-pricing';
 import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
 import { isPackageAgreementVersion } from '@/lib/agreements/template';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
@@ -42,18 +43,20 @@ export type OwnerCampaign = Pick<
   | 'close_at'
   | 'approved_at'
   | 'created_at'
-  // Fixed package price agreed at approval, paid by one purchase. NULL only on a campaign of the retired
-  // pay-per-result model, which cannot be paid or started.
-  | 'package_price'
   // How many contacts the campaign may approach (the fixed-price package model); NULL = no quota.
   | 'contact_quota'
->;
+> & {
+  // The current pricing round's final price (campaign_pricing, task 4.1 — read through the pricing module after the
+  // RLS-scoped campaign read proved access). NULL only on a campaign of the retired pay-per-result model, which has
+  // no round, cannot be paid and cannot start.
+  price: number | null;
+};
 
 // Exported so the admin cross-tenant reader (src/lib/data/admin/campaigns.ts)
 // selects the SAME shape — an admin viewing a campaign must see exactly what
-// the owner sees, and a second column list here would drift.
+// the owner sees, and a second column list here would drift. The price is NOT here: it comes from the pricing module.
 export const CAMPAIGN_COLUMNS =
-  'id, event_id, template_id, status, max_contacts, tos_version, allowed_channels, start_at, close_at, approved_at, created_at, package_price, contact_quota';
+  'id, event_id, template_id, status, max_contacts, tos_version, allowed_channels, start_at, close_at, approved_at, created_at, contact_quota';
 
 // R9 refusal, in the owner's vocabulary (audit §2): the event step is
 // "אישור פרטי האירוע", never "פרסום". Exported so the console status route can
@@ -130,7 +133,7 @@ export async function getPackageOffer(packageId: string): Promise<PackageOffer |
 // `pending_approval`. Idempotent: if a non-cancelled campaign already exists for
 // the event it is returned unchanged (one campaign per event — entered via the
 // "הפעלת אישורי הגעה" CTA, never a repeatable "new campaign"). The campaign snapshots the chosen package's price
-// (`package_price`), quota (`contact_quota`), channels and outreach schedule. The activity window is derived from the
+// (its pricing round), quota (`contact_quota`), channels and outreach schedule. The activity window is derived from the
 // event date: outreach closes at the event.
 //
 // Refused unless the package switch is on, the package is an offer, and the ACTIVE agreement is the package contract
@@ -201,8 +204,8 @@ export async function createCampaign(
   }
   const admin = createAdminClient();
   // Phase 2 of the price migration (personal-coupons D8, task 2.1): the campaign and its pricing round are created
-  // in ONE database transaction (create_package_campaign). The pricing row IS the price; the mirror trigger fills
-  // campaigns.package_price in the same transaction for the readers that have not moved yet (task 4.1).
+  // in ONE database transaction (create_package_campaign). The pricing row IS the price; the mirror trigger keeps
+  // the legacy campaigns column equal in the same transaction until the phase-3 contract drops it.
   const { data, error } = await admin.rpc('create_package_campaign', {
     _event_id: eventId,
     _template_id: offer.id,
@@ -229,7 +232,9 @@ export async function getCampaign(campaignId: string): Promise<OwnerCampaign> {
     const { notFound } = await import('next/navigation');
     notFound();
   }
-  return data as OwnerCampaign;
+  // The RLS-scoped read above proved access; the price comes from the round (the pricing module, task 4.1).
+  const row = data as NonNullable<typeof data>; // notFound() above never returns
+  return { ...row, price: (await getCurrentPricing(row.id))?.price ?? null } as OwnerCampaign;
 }
 
 export async function listCampaignsForEvent(
@@ -243,7 +248,10 @@ export async function listCampaignsForEvent(
     .eq('event_id', eventId)
     .order('created_at', { ascending: false });
   if (error) throw new Error('טעינת הקמפיינים נכשלה');
-  return (data ?? []) as OwnerCampaign[];
+  const rows = data ?? [];
+  // ONE batch read for every campaign's current round — no per-row query.
+  const pricing = await getCurrentPricingByCampaign(rows.map((c) => c.id));
+  return rows.map((c) => ({ ...c, price: pricing.get(c.id)?.price ?? null })) as OwnerCampaign[];
 }
 
 // The event's "RSVP confirmations" campaign. Returns the most-recent
@@ -268,7 +276,8 @@ export async function getCampaignForEvent(
     .limit(1)
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
-  return (data ?? null) as OwnerCampaign | null;
+  if (!data) return null;
+  return { ...data, price: (await getCurrentPricing(data.id))?.price ?? null } as OwnerCampaign;
 }
 
 // The event's campaign STAGE only, for surfaces that show it next to ANOTHER
@@ -295,15 +304,18 @@ export async function getCampaignStageForEvent(
   if (allowed !== true) return null;
   const { data, error } = await supabase
     .from('campaigns')
-    .select('id, status, package_price')
+    .select('id, status')
     .eq('event_id', eventId)
     .neq('status', 'cancelled')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
-  // A package campaign is funded by its payment, which only the ledger knows.
-  return campaignStage(data ? { ...data, payment: await packagePaymentOf(data) } : null);
+  if (!data) return campaignStage(null);
+  // A package campaign is funded by its payment, which only the ledger knows; the round says whether it IS a package.
+  const price = (await getCurrentPricing(data.id))?.price ?? null;
+  const withPrice = { ...data, price };
+  return campaignStage({ ...withPrice, payment: await packagePaymentOf(withPrice) });
 }
 
 
@@ -321,7 +333,7 @@ export async function approveCampaign(
 
   const { data: campaign, error } = await admin
     .from('campaigns')
-    .select('id, event_id, status, package_price')
+    .select('id, event_id, status')
     .eq('id', campaignId)
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
@@ -330,8 +342,8 @@ export async function approveCampaign(
     return notFound();
   }
 
-  // A campaign is approved only under the package contract, and only when it carries a package.
-  if (!isPackageAgreementVersion(tosVersion) || campaign.package_price == null) {
+  // A campaign is approved only under the package contract, and only when it carries a package (a pricing round).
+  if (!isPackageAgreementVersion(tosVersion) || (await getCurrentPricing(campaignId)) === null) {
     throw new Error('ההסכם אינו תואם למודל התמחור של הקמפיין');
   }
 
@@ -382,9 +394,11 @@ export async function getCampaignRef(campaignId: string): Promise<CampaignRef | 
 }
 
 // The package purchase's view of a campaign: its status and the fixed price agreed at approval. The price is read here,
-// on the server, and is the ONLY source of the amount charged — the browser submits nothing but a card token.
-// `package_price` NULL means a campaign of the retired pay-per-result model, which the purchase route must refuse.
-export type CampaignPurchaseState = Pick<CampaignRow, 'id' | 'event_id' | 'status' | 'package_price'> & {
+// on the server, FROM THE CURRENT PRICING ROUND, and is the ONLY source of the amount charged — the browser submits
+// nothing but a card token. `price` NULL means a campaign of the retired pay-per-result model (no round), which the
+// purchase route must refuse.
+export type CampaignPurchaseState = Pick<CampaignRow, 'id' | 'event_id' | 'status'> & {
+  price: number | null;
   /** The name of the package the campaign was created from (campaigns.template_id → packages): the receipt line. */
   package_name: string | null;
 };
@@ -396,13 +410,14 @@ export async function getCampaignForPurchase(
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('campaigns')
-    .select('id, event_id, status, package_price, package:packages(name)')
+    .select('id, event_id, status, package:packages(name)')
     .eq('id', campaignId)
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
   if (!data) return null;
   const { package: pkg, ...campaign } = data;
-  return { ...campaign, package_name: pkg?.name ?? null };
+  const price = (await getCurrentPricing(campaignId))?.price ?? null;
+  return { ...campaign, price, package_name: pkg?.name ?? null };
 }
 
 // --- Campaign lifecycle (no money) ------------------------------------------
@@ -455,7 +470,7 @@ async function transitionCampaignStatus(
   const admin = createAdminClient();
   const { data: campaign, error } = await admin
     .from('campaigns')
-    .select('id, event_id, package_price')
+    .select('id, event_id')
     .eq('id', campaignId)
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
@@ -502,19 +517,18 @@ async function transitionCampaignStatus(
   }
 
   if (funding === 'package') {
-    // Only a package campaign is ever funded: one created under the earlier model has no payment to start from.
-    if (campaign.package_price == null) throw new Error(NO_PACKAGE_ERROR);
+    // Only a package campaign is ever funded: one created under the earlier model has no pricing round and no payment
+    // to start from. Rounds are append-only — a campaign that has one cannot stop having one — so this pre-check
+    // cannot be raced false, and no update-time re-guard is needed.
+    if ((await getCurrentPricing(campaign.id)) === null) throw new Error(NO_PACKAGE_ERROR);
     await opts?.preparePackage?.({ id: campaign.id, event_id: campaign.event_id });
   }
 
-  let query = admin
+  const query = admin
     .from('campaigns')
     .update({ status: to })
     .eq('id', campaignId)
     .in('status', from);
-  if (funding === 'package') {
-    query = query.not('package_price', 'is', null);
-  }
   const { data: updated, error: upErr } = await query
     .select('id')
     .maybeSingle();

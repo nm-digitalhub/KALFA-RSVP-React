@@ -46,7 +46,7 @@ import { getPackagePaymentState, purchasePackage, type PackagePurchaseInput } fr
 // The package purchase is the one place a customer's card is charged for the whole package, once. The properties
 // defended here, each against the database double that enforces the real unique indexes:
 //   - the PENDING ledger row exists before SUMIT is asked for money (a crash can never leave a charge unrecorded);
-//   - the amount is the campaign's own package_price, never anything the browser sent;
+//   - the amount is the campaign's own price, never anything the browser sent;
 //   - a double click, a second tab, or a retry after a payment already exists cannot charge twice;
 //   - a clear decline can be retried; "we do not know" and "charged but not recorded" go to REVIEW, never to a retry;
 //   - a confirmed charge is never downgraded by a failure of something that comes after it (the card vault, the
@@ -110,7 +110,7 @@ const GOOD: SumitChargeResult = {
 };
 
 // No package name: the receipt falls back to the general line (receiptLineFor).
-const CAMPAIGN: CampaignPurchaseState = { id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, package_name: null };
+const CAMPAIGN: CampaignPurchaseState = { id: 'c1', event_id: 'e1', status: 'approved', price: 120, package_name: null };
 const SECRETS = ['og-token-123', 'test-api-key', 'tok-reusable', '316125434'];
 
 function input(over: { campaign?: Partial<CampaignPurchaseState> } = {}): PackagePurchaseInput {
@@ -130,13 +130,14 @@ function useDb(seed: TableRow[] = []) {
     payment_operations: seed,
     // personal-coupons D22 (task 2.4): the CURRENT LOCKED round the payment must name. Tests that override the
     // campaign price call roundPrice() to keep the round in step (the mirror does that in production).
-    campaign_pricing: [{ id: 'round-1', campaign_id: 'c1', package_price: 120, locked_at: '2026-10-07T00:00:00Z', superseded_at: null }],
+    campaign_pricing: [{ id: 'round-1', campaign_id: 'c1', version: 1, list_price: 120, discount_amount: 0, package_price: 120, locked_at: '2026-10-07T00:00:00Z', superseded_at: null, coupon_assignment_id: null }],
   }, {}, { beforeInsert: withLedgerStamp(trigger), uniqueIndexes: INDEXES });
   vi.mocked(createAdminClient).mockReturnValue(db.client as never);
 }
 
 function roundPrice(price: number) {
   db.rows('campaign_pricing')[0].package_price = price;
+  db.rows('campaign_pricing')[0].list_price = price;
 }
 
 // Everything the code logged or alerted, flattened — to prove no secret and no card data ever leaves in a log line.
@@ -184,8 +185,8 @@ describe('purchasePackage — only a signed package campaign with a real price c
     expect(db.rows('payment_operations')).toHaveLength(0);
   });
 
-  it.each([null, 0, -5, Number.NaN])('package_price %s (a pay-per-result campaign, or no usable amount) → not_purchasable', async (price) => {
-    expect(await purchasePackage(input({ campaign: { package_price: price } }))).toBe('not_purchasable');
+  it.each([null, 0, -5, Number.NaN])('price %s (a pay-per-result campaign, or no usable amount) → not_purchasable', async (price) => {
+    expect(await purchasePackage(input({ campaign: { price: price } }))).toBe('not_purchasable');
     expect(chargeSumit).not.toHaveBeenCalled();
     expect(db.rows('payment_operations')).toHaveLength(0);
   });
@@ -302,7 +303,7 @@ describe('purchasePackage — the charge', () => {
       return GOOD;
     });
     roundPrice(149.9);
-    await purchasePackage(input({ campaign: { package_price: 149.9 } }));
+    await purchasePackage(input({ campaign: { price: 149.9 } }));
     expect(linesAtCharge).toMatchObject([
       { operation_id: purchaseRows()[0].id, line_no: 1, description: 'KALFA — חבילת אישורי הגעה לאירוע', quantity: 1, unit_price: 149.9 },
     ]);
@@ -319,7 +320,7 @@ describe('purchasePackage — the charge', () => {
   it('asks for exactly the campaign price, as a 2-decimal string, with the operation id as the reconciliation reference', async () => {
     vi.mocked(getSumitCustomerId).mockResolvedValue(2127277236);
     roundPrice(149.9);
-    await purchasePackage(input({ campaign: { package_price: 149.9 } }));
+    await purchasePackage(input({ campaign: { price: 149.9 } }));
     const sent = vi.mocked(chargeSumit).mock.calls[0][0];
     expect(sent).toEqual({
       companyId: 12345,

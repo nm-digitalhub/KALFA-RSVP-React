@@ -69,7 +69,7 @@ function campaign(over: Record<string, unknown> = {}) {
     event_id: EVENT_ID,
     status: 'approved',
     tos_version: '2026-10-v6',
-    package_price: 120,
+    price: 120,
     ...over,
   };
 }
@@ -103,7 +103,7 @@ beforeEach(() => {
 
 describe('payment page — a package campaign', () => {
   it('shows the package screen decided from the LEDGER', async () => {
-    vi.mocked(getCampaign).mockResolvedValue(campaign({ package_price: 120 }) as never);
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
     const html = await render();
     expect(html).toContain('data-marker="package-view"');
     expect(html).toContain('data-screen="form"');
@@ -113,7 +113,7 @@ describe('payment page — a package campaign', () => {
   });
 
   it('decides "paid" from the ledger, not from a query string', async () => {
-    vi.mocked(getCampaign).mockResolvedValue(campaign({ package_price: 120 }) as never);
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0 });
     expect(await render()).toContain('data-screen="paid"');
     // ...and a forged ?paid=1 with nothing recorded does not pretend
@@ -122,7 +122,7 @@ describe('payment page — a package campaign', () => {
   });
 
   it('a paid, approved package campaign can be started from here, and the page says the automatic start did not happen', async () => {
-    vi.mocked(getCampaign).mockResolvedValue(campaign({ package_price: 120, status: 'approved' }) as never);
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120, status: 'approved' }) as never);
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0 });
     const html = await render({ paid: '1', activate: 'failed' });
     expect(html).toContain('data-screen="paid"');
@@ -135,19 +135,19 @@ describe('payment page — a package campaign', () => {
   });
 
   it('a paid package campaign that is already running says so', async () => {
-    vi.mocked(getCampaign).mockResolvedValue(campaign({ package_price: 120, status: 'active' }) as never);
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120, status: 'active' }) as never);
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0 });
     expect(await render()).toContain('data-activation="active"');
   });
 
   it('an unreadable ledger is "unavailable", not an empty form', async () => {
-    vi.mocked(getCampaign).mockResolvedValue(campaign({ package_price: 120 }) as never);
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
     vi.mocked(getPackagePaymentState).mockRejectedValue(new Error('boom'));
     expect(await render()).toContain('data-screen="unavailable"');
   });
 
   it('closed gates, or a missing provider configuration, never produce a form', async () => {
-    vi.mocked(getCampaign).mockResolvedValue(campaign({ package_price: 120 }) as never);
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
     vi.mocked(getPackageModelEnabled).mockResolvedValue(false);
     expect(await render()).toContain('data-screen="unavailable"');
     vi.mocked(getPackageModelEnabled).mockResolvedValue(true);
@@ -158,20 +158,20 @@ describe('payment page — a package campaign', () => {
   });
 
   it('turns ?error= into one of OUR sentences only', async () => {
-    vi.mocked(getCampaign).mockResolvedValue(campaign({ package_price: 120 }) as never);
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
     expect(await render({ error: 'purchase_declined' })).toContain(`data-error="${PURCHASE_ERROR_MESSAGES.purchase_declined}"`);
     expect(await render({ error: '<script>alert(1)</script>' })).toContain('data-error=""');
   });
 
   it('a campaign whose terms are not approved yet goes back to the approval step', async () => {
-    vi.mocked(getCampaign).mockResolvedValue(campaign({ package_price: 120, status: 'pending_approval' }) as never);
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120, status: 'pending_approval' }) as never);
     await expect(render()).rejects.toThrow('NEXT_REDIRECT');
   });
 });
 
 describe('payment page — a campaign without a package', () => {
   it('was created under the earlier model and is sent to its campaign page, without reading the ledger', async () => {
-    vi.mocked(getCampaign).mockResolvedValue(campaign({ package_price: null, status: 'closed' }) as never);
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: null, status: 'closed' }) as never);
     await expect(render()).rejects.toThrow('NEXT_REDIRECT');
     expect(getPackagePaymentState).not.toHaveBeenCalled();
   });
@@ -182,7 +182,7 @@ describe('payment page — a campaign without a package', () => {
 describe('payment page — the CardCom pilot', () => {
   const cardcom = (over: Record<string, unknown> = {}) => ({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, ...over });
   beforeEach(() => {
-    vi.mocked(getCampaign).mockResolvedValue(campaign({ package_price: 120 }) as never);
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
   });
 
   it('shows SUMIT\'s form while CardCom is not configured or not switched on', async () => {

@@ -35,7 +35,7 @@ const NOW = new Date('2026-10-07T12:00:00Z');
 const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60_000).toISOString();
 
 const input = (over: Partial<CardcomStartInput> = {}): CardcomStartInput => ({
-  campaign: { id: 'c1', event_id: 'e1', status: 'approved', package_price: 149, package_name: 'אישורי הגעה — וואטסאפ + שיחות AI' },
+  campaign: { id: 'c1', event_id: 'e1', status: 'approved', price: 149, package_name: 'אישורי הגעה — וואטסאפ + שיחות AI' },
   payer: { userId: 'u1', email: 'dana@example.com', name: 'דנה כהן' },
   mayUseTestTerminal: false,
   ...over,
@@ -66,7 +66,7 @@ beforeEach(() => {
   fake = createFakeTableClient({
     payment_operations: [], payment_operation_lines: [], cardcom_payment_sessions: [],
     // personal-coupons D22 (task 2.4): the CURRENT LOCKED pricing round the payment must name.
-    campaign_pricing: [{ id: 'round-1', campaign_id: 'c1', package_price: 149, locked_at: NOW.toISOString(), superseded_at: null }],
+    campaign_pricing: [{ id: 'round-1', campaign_id: 'c1', version: 1, list_price: 149, discount_amount: 0, package_price: 149, locked_at: NOW.toISOString(), superseded_at: null, coupon_assignment_id: null }],
   }, {}, ledgerOptions);
 });
 
@@ -90,8 +90,8 @@ describe('startCardcomPurchase: gates (all fail closed)', () => {
   });
 
   it.each([
-    ['no price (a campaign of the retired pay-per-result model)', { package_price: null }],
-    ['a zero price', { package_price: 0 }],
+    ['no price (a campaign of the retired pay-per-result model)', { price: null }],
+    ['a zero price', { price: 0 }],
     ['a campaign that is not approved', { status: 'draft' }],
   ])('refuses %s as not purchasable', async (_label, over) => {
     const base = input();
@@ -138,7 +138,7 @@ describe('startCardcomPurchase: what the ledger already says', () => {
           payment_operations: [{ id: 'op0', campaign_id: 'c1', event_id: 'e1', kind: 'package_purchase', outcome: 'pending', once_slot: true, recorded_at: minutesAgo(age), meta: { provider: 'cardcom', payerUserId: 'u1' } }],
           payment_operation_lines: [],
           cardcom_payment_sessions: [{ low_profile_id: 'lp-old', operation_id: 'op0' }],
-          campaign_pricing: [{ id: 'round-1', campaign_id: 'c1', package_price: 149, locked_at: NOW.toISOString(), superseded_at: null }],
+          campaign_pricing: [{ id: 'round-1', campaign_id: 'c1', version: 1, list_price: 149, discount_amount: 0, package_price: 149, locked_at: NOW.toISOString(), superseded_at: null, coupon_assignment_id: null }],
         },
         {},
         ledgerOptions,

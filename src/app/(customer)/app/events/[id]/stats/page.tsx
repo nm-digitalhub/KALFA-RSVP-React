@@ -78,7 +78,7 @@ export default async function EventStatsPage({
   const campaignDisplayStage = stats.campaign.status
     ? campaignStage({
         status: stats.campaign.status,
-        package_price: stats.campaign.packagePrice,
+        price: stats.campaign.packagePrice,
         payment: stats.campaign.paymentStatus ? { status: stats.campaign.paymentStatus } : null,
       })
     : null;

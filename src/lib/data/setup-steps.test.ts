@@ -76,7 +76,7 @@ describe('computeSetupSteps', () => {
   const active = { ...readyEvent, status: 'active' as const };
   const pkg = (status: 'pending_approval' | 'approved' | 'active' | 'paused', payment?: { status: string } | null) => ({
     status,
-    package_price: 150,
+    price: 150,
     payment,
   });
 
@@ -186,10 +186,10 @@ describe('setupBackTarget', () => {
   });
 
   it.each([
-    ['awaiting the approval', { status: 'pending_approval' as const, package_price: 149 }],
-    ['approved, awaiting payment', { status: 'approved' as const, package_price: 149, payment: { status: 'none' } }],
-    ['paid, awaiting activation', { status: 'approved' as const, package_price: 149, payment: { status: 'collected' } }],
-    ['active', { status: 'active' as const, package_price: 149 }],
+    ['awaiting the approval', { status: 'pending_approval' as const, price: 149 }],
+    ['approved, awaiting payment', { status: 'approved' as const, price: 149, payment: { status: 'none' } }],
+    ['paid, awaiting activation', { status: 'approved' as const, price: 149, payment: { status: 'collected' } }],
+    ['active', { status: 'active' as const, price: 149 }],
   ])('has no back once a campaign exists (%s): the choice, the approval and the payment cannot be undone from here', (_name, campaign) => {
     expect(back({ event: activeEvent, campaign, isPast: false })).toBeNull();
   });

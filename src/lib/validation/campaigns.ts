@@ -35,7 +35,7 @@ export const setupAcknowledgmentsSchema = z.object({
 });
 
 // Package purchase: the browser submits ONLY the single-use card token (payments.js injects the `og-token` hidden
-// field). The price charged is the campaign's own `package_price`, read on the server
+// field). The price charged is the campaign's current pricing round's, read on the server
 // — the browser submits only the single-use card token, and any other field is dropped by the parse.
 export const purchasePackageSchema = z.object({
   'og-token': z.string({ error: 'פרטי תשלום חסרים' }).trim().min(1, { error: 'פרטי תשלום חסרים' }),

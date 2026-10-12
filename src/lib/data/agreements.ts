@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { getCurrentPricingOrThrow } from '@/lib/data/campaign-pricing';
 import { randomUUID } from 'node:crypto';
 
 import { requireUser } from '@/lib/auth/dal';
@@ -143,7 +144,7 @@ export async function recordPackageApproval(
   const { data: campaign, error } = await admin
     .from('campaigns')
     .select(
-      'id, event_id, status, package_price, contact_quota, allowed_channels, start_at, close_at',
+      'id, event_id, status, contact_quota, allowed_channels, start_at, close_at',
     )
     .eq('id', input.campaignId)
     .maybeSingle();
@@ -155,7 +156,7 @@ export async function recordPackageApproval(
   if (campaign.status !== 'pending_approval') {
     return { ok: false, error: 'ניתן לאשר רק קמפיין הממתין לאישור' };
   }
-  if (campaign.package_price == null || campaign.contact_quota == null) {
+  if (campaign.contact_quota == null) {
     return { ok: false, error: 'תנאי הקמפיין חסרים' };
   }
 
@@ -183,30 +184,30 @@ export async function recordPackageApproval(
   // The pricing round (personal-coupons D7, task 2.2): the document is rendered from ONE round and ONE version, and
   // the approval is bound to exactly that record — a price that changed meanwhile refuses, and a document rendered
   // from a superseded round refuses even when the version numbers coincide.
-  const { data: round, error: roundErr } = await admin
-    .from('campaign_pricing')
-    .select('id, version, locked_at, list_price, discount_amount, package_price')
-    .eq('campaign_id', campaign.id)
-    .is('superseded_at', null)
-    .maybeSingle();
-  if (roundErr || !round) return { ok: false, error: 'תנאי הקמפיין חסרים' };
-  if (round.locked_at !== null) return { ok: false, error: 'ניתן לאשר רק קמפיין הממתין לאישור' };
+  let round;
+  try {
+    round = await getCurrentPricingOrThrow(campaign.id);
+  } catch {
+    return { ok: false, error: 'תנאי הקמפיין חסרים' };
+  }
+  if (!round) return { ok: false, error: 'תנאי הקמפיין חסרים' };
+  if (round.lockedAt !== null) return { ok: false, error: 'ניתן לאשר רק קמפיין הממתין לאישור' };
 
   const [company, configTokens] = await Promise.all([
     getCompanyLegal(),
     getAgreementConfigTokens(),
   ]);
-  const discountAmount = Number(round.discount_amount);
+  const discountAmount = round.discountAmount;
   const html = renderAgreementDocument(
     agreementContent(company, event.name, {
       channels: campaign.allowed_channels,
       startAt: campaign.start_at,
       closeAt: campaign.close_at,
       // The prices come from the round the approval will be bound to — never from the legacy column (D8 phase 2).
-      packagePrice: Number(round.package_price),
+      packagePrice: round.price,
       contactQuota: campaign.contact_quota,
       ...(discountAmount > 0
-        ? { listPrice: Number(round.list_price), discountAmount }
+        ? { listPrice: round.listPrice, discountAmount }
         : {}),
     }),
     {
@@ -227,7 +228,7 @@ export async function recordPackageApproval(
   const { error: reqErr } = await admin.from('approval_requests').insert({
     id: requestId,
     campaign_id: campaign.id,
-    pricing_round_id: round.id,
+    pricing_round_id: round.roundId,
     expected_version: round.version,
     pdf_ref: pdfPath,
   });
@@ -242,7 +243,7 @@ export async function recordPackageApproval(
     ({ error: approveErr } = await admin.rpc('approve_package_terms', {
     _request_id: requestId,
     _campaign_id: campaign.id,
-    _pricing_round_id: round.id,
+    _pricing_round_id: round.roundId,
     _expected_version: round.version,
     _signer_user_id: user.id,
     _agreement_version: agreementDoc.version,

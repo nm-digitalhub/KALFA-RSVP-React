@@ -219,7 +219,7 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
     if (c) {
       campaign.id = c.id;
       campaign.status = c.status ?? null;
-      campaign.packagePrice = c.package_price ?? null;
+      campaign.packagePrice = c.price ?? null;
       campaign.paymentStatus = (await packagePaymentOf(c))?.status ?? null;
       campaign.maxContacts = c.max_contacts ?? null;
       if (c.contact_quota != null) {

@@ -22,11 +22,14 @@ vi.mock('@/lib/payments/package-refund', () => ({
   refundPackagePayment: vi.fn(),
 }));
 vi.mock('@/lib/data/campaigns', () => ({ closeCampaign: vi.fn() }));
+// The pricing module decides "is this a package" (task 4.1); each fixture states the campaign's current-round price.
+vi.mock('@/lib/data/campaign-pricing', () => ({ getCurrentPricing: vi.fn() }));
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getCurrentPricing } from '@/lib/data/campaign-pricing';
 import { getEmailSender } from '@/lib/email/sender';
 import { getSmsSender } from '@/lib/sms/sender';
 import { cancellationRequestResponseEmail } from '@/lib/email/templates';
@@ -180,7 +183,14 @@ describe('getCampaignForEventAdmin', () => {
   beforeEach(() => vi.clearAllMocks());
 
   // A fixed-price package's money is in the payment ledger.
+  function pricingOf(price: number | null) {
+    (getCurrentPricing as unknown as Mock).mockResolvedValue(
+      price == null ? null : { roundId: 'round-1', version: 1, listPrice: price, discountAmount: 0, price, lockedAt: '2026-10-07T00:00:00Z', couponAssignmentId: null },
+    );
+  }
+
   function adminClientFor(row: Record<string, unknown>) {
+    pricingOf((row.package_price as number | null) ?? null);
     const maybeSingle = vi.fn().mockResolvedValue({ data: row, error: null });
     (createAdminClient as unknown as Mock).mockReturnValue({
       from: () => ({ select: () => ({ eq: () => ({ neq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }) }),
@@ -300,6 +310,11 @@ describe('resolveCancellationRequest', () => {
     cancelledCampaign?: 'before' | 'after';
   }) {
     (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
+    (getCurrentPricing as unknown as Mock).mockResolvedValue(
+      opts.packagePrice == null
+        ? null
+        : { roundId: 'round-1', version: 1, listPrice: opts.packagePrice, discountAmount: 0, price: opts.packagePrice, lockedAt: '2026-10-07T00:00:00Z', couponAssignmentId: null },
+    );
     const single = vi.fn().mockResolvedValue({
       data: {
         id: 'r1',

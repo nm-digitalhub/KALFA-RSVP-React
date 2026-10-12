@@ -19,7 +19,7 @@ export type PackagePaymentScreen =
   | { kind: 'unavailable'; reason: 'ledger' | 'bad_state' | 'past' | 'not_active' | 'disabled' };
 
 export interface PackagePaymentScreenInput {
-  // The campaign's own package_price.
+  // The campaign's current pricing round's final price (the pricing module).
   price: number;
   // The ledger-derived state; null when the ledger could not be read.
   payment: PaymentState | null;

@@ -50,7 +50,7 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
 
 ## 4. Readers move to the pricing record
 
-- [ ] 4.1 Move the remaining readers (screens, stats, labels, cancellation, package-paid, payment screen; every file `grep package_price src` finds). Verify: the grep finds only the pricing module and the contract note; tsc and the full suite pass.
+- [x] 4.1 Move the remaining readers (screens, stats, labels, cancellation, package-paid, payment screen; every file `grep package_price src` finds). Verify: the grep finds only the pricing module and the contract note; tsc and the full suite pass. (12.10: the pricing module src/lib/data/campaign-pricing.ts created — single+batch+OrThrow readers; OwnerCampaign/CampaignPurchaseState carry `price` from the round; the three inline round reads (purchases, agreements) absorbed; the update-time package guard dropped (rounds are append-only, the pre-check cannot be raced); remaining grep hits: the module, the primer's campaign_pricing schema entry, generated types, and DB-row test fixtures. tsc 0, suite 12142 passed, build clean.)
 
 ## 5. Offers and assignments (coupon switch)
 

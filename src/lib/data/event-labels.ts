@@ -130,15 +130,15 @@ export const CAMPAIGN_STAGE_VARIANTS: Record<CampaignStage, BadgeVariant> = {
 
 export type CampaignStageInput = {
   status: CampaignStatus;
-  // The package price agreed at approval; a campaign without one has nothing to pay and is never funded.
-  package_price?: number | null;
+  // The current pricing round's final price (the pricing module); a campaign without one has nothing to pay and is never funded.
+  price?: number | null;
   // The ledger-derived payment state of the package (status only, so this leaf module imports nothing).
   payment?: { status: string } | null;
 };
 
 // Funded = ready to start: the package is paid in full according to the ledger.
 function isFunded(c: CampaignStageInput): boolean {
-  return (c.package_price ?? null) != null && c.payment?.status === 'collected';
+  return (c.price ?? null) != null && c.payment?.status === 'collected';
 }
 
 export function campaignStage(campaign: CampaignStageInput | null): CampaignStage {

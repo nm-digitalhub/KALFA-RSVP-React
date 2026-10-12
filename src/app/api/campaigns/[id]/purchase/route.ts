@@ -16,7 +16,7 @@ import { isAllowedOrigin } from '@/lib/http/allowed-origin';
 // everything that decides whether money moves to purchasePackage (src/lib/payments/package-purchase.ts), which holds
 // the gates, the ledger lock and the charge. Mirrors the hold route (../authorize/route.ts).
 //
-// The browser submits ONLY the card token. The price charged is the campaign's own `package_price`, read here on the
+// The browser submits ONLY the card token. The price charged is the campaign's current pricing round's, read here on the
 // server; a price, a campaign id or any other field in the form is ignored.
 
 // Both a fresh payment and one that was already recorded land on the same "paid" page: a second click, or a page

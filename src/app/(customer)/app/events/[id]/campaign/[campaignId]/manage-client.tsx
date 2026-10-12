@@ -47,7 +47,7 @@ type Campaign = {
   status: CampaignStatus;
   // A package campaign is funded by its payment (the ledger): its price, and the ledger state the page derived for it
   // (null for a campaign without a package, or when the ledger could not be read).
-  package_price: number | null;
+  price: number | null;
   // How many contacts the campaign may approach (null = the campaign has no quota). Used: its authorized list.
   contact_quota: number | null;
   payment_status: string | null;
@@ -260,7 +260,7 @@ function CampaignStatusCard({
 }) {
   const stage = campaignStage({
     status,
-    package_price: campaign.package_price,
+    price: campaign.price,
     payment: paymentOf(campaign),
   });
   const quota = campaign.contact_quota;
@@ -844,7 +844,7 @@ export function ManageClient({
   const reached = summary?.reachedCount ?? 0;
 
   // Funded = the package was paid in full (from the ledger).
-  const funded = campaign.package_price != null && campaign.payment_status === 'collected';
+  const funded = campaign.price != null && campaign.payment_status === 'collected';
   const heldOrLive =
     funded &&
     ['approved', 'scheduled', 'active', 'paused'].includes(status);

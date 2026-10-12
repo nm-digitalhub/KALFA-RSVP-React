@@ -32,11 +32,11 @@ export interface SetupInput {
     venue_address: string | null;
     celebrants: unknown;
   };
-  // `package_price` = the package price agreed at approval. `payment` = the ledger state of the package (see
-  // campaignStage).
+  // `price` = the current pricing round's final price (the pricing module). `payment` = the ledger state of the
+  // package (see campaignStage).
   campaign: {
     status: CampaignStatus;
-    package_price?: number | null;
+    price?: number | null;
     payment?: { status: string } | null;
   } | null;
   isPast: boolean;

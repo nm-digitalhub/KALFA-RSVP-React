@@ -29,20 +29,20 @@ describe('getPackagePaymentState', () => {
 
 describe('packagePaymentOf', () => {
   it('is null for a campaign that is not a package, without touching the ledger', async () => {
-    expect(await packagePaymentOf({ id: 'c1', package_price: null })).toBeNull();
+    expect(await packagePaymentOf({ id: 'c1', price: null })).toBeNull();
     expect(await packagePaymentOf({ id: 'c1' })).toBeNull();
     expect(loadOperations).not.toHaveBeenCalled();
   });
 
   it('is the ledger state for a package campaign', async () => {
     vi.mocked(loadOperations).mockResolvedValue([...COLLECTED]);
-    expect(await packagePaymentOf({ id: 'c1', package_price: 150 })).toMatchObject({ status: 'collected' });
+    expect(await packagePaymentOf({ id: 'c1', price: 150 })).toMatchObject({ status: 'collected' });
   });
 
   it('is null — "not funded" — when the ledger cannot be read, and says so in the log', async () => {
     vi.mocked(loadOperations).mockRejectedValue(new Error('db down'));
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-    expect(await packagePaymentOf({ id: 'c1', package_price: 150 })).toBeNull();
+    expect(await packagePaymentOf({ id: 'c1', price: 150 })).toBeNull();
     expect(log).toHaveBeenCalledTimes(1);
     log.mockRestore();
   });

@@ -41,12 +41,21 @@ vi.mock('@/lib/data/payments', () => ({
 vi.mock('@/lib/data/agreements-doc', () => ({ getApprovedPackageAgreementDoc: vi.fn() }));
 // A paid package starts only when the LEDGER says it is paid, and its list is filled first.
 vi.mock('@/lib/data/authorized-fill', () => ({ fillAuthorizedSet: vi.fn() }));
+// The pricing module (task 4.1): "is this a package, and at what price" now comes from the campaign's current round.
+// Default: a locked 150 round (matching the collected:150 ledger default); the no-package tests override to null.
+vi.mock('@/lib/data/campaign-pricing', () => ({
+  getCurrentPricing: vi.fn(),
+  getCurrentPricingOrThrow: vi.fn(),
+  getCurrentPricingByCampaign: vi.fn().mockResolvedValue(new Map()),
+}));
+
 vi.mock('@/lib/payments/package-paid', () => ({
   getPackagePaymentState: vi.fn(),
   packagePaymentOf: vi.fn().mockResolvedValue(null),
 }));
 
 import { createMockSupabase, type QueryResult } from '@/test/supabase-mock';
+import { getCurrentPricing } from '@/lib/data/campaign-pricing';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { requireOwnedEvent } from '@/lib/data/events';
@@ -118,6 +127,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Every campaign that is started has a recorded package payment unless a test says otherwise.
   vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 150, credit: 0, committed: 0 });
+  vi.mocked(getCurrentPricing).mockResolvedValue({ roundId: 'round-1', version: 1, listPrice: 150, discountAmount: 0, price: 150, lockedAt: '2026-10-07T00:00:00Z', couponAssignmentId: null });
   // clearAllMocks resets call history but NOT implementations — a test that
   // makes requireAdmin reject (non-admin) would otherwise leak into the next.
   vi.mocked(requireAdmin).mockResolvedValue(
@@ -271,7 +281,7 @@ describe('createCampaign — celebrants gate (בעלי השמחה)', () => {
 describe('getCampaignForPurchase', () => {
   it('selects only what the package purchase needs, via the admin client', async () => {
     const { client, builder } = adminWith({
-      data: { id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, package: { name: 'אישורי הגעה — וואטסאפ + שיחות AI' } },
+      data: { id: 'c1', event_id: 'e1', status: 'approved', package: { name: 'אישורי הגעה — וואטסאפ + שיחות AI' } },
       error: null,
     });
 
@@ -279,9 +289,10 @@ describe('getCampaignForPurchase', () => {
 
     expect(client.from).toHaveBeenCalledWith('campaigns');
     // The package the campaign was created from (template_id → packages): its name is the receipt line.
-    expect(builder.select).toHaveBeenCalledWith('id, event_id, status, package_price, package:packages(name)');
+    // The price is NOT selected here: it comes from the current pricing round (the pricing module).
+    expect(builder.select).toHaveBeenCalledWith('id, event_id, status, package:packages(name)');
     expect(builder.eq).toHaveBeenCalledWith('id', 'c1');
-    expect(r).toEqual({ id: 'c1', event_id: 'e1', status: 'approved', package_price: 120, package_name: 'אישורי הגעה — וואטסאפ + שיחות AI' });
+    expect(r).toEqual({ id: 'c1', event_id: 'e1', status: 'approved', price: 150, package_name: 'אישורי הגעה — וואטסאפ + שיחות AI' });
   });
 
   it('returns null for a campaign that does not exist', async () => {
@@ -311,7 +322,9 @@ describe('campaign lifecycle transitions', () => {
       'scheduled',
       'paused',
     ]);
-    expect(builder.not).toHaveBeenCalledWith('package_price', 'is', null);
+    // No update-time package guard any more: "is a package" = a current round exists, and rounds are append-only,
+    // so the pre-check (the pricing module) cannot be raced false.
+    expect(builder.not).not.toHaveBeenCalled();
     expect(getPackagePaymentState).toHaveBeenCalledWith('c1');
     // Additive campaign_billing alert once activation succeeds (campaign_id only).
     expect(sendSlackAlert).toHaveBeenCalledWith(
@@ -790,7 +803,7 @@ describe('campaign run-state: console actor (owner decision 2026-07-21)', () => 
     await activateCampaign('c1', CONSOLE);
 
     expect(getPackagePaymentState).toHaveBeenCalledWith('c1');
-    expect(builders.campaigns.not).toHaveBeenCalledWith('package_price', 'is', null);
+    expect(builders.campaigns.not).not.toHaveBeenCalled();
   });
 
   it('still refuses a PAST event — the guard the first draft of the route lost', async () => {
@@ -1105,6 +1118,7 @@ describe('approveCampaign — only a package campaign, only under the package co
   });
 
   it('a campaign without a package cannot be approved', async () => {
+    vi.mocked(getCurrentPricing).mockResolvedValue(null);
     const { builder, result } = await approveWith({ ...pending, package_price: null }, '2026-10-v6');
     await expect(result).rejects.toThrow('ההסכם אינו תואם למודל התמחור של הקמפיין');
     expect(builder.update).not.toHaveBeenCalled();
@@ -1139,7 +1153,7 @@ describe('activateCampaign — a paid package campaign', () => {
     expect(getPackagePaymentState).toHaveBeenCalledWith('c1');
     expect(fillAuthorizedSet).not.toHaveBeenCalled();
     expect(b.campaigns.update).toHaveBeenCalledWith({ status: 'active' });
-    expect(b.campaigns.not).toHaveBeenCalledWith('package_price', 'is', null);
+    expect(b.campaigns.not).not.toHaveBeenCalled();
   });
 
   it('proves ownership before reading payment, and payment before changing status', async () => {
@@ -1215,6 +1229,7 @@ describe('activateCampaign — a campaign without a package', () => {
   it('cannot be started: it has no package payment, and nothing is read or written', async () => {
     vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
     vi.mocked(getPackagePaymentState).mockReset();
+    vi.mocked(getCurrentPricing).mockResolvedValue(null);
     const b = adminByTable({ campaigns: { id: 'c1', event_id: 'e1', package_price: null }, events: { event_date: '2999-01-01T00:00:00+00:00', status: 'active' } });
     await expect(activateCampaign('c1')).rejects.toThrow(NO_PACKAGE_ERROR);
     expect(getPackagePaymentState).not.toHaveBeenCalled();
@@ -1226,18 +1241,18 @@ describe('getCampaignStageForEvent — a package campaign is funded by its payme
   it('reads the ledger for a package campaign: paid + approved is "awaiting activation"', async () => {
     const { packagePaymentOf } = await import('@/lib/payments/package-paid');
     vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
-    const server = createMockSupabase<unknown>({ data: { id: 'c1', status: 'approved', package_price: 150 }, error: null });
+    const server = createMockSupabase<unknown>({ data: { id: 'c1', status: 'approved' }, error: null });
     server.client.rpc.mockResolvedValue({ data: true, error: null });
     vi.mocked(createClient).mockResolvedValue(server.client as never);
     vi.mocked(packagePaymentOf).mockResolvedValue({ status: 'collected', collected: 150, credit: 0, committed: 0 });
     expect(await getCampaignStageForEvent('e1')).toBe('awaiting_activation');
-    expect(packagePaymentOf).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1', package_price: 150 }));
+    expect(packagePaymentOf).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1', price: 150 }));
   });
 
   it('an unpaid package campaign is still "awaiting payment"', async () => {
     const { packagePaymentOf } = await import('@/lib/payments/package-paid');
     vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
-    const server = createMockSupabase<unknown>({ data: { id: 'c1', status: 'approved', package_price: 150 }, error: null });
+    const server = createMockSupabase<unknown>({ data: { id: 'c1', status: 'approved' }, error: null });
     server.client.rpc.mockResolvedValue({ data: true, error: null });
     vi.mocked(createClient).mockResolvedValue(server.client as never);
     vi.mocked(packagePaymentOf).mockResolvedValue(null);

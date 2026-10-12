@@ -8,6 +8,7 @@ import { CardcomError, cardcomFailureFacts } from '@/lib/cardcom/mutator';
 import { getCampaignCreditTotal } from '@/lib/data/billing';
 import type { CampaignPurchaseState } from '@/lib/data/campaigns';
 import { getCardcomServerConfig } from '@/lib/data/cardcom-config';
+import { getCurrentPricingOrThrow } from '@/lib/data/campaign-pricing';
 import { getPackageModelEnabled, getPaymentsEnabled } from '@/lib/data/payments';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Json } from '@/lib/supabase/types';
@@ -23,7 +24,7 @@ import { resolvePurchaseProvider } from './provider';
 // 2026-10-07-cardcom-pilot-plan.md, 4.3). The CardCom counterpart of purchasePackage (package-purchase.ts), with the same
 // safety argument in the same order:
 //   1. every gate is fail-closed (payments, the package switch, the CardCom connection, the test-terminal rule);
-//   2. the amount is the campaign's own `package_price`, read by the caller from the database — never browser input;
+//   2. the amount is the campaign's current pricing round's price, read by the caller from the database — never browser input;
 //   3. the PENDING ledger row is written BEFORE CardCom is asked for anything; the database (one pending row per campaign
 //      + kind, and "once per campaign") is what makes a double click or a second tab impossible;
 //   4. a failure to OPEN the session closes that row as failed. That is safe for CardCom, unlike a charge: with no
@@ -114,8 +115,8 @@ export async function startCardcomPurchase(input: CardcomStartInput): Promise<Ca
   if (!paymentsOn || !packageOn || !config) return { status: 'disabled' };
   if (resolvePurchaseProvider(config, input.mayUseTestTerminal) !== 'cardcom') return { status: 'disabled' };
 
-  // 2. A fixed price. NULL is a pay-per-result campaign: it must never be charged here.
-  const price = campaign.package_price == null ? Number.NaN : Number(campaign.package_price);
+  // 2. A fixed price (the current round's, via the pricing module). NULL is a pay-per-result campaign: never charged here.
+  const price = campaign.price == null ? Number.NaN : Number(campaign.price);
   if (!Number.isFinite(price) || price <= 0) return { status: 'not_purchasable' };
 
   const admin = createAdminClient();
@@ -165,23 +166,17 @@ export async function startCardcomPurchase(input: CardcomStartInput): Promise<Ca
   // flow has not produced a locked price — nothing may be charged.
   let pricingRoundId: string;
   try {
-    const { data: round, error: roundError } = await admin
-      .from('campaign_pricing')
-      .select('id, package_price, locked_at')
-      .eq('campaign_id', campaignId)
-      .is('superseded_at', null)
-      .maybeSingle();
-    if (roundError) throw new Error('round_read_failed');
-    if (!round || round.locked_at === null) {
+    const round = await getCurrentPricingOrThrow(campaignId);
+    if (!round || round.lockedAt === null) {
       console.error('[cardcom-purchase] no locked pricing round; nothing was opened', { campaignId });
       return { status: 'not_purchasable' };
     }
-    if (Number(round.package_price) !== price) {
-      // The mirror keeps these equal; a mismatch means a concurrent supersede — the buyer re-reads and re-approves.
+    if (round.price !== price) {
+      // Both reads are of the current round; a mismatch means a concurrent supersede — the buyer re-reads and re-approves.
       console.error('[cardcom-purchase] campaign price differs from its locked round; nothing was opened', { campaignId });
       return { status: 'not_purchasable' };
     }
-    pricingRoundId = round.id;
+    pricingRoundId = round.roundId;
   } catch {
     console.error('[cardcom-purchase] pricing round could not be read; nothing was opened', { campaignId });
     return { status: 'error' };

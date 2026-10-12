@@ -1,4 +1,5 @@
 import 'server-only';
+import { getCurrentPricingOrThrow } from '@/lib/data/campaign-pricing';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { logActivity } from '@/lib/data/activity';
@@ -24,7 +25,7 @@ import { resolvePurchaseProvider } from './provider';
 //
 // The order is the safety argument:
 //   1. every gate is fail-closed (payments, the package switch, the provider configuration);
-//   2. the amount is the campaign's own `package_price`, read by the caller from the database — never browser input;
+//   2. the amount is the campaign's current pricing round's price, read by the caller from the database — never browser input;
 //   3. the PENDING ledger row is written BEFORE the provider is asked for money. The database (one pending row per
 //      campaign + kind, and "once per campaign") is what makes a double click, a second tab or a retry impossible;
 //   4. a clear decline closes the row as failed, and the customer may try again. Anything else — the network, a
@@ -142,8 +143,8 @@ export async function purchasePackage(input: PackagePurchaseInput): Promise<Purc
     return 'disabled';
   }
 
-  // 2. A fixed price. NULL is a pay-per-result campaign: it must never be charged here.
-  const price = campaign.package_price == null ? Number.NaN : Number(campaign.package_price);
+  // 2. A fixed price (the current round's, via the pricing module). NULL is a pay-per-result campaign: never charged here.
+  const price = campaign.price == null ? Number.NaN : Number(campaign.price);
   if (!Number.isFinite(price) || price <= 0) return 'not_purchasable';
 
   // The only reads and writes below go through the service-role client: the ledger has no grant for the browser.
@@ -190,18 +191,12 @@ export async function purchasePackage(input: PackagePurchaseInput): Promise<Purc
   // CURRENT, LOCKED round; the DB open guard re-validates it inside the PENDING insert's transaction.
   let pricingRoundId: string;
   try {
-    const { data: round, error: roundError } = await admin
-      .from('campaign_pricing')
-      .select('id, package_price, locked_at')
-      .eq('campaign_id', campaignId)
-      .is('superseded_at', null)
-      .maybeSingle();
-    if (roundError) throw new Error('round_read_failed');
-    if (!round || round.locked_at === null || Number(round.package_price) !== price) {
+    const round = await getCurrentPricingOrThrow(campaignId);
+    if (!round || round.lockedAt === null || round.price !== price) {
       console.error('[package-purchase] no matching locked pricing round; nothing was charged', { campaignId });
       return 'not_purchasable';
     }
-    pricingRoundId = round.id;
+    pricingRoundId = round.roundId;
   } catch {
     console.error('[package-purchase] pricing round could not be read; nothing was charged', { campaignId });
     return 'error';

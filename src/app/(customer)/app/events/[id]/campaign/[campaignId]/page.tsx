@@ -179,7 +179,7 @@ export default async function CampaignManagePage({
         campaign={{
           id: campaign.id,
           status: campaign.status,
-          package_price: campaign.package_price,
+          price: campaign.price,
           contact_quota: campaign.contact_quota,
           payment_status: payment?.status ?? null,
           payment_test_money: payment?.testMoney === true,

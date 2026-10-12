@@ -3,6 +3,7 @@ import 'server-only';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
+import { getCurrentPricing } from '@/lib/data/campaign-pricing';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getEmailSender } from '@/lib/email/sender';
 import { getSmsSender } from '@/lib/sms/sender';
@@ -353,7 +354,7 @@ export async function getCampaignForEventAdmin(
   const { data, error } = await admin
     .from('campaigns')
     .select(
-      'id, package_price, contact_quota',
+      'id, contact_quota',
     )
     .eq('event_id', eventId)
     // The LIVE campaign: the one resolveCancellationRequest acts on (liveCampaignOf), so the screen never promises what the resolver will
@@ -368,8 +369,10 @@ export async function getCampaignForEventAdmin(
   if (error) throw new Error('טעינת נתוני הקמפיין נכשלה');
   if (!data) return null;
 
-  // A package: the ledger decides what was paid and whether a usable card is saved.
-  const isPackage = data.package_price != null;
+  // A package: the current pricing round says whether it IS one (the pricing module); the ledger decides what was
+  // paid and whether a usable card is saved.
+  const pricing = await getCurrentPricing(data.id);
+  const isPackage = pricing !== null;
   let packagePaid: number | null = null;
   let packageRefundable: number | null = null;
   let packageRefundedForRequest: number | null = null;
@@ -485,7 +488,6 @@ export async function resolveCancellationRequest(
         id: string;
         status: string;
         created_at: string;
-        package_price: number | null;
       }[];
     } | null;
   };
@@ -494,7 +496,7 @@ export async function resolveCancellationRequest(
     .from('event_cancellation_requests')
     .select(
       'id, request_code, event_id, sms_consent, status, ' +
-        'events(id, status, owner_id, campaigns(id, status, created_at, package_price))',
+        'events(id, status, owner_id, campaigns(id, status, created_at))',
     )
     .eq('id', requestId)
     .single();
@@ -511,7 +513,8 @@ export async function resolveCancellationRequest(
   const campaign = liveCampaignOf([...event.campaigns].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? '')));
   // A fixed-price package was paid at purchase. Resolving its request means giving money BACK through the payment ledger
   // (package-refund.ts); the pieces for that are decided here, before any money moves or the customer is e-mailed.
-  const isPackage = campaign?.package_price != null;
+  // Whether the live campaign IS a package comes from its pricing round (the pricing module).
+  const isPackage = campaign !== null && (await getCurrentPricing(campaign.id)) !== null;
 
   // A fixed-price package: what the card paid BEFORE this request refunded anything (the base of a percentage fee) comes
   // from the ledger, never from the old campaign columns (a package has none of them) — and so does what an earlier

@@ -35,7 +35,7 @@ export async function PackageTermsStep({
     getAgreementConfigTokens(),
   ]);
 
-  if (campaign.package_price == null || campaign.contact_quota == null || !doc) {
+  if (campaign.price == null || campaign.contact_quota == null || !doc) {
     return (
       <p role="status" className={NOTICE}>
         תנאי החבילה אינם זמינים לאישור כעת — פנו לתמיכה.
@@ -48,7 +48,7 @@ export async function PackageTermsStep({
       channels: campaign.allowed_channels,
       startAt: campaign.start_at,
       closeAt: campaign.close_at,
-      packagePrice: campaign.package_price,
+      packagePrice: campaign.price,
       contactQuota: campaign.contact_quota,
     }),
     doc,
@@ -69,7 +69,7 @@ export async function PackageTermsStep({
         <dl className="grid grid-cols-1 gap-y-1 sm:grid-cols-2 sm:gap-y-1.5">
           <dt className="text-muted-foreground">מחיר החבילה</dt>
           <dd>
-            <strong>{formatAmount(campaign.package_price)}</strong> — תשלום אחד, מחיר סופי; לא נגבה מע״מ
+            <strong>{formatAmount(campaign.price)}</strong> — תשלום אחד, מחיר סופי; לא נגבה מע״מ
           </dd>
           <dt className="text-muted-foreground">מכסת אנשי קשר</dt>
           <dd>עד {campaign.contact_quota.toLocaleString('he-IL')} אנשי קשר</dd>

@@ -13,7 +13,7 @@ import {
 // only. The campaign display state is DERIVED (status + the package payment), not
 // a new enum value.
 describe('campaignStage', () => {
-  const pkg = { package_price: 150 };
+  const pkg = { price: 150 };
 
   it('no campaign → not_set', () => {
     expect(campaignStage(null)).toBe('not_set');
@@ -65,7 +65,7 @@ describe('event status labels (audit §2/§3)', () => {
 });
 
 describe('campaignStage — a campaign is funded by its package payment', () => {
-  const approved = { status: 'approved' as const, package_price: 150 };
+  const approved = { status: 'approved' as const, price: 150 };
 
   it('approved and paid in full: awaiting activation', () => {
     expect(campaignStage({ ...approved, payment: { status: 'collected' } })).toBe('awaiting_activation');
@@ -87,13 +87,13 @@ describe('campaignStage — a campaign is funded by its package payment', () => 
   });
 
   it('a campaign without a package is never funded, whatever payment it is handed', () => {
-    expect(campaignStage({ status: 'approved', package_price: null, payment: { status: 'collected' } })).toBe('awaiting_payment');
+    expect(campaignStage({ status: 'approved', price: null, payment: { status: 'collected' } })).toBe('awaiting_payment');
   });
 
   it('statuses past activation do not depend on the payment', () => {
     for (const status of ['active', 'paused', 'closed'] as const) {
-      expect(campaignStage({ status, package_price: 150, payment: null })).toBe(
-        campaignStage({ status, package_price: 150, payment: { status: 'collected' } }),
+      expect(campaignStage({ status, price: 150, payment: null })).toBe(
+        campaignStage({ status, price: 150, payment: { status: 'collected' } }),
       );
     }
   });

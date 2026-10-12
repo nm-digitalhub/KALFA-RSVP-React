@@ -76,7 +76,7 @@ export default async function SetupPage({
     event: toSetupEvent(event),
     campaign: campaign && {
       status: campaign.status,
-      package_price: campaign.package_price,
+      price: campaign.price,
       payment,
     },
     isPast,

@@ -41,7 +41,7 @@ export default async function CampaignPaymentPage({
     redirect(`/app/events/${id}/setup`);
   }
   // A campaign without a package was created under the earlier model and has nothing to pay here.
-  if (campaign.package_price == null) {
+  if (campaign.price == null) {
     redirect(`/app/events/${id}/campaign/${campaignId}`);
   }
 
@@ -84,7 +84,7 @@ export default async function CampaignPaymentPage({
   // A pending CardCom payment is a form the buyer can pick up again; a pending SUMIT charge never is.
   const pendingIsResumable = provider === 'cardcom' && payment?.status === 'pending' && (await isCardcomPurchasePending(campaignId));
   const screen = packagePaymentScreen({
-    price: Number(campaign.package_price),
+    price: Number(campaign.price),
     payment,
     campaignStatus: campaign.status,
     eventPast: isPast,

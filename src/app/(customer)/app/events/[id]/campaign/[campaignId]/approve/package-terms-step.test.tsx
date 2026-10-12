@@ -28,7 +28,7 @@ const PAST = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
 const campaign = {
   id: 'c1',
   event_id: 'e1',
-  package_price: 150,
+  price: 150,
   contact_quota: 100,
   max_contacts: 0,
   allowed_channels: ['whatsapp', 'call'],
@@ -87,7 +87,7 @@ describe('PackageTermsStep', () => {
   });
 
   it('offers no approval for a campaign that has no package price or quota', async () => {
-    for (const over of [{ package_price: null }, { contact_quota: null }]) {
+    for (const over of [{ price: null }, { contact_quota: null }]) {
       const html = await render({ campaign: over });
       expect(html).not.toContain('data-marker="approve-form"');
     }

@@ -19,9 +19,10 @@ export async function getPackagePaymentState(campaignId: string): Promise<Paymen
 // tells the customer what is wrong.
 export async function packagePaymentOf(campaign: {
   id: string;
-  package_price?: number | null;
+  /** The current pricing round's final price (the pricing module); null = no package, nothing to pay. */
+  price?: number | null;
 }): Promise<PaymentState | null> {
-  if (campaign.package_price == null) return null;
+  if (campaign.price == null) return null;
   try {
     return await getPackagePaymentState(campaign.id);
   } catch (err) {
