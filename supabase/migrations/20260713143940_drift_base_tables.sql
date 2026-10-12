@@ -102,3 +102,27 @@ CREATE POLICY gg_admin_all ON public.guest_groups
 CREATE TRIGGER trg_guests_updated
   BEFORE UPDATE ON public.guests
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- The dashboard-era FOREIGN KEYS (the last drift class, found by a full pg_constraint diff production↔replica,
+-- 12.10.2026): the June 21–22 baseline tables were created in production WITH these constraints (cascading event
+-- cleanup, auth.users links), but the first migration files lack them, and 0007's if-not-exists masked three more.
+-- Each definition below is the production text verbatim.
+ALTER TABLE public.activity_log ADD CONSTRAINT activity_log_event_id_fkey FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE;
+ALTER TABLE public.activity_log ADD CONSTRAINT activity_log_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL;
+ALTER TABLE public.campaigns DROP CONSTRAINT campaigns_event_id_fkey;
+ALTER TABLE public.campaigns ADD CONSTRAINT campaigns_event_id_fkey FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE;
+ALTER TABLE public.event_questions ADD CONSTRAINT event_questions_event_id_fkey FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE;
+ALTER TABLE public.events ADD CONSTRAINT events_org_id_fkey FOREIGN KEY (org_id) REFERENCES organizations(id);
+ALTER TABLE public.events ADD CONSTRAINT events_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE public.events ADD CONSTRAINT events_package_id_fkey FOREIGN KEY (package_id) REFERENCES packages(id);
+ALTER TABLE public.guest_groups DROP CONSTRAINT guest_groups_event_id_fkey;
+ALTER TABLE public.guest_groups ADD CONSTRAINT guest_groups_event_id_fkey FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE;
+ALTER TABLE public.guests ADD CONSTRAINT guests_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL;
+ALTER TABLE public.guests DROP CONSTRAINT guests_event_id_fkey;
+ALTER TABLE public.guests ADD CONSTRAINT guests_event_id_fkey FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE;
+ALTER TABLE public.guests ADD CONSTRAINT guests_group_id_fkey FOREIGN KEY (group_id) REFERENCES guest_groups(id) ON DELETE SET NULL;
+ALTER TABLE public.profiles ADD CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE public.rsvp_responses ADD CONSTRAINT rsvp_responses_event_id_fkey FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE;
+ALTER TABLE public.rsvp_responses ADD CONSTRAINT rsvp_responses_guest_id_fkey FOREIGN KEY (guest_id) REFERENCES guests(id) ON DELETE CASCADE;
+ALTER TABLE public.user_roles ADD CONSTRAINT user_roles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
