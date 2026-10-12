@@ -29,7 +29,7 @@
       "source": "elevenlabs/skills",
       "sourceType": "github",
       "skillPath": "agents/SKILL.md",
-      "computedHash": "f17532654c1ab12e6c69bf5faf10bc571e696488d13c3eeb8514449a32c5bbc8"
+      "computedHash": "62ce5580f82bb8f2df303444709f4f141c75a676089bd727ff0d457b6e255edc"
     },
     "analytics-tracking": {
       "source": "louisblythe/salesskills",
@@ -1080,13 +1080,13 @@
       "source": "elevenlabs/skills",
       "sourceType": "github",
       "skillPath": "speech-engine/SKILL.md",
-      "computedHash": "de2964a7301bb12e81f1ca3cbf11c9954be296a1be7cbc9e7cdc0b7a08fe4e78"
+      "computedHash": "409fb9839da70eb3341330cd5486a837979eec28be3dbe83290ddff44de910b0"
     },
     "speech-to-text": {
       "source": "elevenlabs/skills",
       "sourceType": "github",
       "skillPath": "speech-to-text/SKILL.md",
-      "computedHash": "46cf6bb280b5e3d9d76f331d316e5f391c8b78aa220e3e597efa66ecedd5322c"
+      "computedHash": "06f18ad079255645ff81e3f2926a8e7dde145a6e6d6b0df06348cb2ba22d409d"
     },
     "stitch-loop": {
       "source": "google-labs-code/stitch-skills",
@@ -1194,7 +1194,7 @@
       "source": "elevenlabs/skills",
       "sourceType": "github",
       "skillPath": "text-to-speech/SKILL.md",
-      "computedHash": "d62f83848f390707a99665cbb0ce221433c9f65a128e5291640b72c90766d982"
+      "computedHash": "bb182b4e3a864bdc7f04c0401dfd45b2b5c6f144281d5e6ddb7da0c00b7de3ad"
     },
     "time-management": {
       "source": "louisblythe/salesskills",
@@ -1236,7 +1236,7 @@
       "source": "elevenlabs/skills",
       "sourceType": "github",
       "skillPath": ".agents/skills/update-skills-from-changelog/SKILL.md",
-      "computedHash": "e5b444a842eace814536b815ad5c12f9f53a2a4e5953ecd430d542cd1722e5d4"
+      "computedHash": "d08cc5333ba774b2a07333fa8913db6d99f652a691f052783511f13fd12503c5"
     },
     "urgency-creation": {
       "source": "louisblythe/salesskills",
