@@ -55,7 +55,16 @@ begin
   select count(*) into v_left from public.payment_operations where provider = 'sumit' and meta ->> 'provider' = 'cardcom';
   select tgenabled into v_guard from pg_trigger
    where tgrelid = 'public.payment_operations'::regclass and tgname = 'payment_operations_guard_update';
-  if v_fixed <> 4 or v_left <> 0 or v_guard <> 'O' then
+  -- REPLAY FIX (12.10.2026, the support-approved three-state rule):
+  --   0 of 4, nothing mislabeled, guard on  -> a fresh database with no production data: success, with a notice;
+  --   4 of 4                                -> the original full verification, unchanged;
+  --   anything else                         -> partial or unsafe: keep failing closed.
+  if v_fixed = 0 and v_left = 0 and v_guard = 'O'
+     and not exists (select 1 from public.payment_operations
+                      where id in ('01a117b4-84d2-7791-9738-d0ef735386b7', '01a1180f-0f21-700c-b26e-40987ecb1278',
+                                   '01a11811-6cc4-7eb4-b109-aec9e86cb3b1', '01a11814-1edf-7425-9487-262f7f8d13b8')) then
+    raise notice 'restamp: no pilot rows present (fresh replay) — nothing to fix';
+  elsif v_fixed <> 4 or v_left <> 0 or v_guard <> 'O' then
     raise exception 'restamp verification failed: fixed %, still mislabeled %, guard %', v_fixed, v_left, v_guard;
   end if;
 end $$;

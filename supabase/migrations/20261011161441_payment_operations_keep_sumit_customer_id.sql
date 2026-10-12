@@ -48,7 +48,11 @@ begin
   select count(*) into v_keyed from public.payment_operations where meta ? 'sumit_customer_id';
   select tgenabled into v_guard from pg_trigger
    where tgrelid = 'public.payment_operations'::regclass and tgname = 'payment_operations_guard_update';
-  if v_campaigns <> 1 or v_matched <> 1 or v_keyed <> 1 or v_guard <> 'O' then
+  -- REPLAY FIX (12.10.2026, the support-approved three-state rule): a fresh database holds no SUMIT campaign at
+  -- all — nothing to copy, success with a notice. Any partial state keeps failing closed, unchanged.
+  if v_campaigns = 0 and v_matched = 0 and v_keyed = 0 and v_guard = 'O' then
+    raise notice 'sumit customer id copy: no SUMIT campaign present (fresh replay) — nothing to copy';
+  elsif v_campaigns <> 1 or v_matched <> 1 or v_keyed <> 1 or v_guard <> 'O' then
     raise exception 'sumit customer id copy failed: campaigns %, matched %, rows keyed %, guard %',
       v_campaigns, v_matched, v_keyed, v_guard;
   end if;

@@ -51,6 +51,14 @@ left join public.whatsapp_message_templates w
 do $$
 declare missing_names text;
 begin
+  -- REPLAY FIX (12.10.2026, with support): a FULLY EMPTY mirror means a fresh database where the runtime Meta sync
+  -- has not run yet — nothing to backfill, so this becomes a no-op (the inserts below are filtered to resolved rows).
+  -- A PARTIALLY filled mirror still fails closed: that is a half-synced production state this guard exists to catch.
+  -- On production this migration is already recorded as applied and never re-runs; the admin template-routing screen
+  -- (setTemplateRoute) is the runtime path that fills these tables on any fresh environment.
+  if not exists (select 1 from public.whatsapp_message_templates) then
+    return;
+  end if;
   select string_agg(distinct tname, ', ') into missing_names from resolved_routes where template_id is null;
   if missing_names is not null then
     raise exception 'templates missing from the Meta mirror: %', missing_names;
@@ -59,7 +67,7 @@ end $$;
 
 -- 1. Routes.
 insert into public.message_template_routes (message_key, event_type, with_media, whatsapp_template_id)
-select message_key, event_type::public.event_type, with_media, template_id from resolved_routes;
+select message_key, event_type::public.event_type, with_media, template_id from resolved_routes where template_id is not null;
 
 -- 2. One layout per Meta template. The contract is a property of the template
 --    (what {1} means is set by its text), so a route's param_contract wins;
@@ -78,6 +86,7 @@ select distinct on (template_id)
     end
   ) as layout
 from resolved_routes
+where template_id is not null
 order by template_id, (pc is null);
 
 create temporary table layout_paths (layout text, type text, sub_type text, index int, position int, source_path text);
@@ -132,18 +141,20 @@ insert into public.whatsapp_template_parameters (whatsapp_template_id, type, sub
 select distinct r.template_id, 'button', 'url', 0, 1,
   case when r.message_key = 'sales_signup_link' then 'lead.signup_ref' else 'event.gift_link_token' end
 from resolved_routes r
-where r.message_key in ('gift', 'event_day_pay', 'sales_signup_link');
+where r.message_key in ('gift', 'event_day_pay', 'sales_signup_link')
+  and r.template_id is not null;
 
 -- IMAGE header of the media siblings: the event's invite image (today:
 -- resolveTemplateMedia, outreach.ts).
 insert into public.whatsapp_template_parameters (whatsapp_template_id, type, sub_type, index, position, source_path)
 select distinct template_id, 'header', null::text, null::int, 1, 'event.invite_image'
-from resolved_routes where with_media;
+from resolved_routes where with_media and template_id is not null;
 
 -- 3. The category each template was requested under = its step's.
 insert into public.whatsapp_template_settings (whatsapp_template_id, requested_category)
 select distinct on (r.template_id) r.template_id, m.requested_category
 from resolved_routes r join public.message_templates m using (message_key)
+where r.template_id is not null
 order by r.template_id, m.message_key;
 
 -- 4. Proof against Meta's own text: every routed template's body/header

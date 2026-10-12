@@ -65,6 +65,14 @@ begin
     ('39334087-e68c-4c81-aea4-b465cfc205e2', '055528', '1', '9429', 'XXXXXXXXXXXX9429', 9, 2031, '22', '16',
      '{"hold_entity_id": 2327129326, "transaction_id": 2327129321, "payment_method_id": 2327129072}');
 
+  -- REPLAY FIX (12.10.2026, the support-approved pattern): on a fresh database NEITHER historical campaign exists —
+  -- there is nothing to rebuild, so this data migration is a no-op. When at least one exists, every original
+  -- fail-closed check below still applies unchanged. On production this file is already recorded as applied.
+  if not exists (select 1 from public.campaigns c join _card_facts f on f.campaign_id = c.id) then
+    raise notice 'ledger card details: no historical campaign present (fresh replay) — nothing to rebuild';
+    return;
+  end if;
+
   -- the campaigns are still the ones the facts were read for
   if exists (
     select 1
