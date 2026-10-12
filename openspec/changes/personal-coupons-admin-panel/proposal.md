@@ -24,9 +24,12 @@ promised, its validity, binding and consumption state, and what is allowed right
   from coupon_assignment_events, allowedActions (display-only). Permission-gated links.
 - **Assign screen**: an account-lookup step (server-resolved, not a 1,000-user scan;
   explicit confirm of the found account; active benefits shown), explicit offer choice
-  (no silent first-option default), stale-offer refresh ("תנאי ההצעה השתנו"), idempotency
-  key bound to the original request (a replay with a different target/offer is refused),
-  navigate to the created/returned assignment's detail page.
+  (no silent first-option default), idempotency key bound to the original request (a
+  replay with a different target/offer is refused), navigate to the created/returned
+  assignment's detail page. The CREATE itself becomes one database transaction: the
+  assignment, its frozen options and its history event commit together, and the match
+  against the confirmed preview terms is validated INSIDE that transaction — drifted
+  terms are refused there ("תנאי ההצעה השתנו"), never persisted partially.
 - **Void**: moves to the detail page as an AlertDialog with a REQUIRED reason (≤500
   chars, kept in meta.staff_reason), server-decided under locks, release+state+event as
   one transaction, no success answer when nothing changed, repeat void writes no second

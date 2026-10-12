@@ -46,14 +46,22 @@ here changes business rules.
   pattern of replace_sales_coupon_assignment: a service_role-only SQL function
   (void_staff_coupon_assignment) created via `npx supabase migration new`, locking in
   the SAME campaign → round → assignment order (acceptance 20: verify release's lock
-  order matches before relying on it). Writer unification with the agent path is NOT
-  pulled in — the void function is the only new shared-mechanics surface, and no
-  technical dependency on unifying the creators was found.
-- **AD9 — assign create stays TS-side.** createStaffAssignment keeps its current write
-  path (insert + options + event with the existing delete-on-partial-failure rule) —
-  acceptance 16 is covered by the existing constraints plus tests; no create RPC is
-  required by the spec. If stage-ד testing proves otherwise, that becomes its own
-  decision, presented before widening scope.
+  order matches before relying on it).
+- **AD9 — atomic create.** createStaffAssignment's write path moves into a
+  service_role-only SQL function (create_staff_coupon_assignment, same migration
+  discipline): ONE transaction that locks the offer and its packages (for share),
+  re-validates the CONFIRMED preview terms against live offer/prices and refuses
+  "terms changed" on any drift, inserts the assignment + every frozen option + the
+  'assigned' event together, enforces idempotency with request binding (same key ⇒
+  the stored assignment, verified against the stored target+offer; a mismatch is
+  refused — never answered as an existing success), and runs the duplicate rule
+  (keep the later-expiring identical assignment, void + event for the loser) inside
+  the same transaction. A failure at ANY step rolls back everything — the current
+  TS-side delete-on-partial-failure compensation is retired. Writer unification with
+  the agent path remains out of scope: the agent's create (insert + options + event)
+  stays in applyAgentDiscount; no technical dependency on unifying them was found,
+  and the two new functions share mechanics only through the same locking and
+  validation conventions.
 - **AD10 — permissions unchanged.** Everything stays behind manage_billing per function
   (the coverage test enforces it); links to /admin/users/[id] (manage_staff + access
   reason) and /admin/events/[id] (view_events) render only when the viewer holds those
@@ -67,8 +75,10 @@ here changes business rules.
 - The guard join and the filtered count need to stay cheap: add indexes only where
   EXPLAIN on the local DB shows they are needed; schema work, if any, is its own
   reviewed migration.
-- Concurrency acceptance (19–20) runs on the LOCAL DB with two real connections, the
-  same harness as the replacement RPC's proof.
+- Concurrency acceptance (16–20) runs on the LOCAL DB with two real connections, the
+  same harness as the replacement RPC's proof — covering create-vs-create (double
+  submit), create-vs-offer-edit, and void-vs-bind/approve/payment races, plus
+  forced mid-transaction failures proving full rollback.
 - Auth email lookup variance: AD6's query path must be measured against a seeded local
   Auth table beyond 1,000 users before the scan is deleted.
 

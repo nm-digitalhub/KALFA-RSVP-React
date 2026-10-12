@@ -88,10 +88,6 @@ the original request. Successful outcomes navigate to the resulting assignment's
 - **WHEN** the target account exists beyond any provider page limit
 - **THEN** the lookup still finds it, and lookup failure is reported as failure — never as "not found"
 
-#### Scenario: Stale offer between preview and confirm
-- **WHEN** the offer or its prices changed after the preview was shown
-- **THEN** the server refuses and the screen asks to re-confirm the refreshed terms
-
 #### Scenario: Replay returns saved terms
 - **WHEN** the create is retried with the same idempotency key after prices changed
 - **THEN** the answer carries the originally frozen options, not recomputed ones
@@ -103,6 +99,30 @@ the original request. Successful outcomes navigate to the resulting assignment's
 #### Scenario: Duplicate kept
 - **WHEN** the new assignment is the one voided under the duplicate rule
 - **THEN** the flow points at the KEPT assignment's detail with an explanation, not a success for an unusable row
+
+### Requirement: Atomic staff assignment creation
+Creating a staff assignment SHALL persist the assignment, all of its frozen price
+options and its history event in ONE database transaction, which SHALL also validate
+the confirmed preview terms against the live offer and package prices — a drifted
+offer or price is refused inside the transaction and nothing is persisted. The
+duplicate rule (identical option set keeps the later-expiring assignment) executes
+inside the same transaction.
+
+#### Scenario: Stale offer refused in the transaction
+- **WHEN** the offer or its prices changed between the confirmed preview and the create transaction's validation
+- **THEN** the transaction refuses, nothing is persisted, and the screen asks to re-confirm the refreshed terms
+
+#### Scenario: Partial write is impossible
+- **WHEN** writing the options or the history event fails after the assignment row insert
+- **THEN** the whole creation rolls back — no assignment without its frozen options and its recorded event
+
+#### Scenario: Double submit yields one assignment
+- **WHEN** the same create is submitted twice concurrently (double click or retry race)
+- **THEN** exactly one assignment with one event exists, and both callers receive that same assignment
+
+#### Scenario: Create races an offer edit
+- **WHEN** a create and an offer/price edit run on two real connections
+- **THEN** locks serialize them — the create commits the previewed terms or refuses, never a mix
 
 ### Requirement: Reasoned atomic void
 Void SHALL be offered from the detail page, require a staff reason (1–500 chars, stored
