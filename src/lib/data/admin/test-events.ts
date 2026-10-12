@@ -29,6 +29,8 @@ const purgeOutcomeSchema = z.enum([
   'purged',
   'not_marked',
   'financial_activity',
+  // personal-coupons D6: an ever-approved campaign holds a locked pricing round, which is undeletable history.
+  'approved_terms',
   'not_staff',
   'no_event',
 ]);

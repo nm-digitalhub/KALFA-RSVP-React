@@ -19,6 +19,8 @@ const PURGE_ERRORS: Record<Exclude<PurgeOutcome, 'purged'>, string> = {
   not_marked: 'האירוע לא מסומן כאירוע בדיקה.',
   financial_activity:
     'לא ניתן למחוק: באירוע יש פעילות כספית (תשלום או החזר ביומן התשלומים, מסמך SUMIT או גביית ביטול).',
+  approved_terms:
+    'לא ניתן למחוק: בקמפיין של האירוע אושרו תנאים — מחיר מאושר הוא היסטוריה שאינה נמחקת.',
   not_staff: 'אין הרשאה לפעולה.',
   no_event: 'האירוע לא נמצא.',
 };
