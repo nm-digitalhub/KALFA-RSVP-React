@@ -75,6 +75,10 @@ const lpResultSchema = z.object({
   TranzactionInfo: z
     .object({
       ApprovalNumber: z.string().nullish(),
+      // D11 (personal-coupons 3.1): the charged amount and currency. `unknown` like the card facts — a shape change
+      // must not make a confirmed payment unreadable; the checks below decide, and a missing value goes to review.
+      Amount: z.unknown().optional(),
+      CoinId: z.unknown().optional(),
       DocumentUrl: z.unknown().optional(),
       Last4CardDigitsString: z.unknown().optional(),
       CardMonth: z.unknown().optional(),
@@ -322,6 +326,41 @@ export async function settleCardcomSession(lowProfileId: string, options: Settle
       { reviewTitle: ECHO_TITLES[verdict.reason], extraFields: { terminal_opened_on: operation.provider_terminal, terminal_reported: echo ?? 'none' } },
     );
   }
+  // D11 (personal-coupons 3.1): the amount and the currency must also match before anything is called paid.
+  // MEASURED 12.10.2026 on the settled ₪1.00 session of terminal 172204: Amount is in SHEKELS (1), CoinId is 1 (₪).
+  // A mismatch or a missing value is a confirmed charge we cannot reconcile — a person looks, it is never counted paid.
+  {
+    const reportedAmount = amountFromCardcom(result.TranzactionInfo?.Amount);
+    const reportedCoin = coinIdFromCardcom(result.TranzactionInfo?.CoinId);
+    const ledgerAmount = Number(operation.amount);
+    const mismatch =
+      reportedAmount === null || reportedCoin === null ? 'missing'
+      : reportedCoin !== 1 ? 'currency'
+      : Math.round(reportedAmount * 100) !== Math.round(ledgerAmount * 100) ? 'amount'
+      : null;
+    if (mismatch !== null) {
+      const note =
+        mismatch === 'missing'
+          ? 'CardCom confirmed the charge but did not report its amount or currency — check in CardCom what was charged, then resolve'
+          : mismatch === 'currency'
+            ? `CardCom reported currency ${String(result.TranzactionInfo?.CoinId)} instead of shekels — check in CardCom what was charged, then resolve`
+            : `CardCom reported ₪${reportedAmount} but the ledger row says ₪${ledgerAmount} — check in CardCom what was charged, then resolve`;
+      return close(
+        admin,
+        operation,
+        { outcome: 'review', ...references, ...echoColumn, meta, note },
+        {
+          reviewTitle: 'תשלום CardCom אושר אך הסכום או המטבע אינם תואמים',
+          extraFields: {
+            amount_expected: ledgerAmount,
+            amount_reported: reportedAmount ?? 'none',
+            coin_reported: reportedCoin ?? String(result.TranzactionInfo?.CoinId ?? 'none'),
+          },
+        },
+      );
+    }
+  }
+
   // What CardCom says about the card, its token, and when it happened. Not in `references`: those are what a parked review row
   // keeps, and none of this may be the reason a confirmed payment cannot be recorded (each field is checked on its own).
   const citizenSecretId = await keepHolderId(admin, operation.campaign_id, holderIdFromCardcom(result.TranzactionInfo?.CardOwnerIdentityNumber, result.UIValues?.CardOwnerIdentityNumber));
@@ -344,6 +383,15 @@ export async function settleCardcomSession(lowProfileId: string, options: Settle
     await afterPaid(admin, operation, result.DocumentInfo?.DocumentNumber ?? null);
   }
   return closed;
+}
+
+// D11 keepers: a value survives only in the one shape CardCom actually sends (measured 12.10.2026) — a finite
+// non-negative number. Anything else reads as missing, which goes to review.
+function amountFromCardcom(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
+}
+function coinIdFromCardcom(v: unknown): number | null {
+  return typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null;
 }
 
 type CloseDetails = Parameters<typeof completeOperation>[2] extends infer C ? Omit<Extract<C, { from: 'pending' }>, 'from'> : never;

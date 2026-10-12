@@ -167,7 +167,7 @@ Finality is a recorded fact, not a timer: every approval request is persisted (k
 
 **D10. Consumption happens in the payment's own transaction.** An `AFTER UPDATE` trigger on `payment_operations` handles the moment a package-purchase row moves to `succeeded`. In the same transaction as the settlement write, it sets that campaign's bound assignment to `consumed` and writes the history row. Nothing is left half done to recover, and no repair ever charges again. The staff view also shows any succeeded payment whose campaign's assignment is not `consumed`, as a guard that should stay empty.
 
-**D11. Settlement adds amount and currency to its existing checks.** It keeps success, `ChargeOnly`, the transaction id and the terminal. It adds: `TranzactionInfo.Amount` equal to the ledger amount (in agorot), and `CoinId` meaning shekels. Anything else, including a missing value, goes to review with an alert.
+**D11. Settlement adds amount and currency to its existing checks.** It keeps success, `ChargeOnly`, the transaction id and the terminal. It adds: `TranzactionInfo.Amount` equal to the ledger amount — **in shekels** (MEASURED 12.10.2026 on the settled ₪1.00 session of terminal 172204: `Amount: 1`, `CoinId: 1`; the earlier "agorot" note was wrong) — and `CoinId` 1, meaning shekels. Anything else, including a missing value, goes to review with an alert.
 
 **D12. Screens.** The wording is the owner's. The mockups and proposed copy are in `ui/` (canvas: https://claude.ai/artifact/L7KViWHTF2puFwa7bTZRpy). They are built on the existing components: the setup page and its stepper, `PackageChoiceForm`, `PackageTermsStep`, `ApprovePackageTermsForm`, `FormError`, and the admin packages and recordings pages.
 

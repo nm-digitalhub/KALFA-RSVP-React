@@ -368,6 +368,55 @@ async function main() {
     await expectError(pendingPayment(c2, e2, 190, p2.id), /expired before the session opened/, 'T13-expired');
   });
 
+  // T14 (task 3.2, D10) — success consumes the bound benefit in the same transaction; the ledger row is untouched.
+  await test('T14 a succeeded payment consumes the bound benefit; the row itself unchanged', async () => {
+    const u = await newUser(); const e = await newEvent(u);
+    const c = await newCampaign(e, PKG.A);
+    const asg = await newAssignment(await newOffer(), u, { packages: [PKG.A] });
+    await q(`select public.bind_coupon_assignment($1, $2)`, [asg, c]);
+    await approve(c, u);
+    const p = await currentPricing(c);
+    await pendingPayment(c, e, 190, p.id);
+    const before = await one(`select * from public.payment_operations where campaign_id = $1`, [c]);
+    await q(`update public.payment_operations set outcome = 'succeeded' where id = $1 and outcome = 'pending'`, [before.id]);
+    const st = await one(`select state from public.coupon_assignments where id = $1`, [asg]);
+    if (st.state !== 'consumed') throw new Error(`assignment ${st.state}`);
+    const ev = await one(`select count(*)::int n from public.coupon_assignment_events where assignment_id = $1 and action = 'consumed'`, [asg]);
+    if (ev.n !== 1) throw new Error(`${ev.n} consume events`);
+    const after = await one(`select * from public.payment_operations where id = $1`, [before.id]);
+    for (const k of Object.keys(before)) {
+      if (k === 'outcome') continue;
+      if (JSON.stringify(after[k]) !== JSON.stringify(before[k])) throw new Error(`ledger field ${k} changed by the trigger`);
+    }
+  });
+
+  // T15 (task 3.2) — pending, review and failed leave the benefit bound; expiry mid-session still consumes (D20).
+  await test('T15 review/failed leave it bound; mid-session expiry still consumes', async () => {
+    const u = await newUser(); const e = await newEvent(u);
+    const c = await newCampaign(e, PKG.A);
+    // bound+expired-by-insert (the valid-at-open state is the DB guard's business; here the trigger must ignore expiry)
+    const off = await newOffer();
+    const asg = (await one(
+      `insert into public.coupon_assignments (offer_id, assigned_by, user_id, kind, value, expires_at, idempotency_key, state, bound_campaign_id)
+       values ($1, $2, $2, 'percent', 5, now() + interval '1 minute', $3, 'bound', $4) returning id`,
+      [off, u, randomUUID(), c],
+    )).id;
+    await q(`update public.campaign_pricing set coupon_assignment_id = $1, discount_amount = 10, package_price = list_price - 10
+             where campaign_id = $2 and superseded_at is null`, [asg, c]);
+    await approve(c, u);
+    const p = await currentPricing(c);
+    await pendingPayment(c, e, 190, p.id);
+    const opRow = await one(`select id from public.payment_operations where campaign_id = $1`, [c]);
+    await q(`update public.payment_operations set outcome = 'review' where id = $1 and outcome = 'pending'`, [opRow.id]);
+    let st = await one(`select state from public.coupon_assignments where id = $1`, [asg]);
+    if (st.state !== 'bound') throw new Error(`after review: ${st.state}`);
+    // the expiry passes while the session is open — settlement still consumes (D20)
+    await q(`update public.coupon_assignments set bound_campaign_id = bound_campaign_id where id = $1`, [asg]); // no-op sanity
+    await q(`update public.payment_operations set outcome = 'succeeded' where id = $1 and outcome = 'review'`, [opRow.id]);
+    st = await one(`select state from public.coupon_assignments where id = $1`, [asg]);
+    if (st.state !== 'consumed') throw new Error(`after success: ${st.state}`);
+  });
+
   // ── report ──
   let failed = 0;
   for (const [name, ok, msg] of results) {

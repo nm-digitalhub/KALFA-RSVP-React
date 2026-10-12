@@ -32,7 +32,8 @@ const session = (over: TableRow = {}): TableRow => ({ low_profile_id: LP, operat
 const PAID = {
   ResponseCode: 0, Description: 'The transaction was successful', Operation: 'ChargeOnly', TranzactionId: 555,
   DocumentInfo: { ResponseCode: 0, DocumentNumber: 77, DocumentType: 'Receipt' },
-  TranzactionInfo: { ApprovalNumber: '0123456' },
+  // D11: the confirmed answer also reports what was charged, in shekels (measured live 12.10.2026).
+  TranzactionInfo: { ApprovalNumber: '0123456', Amount: 149, CoinId: 1 },
 };
 // The extra fields CardCom returned on the first real run (terminal 1000, 7.10.2026): the card's facts, a reusable card token
 // (which must never be stored) and a working document link under TranzactionInfo while DocumentInfo's came back null.
@@ -40,7 +41,7 @@ const DOC_LINK = 'https://secure.cardcom.solutions/api/v11/documents/DownloadDoc
 const PAID_WITH_CARD = {
   ...PAID,
   TranzactionInfo: {
-    ApprovalNumber: '0123456', Last4CardDigitsString: '0008', CardMonth: 12, CardYear: 30, Brand: 'Visa', Issuer: 'CAL',
+    ApprovalNumber: '0123456', Amount: 149, CoinId: 1, Last4CardDigitsString: '0008', CardMonth: 12, CardYear: 30, Brand: 'Visa', Issuer: 'CAL',
     Token: 'tok-secret', FirstCardDigits: 458028, DocumentUrl: DOC_LINK,
   },
 };
@@ -98,7 +99,7 @@ describe('settleCardcomSession: a paid session', () => {
   });
 
   it('records a confirmed payment even when the card facts or the link are unusable: those fields stay empty, the payment is still recorded', async () => {
-    answer({ ...PAID, TranzactionInfo: { ApprovalNumber: '0123456', Last4CardDigitsString: 'x', CardMonth: 99, CardYear: 99999, Brand: { n: 1 }, Issuer: 7, DocumentUrl: 'http://evil.example/doc' } });
+    answer({ ...PAID, TranzactionInfo: { ApprovalNumber: '0123456', Amount: 149, CoinId: 1, Last4CardDigitsString: 'x', CardMonth: 99, CardYear: 99999, Brand: { n: 1 }, Issuer: 7, DocumentUrl: 'http://evil.example/doc' } });
     await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
     expect(ledger()).toMatchObject({ outcome: 'succeeded', provider_payment_id: 555, provider_document_number: 77 });
     for (const column of ['card_last4', 'card_exp_month', 'card_exp_year', 'card_brand', 'card_issuer', 'provider_document_url']) expect(ledger()[column] ?? null).toBeNull();
@@ -197,7 +198,7 @@ describe('settleCardcomSession: what CardCom says about the card is mapped onto 
   });
 
   it('a payment is recorded even when CardCom\'s extra fields are unusable: they stay empty, the payment does not', async () => {
-    answer({ ...PAID, TranzactionInfo: { ApprovalNumber: '0123456', CardOwnerName: 7, NumberOfPayments: -3, FirstCardDigits: 'x', Uid: { a: 1 }, AccountId: 2 ** 40 } });
+    answer({ ...PAID, TranzactionInfo: { ApprovalNumber: '0123456', Amount: 149, CoinId: 1, CardOwnerName: 7, NumberOfPayments: -3, FirstCardDigits: 'x', Uid: { a: 1 }, AccountId: 2 ** 40 } });
     await expect(settleWithVault()).resolves.toEqual({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
     expect(ledger()).toMatchObject({ outcome: 'succeeded', provider_payment_id: 555, provider_document_number: 77 });
     for (const column of ['card_owner_name', 'number_of_payments', 'card_first_digits', 'provider_unique_id', 'provider_account_id']) expect(ledger()[column] ?? null).toBeNull();
@@ -524,4 +525,32 @@ describe('settleCardcomSession: the terminal of the payment', () => {
     });
   });
 });
+// ── D11 (personal-coupons 3.1): the amount and currency gate ──
+describe('settleCardcomSession: the charged amount must match (D11)', () => {
+  it('a confirmed charge of a DIFFERENT amount goes to review with the two figures, never paid', async () => {
+    answer({ ...PAID, TranzactionInfo: { ApprovalNumber: '0123456', Amount: 150, CoinId: 1 } });
+    await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'review', alreadyDone: false });
+    expect(ledger()).toMatchObject({ outcome: 'review', note: expect.stringContaining('₪150') });
+    expect(String(ledger().note)).toContain('₪149');
+  });
+
+  it('a missing amount or currency goes to review — a charge we cannot reconcile is never counted paid', async () => {
+    answer({ ...PAID, TranzactionInfo: { ApprovalNumber: '0123456' } });
+    await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'review', alreadyDone: false });
+    expect(String(ledger().note)).toContain('did not report its amount or currency');
+  });
+
+  it('a non-shekel currency goes to review even when the number matches', async () => {
+    answer({ ...PAID, TranzactionInfo: { ApprovalNumber: '0123456', Amount: 149, CoinId: 2 } });
+    await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'review', alreadyDone: false });
+    expect(String(ledger().note)).toContain('instead of shekels');
+  });
+
+  it('a matching amount does NOT rescue an answer the existing checks refuse (not ChargeOnly)', async () => {
+    answer({ ...PAID, Operation: 'ChargeAndCreateToken', TranzactionInfo: { ApprovalNumber: '0123456', Amount: 149, CoinId: 1 } });
+    await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'review', alreadyDone: false });
+    expect(String(ledger().note)).toContain('ChargeOnly');
+  });
+});
+
 

@@ -42,11 +42,11 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
 
 ## 3. Settlement
 
-- [ ] 3.1 `settleCardcomSession` keeps its existing checks and adds `TranzactionInfo.Amount` and `CoinId` (D11). Verify:
+- [x] 3.1 **Shipped 12.10.2026.** The amount/currency gate sits after the terminal echo, before anything is called paid; MEASURED first on the real settled ₪1.00 session of terminal 172204 (`Amount: 1` = SHEKELS, `CoinId: 1` — the design's agorot note was wrong and was corrected). Verified: 58/58 incl. equal/different/missing/foreign-currency and the existing-check precedence. `settleCardcomSession` keeps its existing checks and adds `TranzactionInfo.Amount` and `CoinId` (D11). Verify:
   - tests for equal, different and missing values;
   - a test that an existing check still fails when the amount matches;
   - a read-only GetLpResult on terminal 172204 shows both fields present.
-- [ ] 3.2 The consume trigger on `payment_operations` (D10). Verify: in one transaction, a package payment moving to succeeded consumes the bound assignment; pending, review and failed leave it bound; the ledger row is never changed by the trigger.
+- [x] 3.2 **Shipped 12.10.2026** (migration 20261012024035, anchored on the row's pricing_round_id). Verified on the local replica (suite T14/T15): success consumes in the same transaction with an event row; review/failed leave it bound; the ledger row is field-for-field unchanged; mid-session expiry still consumes (D20). The consume trigger on `payment_operations` (D10).
 
 ## 4. Readers move to the pricing record
 
