@@ -126,8 +126,17 @@ let db: FakeTableClient;
 let errorLog: ReturnType<typeof vi.spyOn>;
 
 function useDb(seed: TableRow[] = []) {
-  db = createFakeTableClient({ payment_operations: seed }, {}, { beforeInsert: withLedgerStamp(trigger), uniqueIndexes: INDEXES });
+  db = createFakeTableClient({
+    payment_operations: seed,
+    // personal-coupons D22 (task 2.4): the CURRENT LOCKED round the payment must name. Tests that override the
+    // campaign price call roundPrice() to keep the round in step (the mirror does that in production).
+    campaign_pricing: [{ id: 'round-1', campaign_id: 'c1', package_price: 120, locked_at: '2026-10-07T00:00:00Z', superseded_at: null }],
+  }, {}, { beforeInsert: withLedgerStamp(trigger), uniqueIndexes: INDEXES });
   vi.mocked(createAdminClient).mockReturnValue(db.client as never);
+}
+
+function roundPrice(price: number) {
+  db.rows('campaign_pricing')[0].package_price = price;
 }
 
 // Everything the code logged or alerted, flattened — to prove no secret and no card data ever leaves in a log line.
@@ -292,6 +301,7 @@ describe('purchasePackage — the charge', () => {
       linesAtCharge = db.rows('payment_operation_lines').map((r) => ({ ...r }));
       return GOOD;
     });
+    roundPrice(149.9);
     await purchasePackage(input({ campaign: { package_price: 149.9 } }));
     expect(linesAtCharge).toMatchObject([
       { operation_id: purchaseRows()[0].id, line_no: 1, description: 'KALFA — חבילת אישורי הגעה לאירוע', quantity: 1, unit_price: 149.9 },
@@ -308,6 +318,7 @@ describe('purchasePackage — the charge', () => {
 
   it('asks for exactly the campaign price, as a 2-decimal string, with the operation id as the reconciliation reference', async () => {
     vi.mocked(getSumitCustomerId).mockResolvedValue(2127277236);
+    roundPrice(149.9);
     await purchasePackage(input({ campaign: { package_price: 149.9 } }));
     const sent = vi.mocked(chargeSumit).mock.calls[0][0];
     expect(sent).toEqual({

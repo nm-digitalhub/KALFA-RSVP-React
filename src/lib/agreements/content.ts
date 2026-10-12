@@ -20,6 +20,9 @@ export function agreementContent(
     closeAt: string | null;
     packagePrice: number;
     contactQuota: number;
+    // personal-coupons 2.3: present only when a benefit applies — the terms then state all three figures.
+    listPrice?: number;
+    discountAmount?: number;
   },
 ): AgreementContent {
   return {
@@ -38,5 +41,8 @@ export function agreementContent(
     windowText: `${fmtAgreementDate(t.startAt)} – ${fmtAgreementDate(t.closeAt)}`,
     packagePrice: t.packagePrice,
     contactQuota: t.contactQuota,
+    ...(t.listPrice !== undefined && t.discountAmount !== undefined
+      ? { listPrice: t.listPrice, discountAmount: t.discountAmount }
+      : {}),
   };
 }

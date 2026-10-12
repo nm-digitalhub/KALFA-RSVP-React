@@ -155,3 +155,33 @@ describe('renderAgreementDocument', () => {
     expect(escaped).toContain('&lt;b&gt;');
   });
 });
+
+// personal-coupons 2.3: when a benefit applies the rendered document states all three figures.
+describe('benefit tokens (personal-coupons 2.3)', () => {
+  const content = {
+    company: { name: 'קלפה', id: '1', address: 'א', contactPhone: '0', contactEmail: 'a@b', privacyUrl: '', termsUrl: '', warrantyText: 'ת' },
+    eventName: 'אירוע',
+    channels: ['whatsapp'],
+    windowText: 'חלון',
+    packagePrice: 190,
+    contactQuota: 200,
+    listPrice: 200,
+    discountAmount: 10,
+  };
+
+  const doc = (bodyHtml: string) =>
+    ({ version: 'v-test', status: 'approved', bodyHtml }) as const;
+
+  it('a discounted document shows list price, discount and final price', () => {
+    const html = renderAgreementBody(content, doc('מחיר מחירון {{listPrice}}; הטבה {{discountAmount}}; לתשלום {{packagePrice}}'));
+    expect(html).toContain('₪200.00');
+    expect(html).toContain('₪10.00');
+    expect(html).toContain('₪190.00');
+  });
+
+  it('without a benefit the tokens still render (list = final, discount ₪0.00)', () => {
+    const { listPrice: _l, discountAmount: _d, ...plain } = content;
+    const html = renderAgreementBody({ ...plain, packagePrice: 200 }, doc('{{listPrice}}|{{discountAmount}}|{{packagePrice}}'));
+    expect(html).toContain('₪200.00|₪0.00|₪200.00');
+  });
+});

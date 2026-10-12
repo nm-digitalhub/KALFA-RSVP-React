@@ -4,7 +4,6 @@ import { randomUUID } from 'node:crypto';
 
 import { requireUser } from '@/lib/auth/dal';
 import { fillAuthorizedSet } from '@/lib/data/authorized-fill';
-import { approveCampaign } from '@/lib/data/campaigns';
 import { getCompanyLegal } from '@/lib/data/company';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
@@ -15,7 +14,7 @@ import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
 import { getAgreementConfigTokens } from '@/lib/data/agreement-config';
 import { agreementContent } from '@/lib/agreements/content';
 import { renderAgreementPdf, sha256Hex } from '@/lib/agreements/pdf';
-import { uploadLegalDoc } from '@/lib/storage/legal-docs';
+import { removeLegalDoc, uploadLegalDoc } from '@/lib/storage/legal-docs';
 import { getEmailSender } from '@/lib/email/sender';
 import { agreementEmail } from '@/lib/email/templates';
 import { getAppUrl } from '@/lib/url';
@@ -181,17 +180,34 @@ export async function recordPackageApproval(
     return { ok: false, error: 'נוסח התנאים עודכן. קראו שוב ואשרו.' };
   }
 
+  // The pricing round (personal-coupons D7, task 2.2): the document is rendered from ONE round and ONE version, and
+  // the approval is bound to exactly that record — a price that changed meanwhile refuses, and a document rendered
+  // from a superseded round refuses even when the version numbers coincide.
+  const { data: round, error: roundErr } = await admin
+    .from('campaign_pricing')
+    .select('id, version, locked_at, list_price, discount_amount, package_price')
+    .eq('campaign_id', campaign.id)
+    .is('superseded_at', null)
+    .maybeSingle();
+  if (roundErr || !round) return { ok: false, error: 'תנאי הקמפיין חסרים' };
+  if (round.locked_at !== null) return { ok: false, error: 'ניתן לאשר רק קמפיין הממתין לאישור' };
+
   const [company, configTokens] = await Promise.all([
     getCompanyLegal(),
     getAgreementConfigTokens(),
   ]);
+  const discountAmount = Number(round.discount_amount);
   const html = renderAgreementDocument(
     agreementContent(company, event.name, {
       channels: campaign.allowed_channels,
       startAt: campaign.start_at,
       closeAt: campaign.close_at,
-      packagePrice: campaign.package_price,
+      // The prices come from the round the approval will be bound to — never from the legacy column (D8 phase 2).
+      packagePrice: Number(round.package_price),
       contactQuota: campaign.contact_quota,
+      ...(discountAmount > 0
+        ? { listPrice: Number(round.list_price), discountAmount }
+        : {}),
     }),
     {
       approverName: signerName,
@@ -204,26 +220,68 @@ export async function recordPackageApproval(
   const pdfBytes = await renderAgreementPdf(html);
   const contentHash = sha256Hex(pdfBytes);
 
-  const pdfPath = `${campaign.event_id}/${campaign.id}/agreement-${randomUUID()}.pdf`;
+  // D7 finality: the approval REQUEST is persisted before the PDF is uploaded. A retry reuses the id and reads the
+  // stored outcome; the cleanup of a leftover PDF is allowed only for a request concluded as refused.
+  const requestId = randomUUID();
+  const pdfPath = `${campaign.event_id}/${campaign.id}/agreement-${requestId}.pdf`;
+  const { error: reqErr } = await admin.from('approval_requests').insert({
+    id: requestId,
+    campaign_id: campaign.id,
+    pricing_round_id: round.id,
+    expected_version: round.version,
+    pdf_ref: pdfPath,
+  });
+  if (reqErr) return { ok: false, error: 'שמירת האישור נכשלה' };
+
   await uploadLegalDoc(pdfPath, pdfBytes, 'application/pdf');
 
-  const { error: insErr } = await admin.from('signed_agreements').insert({
-    campaign_id: campaign.id,
-    event_id: campaign.event_id,
-    signer_user_id: user.id,
-    agreement_version: agreementDoc.version,
-    ip: input.ip,
-    user_agent: input.userAgent,
-    signature_ref: null,
-    content_hash: contentHash,
-    pdf_ref: pdfPath,
-    verified_phone: null,
-    otp_verified_at: null,
-  });
-  if (insErr) return { ok: false, error: 'שמירת האישור נכשלה' };
-
-  // Lock the campaign as approved (status-guarded, race-safe) with the version actually shown.
-  await approveCampaign(campaign.id, agreementDoc.version);
+  // One transaction in the database (approve_package_terms): request concluded, agreement stored, campaign
+  // approved, price locked — or nothing at all.
+  let approveErr: { message: string } | null = null;
+  try {
+    ({ error: approveErr } = await admin.rpc('approve_package_terms', {
+    _request_id: requestId,
+    _campaign_id: campaign.id,
+    _pricing_round_id: round.id,
+    _expected_version: round.version,
+    _signer_user_id: user.id,
+    _agreement_version: agreementDoc.version,
+    // Evidentiary nullables: omitted when unknown (the function defaults them to null).
+    ...(input.ip === null ? {} : { _ip: input.ip }),
+    ...(input.userAgent === null ? {} : { _user_agent: input.userAgent }),
+    _content_hash: contentHash,
+    _pdf_ref: pdfPath,
+  }));
+  } catch (err) {
+    // The call itself failed to return (timeout, broken connection) — the database may still have committed.
+    approveErr = { message: err instanceof Error ? err.message : 'rpc failed' };
+  }
+  if (approveErr) {
+    if (/approve_refused|stale pricing/.test(approveErr.message)) {
+      // A DEFINITE refusal: nothing was stored. The request is concluded as refused and its PDF removed; the
+      // customer is shown terms rendered from the current price.
+      await admin
+        .from('approval_requests')
+        .update({ state: 'refused', concluded_at: new Date().toISOString() })
+        .eq('id', requestId)
+        .eq('state', 'open');
+      await removeLegalDoc(pdfPath);
+      return { ok: false, error: 'המחיר או התנאים עודכנו בזמן הקריאה. קראו שוב ואשרו.' };
+    }
+    // The outcome is UNKNOWN (timeout, broken connection): nothing is removed. The stored agreement for this
+    // request id is the truth — found means the database committed the approval.
+    const { data: stored } = await admin
+      .from('signed_agreements')
+      .select('id')
+      .eq('approval_request_id', requestId)
+      .maybeSingle();
+    if (!stored) {
+      // Still unknown — the attempt may not have reached the database at all. The request stays open and the PDF
+      // stays; a retry renders fresh terms under a new request id.
+      return { ok: false, error: 'האישור לא הושלם. נסו שוב.' };
+    }
+    // Committed after all: continue as a success.
+  }
 
   // The list every send reads is empty until something fills it. This is the only fill of the guests added BEFORE the
   // approval, in order of addition; a guest added after it is admitted by reconcileCampaignSetForContact (contacts.ts)

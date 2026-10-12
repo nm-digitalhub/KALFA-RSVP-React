@@ -158,6 +158,34 @@ export async function startCardcomPurchase(input: CardcomStartInput): Promise<Ca
     return { status: 'error' };
   }
 
+  // 3a2. The pricing round (personal-coupons D22, task 2.4): the payment names the CURRENT, LOCKED round it charges,
+  // and the database's open guard re-validates all of it inside the PENDING insert's own transaction (current, locked,
+  // amount equal, any bound benefit still bound and unexpired). An unlocked or missing round here means the approval
+  // flow has not produced a locked price — nothing may be charged.
+  let pricingRoundId: string;
+  try {
+    const { data: round, error: roundError } = await admin
+      .from('campaign_pricing')
+      .select('id, package_price, locked_at')
+      .eq('campaign_id', campaignId)
+      .is('superseded_at', null)
+      .maybeSingle();
+    if (roundError) throw new Error('round_read_failed');
+    if (!round || round.locked_at === null) {
+      console.error('[cardcom-purchase] no locked pricing round; nothing was opened', { campaignId });
+      return { status: 'not_purchasable' };
+    }
+    if (Number(round.package_price) !== price) {
+      // The mirror keeps these equal; a mismatch means a concurrent supersede — the buyer re-reads and re-approves.
+      console.error('[cardcom-purchase] campaign price differs from its locked round; nothing was opened', { campaignId });
+      return { status: 'not_purchasable' };
+    }
+    pricingRoundId = round.id;
+  } catch {
+    console.error('[cardcom-purchase] pricing round could not be read; nothing was opened', { campaignId });
+    return { status: 'error' };
+  }
+
   // 3b. Take the lock: the PENDING row, before CardCom is asked for anything.
   const lines = [{ description: receiptLineFor(campaign.package_name), unitPrice: price }];
   let operationId: string;
@@ -173,6 +201,9 @@ export async function startCardcomPurchase(input: CardcomStartInput): Promise<Ca
       // both. `meta.provider` stays until its readers move to the column (plan section 9).
       provider: 'cardcom',
       providerTerminal: config.terminalNumber,
+      // D22: the round this payment charges; the DB open guard validates it in the insert's transaction, and
+      // settlement/consumption/refunds read the price from it — never from whichever row is current later.
+      pricingRoundId,
       meta: { payerUserId: payer.userId, provider: 'cardcom' },
     });
     if ('alreadyInProgress' in begun) return { status: 'in_progress' };

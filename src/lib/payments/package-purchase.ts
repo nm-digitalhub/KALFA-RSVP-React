@@ -186,6 +186,27 @@ export async function purchasePackage(input: PackagePurchaseInput): Promise<Purc
     return 'error';
   }
 
+  // The pricing round (personal-coupons D22, task 2.4) — same rule as the CardCom path: the payment names the
+  // CURRENT, LOCKED round; the DB open guard re-validates it inside the PENDING insert's transaction.
+  let pricingRoundId: string;
+  try {
+    const { data: round, error: roundError } = await admin
+      .from('campaign_pricing')
+      .select('id, package_price, locked_at')
+      .eq('campaign_id', campaignId)
+      .is('superseded_at', null)
+      .maybeSingle();
+    if (roundError) throw new Error('round_read_failed');
+    if (!round || round.locked_at === null || Number(round.package_price) !== price) {
+      console.error('[package-purchase] no matching locked pricing round; nothing was charged', { campaignId });
+      return 'not_purchasable';
+    }
+    pricingRoundId = round.id;
+  } catch {
+    console.error('[package-purchase] pricing round could not be read; nothing was charged', { campaignId });
+    return 'error';
+  }
+
   // 3b. Take the lock: the PENDING row, before the provider is called.
   const knownCustomerId = await getSumitCustomerId(payer.userId);
   let operationId: string;
@@ -199,6 +220,7 @@ export async function purchasePackage(input: PackagePurchaseInput): Promise<Purc
       // price will be a second, negative line (see 'credit_unsupported' above).
       lines: [{ description: receiptLineFor(campaign.package_name), unitPrice: price }],
       provider: 'sumit',
+      pricingRoundId,
       meta: { payerUserId: payer.userId },
     });
     if ('alreadyInProgress' in begun) return 'in_progress';

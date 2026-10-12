@@ -78,6 +78,10 @@ export type NewOperation = OperationDetails & {
   // when the CardCom purchase passed none (restamped by 20261011143109_payment_operations_restamp_pilot_rows.sql).
   provider: 'sumit' | 'cardcom';
   providerTerminal?: number | null;
+  // personal-coupons D22 (task 2.4): the pricing round a package purchase charges. Written at INSERT; the
+  // open-payment guard (payment_operations_open_guard) validates it in the same transaction — current, locked,
+  // amount equal, benefit still bound and unexpired. Settlement/consumption/refunds read the price from the round.
+  pricingRoundId?: string | null;
   source?: 'app' | 'provider_sync' | 'manual_backfill';
   // Non-sensitive extras only — never card data, a citizen id or a raw provider body.
   meta?: { [key: string]: Json | undefined };
@@ -232,6 +236,7 @@ function insertRow(op: NewOperation): TablesInsert<'payment_operations'> {
     // not written by anyone: the database sets it from the terminal when the row is inserted.
     provider: op.provider,
     ...(op.providerTerminal === undefined ? {} : { provider_terminal: op.providerTerminal }),
+    ...(op.pricingRoundId === undefined ? {} : { pricing_round_id: op.pricingRoundId }),
     ...detailColumns(op),
   };
 }

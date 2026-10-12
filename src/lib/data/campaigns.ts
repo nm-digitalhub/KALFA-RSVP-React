@@ -199,24 +199,21 @@ export async function createCampaign(
     throw new Error('הסכם החבילה טרם הופעל — פנו לתמיכה');
   }
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('campaigns')
-    .insert({
-      event_id: eventId,
-      status: 'pending_approval',
-      template_id: offer.id,
-      package_price: offer.price, // locked copy of the package price
-      contact_quota: offer.contact_quota, // locked copy of the quota
-      max_contacts: maxContacts, // derived from the unique-contact count (§7)
-      allowed_channels: offer.channels,
-      start_at: null,
-      close_at: event.event_date, // window closes at the event date
-      outreach_schedule: offer.outreach_schedule as unknown as Json,
-    })
-    .select('id')
-    .single();
-  if (error || !data) throw new Error('יצירת הקמפיין נכשלה');
-  return { id: data.id };
+  // Phase 2 of the price migration (personal-coupons D8, task 2.1): the campaign and its pricing round are created
+  // in ONE database transaction (create_package_campaign). The pricing row IS the price; the mirror trigger fills
+  // campaigns.package_price in the same transaction for the readers that have not moved yet (task 4.1).
+  const { data, error } = await admin.rpc('create_package_campaign', {
+    _event_id: eventId,
+    _template_id: offer.id,
+    _list_price: offer.price, // the pricing round's list price (and, with no benefit, its final price)
+    _contact_quota: offer.contact_quota, // locked copy of the quota
+    _max_contacts: maxContacts, // derived from the unique-contact count (§7)
+    _allowed_channels: offer.channels,
+    _close_at: event.event_date, // window closes at the event date
+    _outreach_schedule: offer.outreach_schedule as unknown as Json,
+  });
+  if (error || typeof data !== 'string') throw new Error('יצירת הקמפיין נכשלה');
+  return { id: data };
 }
 
 export async function getCampaign(campaignId: string): Promise<OwnerCampaign> {

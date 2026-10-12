@@ -8058,12 +8058,12 @@ export type Database = {
           _campaign_id: string
           _content_hash: string
           _expected_version: number
-          _ip: string
+          _ip?: string
           _pdf_ref: string
           _pricing_round_id: string
           _request_id: string
           _signer_user_id: string
-          _user_agent: string
+          _user_agent?: string
         }
         Returns: undefined
       }
@@ -8275,6 +8275,19 @@ export type Database = {
         }
       }
       create_organization: { Args: { _name: string }; Returns: string }
+      create_package_campaign: {
+        Args: {
+          _allowed_channels: Database["public"]["Enums"]["campaign_channel"][]
+          _close_at: string
+          _contact_quota: number
+          _event_id: string
+          _list_price: number
+          _max_contacts: number
+          _outreach_schedule: Json
+          _template_id: string
+        }
+        Returns: string
+      }
       exposed_for_billing: {
         Args: {
           p_campaign: string

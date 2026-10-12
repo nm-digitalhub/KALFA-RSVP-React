@@ -1023,13 +1023,15 @@ describe('createCampaign(eventId, packageId) — a campaign from a fixed-price p
     vi.spyOn(server.builder, 'then')
       .mockImplementationOnce((f) => f({ data: celebrants, error: null }))
       .mockImplementationOnce((f) => f({ data: opts.existing ? { id: 'c-existing', status: 'pending_approval' } : null, error: null }));
-    const { builder } = adminWith<unknown>({ data: null, error: null });
+    const { client, builder } = adminWith<unknown>({ data: null, error: null });
     vi.spyOn(builder, 'then')
-      .mockImplementationOnce((f) => f({ data: opts.offers ?? [packageRow()], error: null }))
-      .mockImplementationOnce((f) => f({ data: opts.insertResult ?? { id: 'c-new' }, error: null }));
+      .mockImplementationOnce((f) => f({ data: opts.offers ?? [packageRow()], error: null }));
+    // Phase 2 (task 2.1): creation goes through ONE transaction in the database — the rpc, not a table insert.
+    const rpc = vi.fn().mockResolvedValue({ data: (opts.insertResult as { id?: string } | undefined)?.id ?? 'c-new', error: opts.insertResult === null ? { message: 'boom' } : null });
+    (client as unknown as { rpc: typeof rpc }).rpc = rpc;
     vi.mocked(getPackageModelEnabled).mockResolvedValueOnce(true);
     vi.mocked(getApprovedPackageAgreementDoc).mockResolvedValue(PACKAGE_DOC);
-    return builder;
+    return Object.assign(builder, { rpc });
   }
 
   it('snapshots the package onto the campaign: its price, its quota, and NO per-reached formula or ceiling', async () => {
@@ -1038,20 +1040,18 @@ describe('createCampaign(eventId, packageId) — a campaign from a fixed-price p
     const r = await createCampaign('e1', 'pkg-fixed');
 
     expect(r.id).toBe('c-new');
-    const inserted = vi.mocked(builder.insert).mock.calls[0][0] as Record<string, unknown>;
-    expect(inserted).toMatchObject({
-      status: 'pending_approval',
-      template_id: 'pkg-fixed',
-      package_price: 150,
-      contact_quota: 40,
-      allowed_channels: ['whatsapp'],
-      outreach_schedule: [{ days_before: 7, channel: 'whatsapp', message_key: 'rsvp_1' }],
-      max_contacts: 25,
+    // Phase 2 (task 2.1): one atomic rpc creates the campaign WITH its pricing round; the list price goes to the
+    // round, never to a campaigns column (the mirror fills campaigns.package_price in the same transaction).
+    expect(builder.rpc).toHaveBeenCalledWith('create_package_campaign', {
+      _event_id: 'e1',
+      _template_id: 'pkg-fixed',
+      _list_price: 150,
+      _contact_quota: 40,
+      _max_contacts: 25,
+      _allowed_channels: ['whatsapp'],
+      _close_at: ownedEvent().event_date,
+      _outreach_schedule: [{ days_before: 7, channel: 'whatsapp', message_key: 'rsvp_1' }],
     });
-    // The retired pay-per-result columns are not written at all (reach recording no longer reads them).
-    for (const retired of ['price_per_reached', 'base_price', 'included_reached', 'max_charge_ceiling']) {
-      expect(inserted).not.toHaveProperty(retired);
-    }
   });
 
   it('refuses while the package switch is off, writing nothing', async () => {

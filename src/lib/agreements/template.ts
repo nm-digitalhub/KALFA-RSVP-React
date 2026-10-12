@@ -70,6 +70,11 @@ export type AgreementContent = {
   // The package's one price (₪, final — the business is VAT-exempt) and how many contacts the campaign may approach.
   packagePrice: number;
   contactQuota: number;
+  // personal-coupons 2.3 (D12/D15): present only when a personal benefit applies. The terms then state the list
+  // price, the discount and the final price (packagePrice above); the deadline wording itself is the admin body's
+  // (the owner's), these tokens only carry the figures.
+  listPrice?: number;
+  discountAmount?: number;
 };
 
 // The customer's APPROVAL of the terms (they ticked the box): who, when, and from which address. The version comes
@@ -133,6 +138,10 @@ function tokenMap(c: AgreementContent, version: string): Record<string, string> 
     eventName: esc(c.eventName),
     packagePrice: ils(c.packagePrice),
     contactQuota: c.contactQuota.toLocaleString('he-IL'),
+    // Benefit figures (personal-coupons 2.3). With no benefit: the list price equals the final price and the
+    // discount renders as ₪0.00 — the admin body may branch its wording, but a token never renders as a hole.
+    listPrice: ils(c.listPrice ?? c.packagePrice),
+    discountAmount: ils(c.discountAmount ?? 0),
     channels: esc(channelList),
     windowText: esc(c.windowText),
     vatRate: String(VAT_RATE_PERCENT),

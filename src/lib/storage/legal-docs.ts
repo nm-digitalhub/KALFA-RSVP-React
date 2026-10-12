@@ -44,3 +44,14 @@ export async function signedLegalDocUrl(
   if (error || !data) throw new Error('יצירת קישור מאובטח נכשלה');
   return data.signedUrl;
 }
+
+// Remove a stored legal doc. ONLY for a document whose approval request was concluded as REFUSED (personal-coupons
+// D7): nothing was stored that references it. Never called on an unknown outcome.
+export async function removeLegalDoc(path: string): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin.storage.from(BUCKET).remove([path]);
+  if (error) {
+    // Best-effort: a leftover refused-request PDF binds no one; the request row records it for a later sweep.
+    console.error('[legal-docs] refused-approval document could not be removed', { path });
+  }
+}

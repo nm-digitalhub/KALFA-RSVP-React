@@ -107,7 +107,7 @@ async function approve(campaignId, signerId, { roundId, version, requestId } = {
      values ($1, $2, $3, $4, 'test/agreement.pdf')`,
     [rid, campaignId, roundId ?? p.id, version ?? p.version],
   );
-  await q(`select public.approve_package_terms($1, $2, $3, $4, $5, '2026-10-v6', null, null, 'hash', 'test/agreement.pdf')`, [
+  await q(`select public.approve_package_terms(_request_id => $1, _campaign_id => $2, _pricing_round_id => $3, _expected_version => $4, _signer_user_id => $5, _agreement_version => '2026-10-v6', _content_hash => 'hash', _pdf_ref => 'test/agreement.pdf')`, [
     rid, campaignId, roundId ?? p.id, version ?? p.version, signerId,
   ]);
   return rid;
@@ -182,7 +182,7 @@ async function main() {
     await q(`insert into public.approval_requests (id, campaign_id, pricing_round_id, expected_version, pdf_ref) values ($1,$3,$4,$5,'a.pdf'),($2,$3,$4,$5,'b.pdf')`,
       [r1, r2, c, p.id, p.version]);
     const call = (conn, rid) => conn.query(
-      `select public.approve_package_terms($1, $2, $3, $4, $5, '2026-10-v6', null, null, 'h', 'x.pdf')`,
+      `select public.approve_package_terms(_request_id => $1, _campaign_id => $2, _pricing_round_id => $3, _expected_version => $4, _signer_user_id => $5, _agreement_version => '2026-10-v6', _content_hash => 'h', _pdf_ref => 'x.pdf')`,
       [rid, c, p.id, p.version, u],
     );
     const { bError } = await race((a) => call(a, r1), (b) => call(b, r2));
@@ -202,7 +202,7 @@ async function main() {
       [rid, c, p.id, p.version]);
     const { bError } = await race(
       (a) => a.query(`select public.bind_coupon_assignment($1, $2)`, [asg, c]),
-      (b) => b.query(`select public.approve_package_terms($1, $2, $3, $4, $5, '2026-10-v6', null, null, 'h', 'x.pdf')`,
+      (b) => b.query(`select public.approve_package_terms(_request_id => $1, _campaign_id => $2, _pricing_round_id => $3, _expected_version => $4, _signer_user_id => $5, _agreement_version => '2026-10-v6', _content_hash => 'h', _pdf_ref => 'x.pdf')`,
         [rid, c, p.id, p.version, u]),
     );
     if (!bError || !/stale pricing version/.test(bError.message)) throw new Error(`B: ${bError?.message ?? 'succeeded'}`);
