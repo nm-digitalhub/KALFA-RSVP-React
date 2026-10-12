@@ -1,9 +1,11 @@
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
+import { redirect, unstable_rethrow } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { buttonVariants } from '@/components/ui/button';
+import { requireUser } from '@/lib/auth/dal';
 import { getCampaignForEvent, listPackageOffers, type PackageOffer } from '@/lib/data/campaigns';
+import { getBenefitView, type BenefitView } from '@/lib/data/coupon-benefits';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { getEvent } from '@/lib/data/events';
 import {
@@ -18,10 +20,11 @@ import { formatIsraelDate, formatIsraelDateTime } from '@/lib/date';
 import { packagePaymentOf } from '@/lib/payments/package-paid';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 
-import { choosePackageAction, setupCampaignAction } from '../campaign/campaign-actions';
+import { acceptBenefitAction, choosePackageAction, setupCampaignAction } from '../campaign/campaign-actions';
 import { PackageTermsStep } from '../campaign/[campaignId]/approve/package-terms-step';
+import { BenefitAcceptBanner } from '../benefit-accept-banner';
 import { EditEventForm } from '../edit-event-form';
-import { PackageChoiceForm } from '../package-choice-form';
+import { PackageChoiceForm, type PackageChoiceBenefit } from '../package-choice-form';
 import { SetupConfirmForm } from '../setup-confirm-form';
 import { SetupStepper } from '../setup-stepper';
 
@@ -60,7 +63,9 @@ export default async function SetupPage({
   // catalogue that cannot be read must not take the whole page down: it is shown as empty, and the action that would
   // create the campaign refuses on its own.
   let offers: PackageOffer[] = [];
-  if (!campaign) {
+  // The choice creates the campaign — and while the campaign is still pending approval, the SAME
+  // step also changes the package (task 5.3: the pre-approval move; the bound benefit follows).
+  if (!campaign || campaign.status === 'pending_approval') {
     try {
       offers = await listPackageOffers();
     } catch (err) {
@@ -70,6 +75,55 @@ export default async function SetupPage({
       });
     }
   }
+
+  // The personal benefit as this ACCOUNT may see it (tasks 7.1/7.2): active prices per package,
+  // an ended/used notice for the proven owner, or the neutral verify-phone invitation. Fail-open
+  // to "nothing": a broken benefit read must not take the setup page down, and reveals nothing.
+  let benefitView: BenefitView = { kind: 'none' };
+  try {
+    const user = await requireUser();
+    benefitView = await getBenefitView(user, { currentCampaignId: campaign?.id ?? null });
+  } catch (err) {
+    unstable_rethrow(err);
+    console.error('[setup] benefit view could not be read', {
+      eventId: id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  const benefitForForm: PackageChoiceBenefit =
+    benefitView.kind === 'active'
+      ? {
+          kind: 'active',
+          expiresAtLabel: formatIsraelDate(benefitView.expiresAt) || benefitView.expiresAt,
+          perPackage: Object.fromEntries(
+            benefitView.perPackage.map((p) => [p.packageId, { listPrice: p.listPrice, finalPrice: p.finalPrice }]),
+          ),
+        }
+      : benefitView.kind === 'ended'
+        ? {
+            kind: 'ended',
+            reason: benefitView.reason,
+            endedAtLabel: benefitView.endedAt ? formatIsraelDate(benefitView.endedAt) || null : null,
+          }
+        : benefitView.kind === 'used'
+          ? { kind: 'used', eventName: benefitView.eventName }
+          : { kind: benefitView.kind };
+
+  // The acceptance banner (task 5.5, ש5/D21): approved terms, nothing paid, and an active benefit
+  // that prices THIS campaign's package lower than the approved price — the customer decides.
+  const acceptBenefit =
+    campaign &&
+    campaign.status === 'approved' &&
+    campaign.template_id &&
+    typeof campaign.price === 'number' &&
+    benefitView.kind === 'active'
+      ? (() => {
+          const option = benefitView.perPackage.find((p) => p.packageId === campaign.template_id);
+          return option && option.finalPrice < (campaign.price as number)
+            ? { approvedPrice: campaign.price as number, benefitPrice: option.finalPrice }
+            : null;
+        })()
+      : null;
   // A package campaign is funded by its payment, which only the ledger knows: the steps and the stage follow it.
   const payment = campaign ? await packagePaymentOf(campaign) : null;
   const { steps, stage } = computeSetupSteps({
@@ -202,6 +256,8 @@ export default async function SetupPage({
                   description: o.description,
                   includes: o.includes,
                 }))}
+                benefit={benefitForForm}
+                selectedPackageId={campaign?.template_id ?? null}
               />
             </>
           ) : null}
@@ -219,9 +275,20 @@ export default async function SetupPage({
           {current === 'pay' && base ? (
             <>
               <h2 className="text-lg font-semibold">{labels.pay}</h2>
-              <Link href={`${base}/payment`} className={buttonVariants()}>
-                המשך לתשלום החבילה
-              </Link>
+              {acceptBenefit && campaign ? (
+                // ש5/D21 (task 5.5): the benefit WAITS for the customer's decision — accepting
+                // reopens approval at the discounted price; the link pays the approved price.
+                <BenefitAcceptBanner
+                  action={acceptBenefitAction.bind(null, id, campaign.id)}
+                  approvedPrice={acceptBenefit.approvedPrice}
+                  benefitPrice={acceptBenefit.benefitPrice}
+                  paymentHref={`${base}/payment`}
+                />
+              ) : (
+                <Link href={`${base}/payment`} className={buttonVariants()}>
+                  המשך לתשלום החבילה
+                </Link>
+              )}
             </>
           ) : null}
 

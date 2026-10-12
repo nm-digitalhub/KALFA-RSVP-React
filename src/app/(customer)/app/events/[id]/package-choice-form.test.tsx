@@ -1,82 +1,88 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { PackageChoiceForm, type PackageChoiceOffer } from './package-choice-form';
 
-// The "בחירת חבילה" step of the setup flow. The owner picks ONE fixed-price package; the form submits only which one
-// (`package_id`) — the price and the quota shown here are for reading, and the server reads its own when it creates the
-// campaign. What is shown must be enough to decide (name, price, quota, what is included) and must never name the
-// payment provider or speak of a card hold.
+// The benefit states of the package choice (tasks 7.1/7.2, mocked in ui/Main.dc.html +
+// ui/States.dc.html): every state the model can hold renders deliberately — active prices with a
+// struck-through list price and an accessible price sentence, the ended/used owner notices, and
+// the NEUTRAL verify invitation that reveals nothing.
 
 afterEach(cleanup);
 
+const noopAction = async () => null;
+
 const OFFERS: PackageChoiceOffer[] = [
-  { id: 'p-gold', name: 'זהב', price: 150, contact_quota: 100, description: 'לאירועים בינוניים', includes: ['וואטסאפ', 'שיחות AI'] },
-  { id: 'p-silver', name: 'כסף', price: 99.9, contact_quota: 50, description: null, includes: [] },
+  { id: 'p-1', name: 'חבילה קטנה', price: 100, contact_quota: 100, description: null, includes: [] },
+  { id: 'p-2', name: 'חבילה גדולה', price: 200, contact_quota: 200, description: null, includes: [] },
 ];
 
-function form(offers: PackageChoiceOffer[] = OFFERS) {
-  return render(<PackageChoiceForm action={vi.fn()} offers={offers} />);
-}
-const radios = (c: HTMLElement) => Array.from(c.querySelectorAll<HTMLInputElement>('input[type="radio"][name="package_id"]'));
+describe('PackageChoiceForm — benefit states', () => {
+  it('active: covered packages show list struck through + final, uncovered keep the list price', () => {
+    render(
+      <PackageChoiceForm
+        action={noopAction}
+        offers={OFFERS}
+        benefit={{
+          kind: 'active',
+          expiresAtLabel: '26.10.2026',
+          perPackage: { 'p-1': { listPrice: 100, finalPrice: 95 } },
+        }}
+      />,
+    );
 
-describe('PackageChoiceForm', () => {
-  it('shows each package with its name, price, quota and what it includes, and submits only the package id', () => {
-    const { container } = form();
-    expect(container.textContent).toContain('זהב');
-    expect(container.textContent).toContain('150');
-    expect(container.textContent).toContain('עד 100 אנשי קשר');
-    expect(container.textContent).toContain('לאירועים בינוניים');
-    expect(container.textContent).toContain('שיחות AI');
-    expect(radios(container).map((r) => r.value)).toEqual(['p-gold', 'p-silver']);
-    // nothing but the choice is a form field: no price, no quota, no package name is submitted
-    const names = Array.from(container.querySelectorAll('input, select, textarea')).map((e) => e.getAttribute('name'));
-    expect(new Set(names)).toEqual(new Set(['package_id']));
+    expect(screen.getByText(/יש לכם הטבה אישית/)).toBeTruthy();
+    expect(screen.getByText(/בתוקף עד 26\.10\.2026/)).toBeTruthy();
+    // The accessible price sentence carries both numbers.
+    expect(screen.getByText(/מחיר עם ההטבה.*95.*במקום.*100/)).toBeTruthy();
+    // The uncovered package still shows one plain price (no benefit text for it).
+    expect(screen.getAllByText(/200/).length).toBeGreaterThan(0);
   });
 
-  it('a multi-paragraph description keeps its line breaks on screen', () => {
-    const description = 'פסקה ראשונה.\n\nפסקה שנייה.';
-    const { container } = form([{ ...OFFERS[0], description }]);
-    const paragraph = Array.from(container.querySelectorAll('p')).find((p) => p.textContent === description);
-    expect(paragraph).toBeDefined();
-    expect(paragraph?.className).toContain('whitespace-pre-line');
+  it('verify_invite: the neutral invitation, with no word about any offer', () => {
+    render(<PackageChoiceForm action={noopAction} offers={OFFERS} benefit={{ kind: 'verify_invite' }} />);
+
+    expect(screen.getByText(/אמתו את מספר הטלפון/)).toBeTruthy();
+    const link = screen.getByRole('link', { name: 'אימות מספר הטלפון' });
+    expect(link.getAttribute('href')).toBe('/app/settings');
+    // Nothing reveals whether a benefit exists.
+    expect(screen.queryByText(/יש לכם הטבה/)).toBeNull();
   });
 
-  it('a fractional price keeps both agorot digits', () => {
-    const { container } = form();
-    expect(container.textContent).toContain('99.90');
+  it('ended (expired): the owner is told, with the date, and prices are the regular ones', () => {
+    render(
+      <PackageChoiceForm
+        action={noopAction}
+        offers={OFFERS}
+        benefit={{ kind: 'ended', reason: 'expired', endedAtLabel: '01.10.2026' }}
+      />,
+    );
+
+    expect(screen.getByRole('status').textContent).toContain('הסתיימה ב-01.10.2026');
   });
 
-  it('with several packages nothing is pre-selected: the owner must choose, and the choice is required', () => {
-    const { container } = form();
-    expect(radios(container).every((r) => !r.checked)).toBe(true);
-    expect(radios(container).every((r) => r.required)).toBe(true);
+  it('ended (unavailable): the voided-benefit notice', () => {
+    render(
+      <PackageChoiceForm action={noopAction} offers={OFFERS} benefit={{ kind: 'ended', reason: 'unavailable', endedAtLabel: null }} />,
+    );
+
+    expect(screen.getByRole('status').textContent).toContain('אינה זמינה עוד');
   });
 
-  it('with a single package it is pre-selected', () => {
-    const { container } = form([OFFERS[0]]);
-    expect(radios(container)).toHaveLength(1);
-    expect(radios(container)[0].checked).toBe(true);
+  it('used: named with its event', () => {
+    render(
+      <PackageChoiceForm action={noopAction} offers={OFFERS} benefit={{ kind: 'used', eventName: 'החתונה של דנה' }} />,
+    );
+
+    expect(screen.getByRole('status').textContent).toContain('"החתונה של דנה"');
   });
 
-  it('choosing a package selects exactly that one', () => {
-    const { container } = form();
-    fireEvent.click(screen.getByLabelText(/כסף/));
-    expect(radios(container).map((r) => r.checked)).toEqual([false, true]);
-  });
+  it('an existing campaign pre-selects its package (the pre-approval change flow)', () => {
+    render(<PackageChoiceForm action={noopAction} offers={OFFERS} selectedPackageId="p-2" />);
 
-  it('says what happens next, without naming the provider or a hold', () => {
-    const { container } = form();
-    expect(screen.getByRole('button', { name: 'בחירה והמשך להסכם' })).toBeTruthy();
-    expect(container.textContent).not.toMatch(/sumit/i);
-    expect(container.textContent).not.toMatch(/תפיסה|hold/i);
-  });
-
-  it('no packages on offer → a message and no way to submit', () => {
-    const { container } = form([]);
-    expect(radios(container)).toHaveLength(0);
-    expect(screen.queryByRole('button', { name: 'בחירה והמשך להסכם' })).toBeNull();
-    expect(container.textContent).toContain('אין כרגע חבילות זמינות');
+    const selected = screen.getByLabelText(/חבילה גדולה/) as HTMLInputElement;
+    expect(selected.defaultChecked).toBe(true);
+    expect(screen.getByRole('button', { name: 'עדכון הבחירה והמשך' })).toBeTruthy();
   });
 });

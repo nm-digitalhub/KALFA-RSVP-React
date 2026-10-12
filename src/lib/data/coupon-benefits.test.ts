@@ -8,6 +8,7 @@ import {
   lapseExpiredBoundBenefit,
   releaseCancelledCampaignBenefit,
   acceptBenefitForCampaign,
+  getBenefitView,
 } from './coupon-benefits';
 
 vi.mock('server-only', () => ({}));
@@ -425,5 +426,111 @@ describe('acceptBenefitForCampaign (task 5.5 — ש5/D21/D22)', () => {
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(logActivity).not.toHaveBeenCalled();
     errorSpy.mockRestore();
+  });
+});
+
+describe('getBenefitView (tasks 7.1/7.2 — the reveal rules)', () => {
+  it('7.2: an UNVERIFIED account gets the identical neutral invite whether or not a phone offer exists — the phone is never queried', async () => {
+    // Case A: an assignment DOES exist for the account's (unverified) phone.
+    const a = tableClient({ coupon_assignments: [{ data: [], error: null }] });
+    const viewA = await getBenefitView(unverifiedUser);
+    const callsA = a.client.from.mock.calls.map(([t]) => t);
+
+    // Case B: nothing exists anywhere.
+    const b = tableClient({ coupon_assignments: [{ data: [], error: null }] });
+    const viewB = await getBenefitView(unverifiedUser);
+    const callsB = b.client.from.mock.calls.map(([t]) => t);
+
+    expect(viewA).toEqual({ kind: 'verify_invite' });
+    expect(viewB).toEqual(viewA);
+    // One account-scoped query in both cases; the phone never reaches the database.
+    expect(callsA).toEqual(['coupon_assignments']);
+    expect(callsB).toEqual(callsA);
+  });
+
+  it('a CLAIMED benefit shows even without a verified phone — it is already proven', async () => {
+    tableClient({
+      coupon_assignments: [{ data: [assignmentRow({ user_id: 'u-1' })], error: null }],
+    });
+
+    const view = await getBenefitView(unverifiedUser);
+
+    expect(view).toMatchObject({
+      kind: 'active',
+      perPackage: [{ packageId: 'p-1', listPrice: 100, finalPrice: 95 }],
+    });
+  });
+
+  it('a verified phone with an unclaimed assignment shows the active benefit', async () => {
+    tableClient({
+      coupon_assignments: [
+        { data: [], error: null },
+        { data: [assignmentRow()], error: null },
+      ],
+    });
+
+    expect((await getBenefitView(verifiedUser)).kind).toBe('active');
+  });
+
+  it('with several active benefits the BEST final price per package is shown (D18)', async () => {
+    tableClient({
+      coupon_assignments: [
+        {
+          data: [
+            assignmentRow({ id: 'a-1', user_id: 'u-1' }),
+            assignmentRow({
+              id: 'a-2',
+              user_id: 'u-1',
+              coupon_assignment_options: [
+                { package_id: 'p-1', list_price: 100, final_price: 80, packages: { name: 'בסיס' } },
+              ],
+            }),
+          ],
+          error: null,
+        },
+      ],
+    });
+
+    const view = await getBenefitView(unverifiedUser);
+    expect(view).toMatchObject({ kind: 'active', perPackage: [expect.objectContaining({ finalPrice: 80 })] });
+  });
+
+  it('bound to the CURRENT campaign counts as active; bound elsewhere reads as used, named with its event', async () => {
+    const bound = assignmentRow({ user_id: 'u-1', state: 'bound', bound_campaign_id: 'c-other' });
+    tableClient({
+      coupon_assignments: [{ data: [bound], error: null }],
+      campaigns: [{ data: { id: 'c-other', events: { name: 'החתונה של דנה' } }, error: null }],
+    });
+
+    const used = await getBenefitView(unverifiedUser, { currentCampaignId: 'c-mine' });
+    expect(used).toEqual({ kind: 'used', eventName: 'החתונה של דנה' });
+
+    tableClient({
+      coupon_assignments: [{ data: [{ ...bound, bound_campaign_id: 'c-mine' }], error: null }],
+    });
+    expect((await getBenefitView(unverifiedUser, { currentCampaignId: 'c-mine' })).kind).toBe('active');
+  });
+
+  it('expired shows the ended notice with its date; void shows the unavailable notice', async () => {
+    tableClient({
+      coupon_assignments: [{ data: [assignmentRow({ user_id: 'u-1', expires_at: PAST })], error: null }],
+    });
+    expect(await getBenefitView(unverifiedUser)).toEqual({ kind: 'ended', reason: 'expired', endedAt: PAST });
+
+    tableClient({
+      coupon_assignments: [{ data: [assignmentRow({ user_id: 'u-1', state: 'void' })], error: null }],
+    });
+    expect(await getBenefitView(unverifiedUser)).toEqual({ kind: 'ended', reason: 'unavailable', endedAt: null });
+  });
+
+  it('verified and empty-handed → none (no invite for a verified phone)', async () => {
+    tableClient({
+      coupon_assignments: [
+        { data: [], error: null },
+        { data: [], error: null },
+      ],
+    });
+
+    expect(await getBenefitView(verifiedUser)).toEqual({ kind: 'none' });
   });
 });

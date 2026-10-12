@@ -70,6 +70,120 @@ function toBenefit(row: AssignmentRow): EligibleBenefit {
 
 type SessionUser = Pick<User, 'id' | 'phone' | 'phone_confirmed_at'>;
 
+export type PackageBenefitPrice = {
+  packageId: string;
+  listPrice: number;
+  discountAmount: number;
+  finalPrice: number;
+};
+
+/**
+ * What the package-choice screen may say about a benefit (tasks 7.1/7.2). The variants ARE the
+ * reveal rules:
+ *  - `verify_invite` — the account has no verified phone and holds no claimed benefit. The screen
+ *    shows the NEUTRAL invitation only; by construction the answer is identical whether or not a
+ *    phone-targeted assignment exists, because the phone is never even queried.
+ *  - `active` — usable benefit(s): the best final price per package (D18's own rule), with expiry.
+ *  - `used` — the benefit serves another campaign, or was consumed; named with its event.
+ *  - `ended` — expired (with the date) or voided. Shown only to the proven owner.
+ *  - `none` — verified (or claimed) and simply nothing to show.
+ */
+export type BenefitView =
+  | { kind: 'verify_invite' }
+  | { kind: 'none' }
+  | { kind: 'active'; expiresAt: string; perPackage: PackageBenefitPrice[] }
+  | { kind: 'used'; eventName: string | null }
+  | { kind: 'ended'; reason: 'expired' | 'unavailable'; endedAt: string | null };
+
+type ViewRow = AssignmentRow & { state: string };
+
+export async function getBenefitView(
+  user: SessionUser,
+  { currentCampaignId }: { currentCampaignId?: string | null } = {},
+): Promise<BenefitView> {
+  const admin = createAdminClient();
+
+  // The account's PROVEN rows (claimed or staff-assigned), every state — the owner is told about
+  // ended and used benefits too.
+  const { data: ownRows, error: ownError } = await admin
+    .from('coupon_assignments')
+    .select(ASSIGNMENT_COLUMNS)
+    .eq('user_id', user.id);
+  if (ownError) return { kind: 'none' }; // fail-closed: reveal nothing on a broken read
+
+  const verifiedPhone = verifiedPhoneOf(user);
+  let phoneRows: ViewRow[] = [];
+  if (verifiedPhone) {
+    const { data, error } = await admin
+      .from('coupon_assignments')
+      .select(ASSIGNMENT_COLUMNS)
+      .eq('phone_e164', verifiedPhone)
+      .is('user_id', null)
+      .in('state', ['assigned', 'bound']);
+    if (error) return { kind: 'none' };
+    phoneRows = (data ?? []) as ViewRow[];
+  }
+
+  const rows = [...((ownRows ?? []) as ViewRow[]), ...phoneRows];
+  const now = Date.now();
+
+  const isActive = (r: ViewRow) =>
+    (r.state === 'assigned' || (r.state === 'bound' && r.bound_campaign_id === (currentCampaignId ?? null))) &&
+    Date.parse(r.expires_at) > now;
+  const active = rows.filter(isActive);
+
+  if (active.length > 0) {
+    // D18's display rule = its binding rule: per package, the lowest final price among the
+    // account's active benefits.
+    const best = new Map<string, PackageBenefitPrice>();
+    let expiresAt = active[0].expires_at;
+    for (const row of active) {
+      if (Date.parse(row.expires_at) > Date.parse(expiresAt)) expiresAt = row.expires_at;
+      for (const o of row.coupon_assignment_options ?? []) {
+        const price: PackageBenefitPrice = {
+          packageId: o.package_id,
+          listPrice: Number(o.list_price),
+          discountAmount: Number(o.list_price) - Number(o.final_price),
+          finalPrice: Number(o.final_price),
+        };
+        const held = best.get(price.packageId);
+        if (!held || price.finalPrice < held.finalPrice) best.set(price.packageId, price);
+      }
+    }
+    return { kind: 'active', expiresAt, perPackage: [...best.values()] };
+  }
+
+  // Nothing usable. An unverified account that holds no proven benefit gets the neutral invite —
+  // and nothing else, whatever may or may not exist on its (unproven) phone.
+  const used = rows.find(
+    (r) => r.state === 'consumed' || (r.state === 'bound' && r.bound_campaign_id !== (currentCampaignId ?? null)),
+  );
+  if (used) {
+    let eventName: string | null = null;
+    if (used.bound_campaign_id) {
+      const { data: campaignRow } = await admin
+        .from('campaigns')
+        .select('id, events(name)')
+        .eq('id', used.bound_campaign_id)
+        .maybeSingle();
+      eventName = (campaignRow as { events?: { name?: string } | null } | null)?.events?.name ?? null;
+    }
+    return { kind: 'used', eventName };
+  }
+
+  const expired = rows
+    .filter((r) => (r.state === 'assigned' || r.state === 'bound') && Date.parse(r.expires_at) <= now)
+    .sort((a, b) => Date.parse(b.expires_at) - Date.parse(a.expires_at))[0];
+  if (expired) return { kind: 'ended', reason: 'expired', endedAt: expired.expires_at };
+
+  if (rows.some((r) => r.state === 'void')) {
+    return { kind: 'ended', reason: 'unavailable', endedAt: null };
+  }
+
+  if (!verifiedPhone) return { kind: 'verify_invite' };
+  return { kind: 'none' };
+}
+
 /**
  * Every assignment this account may use: claimed/staff assignments on the account itself, plus
  * unclaimed phone assignments whose number equals the account's verified phone. Includes expired

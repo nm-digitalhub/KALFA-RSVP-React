@@ -309,3 +309,194 @@ export async function createStaffAssignment({
     })),
   };
 }
+
+// ── The staff list (task 7.3, mockup ui/Assignments.dc.html) ────────────────
+
+export type StaffAssignmentListRow = {
+  id: string;
+  createdAt: string;
+  expiresAt: string;
+  state: 'assigned' | 'bound' | 'consumed' | 'void';
+  offerTitle: string;
+  source: { kind: 'agent' } | { kind: 'staff' };
+  target: { userEmail: string | null; phoneMasked: string | null; claimed: boolean };
+  options: { packageName: string; finalPrice: number }[];
+  bound: { eventName: string | null; packageName: string | null; finalPrice: number | null } | null;
+  /** The bound campaign's package payment, as the screen shows it. */
+  payment: 'none' | 'pending' | 'review' | 'succeeded';
+  /** Why the void button is disabled (D22/D10); null = void is offered. */
+  heldBy: 'payment' | 'review' | 'approved_terms' | null;
+  /** D10's guard: a SUCCEEDED payment whose assignment was not consumed — data damage to surface. */
+  guard: boolean;
+};
+
+export type StaffAssignmentList = {
+  rows: StaffAssignmentListRow[];
+  /** D10 guard rows in the whole set — the banner says plainly whether any exist. */
+  guardCount: number;
+};
+
+// The caller sees most of a number, never all of it: +9725…123 keeps the prefix and last 3.
+function maskPhone(phone: string): string {
+  if (phone.length <= 8) return phone;
+  return `${phone.slice(0, 5)}…${phone.slice(-3)}`;
+}
+
+// Every assignment with its source, target, frozen options, bound campaign, and that campaign's
+// package-payment outcome (the spec's staff-visibility requirement). Batched reads — never per-row
+// queries against campaigns/payments; the user-email lookups go per UNIQUE id through the Auth
+// admin API (small, capped set).
+export async function listStaffAssignments(): Promise<StaffAssignmentList> {
+  await requirePlatformPermission('manage_billing');
+  const admin = createAdminClient();
+
+  const { data, error } = await admin
+    .from('coupon_assignments')
+    .select(
+      'id, created_at, expires_at, state, user_id, phone_e164, sales_call_attempt_id, assigned_by, bound_campaign_id, offers(title), coupon_assignment_options(final_price, packages(name))',
+    )
+    .order('created_at', { ascending: false })
+    .limit(200);
+  if (error) throw new Error('טעינת ההטבות נכשלה');
+
+  type Row = {
+    id: string;
+    created_at: string;
+    expires_at: string;
+    state: string;
+    user_id: string | null;
+    phone_e164: string | null;
+    sales_call_attempt_id: string | null;
+    assigned_by: string | null;
+    bound_campaign_id: string | null;
+    offers: { title: string } | null;
+    coupon_assignment_options: { final_price: number; packages: { name: string } | null }[] | null;
+  };
+  const rows = (data ?? []) as Row[];
+
+  // The bound campaigns: event name + the chosen package's name, one query.
+  const campaignIds = [...new Set(rows.map((r) => r.bound_campaign_id).filter((x): x is string => !!x))];
+  const campaignById = new Map<string, { eventName: string | null; packageName: string | null; templateId: string | null }>();
+  const lockedCampaigns = new Set<string>();
+  if (campaignIds.length > 0) {
+    const { data: campaigns, error: cErr } = await admin
+      .from('campaigns')
+      .select('id, template_id, events(name), packages(name)')
+      .in('id', campaignIds);
+    if (cErr) throw new Error('טעינת הקמפיינים נכשלה');
+    for (const c of (campaigns ?? []) as Array<{ id: string; template_id: string | null; events: { name: string } | null; packages: { name: string } | null }>) {
+      campaignById.set(c.id, {
+        eventName: c.events?.name ?? null,
+        packageName: c.packages?.name ?? null,
+        templateId: c.template_id,
+      });
+    }
+
+    const { data: lockedRounds, error: lErr } = await admin
+      .from('campaign_pricing')
+      .select('campaign_id, locked_at')
+      .in('campaign_id', campaignIds)
+      .is('superseded_at', null);
+    if (lErr) throw new Error('טעינת המחירים נכשלה');
+    for (const r of lockedRounds ?? []) {
+      if (r.locked_at) lockedCampaigns.add(r.campaign_id);
+    }
+  }
+
+  // The package payments of those campaigns, one query; precedence for display: pending > review > succeeded.
+  const paymentByCampaign = new Map<string, StaffAssignmentListRow['payment']>();
+  if (campaignIds.length > 0) {
+    const { data: payments, error: pErr } = await admin
+      .from('payment_operations')
+      .select('campaign_id, outcome')
+      .in('campaign_id', campaignIds)
+      .eq('kind', 'package_purchase')
+      .in('outcome', ['pending', 'review', 'succeeded']);
+    if (pErr) throw new Error('טעינת התשלומים נכשלה');
+    const rank = { pending: 3, review: 2, succeeded: 1 } as const;
+    for (const p of payments ?? []) {
+      if (!p.campaign_id) continue;
+      const held = paymentByCampaign.get(p.campaign_id);
+      const next = p.outcome as keyof typeof rank;
+      if (!held || rank[next] > rank[held as keyof typeof rank]) paymentByCampaign.set(p.campaign_id, next);
+    }
+  }
+
+  // The claimed accounts' emails — per unique id, through the Auth admin API (the set is small).
+  const userIds = [...new Set(rows.map((r) => r.user_id).filter((x): x is string => !!x))];
+  const emailById = new Map<string, string | null>();
+  for (const id of userIds) {
+    const { data: u } = await admin.auth.admin.getUserById(id);
+    emailById.set(id, u?.user?.email ?? null);
+  }
+
+  let guardCount = 0;
+  const out: StaffAssignmentListRow[] = rows.map((r) => {
+    const bound = r.bound_campaign_id ? (campaignById.get(r.bound_campaign_id) ?? null) : null;
+    const payment = r.bound_campaign_id ? (paymentByCampaign.get(r.bound_campaign_id) ?? 'none') : 'none';
+    const boundFinal =
+      bound?.templateId != null
+        ? (r.coupon_assignment_options ?? []).find((o) => o.packages?.name === bound.packageName)?.final_price ?? null
+        : null;
+    const guard = payment === 'succeeded' && r.state !== 'consumed';
+    if (guard) guardCount += 1;
+    const heldBy: StaffAssignmentListRow['heldBy'] =
+      r.state !== 'assigned' && r.state !== 'bound'
+        ? null
+        : payment === 'pending'
+          ? 'payment'
+          : payment === 'review'
+            ? 'review'
+            : r.bound_campaign_id && lockedCampaigns.has(r.bound_campaign_id)
+              ? 'approved_terms'
+              : null;
+    return {
+      id: r.id,
+      createdAt: r.created_at,
+      expiresAt: r.expires_at,
+      state: (['assigned', 'bound', 'consumed', 'void'] as const).includes(r.state as never)
+        ? (r.state as StaffAssignmentListRow['state'])
+        : 'void',
+      offerTitle: r.offers?.title ?? '',
+      source: r.sales_call_attempt_id ? { kind: 'agent' } : { kind: 'staff' },
+      target: {
+        userEmail: r.user_id ? (emailById.get(r.user_id) ?? null) : null,
+        phoneMasked: r.phone_e164 ? maskPhone(r.phone_e164) : null,
+        claimed: r.user_id !== null,
+      },
+      options: (r.coupon_assignment_options ?? []).map((o) => ({
+        packageName: o.packages?.name ?? '',
+        finalPrice: Number(o.final_price),
+      })),
+      bound: bound
+        ? { eventName: bound.eventName, packageName: bound.packageName, finalPrice: boundFinal != null ? Number(boundFinal) : null }
+        : null,
+      payment,
+      heldBy,
+      guard,
+    };
+  });
+
+  return { rows: out, guardCount };
+}
+
+// An EXACT-email account lookup for the assign form (the mockup's search field). The Auth admin
+// API has no email filter, so this scans capped pages for an exact, case-insensitive match —
+// fine at this platform's account scale, and never a substring search that could leak lookalikes.
+export async function findAccountByEmail(
+  email: string,
+): Promise<{ id: string; email: string } | null> {
+  await requirePlatformPermission('manage_billing');
+  const admin = createAdminClient();
+  const needle = email.trim().toLowerCase();
+  if (!needle) return null;
+
+  for (let page = 1; page <= 5; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) throw new Error('חיפוש החשבון נכשל');
+    const hit = data.users.find((u) => (u.email ?? '').toLowerCase() === needle);
+    if (hit) return { id: hit.id, email: hit.email ?? needle };
+    if (data.users.length < 200) break;
+  }
+  return null;
+}
