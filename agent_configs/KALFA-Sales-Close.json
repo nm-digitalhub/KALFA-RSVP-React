@@ -171,7 +171,6 @@
                 "service_tier": "standard",
                 "opener": null,
                 "enable_reasoning_summary": false,
-                "temperature": 0.4,
                 "max_tokens": -1,
                 "tool_ids": [
                     "tool_8301m0mxkz94emvayp27p2w82tkv",
