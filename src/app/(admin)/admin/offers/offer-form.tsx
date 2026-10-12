@@ -2,7 +2,10 @@
 
 import { useActionState, useId, useState } from 'react';
 
+import { Info } from 'lucide-react';
+
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { computeOfferOption, type OfferKind } from '@/lib/offers/pricing';
 import type { OfferPackageChoice } from '@/lib/data/admin/offers';
 import type { FormState } from '@/lib/validation/result';
@@ -290,14 +293,38 @@ export function OfferForm({
       <fieldset className="space-y-2">
         <legend className="text-sm font-semibold">כללי שימוש לסוכן</legend>
         <div className="space-y-1">
-          <label htmlFor={`${formId}-objections`} className={labelClass}>
-            מתי מותר להציע — סיבות התנגדות, שורה לכל סיבה
-          </label>
+          <div className="flex items-center gap-1.5">
+            <label htmlFor={`${formId}-objections`} className={labelClass}>
+              מילים שמזהות התנגדות מחיר — מילה או ביטוי קצר בכל שורה
+            </label>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label="הסבר על פורמט מילות ההתנגדות"
+                      className="text-muted-foreground hover:text-foreground"
+                    />
+                  }
+                >
+                  <Info className="size-3.5" aria-hidden />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-72 text-start leading-relaxed">
+                  ההתאמה היא הכלה של טקסט: ההצעה תוצע כשדיווח ההתנגדות של הסוכן מכיל אחת
+                  מהשורות. מילים קצרות (&quot;יקר&quot;, &quot;הנחה&quot;, &quot;זול&quot;) תופסות
+                  כל ניסוח; משפט שלם כמעט לעולם לא יתאים. רשימה ריקה = מתאים לכל התנגדות. זה אינו
+                  תנאי שלב או זמן בשיחה — רק התאמת מילים.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
           <textarea
             id={`${formId}-objections`}
             name="agent_objections"
             rows={3}
             defaultValue={values.agent_objections.join('\n')}
+            placeholder={'יקר\nהנחה\nזול'}
             className={inputClass}
           />
           <p className="text-xs text-muted-foreground">
