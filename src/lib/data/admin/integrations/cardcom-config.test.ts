@@ -23,6 +23,7 @@ const row = (over: TableRow = {}): TableRow => ({
   terminal_number: 1001,
   api_name: 'kalfa-api',
   enabled: true,
+  save_card_on_purchase: false,
   api_password_secret: SECRET_ID,
   updated_at: '2026-10-07T10:00:00.000Z',
   ...over,
@@ -33,6 +34,7 @@ const input = (over: Partial<Parameters<typeof saveCardcomConfig>[0]> = {}) => (
   apiPassword: 'new-password',
   documentReportSecret: '',
   enabled: true,
+  saveCardOnPurchase: false,
   ...over,
 });
 
@@ -55,6 +57,7 @@ describe('readCardcomAdminConfig', () => {
       terminalNumber: 1001,
       apiName: 'kalfa-api',
       enabled: true,
+      saveCardOnPurchase: false,
       hasPassword: true,
       hasDocumentReportSecret: false,
       isTestTerminal: false,
@@ -95,9 +98,15 @@ describe('saveCardcomConfig', () => {
     expect(fake.rpcCalls).toEqual([
       {
         fn: 'cardcom_config_save',
-        args: { p_terminal_number: 1001, p_api_name: 'kalfa-api', p_api_password: 'new-password', p_enabled: true, p_updated_by: 'session-user' },
+        args: { p_terminal_number: 1001, p_api_name: 'kalfa-api', p_api_password: 'new-password', p_enabled: true, p_updated_by: 'session-user', p_save_card_on_purchase: false },
       },
     ]);
+  });
+
+  it('the save-card switch travels to the database function and into the audit record', async () => {
+    await expect(saveCardcomConfig(input({ saveCardOnPurchase: true }))).resolves.toEqual({ ok: true });
+    expect(fake.rpcCalls[0].args).toMatchObject({ p_save_card_on_purchase: true });
+    expect(logActivityMock.mock.calls[0][0].meta).toMatchObject({ saveCardOnPurchase: true });
   });
 
   it('keeps the stored password when the field is blank, and the switch can still be turned on', async () => {
@@ -127,7 +136,7 @@ describe('saveCardcomConfig', () => {
     await saveCardcomConfig(input({ apiPassword: 'super-secret' }));
     expect(logActivityMock).toHaveBeenCalledWith({
       action: 'admin.cardcom_config.saved',
-      meta: { terminalNumber: 1001, enabled: true, passwordSubmitted: true, documentReportSecretSubmitted: false },
+      meta: { terminalNumber: 1001, enabled: true, saveCardOnPurchase: false, passwordSubmitted: true, documentReportSecretSubmitted: false },
     });
     expect(JSON.stringify(logActivityMock.mock.calls)).not.toContain('super-secret');
   });

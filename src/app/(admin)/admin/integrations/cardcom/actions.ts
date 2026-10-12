@@ -24,6 +24,7 @@ export async function updateCardcomConfigAction(
     api_password: formData.get('api_password') ?? '',
     document_report_secret: formData.get('document_report_secret') ?? '',
     enabled: formData.get('enabled') === 'on',
+    save_card_on_purchase: formData.get('save_card_on_purchase') === 'on',
   });
   if (!parsed.success) {
     return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
@@ -35,6 +36,7 @@ export async function updateCardcomConfigAction(
       apiPassword: parsed.data.api_password,
       documentReportSecret: parsed.data.document_report_secret,
       enabled: parsed.data.enabled,
+      saveCardOnPurchase: parsed.data.save_card_on_purchase,
     });
     if (!result.ok) {
       return { fieldErrors: { api_password: ['כדי להפעיל את CardCom חובה סיסמת API שמורה (היא נדרשת להחזרים)'] } };

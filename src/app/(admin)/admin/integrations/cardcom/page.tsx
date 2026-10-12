@@ -58,6 +58,7 @@ export default async function CardcomPage() {
             terminal_number: config.terminalNumber === null ? '' : String(config.terminalNumber),
             api_name: config.apiName ?? '',
             enabled: config.enabled,
+            save_card_on_purchase: config.saveCardOnPurchase,
             has_password: config.hasPassword,
             has_document_report_secret: config.hasDocumentReportSecret,
             document_report_url: documentReportUrl,

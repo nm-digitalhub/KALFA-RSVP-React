@@ -189,9 +189,10 @@ export async function startCardcomPurchase(input: CardcomStartInput): Promise<Ca
 
   // 3b. Take the lock: the PENDING row, before CardCom is asked for anything.
   // One source for what we ask CardCom to do: the SAME value goes into the request and onto the row's stamp, so the
-  // settle gate can never disagree with the request (today always a one-off charge; the upgrade flow will pass
-  // ChargeAndCreateToken here and nowhere else).
-  const requestedOperation = Operation.ChargeOnly;
+  // settle gate can never disagree with the request. The admin save-card switch (cardcom_config.save_card_on_purchase,
+  // 12.10.2026) decides it: ON asks CardCom to also save the card for the planned upgrade charges — the operator may
+  // turn it on only once the approved terms disclose the saving.
+  const requestedOperation = config.saveCardOnPurchase ? Operation.ChargeAndCreateToken : Operation.ChargeOnly;
   const lines = [{ description: receiptLineFor(campaign.package_name), unitPrice: price }];
   let operationId: string;
   try {

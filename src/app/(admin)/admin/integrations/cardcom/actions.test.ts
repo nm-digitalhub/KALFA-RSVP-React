@@ -22,7 +22,14 @@ beforeEach(() => {
 describe('updateCardcomConfigAction', () => {
   it('validates, saves with the terminal as a number and the checkbox as a boolean, and revalidates both pages', async () => {
     const state = await updateCardcomConfigAction(null, form());
-    expect(saveMock).toHaveBeenCalledWith({ terminalNumber: 1001, apiName: 'kalfa-api', apiPassword: 'pw', documentReportSecret: '', enabled: true });
+    expect(saveMock).toHaveBeenCalledWith({
+      terminalNumber: 1001,
+      apiName: 'kalfa-api',
+      apiPassword: 'pw',
+      documentReportSecret: '',
+      enabled: true,
+      saveCardOnPurchase: false,
+    });
     expect(state).toEqual({ notice: 'פרטי CardCom נשמרו' });
     expect(revalidateMock).toHaveBeenCalledWith('/admin/integrations/cardcom');
     expect(revalidateMock).toHaveBeenCalledWith('/admin/integrations');
@@ -32,7 +39,19 @@ describe('updateCardcomConfigAction', () => {
     const f = form({ api_password: '' });
     f.delete('enabled');
     await updateCardcomConfigAction(null, f);
-    expect(saveMock).toHaveBeenCalledWith({ terminalNumber: 1001, apiName: 'kalfa-api', apiPassword: '', documentReportSecret: '', enabled: false });
+    expect(saveMock).toHaveBeenCalledWith({
+      terminalNumber: 1001,
+      apiName: 'kalfa-api',
+      apiPassword: '',
+      documentReportSecret: '',
+      enabled: false,
+      saveCardOnPurchase: false,
+    });
+  });
+
+  it('the save-card checkbox reaches the save as a boolean', async () => {
+    await updateCardcomConfigAction(null, form({ save_card_on_purchase: 'on' }));
+    expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ saveCardOnPurchase: true }));
   });
 
   it.each([

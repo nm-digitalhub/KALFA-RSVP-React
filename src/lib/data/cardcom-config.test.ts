@@ -13,20 +13,45 @@ import { CARDCOM_TEST_TERMINAL, getCardcomApiPassword, getCardcomServerConfig, i
 // reads it). Every reader is fail-closed: any error, a missing row or a value that makes no sense resolves to "not
 // configured", never to a throw — a customer page must not crash because clearing is unset.
 
-const row = (over: TableRow = {}): TableRow => ({ id: true, terminal_number: 1001, api_name: 'kalfa-api', enabled: true, ...over });
+const row = (over: TableRow = {}): TableRow => ({
+  id: true,
+  terminal_number: 1001,
+  api_name: 'kalfa-api',
+  enabled: true,
+  save_card_on_purchase: false,
+  ...over,
+});
 
 beforeEach(() => {
   fake = createFakeTableClient({ cardcom_config: [row()] }, { cardcom_api_password: () => ({ data: 'the-password' }) });
 });
 
 describe('getCardcomServerConfig', () => {
-  it('returns the terminal, the API name and the switch', async () => {
-    await expect(getCardcomServerConfig()).resolves.toEqual({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true });
+  it('returns the terminal, the API name and the switches', async () => {
+    await expect(getCardcomServerConfig()).resolves.toEqual({
+      terminalNumber: 1001,
+      apiName: 'kalfa-api',
+      enabled: true,
+      saveCardOnPurchase: false,
+    });
   });
 
   it('reports a switched-off connection as such, still configured', async () => {
     fake = createFakeTableClient({ cardcom_config: [row({ enabled: false })] });
-    await expect(getCardcomServerConfig()).resolves.toEqual({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: false });
+    await expect(getCardcomServerConfig()).resolves.toEqual({
+      terminalNumber: 1001,
+      apiName: 'kalfa-api',
+      enabled: false,
+      saveCardOnPurchase: false,
+    });
+  });
+
+  it('carries the save-card switch when it is on, and only an explicit true turns it on', async () => {
+    fake = createFakeTableClient({ cardcom_config: [row({ save_card_on_purchase: true })] });
+    await expect(getCardcomServerConfig()).resolves.toMatchObject({ saveCardOnPurchase: true });
+    // A value that makes no sense fails CLOSED for the feature (ChargeOnly), not for the whole connection.
+    fake = createFakeTableClient({ cardcom_config: [row({ save_card_on_purchase: 'yes' })] });
+    await expect(getCardcomServerConfig()).resolves.toMatchObject({ saveCardOnPurchase: false });
   });
 
   it('is null when nothing was ever saved', async () => {

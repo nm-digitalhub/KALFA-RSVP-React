@@ -435,6 +435,8 @@ export const cardcomConfigSchema = z.object({
     .trim()
     .regex(/^(|[A-Za-z0-9]{24,128})$/, { error: 'הסוד חייב להיות 24–128 אותיות באנגלית וספרות בלבד' }),
   enabled: z.boolean(),
+  // The save-card switch: purchases request ChargeAndCreateToken (charge + save the card) instead of ChargeOnly.
+  save_card_on_purchase: z.boolean(),
 });
 
 export const extraSmsSchema = z.object({

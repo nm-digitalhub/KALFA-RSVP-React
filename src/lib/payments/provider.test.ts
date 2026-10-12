@@ -14,7 +14,7 @@ import { resolvePurchaseProvider } from './provider';
 // published test terminal (1000), where nothing is charged, only for someone who may configure the integration:
 // everyone else keeps paying through SUMIT, never through a "payment" that moves no money and still activates a campaign.
 
-const cfg = (over = {}) => ({ terminalNumber: 1001, apiName: 'x', enabled: true, ...over });
+const cfg = (over = {}) => ({ terminalNumber: 1001, apiName: 'x', enabled: true, saveCardOnPurchase: false, ...over });
 
 describe('resolvePurchaseProvider', () => {
   it('is SUMIT when CardCom is not configured', () => {

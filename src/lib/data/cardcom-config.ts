@@ -22,6 +22,12 @@ export type CardcomServerConfig = {
   apiName: string;
   /** The pilot switch: only an explicit true sends a package purchase to CardCom. */
   enabled: boolean;
+  /**
+   * The save-card switch (admin, 12.10.2026): when true, a package purchase asks CardCom for
+   * ChargeAndCreateToken — charge AND save the card for the planned upgrade charges — instead of ChargeOnly.
+   * Only an explicit true tokenizes, same posture as `enabled`.
+   */
+  saveCardOnPurchase: boolean;
 };
 
 export async function getCardcomServerConfig(): Promise<CardcomServerConfig | null> {
@@ -29,7 +35,7 @@ export async function getCardcomServerConfig(): Promise<CardcomServerConfig | nu
     const admin = createAdminClient();
     const { data, error } = await admin
       .from('cardcom_config')
-      .select('terminal_number, api_name, enabled')
+      .select('terminal_number, api_name, enabled, save_card_on_purchase')
       .eq('id', true)
       .maybeSingle();
     if (error || !data) return null;
@@ -37,7 +43,7 @@ export async function getCardcomServerConfig(): Promise<CardcomServerConfig | nu
     const apiName = typeof data.api_name === 'string' ? data.api_name.trim() : '';
     if (typeof terminalNumber !== 'number' || !Number.isInteger(terminalNumber) || terminalNumber <= 0) return null;
     if (apiName === '' || typeof data.enabled !== 'boolean') return null;
-    return { terminalNumber, apiName, enabled: data.enabled };
+    return { terminalNumber, apiName, enabled: data.enabled, saveCardOnPurchase: data.save_card_on_purchase === true };
   } catch {
     return null;
   }

@@ -1884,6 +1884,7 @@ export type Database = {
           api_password_secret: string | null
           enabled: boolean
           id: boolean
+          save_card_on_purchase: boolean
           terminal_number: number
           updated_at: string
           updated_by: string | null
@@ -1893,6 +1894,7 @@ export type Database = {
           api_password_secret?: string | null
           enabled?: boolean
           id?: boolean
+          save_card_on_purchase?: boolean
           terminal_number: number
           updated_at?: string
           updated_by?: string | null
@@ -1902,6 +1904,7 @@ export type Database = {
           api_password_secret?: string | null
           enabled?: boolean
           id?: boolean
+          save_card_on_purchase?: boolean
           terminal_number?: number
           updated_at?: string
           updated_by?: string | null
@@ -8187,6 +8190,7 @@ export type Database = {
           p_api_name: string
           p_api_password: string
           p_enabled: boolean
+          p_save_card_on_purchase?: boolean
           p_terminal_number: number
           p_updated_by: string
         }

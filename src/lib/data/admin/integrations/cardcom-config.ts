@@ -24,6 +24,8 @@ export type AdminCardcomConfig = {
   apiName: string | null;
   /** The pilot switch. */
   enabled: boolean;
+  /** The save-card switch: purchases ask CardCom to also save the card (ChargeAndCreateToken) for upgrade charges. */
+  saveCardOnPurchase: boolean;
   /** A password is stored in the vault (needed to refund, and to switch the pilot on). */
   hasPassword: boolean;
   /** The document report webhook secret is stored in the vault. */
@@ -38,6 +40,7 @@ export const UNCONFIGURED_CARDCOM: AdminCardcomConfig = {
   terminalNumber: null,
   apiName: null,
   enabled: false,
+  saveCardOnPurchase: false,
   hasPassword: false,
   hasDocumentReportSecret: false,
   isTestTerminal: false,
@@ -50,7 +53,7 @@ export async function readCardcomAdminConfig(): Promise<AdminCardcomConfig> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('cardcom_config')
-    .select('terminal_number, api_name, enabled, api_password_secret, updated_at')
+    .select('terminal_number, api_name, enabled, save_card_on_purchase, api_password_secret, updated_at')
     .eq('id', true)
     .maybeSingle();
 
@@ -67,6 +70,7 @@ export async function readCardcomAdminConfig(): Promise<AdminCardcomConfig> {
     terminalNumber: data.terminal_number,
     apiName: data.api_name,
     enabled: data.enabled,
+    saveCardOnPurchase: data.save_card_on_purchase,
     // The vault secret id collapses to a boolean HERE and is never returned.
     hasPassword: data.api_password_secret !== null,
     hasDocumentReportSecret: secretSaved === true,
@@ -85,6 +89,8 @@ export async function saveCardcomConfig(input: {
   /** '' means KEEP THE STORED DOCUMENT REPORT SECRET. */
   documentReportSecret: string;
   enabled: boolean;
+  /** The save-card switch; the form always decides it, so no "keep stored" sentinel here. */
+  saveCardOnPurchase: boolean;
 }): Promise<SaveCardcomConfigResult> {
   const user = await requirePlatformPermission('integrations.manage');
   const admin = createAdminClient();
@@ -104,6 +110,7 @@ export async function saveCardcomConfig(input: {
     p_enabled: input.enabled,
     // From the SESSION, never from the form: auth.uid() is NULL under the service role, so this is the only provenance.
     p_updated_by: user.id,
+    p_save_card_on_purchase: input.saveCardOnPurchase,
   });
   if (error) throw error;
 
@@ -120,6 +127,7 @@ export async function saveCardcomConfig(input: {
     meta: {
       terminalNumber: input.terminalNumber,
       enabled: input.enabled,
+      saveCardOnPurchase: input.saveCardOnPurchase,
       passwordSubmitted: input.apiPassword !== '',
       documentReportSecretSubmitted: input.documentReportSecret !== '',
     },

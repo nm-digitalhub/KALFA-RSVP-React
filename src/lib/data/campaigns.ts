@@ -33,6 +33,7 @@ export type OwnerCampaign = Pick<
   CampaignRow,
   | 'id'
   | 'event_id'
+  | 'template_id'
   | 'status'
   | 'max_contacts'
   | 'tos_version'
@@ -52,7 +53,7 @@ export type OwnerCampaign = Pick<
 // selects the SAME shape — an admin viewing a campaign must see exactly what
 // the owner sees, and a second column list here would drift.
 export const CAMPAIGN_COLUMNS =
-  'id, event_id, status, max_contacts, tos_version, allowed_channels, start_at, close_at, approved_at, created_at, package_price, contact_quota';
+  'id, event_id, template_id, status, max_contacts, tos_version, allowed_channels, start_at, close_at, approved_at, created_at, package_price, contact_quota';
 
 // R9 refusal, in the owner's vocabulary (audit §2): the event step is
 // "אישור פרטי האירוע", never "פרסום". Exported so the console status route can

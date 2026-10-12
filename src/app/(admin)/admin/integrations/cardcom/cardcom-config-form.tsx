@@ -11,6 +11,7 @@ export type CardcomConfigFormValues = {
   terminal_number: string;
   api_name: string;
   enabled: boolean;
+  save_card_on_purchase: boolean;
   /** Whether a password is stored. The password itself is never sent to the form. */
   has_password: boolean;
   /** Whether the document report secret is stored. The secret itself is never sent to the form. */
@@ -86,6 +87,25 @@ export function CardcomConfigForm({ values }: { values: CardcomConfigFormValues 
           <span className="block text-sm font-medium">רכישות חבילה עוברות ל-CardCom</span>
           <span className="block text-xs text-muted-foreground">
             כשכבוי — הרכישות נשארות אצל ספק הסליקה הקיים. מצריך סיסמת API שמורה. על מסוף הבדיקות (1000) רק מנהל פלטפורמה יכול לרכוש.
+          </span>
+        </span>
+      </label>
+
+      {/* The save-card switch (12.10.2026): flips the purchase operation between ChargeOnly and ChargeAndCreateToken.
+          Takes effect on the NEXT purchase opened — no deploy. The legal precondition is wording, not code, so it is
+          stated in the hint and enforced by the operator. */}
+      <label className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          name="save_card_on_purchase"
+          defaultChecked={values.save_card_on_purchase}
+          className="mt-1 size-4 accent-primary"
+        />
+        <span>
+          <span className="block text-sm font-medium">שמירת כרטיס ברכישה (לחיובי שדרוג)</span>
+          <span className="block text-xs text-muted-foreground">
+            כשדולק — הרכישה מבקשת מ-CardCom גם לשמור את הכרטיס (ChargeAndCreateToken) לטובת שדרוג חבילה עתידי.
+            לפני ההדלקה חובה שתנאי ההסכם שהלקוח מאשר יגלו את שמירת אמצעי התשלום — נוסח של עורך הדין.
           </span>
         </span>
       </label>

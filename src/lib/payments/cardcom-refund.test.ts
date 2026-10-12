@@ -85,7 +85,7 @@ beforeEach(() => {
   errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
   useDb();
   vi.mocked(getPaymentsEnabled).mockResolvedValue(true);
-  vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true });
+  vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false });
   vi.mocked(getCardcomApiPassword).mockResolvedValue(PASSWORD);
   vi.mocked(logActivity).mockResolvedValue(undefined);
   vi.mocked(transactionsTransaction).mockResolvedValue(okAnswer() as never);
@@ -220,7 +220,7 @@ describe('refundCardcomPayment: a refund', () => {
   });
 
   it('refunds a TEST payment on the test terminal like any other: the refund row is test money too (the database copies it from the parent), and every alert says so', async () => {
-    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'kalfa-api', enabled: true });
+    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false });
     useDb([{ ...PURCHASE, provider_terminal: 1000, is_test: true }]);
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toMatchObject({ status: 'refunded', amount: 149 });
     expect(refundRows()).toMatchObject([{ outcome: 'succeeded', provider: 'cardcom', provider_terminal: 1000, is_test: true }]);
@@ -236,7 +236,7 @@ describe('refundCardcomPayment: a refund', () => {
   });
 
   it('still refunds when the pilot switch was turned off after the payment: the money goes back through the company that was paid', async () => {
-    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: false });
+    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: false, saveCardOnPurchase: false });
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toMatchObject({ status: 'refunded' });
   });
 });

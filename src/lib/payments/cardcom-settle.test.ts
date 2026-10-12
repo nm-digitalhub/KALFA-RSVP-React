@@ -51,7 +51,7 @@ const answer = (value: unknown) => vi.mocked(lowProfileGetLpResult).mockResolved
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true });
+  vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false });
   fake = createFakeTableClient({ payment_operations: [op()], cardcom_payment_sessions: [session()], activity_log: [] });
   answer(PAID);
 });
@@ -340,7 +340,7 @@ describe('settleCardcomSession: the terminal of the payment', () => {
       activity_log: [],
     });
   };
-  const connectedTo = (terminalNumber: number) => vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber, apiName: 'kalfa-api', enabled: true });
+  const connectedTo = (terminalNumber: number) => vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false });
   const paidReporting = (terminal: unknown) => answer({ ...PAID, TerminalNumber: terminal });
   const alertsSent = () => vi.mocked(sendSlackAlert).mock.calls.map(([a]) => a);
 
