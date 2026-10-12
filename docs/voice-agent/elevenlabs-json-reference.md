@@ -4,7 +4,11 @@
 > נלמד מהתיעוד הרשמי (`api-reference/agents/update`, `customization/tools/system-tools`,
 > `api-reference/tests/create`, `guides/simulate-conversation`) 2026-07-15.
 > הסוכן שלנו: `agent_9701kxj3n54ye518a3s518cexd48`.
-> **עדכון: אך ורק דרך תהליך ה-CLI ב-§6** — לא PATCH ידני ולא עריכה ידנית של ה-JSON מהראש.
+> **עדכון (12.10.2026, החלטת בעלים):** ברירת המחדל היא תהליך ה-CLI ב-§6 (pull → עריכה → push → pull מאמת).
+> **PATCH ישיר מותר** רק במשמעת הסקיל הרשמי `architect-update-config-safely`: קריאת הקונפיג הנוכחי לפני,
+> שדה אחד מעוצב-נכון לכל PATCH, בלי להמציא מפתחות/ערכי enum מהזיכרון, אימות בקריאה חוזרת —
+> ולסיום `agents pull --update` כדי שהריפו והגיט יישארו נאמנים לשרת. PATCH עיוור או בלתי-מאומת נשאר אסור.
+> עריכה ידנית של ה-JSON מהראש (בלי pull טרי) נשארת אסורה כתמיד.
 
 ---
 
