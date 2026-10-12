@@ -78,6 +78,9 @@ export type NewOperation = OperationDetails & {
   // when the CardCom purchase passed none (restamped by 20261011143109_payment_operations_restamp_pilot_rows.sql).
   provider: 'sumit' | 'cardcom';
   providerTerminal?: number | null;
+  // The operation the provider session was ASKED to perform (CardCom: ChargeOnly / ChargeAndCreateToken).
+  // Stamped at birth; settlement matches the provider's answer against it. Null = ChargeOnly (pre-12.10 rows).
+  providerOperation?: string | null;
   // personal-coupons D22 (task 2.4): the pricing round a package purchase charges. Written at INSERT; the
   // open-payment guard (payment_operations_open_guard) validates it in the same transaction — current, locked,
   // amount equal, benefit still bound and unexpired. Settlement/consumption/refunds read the price from the round.
@@ -237,6 +240,7 @@ function insertRow(op: NewOperation): TablesInsert<'payment_operations'> {
     provider: op.provider,
     ...(op.providerTerminal === undefined ? {} : { provider_terminal: op.providerTerminal }),
     ...(op.pricingRoundId === undefined ? {} : { pricing_round_id: op.pricingRoundId }),
+    ...(op.providerOperation === undefined ? {} : { provider_operation: op.providerOperation }),
     ...detailColumns(op),
   };
 }

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { Operation } from '@/lib/cardcom/generated/models';
 import { buildCreateLowProfile } from '@/lib/cardcom/create-request';
 import { lowProfileCreate } from '@/lib/cardcom/generated/low-profile/low-profile';
 import { CardcomError, cardcomFailureFacts } from '@/lib/cardcom/mutator';
@@ -187,6 +188,10 @@ export async function startCardcomPurchase(input: CardcomStartInput): Promise<Ca
   }
 
   // 3b. Take the lock: the PENDING row, before CardCom is asked for anything.
+  // One source for what we ask CardCom to do: the SAME value goes into the request and onto the row's stamp, so the
+  // settle gate can never disagree with the request (today always a one-off charge; the upgrade flow will pass
+  // ChargeAndCreateToken here and nowhere else).
+  const requestedOperation = Operation.ChargeOnly;
   const lines = [{ description: receiptLineFor(campaign.package_name), unitPrice: price }];
   let operationId: string;
   try {
@@ -201,6 +206,7 @@ export async function startCardcomPurchase(input: CardcomStartInput): Promise<Ca
       // both. `meta.provider` stays until its readers move to the column (plan section 9).
       provider: 'cardcom',
       providerTerminal: config.terminalNumber,
+      providerOperation: requestedOperation,
       // D22: the round this payment charges; the DB open guard validates it in the insert's transaction, and
       // settlement/consumption/refunds read the price from it — never from whichever row is current later.
       pricingRoundId,
@@ -217,6 +223,7 @@ export async function startCardcomPurchase(input: CardcomStartInput): Promise<Ca
   let lowProfileId: string;
   try {
     const request = buildCreateLowProfile({
+      operation: requestedOperation,
       terminalNumber: config.terminalNumber,
       apiName: config.apiName,
       operationId,

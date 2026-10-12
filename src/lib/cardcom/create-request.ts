@@ -19,6 +19,8 @@ import { DocumentToCreate, Operation, ThreeDSecureState, type CreateLowProfile }
 export type CardcomLine = { description: string; quantity?: number; unitPrice: number };
 
 export type CardcomCreateInput = {
+  /** The CardCom operation to request. Default: ChargeOnly. ChargeAndCreateToken saves a reusable card for the planned upgrades. */
+  operation?: Operation;
   terminalNumber: number;
   apiName: string;
   /** The payment ledger operation this session pays for. */
@@ -57,7 +59,9 @@ export function buildCreateLowProfile(input: CardcomCreateInput): CreateLowProfi
   return {
     TerminalNumber: input.terminalNumber,
     ApiName: apiName,
-    Operation: Operation.ChargeOnly,
+    // The operation is DATA (owner, 12.10.2026): the default stays a one-off charge; the planned package upgrade
+    // will pass ChargeAndCreateToken, and the caller stamps the SAME value on the ledger row (provider_operation).
+    Operation: input.operation ?? Operation.ChargeOnly,
     ReturnValue: input.operationId,
     Amount: totalCents / 100,
     SuccessRedirectUrl: input.returnUrl,

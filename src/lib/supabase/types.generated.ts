@@ -5604,6 +5604,7 @@ export type Database = {
           provider_document_type: string | null
           provider_document_url: string | null
           provider_entry_mode: string | null
+          provider_operation: string | null
           provider_payment_id: number | null
           provider_payment_type: string | null
           provider_payment_vector: string | null
@@ -5661,6 +5662,7 @@ export type Database = {
           provider_document_type?: string | null
           provider_document_url?: string | null
           provider_entry_mode?: string | null
+          provider_operation?: string | null
           provider_payment_id?: number | null
           provider_payment_type?: string | null
           provider_payment_vector?: string | null
@@ -5718,6 +5720,7 @@ export type Database = {
           provider_document_type?: string | null
           provider_document_url?: string | null
           provider_entry_mode?: string | null
+          provider_operation?: string | null
           provider_payment_id?: number | null
           provider_payment_type?: string | null
           provider_payment_vector?: string | null

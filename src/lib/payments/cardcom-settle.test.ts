@@ -552,5 +552,38 @@ describe('settleCardcomSession: the charged amount must match (D11)', () => {
     expect(String(ledger().note)).toContain('ChargeOnly');
   });
 });
+// ── the requested operation is DATA on the row (owner, 12.10.2026) ──
+describe('settleCardcomSession: the answered operation must match the row stamp', () => {
+  const tokenOp = () => op({ provider_operation: 'ChargeAndCreateToken' });
+
+  it('a session that asked ChargeAndCreateToken settles when CardCom answers it WITH a token', async () => {
+    fake = createFakeTableClient({ payment_operations: [tokenOp()], cardcom_payment_sessions: [session()], activity_log: [] });
+    answer({ ...PAID, Operation: 'ChargeAndCreateToken', TranzactionInfo: { ApprovalNumber: '0123456', Amount: 149, CoinId: 1, Token: 'tok-upgrade' } });
+    await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
+    expect(ledger()).toMatchObject({ outcome: 'succeeded', card_token_ref: 'tok-upgrade' });
+  });
+
+  it('…but WITHOUT a token it goes to review: the card the customer approved saving was not saved', async () => {
+    fake = createFakeTableClient({ payment_operations: [tokenOp()], cardcom_payment_sessions: [session()], activity_log: [] });
+    answer({ ...PAID, Operation: 'ChargeAndCreateToken', TranzactionInfo: { ApprovalNumber: '0123456', Amount: 149, CoinId: 1 } });
+    await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'review', alreadyDone: false });
+    expect(String(ledger().note)).toContain('returned no card token');
+  });
+
+  it('an answer of ChargeOnly where the session asked ChargeAndCreateToken goes to review (and vice versa stays covered)', async () => {
+    fake = createFakeTableClient({ payment_operations: [tokenOp()], cardcom_payment_sessions: [session()], activity_log: [] });
+    answer({ ...PAID, TranzactionInfo: { ApprovalNumber: '0123456', Amount: 149, CoinId: 1 } });
+    await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'review', alreadyDone: false });
+    expect(String(ledger().note)).toContain('asked for ChargeAndCreateToken');
+  });
+
+  it('a stamp with no settlement contract (CreateTokenOnly) parks for a person — nothing opens such sessions today', async () => {
+    fake = createFakeTableClient({ payment_operations: [op({ provider_operation: 'CreateTokenOnly' })], cardcom_payment_sessions: [session()], activity_log: [] });
+    answer(PAID);
+    await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'review', alreadyDone: false });
+    expect(String(ledger().note)).toContain('not built');
+  });
+});
+
 
 

@@ -274,6 +274,21 @@ Both D15's and D21's customer-facing flows are this one function with different 
   - if the terms are already approved, the customer receives the improvement through the acceptance path (D21/D22): new terms at the better price.
 - Escalation never happens implicitly: an offer that does not allow replacement cannot replace, so hesitation does not automatically become another discount.
 
+**D24. The requested CardCom operation is data, and the upgrade path is token-based** (owner, 12.10.2026 —
+"למה לדחות... קוד קשיח", then "יש אופרציות נוספות! תבחן כל אחת מהן").
+- Every payment row carries `provider_operation` — the operation its session was ASKED to perform, stamped at birth
+  from the same constant that builds the request. Settlement matches CardCom's answered Operation against the
+  row's stamp, never against a constant; an answer we did not ask for, in either direction, parks in review.
+- The five CardCom operations, examined: `ChargeOnly` — today's purchase; `ChargeAndCreateToken` — the purchase
+  that also saves the card for the planned package UPGRADE (token required in the answer, else review; the token
+  already persists to card_token_ref); `Do3DSAndSubmit` — charging a SAVED token with 3DS, customer present
+  (docs/cardcom/response (2).md:125,486-495) — the upgrade's second half, settlement contract to be written with
+  that flow; `CreateTokenOnly` — saving a card without charging (a future "update my card" screen);
+  `SuspendedDeal` — the retired hold model, not used by decision. A stamp with no settlement contract parks in
+  review with a clear note — the pipe exists, the tap stays shut until each flow defines its contract.
+- Nothing requests a token yet: the upgrade product (consent wording in the terms — an attorney item — and the
+  charge-the-difference flow over a supersede round) is its own change, built on this groundwork.
+
 ## Risks / Trade-offs
 
 - **Two copies of the price during the transition.** Mitigation: the database keeps them equal in both phases, locks on any approval (D8), and the contract waits for an equality check that returns no rows.

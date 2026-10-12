@@ -130,6 +130,8 @@ type OperationRow = {
   id: string; campaign_id: string; event_id: string; outcome: string; amount: number | string; meta: Json;
   // The terminal the session was opened on (null = a row written before the stamp existed) and the class the database gave the row.
   provider_terminal: number | null;
+  // The operation the session was ASKED to perform (null = ChargeOnly, rows born before 12.10.2026).
+  provider_operation: string | null;
   is_test: boolean;
 };
 
@@ -232,7 +234,7 @@ export async function settleCardcomSession(lowProfileId: string, options: Settle
 
   const { data: row, error: rowError } = await admin
     .from('payment_operations')
-    .select('id, campaign_id, event_id, outcome, amount, meta, provider_terminal, is_test')
+    .select('id, campaign_id, event_id, outcome, amount, meta, provider_terminal, is_test, provider_operation')
     .eq('id', session.operation_id)
     .maybeSingle();
   if (rowError || !row) return { status: 'error' };
@@ -306,10 +308,18 @@ export async function settleCardcomSession(lowProfileId: string, options: Settle
     providerDocument: document,
   };
 
-  // CardCom's guide: success is ResponseCode 0 AND Operation ChargeOnly. A "success" that is anything else, or that
-  // carries no transaction id, is not something to call paid and not something to call failed: a person looks.
-  if (result.Operation !== 'ChargeOnly' || typeof result.TranzactionId !== 'number' || result.TranzactionId <= 0) {
-    return close(admin, operation, { outcome: 'review', ...references, ...echoColumn, note: 'CardCom answered success, but not as a ChargeOnly charge with a transaction id — check in CardCom' });
+  // CardCom's guide: success is ResponseCode 0 AND the operation WE ASKED FOR (the row's birth stamp;
+  // null = ChargeOnly for rows born before 12.10.2026). An answer of a different operation — in either
+  // direction — or one with no transaction id, is not something to call paid and not something to call
+  // failed: a person looks. (A token CardCom volunteers on a ChargeOnly is terminal behavior, measured on
+  // the real run of 7.10.2026 — it is kept, never a review reason; the gate is the OPERATION.)
+  const expectedOperation = operation.provider_operation ?? 'ChargeOnly';
+  if (expectedOperation !== 'ChargeOnly' && expectedOperation !== 'ChargeAndCreateToken') {
+    // CreateTokenOnly (no money moves) and the rest have no settlement contract here yet; nothing opens them today.
+    return close(admin, operation, { outcome: 'review', ...references, ...echoColumn, note: `settlement for a ${expectedOperation} session is not built — resolve by hand` });
+  }
+  if (result.Operation !== expectedOperation || typeof result.TranzactionId !== 'number' || result.TranzactionId <= 0) {
+    return close(admin, operation, { outcome: 'review', ...references, ...echoColumn, note: `CardCom answered success, but as ${String(result.Operation ?? 'none')} where the session asked for ${expectedOperation}, or without a transaction id — check in CardCom` });
   }
 
   const documentType = result.DocumentInfo?.DocumentType;
@@ -359,6 +369,13 @@ export async function settleCardcomSession(lowProfileId: string, options: Settle
         },
       );
     }
+  }
+
+  // We asked CardCom to SAVE the card (the planned upgrades): a confirmed charge whose answer carries no token did
+  // not do what the customer approved — a person looks before it is counted.
+  if (expectedOperation === 'ChargeAndCreateToken'
+      && (cardFactsFromCardcom(result.TranzactionInfo, null)?.tokenRef ?? null) === null) {
+    return close(admin, operation, { outcome: 'review', ...references, ...echoColumn, meta, note: 'CardCom confirmed the charge but returned no card token although ChargeAndCreateToken was requested — check in CardCom, then resolve' });
   }
 
   // What CardCom says about the card, its token, and when it happened. Not in `references`: those are what a parked review row
