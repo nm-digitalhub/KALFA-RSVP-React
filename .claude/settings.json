@@ -187,7 +187,8 @@
   "workflowSizeGuideline": "medium",
   "enabledPlugins": {
     "postgres-best-practices@postgres-skills": true,
-    "ux-ui-design@nklisch-skills": true
+    "ux-ui-design@nklisch-skills": true,
+    "elevenlabs@elevenlabs": true
   },
   "extraKnownMarketplaces": {
     "postgres-skills": {
