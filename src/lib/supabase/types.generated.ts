@@ -1775,7 +1775,6 @@ export type Database = {
           close_at: string | null
           contact_quota: number | null
           created_at: string
-          enabled: boolean
           event_id: string
           id: string
           max_contacts: number
@@ -1783,7 +1782,6 @@ export type Database = {
           package_price: number | null
           start_at: string | null
           status: Database["public"]["Enums"]["campaign_status"]
-          steps: Json
           sumit_charge_document_id: number | null
           sumit_customer_id: number | null
           sumit_order_document_id: number | null
@@ -1805,7 +1803,6 @@ export type Database = {
           close_at?: string | null
           contact_quota?: number | null
           created_at?: string
-          enabled?: boolean
           event_id: string
           id?: string
           max_contacts: number
@@ -1813,7 +1810,6 @@ export type Database = {
           package_price?: number | null
           start_at?: string | null
           status?: Database["public"]["Enums"]["campaign_status"]
-          steps?: Json
           sumit_charge_document_id?: number | null
           sumit_customer_id?: number | null
           sumit_order_document_id?: number | null
@@ -1835,7 +1831,6 @@ export type Database = {
           close_at?: string | null
           contact_quota?: number | null
           created_at?: string
-          enabled?: boolean
           event_id?: string
           id?: string
           max_contacts?: number
@@ -1843,7 +1838,6 @@ export type Database = {
           package_price?: number | null
           start_at?: string | null
           status?: Database["public"]["Enums"]["campaign_status"]
-          steps?: Json
           sumit_charge_document_id?: number | null
           sumit_customer_id?: number | null
           sumit_order_document_id?: number | null
