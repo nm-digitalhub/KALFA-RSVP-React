@@ -9,7 +9,7 @@
     "dev": "next dev",
     "build": "NEXT_DIST_DIR=.next-verify next build --webpack",
     "start": "next start",
-    "gen:types": "supabase gen types --linked > src/lib/supabase/types.generated.ts",
+    "gen:types": "supabase gen types --linked > src/lib/supabase/types.generated.ts.tmp && mv src/lib/supabase/types.generated.ts.tmp src/lib/supabase/types.generated.ts",
     "types:check": "node scripts/check-supabase-types.mjs",
     "browser:check": "node scripts/check-puppeteer-browser.mjs",
     "natives:install": "node scripts/install-native-deps.mjs",
