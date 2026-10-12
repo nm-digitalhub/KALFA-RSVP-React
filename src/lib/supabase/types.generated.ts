@@ -8818,6 +8818,17 @@ export type Database = {
         }
         Returns: string
       }
+      replace_sales_coupon_assignment: {
+        Args: {
+          _call_attempt_id: string
+          _objection_reason: string
+          _offer_id: string
+          _old_assignment_id: string
+          _options: Json
+          _phone_e164: string
+        }
+        Returns: string
+      }
       reserve_outreach_step: {
         Args: {
           p_campaign: string

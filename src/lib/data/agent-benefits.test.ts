@@ -248,12 +248,13 @@ describe('applyAgentDiscount — D16/D23: the phone already holds an active assi
 
   it('an allowed escalation replaces: old closed into history, new recorded, better prices answered', async () => {
     const better = offerRow({ id: 'o-better', value: 10, may_replace: true }); // final 180 < 190
-    const { calls } = tableClient({
+    const { calls, rpc } = tableClient({
       coupon_assignments: [
         { data: null, error: null },
         { data: [assignmentRow()], error: null },
-        { data: null, error: null }, // void update of a-1
-        { data: { id: 'a-new' }, error: null }, // insert
+        { data: assignmentRow({ id: 'a-new', offer_id: 'o-better', coupon_assignment_options: [
+          { package_id: 'p-1', list_price: 200, final_price: 180, packages: { name: 'בסיס' } },
+        ] }), error: null }, // durable reread after RPC
       ],
       offers: [{ data: [better], error: null }],
       packages: [{ data: packageRows, error: null }],
@@ -265,6 +266,7 @@ describe('applyAgentDiscount — D16/D23: the phone already holds an active assi
       activity_log: [{ data: null, error: null }],
     });
 
+    rpc.mockResolvedValueOnce({ data: 'a-new', error: null });
     const answer = await applyAgentDiscount(input);
 
     expect(answer).toMatchObject({
@@ -272,9 +274,11 @@ describe('applyAgentDiscount — D16/D23: the phone already holds an active assi
       offer: { id: 'o-better' },
       options: [expect.objectContaining({ final_price: 180 })],
     });
-    expect(calls.coupon_assignment_events[0].insert).toHaveBeenCalledWith(
-      expect.objectContaining({ assignment_id: 'a-1', action: 'voided', reason: 'escalation_replaced' }),
-    );
+    expect(rpc).toHaveBeenCalledWith('replace_sales_coupon_assignment', expect.objectContaining({
+      _old_assignment_id: 'a-1', _offer_id: 'o-better', _call_attempt_id: 'call-1',
+    }));
+    expect(calls.coupon_assignments).toHaveLength(3);
+    expect(calls.coupon_assignment_events).toBeUndefined();
     expect(calls.activity_log[0].insert).toHaveBeenCalledWith(
       expect.objectContaining({
         meta: expect.objectContaining({ outcome: 'escalated', replacedAssignmentId: 'a-1' }),
@@ -325,8 +329,7 @@ describe('applyAgentDiscount — D16/D23: the phone already holds an active assi
       coupon_assignments: [
         { data: null, error: null },
         { data: [assignmentRow({ state: 'bound', bound_campaign_id: 'c-1' })], error: null },
-        { data: null, error: null }, // void update
-        { data: { id: 'a-new' }, error: null }, // insert
+        { data: assignmentRow({ id: 'a-new', offer_id: 'o-better', state: 'bound', bound_campaign_id: 'c-1' }), error: null },
       ],
       offers: [{ data: [better], error: null }],
       packages: [{ data: packageRows, error: null }],
@@ -340,10 +343,44 @@ describe('applyAgentDiscount — D16/D23: the phone already holds an active assi
       activity_log: [{ data: null, error: null }],
     });
 
+    rpc.mockResolvedValueOnce({ data: 'a-new', error: null });
     const answer = await applyAgentDiscount(input);
 
     expect(answer).toMatchObject({ status: 'offer', offer: { id: 'o-better' } });
-    expect(rpc).toHaveBeenCalledWith('release_coupon_assignment', expect.objectContaining({ _assignment_id: 'a-1' }));
-    expect(rpc).toHaveBeenCalledWith('bind_coupon_assignment', expect.objectContaining({ _assignment_id: 'a-new', _campaign_id: 'c-1' }));
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('replace_sales_coupon_assignment', expect.objectContaining({ _old_assignment_id: 'a-1' }));
+  });
+});
+
+describe('atomic replacement: durable state after RPC uncertainty', () => {
+  function replacementQueues(latest: Result) {
+    return {
+      coupon_assignments: [
+        { data: null, error: null }, { data: [assignmentRow()], error: null }, latest,
+      ],
+      offers: [{ data: [offerRow({ id: 'o-better', value: 10, may_replace: true })], error: null }],
+      packages: [{ data: packageRows, error: null }],
+      activity_log: [{ data: null, error: null }],
+    };
+  }
+  it('a refused RPC returns the still-stored old benefit without application-side writes', async () => {
+    const { rpc, calls } = tableClient(replacementQueues({ data: assignmentRow(), error: null }));
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'replacement refused' } });
+    expect(await applyAgentDiscount(input)).toMatchObject({ offer: { id: 'o-1' } });
+    expect(calls.coupon_assignments).toHaveLength(3);
+    for (const call of calls.coupon_assignments) {
+      expect(call.update).not.toHaveBeenCalled(); expect(call.insert).not.toHaveBeenCalled();
+    }
+  });
+  it('lost response after commit returns the stored replacement, not the cached old benefit', async () => {
+    const { rpc } = tableClient(replacementQueues({ data: assignmentRow({ id: 'a-new', offer_id: 'o-better' }), error: null }));
+    rpc.mockRejectedValueOnce(new Error('connection lost'));
+    expect(await applyAgentDiscount(input)).toMatchObject({ offer: { id: 'o-better' } });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+  it('cannot advertise either benefit when the durable reread fails', async () => {
+    const { rpc } = tableClient(replacementQueues({ data: null, error: { message: 'read failed' } }));
+    rpc.mockRejectedValueOnce(new Error('connection lost'));
+    expect(await applyAgentDiscount(input)).toEqual({ status: 'no_offer' });
   });
 });

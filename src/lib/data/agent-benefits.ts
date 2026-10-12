@@ -339,79 +339,49 @@ export async function applyAgentDiscount({
     for (const candidate of candidates) {
       if ((await escalationAllowed(admin, active, candidate)) !== 'replace') continue;
 
-      // The escalation: close the old into history, then write the better promise.
-      if (active.state === 'bound' && active.bound_campaign_id) {
-        const { error: releaseError } = await admin.rpc('release_coupon_assignment', {
-          _assignment_id: active.id,
-          _reason: 'replaced by escalation (D23)',
+      // Release, void, insert frozen options, history and re-bind are ONE RPC transaction.
+      // The RPC rechecks live state after row locks; the earlier read is only a quick precheck.
+      let replacementId: string | null = null;
+      try {
+        const { data, error } = await admin.rpc('replace_sales_coupon_assignment', {
+          _old_assignment_id: active.id,
+          _call_attempt_id: callAttemptId,
+          _phone_e164: phoneE164,
+          _offer_id: candidate.offer.id,
+          _objection_reason: objectionReason,
+          _options: candidate.options.map((option) => ({
+            package_id: option.package_id,
+            list_price: option.list_price,
+            discount_amount: option.discount_amount,
+            final_price: option.final_price,
+          })),
         });
-        if (releaseError) break; // raced into a held state — the existing promise stands
+        if (!error && typeof data === 'string') replacementId = data;
+      } catch {
+        // The response may have been lost AFTER commit. Never advertise the cached old row.
       }
-      const { error: voidError } = await admin
+
+      // Reread the durable state on success AND failure. A rollback retains the old promise;
+      // an unknown-but-committed result exposes the new one, without another replacement write.
+      const { data: latest, error: latestError } = await admin
         .from('coupon_assignments')
-        .update({ state: 'void' })
-        .eq('id', active.id)
-        .in('state', ['assigned', 'bound']);
-      if (voidError) break;
-      await admin.from('coupon_assignment_events').insert({
-        assignment_id: active.id,
-        action: 'voided',
-        actor_user_id: null,
-        reason: 'escalation_replaced',
-      });
-
-      const written = await insertAssignment(admin, {
-        callAttemptId,
-        phoneE164,
-        candidate,
-        objectionReason,
-      });
-      if (written === 'conflict' || written === 'failed') {
-        // The replacement could not be recorded — nothing new is promised.
-        await recordAgentDiscountActivity(admin, {
-          callAttemptId,
-          objectionReason,
-          outcome: 'escalation_write_failed',
-          voidedAssignmentId: active.id,
-        });
-        return { status: 'no_offer' };
-      }
-
-      // The benefit follows the live campaign (D17): the replaced assignment's campaign, when it
-      // had one on an unlocked round, receives the better promise in the bind's own transaction.
-      if (active.state === 'bound' && active.bound_campaign_id) {
-        const { error: bindError } = await admin.rpc('bind_coupon_assignment', {
-          _assignment_id: written.id,
-          _campaign_id: active.bound_campaign_id,
-        });
-        if (bindError) {
-          console.error('[agent-benefits] escalation re-bind did not complete', {
-            assignmentId: written.id,
-            campaignId: active.bound_campaign_id,
-            error: bindError.message,
-          });
-        }
-      }
+        .select(ASSIGNMENT_COLUMNS)
+        .eq('phone_e164', phoneE164)
+        .in('state', ['assigned', 'bound'])
+        .limit(1)
+        .maybeSingle();
+      const durable = latest as AssignmentRow | null;
+      if (latestError || !durable || Date.parse(durable.expires_at) <= Date.now()
+          || !durable.coupon_assignment_options?.length) return { status: 'no_offer' };
 
       await recordAgentDiscountActivity(admin, {
         callAttemptId,
         objectionReason,
-        outcome: 'escalated',
-        offerId: candidate.offer.id,
-        assignmentId: written.id,
+        outcome: replacementId === durable.id ? 'escalated' : 'replacement_state_reread',
+        assignmentId: durable.id,
         replacedAssignmentId: active.id,
       });
-      return {
-        status: 'offer',
-        offer: { id: candidate.offer.id, title: candidate.offer.title },
-        options: candidate.options.map(({ package_id, package_name, list_price, final_price }) => ({
-          package_id,
-          package_name,
-          list_price,
-          final_price,
-        })),
-        expiresAt: written.expiresAt,
-      };
+      return toAnswer(durable);
     }
 
     // No allowed escalation: the existing assignment IS the answer — same options, same expiry.
