@@ -28,6 +28,7 @@ const OUTCOME_TO_ERROR: Record<Exclude<PurchaseOutcome, 'paid' | 'already_paid'>
   disabled: PURCHASE_ERROR.DISABLED,
   not_purchasable: PURCHASE_ERROR.BAD_STATE,
   credit_unsupported: PURCHASE_ERROR.CREDIT,
+  reapproval_required: PURCHASE_ERROR.REAPPROVAL,
   error: PURCHASE_ERROR.FAILED,
 };
 

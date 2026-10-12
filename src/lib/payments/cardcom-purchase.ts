@@ -9,6 +9,7 @@ import { getCampaignCreditTotal } from '@/lib/data/billing';
 import type { CampaignPurchaseState } from '@/lib/data/campaigns';
 import { getCardcomServerConfig } from '@/lib/data/cardcom-config';
 import { getCurrentPricingOrThrow } from '@/lib/data/campaign-pricing';
+import { lapseExpiredBoundBenefit } from '@/lib/data/coupon-benefits';
 import { getPackageModelEnabled, getPaymentsEnabled } from '@/lib/data/payments';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Json } from '@/lib/supabase/types';
@@ -44,6 +45,7 @@ export type CardcomStartOutcome =
   | { status: 'disabled' } // a gate is closed
   | { status: 'not_purchasable' } // not a signed package campaign, no usable price, or it was refunded
   | { status: 'credit_unsupported' } // the event holds unspent credit and deducting it is not built yet
+  | { status: 'reapproval_required' } // the bound benefit expired before the session opened (D15) — new terms to approve
   | { status: 'error' }; // something failed BEFORE any payment could happen
 
 export type CardcomStartInput = {
@@ -175,6 +177,18 @@ export async function startCardcomPurchase(input: CardcomStartInput): Promise<Ca
       // Both reads are of the current round; a mismatch means a concurrent supersede — the buyer re-reads and re-approves.
       console.error('[cardcom-purchase] campaign price differs from its locked round; nothing was opened', { campaignId });
       return { status: 'not_purchasable' };
+    }
+    // D15 (task 5.3): the payment SESSION OPEN is the deciding step for a benefit's validity. An expired bound
+    // benefit lapses here — the locked round is superseded to the list price and the buyer re-approves — instead of
+    // dying as an opaque insert failure at the DB guard (which stays the backstop for the race past this check).
+    if (round.couponAssignmentId) {
+      const lapse = await lapseExpiredBoundBenefit({
+        campaignId,
+        assignmentId: round.couponAssignmentId,
+        listPrice: round.listPrice,
+        actorUserId: payer.userId,
+      });
+      if (lapse === 'lapsed') return { status: 'reapproval_required' };
     }
     pricingRoundId = round.roundId;
   } catch {

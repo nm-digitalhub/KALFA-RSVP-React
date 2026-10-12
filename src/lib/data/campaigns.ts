@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { unstable_rethrow } from 'next/navigation';
+
 import { requireUser, requirePlatformPermission } from '@/lib/auth/dal';
 import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import { requireOwnedEvent, requireEventAccess } from '@/lib/data/events';
@@ -17,6 +19,11 @@ import {
 } from '@/lib/data/package-activation-errors';
 import { getPackagePaymentState, packagePaymentOf } from '@/lib/payments/package-paid';
 import { getCurrentPricing, getCurrentPricingByCampaign } from '@/lib/data/campaign-pricing';
+import {
+  bindBestBenefit,
+  acceptBenefitForCampaign,
+  releaseCancelledCampaignBenefit,
+} from '@/lib/data/coupon-benefits';
 import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
 import { isPackageAgreementVersion } from '@/lib/agreements/template';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
@@ -217,7 +224,119 @@ export async function createCampaign(
     _outreach_schedule: offer.outreach_schedule as unknown as Json,
   });
   if (error || typeof data !== 'string') throw new Error('יצירת הקמפיין נכשלה');
+
+  // The binding applied at package choice (personal-coupons task 5.2): once the campaign and its
+  // round exist, the account's best eligible benefit for the chosen package is bound (D18 picks
+  // the lowest final price; a phone benefit is claimed on first use). NON-FATAL: a benefit that
+  // cannot be bound leaves the campaign at its list price — it never blocks the purchase flow.
+  try {
+    const user = await requireUser();
+    await bindBestBenefit({ campaignId: data, eventId, packageId: offer.id, user });
+  } catch (err) {
+    unstable_rethrow(err);
+    console.error('[campaigns] benefit bind at package choice failed', {
+      campaignId: data,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   return { id: data };
+}
+
+// The package change BEFORE approval (personal-coupons task 5.3, D5/D17): the event's pending
+// campaign moves to another offered package. One database transaction (change_campaign_package):
+// the campaign's snapshot fields, the current UNLOCKED round at the new list price, and the bound
+// benefit following the change — onto the new package's frozen option, or unbound when the new
+// package has no option. A locked round is refused there (past approval the only path is the
+// supersede operation). The celebrants/date gates are not re-run: they passed at creation and a
+// package change does not touch them.
+export async function changeCampaignPackage(
+  eventId: string,
+  packageId: string,
+): Promise<{ id: string; changed: boolean }> {
+  const event = await requireOwnedEvent(eventId);
+  assertEventNotPast(event.event_date);
+  if (event.status !== 'active') {
+    throw new Error(EVENT_NOT_CONFIRMED_ERROR);
+  }
+  const campaign = await getCampaignForEvent(eventId);
+  if (!campaign) throw new Error('אין קמפיין לאירוע — יש לבחור חבילה תחילה');
+  if (campaign.status !== 'pending_approval') {
+    throw new Error('לא ניתן להחליף חבילה אחרי אישור התנאים');
+  }
+  // The offer is read server-side by id — the browser submits only the choice.
+  const offer = await getPackageOffer(packageId);
+  if (!offer) throw new Error('החבילה שנבחרה אינה זמינה');
+
+  const user = await requireUser();
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc('change_campaign_package', {
+    _campaign_id: campaign.id,
+    _template_id: offer.id,
+    _list_price: offer.price,
+    _contact_quota: offer.contact_quota,
+    _allowed_channels: offer.channels,
+    _outreach_schedule: offer.outreach_schedule as unknown as Json,
+    _actor_user_id: user.id,
+  });
+  if (error || typeof data !== 'string') throw new Error('החלפת החבילה נכשלה');
+  if (data === 'unchanged') return { id: campaign.id, changed: false };
+
+  await logActivity({
+    eventId,
+    action: 'campaign.package_changed',
+    meta: { campaignId: campaign.id, packageId: offer.id, benefit: data },
+  });
+
+  // D18 after the move: another eligible benefit may price the NEW package lower than whatever the
+  // transaction left bound (or nothing is bound now) — the same non-fatal best-price pass as at
+  // package choice. bind_coupon_assignment releases a replaced assignment in the same transaction.
+  try {
+    await bindBestBenefit({ campaignId: campaign.id, eventId, packageId: offer.id, user });
+  } catch (err) {
+    unstable_rethrow(err);
+    console.error('[campaigns] benefit re-bind after package change failed', {
+      campaignId: campaign.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  return { id: campaign.id, changed: true };
+}
+
+// The acceptance flow's entry (task 5.5, ש5/D21): the owner of an APPROVED, unpaid campaign
+// accepts a waiting benefit — the approved terms are superseded by the discounted price and the
+// campaign returns to approval. Ownership proven first; the campaign must belong to the event and
+// hold approved terms; the supersede rpc itself refuses any campaign with money movement.
+export async function acceptCampaignBenefit(
+  eventId: string,
+  campaignId: string,
+): Promise<'accepted' | 'none'> {
+  await requireOwnedEvent(eventId);
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('campaigns')
+    .select('id, event_id, status, template_id')
+    .eq('id', campaignId)
+    .maybeSingle();
+  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  if (!data || data.event_id !== eventId) {
+    const { notFound } = await import('next/navigation');
+    notFound();
+  }
+  const campaign = data as NonNullable<typeof data>; // notFound() above never returns
+  if (campaign.status !== 'approved') {
+    throw new Error('ההטבה מתקבלת רק אחרי אישור תנאים וכשטרם שולם');
+  }
+  if (!campaign.template_id) throw new Error('לקמפיין אין חבילה');
+
+  const user = await requireUser();
+  return acceptBenefitForCampaign({
+    campaignId: campaign.id,
+    eventId,
+    packageId: campaign.template_id,
+    user,
+  });
 }
 
 export async function getCampaign(campaignId: string): Promise<OwnerCampaign> {
@@ -831,6 +950,18 @@ export async function cancelCampaign(campaignId: string): Promise<void> {
   if (error) throw new Error('ביטול הקמפיין נכשל');
   if (data === 'no_campaign' || data === 'not_cancellable') {
     throw new Error('לא ניתן לבטל קמפיין זה');
+  }
+  // D17 (personal-coupons task 5.3): a cancelled campaign frees its bound, unconsumed benefit so
+  // it follows the event's next campaign. Runs on 'already_cancelled' too — a release that failed
+  // on the first cancel self-heals on the retry. Loud but non-fatal (the cancel already stands).
+  try {
+    await releaseCancelledCampaignBenefit(campaignId, staff.id);
+  } catch (err) {
+    unstable_rethrow(err);
+    console.error('[campaigns] benefit release on cancel failed', {
+      campaignId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
   // 'cancelled' and 'already_cancelled' are both idempotent success.
   // Additive ops alert (fire-and-forget, fail-safe): only a FRESH cancellation

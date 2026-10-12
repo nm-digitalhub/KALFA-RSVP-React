@@ -21,7 +21,11 @@ import { withLedgerStamp } from '@/test/ledger-stamp-trigger';
 
 let fake: FakeTableClient;
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => fake.client }));
+// D15 (task 5.3): the lapse decision is the benefits module's own job (its tests); here it is a
+// stub so the tests pin only the routing — 'lapsed' → reapproval_required before any ledger write.
+vi.mock('@/lib/data/coupon-benefits', () => ({ lapseExpiredBoundBenefit: vi.fn() }));
 
+import { lapseExpiredBoundBenefit } from '@/lib/data/coupon-benefits';
 import { settleCardcomSession } from './cardcom-settle';
 import { startCardcomPurchase, type CardcomStartInput } from './cardcom-purchase';
 import { getPackagePaymentState } from './package-paid';
@@ -176,6 +180,39 @@ describe('startCardcomPurchase: what the ledger already says', () => {
       await expect(startCardcomPurchase(input())).resolves.toEqual({ status: 'in_progress' });
       expect(lowProfileCreate).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('startCardcomPurchase: the D15 lapse at open (task 5.3)', () => {
+  function roundWithBenefit() {
+    fake = createFakeTableClient({
+      payment_operations: [], payment_operation_lines: [], cardcom_payment_sessions: [],
+      campaign_pricing: [{ id: 'round-1', campaign_id: 'c1', version: 2, list_price: 149, discount_amount: 10, package_price: 139, locked_at: NOW.toISOString(), superseded_at: null, coupon_assignment_id: 'a-1' }],
+    }, {}, ledgerOptions);
+  }
+
+  it("'lapsed' answers reapproval_required BEFORE any ledger write — nothing pending, CardCom never asked", async () => {
+    roundWithBenefit();
+    vi.mocked(lapseExpiredBoundBenefit).mockResolvedValue('lapsed');
+
+    await expect(startCardcomPurchase(input({ campaign: { ...input().campaign, price: 139 } }))).resolves.toEqual({ status: 'reapproval_required' });
+
+    expect(lapseExpiredBoundBenefit).toHaveBeenCalledWith({ campaignId: 'c1', assignmentId: 'a-1', listPrice: 149, actorUserId: 'u1' });
+    expect(ops()).toEqual([]);
+    expect(lowProfileCreate).not.toHaveBeenCalled();
+  });
+
+  it("'kept' (still valid) proceeds to open the session at the DISCOUNTED price", async () => {
+    roundWithBenefit();
+    vi.mocked(lapseExpiredBoundBenefit).mockResolvedValue('kept');
+
+    await expect(startCardcomPurchase(input({ campaign: { ...input().campaign, price: 139 } }))).resolves.toMatchObject({ status: 'ready' });
+    expect(ops()).toMatchObject([{ outcome: 'pending', amount: 139, pricing_round_id: 'round-1' }]);
+  });
+
+  it('a round WITHOUT a benefit never consults the lapse path', async () => {
+    await expect(startCardcomPurchase(input())).resolves.toMatchObject({ status: 'ready' });
+    expect(lapseExpiredBoundBenefit).not.toHaveBeenCalled();
   });
 });
 

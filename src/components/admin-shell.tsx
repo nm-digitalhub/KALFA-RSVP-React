@@ -7,6 +7,7 @@ import { DirectionProvider } from '@base-ui/react/direction-provider';
 import {
   Activity,
   Ban,
+  BadgePercent,
   Bot,
   Building2,
   CalendarClock,
@@ -140,6 +141,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'מוצר וחוזה',
     items: [
       { href: '/admin/packages', label: 'חבילות', icon: Package, permission: 'manage_billing' },
+      // The staff-managed benefit offers (personal-coupons D14) — managed like the packages.
+      { href: '/admin/offers', label: 'הצעות להטבה', icon: BadgePercent, permission: 'manage_billing' },
       { href: '/admin/agreement', label: 'חוזה', icon: FileText, permission: 'manage_settings' },
       { href: '/admin/company', label: 'פרטי חברה', icon: Building2, permission: 'manage_settings' },
       { href: '/admin/faq', label: 'שאלות נפוצות', icon: CircleQuestionMark, permission: 'manage_settings' },

@@ -48,6 +48,8 @@ const START_FAILURE: Record<string, PurchaseErrorCode> = {
   credit_unsupported: 'credit_unsupported',
   event_past: 'event_past',
   event_not_active: 'event_not_active',
+  // D15: the benefit expired before the session opened — the terms await re-approval at the list price.
+  reapproval_required: 'reapproval_required',
 };
 
 const FIELD_MESSAGE: Record<CardholderField, string> = {

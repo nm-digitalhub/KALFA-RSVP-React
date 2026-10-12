@@ -17,6 +17,9 @@ export const PURCHASE_ERROR = {
   CREDIT: 'credit_unsupported',
   EVENT_PAST: 'event_past',
   EVENT_NOT_ACTIVE: 'event_not_active',
+  // D15 (personal-coupons): the benefit expired before payment opened — the price returned to the
+  // list price and the terms await a fresh approval.
+  REAPPROVAL: 'reapproval_required',
 } as const;
 
 export type PurchaseErrorCode = (typeof PURCHASE_ERROR)[keyof typeof PURCHASE_ERROR];
@@ -32,6 +35,7 @@ export const PURCHASE_ERROR_MESSAGES: Record<PurchaseErrorCode, string> = {
   credit_unsupported: 'לאירוע הזה יש קרדיט פתוח, ורכישה עם קרדיט עדיין לא נתמכת. פנו לתמיכה להשלמת הרכישה.',
   event_past: 'מועד האירוע כבר חלף — לא ניתן לרכוש חבילה עבור אירוע שעבר.',
   event_not_active: 'פרטי האירוע עוד לא אושרו — יש לאשר אותם לפני התשלום.',
+  reapproval_required: 'תוקף ההטבה הסתיים, והמחיר חזר למחיר המלא. יש לאשר את התנאים מחדש לפני התשלום.',
 };
 
 // `?error=` is attacker-controlled text. Only a code this module defines selects a sentence; anything else is nothing.

@@ -7,11 +7,14 @@ import { headers } from 'next/headers';
 
 import {
   createCampaign,
+  changeCampaignPackage,
+  acceptCampaignBenefit,
   activateCampaign,
   pauseCampaign,
   closeCampaign,
   cancelCampaign,
   getCampaignRef,
+  getCampaignForEvent,
   updateThankyouSchedule,
 } from '@/lib/data/campaigns';
 import { requireOwnedEvent, publishEvent, closeEvent, getEvent } from '@/lib/data/events';
@@ -103,12 +106,28 @@ export async function choosePackageAction(
   if (!parsed.success) return { error: 'יש לבחור חבילה' };
 
   try {
-    const campaign = await createCampaign(eventId, parsed.data.package_id);
-    await logActivity({
-      eventId,
-      action: 'campaign.package_chosen',
-      meta: { campaignId: campaign.id, packageId: parsed.data.package_id },
-    });
+    // A pending campaign already exists → this is a PACKAGE CHANGE (personal-coupons task 5.3,
+    // D5/D17): one DB transaction moves the campaign, the price and the bound benefit to the new
+    // package. Any other state keeps createCampaign's create-or-continue contract (an approved or
+    // later campaign is returned unchanged — no silent price change past approval).
+    const existing = await getCampaignForEvent(eventId);
+    if (existing && existing.status === 'pending_approval') {
+      const changed = await changeCampaignPackage(eventId, parsed.data.package_id);
+      if (changed.changed) {
+        await logActivity({
+          eventId,
+          action: 'campaign.package_chosen',
+          meta: { campaignId: changed.id, packageId: parsed.data.package_id, changedExisting: true },
+        });
+      }
+    } else {
+      const campaign = await createCampaign(eventId, parsed.data.package_id);
+      await logActivity({
+        eventId,
+        action: 'campaign.package_chosen',
+        meta: { campaignId: campaign.id, packageId: parsed.data.package_id },
+      });
+    }
   } catch (err) {
     unstable_rethrow(err);
     return { error: err instanceof Error ? err.message : 'בחירת החבילה נכשלה. נסו שוב.' };
@@ -125,6 +144,34 @@ export async function choosePackageAction(
 // (`terms_version`); recordPackageApproval compares it with the approved package document, derives everything else on the
 // server, and records who, when, from where and which version. The approval is the step right before paying, so the
 // customer lands straight on the payment page, not back on the setup steps.
+// The acceptance flow (task 5.5, ש5/D21): the banner's "יש לך הטבה — לחץ לקבל". Accepting
+// supersedes the approved price with the benefit's discounted one and routes back to the approval
+// step (the campaign is pending_approval again); ignoring the banner leaves the approved price
+// payable as it is.
+export async function acceptBenefitAction(
+  eventId: string,
+  campaignId: string,
+  _prevState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  void _prevState;
+  void _formData;
+  try {
+    const result = await acceptCampaignBenefit(eventId, campaignId);
+    if (result === 'none') {
+      return { error: 'לא נמצאה הטבה זמינה לקבלת ההנחה. ייתכן שפג תוקפה.' };
+    }
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: err instanceof Error ? err.message : 'קבלת ההטבה נכשלה. נסו שוב.' };
+  }
+
+  revalidatePath(`/app/events/${eventId}`);
+  revalidatePath(`/app/events/${eventId}/campaign`);
+  // Straight to approving the NEW terms at the discounted price.
+  redirect(`/app/events/${eventId}/setup`);
+}
+
 export async function approvePackageTermsAction(
   eventId: string,
   campaignId: string,

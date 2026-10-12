@@ -19,6 +19,9 @@ vi.mock('@/lib/data/cardcom-config', async (importOriginal) => ({
 vi.mock('@/lib/data/sumit-customers', () => ({ getSumitCustomerId: vi.fn(), recordSumitCustomerId: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/data/tax-ceiling', () => ({ checkOsekPaturCeilingAfterCharge: vi.fn() }));
+// D15 (task 5.3): the lapse decision is the benefits module's own job (its tests); the stub pins
+// only the routing — 'lapsed' → reapproval_required before any ledger write or charge.
+vi.mock('@/lib/data/coupon-benefits', () => ({ lapseExpiredBoundBenefit: vi.fn() }));
 // The real error classes (the purchase tells a decline from "we do not know" by class), a fake network call.
 vi.mock('@/lib/sumit/charge', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/sumit/charge')>()),
@@ -41,6 +44,7 @@ import { chargeSumit, SumitDeclinedError, SumitNetworkError, type SumitChargeRes
 import { saveCitizenId } from '@/lib/payments/card';
 import type { CampaignPurchaseState } from '@/lib/data/campaigns';
 import { getCardcomServerConfig } from '@/lib/data/cardcom-config';
+import { lapseExpiredBoundBenefit } from '@/lib/data/coupon-benefits';
 import { getPackagePaymentState, purchasePackage, type PackagePurchaseInput } from './package-purchase';
 
 // The package purchase is the one place a customer's card is charged for the whole package, once. The properties
@@ -164,6 +168,38 @@ beforeEach(() => {
 function purchaseRows(): TableRow[] {
   return db.rows('payment_operations').filter((r) => r.kind === 'package_purchase');
 }
+
+describe('purchasePackage — the D15 lapse at open (task 5.3)', () => {
+  function roundWithBenefit() {
+    db.rows('campaign_pricing')[0].discount_amount = 10;
+    db.rows('campaign_pricing')[0].package_price = 110;
+    db.rows('campaign_pricing')[0].coupon_assignment_id = 'a-1';
+  }
+
+  it("'lapsed' answers reapproval_required BEFORE any ledger write — nothing pending, nothing charged", async () => {
+    roundWithBenefit();
+    vi.mocked(lapseExpiredBoundBenefit).mockResolvedValue('lapsed');
+
+    await expect(purchasePackage(input({ campaign: { price: 110 } }))).resolves.toBe('reapproval_required');
+
+    expect(lapseExpiredBoundBenefit).toHaveBeenCalledWith({ campaignId: 'c1', assignmentId: 'a-1', listPrice: 120, actorUserId: 'u1' });
+    expect(purchaseRows()).toEqual([]);
+    expect(chargeSumit).not.toHaveBeenCalled();
+  });
+
+  it("'kept' (still valid) proceeds to charge the DISCOUNTED price", async () => {
+    roundWithBenefit();
+    vi.mocked(lapseExpiredBoundBenefit).mockResolvedValue('kept');
+
+    await expect(purchasePackage(input({ campaign: { price: 110 } }))).resolves.toBe('paid');
+    expect(purchaseRows()).toMatchObject([{ outcome: 'succeeded', amount: 110, pricing_round_id: 'round-1' }]);
+  });
+
+  it('a round WITHOUT a benefit never consults the lapse path', async () => {
+    await expect(purchasePackage(input())).resolves.toBe('paid');
+    expect(lapseExpiredBoundBenefit).not.toHaveBeenCalled();
+  });
+});
 
 describe('purchasePackage — closed gates (fail-closed, nothing written, nothing charged)', () => {
   it.each([

@@ -41,6 +41,13 @@ vi.mock('@/lib/data/payments', () => ({
 vi.mock('@/lib/data/agreements-doc', () => ({ getApprovedPackageAgreementDoc: vi.fn() }));
 // A paid package starts only when the LEDGER says it is paid, and its list is filled first.
 vi.mock('@/lib/data/authorized-fill', () => ({ fillAuthorizedSet: vi.fn() }));
+// Task 5.2: the benefit binding at package choice is the benefits module's own job (its tests);
+// here it is stubbed to "no benefit" and asserted as a wiring call only.
+vi.mock('@/lib/data/coupon-benefits', () => ({
+  bindBestBenefit: vi.fn(),
+  acceptBenefitForCampaign: vi.fn(),
+  releaseCancelledCampaignBenefit: vi.fn(),
+}));
 // The pricing module (task 4.1): "is this a package, and at what price" now comes from the campaign's current round.
 // Default: a locked 150 round (matching the collected:150 ledger default); the no-package tests override to null.
 vi.mock('@/lib/data/campaign-pricing', () => ({
@@ -82,10 +89,17 @@ function ownedEvent(
 }
 import { countUniqueContactsForEvent } from '@/lib/data/contacts';
 import {
+  bindBestBenefit,
+  acceptBenefitForCampaign,
+  releaseCancelledCampaignBenefit,
+} from '@/lib/data/coupon-benefits';
+import {
   getCampaignForPurchase,
   listPackageOffers,
   getPackageOffer,
   createCampaign,
+  changeCampaignPackage,
+  acceptCampaignBenefit,
   approveCampaign,
   activateCampaign,
   pauseCampaign,
@@ -736,6 +750,25 @@ describe('cancelCampaign (R8 — wind-down, platform-admin only)', () => {
     await expect(cancelCampaign('c1')).resolves.toBeUndefined();
     // already_cancelled is idempotent-retry noise → NO alert (no Slack spam).
     expect(sendSlackAlert).not.toHaveBeenCalled();
+    // D17 (task 5.3): the release retries on already_cancelled too — a release that failed on the
+    // first cancel self-heals.
+    expect(releaseCancelledCampaignBenefit).toHaveBeenCalledWith('c1', 'admin');
+  });
+
+  it('frees the bound benefit on a fresh cancel (D17), and a release failure never fails the cancel', async () => {
+    const { client } = adminWith<{ id: string; event_id: string }>({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+    client.rpc.mockResolvedValue({ data: 'cancelled', error: null });
+    vi.mocked(releaseCancelledCampaignBenefit).mockRejectedValueOnce(new Error('release exploded'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(cancelCampaign('c1')).resolves.toBeUndefined();
+
+    expect(releaseCancelledCampaignBenefit).toHaveBeenCalledWith('c1', 'admin');
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 
   it('throws a safe Hebrew message on not_cancellable', async () => {
@@ -1067,6 +1100,35 @@ describe('createCampaign(eventId, packageId) — a campaign from a fixed-price p
     });
   });
 
+  it('binds the account’s best benefit AFTER the campaign exists (task 5.2 wiring)', async () => {
+    wire();
+    vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
+    vi.mocked(bindBestBenefit).mockResolvedValue('bound');
+
+    const r = await createCampaign('e1', 'pkg-fixed');
+
+    expect(r.id).toBe('c-new');
+    expect(bindBestBenefit).toHaveBeenCalledWith({
+      campaignId: 'c-new',
+      eventId: 'e1',
+      packageId: 'pkg-fixed',
+      user: { id: 'u1' },
+    });
+  });
+
+  it('a failed benefit bind never fails the package choice — the campaign stays at list price', async () => {
+    wire();
+    vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
+    vi.mocked(bindBestBenefit).mockRejectedValue(new Error('benefit exploded'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const r = await createCampaign('e1', 'pkg-fixed');
+
+    expect(r.id).toBe('c-new');
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
   it('refuses while the package switch is off, writing nothing', async () => {
     const builder = wire();
     vi.mocked(getPackageModelEnabled).mockReset();
@@ -1099,6 +1161,122 @@ describe('createCampaign(eventId, packageId) — a campaign from a fixed-price p
     expect(r.id).toBe('c-existing');
     expect(builder.insert).not.toHaveBeenCalled();
     expect(getApprovedPackageAgreementDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe('acceptCampaignBenefit — the acceptance flow entry (task 5.5, ש5/D21)', () => {
+  function wireAccept(campaign: Record<string, unknown> | null) {
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
+    serverWith<unknown>({ data: campaign, error: null });
+  }
+
+  it('an APPROVED campaign hands off to the benefit accept with its own package', async () => {
+    wireAccept({ id: 'c1', event_id: 'e1', status: 'approved', template_id: 'pkg-fixed' });
+    vi.mocked(acceptBenefitForCampaign).mockResolvedValue('accepted');
+
+    const r = await acceptCampaignBenefit('e1', 'c1');
+
+    expect(r).toBe('accepted');
+    expect(requireOwnedEvent).toHaveBeenCalledWith('e1');
+    expect(acceptBenefitForCampaign).toHaveBeenCalledWith({
+      campaignId: 'c1',
+      eventId: 'e1',
+      packageId: 'pkg-fixed',
+      user: { id: 'u1' },
+    });
+  });
+
+  it('refuses a campaign that is not approved — the banner only exists on approved, unpaid terms', async () => {
+    wireAccept({ id: 'c1', event_id: 'e1', status: 'pending_approval', template_id: 'pkg-fixed' });
+
+    await expect(acceptCampaignBenefit('e1', 'c1')).rejects.toThrow(
+      'ההטבה מתקבלת רק אחרי אישור תנאים וכשטרם שולם',
+    );
+    expect(acceptBenefitForCampaign).not.toHaveBeenCalled();
+  });
+
+  it("404s a campaign of ANOTHER event — the id never overrides the ownership boundary", async () => {
+    wireAccept({ id: 'c1', event_id: 'e-other', status: 'approved', template_id: 'pkg-fixed' });
+
+    await expect(acceptCampaignBenefit('e1', 'c1')).rejects.toThrow();
+    expect(acceptBenefitForCampaign).not.toHaveBeenCalled();
+  });
+});
+
+describe('changeCampaignPackage — the pre-approval package change (task 5.3, D5/D17)', () => {
+  // requireOwnedEvent is mocked; the server client serves getCampaignForEvent; the admin client
+  // serves the offers read and the change rpc.
+  function wireChange(opts: { campaign?: Record<string, unknown> | null; offers?: unknown; rpcData?: unknown } = {}) {
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
+    vi.mocked(getPackageModelEnabled).mockResolvedValue(true);
+    const campaign =
+      opts.campaign === undefined ? { id: 'c1', event_id: 'e1', status: 'pending_approval' } : opts.campaign;
+    serverWith<unknown>({ data: campaign, error: null });
+    const { client } = adminWith<unknown>({ data: opts.offers ?? [packageRow()], error: null });
+    client.rpc.mockResolvedValue({ data: opts.rpcData ?? 'bound', error: null });
+    return { client };
+  }
+
+  it('moves the campaign in ONE rpc — the offer fields read server-side, never from the browser', async () => {
+    const { client } = wireChange();
+
+    const r = await changeCampaignPackage('e1', 'pkg-fixed');
+
+    expect(r).toEqual({ id: 'c1', changed: true });
+    expect(client.rpc).toHaveBeenCalledWith('change_campaign_package', {
+      _campaign_id: 'c1',
+      _template_id: 'pkg-fixed',
+      _list_price: 150,
+      _contact_quota: 40,
+      _allowed_channels: ['whatsapp'],
+      _outreach_schedule: [{ days_before: 7, channel: 'whatsapp', message_key: 'rsvp_1' }],
+      _actor_user_id: 'u1',
+    });
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'campaign.package_changed' }),
+    );
+    // D18 after the move: the best-price pass runs for the NEW package.
+    expect(bindBestBenefit).toHaveBeenCalledWith(
+      expect.objectContaining({ campaignId: 'c1', packageId: 'pkg-fixed' }),
+    );
+  });
+
+  it("'unchanged' (same package) logs nothing and skips the best-price pass", async () => {
+    wireChange({ rpcData: 'unchanged' });
+
+    const r = await changeCampaignPackage('e1', 'pkg-fixed');
+
+    expect(r).toEqual({ id: 'c1', changed: false });
+    expect(logActivity).not.toHaveBeenCalled();
+    expect(bindBestBenefit).not.toHaveBeenCalled();
+  });
+
+  it('refuses after approval — past approval the only path is the supersede operation', async () => {
+    const { client } = wireChange({ campaign: { id: 'c1', event_id: 'e1', status: 'approved' } });
+
+    await expect(changeCampaignPackage('e1', 'pkg-fixed')).rejects.toThrow(
+      'לא ניתן להחליף חבילה אחרי אישור התנאים',
+    );
+    expect(client.rpc).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the event has no campaign', async () => {
+    wireChange({ campaign: null });
+
+    await expect(changeCampaignPackage('e1', 'pkg-fixed')).rejects.toThrow(
+      'אין קמפיין לאירוע — יש לבחור חבילה תחילה',
+    );
+  });
+
+  it('refuses a package that is not an offer', async () => {
+    const { client } = wireChange({ offers: [] });
+
+    await expect(changeCampaignPackage('e1', 'pkg-other')).rejects.toThrow(
+      'החבילה שנבחרה אינה זמינה',
+    );
+    expect(client.rpc).not.toHaveBeenCalled();
   });
 });
 

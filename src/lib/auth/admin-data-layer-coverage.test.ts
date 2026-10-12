@@ -37,6 +37,8 @@ const EXEMPT: Record<string, string[]> = {
   'src/lib/data/admin/dashboard.ts': [],
   'src/lib/data/admin/event-view.ts': [],
   'src/lib/data/admin/events.ts': [],
+  'src/lib/data/admin/coupon-assignments.ts': [],
+  'src/lib/data/admin/offers.ts': [],
   'src/lib/data/admin/packages.ts': [],
   'src/lib/data/admin/payment-review.ts': [],
   'src/lib/data/admin/settings.ts': [],
@@ -104,6 +106,11 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // are two separate keys so marking alone can never delete anything.
   'src/lib/data/admin/test-events.ts': ['view_events', 'events.mark_test', 'events.purge_test'],
   'src/lib/data/admin/events.ts': 'manage_billing',
+  // The staff-managed benefit offers (personal-coupons D14) — managed under the same key as the
+  // packages they discount.
+  'src/lib/data/admin/offers.ts': 'manage_billing',
+  // Staff assignment of a personal benefit (D13/D18) — the same billing key as the offers.
+  'src/lib/data/admin/coupon-assignments.ts': 'manage_billing',
   'src/lib/data/admin/packages.ts': 'manage_billing',
   // Payment operations stuck in `review`: listing them, looking one up at the provider, and deciding it. The same key
   // as every other payment surface; the two targeted functions also record a staff-access audit row (AUDIT_REQUIRED).

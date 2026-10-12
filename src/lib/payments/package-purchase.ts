@@ -1,5 +1,6 @@
 import 'server-only';
 import { getCurrentPricingOrThrow } from '@/lib/data/campaign-pricing';
+import { lapseExpiredBoundBenefit } from '@/lib/data/coupon-benefits';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { logActivity } from '@/lib/data/activity';
@@ -49,6 +50,7 @@ export type PurchaseOutcome =
   | 'disabled' // a gate is closed
   | 'not_purchasable' // not a signed package campaign, or no usable price, or it was refunded
   | 'credit_unsupported' // the event holds unspent credit and deducting it is not built yet
+  | 'reapproval_required' // the bound benefit expired before the charge (D15) — new terms to approve
   | 'error'; // something failed BEFORE any charge; nothing was charged
 
 export interface PackagePurchaseInput {
@@ -195,6 +197,17 @@ export async function purchasePackage(input: PackagePurchaseInput): Promise<Purc
     if (!round || round.lockedAt === null || round.price !== price) {
       console.error('[package-purchase] no matching locked pricing round; nothing was charged', { campaignId });
       return 'not_purchasable';
+    }
+    // D15 (task 5.3) — same rule as the CardCom path: an expired bound benefit lapses at open; the
+    // locked round is superseded to the list price and the buyer re-approves.
+    if (round.couponAssignmentId) {
+      const lapse = await lapseExpiredBoundBenefit({
+        campaignId,
+        assignmentId: round.couponAssignmentId,
+        listPrice: round.listPrice,
+        actorUserId: payer.userId,
+      });
+      if (lapse === 'lapsed') return 'reapproval_required';
     }
     pricingRoundId = round.roundId;
   } catch {

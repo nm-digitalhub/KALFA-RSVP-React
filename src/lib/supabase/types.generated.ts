@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.15"
   }
   graphql_public: {
     Tables: {
@@ -8201,6 +8201,18 @@ export type Database = {
       cardcom_document_report_secret_save: {
         Args: { p_secret: string }
         Returns: undefined
+      }
+      change_campaign_package: {
+        Args: {
+          _actor_user_id?: string
+          _allowed_channels: Database["public"]["Enums"]["campaign_channel"][]
+          _campaign_id: string
+          _contact_quota: number
+          _list_price: number
+          _outreach_schedule: Json
+          _template_id: string
+        }
+        Returns: string
       }
       claim_callback_triage: {
         Args: never

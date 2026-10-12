@@ -41,6 +41,11 @@ vi.mock('@/lib/data/event-exchange-sync', () => ({
 }));
 vi.mock('@/lib/data/campaigns', () => ({
   createCampaign: vi.fn(),
+  // Task 5.3: choosePackageAction dispatches to the package CHANGE when a pending campaign exists.
+  changeCampaignPackage: vi.fn(),
+  getCampaignForEvent: vi.fn(),
+  // Task 5.5: the acceptance flow.
+  acceptCampaignBenefit: vi.fn(),
   // The fixed-price package catalogue: EMPTY by default (the production default — the package switch is off).
   listPackageOffers: vi.fn().mockResolvedValue([]),
   activateCampaign: vi.fn(),
@@ -54,13 +59,21 @@ vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 
 import { publishEvent, closeEvent, requireOwnedEvent, getEvent } from '@/lib/data/events';
 import { syncEventToExchange, markEventExchangeCancelled } from '@/lib/data/event-exchange-sync';
-import { cancelCampaign, createCampaign, listPackageOffers } from '@/lib/data/campaigns';
+import {
+  cancelCampaign,
+  createCampaign,
+  changeCampaignPackage,
+  acceptCampaignBenefit,
+  getCampaignForEvent,
+  listPackageOffers,
+} from '@/lib/data/campaigns';
 import { redirect } from 'next/navigation';
 import { recordPackageApproval } from '@/lib/data/agreements';
 import { logActivity } from '@/lib/data/activity';
 import {
   setupCampaignAction,
   choosePackageAction,
+  acceptBenefitAction,
   approvePackageTermsAction,
   closeEventAction,
   cancelCampaignAction,
@@ -259,6 +272,8 @@ describe('setupCampaignAction — "אישור פרטי האירוע והמשך" 
 // Earlier suites leave rejected/resolved implementations behind (clearAllMocks keeps them), so these start clean.
 function resetPackageMocks() {
   vi.mocked(createCampaign).mockReset();
+  vi.mocked(changeCampaignPackage).mockReset();
+  vi.mocked(getCampaignForEvent).mockReset();
   vi.mocked(listPackageOffers).mockReset();
   vi.mocked(listPackageOffers).mockResolvedValue([]);
   vi.mocked(logActivity).mockReset();
@@ -296,6 +311,41 @@ describe('choosePackageAction — the owner picks a fixed-price package', () => 
       expect(createCampaign).not.toHaveBeenCalled();
     },
   );
+
+  it('a PENDING campaign routes to the package CHANGE (task 5.3) — never a second campaign', async () => {
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c-old', status: 'pending_approval' } as never);
+    vi.mocked(changeCampaignPackage).mockResolvedValue({ id: 'c-old', changed: true });
+
+    await expect(choosePackageAction('e1', null, form(PKG))).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(changeCampaignPackage).toHaveBeenCalledWith('e1', PKG);
+    expect(createCampaign).not.toHaveBeenCalled();
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'campaign.package_chosen',
+        meta: expect.objectContaining({ changedExisting: true }),
+      }),
+    );
+  });
+
+  it('an APPROVED campaign keeps the create-or-continue contract — no silent price change past approval', async () => {
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c-old', status: 'approved' } as never);
+    vi.mocked(createCampaign).mockResolvedValue({ id: 'c-old' });
+
+    await expect(choosePackageAction('e1', null, form(PKG))).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(changeCampaignPackage).not.toHaveBeenCalled();
+    expect(createCampaign).toHaveBeenCalledWith('e1', PKG);
+  });
+
+  it("an unchanged package ('unchanged') records nothing", async () => {
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c-old', status: 'pending_approval' } as never);
+    vi.mocked(changeCampaignPackage).mockResolvedValue({ id: 'c-old', changed: false });
+
+    await expect(choosePackageAction('e1', null, form(PKG))).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(logActivity).not.toHaveBeenCalled();
+  });
 
   it('shows the data layer\'s own safe message when the package is unavailable', async () => {
     vi.mocked(createCampaign).mockRejectedValue(new Error('החבילה שנבחרה אינה זמינה'));
@@ -381,5 +431,37 @@ describe('approvePackageTermsAction — the customer approves the package terms'
       Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;replace;/app;307;' }),
     );
     await expect(approvePackageTermsAction('e1', CAMPAIGN, null, form())).rejects.toThrow('NEXT_REDIRECT');
+  });
+});
+
+// ש5/D21 (task 5.5): accepting the waiting benefit supersedes the approved price and routes back
+// to the approval step; ignoring it leaves the approved price payable (nothing here runs then).
+describe('acceptBenefitAction — the "יש לך הטבה" banner', () => {
+  it('accepts and routes straight back to the setup flow (the new terms await approval)', async () => {
+    vi.mocked(acceptCampaignBenefit).mockResolvedValue('accepted');
+
+    await expect(acceptBenefitAction('e1', 'c1', null, new FormData())).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(acceptCampaignBenefit).toHaveBeenCalledWith('e1', 'c1');
+    expect(redirect).toHaveBeenCalledWith('/app/events/e1/setup');
+  });
+
+  it("'none' (expired or gone) answers a safe message and routes nowhere", async () => {
+    vi.mocked(acceptCampaignBenefit).mockResolvedValue('none');
+
+    const result = await acceptBenefitAction('e1', 'c1', null, new FormData());
+
+    expect(result).toEqual({ error: 'לא נמצאה הטבה זמינה לקבלת ההנחה. ייתכן שפג תוקפה.' });
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the data layer's own safe message", async () => {
+    vi.mocked(acceptCampaignBenefit).mockRejectedValue(
+      new Error('ההטבה מתקבלת רק אחרי אישור תנאים וכשטרם שולם'),
+    );
+
+    const result = await acceptBenefitAction('e1', 'c1', null, new FormData());
+
+    expect(result).toEqual({ error: 'ההטבה מתקבלת רק אחרי אישור תנאים וכשטרם שולם' });
   });
 });

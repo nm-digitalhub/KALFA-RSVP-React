@@ -358,6 +358,76 @@ export const operationalFieldsSchema = z
   });
 export type OperationalFieldsInput = z.infer<typeof operationalFieldsSchema>;
 
+// --- offers (personal-coupons D14/D23): the staff-managed benefit offers ---
+
+const OFFER_TITLE_MAX = 120;
+const OFFER_OBJECTION_MAX = 80;
+const OFFER_OBJECTIONS_MAX_ITEMS = 20;
+const OFFER_PACKAGES_MAX_ITEMS = 50;
+
+// D23's objection kinds are FREE VALUES, one per line — never a closed list in code; the server
+// matches the agent's reported reason against whatever the staff wrote here.
+const objectionsFromTextarea = z
+  .union([z.string(), z.undefined(), z.null()])
+  .transform((value) =>
+    (value ?? '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== ''),
+  )
+  .pipe(
+    z
+      .array(z.string().max(OFFER_OBJECTION_MAX, { error: 'סיבת התנגדות ארוכה מדי' }))
+      .max(OFFER_OBJECTIONS_MAX_ITEMS, { error: 'יותר מדי סיבות התנגדות' }),
+  );
+
+// A per-package value override (D14: a pricier package may carry a larger discount). Blank/absent
+// means "no override — use the offer's own value"; preprocessed to null BEFORE coercion, because
+// z.coerce.number would silently turn null into 0.
+const offerValueOverride = z.preprocess(
+  (value) => (value === undefined || value === null || value === '' ? null : value),
+  z.union([
+    z.null(),
+    z.coerce
+      .number({ error: 'נא להזין גובה הנחה תקין' })
+      .positive({ error: 'גובה ההנחה חייב להיות חיובי' }),
+  ]),
+);
+
+export const offerSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, { error: 'נא להזין שם הצעה' })
+    .max(OFFER_TITLE_MAX, { error: 'שם ההצעה ארוך מדי' }),
+  kind: z.enum(['percent', 'amount'], { error: 'נא לבחור סוג הנחה' }),
+  value: z.coerce
+    .number({ error: 'נא להזין גובה הנחה תקין' })
+    .positive({ error: 'גובה ההנחה חייב להיות חיובי' }),
+  validity_days: z.coerce
+    .number({ error: 'נא להזין מספר ימים תקין' })
+    .int({ error: 'התוקף חייב להיות מספר שלם של ימים' })
+    .positive({ error: 'התוקף חייב להיות לפחות יום אחד' }),
+  allow_agent: activeCheckbox,
+  allow_staff: activeCheckbox,
+  agent_objections: objectionsFromTextarea,
+  may_replace: activeCheckbox,
+  is_active: activeCheckbox,
+  // An offer exists to allow packages (D14); an empty set would freeze an assignment with no
+  // options, so the form refuses it outright.
+  packages: z
+    .array(
+      z.object({
+        package_id: z.uuid({ error: 'מזהה חבילה לא תקין' }),
+        value_override: offerValueOverride,
+      }),
+    )
+    .min(1, { error: 'נא לבחור לפחות חבילה אחת' })
+    .max(OFFER_PACKAGES_MAX_ITEMS, { error: 'יותר מדי חבילות' }),
+});
+
+export type OfferInput = z.infer<typeof offerSchema>;
+
 // --- app_role (for reference / future role management) ---
 export const appRoleEnum = z.enum(Constants.public.Enums.app_role, {
   error: 'תפקיד לא תקין',
