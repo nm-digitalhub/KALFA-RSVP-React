@@ -44,23 +44,29 @@ export const OPEN_FIELDS_CAPTCHA_FIELD = 'reCaptcha';
 // Loaded onto the payment page: CardCom's 3D Secure handling.
 export const OPEN_FIELDS_3DS_SCRIPT = `${OPEN_FIELDS_ORIGIN}/External/OpenFields/3DS.js`;
 
-// The CSS CardCom injects into each frame. It cannot read our design tokens (a frame is another document), so it is plain:
-// the same border, radius and height as the page's own inputs, and a visible focus ring.
+// The CSS CardCom injects into each frame. It cannot read our design tokens (a frame is another document), so the
+// values below are the LITERALS of the page's own <Input> (src/components/ui/input.tsx: h-8, rounded-lg, border-input,
+// bg-transparent, px-2.5, text-base; tokens from globals.css light theme). Owner 12.10: the CVV box visibly mismatched
+// the MM/YY inputs beside it — keep these in lockstep with the Input component.
 const FIELD_CSS = `
   body { margin: 0; }
   input, #cardNumber, #cvvField {
     box-sizing: border-box;
     width: 100%;
-    height: 40px;
+    height: 32px;
     margin: 0;
-    padding: 0 12px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
+    padding: 4px 10px;
+    border: 1px solid oklch(0.922 0 0);
+    border-radius: 10px;
     font-size: 16px;
-    background: #ffffff;
-    color: #0f172a;
+    background: transparent;
+    color: oklch(0.145 0 0);
   }
-  input:focus, #cardNumber:focus, #cvvField:focus { outline: 2px solid #2563eb; outline-offset: 1px; }
+  input:focus, #cardNumber:focus, #cvvField:focus {
+    outline: none;
+    border-color: oklch(0.511 0.262 276.97);
+    box-shadow: 0 0 0 3px oklch(0.511 0.262 276.97 / 50%);
+  }
   .invalid { border-color: #b91c1c; }
   input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   input[type=number] { -moz-appearance: textfield; }

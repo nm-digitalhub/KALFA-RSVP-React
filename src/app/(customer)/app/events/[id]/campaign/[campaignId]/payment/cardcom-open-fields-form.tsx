@@ -342,7 +342,7 @@ export function CardcomOpenFieldsForm({
               name={OPEN_FIELDS_FRAME_ID.cardNumber}
               title="מספר כרטיס אשראי"
               src={OPEN_FIELDS_FRAME_SRC.cardNumber}
-              className="block h-10 w-full border-0"
+              className="block h-8 w-full border-0"
               dir="ltr"
             />
           </div>
@@ -367,7 +367,7 @@ export function CardcomOpenFieldsForm({
                 name={OPEN_FIELDS_FRAME_ID.cvv}
                 title="קוד אבטחה (CVV)"
                 src={OPEN_FIELDS_FRAME_SRC.cvv}
-                className="block h-10 w-full border-0"
+                className="block h-8 w-full border-0"
                 dir="ltr"
               />
             </div>
