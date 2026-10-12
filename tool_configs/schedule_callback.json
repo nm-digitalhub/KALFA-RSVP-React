@@ -1,7 +1,7 @@
 {
     "type": "client",
     "name": "schedule_callback",
-    "description": "כשהאורח מבקש שנחזור אליו במועד אחר (\"תחזרו אליי מחר\", \"עכשיו לא נוח\", \"בערב\", \"אחרי החג\") — קראי לכלי גם עם callback_when_text (כלשונו) וגם עם callback_iso (הזמן המחושב). בלי callback_iso השיחה החוזרת לא תתבצע כלל. כשאת מאשרת לאורח בקול — אמרי את השעה בשעון ישראל בפורמט 24 שעות (\"נחזור אליך בסביבות 19:00\"). אחרי שהכלי חוזר, אשרי בקצרה וסיימי ב-end_call. מחזיר noted/queued.",
+    "description": "\u05db\u05d0\u05e9\u05e8 \u05d4\u05e4\u05d5\u05e0\u05d4 \u05de\u05d1\u05e7\u05e9 \u05d7\u05d6\u05e8\u05d4 \u05d1\u05de\u05d5\u05e2\u05d3 \u05d0\u05d7\u05e8, \u05e9\u05d5\u05dc\u05d7\u05d9\u05dd callback_when_text \u05db\u05dc\u05e9\u05d5\u05e0\u05d5 \u05d5-callback_iso \u05e2\u05ea\u05d9\u05d3\u05d9 \u05d1\u05e4\u05d5\u05e8\u05de\u05d8 ISO 8601. \u05d0\u05dd \u05d4\u05de\u05d5\u05e2\u05d3 \u05e2\u05de\u05d5\u05dd, \u05de\u05d1\u05e7\u05e9\u05d9\u05dd \u05d4\u05d1\u05d4\u05e8\u05d4 \u05dc\u05e4\u05e0\u05d9 \u05ea\u05d6\u05de\u05d5\u05df. \u05d0\u05d9\u05df \u05dc\u05d0\u05e9\u05e8 \u05e9\u05e0\u05e7\u05d1\u05e2\u05d4 \u05d7\u05d6\u05e8\u05d4 \u05d1\u05dc\u05d9 \u05ea\u05d5\u05e6\u05d0\u05d4 \u05de\u05d5\u05e6\u05dc\u05d7\u05ea \u05de\u05d4\u05db\u05dc\u05d9. \u05d0\u05ea \u05d4\u05e9\u05e2\u05d4 \u05d0\u05d5\u05de\u05e8\u05d9\u05dd \u05d1\u05e9\u05e2\u05d5\u05df \u05d9\u05e9\u05e8\u05d0\u05dc. \u05dc\u05d0\u05d7\u05e8 \u05d4\u05e6\u05dc\u05d7\u05d4 \u05de\u05e1\u05d9\u05d9\u05de\u05d9\u05dd \u05dc\u05e4\u05d9 \u05d4\u05d5\u05e8\u05d0\u05d5\u05ea \u05d4\u05e1\u05d5\u05db\u05df.",
     "response_timeout_secs": 10,
     "disable_interruptions": false,
     "interruption_mode": "allow",
@@ -21,7 +21,7 @@
         "properties": {
             "callback_when_text": {
                 "type": "string",
-                "description": "הזמן שהאורח ציין לחזרה, כלשונו בעברית (\"מחר בערב\", \"אחרי שש\", \"ביום ראשון\")",
+                "description": "\u05de\u05d5\u05e2\u05d3 \u05d4\u05d7\u05d6\u05e8\u05d4 \u05e9\u05d4\u05e4\u05d5\u05e0\u05d4 \u05e6\u05d9\u05d9\u05df \u05d1\u05de\u05d9\u05dc\u05d5\u05ea\u05d9\u05d5, \u05e2\u05d3 200 \u05ea\u05d5\u05d5\u05d9\u05dd. \u05dc\u05d3\u05d5\u05d2\u05de\u05d4: \"\u05de\u05d7\u05e8 \u05d1\u05e9\u05de\u05d5\u05e0\u05d4 \u05d1\u05e2\u05e8\u05d1\". \u05d0\u05d9\u05df \u05dc\u05d4\u05de\u05e6\u05d9\u05d0 \u05de\u05d5\u05e2\u05d3 \u05e9\u05dc\u05d0 \u05d4\u05ea\u05d1\u05e7\u05e9.",
                 "is_system_provided": false,
                 "dynamic_variable": "",
                 "allowed_values_dynamic_variable": "",
@@ -30,7 +30,7 @@
             },
             "callback_iso": {
                 "type": "string",
-                "description": "הזמן המוחלט לחזרה, ISO 8601. חשבי אותו מ-{{system__time_utc}} — הזמן הנוכחי ב-UTC, זמין לך תמיד. דוגמאות: \"בעוד עשרים דקות\" ← system__time_utc ועוד 20 דקות. \"מחר בשמונה בערב\" ← מחר בשעה 20:00 שעון ישראל, מומר ל-UTC. שעון ישראל הוא UTC+3 בקיץ (אפריל–אוקטובר) ו-UTC+2 בחורף. השאירי ריק רק אם האורח לא נקב בזמן כלשהו (\"מתישהו\", \"תחזרו אליי\") — זמן יחסי כמו \"בעוד שעה\" או \"מחר\" הוא תמיד ניתן לחישוב.",
+                "description": "\u05de\u05d5\u05e2\u05d3 \u05de\u05d5\u05d7\u05dc\u05d8 \u05d1\u05e2\u05ea\u05d9\u05d3 \u05d1\u05e4\u05d5\u05e8\u05de\u05d8 ISO 8601, \u05e2\u05d3 40 \u05ea\u05d5\u05d5\u05d9\u05dd. \u05d7\u05d9\u05e9\u05d5\u05d1 \u05d6\u05de\u05df \u05d9\u05d7\u05e1\u05d9 \u05de\u05ea\u05d1\u05e1\u05e1 \u05e2\u05dc {{system__time_utc}}; \u05de\u05d5\u05e2\u05d3 \u05e9\u05e0\u05d0\u05de\u05e8 \u05d1\u05e9\u05e2\u05d5\u05df \u05d9\u05e9\u05e8\u05d0\u05dc \u05de\u05e4\u05d5\u05e8\u05e9 \u05dc\u05e4\u05d9 Asia/Jerusalem \u05d1\u05ea\u05d0\u05e8\u05d9\u05da \u05d4\u05de\u05d1\u05d5\u05e7\u05e9, \u05db\u05d5\u05dc\u05dc \u05e9\u05e2\u05d5\u05df \u05e7\u05d9\u05e5 \u05d0\u05d5 \u05d7\u05d5\u05e8\u05e3. \u05d0\u05d9\u05df \u05dc\u05d4\u05e0\u05d9\u05d7 \u05d4\u05e4\u05e8\u05e9 UTC \u05e7\u05d1\u05d5\u05e2 \u05dc\u05e4\u05d9 \u05d7\u05d5\u05d3\u05e9. \u05dc\u05d3\u05d5\u05d2\u05de\u05ea \u05e4\u05d5\u05e8\u05de\u05d8 \u05d1\u05dc\u05d1\u05d3: 2026-10-13T17:00:00Z. \u05d0\u05dd \u05d4\u05de\u05d5\u05e2\u05d3 \u05d0\u05d9\u05e0\u05d5 \u05d1\u05e8\u05d5\u05e8, \u05d9\u05e9 \u05dc\u05e9\u05d0\u05d5\u05dc \u05d4\u05d1\u05d4\u05e8\u05d4. \u05d0\u05d9\u05df \u05dc\u05d4\u05e9\u05d0\u05d9\u05e8 \u05e8\u05d9\u05e7 \u05d5\u05dc\u05d4\u05d1\u05d8\u05d9\u05d7 \u05ea\u05d6\u05de\u05d5\u05df.",
                 "is_system_provided": false,
                 "dynamic_variable": "",
                 "allowed_values_dynamic_variable": "",

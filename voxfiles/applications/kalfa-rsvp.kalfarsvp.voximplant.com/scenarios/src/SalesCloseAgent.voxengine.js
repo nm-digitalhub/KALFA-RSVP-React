@@ -514,7 +514,8 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                                                 list_price: option.list_price,
                                                 final_price: option.final_price
                                             };
-                                        })
+                                        }),
+                                        expires_at: typeof body.expires_at === 'string' ? body.expires_at : null
                                     };
                                 }
                                 return { offer: null, options: [] };
@@ -540,7 +541,10 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             return { reason: String(args.reason || '').slice(0, 300) };
                         },
                         resultFrom: function (ok, body) {
-                            return { transferred: ok && !!body && body.transferred === true };
+                            return {
+                                transferred: ok && !!body && body.transferred === true,
+                                notified: ok && !!body && body.notified === true
+                            };
                         }
                     },
                     log_outcome: {
@@ -554,12 +558,16 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                                 body.discount_tier_applied = tier.slice(0, 64);
                             return body;
                         },
-                        resultFrom: function (ok) { return ok ? 'recorded' : 'failed'; }
+                        resultFrom: function (ok, body) {
+                            if (!ok || !body) return 'failed';
+                            if (body.ok === true) return 'recorded';
+                            return body.already_recorded === true ? 'already_recorded' : 'failed';
+                        }
                     },
                     mark_dnc: {
                         path: 'dnc',
                         body: function () { return {}; },
-                        resultFrom: function (ok) { return ok ? 'removed' : 'failed'; }
+                        resultFrom: function (ok, body) { return ok && !!body && body.ok === true ? 'removed' : 'failed'; }
                     },
                     notify_owner: {
                         path: 'note',
@@ -568,7 +576,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             var kind = kinds.indexOf(args.kind) !== -1 ? args.kind : 'flag';
                             return { kind: kind, text: String(args.text || '').slice(0, 500) };
                         },
-                        resultFrom: function (ok) { return ok ? 'noted' : 'failed'; }
+                        resultFrom: function (ok, body) { return ok && !!body && body.ok === true ? 'noted' : 'failed'; }
                     },
                     schedule_callback: {
                         path: 'schedule',
@@ -581,7 +589,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                                 body.callback_iso = iso.slice(0, 40);
                             return body;
                         },
-                        resultFrom: function (ok) { return ok ? 'noted' : 'failed'; }
+                        resultFrom: function (ok, body) { return ok && !!body && body.ok === true ? 'noted' : 'failed'; }
                     }
                 };
                 function normalizedToolArgs(rawArgs) {
