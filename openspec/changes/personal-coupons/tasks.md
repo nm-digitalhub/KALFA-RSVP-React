@@ -90,6 +90,6 @@ Database checks re-measure the live state; none assumes a fixed count. Every con
 
 ## 8. Contract (phase 3 of D8)
 
-- [ ] 8.1 Run the equality query (D8) on live. Verify: it returns no rows; the output is recorded in this change.
+- [x] 8.1 Run the equality query (D8) on live. Verify: it returns no rows; the output is recorded in this change.
 - [ ] 8.2 Rollback rule (D8): before the coupon switch turns on, add the query listing campaigns that carry an assignment to the runbook. Verify: it returns a seeded test campaign with an assignment, and nothing else.
-- [ ] 8.3 After the deploy of groups 1–7: `npx supabase migration new drop_campaigns_package_price`. It drops the mirror trigger and the column; then regenerate the types. Verify: tsc and the full suite pass; nothing reads the old column.
+- [x] 8.3 After the deploy of groups 1–7: `npx supabase migration new drop_campaigns_package_price`. It drops the mirror trigger and the column; then regenerate the types. Verify: tsc and the full suite pass; nothing reads the old column.

@@ -1779,7 +1779,6 @@ export type Database = {
           id: string
           max_contacts: number
           outreach_schedule: Json | null
-          package_price: number | null
           start_at: string | null
           status: Database["public"]["Enums"]["campaign_status"]
           sumit_charge_document_id: number | null
@@ -1807,7 +1806,6 @@ export type Database = {
           id?: string
           max_contacts: number
           outreach_schedule?: Json | null
-          package_price?: number | null
           start_at?: string | null
           status?: Database["public"]["Enums"]["campaign_status"]
           sumit_charge_document_id?: number | null
@@ -1835,7 +1833,6 @@ export type Database = {
           id?: string
           max_contacts?: number
           outreach_schedule?: Json | null
-          package_price?: number | null
           start_at?: string | null
           status?: Database["public"]["Enums"]["campaign_status"]
           sumit_charge_document_id?: number | null

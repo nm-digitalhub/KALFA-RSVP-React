@@ -93,11 +93,17 @@ describe('setup page — nothing on offer (the package switch is off)', () => {
     expect(html).toContain('data-offers="[]"');
   });
 
-  it('a campaign that already exists never triggers a catalogue read', async () => {
-    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'pending_approval', package_price: 150 } as never);
+  it('a PENDING campaign still reads the catalogue — the same step changes the package (5.3)', async () => {
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'pending_approval' } as never);
     const html = await render();
-    expect(listPackageOffers).not.toHaveBeenCalled();
+    expect(listPackageOffers).toHaveBeenCalledTimes(1);
     expect(html).toContain('data-marker="package-terms"');
+  });
+
+  it('a campaign past approval never triggers a catalogue read', async () => {
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'approved' } as never);
+    await render();
+    expect(listPackageOffers).not.toHaveBeenCalled();
   });
 });
 

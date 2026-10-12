@@ -521,6 +521,7 @@ export type AssignableOffer = {
 export async function listAssignableOffers(
   format: { currency: (amount: number) => string; date: (value: Date) => string },
 ): Promise<AssignableOffer[]> {
+  await requirePlatformPermission('manage_billing');
   const [offers, choices] = await Promise.all([listOffers(), listOfferPackageChoices()]);
   const byPackage = new Map(choices.map((c) => [c.id, { name: c.name, price: c.price_with_vat }]));
   const nowMs = Date.now();
