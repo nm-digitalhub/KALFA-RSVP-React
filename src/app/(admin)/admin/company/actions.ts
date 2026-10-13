@@ -2,21 +2,11 @@
 
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { unstable_rethrow } from 'next/navigation';
 
 import { updateCompanySettings } from '@/lib/data/admin/settings';
 import { companySettingsSchema } from '@/lib/validation/admin';
 import type { FormState } from '@/lib/validation/result';
-
-function isNextControlFlow(err: unknown): boolean {
-  return (
-    !!err &&
-    typeof err === 'object' &&
-    'digest' in err &&
-    typeof (err as { digest?: unknown }).digest === 'string' &&
-    ((err as { digest: string }).digest.startsWith('NEXT_REDIRECT') ||
-      (err as { digest: string }).digest === 'NEXT_NOT_FOUND')
-  );
-}
 
 export async function updateCompanyAction(
   _prevState: FormState,
@@ -41,7 +31,7 @@ export async function updateCompanyAction(
   try {
     await updateCompanySettings(parsed.data);
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'עדכון פרטי החברה נכשל. נסו שוב.' };
   }
 

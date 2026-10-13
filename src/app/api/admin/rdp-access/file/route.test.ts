@@ -37,6 +37,19 @@ afterEach(() => {
 });
 
 describe('POST /api/admin/rdp-access/file', () => {
+  it.each([
+    ['/access-denied', 403, 'forbidden'],
+    ['/auth/login', 401, 'unauthorized'],
+  ] as const)('preserves auth failure when the DAL recheck redirects to %s', async (path, status, code) => {
+    issueMyRdpFile.mockRejectedValue(Object.assign(new Error('NEXT_REDIRECT'), {
+      digest: `NEXT_REDIRECT;replace;${path};307;`,
+    }));
+    const response = await call();
+    expect(response.status).toBe(status);
+    expect(response.headers.get('location')).toBeNull();
+    await expect(response.json()).resolves.toEqual({ error: code });
+  });
+
   it('returns the file as a private, non-cacheable attachment and passes the real client address', async () => {
     const res = await call();
     expect(res.status).toBe(200);

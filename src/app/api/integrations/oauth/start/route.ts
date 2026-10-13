@@ -2,6 +2,7 @@ import { unstable_rethrow } from 'next/navigation';
 import { NextResponse } from 'next/server';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
+import { platformAuthErrorResponse } from '@/lib/auth/api-error';
 import { createOAuthFlow } from '@/lib/integrations/oauth-flow';
 import { resolveProvider } from '@/lib/integrations/registry';
 import { resolveAppRedirectPath } from '@/lib/url';
@@ -29,11 +30,14 @@ import { resolveAppRedirectPath } from '@/lib/url';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  // Outside the try on purpose. `requirePlatformPermission` signals failure by
-  // calling `redirect()`, which throws NEXT_REDIRECT — a control-flow signal
-  // Next.js unwinds itself. Keeping it out here means it cannot meet a catch at
-  // all, rather than relying on `unstable_rethrow` to let it back out.
-  const user = await requirePlatformPermission('integrations.manage');
+  let user;
+  try {
+    user = await requirePlatformPermission('integrations.manage');
+  } catch (error) {
+    const response = platformAuthErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
 
   const url = new URL(request.url);
   const providerId = url.searchParams.get('provider')?.trim();

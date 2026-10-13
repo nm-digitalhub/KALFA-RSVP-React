@@ -17,6 +17,7 @@
 // inline validation below gives a field-level error instead of a raw DB one.
 
 import { revalidatePath } from 'next/cache';
+import { unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
@@ -78,16 +79,6 @@ function timeToMinutes(hhmm: string): number | null {
   const min = Number(m[2]);
   if (h > 23 || min > 59) return null;
   return h * 60 + min;
-}
-
-function isNextRedirect(err: unknown): boolean {
-  return (
-    !!err &&
-    typeof err === 'object' &&
-    'digest' in err &&
-    typeof (err as { digest?: unknown }).digest === 'string' &&
-    (err as { digest: string }).digest.startsWith('NEXT_REDIRECT')
-  );
 }
 
 export async function saveCallbackPolicyAction(
@@ -203,7 +194,7 @@ export async function saveCallbackPolicyAction(
       return { error: 'עדכון מדיניות התזמון נכשל. נסו שוב.' };
     }
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'עדכון מדיניות התזמון נכשל. נסו שוב.' };
   }
 

@@ -72,19 +72,19 @@ describe('start', () => {
     expect(response.headers.get('location')).toBe('https://login.example.test/authorize?x=1');
   });
 
-  it('⚠️ lets NEXT_REDIRECT out of the handler untouched', async () => {
-    // `requirePlatformPermission` refuses by calling `redirect()`, which throws.
-    // It is awaited OUTSIDE the try so it cannot meet a catch at all — if this
-    // ever regressed into the try, a denied admin would silently receive a 400
-    // instead of being sent away.
+  it.each([
+    ['/access-denied', 403, 'forbidden'],
+    ['/auth/login', 401, 'unauthorized'],
+  ] as const)('returns an API authorization error for %s', async (path, status, code) => {
     const nextRedirect = Object.assign(new Error('NEXT_REDIRECT'), {
-      digest: 'NEXT_REDIRECT;replace;/app;307;',
+      digest: `NEXT_REDIRECT;replace;${path};307;`,
     });
     permMock.mockRejectedValueOnce(nextRedirect);
 
-    await expect(startGET(startRequest('provider=fixture&capability=mail.send'))).rejects.toBe(
-      nextRedirect,
-    );
+    const response = await startGET(startRequest('provider=fixture&capability=mail.send'));
+    expect(response.status).toBe(status);
+    expect(response.headers.get('location')).toBeNull();
+    await expect(response.json()).resolves.toEqual({ error: code });
     expect(startMock).not.toHaveBeenCalled();
   });
 

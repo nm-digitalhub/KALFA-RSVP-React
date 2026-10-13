@@ -658,6 +658,7 @@ export async function createVoicePurposeAction(
   try {
     await createVoicePurpose(parsed.data);
   } catch (e) {
+    unstable_rethrow(e);
     return { error: e instanceof Error ? e.message : 'יצירת הייעוד נכשלה' };
   }
 
@@ -712,6 +713,7 @@ export async function updateVoicePurposeAction(
   try {
     await updateVoicePurpose(parsed.data);
   } catch (e) {
+    unstable_rethrow(e);
     return { error: e instanceof Error ? e.message : 'עדכון הייעוד נכשל' };
   }
 

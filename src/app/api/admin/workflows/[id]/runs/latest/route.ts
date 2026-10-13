@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { workflowRunsFingerprint } from '@/lib/data/admin/workflows';
+import { platformAuthErrorResponse } from '@/lib/auth/api-error';
 
 // "Has the runs list changed?" — one query, one short string, nothing else.
 //
@@ -32,7 +33,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const fingerprint = await workflowRunsFingerprint(id);
+  let fingerprint;
+  try {
+    fingerprint = await workflowRunsFingerprint(id);
+  } catch (error) {
+    const response = platformAuthErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
 
   // `no-store` because the whole value of this route is that it is current.
   return NextResponse.json(

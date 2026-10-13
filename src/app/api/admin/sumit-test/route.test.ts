@@ -58,6 +58,17 @@ describe('POST /api/admin/sumit-test — CSRF origin gate', () => {
     expect(chargeRaw).toHaveBeenCalled();
   });
 
+  it('returns plain 403 for the shared access-denied guard without charging', async () => {
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(Object.assign(new Error('NEXT_REDIRECT'), {
+      digest: 'NEXT_REDIRECT;replace;/access-denied;307;',
+    }));
+    const response = await POST(request({}));
+    expect(response.status).toBe(403);
+    expect(response.headers.get('location')).toBeNull();
+    expect(await response.text()).toBe('Forbidden');
+    expect(chargeRaw).not.toHaveBeenCalled();
+  });
+
   it('rejects a cross-origin POST with 403, without calling chargeRaw', async () => {
     const res = await POST(
       request({ 'og-token': 'og-123', amount: '1' }, { Origin: 'https://evil.test' }),

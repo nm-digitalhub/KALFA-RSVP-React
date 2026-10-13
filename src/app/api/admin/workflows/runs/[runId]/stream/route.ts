@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
+import { platformAuthErrorResponse } from '@/lib/auth/api-error';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isTerminalStatus, type StreamEvent } from '@/lib/workflow/execution-events';
 import { createSerializedDrainer, drainEventsSince } from '@/lib/workflow/drain';
@@ -36,7 +37,13 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ runId: string }> },
 ) {
-  await requirePlatformPermission('view_customer_data');
+  try {
+    await requirePlatformPermission('view_customer_data');
+  } catch (error) {
+    const response = platformAuthErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
 
   const { runId } = await params;
 

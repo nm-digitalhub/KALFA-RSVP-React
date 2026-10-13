@@ -15,6 +15,7 @@
 // mapped to the snake_case agr_* columns on save.
 
 import { revalidatePath } from 'next/cache';
+import { unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
@@ -34,19 +35,6 @@ const agreementConfigSchema = z.object({
   retentionDays: z.string().trim(),
   recordRetentionMonths: z.string().trim(),
 });
-
-// Re-throw Next.js control-flow signals (redirect/notFound) so they are not
-// swallowed by the catch — same guard as ../company/actions.ts.
-function isNextControlFlow(err: unknown): boolean {
-  return (
-    !!err &&
-    typeof err === 'object' &&
-    'digest' in err &&
-    typeof (err as { digest?: unknown }).digest === 'string' &&
-    ((err as { digest: string }).digest.startsWith('NEXT_REDIRECT') ||
-      (err as { digest: string }).digest === 'NEXT_NOT_FOUND')
-  );
-}
 
 export async function saveAgreementConfigAction(
   _prevState: FormState,
@@ -87,7 +75,7 @@ export async function saveAgreementConfigAction(
       return { error: 'עדכון הגדרות החוזה נכשל. נסו שוב.' };
     }
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'עדכון הגדרות החוזה נכשל. נסו שוב.' };
   }
 

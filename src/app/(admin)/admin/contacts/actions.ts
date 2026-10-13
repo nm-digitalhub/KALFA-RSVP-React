@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { unstable_rethrow } from 'next/navigation';
 
 import { sendInquiryReply, updateContactStatus } from '@/lib/data/admin/contacts';
 import { sendInquiryReplySchema, updateContactStatusSchema } from '@/lib/validation/admin';
@@ -9,16 +10,6 @@ import type { FormState } from '@/lib/validation/result';
 
 // Re-throw Next.js control-flow signals (e.g. a redirect thrown by the DAL
 // permission gate); catching them would silently break the redirect.
-function isNextRedirect(err: unknown): boolean {
-  return (
-    !!err &&
-    typeof err === 'object' &&
-    'digest' in err &&
-    typeof (err as { digest?: unknown }).digest === 'string' &&
-    (err as { digest: string }).digest.startsWith('NEXT_REDIRECT')
-  );
-}
-
 // Update a single contact message's status. Validates the closed status
 // vocabulary server-side; authorization is enforced inside
 // updateContactStatus (requirePlatformPermission).
@@ -38,7 +29,7 @@ export async function updateContactStatusAction(
   try {
     await updateContactStatus(parsed.data.id, parsed.data.status);
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'עדכון הסטטוס נכשל. נסו שוב.' };
   }
 
@@ -67,7 +58,7 @@ export async function sendInquiryReplyAction(
   try {
     await sendInquiryReply(parsed.data.id, parsed.data.reply);
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return {
       error: err instanceof Error ? err.message : 'שליחת המענה נכשלה. נסו שוב.',
     };

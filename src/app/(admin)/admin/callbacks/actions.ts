@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { unstable_rethrow } from 'next/navigation';
 
 import { cancelCallback, rescheduleCallback, updateCallOutcome } from '@/lib/data/admin/callbacks';
 import {
@@ -10,18 +11,6 @@ import {
   rescheduleCallbackSchema,
 } from '@/lib/validation/admin';
 import type { FormState } from '@/lib/validation/result';
-
-// Re-thrown so Next.js control-flow signals (e.g. a redirect from an admin
-// gate) are never swallowed by a surrounding try/catch.
-function isNextRedirect(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'digest' in err &&
-    typeof (err as { digest?: unknown }).digest === 'string' &&
-    (err as { digest: string }).digest.startsWith('NEXT_REDIRECT')
-  );
-}
 
 // Cancel a request outright. Authorization is enforced inside cancelCallback
 // (requirePlatformPermission). Returns a typed FormState for useActionState.
@@ -41,7 +30,7 @@ export async function cancelCallbackAction(
   } catch (err) {
     // Re-throw Next.js control-flow signals (e.g. redirect from requirePlatformPermission);
     // catching them would silently break the redirect.
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'ביטול הבקשה נכשל. נסו שוב.' };
   }
 
@@ -87,7 +76,7 @@ export async function updateCallOutcomeAction(
   try {
     await updateCallOutcome(parsed.data.id, parsed.data.callOutcome);
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'עדכון תוצאת השיחה נכשל. נסו שוב.' };
   }
 
@@ -117,7 +106,7 @@ export async function rescheduleCallbackAction(
   try {
     outcome = await rescheduleCallback(parsed.data.id, parsed.data.exactAt);
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'תזמון השיחה נכשל. נסו שוב.' };
   }
 

@@ -1,4 +1,5 @@
 import { getUser, hasPlatformPermission } from '@/lib/auth/dal';
+import { platformAuthErrorResponse } from '@/lib/auth/api-error';
 import { issueMyRdpFile, type RdpFileIssueFailure } from '@/lib/data/admin/rdp-access';
 import { socketClientIp } from '@/lib/security/client-ip';
 import { rateLimit } from '@/lib/security/rate-limit';
@@ -65,7 +66,10 @@ export async function POST(request: Request): Promise<Response> {
   let issued: Awaited<ReturnType<typeof issueMyRdpFile>>;
   try {
     issued = await issueMyRdpFile(socketClientIp((name) => request.headers.get(name)));
-  } catch {
+  } catch (error) {
+    // The DAL checks again: the session/permission may change after preflight.
+    const response = platformAuthErrorResponse(error);
+    if (response) return response;
     console.error('rdp-access: issuing the connection file failed');
     return failure('server_error');
   }

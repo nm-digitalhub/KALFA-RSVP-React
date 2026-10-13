@@ -41,6 +41,7 @@ vi.mock('@/lib/data/admin/integrations/send-policy', () => ({
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
 import { updateWhatsAppChannelConfig } from '@/lib/data/admin/channels';
+import { createVoicePurpose, updateVoicePurpose, listVoicePurposesForAdmin } from '@/lib/data/admin/voice-purposes';
 import {
   getVoximplantChannelConfig,
   updateVoximplantLiveCalls,
@@ -55,12 +56,14 @@ import {
   updateCallConsentRequiredAction,
   updateChannelCatalogAction,
   updateSendPolicyAction,
+  createVoicePurposeAction,
+  updateVoicePurposeAction,
 } from './actions';
 
 type VoxChannelConfig = Awaited<ReturnType<typeof getVoximplantChannelConfig>>;
 
 const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
-  digest: 'NEXT_REDIRECT;replace;/app;307;',
+  digest: 'NEXT_REDIRECT;replace;/access-denied;307;',
 });
 
 function fd(entries: Record<string, string>): FormData {
@@ -78,6 +81,18 @@ const FIELDS = {
 };
 
 beforeEach(() => vi.clearAllMocks());
+
+describe.each([
+  { name: 'create voice purpose', action: createVoicePurposeAction, write: vi.mocked(createVoicePurpose) },
+  { name: 'update voice purpose', action: updateVoicePurposeAction, write: vi.mocked(updateVoicePurpose) },
+])('$name authorization', ({ action, write }) => {
+  it('propagates a DAL redirect even after the earlier read was allowed', async () => {
+    vi.mocked(getVoximplantChannelConfig).mockResolvedValue({} as VoxChannelConfig);
+    vi.mocked(listVoicePurposesForAdmin).mockResolvedValue([]);
+    write.mockRejectedValueOnce(NEXT_REDIRECT);
+    await expect(action(null, fd({ key: 'test_purpose', displayName: 'ייעוד בדיקה' }))).rejects.toBe(NEXT_REDIRECT);
+  });
+});
 
 describe('updateWhatsAppChannelAction — Next.js control-flow signals (requireAdmin)', () => {
   it('propagates a NEXT_REDIRECT from updateWhatsAppChannelConfig instead of returning { error }', async () => {

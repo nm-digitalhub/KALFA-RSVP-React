@@ -28,7 +28,10 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
 
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { isAdmin, requireAdmin, isOrgOwner, requireOrgOwner } from './dal';
+import {
+  isAdmin, requireAdmin, isOrgOwner, requireOrgOwner,
+  requireUser, requirePlatformStaff, requirePlatformOwner, requirePlatformPermission,
+} from './dal';
 
 function fakeUser(id = 'user-1'): User {
   return { id } as unknown as User;
@@ -55,6 +58,78 @@ function mockClient(
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe.each([
+  { name: 'requirePlatformStaff', guard: requirePlatformStaff, rpcArgs: ['is_platform_staff'] },
+  { name: 'requirePlatformOwner', guard: requirePlatformOwner, rpcArgs: ['is_platform_owner'] },
+  {
+    name: 'requirePlatformPermission',
+    guard: () => requirePlatformPermission('manage_staff'),
+    rpcArgs: ['has_platform_permission', { _key: 'manage_staff' }],
+  },
+])('$name', ({ guard, rpcArgs }) => {
+  it('returns the authenticated user when access is allowed', async () => {
+    const user = fakeUser();
+    const { rpc } = mockClient(user, async () => ({ data: true, error: null }));
+    await expect(guard()).resolves.toEqual(user);
+    expect(rpc).toHaveBeenCalledWith(...rpcArgs);
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { data: false, error: null },
+    { data: null, error: null },
+    { data: true, error: { message: 'RPC failed' } },
+  ])('redirects denied or failed checks to /access-denied: %j', async (result) => {
+    mockClient(fakeUser(), async () => result);
+    await expect(guard()).rejects.toMatchObject({
+      digest: 'NEXT_REDIRECT;replace;/access-denied;307;',
+    });
+  });
+
+  it('sends anonymous users to login without checking permissions', async () => {
+    const { rpc } = mockClient(null, async () => ({ data: true, error: null }));
+    await expect(guard()).rejects.toMatchObject({
+      digest: 'NEXT_REDIRECT;replace;/auth/login;307;',
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('propagates unexpected RPC exceptions', async () => {
+    const error = new Error('network unavailable');
+    mockClient(fakeUser(), async () => { throw error; });
+    await expect(guard()).rejects.toBe(error);
+    expect(redirect).not.toHaveBeenCalled();
+  });
+});
+
+describe('requireUser for the access-denied page', () => {
+  it('accepts an authenticated user without platform permissions', async () => {
+    const user = fakeUser();
+    const { rpc } = mockClient(user, async () => ({ data: false, error: null }));
+    await expect(requireUser()).resolves.toEqual(user);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('redirects anonymous visitors to login', async () => {
+    mockClient(null, async () => ({ data: false, error: null }));
+    await expect(requireUser()).rejects.toMatchObject({
+      digest: 'NEXT_REDIRECT;replace;/auth/login;307;',
+    });
+  });
+});
+
+it('evaluates each named permission independently for the same staff user', async () => {
+  const user = fakeUser();
+  mockClient(user, async (_name, args) => ({
+    data: (args as { _key: string })._key === 'manage_billing',
+    error: null,
+  }));
+  await expect(requirePlatformPermission('manage_staff')).rejects.toMatchObject({
+    digest: 'NEXT_REDIRECT;replace;/access-denied;307;',
+  });
+  await expect(requirePlatformPermission('manage_billing')).resolves.toEqual(user);
 });
 
 describe('requireAdmin', () => {

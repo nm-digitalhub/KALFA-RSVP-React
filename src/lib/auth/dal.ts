@@ -146,7 +146,7 @@ export const isPlatformStaff = cache(async (): Promise<boolean> => {
   return data === true;
 });
 
-// Require platform staff; redirect to /app otherwise.
+// Require platform staff; redirect to /access-denied otherwise.
 //
 // THE FLOOR for the admin area — "is this person staff at all" — and never the
 // authorization for an individual action, which is requirePlatformPermission.
@@ -155,7 +155,7 @@ export const isPlatformStaff = cache(async (): Promise<boolean> => {
 export const requirePlatformStaff = cache(async () => {
   const user = await requireUser();
   if (!(await isPlatformStaff())) {
-    redirect('/app');
+    redirect('/access-denied');
   }
   return user;
 });
@@ -183,7 +183,7 @@ export const isPlatformOwner = cache(async (): Promise<boolean> => {
 export const requirePlatformOwner = cache(async () => {
   const user = await requireUser();
   if (!(await isPlatformOwner())) {
-    redirect('/app');
+    redirect('/access-denied');
   }
   return user;
 });
@@ -221,14 +221,14 @@ export const hasPlatformPermission = cache(async (key: string): Promise<boolean>
 });
 
 // Require the current user to hold platform permission `key` (via their staff
-// role); redirect to /app otherwise. Sibling of requirePlatformOwner, one layer
+// role); redirect to /access-denied otherwise. Sibling of requirePlatformOwner, one layer
 // finer-grained. `key` is validated at the DB against the seeded catalog (no
 // hardcoded union here) — an unknown/mistyped key simply never matches and the
 // user is redirected. Memoized per (render pass, key) via cache().
 export const requirePlatformPermission = cache(async (key: string) => {
   const user = await requireUser();
   if (!(await hasPlatformPermission(key))) {
-    redirect('/app');
+    redirect('/access-denied');
   }
   return user;
 });

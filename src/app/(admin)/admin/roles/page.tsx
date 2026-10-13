@@ -8,7 +8,7 @@ import { RolesClient } from './roles-client';
 export const metadata: Metadata = { title: 'תפקידי צוות' };
 
 // Admin: UI-editable PLATFORM (Owner/Staff) RBAC matrix editor. Owner-only —
-// requirePlatformOwner() redirects a non-owner to /app (belt-and-suspenders on
+// requirePlatformOwner() redirects a non-owner to /access-denied (belt-and-suspenders on
 // top of the data-layer gate and each server action's own re-check). Staff are
 // assigned their role from the user-detail screen; here the owner defines what
 // each role can do.

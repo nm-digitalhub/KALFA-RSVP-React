@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { unstable_rethrow } from 'next/navigation';
 
 import {
   setUserSuspended,
@@ -17,16 +18,6 @@ import {
   voidCreditSchema,
 } from '@/lib/validation/admin';
 import type { ActionResult, FormState } from '@/lib/validation/result';
-
-function isNextRedirect(err: unknown): boolean {
-  return (
-    err !== null &&
-    typeof err === 'object' &&
-    'digest' in err &&
-    typeof (err as { digest?: unknown }).digest === 'string' &&
-    (err as { digest: string }).digest.startsWith('NEXT_REDIRECT')
-  );
-}
 
 // The admin data layer only throws Error with our own safe Hebrew messages
 // (last-staff / no-self-lockout / not-found / generic) — never raw DB detail —
@@ -49,7 +40,7 @@ export async function suspendUserAction(
   try {
     await setUserSuspended(parsed.data.user_id, true);
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: safeMessage(err, 'הפעולה נכשלה') };
   }
   revalidateUsers();
@@ -65,7 +56,7 @@ export async function reactivateUserAction(
   try {
     await setUserSuspended(parsed.data.user_id, false);
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: safeMessage(err, 'הפעולה נכשלה') };
   }
   revalidateUsers();
@@ -93,7 +84,7 @@ export async function grantCreditAction(
       ownerId: parsed.data.user_id,
     });
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: safeMessage(err, 'מתן ההטבה נכשל') };
   }
   revalidateUsers();
@@ -119,7 +110,7 @@ export async function viewUserDetailAction(input: {
     }
     return { ok: true, data: user };
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { ok: false, error: safeMessage(err, 'הצפייה נכשלה') };
   }
 }
@@ -141,7 +132,7 @@ export async function voidCreditAction(input: {
       ownerId: parsed.data.user_id,
     });
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: safeMessage(err, 'ביטול הזיכוי נכשל') };
   }
   revalidateUsers();
