@@ -7,8 +7,8 @@
 //
 //   puppeteer  — downloads Chrome from a postinstall. Without it,
 //                puppeteer.launch() throws at RUNTIME, which takes down
-//                src/lib/agreements/pdf.ts (the PDF of the package-terms approval) and
-//                src/lib/data/social-image-render.ts. Reached production once,
+//                the fleet CLI social-image renderer (src/lib/data/social-image-render.ts).
+//                A missing-browser failure reached production once,
 //                on 2026-09-06, after a 25.7 → 25.10 bump.
 //   keytar     — a native module whose install pulls a prebuilt .node binary.
 //                Nothing in src/ or worker/ imports it; it is reached only

@@ -260,7 +260,7 @@
 //     HTML+CSS mockup itself (--html, or --html-file for a large one — see
 //     the free-text-flag note above) and this command screenshots it with a
 //     local headless browser (Puppeteer, src/lib/data/social-image-render.ts
-//     — the same tool and launch args as renderAgreementPdf). No external
+//     — requires the installed matching Chrome). No external
 //     image-generation API, no account/billing dependency, no network at
 //     render time at all: an ElevenLabs Flows attempt was tried and rejected
 //     live (402, "requires a Pro plan or above" — the project's account is

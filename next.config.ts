@@ -92,10 +92,9 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // Puppeteer bundles a Chromium binary and uses dynamic requires; it must run
-  // as a real Node module (not be webpack-bundled). Used server-side to render
-  // the package-terms approval PDF (Hebrew BiDi). See src/lib/agreements/pdf.ts.
-  // Kept out of the server bundle so Node loads them with a native require.
+  // Agreement PDFs use React-PDF. Puppeteer is used only by the fleet CLI
+  // social-image renderer, which is outside the Next server dependency graph.
+  // The packages below stay external so Node loads them with a native require.
   //
   // pg-boss: verified, not assumed. Without it webpack inlined the whole library
   // into the outreach-call route — 283 KB, with contractor.check()'s own source
@@ -113,7 +112,6 @@ const nextConfig: NextConfig = {
   // RateLimiterDrizzle.js requires an expression webpack cannot resolve ("Critical dependency" build warning).
   // We use only RateLimiterMemory (src/lib/security/rate-limit.ts); Node's own require loads it at runtime.
   serverExternalPackages: [
-    'puppeteer',
     'pg-boss',
     '@google-analytics/data',
     'rate-limiter-flexible',

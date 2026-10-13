@@ -28,7 +28,7 @@ function mockBrowser(pngBytes: Uint8Array) {
 }
 
 describe('renderHtmlToImage', () => {
-  it('launches with the same sandbox args as renderAgreementPdf, sets the viewport, and returns PNG bytes', async () => {
+  it('launches with the fleet renderer sandbox args, sets the viewport, and returns PNG bytes', async () => {
     const bytes = new Uint8Array([1, 2, 3]);
     const { setViewport, setContent, close } = mockBrowser(bytes);
 

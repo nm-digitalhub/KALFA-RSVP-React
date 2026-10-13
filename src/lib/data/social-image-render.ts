@@ -10,14 +10,11 @@ import { createRequire } from 'node:module';
 // those spawns and tripped the bundle-size gate (scripts/check-fleet-agent-
 // bundle.mjs). createRequire is opaque to esbuild's bundler analysis, so
 // Puppeteer stays a real runtime require resolved by Node against
-// node_modules, exactly like the Next.js app already treats it via
-// next.config.ts's serverExternalPackages for the same reason.
+// node_modules. This renderer is imported by the fleet CLI, not the Next app.
 const puppeteer = createRequire(__filename)('puppeteer') as typeof import('puppeteer');
 
-// Renders an author-supplied HTML file to a PNG screenshot. Same tool and
-// launch args as renderAgreementPdf (src/lib/agreements/pdf.ts) — Puppeteer is
-// already a real project dependency, already proven on this server (Chromium
-// installed once, long-lived pm2 process).
+// Renders an author-supplied HTML file to a PNG screenshot for fleet render-image.
+// Puppeteer and its matching Chrome remain required for this CLI functionality.
 //
 // Why a local render and not an image-generation API: social-manager's image
 // posts are a small HTML+CSS mockup rendered to PNG. An ElevenLabs Flows
@@ -51,8 +48,8 @@ export async function renderHtmlToImage(p: RenderHtmlToImageParams): Promise<Buf
       height: p.height,
       deviceScaleFactor: p.deviceScaleFactor ?? 1,
     });
-    // The HTML is server/role-authored and trusted (no script exec of
-    // untrusted input) — same trust boundary as renderAgreementPdf.
+    // The HTML is server/role-authored and trusted. This fleet-only renderer
+    // does not accept untrusted input.
     await page.setContent(p.html, { waitUntil: 'load' });
     const png = await page.screenshot({ type: 'png' });
     return Buffer.from(png);

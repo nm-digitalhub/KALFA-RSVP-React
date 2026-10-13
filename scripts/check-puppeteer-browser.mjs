@@ -13,11 +13,9 @@
 // — the puppeteer tests mock `launch`, so nothing in the suite ever touches a
 // real browser.
 //
-// What breaks when this is wrong is not cosmetic: src/lib/agreements/pdf.ts
-// renders the PDF of the customer's package-terms approval (stored with its
-// SHA-256 as the evidence trail), and src/lib/data/social-image-render.ts
-// renders social images. Both call `puppeteer.launch()` with no explicit
-// executablePath, so both depend on this resolution succeeding.
+// The fleet CLI render-image functionality uses src/lib/data/social-image-render.ts.
+// It calls puppeteer.launch() without an explicit executablePath and needs the
+// matching Chrome. Agreement PDFs use React-PDF and do not need a browser.
 //
 // Deliberately checks the PATH rather than launching: resolving is milliseconds
 // and answers the only question that has ever gone wrong here. It never
@@ -51,7 +49,7 @@ if (!existsSync(executablePath)) {
   console.error(
     `check-puppeteer-browser: puppeteer ${version} expects a browser that is NOT installed.\n` +
       `  missing: ${executablePath}\n\n` +
-      '  Agreement PDFs and social images call puppeteer.launch() and will throw at\n' +
+      '  Fleet social images call puppeteer.launch() and will throw at\n' +
       '  runtime until this exists. npm cannot fetch it on its own here: npm 12 blocks\n' +
       "  puppeteer's postinstall script by default.\n\n" +
       '  Fix:  npx puppeteer browsers install chrome\n',
