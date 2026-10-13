@@ -17,7 +17,16 @@
  *      paths read that as "already gone" and drop our DB row for it.
  *
  * Everything it creates, it deletes.
+ *
+ * Modes (no flag = every check above):
+ *   --windows-only   only the offline all-day window arithmetic; touches neither
+ *                    the database nor the mailbox.
+ *   --all-day-live   the offline windows, then ONLY the three all-day cases
+ *                    against the real mailbox (create → read → update → read,
+ *                    delete in a `finally`); no timed event, series or kill switch.
  */
+import { randomBytes } from 'node:crypto';
+
 import { calendarProvider, selectedCalendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import { graphProvider } from '@/lib/exchange-ews/graph-impl';
 import { ilWallTimeToIso } from '@/lib/data/event-date';
@@ -76,6 +85,108 @@ const ALL_DAY_CASES = [
   { day: '2026-03-27', hours: 23, what: 'clocks go forward' },
 ] as const;
 
+// ---- --all-day-live ----------------------------------------------------------
+// The three all-day cases only, against the real mailbox. Each item carries a per-run token in its subject so
+// that what this run created can be told from anything else, and is deleted in a `finally` even when a check
+// fails or a call throws. A scan before and after reports any test item left in the mailbox.
+const ALL_DAY_SUBJECT = 'KALFA — בדיקת יום שלם';
+
+type ReadBack = Awaited<ReturnType<typeof graphProvider.getAppointment>>;
+
+function describeReadBack(label: string, back: ReadBack, c: (typeof ALL_DAY_CASES)[number]) {
+  if (!back.ok) {
+    check(`${label}: read`, false, back.error);
+    return;
+  }
+  const { start, end, allDay, showAs, subject } = back.data;
+  const nextDay = addCalendarDays(c.day, 1);
+  const hours = (end.getTime() - start.getTime()) / 3_600_000;
+  console.log(`   ${label}: start=${start.toISOString()} (יום ${israelDay(start)}) end=${end.toISOString()} (יום ${israelDay(end)}) · ${hours}h · allDay=${allDay} · showAs=${showAs} · subject="${subject}"`);
+  check(`${label}: start day`, israelDay(start) === c.day, `${israelDay(start)} (expected ${c.day})`);
+  check(`${label}: end day`, israelDay(end) === nextDay, `${israelDay(end)} (expected ${nextDay}: one calendar day, not zero)`);
+  check(`${label}: allDay`, allDay === true, `allDay=${allDay}`);
+  check(`${label}: showAs`, showAs === 'free', `showAs=${showAs}`);
+}
+
+async function scanTestItems(cfg: ExchangeConnectionConfig, token: string): Promise<{ mine: string[]; older: string[] }> {
+  const mine: string[] = [];
+  const older: string[] = [];
+  for (const c of ALL_DAY_CASES) {
+    const { start, end } = allDayWindow(c.day);
+    const view = await graphProvider.listAppointments(cfg, {
+      start: new Date(start.getTime() - 36 * 3_600_000),
+      end: new Date(end.getTime() + 36 * 3_600_000),
+    });
+    if (!view.ok) {
+      check(`scan ${c.day}`, false, view.error);
+      continue;
+    }
+    for (const a of view.data) {
+      if (!a.subject.includes('בדיקת יום שלם')) continue;
+      (a.subject.includes(token) ? mine : older).push(`${a.id} · "${a.subject}" · ${israelDay(a.start)}`);
+    }
+  }
+  return { mine, older };
+}
+
+async function runAllDayLive(cfg: ExchangeConnectionConfig) {
+  const token = randomBytes(4).toString('hex');
+  const subject = `${ALL_DAY_SUBJECT} — ${token}`;
+  console.log(`run token: ${token}`);
+
+  const before = await scanTestItems(cfg, token);
+  console.log(`test items already in the mailbox before this run (older runs): ${before.older.length}`);
+  for (const line of before.older) console.log(`   • ${line}`);
+
+  for (const c of ALL_DAY_CASES) {
+    const { start, end } = allDayWindow(c.day);
+    console.log('');
+    console.log(`── ${c.day} · ${c.what} · ${(end.getTime() - start.getTime()) / 3_600_000}h absolute ──`);
+    console.log(`   sent: start=${start.toISOString()} end=${end.toISOString()}`);
+    let id: string | null = null;
+    try {
+      const made = await graphProvider.createAppointment(cfg, { subject, start, end, allDay: true, showAs: 'free' });
+      check(`${c.day} create`, made.ok, made.ok ? `id=${made.data.appointmentId}` : made.error);
+      if (!made.ok) continue;
+      id = made.data.appointmentId;
+      console.log(`   appointment id: ${id}`);
+
+      const first = await graphProvider.getAppointment(cfg, id);
+      describeReadBack(`${c.day} read after create`, first, c);
+      if (!first.ok) continue;
+
+      // The PATCH a cancellation sends: the start/end just read back, plus a new subject.
+      const updated = await graphProvider.updateAppointment(cfg, id, {
+        start: first.data.start,
+        end: first.data.end,
+        subject: `בוטל — ${subject}`,
+      });
+      check(`${c.day} update`, updated.ok, updated.ok ? 'PATCH accepted' : updated.error);
+
+      const second = await graphProvider.getAppointment(cfg, id);
+      describeReadBack(`${c.day} read after update`, second, c);
+      if (second.ok) {
+        check(`${c.day} subject renamed`, second.data.subject.startsWith('בוטל'), `subject="${second.data.subject}"`);
+      }
+    } catch (e) {
+      check(`${c.day} threw`, false, e instanceof Error ? e.message : String(e));
+    } finally {
+      if (id) {
+        const deleted = await graphProvider.deleteAppointment(cfg, id);
+        check(`${c.day} delete`, deleted.ok, deleted.ok ? `deleted ${id}` : deleted.error);
+        const gone = await graphProvider.getAppointment(cfg, id);
+        check(`${c.day} gone after delete`, !gone.ok && gone.error === 'not_found', gone.ok ? 'STILL THERE' : `read → ${gone.error}`);
+      }
+    }
+  }
+
+  console.log('');
+  const after = await scanTestItems(cfg, token);
+  check('no item of this run left', after.mine.length === 0, after.mine.length === 0 ? '0 left in the three day windows' : after.mine.join(' | '));
+  console.log(`test items from OLDER runs still in the mailbox: ${after.older.length}`);
+  for (const line of after.older) console.log(`   • ${line}`);
+}
+
 async function main() {
   // Offline first: the all-day windows are computed and checked before the database or the mailbox is touched.
   for (const c of ALL_DAY_CASES) {
@@ -96,6 +207,14 @@ async function main() {
   console.log(`mailbox (from DB): ${cfg.mailboxEmail}`);
   console.log(`active provider: ${selectedCalendarProvider()}`);
   console.log('');
+
+  if (process.argv.includes('--all-day-live')) {
+    await runAllDayLive(cfg);
+    console.log('');
+    console.log(failures === 0 ? '✅ ALL-DAY LIVE CHECKS PASS' : `❌ ${failures} check(s) failed`);
+    if (failures) process.exit(1);
+    return;
+  }
 
   // ---- 1. all-day, the wrong-day trap -------------------------------------
   for (const c of ALL_DAY_CASES) {
