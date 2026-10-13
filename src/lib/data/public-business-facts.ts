@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { buildBusinessFacts, type BusinessFacts } from '@/lib/fleet/business-facts';
-import { listPackageOffers } from './campaigns';
+import { listPackageOffers } from './package-offers';
 
 // The ONE reader of the business facts: the /faq page's price card and its {{token}}s (src/lib/faq/tokens.ts), the
 // event-type pages' cadence line, /admin/faq's preview, and the support-drafter (scripts/fleet-agent-cli.ts

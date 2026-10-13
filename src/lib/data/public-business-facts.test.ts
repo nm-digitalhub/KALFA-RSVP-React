@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
-vi.mock('./campaigns', () => ({ listPackageOffers: vi.fn() }));
+vi.mock('./package-offers', () => ({ listPackageOffers: vi.fn() }));
 
-import { listPackageOffers } from './campaigns';
+import { listPackageOffers } from './package-offers';
 import { getPublicBusinessFacts } from './public-business-facts';
 
 const offer = {

@@ -12,7 +12,6 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { logActivity } from '@/lib/data/activity';
-import { getPackageModelEnabled } from '@/lib/data/payments';
 import {
   PACKAGE_NOT_PAID_ERROR,
   PACKAGE_PAYMENT_UNVERIFIED_ERROR,
@@ -28,6 +27,12 @@ import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
 import { isPackageAgreementVersion } from '@/lib/agreements/template';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
 import type { Enums, Json, Tables, TablesUpdate } from '@/lib/supabase/types';
+import { getPackageOffer } from '@/lib/data/package-offers';
+
+// The catalogue moved to package-offers.ts (worker-safe); re-exported so callers keep importing it from here.
+export { listPackageOffers, getPackageOffer } from '@/lib/data/package-offers';
+export type { OutreachTouchpoint, PackageOffer } from '@/lib/data/package-offers';
+
 // Campaign = the RSVP outreach of one event, sold as a fixed-price package. The
 // commercial terms are copied from the chosen package offer, never accepted from
 // the client. Reads are scoped via RLS (can_access_event); writes go through the
@@ -35,7 +40,6 @@ import type { Enums, Json, Tables, TablesUpdate } from '@/lib/supabase/types';
 // money writes, §18).
 
 type CampaignRow = Tables<'campaigns'>;
-type Channel = Enums<'campaign_channel'>;
 
 export type OwnerCampaign = Pick<
   CampaignRow,
@@ -72,69 +76,6 @@ export const EVENT_NOT_CONFIRMED_ERROR = 'יש לאשר את פרטי האירו
 
 // A campaign created under the earlier pay-per-result model cannot be started: it has no package payment.
 export const NO_PACKAGE_ERROR = 'לא ניתן להפעיל קמפיין שלא נרכשה עבורו חבילה';
-
-// A single touchpoint in the event-anchored outreach schedule (§10) — a friendly
-// drip leading up to the event to maximize reached contacts.
-export type OutreachTouchpoint = {
-  days_before: number; // days before the event date
-  channel: Channel;
-  message_key: string; // references an approved WhatsApp template / call script
-};
-
-// The fixed-price package catalogue (docs/superpowers/plans/2026-10-04-package-payment-plan.md, P-F): active packages
-// that carry a contact quota (the packages action refuses a per-reached price, so no package carries one).
-//
-// The whole catalogue is behind the package switch: while it is off this is empty without a read, so nothing can be
-// offered, and createCampaign below cannot snapshot one. Fail-closed like every money switch.
-export type PackageOffer = {
-  id: string;
-  name: string;
-  // The package's own price (packages.price_with_vat — the final consumer price; the business is VAT-exempt).
-  price: number;
-  contact_quota: number;
-  description: string | null;
-  // What the package includes, one line each (packages.includes — a JSON array of strings).
-  includes: string[];
-  channels: Channel[];
-  outreach_schedule: OutreachTouchpoint[];
-};
-
-export async function listPackageOffers(): Promise<PackageOffer[]> {
-  if (!(await getPackageModelEnabled())) return [];
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('packages')
-    .select('id, name, price_with_vat, contact_quota, description, includes, channels, outreach_schedule')
-    .eq('active', true)
-    .not('contact_quota', 'is', null)
-    .order('sort_order', { ascending: true });
-  if (error) throw new Error('טעינת החבילות נכשלה');
-  return (data ?? [])
-    .filter(
-      (p) =>
-        p.contact_quota != null &&
-        p.contact_quota >= 1 &&
-        Number(p.price_with_vat) > 0 &&
-        (p.channels ?? []).length > 0,
-    )
-    .map((p) => ({
-      id: p.id,
-      name: p.name,
-      price: Number(p.price_with_vat),
-      contact_quota: p.contact_quota as number,
-      description: p.description,
-      includes: Array.isArray(p.includes)
-        ? p.includes.filter((x): x is string => typeof x === 'string')
-        : [],
-      channels: p.channels ?? [],
-      outreach_schedule: (p.outreach_schedule as OutreachTouchpoint[] | null) ?? [],
-    }));
-}
-
-// One offer by id; null when it is not an offer (the switch is off, inactive, legacy, not sellable).
-export async function getPackageOffer(packageId: string): Promise<PackageOffer | null> {
-  return (await listPackageOffers()).find((o) => o.id === packageId) ?? null;
-}
 
 // Create-or-continue the event's SINGLE "RSVP confirmations" campaign in
 // `pending_approval`. Idempotent: if a non-cancelled campaign already exists for
