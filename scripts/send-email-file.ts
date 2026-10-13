@@ -9,12 +9,12 @@
 //   SEND_SUBJECT="..." \
 //   SEND_HTML_FILE=/path/to/body.html \
 //   [SEND_TEXT_FILE=/path/to/body.txt] \
-//   [SEND_PDF_HTML_FILE=/path/to/doc.html SEND_PDF_NAME=doc.pdf] \
+//   [SEND_PDF_FILE=/path/to/doc.pdf SEND_PDF_NAME=doc.pdf] \
 //   node --env-file=.env.local dist/send-email-file.cjs
 //
-// SEND_PDF_HTML_FILE, when set, is rendered to an A4 PDF with the SAME
-// pipeline as the package terms (renderAgreementPdf — correct Hebrew BiDi)
-// and attached as SEND_PDF_NAME.
+// SEND_PDF_FILE, when set, is attached as SEND_PDF_NAME. PDF generation is
+// deliberately outside this generic mail utility: package agreements use their
+// structured React PDF renderer, while other callers may provide any PDF file.
 //
 // Bundle (matches the sync-voximplant-sa pattern in package.json):
 //   esbuild scripts/send-email-file.ts --bundle --platform=node --format=cjs \
@@ -25,7 +25,6 @@
 
 import { readFileSync } from 'node:fs';
 
-import { renderAgreementPdf } from '@/lib/agreements/pdf';
 import { getEmailSender, type EmailAttachment } from '@/lib/email/sender';
 
 function requireEnv(name: string): string {
@@ -38,7 +37,7 @@ const TO = requireEnv('SEND_TO');
 const SUBJECT = requireEnv('SEND_SUBJECT');
 const HTML_FILE = requireEnv('SEND_HTML_FILE');
 const TEXT_FILE = process.env.SEND_TEXT_FILE;
-const PDF_HTML_FILE = process.env.SEND_PDF_HTML_FILE;
+const PDF_FILE = process.env.SEND_PDF_FILE;
 const PDF_NAME = process.env.SEND_PDF_NAME ?? 'document.pdf';
 
 async function main() {
@@ -46,8 +45,8 @@ async function main() {
   const text = TEXT_FILE ? readFileSync(TEXT_FILE, 'utf8') : undefined;
 
   let attachments: EmailAttachment[] | undefined;
-  if (PDF_HTML_FILE) {
-    const pdfBytes = await renderAgreementPdf(readFileSync(PDF_HTML_FILE, 'utf8'));
+  if (PDF_FILE) {
+    const pdfBytes = readFileSync(PDF_FILE);
     attachments = [
       { filename: PDF_NAME, content: pdfBytes, contentType: 'application/pdf' },
     ];

@@ -108,8 +108,8 @@ function orTodo(v: string): string {
 const DRAFT_MARKER =
   '\n\n  <div class="draft">טיוטה — נוסח משפטי לאישור עו"ד (דיני הגנת הצרכן) טרם הפעלה מסחרית.</div>';
 
-// Shared CSS — injected into the PDF document AND the on-page preview so the
-// customer sees exactly what is approved.
+// Shared CSS for the on-page HTML preview. The PDF renderer has its own
+// React-PDF style mapping, while both surfaces consume the same agreement body.
 export const AGREEMENT_CSS = `
   .agreement-doc { font-family: "Noto Sans Hebrew", "DejaVu Sans", sans-serif; direction: rtl; color: #1a1a1a; line-height: 1.7; }
   .agreement-doc h1 { font-size: 22px; margin: 0 0 4px; }
@@ -232,26 +232,4 @@ export function renderAgreementBody(
   }
   const inner = substituteTokens(doc.bodyHtml, c, doc.version, extraTokens);
   return doc.status === 'draft' ? inner + DRAFT_MARKER : inner;
-}
-
-// Full self-contained HTML document for the PDF: CSS + body + approval block.
-// `extraTokens` are forwarded to the body; pass RAW values.
-export function renderAgreementDocument(
-  c: AgreementContent,
-  approval: AgreementApproval,
-  doc: AgreementDoc,
-  extraTokens: Record<string, string> = {},
-): string {
-  const approvalBlock = `
-  <div class="sig">
-    <h2>אישור תנאי החבילה</h2>
-    <div class="meta">אושר על ידי: ${esc(approval.approverName)} · תאריך: ${esc(approval.approvedDateText)}${approval.ip ? ` · IP: ${esc(approval.ip)}` : ''} · גרסה: ${esc(doc.version)}</div>
-    <div class="meta">האישור ניתן באתר, בסימון תיבת האישור לאחר שהלקוח קרא את התנאים.</div>
-  </div>`;
-
-  return `<!doctype html>
-<html lang="he" dir="rtl">
-<head><meta charset="utf-8"><style>* { box-sizing: border-box; } body { margin: 40px; }${AGREEMENT_CSS}</style></head>
-<body><div class="agreement-doc">${renderAgreementBody(c, doc, extraTokens)}${approvalBlock}</div></body>
-</html>`;
 }

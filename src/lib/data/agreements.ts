@@ -10,7 +10,6 @@ import { requireOwnedEvent } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { getProfile } from '@/lib/data/profiles';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { renderAgreementDocument } from '@/lib/agreements/template';
 import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
 import { getAgreementConfigTokens } from '@/lib/data/agreement-config';
 import { agreementContent } from '@/lib/agreements/content';
@@ -198,27 +197,32 @@ export async function recordPackageApproval(
     getAgreementConfigTokens(),
   ]);
   const discountAmount = round.discountAmount;
-  const html = renderAgreementDocument(
-    agreementContent(company, event.name, {
-      channels: campaign.allowed_channels,
-      startAt: campaign.start_at,
-      closeAt: campaign.close_at,
-      // The prices come from the round the approval will be bound to — never from the legacy column (D8 phase 2).
-      packagePrice: round.price,
-      contactQuota: campaign.contact_quota,
-      ...(discountAmount > 0
-        ? { listPrice: round.listPrice, discountAmount }
-        : {}),
-    }),
-    {
-      approverName: signerName,
-      approvedDateText: formatIsraelDate(Date.now()),
-      ip: input.ip,
-    },
-    agreementDoc,
-    configTokens,
-  );
-  const pdfBytes = await renderAgreementPdf(html);
+
+  const content = agreementContent(company, event.name, {
+    channels: campaign.allowed_channels,
+    startAt: campaign.start_at,
+    closeAt: campaign.close_at,
+    // The prices come from the round the approval will be bound to — never from the legacy column (D8 phase 2).
+    packagePrice: round.price,
+    contactQuota: campaign.contact_quota,
+    ...(discountAmount > 0
+      ? { listPrice: round.listPrice, discountAmount }
+      : {}),
+  });
+
+  const approval = {
+    approverName: signerName,
+    approvedDateText: formatIsraelDate(Date.now()),
+    ip: input.ip,
+  };
+
+  const pdfBytes = await renderAgreementPdf({
+    content,
+    approval,
+    doc: agreementDoc,
+    extraTokens: configTokens,
+  });
+
   const contentHash = sha256Hex(pdfBytes);
 
   // D7 finality: the approval REQUEST is persisted before the PDF is uploaded. A retry reuses the id and reads the

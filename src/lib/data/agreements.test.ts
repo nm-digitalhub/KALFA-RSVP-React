@@ -8,11 +8,6 @@ vi.mock('@/lib/data/company', () => ({ getCompanyLegal: vi.fn() }));
 vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
 vi.mock('@/lib/data/profiles', () => ({ getProfile: vi.fn() }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
-// The real contract-model predicate (the model↔contract check is what is under test), a fake renderer.
-vi.mock('@/lib/agreements/template', async (importOriginal) => ({
-  isPackageAgreementVersion: (await importOriginal<typeof import('@/lib/agreements/template')>()).isPackageAgreementVersion,
-  renderAgreementDocument: vi.fn().mockReturnValue('<html>agreement</html>'),
-}));
 vi.mock('@/lib/data/agreements-doc', () => ({
   getApprovedPackageAgreementDoc: vi.fn(),
 }));
@@ -38,7 +33,7 @@ import { fillAuthorizedSet } from '@/lib/data/authorized-fill';
 import { approveCampaign } from '@/lib/data/campaigns';
 import { getCompanyLegal } from '@/lib/data/company';
 import { getAgreementConfigTokens } from '@/lib/data/agreement-config';
-import { renderAgreementDocument, type AgreementDoc } from '@/lib/agreements/template';
+import type { AgreementDoc } from '@/lib/agreements/template';
 import { renderAgreementPdf, sha256Hex } from '@/lib/agreements/pdf';
 import { removeLegalDoc, uploadLegalDoc } from '@/lib/storage/legal-docs';
 import { getEmailSender } from '@/lib/email/sender';
@@ -109,11 +104,26 @@ describe('recordPackageApproval — the customer approves the package terms (no 
     const result = await recordPackageApproval(approvalInput);
 
     expect(result).toEqual({ ok: true });
-    // the document carries the package figures and an APPROVAL block (no signature image)
-    const [content, approval, doc] = vi.mocked(renderAgreementDocument).mock.calls[0];
-    expect(content).toMatchObject({ packagePrice: 150, contactQuota: 100, eventName: 'Event' });
-    expect(approval).toEqual({ approverName: 'דנה כהן', approvedDateText: expect.any(String), ip: '203.0.113.5' });
-    expect(doc?.version).toBe('2026-10-v6');
+    // The structured PDF input carries the exact package figures,
+    // approval evidence and approved agreement document.
+    expect(renderAgreementPdf).toHaveBeenCalledTimes(1);
+
+    const [pdfInput] = vi.mocked(renderAgreementPdf).mock.calls[0];
+
+    expect(pdfInput.content).toMatchObject({
+      packagePrice: 150,
+      contactQuota: 100,
+      eventName: 'Event',
+    });
+
+    expect(pdfInput.approval).toEqual({
+      approverName: 'דנה כהן',
+      approvedDateText: expect.any(String),
+      ip: '203.0.113.5',
+    });
+
+    expect(pdfInput.doc).toBe(PACKAGE_DOC);
+    expect(pdfInput.extraTokens).toEqual({});
     // only the PDF is stored — there is no signature image
     expect(uploadLegalDoc).toHaveBeenCalledTimes(1);
     expect(vi.mocked(uploadLegalDoc).mock.calls[0][0]).toMatch(/agreement-.*\.pdf$/);
@@ -171,7 +181,7 @@ describe('recordPackageApproval — the customer approves the package terms (no 
     expect((await recordPackageApproval(approvalInput)).ok).toBe(false);
     vi.mocked(requireOwnedEvent).mockResolvedValue({ ...futureEvent, status: 'draft' as never });
     expect((await recordPackageApproval(approvalInput)).ok).toBe(false);
-    expect(renderAgreementDocument).not.toHaveBeenCalled();
+    expect(renderAgreementPdf).not.toHaveBeenCalled();
     expect(uploadLegalDoc).not.toHaveBeenCalled();
   });
 

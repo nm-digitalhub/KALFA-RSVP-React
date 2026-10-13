@@ -1,33 +1,48 @@
 import 'server-only';
 
 import { createHash } from 'node:crypto';
+import { renderToBuffer } from '@react-pdf/renderer';
 
-import puppeteer from 'puppeteer';
+import { getAppOrigin } from '@/lib/url';
 
-// Render the package-terms approval HTML (the terms plus the approval block) to a
-// PDF using a headless browser. The
-// browser does correct Hebrew BiDi shaping of mixed text + amounts/IDs/dates
-// natively (pdf-lib/pdfkit do not), which is essential for a legal document.
-// Viable here because beta runs as a long-lived pm2 Node server (Chromium is
-// installed once). The HTML is server-generated and trusted (no script exec).
-export async function renderAgreementPdf(html: string): Promise<Uint8Array> {
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
-  try {
-    const page = await browser.newPage();
-    // The HTML is self-contained: no signature image (the terms are approved,
-    // not signed), no links and no external resources, so 'load' is sufficient.
-    await page.setContent(html, { waitUntil: 'load' });
-    return await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
-    });
-  } finally {
-    await browser.close();
-  }
+import { AgreementPdfDocument } from './pdf-document';
+import { parseAgreementPdfHtml } from './pdf-html';
+import {
+  renderAgreementBody,
+  type AgreementApproval,
+  type AgreementContent,
+  type AgreementDoc,
+} from './template';
+
+export type AgreementPdfInput = {
+  content: AgreementContent;
+  approval: AgreementApproval;
+  doc: AgreementDoc;
+  extraTokens?: Record<string, string>;
+};
+
+export async function renderAgreementPdf(
+  input: AgreementPdfInput,
+): Promise<Uint8Array> {
+  const html = renderAgreementBody(
+    input.content,
+    input.doc,
+    input.extraTokens ?? {},
+  );
+
+  const blocks = parseAgreementPdfHtml(html);
+  const appOrigin = await getAppOrigin();
+
+  const buffer = await renderToBuffer(
+    AgreementPdfDocument({
+      blocks,
+      approval: input.approval,
+      version: input.doc.version,
+      appOrigin,
+    }),
+  );
+
+  return new Uint8Array(buffer);
 }
 
 // SHA-256 of the final PDF bytes — stored separately from the file as tamper

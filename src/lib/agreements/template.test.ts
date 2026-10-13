@@ -7,8 +7,6 @@ import {
   agreementTokens,
   findUnknownTokens,
   renderAgreementBody,
-  renderAgreementDocument,
-  type AgreementApproval,
   type AgreementContent,
   type AgreementDoc,
 } from '@/lib/agreements/template';
@@ -38,12 +36,6 @@ const doc = (bodyHtml: string | null, status: AgreementDoc['status'] = 'approved
   status,
   bodyHtml,
 });
-
-const approval: AgreementApproval = {
-  approverName: 'דנה כהן',
-  approvedDateText: '25.6.2026',
-  ip: '203.0.113.5',
-};
 
 describe('renderAgreementBody', () => {
   it('substitutes the built-in tokens: the seller identity (§14ג), the event and the package figures', () => {
@@ -127,32 +119,6 @@ describe('the token list', () => {
 
   it('a body quoting a retired pay-per-result figure has an unknown token, so approval refuses it', () => {
     expect(findUnknownTokens('<p>{{packagePrice}} {{pricePerReached}}</p>')).toEqual(['pricePerReached']);
-  });
-});
-
-describe('renderAgreementDocument', () => {
-  const html = renderAgreementDocument(content, approval, doc('<p>{{company.name}} {{packagePrice}}</p>'));
-
-  it('is a full RTL Hebrew document with the body and the approval: who, when, from where, which version', () => {
-    expect(html).toContain('<html lang="he" dir="rtl">');
-    expect(html).toContain('קאלפא בע״מ');
-    expect(html).toContain('אישור תנאי החבילה');
-    expect(html).toContain('דנה כהן');
-    expect(html).toContain('25.6.2026');
-    expect(html).toContain('203.0.113.5');
-    expect(html).toContain(PACKAGE_AGREEMENT_VERSION);
-    expect(html).toContain('בסימון תיבת האישור');
-  });
-
-  it('has no signature image and no verified phone', () => {
-    expect(html).not.toContain('<img');
-    expect(html).not.toContain('טלפון מאומת');
-  });
-
-  it('escapes HTML in the approver name', () => {
-    const escaped = renderAgreementDocument(content, { ...approval, approverName: '<b>x</b>' }, doc('<p>x</p>'));
-    expect(escaped).not.toContain('<b>x</b>');
-    expect(escaped).toContain('&lt;b&gt;');
   });
 });
 
