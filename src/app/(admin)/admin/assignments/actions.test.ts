@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
-vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn(), refresh: vi.fn() }));
 vi.mock('next/navigation', () => ({
   redirect: vi.fn((target: string) => {
     throw new Error(`REDIRECT:${target}`);
@@ -19,6 +19,7 @@ import {
   findAccountByEmail,
   voidStaffAssignment,
 } from '@/lib/data/admin/coupon-assignments';
+import { refresh } from 'next/cache';
 import { createAssignmentAction, voidAssignmentAction } from './actions';
 
 // The assign action (admin-panel ג.3, spec §8): every successful outcome navigates to the
@@ -104,6 +105,8 @@ describe('createAssignmentAction', () => {
     vi.mocked(createStaffAssignment).mockRejectedValue(new Error('תנאי ההצעה השתנו. בדקו ואשרו מחדש.'));
     const r = await createAssignmentAction(null, form(VALID));
     expect(r).toEqual({ error: 'תנאי ההצעה השתנו. בדקו ואשרו מחדש.' });
+    // The router is refreshed inside the action, so the preview re-reads the CURRENT terms.
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 
   it('tampered confirmed_terms fail validation before anything runs', async () => {
@@ -113,6 +116,7 @@ describe('createAssignmentAction', () => {
     );
     expect(r?.error).toBeTruthy();
     expect(createStaffAssignment).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled(); // nothing on the server moved — no refresh round trip
   });
 
   it('a lookup failure at confirm time is an error, not a silent assignment', async () => {
@@ -141,12 +145,21 @@ describe('voidAssignmentAction', () => {
     });
     const result = await voidAssignmentAction(ID, LIST, null, form({ reason: 'x' }));
     expect(result).toEqual({ error: expect.stringContaining('המצב השתנה') });
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 
   it('an empty reason fails validation before anything runs', async () => {
     const result = await voidAssignmentAction(ID, LIST, null, form({ reason: '   ' }));
     expect(result).toEqual({ error: 'נדרשת סיבת ביטול' });
     expect(voidStaffAssignment).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('an unexpected server failure keeps the dialog open and refreshes the details in the same round trip', async () => {
+    vi.mocked(voidStaffAssignment).mockRejectedValue(new Error('void: assignment changed'));
+    const result = await voidAssignmentAction(ID, LIST, null, form({ reason: 'x' }));
+    expect(result).toEqual({ error: 'void: assignment changed' });
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 
   it('a successful void carries the trimmed reason, then answers on the detail page keeping the filters', async () => {

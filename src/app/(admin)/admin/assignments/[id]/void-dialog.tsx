@@ -1,7 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useActionState, useState } from 'react';
 
 import {
   AlertDialog,
@@ -33,18 +32,13 @@ export function VoidAssignmentDialog({
   customerLabel: string;
   offerTitle: string;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
   const action = voidAssignmentAction.bind(null, assignmentId, listSearch);
   const [state, formAction, pending] = useActionState(action, null);
 
-  // Only validation and unexpected errors come back here (the reason stays in this
-  // component's state); a refusal or a success navigates to the detail page instead.
-  useEffect(() => {
-    if (state?.error) router.refresh();
-  }, [state, router]);
-
+  // Only validation and unexpected errors come back here (the reason stays in this component's
+  // state; the action refreshes the details itself); a refusal or a success navigates instead.
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger

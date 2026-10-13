@@ -1,7 +1,7 @@
 'use server';
 
 import { redirect, unstable_rethrow } from 'next/navigation';
-import { revalidatePath } from 'next/cache';
+import { refresh, revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import {
@@ -86,6 +86,9 @@ export async function createAssignmentAction(
     target = `/admin/assignments/${result.keptAssignmentId}?notice=${notice}`;
   } catch (err) {
     unstable_rethrow(err);
+    // The offer or its prices may have moved since the page loaded: refresh the router in this same
+    // round trip so the preview shows the CURRENT terms the next confirmation will send (spec §8).
+    refresh();
     return { error: err instanceof Error ? err.message : 'הקצאת ההטבה נכשלה. נסו שוב.' };
   }
 
@@ -117,12 +120,14 @@ export async function voidAssignmentAction(
     const result = await voidStaffAssignment(assignmentId, parsed.data.reason);
     if (result.outcome === 'refused') {
       if (!Object.hasOwn(VOID_REFUSALS, result.reason)) {
+        refresh();
         return { error: 'הביטול נדחה. המצב השתנה — רעננו את העמוד.' };
       }
       refusal = result.reason;
     }
   } catch (err) {
     unstable_rethrow(err);
+    refresh(); // the assignment may have changed under the open dialog — re-read the details
     return { error: err instanceof Error ? err.message : 'ביטול ההטבה נכשל. נסו שוב.' };
   }
 
