@@ -117,6 +117,15 @@ export const AGREEMENT_CSS = `
   .agreement-doc h2 { font-size: 16px; margin: 20px 0 6px; border-bottom: 1px solid #e3e3e8; padding-bottom: 4px; }
   .agreement-doc p { margin: 6px 0; }
   .agreement-doc ul { padding-inline-start: 22px; margin: 6px 0; }
+  .agreement-doc h3 { font-size: 14.6667px; font-weight: 700; margin: 16px 0 6px; }
+  .agreement-doc h4 { font-size: 14px; font-weight: 700; margin: 13.3333px 0 5.3333px; }
+  .agreement-doc h5 { font-size: 13.3333px; font-weight: 700; margin: 10.6667px 0 4px; }
+  .agreement-doc h6 { font-size: 12.6667px; font-weight: 700; margin: 8px 0 4px; }
+  .agreement-doc mark { background-color: #ffff00; }
+  .agreement-doc code, .agreement-doc pre { font-family: "DejaVu Sans Mono", "DejaVu Sans", monospace; }
+  .agreement-doc pre { white-space: pre-wrap; font-size: 13.3333px; line-height: 1.4; padding: 12px; margin: 8px 0; background: #f7f7f9; }
+  .agreement-doc small { font-size: 80%; }
+  .agreement-doc blockquote { border-right: 2.6667px solid #d4d4d8; padding-right: 13.3333px; margin: 8px 0; }
   .agreement-doc dl.terms { background: #f7f7f9; border: 1px solid #e3e3e8; border-radius: 8px; padding: 14px; display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 6px 0; }
   .agreement-doc dl.terms dt { font-weight: 700; }
   .agreement-doc dl.terms dd { margin: 0; }

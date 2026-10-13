@@ -67,9 +67,7 @@ export const TERMS_LIST_DEFAULT_CLASS = TERMS_LIST_CLASS;
 export function contractExtensions(): Extensions {
   return [
     StarterKit.configure({
-      heading: { levels: [1, 2, 3] },
-      code: false,
-      codeBlock: false,
+      heading: { levels: [1, 2, 3, 4, 5, 6] },
       // No rel/target/class of the editor's own: a link is written exactly as it was loaded.
       link: { openOnClick: false, autolink: false, linkOnPaste: false, HTMLAttributes: { target: null, rel: null, class: null } },
     }),
@@ -100,7 +98,7 @@ export function serializeContractHtml(editor: Editor): string {
 
 const BLOCK_TAGS = new Set([
   'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DD', 'DIV', 'DL', 'DT', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
-  'HR', 'LI', 'OL', 'P', 'SECTION', 'UL', 'BODY',
+  'HR', 'LI', 'OL', 'P', 'PRE', 'SECTION', 'UL', 'BODY',
 ]);
 const isBlock = (n: Node_ | null): boolean => n !== null && n.nodeType === 1 && BLOCK_TAGS.has((n as Element).tagName);
 type Node_ = globalThis.Node;
@@ -111,6 +109,8 @@ type Node_ = globalThis.Node;
 export function normalizeContractHtml(html: string): string {
   const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
   const walk = (el: Element) => {
+    // Preformatted whitespace is content, including inside nested <code>.
+    if (el.tagName === 'PRE') return;
     for (const child of [...el.childNodes]) {
       if (child.nodeType === 3) child.textContent = (child.textContent ?? '').replace(/\s+/g, ' ');
       else if (child.nodeType === 1) walk(child as Element);

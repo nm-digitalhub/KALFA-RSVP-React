@@ -87,3 +87,14 @@ describe('normalizeContractHtml', () => {
     expect(normalizeContractHtml('<p>a b</p>')).not.toBe(normalizeContractHtml('<p>ab</p>'));
   });
 });
+
+describe('expanded document formatting stays lossless', () => {
+  it.each(['<p><u>קו תחתון</u></p>', '<h4>ארבע</h4><h5>חמש</h5><h6>שש</h6>', '<p><code>value</code></p>', '<pre><code>  one\n\ttwo  \n</code></pre>'])('round trips %s', (html) => {
+    expect(roundTrip(html)).toBe(html);
+    expect(canEditVisually(html)).toBe(true);
+  });
+  it('does not equate different preformatted whitespace', () => {
+    expect(normalizeContractHtml('<pre><code>  a\n b</code></pre>')).not.toBe(normalizeContractHtml('<pre><code>a b</code></pre>'));
+    expect(canEditVisually('<pre><code>a<strong>  b</strong></code></pre>')).toBe(false);
+  });
+});

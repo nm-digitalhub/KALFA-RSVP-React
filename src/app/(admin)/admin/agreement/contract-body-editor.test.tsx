@@ -99,3 +99,27 @@ describe('ContractBodyEditor — a body it cannot reproduce exactly', () => {
     expect((field(container) as HTMLTextAreaElement).value).toBe(`${EXOTIC}<p>עוד</p>`);
   });
 });
+
+describe('PDF compatibility warnings', () => {
+  it('distinguishes all three warning types and keeps raw draft HTML unchanged', async () => {
+    const raw = '<div style="position:fixed">{{pakagePrice}}</div>';
+    const { container } = render(<ContractBodyEditor name="body_html" initialHtml={raw} tokens={TOKENS} />);
+    await waitFor(() => expect(container.querySelector('textarea')).not.toBeNull());
+    expect(container.textContent).toContain('תחליפים שאינם מוכרים');
+    expect(container.textContent).toContain('חוזה החבילה חייב לכלול');
+    expect(container.textContent).toContain('בעיית תאימות ל-PDF');
+    expect(container.textContent).toContain('position:fixed');
+    expect(field(container).value).toBe(raw);
+    expect(field(container).disabled).toBe(false);
+    const compatible = '<div><p>{{packagePrice}} {{contactQuota}}</p></div>';
+    fireEvent.change(field(container), { target: { value: compatible } });
+    expect(field(container).value).toBe(compatible);
+    expect(container.textContent).not.toContain('בעיית תאימות ל-PDF');
+  });
+  it('keeps newly supported visual formatting in the draft field', async () => {
+    const raw = '<h4>תנאי</h4><h5>תנאי</h5><h6>תנאי</h6><p><u>קו</u><code>value</code></p><pre><code>  x\n y</code></pre>';
+    const { container } = await visual(raw);
+    expect(field(container).value).toBe(raw);
+    expect(container.textContent).not.toContain('בעיית תאימות ל-PDF');
+  });
+});

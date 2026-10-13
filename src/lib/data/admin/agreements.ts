@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { findAgreementPdfCompatibilityIssues } from '@/lib/agreements/pdf-html';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
@@ -103,6 +104,10 @@ export async function approveAgreement(version: string): Promise<void> {
   const missing = missingPackageTokens(body ?? '');
   if (missing.length > 0) {
     throw new Error(`נוסח חוזה החבילה חייב לכלול את התחליפים: ${missing.map((t) => `{{${t}}}`).join(' ')}`);
+  }
+  const pdfIssues = findAgreementPdfCompatibilityIssues(body ?? '');
+  if (pdfIssues.length > 0) {
+    throw new Error(`לא ניתן לאשר את החוזה משום שחלק מהנוסח אינו ניתן לייצוג ב-PDF: ${pdfIssues.join('; ')}`);
   }
   const { error } = await admin
     .from('agreement_documents')

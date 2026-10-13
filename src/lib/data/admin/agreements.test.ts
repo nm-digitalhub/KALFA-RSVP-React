@@ -141,3 +141,24 @@ describe('approveAgreement', () => {
     expect(b.update).not.toHaveBeenCalled();
   });
 });
+
+describe('PDF compatibility gates approval, not draft saving', () => {
+  it('approves rich document HTML', async () => {
+    const body = `${GOOD_BODY}<section dir="rtl"><h4>תנאי</h4><p style="color:blue"><u>קו</u><mark>סימון</mark><small>קטן</small></p><pre><code>  const fee = 10;</code></pre></section>`;
+    const b = wire([{ data: { body_html: body } }, { data: null }]);
+    await approveAgreement('2026-10-v6');
+    expect(b.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'approved', version: '2026-10-v6', approved_by: 'admin-1', approved_at: expect.any(String) }));
+  });
+  it.each(['<iframe src="/terms"></iframe>', '<p style="display:none">hidden</p>', '<p onclick="x()">x</p>', '<a href="javascript:x()">link</a>'])('does not write or audit approval when incompatible: %s', async (html) => {
+    const b = wire([{ data: { body_html: `${GOOD_BODY}${html}` } }]);
+    await expect(approveAgreement('2026-10-v6')).rejects.toThrow('לא ניתן לאשר את החוזה משום שחלק מהנוסח אינו ניתן לייצוג ב-PDF');
+    expect(b.update).not.toHaveBeenCalled();
+    expect(logActivity).not.toHaveBeenCalled();
+  });
+  it('saves an unfinished, incompatible raw HTML draft unchanged', async () => {
+    const body = '<table><tr><td>{{unfinished}}</td></tr></table>';
+    const b = wire();
+    await updateAgreement({ version: 'draft-2026-10-v6', bodyHtml: body });
+    expect(b.update).toHaveBeenCalledWith({ version: 'draft-2026-10-v6', body_html: body, status: 'draft', approved_by: null, approved_at: null });
+  });
+});

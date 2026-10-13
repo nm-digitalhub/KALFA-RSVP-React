@@ -5,6 +5,7 @@ import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 
 import { Button } from '@/components/ui/button';
 import { AGREEMENT_CSS, findUnknownTokens, missingPackageTokens } from '@/lib/agreements/template';
+import { findAgreementPdfCompatibilityIssues } from '@/lib/agreements/pdf-html';
 import { cn } from '@/lib/utils';
 
 import {
@@ -73,9 +74,13 @@ function TokenWarnings({
 }) {
   const unknown = findUnknownTokens(html, tokens);
   const missing = missingPackageTokens(html);
-  if (unknown.length === 0 && missing.length === 0) return null;
+  const pdfIssues = findAgreementPdfCompatibilityIssues(html);
+  if (unknown.length === 0 && missing.length === 0 && pdfIssues.length === 0) return null;
   return (
     <div role="status" className="space-y-1 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+      {pdfIssues.length > 0 ? (
+        <p>בעיית תאימות ל-PDF (ניתן לשמור טיוטה, אך לא לאשר): {pdfIssues.join('; ')}</p>
+      ) : null}
       {unknown.length > 0 ? (
         <p>
           תחליפים שאינם מוכרים (יוצגו ללקוח כמו שהם, והאישור יידחה):{' '}
