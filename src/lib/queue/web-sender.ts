@@ -2,6 +2,8 @@ import 'server-only';
 
 import { PgBoss, type ConstructorOptions } from 'pg-boss';
 
+import { reportPgBossError } from '@/lib/alerts/pg-boss-alert';
+
 // The web tier's SEND-ONLY pg-boss connection.
 //
 // One shared copy: a second hand-written copy of a connection whose flags are
@@ -58,6 +60,14 @@ export function webSenderOptions(env: Record<string, string | undefined> = proce
 // connection that never completes) must not leave its half-open pool behind.
 export async function createWebJobSender(options: ConstructorOptions): Promise<PgBoss> {
   const boss = new PgBoss(options);
+  // pg-boss emits `error` for the failures of its own background work, and an
+  // `error` event nobody listens to is thrown — as an uncaught exception in the
+  // Next server (`Error: Unhandled error.` in kalfa-beta's error log, 2026-10-13).
+  // The message goes to the log as before; the alert carries the class only.
+  boss.on('error', (e: Error) => {
+    console.error('[web-sender] pg-boss error:', e.message);
+    void reportPgBossError(e, 'kalfa-web-sender');
+  });
   try {
     await boss.start();
   } catch (err) {

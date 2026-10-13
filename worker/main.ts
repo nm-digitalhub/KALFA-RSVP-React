@@ -121,6 +121,7 @@ import { runRdpAccessSweep } from '@/lib/rdp-access/sweep';
 import { runPaymentOrphanSweep } from '@/lib/data/payment-orphans';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { reportPgBossError } from '@/lib/alerts/pg-boss-alert';
 
 // Standalone process — load .env.local ourselves (Next is not running here).
 //
@@ -970,14 +971,9 @@ async function main(): Promise<void> {
   });
   boss.on('error', (e: Error) => {
     console.error('[pgboss]', e.message);
-    // Fire-and-forget (the listener is sync); sendSlackAlert never throws.
-    void sendSlackAlert({
-      level: 'error',
-      title: 'pg-boss error',
-      detail: e.message,
-      source: 'pgboss',
-      category: 'errors',
-    });
+    // Fire-and-forget (the listener is sync); reportPgBossError never throws. One
+    // alert per failure class and process — see src/lib/alerts/pg-boss-alert.ts.
+    void reportPgBossError(e, 'kalfa-worker');
   });
 
   // Signal handlers are registered BEFORE boss.start(), not after the ~12s of

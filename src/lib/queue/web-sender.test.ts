@@ -4,19 +4,27 @@ vi.mock('server-only', () => ({}));
 
 // A stand-in for pg-boss that records how many senders were built and lets a test
 // decide how long start() takes and whether it fails.
-type FakeBoss = { options: unknown; stopped: boolean };
+type FakeBoss = { options: unknown; stopped: boolean; listeners: Record<string, Array<(e: Error) => void>> };
 const h = vi.hoisted(() => ({
-  created: [] as Array<{ options: unknown; stopped: boolean }>,
+  created: [] as Array<{ options: unknown; stopped: boolean; listeners: Record<string, Array<(e: Error) => void>> }>,
   start: async (): Promise<void> => undefined,
+  report: vi.fn(),
 }));
+
+vi.mock('@/lib/alerts/pg-boss-alert', () => ({ reportPgBossError: h.report }));
 
 vi.mock('pg-boss', () => ({
   PgBoss: class {
     options: unknown;
     stopped = false;
+    listeners: Record<string, Array<(e: Error) => void>> = {};
     constructor(options: unknown) {
       this.options = options;
       h.created.push(this);
+    }
+    on(event: string, listener: (e: Error) => void) {
+      (this.listeners[event] ??= []).push(listener);
+      return this;
     }
     start() {
       return h.start();
@@ -37,6 +45,7 @@ const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 5));
 beforeEach(() => {
   h.created.length = 0;
   h.start = async () => undefined;
+  h.report.mockReset();
 });
 
 describe('webSenderOptions', () => {
@@ -99,5 +108,18 @@ describe('getWebJobSender', () => {
     h.start = async () => undefined;
     await expect(getWebJobSender()).resolves.toBeDefined();
     expect(h.created).toHaveLength(2);
+  });
+
+  it('listens for pg-boss errors and reports them as the web sender, instead of letting them go unhandled', async () => {
+    const { getWebJobSender } = await load();
+    await getWebJobSender();
+
+    const listeners = (h.created[0] as FakeBoss).listeners.error ?? [];
+    expect(listeners).toHaveLength(1);
+
+    const err = new Error('Connection terminated due to connection timeout');
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    listeners[0](err);
+    expect(h.report).toHaveBeenCalledWith(err, 'kalfa-web-sender');
   });
 });

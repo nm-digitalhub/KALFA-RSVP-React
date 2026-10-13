@@ -35,6 +35,11 @@ vi.mock('pg-boss', () => ({
     async start() {
       return this;
     }
+    // The web sender registers an `error` listener (web-sender.ts); this stub
+    // never emits one.
+    on() {
+      return this;
+    }
     send = boss.send;
   },
 }));
