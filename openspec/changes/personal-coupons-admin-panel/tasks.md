@@ -103,6 +103,13 @@ AGENTS.md's Next.js docs note applies before UI work.
   walked item-by-item, each outcome recorded in verification-acceptance.md
   (acceptance 25). Verify: all green before the change is offered for archive.
 
+- [x] ה.4 (owner, 13.10) Run the Supabase Advisors (security + performance) against the
+  LOCAL DB, judge every finding against the intended access model before any fix —
+  especially the new functions' execute grants, search_path, and the indexes behind the
+  new queries — and record findings, fixes and intentional exceptions in the
+  verification docs. Advisors do not replace the concurrency/acceptance checks; the
+  remote DB is untouched. Verify: verification-advisors.md records the run.
+
 ## Acceptance mapping (spec §14 → tasks)
 
 | # | בדיקת קבלה | משימות |
