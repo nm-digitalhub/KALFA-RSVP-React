@@ -5,8 +5,8 @@ import type {
   EventCalendarRecurrenceRule,
   EventCalendarWeekday,
 } from "@/components/reui/event-calendar/event-calendar-types"
+import { wallClockToDate } from "@/lib/data/event-date"
 import { TZDate } from "@date-fns/tz"
-import { addDays, addMonths, addWeeks, addYears } from "date-fns"
 
 /** Guard: max window-intersecting occurrences per event per expansion. */
 const MAX_OCCURRENCES = 1000
@@ -43,12 +43,13 @@ class EventCalendarRecurrenceError extends Error {
 
 /**
  * Parses a raw RRULE line (with or without the "RRULE:" prefix) into the
- * structured subset. Pass the display time zone so Z-less UNTIL values are
- * interpreted as wall time in that zone rather than the machine zone.
+ * structured subset. The display time zone is required: a Z-less UNTIL is wall
+ * time in that zone, resolved by the shared policy (an overlap takes the earlier
+ * occurrence, a gap moves forward), never in the machine's zone.
  */
 function parseRRuleString(
   input: string,
-  timeZone?: string
+  timeZone: string
 ): EventCalendarRecurrenceRule {
   const body = input.trim().replace(/^RRULE:/i, "")
   const rule: Partial<EventCalendarRecurrenceRule> = {}
@@ -125,7 +126,7 @@ function parseRRuleString(
   return rule as EventCalendarRecurrenceRule
 }
 
-function parseRRuleDate(value: string, timeZone?: string): Date {
+function parseRRuleDate(value: string, timeZone: string): Date {
   // RFC 5545 basic formats: YYYYMMDD or YYYYMMDDTHHMMSS(Z). The T and Z
   // designators are case-insensitive too (RFC 5545 3.1), so fold before matching.
   const match = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/.exec(
@@ -133,17 +134,20 @@ function parseRRuleDate(value: string, timeZone?: string): Date {
   )
   if (!match) throw new EventCalendarRecurrenceError(`UNTIL=${value}`)
   const [, y, m, d, hh = "23", mm = "59", ss = "59", z] = match
-  // Z-less values (including date-only ones, which mean end of that day
-  // inclusive) are wall time in the display zone, not the machine zone.
-  const date = z
-    ? new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}Z`)
-    : timeZone
-      ? new Date(new TZDate(+y, +m - 1, +d, +hh, +mm, +ss, timeZone).getTime())
-      : new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}`)
-  if (Number.isNaN(date.getTime())) {
-    throw new EventCalendarRecurrenceError(`UNTIL=${value}`)
+  if (z) {
+    // ...Z is an absolute instant: no zone is involved.
+    const instant = new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}Z`)
+    if (Number.isNaN(instant.getTime())) {
+      throw new EventCalendarRecurrenceError(`UNTIL=${value}`)
+    }
+    return instant
   }
-  return date
+  // Z-less values (including date-only ones, which mean end of that day
+  // inclusive) are wall time in the display zone, resolved by the shared
+  // wall-clock policy - not the machine zone, and no fallback to it.
+  const resolved = wallClockToDate(`${y}-${m}-${d}T${hh}:${mm}:${ss}`, timeZone)
+  if (!resolved) throw new EventCalendarRecurrenceError(`UNTIL=${value}`)
+  return resolved
 }
 
 /** Serializes the structured subset back to an RRULE line (without prefix). */
@@ -175,7 +179,7 @@ function formatRRuleString(rule: EventCalendarRecurrenceRule): string {
 
 function resolveRule(
   recurrence: EventCalendarRecurrenceRule | string,
-  timeZone?: string
+  timeZone: string
 ): EventCalendarRecurrenceRule {
   return typeof recurrence === "string"
     ? parseRRuleString(recurrence, timeZone)
@@ -230,6 +234,56 @@ function expandRecurrence<TData>(
   const interval = Math.max(1, rule.interval ?? 1)
   const durationMs = event.end.getTime() - event.start.getTime()
   const zonedStart = new TZDate(event.start.getTime(), ctx.timeZone)
+
+  // Every wall clock -> instant in the display zone goes through the shared
+  // resolver (data/event-date.ts): an overlap takes the earlier occurrence, a gap
+  // moves forward, and the machine's own zone never enters. NOT through TZDate's
+  // component constructor, nor its setters (which date-fns' addDays/addMonths
+  // use): they read the components with the native Date, so the host decides an
+  // overlap. TZDate(timestamp, zone) stays - the instant is already known.
+  const pad = (n: number, width = 2) => String(n).padStart(width, "0")
+  const zonedWall = (
+    year: number,
+    month: number,
+    day: number,
+    hour: number,
+    minute: number,
+    second: number,
+    millisecond: number
+  ): TZDate => {
+    const resolved = wallClockToDate(
+      `${pad(year, 4)}-${pad(month + 1)}-${pad(day)}T${pad(hour)}:${pad(minute)}:${pad(second)}.${pad(millisecond, 3)}`,
+      ctx.timeZone
+    )
+    // A year outside 0000-9999 has no wall-clock text: an Invalid Date, so that
+    // occurrence simply never appears.
+    return new TZDate(resolved ? resolved.getTime() : Number.NaN, ctx.timeZone)
+  }
+  /** `base` moved by whole CALENDAR days at the same wall-clock time of day. */
+  const addWallDays = (base: TZDate, days: number): TZDate => {
+    if (days === 0) return base
+    const target = new Date(
+      Date.UTC(base.getFullYear(), base.getMonth(), base.getDate() + days)
+    )
+    return zonedWall(
+      target.getUTCFullYear(),
+      target.getUTCMonth(),
+      target.getUTCDate(),
+      base.getHours(),
+      base.getMinutes(),
+      base.getSeconds(),
+      base.getMilliseconds()
+    )
+  }
+  /** Year and zero-based month `months` after DTSTART's - calendar arithmetic, no instant. */
+  const monthsFromStart = (months: number): [year: number, month: number] => {
+    const index = zonedStart.getMonth() + months
+    return [
+      zonedStart.getFullYear() + Math.floor(index / 12),
+      ((index % 12) + 12) % 12,
+    ]
+  }
+
   // A span of whole local days is wall time, not an absolute delta: a 3 day
   // all-day bar crossing spring forward would otherwise end at 01:00 and
   // occupy a fourth day in the month grid. Timed spans stay absolute so a two
@@ -237,14 +291,14 @@ function expandRecurrence<TData>(
   const daySpan = Math.round(durationMs / 86400000)
   const wallDaySpan =
     daySpan > 0 &&
-    addDays(zonedStart, daySpan).getTime() === event.end.getTime()
+    addWallDays(zonedStart, daySpan).getTime() === event.end.getTime()
       ? daySpan
       : null
   const endFor = (start: Date): Date =>
     wallDaySpan === null
       ? new Date(start.getTime() + durationMs)
       : new Date(
-          addDays(
+          addWallDays(
             new TZDate(start.getTime(), ctx.timeZone),
             wallDaySpan
           ).getTime()
@@ -298,8 +352,9 @@ function expandRecurrence<TData>(
     (rule.freq === "yearly" &&
       Boolean(rule.byMonth?.length || rule.byMonthDay?.length || monthlyByDay))
 
+  // Calendar arithmetic on a UTC date: no zone, no host.
   const daysInMonth = (year: number, month: number) =>
-    new Date(year, month + 1, 0).getDate()
+    new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
 
   // RFC 5545 3.3.10 LIMIT filters: at these frequencies a BY* part narrows the
   // set instead of reshaping it. Dropping them silently expanded the series as
@@ -338,15 +393,14 @@ function expandRecurrence<TData>(
 
   /** Wall-clock instant in the display zone carrying DTSTART's time-of-day. */
   const zonedDate = (year: number, month: number, day: number) =>
-    new TZDate(
+    zonedWall(
       year,
       month,
       day,
       zonedStart.getHours(),
       zonedStart.getMinutes(),
       zonedStart.getSeconds(),
-      zonedStart.getMilliseconds(),
-      ctx.timeZone
+      zonedStart.getMilliseconds()
     )
 
   /** Selected days-of-month, ascending: BYMONTHDAY (and) BYDAY, else the clamped anchor day. */
@@ -367,7 +421,9 @@ function expandRecurrence<TData>(
         const weekday = WEEKDAYS.indexOf(day)
         const matches: number[] = []
         for (let d = 1; d <= total; d++) {
-          if (new Date(year, month, d).getDay() === weekday) matches.push(d)
+          if (new Date(Date.UTC(year, month, d)).getUTCDay() === weekday) {
+            matches.push(d)
+          }
         }
         if (ordinal === 0) {
           byDayMatches.push(...matches) // plain BYDAY: every matching weekday
@@ -388,15 +444,17 @@ function expandRecurrence<TData>(
 
   /** Chronological candidates of one period, derived from the DTSTART anchor by index (no drift). */
   const periodCandidates = (period: number): TZDate[] => {
-    if (rule.freq === "daily") return [addDays(zonedStart, period * interval)]
+    if (rule.freq === "daily") {
+      return [addWallDays(zonedStart, period * interval)]
+    }
     if (rule.freq === "weekly") {
-      const base = addWeeks(zonedStart, period * interval)
+      const base = addWallDays(zonedStart, 7 * period * interval)
       if (!weeklyDays) return [base]
       const week: TZDate[] = []
       // walk the WKST-aligned week so candidates stay chronological
       const baseOffset = fromWeekStart(base.getDay())
       for (let offset = 0; offset < 7; offset++) {
-        const candidate = addDays(base, offset - baseOffset)
+        const candidate = addWallDays(base, offset - baseOffset)
         if (!weeklyDays.includes(candidate.getDay())) continue
         // days of the DTSTART week before DTSTART are not part of the series
         if (candidate.getTime() < zonedStart.getTime()) continue
@@ -405,15 +463,13 @@ function expandRecurrence<TData>(
       return week
     }
     if (rule.freq === "monthly") {
-      const anchor = addMonths(zonedStart, period * interval)
-      const year = anchor.getFullYear()
-      const month = anchor.getMonth()
+      const [year, month] = monthsFromStart(period * interval)
       return monthDays(year, month)
         .map((day) => zonedDate(year, month, day))
         .filter((c) => c.getTime() >= zonedStart.getTime())
     }
     // yearly
-    const year = addYears(zonedStart, period * interval).getFullYear()
+    const year = zonedStart.getFullYear() + period * interval
     const dates: TZDate[] = []
     for (const month of yearlyMonths) {
       for (const day of monthDays(year, month - 1)) {
@@ -431,26 +487,24 @@ function expandRecurrence<TData>(
 
   /** Earliest/latest instant a period can produce - loop bounds without expanding it. */
   const periodEdge = (period: number, edge: "first" | "last"): TZDate => {
-    if (rule.freq === "daily") return addDays(zonedStart, period * interval)
+    if (rule.freq === "daily") return addWallDays(zonedStart, period * interval)
     if (rule.freq === "weekly") {
-      const base = addWeeks(zonedStart, period * interval)
+      const base = addWallDays(zonedStart, 7 * period * interval)
       if (!weeklyDays) return base
-      return addDays(
+      return addWallDays(
         base,
         (edge === "first" ? 0 : 6) - fromWeekStart(base.getDay())
       )
     }
     if (rule.freq === "monthly") {
-      const anchor = addMonths(zonedStart, period * interval)
-      const year = anchor.getFullYear()
-      const month = anchor.getMonth()
+      const [year, month] = monthsFromStart(period * interval)
       return zonedDate(
         year,
         month,
         edge === "first" ? 1 : daysInMonth(year, month)
       )
     }
-    const year = addYears(zonedStart, period * interval).getFullYear()
+    const year = zonedStart.getFullYear() + period * interval
     const month =
       (edge === "first"
         ? yearlyMonths[0]

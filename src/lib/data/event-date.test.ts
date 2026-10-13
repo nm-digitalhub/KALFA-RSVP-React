@@ -1,10 +1,6 @@
-import { execFileSync } from 'node:child_process';
-import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { TZDate, tzScan } from '@date-fns/tz';
-import { describe, expect, it } from 'vitest';
+import { createHostRunner, HOST_ZONES, type HostRunner } from '@/test/host-zone';
 
 import {
   defaultThankyouSendAt,
@@ -15,8 +11,13 @@ import {
   wallClockToDate,
 } from './event-date';
 
-// The suite runs under the TZ pinned in vitest.config.mts (Asia/Jerusalem), but nothing here depends on
-// it: the DST policy is host-independent and 'DST wall-clock policy' below proves it under other host zones.
+// The suite runs under the TZ pinned in vitest.config.mts (Asia/Jerusalem), but nothing here depends on it:
+// the DST contract below is host-independent, and 'host zone matrix' proves it by running the real resolver in
+// fresh processes whose host zone is something else.
+//
+// Correctness expectations in this file are written out by hand or derived from Intl alone (an explicit zone
+// passed to Intl.DateTimeFormat). None is computed with Temporal, @date-fns/tz, tzOffset or tzScan: a test that
+// asks the implementation's own machinery for the answer cannot catch that machinery being wrong.
 describe('wallClockToDate', () => {
   const IL = 'Asia/Jerusalem';
   const iso = (d: Date | null) => d?.toISOString() ?? null;
@@ -57,15 +58,21 @@ describe('wallClockToDate', () => {
     expect(wallClockToDate('not a date', IL)).toBeNull();
     expect(wallClockToDate('2026-10-07', IL)).toBeNull();
     expect(wallClockToDate('2026-10-07T06:36', 'Not/AZone')).toBeNull();
+    expect(wallClockToDate('2026-10-07T06:36', '')).toBeNull();
   });
 
   it('returns null for a calendar or clock value that does not exist instead of rolling it into another date', () => {
     expect(wallClockToDate('2026-02-30T10:00', IL)).toBeNull();
+    expect(wallClockToDate('2026-02-29T10:00', IL)).toBeNull(); // 2026 is not a leap year
+    expect(wallClockToDate('2100-02-29T10:00', IL)).toBeNull(); // 2100 is not a leap year either
     expect(wallClockToDate('2026-13-01T10:00', IL)).toBeNull();
     expect(wallClockToDate('2026-10-00T10:00', IL)).toBeNull();
     expect(wallClockToDate('2026-10-07T25:00', IL)).toBeNull();
     expect(wallClockToDate('2026-10-07T10:61', IL)).toBeNull();
     expect(wallClockToDate('2026-10-07T24:01', IL)).toBeNull();
+    expect(wallClockToDate('2026-10-07T10:30:60', IL)).toBeNull();
+    // A real leap day is a real day.
+    expect(iso(wallClockToDate('2028-02-29T10:00', IL))).toBe('2028-02-29T08:00:00.000Z');
   });
 
   // Hour is 0..23. 24:00 used to be read as "the end of the day" and rolled into the next one.
@@ -88,6 +95,51 @@ describe('wallClockToDate', () => {
     // Israel 2026: clocks go 02:00 -> 01:00 on Sunday 25.10.
     expect(iso(wallClockToDate('2026-10-25T00:30', IL))).toBe('2026-10-24T21:30:00.000Z');
     expect(iso(wallClockToDate('2026-10-25T02:30', IL))).toBe('2026-10-25T00:30:00.000Z'); // IST, +02:00
+  });
+});
+
+// The text format: HH:mm, HH:mm:ss, HH:mm:ss.S to .SSSSSSSSS — and nothing after it.
+describe('wall-clock text format', () => {
+  const IL = 'Asia/Jerusalem';
+  const iso = (d: Date | null) => d?.toISOString() ?? null;
+
+  it('keeps milliseconds: a fraction of 1 to 3 digits is exact, longer ones are cut to the millisecond (never rounded)', () => {
+    expect(iso(wallClockToDate('2026-07-15T09:30:00', IL))).toBe('2026-07-15T06:30:00.000Z');
+    expect(iso(wallClockToDate('2026-07-15T09:30:00.1', IL))).toBe('2026-07-15T06:30:00.100Z');
+    expect(iso(wallClockToDate('2026-07-15T09:30:00.12', IL))).toBe('2026-07-15T06:30:00.120Z');
+    expect(iso(wallClockToDate('2026-07-15T09:30:00.123', IL))).toBe('2026-07-15T06:30:00.123Z');
+    expect(iso(wallClockToDate('2026-07-15T09:30:00.123456789', IL))).toBe('2026-07-15T06:30:00.123Z');
+    // 7 digits is what Microsoft Graph writes ("…T00:00:00.0000000"); 9999999 must not round up into the next second.
+    expect(iso(wallClockToDate('2026-07-15T00:00:00.0000000', IL))).toBe('2026-07-14T21:00:00.000Z');
+    expect(iso(wallClockToDate('2026-07-15T09:30:00.9999999', IL))).toBe('2026-07-15T06:30:00.999Z');
+  });
+
+  it('keeps the milliseconds through the overlap and the gap too', () => {
+    expect(iso(wallClockToDate('2026-10-25T01:30:00.123', IL))).toBe('2026-10-24T22:30:00.123Z');
+    expect(iso(wallClockToDate('2026-03-27T02:30:00.456', IL))).toBe('2026-03-27T00:30:00.456Z');
+  });
+
+  it('is anchored to the end of the text: a zone designator, an offset, a dangling dot, spaces, a newline or junk refuse it', () => {
+    for (const text of [
+      '2026-10-25T01:30Z',
+      '2026-10-25T01:30:00Z',
+      '2026-10-25T01:30:00.123Z',
+      '2026-10-25T01:30:00+03:00',
+      '2026-10-25T01:30:00.',
+      '2026-10-25T01:30:00.1234567890', // ten digits
+      '2026-10-25T01:30:00.123 extra',
+      ' 2026-10-25T01:30',
+      '2026-10-25T01:30 ',
+      '2026-10-25T01:30\n',
+      'x2026-10-25T01:30',
+      '2026-10-25T01:3',
+      '2026-10-25T1:30',
+      '2026-10-25T01:30:5',
+      '2026-10-25T01:30.5',
+      '26-10-25T01:30',
+    ]) {
+      expect(wallClockToDate(text, IL), JSON.stringify(text)).toBeNull();
+    }
   });
 });
 
@@ -135,6 +187,14 @@ describe('ilWallTimeToIso', () => {
     expect(ilWallTimeToIso('2026-10-25', '01:30')).toBe('2026-10-25T01:30:00+03:00');
   });
 
+  it('keeps seconds and milliseconds: 2026-10-25T01:30:00.123 stays .123', () => {
+    expect(ilWallTimeToIso('2026-10-25', '01:30:00.123')).toBe('2026-10-25T01:30:00.123+03:00');
+    expect(ilWallTimeToIso('2026-03-27', '02:30:45')).toBe('2026-03-27T03:30:45+03:00');
+    expect(ilWallTimeToIso('2026-10-25', '01:30:00.5')).toBe('2026-10-25T01:30:00.5+03:00');
+    // No fraction in, none out.
+    expect(ilWallTimeToIso('2026-10-25', '01:30:00')).toBe('2026-10-25T01:30:00+03:00');
+  });
+
   it('rejects 24:00 instead of reading it as the end of the day', () => {
     expect(() => ilWallTimeToIso('2026-03-26', '24:00')).toThrow(RangeError);
     expect(instant(ilWallTimeToIso('2026-03-27', '00:00'))).toBe('2026-03-26T22:00:00.000Z');
@@ -147,6 +207,7 @@ describe('ilWallTimeToIso', () => {
     expect(() => ilWallTimeToIso('2026-03-27', '25:00')).toThrow(RangeError);
     expect(() => ilWallTimeToIso('2026-03-27', '10:61')).toThrow(RangeError);
     expect(() => ilWallTimeToIso('2026-03-27', '9:00')).toThrow(RangeError);
+    expect(() => ilWallTimeToIso('2026-03-27', '10:00Z')).toThrow(RangeError);
     expect(() => ilWallTimeToIso('2026-03-27', 'noon')).toThrow(/not an Israel wall-clock/);
   });
 
@@ -156,7 +217,7 @@ describe('ilWallTimeToIso', () => {
   });
 });
 
-// ── DST wall-clock policy: a contract ───────────────────────────────────────────────────────────────
+// ── DST wall-clock contract ─────────────────────────────────────────────────────────────────────────
 // wallClockToDate and ilWallTimeToIso resolve a wall time across a DST switch by ONE policy, for every IANA
 // zone and whatever the zone of the machine running them:
 //
@@ -170,45 +231,53 @@ describe('ilWallTimeToIso', () => {
 //
 //   Israel 2026: 27.3 02:00 -> 03:00 (02:00-02:59 never happens: the GAP);
 //                25.10 02:00 -> 01:00 (01:00-01:59 happens twice, +03:00 then +02:00: the OVERLAP).
+//   Israel 2027: 26.3 02:00 -> 03:00;  31.10 02:00 -> 01:00.
 //
-// Why resolveWallClock does its own offset arithmetic instead of TZDate's component constructor (MEASURED
-// 2026-10-13, @date-fns/tz 1.5.0, Node 24): @date-fns/tz has no disambiguation option, and its zone argument
-// does NOT make the result host-independent. date/mini.js reads the components with the native `new Date(...)`
-// (host zone), samples the target offset at THAT instant and corrects by the difference to the host's offset,
-// so for an overlap the HOST decides: UTC+3 or more picks the +03:00 occurrence, UTC+2 or less (UTC, London,
-// New York...) the +02:00 one (swept over the 418 zones of Intl.supportedValuesOf('timeZone') as host: 163 pick
-// the first, 254 the later, Africa/Cairo is mixed). Worse, about twenty host zones (Europe/Athens, Helsinki,
-// Kiev, Beirut, Africa/Cairo, Australia/Lord_Howe...) are an hour off even for an ordinary Israeli time when
-// the HOST's own spring-forward gap swallows that wall time (host Athens: 2026-03-29 03:30 Israel gave 01:30Z,
-// not 00:30Z). Production was right only because every process declares TZ=Asia/Jerusalem. The last test in
-// this block keeps that measurement as a tripwire.
-//
-// How the host zone is varied here: assigning process.env.TZ at run time makes Node re-read the zone (measured:
-// native Date parsing follows it inside a vitest worker), so withHostZone() runs the REAL function under other
-// host zones in-process. `TZ=UTC npm test` on the command line would change nothing: vitest.config.mts pins TZ
-// through test.env.
-describe('DST wall-clock policy — overlap = earlier, gap = forward, host zone irrelevant', () => {
+// How the host zone is varied: vitest.config.mts pins TZ for the whole run, so `TZ=UTC npm test` would change
+// nothing, and assigning process.env.TZ inside a test only reaches what happens to re-read it. 'host zone
+// matrix' therefore bundles the real module and runs it in a fresh Node process per host zone
+// (src/test/host-zone.ts).
+describe('DST wall-clock contract — overlap = earlier, gap = forward', () => {
   const IL = 'Asia/Jerusalem';
   const iso = (d: Date | null) => d?.toISOString() ?? null;
 
-  function withHostZone<T>(hostZone: string, fn: () => T): T {
-    const before = process.env.TZ;
-    process.env.TZ = hostZone;
-    try {
-      return fn();
-    } finally {
-      if (before === undefined) delete process.env.TZ;
-      else process.env.TZ = before;
-    }
-  }
-
-  it('reads a wall time in the autumn overlap as its FIRST occurrence (+03:00)', () => {
+  it('Israel 2026 autumn overlap: every wall time in 01:00-01:59 is its FIRST occurrence (+03:00)', () => {
     expect(iso(wallClockToDate('2026-10-25T01:00', IL))).toBe('2026-10-24T22:00:00.000Z');
     expect(iso(wallClockToDate('2026-10-25T01:30', IL))).toBe('2026-10-24T22:30:00.000Z');
     expect(iso(wallClockToDate('2026-10-25T01:59', IL))).toBe('2026-10-24T22:59:00.000Z');
     expect(ilWallTimeToIso('2026-10-25', '01:30')).toBe('2026-10-25T01:30:00+03:00');
-    // 2027: the clocks go back on Sunday 31.10 (tzScan: 2027-10-30T23:00Z).
+  });
+
+  it('Israel 2026 spring gap: every wall time in 02:00-02:59 moves FORWARD one hour', () => {
+    expect(iso(wallClockToDate('2026-03-27T02:00', IL))).toBe('2026-03-27T00:00:00.000Z');
+    expect(iso(wallClockToDate('2026-03-27T02:30', IL))).toBe('2026-03-27T00:30:00.000Z');
+    expect(iso(wallClockToDate('2026-03-27T02:59', IL))).toBe('2026-03-27T00:59:00.000Z');
+    expect(ilWallTimeToIso('2026-03-27', '02:30')).toBe('2026-03-27T03:30:00+03:00');
+    // Seconds ride along.
+    expect(iso(wallClockToDate('2026-03-27T02:30:45', IL))).toBe('2026-03-27T00:30:45.000Z');
+    // What the user sees after saving an event typed as 02:30 on that day: the MOVED time, not the one typed.
+    expect(ilTimeInputValue(ilWallTimeToIso('2026-03-27', '02:30'))).toBe('03:30');
+  });
+
+  it('Israel 2027 follows the same policy on its own switch days', () => {
+    // 2027-10-31 02:00 -> 01:00 (switch at 2027-10-30T23:00Z); 2027-03-26 02:00 -> 03:00 (at 00:00Z).
+    expect(iso(wallClockToDate('2027-10-31T01:00', IL))).toBe('2027-10-30T22:00:00.000Z');
+    expect(iso(wallClockToDate('2027-10-31T01:30', IL))).toBe('2027-10-30T22:30:00.000Z');
+    expect(iso(wallClockToDate('2027-10-31T01:59', IL))).toBe('2027-10-30T22:59:00.000Z');
+    expect(iso(wallClockToDate('2027-03-26T02:00', IL))).toBe('2027-03-26T00:00:00.000Z');
+    expect(iso(wallClockToDate('2027-03-26T02:30', IL))).toBe('2027-03-26T00:30:00.000Z');
+    expect(iso(wallClockToDate('2027-03-26T02:59', IL))).toBe('2027-03-26T00:59:00.000Z');
     expect(ilWallTimeToIso('2027-10-31', '01:30')).toBe('2027-10-31T01:30:00+03:00');
+    expect(ilWallTimeToIso('2027-03-26', '02:30')).toBe('2027-03-26T03:30:00+03:00');
+  });
+
+  it('wall times on a switch day outside the gap and the overlap are plain single instants', () => {
+    expect(iso(wallClockToDate('2026-10-25T00:30', IL))).toBe('2026-10-24T21:30:00.000Z');
+    expect(iso(wallClockToDate('2026-10-25T02:00', IL))).toBe('2026-10-25T00:00:00.000Z'); // first minute after the overlap
+    expect(iso(wallClockToDate('2026-10-25T02:30', IL))).toBe('2026-10-25T00:30:00.000Z');
+    expect(iso(wallClockToDate('2026-03-27T01:59', IL))).toBe('2026-03-26T23:59:00.000Z'); // last minute before the gap
+    expect(iso(wallClockToDate('2026-03-27T03:00', IL))).toBe('2026-03-27T00:00:00.000Z'); // first minute after it
+    expect(iso(wallClockToDate('2026-03-27T03:30', IL))).toBe('2026-03-27T00:30:00.000Z');
   });
 
   it('cannot tell the two occurrences apart afterwards: both read back as 01:30', () => {
@@ -217,20 +286,7 @@ describe('DST wall-clock policy — overlap = earlier, gap = forward, host zone 
     expect(ilTimeInputValue('2026-10-24T23:30:00.000Z')).toBe('01:30');
   });
 
-  it('moves a wall time in the spring gap forward — and reads back as the MOVED time, not the one typed', () => {
-    expect(iso(wallClockToDate('2026-03-27T02:00', IL))).toBe('2026-03-27T00:00:00.000Z');
-    expect(iso(wallClockToDate('2026-03-27T02:30', IL))).toBe('2026-03-27T00:30:00.000Z');
-    expect(iso(wallClockToDate('2026-03-27T02:59', IL))).toBe('2026-03-27T00:59:00.000Z');
-    expect(ilWallTimeToIso('2026-03-27', '02:30')).toBe('2026-03-27T03:30:00+03:00');
-    // 2027: the clocks go forward on Friday 26.3 (tzScan: 2027-03-26T00:00Z).
-    expect(ilWallTimeToIso('2027-03-26', '02:30')).toBe('2027-03-26T03:30:00+03:00');
-    // What the user sees after saving an event typed as 02:30 on that day:
-    expect(ilTimeInputValue(ilWallTimeToIso('2026-03-27', '02:30'))).toBe('03:30');
-    // Seconds ride along.
-    expect(iso(wallClockToDate('2026-03-27T02:30:45', IL))).toBe('2026-03-27T00:30:45.000Z');
-  });
-
-  it('equals an independent, Intl-only oracle for every minute around both switches (overlap: earlier, gap: forward)', () => {
+  it('equals an independent, Intl-only oracle for every minute around both Israeli switches of 2026 (overlap: earlier, gap: forward)', () => {
     const wallFmt = new Intl.DateTimeFormat('en-CA', {
       timeZone: IL,
       hourCycle: 'h23',
@@ -248,7 +304,7 @@ describe('DST wall-clock policy — overlap = earlier, gap = forward, host zone 
     const HOUR = 3_600_000;
     // Israel has exactly two offsets: +02:00 (IST) and +03:00 (IDT). The oracle reads the wall text as if it were
     // UTC, keeps the candidate instants whose Israel wall clock really reads that text (Intl with an explicit
-    // zone — no host zone, no TZDate), and takes the earliest; with none (the gap) it takes the pre-gap +02:00.
+    // zone — no host zone), and takes the earliest; with none (the gap) it takes the pre-gap +02:00.
     const oracle = (wall: string): { ms: number; candidates: number } => {
       const asUtc = Date.parse(`${wall}:00Z`);
       const real = [asUtc - 3 * HOUR, asUtc - 2 * HOUR].filter((ms) => wallOf(ms) === wall);
@@ -276,10 +332,46 @@ describe('DST wall-clock policy — overlap = earlier, gap = forward, host zone 
     expect(gapMinutes).toBe(60);
   });
 
-  // Layer 4: any IANA zone, not only Israel — and not only 60-minute jumps. An Intl-only oracle (it knows
-  // nothing of tzOffset or TZDate): walk the minutes around every 2026 switch, ask Intl what the zone's wall
-  // clock reads at each instant, and derive from that alone what every wall minute must resolve to.
-  // Lord_Howe jumps 30 minutes, Chatham sits on :45 offsets, Casablanca runs its DST backwards for Ramadan.
+  // Any IANA zone, not only Israel — and not only 60-minute jumps. The switch instants below are written out
+  // (found once by walking Intl.DateTimeFormat's offset minute by minute) so the test needs no library to know
+  // where a switch is; the oracle then walks the minutes around each one, asks Intl what the zone's wall clock
+  // reads at every instant, and derives from that alone what every wall minute must resolve to. Lord_Howe jumps
+  // 30 minutes, Chatham sits on :45 offsets, Casablanca runs its DST backwards for Ramadan.
+  // [switch instant (UTC), wall-clock change in minutes: + is a gap, - is an overlap]
+  const SWITCHES: Record<string, Array<[utc: string, change: number]>> = {
+    'Asia/Jerusalem': [
+      ['2026-03-27T00:00:00Z', 60],
+      ['2026-10-24T23:00:00Z', -60],
+      ['2027-03-26T00:00:00Z', 60],
+      ['2027-10-30T23:00:00Z', -60],
+    ],
+    'America/New_York': [
+      ['2026-03-08T07:00:00Z', 60],
+      ['2026-11-01T06:00:00Z', -60],
+    ],
+    'Europe/Berlin': [
+      ['2026-03-29T01:00:00Z', 60],
+      ['2026-10-25T01:00:00Z', -60],
+    ],
+    'Europe/Athens': [
+      ['2026-03-29T01:00:00Z', 60],
+      ['2026-10-25T01:00:00Z', -60],
+    ],
+    'Australia/Lord_Howe': [
+      ['2026-04-04T15:00:00Z', -30],
+      ['2026-10-03T15:30:00Z', 30],
+    ],
+    'Pacific/Chatham': [
+      ['2026-04-04T14:00:00Z', -60],
+      ['2026-09-26T14:00:00Z', 60],
+    ],
+    'Africa/Casablanca': [
+      ['2026-02-15T02:00:00Z', -60],
+      ['2026-03-22T02:00:00Z', 60],
+      ['2026-09-20T01:00:00Z', -60],
+    ],
+  };
+
   function oracleWindow(zone: string, startMs: number, endMs: number) {
     const fmt = new Intl.DateTimeFormat('en-CA', {
       timeZone: zone,
@@ -318,27 +410,15 @@ describe('DST wall-clock policy — overlap = earlier, gap = forward, host zone 
     return { expected, overlapMinutes, gapMinutes };
   }
 
-  it.each([
-    'Asia/Jerusalem',
-    'America/New_York',
-    'Europe/Berlin',
-    'Europe/Athens',
-    'Australia/Lord_Howe',
-    'Pacific/Chatham',
-    'Africa/Casablanca',
-  ])('%s: every wall minute around every 2026 switch equals an Intl-only oracle', (zone) => {
-    const switches = tzScan(zone, { start: new Date('2026-01-01T00:00:00Z'), end: new Date('2027-01-01T00:00:00Z') });
-    expect(switches.length, `${zone} has switches in 2026`).toBeGreaterThan(0);
+  it.each(Object.keys(SWITCHES))('%s: every wall minute around every listed switch equals an Intl-only oracle', (zone) => {
     const mismatches: string[] = [];
-    for (const sw of switches) {
-      const { expected, overlapMinutes, gapMinutes } = oracleWindow(
-        zone,
-        sw.date.getTime() - 3 * 3_600_000,
-        sw.date.getTime() + 3 * 3_600_000,
-      );
-      // The oracle saw the real thing: a forward jump of `change` minutes is a gap that long, a backward one an overlap.
-      if (sw.change > 0) expect(gapMinutes, `${zone} gap at ${sw.date.toISOString()}`).toBe(sw.change);
-      else expect(overlapMinutes, `${zone} overlap at ${sw.date.toISOString()}`).toBe(-sw.change);
+    for (const [utc, change] of SWITCHES[zone]) {
+      const at = Date.parse(utc);
+      const { expected, overlapMinutes, gapMinutes } = oracleWindow(zone, at - 3 * 3_600_000, at + 3 * 3_600_000);
+      // The table is checked against Intl too: a forward jump of `change` minutes is a gap that long, a backward
+      // one an overlap that long. A wrong switch instant or size in the table fails here, not silently.
+      if (change > 0) expect(gapMinutes, `${zone} gap at ${utc}`).toBe(change);
+      else expect(overlapMinutes, `${zone} overlap at ${utc}`).toBe(-change);
       for (const [wall, instant] of expected) {
         const text = new Date(wall).toISOString().slice(0, 16);
         const got = wallClockToDate(text, zone)?.getTime();
@@ -348,152 +428,108 @@ describe('DST wall-clock policy — overlap = earlier, gap = forward, host zone 
     expect(mismatches).toEqual([]);
   });
 
-  // Layer 2: the same inputs under other HOST zones give the very same instants. Hosts: UTC and New York (the
-  // two that flipped the overlap), Athens / Cairo / Lord_Howe (the hour-off ones), Tokyo and Auckland (east).
-  // The Athens case is the one that was an hour wrong: 2026-03-29 03:30 Israel is 00:30Z (IDT), not 01:30Z.
-  const HOSTS = ['UTC', 'Asia/Jerusalem', 'America/New_York', 'Europe/Athens', 'Africa/Cairo', 'Australia/Lord_Howe', 'Asia/Tokyo', 'Pacific/Auckland'];
-  const CASES: Array<[wall: string, zone: string, instant: string]> = [
-    ['2026-10-25T01:00', IL, '2026-10-24T22:00:00.000Z'], // Israel overlap: earlier
+  it('other zones, by hand: New York and Berlin (60 minutes), Lord_Howe (30 minutes)', () => {
+    // New York 2026: 8.3 02:00 -> 03:00 (gap); 1.11 02:00 -> 01:00 (overlap, EDT -04:00 first).
+    expect(iso(wallClockToDate('2026-11-01T01:30', 'America/New_York'))).toBe('2026-11-01T05:30:00.000Z');
+    expect(iso(wallClockToDate('2026-03-08T02:30', 'America/New_York'))).toBe('2026-03-08T07:30:00.000Z');
+    // Berlin 2026: 29.3 02:00 -> 03:00 (gap); 25.10 03:00 -> 02:00 (overlap, CEST +02:00 first).
+    expect(iso(wallClockToDate('2026-10-25T02:30', 'Europe/Berlin'))).toBe('2026-10-25T00:30:00.000Z');
+    expect(iso(wallClockToDate('2026-03-29T02:30', 'Europe/Berlin'))).toBe('2026-03-29T01:30:00.000Z');
+    // Lord_Howe 2026: 5.4 02:00 -> 01:30 (a 30-minute overlap, +11:00 first); 4.10 02:00 -> 02:30 (a 30-minute gap).
+    expect(iso(wallClockToDate('2026-04-05T01:45', 'Australia/Lord_Howe'))).toBe('2026-04-04T14:45:00.000Z');
+    expect(iso(wallClockToDate('2026-04-05T01:30', 'Australia/Lord_Howe'))).toBe('2026-04-04T14:30:00.000Z');
+    expect(iso(wallClockToDate('2026-04-05T02:00', 'Australia/Lord_Howe'))).toBe('2026-04-04T15:30:00.000Z'); // after the overlap: +10:30
+    expect(iso(wallClockToDate('2026-10-04T02:15', 'Australia/Lord_Howe'))).toBe('2026-10-03T15:45:00.000Z'); // forward 30 min, not 60
+    expect(iso(wallClockToDate('2026-10-04T02:30', 'Australia/Lord_Howe'))).toBe('2026-10-03T15:30:00.000Z'); // first minute after the gap
+    expect(iso(wallClockToDate('2026-10-04T01:59', 'Australia/Lord_Howe'))).toBe('2026-10-03T15:29:00.000Z'); // last minute before it
+  });
+});
+
+// ── host zone matrix ────────────────────────────────────────────────────────────────────────────────
+// The production resolver, bundled and run in a FRESH Node process per host zone (the host zone is decided at
+// process start, as on a deployment on another machine). Same inputs, same instants, on every host — including
+// the hosts whose own DST gap swallows an ordinary Israeli wall time (Athens, Cairo, Lord_Howe), which is where
+// a resolver built on the host's native Date was an hour off.
+describe('host zone matrix — the result does not depend on the zone of the machine', () => {
+  const IL = 'Asia/Jerusalem';
+  let runner: HostRunner;
+
+  beforeAll(() => {
+    runner = createHostRunner(`
+      import { ilWallTimeToIso, wallClockToDate } from '@/lib/data/event-date';
+      const { cases, ilCases } = JSON.parse(process.argv[2]);
+      console.log(JSON.stringify({
+        host: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        instants: cases.map(([wall, zone]) => wallClockToDate(wall, zone)?.toISOString() ?? null),
+        il: ilCases.map(([date, time]) => {
+          try { return ilWallTimeToIso(date, time); } catch (e) { return 'ERR:' + e.name; }
+        }),
+      }));
+    `);
+  }, 30_000);
+  afterAll(() => runner.dispose());
+
+  // [wall, zone, expected instant] — written out by hand.
+  const CASES: Array<[wall: string, zone: string, instant: string | null]> = [
+    ['2026-10-25T01:00', IL, '2026-10-24T22:00:00.000Z'], // Israel 2026 overlap: earlier
     ['2026-10-25T01:30', IL, '2026-10-24T22:30:00.000Z'],
     ['2026-10-25T01:59', IL, '2026-10-24T22:59:00.000Z'],
-    ['2026-03-27T02:00', IL, '2026-03-27T00:00:00.000Z'], // Israel gap: forward
+    ['2026-10-25T01:30:00.123', IL, '2026-10-24T22:30:00.123Z'], // milliseconds ride along
+    ['2026-03-27T02:00', IL, '2026-03-27T00:00:00.000Z'], // Israel 2026 gap: forward
     ['2026-03-27T02:30', IL, '2026-03-27T00:30:00.000Z'],
     ['2026-03-27T02:59', IL, '2026-03-27T00:59:00.000Z'],
+    ['2027-10-31T01:30', IL, '2027-10-30T22:30:00.000Z'], // Israel 2027
+    ['2027-03-26T02:30', IL, '2027-03-26T00:30:00.000Z'],
     ['2026-10-25T00:30', IL, '2026-10-24T21:30:00.000Z'], // ordinary, on a switch day
     ['2026-10-25T02:30', IL, '2026-10-25T00:30:00.000Z'],
     ['2026-03-27T01:30', IL, '2026-03-26T23:30:00.000Z'],
-    ['2026-03-29T03:30', IL, '2026-03-29T00:30:00.000Z'], // the Athens-host case
+    ['2026-03-27T03:30', IL, '2026-03-27T00:30:00.000Z'],
+    ['2026-03-29T03:30', IL, '2026-03-29T00:30:00.000Z'], // inside Athens' / Helsinki's own gap as a HOST (was 01:30Z there)
+    ['2026-04-24T00:30', IL, '2026-04-23T21:30:00.000Z'], // inside Cairo's own gap as a host
+    ['2026-10-04T02:15', IL, '2026-10-03T23:15:00.000Z'], // inside Lord_Howe's own gap as a host
     ['2026-01-15T09:30', IL, '2026-01-15T07:30:00.000Z'],
     ['2026-07-15T09:30', IL, '2026-07-15T06:30:00.000Z'],
     ['2026-11-01T01:30', 'America/New_York', '2026-11-01T05:30:00.000Z'], // overlap: EDT (-4) first
-    ['2026-03-08T02:30', 'America/New_York', '2026-03-08T07:30:00.000Z'], // gap: EST (-5) before it -> 03:30 EDT
+    ['2026-03-08T02:30', 'America/New_York', '2026-03-08T07:30:00.000Z'], // gap: -> 03:30 EDT
     ['2026-10-25T02:30', 'Europe/Berlin', '2026-10-25T00:30:00.000Z'], // overlap: CEST (+2) first
-    ['2026-03-29T02:30', 'Europe/Berlin', '2026-03-29T01:30:00.000Z'], // gap: CET (+1) before it -> 03:30 CEST
+    ['2026-03-29T02:30', 'Europe/Berlin', '2026-03-29T01:30:00.000Z'], // gap: -> 03:30 CEST
     ['2026-04-05T01:45', 'Australia/Lord_Howe', '2026-04-04T14:45:00.000Z'], // overlap, 30 min: +11:00 first
-    ['2026-10-04T02:15', 'Australia/Lord_Howe', '2026-10-03T15:45:00.000Z'], // gap, 30 min: +10:30 before it
+    ['2026-10-04T02:15', 'Australia/Lord_Howe', '2026-10-03T15:45:00.000Z'], // gap, 30 min: forward 30
+    ['2026-02-30T10:00', IL, null], // invalid stays invalid on every host
+    ['2026-10-25T01:30Z', IL, null],
+    ['2026-10-25T01:30', 'Not/AZone', null],
+  ];
+  const IL_CASES: Array<[date: string, time: string, text: string]> = [
+    ['2026-10-25', '01:30', '2026-10-25T01:30:00+03:00'],
+    ['2026-03-27', '02:30', '2026-03-27T03:30:00+03:00'],
+    ['2027-10-31', '01:30', '2027-10-31T01:30:00+03:00'],
+    ['2027-03-26', '02:30', '2027-03-26T03:30:00+03:00'],
+    ['2026-10-25', '01:30:00.123', '2026-10-25T01:30:00.123+03:00'],
+    ['2026-03-27', '02:30:45', '2026-03-27T03:30:45+03:00'],
+    ['2026-01-15', '09:30', '2026-01-15T09:30:00+02:00'],
+    ['2026-07-15', '09:30', '2026-07-15T09:30:00+03:00'],
+    ['2026-03-27', '', '2026-03-27'],
+    ['not-a-date', '10:00', 'ERR:RangeError'],
   ];
 
-  it('gives the same instant under every host zone (UTC, New York, Athens, Cairo, Lord_Howe, Tokyo, Auckland…)', () => {
+  it.each(HOST_ZONES)('host %s: every case gives the same instant', (host) => {
+    const out = runner.run<{ host: string; instants: Array<string | null>; il: string[] }>(host, {
+      cases: CASES.map(([wall, zone]) => [wall, zone]),
+      ilCases: IL_CASES.map(([date, time]) => [date, time]),
+    });
+    // The switch took effect: the child really ran under the requested host zone.
+    expect(out.host).toBe(host);
     const mismatches: string[] = [];
-    for (const host of HOSTS) {
-      withHostZone(host, () => {
-        // Prove the switch took effect: native Date parsing follows the host zone.
-        expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(host);
-        for (const [wall, zone, instant] of CASES) {
-          const got = iso(wallClockToDate(wall, zone));
-          if (got !== instant) mismatches.push(`host ${host}: ${zone} ${wall} -> ${got}, want ${instant}`);
-        }
-        if (ilWallTimeToIso('2026-10-25', '01:30') !== '2026-10-25T01:30:00+03:00') mismatches.push(`host ${host}: ilWallTimeToIso overlap`);
-        if (ilWallTimeToIso('2026-03-27', '02:30') !== '2026-03-27T03:30:00+03:00') mismatches.push(`host ${host}: ilWallTimeToIso gap`);
-      });
-    }
+    CASES.forEach(([wall, zone, instant], i) => {
+      if (out.instants[i] !== instant) mismatches.push(`${zone} ${wall}: got ${out.instants[i]}, want ${instant}`);
+    });
+    IL_CASES.forEach(([date, time, text], i) => {
+      if (out.il[i] !== text) mismatches.push(`ilWallTimeToIso(${date}, ${time}): got ${out.il[i]}, want ${text}`);
+    });
     expect(mismatches).toEqual([]);
   });
-
-  // Layer 1: nothing changes where production already was right. Under the pinned host zone (the production
-  // processes declare TZ=Asia/Jerusalem too) TZDate's component constructor was the old behaviour; the new
-  // arithmetic must equal it for every wall time we sample in 2024-2030, seconds included: every 45 minutes
-  // all along (45 is coprime with the hour, so the minutes vary), and every quarter hour within two days of
-  // each of the fourteen switches.
-  it('equals the previous behaviour under the production host zone across 2024-2030 (seconds included)', () => {
-    withHostZone(IL, () => {
-      const MIN = 60_000;
-      const start = Date.UTC(2024, 0, 1);
-      const end = Date.UTC(2031, 0, 1);
-      const walls = new Set<number>();
-      for (let w = start; w < end; w += 45 * MIN) walls.add(w);
-      for (const sw of tzScan(IL, { start: new Date(start), end: new Date(end) })) {
-        // Dense around each switch: a window that covers the whole gap or overlap, whatever the offset.
-        for (let w = sw.date.getTime() - 2 * 86_400_000; w <= sw.date.getTime() + 5 * 86_400_000; w += 15 * MIN) walls.add(w);
-      }
-      const mismatches: string[] = [];
-      let i = 0;
-      for (const w of walls) {
-        const d = new Date(w);
-        const second = i++ % 60;
-        const text = `${d.toISOString().slice(0, 16)}:${String(second).padStart(2, '0')}`;
-        const previous = new TZDate(
-          d.getUTCFullYear(),
-          d.getUTCMonth(),
-          d.getUTCDate(),
-          d.getUTCHours(),
-          d.getUTCMinutes(),
-          second,
-          IL,
-        ).getTime();
-        const now = wallClockToDate(text, IL)?.getTime();
-        if (now !== previous) mismatches.push(`${text}: ${now} vs ${previous}`);
-      }
-      expect(walls.size).toBeGreaterThan(80_000);
-      expect(mismatches).toEqual([]);
-    });
-  }, 30_000);
-
-  // The call resolveWallClock USED to make — new TZDate(y, m - 1, d, h, mi, 0, zone) — in a fresh Node process per
-  // HOST zone. It exercises the library, not event-date.ts: it is the proof of why resolveWallClock does not use
-  // it (the host zone, not the zone argument, decides the overlap) and the tripwire for a @date-fns/tz upgrade.
-  // If the library ever fixes this the test fails: then decide whether the offset arithmetic can go.
-  it("the library's component constructor resolves the overlap by the HOST zone (why resolveWallClock does not use it)", () => {
-    const entry = pathToFileURL(join(dirname(createRequire(import.meta.url).resolve('@date-fns/tz/package.json')), 'index.js')).href;
-    const cases: Array<[label: string, year: number, month: number, day: number, hour: number, minute: number]> = [
-      ['overlap 25.10 01:00', 2026, 10, 25, 1, 0],
-      ['overlap 25.10 01:30', 2026, 10, 25, 1, 30],
-      ['overlap 25.10 01:59', 2026, 10, 25, 1, 59],
-      ['gap 27.3 02:00', 2026, 3, 27, 2, 0],
-      ['gap 27.3 02:30', 2026, 3, 27, 2, 30],
-      ['gap 27.3 02:59', 2026, 3, 27, 2, 59],
-      ['plain 25.10 00:30', 2026, 10, 25, 0, 30],
-      ['plain 25.10 02:30', 2026, 10, 25, 2, 30],
-      ['plain 27.3 01:30', 2026, 3, 27, 1, 30],
-      ['plain 27.3 03:30', 2026, 3, 27, 3, 30],
-    ];
-    const script = `
-      const { TZDate } = await import(${JSON.stringify(entry)});
-      const out = {};
-      for (const [label, y, m, d, h, mi] of ${JSON.stringify(cases)}) {
-        out[label] = new Date(new TZDate(y, m - 1, d, h, mi, 0, 'Asia/Jerusalem').getTime()).toISOString();
-      }
-      console.log(JSON.stringify(out));
-    `;
-    const inHost = (hostZone: string): Record<string, string> =>
-      JSON.parse(
-        // A minimal environment: nothing of this test process (its pinned TZ included) leaks into the child.
-        // (NODE_ENV only because Next's ProcessEnv typing requires the key; the child ignores it.)
-        execFileSync(process.execPath, ['--input-type=module', '-e', script], {
-          env: { PATH: process.env.PATH ?? '', TZ: hostZone, NODE_ENV: 'test' },
-          encoding: 'utf8',
-          timeout: 15_000,
-        }),
-      ) as Record<string, string>;
-
-    // Identical on every host: the gap goes forward, plain times are plain.
-    const everywhere = {
-      'gap 27.3 02:00': '2026-03-27T00:00:00.000Z',
-      'gap 27.3 02:30': '2026-03-27T00:30:00.000Z',
-      'gap 27.3 02:59': '2026-03-27T00:59:00.000Z',
-      'plain 25.10 00:30': '2026-10-24T21:30:00.000Z',
-      'plain 25.10 02:30': '2026-10-25T00:30:00.000Z',
-      'plain 27.3 01:30': '2026-03-26T23:30:00.000Z',
-      'plain 27.3 03:30': '2026-03-27T00:30:00.000Z',
-    };
-    // The overlap: the FIRST occurrence (+03:00, 22:xxZ) or the SECOND (+02:00, 23:xxZ), by host.
-    const first = {
-      'overlap 25.10 01:00': '2026-10-24T22:00:00.000Z',
-      'overlap 25.10 01:30': '2026-10-24T22:30:00.000Z',
-      'overlap 25.10 01:59': '2026-10-24T22:59:00.000Z',
-    };
-    const second = {
-      'overlap 25.10 01:00': '2026-10-24T23:00:00.000Z',
-      'overlap 25.10 01:30': '2026-10-24T23:30:00.000Z',
-      'overlap 25.10 01:59': '2026-10-24T23:59:00.000Z',
-    };
-
-    expect(inHost('Asia/Jerusalem')).toEqual({ ...everywhere, ...first });
-    expect(inHost('Asia/Tokyo')).toEqual({ ...everywhere, ...first });
-    expect(inHost('UTC')).toEqual({ ...everywhere, ...second });
-    expect(inHost('America/New_York')).toEqual({ ...everywhere, ...second });
-  });
 });
+
 
 describe('ilDateInputValue', () => {
   it('passes a plain date column value through unchanged', () => {
