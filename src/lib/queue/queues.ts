@@ -1,6 +1,9 @@
-// pg-boss queue names + per-queue config (pure constants — no pg-boss import, so
-// safe to reference anywhere). The worker (worker/main.ts) owns work()/schedule()
-// for every queue except the owner-agent ones, which kalfa-owner-agent works.
+// pg-boss queue names + per-queue config (pure constants — no runtime pg-boss
+// import, only a type, so safe to reference anywhere). The worker (worker/main.ts)
+// owns work()/schedule() for every queue except the owner-agent ones, which
+// kalfa-owner-agent works.
+import type { JobWithMetadata } from 'pg-boss';
+
 // Queues that no longer exist. pg-boss keeps a schedule row in the database
 // after the code stops calling schedule(), so a retired cron would keep filing
 // jobs that no worker drains; the worker unschedules and deletes these at
@@ -395,6 +398,15 @@ export const CALL_RETRY = {
   retryBackoff: true,
   retryDelayMax: 60,
 } as const;
+
+// True on the last delivery pg-boss will make of a job: its retry count has
+// reached its retry limit, so a failure now is final. pg-boss hands both numbers
+// to a handler registered with `{ includeMetadata: true }` — the value is the
+// one its fetch statement just wrote to the row (retry_count is incremented
+// there), so it equals what a later SELECT of the row would return.
+export function isFinalDelivery(job: Pick<JobWithMetadata, 'retryCount' | 'retryLimit'>): boolean {
+  return job.retryCount >= job.retryLimit;
+}
 
 // How a step job was enqueued (§11.2/§11.4): 'plan'/'replan' → detId, 'defer' →
 // deferId. Carried in the payload for audit + successor re-enqueue; never PII.

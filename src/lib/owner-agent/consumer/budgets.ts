@@ -127,11 +127,10 @@ export const OWNER_AGENT_PM2_KILL_TIMEOUT_MS = 330_000;
 
 /**
  * This process's pg-boss pool. The database role has ~15 session-mode slots
- * (worker/main.ts), and the other holders are the worker's pool (8), its
- * job-meta pool (2) and the web tier's send-only sender (2) — 12. Two here
- * leaves one slot free even with everything at its maximum; three would fill
- * the last one, and the process refused a connection could be the worker
- * that drives guests. budgets.test.ts reads the other
- * three pool sizes from their files.
+ * (worker/main.ts), and the other holders are the worker's pool (8) and the
+ * web tier's send-only sender (2) — 10. Two here leaves three slots free even
+ * with everything at its maximum; three would leave two, and the process
+ * refused a connection could be the worker that drives guests. budgets.test.ts
+ * reads the other two pool sizes from their files.
  */
 export const OWNER_AGENT_DB_POOL_MAX = 2;

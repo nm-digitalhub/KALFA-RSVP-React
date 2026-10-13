@@ -28,7 +28,7 @@
 | `outreach-sweeper` | **קורא לאותה פונקציה בדיוק**, `handleArm(boss)` (`:1126-1131`) | cron כל 5 דקות (`:1537`) | **להסיר (כפילות)** | MEASURED: שני תורים מריצים את אותו handler. בכל דקה חמישית handleArm רץ פעמיים. אם `outreach-arm` יעבור ל-*/5, התור הזה מיותר לגמרי. |
 | `outreach-step` | `handleStep` (`:351-459`) מבצע צעד אחד לאיש קשר: gate, בדיקת סמן, `planRev` ו-deterministic id, ואז `evaluateStep` → reserve → send → resolve | on demand, `startAfter` | **להשאיר + תיקון קטן** | idempotency: `job.id` חייב להיות שווה ל-`detId`/`deferId` (`:416-420`), ויש reserve/resolve. MEASURED. ראו באג B2. |
 | `outreach-dead` | `handleDead` (`:462-…`): dead-letter. טלמטריה ורציפות שרשרת, בלי התאוששות עסקית | on demand (dead letter) | להשאיר | 0 ריצות ב-7 ימים. MEASURED |
-| `outreach-call-request` | `handleCallRequest` (`:165`): שיחת AI ל-outreach. משתמש ב-`worker/pgboss-meta.ts` כדי לקרוא `retry_count` ישירות מטבלת ה-job (`:175-177`) | on demand | **לתקן (includeMetadata)** | `work(name, { includeMetadata: true })` מעביר `retryCount` ו-`retryLimit` ל-handler (`pg-boss types.d.ts`, `JobWithMetadata`). כך נחסכים pool נוסף ושאילתה. INFERRED: סמנטיקה זהה. |
+| `outreach-call-request` | `handleCallRequest` (`:165`): שיחת AI ל-outreach. משתמש ב-`worker/pgboss-meta.ts` כדי לקרוא `retry_count` ישירות מטבלת ה-job (`:175-177`) | on demand | **תוקן 13.10.2026 (includeMetadata)** | `work(name, { includeMetadata: true })` מעביר `retryCount` ו-`retryLimit` ל-handler (`pg-boss types.d.ts`, `JobWithMetadata`). כך נחסכים pool נוסף ושאילתה. MEASURED 13.10.2026: סמנטיקה זהה, `retryCount` ו-`retryLimit` שנמסרו ל-handler שווים לשורה בכל משלוח (מבחן האינטגרציה ב-`pgboss-isolation.integration.test.ts`). `worker/pgboss-meta.ts` נמחק. |
 
 ### קבוצה 2: נכנסות ו-workflows
 
@@ -126,7 +126,7 @@
 | 5 | `fleet-request-expire-sweep` לכל שעה, ו-`inquiry-followup-sweep` ו-`campaign-thankyou-sweep` לכל 15 דקות | 120+192+192=504 | -1,008 | נמוך. לבדוק את SLA ה-follow-up |
 | 6 | `voximplant-balance-check` לכל שעה | 24 | -48 | נמוך |
 | 7 | **retention:** `updateQueue(name, { deleteAfterSeconds: 86400 })` לתורים התכופים, כולל `__pgboss__send-it`. ל-`updateQueue` אין הגנה על שמות פנימיים, רק `assertObjectName` (`manager.js:1860`, `attorney.js:543`). MEASURED | — | מקטין את הטבלה מכ-7 ימים ליום אחד | **תלוי ב-B1.** השמירה על היסטוריה לצורך איתור תקלות מתקצרת ליום אחד |
-| 8 | `includeMetadata` במקום `worker/pgboss-meta.ts` | — | — | נמוך. חוסך pool ושאילתה |
+| 8 | `includeMetadata` במקום `worker/pgboss-meta.ts` | — | — | נמוך. חוסך pool ושאילתה. **בוצע 13.10.2026** |
 | 9 | `on('warning')` שמתריע ל-Slack (B5) | — | — | נמוך |
 
 **סך הכול, סעיפים 1–6:** כ-3,390 ticks פחות ביום, כלומר **כ-6,790 שורות פחות ביום, בערך מחצית**. INFERRED.

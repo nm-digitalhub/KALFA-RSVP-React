@@ -70,7 +70,7 @@
 
 ### שלב 6: קוד ידני נוסף
 
-- **`worker/pgboss-meta.ts`:** מוחלף ב-`work(..., { includeMetadata: true })`. בודקים שהטסטים של `callRequest` נשארים ירוקים.
+- **`worker/pgboss-meta.ts`:** מוחלף ב-`work(..., { includeMetadata: true })`. בודקים שהטסטים של `callRequest` נשארים ירוקים. **בוצע 13.10.2026**: הקובץ נמחק, ו-`isFinalDelivery` ב-`src/lib/queue/queues.ts` מחליף את השאילתה.
 - **הערה ישנה:** מתקנים את ההערה ב-`worker/main.ts:960`.
 
 ### שלב 7: פירוק הישן (דורש אישור נפרד)

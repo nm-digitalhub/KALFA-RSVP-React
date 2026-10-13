@@ -8,8 +8,7 @@ vi.mock('server-only', () => ({}));
 
 import { enqueueStepJob } from './enqueue';
 import { detId, deferId } from './schedule';
-import { QUEUES } from '@/lib/queue/queues';
-import { getJobRetryMeta, closeJobMetaPool } from '../../../worker/pgboss-meta';
+import { QUEUES, isFinalDelivery } from '@/lib/queue/queues';
 import { resolveTestDb } from './test-db-guard';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -29,12 +28,16 @@ import { resolveTestDb } from './test-db-guard';
 const RUN = process.env.OUTREACH_DB_IT === '1';
 const TEST = RUN ? resolveTestDb() : null;
 
+// Supabase local (`supabase start`, the allowed environment above) does not speak
+// SSL; a hosted test database does. The guard has already refused production.
+const isLocalHost = (url: string) => ['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname);
+
 const dbCfg = () => ({
   connectionString: TEST!.dbUrl,
-  ssl: { rejectUnauthorized: false },
+  ssl: isLocalHost(TEST!.dbUrl) ? false : { rejectUnauthorized: false },
 });
 
-// A lowercase-hex + underscore identifier (matches getJobRetryMeta's IDENT_RE).
+// A lowercase-hex + underscore identifier — the schema name is interpolated into SQL.
 const uniqueSchema = () => `pgboss_test_${randomUUID().replace(/-/g, '')}`;
 
 const ENQ = {
@@ -88,7 +91,6 @@ describe.skipIf(!RUN)('pg-boss isolation — deterministic ids + at-most-once', 
       );
       expect(leftover.rows).toHaveLength(0);
       await pool.end();
-      await closeJobMetaPool();
     }
   });
 
@@ -142,22 +144,40 @@ describe.skipIf(!RUN)('pg-boss isolation — deterministic ids + at-most-once', 
     expect(live[0].id).toBe(deferJobId);
   });
 
-  it('getJobRetryMeta reads retry_count/retry_limit for the exhaustion decision (retry_count = retry_limit → advance-skip, not dead-letter)', async () => {
-    const slot = 1_800_000_000_000;
-    await enqueueStepJob(boss, { mode: 'plan', ...ENQ, targetSlotMs: slot, runAtMs: slot });
-    const id = detId(ENQ.campaignId, ENQ.contactId, ENQ.stepIndex, ENQ.planRev);
-    // Simulate the final attempt: retry_count has reached retry_limit.
-    await pool.query(`update ${schema}.job set retry_count=retry_limit where id=$1 and name=$2`, [id, QUEUES.step]);
-    const meta = await getJobRetryMeta({ schema, queueName: QUEUES.step, jobId: id });
-    expect(meta).not.toBeNull();
-    expect(meta!.retryCount).toBe(meta!.retryLimit); // → the last permitted delivery (handleCallRequest settles its dispatch row here)
-    // an unknown job id → null (no crash).
-    expect(await getJobRetryMeta({ schema, queueName: QUEUES.step, jobId: randomUUID() })).toBeNull();
-  });
+  it('includeMetadata hands the handler the retryCount/retryLimit the row stores, on every delivery (the SELECT the call-request path used to make)', async () => {
+    const queue = 'call-meta-it';
+    await boss.createQueue(queue);
+    await boss.send(queue, { n: 1 }, { retryLimit: 2, retryDelay: 0 });
 
-  it('getJobRetryMeta rejects a non-identifier schema (no interpolation of untrusted text)', async () => {
-    await expect(
-      getJobRetryMeta({ schema: 'pgboss; drop table job; --', queueName: QUEUES.step, jobId: randomUUID() }),
-    ).rejects.toThrow(/invalid pgboss schema/);
+    type Counts = { retryCount: number; retryLimit: number };
+    const seen: Array<{ meta: Counts; stored: Counts; final: boolean }> = [];
+    await boss.work(queue, { includeMetadata: true, pollingIntervalSeconds: 0.5 }, async (jobs) => {
+      for (const job of jobs) {
+        // Read the row from inside the handler: this is exactly the moment the old
+        // getJobRetryMeta() query ran.
+        const { rows } = await pool.query(
+          `select retry_count, retry_limit from ${schema}.job where name=$1 and id=$2`,
+          [queue, job.id],
+        );
+        seen.push({
+          meta: { retryCount: job.retryCount, retryLimit: job.retryLimit },
+          stored: { retryCount: Number(rows[0].retry_count), retryLimit: Number(rows[0].retry_limit) },
+          final: isFinalDelivery(job),
+        });
+      }
+      throw new Error('fail on purpose: drive the next delivery');
+    });
+
+    await vi.waitFor(() => expect(seen).toHaveLength(3), { timeout: 20_000, interval: 250 });
+    // Three deliveries, retryCount 0 → 1 → 2 against a limit of 2 …
+    expect(seen.map((s) => s.meta)).toEqual([
+      { retryCount: 0, retryLimit: 2 },
+      { retryCount: 1, retryLimit: 2 },
+      { retryCount: 2, retryLimit: 2 },
+    ]);
+    // … each identical to what the row held at that moment (the 1:1 claim) …
+    for (const s of seen) expect(s.meta).toEqual(s.stored);
+    // … and only the last one is "final" (handleCallRequest settles its dispatch row here).
+    expect(seen.map((s) => s.final)).toEqual([false, false, true]);
   });
 });

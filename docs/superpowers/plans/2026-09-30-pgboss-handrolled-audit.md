@@ -19,7 +19,7 @@
 | # | אצלנו | מקבילה רשמית | הערכה |
 |---|---|---|---|
 | 1 | clone של מסך המשימות שנבנה ידנית, תהליך pm2 בשם `kalfa-pgboss-ui`, ו-reverse proxy (`src/lib/pgboss/dashboard-proxy.ts`) | `createDashboardHandler()`: handler בסגנון Fetch, עם `basePath` שנקבע בזמן ריצה | כפילות אמיתית. שני התנאים למעבר: גרסה מוטמעת שתואמת את הסכמה, ותקציב חיבורים (pool קבוע של 10) |
-| 2 | `worker/pgboss-meta.ts`: pool נוסף ושאילתה ישירה ל-`pgboss.job` | `work(..., { includeMetadata: true })` | כפילות אמיתית, סיכון נמוך |
+| 2 | `worker/pgboss-meta.ts`: pool נוסף ושאילתה ישירה ל-`pgboss.job` | `work(..., { includeMetadata: true })` | כפילות אמיתית, סיכון נמוך. **בוצע 13.10.2026** |
 | 3 | `ops_job_health`: SQL ישיר על טבלאות פנימיות של pg-boss | `getQueues()`, `getSchedules()`, `findJobs()` | כפילות חלקית |
 | 4 | `src/lib/ops/queue-schedule.ts`: מפה ידנית של תדירויות | `getSchedules()` ו-`previewSchedule()` | כפילות. ייתכן גם באג: `archive-backup-sweep` ותורים שבועיים מדווחים stale כבר אחרי 7 ימים |
 | 5 | אין שום הגדרת retention | `deleteAfterSeconds` ו-`retentionSeconds` ברמת התור | חסר. זה התיקון הרשמי לאזהרה על גודל הטבלה, אבל תלוי בשורה 4 |

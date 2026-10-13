@@ -13,10 +13,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { PgBoss, type Job } from 'pg-boss';
+import { PgBoss, type Job, type JobWithMetadata } from 'pg-boss';
 import { Client as PgClient } from 'pg';
 
-import { QUEUES, RETIRED_QUEUES, WORKFLOW_RUN_EXPIRE_SECONDS, type OutreachCallRequest, type OutreachStepJob,
+import { QUEUES, RETIRED_QUEUES, WORKFLOW_RUN_EXPIRE_SECONDS, isFinalDelivery, type OutreachCallRequest, type OutreachStepJob,
   type WorkflowRunJob,
 } from '@/lib/queue/queues';
 import { completedRetentionSeconds, PGBOSS_SEND_IT_QUEUE } from '@/lib/ops/queue-schedule';
@@ -49,7 +49,6 @@ import { detId, deferId, stepPlanRev, stepAuditId } from '@/lib/outreach/schedul
 import { evaluateStep } from '@/lib/outreach/send-window';
 import { getOutreachEnabled, getSendPolicy } from '@/lib/data/outreach-config';
 import { buildJewishCalendar } from '@/lib/outreach/jewish-calendar';
-import { getJobRetryMeta, closeJobMetaPool } from './pgboss-meta';
 import {
   claimUnprocessedWebhookEvents,
   markWebhookEventProcessed,
@@ -159,7 +158,9 @@ import { runSupabaseCliUpdate } from '@/lib/ops/supabase-cli-update';
 const SCHEDULE_TZ = 'Asia/Jerusalem';
 
 type StepJob = { id: string; data: OutreachStepJob };
-type CallJob = { id: string; data: OutreachCallRequest };
+// Registered with { includeMetadata: true } (the work() call below) so the job
+// arrives with its retryCount / retryLimit.
+type CallJob = JobWithMetadata<OutreachCallRequest>;
 type MeetingConfirmJob = { id: string; data: MeetingConfirmDispatchJob & { registryWaits?: number } };
 type SalesCallJob = { id: string; data: SalesCallDispatchJob & { registryWaits?: number } };
 
@@ -173,26 +174,19 @@ async function handleCallRequest(job: CallJob): Promise<void> {
   const result = await dispatchOutreachCall(job.data);
   if (result.kind === 'transient_error') {
     // Not a final outcome — the dispatch row stays 'accepted' while pg-boss
-    // retries. On the LAST permitted delivery (retry_count = retry_limit, read
-    // through the pgboss-meta adapter), settle failed/temporary_dispatch_failure BEFORE the rethrow so no 202
-    // is left unanswered. A failed meta read degrades safely: the row stays
-    // 'accepted' and the retention sweep clears it.
-    if (job.data.isManual && job.data.dispatchId) {
+    // retries. On the LAST permitted delivery (retryCount = retryLimit, which
+    // pg-boss hands over with the job), settle failed/temporary_dispatch_failure
+    // BEFORE the rethrow so no 202 is left unanswered. A failed settle degrades
+    // safely: the row stays 'accepted' and the retention sweep clears it.
+    if (job.data.isManual && job.data.dispatchId && isFinalDelivery(job)) {
       try {
-        const meta = await getJobRetryMeta({
-          schema: 'pgboss',
-          queueName: QUEUES.callRequest,
-          jobId: job.id,
+        await settleDispatchFailure({
+          dispatchId: job.data.dispatchId,
+          eventId: job.data.eventId,
+          contactId: job.data.contactId,
         });
-        if (meta && meta.retryCount >= meta.retryLimit) {
-          await settleDispatchFailure({
-            dispatchId: job.data.dispatchId,
-            eventId: job.data.eventId,
-            contactId: job.data.contactId,
-          });
-        }
       } catch (e) {
-        console.error('[kalfa-worker] dispatch retry-meta read failed', {
+        console.error('[kalfa-worker] dispatch settle on the final delivery failed', {
           jobId: job.id,
           detail: e instanceof Error ? e.message : 'unknown error',
         });
@@ -1005,7 +999,6 @@ async function main(): Promise<void> {
     // immediately in the next process (pg-boss failWip). pm2's kill_timeout
     // (ecosystem.config.cjs) must exceed this or the wait is cut short.
     await boss.stop({ graceful: true, timeout: 30000 });
-    await closeJobMetaPool();
     process.exit(0);
   };
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
@@ -1170,6 +1163,7 @@ async function main(): Promise<void> {
   );
   await boss.work(
     QUEUES.callRequest,
+    { includeMetadata: true },
     guardedWorker(QUEUES.callRequest, async (jobs: CallJob[]) => {
       for (const job of jobs) await handleCallRequest(job);
     }),

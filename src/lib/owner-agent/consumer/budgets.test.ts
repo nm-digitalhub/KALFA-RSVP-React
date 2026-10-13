@@ -147,13 +147,12 @@ describe('session-mode connection slots', () => {
     return Number(m[1]);
   };
 
-  it('worker 8 + job-meta 2 + web sender 2 + this process leave at least one slot of 15', () => {
+  it('worker 8 + web sender 2 + this process leave at least one slot of 15', () => {
     const worker = poolMax('worker/main.ts', /application_name: 'kalfa-worker',[\s\S]*?\bmax: (\d+),/);
-    const meta = poolMax('worker/pgboss-meta.ts', /\bmax: (\d+),/);
     const web = poolMax('src/lib/queue/web-sender.ts', /\bmax: (\d+),/);
-    expect([worker, meta, web]).toEqual([8, 2, 2]);
+    expect([worker, web]).toEqual([8, 2]);
     expect(OWNER_AGENT_DB_POOL_MAX).toBe(2);
-    expect(worker + meta + web + OWNER_AGENT_DB_POOL_MAX).toBeLessThanOrEqual(14);
+    expect(worker + web + OWNER_AGENT_DB_POOL_MAX).toBeLessThanOrEqual(14);
   });
 
   it('the consumer uses that constant, not a literal', () => {

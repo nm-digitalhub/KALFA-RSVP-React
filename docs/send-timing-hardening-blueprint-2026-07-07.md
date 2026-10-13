@@ -736,6 +736,8 @@ No partial anchor and no anchor for a non-cursor step can persist. **Pre-migrati
 reserve / release / resolve ALL additionally guard `plan_rev = p_expected_plan_rev`. **planRev mismatch → `stale`: never advance, never clear, never write a new-plan audit.** Closes: an old J / old dead-letter arriving while the cursor is coincidentally still at the same step but the plan changed must NOT advance the new plan's cursor.
 
 ### 12.9.3 Final definite failure — PRIMARY path = `retry_count = retry_limit` (dead-letter is fallback)
+> **Superseded 2026-10-13 (the adapter named below):** the worker no longer reads the row. It registers the call-request queue with `{ includeMetadata: true }` and tests `isFinalDelivery(job)` (`src/lib/queue/queues.ts`); `worker/pgboss-meta.ts` is deleted. The rule itself (last attempt ⇔ `retry_count = retry_limit`) is unchanged.
+
 PROVEN (probe): `pgboss.job.retry_count` is readable; the last attempt ⇔ `retry_count = retry_limit`. Worker-only adapter:
 ```
 getJobRetryMeta(jobId, queueName) -> { state, retryCount, retryLimit }
@@ -800,6 +802,8 @@ The dead handler receives the ORIGINAL `StepData` intact: `{campaignId, contactI
 - **`app_settings.outreach_run_revision`:** **NO code writer exists** — `outreach_enabled` has a getter only, no setter (the global switch is a manual/ops toggle). Per "no counter without a writer" it is **NOT added in v1**. Global-manual pause→resume durability is a DOCUMENTED gap needing a future `setOutreachEnabled` writer that toggles + increments in one transaction. Per-campaign pause/resume (the common case) IS solved.
 
 ### 12.10.5 `getJobRetryMeta` adapter — worker-only, guarded, schema-as-identifier
+> **Superseded 2026-10-13:** removed — see the note under §12.9.3. The text below is the original design.
+
 ```
 getJobRetryMeta({ schema, queueName, jobId }) -> { state, retryCount, retryLimit } | null
   SELECT state, retry_count, retry_limit FROM <schema>.job WHERE name = $1 AND id = $2   -- $1=queueName, $2=jobId
