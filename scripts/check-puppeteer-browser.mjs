@@ -14,7 +14,8 @@
 // real browser.
 //
 // What breaks when this is wrong is not cosmetic: src/lib/agreements/pdf.ts
-// renders the SIGNED CUSTOMER AGREEMENT, and src/lib/data/social-image-render.ts
+// renders the PDF of the customer's package-terms approval (stored with its
+// SHA-256 as the evidence trail), and src/lib/data/social-image-render.ts
 // renders social images. Both call `puppeteer.launch()` with no explicit
 // executablePath, so both depend on this resolution succeeding.
 //

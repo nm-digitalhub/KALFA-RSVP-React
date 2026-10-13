@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto';
 
 import puppeteer from 'puppeteer';
 
-// Render the signed-agreement HTML to a PDF using a headless browser. The
+// Render the package-terms approval HTML (the terms plus the approval block) to a
+// PDF using a headless browser. The
 // browser does correct Hebrew BiDi shaping of mixed text + amounts/IDs/dates
 // natively (pdf-lib/pdfkit do not), which is essential for a legal document.
 // Viable here because beta runs as a long-lived pm2 Node server (Chromium is
@@ -16,8 +17,8 @@ export async function renderAgreementPdf(html: string): Promise<Uint8Array> {
   });
   try {
     const page = await browser.newPage();
-    // The HTML embeds the signature as an inline data URL (no network), so
-    // 'load' (fires after inline images load) is sufficient.
+    // The HTML is self-contained: no signature image (the terms are approved,
+    // not signed), no links and no external resources, so 'load' is sufficient.
     await page.setContent(html, { waitUntil: 'load' });
     return await page.pdf({
       format: 'A4',
@@ -30,7 +31,7 @@ export async function renderAgreementPdf(html: string): Promise<Uint8Array> {
 }
 
 // SHA-256 of the final PDF bytes — stored separately from the file as tamper
-// evidence (proves the signed document was not altered).
+// evidence (proves the approved document was not altered).
 export function sha256Hex(data: Uint8Array): string {
   return createHash('sha256').update(data).digest('hex');
 }

@@ -7,7 +7,7 @@
 //
 //   puppeteer  — downloads Chrome from a postinstall. Without it,
 //                puppeteer.launch() throws at RUNTIME, which takes down
-//                src/lib/agreements/pdf.ts (the SIGNED CUSTOMER AGREEMENT) and
+//                src/lib/agreements/pdf.ts (the PDF of the package-terms approval) and
 //                src/lib/data/social-image-render.ts. Reached production once,
 //                on 2026-09-06, after a 25.7 → 25.10 bump.
 //   keytar     — a native module whose install pulls a prebuilt .node binary.
@@ -15,11 +15,13 @@
 //                through @microsoft/m365agentstoolkit-cli, and without it that
 //                CLI cannot start at all.
 //
-// This runs as the ROOT package's own postinstall. That is deliberate and is
-// NOT a way around the security default: `allowScripts` gates what THIRD-PARTY
-// packages may execute. This file is ours, it is in the repo, and it is
-// reviewable — unlike `npm install-scripts approve puppeteer`, which would hand
-// every future version of that package the right to run arbitrary code here.
+// This runs as the ROOT package's own postinstall and is NOT a way around the
+// security default: `allowScripts` gates what THIRD-PARTY packages may execute,
+// and this file is ours, in the repo and reviewable. Since 6cb12232 puppeteer and
+// keytar are also approved in `allowScripts` (by name, any version), so npm runs
+// their own scripts on install; this file remains the net for the case where that
+// approval does not match — a pinned entry after a version bump is what broke
+// production on 2026-09-06. Both steps are then no-ops.
 //
 // Idempotent: both steps check first and exit quietly when the artifact is
 // already in place, so a normal `npm install` costs milliseconds.

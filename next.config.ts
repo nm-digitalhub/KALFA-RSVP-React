@@ -94,7 +94,7 @@ const nextConfig: NextConfig = {
   },
   // Puppeteer bundles a Chromium binary and uses dynamic requires; it must run
   // as a real Node module (not be webpack-bundled). Used server-side to render
-  // the signed-agreement PDF (Hebrew BiDi). See src/lib/agreements/pdf.ts.
+  // the package-terms approval PDF (Hebrew BiDi). See src/lib/agreements/pdf.ts.
   // Kept out of the server bundle so Node loads them with a native require.
   //
   // pg-boss: verified, not assumed. Without it webpack inlined the whole library
