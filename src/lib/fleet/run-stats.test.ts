@@ -24,6 +24,28 @@ describe('rangeStartDate', () => {
   it('rejects an unknown range', () => {
     expect(rangeStartDate('90d', new Date())).toBeNull();
   });
+
+  // The range is N local CALENDAR days ending today, not N×24h back from the instant. Around a DST switch the
+  // two differ for the hour after midnight (Israel 2026: summer time starts Fri 27.3 02:00, ends Sun 25.10 02:00).
+  it('spring switch: 00:30 on 28.3 (the day after the 23-hour day) — 7d starts 22.3', () => {
+    const now = new Date('2026-03-28T00:30:00+03:00');
+    expect(rangeStartDate('1d', now)).toBe('2026-03-28');
+    expect(rangeStartDate('7d', now)).toBe('2026-03-22'); // instant − 144h read as 21.3
+    expect(rangeStartDate('30d', now)).toBe('2026-02-27');
+  });
+
+  it('autumn switch: 23:30 on the 25-hour day 25.10 — 7d starts 19.10, 1d starts 25.10', () => {
+    const now = new Date('2026-10-25T23:30:00+02:00');
+    expect(rangeStartDate('1d', now)).toBe('2026-10-25');
+    expect(rangeStartDate('7d', now)).toBe('2026-10-19'); // instant − 144h read as 20.10
+    expect(rangeStartDate('30d', now)).toBe('2026-09-26');
+  });
+
+  it('is decided by the Israel date, not the UTC one', () => {
+    // 22:30Z on the 27th is already the 28th in Israel (01:30 IDT).
+    expect(rangeStartDate('1d', new Date('2026-09-27T22:30:00Z'))).toBe('2026-09-28');
+    expect(rangeStartDate('7d', new Date('2026-09-27T22:30:00Z'))).toBe('2026-09-22');
+  });
 });
 
 describe('aggregateRunIndex / findRunaways', () => {

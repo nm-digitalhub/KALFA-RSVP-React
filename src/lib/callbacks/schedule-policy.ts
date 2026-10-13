@@ -107,11 +107,17 @@ export function addCalendarDays(dateStr: string, n: number): string {
   return new Date(Date.parse(`${dateStr}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
 }
 
-/** The absolute instant of an Israel wall-clock date + minutes from midnight. */
+/**
+ * The absolute instant of an Israel wall-clock date + minutes from midnight.
+ * A window may END at 24:00 (end_min = 1440 — the DB CHECK allows it); there is no wall-clock hour 24, so
+ * that is 00:00 of the next calendar day.
+ */
 export function localInstant(dateStr: string, minutes: number): number {
-  const hh = String(Math.floor(minutes / 60)).padStart(2, '0');
-  const mm = String(minutes % 60).padStart(2, '0');
-  return Date.parse(ilWallTimeToIso(dateStr, `${hh}:${mm}`));
+  const day = minutes >= 24 * 60 ? addCalendarDays(dateStr, 1) : dateStr;
+  const inDay = minutes >= 24 * 60 ? minutes - 24 * 60 : minutes;
+  const hh = String(Math.floor(inDay / 60)).padStart(2, '0');
+  const mm = String(inDay % 60).padStart(2, '0');
+  return Date.parse(ilWallTimeToIso(day ?? dateStr, `${hh}:${mm}`));
 }
 
 /**

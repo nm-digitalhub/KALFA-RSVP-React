@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildConversationEvents,
   continuationTitle,
+  dayLabel,
   deriveSubject,
   distinctiveTitle,
   isWaitingOnAgent,
@@ -10,6 +11,7 @@ import {
   layoutStream,
   resolveOwnerTitle,
   rowToEvents,
+  shortStamp,
   summarizeConversations,
   type ConversationEvent,
   type ConversationRequestRow,
@@ -307,5 +309,38 @@ describe('composer titles', () => {
   it('distinctiveTitle keeps the part after the last em-dash separator', () => {
     expect(distinctiveTitle('פרסום — אינסטגרם — פוסט')).toBe('פוסט');
     expect(distinctiveTitle('בלי מפריד')).toBe('בלי מפריד');
+  });
+});
+
+// "Yesterday" is the Israel CALENDAR day before today's, not the day 24h ago. Israel 2026: the 27.3 has 23 hours
+// (clocks go 02:00 → 03:00), the 25.10 has 25 (02:00 → 01:00).
+describe('dayLabel / shortStamp — yesterday is a calendar day (23h and 25h days)', () => {
+  it('23-hour day: just after midnight on 28.3, a message from the 27.3 is "yesterday"', () => {
+    const now = Date.parse('2026-03-28T00:30:00+03:00'); // now − 24h reads as 23:30 on the 26th
+    expect(dayLabel('2026-03-27T12:00:00+03:00', now)).toBe('אתמול');
+    expect(shortStamp('2026-03-27T12:00:00+03:00', now)).toBe('אתמול');
+    expect(dayLabel('2026-03-28T00:10:00+03:00', now)).toBe('היום');
+    expect(dayLabel('2026-03-26T12:00:00+02:00', now)).not.toBe('אתמול'); // two days ago
+  });
+
+  it('25-hour day: late on 25.10, a message from the 24.10 is "yesterday" and the 25.10 is today', () => {
+    const now = Date.parse('2026-10-25T23:30:00+02:00'); // now − 24h reads as 00:30 on the 25th
+    expect(dayLabel('2026-10-24T12:00:00+03:00', now)).toBe('אתמול');
+    expect(shortStamp('2026-10-24T12:00:00+03:00', now)).toBe('אתמול');
+    expect(dayLabel('2026-10-25T09:00:00+02:00', now)).toBe('היום');
+    expect(dayLabel('2026-10-23T12:00:00+03:00', now)).not.toBe('אתמול');
+  });
+
+  it('just after midnight on 26.10, the whole 25-hour 25.10 is "yesterday"', () => {
+    const now = Date.parse('2026-10-26T00:30:00+02:00');
+    expect(dayLabel('2026-10-25T00:10:00+03:00', now)).toBe('אתמול'); // first minutes of the long day
+    expect(dayLabel('2026-10-25T23:50:00+02:00', now)).toBe('אתמול'); // its last minutes
+  });
+
+  it('an ordinary day is unchanged', () => {
+    const now = Date.parse('2026-07-15T12:00:00+03:00');
+    expect(dayLabel('2026-07-14T09:00:00+03:00', now)).toBe('אתמול');
+    expect(dayLabel('2026-07-15T09:00:00+03:00', now)).toBe('היום');
+    expect(shortStamp('2026-07-15T09:00:00+03:00', now)).toBe('09:00');
   });
 });

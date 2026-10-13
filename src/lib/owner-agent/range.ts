@@ -21,11 +21,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // The rolling definition for 7d/30d is deliberate: it is the definition the
 // /admin/voice page uses for its "7 ימים" tiles (voice-ops.ts calls the same
 // voice core with '7d'), so the agent and that page agree on the same number.
-//
-// Known edge: ilWallTimeToIso() probes the UTC offset at NOON of the given day,
-// so on the two DST-switch days a year the computed Israel midnight is off by
-// one hour (the switch happens at 02:00, after midnight). Accepted: a one-hour
-// skew on two days a year in an aggregate count.
 export function rangeStartIso(range: OwnerAgentRange, nowMs: number): string {
   switch (range) {
     case 'today':
@@ -45,8 +40,8 @@ export const RANGE_DAYS: Record<OwnerAgentRange, number> = { today: 1, '7d': 7, 
 // after today in Israel (0 = today, 1 = tomorrow, …). Day arithmetic is done on
 // the calendar string, not on an instant near midnight: UTC noon of today's
 // Israel date plus N days lands on the Israel date N days later whatever the
-// DST state, and ilWallTimeToIso() then attaches that day's offset. Same DST
-// edge as rangeStartIso above.
+// DST state, and ilWallTimeToIso() then attaches that day's offset (the
+// midnight's own, so the two switch days are right too).
 export function israelMidnightIso(nowMs: number, dayOffset = 0): string {
   const day = israelCalendarDay(Date.parse(`${todayIL(nowMs)}T12:00:00Z`) + dayOffset * DAY_MS);
   return new Date(ilWallTimeToIso(day, '00:00')).toISOString();

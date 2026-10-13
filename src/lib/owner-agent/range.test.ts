@@ -31,6 +31,29 @@ describe('rangeStartIso', () => {
   });
 });
 
+// Regression (13.10.2026): Israel midnight on the two DST-switch days used to be computed with the
+// offset of NOON that day, an hour off. The switch is at 02:00, so midnight still has the OLD offset.
+describe('rangeStartIso / israelMidnightIso on the DST-switch days', () => {
+  it("'today' on the spring-forward day (27.3.2026) starts at 00:00 IST = 22:00Z the day before", () => {
+    const now = Date.parse('2026-03-27T12:00:00Z'); // 15:00 IDT on the 27th
+    expect(rangeStartIso('today', now)).toBe('2026-03-26T22:00:00.000Z');
+  });
+
+  it("'today' on the fall-back day (25.10.2026) starts at 00:00 IDT = 21:00Z the day before", () => {
+    const now = Date.parse('2026-10-25T12:00:00Z'); // 14:00 IST on the 25th
+    expect(rangeStartIso('today', now)).toBe('2026-10-24T21:00:00.000Z');
+  });
+
+  it('israelMidnightIso lands on the right midnight when the target day is a switch day', () => {
+    const beforeSpring = Date.parse('2026-03-26T12:00:00Z');
+    expect(israelMidnightIso(beforeSpring, 1)).toBe('2026-03-26T22:00:00.000Z'); // 27.3 00:00 IST
+    expect(israelMidnightIso(beforeSpring, 2)).toBe('2026-03-27T21:00:00.000Z'); // 28.3 00:00 IDT
+    const beforeAutumn = Date.parse('2026-10-24T12:00:00Z');
+    expect(israelMidnightIso(beforeAutumn, 1)).toBe('2026-10-24T21:00:00.000Z'); // 25.10 00:00 IDT
+    expect(israelMidnightIso(beforeAutumn, 2)).toBe('2026-10-25T22:00:00.000Z'); // 26.10 00:00 IST
+  });
+});
+
 describe('israelMidnightIso', () => {
   it('offset 0 equals rangeStartIso(today); offsets count Israel days, not UTC days', () => {
     const now = Date.parse('2026-09-24T22:30:00Z'); // 01:30 on the 25th in Israel

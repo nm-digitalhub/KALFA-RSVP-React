@@ -126,7 +126,13 @@ export const eventFormSchema = z.object({
     .min(1, { error: 'נא להזין שם אירוע' })
     .max(200, { error: 'שם האירוע ארוך מדי' }),
   event_type: z.enum(EVENT_TYPES, { error: 'נא לבחור סוג אירוע' }),
-  event_date: z.string().trim().optional().or(z.literal('')),
+  // <input type="date"> → 'YYYY-MM-DD': a real calendar date (z.iso.date rejects 30 February), or empty. It is
+  // composed into an instant by ilWallTimeToIso, which fails on anything else.
+  event_date: z
+    .string()
+    .trim()
+    .pipe(z.union([z.literal(''), z.iso.date({ error: 'תאריך לא תקין' })]))
+    .optional(),
   event_time: z
     .string()
     .trim()

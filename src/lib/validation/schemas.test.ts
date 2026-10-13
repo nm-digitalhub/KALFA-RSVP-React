@@ -319,6 +319,23 @@ describe('createEventSchema', () => {
     }
   });
 
+  // event_date is composed into an instant by ilWallTimeToIso, which fails on anything that is not a real date:
+  // the boundary refuses it first, with the error on the field.
+  it('rejects an event_date that is not a real YYYY-MM-DD calendar date, with the error on event_date', () => {
+    for (const bad of ['abc', '2030-02-30', '2030-13-01', '30/06/2030', '2030-6-1']) {
+      const result = createEventSchema.safeParse({ name: 'אירוע', event_type: 'birthday', event_date: bad });
+      expect(result.success, bad).toBe(false);
+      if (!result.success) expect(z.flattenError(result.error).fieldErrors.event_date, bad).toBeDefined();
+    }
+  });
+
+  it('accepts a real event_date, an empty one, and one with surrounding spaces (trimmed)', () => {
+    for (const ok of [ilDate(30), '', `  ${ilDate(30)}  `]) {
+      const result = createEventSchema.safeParse({ name: 'אירוע', event_type: 'birthday', event_date: ok });
+      expect(result.success, ok).toBe(true);
+    }
+  });
+
   it('allows optional venue_name and event_date to be empty strings', () => {
     const result = createEventSchema.safeParse({
       name: 'אירוע',

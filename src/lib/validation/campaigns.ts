@@ -63,8 +63,8 @@ export type WhatsappSendInput = z.infer<typeof whatsappSendSchema>;
 export const thankyouScheduleSchema = z
   .object({
     auto_enabled: z.boolean(),
-    send_date: z.string().trim(),
-    send_time: z.string().trim(),
+    send_date: z.string().trim().pipe(z.union([z.literal(''), z.iso.date({ error: 'תאריך לא תקין' })])),
+    send_time: z.string().trim().pipe(z.union([z.literal(''), z.iso.time({ precision: -1, error: 'שעה לא תקינה' })])),
   })
   .refine((v) => (v.send_date === '') === (v.send_time === ''), {
     error: 'יש למלא גם תאריך וגם שעה, או להשאיר את שניהם ריקים',
@@ -77,8 +77,16 @@ export type ThankyouScheduleInput = z.infer<typeof thankyouScheduleSchema>;
 // a customer's date moved, and it lands in the support access log beside the
 // staff id.
 export const rescheduleEventSchema = z.object({
-  event_date: z.string().trim().min(1, { error: 'יש לבחור תאריך' }),
-  event_time: z.string().trim().min(1, { error: 'יש לבחור שעה' }),
+  event_date: z
+    .string()
+    .trim()
+    .min(1, { error: 'יש לבחור תאריך' })
+    .pipe(z.iso.date({ error: 'תאריך לא תקין' })),
+  event_time: z
+    .string()
+    .trim()
+    .min(1, { error: 'יש לבחור שעה' })
+    .pipe(z.iso.time({ precision: -1, error: 'שעה לא תקינה' })),
   reason: z
     .string()
     .trim()

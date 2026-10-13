@@ -11,6 +11,8 @@
 // timestamps (date -Is) while scheduler.mjs writes UTC (toISOString), so a
 // plain ts.slice(0, 10) would split one local day across two buckets.
 
+import { addCalendarDays } from '@/lib/date';
+
 const DAY_FORMAT = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Jerusalem',
   year: 'numeric',
@@ -34,11 +36,15 @@ export function localDate(ts: string): string | null {
   return Number.isNaN(ms) ? null : DAY_FORMAT.format(new Date(ms));
 }
 
-/** First local date included in the range, or null for an unknown range. */
+/**
+ * First local date included in the range, or null for an unknown range. The range is N local CALENDAR
+ * days ending with today (Asia/Jerusalem) — not a rolling N×24h: subtracting 24h multiples from the instant
+ * lands on the wrong date for the hour after midnight around a DST switch (a day there is 23 or 25 hours).
+ */
 export function rangeStartDate(range: string, now: Date): string | null {
   const days = RANGE_DAYS[range];
   if (!days) return null;
-  return DAY_FORMAT.format(new Date(now.getTime() - (days - 1) * 86_400_000));
+  return addCalendarDays(DAY_FORMAT.format(now), -(days - 1));
 }
 
 export function aggregateRunIndex(lines: readonly string[], sinceDate: string): RunStat[] {

@@ -200,6 +200,25 @@ export function daysUntil(ymd: string | null | undefined, now: Date = new Date()
   return Math.round((target - today) / 86_400_000);
 }
 
+/**
+ * A calendar date ('YYYY-MM-DD') moved by whole CALENDAR days — 'the day after', 'the day before' — as a new
+ * 'YYYY-MM-DD'. null for text that is not a real date.
+ *
+ * This is the one place a day is added to a date. Never add 24h to an INSTANT and read the Israel day off it: a
+ * day with a DST switch is 23 or 25 hours long, so that lands on the wrong date for the hour around midnight.
+ * The arithmetic is on the date itself (a UTC calendar date has no DST), and the caller turns the result into an
+ * instant with the wall-clock primitive in data/event-date.ts when it needs one.
+ */
+export function addCalendarDays(ymd: string, days: number): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!m || !Number.isInteger(days)) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const start = new Date(Date.UTC(y, mo - 1, d));
+  // Round-trip guard: rejects 2026-02-30, which Date.UTC would roll into March.
+  if (start.getUTCFullYear() !== y || start.getUTCMonth() !== mo - 1 || start.getUTCDate() !== d) return null;
+  return new Date(Date.UTC(y, mo - 1, d + days)).toISOString().slice(0, 10);
+}
+
 // --- Spoken clock & relative date (ElevenLabs TTS) ---------------------------
 // The formatters ABOVE emit digits on purpose: the say()-based RSVP VoxEngine
 // scenarios run their own `normalizeForSpeech` over the ctx payload before

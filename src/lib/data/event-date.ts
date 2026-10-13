@@ -1,7 +1,9 @@
 // L1 — the single shared "past event" rule, as a leaf module (its only imports
-// are `@/lib/date` and the pure `@date-fns/tz`) so it is safe to import from the
+// are `@/lib/date`, the pure `@date-fns/tz` and `date-fns/formatISO`) so it is safe to import from the
 // pg-boss worker (no `server-only`) and from client UI without dragging in the
 // events data layer. `@/lib/data/events` re-exports these as the documented home.
+// formatISO comes from its own subpath on purpose: the `date-fns` barrel costs ~1.4s to load, which
+// every module that reaches this one would pay.
 //
 // An event is "past" only AFTER the end of its calendar day in Israel, matching
 // the DB guard `(now() AT TIME ZONE 'Asia/Jerusalem')::date >
@@ -9,8 +11,9 @@
 // valid; a null/unparseable date is never "past" (mirrors the DB NULL semantics).
 
 import { TZDate } from '@date-fns/tz';
+import { formatISO } from 'date-fns/formatISO';
 
-import { ISRAEL_TIME_ZONE } from '@/lib/date';
+import { ISRAEL_TIME_ZONE, addCalendarDays } from '@/lib/date';
 
 const ISRAEL_TZ = ISRAEL_TIME_ZONE;
 
@@ -108,26 +111,66 @@ export function isBeforeTomorrowIL(
   return israelCalendarDay(eventMs) <= israelCalendarDay(nowMs);
 }
 
-// Compose an Israel WALL-CLOCK date+time into an absolute ISO instant.
-// ICU supplies the UTC offset for that specific instant (DST-aware:
-// +03:00 in IDT summer, +02:00 in IST winter) — no hand-rolled offset table.
+// THE ONE wall-clock -> instant primitive. Every conversion of "this wall-clock time, read IN this
+// zone" to a real instant goes through here, so there is exactly one place that decides what a wall
+// time means across a DST switch — and it is @date-fns/tz's TZDate, which is given the wall-clock
+// COMPONENTS and the zone and resolves the offset for that very instant. Nothing here computes a UTC
+// offset: a previous version looked the offset up at noon of the date, which is the wrong offset for
+// every wall time before the 02:00 switch on the two DST days a year (Israel: 01:00 on the spring
+// switch day came out as 00:00; 00:30 on the autumn one as 01:30).
+//
+// Built from components, never from a string: @date-fns/tz documents the component constructor (wall
+// clock in the given zone) but not how its string constructor reads zone-less text, and measured it
+// depends on the host zone. A wall time inside the spring-forward gap resolves to the instant just
+// after it; one in the fall-back overlap resolves to one of its two instants (host-zone dependent,
+// so the tests run under the pinned TZ).
+//
+// Total: null — never a throw — for text that is not a wall-clock datetime, a calendar or clock value
+// that does not exist (month 13, 30 February, minute 61, hour 24: TZDate would silently roll those over
+// into another date), or a zone TZDate cannot resolve. Hour is 0..23, minute and second 0..59; 24:00 is NOT
+// a wall-clock time (a caller that means "the end of the day" says 00:00 of the next one).
+const WALL_CLOCK = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/;
+
+function daysInMonth(year: number, month: number): number {
+  // Calendar arithmetic on a UTC date — no zone is involved.
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function resolveWallClock(wall: string, zone: string): TZDate | null {
+  const m = WALL_CLOCK.exec(wall);
+  if (!m) return null;
+  const [, y, mo, d, hh, mi, ss] = m;
+  const year = +y;
+  const month = +mo;
+  const day = +d;
+  const hour = +hh;
+  const minute = +mi;
+  const second = ss === undefined ? 0 : +ss;
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  try {
+    const resolved = new TZDate(year, month - 1, day, hour, minute, second, zone);
+    return Number.isNaN(resolved.getTime()) ? null : resolved;
+  } catch {
+    return null;
+  }
+}
+
+// Compose an Israel WALL-CLOCK date+time into an absolute ISO instant carrying the LOCAL offset of
+// that instant (DST-aware: +03:00 in IDT summer, +02:00 in IST winter), e.g. '2026-03-27T01:00:00+02:00'.
 // timeStr '' → the plain date string is returned unchanged (legacy date-only
 // behavior: Postgres stores it as midnight UTC, displays as a date).
-const IL_OFFSET_FMT = new Intl.DateTimeFormat('en-US', {
-  timeZone: ISRAEL_TZ,
-  timeZoneName: 'longOffset',
-});
-
+// A wall clock that cannot be read or does not exist FAILS with a RangeError: this function returns a
+// string, so there is no null to return, and an offset-less or guessed datetime would be stored as if it were
+// real. The input boundaries (the event, thank-you and reschedule schemas) validate the date and the time
+// first, so a RangeError here means a caller skipped them.
 export function ilWallTimeToIso(dateStr: string, timeStr: string): string {
   if (!timeStr) return dateStr;
-  // Approximate instant for offset lookup (noon avoids DST-boundary edges).
-  const probe = Date.parse(`${dateStr}T12:00:00Z`);
-  const part = IL_OFFSET_FMT.formatToParts(probe).find(
-    (x) => x.type === 'timeZoneName',
-  )?.value;
-  const m = part?.match(/GMT([+-]\d{2}:\d{2})/);
-  const offset = m ? m[1] : '+02:00';
-  return `${dateStr}T${timeStr}:00${offset}`;
+  const resolved = resolveWallClock(`${dateStr}T${timeStr}`, ISRAEL_TZ);
+  if (!resolved) {
+    throw new RangeError(`ilWallTimeToIso: not an Israel wall-clock date and time: "${dateStr}" "${timeStr}"`);
+  }
+  return formatISO(resolved);
 }
 
 // Resolve a zone-less wall-clock datetime ("2026-10-07T06:36", seconds optional)
@@ -135,27 +178,10 @@ export function ilWallTimeToIso(dateStr: string, timeStr: string): string {
 // turns an <input type="datetime-local"> value into an instant: such a value
 // carries no zone, so handing it to Postgres stores it as UTC and to Date.parse
 // reads it in the host zone — a three-hour error for Israel in summer.
-//
-// Built from components, never from a string: @date-fns/tz documents the
-// component constructor (wall clock in the given zone) but not how its string
-// constructor reads zone-less text, and measured it depends on the host zone.
-// A wall time inside the spring-forward gap resolves to the instant just after
-// it; one in the fall-back overlap resolves to one of its two instants
-// (host-zone dependent, so the tests run under the pinned TZ).
-//
-// Total: returns null for text that is not a wall-clock datetime or a zone
-// TZDate cannot resolve, never throws — it also runs inside a Zod transform,
-// where a throw would escape safeParse.
+// It also runs inside a Zod transform, where a throw would escape safeParse — hence total (see above).
 export function wallClockToDate(wall: string, zone: string): Date | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(wall);
-  if (!m) return null;
-  const [, y, mo, d, hh, mi, ss] = m;
-  try {
-    const ms = new TZDate(+y, +mo - 1, +d, +hh, +mi, +(ss ?? 0), zone).getTime();
-    return Number.isNaN(ms) ? null : new Date(ms);
-  } catch {
-    return null;
-  }
+  const resolved = resolveWallClock(wall, zone);
+  return resolved ? new Date(resolved.getTime()) : null;
 }
 
 // The IL wall-clock HH:mm of a stored event instant, for <input type="time">
@@ -188,18 +214,18 @@ export function ilDateInputValue(value: string | null): string {
   return israelCalendarDay(ms);
 }
 
-const DAY_MS = 86_400_000;
-
-// Auto-thankyou default schedule: the morning after the event's Israel
-// calendar day, ~10:00 local (a reader-active hour, not the middle of the
-// night). Composed from the two primitives above so DST is handled the same
-// way everywhere else in the app — no hand-rolled offset math here either.
-// Returns null for an unparseable/missing event_date (the caller must decide
+// Auto-thankyou default schedule: 10:00 Israel on the CALENDAR day after the event's Israel calendar
+// day (a reader-active hour, not the middle of the night). This is the rule the database trigger
+// sync_campaign_window_from_event applies:
+//   ((event_date AT TIME ZONE 'Asia/Jerusalem')::date + 1 + time '10:00') AT TIME ZONE 'Asia/Jerusalem'
+// so the day is added to the DATE — never 24h to the instant, which is a day off around the two DST
+// switches (a day there is 23 or 25 hours) — and the wall time is turned into an instant by the
+// primitive above. Returns null for an unparseable/missing event_date (the caller must decide
 // what "no schedule yet" means; this never guesses).
 export function defaultThankyouSendAt(eventDate: string | null): string | null {
   if (!eventDate) return null;
   const eventMs = Date.parse(eventDate);
   if (Number.isNaN(eventMs)) return null;
-  const nextDay = israelCalendarDay(eventMs + DAY_MS);
-  return ilWallTimeToIso(nextDay, '10:00');
+  const nextDay = addCalendarDays(israelCalendarDay(eventMs), 1);
+  return nextDay === null ? null : ilWallTimeToIso(nextDay, '10:00');
 }

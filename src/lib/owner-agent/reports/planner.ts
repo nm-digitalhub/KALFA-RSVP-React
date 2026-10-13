@@ -21,6 +21,8 @@
 // local_date, slot_time), the table's unique constraint. local_date is the
 // zone's calendar date of the slot, never a UTC date.
 
+import { wallClockToDate } from '@/lib/data/event-date';
+
 /** A due slot is planned up to this long after its minute; later it is `expired`. */
 export const REPORT_CATCH_UP_MINUTES = 60;
 export const REPORT_CATCH_UP_MS = REPORT_CATCH_UP_MINUTES * 60_000;
@@ -118,28 +120,20 @@ export function planDueSlots(subscriptions: readonly PlannerSubscription[], nowM
   return due;
 }
 
-// The zone's offset (ms, local − UTC) at an instant, from the formatted parts.
-function offsetAt(ms: number, timeZone: string): number {
-  const minute = Math.floor(ms / MINUTE_MS) * MINUTE_MS;
-  const p = localParts(minute, timeZone);
-  const asUtc = Date.parse(`${p.date}T${p.time}:00Z`);
-  return asUtc - minute;
-}
-
 /**
- * The instant of a local wall-clock time. Two passes: guess with the offset at
- * the naive UTC reading, then correct with the offset at the result — right on
- * both sides of a switch, unlike a single probe (range.ts probes at noon and
- * is an hour off at midnight on switch days). A time inside a gap resolves to
- * an instant just past it; that slot is never planned anyway.
+ * The instant of a local wall-clock time, resolved by the shared primitive
+ * (wallClockToDate in data/event-date.ts, i.e. @date-fns/tz's TZDate): right on
+ * both sides of a switch, and no offset is computed here. A time inside a gap
+ * resolves to an instant just past it; that slot is never planned anyway.
+ * A time in the repeated autumn hour resolves to one of its two instants.
+ * Throws report_bad_slot for a malformed key or a zone that cannot be resolved.
  */
 export function wallTimeToInstant(localDate: string, time: string, timeZone: string): number {
   const slot = normalizeSlotTime(time);
   if (!LOCAL_DATE.test(localDate) || !slot) throw new Error('report_bad_slot');
-  const naive = Date.parse(`${localDate}T${slot}:00Z`);
-  if (Number.isNaN(naive)) throw new Error('report_bad_slot');
-  const first = naive - offsetAt(naive, timeZone);
-  return naive - offsetAt(first, timeZone);
+  const resolved = wallClockToDate(`${localDate}T${slot}`, timeZone);
+  if (!resolved) throw new Error('report_bad_slot');
+  return resolved.getTime();
 }
 
 export interface ReportPeriod {

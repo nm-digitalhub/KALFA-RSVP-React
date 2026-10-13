@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  addCalendarDays,
   ISRAEL_LOCALE,
   ISRAEL_TIME_ZONE,
   formatIsraelDate,
@@ -183,5 +184,31 @@ describe('formatIsraelRelativeSpokenDate', () => {
   it('returns empty for unparseable input', () => {
     expect(formatIsraelRelativeSpokenDate('', now)).toBe('');
     expect(formatIsraelRelativeSpokenDate('2026-09-20T05:00:00Z', 'nope')).toBe('');
+  });
+});
+
+describe('addCalendarDays', () => {
+  it('moves a calendar date by whole days, across month and year ends and a leap day', () => {
+    expect(addCalendarDays('2026-07-31', 1)).toBe('2026-08-01');
+    expect(addCalendarDays('2026-12-31', 1)).toBe('2027-01-01');
+    expect(addCalendarDays('2026-03-01', -1)).toBe('2026-02-28');
+    expect(addCalendarDays('2028-03-01', -1)).toBe('2028-02-29');
+    expect(addCalendarDays('2026-09-27', -6)).toBe('2026-09-21');
+    expect(addCalendarDays('2026-09-27', 0)).toBe('2026-09-27');
+  });
+
+  it('counts days, not 24-hour spans: the 23-hour and 25-hour Israel days are one day each', () => {
+    expect(addCalendarDays('2026-03-27', 1)).toBe('2026-03-28'); // spring switch day (23h)
+    expect(addCalendarDays('2026-03-28', -1)).toBe('2026-03-27');
+    expect(addCalendarDays('2026-10-25', 1)).toBe('2026-10-26'); // autumn switch day (25h)
+    expect(addCalendarDays('2026-10-26', -1)).toBe('2026-10-25');
+  });
+
+  it('is null for text that is not a real date or a whole number of days', () => {
+    expect(addCalendarDays('2026-02-30', 1)).toBeNull();
+    expect(addCalendarDays('2026-13-01', 1)).toBeNull();
+    expect(addCalendarDays('26-03-01', 1)).toBeNull();
+    expect(addCalendarDays('', 1)).toBeNull();
+    expect(addCalendarDays('2026-03-01', 1.5)).toBeNull();
   });
 });

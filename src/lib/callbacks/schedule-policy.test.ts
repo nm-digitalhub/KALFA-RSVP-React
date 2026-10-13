@@ -23,6 +23,24 @@ const hhmm = (ms: number) => {
 };
 const day = (ms: number) => localParts(ms).date;
 
+// A window may END at 24:00 (end_min = 1440, which the policy table's CHECK allows). There is no wall-clock hour
+// 24, so that end is 00:00 of the next calendar day — including when that day is a DST-switch day.
+describe('localInstant — a window ending at 24:00', () => {
+  it('1440 minutes is 00:00 of the next day', () => {
+    expect(new Date(localInstant('2026-07-28', 1440)).toISOString()).toBe('2026-07-28T21:00:00.000Z'); // 29.7 00:00 IDT
+    expect(localInstant('2026-07-28', 1440)).toBe(localInstant('2026-07-29', 0));
+  });
+
+  it('is exact when the next day is the spring-forward day or the fall-back day', () => {
+    expect(new Date(localInstant('2026-03-26', 1440)).toISOString()).toBe('2026-03-26T22:00:00.000Z'); // 27.3 00:00 IST
+    expect(new Date(localInstant('2026-10-24', 1440)).toISOString()).toBe('2026-10-24T21:00:00.000Z'); // 25.10 00:00 IDT
+  });
+
+  it('1439 minutes is still the last minute of the same day', () => {
+    expect(localInstant('2026-07-28', 1439)).toBe(localInstant('2026-07-28', 1440) - 60_000);
+  });
+});
+
 // 2026-07-28 is a Tuesday; 2026-07-31 a Friday; 2026-08-01 a Saturday.
 const TUE = '2026-07-28';
 const FRI = '2026-07-31';

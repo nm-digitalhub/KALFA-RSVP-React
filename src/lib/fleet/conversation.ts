@@ -10,7 +10,7 @@
 // A completion written today for a request filed last week must render after
 // this week's messages, so the stream is sorted by event time, never by row.
 
-import { formatIsraelDate, formatIsraelTime, ISRAEL_TIME_ZONE } from '@/lib/date';
+import { addCalendarDays, formatIsraelDate, formatIsraelTime, ISRAEL_TIME_ZONE } from '@/lib/date';
 
 import { requestBodyAuthor, splitRequestAnswer, type ContentAuthor } from './content-author';
 
@@ -341,17 +341,23 @@ export function israelDayKey(iso: string | number): string {
   return dayKeyFormat.format(typeof iso === 'number' ? iso : Date.parse(iso));
 }
 
+// "Yesterday" is the Israel CALENDAR day before today's — not the day 24h ago, which is a different date
+// for the hour after midnight around a DST switch (a day there is 23 or 25 hours long).
+function israelYesterdayKey(nowMs: number): string | null {
+  return addCalendarDays(israelDayKey(nowMs), -1);
+}
+
 export function shortStamp(iso: string, nowMs: number): string {
   const key = israelDayKey(iso);
   if (key === israelDayKey(nowMs)) return formatIsraelTime(iso);
-  if (key === israelDayKey(nowMs - 86_400_000)) return 'אתמול';
+  if (key === israelYesterdayKey(nowMs)) return 'אתמול';
   return formatIsraelDate(iso);
 }
 
 export function dayLabel(iso: string, nowMs: number): string {
   const key = israelDayKey(iso);
   if (key === israelDayKey(nowMs)) return 'היום';
-  if (key === israelDayKey(nowMs - 86_400_000)) return 'אתמול';
+  if (key === israelYesterdayKey(nowMs)) return 'אתמול';
   return formatIsraelDate(iso);
 }
 

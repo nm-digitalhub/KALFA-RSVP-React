@@ -4,6 +4,8 @@ import {
   approveCampaignSchema,
   purchasePackageSchema,
   choosePackageSchema,
+  rescheduleEventSchema,
+  thankyouScheduleSchema,
 } from '@/lib/validation/campaigns';
 
 describe('approveCampaignSchema', () => {
@@ -72,5 +74,46 @@ describe('choosePackageSchema', () => {
       contact_quota: '9999',
     });
     expect(r.success && Object.keys(r.data)).toEqual(['package_id']);
+  });
+});
+
+// Both schemas feed ilWallTimeToIso, which fails on a wall clock that cannot be read or does not exist.
+describe('thankyouScheduleSchema — the Israel wall-clock date and time', () => {
+  const ok = { auto_enabled: true, send_date: '2026-10-25', send_time: '00:30' };
+
+  it('accepts a real date with a real time, and both empty (clears the schedule)', () => {
+    expect(thankyouScheduleSchema.safeParse(ok).success).toBe(true);
+    expect(thankyouScheduleSchema.safeParse({ ...ok, send_date: '', send_time: '' }).success).toBe(true);
+  });
+
+  it('rejects a date that is not a real calendar date, and a time that is not 00:00–23:59', () => {
+    for (const send_date of ['2026-02-30', '2026-13-01', 'abc', '25/10/2026']) {
+      expect(thankyouScheduleSchema.safeParse({ ...ok, send_date }).success, send_date).toBe(false);
+    }
+    for (const send_time of ['24:00', '25:00', '12:60', '9:00', 'noon', '10:00:30']) {
+      expect(thankyouScheduleSchema.safeParse({ ...ok, send_time }).success, send_time).toBe(false);
+    }
+  });
+
+  it('still refuses a half-filled pair', () => {
+    expect(thankyouScheduleSchema.safeParse({ ...ok, send_time: '' }).success).toBe(false);
+    expect(thankyouScheduleSchema.safeParse({ ...ok, send_date: '' }).success).toBe(false);
+  });
+});
+
+describe('rescheduleEventSchema — the Israel wall-clock date and time', () => {
+  const ok = { event_date: '2026-03-27', event_time: '01:00', reason: 'הלקוח ביקש להקדים את האירוע' };
+
+  it('accepts a real date and time', () => {
+    expect(rescheduleEventSchema.safeParse(ok).success).toBe(true);
+  });
+
+  it('rejects an impossible date or time instead of letting ilWallTimeToIso throw', () => {
+    for (const event_date of ['2026-02-30', '2026-13-01', 'abc', '']) {
+      expect(rescheduleEventSchema.safeParse({ ...ok, event_date }).success, event_date).toBe(false);
+    }
+    for (const event_time of ['24:00', '25:00', '12:60', '1:00', '']) {
+      expect(rescheduleEventSchema.safeParse({ ...ok, event_time }).success, event_time).toBe(false);
+    }
   });
 });

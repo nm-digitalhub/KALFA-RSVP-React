@@ -248,6 +248,29 @@ describe('computeStepSlot / eventDayExclusiveEndMs (worker entry points)', () =>
     expect(localHM(e)).toBe('00:00');
   });
 
+  // Regression (13.10.2026): the next-day midnight used to carry the offset of NOON of that day,
+  // an hour off when that day is a DST-switch day (the switch is at 02:00, after midnight).
+  it('expiry is exact when the NEXT day is the spring-forward day (27.3.2026, midnight still IST)', () => {
+    const e = eventDayExclusiveEndMs('2026-03-26T18:00:00+02:00');
+    expect(new Date(e).toISOString()).toBe('2026-03-26T22:00:00.000Z');
+    expect(israelCalendarDay(e)).toBe('2026-03-27');
+    expect(localHM(e)).toBe('00:00');
+  });
+
+  it('expiry is exact when the NEXT day is the fall-back day (25.10.2026, midnight still IDT)', () => {
+    const e = eventDayExclusiveEndMs('2026-10-24T18:00:00+03:00');
+    expect(new Date(e).toISOString()).toBe('2026-10-24T21:00:00.000Z');
+    expect(israelCalendarDay(e)).toBe('2026-10-25');
+    expect(localHM(e)).toBe('00:00');
+  });
+
+  it('expiry is exact for an event ON a switch day (a 23h and a 25h day)', () => {
+    const spring = eventDayExclusiveEndMs('2026-03-27T18:00:00+03:00');
+    expect(new Date(spring).toISOString()).toBe('2026-03-27T21:00:00.000Z'); // 28.3 00:00 IDT
+    const autumn = eventDayExclusiveEndMs('2026-10-25T18:00:00+02:00');
+    expect(new Date(autumn).toISOString()).toBe('2026-10-25T22:00:00.000Z'); // 26.10 00:00 IST
+  });
+
   it('composes plannedSendTime + resolveSendSlot for a touchpoint', () => {
     const r = computeStepSlot({
       eventDateIso: '2026-07-20T18:00:00+03:00', // Mon 2026-07-20
