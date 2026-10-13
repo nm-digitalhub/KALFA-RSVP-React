@@ -107,7 +107,7 @@ AGENTS.md's Next.js docs note applies before UI work.
   `verification-browser.md`; screenshots in `verification-screenshots/`. This box is checked
   only after a short smoke pass on the deployed build, or by the owner's explicit decision
   that the local pass is enough.
-- [ ] ה.3 **Gates DONE on the final state (lint, tsc, suite 12,343, build OK) and the acceptance walk recorded in verification-acceptance.md (24/26 proven); the checkbox waits only for ה.2's two browser items.** Full gates (lint, tsc, full suite, build) + the acceptance mapping below
+- [ ] ה.3 **Gates DONE on the final pushed state (13.10, commit b07327cb): lint clean (0 warnings), `tsc --noEmit` clean, full suite 12,351 passed / 39 skipped (716 files), `npm run build` OK; the acceptance walk is recorded in verification-acceptance.md. The box stays unchecked only because acceptance 24/26 are proven locally, not yet on the deployed build — see ה.2.** Full gates (lint, tsc, full suite, build) + the acceptance mapping below
   walked item-by-item, each outcome recorded in verification-acceptance.md
   (acceptance 25). Verify: all green before the change is offered for archive.
 

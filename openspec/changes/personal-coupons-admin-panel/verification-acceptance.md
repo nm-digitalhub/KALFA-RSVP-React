@@ -28,5 +28,5 @@ Status key: ✓ proven (test/SQL/browser run named). The browser rows (24, 26) a
 | 22 | החזר אינו משחרר consumed | ✓ | consumed beats expiry (mapper) + detail healthy-shape test |
 | 23 | מצב שהשתנה מאז פתיחת החלון | ✓ | RPC re-decides under locks (ד.6); a state-driven refusal is answered on the detail page with the new state's message + refreshed details, list filters kept (action + page tests; browser: concurrent void while the dialog was open); terms drift on assign refreshes the preview and asks to re-confirm (browser) |
 | 24 | מובייל 360/390, דסקטופ, RTL, מקלדת, הגדלה | ✓ מקומי · ◻ פרוס | verification-browser.md — list/new/detail/dialog at 360, 390, 1440; reflow at 320px (≈400% zoom, simulated by viewport); keyboard + dialog focus; no overflow, no console errors. Local `next dev`, not the deployed build |
-| 25 | typecheck, בדיקות ובנייה | ✓ | lint+tsc clean; full suite 12,343+; build — rerun below with this change |
+| 25 | typecheck, בדיקות ובנייה | ✓ | final pushed state b07327cb (13.10): lint clean (0 warnings), tsc clean, full suite 12,351 passed / 39 skipped (716 files), build OK (isolated `.next-verify`) |
 | 26 | צילומי בדיקה עם נתוני בדיקה בלבד | ✓ מקומי · ◻ פרוס | verification-screenshots/ (10 files) — local test accounts/offers only (`*@local.test`), masked phone format |
