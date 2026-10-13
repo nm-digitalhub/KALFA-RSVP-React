@@ -104,19 +104,64 @@ describe('buildEventAppointmentDraft', () => {
 });
 
 describe('buildRsvpDeadlineDraft', () => {
-  it('is an all-day, free-showing item spanning exactly one day', () => {
+  const heading = {
+    eventType: 'wedding' as const,
+    celebrants: { groom: 'יוסי', bride: 'דנה' },
+    eventName: 'האירוע שלנו',
+  };
+  const hours = (d: { start: Date; end: Date }) => (d.end.getTime() - d.start.getTime()) / 3_600_000;
+
+  it('is an all-day, free-showing item with no reminder, in the KALFA category', () => {
     const draft = buildRsvpDeadlineDraft({
-      eventType: 'wedding',
-      celebrants: { groom: 'יוסי', bride: 'דנה' },
-      eventName: 'האירוע שלנו',
+      ...heading,
       startIsoMidnight: '2026-08-25T21:00:00.000+00:00', // Israel midnight (IDT, +03:00) for 2026-08-26
+      endIsoMidnight: '2026-08-26T21:00:00.000+00:00', // Israel midnight for 2026-08-27
     });
     expect(draft.allDay).toBe(true);
     expect(draft.showAs).toBe('free');
     expect(draft.category).toBe(EVENT_EXCHANGE_CATEGORY);
-    expect(draft.end.getTime() - draft.start.getTime()).toBe(24 * 60 * 60 * 1000);
     expect(draft.reminderMinutes).toBeUndefined();
     expect(draft.subject).toContain('מועד אחרון לאישור הגעה');
+  });
+
+  // The end is the Israel midnight of the NEXT calendar day, as given — never start + 24h.
+  it('an ordinary day: two consecutive Israel midnights, 24 hours apart', () => {
+    const draft = buildRsvpDeadlineDraft({
+      ...heading,
+      startIsoMidnight: '2026-08-25T21:00:00.000Z',
+      endIsoMidnight: '2026-08-26T21:00:00.000Z',
+    });
+    expect(draft.start.toISOString()).toBe('2026-08-25T21:00:00.000Z');
+    expect(draft.end.toISOString()).toBe('2026-08-26T21:00:00.000Z');
+    expect(hours(draft)).toBe(24);
+  });
+
+  it('the autumn switch day, 2026-10-25, is 25 absolute hours and exactly one calendar day', () => {
+    // Midnight 25.10 is still IDT (+03:00 → 21:00Z on the 24th); midnight 26.10 is IST (+02:00 → 22:00Z on the 25th).
+    const draft = buildRsvpDeadlineDraft({
+      ...heading,
+      startIsoMidnight: '2026-10-24T21:00:00.000Z',
+      endIsoMidnight: '2026-10-25T22:00:00.000Z',
+    });
+    expect(draft.start.toISOString()).toBe('2026-10-24T21:00:00.000Z');
+    expect(draft.end.toISOString()).toBe('2026-10-25T22:00:00.000Z');
+    expect(hours(draft)).toBe(25);
+    expect(draft.allDay).toBe(true);
+    expect(draft.showAs).toBe('free');
+  });
+
+  it('the spring switch day, 2026-03-27, is 23 absolute hours and exactly one calendar day', () => {
+    // Midnight 27.3 is still IST (+02:00 → 22:00Z on the 26th); midnight 28.3 is IDT (+03:00 → 21:00Z on the 27th).
+    const draft = buildRsvpDeadlineDraft({
+      ...heading,
+      startIsoMidnight: '2026-03-26T22:00:00.000Z',
+      endIsoMidnight: '2026-03-27T21:00:00.000Z',
+    });
+    expect(draft.start.toISOString()).toBe('2026-03-26T22:00:00.000Z');
+    expect(draft.end.toISOString()).toBe('2026-03-27T21:00:00.000Z');
+    expect(hours(draft)).toBe(23);
+    expect(draft.allDay).toBe(true);
+    expect(draft.showAs).toBe('free');
   });
 });
 

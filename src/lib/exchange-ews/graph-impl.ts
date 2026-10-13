@@ -205,7 +205,7 @@ function toGraphDateTime(d: Date, zone: string): { dateTime: string; timeZone: s
 // all-day `end` as EXCLUSIVE, so a one-day item ends at the FOLLOWING
 // midnight. A caller that passed 23:59 of the same day would snap onto the
 // start date and produce a zero-length item. Callers must pass the exclusive
-// end — which is what buildRsvpDeadlineDraft does (start + DAY_MS).
+// end — which is what buildRsvpDeadlineDraft gets: the next calendar day's midnight.
 function toGraphAllDay(d: Date): { dateTime: string; timeZone: string } {
   return {
     dateTime: `${format(new TZDate(d.getTime(), ISRAEL_TIME_ZONE), 'yyyy-MM-dd')}T00:00:00`,

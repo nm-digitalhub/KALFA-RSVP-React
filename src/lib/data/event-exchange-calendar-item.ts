@@ -24,7 +24,6 @@ export const EVENT_EXCHANGE_REMINDER_MINUTES = 24 * 60;
 // block is the owner's chosen placeholder duration, not a measured guest-list
 // wrap time.
 const EVENT_DURATION_MS = 4 * 60 * 60 * 1000;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 const CANCELLED_PREFIX = '[בוטל] ';
 
@@ -91,9 +90,14 @@ export function buildEventAppointmentDraft(input: EventExchangeDraftInput): Appo
 
 /**
  * The separate, informational all-day item for rsvp_deadline, when the event
- * has one. `startIsoMidnight` must already be the Israel-midnight instant of
- * the deadline day (src/lib/data/event-date.ts's ilWallTimeToIso(date,
- * '00:00') — this module stays pure and does no timezone math itself).
+ * has one. It covers the deadline's Israel CALENDAR day: `startIsoMidnight` is
+ * the Israel midnight that starts the deadline day and `endIsoMidnight` the
+ * Israel midnight that starts the NEXT calendar day (Graph reads an all-day
+ * `end` as exclusive). Both come from src/lib/data/event-date.ts's
+ * ilWallTimeToIso(date, '00:00') — this module stays pure and does no timezone
+ * math itself. The end is never start + 24h: a calendar day in Israel is 23, 24
+ * or 25 hours long, and on the 25-hour day a 24h end falls back on the same
+ * date and the item collapses to zero length.
  *
  * showAs: 'free' is NOT optional here — AppointmentDraft's own comment: an
  * informational all-day item must pass 'free' or it blacks out the owner's
@@ -104,10 +108,10 @@ export function buildEventAppointmentDraft(input: EventExchangeDraftInput): Appo
  * on the calendar grid rather than alerted on.
  */
 export function buildRsvpDeadlineDraft(
-  input: EventHeadingInput & { startIsoMidnight: string },
+  input: EventHeadingInput & { startIsoMidnight: string; endIsoMidnight: string },
 ): AppointmentDraft {
   const start = new Date(input.startIsoMidnight);
-  const end = new Date(start.getTime() + DAY_MS);
+  const end = new Date(input.endIsoMidnight);
   return {
     subject: buildRsvpDeadlineSubject(input),
     start,

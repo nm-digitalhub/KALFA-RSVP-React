@@ -29,6 +29,7 @@ import {
   buildRsvpDeadlineDraft,
 } from '@/lib/data/event-exchange-calendar-item';
 import { ilWallTimeToIso } from '@/lib/data/event-date';
+import { addCalendarDays } from '@/lib/date';
 import { resolveMailboxPassword } from '@/lib/exchange-ews/mailbox-credential';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import type { ExchangeConnectionConfig } from '@/lib/exchange-ews/types';
@@ -38,6 +39,17 @@ import { getAppUrl } from '@/lib/url';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 type EventType = Enums<'event_type'>;
+
+// The all-day RSVP-deadline item spans the deadline's Israel CALENDAR day: from its midnight to the midnight of the
+// NEXT calendar day. The end is the next day's midnight, never start + 24h — a day in Israel is 23, 24 or 25 hours
+// long. ONE place computes both instants, so the create and the reschedule path cannot drift apart.
+function rsvpDeadlineMidnights(rsvpDeadline: string): { startIsoMidnight: string; endIsoMidnight: string } {
+  const startIsoMidnight = ilWallTimeToIso(rsvpDeadline, '00:00');
+  const nextDate = addCalendarDays(rsvpDeadline, 1);
+  if (nextDate === null) throw new RangeError(`rsvp_deadline is not a calendar date: "${rsvpDeadline}"`);
+  const endIsoMidnight = ilWallTimeToIso(nextDate, '00:00');
+  return { startIsoMidnight, endIsoMidnight };
+}
 
 // ── The business connection ─────────────────────────────────────────────────
 
@@ -187,8 +199,10 @@ export async function syncEventToExchange(eventId: string): Promise<void> {
 
     let rsvpDeadlineAppointmentId: string | null = null;
     if (event.rsvp_deadline) {
-      const startIsoMidnight = ilWallTimeToIso(event.rsvp_deadline, '00:00');
-      const rsvpDraft = buildRsvpDeadlineDraft({ ...headingInput, startIsoMidnight });
+      const rsvpDraft = buildRsvpDeadlineDraft({
+        ...headingInput,
+        ...rsvpDeadlineMidnights(event.rsvp_deadline),
+      });
       const rsvpCreated = await calendarProvider.createAppointment(
         connection.connection.config,
         rsvpDraft,
@@ -337,8 +351,10 @@ export async function rescheduleEventExchangeAppointment(eventId: string): Promi
     // move is earlier), so it moves too — and only when the event still has one.
     let deadlineMoved = false;
     if (link.rsvp_deadline_appointment_id && event.rsvp_deadline) {
-      const startIsoMidnight = ilWallTimeToIso(event.rsvp_deadline, '00:00');
-      const rsvpDraft = buildRsvpDeadlineDraft({ ...headingInput, startIsoMidnight });
+      const rsvpDraft = buildRsvpDeadlineDraft({
+        ...headingInput,
+        ...rsvpDeadlineMidnights(event.rsvp_deadline),
+      });
       const rsvpMoved = await calendarProvider.updateAppointment(
         connection.connection.config,
         link.rsvp_deadline_appointment_id,

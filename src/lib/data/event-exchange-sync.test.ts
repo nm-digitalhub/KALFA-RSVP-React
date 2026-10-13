@@ -24,7 +24,11 @@ import {
   EVENT_EXCHANGE_CANCELLED_CATEGORY,
   EVENT_EXCHANGE_CATEGORY,
 } from '@/lib/data/event-exchange-calendar-item';
-import { markEventExchangeCancelled, syncEventToExchange } from '@/lib/data/event-exchange-sync';
+import {
+  markEventExchangeCancelled,
+  rescheduleEventExchangeAppointment,
+  syncEventToExchange,
+} from '@/lib/data/event-exchange-sync';
 
 type Row = Record<string, unknown>;
 type Admin = ReturnType<typeof createAdminClient>;
@@ -119,6 +123,33 @@ describe('syncEventToExchange', () => {
     );
   });
 
+  // The all-day item runs from the Israel midnight of the deadline day to the Israel midnight of the NEXT calendar
+  // day — 25 absolute hours on 25.10 (clocks go back), 23 on 27.3 (clocks go forward). start + 24h is wrong on both.
+  it.each([
+    ['an ordinary day', '2026-08-20', '2026-08-19T21:00:00.000Z', '2026-08-20T21:00:00.000Z', 24],
+    ['the 25-hour autumn day', '2026-10-25', '2026-10-24T21:00:00.000Z', '2026-10-25T22:00:00.000Z', 25],
+    ['the 23-hour spring day', '2026-03-27', '2026-03-26T22:00:00.000Z', '2026-03-27T21:00:00.000Z', 23],
+  ])('CREATE: the rsvp_deadline item spans one calendar day on %s', async (_label, deadline, start, end, hours) => {
+    mockAdmin(
+      { data: null, error: null },
+      { data: { ...EVENT_ROW, rsvp_deadline: deadline }, error: null },
+      { data: [CONNECTION], error: null },
+      { data: null, error: null },
+    );
+    vi.mocked(calendarProvider.createAppointment)
+      .mockResolvedValueOnce({ ok: true, data: { appointmentId: 'appt-1' } })
+      .mockResolvedValueOnce({ ok: true, data: { appointmentId: 'appt-2' } });
+
+    await syncEventToExchange('event-1');
+
+    const [, rsvpDraft] = vi.mocked(calendarProvider.createAppointment).mock.calls[1];
+    expect(rsvpDraft.start.toISOString()).toBe(start);
+    expect(rsvpDraft.end.toISOString()).toBe(end);
+    expect((rsvpDraft.end.getTime() - rsvpDraft.start.getTime()) / 3_600_000).toBe(hours);
+    expect(rsvpDraft.allDay).toBe(true);
+    expect(rsvpDraft.showAs).toBe('free');
+  });
+
   it('no-ops when the event was already synced (idempotent)', async () => {
     mockAdmin({ data: { id: 'link-1' }, error: null });
 
@@ -208,6 +239,53 @@ function appointmentDetail(overrides: Partial<ExchangeAppointmentDetail> = {}): 
     ...overrides,
   };
 }
+
+describe('rescheduleEventExchangeAppointment — the rsvp_deadline item', () => {
+  const LINK: Row = { id: 'link-1', appointment_id: 'appt-1', rsvp_deadline_appointment_id: 'appt-2' };
+
+  // The update path moves the item with the same two midnights the create path uses, never start + 24h.
+  it.each([
+    ['an ordinary day', '2026-08-20', '2026-08-19T21:00:00.000Z', '2026-08-20T21:00:00.000Z', 24],
+    ['the 25-hour autumn day', '2026-10-25', '2026-10-24T21:00:00.000Z', '2026-10-25T22:00:00.000Z', 25],
+    ['the 23-hour spring day', '2026-03-27', '2026-03-26T22:00:00.000Z', '2026-03-27T21:00:00.000Z', 23],
+  ])('UPDATE: the moved rsvp_deadline item spans one calendar day on %s', async (_label, deadline, start, end, hours) => {
+    mockAdmin(
+      { data: LINK, error: null }, // exchange_calendar_links lookup
+      { data: { ...EVENT_ROW, rsvp_deadline: deadline }, error: null }, // events read
+      { data: [CONNECTION], error: null }, // exchange_connections lookup
+      { data: null, error: null }, // exchange_calendar_links update
+    );
+    vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
+
+    await rescheduleEventExchangeAppointment('event-1');
+
+    expect(calendarProvider.updateAppointment).toHaveBeenCalledTimes(2);
+    const [, mainId] = vi.mocked(calendarProvider.updateAppointment).mock.calls[0];
+    const [, rsvpId, rsvpUpdate] = vi.mocked(calendarProvider.updateAppointment).mock.calls[1];
+    expect(mainId).toBe('appt-1');
+    expect(rsvpId).toBe('appt-2');
+    expect(rsvpUpdate.start.toISOString()).toBe(start);
+    expect(rsvpUpdate.end.toISOString()).toBe(end);
+    expect((rsvpUpdate.end.getTime() - rsvpUpdate.start.getTime()) / 3_600_000).toBe(hours);
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ meta: expect.objectContaining({ rsvpDeadlineItemMoved: true }) }),
+    );
+  });
+
+  it('moves only the main item when the event no longer has a deadline', async () => {
+    mockAdmin(
+      { data: LINK, error: null },
+      { data: { ...EVENT_ROW, rsvp_deadline: null }, error: null },
+      { data: [CONNECTION], error: null },
+      { data: null, error: null },
+    );
+    vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
+
+    await rescheduleEventExchangeAppointment('event-1');
+
+    expect(calendarProvider.updateAppointment).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('markEventExchangeCancelled', () => {
   it('prefixes the subject and swaps the category, preserving start/end', async () => {
