@@ -28,7 +28,8 @@
 | `src/lib/data/close-charge.ts` | גמר חשבון: סגירה + capture של הכרטיס התפוס |
 | `src/lib/data/campaign-delivery.ts` | לוח המסירה B8 (funnel + תוצאות contact) |
 | `src/lib/data/webhooks.ts`, `webhook-processing.ts` | intake ועיבוד out‑of‑band של אירועי Meta |
-| `src/lib/outreach/schedule.ts` | מתמטיקת לו"ז טהורה + det‑id |
+| `src/lib/outreach/schedule.ts` | זהות התוכנית: det‑id / defer‑id ו‑`planRev` (טהור) |
+| `src/lib/outreach/send-window.ts` | מודל הזמן היחיד: `plannedSendTime`, `resolveSendSlot`, `evaluateStep` |
 | `src/lib/queue/queues.ts` | שמות תורים + מדיניות retry (קבועים) |
 | `worker/main.ts` | תהליך ה‑pg‑boss (pm2 `kalfa-worker`) |
 | `src/app/(customer)/app/events/[id]/campaign*` | ה‑UX: מקטע האירוע, actions, approve/payment/manage |
@@ -181,7 +182,7 @@ charge   = max(0, min(Σ locked_price, ceiling) − Σ credits)   -- בגמר ח
 | 3 | 2 | call | `call_1` |
 | 4 | 1 | whatsapp | `final` |
 
-מועד כל touchpoint = `event_date − days_before × 24h` (`touchpointTime`, `src/lib/outreach/schedule.ts:16-18`). עריכת תאריך האירוע ממקמת מחדש את הפניות הבאות, כי הזמנים נגזרים תמיד מה‑`event_date` החי. תגובה אנושית מאומתת עוצרת את כל הרצף (stop‑on‑reach, §6.3).
+מועד כל touchpoint נגזר מ‑`event_date` החי ומ‑`days_before` כ**ימי לוח בישראל**, לא כ‑`event_date − days_before × 24h`: `plannedSendTime` (`src/lib/outreach/send-window.ts`) לוקח את יום האירוע בישראל, מחסיר `days_before` ימי לוח וקובע שעת‑יום מועדפת, ו‑`resolveSendSlot` מצמיד אותו לחלון שליחה חוקי (חלון יומי, שבת/חג, תפוגה). עריכת תאריך האירוע ממקמת מחדש את הפניות הבאות, כי הזמנים נגזרים תמיד מה‑`event_date` החי. תגובה אנושית מאומתת עוצרת את כל הרצף (stop‑on‑reach, §6.3).
 
 ### 4.3 תבניות הודעה (`message_templates`)
 
@@ -193,7 +194,8 @@ Spec: `plans/outreach-engine-c1-spec.md` (ממומש). חלוקת אחריות:
 
 - **שכבת ה‑web (Next.js) נקייה מ‑pg‑boss** — היא רק משנה שורות DB (סטטוס קמפיין, קונפיג).
 - **`src/lib/queue/queues.ts`** — קבועים טהורים: שמות תורים ומדיניות retry (ללא import של pg‑boss, בטוח לכל צד).
-- **`src/lib/outreach/schedule.ts`** — מתמטיקת הלו"ז, טהורה וללא I/O: `touchpointTime`, `nextTouchpointIndex` (שורות 22‑39), `firstDueIndex` (44‑67, כולל fire‑first‑now כשהכול בעבר), ו‑`detId` (75‑89) — UUIDv5 דטרמיניסטי לכל `(campaign, contact, step)`.
+- **`src/lib/outreach/schedule.ts`** — זהות התוכנית, טהורה וללא I/O: מבנה `Touchpoint`; `detId` / `deferId` / `stepAuditId` — UUIDv5 דטרמיניסטי לכל `(campaign, contact, step, planRev)`; ו‑`planRev` / `stepPlanRev` — טביעת האצבע של התוכנית. (`touchpointTime`, `nextTouchpointIndex` ו‑`firstDueIndex`, שתוארו כאן בעבר, הוסרו ב‑13.10.2026 — לא היה להם קורא.)
+- **`src/lib/outreach/send-window.ts`** — מודל הזמן היחיד, טהור: `plannedSendTime` (יום האירוע בישראל פחות `days_before` ימי לוח, בשעה המועדפת), `resolveSendSlot` (חלון יומי, שבת/חג, פיזור, תפוגה) ו‑`evaluateStep` — ההחלטה `send` / `defer` / `skip` / `terminal` לצעד שבסמן.
 - **`src/lib/data/outreach-engine.ts`** — שכבת ההחלטות/DB, request‑free (בלי cookies/`requireUser`; רצה מה‑worker עם service‑role).
 - **`worker/main.ts`** — התהליך היחיד שמחזיק pg‑boss ומבצע `send`/`work`/`schedule`.
 
@@ -217,7 +219,7 @@ Spec: `plans/outreach-engine-c1-spec.md` (ממומש). חלוקת אחריות:
 ### 5.3 מחזור חיים של צעד (`handleStep`, `worker/main.ts:62-110`)
 
 1. **שער** — `stepGate` (`outreach-engine.ts:134-157`): `outreach_enabled` כבוי → `paused` (re‑enqueue בעוד 5 דקות); קמפיין לא `active` / `close_at` עבר / **יום האירוע עבר לפי ה‑`event_date` החי** (L1) / אירוע לא `active` (R9) → `stopped`; ה‑contact כבר reached → `reached` (עצירה סופית).
-2. **schedule‑next‑FIRST** — הצעד הבא (`nextTouchpointIndex`) מתוזמן **לפני** הביצוע, עם `id: detId(...)` — כך כשל שליחה לעולם לא שובר את השרשרת, וכפילות enqueue היא no‑op (`ON CONFLICT (name,id) DO NOTHING` של pg‑boss).
+2. **הערכת הצעד (cursor‑first)** — ה‑job תקף רק אם הוא מכוון לסמן הנוכחי, ל‑`planRev` הנוכחי ול‑id הדטרמיניסטי התואם (`detId` / `deferId`); אחרת הוא ישן ונזרק. `evaluateStep` (`send-window.ts`) מחליט `send` / `defer` / `skip` / `terminal`: דחייה או דילוג מתזמנים מחדש את הסמן (`ensureCurrentStep`), ושליחה רצה כ‑reserve → send → resolve. רציפות השרשרת בכשל נשמרת ב‑handler של ה‑dead‑letter; כפילות enqueue היא no‑op (`ON CONFLICT (name,id) DO NOTHING` של pg‑boss).
 3. **ביצוע** — `executeStep` (`outreach-engine.ts:232-294`): שליפת ה‑contact, דילוג אם `removal_requested` או ללא `whatsapp_consent_at` (לערוץ whatsapp) או ערוץ שאינו ב‑`allowed_channels`; ואז `claimStep` — UPDATE אטומי שמקדם את `current_step_index` רק אם הוא עדיין `stepIndex` (`outreach-engine.ts:161-178`); רק המנצח שולח. WhatsApp → `sendOneWhatsApp` (`src/lib/data/outreach.ts:23-61`, רישום interaction יוצא לא‑billable עם dedup); `call` → enqueue ל‑`outreach-call-request`.
 4. אם אין touchpoint עתידי — `setOutreachStatus(..., 'exhausted')`.
 

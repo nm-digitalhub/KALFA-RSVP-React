@@ -6,6 +6,7 @@ import { createEvent, type DateArray, type EventAttributes } from 'ics';
 import { eventHeadingFor } from '@/lib/data/celebrant-display';
 import { asEventType } from '@/lib/data/event-display';
 import { ilTimeInputValue, israelCalendarDay } from '@/lib/data/event-date';
+import { addCalendarDays } from '@/lib/date';
 import type { Json } from '@/lib/supabase/types';
 
 // The guest "add to calendar" DOMAIN module — everything about turning an event
@@ -27,7 +28,6 @@ import type { Json } from '@/lib/supabase/types';
 // calendar day via src/lib/data/event-date.ts, never string slicing. No
 // duration column exists — a timed event defaults to a 3h block.
 export const DEFAULT_DURATION_HOURS = 3;
-const DAY_MS = 86_400_000;
 
 export interface CalendarEventInput {
   name: string;
@@ -140,6 +140,14 @@ export function calendarUid(seed: string): string {
   return `${createHash('sha256').update(`kalfa-calendar:${seed}`).digest('hex').slice(0, 32)}@kalfa.me`;
 }
 
+// All-day VALUE=DATE bounds: the Israel day and the NEXT calendar day (RFC 5545 DTEND is exclusive). The next day is a
+// date plus one calendar day — never an instant plus 24h, which is a day off around the DST switches.
+function allDayBounds(israelDay: string): { start: DateArray; end: DateArray } {
+  const nextDay = addCalendarDays(israelDay, 1);
+  if (nextDay === null) throw new RangeError(`not a calendar day: "${israelDay}"`);
+  return { start: dateArray(israelDay), end: dateArray(nextDay) };
+}
+
 /** The RFC 5545 text via the `ics` package (UTC instants; all-day as VALUE=DATE). */
 export function renderIcs(build: CalendarEventBuild, uidSeed?: string): string {
   const when: Pick<EventAttributes, 'start' | 'startInputType' | 'startOutputType' | 'endInputType' | 'endOutputType'> & {
@@ -153,7 +161,7 @@ export function renderIcs(build: CalendarEventBuild, uidSeed?: string): string {
         endInputType: 'utc',
         endOutputType: 'utc',
       }
-    : { start: dateArray(build.israelDay), end: dateArray(israelCalendarDay(Date.parse(`${build.israelDay}T12:00:00Z`) + DAY_MS)) };
+    : allDayBounds(build.israelDay);
 
   const { error, value } = createEvent({
     ...when,

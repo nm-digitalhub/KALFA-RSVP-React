@@ -13,6 +13,7 @@
 import { createHash } from 'node:crypto';
 
 import { israelCalendarDay, ilWallTimeToIso } from '@/lib/data/event-date';
+import { addCalendarDays } from '@/lib/date';
 import {
   hhmmToMin,
   preferredMinutes,
@@ -39,9 +40,15 @@ function localParts(ms: number): { date: string; weekday: number; minutes: numbe
   return { date, weekday, minutes: h * 60 + m };
 }
 
-function addDays(dateStr: string, n: number): string {
-  const ms = Date.parse(`${dateStr}T00:00:00Z`) + n * 86_400_000;
-  return new Date(ms).toISOString().slice(0, 10);
+// A calendar date moved by whole calendar days (addCalendarDays, the one place a day is added to a date). Every date
+// here comes from israelCalendarDay and every shift from an integer days_before (the package schedule schema
+// validates it), so null can only mean a bug: it fails loudly instead of becoming a string.
+function shiftDay(date: string, days: number): string {
+  const shifted = addCalendarDays(date, days);
+  if (shifted === null) {
+    throw new RangeError(`send-window: cannot move the calendar date "${date}" by ${days} day(s)`);
+  }
+  return shifted;
 }
 
 // The absolute instant of an Israel wall-clock date + minutes-from-midnight.
@@ -58,7 +65,7 @@ export function plannedSendTime(
   policy: SendPolicy,
 ): number {
   const eventDate = israelCalendarDay(Date.parse(eventDateIso));
-  const targetDate = addDays(eventDate, -daysBefore);
+  const targetDate = shiftDay(eventDate, -daysBefore);
   return localInstant(targetDate, preferredMinutes(policy, daysBefore));
 }
 
@@ -68,7 +75,7 @@ export function plannedSendTime(
 // (localInstant routes through ilWallTimeToIso, which looks up the real offset).
 export function eventDayExclusiveEndMs(eventDateIso: string): number {
   const eventDayIL = israelCalendarDay(Date.parse(eventDateIso));
-  return localInstant(addDays(eventDayIL, 1), 0);
+  return localInstant(shiftDay(eventDayIL, 1), 0);
 }
 
 export type SlotResult =
@@ -276,7 +283,7 @@ export function resolveSendSlot(input: SlotInput): SlotResult {
     const base = policy.weekday[weekday];
     // null is Saturday only (parseSendPolicy enforces it) → no send that day.
     if (!base) {
-      t = localInstant(addDays(date, 1), 0);
+      t = localInstant(shiftDay(date, 1), 0);
       continue;
     }
     const windowStartMs = localInstant(date, hhmmToMin(base.start));
@@ -287,7 +294,7 @@ export function resolveSendSlot(input: SlotInput): SlotResult {
     }
     // End-EXCLUSIVE window close (20:30:00 and 20:30:01 are both out).
     if (t >= windowEndMs) {
-      t = localInstant(addDays(date, 1), 0);
+      t = localInstant(shiftDay(date, 1), 0);
       continue;
     }
 
@@ -296,7 +303,7 @@ export function resolveSendSlot(input: SlotInput): SlotResult {
     // or past the deadline.
     const usableEnd = Math.min(windowEndMs, calendar.nextBlockedStart(t), expiresAtMs);
     if (t >= usableEnd) {
-      t = localInstant(addDays(date, 1), 0);
+      t = localInstant(shiftDay(date, 1), 0);
       continue;
     }
     const at = spreadWithin(t, usableEnd, policy.spreadSpanMs, spreadKey);

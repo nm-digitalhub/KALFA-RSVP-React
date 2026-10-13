@@ -1,5 +1,7 @@
 # KALFA §10 Outreach Engine — Full Implementation Spec (C1)
 
+> **Superseded (send timing and step scheduling) by** `docs/send-timing-hardening-blueprint-2026-07-07.md` — implemented in `src/lib/outreach/send-window.ts` (`plannedSendTime` + `resolveSendSlot` + `evaluateStep`) with the cursor-first worker. `touchpointTime` / `nextTouchpointIndex` / `firstDueIndex` below were removed on 2026-10-13 (no caller). Kept as written for history.
+
 ## Context7 verification (read, not memory)
 Library: **`/timgit/pg-boss`** via Context7 `query-docs`. pg-boss version (package.json): **`^12.21.2`**.
 

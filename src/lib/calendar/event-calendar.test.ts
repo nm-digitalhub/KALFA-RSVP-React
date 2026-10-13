@@ -130,6 +130,46 @@ describe('renderIcs (ics package)', () => {
     expect(ics).toMatch(/DTEND;VALUE=DATE:20260713/);
   });
 
+  // The DTEND of an all-day entry is the NEXT CALENDAR day (RFC 5545: exclusive) — a date plus one day, never an
+  // instant plus 24h. Pinned for an ordinary day, around both Israel DST switches (the 23-hour 27.3.2026 and the
+  // 25-hour 25.10.2026) and across month, year and leap-day boundaries. The expected bounds are written out, so a
+  // change to how the next day is computed cannot move them.
+  it.each([
+    ['2026-07-12', '20260712', '20260713'], // ordinary summer day
+    ['2026-01-15', '20260115', '20260116'], // ordinary winter day
+    ['2026-03-26', '20260326', '20260327'], // the day before the spring switch
+    ['2026-03-27', '20260327', '20260328'], // spring switch day (23h)
+    ['2026-03-28', '20260328', '20260329'], // the day after it
+    ['2026-10-24', '20261024', '20261025'], // the day before the autumn switch
+    ['2026-10-25', '20261025', '20261026'], // autumn switch day (25h)
+    ['2026-10-26', '20261026', '20261027'], // the day after it
+    ['2026-12-31', '20261231', '20270101'], // year end
+    ['2026-02-28', '20260228', '20260301'], // February, common year
+    ['2028-02-28', '20280228', '20280229'], // February, leap year
+    ['2028-02-29', '20280229', '20280301'], // leap day
+  ])('all-day %s: DTSTART;VALUE=DATE:%s and DTEND;VALUE=DATE:%s', (day, start, end) => {
+    const allDay = buildCalendarEvent({ ...base, event_date: `${day}T00:00:00+00:00` })!;
+    const ics = renderIcs(allDay);
+    expect(ics).toContain(`DTSTART;VALUE=DATE:${start}`);
+    expect(ics).toContain(`DTEND;VALUE=DATE:${end}`);
+  });
+
+  it('every day of 2026 and of the leap year 2028 ends on the same date as the previous noon-plus-24h computation', () => {
+    // The computation this replaced, kept here only as the reference the new one must reproduce.
+    const legacyNextDay = (day: string) => {
+      const next = new Date(Date.parse(`${day}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+      return next.replaceAll('-', '');
+    };
+    for (const year of [2026, 2028]) {
+      for (let ms = Date.UTC(year, 0, 1); ms <= Date.UTC(year, 11, 31); ms += 86_400_000) {
+        const day = new Date(ms).toISOString().slice(0, 10);
+        const ics = renderIcs(buildCalendarEvent({ ...base, event_date: `${day}T00:00:00+00:00` })!);
+        expect(ics, day).toContain(`DTSTART;VALUE=DATE:${day.replaceAll('-', '')}`);
+        expect(ics, day).toContain(`DTEND;VALUE=DATE:${legacyNextDay(day)}`);
+      }
+    }
+  });
+
   it('a title with an embedded newline cannot inject a property line', () => {
     const evil = buildCalendarEvent({ ...base, name: 'מסיבה\nURL:https://evil.example', event_type: 'other', celebrants: null })!;
     const ics = renderIcs(evil);
