@@ -27,7 +27,6 @@
 // types:check` compares only the generated file.
 
 import type { MergeDeep } from 'type-fest';
-import type { Json as CouponRpcJson } from './types.generated';
 import type { Database as DatabaseGenerated } from './types.generated';
 
 export type { Json } from './types.generated';
@@ -38,23 +37,10 @@ export type Database = MergeDeep<
   {
     public: {
       Functions: {
-        // Migration 20261012234733 — applied LOCALLY only so far (the admin-panel change is
-        // undeployed); the generated file will carry this once the migration reaches the
-        // linked project and gen:types runs, and this entry can then be dropped.
-        void_staff_coupon_assignment: {
-          Args: { _staff_id: string; _assignment_id: string; _staff_reason: string };
-          Returns: CouponRpcJson;
-        };
-        create_staff_coupon_assignment: {
-          Args: {
-            _staff_id: string;
-            _user_id: string;
-            _offer_id: string;
-            _idempotency_key: string;
-            _confirmed_options: CouponRpcJson;
-          };
-          Returns: CouponRpcJson;
-        };
+        // Migrations 20261012234733 / 20261013000428 (live). Overrides kept ONLY for the
+        // nullability gen:types cannot see: both functions LEFT JOIN profiles/offers/events,
+        // so full_name, end_reason, offer_title, user_id and phone_e164 come back NULL for
+        // unclaimed or nameless rows, and the optional filters are passed as null.
         admin_lookup_account_by_email: {
           Args: { _email: string };
           Returns: { id: string; email: string; full_name: string | null }[];

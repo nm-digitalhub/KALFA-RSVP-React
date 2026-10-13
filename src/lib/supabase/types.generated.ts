@@ -8045,6 +8045,38 @@ export type Database = {
     }
     Functions: {
       accept_invitation: { Args: { _token: string }; Returns: string }
+      admin_list_coupon_assignments: {
+        Args: {
+          _offer_id?: string
+          _page?: number
+          _page_size?: number
+          _phone?: string
+          _sort?: string
+          _source?: string
+          _status?: string
+          _user_id?: string
+        }
+        Returns: {
+          created_at: string
+          end_reason: string
+          expires_at: string
+          id: string
+          offer_title: string
+          phone_e164: string
+          source_kind: string
+          state: string
+          total_count: number
+          user_id: string
+        }[]
+      }
+      admin_lookup_account_by_email: {
+        Args: { _email: string }
+        Returns: {
+          email: string
+          full_name: string
+          id: string
+        }[]
+      }
       admin_reschedule_event: {
         Args: { _event_date: string; _event_id: string }
         Returns: string
@@ -8297,6 +8329,16 @@ export type Database = {
           _template_id: string
         }
         Returns: string
+      }
+      create_staff_coupon_assignment: {
+        Args: {
+          _confirmed_options: Json
+          _idempotency_key: string
+          _offer_id: string
+          _staff_id: string
+          _user_id: string
+        }
+        Returns: Json
       }
       exposed_for_billing: {
         Args: {
@@ -8953,6 +8995,14 @@ export type Database = {
           p_source?: string
         }
         Returns: string
+      }
+      void_staff_coupon_assignment: {
+        Args: {
+          _assignment_id: string
+          _staff_id: string
+          _staff_reason: string
+        }
+        Returns: Json
       }
       wake_parked_workflow_run: {
         Args: { p_correlation_id: string; p_node_id: string; p_run_id: string }
