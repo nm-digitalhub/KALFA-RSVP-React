@@ -148,4 +148,4 @@ one transaction. The actor is the authenticated user, never a browser field.
 
 #### Scenario: State changed since the dialog opened
 - **WHEN** the assignment's state changed between opening the dialog and confirming
-- **THEN** the server refuses, the view refreshes to the new state, and the typed reason is kept on the failed form
+- **THEN** the server refuses and the detail page answers with the message of the NEW state (a closed refusal code, list filters kept) and the refreshed details; a validation or unexpected error keeps the typed reason on the open form

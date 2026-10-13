@@ -88,7 +88,9 @@ AGENTS.md's Next.js docs note applies before UI work.
   19). Verify: recorded run.
 - [x] ד.6 The void dialog on the detail page (AlertDialog, required reason, danger
   styling, focus kept/returned), wired to ד.3; a state changed since the dialog
-  opened refuses, refreshes the view and keeps the typed reason (acceptance 23).
+  opened refuses and is answered on the detail page with the new state's message and the
+  refreshed details (list filters kept); validation/unexpected errors keep the typed
+  reason on the open form (acceptance 23).
   Verify: component tests; action tests for every refusal code.
 
 ## Stage ה — closure
@@ -96,9 +98,15 @@ AGENTS.md's Next.js docs note applies before UI work.
 - [x] ה.1 Permission acceptance (§14 1–3): no manage_billing → no list/detail/lookup/
   assign/void; id tampering never bypasses; links only with their own permissions.
   Verify: the admin coverage test stays green + targeted tests.
-- [ ] ה.2 **BLOCKED on the deploy (the apply directive forbids deploying; the authenticated admin screens are reachable only on the deployed build).** Browser pass at 360/390/desktop, RTL, keyboard, zoom (acceptance 24) on the
-  deployed build; record findings with real test data only (acceptance 26). Verify:
-  noted in this change.
+- [ ] ה.2 **PARTIAL — local pass DONE, deployed-build pass PENDING the owner's own deploy
+  (the apply directive forbids me to deploy).** Browser pass at 360/390/desktop, RTL,
+  keyboard, zoom (acceptance 24), real test data only (acceptance 26), originally specified
+  on the deployed build. Done so far on a local `next dev` (sanitized env, isolated build
+  dir) against the local Supabase stack, zoom simulated as a 320px reflow: recorded with
+  evidence, 4 defects found and fixed + 3 items recorded, and the exact method in
+  `verification-browser.md`; screenshots in `verification-screenshots/`. This box is checked
+  only after a short smoke pass on the deployed build, or by the owner's explicit decision
+  that the local pass is enough.
 - [ ] ה.3 **Gates DONE on the final state (lint, tsc, suite 12,343, build OK) and the acceptance walk recorded in verification-acceptance.md (24/26 proven); the checkbox waits only for ה.2's two browser items.** Full gates (lint, tsc, full suite, build) + the acceptance mapping below
   walked item-by-item, each outcome recorded in verification-acceptance.md
   (acceptance 25). Verify: all green before the change is offered for archive.

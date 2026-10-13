@@ -1,6 +1,6 @@
 # verification-acceptance — spec §14 walked item-by-item (13.10.2026)
 
-Status key: ✓ proven (test/SQL run named) · ◻ pending the deploy (browser pass ה.2).
+Status key: ✓ proven (test/SQL/browser run named). The browser rows (24, 26) are proven on a LOCAL `next dev` + local Supabase only ("✓ מקומי"); the deployed-build pass ("◻ פרוס") is still pending the owner's deploy — see verification-browser.md and task ה.2.
 
 | # | בדיקה | סטטוס | ראיה |
 |---|---|---|---|
@@ -26,7 +26,7 @@ Status key: ✓ proven (test/SQL run named) · ◻ pending the deploy (browser p
 | 20 | סדר נעילות אחיד; release תוקן קודם | ✓ | verification-d-1 + migration 20261013001452 |
 | 21 | תשלום שנפתח בתוקף שומר תנאים | ✓ | the saved-terms sentence + no re-pricing anywhere (detail test) |
 | 22 | החזר אינו משחרר consumed | ✓ | consumed beats expiry (mapper) + detail healthy-shape test |
-| 23 | מצב שהשתנה מאז פתיחת החלון | ✓ | RPC re-decides under locks; dialog refusal refreshes keeping the reason (ד.6) |
-| 24 | מובייל 360/390, דסקטופ, RTL, מקלדת, הגדלה | ◻ | ה.2 — runs on the deployed build (deploy excluded from this run by directive) |
+| 23 | מצב שהשתנה מאז פתיחת החלון | ✓ | RPC re-decides under locks (ד.6); a state-driven refusal is answered on the detail page with the new state's message + refreshed details, list filters kept (action + page tests; browser: concurrent void while the dialog was open); terms drift on assign refreshes the preview and asks to re-confirm (browser) |
+| 24 | מובייל 360/390, דסקטופ, RTL, מקלדת, הגדלה | ✓ מקומי · ◻ פרוס | verification-browser.md — list/new/detail/dialog at 360, 390, 1440; reflow at 320px (≈400% zoom, simulated by viewport); keyboard + dialog focus; no overflow, no console errors. Local `next dev`, not the deployed build |
 | 25 | typecheck, בדיקות ובנייה | ✓ | lint+tsc clean; full suite 12,343+; build — rerun below with this change |
-| 26 | צילומי בדיקה עם נתוני בדיקה בלבד | ◻ | with ה.2 |
+| 26 | צילומי בדיקה עם נתוני בדיקה בלבד | ✓ מקומי · ◻ פרוס | verification-screenshots/ (10 files) — local test accounts/offers only (`*@local.test`), masked phone format |
