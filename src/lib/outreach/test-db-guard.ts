@@ -52,3 +52,10 @@ export function resolveTestDb(): TestDbConfig {
 
   return { dbUrl, supabaseUrl, serviceKey };
 }
+
+// Supabase local (`supabase start`) does not speak SSL; a hosted test database
+// does. Call it only with a URL resolveTestDb() has already accepted.
+export function testDbSsl(dbUrl: string): false | { rejectUnauthorized: false } {
+  const host = new URL(dbUrl).hostname;
+  return ['localhost', '127.0.0.1', '[::1]'].includes(host) ? false : { rejectUnauthorized: false };
+}

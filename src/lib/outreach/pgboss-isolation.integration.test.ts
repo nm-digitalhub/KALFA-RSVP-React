@@ -9,7 +9,7 @@ vi.mock('server-only', () => ({}));
 import { enqueueStepJob } from './enqueue';
 import { detId, deferId } from './schedule';
 import { QUEUES, isFinalDelivery } from '@/lib/queue/queues';
-import { resolveTestDb } from './test-db-guard';
+import { resolveTestDb, testDbSsl } from './test-db-guard';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // §8.2 / §11.10 — STRICT-isolation pg-boss integration. Each run creates a UNIQUE
@@ -28,13 +28,9 @@ import { resolveTestDb } from './test-db-guard';
 const RUN = process.env.OUTREACH_DB_IT === '1';
 const TEST = RUN ? resolveTestDb() : null;
 
-// Supabase local (`supabase start`, the allowed environment above) does not speak
-// SSL; a hosted test database does. The guard has already refused production.
-const isLocalHost = (url: string) => ['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname);
-
 const dbCfg = () => ({
   connectionString: TEST!.dbUrl,
-  ssl: isLocalHost(TEST!.dbUrl) ? false : { rejectUnauthorized: false },
+  ssl: testDbSsl(TEST!.dbUrl),
 });
 
 // A lowercase-hex + underscore identifier — the schema name is interpolated into SQL.
@@ -83,12 +79,12 @@ describe.skipIf(!RUN)('pg-boss isolation — deterministic ids + at-most-once', 
     try {
       await boss.stop({ graceful: false });
     } finally {
-      // ABSOLUTE isolation: drop only OUR schema, then prove none leaked. Never
-      // touches the real `pgboss` schema.
+      // ABSOLUTE isolation: drop only OUR schema, then prove it is gone. Never
+      // touches the real `pgboss` schema. Our own name, not every `pgboss_test_%`:
+      // another integration file may hold its disposable schema at this moment
+      // (vitest runs files in parallel).
       await pool.query(`drop schema if exists ${schema} cascade`);
-      const leftover = await pool.query(
-        `select nspname from pg_namespace where nspname like 'pgboss\\_test\\_%'`,
-      );
+      const leftover = await pool.query(`select nspname from pg_namespace where nspname = $1`, [schema]);
       expect(leftover.rows).toHaveLength(0);
       await pool.end();
     }
