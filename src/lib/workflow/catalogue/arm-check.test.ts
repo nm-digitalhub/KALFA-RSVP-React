@@ -1,7 +1,10 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 
 import { isKnownNodeType } from './nodes';
+import { PALETTE_ITEMS } from './schemas';
 import { DIAGRAM_TEMPLATES } from './templates';
+import { NODE_REQUIRED_FIELDS, NODE_TYPES } from './types';
 
 import { findArmBlockers, findArmBlockersByNode } from './arm-check';
 
@@ -379,8 +382,6 @@ describe('the declarations the gate reads', () => {
     // or cap would arm cleanly again. The map is exhaustive by its
     // `Record<KalfaNodeType, …>` type — this pins it at runtime too, for the
     // types that arrive as strings out of stored JSON.
-    const { NODE_REQUIRED_FIELDS } = await import('./types');
-    const { NODE_TYPES } = await import('./types');
 
     for (const type of NODE_TYPES) {
       expect(NODE_REQUIRED_FIELDS[type], type).toBeDefined();
@@ -398,8 +399,6 @@ describe('the declarations the gate reads', () => {
     // declaring its own copy, so a field required to arm is required in the form
     // by construction. An `toEqual` here would still pass if someone pasted a
     // second literal; identity will not.
-    const { NODE_REQUIRED_FIELDS } = await import('./types');
-    const { PALETTE_ITEMS } = await import('./schemas');
 
     for (const item of PALETTE_ITEMS) {
       // `PaletteItem.type` is a plain string in the SDK; the map is keyed by our
@@ -610,7 +609,6 @@ describe('⚠️ the error PORT and the error POLICY must agree', () => {
     // The rule is only worth shipping if the starter diagrams we hand people are
     // already consistent. If one is not, that is a defect in the template, not a
     // reason to soften the rule.
-    const { DIAGRAM_TEMPLATES } = await import('./templates');
     const offenders = DIAGRAM_TEMPLATES.flatMap((t) =>
       about(findArmBlockers(t.value.diagram)).map((m) => `${t.value.name}: ${m}`),
     );

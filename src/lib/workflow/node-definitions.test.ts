@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Every node folder's `definition.ts` is complete, and every registry reads it.
 //
 // Condition 5 of plans/node-folders-file-matrix.md §7. A node moved into

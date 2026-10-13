@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // The layout-direction menu item, driven through the decorator it is registered
 // with rather than through the function directly.
 //

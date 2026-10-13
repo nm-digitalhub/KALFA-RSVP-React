@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { Validator } from '@cfworker/json-schema';
 import { describe, expect, it } from 'vitest';
 

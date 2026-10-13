@@ -1,6 +1,10 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
+
+import { PALETTE_ITEMS } from '@/lib/workflow/catalogue/schemas';
+import { DIAGRAM_TEMPLATES } from '@/lib/workflow/catalogue/templates';
 
 import { STEP_HANDLERS, type StepContext } from './index';
 import { assertCoversEveryNodeFolder, serverStepSources } from '../node-sources';
@@ -249,8 +253,6 @@ describe('the chaining starter actually chains', () => {
   // same on the canvas and fails at run time with the token in the message —
   // after the customer has already been created.
   it('the document node references the customer node’s customerId, and that field is on its outputSchema', async () => {
-    const { DIAGRAM_TEMPLATES } = await import('@/lib/workflow/catalogue/templates');
-    const { PALETTE_ITEMS } = await import('@/lib/workflow/catalogue/schemas');
 
     const template = DIAGRAM_TEMPLATES.find(
       (t) => t.value.name === 'יצירת לקוח והפקת מסמך עבורו',

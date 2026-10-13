@@ -4,7 +4,12 @@ import { defineConfig } from 'vitest/config';
 // Unit tests run in a Node environment. Most testable logic is server-side
 // (Zod schemas, ownership filtering, auth helpers). A component or hook test is
 // a `.test.tsx` file that opts into a DOM with a `// @vitest-environment jsdom`
-// first line and renders with @testing-library/react.
+// first line and renders with @testing-library/react. So does any test that
+// imports a module which imports `@workflowbuilder/sdk` at run time (the node
+// definitions under src/lib/workflow, the editor controls): the SDK is a
+// browser-only editor and 3.0.0 reads `document` while it loads, so under Node
+// the import fails with "document is not defined". The worker, owner-agent and
+// fleet-agent bundles do not reach the SDK; the SDK README says "Client-side only".
 //
 // TZ is pinned so a test suite full of dates gives the same answer on any
 // machine. Without it the runner inherits the host, and a scheduling test that

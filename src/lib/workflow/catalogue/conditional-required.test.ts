@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // "This field is required, but only when that field says so."
 //
 // ⚠️ THE CONTRACT, STATED ONCE: a webhook body is meaningless on GET or DELETE

@@ -175,6 +175,7 @@ const HE = {
     label: 'כותרת',
   },
   conditions: {
+    add: 'הוספת תנאי',
     title: 'עורך התנאים',
     subtitle: 'הגדירו את כללי התנאי',
     cancel: 'ביטול',

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Pins the two condition-branch handle ids to the SDK's own formatter.
 //
 // `CONDITION_BRANCH_HANDLES` (and the switch's `SWITCH_DEFAULT_HANDLE` and

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import Ajv from 'ajv';
 import { describe, expect, it } from 'vitest';
 

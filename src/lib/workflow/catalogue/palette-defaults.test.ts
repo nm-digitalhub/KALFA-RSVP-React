@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // What a node carries the moment it is DROPPED, before the owner opens it.
 //
 // ⚠️ THE DEFECT THIS PINS REACHED THE TEAM'S QUEUE. `action.create_callback_request`

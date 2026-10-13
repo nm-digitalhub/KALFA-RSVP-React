@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // The gate that `TranslationKey` was documented to be and cannot be.
 //
 // @workflowbuilder/sdk exports a `TranslationKey` type described as the "union

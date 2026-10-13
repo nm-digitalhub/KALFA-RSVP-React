@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 
 import { SUMIT_HOLD_FIELDS_OUTPUT } from '../nodes/trigger-sumit-card/definition';

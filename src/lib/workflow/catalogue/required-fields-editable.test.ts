@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // A field the arm gate refuses when blank must be a field the owner can type.
 //
 // ⚠️ THE DEFECT THIS PINS WAS SILENT AND LIVED IN PRODUCTION. `description` was

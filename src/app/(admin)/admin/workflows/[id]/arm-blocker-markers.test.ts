@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Regression coverage for removing SDK-computed validation state before save.
 //
 // `errors` and `customErrors` belong to editor validation state, not to the

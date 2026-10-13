@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // The four reference namespaces, end to end through the real runner.
 //
 // A comment cannot be trusted to say whether a feature is wired. These can:
@@ -9,6 +10,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { dryRunWorkflow } from '../engine/dry-run';
+import { PALETTE_ITEMS } from './schemas';
+import { DIAGRAM_TEMPLATES } from './templates';
 
 type Props = Record<string, unknown>;
 
@@ -273,7 +276,6 @@ describe('⚠️ every {{nodes.…}} reference in a starter names a field its no
   // `action.start_for_each_guest.reason` — were exactly that, and were fixed by
   // declaring the fields rather than by keeping the `?` and moving on.
   it('no reference names a node that is not in the diagram', async () => {
-    const { DIAGRAM_TEMPLATES } = await import('./templates');
     const strays: string[] = [];
     for (const template of DIAGRAM_TEMPLATES) {
       const ids = new Set(template.value.diagram.nodes.map((n) => n.id));
@@ -287,8 +289,6 @@ describe('⚠️ every {{nodes.…}} reference in a starter names a field its no
   });
 
   it('⚠️ and names a field that node declares — optional or not', async () => {
-    const { DIAGRAM_TEMPLATES } = await import('./templates');
-    const { PALETTE_ITEMS } = await import('./schemas');
 
     const published = new Map<string, Set<string>>();
     for (const item of PALETTE_ITEMS) {

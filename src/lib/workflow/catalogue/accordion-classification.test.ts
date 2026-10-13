@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Which container each grouping uses, and the renderer fact behind the choice.
 //
 // ⚠️ MEASURED IN THE 2.3.0 BUNDLE, because the answer decides the whole
