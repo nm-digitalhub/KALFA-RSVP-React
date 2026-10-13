@@ -16,6 +16,7 @@ import {
   packageBaseSchema,
   operationalFieldsSchema,
   appRoleEnum,
+  companySettingsSchema,
 } from './admin';
 
 // callback_requests.status is a system-driven scheduling state machine with no
@@ -381,5 +382,32 @@ describe('rescheduleCallbackSchema', () => {
   it('still requires a valid request id', () => {
     const r = rescheduleCallbackSchema.safeParse({ id: 'not-a-uuid', exactAt: '2026-10-07T06:36' });
     expect(r.success).toBe(false);
+  });
+});
+
+describe('companySettingsSchema — the agreement link addresses', () => {
+  const company = {
+    company_legal_name: 'קאלפא',
+    company_legal_id: '51-1234567',
+    company_legal_address: 'הרצל 1',
+    company_contact_phone: '03-1234567',
+    company_contact_email: 'support@kalfa.me',
+    privacy_url: 'https://beta.kalfa.me/privacy',
+    terms_url: '/terms',
+    warranty_text: 'ת',
+    company_instagram_url: '',
+  };
+
+  it('saves an http(s) address, a path on this site, or empty (the /privacy and /terms defaults)', () => {
+    expect(companySettingsSchema.safeParse(company).success).toBe(true);
+    expect(companySettingsSchema.safeParse({ ...company, privacy_url: '', terms_url: '' }).success).toBe(true);
+  });
+
+  it.each(['privacy_url', 'terms_url'] as const)('refuses an unsafe %s at the source, with the field named', (field) => {
+    for (const value of ['javascript:alert(1)', '//evil.example/x', 'https://']) {
+      const parsed = companySettingsSchema.safeParse({ ...company, [field]: value });
+      expect(parsed.success, value).toBe(false);
+      if (!parsed.success) expect(Object.keys(parsed.error.flatten().fieldErrors)).toEqual([field]);
+    }
   });
 });

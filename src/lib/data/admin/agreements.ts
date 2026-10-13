@@ -1,15 +1,18 @@
 import 'server-only';
 
+import { agreementContent } from '@/lib/agreements/content';
 import { findAgreementPdfCompatibilityIssues } from '@/lib/agreements/pdf-html';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { getAgreementConfigTokens } from '@/lib/data/agreement-config';
+import { getCompanyLegal } from '@/lib/data/company';
 import {
   PACKAGE_AGREEMENT_VERSION,
   findUnknownTokens,
   isPackageAgreementVersion,
   missingPackageTokens,
+  renderAgreementBody,
   type AgreementDoc,
 } from '@/lib/agreements/template';
 
@@ -96,7 +99,8 @@ export async function approveAgreement(version: string): Promise<void> {
     .maybeSingle();
   const body = current?.body_html ?? null;
   assertShape(version, body);
-  const configKeys = Object.keys(await getAgreementConfigTokens());
+  const configTokens = await getAgreementConfigTokens();
+  const configKeys = Object.keys(configTokens);
   const unknown = findUnknownTokens(body ?? '', configKeys);
   if (unknown.length > 0) {
     throw new Error(`בנוסח יש תחליפים שאינם מוכרים: ${unknown.map((t) => `{{${t}}}`).join(' ')}`);
@@ -108,6 +112,28 @@ export async function approveAgreement(version: string): Promise<void> {
   const pdfIssues = findAgreementPdfCompatibilityIssues(body ?? '');
   if (pdfIssues.length > 0) {
     throw new Error(`לא ניתן לאשר את החוזה משום שחלק מהנוסח אינו ניתן לייצוג ב-PDF: ${pdfIssues.join('; ')}`);
+  }
+  // The body above still holds {{tokens}}. The links the privacy/terms tokens expand to come from the company settings
+  // (app_settings), so also check what the customer's PDF is really made of: the body rendered with the REAL company
+  // data and the config tokens, and representative package figures (they only change the text, never the structure).
+  // renderAgreementPdf parses the same HTML again when a customer approves (pdf.ts) and stays the last guard, for
+  // company data that changes after this approval.
+  const rendered = renderAgreementBody(
+    agreementContent(await getCompanyLegal(), 'אירוע לדוגמה', {
+      channels: ['whatsapp', 'call'],
+      startAt: null,
+      closeAt: null,
+      packagePrice: 100,
+      contactQuota: 100,
+    }),
+    { version, status: 'approved', bodyHtml: body },
+    configTokens,
+  );
+  const renderedIssues = findAgreementPdfCompatibilityIssues(rendered);
+  if (renderedIssues.length > 0) {
+    throw new Error(
+      `לא ניתן לאשר את החוזה משום שלאחר החלפת התחליפים (פרטי החברה וכתובות הקישורים) הנוסח אינו ניתן לייצוג ב-PDF: ${renderedIssues.join('; ')}`,
+    );
   }
   const { error } = await admin
     .from('agreement_documents')

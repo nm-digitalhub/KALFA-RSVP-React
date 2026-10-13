@@ -6,14 +6,27 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/data/agreement-config', () => ({ getAgreementConfigTokens: vi.fn() }));
+vi.mock('@/lib/data/company', () => ({ getCompanyLegal: vi.fn() }));
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getAgreementConfigTokens } from '@/lib/data/agreement-config';
+import { getCompanyLegal } from '@/lib/data/company';
 import { logActivity } from '@/lib/data/activity';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createMockSupabase } from '@/test/supabase-mock';
 import { approveAgreement, getAgreementForAdmin, updateAgreement } from './agreements';
 
+const COMPANY = {
+  name: 'קאלפא',
+  id: '51-1234567',
+  address: 'הרצל 1',
+  contactPhone: '03-1234567',
+  contactEmail: 'support@kalfa.me',
+  privacyUrl: 'https://beta.kalfa.me/privacy',
+  termsUrl: 'https://beta.kalfa.me/terms',
+  warrantyText: 'ת',
+  instagramUrl: '',
+};
 const GOOD_BODY = '<h1>חבילה</h1><p>{{packagePrice}} · עד {{contactQuota}} · {{company.name}}</p>';
 
 // A query builder that also has .match (the admin layer selects the package row with it).
@@ -27,11 +40,12 @@ function wire(results: Array<{ data?: unknown; error?: unknown }> = [{ data: nul
 }
 
 beforeEach(() => {
-  for (const m of [requirePlatformPermission, logActivity, getAgreementConfigTokens, createAdminClient]) {
+  for (const m of [requirePlatformPermission, logActivity, getAgreementConfigTokens, getCompanyLegal, createAdminClient]) {
     vi.mocked(m).mockReset();
   }
   vi.mocked(requirePlatformPermission).mockResolvedValue({ id: 'admin-1' } as unknown as User);
   vi.mocked(getAgreementConfigTokens).mockResolvedValue({ liabilityCap: '', retentionDays: '' });
+  vi.mocked(getCompanyLegal).mockResolvedValue(COMPANY);
 });
 
 describe('every admin function is behind manage_settings', () => {
@@ -160,5 +174,42 @@ describe('PDF compatibility gates approval, not draft saving', () => {
     const b = wire();
     await updateAgreement({ version: 'draft-2026-10-v6', bodyHtml: body });
     expect(b.update).toHaveBeenCalledWith({ version: 'draft-2026-10-v6', body_html: body, status: 'draft', approved_by: null, approved_at: null });
+  });
+});
+
+// The body is checked raw above; the links the {{privacyLink}} / {{termsLink}} tokens expand to come from the company
+// settings, so approval also checks the body AFTER the tokens are replaced, with the real company data.
+describe('PDF compatibility after the tokens are replaced', () => {
+  const WITH_LINKS = `${GOOD_BODY}<p>{{privacyLink}} · {{termsLink}}</p>`;
+
+  it('approves when the company links expand to compatible anchors', async () => {
+    const b = wire([{ data: { body_html: WITH_LINKS } }, { data: null }]);
+    await approveAgreement('2026-10-v6');
+    expect(getCompanyLegal).toHaveBeenCalledTimes(1);
+    expect(b.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'approved' }));
+  });
+
+  it.each([
+    ['a script address in the privacy URL', { privacyUrl: 'javascript:alert(1)' }],
+    ['an unsupported protocol in the terms URL', { termsUrl: 'ftp://kalfa.me/terms' }],
+  ])('refuses %s: nothing is written or audited', async (_label, over) => {
+    vi.mocked(getCompanyLegal).mockResolvedValue({ ...COMPANY, ...over });
+    const b = wire([{ data: { body_html: WITH_LINKS } }]);
+    await expect(approveAgreement('2026-10-v6')).rejects.toThrow('לאחר החלפת התחליפים');
+    expect(b.update).not.toHaveBeenCalled();
+    expect(logActivity).not.toHaveBeenCalled();
+  });
+
+  it('a body without the link tokens is unaffected by bad company links (they never reach the document)', async () => {
+    vi.mocked(getCompanyLegal).mockResolvedValue({ ...COMPANY, privacyUrl: 'javascript:alert(1)' });
+    const b = wire([{ data: { body_html: GOOD_BODY } }, { data: null }]);
+    await approveAgreement('2026-10-v6');
+    expect(b.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'approved' }));
+  });
+
+  it('keeps the earlier raw-body check: an incompatible element is refused before the company data is read', async () => {
+    wire([{ data: { body_html: `${GOOD_BODY}<iframe src="/terms"></iframe>` } }]);
+    await expect(approveAgreement('2026-10-v6')).rejects.toThrow('אינו ניתן לייצוג ב-PDF');
+    expect(getCompanyLegal).not.toHaveBeenCalled();
   });
 });

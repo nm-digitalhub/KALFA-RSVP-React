@@ -8,6 +8,7 @@ import { z } from 'zod';
 // closed working vocabulary here and render unknown values with a
 // `LABELS[s] ?? s` fallback so legacy/foreign values never break the UI.
 
+import { agreementLinkUrlSchema } from '@/lib/agreements/link-url';
 import { Constants, type Enums } from '@/lib/supabase/types';
 import { wallClockToDate } from '@/lib/data/event-date';
 import { ISRAEL_TIME_ZONE } from '@/lib/date';
@@ -550,8 +551,10 @@ export const companySettingsSchema = z.object({
   company_legal_address: z.string().trim(),
   company_contact_phone: z.string().trim(),
   company_contact_email: z.string().trim(),
-  privacy_url: z.string().trim(),
-  terms_url: z.string().trim(),
+  // Embedded as links in the agreement (and its PDF): an http(s) address or a path on this site, or empty for the
+  // /privacy and /terms defaults. The rule is shared with the PDF path (agreements/link-url.ts).
+  privacy_url: agreementLinkUrlSchema,
+  terms_url: agreementLinkUrlSchema,
   warranty_text: z.string().trim(),
   // Emitted verbatim as Organization.sameAs, so it must be a real profile URL
   // on instagram.com — an arbitrary string here would publish a bogus entity
