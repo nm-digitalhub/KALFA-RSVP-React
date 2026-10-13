@@ -175,7 +175,6 @@ export function PackagePaymentView({
                 companyId={formConfig.companyId}
                 apiPublicKey={formConfig.apiPublicKey}
                 amount={screen.amount}
-                signerName={signerName}
               />
             ) : null}
           </section>

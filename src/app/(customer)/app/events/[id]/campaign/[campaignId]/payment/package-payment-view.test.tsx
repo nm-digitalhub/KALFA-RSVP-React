@@ -51,7 +51,7 @@ describe('PackagePaymentView — the card form', () => {
     render(view({ kind: 'form', amount: 120 }));
     expect(screen.getByTestId('card-form')).toBeTruthy();
     expect(formProps).toHaveBeenCalledWith(
-      expect.objectContaining({ campaignId: 'c1', companyId: 12345, apiPublicKey: 'pub-key', amount: 120, signerName: 'דנה כהן' }),
+      expect.objectContaining({ campaignId: 'c1', companyId: 12345, apiPublicKey: 'pub-key', amount: 120 }),
     );
     expect(screen.getByText(/120/)).toBeTruthy();
   });

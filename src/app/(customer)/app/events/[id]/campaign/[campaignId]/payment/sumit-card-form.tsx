@@ -4,7 +4,6 @@ import { useCallback, useRef, useState } from 'react';
 import Script from 'next/script';
 import { Check, Clock3, LoaderCircle } from 'lucide-react';
 import { getCardType, PaymentIcon, type PaymentType } from 'react-svg-credit-card-payment-icons';
-import { CreditCard, type Focused } from 'react-credit-cards-library';
 
 import {
   Dialog,
@@ -58,20 +57,6 @@ const PAYMENTS_SRC = 'https://app.sumit.co.il/scripts/payments.js';
 
 const inputClass =
   'w-full rounded-md border border-border bg-transparent px-3 py-2';
-
-// Real embossed cards keep the first and last name in full and abbreviate any
-// middle name(s) — issuers vary on how many letters (commonly a single
-// initial; some use more, matching the 3-letter middle abbreviation on the
-// actual card the KALFA owner checked this against). Display-only: this
-// never touches what SUMIT tokenizes or what reaches our server.
-export function formatCardholderName(fullName: string): string {
-  const parts = fullName.trim().split(/\s+/).filter(Boolean);
-  if (parts.length <= 2) return parts.join(' ').toUpperCase();
-  const [first, ...rest] = parts;
-  const last = rest.pop() as string;
-  const middles = rest.map((m) => m.slice(0, 3));
-  return [first, ...middles, last].join(' ').toUpperCase();
-}
 
 // Two REAL, event-driven stages — never a fake timer. 'verifying' starts the
 // instant the form is submitted (tokenization AJAX to SUMIT is in flight);
@@ -130,17 +115,12 @@ export function SumitCardForm({
   companyId,
   apiPublicKey,
   amount,
-  signerName,
 }: {
   campaignId: string;
   companyId: number;
   apiPublicKey: string;
   // Display only — the server never reads it: the campaign's fixed package price, which the purchase route reads itself.
   amount: number;
-  // Read-only, for the card preview only — SUMIT never needs a name-on-card
-  // field (customerName is sent server-side from the profile), so this adds
-  // no new input and collects nothing new from the user.
-  signerName: string;
 }) {
   // ready: payments.js loaded + BindFormSubmit ran → submit enabled.
   const [ready, setReady] = useState(false);
@@ -153,17 +133,6 @@ export function SumitCardForm({
   // payments.js itself reads via data-og, so it can't affect tokenization.
   const [cardType, setCardType] = useState<PaymentType>('Generic');
   const [stage, setStage] = useState<PaymentStage>('idle');
-  // Live visual preview (react-credit-cards-library) — reads the same
-  // uncontrolled fields via onChange/onFocus, same as cardType above: no
-  // value= on the underlying inputs, so payments.js's data-og read is
-  // unaffected. expMonth/expYear are ours to combine — SUMIT still gets them
-  // as two separate fields exactly as before, this is display-only.
-  const [previewNumber, setPreviewNumber] = useState('');
-  const [expMonth, setExpMonth] = useState('');
-  const [expYear, setExpYear] = useState('');
-  const [previewCvc, setPreviewCvc] = useState('');
-  const [previewFocus, setPreviewFocus] = useState<Focused>('');
-  const previewExpiry = expMonth && expYear ? `${expMonth.padStart(2, '0')}/${expYear.slice(-2)}` : '';
   const formRef = useRef<HTMLFormElement>(null);
   const copy = PURCHASE_COPY;
   const formattedAmount = formatAmount(amount);
@@ -232,22 +201,6 @@ export function SumitCardForm({
         onError={() => setLoadError(true)}
       />
 
-      {/* dir="ltr" is required here — the card's internal number/expiry rows
-          are flex layouts, and flex-direction:row visually reverses under an
-          inherited RTL context, flipping the digit-group ORDER (each group's
-          own digits stayed correct — verified against the raw input value —
-          only the group order flipped, the signature of RTL flex reversal,
-          not a data bug). A card face is always read LTR regardless of the
-          page language, so this is the correct fix, not a workaround. */}
-      <div dir="ltr" className="mb-5 hidden justify-center sm:flex">
-        <CreditCard
-          number={previewNumber}
-          name={formatCardholderName(signerName)}
-          expiry={previewExpiry}
-          cvc={previewCvc}
-          focus={previewFocus}
-        />
-      </div>
 
       <form
         ref={formRef}
@@ -282,9 +235,7 @@ export function SumitCardForm({
               className={`${inputClass} pe-14`}
               onChange={(e) => {
                 setCardType(getCardType(e.target.value));
-                setPreviewNumber(e.target.value);
               }}
-              onFocus={() => setPreviewFocus('number')}
             />
             <span className="pointer-events-none absolute inset-y-0 end-3 flex items-center">
               <PaymentIcon type={cardType} format="flatRounded" width={32} aria-hidden="true" />
@@ -309,8 +260,6 @@ export function SumitCardForm({
               placeholder="MM"
               maxLength={2}
               className={inputClass}
-              onChange={(e) => setExpMonth(e.target.value)}
-              onFocus={() => setPreviewFocus('expiry')}
             />
           </div>
           <div className="flex-1">
@@ -329,8 +278,6 @@ export function SumitCardForm({
               placeholder="YYYY"
               maxLength={4}
               className={inputClass}
-              onChange={(e) => setExpYear(e.target.value)}
-              onFocus={() => setPreviewFocus('expiry')}
             />
           </div>
         </div>
@@ -347,8 +294,6 @@ export function SumitCardForm({
             autoComplete="cc-csc"
             maxLength={4}
             className={inputClass}
-            onChange={(e) => setPreviewCvc(e.target.value)}
-            onFocus={() => setPreviewFocus('cvc')}
           />
         </div>
 
