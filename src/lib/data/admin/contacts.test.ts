@@ -500,6 +500,52 @@ describe('resolveInquiryUrgency', () => {
     expect(map.get('cm-1')).toEqual({ daysToEvent: 3, eventName: 'החתונה של דנה' });
   });
 
+  // daysToEvent is CALENDAR days in Israel (same day 0, tomorrow 1), not elapsed hours / 24. The badge turns
+  // destructive at <= 7, so being off by one flips what the reader sees.
+  async function daysFor(nowIso: string, eventIso: string): Promise<number | undefined> {
+    mockTwoReads(
+      [{ id: 'owner-1', phone: '+972501112222' }],
+      [{ owner_id: 'owner-1', name: 'אירוע', event_date: eventIso }],
+    );
+    const map = await resolveInquiryUrgency([{ id: 'cm-1', phone: '+972501112222' }], Date.parse(nowIso));
+    return map.get('cm-1')?.daysToEvent;
+  }
+
+  it('an event later TODAY in Israel is 0 days (elapsed hours / 24 would round it up to 1)', async () => {
+    // 10:00 IDT now, 20:00 IDT the same day.
+    expect(await daysFor('2026-08-16T07:00:00Z', '2026-08-16T17:00:00Z')).toBe(0);
+  });
+
+  it('an event TOMORROW is 1 day — including 20 minutes away across Israel midnight', async () => {
+    expect(await daysFor('2026-08-16T09:00:00Z', '2026-08-17T09:00:00Z')).toBe(1);
+    // 23:50 IDT on the 16th → 00:10 IDT on the 17th.
+    expect(await daysFor('2026-08-16T20:50:00Z', '2026-08-16T21:10:00Z')).toBe(1);
+  });
+
+  it('the Israel day decides, not the UTC date', async () => {
+    // 21:30Z on the 16th is already 00:30 on the 17th in Israel; the event is that same Israel day.
+    expect(await daysFor('2026-08-16T21:30:00Z', '2026-08-17T10:00:00Z')).toBe(0);
+  });
+
+  it('spring switch (23-hour day 27.3): 23:30 on the 26th → 00:30 on the 28th is 2 calendar days, 24 elapsed hours', async () => {
+    expect(await daysFor('2026-03-26T21:30:00Z', '2026-03-27T21:30:00Z')).toBe(2);
+  });
+
+  it('autumn switch (25-hour day 25.10): 23:30 on the 24th → 23:30 on the 25th is 1 calendar day, 25 elapsed hours', async () => {
+    expect(await daysFor('2026-10-24T20:30:00Z', '2026-10-25T21:30:00Z')).toBe(1);
+  });
+
+  it('the 7-day threshold stays right across the autumn switch', async () => {
+    // From Sunday 18.10 12:00 IDT: Sunday 25.10 22:00 IST is exactly 7 calendar days (7 days 11 hours elapsed, which
+    // ceil / 24 would call 8 and show as non-urgent); Monday 26.10 is 8.
+    const seven = await daysFor('2026-10-18T09:00:00Z', '2026-10-25T20:00:00Z');
+    const eight = await daysFor('2026-10-18T09:00:00Z', '2026-10-26T08:00:00Z');
+    expect(seven).toBe(7);
+    expect(seven! <= 7).toBe(true);
+    expect(eight).toBe(8);
+    expect(eight! <= 7).toBe(false);
+  });
+
   it('does not query at all when no inquiry carries a phone', async () => {
     const { client } = mockTwoReads([], []);
     const map = await resolveInquiryUrgency([{ id: 'cm-1', phone: null }], NOW);

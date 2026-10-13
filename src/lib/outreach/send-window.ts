@@ -126,9 +126,10 @@ function spreadWithin(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// THE SINGLE EVALUATOR (§12.3.1 / §F). Replaces nextTouchpointIndex +
-// touchpointTime: every eligibility+timing decision for the CURSOR step flows
-// through ONE function over ONE time model (plannedSendTime + resolveSendSlot).
+// THE SINGLE EVALUATOR (§12.3.1 / §F). Replaced the old nextTouchpointIndex +
+// touchpointTime pair (event − N×24h, since deleted from schedule.ts): every
+// eligibility+timing decision for the CURSOR step flows through ONE function
+// over ONE time model (plannedSendTime + resolveSendSlot).
 // The worker never enqueues a step > cursor; the evaluator decides what to do
 // with the cursor step:
 //   send     — a legal slot is at/before now → execute the send now.

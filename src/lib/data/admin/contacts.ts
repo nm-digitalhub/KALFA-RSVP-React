@@ -3,6 +3,8 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
+import { israelCalendarDay } from '@/lib/data/event-date';
+import { daysUntil } from '@/lib/date';
 import { getEmailSender } from '@/lib/email/sender';
 import { getAppOrigin } from '@/lib/url';
 import { inquiryReplyEmail } from '@/lib/email/templates';
@@ -432,16 +434,18 @@ export async function resolveInquiryUrgency(
     }
   }
 
-  const DAY_MS = 86_400_000;
   for (const inquiry of inquiries) {
     if (!inquiry.phone) continue;
     const ownerId = ownerByPhone.get(inquiry.phone);
     const event = ownerId ? soonestByOwner.get(ownerId) : undefined;
     if (!event) continue;
-    urgency.set(inquiry.id, {
-      daysToEvent: Math.max(0, Math.ceil((Date.parse(event.event_date) - nowMs) / DAY_MS)),
-      eventName: event.name,
-    });
+    // CALENDAR days in Israel between today and the event's day: an event later today is 0, tomorrow 1. Not elapsed
+    // hours / 24, which reads an event this evening as 1 and is an hour off across the two DST switches.
+    const eventMs = Date.parse(event.event_date);
+    if (Number.isNaN(eventMs)) continue;
+    const daysToEvent = daysUntil(israelCalendarDay(eventMs), new Date(nowMs));
+    if (daysToEvent === null) continue;
+    urgency.set(inquiry.id, { daysToEvent, eventName: event.name });
   }
   return urgency;
 }
