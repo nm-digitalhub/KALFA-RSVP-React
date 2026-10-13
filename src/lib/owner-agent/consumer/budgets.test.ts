@@ -138,25 +138,16 @@ describe('no generic pm2 start can start kalfa-owner-agent', () => {
   });
 });
 
-// The role's ~15 session-mode slots are shared. The
-// other pools are read from their own files, so a change there re-runs this.
-describe('session-mode connection slots', () => {
-  const poolMax = (file: string, pattern: RegExp) => {
-    const m = pattern.exec(readFileSync(path.join(ROOT, file), 'utf8'));
-    if (!m) throw new Error(`pool size not found in ${file}`);
-    return Number(m[1]);
-  };
-
-  it('worker 8 + web sender 1 + this process leave at least one slot of 15', () => {
-    const worker = poolMax('worker/main.ts', /application_name: 'kalfa-worker',[\s\S]*?\bmax: (\d+),/);
-    const web = poolMax('src/lib/queue/web-sender.ts', /\bmax: (\d+),/);
-    expect([worker, web]).toEqual([8, 1]);
-    expect(OWNER_AGENT_DB_POOL_MAX).toBe(2);
-    expect(worker + web + OWNER_AGENT_DB_POOL_MAX).toBeLessThanOrEqual(14);
-  });
-
+// The session-mode slot arithmetic for ALL holders lives in
+// src/lib/queue/session-slots.test.ts; this file only pins that the consumer
+// takes its pool size from the constant that test reads.
+describe('the consumer pool size', () => {
   it('the consumer uses that constant, not a literal', () => {
     const main = readFileSync(path.join(import.meta.dirname, 'main.ts'), 'utf8');
     expect(main).toMatch(/max: OWNER_AGENT_DB_POOL_MAX,/);
+  });
+
+  it('is two', () => {
+    expect(OWNER_AGENT_DB_POOL_MAX).toBe(2);
   });
 });
