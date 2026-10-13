@@ -70,6 +70,18 @@ describe('israelMidnightIso', () => {
     expect(israelMidnightIso(now, 7)).toBe('2026-10-26T22:00:00.000Z');
   });
 
+  it('counts whole calendar days across month and year ends, and backwards', () => {
+    const lateDecember = Date.parse('2026-12-30T10:00:00Z'); // 12:00 IST on the 30th
+    expect(israelMidnightIso(lateDecember, 2)).toBe('2026-12-31T22:00:00.000Z'); // 1.1.2027 00:00 IST
+    expect(israelMidnightIso(lateDecember, -30)).toBe('2026-11-29T22:00:00.000Z'); // 30.11.2026 00:00 IST
+    const lateFebruary = Date.parse('2026-02-27T10:00:00Z');
+    expect(israelMidnightIso(lateFebruary, 3)).toBe('2026-03-01T22:00:00.000Z'); // 2.3.2026 00:00 IST
+  });
+
+  it('rejects an offset that is not a whole number of days', () => {
+    expect(() => israelMidnightIso(Date.parse('2026-09-24T10:00:00Z'), 1.5)).toThrow(RangeError);
+  });
+
   it('RANGE_DAYS: today = 1, 7d = 7, 30d = 30', () => {
     expect(RANGE_DAYS).toEqual({ today: 1, '7d': 7, '30d': 30 });
   });

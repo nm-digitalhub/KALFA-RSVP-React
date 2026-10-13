@@ -1,4 +1,5 @@
-import { ilWallTimeToIso, israelCalendarDay, todayIL } from '@/lib/data/event-date';
+import { ilWallTimeToIso, todayIL } from '@/lib/data/event-date';
+import { addCalendarDays } from '@/lib/date';
 
 // The ONLY input an owner-agent read tool accepts (plan §5: "no free input,
 // only a range enum"). The model picks one of these three literals and nothing
@@ -38,11 +39,11 @@ export const RANGE_DAYS: Record<OwnerAgentRange, number> = { today: 1, '7d': 7, 
 
 // Israel midnight (ISO, UTC) that starts the calendar day `dayOffset` days
 // after today in Israel (0 = today, 1 = tomorrow, …). Day arithmetic is done on
-// the calendar string, not on an instant near midnight: UTC noon of today's
-// Israel date plus N days lands on the Israel date N days later whatever the
-// DST state, and ilWallTimeToIso() then attaches that day's offset (the
-// midnight's own, so the two switch days are right too).
+// the calendar string (addCalendarDays), not on an instant near midnight, and
+// ilWallTimeToIso() then attaches that day's offset (the midnight's own, so the
+// two switch days are right too). `dayOffset` is a whole number of days.
 export function israelMidnightIso(nowMs: number, dayOffset = 0): string {
-  const day = israelCalendarDay(Date.parse(`${todayIL(nowMs)}T12:00:00Z`) + dayOffset * DAY_MS);
+  const day = addCalendarDays(todayIL(nowMs), dayOffset);
+  if (day === null) throw new RangeError(`israelMidnightIso: dayOffset must be a whole number, got ${dayOffset}`);
   return new Date(ilWallTimeToIso(day, '00:00')).toISOString();
 }
