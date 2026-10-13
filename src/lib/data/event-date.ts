@@ -10,7 +10,7 @@
 // (event_date AT TIME ZONE 'Asia/Jerusalem')::date`. An event TODAY is still
 // valid; a null/unparseable date is never "past" (mirrors the DB NULL semantics).
 
-import { TZDate } from '@date-fns/tz';
+import { TZDate, tzOffset } from '@date-fns/tz';
 import { formatISO } from 'date-fns/formatISO';
 
 import { ISRAEL_TIME_ZONE, addCalendarDays } from '@/lib/date';
@@ -113,27 +113,77 @@ export function isBeforeTomorrowIL(
 
 // THE ONE wall-clock -> instant primitive. Every conversion of "this wall-clock time, read IN this
 // zone" to a real instant goes through here, so there is exactly one place that decides what a wall
-// time means across a DST switch — and it is @date-fns/tz's TZDate, which is given the wall-clock
-// COMPONENTS and the zone and resolves the offset for that very instant. Nothing here computes a UTC
-// offset: a previous version looked the offset up at noon of the date, which is the wrong offset for
-// every wall time before the 02:00 switch on the two DST days a year (Israel: 01:00 on the spring
-// switch day came out as 00:00; 00:30 on the autumn one as 01:30).
+// time means across a DST switch. A previous version looked the UTC offset up at noon of the date,
+// which is the wrong offset for every wall time before the 02:00 switch on the two DST days a year
+// (Israel: 01:00 on the spring switch day came out as 00:00; 00:30 on the autumn one as 01:30).
 //
-// Built from components, never from a string: @date-fns/tz documents the component constructor (wall
-// clock in the given zone) but not how its string constructor reads zone-less text, and measured it
-// depends on the host zone. A wall time inside the spring-forward gap resolves to the instant just
-// after it; one in the fall-back overlap resolves to one of its two instants (host-zone dependent,
-// so the tests run under the pinned TZ).
+// THE POLICY (ECMAScript Date / Temporal "compatible" / RFC 5545 §3.3.5), for every IANA zone:
+//   - a wall time that happens ONCE resolves to that instant;
+//   - a wall time in a fall-back OVERLAP (it happens twice) resolves to the EARLIER occurrence
+//     (Israel 2026-10-25 01:30 -> 22:30Z, the +03:00 one);
+//   - a wall time in a spring-forward GAP (it never happens) moves FORWARD by the size of the jump
+//     (Israel 2026-03-27 02:30 -> 03:30 IDT = 00:30Z; Australia/Lord_Howe jumps 30 minutes, not 60).
+// It does NOT depend on the zone of the machine running it. That is why this does not call TZDate's
+// component constructor, which would be the obvious one-liner: it reads the components with the native
+// Date (host zone) and corrects by the host's offset, so for an overlap the host decides (UTC+3 or more
+// picks the first occurrence, UTC+2 or less the second) and a few host zones are an hour off even for an
+// unambiguous time (event-date.test.ts, "the library's component constructor", keeps the measurement).
+// Production happened to be right because every process declares TZ=Asia/Jerusalem.
+//
+// HOW: read the components as if they were UTC (`wall`: only a number, no zone, no host). The instant is
+// wall - offset, where `offset` is the zone's UTC offset in force at that instant. Take the offset on each
+// side of any switch near the wall time (the zone's offset 24 h before and 24 h after `wall`; the real
+// instant is within 14 h of `wall`, so any switch that can matter lies between the two samples) and keep a
+// candidate only if its own offset really applies at the candidate instant. One survivor: a normal time.
+// Two: an overlap, take the earlier. None: a gap, use the offset from BEFORE the gap, which lands the
+// wall time forward by exactly the jump. tzOffset is Intl with an explicit timeZone, so no host zone
+// enters. Assumes no two switches fall within 48 h of each other: none of the 134 zones that switch in
+// 2024-2028 does (swept against an Intl-only oracle: 1,289 switches, 465k wall minutes, no difference).
+// The result is wrapped in TZDate(timestamp, zone), the supported form, only so callers can format it in
+// the zone; the instant itself is already fixed.
 //
 // Total: null — never a throw — for text that is not a wall-clock datetime, a calendar or clock value
-// that does not exist (month 13, 30 February, minute 61, hour 24: TZDate would silently roll those over
-// into another date), or a zone TZDate cannot resolve. Hour is 0..23, minute and second 0..59; 24:00 is NOT
+// that does not exist (month 13, 30 February, minute 61, hour 24: they would silently roll over into
+// another date), or a zone that cannot be resolved. Hour is 0..23, minute and second 0..59; 24:00 is NOT
 // a wall-clock time (a caller that means "the end of the day" says 00:00 of the next one).
 const WALL_CLOCK = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/;
+
+const DAY_MS = 86_400_000;
 
 function daysInMonth(year: number, month: number): number {
   // Calendar arithmetic on a UTC date — no zone is involved.
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+// The instant (ms since the epoch) at which `zone`'s wall clock reads these components. Throws on a zone
+// Intl cannot resolve; the caller turns that into null.
+function wallClockInstantMs(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  zone: string,
+): number {
+  // setUTCFullYear, not Date.UTC: Date.UTC reads the years 0..99 as 1900..1999.
+  const wallDate = new Date(0);
+  wallDate.setUTCFullYear(year, month - 1, day);
+  wallDate.setUTCHours(hour, minute, second, 0);
+  const wall = wallDate.getTime();
+
+  // The zone's UTC offset, in ms, in force at an instant (tzOffset returns minutes, possibly fractional
+  // for pre-1970 local mean time).
+  const offsetAt = (instant: number): number => Math.round(tzOffset(zone, new Date(instant)) * 60) * 1000;
+
+  const before = offsetAt(wall - DAY_MS);
+  const after = offsetAt(wall + DAY_MS);
+  const candidates = [...new Set([before, after])]
+    .map((offset) => wall - offset)
+    .filter((instant) => offsetAt(instant) === wall - instant)
+    .sort((a, b) => a - b);
+  // 1 = an ordinary time, 2 = an overlap (the earlier one wins), 0 = a gap (the offset before it).
+  return candidates.length > 0 ? candidates[0] : wall - before;
 }
 
 function resolveWallClock(wall: string, zone: string): TZDate | null {
@@ -149,8 +199,8 @@ function resolveWallClock(wall: string, zone: string): TZDate | null {
   if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
   if (hour > 23 || minute > 59 || second > 59) return null;
   try {
-    const resolved = new TZDate(year, month - 1, day, hour, minute, second, zone);
-    return Number.isNaN(resolved.getTime()) ? null : resolved;
+    const instant = wallClockInstantMs(year, month, day, hour, minute, second, zone);
+    return Number.isFinite(instant) ? new TZDate(instant, zone) : null;
   } catch {
     return null;
   }

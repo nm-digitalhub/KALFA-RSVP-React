@@ -122,10 +122,10 @@ export function planDueSlots(subscriptions: readonly PlannerSubscription[], nowM
 
 /**
  * The instant of a local wall-clock time, resolved by the shared primitive
- * (wallClockToDate in data/event-date.ts, i.e. @date-fns/tz's TZDate): right on
- * both sides of a switch, and no offset is computed here. A time inside a gap
- * resolves to an instant just past it; that slot is never planned anyway.
- * A time in the repeated autumn hour resolves to one of its two instants.
+ * (wallClockToDate in data/event-date.ts): right on both sides of a switch, the
+ * same on any host, and no offset is computed here. A time inside a gap moves
+ * forward by the jump; that slot is never planned anyway. A time in the repeated
+ * autumn hour resolves to its earlier occurrence.
  * Throws report_bad_slot for a malformed key or a zone that cannot be resolved.
  */
 export function wallTimeToInstant(localDate: string, time: string, timeZone: string): number {
