@@ -1,0 +1,13 @@
+--- a/dist/index-DU6Akeew.js	
++++ b/dist/index-DU6Akeew.js	
+@@ -18292,9 +18292,9 @@
+   excludeTypes: r = []
+ }) => {
+   const a = Object.entries(e).map(([i, s]) => ({
+     id: `${$r}.${n}.${i}`,
+-    display: `${ai(t, 15)} · ${ai(s.label, 15)}`,
++    display: `${t} · ${s.label}`,
+     label: s.label,
+     description: s.description,
+     type: s.type
+   }));

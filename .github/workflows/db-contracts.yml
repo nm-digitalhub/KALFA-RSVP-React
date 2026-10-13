@@ -20,6 +20,8 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      # `patchedDependencies` and lockfile v4 need npm 12 (Node 24 ships npm 11).
+      - run: npm install -g npm@12
       - run: npm ci
       - name: Verify live DB contracts
         env:

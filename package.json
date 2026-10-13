@@ -13,7 +13,7 @@
     "types:check": "node scripts/check-supabase-types.mjs",
     "browser:check": "node scripts/check-puppeteer-browser.mjs",
     "natives:install": "node scripts/install-native-deps.mjs",
-    "postinstall": "node scripts/install-native-deps.mjs && node scripts/patch-workflowbuilder-sdk.mjs",
+    "postinstall": "node scripts/install-native-deps.mjs",
     "deploy": "node scripts/check-supabase-types.mjs && node scripts/check-puppeteer-browser.mjs && node -e \"require('fs').writeFileSync('.deploy-id', Date.now().toString(36))\" && NEXT_DIST_DIR=.next-stage next build --webpack && rm -rf .next.old && mv .next .next.old && mv .next-stage .next && pm2 restart kalfa-beta && rm -rf .next.old && node scripts/worker-build-restart.mjs && node scripts/owner-agent-build-restart.mjs && env -u npm_config_global_ignore_file npm run fleet-agent:build && pm2 restart kalfa-fleet && pm2 restart kalfa-ops-agent && env -u npm_config_global_ignore_file npm run seo:audit && env -u npm_config_global_ignore_file npm run seo:indexnow",
     "seo:audit": "node --env-file=.env.local scripts/seo-audit.mjs",
     "seo:indexnow": "node --env-file=.env.local scripts/seo-indexnow.mjs",
@@ -277,5 +277,8 @@
       "fast-xml-parser": "^5.11.1",
       "uuid": "^14.0.2"
     }
+  },
+  "patchedDependencies": {
+    "@workflowbuilder/sdk@3.0.0": "patches/@workflowbuilder/sdk@3.0.0.patch"
   }
 }

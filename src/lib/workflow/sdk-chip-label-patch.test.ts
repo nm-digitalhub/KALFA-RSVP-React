@@ -3,10 +3,12 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-// Pins scripts/patch-workflowbuilder-sdk.mjs: the INSTALLED SDK must show full
-// node and field labels on variable chips. If an SDK upgrade moves the code, the
-// postinstall patch finds nothing and this fails — instead of the owner seeing
-// `{{ תפיסת מסגרת השת... · … }}` again.
+// Pins patches/@workflowbuilder/sdk@3.0.0.patch (`patchedDependencies` in package.json): the INSTALLED
+// SDK must show full node and field labels on variable chips. The SDK cuts both
+// labels to 15 characters in `display`, with no prop to change it. npm applies
+// the patch during every install — also under --ignore-scripts — and fails the
+// install if an SDK upgrade moves the code; this test is the second net, so the
+// owner never sees `{{ תפיסת מסגרת השת... · … }}` again.
 const dist = join(process.cwd(), 'node_modules', '@workflowbuilder', 'sdk', 'dist');
 const bundles = readdirSync(dist)
   .filter((f) => f.endsWith('.js'))

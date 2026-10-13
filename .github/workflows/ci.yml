@@ -32,6 +32,11 @@ jobs:
           node-version: 24
           cache: npm
 
+      # package.json `patchedDependencies` and the lockfile format (v4) are npm 12
+      # features; Node 24 ships npm 11, which would not apply the SDK patch.
+      - name: Use npm 12
+        run: npm install -g npm@12
+
       - name: Install dependencies
         run: npm ci
 
