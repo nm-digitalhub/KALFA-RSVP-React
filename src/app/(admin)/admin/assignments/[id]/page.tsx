@@ -6,7 +6,8 @@ import { hasPlatformPermission, requirePlatformPermission } from '@/lib/auth/dal
 import { getStaffAssignmentDetail } from '@/lib/data/admin/coupon-assignments';
 import { formatIsraelDate, formatIsraelDateTime } from '@/lib/date';
 import { PageHeading, Badge, formatCurrency, formatDateTime } from '../../_components';
-import { listBackHref } from '../list-params';
+import { listBackHref, sanitizedListSearch } from '../list-params';
+import { voidRefusalFromNotice } from '../void-refusals';
 import { VoidAssignmentDialog } from './void-dialog';
 
 export const metadata: Metadata = { title: 'פרטי הטבה' };
@@ -55,7 +56,10 @@ export default async function AdminAssignmentDetailPage({
         ? 'ההטבה כבר הוקצתה. מוצגים הפרטים שנשמרו.'
         : notice === 'duplicate_kept'
           ? 'ההקצאה החדשה זהה להטבה קיימת ולכן לא נשמרה — מוצגת ההטבה שנשארה בתוקף.'
-          : null;
+          : notice === 'voided'
+            ? 'ההטבה בוטלה.'
+            : null;
+  const refusalText = voidRefusalFromNotice(notice);
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
 
   const detail = await getStaffAssignmentDetail(id);
@@ -89,6 +93,12 @@ export default async function AdminAssignmentDetailPage({
       {noticeText ? (
         <p role="status" className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success">
           {noticeText}
+        </p>
+      ) : null}
+
+      {refusalText ? (
+        <p role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+          הביטול לא בוצע. {refusalText} המצב המעודכן מוצג כאן.
         </p>
       ) : null}
 
@@ -330,6 +340,7 @@ export default async function AdminAssignmentDetailPage({
           <div className="mt-2 space-y-2">
             <VoidAssignmentDialog
               assignmentId={a.id}
+              listSearch={sanitizedListSearch(sp)}
               customerLabel={
                 detail.recipient !== 'unavailable'
                   ? (detail.recipient.name ?? detail.recipient.email ?? detail.recipient.phoneMasked ?? '')

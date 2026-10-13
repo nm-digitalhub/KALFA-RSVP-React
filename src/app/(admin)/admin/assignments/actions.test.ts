@@ -14,8 +14,12 @@ vi.mock('@/lib/data/admin/coupon-assignments', () => ({
   voidStaffAssignment: vi.fn(),
 }));
 
-import { createStaffAssignment, findAccountByEmail } from '@/lib/data/admin/coupon-assignments';
-import { createAssignmentAction } from './actions';
+import {
+  createStaffAssignment,
+  findAccountByEmail,
+  voidStaffAssignment,
+} from '@/lib/data/admin/coupon-assignments';
+import { createAssignmentAction, voidAssignmentAction } from './actions';
 
 // The assign action (admin-panel ג.3, spec §8): every successful outcome navigates to the
 // assignment the flow should SHOW — the kept one on a duplicate — with an honest notice,
@@ -116,5 +120,47 @@ describe('createAssignmentAction', () => {
     const r = await createAssignmentAction(null, form(VALID));
     expect(r?.error).toContain('לא נמצא חשבון');
     expect(createStaffAssignment).not.toHaveBeenCalled();
+  });
+});
+
+describe('voidAssignmentAction', () => {
+  const ID = '33333333-3333-4333-8333-333333333333';
+  const LIST = '?status=waiting&sort=expiry&page=2';
+
+  it('a refusal navigates to the detail page with the refusal code and the list filters — the dialog may no longer exist there', async () => {
+    vi.mocked(voidStaffAssignment).mockResolvedValue({ outcome: 'refused', reason: 'already_ended' });
+    await expect(voidAssignmentAction(ID, LIST, null, form({ reason: 'x' }))).rejects.toThrow(
+      `REDIRECT:/admin/assignments/${ID}?status=waiting&sort=expiry&page=2&notice=void_refused_already_ended`,
+    );
+  });
+
+  it('a refusal code outside the closed set never reaches the URL', async () => {
+    vi.mocked(voidStaffAssignment).mockResolvedValue({
+      outcome: 'refused',
+      reason: '<script>' as unknown as 'already_ended',
+    });
+    const result = await voidAssignmentAction(ID, LIST, null, form({ reason: 'x' }));
+    expect(result).toEqual({ error: expect.stringContaining('המצב השתנה') });
+  });
+
+  it('an empty reason fails validation before anything runs', async () => {
+    const result = await voidAssignmentAction(ID, LIST, null, form({ reason: '   ' }));
+    expect(result).toEqual({ error: 'נדרשת סיבת ביטול' });
+    expect(voidStaffAssignment).not.toHaveBeenCalled();
+  });
+
+  it('a successful void carries the trimmed reason, then answers on the detail page keeping the filters', async () => {
+    vi.mocked(voidStaffAssignment).mockResolvedValue({ outcome: 'voided' });
+    await expect(
+      voidAssignmentAction(ID, LIST, null, form({ reason: '  טעות בהקצאה  ' })),
+    ).rejects.toThrow(`REDIRECT:/admin/assignments/${ID}?status=waiting&sort=expiry&page=2&notice=voided`);
+    expect(voidStaffAssignment).toHaveBeenCalledWith(ID, 'טעות בהקצאה');
+  });
+
+  it('the list filters are re-validated: unknown keys and malformed values are dropped, never echoed', async () => {
+    vi.mocked(voidStaffAssignment).mockResolvedValue({ outcome: 'voided' });
+    await expect(
+      voidAssignmentAction(ID, '?status=waiting&evil=https://x.example&page=abc&q=a/b', null, form({ reason: 'x' })),
+    ).rejects.toThrow(`REDIRECT:/admin/assignments/${ID}?status=waiting&notice=voided`);
   });
 });

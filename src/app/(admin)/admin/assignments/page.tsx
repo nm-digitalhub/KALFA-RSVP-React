@@ -39,8 +39,13 @@ const SORT_OPTIONS: { key: NonNullable<AssignmentListFilters['sort']>; label: st
 
 type RawParams = { q?: string; status?: string; source?: string; offer?: string; sort?: string; page?: string };
 
-function targetLine(row: StaffAssignmentListRow) {
-  return row.target.name ?? row.target.email ?? row.target.phoneMasked ?? '—';
+// A claimed row whose name and email could not be resolved is shown as exactly that —
+// never as "—", which would read as "no customer".
+function targetLine(row: StaffAssignmentListRow): { text: string; ltr: boolean } {
+  const { name, email, phoneMasked, claimed } = row.target;
+  const text = name ?? email ?? phoneMasked;
+  if (text) return { text, ltr: name === null };
+  return { text: claimed ? 'חשבון — הפרטים אינם זמינים' : '—', ltr: false };
 }
 
 export default async function AdminAssignmentsPage({
@@ -266,7 +271,7 @@ export default async function AdminAssignmentsPage({
                     {list.rows.map((row) => (
                       <tr key={row.id} className="border-b border-border last:border-b-0">
                         <td className="px-4 py-3">
-                          <span dir={row.target.name ? undefined : 'ltr'}>{targetLine(row)}</span>
+                          <span dir={targetLine(row).ltr ? 'ltr' : undefined}>{targetLine(row).text}</span>
                           {!row.target.claimed ? (
                             <div className="text-xs text-muted-foreground">טרם שויכה לחשבון</div>
                           ) : null}
@@ -296,8 +301,8 @@ export default async function AdminAssignmentsPage({
                   <li key={row.id} className="rounded-lg border border-border p-4 text-sm">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="font-medium" dir={row.target.name ? undefined : 'ltr'}>
-                          {targetLine(row)}
+                        <p className="font-medium" dir={targetLine(row).ltr ? 'ltr' : undefined}>
+                          {targetLine(row).text}
                         </p>
                         {!row.target.claimed ? (
                           <p className="text-xs text-muted-foreground">טרם שויכה לחשבון</p>

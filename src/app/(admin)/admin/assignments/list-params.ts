@@ -29,3 +29,12 @@ export function sanitizedListSearch(raw: Record<string, string | string[] | unde
 export function listBackHref(raw: Record<string, string | string[] | undefined>): string {
   return `/admin/assignments${sanitizedListSearch(raw)}`;
 }
+
+/** The detail page's query: the validated list params (re-sanitized here — the caller's
+ *  string is never trusted) plus one `notice` code. */
+export function detailSearch(rawListSearch: string, notice: string): string {
+  const incoming = Object.fromEntries(new URLSearchParams(rawListSearch));
+  const params = new URLSearchParams(sanitizedListSearch(incoming).slice(1));
+  params.set('notice', notice);
+  return `?${params.toString()}`;
+}

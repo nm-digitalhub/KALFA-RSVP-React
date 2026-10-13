@@ -19,41 +19,31 @@ import { voidAssignmentAction } from '../actions';
 
 // The void dialog (admin-panel ד.6, spec §9): opened only from the detail page, the
 // project's AlertDialog (never window.confirm), a REQUIRED reason, and the danger styling.
-// The server re-decides under locks; a refusal keeps the typed reason on the form and
-// refreshes the view to the state that refused it.
+// The server re-decides under locks; the outcome (done, or refused because the state moved)
+// is answered on the detail page, which re-reads the live state.
 
 export function VoidAssignmentDialog({
   assignmentId,
+  listSearch,
   customerLabel,
   offerTitle,
 }: {
   assignmentId: string;
+  listSearch: string;
   customerLabel: string;
   offerTitle: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
-  const action = voidAssignmentAction.bind(null, assignmentId);
+  const action = voidAssignmentAction.bind(null, assignmentId, listSearch);
   const [state, formAction, pending] = useActionState(action, null);
 
-  // A refusal means the live state differs from what the screen showed — refresh the
-  // sections (the typed reason survives: it lives in this component's state).
+  // Only validation and unexpected errors come back here (the reason stays in this
+  // component's state); a refusal or a success navigates to the detail page instead.
   useEffect(() => {
     if (state?.error) router.refresh();
-    if (state?.notice) {
-      setOpen(false);
-      router.refresh();
-    }
   }, [state, router]);
-
-  if (state?.notice) {
-    return (
-      <p role="status" className="text-sm text-success">
-        ההטבה בוטלה.
-      </p>
-    );
-  }
 
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>

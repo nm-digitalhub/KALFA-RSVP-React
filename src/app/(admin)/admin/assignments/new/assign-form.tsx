@@ -1,6 +1,7 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { FormError, SubmitButton } from '@/components/forms';
 import type { AssignableOffer } from '@/lib/data/admin/coupon-assignments';
@@ -21,9 +22,25 @@ export function AssignForm({
   offers: AssignableOffer[];
   idempotencyKey: string;
 }) {
+  const router = useRouter();
   const [state, formAction, pending] = useActionState(createAssignmentAction, null);
   const [selectedId, setSelectedId] = useState('');
   const selected = offers.find((o) => o.id === selectedId) ?? null;
+  const selectRef = useRef<HTMLSelectElement>(null);
+
+  // React resets a form's fields when its action settles. A refusal keeps the page, so the
+  // select must go back to the choice the preview and the confirmed terms still show.
+  useEffect(() => {
+    if (selectRef.current && selectRef.current.value !== selectedId) {
+      selectRef.current.value = selectedId;
+    }
+  }, [state, selectedId]);
+
+  // A refusal means the offer or its prices moved since the page loaded: re-read them so the
+  // preview shows the CURRENT terms the next confirmation will send (the choice is kept).
+  useEffect(() => {
+    if (state?.error) router.refresh();
+  }, [state, router]);
 
   const inputClass =
     'w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-primary';
@@ -45,6 +62,7 @@ export function AssignForm({
         </label>
         <select
           id="assign-offer"
+          ref={selectRef}
           name="offer_id"
           required
           value={selectedId}

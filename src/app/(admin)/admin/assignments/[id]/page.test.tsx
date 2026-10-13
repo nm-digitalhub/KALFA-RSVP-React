@@ -158,4 +158,29 @@ describe('/admin/assignments/[id]', () => {
     expect(html).toContain('מוחזקת על ידי תשלום פתוח');
     expect(html).toContain('התשלום הפתוח כפוף לתנאים שנשמרו');
   });
+
+  it('a void refusal carried by the notice code is answered on the page — closed codes only', async () => {
+    vi.mocked(getStaffAssignmentDetail).mockResolvedValue(
+      detail({ allowedActions: { canVoid: false, blockReason: 'already_ended' } }),
+    );
+    const refused = await render(ID, { notice: 'void_refused_already_ended' });
+    expect(refused).toContain('הביטול לא בוצע.');
+    expect(refused).toContain('ההטבה כבר הסתיימה — אין מה לבטל.');
+    expect(refused).toContain('המצב המעודכן מוצג כאן.');
+
+    const unknown = await render(ID, { notice: 'void_refused_<script>' });
+    expect(unknown).not.toContain('הביטול לא בוצע.');
+    expect(unknown).not.toContain('<script>');
+    const inherited = await render(ID, { notice: 'void_refused_constructor' });
+    expect(inherited).not.toContain('הביטול לא בוצע.');
+  });
+
+  it('a completed void is confirmed on the page, in place of the stale "created" banner', async () => {
+    vi.mocked(getStaffAssignmentDetail).mockResolvedValue(
+      detail({ allowedActions: { canVoid: false, blockReason: 'already_ended' } }),
+    );
+    const html = await render(ID, { notice: 'voided' });
+    expect(html).toContain('ההטבה בוטלה.');
+    expect(html).not.toContain('ההטבה הוקצתה.');
+  });
 });

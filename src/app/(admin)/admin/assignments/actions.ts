@@ -11,6 +11,8 @@ import {
   type ConfirmedOption,
 } from '@/lib/data/admin/coupon-assignments';
 import type { FormState } from '@/lib/validation/result';
+import { detailSearch } from './list-params';
+import { VOID_REFUSALS, VOID_REFUSED_NOTICE_PREFIX } from './void-refusals';
 
 // The staff assignment actions (task 7.3). Thin wrappers: validate, call the gated data layer,
 // surface its own safe Hebrew messages. The browser sends an email and an offer id — never a
@@ -91,14 +93,6 @@ export async function createAssignmentAction(
   redirect(target);
 }
 
-const VOID_REFUSALS: Record<string, string> = {
-  held_by_payment: 'ההטבה מוחזקת על ידי תשלום פתוח — לא ניתן לבטל עד שהתשלום יוכרע.',
-  held_by_review: 'ההטבה מוחזקת עד סיום בדיקת התשלום.',
-  held_by_approved_terms: 'ההטבה קשורה לתנאים מאושרים — היא משולמת בתוקפה או פגה (אין ביטול).',
-  already_ended: 'ההטבה כבר הסתיימה — אין מה לבטל.',
-  needs_investigation: 'קיימת תנועת כסף או חריגת מימוש — אין ביטול; נדרשת בדיקה מול התשלומים.',
-};
-
 const voidSchema = z.object({
   reason: z
     .string()
@@ -109,6 +103,7 @@ const voidSchema = z.object({
 
 export async function voidAssignmentAction(
   assignmentId: string,
+  listSearch: string,
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
@@ -117,17 +112,28 @@ export async function voidAssignmentAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'נדרשת סיבת ביטול' };
   }
+  let refusal: string | null = null;
   try {
     const result = await voidStaffAssignment(assignmentId, parsed.data.reason);
     if (result.outcome === 'refused') {
-      return { error: VOID_REFUSALS[result.reason] ?? 'הביטול נדחה. המצב השתנה — רעננו את העמוד.' };
+      if (!Object.hasOwn(VOID_REFUSALS, result.reason)) {
+        return { error: 'הביטול נדחה. המצב השתנה — רעננו את העמוד.' };
+      }
+      refusal = result.reason;
     }
   } catch (err) {
     unstable_rethrow(err);
     return { error: err instanceof Error ? err.message : 'ביטול ההטבה נכשל. נסו שוב.' };
   }
 
-  revalidatePath('/admin/assignments');
+  // Both outcomes are answered on the detail page, which re-reads the live state (spec §9):
+  // the dialog may no longer exist there, and the list filters it was opened from are kept.
   revalidatePath(`/admin/assignments/${assignmentId}`);
-  return { notice: 'ההטבה בוטלה' };
+  if (refusal) {
+    redirect(
+      `/admin/assignments/${assignmentId}${detailSearch(listSearch, `${VOID_REFUSED_NOTICE_PREFIX}${refusal}`)}`,
+    );
+  }
+  revalidatePath('/admin/assignments');
+  redirect(`/admin/assignments/${assignmentId}${detailSearch(listSearch, 'voided')}`);
 }

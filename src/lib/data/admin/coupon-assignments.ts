@@ -46,18 +46,6 @@ type OfferRow = {
   offer_packages: { package_id: string; value_override: number | null }[] | null;
 };
 
-// The option sets are identical when the package set matches and every final price matches — in
-// whole agorot, never float equality.
-function sameOptionSet(
-  a: { packageId: string; finalPrice: number }[],
-  b: { packageId: string; finalPrice: number }[],
-): boolean {
-  if (a.length !== b.length) return false;
-  const key = (o: { packageId: string; finalPrice: number }) =>
-    `${o.packageId}:${Math.round(o.finalPrice * 100)}`;
-  const bKeys = new Set(b.map(key));
-  return a.every((o) => bKeys.has(key(o)));
-}
 export type VoidRefusal =
   | 'held_by_payment'
   | 'held_by_review'

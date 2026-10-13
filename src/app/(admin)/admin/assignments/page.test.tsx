@@ -117,4 +117,26 @@ describe('/admin/assignments (list states)', () => {
     // The list never offers a void button (spec §6) — that belongs to the detail page.
     expect(html).not.toContain('ביטול ההטבה');
   });
+
+  it('a claimed row whose account could not be resolved says so — never a bare dash', async () => {
+    vi.mocked(listStaffAssignments).mockResolvedValue(
+      listResult({
+        rows: [row({ target: { name: null, email: null, phoneMasked: null, claimed: true } })],
+        total: 1,
+      }),
+    );
+    const html = await render();
+
+    expect(html).toContain('חשבון — הפרטים אינם זמינים');
+    // A resolved email still wins over the fallback.
+    vi.mocked(listStaffAssignments).mockResolvedValue(
+      listResult({
+        rows: [row({ target: { name: null, email: 'a@b.il', phoneMasked: null, claimed: true } })],
+        total: 1,
+      }),
+    );
+    const withEmail = await render();
+    expect(withEmail).toContain('a@b.il');
+    expect(withEmail).not.toContain('חשבון — הפרטים אינם זמינים');
+  });
 });
