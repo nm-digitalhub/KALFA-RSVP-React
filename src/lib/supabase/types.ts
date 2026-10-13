@@ -27,6 +27,7 @@
 // types:check` compares only the generated file.
 
 import type { MergeDeep } from 'type-fest';
+import type { Json as CouponRpcJson } from './types.generated';
 import type { Database as DatabaseGenerated } from './types.generated';
 
 export type { Json } from './types.generated';
@@ -37,6 +38,51 @@ export type Database = MergeDeep<
   {
     public: {
       Functions: {
+        // Migration 20261012234733 — applied LOCALLY only so far (the admin-panel change is
+        // undeployed); the generated file will carry this once the migration reaches the
+        // linked project and gen:types runs, and this entry can then be dropped.
+        void_staff_coupon_assignment: {
+          Args: { _staff_id: string; _assignment_id: string; _staff_reason: string };
+          Returns: CouponRpcJson;
+        };
+        create_staff_coupon_assignment: {
+          Args: {
+            _staff_id: string;
+            _user_id: string;
+            _offer_id: string;
+            _idempotency_key: string;
+            _confirmed_options: CouponRpcJson;
+          };
+          Returns: CouponRpcJson;
+        };
+        admin_lookup_account_by_email: {
+          Args: { _email: string };
+          Returns: { id: string; email: string; full_name: string | null }[];
+        };
+        admin_list_coupon_assignments: {
+          Args: {
+            _user_id?: string | null;
+            _phone?: string | null;
+            _status?: string | null;
+            _source?: string | null;
+            _offer_id?: string | null;
+            _sort?: string;
+            _page?: number;
+            _page_size?: number;
+          };
+          Returns: {
+            id: string;
+            created_at: string;
+            expires_at: string;
+            state: string;
+            end_reason: string | null;
+            offer_title: string | null;
+            user_id: string | null;
+            phone_e164: string | null;
+            source_kind: string;
+            total_count: number;
+          }[];
+        };
         // p_next_wake_at timestamptz, no default; body: `if p_next_wake_at is not null`.
         fleet_goal_progress: { Args: { p_next_wake_at: string | null } };
         // CAS params compared with `IS NOT DISTINCT FROM` — NULL means "expect no plan yet".

@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { listEligibleBenefits } from '@/lib/data/coupon-benefits';
-import { createStaffAssignment, listStaffAssignments, voidStaffAssignment } from './coupon-assignments';
+import { createStaffAssignment, listStaffAssignments, lookupStaffAssignmentRecipient, voidStaffAssignment } from './coupon-assignments';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
@@ -13,7 +13,7 @@ vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/data/coupon-benefits', () => ({ listEligibleBenefits: vi.fn() }));
 
-type Result = { data: unknown; error: { message: string; code?: string } | null };
+type Result = { data: unknown; error: { message: string; code?: string } | null; count?: number | null };
 
 function tableClient(queues: Record<string, Result[]>) {
   const calls: Record<string, Array<Record<string, ReturnType<typeof vi.fn>>>> = {};
@@ -21,7 +21,7 @@ function tableClient(queues: Record<string, Result[]>) {
     from: vi.fn((table: string) => {
       const result = queues[table]?.shift() ?? { data: null, error: null };
       const builder: Record<string, unknown> = {};
-      for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'in', 'is', 'order', 'limit', 'single', 'maybeSingle']) {
+      for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'neq', 'in', 'is', 'order', 'limit', 'single', 'maybeSingle']) {
         builder[m] = vi.fn(() => builder);
       }
       builder.then = (onFulfilled: (value: Result) => unknown) => onFulfilled(result);
@@ -29,7 +29,12 @@ function tableClient(queues: Record<string, Result[]>) {
       return builder;
     }),
     rpc: vi.fn(async () => ({ data: null, error: null })),
-    auth: { admin: { getUserById: vi.fn(async () => ({ data: { user: { id: 'u-1' } }, error: null })) } },
+    auth: {
+      admin: {
+        getUserById: vi.fn(async () => ({ data: { user: { id: 'u-1' } }, error: null })),
+        listUsers: vi.fn(async () => ({ data: { users: [] }, error: null })),
+      },
+    },
   };
   vi.mocked(createAdminClient).mockReturnValue(client as unknown as ReturnType<typeof createAdminClient>);
   return { client, calls };
@@ -57,315 +62,287 @@ beforeEach(() => {
   vi.mocked(listEligibleBenefits).mockResolvedValue([]);
 });
 
-describe('createStaffAssignment', () => {
-  it('freezes the options from the SHARED computation (100.50 at 1%→… here 5% → 5.03 / 95.47)', async () => {
-    const { calls } = tableClient({
+describe('createStaffAssignment (over the ONE-transaction RPC)', () => {
+  function rpcResult(overrides: Record<string, unknown> = {}) {
+    return {
+      assignment_id: 'a-new',
+      kept_assignment_id: 'a-new',
+      outcome: 'created',
+      duplicate_voided: 'none',
+      expires_at: FUTURE,
+      ...overrides,
+    };
+  }
+
+  it('sends the SERVER-computed frozen terms to the transaction (100.50 at 5% → 5.03 / 95.47)', async () => {
+    const { client } = tableClient({
       offers: [{ data: offerRow, error: null }],
       packages: [{ data: packageRows, error: null }],
-      coupon_assignments: [{ data: { id: 'a-new' }, error: null }],
-      coupon_assignment_options: [{ data: null, error: null }],
-      coupon_assignment_events: [{ data: null, error: null }],
+      activity_log: [{ data: null, error: null }],
     });
+    client.rpc.mockResolvedValueOnce({ data: rpcResult(), error: null } as never);
 
     const r = await createStaffAssignment(input);
 
-    expect(requirePlatformPermission).toHaveBeenCalledWith('manage_billing');
-    expect(r.outcome).toBe('created');
-    // decimal.js: 5% of ₪100.50 = 5.025 → 5.03 (half-up); final 95.47 — exact decimals.
-    expect(calls.coupon_assignment_options[0].insert).toHaveBeenCalledWith([
-      { assignment_id: 'a-new', package_id: 'p-1', list_price: 100.5, discount_amount: 5.03, final_price: 95.47 },
-    ]);
-    expect(calls.coupon_assignments[0].insert).toHaveBeenCalledWith(
-      expect.objectContaining({ assigned_by: 'staff-1', user_id: 'u-1', kind: 'percent', value: 5 }),
-    );
+    expect(client.rpc).toHaveBeenCalledWith('create_staff_coupon_assignment', {
+      _staff_id: 'staff-1',
+      _user_id: 'u-1',
+      _offer_id: 'o-1',
+      _idempotency_key: 'k-1',
+      _confirmed_options: [
+        { package_id: 'p-1', list_price: 100.5, discount_amount: 5.03, final_price: 95.47 },
+      ],
+    });
+    expect(r).toMatchObject({ outcome: 'created', assignmentId: 'a-new', keptAssignmentId: 'a-new' });
+    expect(r.options).toEqual([{ packageId: 'p-1', packageName: 'בסיס', listPrice: 100.5, finalPrice: 95.47 }]);
     expect(logActivity).toHaveBeenCalledWith(expect.objectContaining({ action: 'coupon.assigned' }));
   });
 
-  it('refuses an offer staff may not assign (D14 — who may assign)', async () => {
-    tableClient({ offers: [{ data: { ...offerRow, allow_staff: false }, error: null }] });
-
-    await expect(createStaffAssignment(input)).rejects.toThrow('ההצעה אינה מוקצית על ידי צוות');
+  it('refuses an offer staff may not assign (D14) before any transaction', async () => {
+    const { client } = tableClient({
+      offers: [{ data: { ...offerRow, allow_staff: false }, error: null }],
+    });
+    await expect(createStaffAssignment(input)).rejects.toThrow('אינה מוקצית על ידי צוות');
+    expect(client.rpc).not.toHaveBeenCalled();
   });
 
-  it('an idempotent retry returns the EXISTING assignment — never a second one', async () => {
-    tableClient({
+  it('an idempotent replay ("existing") answers the STORED options — never a fresh computation', async () => {
+    const { client } = tableClient({
       offers: [{ data: offerRow, error: null }],
       packages: [{ data: packageRows, error: null }],
-      coupon_assignments: [
-        { data: null, error: { message: 'dup', code: '23505' } },
-        { data: { id: 'a-old', expires_at: FUTURE }, error: null },
+      coupon_assignment_options: [
+        {
+          data: [
+            // The stored promise differs from today's price — the answer must carry IT.
+            { package_id: 'p-1', list_price: 80, final_price: 76, packages: { name: 'בסיס' } },
+          ],
+          error: null,
+        },
       ],
     });
+    client.rpc.mockResolvedValueOnce({
+      data: rpcResult({ assignment_id: 'a-old', kept_assignment_id: 'a-old', outcome: 'existing' }),
+      error: null,
+    } as never);
 
     const r = await createStaffAssignment(input);
 
     expect(r).toMatchObject({ assignmentId: 'a-old', outcome: 'existing', duplicateVoided: 'none' });
+    expect(r.options).toEqual([{ packageId: 'p-1', packageName: 'בסיס', listPrice: 80, finalPrice: 76 }]);
     expect(logActivity).not.toHaveBeenCalled();
   });
 
-  it('D18 duplicate: an identical option set voids the SHORTER-lived (the previous one here), audited', async () => {
-    vi.mocked(listEligibleBenefits).mockResolvedValue([
-      {
-        assignmentId: 'a-old',
-        state: 'assigned',
-        boundCampaignId: null,
-        expiresAt: '2026-10-20T00:00:00.000Z',
-        claimed: true,
-        options: [{ packageId: 'p-1', listPrice: 100.5, discountAmount: 5.03, finalPrice: 95.47 }],
-      },
-    ]);
-    const { calls } = tableClient({
+  it('a replay whose key served a DIFFERENT request is refused by the transaction', async () => {
+    const { client } = tableClient({
       offers: [{ data: offerRow, error: null }],
       packages: [{ data: packageRows, error: null }],
-      coupon_assignments: [
-        { data: { id: 'a-new' }, error: null }, // the insert
-        { data: null, error: null }, // the void update
-      ],
-      coupon_assignment_options: [{ data: null, error: null }],
-      coupon_assignment_events: [
-        { data: null, error: null }, // assigned
-        { data: null, error: null }, // voided
-      ],
     });
+    client.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'assign: key already used for a different request' },
+    } as never);
 
-    const r = await createStaffAssignment(input);
-
-    expect(r.duplicateVoided).toBe('previous');
-    expect(calls.coupon_assignments[1].update).toHaveBeenCalledWith({ state: 'void' });
-    expect(calls.coupon_assignments[1].eq).toHaveBeenCalledWith('id', 'a-old');
-    expect(calls.coupon_assignment_events[1].insert).toHaveBeenCalledWith(
-      expect.objectContaining({ assignment_id: 'a-old', action: 'voided', reason: 'duplicate' }),
-    );
-    expect(logActivity).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'coupon.voided_duplicate' }),
-    );
+    await expect(createStaffAssignment(input)).rejects.toThrow('מפתח הפעולה כבר שימש');
   });
 
-  it('a DIFFERENT final price is not a duplicate — both stay (best price decides at binding)', async () => {
-    vi.mocked(listEligibleBenefits).mockResolvedValue([
-      {
-        assignmentId: 'a-old',
-        state: 'assigned',
-        boundCampaignId: null,
-        expiresAt: FUTURE,
-        claimed: true,
-        options: [{ packageId: 'p-1', listPrice: 100.5, discountAmount: 10, finalPrice: 90.5 }],
-      },
-    ]);
-    const { calls } = tableClient({
-      offers: [{ data: offerRow, error: null }],
-      packages: [{ data: packageRows, error: null }],
-      coupon_assignments: [{ data: { id: 'a-new' }, error: null }],
-      coupon_assignment_options: [{ data: null, error: null }],
-      coupon_assignment_events: [{ data: null, error: null }],
+  it('the transaction-reported duplicate outcomes map: previous voided / NEW voided points at the kept row', async () => {
+    const { client } = tableClient({
+      offers: [{ data: offerRow, error: null }, { data: offerRow, error: null }],
+      packages: [{ data: packageRows, error: null }, { data: packageRows, error: null }],
+      activity_log: [{ data: null, error: null }, { data: null, error: null }, { data: null, error: null }, { data: null, error: null }],
     });
+    client.rpc.mockResolvedValueOnce({
+      data: rpcResult({ duplicate_voided: 'previous' }),
+      error: null,
+    } as never);
+    const kept = await createStaffAssignment(input);
+    expect(kept).toMatchObject({ duplicateVoided: 'previous', keptAssignmentId: 'a-new' });
+    expect(logActivity).toHaveBeenCalledWith(expect.objectContaining({ action: 'coupon.voided_duplicate' }));
 
-    const r = await createStaffAssignment(input);
-
-    expect(r.duplicateVoided).toBe('none');
-    expect(calls.coupon_assignments).toHaveLength(1); // only the insert — no void pass
+    client.rpc.mockResolvedValueOnce({
+      data: rpcResult({ assignment_id: 'a-new-voided', kept_assignment_id: 'a-kept', duplicate_voided: 'new' }),
+      error: null,
+    } as never);
+    const lost = await createStaffAssignment(input);
+    expect(lost).toMatchObject({ duplicateVoided: 'new', keptAssignmentId: 'a-kept' });
   });
 
   it('gate: rejects without manage_billing and reads nothing', async () => {
-    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(
-      Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;' }),
-    );
     const { client } = tableClient({});
+    vi.mocked(requirePlatformPermission).mockRejectedValue(new Error('redirect'));
 
-    await expect(createStaffAssignment(input)).rejects.toThrow('NEXT_REDIRECT');
+    await expect(createStaffAssignment(input)).rejects.toThrow('redirect');
     expect(client.from).not.toHaveBeenCalled();
+    expect(client.rpc).not.toHaveBeenCalled();
   });
 });
 
-describe('voidStaffAssignment (tasks 5.5/7.3)', () => {
-  it('REFUSES a void while the campaign has a pending package payment — held by that payment', async () => {
-    const { client } = tableClient({
-      coupon_assignments: [{ data: { id: 'a-1', state: 'bound', bound_campaign_id: 'c-1' }, error: null }],
-      payment_operations: [{ data: { id: 'op-1' }, error: null }],
+
+describe('voidStaffAssignment (over the ONE-transaction RPC, ד.3)', () => {
+  it('a voided outcome forwards the REQUIRED staff reason and audits', async () => {
+    const { client } = tableClient({ activity_log: [{ data: null, error: null }] });
+    client.rpc.mockResolvedValueOnce({ data: { outcome: 'voided' }, error: null } as never);
+
+    const r = await voidStaffAssignment('a-1', '  טעות בהקצאה  ');
+
+    expect(client.rpc).toHaveBeenCalledWith('void_staff_coupon_assignment', {
+      _staff_id: 'staff-1',
+      _assignment_id: 'a-1',
+      _staff_reason: 'טעות בהקצאה',
     });
-
-    const r = await voidStaffAssignment('a-1');
-
-    expect(r).toEqual({ outcome: 'refused', reason: 'held_by_payment' });
-    // Nothing was written: no release, no void.
-    expect(client.rpc).not.toHaveBeenCalled();
-    expect(logActivity).not.toHaveBeenCalled();
-  });
-
-  it('refuses a benefit bound into APPROVED terms (a locked round) — it pays or lapses', async () => {
-    tableClient({
-      coupon_assignments: [{ data: { id: 'a-1', state: 'bound', bound_campaign_id: 'c-1' }, error: null }],
-      payment_operations: [{ data: null, error: null }],
-      campaign_pricing: [{ data: { id: 'r-1', locked_at: FUTURE, coupon_assignment_id: 'a-1' }, error: null }],
-    });
-
-    expect(await voidStaffAssignment('a-1')).toEqual({
-      outcome: 'refused',
-      reason: 'held_by_approved_terms',
-    });
-  });
-
-  it('voids an unbound assignment with an audited event', async () => {
-    const { client, calls } = tableClient({
-      coupon_assignments: [
-        { data: { id: 'a-1', state: 'assigned', bound_campaign_id: null }, error: null },
-        { data: null, error: null }, // the void update
-      ],
-      coupon_assignment_events: [{ data: null, error: null }],
-    });
-
-    const r = await voidStaffAssignment('a-1');
-
     expect(r).toEqual({ outcome: 'voided' });
-    expect(client.rpc).not.toHaveBeenCalled();
-    expect(calls.coupon_assignments[1].update).toHaveBeenCalledWith({ state: 'void' });
-    expect(calls.coupon_assignment_events[0].insert).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'voided', reason: 'staff_void' }),
-    );
     expect(logActivity).toHaveBeenCalledWith(expect.objectContaining({ action: 'coupon.voided' }));
   });
 
-  it('a BOUND assignment on an unlocked round is released first (the price returns to list), then voided', async () => {
-    const { client } = tableClient({
-      coupon_assignments: [
-        { data: { id: 'a-1', state: 'bound', bound_campaign_id: 'c-1' }, error: null },
-        { data: null, error: null }, // the void update
-      ],
-      payment_operations: [{ data: null, error: null }],
-      campaign_pricing: [{ data: { id: 'r-1', locked_at: null, coupon_assignment_id: 'a-1' }, error: null }],
-      coupon_assignment_events: [{ data: null, error: null }],
-    });
-
-    const r = await voidStaffAssignment('a-1');
-
-    expect(r).toEqual({ outcome: 'voided' });
-    expect(client.rpc).toHaveBeenCalledWith('release_coupon_assignment', {
-      _assignment_id: 'a-1',
-      _reason: 'voided_by_staff',
-      _actor_user_id: 'staff-1',
-    });
+  it('an empty reason is refused before the transaction is ever called', async () => {
+    const { client } = tableClient({});
+    await expect(voidStaffAssignment('a-1', '   ')).rejects.toThrow('נדרשת סיבת ביטול');
+    expect(client.rpc).not.toHaveBeenCalled();
   });
 
-  it('a consumed assignment has nothing to void', async () => {
-    tableClient({
-      coupon_assignments: [{ data: { id: 'a-1', state: 'consumed', bound_campaign_id: 'c-1' }, error: null }],
-    });
+  it('every transaction refusal maps through: held_by_payment / held_by_review / held_by_approved_terms / needs_investigation / already_ended', async () => {
+    const { client } = tableClient({});
+    for (const reason of [
+      'held_by_payment',
+      'held_by_review',
+      'held_by_approved_terms',
+      'needs_investigation',
+      'already_ended',
+    ] as const) {
+      client.rpc.mockResolvedValueOnce({ data: { outcome: 'refused', reason }, error: null } as never);
+      expect(await voidStaffAssignment('a-1', 'סיבה')).toEqual({ outcome: 'refused', reason });
+    }
+    expect(logActivity).not.toHaveBeenCalled();
+  });
 
-    expect(await voidStaffAssignment('a-1')).toEqual({ outcome: 'refused', reason: 'already_ended' });
+  it('gate: rejects without manage_billing and calls nothing', async () => {
+    const { client } = tableClient({});
+    vi.mocked(requirePlatformPermission).mockRejectedValue(new Error('redirect'));
+
+    await expect(voidStaffAssignment('a-1', 'סיבה')).rejects.toThrow('redirect');
+    expect(client.rpc).not.toHaveBeenCalled();
   });
 });
 
-describe('listStaffAssignments (task 7.3 — the screen reads held states and the D10 guard)', () => {
-  function listRow(overrides: Record<string, unknown> = {}) {
+
+describe('listStaffAssignments (admin-panel א.2/א.3 — the SQL list and the global guard)', () => {
+  function rpcRow(overrides: Record<string, unknown> = {}) {
     return {
       id: 'a-1',
       created_at: '2026-10-12T10:00:00.000Z',
       expires_at: FUTURE,
       state: 'bound',
+      end_reason: null,
+      offer_title: 'לקוחות מצטרפים',
       user_id: null,
       phone_e164: '+972501234567',
-      sales_call_attempt_id: 'call-1',
-      assigned_by: null,
-      bound_campaign_id: 'c-1',
-      offers: { title: 'הטבה' },
-      coupon_assignment_options: [{ final_price: 190, packages: { name: 'בסיס' } }],
+      source_kind: 'agent',
+      total_count: 1,
       ...overrides,
     };
   }
 
-  it('held by a PENDING payment, by a payment in REVIEW, and by APPROVED terms — each shown as such', async () => {
-    tableClient({
-      coupon_assignments: [
-        {
-          data: [
-            listRow({ id: 'a-pend', bound_campaign_id: 'c-pend' }),
-            listRow({ id: 'a-rev', bound_campaign_id: 'c-rev' }),
-            listRow({ id: 'a-lock', bound_campaign_id: 'c-lock' }),
-            listRow({ id: 'a-free', state: 'assigned', bound_campaign_id: null }),
-          ],
-          error: null,
-        },
-      ],
-      campaigns: [
-        {
-          data: [
-            { id: 'c-pend', template_id: 'p-1', events: { name: 'אירוע א' }, packages: { name: 'בסיס' } },
-            { id: 'c-rev', template_id: 'p-1', events: { name: 'אירוע ב' }, packages: { name: 'בסיס' } },
-            { id: 'c-lock', template_id: 'p-1', events: { name: 'אירוע ג' }, packages: { name: 'בסיס' } },
-          ],
-          error: null,
-        },
-      ],
-      campaign_pricing: [{ data: [{ campaign_id: 'c-lock', locked_at: '2026-10-12T11:00:00.000Z' }], error: null }],
-      payment_operations: [
-        {
-          data: [
-            { campaign_id: 'c-pend', outcome: 'pending' },
-            { campaign_id: 'c-rev', outcome: 'review' },
-          ],
-          error: null,
-        },
-      ],
+  it('passes normalized filters to the SQL function and maps rows (display, masking, claim)', async () => {
+    const { client } = tableClient({
+      profiles: [{ data: [], error: null }],
+      payment_operations: [{ data: null, error: null, count: 0 }],
+    });
+    client.rpc.mockResolvedValueOnce({ data: [rpcRow()], error: null } as never);
+
+    const list = await listStaffAssignments({
+      status: 'nonsense' as never, // invalid → normalized away
+      source: 'agent',
+      sort: 'bad' as never, // invalid → newest
+      page: -3, // invalid → 1
     });
 
-    const { rows, guardCount } = await listStaffAssignments();
-
-    const byId = new Map(rows.map((r) => [r.id, r]));
-    expect(byId.get('a-pend')).toMatchObject({ payment: 'pending', heldBy: 'payment', guard: false });
-    expect(byId.get('a-rev')).toMatchObject({ payment: 'review', heldBy: 'review', guard: false });
-    expect(byId.get('a-lock')).toMatchObject({ payment: 'none', heldBy: 'approved_terms' });
-    // The unheld row offers the void (heldBy null), and nothing trips the guard.
-    expect(byId.get('a-free')).toMatchObject({ heldBy: null, source: { kind: 'agent' } });
-    expect(guardCount).toBe(0);
+    expect(client.rpc).toHaveBeenCalledWith('admin_list_coupon_assignments', {
+      _user_id: null,
+      _phone: null,
+      _status: null,
+      _source: 'agent',
+      _offer_id: null,
+      _sort: 'newest',
+      _page: 1,
+      _page_size: 25,
+    });
+    expect(list.total).toBe(1);
+    expect(list.rows[0]).toMatchObject({
+      display: { key: 'bound', label: 'משויכת לאירוע' },
+      offerTitle: 'לקוחות מצטרפים',
+      target: { phoneMasked: '+9725…567', claimed: false, name: null },
+      sourceKind: 'agent',
+    });
   });
 
-  it('D10 guard: a SUCCEEDED payment whose assignment was not consumed is surfaced and counted', async () => {
+  it('an out-of-range page is corrected to the last page while keeping the filters', async () => {
     const { client } = tableClient({
-      coupon_assignments: [
-        {
-          data: [
-            listRow({ id: 'a-bad', bound_campaign_id: 'c-paid', user_id: 'u-9' }),
-            listRow({ id: 'a-ok', state: 'consumed', bound_campaign_id: 'c-paid2' }),
-          ],
-          error: null,
-        },
-      ],
-      campaigns: [
-        {
-          data: [
-            { id: 'c-paid', template_id: 'p-1', events: { name: 'אירוע' }, packages: { name: 'בסיס' } },
-            { id: 'c-paid2', template_id: 'p-1', events: { name: 'אירוע 2' }, packages: { name: 'בסיס' } },
-          ],
-          error: null,
-        },
-      ],
-      campaign_pricing: [{ data: [], error: null }],
-      payment_operations: [
-        {
-          data: [
-            { campaign_id: 'c-paid', outcome: 'succeeded' },
-            { campaign_id: 'c-paid2', outcome: 'succeeded' },
-          ],
-          error: null,
-        },
-      ],
+      profiles: [{ data: [], error: null }],
+      payment_operations: [{ data: null, error: null, count: 0 }],
     });
-    client.auth.admin.getUserById.mockResolvedValue({
-      data: { user: { id: 'u-9', email: 'owner@example.com' } },
-      error: null,
-    } as never);
+    client.rpc
+      .mockResolvedValueOnce({ data: [], error: null } as never) // page 9 → empty
+      .mockResolvedValueOnce({ data: [rpcRow({ total_count: 30 })], error: null } as never) // probe page 1
+      .mockResolvedValueOnce({ data: [rpcRow({ id: 'a-26', total_count: 30 })], error: null } as never); // last page
 
-    const { rows, guardCount } = await listStaffAssignments();
+    const list = await listStaffAssignments({ page: 9, source: 'staff' });
 
-    const byId = new Map(rows.map((r) => [r.id, r]));
-    // The damage row: paid but never consumed — flagged; the phone is masked, the claim shows the email.
-    expect(byId.get('a-bad')).toMatchObject({
-      guard: true,
-      target: { userEmail: 'owner@example.com', phoneMasked: '+9725…567', claimed: true },
+    expect(list.page).toBe(2); // 30 rows / 25 per page → last page 2
+    expect(list.total).toBe(30);
+    expect(client.rpc).toHaveBeenLastCalledWith(
+      'admin_list_coupon_assignments',
+      expect.objectContaining({ _page: 2, _source: 'staff' }),
+    );
+  });
+
+  it('an email q that matches no account is an honest empty result — the list query never runs', async () => {
+    const { client } = tableClient({
+      payment_operations: [{ data: null, error: null, count: 2 }],
     });
-    // Consumed-and-paid is the HEALTHY shape — not a guard row.
-    expect(byId.get('a-ok')).toMatchObject({ guard: false, state: 'consumed' });
-    expect(guardCount).toBe(1);
+    client.rpc.mockResolvedValueOnce({ data: [], error: null } as never); // the exact-email lookup
+
+    const list = await listStaffAssignments({ q: 'missing@example.com' });
+
+    expect(client.rpc).toHaveBeenCalledWith('admin_lookup_account_by_email', { _email: 'missing@example.com' });
+    expect(client.rpc).not.toHaveBeenCalledWith('admin_list_coupon_assignments', expect.anything());
+    expect(list).toMatchObject({ rows: [], total: 0, globalGuardCount: 2, guardCheckStatus: 'ok' });
+  });
+
+  it('the global guard counts via the succeeded-payment join and is independent of the page rows', async () => {
+    const { client, calls } = tableClient({
+      profiles: [{ data: [], error: null }],
+      payment_operations: [{ data: null, error: null, count: 3 }],
+    });
+    client.rpc.mockResolvedValueOnce({ data: [rpcRow()], error: null } as never);
+
+    const list = await listStaffAssignments({ status: 'waiting' });
+
+    expect(list.globalGuardCount).toBe(3);
+    expect(list.guardCheckStatus).toBe('ok');
+    // Attribution is the pricing-round join with outcome=succeeded only — pending never masks it.
+    const guardCall = calls.payment_operations[0];
+    expect(guardCall.eq).toHaveBeenCalledWith('outcome', 'succeeded');
+    expect(guardCall.neq).toHaveBeenCalledWith('campaign_pricing.coupon_assignments.state', 'consumed');
+  });
+
+  it('a FAILED guard check reports failed with a null count — never a clean zero', async () => {
+    const { client } = tableClient({
+      profiles: [{ data: [], error: null }],
+      payment_operations: [{ data: null, error: { message: 'boom' }, count: null }],
+    });
+    client.rpc.mockResolvedValueOnce({ data: [], error: null } as never);
+
+    const list = await listStaffAssignments();
+
+    expect(list.guardCheckStatus).toBe('failed');
+    expect(list.globalGuardCount).toBeNull();
+  });
+
+  it('a failed list read THROWS a safe message — the screen renders an error with retry, not an empty list', async () => {
+    const { client } = tableClient({});
+    client.rpc.mockResolvedValueOnce({ data: null, error: { message: 'boom' } } as never);
+
+    await expect(listStaffAssignments()).rejects.toThrow('טעינת ההטבות נכשלה');
   });
 
   it('gate: rejects without manage_billing and reads nothing', async () => {
@@ -374,5 +351,93 @@ describe('listStaffAssignments (task 7.3 — the screen reads held states and th
 
     await expect(listStaffAssignments()).rejects.toThrow('redirect');
     expect(client.from).not.toHaveBeenCalled();
+    expect(client.rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe('lookupStaffAssignmentRecipient (ג.1 — three distinct answers)', () => {
+  it('found: one indexed SQL lookup (no page-capped scan), with the account and its active benefits', async () => {
+    const { client } = tableClient({});
+    client.rpc.mockResolvedValueOnce({
+      data: [{ id: 'u-9', email: 'c@x.il', full_name: 'נועם' }],
+      error: null,
+    } as never);
+    vi.mocked(listEligibleBenefits).mockResolvedValue([
+      {
+        assignmentId: 'a-1', state: 'assigned', boundCampaignId: null,
+        expiresAt: FUTURE, claimed: true,
+        options: [{ packageId: 'p-1', listPrice: 100, discountAmount: 10, finalPrice: 90 }],
+      },
+    ] as never);
+
+    const r = await lookupStaffAssignmentRecipient('c@x.il');
+
+    expect(client.rpc).toHaveBeenCalledWith('admin_lookup_account_by_email', { _email: 'c@x.il' });
+    expect(r).toMatchObject({
+      status: 'found',
+      account: { id: 'u-9', email: 'c@x.il', name: 'נועם' },
+      activeBenefits: [{ summary: '90₪' }],
+    });
+  });
+
+  it('not_found is a REAL absence — an empty lookup answer, not a capped scan that gave up', async () => {
+    const { client } = tableClient({});
+    client.rpc.mockResolvedValueOnce({ data: [], error: null } as never);
+
+    expect(await lookupStaffAssignmentRecipient('missing@x.il')).toEqual({ status: 'not_found' });
+  });
+
+  it('a FAILED lookup answers unavailable — never not_found', async () => {
+    const { client } = tableClient({});
+    client.rpc.mockResolvedValueOnce({ data: null, error: { message: 'boom' } } as never);
+
+    expect(await lookupStaffAssignmentRecipient('c@x.il')).toEqual({ status: 'unavailable' });
+  });
+});
+
+describe('createStaffAssignment — the confirmed-preview match (ג.2)', () => {
+  it('drifted terms between preview and confirm are REFUSED with the re-confirm message, before any write', async () => {
+    const { calls } = tableClient({
+      offers: [{ data: offerRow, error: null }],
+      packages: [{ data: packageRows, error: null }],
+    });
+
+    await expect(
+      createStaffAssignment({
+        ...input,
+        // The staff member confirmed yesterday's price; today's computation differs.
+        confirmedOptions: [{ packageId: 'p-1', listPrice: 90, discountAmount: 4.5, finalPrice: 85.5 }],
+      }),
+    ).rejects.toThrow('תנאי ההצעה השתנו');
+
+    expect(calls.coupon_assignments).toBeUndefined(); // nothing was inserted or sent
+  });
+
+  it('matching confirmed terms proceed into the transaction', async () => {
+    const { client } = tableClient({
+      offers: [{ data: offerRow, error: null }],
+      packages: [{ data: packageRows, error: null }],
+      activity_log: [{ data: null, error: null }],
+    });
+    client.rpc.mockResolvedValueOnce({
+      data: { assignment_id: 'a-new', kept_assignment_id: 'a-new', outcome: 'created', duplicate_voided: 'none', expires_at: FUTURE },
+      error: null,
+    } as never);
+
+    const r = await createStaffAssignment({
+      ...input,
+      confirmedOptions: [{ packageId: 'p-1', listPrice: 100.5, discountAmount: 5.03, finalPrice: 95.47 }],
+    });
+    expect(r).toMatchObject({ outcome: 'created', keptAssignmentId: 'a-new' });
+  });
+
+  it('a race the pre-check missed still refuses from INSIDE the transaction', async () => {
+    const { client } = tableClient({
+      offers: [{ data: offerRow, error: null }],
+      packages: [{ data: packageRows, error: null }],
+    });
+    client.rpc.mockResolvedValueOnce({ data: null, error: { message: 'assign: terms changed' } } as never);
+
+    await expect(createStaffAssignment(input)).rejects.toThrow('תנאי ההצעה השתנו');
   });
 });

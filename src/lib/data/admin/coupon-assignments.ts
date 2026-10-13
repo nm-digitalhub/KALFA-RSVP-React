@@ -5,7 +5,11 @@ import { listEligibleBenefits, type EligibleBenefit } from '@/lib/data/coupon-be
 import { computeOfferOption, type OfferKind } from '@/lib/offers/pricing';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { normalizePhone } from '@/lib/phone';
+import { deriveAssignmentDisplayStatus, type AssignmentDisplayStatus } from '@/lib/offers/assignment-display-status';
 import { listOfferPackageChoices, listOffers } from './offers';
+
+type AdminClient = ReturnType<typeof createAdminClient>;
 
 // Staff assignment of a personal benefit (personal-coupons tasks 5.3/7.3, mockup ui/AssignNew.dc.html).
 // The STAFF source: an assignment to a specific ACCOUNT, no phone proof needed (D13; the mockup's
@@ -23,6 +27,8 @@ import { listOfferPackageChoices, listOffers } from './offers';
 
 export type StaffAssignmentResult = {
   assignmentId: string;
+  /** The assignment the flow should SHOW: on a duplicate-void of the new row, the KEPT one. */
+  keptAssignmentId: string;
   /** 'created' | 'existing' (an idempotent retry) — and whether the duplicate rule voided a row. */
   outcome: 'created' | 'existing';
   duplicateVoided: 'none' | 'new' | 'previous';
@@ -52,93 +58,61 @@ function sameOptionSet(
   const bKeys = new Set(b.map(key));
   return a.every((o) => bKeys.has(key(o)));
 }
-
-export type VoidRefusal = 'held_by_payment' | 'held_by_approved_terms' | 'already_ended';
+export type VoidRefusal =
+  | 'held_by_payment'
+  | 'held_by_review'
+  | 'held_by_approved_terms'
+  | 'already_ended'
+  | 'needs_investigation';
 export type VoidResult = { outcome: 'voided' } | { outcome: 'refused'; reason: VoidRefusal };
 
-// Staff void (tasks 5.5/7.3). The refusals are the spec's own:
-//   - a pending or in-review package payment HOLDS the assignment (D22) — an unknown payment
-//     outcome never releases, and the row is shown as held by that payment;
-//   - a benefit bound into APPROVED terms (a locked round) is not voided — the payment open guard
-//     requires the bound benefit, so voiding it would break paying the approved price; it pays in
-//     its validity or lapses (D15);
-//   - consumed or void: nothing to void.
-// A bound assignment on an UNLOCKED round is released first (the pricing returns to the list
-// price) and then voided — both audited.
-export async function voidStaffAssignment(assignmentId: string): Promise<VoidResult> {
+// The staff void (admin-panel ד.3, spec §9): decided by ONE transaction
+// (void_staff_coupon_assignment, migration 20261013002106) under locks in the canonical
+// order — release + state + the void event commit together, the staff reason is REQUIRED
+// (stored in meta.staff_reason), a no-op never answers success, and a repeat void writes
+// no second event. This wrapper only gates, forwards and maps.
+export async function voidStaffAssignment(assignmentId: string, staffReason: string): Promise<VoidResult> {
   const staff = await requirePlatformPermission('manage_billing');
   const admin = createAdminClient();
 
-  const { data: asg, error } = await admin
-    .from('coupon_assignments')
-    .select('id, state, bound_campaign_id')
-    .eq('id', assignmentId)
-    .maybeSingle();
-  if (error || !asg) throw new Error('טעינת ההטבה נכשלה');
-  if (asg.state === 'consumed' || asg.state === 'void') {
-    return { outcome: 'refused', reason: 'already_ended' };
+  const reason = staffReason.trim();
+  if (reason.length < 1 || reason.length > 500) {
+    throw new Error('נדרשת סיבת ביטול (עד 500 תווים)');
   }
 
-  if (asg.state === 'bound' && asg.bound_campaign_id) {
-    const { data: holding, error: payError } = await admin
-      .from('payment_operations')
-      .select('id')
-      .eq('campaign_id', asg.bound_campaign_id)
-      .eq('kind', 'package_purchase')
-      .in('outcome', ['pending', 'review'])
-      .limit(1)
-      .maybeSingle();
-    if (payError) throw new Error('בדיקת התשלום נכשלה');
-    if (holding) return { outcome: 'refused', reason: 'held_by_payment' };
-
-    const { data: round, error: roundError } = await admin
-      .from('campaign_pricing')
-      .select('id, locked_at, coupon_assignment_id')
-      .eq('campaign_id', asg.bound_campaign_id)
-      .is('superseded_at', null)
-      .maybeSingle();
-    if (roundError) throw new Error('טעינת המחיר נכשלה');
-    if (round?.locked_at && round.coupon_assignment_id === assignmentId) {
-      return { outcome: 'refused', reason: 'held_by_approved_terms' };
+  const { data, error } = await admin.rpc('void_staff_coupon_assignment', {
+    _staff_id: staff.id,
+    _assignment_id: assignmentId,
+    _staff_reason: reason,
+  });
+  if (error) {
+    if ((error.message ?? '').includes('not found')) {
+      const { notFound } = await import('next/navigation');
+      notFound();
     }
-
-    // Unlocked: the release function resets the pricing and frees the assignment side.
-    const { error: releaseError } = await admin.rpc('release_coupon_assignment', {
-      _assignment_id: assignmentId,
-      _reason: 'voided_by_staff',
-      _actor_user_id: staff.id,
-    });
-    if (releaseError) throw new Error('שחרור ההטבה נכשל');
+    throw new Error('ביטול ההטבה נכשל');
   }
-
-  const { error: voidError } = await admin
-    .from('coupon_assignments')
-    .update({ state: 'void' })
-    .eq('id', assignmentId)
-    .in('state', ['assigned', 'bound']);
-  if (voidError) throw new Error('ביטול ההטבה נכשל');
-
-  await admin.from('coupon_assignment_events').insert({
-    assignment_id: assignmentId,
-    action: 'voided',
-    actor_user_id: staff.id,
-    reason: 'staff_void',
-  });
-  await logActivity({
-    action: 'coupon.voided',
-    meta: { assignmentId, by: 'staff' },
-  });
-  return { outcome: 'voided' };
+  const result = data as { outcome: 'voided' | 'refused'; reason?: VoidRefusal };
+  if (result.outcome === 'voided') {
+    await logActivity({ action: 'coupon.voided', meta: { assignmentId, by: 'staff' } });
+    return { outcome: 'voided' };
+  }
+  return { outcome: 'refused', reason: result.reason ?? 'already_ended' };
 }
+
+export type ConfirmedOption = { packageId: string; listPrice: number; discountAmount: number; finalPrice: number };
 
 export async function createStaffAssignment({
   userId,
   offerId,
   idempotencyKey,
+  confirmedOptions,
 }: {
   userId: string;
   offerId: string;
   idempotencyKey: string;
+  /** The preview the staff member confirmed — validated INSIDE the create transaction. */
+  confirmedOptions?: ConfirmedOption[];
 }): Promise<StaffAssignmentResult> {
   const staff = await requirePlatformPermission('manage_billing');
   const admin = createAdminClient();
@@ -156,7 +130,9 @@ export async function createStaffAssignment({
   const allowed = offer.offer_packages ?? [];
   if (allowed.length === 0) throw new Error('להצעה אין חבילות');
 
-  // The options, frozen from the packages' CURRENT prices via the one shared computation.
+  // The terms, from the packages' CURRENT prices via the one shared computation. These are
+  // what the RPC receives as the confirmed preview — SERVER-computed; when the staff member
+  // confirmed a preview, it must match these exactly or the answer is the re-confirm error.
   const { data: packages, error: packagesError } = await admin
     .from('packages')
     .select('id, name, price_with_vat')
@@ -184,124 +160,109 @@ export async function createStaffAssignment({
     };
   });
 
-  const expiresAt = new Date(Date.now() + offer.validity_days * 24 * 60 * 60 * 1000).toISOString();
+  // A confirmed preview that differs from today's terms refuses BEFORE the transaction —
+  // the same comparison runs again inside the RPC under locks (ד.2), so a race between
+  // this check and the commit still refuses there.
+  if (confirmedOptions) {
+    const agorot = (n: number) => Math.round(n * 100);
+    const byPackage = new Map(confirmedOptions.map((o) => [o.packageId, o]));
+    const drifted =
+      confirmedOptions.length !== options.length ||
+      options.some((o) => {
+        const c = byPackage.get(o.packageId);
+        return (
+          !c ||
+          agorot(c.listPrice) !== agorot(o.listPrice) ||
+          agorot(c.discountAmount) !== agorot(o.discountAmount) ||
+          agorot(c.finalPrice) !== agorot(o.finalPrice)
+        );
+      });
+    if (drifted) throw new Error('תנאי ההצעה השתנו. בדקו ואשרו מחדש.');
+  }
 
-  // The account's active benefits BEFORE the insert — the duplicate comparison set (D18). The
-  // account's auth user supplies the verified phone, so an unclaimed phone benefit counts too.
-  const { data: authUser } = await admin.auth.admin.getUserById(userId);
-  const activeBefore: EligibleBenefit[] = authUser?.user
-    ? await listEligibleBenefits(authUser.user)
-    : await listEligibleBenefits({ id: userId, phone: undefined, phone_confirmed_at: undefined });
-  const activeUnexpired = activeBefore.filter((b) => Date.parse(b.expiresAt) > Date.now());
-
-  const { data: inserted, error: insertError } = await admin
-    .from('coupon_assignments')
-    .insert({
-      offer_id: offer.id,
-      assigned_by: staff.id,
-      user_id: userId,
-      kind,
-      value: offer.value,
-      expires_at: expiresAt,
-      idempotency_key: idempotencyKey,
-    })
-    .select('id')
-    .single();
-
-  if (insertError) {
-    // 23505 on (assigned_by, idempotency_key): the idempotent retry — the existing assignment IS
-    // the answer; no second assignment, no second duplicate pass.
-    if (insertError.code === '23505') {
-      const { data: existing } = await admin
-        .from('coupon_assignments')
-        .select('id, expires_at')
-        .eq('assigned_by', staff.id)
-        .eq('idempotency_key', idempotencyKey)
-        .maybeSingle();
-      if (existing) {
-        return {
-          assignmentId: existing.id,
-          outcome: 'existing',
-          duplicateVoided: 'none',
-          expiresAt: existing.expires_at,
-          options: options.map(({ packageId, packageName, listPrice, finalPrice }) => ({
-            packageId,
-            packageName,
-            listPrice,
-            finalPrice,
-          })),
-        };
-      }
+  // ONE transaction (create_staff_coupon_assignment, migration 20261013001527): assignment +
+  // frozen options + the 'assigned' event + the in-transaction preview validation + the
+  // duplicate rule. No TS-side compensation remains — a failure at any step persists nothing.
+  const { data, error } = await admin.rpc('create_staff_coupon_assignment', {
+    _staff_id: staff.id,
+    _user_id: userId,
+    _offer_id: offerId,
+    _idempotency_key: idempotencyKey,
+    _confirmed_options: options.map(({ packageId, listPrice, discountAmount, finalPrice }) => ({
+      package_id: packageId,
+      list_price: listPrice,
+      discount_amount: discountAmount,
+      final_price: finalPrice,
+    })),
+  });
+  if (error) {
+    const msg = error.message ?? '';
+    if (msg.includes('terms changed')) throw new Error('תנאי ההצעה השתנו. בדקו ואשרו מחדש.');
+    if (msg.includes('key already used')) {
+      throw new Error('מפתח הפעולה כבר שימש להקצאה אחרת — יש לפתוח הקצאה חדשה');
+    }
+    if (msg.includes('account not found')) throw new Error('החשבון לא נמצא');
+    if (msg.includes('offer unavailable') || msg.includes('not staff-assignable')) {
+      throw new Error('ההצעה אינה זמינה להקצאה');
     }
     throw new Error('הקצאת ההטבה נכשלה');
   }
+  const result = data as {
+    assignment_id: string;
+    kept_assignment_id: string;
+    outcome: 'created' | 'existing';
+    duplicate_voided: 'none' | 'new' | 'previous';
+    expires_at: string;
+  };
 
-  const { error: optionsError } = await admin.from('coupon_assignment_options').insert(
-    options.map((o) => ({
-      assignment_id: inserted.id,
-      package_id: o.packageId,
-      list_price: o.listPrice,
-      discount_amount: o.discountAmount,
-      final_price: o.finalPrice,
-    })),
-  );
-  if (optionsError) {
-    await admin.from('coupon_assignments').delete().eq('id', inserted.id);
-    throw new Error('הקצאת ההטבה נכשלה');
+  if (result.outcome === 'existing') {
+    // The idempotent replay answers the STORED promise — never today's computation.
+    const { data: stored } = await admin
+      .from('coupon_assignment_options')
+      .select('package_id, list_price, final_price, packages(name)')
+      .eq('assignment_id', result.assignment_id);
+    return {
+      assignmentId: result.assignment_id,
+      keptAssignmentId: result.kept_assignment_id,
+      outcome: 'existing',
+      duplicateVoided: 'none',
+      expiresAt: result.expires_at,
+      options: ((stored ?? []) as { package_id: string; list_price: number; final_price: number; packages: { name: string } | null }[]).map(
+        (o) => ({
+          packageId: o.package_id,
+          packageName: o.packages?.name ?? '',
+          listPrice: Number(o.list_price),
+          finalPrice: Number(o.final_price),
+        }),
+      ),
+    };
   }
 
-  await admin.from('coupon_assignment_events').insert({
-    assignment_id: inserted.id,
-    action: 'assigned',
-    actor_user_id: staff.id,
-    reason: null,
-  });
   await logActivity({
     action: 'coupon.assigned',
     meta: {
-      assignmentId: inserted.id,
+      assignmentId: result.assignment_id,
       offerId: offer.id,
       targetUserId: userId,
       packageIds: options.map((o) => o.packageId),
     },
   });
-
-  // D18's duplicate rule, after the insert: an identical option set may not stay twice — the one
-  // whose validity ends SOONER is voided, audited as a duplicate. A bound duplicate is left alone
-  // (its campaign relies on it); best-price binding already neutralizes it.
-  let duplicateVoided: StaffAssignmentResult['duplicateVoided'] = 'none';
-  const newSet = options.map(({ packageId, finalPrice }) => ({ packageId, finalPrice }));
-  const duplicate = activeUnexpired.find(
-    (b) => b.state === 'assigned' && sameOptionSet(newSet, b.options),
-  );
-  if (duplicate) {
-    const newExpiresLater = Date.parse(expiresAt) >= Date.parse(duplicate.expiresAt);
-    const voidedId = newExpiresLater ? duplicate.assignmentId : inserted.id;
-    duplicateVoided = newExpiresLater ? 'previous' : 'new';
-    const { error: voidError } = await admin
-      .from('coupon_assignments')
-      .update({ state: 'void' })
-      .eq('id', voidedId)
-      .eq('state', 'assigned');
-    if (!voidError) {
-      await admin.from('coupon_assignment_events').insert({
-        assignment_id: voidedId,
-        action: 'voided',
-        actor_user_id: staff.id,
-        reason: 'duplicate',
-      });
-      await logActivity({
-        action: 'coupon.voided_duplicate',
-        meta: { assignmentId: voidedId, keptAssignmentId: newExpiresLater ? inserted.id : duplicate.assignmentId },
-      });
-    }
+  if (result.duplicate_voided !== 'none') {
+    await logActivity({
+      action: 'coupon.voided_duplicate',
+      meta: {
+        assignmentId: result.duplicate_voided === 'new' ? result.assignment_id : result.kept_assignment_id,
+        keptAssignmentId: result.kept_assignment_id,
+      },
+    });
   }
 
   return {
-    assignmentId: inserted.id,
+    assignmentId: result.assignment_id,
+    keptAssignmentId: result.kept_assignment_id,
     outcome: 'created',
-    duplicateVoided,
-    expiresAt,
+    duplicateVoided: result.duplicate_voided,
+    expiresAt: result.expires_at,
     options: options.map(({ packageId, packageName, listPrice, finalPrice }) => ({
       packageId,
       packageName,
@@ -311,31 +272,41 @@ export async function createStaffAssignment({
   };
 }
 
-// ── The staff list (task 7.3, mockup ui/Assignments.dc.html) ────────────────
+// ── The staff list (admin-panel change, AD3; spec §6) ───────────────────────
+
+export type AssignmentListFilters = {
+  /** Exact email (resolved to the account) or exact phone — never a partial search. */
+  q?: string;
+  /** A display bucket, or 'guard' for the "דורש בדיקה" entry. */
+  status?: 'waiting' | 'bound' | 'consumed' | 'cancelled' | 'expired' | 'guard';
+  source?: 'agent' | 'staff';
+  offer?: string;
+  sort?: 'newest' | 'oldest' | 'expiry';
+  page?: number;
+};
 
 export type StaffAssignmentListRow = {
   id: string;
   createdAt: string;
   expiresAt: string;
-  state: 'assigned' | 'bound' | 'consumed' | 'void';
+  display: AssignmentDisplayStatus;
   offerTitle: string;
-  source: { kind: 'agent' } | { kind: 'staff' };
-  target: { userEmail: string | null; phoneMasked: string | null; claimed: boolean };
-  options: { packageName: string; finalPrice: number }[];
-  bound: { eventName: string | null; packageName: string | null; finalPrice: number | null } | null;
-  /** The bound campaign's package payment, as the screen shows it. */
-  payment: 'none' | 'pending' | 'review' | 'succeeded';
-  /** Why the void button is disabled (D22/D10); null = void is offered. */
-  heldBy: 'payment' | 'review' | 'approved_terms' | null;
-  /** D10's guard: a SUCCEEDED payment whose assignment was not consumed — data damage to surface. */
-  guard: boolean;
+  target: { name: string | null; email: string | null; phoneMasked: string | null; claimed: boolean };
+  sourceKind: 'agent' | 'staff';
 };
 
 export type StaffAssignmentList = {
   rows: StaffAssignmentListRow[];
-  /** D10 guard rows in the whole set — the banner says plainly whether any exist. */
-  guardCount: number;
+  /** Total of the FILTERED set — never the page length. */
+  total: number;
+  page: number;
+  pageSize: number;
+  /** D10 over the WHOLE dataset via pricing_round_id; null when the check failed. */
+  globalGuardCount: number | null;
+  guardCheckStatus: 'ok' | 'failed';
 };
+
+const LIST_PAGE_SIZE = 25;
 
 // The caller sees most of a number, never all of it: +9725…123 keeps the prefix and last 3.
 function maskPhone(phone: string): string {
@@ -343,163 +314,217 @@ function maskPhone(phone: string): string {
   return `${phone.slice(0, 5)}…${phone.slice(-3)}`;
 }
 
-// Every assignment with its source, target, frozen options, bound campaign, and that campaign's
-// package-payment outcome (the spec's staff-visibility requirement). Batched reads — never per-row
-// queries against campaigns/payments; the user-email lookups go per UNIQUE id through the Auth
-// admin API (small, capped set).
-export async function listStaffAssignments(): Promise<StaffAssignmentList> {
-  await requirePlatformPermission('manage_billing');
-  const admin = createAdminClient();
+// Invalid parameters normalize to defaults (spec §6) — a crafted URL can shape nothing here.
+type NormalizedFilters = Omit<AssignmentListFilters, 'sort' | 'page'> & {
+  sort: NonNullable<AssignmentListFilters['sort']>;
+  page: number;
+};
 
-  const { data, error } = await admin
-    .from('coupon_assignments')
-    .select(
-      'id, created_at, expires_at, state, user_id, phone_e164, sales_call_attempt_id, assigned_by, bound_campaign_id, offers(title), coupon_assignment_options(final_price, packages(name))',
-    )
-    .order('created_at', { ascending: false })
-    .limit(200);
-  if (error) throw new Error('טעינת ההטבות נכשלה');
-
-  type Row = {
-    id: string;
-    created_at: string;
-    expires_at: string;
-    state: string;
-    user_id: string | null;
-    phone_e164: string | null;
-    sales_call_attempt_id: string | null;
-    assigned_by: string | null;
-    bound_campaign_id: string | null;
-    offers: { title: string } | null;
-    coupon_assignment_options: { final_price: number; packages: { name: string } | null }[] | null;
+function normalizeFilters(filters: AssignmentListFilters): NormalizedFilters {
+  const statuses = ['waiting', 'bound', 'consumed', 'cancelled', 'expired', 'guard'] as const;
+  const sources = ['agent', 'staff'] as const;
+  const sorts = ['newest', 'oldest', 'expiry'] as const;
+  const page = Number.isInteger(filters.page) && (filters.page as number) >= 1 ? (filters.page as number) : 1;
+  return {
+    q: filters.q?.trim() || undefined,
+    status: statuses.includes(filters.status as never) ? filters.status : undefined,
+    source: sources.includes(filters.source as never) ? filters.source : undefined,
+    offer: /^[0-9a-f-]{36}$/i.test(filters.offer ?? '') ? filters.offer : undefined,
+    sort: sorts.includes(filters.sort as never) ? (filters.sort as 'newest') : 'newest',
+    page,
   };
-  const rows = (data ?? []) as Row[];
-
-  // The bound campaigns: event name + the chosen package's name, one query.
-  const campaignIds = [...new Set(rows.map((r) => r.bound_campaign_id).filter((x): x is string => !!x))];
-  const campaignById = new Map<string, { eventName: string | null; packageName: string | null; templateId: string | null }>();
-  const lockedCampaigns = new Set<string>();
-  if (campaignIds.length > 0) {
-    const { data: campaigns, error: cErr } = await admin
-      .from('campaigns')
-      .select('id, template_id, events(name), packages(name)')
-      .in('id', campaignIds);
-    if (cErr) throw new Error('טעינת הקמפיינים נכשלה');
-    for (const c of (campaigns ?? []) as Array<{ id: string; template_id: string | null; events: { name: string } | null; packages: { name: string } | null }>) {
-      campaignById.set(c.id, {
-        eventName: c.events?.name ?? null,
-        packageName: c.packages?.name ?? null,
-        templateId: c.template_id,
-      });
-    }
-
-    const { data: lockedRounds, error: lErr } = await admin
-      .from('campaign_pricing')
-      .select('campaign_id, locked_at')
-      .in('campaign_id', campaignIds)
-      .is('superseded_at', null);
-    if (lErr) throw new Error('טעינת המחירים נכשלה');
-    for (const r of lockedRounds ?? []) {
-      if (r.locked_at) lockedCampaigns.add(r.campaign_id);
-    }
-  }
-
-  // The package payments of those campaigns, one query; precedence for display: pending > review > succeeded.
-  const paymentByCampaign = new Map<string, StaffAssignmentListRow['payment']>();
-  if (campaignIds.length > 0) {
-    const { data: payments, error: pErr } = await admin
-      .from('payment_operations')
-      .select('campaign_id, outcome')
-      .in('campaign_id', campaignIds)
-      .eq('kind', 'package_purchase')
-      .in('outcome', ['pending', 'review', 'succeeded']);
-    if (pErr) throw new Error('טעינת התשלומים נכשלה');
-    const rank = { pending: 3, review: 2, succeeded: 1 } as const;
-    for (const p of payments ?? []) {
-      if (!p.campaign_id) continue;
-      const held = paymentByCampaign.get(p.campaign_id);
-      const next = p.outcome as keyof typeof rank;
-      if (!held || rank[next] > rank[held as keyof typeof rank]) paymentByCampaign.set(p.campaign_id, next);
-    }
-  }
-
-  // The claimed accounts' emails — per unique id, through the Auth admin API (the set is small).
-  const userIds = [...new Set(rows.map((r) => r.user_id).filter((x): x is string => !!x))];
-  const emailById = new Map<string, string | null>();
-  for (const id of userIds) {
-    const { data: u } = await admin.auth.admin.getUserById(id);
-    emailById.set(id, u?.user?.email ?? null);
-  }
-
-  let guardCount = 0;
-  const out: StaffAssignmentListRow[] = rows.map((r) => {
-    const bound = r.bound_campaign_id ? (campaignById.get(r.bound_campaign_id) ?? null) : null;
-    const payment = r.bound_campaign_id ? (paymentByCampaign.get(r.bound_campaign_id) ?? 'none') : 'none';
-    const boundFinal =
-      bound?.templateId != null
-        ? (r.coupon_assignment_options ?? []).find((o) => o.packages?.name === bound.packageName)?.final_price ?? null
-        : null;
-    const guard = payment === 'succeeded' && r.state !== 'consumed';
-    if (guard) guardCount += 1;
-    const heldBy: StaffAssignmentListRow['heldBy'] =
-      r.state !== 'assigned' && r.state !== 'bound'
-        ? null
-        : payment === 'pending'
-          ? 'payment'
-          : payment === 'review'
-            ? 'review'
-            : r.bound_campaign_id && lockedCampaigns.has(r.bound_campaign_id)
-              ? 'approved_terms'
-              : null;
-    return {
-      id: r.id,
-      createdAt: r.created_at,
-      expiresAt: r.expires_at,
-      state: (['assigned', 'bound', 'consumed', 'void'] as const).includes(r.state as never)
-        ? (r.state as StaffAssignmentListRow['state'])
-        : 'void',
-      offerTitle: r.offers?.title ?? '',
-      source: r.sales_call_attempt_id ? { kind: 'agent' } : { kind: 'staff' },
-      target: {
-        userEmail: r.user_id ? (emailById.get(r.user_id) ?? null) : null,
-        phoneMasked: r.phone_e164 ? maskPhone(r.phone_e164) : null,
-        claimed: r.user_id !== null,
-      },
-      options: (r.coupon_assignment_options ?? []).map((o) => ({
-        packageName: o.packages?.name ?? '',
-        finalPrice: Number(o.final_price),
-      })),
-      bound: bound
-        ? { eventName: bound.eventName, packageName: bound.packageName, finalPrice: boundFinal != null ? Number(boundFinal) : null }
-        : null,
-      payment,
-      heldBy,
-      guard,
-    };
-  });
-
-  return { rows: out, guardCount };
 }
 
-// An EXACT-email account lookup for the assign form (the mockup's search field). The Auth admin
-// API has no email filter, so this scans capped pages for an exact, case-insensitive match —
-// fine at this platform's account scale, and never a substring search that could leak lookalikes.
-export async function findAccountByEmail(
-  email: string,
-): Promise<{ id: string; email: string } | null> {
+type ListRpcRow = {
+  id: string;
+  created_at: string;
+  expires_at: string;
+  state: string;
+  end_reason: string | null;
+  offer_title: string | null;
+  user_id: string | null;
+  phone_e164: string | null;
+  source_kind: 'agent' | 'staff';
+  total_count: number;
+};
+
+// The global D10 guard (AD4): succeeded package payments whose pricing round carries a
+// non-consumed assignment — attributed ONLY via pricing_round_id, over the whole dataset.
+// A failed check is reported as failed, never as "no exceptions".
+async function countGlobalGuard(admin: AdminClient): Promise<{ count: number | null; status: 'ok' | 'failed' }> {
+  const { count, error } = await admin
+    .from('payment_operations')
+    .select('id, campaign_pricing!inner(coupon_assignment_id, coupon_assignments!inner(id, state))', {
+      count: 'exact',
+      head: true,
+    })
+    .eq('kind', 'package_purchase')
+    .eq('outcome', 'succeeded')
+    .neq('campaign_pricing.coupon_assignments.state', 'consumed');
+  if (error || typeof count !== 'number') return { count: null, status: 'failed' };
+  return { count, status: 'ok' };
+}
+
+// Every filter, the sort and the pagination run in SQL (admin_list_coupon_assignments,
+// migration 20261012234733) — never limit(200) + in-memory. The q term resolves to an
+// account (exact email) or an exact normalized phone BEFORE the query; an email that
+// matches no account is an honest empty result.
+export async function listStaffAssignments(
+  rawFilters: AssignmentListFilters = {},
+): Promise<StaffAssignmentList> {
   await requirePlatformPermission('manage_billing');
   const admin = createAdminClient();
-  const needle = email.trim().toLowerCase();
-  if (!needle) return null;
+  const filters = normalizeFilters(rawFilters);
 
-  for (let page = 1; page <= 5; page += 1) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 });
-    if (error) throw new Error('חיפוש החשבון נכשל');
-    const hit = data.users.find((u) => (u.email ?? '').toLowerCase() === needle);
-    if (hit) return { id: hit.id, email: hit.email ?? needle };
-    if (data.users.length < 200) break;
+  let qUserId: string | null = null;
+  let qPhone: string | null = null;
+  if (filters.q) {
+    const phone = normalizePhone(filters.q);
+    if (phone) {
+      qPhone = phone;
+    } else {
+      const account = await findAccountByEmail(filters.q);
+      if (!account) {
+        const guard = await countGlobalGuard(admin);
+        return {
+          rows: [], total: 0, page: 1, pageSize: LIST_PAGE_SIZE,
+          globalGuardCount: guard.count, guardCheckStatus: guard.status,
+        };
+      }
+      qUserId = account.id;
+    }
   }
-  return null;
+
+  const callList = async (page: number) => {
+    const { data, error } = await admin.rpc('admin_list_coupon_assignments', {
+      _user_id: qUserId,
+      _phone: qPhone,
+      _status: filters.status ?? null,
+      _source: filters.source ?? null,
+      _offer_id: filters.offer ?? null,
+      _sort: filters.sort,
+      _page: page,
+      _page_size: LIST_PAGE_SIZE,
+    });
+    if (error) throw new Error('טעינת ההטבות נכשלה');
+    return (data ?? []) as ListRpcRow[];
+  };
+
+  let page = filters.page;
+  let rows = await callList(page);
+  let total = rows[0]?.total_count ?? 0;
+  if (rows.length === 0 && page > 1) {
+    // Out-of-range page: correct to the last page while keeping the filters (spec §6).
+    const probe = await callList(1);
+    total = probe[0]?.total_count ?? 0;
+    page = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
+    rows = page === 1 ? probe : await callList(page);
+  }
+
+  // Names batched from profiles; emails only for claimed rows still missing a name —
+  // bounded by the page size, never a serial pass over the whole table.
+  const userIds = [...new Set(rows.map((r) => r.user_id).filter((x): x is string => !!x))];
+  const nameById = new Map<string, string>();
+  if (userIds.length > 0) {
+    const { data: profiles } = await admin.from('profiles').select('id, full_name').in('id', userIds);
+    for (const p of profiles ?? []) {
+      if (typeof p.full_name === 'string' && p.full_name.trim() !== '') nameById.set(p.id, p.full_name);
+    }
+  }
+  const emailById = new Map<string, string | null>();
+  await Promise.all(
+    userIds
+      .filter((id) => !nameById.has(id))
+      .map(async (id) => {
+        const { data: u } = await admin.auth.admin.getUserById(id);
+        emailById.set(id, u?.user?.email ?? null);
+      }),
+  );
+
+  const out: StaffAssignmentListRow[] = rows.map((r) => ({
+    id: r.id,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+    display: deriveAssignmentDisplayStatus({
+      state: r.state,
+      expiresAt: r.expires_at,
+      endReason: r.end_reason,
+    }),
+    offerTitle: r.offer_title ?? '',
+    target: {
+      name: r.user_id ? (nameById.get(r.user_id) ?? null) : null,
+      email: r.user_id ? (emailById.get(r.user_id) ?? null) : null,
+      phoneMasked: r.phone_e164 ? maskPhone(r.phone_e164) : null,
+      claimed: r.user_id !== null,
+    },
+    sourceKind: r.source_kind,
+  }));
+
+  const guard = await countGlobalGuard(admin);
+  return {
+    rows: out,
+    total,
+    page,
+    pageSize: LIST_PAGE_SIZE,
+    globalGuardCount: guard.count,
+    guardCheckStatus: guard.status,
+  };
+}
+
+// An EXACT-email account lookup (AD6): one indexed SQL query (admin_lookup_account_by_email,
+// migration 20261013000428) — a user beyond any provider page limit is still found, and a
+// lookup FAILURE throws (the callers show a failure, never "not found").
+export async function findAccountByEmail(
+  email: string,
+): Promise<{ id: string; email: string; name: string | null } | null> {
+  await requirePlatformPermission('manage_billing');
+  const admin = createAdminClient();
+  const needle = email.trim();
+  if (!needle) return null;
+  const { data, error } = await admin.rpc('admin_lookup_account_by_email', { _email: needle });
+  if (error) throw new Error('חיפוש החשבון נכשל');
+  const hit = (data ?? [])[0] as { id: string; email: string; full_name: string | null } | undefined;
+  return hit ? { id: hit.id, email: hit.email, name: hit.full_name } : null;
+}
+
+// The assign screen's account step (spec §8): found / not_found / unavailable are THREE
+// distinct answers — a failed lookup is never presented as a missing account — and a found
+// account comes with a short list of its ACTIVE benefits for the staff member to see.
+export type RecipientLookup =
+  | {
+      status: 'found';
+      account: { id: string; email: string; name: string | null };
+      activeBenefits: { summary: string; expiresAt: string }[];
+    }
+  | { status: 'not_found' }
+  | { status: 'unavailable' };
+
+export async function lookupStaffAssignmentRecipient(email: string): Promise<RecipientLookup> {
+  await requirePlatformPermission('manage_billing');
+  try {
+    const account = await findAccountByEmail(email);
+    if (!account) return { status: 'not_found' };
+
+    const admin = createAdminClient();
+    let activeBenefits: { summary: string; expiresAt: string }[] = [];
+    try {
+      const { data: authUser } = await admin.auth.admin.getUserById(account.id);
+      const eligible: EligibleBenefit[] = authUser?.user
+        ? await listEligibleBenefits(authUser.user)
+        : await listEligibleBenefits({ id: account.id, phone: undefined, phone_confirmed_at: undefined });
+      activeBenefits = eligible
+        .filter((b) => Date.parse(b.expiresAt) > Date.now())
+        .map((b) => ({
+          summary: (b.options ?? []).map((o) => `${o.finalPrice}₪`).join(', '),
+          expiresAt: b.expiresAt,
+        }));
+    } catch {
+      activeBenefits = [];
+    }
+    return { status: 'found', account, activeBenefits };
+  } catch {
+    return { status: 'unavailable' };
+  }
 }
 
 // ── The assign form's offer choices (task 7.3, mockup ui/AssignNew.dc.html) ──
@@ -513,9 +538,11 @@ export type AssignableOffer = {
   title: string;
   /** "5%" or the formatted amount — the select's label next to the title. */
   valueLabel: string;
-  /** The expiry the assignment WOULD get if created now (now + validity days), pre-formatted. */
+  /** The expiry the assignment WOULD get if created now — an ESTIMATE until assignment. */
   expiresLabel: string;
   options: { name: string; listPrice: string; finalPrice: string }[];
+  /** The raw terms the form echoes back as the CONFIRMED preview (ג.2/ד.2). */
+  rawOptions: ConfirmedOption[];
 };
 
 export async function listAssignableOffers(
@@ -531,6 +558,7 @@ export async function listAssignableOffers(
     if (!offer.is_active || !offer.allow_staff || offer.packages.length === 0) continue;
     const kind: OfferKind = offer.kind === 'amount' ? 'amount' : 'percent';
     const options: AssignableOffer['options'] = [];
+    const rawOptions: ConfirmedOption[] = [];
     let honorable = true;
     for (const allowed of offer.packages) {
       const pkg = byPackage.get(allowed.package_id);
@@ -538,7 +566,7 @@ export async function listAssignableOffers(
         honorable = false;
         break;
       }
-      const { finalPrice } = computeOfferOption(pkg.price, kind, Number(allowed.value_override ?? offer.value));
+      const { discountAmount, finalPrice } = computeOfferOption(pkg.price, kind, Number(allowed.value_override ?? offer.value));
       if (finalPrice <= 0) {
         honorable = false;
         break;
@@ -547,6 +575,12 @@ export async function listAssignableOffers(
         name: pkg.name,
         listPrice: format.currency(pkg.price),
         finalPrice: format.currency(finalPrice),
+      });
+      rawOptions.push({
+        packageId: allowed.package_id,
+        listPrice: pkg.price,
+        discountAmount,
+        finalPrice,
       });
     }
     if (!honorable || options.length === 0) continue;
@@ -557,7 +591,346 @@ export async function listAssignableOffers(
       valueLabel: kind === 'percent' ? `${Number(offer.value)}%` : format.currency(Number(offer.value)),
       expiresLabel: format.date(new Date(nowMs + offer.validity_days * 24 * 60 * 60 * 1000)),
       options,
+      rawOptions,
     });
   }
   return assignable;
+}
+
+// ── The assignment detail (admin-panel change, AD5; spec §7) ─────────────────
+// One reader for /admin/assignments/[id]: every section the screen shows, allowedActions
+// as DISPLAY-ONLY advice (the void re-decides under locks), and SECTION-LEVEL failure
+// markers — a failed side read never takes down the main record. Payments are attributed
+// through THIS assignment's pricing rounds (pricing_round_id), never by campaign ranking.
+
+const EVENT_ACTION_LABELS: Record<string, string> = {
+  assigned: 'הוקצתה',
+  bound: 'שויכה לאירוע',
+  moved: 'הועברה לחבילה אחרת',
+  released: 'שוחררה מהאירוע',
+  unbound_no_option: 'שוחררה — לחבילה אין אפשרות בהטבה',
+  voided: 'בוטלה',
+  consumed: 'מומשה',
+  supersede_opened: 'נפתח עדכון תנאים',
+};
+
+type Unavailable = 'unavailable';
+
+export type StaffAssignmentDetail = {
+  assignment: {
+    id: string;
+    createdAt: string;
+    expiresAt: string;
+    state: string;
+    display: AssignmentDisplayStatus;
+    /** The SAVED terms — never the offer's current values. */
+    kind: 'percent' | 'amount';
+    value: number;
+    offerId: string | null;
+    /** The offer's CURRENT title — a description, not a frozen snapshot (spec §7). */
+    offerTitle: string | null;
+  };
+  recipient:
+    | {
+        userId: string | null;
+        name: string | null;
+        email: string | null;
+        phoneMasked: string | null;
+        claimed: boolean;
+        claimedAt: string | null;
+      }
+    | Unavailable;
+  source:
+    | { kind: 'agent'; callAttemptId: string; callbackRequestId: string | null; objectionReason: string | null }
+    | { kind: 'staff'; assignedById: string; assignedByName: string | null }
+    | { kind: 'unknown' };
+  frozenOptions:
+    | { packageId: string; packageName: string; listPrice: number; discountAmount: number; finalPrice: number }[]
+    | Unavailable;
+  currentBinding:
+    | {
+        campaignId: string;
+        eventId: string | null;
+        eventName: string | null;
+        packageId: string | null;
+        packageName: string | null;
+        roundPrice: number | null;
+        locked: boolean;
+      }
+    | null
+    | Unavailable;
+  paymentAttempts:
+    | { id: string; roundVersion: number | null; amount: number; at: string; outcome: string }[]
+    | Unavailable;
+  history:
+    | { at: string; actionLabel: string; known: boolean; rawAction: string; actorLabel: string; reason: string | null }[]
+    | Unavailable;
+  allowedActions: {
+    canVoid: boolean;
+    blockReason:
+      | 'held_by_payment'
+      | 'held_by_review'
+      | 'held_by_approved_terms'
+      | 'already_ended'
+      | 'consumption_exception'
+      | null;
+  };
+  warnings: string[];
+};
+
+export async function getStaffAssignmentDetail(id: string): Promise<StaffAssignmentDetail | null> {
+  await requirePlatformPermission('manage_billing');
+  const admin = createAdminClient();
+
+  const { data, error } = await admin
+    .from('coupon_assignments')
+    .select(
+      'id, created_at, expires_at, state, kind, value, user_id, phone_e164, claimed_at, sales_call_attempt_id, assigned_by, bound_campaign_id, offer_id, offers(title), coupon_assignment_options(package_id, list_price, discount_amount, final_price, packages(name))',
+    )
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error('טעינת ההטבה נכשלה');
+  if (!data) return null;
+  type BaseRow = {
+    id: string; created_at: string; expires_at: string; state: string; kind: string; value: number;
+    user_id: string | null; phone_e164: string | null; claimed_at: string | null;
+    sales_call_attempt_id: string | null; assigned_by: string | null; bound_campaign_id: string | null;
+    offer_id: string | null; offers: { title: string } | null;
+    coupon_assignment_options:
+      | { package_id: string; list_price: number; discount_amount: number; final_price: number; packages: { name: string } | null }[]
+      | null;
+  };
+  const row = data as unknown as BaseRow;
+  const warnings: string[] = [];
+
+  // History first — the display status needs the recorded end reason.
+  let history: StaffAssignmentDetail['history'];
+  let endReason: string | null = null;
+  const actorIds = new Set<string>();
+  const { data: events, error: evError } = await admin
+    .from('coupon_assignment_events')
+    .select('at, action, actor_user_id, reason')
+    .eq('assignment_id', id)
+    .order('at', { ascending: true })
+    .order('id', { ascending: true });
+  if (evError) {
+    history = 'unavailable';
+  } else {
+    const rows = (events ?? []) as { at: string; action: string; actor_user_id: string | null; reason: string | null }[];
+    for (const e of rows) if (e.actor_user_id) actorIds.add(e.actor_user_id);
+    const lastVoid = [...rows].reverse().find((e) => e.action === 'voided');
+    endReason = lastVoid?.reason ?? null;
+    const actorNames = new Map<string, string>();
+    if (actorIds.size > 0) {
+      const { data: profs } = await admin.from('profiles').select('id, full_name').in('id', [...actorIds]);
+      for (const p of profs ?? []) if (p.full_name) actorNames.set(p.id, p.full_name);
+    }
+    history = rows.map((e) => ({
+      at: e.at,
+      rawAction: e.action,
+      known: e.action in EVENT_ACTION_LABELS,
+      actionLabel: EVENT_ACTION_LABELS[e.action] ?? 'פעולה נוספת',
+      // A missing actor is NEVER attributed to the agent — it is a system write (spec §7).
+      actorLabel: e.actor_user_id ? (actorNames.get(e.actor_user_id) ?? 'איש צוות') : 'מערכת',
+      reason: e.reason,
+    }));
+  }
+
+  const display = deriveAssignmentDisplayStatus({ state: row.state, expiresAt: row.expires_at, endReason });
+
+  // Recipient — account fields fail soft: "פרטי החשבון אינם זמינים", never "טרם נרשם".
+  let recipient: StaffAssignmentDetail['recipient'];
+  try {
+    let name: string | null = null;
+    let email: string | null = null;
+    if (row.user_id) {
+      const { data: prof } = await admin.from('profiles').select('full_name').eq('id', row.user_id).maybeSingle();
+      name = prof?.full_name ?? null;
+      const { data: u, error: uErr } = await admin.auth.admin.getUserById(row.user_id);
+      if (uErr) throw uErr;
+      email = u?.user?.email ?? null;
+    }
+    recipient = {
+      userId: row.user_id,
+      name,
+      email,
+      phoneMasked: row.phone_e164 ? maskPhone(row.phone_e164) : null,
+      claimed: row.user_id !== null,
+      claimedAt: row.claimed_at,
+    };
+  } catch {
+    recipient = 'unavailable';
+  }
+
+  // Source — the agent's objection reason only when the history recorded it (spec §7).
+  let source: StaffAssignmentDetail['source'] = { kind: 'unknown' };
+  if (row.sales_call_attempt_id) {
+    let callbackRequestId: string | null = null;
+    try {
+      const { data: attempt } = await admin
+        .from('sales_call_attempts')
+        .select('callback_request_id')
+        .eq('id', row.sales_call_attempt_id)
+        .maybeSingle();
+      callbackRequestId = attempt?.callback_request_id ?? null;
+    } catch {
+      callbackRequestId = null;
+    }
+    const assignedEvent = history !== 'unavailable' ? history.find((e) => e.rawAction === 'assigned') : undefined;
+    source = {
+      kind: 'agent',
+      callAttemptId: row.sales_call_attempt_id,
+      callbackRequestId,
+      objectionReason: assignedEvent?.reason ?? null,
+    };
+  } else if (row.assigned_by) {
+    let assignedByName: string | null = null;
+    try {
+      const { data: prof } = await admin.from('profiles').select('full_name').eq('id', row.assigned_by).maybeSingle();
+      assignedByName = prof?.full_name ?? null;
+    } catch {
+      assignedByName = null;
+    }
+    source = { kind: 'staff', assignedById: row.assigned_by, assignedByName };
+  }
+
+  // Frozen options — from coupon_assignment_options ONLY; empty is a data-quality warning,
+  // never zero prices or catalogue prices as a substitute (spec §7).
+  const frozenOptions = (row.coupon_assignment_options ?? []).map((o) => ({
+    packageId: o.package_id,
+    packageName: o.packages?.name ?? '',
+    listPrice: Number(o.list_price),
+    discountAmount: Number(o.discount_amount),
+    finalPrice: Number(o.final_price),
+  }));
+  if (frozenOptions.length === 0) {
+    warnings.push('להטבה אין אפשרויות מחיר שמורות — תקלת נתונים הדורשת בדיקה.');
+  }
+
+  // The assignment's OWN pricing rounds → its payment attempts (pricing_round_id attribution).
+  let paymentAttempts: StaffAssignmentDetail['paymentAttempts'];
+  let exceptionHere = false;
+  let roundsById = new Map<string, number | null>();
+  try {
+    const { data: rounds, error: rErr } = await admin
+      .from('campaign_pricing')
+      .select('id, version')
+      .eq('coupon_assignment_id', id);
+    if (rErr) throw rErr;
+    roundsById = new Map((rounds ?? []).map((r) => [r.id as string, (r.version as number) ?? null]));
+    if (roundsById.size === 0) {
+      paymentAttempts = [];
+    } else {
+      const { data: pays, error: pErr } = await admin
+        .from('payment_operations')
+        .select('id, amount, outcome, occurred_at, pricing_round_id')
+        .in('pricing_round_id', [...roundsById.keys()])
+        .eq('kind', 'package_purchase')
+        .order('occurred_at', { ascending: true });
+      if (pErr) throw pErr;
+      const rows2 = (pays ?? []) as { id: string; amount: number; outcome: string; occurred_at: string; pricing_round_id: string | null }[];
+      paymentAttempts = rows2.map((p) => ({
+        id: p.id,
+        roundVersion: p.pricing_round_id ? (roundsById.get(p.pricing_round_id) ?? null) : null,
+        amount: Number(p.amount),
+        at: p.occurred_at,
+        outcome: p.outcome,
+      }));
+      exceptionHere = rows2.some((p) => p.outcome === 'succeeded') && row.state !== 'consumed';
+      if (exceptionHere) {
+        warnings.push('תשלום שהצליח משויך להטבה הזאת אך היא לא סומנה כמומשה — דורש בדיקה.');
+      }
+    }
+  } catch {
+    paymentAttempts = 'unavailable';
+  }
+
+  // The current binding — the chosen package is matched by package_id, never by name.
+  let currentBinding: StaffAssignmentDetail['currentBinding'] = null;
+  let heldBy: 'payment' | 'review' | 'approved_terms' | null = null;
+  if (row.bound_campaign_id) {
+    try {
+      const { data: campaign, error: cErr } = await admin
+        .from('campaigns')
+        .select('id, template_id, events(id, name), packages(name)')
+        .eq('id', row.bound_campaign_id)
+        .maybeSingle();
+      if (cErr) throw cErr;
+      const c = campaign as unknown as {
+        id: string; template_id: string | null;
+        events: { id: string; name: string } | null; packages: { name: string } | null;
+      } | null;
+      const { data: round, error: roundErr } = await admin
+        .from('campaign_pricing')
+        .select('package_price, locked_at')
+        .eq('campaign_id', row.bound_campaign_id)
+        .is('superseded_at', null)
+        .maybeSingle();
+      if (roundErr) throw roundErr;
+      currentBinding = {
+        campaignId: row.bound_campaign_id,
+        eventId: c?.events?.id ?? null,
+        eventName: c?.events?.name ?? null,
+        packageId: c?.template_id ?? null,
+        packageName: c?.packages?.name ?? null,
+        roundPrice: round?.package_price != null ? Number(round.package_price) : null,
+        locked: round?.locked_at != null,
+      };
+      if (round?.locked_at != null) heldBy = 'approved_terms';
+
+      // An OPEN campaign payment can block actions even when it is not this assignment's
+      // payment (spec §7) — campaign-level only for the HOLD, never for the exception.
+      const { data: open, error: oErr } = await admin
+        .from('payment_operations')
+        .select('outcome')
+        .eq('campaign_id', row.bound_campaign_id)
+        .eq('kind', 'package_purchase')
+        .in('outcome', ['pending', 'review'])
+        .limit(1)
+        .maybeSingle();
+      if (oErr) throw oErr;
+      if (open?.outcome === 'pending') heldBy = 'payment';
+      else if (open?.outcome === 'review') heldBy = 'review';
+      if (open && display.key === 'expired') {
+        warnings.push('תוקף ההטבה פג. התשלום הפתוח כפוף לתנאים שנשמרו בעת פתיחתו.');
+      }
+    } catch {
+      currentBinding = 'unavailable';
+    }
+  }
+
+  const ended = row.state === 'consumed' || row.state === 'void';
+  const allowedActions: StaffAssignmentDetail['allowedActions'] = ended
+    ? { canVoid: false, blockReason: 'already_ended' }
+    : exceptionHere
+      ? { canVoid: false, blockReason: 'consumption_exception' }
+      : heldBy === 'payment'
+        ? { canVoid: false, blockReason: 'held_by_payment' }
+        : heldBy === 'review'
+          ? { canVoid: false, blockReason: 'held_by_review' }
+          : heldBy === 'approved_terms'
+            ? { canVoid: false, blockReason: 'held_by_approved_terms' }
+            : { canVoid: true, blockReason: null };
+
+  return {
+    assignment: {
+      id: row.id,
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+      state: row.state,
+      display,
+      kind: row.kind === 'amount' ? 'amount' : 'percent',
+      value: Number(row.value),
+      offerId: row.offer_id,
+      offerTitle: row.offers?.title ?? null,
+    },
+    recipient,
+    source,
+    frozenOptions,
+    currentBinding,
+    paymentAttempts,
+    history,
+    allowedActions,
+    warnings,
+  };
 }

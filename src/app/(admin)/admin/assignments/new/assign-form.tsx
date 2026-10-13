@@ -6,20 +6,23 @@ import { FormError, SubmitButton } from '@/components/forms';
 import type { AssignableOffer } from '@/lib/data/admin/coupon-assignments';
 import { createAssignmentAction } from '../actions';
 
-// The assign form (task 7.3, mockup ui/AssignNew.dc.html). Everything money-shaped arrives
-// PRECOMPUTED from the server page (the same computeOfferOption the assignment freezes), so the
-// preview the staff member reads is exactly what createStaffAssignment will store. The browser
-// submits only the email, the offer id and the page's idempotency uuid — never a price.
+// The assign form (admin-panel ג.2/ג.3, spec §8). It renders only AFTER the account step
+// resolved and confirmed a real account. The offer choice is EXPLICIT — no silent default —
+// and the preview the staff member sees is echoed back as the confirmed terms, which the
+// server re-validates (and refuses with "תנאי ההצעה השתנו" when the offer drifted). The
+// browser still never sends a price of its own: the echo is compared, never trusted.
 
 export function AssignForm({
+  email,
   offers,
   idempotencyKey,
 }: {
+  email: string;
   offers: AssignableOffer[];
   idempotencyKey: string;
 }) {
   const [state, formAction, pending] = useActionState(createAssignmentAction, null);
-  const [selectedId, setSelectedId] = useState(offers[0]?.id ?? '');
+  const [selectedId, setSelectedId] = useState('');
   const selected = offers.find((o) => o.id === selectedId) ?? null;
 
   const inputClass =
@@ -28,25 +31,13 @@ export function AssignForm({
   return (
     <form action={formAction} className="flex max-w-xl flex-col gap-4">
       <FormError message={state?.error} />
+      <input type="hidden" name="email" value={email} />
       <input type="hidden" name="idempotency_key" value={idempotencyKey} />
-
-      <div className="space-y-1">
-        <label htmlFor="assign-email" className="block text-sm font-medium">
-          חשבון הלקוח
-        </label>
-        <input
-          id="assign-email"
-          name="email"
-          type="email"
-          required
-          dir="ltr"
-          placeholder="חיפוש לפי אימייל"
-          className={inputClass}
-        />
-        <p className="text-xs text-muted-foreground">
-          ההטבה ניתנת לחשבון עצמו, בלי צורך באימות טלפון.
-        </p>
-      </div>
+      <input
+        type="hidden"
+        name="confirmed_terms"
+        value={selected ? JSON.stringify(selected.rawOptions) : ''}
+      />
 
       <div className="space-y-1">
         <label htmlFor="assign-offer" className="block text-sm font-medium">
@@ -60,6 +51,9 @@ export function AssignForm({
           onChange={(e) => setSelectedId(e.target.value)}
           className={inputClass}
         >
+          <option value="" disabled>
+            בחרו הצעה…
+          </option>
           {offers.map((o) => (
             <option key={o.id} value={o.id}>
               {o.title} · {o.valueLabel}
@@ -82,14 +76,14 @@ export function AssignForm({
             ))}
           </ul>
           <p className="text-xs text-muted-foreground">
-            בתוקף עד {selected.expiresLabel}. המחירים נשמרים בהטבה, ושינוי מחיר או הצעה בהמשך לא
-            ישנה אותה.
+            תוקף משוער עד {selected.expiresLabel} — המועד הסופי נקבע ברגע ההקצאה בפועל.
+            המחירים נשמרים בהטבה, ושינוי מחיר או הצעה בהמשך לא ישנה אותה.
           </p>
         </div>
       ) : null}
 
-      <SubmitButton disabled={pending} className="h-10 w-full rounded-lg">
-        {pending ? 'מקצה…' : 'הקצאה'}
+      <SubmitButton disabled={pending || !selected} className="h-10 w-full rounded-lg">
+        {pending ? 'מקצה…' : 'הקצאת הטבה'}
       </SubmitButton>
     </form>
   );

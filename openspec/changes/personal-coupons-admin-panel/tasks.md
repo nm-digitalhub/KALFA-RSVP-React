@@ -6,65 +6,65 @@ AGENTS.md's Next.js docs note applies before UI work.
 
 ## Stage א — data layer
 
-- [ ] א.1 The unified display-status mapper (state + expires_at + history reason →
+- [x] א.1 The unified display-status mapper (state + expires_at + history reason →
   label), shared by list and detail. Verify: unit tests covering every row of the
   spec's §5 table, incl. expired-assigned → פגה and consumed-past-expiry → מומשה.
-- [ ] א.2 listStaffAssignments(filters, pagination): SQL-side q (exact normalized
+- [x] א.2 listStaffAssignments(filters, pagination): SQL-side q (exact normalized
   email/phone), status, source, offer, sort (+id tiebreak), 25/page, total of the
   filtered set; rows slim to list fields; email resolution not serial-per-row. Verify:
   tests for filter beyond 200 rows, out-of-range page correction, invalid-param
   normalization, fetch-failure shape.
-- [ ] א.3 The global guard via pricing_round_id (AD4): globalGuardCount +
+- [x] א.3 The global guard via pricing_round_id (AD4): globalGuardCount +
   guardCheckStatus, independent of page/filter; the ranking stays display-only.
   Verify: tests — exception off-page found; pending does not mask succeeded; failed
   check reported as unavailable, not zero.
-- [ ] א.4 getStaffAssignmentDetail(id) (AD5): all sections, package matching by
+- [x] א.4 getStaffAssignmentDetail(id) (AD5): all sections, package matching by
   package_id, payment attempts via pricing_round_id, history ordered at,id with
   actor labeling rules, allowedActions display-only, section-level failure markers.
   Verify: tests incl. missing-options warning, unknown-action event rendering,
   historical consumption visible after release, refund shown without releasing a
   consumed assignment.
-- [ ] א.5 Idempotent replay answers the SAVED assignment+options and refuses a
+- [x] א.5 Idempotent replay answers the SAVED assignment+options and refuses a
   same-key/different-request replay (AD7; final enforcement moves into the create
   function in ד.2 — this task shapes the read path and messages). Verify: test —
   retry after a price change returns the frozen options; mismatched replay refused.
 
 ## Stage ב — list + detail screens
 
-- [ ] ב.1 /admin/assignments rewritten on א.2/א.3: concise table (desktop) / cards
+- [x] ב.1 /admin/assignments rewritten on א.2/א.3: concise table (desktop) / cards
   (mobile, no 64rem min-width), filters/search/sort/pagination in the URL, the
   "דורש בדיקה" entry when exceptions exist, honest empty/filtered-empty/error states,
   no green banner on every load. Verify: component tests per state; params round-trip.
-- [ ] ב.2 /admin/assignments/[id] (new page) rendering א.4: header, recipient, terms +
+- [x] ב.2 /admin/assignments/[id] (new page) rendering א.4: header, recipient, terms +
   source (callback linkage only when resolvable), frozen options table / mobile
   blocks, binding + payments (incl. the expired-but-open-payment sentence), history,
   copyable id. Permission-gated links (AD10). Verify: component tests per section,
   not-found after permission check, partial-failure rendering.
-- [ ] ב.3 List→detail→back navigation preserving validated filters (AD1). Verify: test
+- [x] ב.3 List→detail→back navigation preserving validated filters (AD1). Verify: test
   that a crafted return param outside the list is rejected.
 
 ## Stage ג — assign flow (UI)
 
-- [ ] ג.1 lookupStaffAssignmentRecipient (AD6) + the account step in
+- [x] ג.1 lookupStaffAssignmentRecipient (AD6) + the account step in
   /admin/assignments/new: exact validated email, איתור חשבון → confirm card with the
   account's active benefits; found/not_found/unavailable distinct. Verify: test that a
   user beyond the provider page limit is found; failure ≠ not-found.
-- [ ] ג.2 Explicit offer choice (no silent default), server-computed preview, estimated
+- [x] ג.2 Explicit offer choice (no silent default), server-computed preview, estimated
   validity labeled as such; the submitted request carries the confirmed preview terms
   for ד.2's in-transaction validation, and a refusal renders "תנאי ההצעה השתנו" with a
   re-confirm. Verify: tests for the stale path and the explicit-choice requirement.
-- [ ] ג.3 Submit: stable idempotency key per operation, double-submit blocked
+- [x] ג.3 Submit: stable idempotency key per operation, double-submit blocked
   client-side (the server guarantee is ד.2/ד.4), success and duplicate-kept navigate
   to the resulting assignment's detail with the spec's messages. Verify: tests —
   replay message, duplicate-kept points at the KEPT row.
 
 ## Stage ד — atomic write paths
 
-- [ ] ד.1 Lock-order audit: release_coupon_assignment, bind_coupon_assignment and
+- [x] ד.1 Lock-order audit: release_coupon_assignment, bind_coupon_assignment and
   replace_sales_coupon_assignment vs the campaign→round→assignment order (acceptance
   20); fix release first if it assumes another order. Verify: documented reading of
   the function sources recorded in this change.
-- [ ] ד.2 Migration via `npx supabase migration new`: create_staff_coupon_assignment
+- [x] ד.2 Migration via `npx supabase migration new`: create_staff_coupon_assignment
   (service_role-only, SECURITY DEFINER, empty search_path) — ONE transaction: offer +
   packages locked for share, confirmed-preview terms re-validated against live prices
   (refuse "terms changed"), assignment + ALL frozen options + the 'assigned' event
@@ -74,7 +74,7 @@ AGENTS.md's Next.js docs note applies before UI work.
   delete-on-partial-failure compensation is retired. Verify: SQL checks on the local
   DB — forced failure at each step rolls back everything (acceptance 16); grants
   refused to browser roles.
-- [ ] ד.3 Migration via `npx supabase migration new`: void_staff_coupon_assignment —
+- [x] ד.3 Migration via `npx supabase migration new`: void_staff_coupon_assignment —
   live re-checks under locks, release+state+event in one transaction, staff reason to
   meta.staff_reason, no-op never answers success, repeat void writes no second event.
   Verify: SQL checks incl. rollback-on-late-failure after the release step
@@ -86,7 +86,7 @@ AGENTS.md's Next.js docs note applies before UI work.
 - [ ] ד.5 Void concurrency on the local DB, two real connections: void vs
   bind/approve/open-payment/settlement — one winner, zero partial writes (acceptance
   19). Verify: recorded run.
-- [ ] ד.6 The void dialog on the detail page (AlertDialog, required reason, danger
+- [x] ד.6 The void dialog on the detail page (AlertDialog, required reason, danger
   styling, focus kept/returned), wired to ד.3; a state changed since the dialog
   opened refuses, refreshes the view and keeps the typed reason (acceptance 23).
   Verify: component tests; action tests for every refusal code.
