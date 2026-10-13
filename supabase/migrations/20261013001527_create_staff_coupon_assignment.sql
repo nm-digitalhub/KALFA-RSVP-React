@@ -111,9 +111,28 @@ begin
 
   v_expires_at := now() + v_offer.validity_days * interval '1 day';
 
-  insert into public.coupon_assignments (offer_id, assigned_by, user_id, kind, value, expires_at, idempotency_key)
-    values (v_offer.id, _staff_id, _user_id, v_offer.kind, v_offer.value, v_expires_at, _idempotency_key)
-    returning id into v_new_id;
+  -- A double submit can race past the pre-check: the unique (assigned_by, idempotency_key)
+  -- decides, and the LOSER answers the stored assignment (acceptance 18) — same request
+  -- verified, never an error for a legitimate retry.
+  begin
+    insert into public.coupon_assignments (offer_id, assigned_by, user_id, kind, value, expires_at, idempotency_key)
+      values (v_offer.id, _staff_id, _user_id, v_offer.kind, v_offer.value, v_expires_at, _idempotency_key)
+      returning id into v_new_id;
+  exception when unique_violation then
+    select * into v_existing from public.coupon_assignments
+     where assigned_by = _staff_id and idempotency_key = _idempotency_key;
+    if not found then raise; end if;
+    if v_existing.user_id is distinct from _user_id or v_existing.offer_id is distinct from _offer_id then
+      raise exception 'assign: key already used for a different request';
+    end if;
+    return jsonb_build_object(
+      'assignment_id', v_existing.id,
+      'kept_assignment_id', v_existing.id,
+      'outcome', 'existing',
+      'duplicate_voided', 'none',
+      'expires_at', v_existing.expires_at
+    );
+  end;
 
   insert into public.coupon_assignment_options (assignment_id, package_id, list_price, discount_amount, final_price)
     select v_new_id, item.package_id, item.list_price, item.discount_amount, item.final_price

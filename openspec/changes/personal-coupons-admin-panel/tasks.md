@@ -79,11 +79,11 @@ AGENTS.md's Next.js docs note applies before UI work.
   meta.staff_reason, no-op never answers success, repeat void writes no second event.
   Verify: SQL checks incl. rollback-on-late-failure after the release step
   (acceptance 17); grants refused to browser roles.
-- [ ] ד.4 Create concurrency on the local DB, two real connections: double submit
+- [x] ד.4 Create concurrency on the local DB, two real connections: double submit
   yields one assignment+one event with both callers answered by it (acceptance 18);
   create vs offer/price edit serializes — previewed terms commit whole or refuse
   (part of 19). Verify: recorded run like the replacement RPC's proof.
-- [ ] ד.5 Void concurrency on the local DB, two real connections: void vs
+- [x] ד.5 Void concurrency on the local DB, two real connections: void vs
   bind/approve/open-payment/settlement — one winner, zero partial writes (acceptance
   19). Verify: recorded run.
 - [x] ד.6 The void dialog on the detail page (AlertDialog, required reason, danger
@@ -93,13 +93,13 @@ AGENTS.md's Next.js docs note applies before UI work.
 
 ## Stage ה — closure
 
-- [ ] ה.1 Permission acceptance (§14 1–3): no manage_billing → no list/detail/lookup/
+- [x] ה.1 Permission acceptance (§14 1–3): no manage_billing → no list/detail/lookup/
   assign/void; id tampering never bypasses; links only with their own permissions.
   Verify: the admin coverage test stays green + targeted tests.
-- [ ] ה.2 Browser pass at 360/390/desktop, RTL, keyboard, zoom (acceptance 24) on the
+- [ ] ה.2 **BLOCKED on the deploy (the apply directive forbids deploying; the authenticated admin screens are reachable only on the deployed build).** Browser pass at 360/390/desktop, RTL, keyboard, zoom (acceptance 24) on the
   deployed build; record findings with real test data only (acceptance 26). Verify:
   noted in this change.
-- [ ] ה.3 Full gates (lint, tsc, full suite, build) + the acceptance mapping below
+- [ ] ה.3 **Gates DONE on the final state (lint, tsc, suite 12,343, build OK) and the acceptance walk recorded in verification-acceptance.md (24/26 proven); the checkbox waits only for ה.2's two browser items.** Full gates (lint, tsc, full suite, build) + the acceptance mapping below
   walked item-by-item, each outcome recorded in verification-acceptance.md
   (acceptance 25). Verify: all green before the change is offered for archive.
 
