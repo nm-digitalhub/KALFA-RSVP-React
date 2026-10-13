@@ -116,9 +116,11 @@ export interface IntegrationsIndex {
  * The owner-agent card's status row. It cannot come from getIntegrationsStatus():
  * that is built on the integrations_configured_flags() RPC, which predates the agent
  * and has no owner_agent_* flag (extending it is a migration). So the two columns are
- * read here, with the COOKIE client — app_settings' staff policy admits every staff
- * member, which is exactly this page's floor — and nothing else: no allow-list, no
- * phone, no audit.
+ * read here with the SERVICE-ROLE client, after the staff floor in getIntegrationsIndex
+ * (the CardCom card below does the same) — and nothing else: no allow-list, no phone,
+ * no audit. Not the cookie client: app_settings' policy requires manage_settings
+ * (20261013021137), which would hand a staff member without it zero rows and drop this
+ * card — shown locked to every staff member — from their page.
  *
  * NOT through the owner-agent module. Its readers call requirePlatformOwner, which
  * REDIRECTS: a non-owner opening this index would be ejected from the admin area by
@@ -129,8 +131,8 @@ export interface IntegrationsIndex {
  */
 async function getOwnerAgentStatus(): Promise<IntegrationStatus | null> {
   try {
-    const supabase = await createClient();
-    const { data, error } = await supabase
+    const admin = createAdminClient();
+    const { data, error } = await admin
       .from('app_settings')
       .select('owner_agent_enabled, owner_agent_phone_number_id')
       .eq('id', true)

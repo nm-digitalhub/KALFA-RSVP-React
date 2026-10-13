@@ -42,19 +42,30 @@ let ownerAgentRead: { data: OwnerAgentRow | null; error: unknown } = {
   error: null,
 };
 
-// Routed per table: the permission labels are read with `.in()`, the owner-agent
-// status row with `.eq().maybeSingle()`. One shared chain would answer both with the
-// same rows.
+// The cookie client answers only the permission labels (`.in()`); the owner-agent status
+// row comes from the SERVICE-ROLE client (`.eq().maybeSingle()`), because app_settings'
+// policy requires manage_settings and a cookie read would drop the card for other staff.
 function mockPermissionLabels(rows: Array<{ key: string; label: string }> | null) {
   const inFn = vi.fn().mockResolvedValue({ data: rows, error: null });
+  const from = vi.fn((_table: string) => ({ select: vi.fn(() => ({ in: inFn })) }));
+  vi.mocked(createClient).mockResolvedValue({ from } as never);
+  return { inFn, from };
+}
+
+/** The service-role client for the owner-agent row; any other table (CardCom) is unreadable here. */
+function mockAdminAppSettings() {
   const maybeSingle = vi.fn(async () => ownerAgentRead);
   const from = vi.fn((table: string) =>
     table === 'app_settings'
       ? { select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle })) })) }
-      : { select: vi.fn(() => ({ in: inFn })) },
+      : {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({ maybeSingle: vi.fn(async () => ({ data: null, error: { message: 'n/a' } })) })),
+          })),
+        },
   );
-  vi.mocked(createClient).mockResolvedValue({ from } as never);
-  return { inFn };
+  vi.mocked(createAdminClient).mockReturnValue({ from } as never);
+  return { from };
 }
 
 /** `keys` = the permissions this viewer holds. */
@@ -77,6 +88,7 @@ beforeEach(() => {
     { key: 'manage_voice', label: 'ניהול מוקד שיחות AI' },
     { key: 'integrations.manage', label: 'ניהול חיבורי אינטגרציה' },
   ]);
+  mockAdminAppSettings();
   viewer([]);
 });
 
@@ -260,6 +272,31 @@ describe('the owner-agent card', () => {
     const { cards } = await byKey();
     // Switched on with no number diverts nothing — that is "not configured".
     expect(cards['owner-agent']).toMatchObject({ configured: false, enabled: true });
+  });
+
+  it('reads app_settings with the service-role client AFTER the staff floor — never the cookie client', async () => {
+    // app_settings' policy requires manage_settings: a cookie read would give staff without it zero
+    // rows and silently drop this card. The staff floor must still run first.
+    const cookie = mockPermissionLabels([]);
+    const admin = mockAdminAppSettings();
+    await getIntegrationsIndex();
+    expect(cookie.from.mock.calls.map((c) => c[0] as string)).not.toContain('app_settings');
+    expect(admin.from.mock.calls.map((c) => c[0] as string)).toContain('app_settings');
+    expect(vi.mocked(requirePlatformStaff).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(createAdminClient).mock.invocationCallOrder[0],
+    );
+  });
+
+  it('a viewer holding NO permission still sees the card, locked, with its real status', async () => {
+    viewer([]);
+    const { cards } = await byKey();
+    expect(cards['owner-agent']).toMatchObject({ canOpen: false, href: null, configured: true, enabled: false });
+  });
+
+  it('never reaches the service-role client when the staff floor refuses', async () => {
+    vi.mocked(requirePlatformStaff).mockRejectedValue(new Error('NEXT_REDIRECT'));
+    await expect(getIntegrationsIndex()).rejects.toThrow('NEXT_REDIRECT');
+    expect(createAdminClient).not.toHaveBeenCalled();
   });
 
   it('is omitted, not invented, when its status cannot be read', async () => {
