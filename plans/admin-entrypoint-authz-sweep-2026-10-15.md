@@ -85,7 +85,7 @@
 | תשלום | `purchase/settle` ← `guardCampaignRoute`: בדיקת Origin, `requireUser`, `requireOwnedEvent` | נקרא | ✓ |
 | ציבורי במכוון | `health`, `auth/callback` (חסימת open-redirect), `auth/logout`, `[...catchAll]` (404), `guest-list-template.csv`, `llms.txt`, `call-me-now/*` (OTP + rate-limit) | הקריאה במלואה רק ל-`health`, `auth/*`, `catchAll`; השאר נקבעו לפי הערות הקובץ | ללא נתונים רגישים בלי טוקן/OTP |
 
-**לא נקרא בעומק (מסומן [מוסק]):** גוף האימות של `voximplant/console/*` (בדקתי רק שהסוד `KALFA_CONSOLE_SECRET` נבדק ושהכשל מחזיר 401, לא אם ההשוואה timing-safe), `workflows/hook/[endpoint]`, `rdp-gateway/*`, `widget/*`, ופנים `verifyElevenLabsWebhook`. אלה נתיבים שבהם הסוכן מציג סוד/חתימה ולא הרשאת צוות.
+**לא נקרא בעומק (מסומן [מוסק]):** ~~גוף האימות של `voximplant/console/*`~~ — נבדק אחר כך: כל ששת הנתיבים משווים עם `safeTokenEqual(secret, sha256Hex(expected))` (`src/lib/security/token-compare.ts`, זמן קבוע) ונכשלים סגור ב-503/401 [נמדד]; `workflows/hook/[endpoint]`, `rdp-gateway/*`, `widget/*`, ופנים `verifyElevenLabsWebhook`. אלה נתיבים שבהם הסוכן מציג סוד/חתימה ולא הרשאת צוות.
 
 **הערה קטנה (לא תוקן):** `webhooks/microsoft-graph` משווה `clientState` עם `!==` רגיל ואין בו rate-limit, בניגוד לשאר ה-webhooks. הסיכון נמוך (סוד משותף, התשובה תמיד 202), אבל זה חריג בסגנון — החלטת בעלים אם לתקן.
 
