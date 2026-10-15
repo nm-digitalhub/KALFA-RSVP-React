@@ -29,7 +29,7 @@
 | **לקוח / ארגון** | `organization_members` + `org_roles` | `has_org_permission(_org_id,_res,_act)` | רק את הארגון שלו |
 | **מוקד שיחות** | `console_agents` | `is_console_agent()` | פיד השיחות של כל האירועים |
 
-**הדגל הישן `user_roles` + `has_role(_user_id,'admin')` יצא משימוש** (§6.1). מאז 2026‑09‑10 (`20260910090301`) 21 policies נבדקות מול `is_platform_staff()`, ומאז 2026‑10‑15 (`20261015114659`) גם שש פונקציות `fleet_*` ושתי policies של הקול נבדקות מול `has_platform_permission`. `requireAdmin()`/`isAdmin()` נמחקו מה‑DAL. הטבלה והפונקציה נשארות רק עד שלב 2 של הפרישה (`plans/user-roles-retirement-stage-2.md`).
+**הדגל הישן `user_roles` + `has_role(_user_id,'admin')` נמחק** (§6.1). מאז 2026‑09‑10 (`20260910090301`) 21 policies נבדקות מול `is_platform_staff()`, ומאז 2026‑10‑15 (`20261015114659`) גם שש פונקציות `fleet_*` ושתי policies של הקול נבדקות מול `has_platform_permission`. `requireAdmin()`/`isAdmin()` נמחקו מה‑DAL, ובאותו יום הוחלה גם מחיקת הטבלה, הפונקציה וה‑enum (`20261015134735`, `plans/user-roles-retirement-stage-2.md`).
 
 **כלל הזהב — אין הצלבת צירים.** ציר הצוות רואה הכול; ציר הלקוח רואה רק את עצמו. אם משתמש‑לקוח מצליח להיכנס לציר צוות או מוקד, כל הבידוד הרב‑דיירותי קורס. זו בדיוק הייתה סדרת התקלות של 2026‑07‑19/20:
 
@@ -157,10 +157,10 @@ e.owner_id = auth.uid()
 
 ## 6. הרשאת Admin — מקור התפקיד האמין
 
-### 6.1 `user_roles` + `has_role()` — יצא משימוש (2026‑10‑15)
+### 6.1 `user_roles` + `has_role()` — נמחקו (2026‑10‑15)
 
-- הדגל הישן (`public.user_roles`, enum `app_role = 'admin' | 'user'`, הפונקציה `has_role(_user_id,_role)`) כבר לא מכריע על שום דבר. 21 policies עברו ל‑`is_platform_staff()` ב‑`20260910090301`; שש פונקציות ה‑`fleet_*` (SECURITY DEFINER) ושתי policies של הקול (`voice_purposes`, `voice_purpose_attempts`) עברו ל‑`has_platform_permission('manage_settings')` / `('manage_voice')` ב‑`20261015114659_retire_user_roles_admin_consumers.sql`; `requireAdmin`/`isAdmin` נמחקו מה‑DAL.
-- הטבלה, הפונקציה וה‑enum עדיין קיימים ב‑DB (3 שורות admin). הם נמחקים בשלב 2, רק אחרי שהמיגרציה הוחלה והבילד נפרס: `plans/user-roles-retirement-stage-2.md`.
+- הדגל הישן (`public.user_roles`, enum `app_role = 'admin' | 'user'`, הפונקציה `has_role(_user_id,_role)`) הפסיק להכריע על דבר, ואז נמחק. 21 policies עברו ל‑`is_platform_staff()` ב‑`20260910090301`; שש פונקציות ה‑`fleet_*` (SECURITY DEFINER) ושתי policies של הקול (`voice_purposes`, `voice_purpose_attempts`) עברו ל‑`has_platform_permission('manage_settings')` / `('manage_voice')` ב‑`20261015114659_retire_user_roles_admin_consumers.sql`; `requireAdmin`/`isAdmin` נמחקו מה‑DAL.
+- הטבלה (3 שורות admin), הפונקציה וה‑enum **נמחקו** במיגרציה `20261015134735_retire_user_roles_stage_2.sql` (הוחלה 15.10.2026, אחרי שהמיגרציה הקודמת הוחלה והבילד נפרס). בלי `CASCADE`, עם בדיקות קדם. 3 השורות מגובות מחוץ ל‑DB ומחוץ ל‑git; פירוט, הוכחות ו‑ROLLBACK: `plans/user-roles-retirement-stage-2.md`.
 - שום תפקיד אינו נקרא מ‑JWT claims, מ‑cookie או מקלט דפדפן — תמיד RPC מול הטבלה.
 
 ### 6.2 Bootstrap של בעל המערכת הראשון
@@ -183,7 +183,7 @@ on conflict (user_id) do nothing;
 
 ## 6A. ציר צוות הפלטפורמה — `platform_staff`
 
-נוסף ב‑`20260713171233_platform_rbac_owner_staff.sql`. ציר **נפרד** מ‑`user_roles`/`has_role` של §6, ונפרד לגמרי מציר הלקוח.
+נוסף ב‑`20260713171233_platform_rbac_owner_staff.sql`. ציר **נפרד** מציר הלקוח (ומהדגל הישן `user_roles`/`has_role` של §6, שנמחק).
 
 | טבלה | תפקיד |
 |---|---|
@@ -362,8 +362,8 @@ public.has_org_permission(_org_id uuid, _resource text, _action text) returns bo
 ## 8. תנוחת ה‑RLS (Row Level Security)
 
 - **כל 54 הטבלאות הציבוריות ב‑DB החי עם RLS מופעל** — נמדד 2026‑07‑21: `select count(*) ... where relkind='r' and not relrowsecurity` מחזיר **0**. (הגרסה הקודמת של המסמך ציינה 33; הסכמה גדלה מאז.) המיגרציות בריפו מפעילות RLS על כל טבלה חדשה.
-- **RLS הוא defense‑in‑depth, לא ההרשאה הראשית**: הבדיקה הראשית היא תמיד בשרת (DAL + שכבת נתונים). ה‑policies מגדרות ב‑`auth.uid()` / `owns_event()` / `has_role()` / `has_org_permission()` / `is_org_member()`.
-- **טבלאות admin** — policy בסגנון `has_role(auth.uid(),'admin')`, והגישה מהקוד היא דרך ה‑client מבוסס‑cookies (לא service‑role), כך שה‑RLS באמת נבדק (§6.3).
+- **RLS הוא defense‑in‑depth, לא ההרשאה הראשית**: הבדיקה הראשית היא תמיד בשרת (DAL + שכבת נתונים). ה‑policies מגדרות ב‑`auth.uid()` / `owns_event()` / `is_platform_staff()` / `has_platform_permission()` / `has_org_permission()` / `is_org_member()`.
+- **טבלאות admin** — policy בסגנון `( SELECT is_platform_staff() )` (או `has_platform_permission('<key>')` כשיש הרשאה ייעודית), והגישה מהקוד היא דרך ה‑client מבוסס‑cookies (לא service‑role), כך שה‑RLS באמת נבדק (§6.3).
 - **משטח אנונימי מכוון וצר**: נמדד 2026‑07‑21 — **policy אחת בלבד** כוללת את התפקיד `anon`: `packages_public_read` (SELECT על `packages`, roles `{anon,authenticated}`). ה‑policies של `callback_requests`/`contact_messages` שהוזכרו בגרסה הקודמת אינן מוגדרות עוד על `anon`.
 - **אפס policies מגודרות על התפקיד `public`** (נמדד: 0). זה היה פער פתוח בגרסה הקודמת ונסגר.
 - **אפס פונקציות ב‑`public` ניתנות להרצה ע"י `anon`** (נמדד על כל 49 הפונקציות). ראו §8.1.
@@ -374,7 +374,7 @@ public.has_org_permission(_org_id uuid, _resource text, _action text) returns bo
 
 **14 פונקציות SECURITY DEFINER כן ניתנות להרצה ע"י `authenticated` — וכך חייב להיות.** זו אינה רשלנות אלא דרישה ארכיטקטונית: ביטויי RLS מורצים **בהרשאות התפקיד הקורא**. אומת אמפירית בטרנזקציה מגולגלת — שלילת EXECUTE על `is_console_agent()` מ‑`authenticated` הפכה קריאה תקינה ל‑`42501 permission denied for function is_console_agent`. שמונה מהן בשימוש ישיר ב‑policies, והשאר נקראות מהשרת דרך ה‑client מבוסס‑cookie, שגם הוא רץ כ‑`authenticated`.
 
-גבול האבטחה של אותן פונקציות נמצא **בתוכן**: כל אחת פותרת `auth.uid()` בעצמה ואינה סומכת על זהות שהקורא סיפק. היוצא מן הכלל לכאורה הוא `has_role(_user_id, _role)` שמקבל מזהה כפרמטר — נבדקו **כל** ה‑policies המשתמשות בו, וכולן מעבירות `auth.uid()`. אזהרות ה‑advisor מסוג `authenticated_security_definer_function_executable` הן אפוא רעש מובנה לארכיטקטורה הזו, לא ליקוי.
+גבול האבטחה של אותן פונקציות נמצא **בתוכן**: כל אחת פותרת `auth.uid()` בעצמה ואינה סומכת על זהות שהקורא סיפק. היוצא מן הכלל לכאורה היה `has_role(_user_id, _role)` שקיבל מזהה כפרמטר (כל ה‑policies שהשתמשו בו העבירו `auth.uid()`); היא נמחקה ב‑15.10.2026 ואין עוד פונקציית הרשאה שמקבלת מזהה מהקורא. אזהרות ה‑advisor מסוג `authenticated_security_definer_function_executable` הן אפוא רעש מובנה לארכיטקטורה הזו, לא ליקוי.
 
 **טריגרים אינם צורכים את ההרשאה הזו.** פונקציית טריגר אינה ניתנת לקריאה ישירה כלל (`0A000: trigger functions can only be called as triggers`), ו‑Postgres מפעיל אותה דרך מנגנון הטריגר בלי לבדוק את הרשאת מבצע ה‑statement — אומת: לאחר שלילת EXECUTE מ‑`authenticated`, `UPDATE` שבוצע בהתחזות ל‑`authenticated` הצליח וה‑`updated_at` עודכן.
 - ה‑RSVP הציבורי **אינו** עובר דרך RLS של anon אלא דרך RPCs נעולים ל‑service_role (ראו §10.1).
@@ -407,7 +407,7 @@ public.has_org_permission(_org_id uuid, _resource text, _action text) returns bo
 | קבוצה | פונקציות | EXECUTE |
 |---|---|---|
 | **נעולות ל‑service_role בלבד** | `submit_rsvp`, `get_rsvp_by_token`, `claim_webhook_events`, `try_record_billed_result`, `campaign_billing_summary` | anon ✗, authenticated ✗, service_role ✓ |
-| helpers של RLS (חייבות להישאר ל‑authenticated) | `owns_event`, `has_role`, `has_org_permission`, `is_org_member` | authenticated ✓ |
+| helpers של RLS (חייבות להישאר ל‑authenticated) | `owns_event`, `is_platform_staff`, `has_platform_permission`, `has_org_permission`, `is_org_member` | authenticated ✓ |
 | RPCs אפליקטיביים | `accept_invitation`, `create_organization`, `can_access_event` | anon/auth ✓ (hardening P2/P3 פתוח) |
 | **הוסרו 2026‑10‑15** (`20261015114659`) | `claim_first_admin` (נמחקה), `org_role_rank` (EXECUTE נשלל מ‑authenticated; נשאר ל‑service_role) | — |
 | trigger/util | `handle_new_user`, `set_updated_at`, `rls_auto_enable`, פונקציות ה‑lifecycle | לא רלוונטי כ‑RPC |
@@ -438,7 +438,7 @@ public.has_org_permission(_org_id uuid, _resource text, _action text) returns bo
 | שאלה | מקור האמת | נקודת הכניסה בקוד |
 |---|---|---|
 | מי המשתמש? | Supabase Auth (token מאומת מול השרת) | `getUser()` / `requireUser()` — `src/lib/auth/dal.ts:14,23` |
-| ~~האם admin פלטפורמה? (דגל ישן)~~ | **יצא משימוש** (`user_roles`/`has_role`, §6.1) — במקומו `platform_staff` | `requireAdmin()`/`isAdmin()` נמחקו 2026‑10‑15 |
+| ~~האם admin פלטפורמה? (דגל ישן)~~ | **נמחק** (`user_roles`/`has_role`, §6.1) — במקומו `platform_staff` | `requireAdmin()`/`isAdmin()` נמחקו 2026‑10‑15 |
 | האם חבר צוות פלטפורמה? | טבלת `platform_staff` דרך RPC `is_staff` | `isStaff()` — `dal.ts:100` |
 | מותר לבצע פעולת צוות ספציפית? | `platform_role_permissions` דרך `has_platform_permission` | `hasPlatformPermission()` / `requirePlatformPermission()` — `dal.ts:117,135` |
 | האם נציג מוקד שיחות? | `console_agents` **∧** `platform_staff` דרך `is_console_agent` | ה‑views ו‑policies של `console_*` |
@@ -451,7 +451,7 @@ public.has_org_permission(_org_id uuid, _resource text, _action text) returns bo
 ## 12. פערים ידועים ופריטים פתוחים (נמדד 2026‑07‑21)
 
 - מעבר `getClaims()` ב‑DAL — מתוכנן, טרם מומש (§3.3).
-- ~~שני מנגנוני admin במקביל~~ — **נסגר 2026‑10‑15**: אין עוד צרכן של `user_roles`/`has_role` בקוד או ב‑DB (`20260910090301` + `20261015114659`). נשאר שלב 2 — מחיקת הטבלה, הפונקציה וה‑enum אחרי deploy: `plans/user-roles-retirement-stage-2.md`.
+- ~~שני מנגנוני admin במקביל~~ — **נסגר 2026‑10‑15**: אין עוד צרכן של `user_roles`/`has_role` בקוד או ב‑DB (`20260910090301` + `20261015114659`), והאובייקטים עצמם נמחקו באותו יום (`20261015134735`).
 - הגנת leaked‑password של Supabase Auth כבויה (הגדרת דשבורד).
 - 6 אזהרות `security_definer_view` על ה‑views של `console_*` — **מכוונות** ומוסברות ב‑§6B; `security_invoker` היה שובר את המוקד.
 - אזהרות `function_search_path_mutable` על פונקציות בסכמת `pgboss` (קוד צד‑שלישי, לא שלנו).

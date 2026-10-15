@@ -21,7 +21,7 @@
 עקרונות רוחביים של הסכמה:
 
 - **RLS מופעל על כל 33 הטבלאות ב‑`public`** (אומת מול `pg_class.relrowsecurity`). בנוסף, ה‑event trigger `ensure_rls` (על `ddl_command_end`) מריץ את `public.rls_auto_enable()` ומפעיל RLS אוטומטית על כל טבלה חדשה שנוצרת ב‑`public`.
-- **דפוסי RLS חוזרים**: `owner` דרך `owns_event(event_id)` או `owner_id/user_id = auth.uid()`; `admin` דרך `has_role(auth.uid(),'admin'::app_role)`; טבלאות רגישות הן admin‑only והשרת כותב אליהן דרך service‑role (עוקף RLS).
+- **דפוסי RLS חוזרים**: `owner` דרך `owns_event(event_id)` או `owner_id/user_id = auth.uid()`; צוות פלטפורמה דרך `( SELECT is_platform_staff() )` או `( SELECT has_platform_permission('<key>') )` (הדגל הישן `has_role` נמחק 15.10.2026); טבלאות רגישות הן admin‑only והשרת כותב אליהן דרך service‑role (עוקף RLS).
 - **כתיבות עסקיות עוברות בשרת**: סטטוסי תשלום, חיובים, snapshots ו‑webhooks נכתבים רק דרך ה‑service‑role client או RPCs מסוג SECURITY DEFINER הנעולים ל‑`service_role`. ה‑RLS משמש בעיקר לקריאה מוגדרת‑היקף (owner SELECT) וכהגנת עומק.
 - **מפתחות**: כל הטבלאות עם PK מסוג `uuid default gen_random_uuid()` (חריגים: `app_settings` — PK בוליאני singleton; `profiles`/`user_settings` — PK שהוא גם FK ל‑`auth.users`).
 
@@ -31,7 +31,6 @@
 
 | Enum | ערכים |
 |---|---|
-| `app_role` | `admin`, `user` |
 | `event_status` | `draft`, `active`, `closed` |
 | `event_type` | `wedding`, `bar_mitzvah`, `bat_mitzvah`, `brit`, `britah`, `henna`, `engagement`, `birthday`, `other` |
 | `guest_status` | `pending`, `attending`, `declined`, `maybe` |
@@ -220,21 +219,11 @@
 - מאוכלס ע"י הטריגר `on_auth_user_created` על `auth.users` שמריץ את `handle_new_user()` ‏(SECURITY DEFINER) — מעתיק `full_name`/`phone` מ‑`raw_user_meta_data`.
 - **RLS**: ‏`own_profile_read` (SELECT ‏`auth.uid() = id`), ‏`own_profile_write` (ALL ‏`auth.uid() = id`), ‏`profiles_admin_read` (SELECT לאדמין).
 
-### `user_roles`
+### ~~`user_roles`~~ — נמחקה (2026‑10‑15)
 
-> **יצאה משימוש (2026‑10‑15).** הדגל הזה כבר לא מכריע על דבר: הצוות מוגדר ב‑`platform_staff` (§14א), ואחרון הצרכנים שלה (`fleet_*` ו‑policies של הקול) עבר ל‑`has_platform_permission` ב‑`20261015114659`. הטבלה נמחקת בשלב 2: `plans/user-roles-retirement-stage-2.md`.
-
-תפקידי **פלטפורמה** (staff) הישנים — נפרדים לחלוטין מתפקידי הארגון (§8). מקור האמת של `has_role`.
-
-| עמודה | טיפוס | NULL | הערות |
-|---|---|---|---|
-| `id` | `uuid` | לא | PK |
-| `user_id` | `uuid` | לא | FK → `auth.users` ON DELETE CASCADE |
-| `role` | `app_role` | לא | `admin` / `user` |
-| `created_at` | `timestamptz` | לא | `now()` |
-
-- **UNIQUE**: `user_roles_user_id_role_key (user_id, role)`.
-- **RLS**: ‏`ur_self_read` — SELECT עבור `user_id = auth.uid() OR has_role(...,'admin')`; ‏`ur_admin_all`. ה‑RPC ‏`claim_first_admin` נמחקה ב‑`20261015114659`; בעל המערכת הראשון נוצר ב‑`platform_staff` (נוהל ב‑`02-auth-and-authorization.md` §6.2).
+> **הטבלה, הפונקציה `has_role` וה‑enum `app_role` נמחקו** במיגרציה `20261015134735_retire_user_roles_stage_2.sql` (הוחלה 15.10.2026). הצוות מוגדר ב‑`platform_staff` (§14א); הצרכנים האחרונים שלה (`fleet_*` ו‑policies של הקול) עברו ל‑`has_platform_permission` ב‑`20261015114659`, שגם מחקה את `claim_first_admin`. בעל המערכת הראשון נוצר ב‑`platform_staff` (נוהל ב‑`02-auth-and-authorization.md` §6.2). הוכחות, גיבוי 3 השורות ו‑ROLLBACK: `plans/user-roles-retirement-stage-2.md`.
+>
+> מה שהיה: תפקידי staff ישנים (`id`, `user_id` → `auth.users` ON DELETE CASCADE, `role app_role` = `admin`|`user`, `created_at`), UNIQUE `(user_id, role)`, policy אחת `ur_self_read`.
 
 ### `user_settings`
 
@@ -679,7 +668,6 @@
 
 | פונקציה | ארגומנטים | מחזירה | SECDEF | EXECUTE | תפקיד |
 |---|---|---|---|---|---|
-| `has_role` | `_user_id uuid, _role app_role` | `boolean` | ✔ | anon, authenticated, service_role | בדיקת תפקיד פלטפורמה מול `user_roles`; הבסיס לכל פוליסות ה‑admin |
 | `owns_event` | `_event_id uuid` | `boolean` | ✔ | ‏PUBLIC (ברירת מחדל) | ‏`events.owner_id = auth.uid()`; הבסיס לכל פוליסות ה‑owner |
 | `has_org_permission` | `_org_id uuid, _resource text, _action text` | `boolean` | ✔ | PUBLIC | **מקור האמת היחיד** להרשאות ארגון — קורא `organization_members` × `role_permissions` × `permission_definitions` |
 | `is_org_member` | `_org_id uuid` | `boolean` | ✔ | PUBLIC | פרימיטיב הבידוד לפי ארגון ב‑RLS |

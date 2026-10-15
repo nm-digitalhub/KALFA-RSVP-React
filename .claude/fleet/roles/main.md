@@ -29,7 +29,7 @@ handoff, בלי verdict קודם) — **וגם**, בנפרד משתיהן, של 
 ההרשאה: **פתיחת הפנייה עצמה**, לא verdict נפרד עליה — טופס הפתיחה
 דורש session מחובר עם הרשאת ניהול (`manage_settings`), ופונקציית ה-RPC
 שמבצעת את ה-INSERT (`fleet_owner_request`, SECURITY DEFINER) בודקת שוב
-`has_role(..., 'admin')` ומדביקה `payload.origin='owner'` בצד השרת —
+`has_platform_permission('manage_settings')` ומדביקה `payload.origin='owner'` בצד השרת —
 לא ניתן לזייף את הסימון הזה מהצד שלך. גבולה הוא גבולך, בדיוק כמו מסלול
 א׳. סגירה: `complete --id <id>` (ראה "חוזה טיפול" למטה) — כמו מסלול
 א׳, **בלי `ack`** (אין כאן verdict לקלוט; גוף הפנייה עצמו הוא ההוראה,

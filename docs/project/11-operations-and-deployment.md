@@ -334,6 +334,17 @@ npm run types:check                        # אימות ש-types.generated.ts ת
   הקובץ גם מייצא את helper-types (`Tables<'x'>`, `TablesInsert`, `TablesUpdate`,
   `Enums<'x'>`) — הצורה המועדפת בקוד על פני `Database['public']['Tables'][...]`.
 
+**שתי התקנות של ה-CLI, ושתיהן חייבות להיות באותה גרסה (נמדד 15.10.2026):**
+1. `node_modules/.bin/supabase` — הגרסה הננעלת ב-`package.json` (`"supabase": "2.121.0"`). בה משתמשים `npx supabase`, `npm run gen:types` והשער `types:check`.
+2. `~/.supabase/bin/supabase` (+ `supabase-go`) — ההתקנה שרצה כשמקלידים `supabase` בטרמינל. מותקנת בסקריפט הרשמי
+   (`curl -fsSL https://raw.githubusercontent.com/supabase/cli/main/install | bash`), שמוריד את ה-tarball מ-GitHub, מאמת sha256 מול `checksums.txt`
+   ומחליף את הבינאריים במקום. הסקריפט לא שומר גיבוי — הגיבויים `*.<גרסה>.bak` שבתיקייה נעשו ידנית לפני כל עדכון.
+   עדכון: קודם `cp -p supabase supabase.<ישנה>.bak` (וכן ל-`supabase-go`), ואז
+   `bash install.sh --version <גרסה> --no-modify-path` מקובץ שקראת (לא pipe ישיר).
+
+עד 15.10 ההתקנה השנייה הייתה 2.120.0 מול 2.121.0 בפרויקט, והבאנר "A new version of Supabase CLI is available"
+הופיע בכל הרצה. בכל העלאת גרסה ב-`package.json` יש לעדכן גם אותה.
+
 `db query --linked` רץ כמשתמש `postgres`, כולל יכולת להריץ פונקציות
 SECURITY DEFINER שנעולות ל-service_role. אין להשתמש בסקריפטים אד-הוק
 לגישת DB — הכלים הרשמיים בלבד.

@@ -179,7 +179,7 @@ J5 בכרטיס ← צבירת `billed_results` ← חיוב סופי בסגיר
   שגיאה קשה, אין fallback שקט). ללא שניהם — 403 (`authorize/route.ts:41-60`,
   `orders/[id]/pay/route.ts:22-41`).
 - **אימות + בעלות בשרת**: `requireUser()` + ‏`requireOwnedEvent(campaign.event_id)`
-  (‏event_id נגזר מה-DB, לא מהדפדפן); באדמין — `requireAdmin()`.
+  (‏event_id נגזר מה-DB, לא מהדפדפן); באדמין — `requirePlatformPermission(<key>)` (למשל `manage_billing`).
 - **שערי קונפיג fail-closed** (`src/lib/data/payments.ts`): ‏`payments_enabled` (מתג-על),
   ‏`campaign_holds_enabled` (‏J5), ‏`close_charge_enabled` (חיוב סופי), ‏`outreach_enabled` —
   כולם `false` כברירת מחדל ב-DB; כל שגיאת קריאה נפתרת ל"כבוי".
@@ -207,7 +207,7 @@ J5 בכרטיס ← צבירת `billed_results` ← חיוב סופי בסגיר
 ## 6. טופס הבדיקה האדמיני — `/admin/sumit-test` (PoC בלבד)
 
 כלי אבחון אדמיני, **לא** זרימת לקוח: מאמת התנהגות REST חיה של SUMIT (J5/AuthorizeAmount/טוקן
-שמור) לפני בניית קוד ייצור (`admin/sumit-test/page.tsx:6-7`). מוגן ב-`requireAdmin()` + בדיקת
+שמור) לפני בניית קוד ייצור (`admin/sumit-test/page.tsx:6-7`). מוגן ב-`requirePlatformPermission('manage_billing')` + בדיקת
 Origin; קורא ל-`chargeRaw` ומציג **רק** את ההקרנה הבטוחה של safe-preview — הגוף הגולמי
 (טוקן/ת"ז/AuthNumber) לעולם לא מגיע ל-DOM ולא נרשם ללוג (`api/admin/sumit-test/route.ts:11-16,193-203`).
 העמוד מציג באנר תוצאה אמיתי (‏Status=0 + ‏ValidPayment) כי HTTP 200 מטעה. הקריאות פוגעות

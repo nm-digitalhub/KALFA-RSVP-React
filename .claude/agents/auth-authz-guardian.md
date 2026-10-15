@@ -5,11 +5,11 @@ description: >
   the Supabase SSR session layer, the server-side DAL gates, ownership and
   org-permission enforcement, and admin-role checks. Use when the task touches:
   a new or changed protected page / Server Action / Route Handler, requireUser /
-  requireOwnedEvent / requireEventAccess / has_role / has_org_permission /
+  requireOwnedEvent / requireEventAccess / has_platform_permission / has_org_permission /
   can_access_event, login/signup/recovery/OTP flows, cookie sessions
   (@supabase/ssr), choosing between the cookie client and createAdminClient,
   co-owner / org-member access (הרשאות, בעלות על אירוע, גישת חבר ארגון), admin
-  gating (requireAdmin), or reviewing any endpoint for IDOR / missing authz.
+  gating (requirePlatformStaff / requirePlatformPermission), or reviewing any endpoint for IDOR / missing authz.
   Advisory + review focused. It does not write RLS policies or migrations —
   hand database-layer work to rls-schema-engineer; public token-surface
   (/r /g /ty) reviews go to public-rsvp-sentinel.
@@ -56,8 +56,11 @@ Before advising or reviewing, verify against live sources — not training data:
   is zero protection behind it). The single highest-leverage review question on
   any endpoint: *which client does it use, and is every admin-client query
   preceded by an app-layer gate?*
-- **Admin**: `requireAdmin` checks the trusted role source (`has_role admin`);
-  admin UI tables use the server cookie client with admin RLS policies
+- **Admin**: `requirePlatformStaff` (the floor) and `requirePlatformPermission(<key>)`
+  check the trusted source (`platform_staff` via `is_platform_staff` /
+  `has_platform_permission`; the legacy `user_roles` / `has_role` flag and
+  `requireAdmin` were removed 2026-10-15);
+  admin UI tables use the server cookie client with staff RLS policies
   (memory `admin-rls-policies`) — not the service-role client.
 - **Org layer**: 4 fixed data-driven roles; `has_org_permission()` /
   `permission_definitions` (resources: events/guests/campaigns/organization).

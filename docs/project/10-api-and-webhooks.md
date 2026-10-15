@@ -4,9 +4,9 @@
 > (‏`"use server"`), מקלטי Webhooks, וה‑worker שמעבד אירועים out‑of‑band.
 > נכון לתאריך 2026‑07‑02, מבוסס על קריאת הקוד עצמו (לא על תיעוד קודם).
 >
-> **עדכון 2026‑10‑15:** `requireAdmin()` נמחקה מה‑DAL, וכל ההפניות אליה במסמך הזה הן היסטוריות. השער בפועל הוא
-> `requirePlatformStaff()` ב‑layout ו‑`requirePlatformPermission(<key>)` בכל פונקציית נתונים/פעולה (נעול בבדיקה
-> `admin-data-layer-coverage.test.ts`). הפעולה `claimFirstAdminAction` נמחקה יחד עם `/app/admin-access`.
+> **עדכון 2026‑10‑15:** `requireAdmin()` נמחקה מה‑DAL; במסמך הזה היא הוחלפה בשער האמיתי — `requirePlatformStaff()` ב‑layout ו‑`requirePlatformPermission(<key>)` בכל פונקציית נתונים/פעולה
+> (נעול בבדיקה `admin-data-layer-coverage.test.ts`). הפעולה `claimFirstAdminAction` נמחקה יחד עם `/app/admin-access`.
+> **ישן ולא קשור לשינוי הזה:** הנתיב `POST /api/admin/orders/[id]/reconcile` (והשורה שלו בטבלת הסיכום) **אינו קיים עוד** — הוסר עם מודל ה‑orders הישן ב‑9.7.2026 (`f400e3ba`); הסעיף שלו נשאר כאן כהיסטוריה עד שייכתב מחדש.
 >
 > שיטת האיסוף: `find src/app -name "route.ts"` (‏10 קבצים, כולל אחד מחוץ ל‑`/api`)
 > ו‑`grep -rl '"use server"' src` (‏21 קבצים, 56 פעולות מיוצאות).
@@ -42,7 +42,7 @@
   של אנונימיים מ‑`/app` ו‑`/admin` ל‑`/auth/login`. **אינו** שכבת ההרשאה — ההרשאה
   האמיתית נאכפת קרוב לנתונים.
 - **DAL** — `src/lib/auth/dal.ts`: ‏`requireUser()` (מפנה ל‑login אם אין משתמש),
-  `requireAdmin()` (בודק תפקיד דרך ה‑RPC ‏`has_role` מול `user_roles` — לעולם לא מהדפדפן),
+  `requirePlatformStaff()` / `requirePlatformPermission(<key>)` (בודקים דרך ה‑RPCs ‏`is_platform_staff` / `has_platform_permission` מול `platform_staff` — לעולם לא מהדפדפן),
   `requireActiveOrg()` (הארגון הפעיל נקרא מ‑cookie אך תמיד מאומת מול חברויות בפועל).
   בעלות על אירוע נאכפת ב‑`requireOwnedEvent()` (‏`src/lib/data/events.ts`) בתוך שכבת הנתונים.
 - **CSRF ב‑Route Handlers של תשלומים** — כל מסלולי ה‑POST הרגישים (`pay`, `authorize`,
@@ -205,7 +205,7 @@ outbound בלבד (`src/lib/sumit/*`), וההתאמה בדיעבד נעשית ב
 - **תפקיד:** ‏POC אדמיני לבדיקת התנהגות SUMIT חיה: חיוב על og‑token חדש (מסלול A)
   או על token שמור (מסלול B, ‏J4, דורש ת"ז + תוקף), עם שליטה ב‑`AutoCapture`,
   ‏`AuthorizeAmount`, ‏`CardTokenNotNeeded`, ‏`PreventDocumentCreation`.
-- **Auth:** ‏`requireAdmin()` + ‏CSRF.
+- **Auth:** ‏`requirePlatformPermission('manage_billing')` + ‏CSRF.
 - **תגובה:** דף HTML עם תצוגת request/response **מוסתרת־סודות** בלבד
   (allow‑list ב‑`src/lib/sumit/safe-preview.ts` — token/ת"ז/AuthNumber מצומצמים לבוליאנים);
   התוצאה העסקית נגזרת מ‑`Status===0 && ValidPayment===true` (ה‑HTTP status של SUMIT
@@ -321,14 +321,14 @@ same‑origin (למעלה) והתאמת אדמין יזומה (`reconcile`). א�
 | | `changeMemberRoleAction` / `removeMemberAction` | ניהול חברים | כנ"ל |
 | | `resendInvitationAction` / `revokeInvitationAction` | ניהול הזמנות | כנ"ל |
 
-### אדמין (`(admin)/admin/*`) — כולן נשענות על `requireAdmin()`
+### אדמין (`(admin)/admin/*`) — כולן נשענות על `requirePlatformPermission(<key>)`
 ההרשאה נאכפת בתוך שכבת הנתונים `src/lib/data/admin/*` (או בפעולה עצמה כשמצוין),
 בנוסף ל‑RLS של טבלאות האדמין.
 
 | קובץ | פעולות | תפקיד |
 |---|---|---|
 | `agreement/actions.ts` | `saveAgreementAction`, `approveAgreementAction`, `revertAgreementAction` | עריכת מסמך ההסכם (טיוטה→אישור→שחזור תבנית); ‏`agreementEditSchema`/`agreementApproveSchema` |
-| `agreement/config-actions.ts` | `saveAgreementConfigAction` | 7 ערכי קונפיג של ההסכם ל‑`app_settings`; ‏`requireAdmin` בפעולה + כתיבה דרך client סשן (RLS נשמר, לא service‑role) |
+| `agreement/config-actions.ts` | `saveAgreementConfigAction` | 7 ערכי קונפיג של ההסכם ל‑`app_settings`; ‏`requirePlatformPermission('manage_settings')` בפעולה + כתיבה דרך client סשן (RLS נשמר, לא service‑role) |
 | `callbacks/actions.ts` | `updateCallbackStatusAction` | עדכון סטטוס בקשת callback‏ (`updateCallbackStatusSchema`) |
 | `channels/actions.ts` | `updateWhatsAppChannelAction`, `testWhatsAppConnectionAction` | קונפיגורציית ערוץ WhatsApp (phone_number_id/WABA/tokens); ‏fail‑closed — אי אפשר להפעיל בלי מזהה+token; בדיקת חיבור חיה |
 | `company/actions.ts` | `updateCompanyAction` | פרטי החברה המשפטיים (`companySettingsSchema`) |
@@ -336,7 +336,7 @@ same‑origin (למעלה) והתאמת אדמין יזומה (`reconcile`). א�
 | `settings/actions.ts` | `updateSettingsAction` | דגלי מערכת + סודות ספקים (SUMIT/SMS/SMTP) ל‑`app_settings`‏ (`appSettingsSchema`) |
 | `templates/actions.ts` | `updateTemplateAction` | תבניות הודעה; ‏fail‑closed — אין הפעלה בלי שם/תוכן |
 | `users/actions.ts` | `grantAdminAction`, `revokeAdminAction`, `suspendUserAction`, `reactivateUserAction`, `grantCreditAction`, `updatePlanAction` | ניהול משתמשים והטבות; הגנות last‑admin / no‑self‑lockout בשכבת `admin/users.ts` |
-| `webhooks/actions.ts` | `reprocessWebhookEventAction` | ‏re‑queue של שורת `webhook_inbox` (איפוס processed_at/attempts); ‏`requireAdmin` בפעולה + ‏`logActivity` |
+| `webhooks/actions.ts` | `reprocessWebhookEventAction` | ‏re‑queue של שורת `webhook_inbox` (איפוס processed_at/attempts); ‏`requirePlatformPermission('manage_settings')` בפעולה + ‏`logActivity` |
 
 ---
 

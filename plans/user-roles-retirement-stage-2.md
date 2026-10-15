@@ -1,6 +1,8 @@
 # פרישת `user_roles` — שלב 2 (מחיקת `has_role`, `user_roles`, `app_role`)
 
-נכתב 15.10.2026. **נוצרה, לא הוחלה, ממתינה לסקירה ולאישור.** המיגרציה נוצרה בפקודה `supabase migration new retire_user_roles_stage_2` (הקובץ `supabase/migrations/20261015134735_retire_user_roles_stage_2.sql`). **אין להריץ `supabase db push` לפני אישור** — הוא מחיל כל מיגרציה ממתינה, כולל את זו.
+נכתב 15.10.2026. **הוחלה במסד החי ב-15.10.2026 (הבעלים הריץ `supabase db push`).** המיגרציה נוצרה בפקודה `supabase migration new retire_user_roles_stage_2` (הקובץ `supabase/migrations/20261015134735_retire_user_roles_stage_2.sql`).
+
+**אומת אחרי ההחלה (מסד חי, 15.10.2026):** `20261015134735` ב-ledger; `has_role`, `user_roles` ו-`app_role` לא קיימים; `platform_staff` שלם (2 שורות); האתר `beta.kalfa.me` תקין (200 / 307) ובלוגים של חמש האפליקציות אין שגיאות על האובייקטים שנמחקו; ה-types הוחזרו (`npm run gen:types`) ואין בהם עוד אזכור; Security Advisor: פונקציות SECURITY DEFINER הניתנות להרצה על ידי משתמש מחובר ירדו מ-23 ל-22 (`has_role`), בלי ממצאים חדשים.
 
 הקובץ הפועל: [`supabase/migrations/20261015134735_retire_user_roles_stage_2.sql`](../supabase/migrations/20261015134735_retire_user_roles_stage_2.sql). הוא כולל בדיקות קדם שמבטלות את המיגרציה אם משהו עדיין בשימוש, `DROP` **בלי `CASCADE`**, והוכחה בסוף באותה טרנזקציה.
 
@@ -37,7 +39,6 @@
 אחרי הבדיקות לא נשאר שום אובייקט זמני.
 
 ## מה נשאר
-1. סקירה של קובץ המיגרציה על ידי הבעלים.
-2. אישור מפורש להחלה (מחיקת טבלה).
-3. אז: `supabase db push`, `npm run gen:types` (השער `types:check` ב-deploy משווה את ה-types למסד החי), וקומיט.
-4. אחרי ההחלה: עדכון `docs/project/02-auth-and-authorization.md` §6.1 ו-`03-database-schema.md` מ"יצא משימוש" ל"נמחק", והרצת Security Advisor (צפוי: `has_role` נעלמת מרשימת ה-SECURITY DEFINER הניתנות להרצה).
+- קומיט ודחיפה של ה-types המחוללים ושל עדכוני התיעוד (`docs/project/02-auth-and-authorization.md` §6.1, `03-database-schema.md`).
+- גיבוי 3 השורות נשמר ב-`ops-evidence/user_roles-backup-20261015.sql` למקרה של ROLLBACK; אפשר למחוק אותו כשהבעלים מחליט שאין בו עוד צורך.
+- השער `types:check` ב-`npm run deploy` משווה את ה-types למסד החי, ולכן ה-deploy הבא דורש שה-types המעודכנים יהיו בעץ (הם כבר בעץ).

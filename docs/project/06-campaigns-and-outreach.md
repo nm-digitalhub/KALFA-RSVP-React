@@ -186,7 +186,7 @@ charge   = max(0, min(Σ locked_price, ceiling) − Σ credits)   -- בגמר ח
 
 ### 4.3 תבניות הודעה (`message_templates`)
 
-`message_key` שבלו"ז נפתר לתוכן שליחה דרך `getTemplateByKey` (`src/lib/data/message-templates.ts:15-28`): שם תבנית Meta מאושרת + שפה (WhatsApp) או script (שיחה). רק תבניות `active=true` נפתרות — **fail‑closed**: מפתח שלא הוגדר לא שולח דבר. ניהול ב‑`/admin/templates` (`listMessageTemplates`/`updateMessageTemplate`, אכיפת `requireAdmin`).
+`message_key` שבלו"ז נפתר לתוכן שליחה דרך `getTemplateByKey` (`src/lib/data/message-templates.ts:15-28`): שם תבנית Meta מאושרת + שפה (WhatsApp) או script (שיחה). רק תבניות `active=true` נפתרות — **fail‑closed**: מפתח שלא הוגדר לא שולח דבר. ניהול ב‑`/admin/templates` (`listMessageTemplates`/`updateMessageTemplate`, אכיפת `requirePlatformPermission('manage_settings')`).
 
 ## 5. מנוע ה‑Outreach (C1) — ארכיטקטורה
 

@@ -53,9 +53,11 @@ project — there is no local stack; every apply is production.
   - Owner-scoped SELECT on event-child tables: `can_access_event(event_id,
     '<resource>', '<action>')` — the org-aware CURRENT convention (Phase 3
     swap). Plain `owns_event()` is pre-org legacy; don't use it for new tables.
-  - Admin override policy via `has_role(auth.uid(), 'admin'::app_role)`.
+  - Staff override policy via `( select public.is_platform_staff() )`, or
+    `( select public.has_platform_permission('<key>') )` for a named capability
+    (the legacy `has_role` / `user_roles` flag was dropped 2026-10-15).
   - **initplan wrapping**: in policies, wrap volatile calls —
-    `(select auth.uid())`, `(select public.has_role(...))` — so Postgres
+    `(select auth.uid())`, `(select public.is_platform_staff())` — so Postgres
     evaluates once per statement, not per row. The audit fixed 55 policies for
     exactly this (migration 815028d). New policies must be born correct.
   - **GRANTs are separate from RLS**: a column/table without `GRANT

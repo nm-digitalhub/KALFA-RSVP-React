@@ -93,7 +93,7 @@ Route Handlers ייעודיים לאדמין:
 בקוד קיימים שני דפוסים, שניהם מאחורי `requirePlatformPermission(<key>)`:
 
 1. **Session (cookie) client + RLS** — עבור נתונים שה-policy מכסה במלואם: `settings.ts`, `channels.ts`, `packages.ts`, `agreement-config.ts` (צד הטופס). כאן ה-RLS פעיל כשכבת אכיפה שנייה בפועל.
-2. **Service-role client (`createAdminClient`)** — עבור נתונים שה-cookie client אינו יכול לקרוא: `users.ts` (אימיילים ב-`auth.users`, `user_roles`/`profiles` שהם self-only), `admin/agreements.ts`, `webhook-inbox.ts`, וכן ה-readers התפעוליים ב-`payments.ts`/`outreach-config.ts` (רצים גם בהקשר לקוח/worker, לא רק אדמין). service-role עוקף RLS, ולכן שם ה-policy היא **defence-in-depth** והשער האמיתי הוא `requirePlatformPermission(<key>)` (ראו ההערה במיגרציה `202606290035_webhook_inbox.sql:33-35`).
+2. **Service-role client (`createAdminClient`)** — עבור נתונים שה-cookie client אינו יכול לקרוא: `users.ts` (אימיילים ב-`auth.users`, `profiles` שהיא self-only), `admin/agreements.ts`, `webhook-inbox.ts`, וכן ה-readers התפעוליים ב-`payments.ts`/`outreach-config.ts` (רצים גם בהקשר לקוח/worker, לא רק אדמין). service-role עוקף RLS, ולכן שם ה-policy היא **defence-in-depth** והשער האמיתי הוא `requirePlatformPermission(<key>)` (ראו ההערה במיגרציה `202606290035_webhook_inbox.sql:33-35`).
 
 ## מערכת ההגדרות — `app_settings`
 
@@ -180,7 +180,7 @@ Route Handlers ייעודיים לאדמין:
 
 זרימת אישור מונעת-DB מעל טבלת `agreement_documents`
 (מיגרציה `202606290022_agreement_documents.sql`), בשכבת
-`src/lib/data/admin/agreements.ts` (service-role מאחורי `requireAdmin`, כל שינוי מבוקר):
+`src/lib/data/admin/agreements.ts` (service-role מאחורי `requirePlatformPermission('manage_settings')`, כל שינוי מבוקר):
 
 - **עריכה** (`updateAgreement`, שורות 40-62): שמירת `version` + `body_html` מותאם (או `null` = חזרה לתבנית הקוד המאומתת). **כל שינוי מחזיר את המסמך ל-`draft`** ומאפס `approved_by`/`approved_at` — חוזה שהשתנה חייב אישור מחדש.
 - **אישור** (`approveAgreement`, שורות 66-80): `status='approved'`, רישום המאשר והזמן; ה-renderer מסיר את סימון הטיוטה.
@@ -213,7 +213,7 @@ REST לפני/לצד זרימת הייצור:
 
 - **מסלול A — כרטיס חדש**: טופס `data-og="form"` שנטען עם jQuery + `payments.js` של SUMIT; הספרייה מבצעת טוקניזציה בצד-לקוח, מזריקה `og-token`, וה-ResponseCallback משחרר submit נטיבי (`sumit-test-form.tsx:48-75`). פרמטרים נבחרים: J5 (`AutoCapture=false`, ברירת המחדל) / J4, סכום, `VATRate`, `AuthorizeAmount`, `CardTokenNotNeeded`, `PreventDocumentCreation`, אימייל לשליחת מסמך.
 - **מסלול B — טוקן שמור (J4)**: טופס שני נפרד לחלוטין, **ללא** `data-og` (כדי ש-`payments.js` לא ייגע בו — אומת מול המקור החי של הספרייה; `sumit-test-form.tsx:288-390` בקירוב). מחייב תוקף כרטיס + CitizenID (חובה לכרטיסים ישראליים) — נדחה בשרת לפני קריאה ל-SUMIT אם חסרים (`route.ts:151-161`). ברירת המחדל למסלול זה היא J4 (`route.ts:130-134`).
-- **ה-Route Handler** (`/api/admin/sumit-test/route.ts`): `requireAdmin` + בדיקת Origin/Referer מול `APP_ORIGIN` (שורות 28-44), קריאת התצורה מ-`app_settings`, ואז `chargeRaw` (`src/lib/sumit/raw-charge.ts`).
+- **ה-Route Handler** (`/api/admin/sumit-test/route.ts`): `requirePlatformPermission('manage_billing')` + בדיקת Origin/Referer מול `APP_ORIGIN` (שורות 28-44), קריאת התצורה מ-`app_settings`, ואז `chargeRaw` (`src/lib/sumit/raw-charge.ts`).
 - **Redaction (safe-preview)**: התגובה הגולמית לעולם לא מגיעה ל-DOM. `summarizeSumitRequest` / `summarizeSumitResponse` (`src/lib/sumit/safe-preview.ts`) הן הקרנת allow-list שטוחה: טוקנים / CitizenID / AuthNumber / אימייל / מזהי-חברה מוחזרים כבוליאני-נוכחות בלבד (`*_present` / `has_*`), ומפתח לא-מוכר לעולם לא מועתק.
 - **באנר הצלחה/כישלון אמיתי**: SUMIT מחזירה HTTP 200 גם על עסקה שנדחתה; ההצלחה נקבעת מ-`Status===0 && Data.Payment.ValidPayment===true` (`route.ts:59-65`), והעמוד מציג באנר ✅/❌ מפורש לצד הבהרה שה-HTTP status אינו אינדיקציה.
 

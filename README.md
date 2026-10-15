@@ -52,7 +52,7 @@ npm run build
   clients via `@supabase/ssr`; `env.ts` reads public env; `types.ts` is generated
   from the live project (`supabase gen types typescript --linked`).
 - `src/lib/auth/dal.ts` — Data Access Layer: `getUser` / `requireUser` /
-  `requireAdmin`, memoized with React `cache()`. `getUser()` verifies the token
+  `requirePlatformStaff` / `requirePlatformPermission`, memoized with React `cache()`. `getUser()` verifies the token
   with Supabase Auth (never `getSession()` for authorization).
 - `src/lib/data/` — ownership-scoped queries returning DTOs; explicit
   `owner_id` filtering in addition to RLS.
@@ -66,8 +66,8 @@ Foundation + events vertical slice, built on the **existing live schema** of the
 `kalfa-event-magic` Supabase project (types generated via `supabase gen types`).
 The database already contains the full domain — `events`, `guests`,
 `guest_groups`, `event_questions`, `rsvp_responses`, `campaigns`, `orders`,
-`packages`, `profiles`, `user_roles`, … — plus RPCs (`submit_rsvp`,
-`get_rsvp_by_token`, `has_role`, `owns_event`). Next domains follow the same
+`packages`, `profiles`, `platform_staff`, … — plus RPCs (`submit_rsvp`,
+`get_rsvp_by_token`, `has_platform_permission`, `owns_event`). Next domains follow the same
 pattern: guests, public RSVP (`/r/[token]`), campaigns/messaging, reports,
 packages/admin.
 

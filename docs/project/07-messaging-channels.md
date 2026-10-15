@@ -364,7 +364,7 @@
   עתידיות); `sms_enabled`/`email_enabled` עצמאיים לערוצים התפעוליים.
 - הסודות (access token, app secret, SMS token, SMTP password) מוצגים בטפסי
   האדמין **ממוסכים עם reveal** (דפוס gateway-plugin), נשלחים רק לעמוד
-  `requireAdmin` על HTTPS, ולעולם לא נלוגגים (`channels.ts:6-11`,
+  `requirePlatformPermission('manage_settings')` על HTTPS, ולעולם לא נלוגגים (`channels.ts:6-11`,
   `settings.ts:10-13`).
 - `/admin/integrations/meta-whatsapp` כולל בדיקת חיבור read-only — `testWhatsAppConnection`
   (`channels.ts:83-113`): GET ל-Graph API על שדות התצוגה בלבד, בלי לשלוח הודעה;
