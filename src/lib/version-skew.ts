@@ -2,8 +2,10 @@ import { unstable_isUnrecognizedActionError } from 'next/navigation';
 
 // Deployment version skew: a tab loaded before a deploy holds Server Action
 // ids from the previous build. Clicking any action button then fails with
-// Next's UnrecognizedActionError (server responds 404 +
-// `x-nextjs-action-not-found`), which surfaces as a dead/stuck button. The
+// Next's UnrecognizedActionError (the client raises it from the server's
+// `x-nextjs-action-not-found: 1` header; the status is 409 for a well-formed
+// id this build does not know, 400 for a malformed one), which surfaces as a
+// dead/stuck button. The
 // recovery is a one-time full reload — the fresh page carries the new build's
 // action ids. `deploymentId` (next.config.ts) already hard-reloads stale tabs
 // on NAVIGATION; this handles the remaining case of a direct action click.

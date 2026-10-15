@@ -13,22 +13,34 @@ import { serveMarkdown } from '@/lib/http/serve-markdown';
 // constant, client/components/app-router-headers.js).
 const ACTION_HEADER = 'next-action';
 
-// EXACTLY what Next's own action handler returns for an unrecognized action
-// (`handleUnrecognizedFetchAction`, server/app-render/action-handler.js): 404,
-// `x-nextjs-action-not-found: 1`, plain-text body. Reproduced byte-for-byte and
-// not improvised, because the client router keys its recovery off this precise
-// shape — `unstable_isUnrecognizedActionError` is what drives our own
-// version-skew reload (src/lib/version-skew.ts). A plain 400 here would look
-// like a generic failure and leave a genuinely stale tab with a dead button.
+// What Next's own action handler returns for an unrecognized action
+// (`handleUnrecognizedAction`, server/app-render/action-handler.js): the
+// `x-nextjs-action-not-found: 1` header, a plain-text body, and a status that
+// depends on the id — `getUnrecognizedActionStatusCode` answers 400
+// ("Invalid Server Action request.") when the id cannot be a Server Action
+// reference (not 42 characters, `mightBeServerReferenceId`), which is exactly
+// the case this proxy intercepts, and 409 otherwise (a well-formed id this
+// build does not know — that one still goes to Next, it is the stale-tab case).
+//
+// The client router keys its recovery off the HEADER alone
+// (client/components/router-reducer/reducers/server-action-reducer.js reads
+// `x-nextjs-action-not-found`, never the status), and that is what drives our
+// own version-skew reload (`unstable_isUnrecognizedActionError`,
+// src/lib/version-skew.ts). The status and body are kept identical to Next's
+// anyway, and src/proxy.test.ts derives them FROM the installed Next source, so
+// a Next upgrade that changes this handler fails the test instead of drifting.
+// (This used to say 404 / "Server action not found.", the answer of an older
+// Next; the installed 16.4.1 answers 400 / "Invalid Server Action request.".)
 //
 // Next's comment on that handler explicitly invites this: "using a blank body +
 // header means that unrecognized actions can also be handled at the infra level
-// (i.e. without needing to invoke a lambda)".
+// (i.e. without needing to invoke a lambda)". Answering here also spares the
+// `console.warn(err)` Next logs for every such request.
 const ACTION_NOT_FOUND_HEADER = 'x-nextjs-action-not-found';
 
-function actionNotFound(): NextResponse {
-  return new NextResponse('Server action not found.', {
-    status: 404,
+function invalidActionRequest(): NextResponse {
+  return new NextResponse('Invalid Server Action request.', {
+    status: 400,
     headers: { [ACTION_NOT_FOUND_HEADER]: '1', 'content-type': 'text/plain' },
   });
 }
@@ -59,7 +71,7 @@ export async function proxy(request: NextRequest) {
   // of diagnosis. Answering here keeps the action pipeline out of it entirely.
   const actionId = request.headers.get(ACTION_HEADER);
   if (actionId !== null && !isPlausibleServerActionId(actionId)) {
-    return actionNotFound();
+    return invalidActionRequest();
   }
 
   if (isNegotiableRequest(request)) {

@@ -1,5 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { mightBeServerReferenceId } from 'next/dist/shared/lib/server-reference-info';
+import { NEXT_ACTION_NOT_FOUND_HEADER } from 'next/dist/client/components/app-router-headers';
+
+import { isPlausibleServerActionId } from '@/lib/security/server-action-id';
 
 const updateSession = vi.fn(async () => new Response('session', { status: 200 }));
 vi.mock('@/lib/supabase/proxy', () => ({ updateSession }));
@@ -8,6 +15,33 @@ const { proxy } = await import('@/proxy');
 
 // A real Next 16 action id: two-hex info byte + 40-char hash = 42 characters.
 const VALID_ACTION_ID = '00' + 'a'.repeat(40);
+
+// What the INSTALLED Next answers for an action id that cannot be a Server
+// Action (not 42 characters). Read from its own source rather than copied into
+// this test, so the proxy cannot drift from Next unnoticed: it had — this file
+// used to assert 404 / "Server action not found.", an older Next's answer, while
+// the installed 16.4.1 answers 400 / "Invalid Server Action request.".
+// If Next rewrites action-handler.js so these patterns stop matching, this
+// fails on the upgrade — that is the cue to re-read the handler and src/proxy.ts.
+function nextUnrecognizedActionAnswer(): { status: number; body: string } {
+  const nextRoot = dirname(createRequire(import.meta.url).resolve('next/package.json'));
+  const source = readFileSync(join(nextRoot, 'dist/server/app-render/action-handler.js'), 'utf8');
+  const status = /function getUnrecognizedActionStatusCode\(actionId\)\s*\{\s*return actionId !== null && !\(0, _serverreferenceinfo\.mightBeServerReferenceId\)\(actionId\) \? (\d{3}) : (\d{3});/.exec(
+    source,
+  );
+  const body = /function getUnrecognizedActionResponseBody\(statusCode\)\s*\{\s*return statusCode === (\d{3}) \? '([^']+)' : '([^']+)';/.exec(
+    source,
+  );
+  if (!status || !body) {
+    throw new Error(
+      "Next's unrecognized-action handler no longer matches the shape src/proxy.ts mirrors — re-read node_modules/next/dist/server/app-render/action-handler.js and update src/proxy.ts.",
+    );
+  }
+  const malformedStatus = Number(status[1]);
+  // The body function names the status whose text is its first string.
+  const body400 = Number(body[1]) === malformedStatus ? body[2] : body[3];
+  return { status: malformedStatus, body: body400 };
+}
 
 function post(actionId?: string): NextRequest {
   const headers = new Headers();
@@ -31,19 +65,31 @@ describe('proxy — malformed Server Action ids', () => {
     ['an empty header', ''],
   ])('answers %s without invoking the session refresh', async (_label, id) => {
     const res = await proxy(post(id));
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(nextUnrecognizedActionAnswer().status);
     expect(updateSession).not.toHaveBeenCalled();
   });
 
-  // The client router keys its recovery off this exact shape — status, header
-  // and content-type together. Loosening any of them turns a recoverable stale
-  // tab into a dead button, so assert all three.
-  it('reproduces Next\'s own unrecognized-action response exactly', async () => {
+  // The client router keys its recovery off the header; status, body and
+  // content-type are kept identical to Next's so the answer is the same whether
+  // the proxy or Next's action pipeline gave it. The expected values come from
+  // the installed Next (above); the literals pin what that derivation found at
+  // the time of writing, so a failure shows which side moved.
+  it('reproduces the installed Next\'s unrecognized-action response exactly', async () => {
+    const expected = nextUnrecognizedActionAnswer();
+    expect(expected).toEqual({ status: 400, body: 'Invalid Server Action request.' });
+
     const res = await proxy(post('x'));
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(expected.status);
     expect(res.headers.get('x-nextjs-action-not-found')).toBe('1');
     expect(res.headers.get('content-type')).toBe('text/plain');
-    await expect(res.text()).resolves.toBe('Server action not found.');
+    await expect(res.text()).resolves.toBe(expected.body);
+  });
+
+  it('uses the header name and the id-length rule of the installed Next', () => {
+    expect(NEXT_ACTION_NOT_FOUND_HEADER).toBe('x-nextjs-action-not-found');
+    for (const id of ['', 'x', 'f'.repeat(40), VALID_ACTION_ID, 'a'.repeat(64)]) {
+      expect(isPlausibleServerActionId(id)).toBe(mightBeServerReferenceId(id));
+    }
   });
 
   it('passes a well-formed 42-character id straight through', async () => {
