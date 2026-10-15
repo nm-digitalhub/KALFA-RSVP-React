@@ -1958,6 +1958,45 @@ export type Database = {
         }
         Relationships: []
       }
+      company_profile: {
+        Row: {
+          company_contact_email: string | null
+          company_contact_phone: string | null
+          company_instagram_url: string | null
+          company_legal_address: string | null
+          company_legal_id: string | null
+          company_legal_name: string | null
+          id: boolean
+          privacy_url: string | null
+          terms_url: string | null
+          warranty_text: string | null
+        }
+        Insert: {
+          company_contact_email?: string | null
+          company_contact_phone?: string | null
+          company_instagram_url?: string | null
+          company_legal_address?: string | null
+          company_legal_id?: string | null
+          company_legal_name?: string | null
+          id?: boolean
+          privacy_url?: string | null
+          terms_url?: string | null
+          warranty_text?: string | null
+        }
+        Update: {
+          company_contact_email?: string | null
+          company_contact_phone?: string | null
+          company_instagram_url?: string | null
+          company_legal_address?: string | null
+          company_legal_id?: string | null
+          company_legal_name?: string | null
+          id?: boolean
+          privacy_url?: string | null
+          terms_url?: string | null
+          warranty_text?: string | null
+        }
+        Relationships: []
+      }
       console_agent_calendar_presence: {
         Row: {
           agent_id: string
