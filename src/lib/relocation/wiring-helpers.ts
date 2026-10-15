@@ -58,7 +58,7 @@ export async function registerDomainInPlesk(host: string): Promise<void> {
   }
 }
 
-/** company_contact_email from app_settings (DB-resident, same REST pattern as
+/** company_contact_email from company_profile (DB-resident, same REST pattern as
  * preflight's fetchWhatsAppSettings), falling back to admin@<apex>. */
 export async function resolveCertEmail(repoRoot: string, targetOrigin: string): Promise<string> {
   const apex = new URL(targetOrigin).hostname.split(".").slice(-2).join(".");
@@ -68,7 +68,7 @@ export async function resolveCertEmail(repoRoot: string, targetOrigin: string): 
     const base = env.NEXT_PUBLIC_SUPABASE_URL;
     const key = env.SUPABASE_SERVICE_ROLE_KEY;
     if (!base || !key) return fallback;
-    const res = await fetch(`${base}/rest/v1/app_settings?id=eq.true&select=company_contact_email`, {
+    const res = await fetch(`${base}/rest/v1/company_profile?id=eq.true&select=company_contact_email`, {
       headers: { apikey: key, authorization: `Bearer ${key}` },
       signal: AbortSignal.timeout(8000),
     });
