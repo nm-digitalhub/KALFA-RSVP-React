@@ -136,6 +136,12 @@ esbuild worker/main.ts --bundle --platform=node --format=cjs --target=node20 \
 (build דטרמיניסטי) או אם ה-worker אינו online — שינוי ב-`.env.local` בלבד דורש
 `pm2 restart kalfa-worker` ידני.
 
+הסטטוס נקרא מ-`pm2 jlist` דרך `scripts/lib/pm2-jlist.mjs` (משותף גם ל-`owner-agent-build-restart.mjs`).
+כשגרסת ה-CLI שונה מגרסת הדמון, pm2 מדפיס ל-stdout באנר לפני ה-JSON ("In-memory PM2 is out-of-date");
+המנתח מדלג עליו **ומדפיס אזהרה**, ולא מפרש אותו כ"pm2 לא עונה". מאז 15.10.2026 קיימת
+התקנת PM2 אחת בלבד (`/usr/bin/pm2` 7.0.4, וגם יחידת האתחול `pm2-kalfa.me.service` מצביעה עליה) — אם האזהרה
+מופיעה שוב, `type -a pm2` ו-`pm2 update`.
+
 ### 3.3 חיבור ה-DB — חובה session pooler (IPv4)
 
 ה-worker מתחבר ל-Postgres ישירות (לא דרך supabase-js) עם

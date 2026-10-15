@@ -24,6 +24,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { parseJlist, warnOnNotice } from './lib/pm2-jlist.mjs';
 
 const BUNDLE = 'dist/worker.cjs';
 const APP = 'kalfa-worker';
@@ -40,13 +41,12 @@ function run(cmd, args, opts = {}) {
 function pm2Online(app) {
   const r = spawnSync('pm2', ['jlist'], { encoding: 'utf8' });
   if (r.status !== 0) return false;
-  try {
-    const list = JSON.parse(r.stdout);
-    const proc = list.find((p) => p.name === app);
-    return proc?.pm2_env?.status === 'online';
-  } catch {
-    return false;
-  }
+  // pm2 may print its own notice before the JSON (CLI/daemon version mismatch);
+  // parseJlist tolerates that and we say so, instead of reading it as "not online".
+  const parsed = parseJlist(r.stdout);
+  if (parsed === null) return false;
+  warnOnNotice('worker-build-restart', parsed.notice);
+  return parsed.list.find((p) => p.name === app)?.pm2_env?.status === 'online';
 }
 
 const before = sha256(BUNDLE);

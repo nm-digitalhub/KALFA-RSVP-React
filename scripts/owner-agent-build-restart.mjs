@@ -39,6 +39,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { parseJlist, warnOnNotice } from './lib/pm2-jlist.mjs';
 
 const APP = 'kalfa-owner-agent';
 const NO_PM2 = process.argv.includes('--no-pm2');
@@ -91,13 +92,14 @@ function buildAndSwap({ script, outVar, file }) {
 function pm2State(app) {
   const r = spawnSync('pm2', ['jlist'], { encoding: 'utf8' });
   if (r.status !== 0) return 'unknown';
-  try {
-    const proc = JSON.parse(r.stdout).find((p) => p.name === app);
-    if (!proc) return 'absent';
-    return proc.pm2_env?.status === 'online' ? 'online' : 'not-online';
-  } catch {
-    return 'unknown';
-  }
+  // pm2 may print its own notice before the JSON (CLI/daemon version mismatch);
+  // parseJlist tolerates that and we say so, instead of reading it as "unknown".
+  const parsed = parseJlist(r.stdout);
+  if (parsed === null) return 'unknown';
+  warnOnNotice('owner-agent-build-restart', parsed.notice);
+  const proc = parsed.list.find((p) => p.name === app);
+  if (!proc) return 'absent';
+  return proc.pm2_env?.status === 'online' ? 'online' : 'not-online';
 }
 
 const changed = BUNDLES.map((b) => ({ file: b.file, changed: buildAndSwap(b) }));
