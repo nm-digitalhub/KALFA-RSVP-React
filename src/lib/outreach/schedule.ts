@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 
 import { israelCalendarDay } from '@/lib/data/event-date';
 import type { SendPolicy } from '@/lib/outreach/send-policy';
+import { deterministicJobId } from '@/lib/queue/deterministic-id';
 
 export type Touchpoint = {
   days_before: number;
@@ -18,21 +19,11 @@ export type Touchpoint = {
 // invalidates every queued job's fingerprint → they re-plan under the new logic.
 export const SEND_TIMING_ALGORITHM_VERSION = 1;
 
-// Fixed KALFA-outreach UUIDv5 namespace (constant — do not change, it anchors the
-// deterministic job ids that give pg-boss exactly-once enqueue per step).
-const UUID_NS = '5b1d0e3a-9b7c-4f2a-8e6d-0c1a2b3c4d5e';
-
-// One RFC-4122 UUIDv5 (version/variant nibbles fixed) over a name in the fixed
-// namespace. A real uuid — so it satisfies Postgres' uuid column AND the strict
-// z.uuid() validator (a string-suffixed id would throw 22P02).
-function uuidv5(name: string): string {
-  const nsBytes = Buffer.from(UUID_NS.replace(/-/g, ''), 'hex');
-  const hash = createHash('sha1').update(nsBytes).update(name).digest();
-  hash[6] = (hash[6] & 0x0f) | 0x50; // version 5
-  hash[8] = (hash[8] & 0x3f) | 0x80; // RFC-4122 variant
-  const h = hash.subarray(0, 16).toString('hex');
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
-}
+// The ids below are UUIDv5s over a fixed namespace (src/lib/queue/deterministic-id.ts, the one implementation: its
+// namespace constant anchors the deterministic job ids that give pg-boss exactly-once enqueue per step, so it must
+// never change). This file used to carry its own byte-identical copy; 60,000 ids captured from that copy were
+// compared against the shared function before it was removed.
+const uuidv5 = deterministicJobId;
 
 // Deterministic UUIDv5 job id for (campaign, contact, step, PLAN REVISION) —
 // same inputs → same id (pg-boss ON CONFLICT DO NOTHING = at-most-once enqueue).
