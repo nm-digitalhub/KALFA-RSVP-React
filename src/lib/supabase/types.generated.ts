@@ -7012,27 +7012,6 @@ export type Database = {
         }
         Relationships: []
       }
-      user_roles: {
-        Row: {
-          created_at: string
-          id: string
-          role: Database["public"]["Enums"]["app_role"]
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          role: Database["public"]["Enums"]["app_role"]
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          role?: Database["public"]["Enums"]["app_role"]
-          user_id?: string
-        }
-        Relationships: []
-      }
       user_settings: {
         Row: {
           billing_updates: boolean
@@ -8517,13 +8496,6 @@ export type Database = {
         Args: { _key: string; _user_id: string }
         Returns: boolean
       }
-      has_role: {
-        Args: {
-          _role: Database["public"]["Enums"]["app_role"]
-          _user_id: string
-        }
-        Returns: boolean
-      }
       has_service_exposure: {
         Args: { p_campaign: string; p_contact: string }
         Returns: boolean
@@ -9022,7 +8994,6 @@ export type Database = {
     }
     Enums: {
       agreement_status: "draft" | "approved"
-      app_role: "admin" | "user"
       campaign_channel: "whatsapp" | "call"
       campaign_status:
         | "draft"
@@ -9224,7 +9195,6 @@ export const Constants = {
   public: {
     Enums: {
       agreement_status: ["draft", "approved"],
-      app_role: ["admin", "user"],
       campaign_channel: ["whatsapp", "call"],
       campaign_status: [
         "draft",
