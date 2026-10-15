@@ -8,7 +8,7 @@ Customers can now consent to KALFA marketing email (change `marketing-email-cons
 
 - **Three code templates.** They follow the approved designs, are built the same way as the existing React Email templates in `src/lib/email/templates.ts`, and include a plain-text version.
   - Each one opens its subject line and its body with "פרסומת".
-  - Each footer carries the advertiser's legal name, address, phone and email, read from `app_settings`.
+  - Each footer carries the advertiser's legal name, address, phone and email, read from `company_profile`.
   - Each includes an unsubscribe link.
 - **A send ledger.** Every marketing email that goes out is recorded once per customer and template, and once per event for the setup reminder, so nobody gets the same email twice. The table is server-only, like the consent ledger.
 - **A scheduled sender.** A pg-boss sweep finds who is due for which email. Before every send it re-checks consent, the confirmed address and the send window. It sends only:

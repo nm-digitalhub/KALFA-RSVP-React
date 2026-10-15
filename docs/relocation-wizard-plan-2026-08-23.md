@@ -35,7 +35,7 @@ console scenarios (they now read `KALFA_APP_ORIGIN`) — F6b performs it under t
   webhook `notificationUrl`, Voximplant callback arming, outreach calls, email templates.
 - **The DB is domain-clean by design.** All guest/RSVP/gift/invite links are built at
   render/send time from `APP_ORIGIN`; tables store bare opaque tokens. Only 2 columns need
-  rewriting on a move: `app_settings.privacy_url` and `app_settings.terms_url`. No message
+  rewriting on a move: `company_profile.privacy_url` and `company_profile.terms_url`. No message
   body stored in the DB contains a URL.
 - **The deploy pipeline is domain-free.** `npm run deploy` (staged build → `.next` swap →
   pm2 restarts) references only port 3002 and pm2 names.
@@ -260,7 +260,7 @@ Three hard rules encoded from the file's own documentation:
 | SUMIT, ExtrA SMS | **no action** — no stored URLs; everything built per-request | — |
 
 ### Stage G — DB updates (automated)
-1. G1: `UPDATE app_settings SET privacy_url = :origin || '/privacy', terms_url = :origin || '/terms';`
+1. G1: `UPDATE company_profile SET privacy_url = :origin || '/privacy', terms_url = :origin || '/terms' WHERE id = true;`
 2. G2: `UPDATE message_templates SET name, components` → the `_vN+1` successor of every
    template Meta has **APPROVED** (row `name` + `components.variants` / `media_variants` /
    `media_variant`); unapproved names stay and keep working through the Stage E 301.

@@ -55,7 +55,7 @@ Facts measured on 11.10.2026 that shape the approach (motivation: proposal.md - 
 **D9. The wording is server-side, versioned, and released only after approval.** The wording and its version live in one module. The form renders the module's wording, and the action records the module's wording, so the browser never supplies either. The checkbox and the settings toggle ship behind `app_settings.marketing_consent_enabled` (default false, the same pattern as `whatsapp_consent_required`), so the code can deploy before the wording is approved. The wording below was approved by the owner on 11.10.2026 (no lawyer review needed, owner ruling):
 > "אני מאשר/ת לקבל מ-{company} עדכונים, טיפים והצעות בדוא״ל. אפשר להסיר בכל עת בלחיצה על "הסרה" בכל הודעה או בהגדרות החשבון."
 
-`{company}` is `app_settings.company_legal_name` (live value 11.10.2026: "נתנאל מבורך קלפה - KALFA RSVP"); the recorded wording is the rendered text.
+`{company}` is `company_profile.company_legal_name` (live value 11.10.2026: "נתנאל מבורך קלפה - KALFA RSVP"); the recorded wording is the rendered text.
 
 ## Risks / Trade-offs
 
