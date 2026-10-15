@@ -69,9 +69,9 @@ export const requireUser = cache(async () => {
 // missed — six fleet_* SECURITY DEFINER RPCs and two voice policies — now ask
 // has_platform_permission('manage_settings' / 'manage_voice'), claim_first_admin()
 // is dropped (migration 20261015114659_retire_user_roles_admin_consumers.sql), and the
-// /app nav link asks isPlatformStaff(). has_role and the user_roles table are dropped in
-// stage 2, after that migration is applied and this build is deployed
-// (plans/user-roles-retirement-stage-2.md).
+// /app nav link asks isPlatformStaff(). has_role, the user_roles table and the app_role
+// enum are DROPPED (stage 2, migration 20261015134735_retire_user_roles_stage_2.sql,
+// applied 2026-10-15; plans/user-roles-retirement-stage-2.md).
 //
 // ⚠️ THE LAYOUT IS NOT THE GATE. `(admin)/admin/layout.tsx` calls
 // requirePlatformStaff(), and that is defense in depth, NOT authority. Next's own

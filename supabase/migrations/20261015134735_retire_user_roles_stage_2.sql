@@ -1,7 +1,8 @@
 -- STAGE 2 of the legacy user_roles retirement: drop has_role(), user_roles and the app_role enum.
 --
--- STATUS: CREATED 15.10.2026, NOT APPLIED. Do not `supabase db push` until the owner has reviewed this file and approved:
--- this migration deletes a table. After applying: `npm run gen:types` (the deploy gate `types:check` compares the committed
+-- STATUS: APPLIED to the live database on 15.10.2026 by the owner (supabase db push). This header was a "NOT APPLIED / do not
+-- push" warning until then; only these comment lines were edited afterwards, no SQL statement was touched.
+-- This migration deletes a table. After applying: `npm run gen:types` (the deploy gate `types:check` compares the committed
 -- types with the LIVE database), then update docs/project/02-auth-and-authorization.md 6.1 and 03-database-schema.md.
 -- Review notes and the test results: plans/user-roles-retirement-stage-2.md
 --

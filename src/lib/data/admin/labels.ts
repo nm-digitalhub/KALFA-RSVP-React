@@ -1,4 +1,3 @@
-import type { Enums } from '@/lib/supabase/types';
 import type { CallbackStatus, CallOutcome, ContactStatus } from '@/lib/validation/admin';
 import type { BadgeVariant } from '@/components/ui/badge';
 
@@ -9,13 +8,6 @@ import type { BadgeVariant } from '@/components/ui/badge';
 // `Record<Enum, string>` so a new enum value becomes a COMPILE error (forcing a
 // translation) rather than a silently-untranslated UI string. The free-text
 // callback status uses a partial map plus a `?? value` fallback in the UI.
-type AppRole = Enums<'app_role'>;
-
-export const APP_ROLE_LABELS: Record<AppRole, string> = {
-  admin: 'מנהל',
-  user: 'משתמש',
-};
-
 // callback_requests.status — SCHEDULING status (see the vocabulary's own
 // comment in validation/admin.ts for the full reasoning: this describes what
 // the scheduler did, never what the owner did with the call). Free text in the

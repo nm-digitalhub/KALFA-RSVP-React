@@ -78,8 +78,9 @@ describe('retire user_roles stage 2 migration', () => {
     expect(text).toMatch(/create policy ur_self_read/i);
   });
 
-  it('says in its header that it must not be applied before review', () => {
-    expect(sql()).toMatch(/NOT APPLIED/);
-    expect(sql()).toMatch(/Do not `supabase db push`/);
+  it('records in its header that it has been applied, and no longer warns "do not push"', () => {
+    // It was applied on 2026-10-15; a stale "do not db push" warning on an applied migration would mislead.
+    expect(sql()).toMatch(/STATUS: APPLIED to the live database on 15\.10\.2026/);
+    expect(sql()).not.toMatch(/Do not `supabase db push` until/);
   });
 });

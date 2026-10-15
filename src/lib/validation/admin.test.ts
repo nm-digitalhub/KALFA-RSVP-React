@@ -15,7 +15,6 @@ import {
   updateContactStatusSchema,
   packageBaseSchema,
   operationalFieldsSchema,
-  appRoleEnum,
   companySettingsSchema,
 } from './admin';
 
@@ -235,14 +234,6 @@ describe('packageBaseSchema', () => {
     expect(packageBaseSchema.safeParse({ ...base, sort_order: '2.5' }).success).toBe(
       false,
     );
-  });
-});
-
-describe('appRoleEnum', () => {
-  it('accepts admin and user, rejects others', () => {
-    expect(appRoleEnum.safeParse('admin').success).toBe(true);
-    expect(appRoleEnum.safeParse('user').success).toBe(true);
-    expect(appRoleEnum.safeParse('superuser').success).toBe(false);
   });
 });
 

@@ -9,7 +9,7 @@ import { z } from 'zod';
 // `LABELS[s] ?? s` fallback so legacy/foreign values never break the UI.
 
 import { agreementLinkUrlSchema } from '@/lib/agreements/link-url';
-import { Constants, type Enums } from '@/lib/supabase/types';
+import { Constants } from '@/lib/supabase/types';
 import { wallClockToDate } from '@/lib/data/event-date';
 import { ISRAEL_TIME_ZONE } from '@/lib/date';
 
@@ -428,12 +428,6 @@ export const offerSchema = z.object({
 });
 
 export type OfferInput = z.infer<typeof offerSchema>;
-
-// --- app_role (for reference / future role management) ---
-export const appRoleEnum = z.enum(Constants.public.Enums.app_role, {
-  error: 'תפקיד לא תקין',
-});
-export type AppRole = Enums<'app_role'>;
 
 // --- app_settings (admin: feature switches) ---
 export const appSettingsSchema = z.object({

@@ -15,7 +15,7 @@ import { createClient } from '@/lib/supabase/server';
 //
 // Read via the cookie/session client: RLS policy channels_auth_read (using true)
 // lets any signed-in admin surface read this non-sensitive display metadata
-// without coupling to a specific platform permission or app_role.
+// without coupling to a specific platform permission.
 
 export type ChannelCatalogEntry = {
   key: string;
