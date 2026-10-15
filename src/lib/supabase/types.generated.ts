@@ -174,12 +174,6 @@ export type Database = {
           cancellation_fee_cap: number
           cancellation_fee_percent: number
           cancellation_refund_days: number
-          company_contact_email: string | null
-          company_contact_phone: string | null
-          company_instagram_url: string | null
-          company_legal_address: string | null
-          company_legal_id: string | null
-          company_legal_name: string | null
           console_call_me_now_enabled: boolean
           console_consult_conference_enabled: boolean
           console_dtmf_handoff_enabled: boolean
@@ -215,7 +209,6 @@ export type Database = {
           owner_agent_reports_enabled: boolean
           package_model_enabled: boolean
           payments_enabled: boolean
-          privacy_url: string | null
           signup_reminder_enabled: boolean
           slack_alert_campaign_billing: boolean
           slack_alert_channel_id: string | null
@@ -237,7 +230,6 @@ export type Database = {
           sumit_api_key: string | null
           sumit_api_public_key: string | null
           sumit_company_id: string | null
-          terms_url: string | null
           unconfirmed_cleanup_enabled: boolean
           updated_at: string
           voximplant_account_callback_prev: Json | null
@@ -261,7 +253,6 @@ export type Database = {
           voximplant_sales_call_rule_id: string | null
           voximplant_sales_calls_enabled: boolean
           voximplant_service_account_json: string | null
-          warranty_text: string | null
           whatsapp_access_token: string | null
           whatsapp_app_secret: string | null
           whatsapp_consent_required: boolean
@@ -283,12 +274,6 @@ export type Database = {
           cancellation_fee_cap?: number
           cancellation_fee_percent?: number
           cancellation_refund_days?: number
-          company_contact_email?: string | null
-          company_contact_phone?: string | null
-          company_instagram_url?: string | null
-          company_legal_address?: string | null
-          company_legal_id?: string | null
-          company_legal_name?: string | null
           console_call_me_now_enabled?: boolean
           console_consult_conference_enabled?: boolean
           console_dtmf_handoff_enabled?: boolean
@@ -324,7 +309,6 @@ export type Database = {
           owner_agent_reports_enabled?: boolean
           package_model_enabled?: boolean
           payments_enabled?: boolean
-          privacy_url?: string | null
           signup_reminder_enabled?: boolean
           slack_alert_campaign_billing?: boolean
           slack_alert_channel_id?: string | null
@@ -346,7 +330,6 @@ export type Database = {
           sumit_api_key?: string | null
           sumit_api_public_key?: string | null
           sumit_company_id?: string | null
-          terms_url?: string | null
           unconfirmed_cleanup_enabled?: boolean
           updated_at?: string
           voximplant_account_callback_prev?: Json | null
@@ -370,7 +353,6 @@ export type Database = {
           voximplant_sales_call_rule_id?: string | null
           voximplant_sales_calls_enabled?: boolean
           voximplant_service_account_json?: string | null
-          warranty_text?: string | null
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
           whatsapp_consent_required?: boolean
@@ -392,12 +374,6 @@ export type Database = {
           cancellation_fee_cap?: number
           cancellation_fee_percent?: number
           cancellation_refund_days?: number
-          company_contact_email?: string | null
-          company_contact_phone?: string | null
-          company_instagram_url?: string | null
-          company_legal_address?: string | null
-          company_legal_id?: string | null
-          company_legal_name?: string | null
           console_call_me_now_enabled?: boolean
           console_consult_conference_enabled?: boolean
           console_dtmf_handoff_enabled?: boolean
@@ -433,7 +409,6 @@ export type Database = {
           owner_agent_reports_enabled?: boolean
           package_model_enabled?: boolean
           payments_enabled?: boolean
-          privacy_url?: string | null
           signup_reminder_enabled?: boolean
           slack_alert_campaign_billing?: boolean
           slack_alert_channel_id?: string | null
@@ -455,7 +430,6 @@ export type Database = {
           sumit_api_key?: string | null
           sumit_api_public_key?: string | null
           sumit_company_id?: string | null
-          terms_url?: string | null
           unconfirmed_cleanup_enabled?: boolean
           updated_at?: string
           voximplant_account_callback_prev?: Json | null
@@ -479,7 +453,6 @@ export type Database = {
           voximplant_sales_call_rule_id?: string | null
           voximplant_sales_calls_enabled?: boolean
           voximplant_service_account_json?: string | null
-          warranty_text?: string | null
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
           whatsapp_consent_required?: boolean
