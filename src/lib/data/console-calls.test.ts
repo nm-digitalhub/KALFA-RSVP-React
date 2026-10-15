@@ -38,6 +38,7 @@ import {
   isShabbatOrYomTovBlocked,
   isShiftActiveAndFresh,
   isWithinHumanCallWindow,
+  nextHumanCallWindowStart,
   isWithinCallerStatedWindow,
   linkConsoleCallSession,
   mapEndedReasonToStatus,
@@ -143,6 +144,67 @@ describe('isWithinHumanCallWindow (pure)', () => {
 
   it('hard-blocks Saturday regardless of time-of-day', () => {
     expect(isWithinHumanCallWindow(Date.parse('2026-06-06T10:00:00+03:00'))).toBe(false);
+  });
+});
+
+// The instant a deferred campaign call is re-scheduled to (openspec change defer-call-outside-dial-window). It must be
+// the first instant the SAME gate above lets through, so these pin both the answers and the agreement with the gate.
+describe('nextHumanCallWindowStart (pure)', () => {
+  const at = (iso: string) => Date.parse(iso);
+
+  it('returns the same instant when the window is already open', () => {
+    expect(nextHumanCallWindowStart(OPEN_HOURS_MS)).toBe(OPEN_HOURS_MS);
+  });
+
+  it('waits for the opening when asked before it', () => {
+    expect(nextHumanCallWindowStart(at('2026-06-04T07:00:00+03:00'))).toBe(at('2026-06-04T08:00:00+03:00'));
+  });
+
+  it('moves to the next day after the window closed', () => {
+    expect(nextHumanCallWindowStart(at('2026-06-04T19:30:00+03:00'))).toBe(at('2026-06-05T08:00:00+03:00'));
+  });
+
+  it('skips Shabbat: Friday afternoon resolves to Sunday morning', () => {
+    expect(nextHumanCallWindowStart(at('2026-06-05T14:00:00+03:00'))).toBe(at('2026-06-07T08:00:00+03:00'));
+  });
+
+  it('skips Saturday itself', () => {
+    expect(nextHumanCallWindowStart(at('2026-06-06T10:00:00+03:00'))).toBe(at('2026-06-07T08:00:00+03:00'));
+  });
+
+  it('follows an admin-edited week (only Tuesday 09:00–12:00 open)', () => {
+    const onlyTuesday = [null, null, { startMin: 540, endMin: 720 }, null, null, null, null] as const;
+    expect(nextHumanCallWindowStart(OPEN_HOURS_MS, onlyTuesday)).toBe(at('2026-06-09T09:00:00+03:00'));
+  });
+
+  it('returns null when no day of the week has a window', () => {
+    const none = [null, null, null, null, null, null, null] as const;
+    expect(nextHumanCallWindowStart(OPEN_HOURS_MS, none)).toBeNull();
+  });
+
+  it('returns null when the first open instant lies beyond the horizon', () => {
+    const onlyTuesday = [null, null, { startMin: 540, endMin: 720 }, null, null, null, null] as const;
+    expect(nextHumanCallWindowStart(OPEN_HOURS_MS, onlyTuesday, 2 * 86_400_000)).toBeNull();
+  });
+
+  it('steps over a Yom Tov', () => {
+    const next = nextHumanCallWindowStart(at('2026-09-13T10:00:00+03:00')); // second day of Rosh Hashana 5787
+    expect(next).not.toBeNull();
+    expect(next as number).toBeGreaterThan(at('2026-09-13T12:00:00+03:00'));
+    expect(isShabbatOrYomTovBlocked(next as number)).toBe(false);
+  });
+
+  it('only ever returns an instant the gate lets through, and the first such instant', () => {
+    const start = at('2026-06-01T00:00:00+03:00');
+    for (let hours = 0; hours < 24 * 21; hours += 7) {
+      const from = start + hours * 3_600_000;
+      const next = nextHumanCallWindowStart(from);
+      expect(next, `from +${hours}h`).not.toBeNull();
+      const result = next as number;
+      expect(result).toBeGreaterThanOrEqual(from);
+      expect(isWithinHumanCallWindow(result), `result +${hours}h`).toBe(true);
+      expect(result === from || !isWithinHumanCallWindow(result - 60_000), `earlier instant +${hours}h`).toBe(true);
+    }
   });
 });
 

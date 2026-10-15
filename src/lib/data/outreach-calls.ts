@@ -27,6 +27,7 @@ import {
   consoleDtmfHandoffEnabled,
   findRoutableAgentVoxUsernames,
   isWithinHumanCallWindow,
+  nextHumanCallWindowStart,
 } from '@/lib/data/console-calls';
 import { getCallbackPolicy } from '@/lib/callbacks/policy-config';
 import { getGuestsForContact, insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
@@ -39,6 +40,7 @@ import {
 // The dial mutation lives in the separated mutations module (never imported by
 // the CLI); this dispatcher is one of its worker-side consumers.
 import { startScenarios } from '@/lib/voximplant/mutations';
+import { retryNotBeforeMs, type DeferralReason } from '@/lib/outreach/call-dispatch-wait';
 import type { OutreachCallRequest } from '@/lib/queue/queues';
 
 // Stage 3 — the outbound AI-call dispatcher. Consumed by worker/main.ts's
@@ -58,6 +60,11 @@ const START_TIMEOUT_MS = 25_000;
 
 export type CallDispatchResult =
   | { kind: 'skipped'; reason: 'outreach_disabled' | 'outside_dial_window' | 'no_call_consent' | 'dnc_listed' | 'already_reached' | 'campaign_not_active' | 'event_closed' | 'concurrent_owner' | 'max_concurrency' | 'campaign_hour_cap' | 'waiting_for_quota' }
+  // A scheduled dial refused only for now (call-dispatch-wait.ts): the dial window is closed, every call slot is busy, the
+  // campaign's hourly cap is full, or the balance is under the reserve. Nothing was dialled and no attempt row exists; the
+  // worker sends the same job again for `notBeforeMs` (null: no such moment exists, e.g. the window does not open in the
+  // look-ahead).
+  | { kind: 'deferred'; reason: DeferralReason; notBeforeMs: number | null }
   | { kind: 'blocked'; reason: 'config_missing' | 'live_calls_disabled' | 'balance_below_reserve' }
   | { kind: 'transient_error'; reason: 'balance_check_failed' } // the ONLY retryable kind
   | { kind: 'already_dispatched'; attemptId: string }
@@ -173,7 +180,16 @@ export async function dispatchOutreachCall(
   //     blocked — an outage can delay calls, never place one at night.
   const policy = await getCallbackPolicy();
   if (!isWithinHumanCallWindow(Date.now(), policy.dialWeekday)) {
-    return { kind: 'skipped', reason: 'outside_dial_window' };
+    // A manual console dial has an operator waiting for an answer now: it is refused and reported, never rescheduled
+    // behind their back. Every other dial is scheduled work and is deferred to the next open instant instead of being
+    // lost (openspec change defer-call-outside-dial-window). No attempt row and no provider call exist yet at this
+    // point, so deferring cannot dial twice.
+    if (job.isManual) return { kind: 'skipped', reason: 'outside_dial_window' };
+    return {
+      kind: 'deferred',
+      reason: 'outside_dial_window',
+      notBeforeMs: nextHumanCallWindowStart(Date.now(), policy.dialWeekday),
+    };
   }
 
   // 4. Fresh gating (never trust the enqueue-time snapshot).
@@ -251,14 +267,19 @@ export async function dispatchOutreachCall(
   //     while the other two are also dialing.
   const active = await countActiveCallsAllSurfaces();
   if (active >= config.maxConcurrentCalls) {
-    await alert('warn', 'Voximplant max concurrency reached — call skipped', {
-      campaignId, active, cap: config.maxConcurrentCalls,
-    });
-    return { kind: 'skipped', reason: 'max_concurrency' };
+    // Alert on the first delivery only: a deferred dial comes back every few minutes while the slots stay full.
+    if (!job.dispatchWaits) {
+      await alert('warn', 'Voximplant max concurrency reached — call skipped', {
+        campaignId, active, cap: config.maxConcurrentCalls,
+      });
+    }
+    if (job.isManual) return { kind: 'skipped', reason: 'max_concurrency' };
+    return { kind: 'deferred', reason: 'max_concurrency', notBeforeMs: retryNotBeforeMs('max_concurrency', Date.now()) };
   }
   const sinceIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   if ((await countCampaignCallsSince(campaignId, sinceIso)) >= config.maxCallsPerCampaignHour) {
-    return { kind: 'skipped', reason: 'campaign_hour_cap' };
+    if (job.isManual) return { kind: 'skipped', reason: 'campaign_hour_cap' };
+    return { kind: 'deferred', reason: 'campaign_hour_cap', notBeforeMs: retryNotBeforeMs('campaign_hour_cap', Date.now()) };
   }
 
   // 6. Balance precheck BEFORE any attempt row is created (so no orphaned row).
@@ -271,10 +292,14 @@ export async function dispatchOutreachCall(
     return { kind: 'transient_error', reason: 'balance_check_failed' };
   }
   if (balance < config.minCallReserve) {
-    await alert('error', 'Voximplant balance below reserve — call blocked', {
-      campaignId, contactId, balance, minReserve: config.minCallReserve,
-    });
-    return { kind: 'blocked', reason: 'balance_below_reserve' };
+    // Alert on the first delivery only; a deferred dial asks again every quarter of an hour until the balance is topped up.
+    if (!job.dispatchWaits) {
+      await alert('error', 'Voximplant balance below reserve — call blocked', {
+        campaignId, contactId, balance, minReserve: config.minCallReserve,
+      });
+    }
+    if (job.isManual) return { kind: 'blocked', reason: 'balance_below_reserve' };
+    return { kind: 'deferred', reason: 'balance_below_reserve', notBeforeMs: retryNotBeforeMs('balance_below_reserve', Date.now()) };
   }
   if (balance < config.lowBalanceThreshold) {
     await alert('warn', 'Voximplant balance low', {

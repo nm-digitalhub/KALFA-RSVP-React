@@ -81,7 +81,7 @@ beforeEach(() => {
 // or reason is added to the union, the totality test below still passes only
 // because mapDispatchResult's `never` default makes an unmapped kind a COMPILE
 // error first — this list is the runtime witness for the reasons.
-const FINAL_RESULTS: Exclude<CallDispatchResult, { kind: 'transient_error' }>[] = [
+const FINAL_RESULTS: Exclude<CallDispatchResult, { kind: 'transient_error' } | { kind: 'deferred' }>[] = [
   { kind: 'skipped', reason: 'outreach_disabled' },
   { kind: 'skipped', reason: 'no_call_consent' },
   { kind: 'skipped', reason: 'dnc_listed' },

@@ -11,8 +11,9 @@ import {
   type NationalRegistryPolicy,
   type RegistryGateContext,
 } from '@/lib/dnc/registry-gate';
-import { isPastEventDay } from '@/lib/data/event-date';
-import { buildJewishCalendar } from '@/lib/outreach/jewish-calendar';
+import { ilWallTimeToIso, isPastEventDay, israelCalendarDay } from '@/lib/data/event-date';
+import { addCalendarDays } from '@/lib/date';
+import { buildJewishCalendar, type BlockedCalendar } from '@/lib/outreach/jewish-calendar';
 import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
 import { rateLimit } from '@/lib/security/rate-limit';
 import { AGENT_STATUS_FRESHNESS_MS } from '@/lib/console/presence';
@@ -219,6 +220,71 @@ export function isWithinHumanCallWindow(
   dialWeekday: readonly DayWindow[] = DEFAULT_CALLBACK_POLICY.dialWeekday,
 ): boolean {
   return !isShabbatOrYomTovBlocked(nowMs) && isWithinDailyCallWindow(nowMs, dialWeekday);
+}
+
+const NEXT_WINDOW_HORIZON_MS = 14 * 86_400_000;
+const DAY_MS = 86_400_000;
+
+function hhmmOfMinutes(minutes: number): string {
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
+// 00:00 Israel time of the calendar day after `day` (YYYY-MM-DD, DST-correct). null from addCalendarDays can only mean
+// a malformed date, which here is a bug: it fails loudly, like send-window.ts's shiftDay.
+function startOfNextIsraelDay(day: string): number {
+  const next = addCalendarDays(day, 1);
+  if (next === null) throw new RangeError(`console-calls: cannot move the calendar date "${day}" by 1 day`);
+  return Date.parse(ilWallTimeToIso(next, '00:00'));
+}
+
+/**
+ * The earliest instant at or after `fromMs` at which `isWithinHumanCallWindow` is true, or null when there is none
+ * inside `horizonMs` (an empty week of windows, or a calendar error: unknown means no instant, so the caller settles
+ * loudly instead of guessing).
+ *
+ * It exists for a scheduled call that arrives while the window is closed: the caller defers it to this instant
+ * instead of dropping it. It is built from the same two pieces as the gate (the Shabbat/Yom-Tov calendar and the
+ * per-weekday window), so the two cannot drift; the test asserts every returned instant passes the gate.
+ */
+export function nextHumanCallWindowStart(
+  fromMs: number,
+  dialWeekday: readonly DayWindow[] = DEFAULT_CALLBACK_POLICY.dialWeekday,
+  horizonMs: number = NEXT_WINDOW_HORIZON_MS,
+): number | null {
+  const limit = fromMs + horizonMs;
+  let calendar: BlockedCalendar;
+  try {
+    calendar = buildJewishCalendar(fromMs - DAY_MS, limit + DAY_MS);
+  } catch {
+    return null;
+  }
+  let t = fromMs;
+  // Every hop moves to a later window or day, so a fortnight needs far fewer than 400.
+  for (let hop = 0; hop < 400; hop += 1) {
+    if (t > limit) return null;
+    const clear = calendar.nextAllowedAt(t, 0);
+    if (clear > t) {
+      t = clear;
+      continue;
+    }
+    const day = israelCalendarDay(t);
+    const { weekday, minutes } = israelWeekdayAndMinutes(t);
+    const window = weekday === 6 ? null : dialWeekday[weekday]; // Saturday is never a dial day
+    if (!window) {
+      t = startOfNextIsraelDay(day);
+      continue;
+    }
+    if (minutes < window.startMin) {
+      t = Date.parse(ilWallTimeToIso(day, hhmmOfMinutes(window.startMin)));
+      continue;
+    }
+    if (minutes >= window.endMin) {
+      t = startOfNextIsraelDay(day);
+      continue;
+    }
+    return t;
+  }
+  return null;
 }
 
 // NO INBOUND HOURS GATE — deliberately removed (compliance ruling, 2026-08-12).

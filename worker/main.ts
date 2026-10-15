@@ -24,7 +24,7 @@ import { runWhatsAppHealthCheck } from '@/lib/whatsapp/run-health-check';
 import { runEmailHealthCheck } from '@/lib/email/run-health-check';
 import { runExtraKeyCheck } from '@/lib/sms/run-key-check';
 import { runSumitHealthCheck } from '@/lib/sumit/run-health-check';
-import { dispatchOutreachCall } from '@/lib/data/outreach-calls';
+import { dispatchOutreachCall, type CallDispatchResult } from '@/lib/data/outreach-calls';
 import { deferForRegistry } from '@/lib/dnc/registry-wait';
 import {
   listActiveCampaigns,
@@ -46,7 +46,8 @@ import {
   type StepExecutionDeps,
 } from '@/lib/outreach/enqueue';
 import { detId, deferId, stepPlanRev, stepAuditId } from '@/lib/outreach/schedule';
-import { evaluateStep } from '@/lib/outreach/send-window';
+import { evaluateStep, eventDayExclusiveEndMs } from '@/lib/outreach/send-window';
+import { decideCallWait, deferCall } from '@/lib/outreach/call-dispatch-wait';
 import { getOutreachEnabled, getSendPolicy } from '@/lib/data/outreach-config';
 import { buildJewishCalendar } from '@/lib/outreach/jewish-calendar';
 import {
@@ -165,14 +166,78 @@ type CallJob = JobWithMetadata<OutreachCallRequest>;
 type MeetingConfirmJob = { id: string; data: MeetingConfirmDispatchJob & { registryWaits?: number } };
 type SalesCallJob = { id: string; data: SalesCallDispatchJob & { registryWaits?: number } };
 
+// A dial refused only for now (`deferred`: dial window closed, every call slot busy, the campaign's hourly cap full, or the
+// balance under the reserve). Nothing was dialled and no attempt row exists, so the same dial is sent again after a wait that
+// fits the reason instead of completing the job and losing the round (openspec change
+// retry-scheduled-calls-on-transient-skips). Returns null when it was sent again; otherwise the final result the job settles
+// with: no moment before the event ends, loudly (log + ops alert), never a silent completion.
+async function deferCallForTransientRefusal(
+  boss: PgBoss,
+  job: CallJob,
+  deferred: Extract<CallDispatchResult, { kind: 'deferred' }>,
+): Promise<Extract<CallDispatchResult, { kind: 'skipped' | 'blocked' }> | null> {
+  const ctx = await getCampaignContext(job.data.campaignId);
+  // No campaign context means the event end is unknown: settle (and say so) rather than defer without a bound.
+  const expiryMs = ctx ? eventDayExclusiveEndMs(ctx.eventDate) : 0;
+  const decision = decideCallWait({
+    job: job.data,
+    reason: deferred.reason,
+    notBeforeMs: deferred.notBeforeMs,
+    expiryMs,
+  });
+  if (decision.action === 'defer') {
+    // The current job completes only after the re-send is stored. A redelivery of this job re-sends the same
+    // deterministic id (a no-op), so a crash between the two cannot lose the round or send it twice.
+    await deferCall(boss, job.data, decision);
+    console.log('[kalfa-worker] call-request deferred', {
+      jobId: job.id,
+      contactId: job.data.contactId,
+      reason: deferred.reason,
+      wait: decision.wait,
+      runAt: new Date(decision.runAtMs).toISOString(),
+    });
+    return null;
+  }
+  console.error('[kalfa-worker] call-request NOT placed: it kept being refused until the event ended', {
+    jobId: job.id,
+    campaignId: job.data.campaignId,
+    contactId: job.data.contactId,
+    touchpointIndex: job.data.touchpointIndex,
+    refusal: deferred.reason,
+    settle: decision.reason,
+  });
+  await sendSlackAlert({
+    level: 'warn',
+    title: 'Campaign call round could not be placed before the event ends',
+    source: 'voximplant-dispatch',
+    category: 'send_health',
+    fields: {
+      campaignId: job.data.campaignId,
+      touchpointIndex: job.data.touchpointIndex,
+      refusal: deferred.reason,
+      settle: decision.reason,
+    },
+  });
+  // The same final answers the dispatcher gave before it could defer, so everything downstream reads them unchanged.
+  return deferred.reason === 'balance_below_reserve'
+    ? { kind: 'blocked', reason: 'balance_below_reserve' }
+    : { kind: 'skipped', reason: deferred.reason };
+}
+
 // Outbound AI-call dispatch (C2). dispatchOutreachCall is fully fail-safe: only a
 // pre-dial balance-check transport failure is retryable — every other outcome
 // (blocked/skipped/ambiguous start_unknown/definite failed_to_start/reconciled)
 // COMPLETES the job so a retry can never place a second call. We throw ONLY on
 // that transient kind (guardedWorker then Slack-alerts + pg-boss retries per
-// CALL_RETRY). Log ids + kind only — never PII.
-async function handleCallRequest(job: CallJob): Promise<void> {
-  const result = await dispatchOutreachCall(job.data);
+// CALL_RETRY). The one exception is `deferred` (above): it re-sends the dial, still
+// without dialling. Log ids + kind only — never PII.
+async function handleCallRequest(boss: PgBoss, job: CallJob): Promise<void> {
+  let result = await dispatchOutreachCall(job.data);
+  if (result.kind === 'deferred') {
+    const settled = await deferCallForTransientRefusal(boss, job, result);
+    if (settled === null) return; // sent again, to be asked once more later
+    result = settled;
+  }
   if (result.kind === 'transient_error') {
     // Not a final outcome — the dispatch row stays 'accepted' while pg-boss
     // retries. On the LAST permitted delivery (retryCount = retryLimit, which
@@ -1161,7 +1226,7 @@ async function main(): Promise<void> {
     QUEUES.callRequest,
     { includeMetadata: true },
     guardedWorker(QUEUES.callRequest, async (jobs: CallJob[]) => {
-      for (const job of jobs) await handleCallRequest(job);
+      for (const job of jobs) await handleCallRequest(boss, job);
     }),
   );
   await boss.work(

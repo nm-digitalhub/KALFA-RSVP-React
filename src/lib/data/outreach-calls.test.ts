@@ -39,6 +39,7 @@ vi.mock('@/lib/data/console-calls', () => ({
   findRoutableAgentVoxUsernames: vi.fn(),
   consoleDtmfHandoffEnabled: vi.fn(),
   isWithinHumanCallWindow: vi.fn(),
+  nextHumanCallWindowStart: vi.fn(),
 }));
 // Dial-hours policy read (gate 3b). Mocked so beforeEach can default every test
 // to "inside the window" — the gate's own behaviour gets dedicated tests below.
@@ -84,7 +85,12 @@ import {
 } from '@/lib/data/outreach-engine';
 import { getGuestsForContact, insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
 import { checkContactSeat } from '@/lib/data/contact-quota';
-import { findRoutableAgentVoxUsernames, consoleDtmfHandoffEnabled, isWithinHumanCallWindow } from '@/lib/data/console-calls';
+import {
+  findRoutableAgentVoxUsernames,
+  consoleDtmfHandoffEnabled,
+  isWithinHumanCallWindow,
+  nextHumanCallWindowStart,
+} from '@/lib/data/console-calls';
 import { getCallbackPolicy } from '@/lib/callbacks/policy-config';
 // Deliberately NOT mocked: gate 4b must be exercised against the same shared L1
 // date rule the DB guard mirrors, not a stub that could agree with a wrong gate.
@@ -123,6 +129,9 @@ const CCTX = {
   rsvpDeadline: null,
 };
 
+// What the (mocked) next-open-instant search answers; its own behaviour is pinned in console-calls.test.ts.
+const NEXT_WINDOW_MS = Date.parse('2026-11-02T08:00:00+02:00');
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getOutreachEnabled).mockResolvedValue(true);
@@ -130,6 +139,7 @@ beforeEach(() => {
   // so every pre-existing test exercises its own gate undisturbed.
   vi.mocked(getCallbackPolicy).mockResolvedValue({ dialWeekday: [] } as never);
   vi.mocked(isWithinHumanCallWindow).mockReturnValue(true);
+  vi.mocked(nextHumanCallWindowStart).mockReturnValue(NEXT_WINDOW_MS);
   vi.mocked(getVoximplantConfig).mockResolvedValue(CONFIG as never);
   vi.mocked(hasCallConsent).mockResolvedValue(true);
   vi.mocked(isDncListed).mockResolvedValue(false);
@@ -155,21 +165,38 @@ beforeEach(() => {
 });
 
 describe('gates (no dial)', () => {
-  it('outside the dial window → skipped/outside_dial_window, before any attempt row or API call', async () => {
+  it('outside the dial window → deferred to the next open instant, before any attempt row or API call', async () => {
     vi.mocked(isWithinHumanCallWindow).mockReturnValue(false);
     const res = await dispatchOutreachCall(job());
-    expect(res).toEqual({ kind: 'skipped', reason: 'outside_dial_window' });
+    expect(res).toEqual({ kind: 'deferred', reason: 'outside_dial_window', notBeforeMs: NEXT_WINDOW_MS });
     expect(createCallAttempt).not.toHaveBeenCalled();
     expect(getAccountInfo).not.toHaveBeenCalled();
     expect(startScenarios).not.toHaveBeenCalled();
-    // The gate consults the ADMIN policy (/admin/callbacks/policy), not a default.
+    // The gate consults the ADMIN policy (/admin/callbacks/policy), not a default, and so does the next-instant search.
     expect(getCallbackPolicy).toHaveBeenCalled();
+    expect(nextHumanCallWindowStart).toHaveBeenCalledWith(expect.any(Number), []);
+  });
+
+  it('outside the window with no open instant ahead → still deferred, with a null instant for the worker to settle loudly', async () => {
+    vi.mocked(isWithinHumanCallWindow).mockReturnValue(false);
+    vi.mocked(nextHumanCallWindowStart).mockReturnValue(null);
+    const res = await dispatchOutreachCall(job());
+    expect(res).toEqual({ kind: 'deferred', reason: 'outside_dial_window', notBeforeMs: null });
+    expect(createCallAttempt).not.toHaveBeenCalled();
   });
 
   it('the dial-window gate also covers callbacks — isCallback exempts only already_reached', async () => {
     vi.mocked(isWithinHumanCallWindow).mockReturnValue(false);
     const res = await dispatchOutreachCall(job({ isCallback: true }));
+    expect(res).toEqual({ kind: 'deferred', reason: 'outside_dial_window', notBeforeMs: NEXT_WINDOW_MS });
+    expect(createCallAttempt).not.toHaveBeenCalled();
+  });
+
+  it('a manual console dial outside the window is refused as before, never rescheduled', async () => {
+    vi.mocked(isWithinHumanCallWindow).mockReturnValue(false);
+    const res = await dispatchOutreachCall(job({ isManual: true }));
     expect(res).toEqual({ kind: 'skipped', reason: 'outside_dial_window' });
+    expect(nextHumanCallWindowStart).not.toHaveBeenCalled();
     expect(createCallAttempt).not.toHaveBeenCalled();
   });
 
@@ -323,13 +350,26 @@ describe('balance', () => {
     expect(createCallAttempt).not.toHaveBeenCalled();
     expect(startScenarios).not.toHaveBeenCalled();
   });
-  it('9. below reserve → blocked, NO interaction, Slack error', async () => {
+  it('9. below reserve → a scheduled dial is deferred, NO interaction, Slack error on the first delivery', async () => {
     vi.mocked(getAccountInfo).mockResolvedValue(acct(0.05) as never);
-    expect(await dispatchOutreachCall(job())).toEqual({ kind: 'blocked', reason: 'balance_below_reserve' });
+    const res = await dispatchOutreachCall(job());
+    expect(res).toMatchObject({ kind: 'deferred', reason: 'balance_below_reserve' });
+    expect((res as { notBeforeMs: number }).notBeforeMs).toBeGreaterThan(Date.now());
     expect(createCallAttempt).not.toHaveBeenCalled();
     expect(insertInteraction).not.toHaveBeenCalled();
     expect(startScenarios).not.toHaveBeenCalled();
     expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'error' }));
+  });
+  it('9b. below reserve on a deferred delivery → deferred again, and no second alert', async () => {
+    vi.mocked(getAccountInfo).mockResolvedValue(acct(0.05) as never);
+    const res = await dispatchOutreachCall(job({ dispatchWaits: 3 }));
+    expect(res).toMatchObject({ kind: 'deferred', reason: 'balance_below_reserve' });
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+  it('9c. below reserve on a manual dial → still blocked and reported, never rescheduled', async () => {
+    vi.mocked(getAccountInfo).mockResolvedValue(acct(0.05) as never);
+    expect(await dispatchOutreachCall(job({ isManual: true }))).toEqual({ kind: 'blocked', reason: 'balance_below_reserve' });
+    expect(createCallAttempt).not.toHaveBeenCalled();
   });
   it('10. warning (≥reserve, <low) → dials + warn', async () => {
     vi.mocked(getAccountInfo).mockResolvedValue(acct(2) as never);
@@ -340,20 +380,37 @@ describe('balance', () => {
 });
 
 describe('rate-limit caps (H1)', () => {
-  it('R1. at/over concurrency cap → skipped max_concurrency, no attempt, no dial, warn', async () => {
+  it('R1. at/over concurrency cap → a scheduled dial is deferred, no attempt, no dial, warn on the first delivery', async () => {
     vi.mocked(countActiveCallsAllSurfaces).mockResolvedValue(5); // == cap
-    expect(await dispatchOutreachCall(job())).toEqual({ kind: 'skipped', reason: 'max_concurrency' });
+    const res = await dispatchOutreachCall(job());
+    expect(res).toMatchObject({ kind: 'deferred', reason: 'max_concurrency' });
+    expect((res as { notBeforeMs: number }).notBeforeMs).toBeGreaterThan(Date.now());
     expect(getAccountInfo).not.toHaveBeenCalled();
     expect(createCallAttempt).not.toHaveBeenCalled();
     expect(startScenarios).not.toHaveBeenCalled();
     expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'warn' }));
   });
-  it('R2. at/over per-campaign hourly cap → skipped campaign_hour_cap, no attempt, no dial', async () => {
+  it('R1b. at the concurrency cap on a deferred delivery → deferred again, no second alert', async () => {
+    vi.mocked(countActiveCallsAllSurfaces).mockResolvedValue(5);
+    expect(await dispatchOutreachCall(job({ dispatchWaits: 2 }))).toMatchObject({ kind: 'deferred', reason: 'max_concurrency' });
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+  it('R1c. at the concurrency cap on a manual dial → still skipped and reported', async () => {
+    vi.mocked(countActiveCallsAllSurfaces).mockResolvedValue(5);
+    expect(await dispatchOutreachCall(job({ isManual: true }))).toEqual({ kind: 'skipped', reason: 'max_concurrency' });
+  });
+  it('R2. at/over per-campaign hourly cap → a scheduled dial is deferred, no attempt, no dial', async () => {
     vi.mocked(countCampaignCallsSince).mockResolvedValue(200); // == cap
-    expect(await dispatchOutreachCall(job())).toEqual({ kind: 'skipped', reason: 'campaign_hour_cap' });
+    const res = await dispatchOutreachCall(job());
+    expect(res).toMatchObject({ kind: 'deferred', reason: 'campaign_hour_cap' });
+    expect((res as { notBeforeMs: number }).notBeforeMs).toBeGreaterThan(Date.now());
     expect(getAccountInfo).not.toHaveBeenCalled();
     expect(createCallAttempt).not.toHaveBeenCalled();
     expect(startScenarios).not.toHaveBeenCalled();
+  });
+  it('R2b. at the hourly cap on a manual dial → still skipped and reported', async () => {
+    vi.mocked(countCampaignCallsSince).mockResolvedValue(200);
+    expect(await dispatchOutreachCall(job({ isManual: true }))).toEqual({ kind: 'skipped', reason: 'campaign_hour_cap' });
   });
   it('R3. under both caps → dials normally', async () => {
     vi.mocked(countActiveCallsAllSurfaces).mockResolvedValue(4);

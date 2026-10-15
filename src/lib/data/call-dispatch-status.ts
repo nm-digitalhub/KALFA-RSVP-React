@@ -93,7 +93,10 @@ export type DispatchSettlement = {
 // transient_error is deliberately NOT mappable — it is not a final outcome
 // while pg-boss will retry. The worker settles temporary_dispatch_failure
 // explicitly on the LAST permitted delivery (settleDispatchFailure below).
-type FinalDispatchResult = Exclude<CallDispatchResult, { kind: 'transient_error' }>;
+// deferred is not final either: the worker sends the dial again for the next open dial-window instant and only
+// settles it as skipped/outside_dial_window when no instant exists before the event ends. A manual dial is never
+// deferred (outreach-calls.ts), so a published status never sees this kind.
+type FinalDispatchResult = Exclude<CallDispatchResult, { kind: 'transient_error' } | { kind: 'deferred' }>;
 
 /**
  * The closed worker→public mapping.

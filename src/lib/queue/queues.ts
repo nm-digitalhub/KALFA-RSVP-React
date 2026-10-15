@@ -471,4 +471,10 @@ export type OutreachCallRequest = {
    * answered.
    */
   dispatchId?: string;
+  /**
+   * How many times this dial has already been sent again because it was refused only for now: the dial window closed,
+   * every call slot busy, the hourly cap full or the balance under the reserve (call-dispatch-wait.ts). Absent on a
+   * first delivery, so jobs queued before this field existed behave as 0.
+   */
+  dispatchWaits?: number;
 };

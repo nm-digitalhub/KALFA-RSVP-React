@@ -61,6 +61,10 @@ function mapDispatchResult(result: CallDispatchResult): WorkflowRsvpAiCallbackRe
     case 'blocked':
     case 'skipped':
       return { ok: false, status: result.kind, reason: result.reason };
+    case 'deferred':
+      // This action dials as a manual dial (isManual), which the dispatcher never defers, and nothing here would send
+      // it again. Reported exactly as the refusal it used to be, should that ever change.
+      return { ok: false, status: 'skipped', reason: result.reason };
   }
 }
 
