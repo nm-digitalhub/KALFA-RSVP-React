@@ -8298,7 +8298,6 @@ export type Database = {
           isSetofReturn: true
         }
       }
-      claim_first_admin: { Args: never; Returns: boolean }
       claim_thankyou_recipient: {
         Args: { p_campaign: string; p_contact: string; p_event: string }
         Returns: string
