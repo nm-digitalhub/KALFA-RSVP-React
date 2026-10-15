@@ -150,11 +150,16 @@ export async function getCompanySettings(): Promise<CompanySettings> {
   await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   const { data, error } = await supabase
-    .from('app_settings')
+    .from('company_profile')
     .select(COMPANY_COLUMNS)
     .eq('id', SETTINGS_ID)
     .maybeSingle();
-  if (error) throw new Error('טעינת פרטי החברה נכשלה');
+  if (error) {
+    throw new Error('טעינת פרטי החברה נכשלה', { cause: error });
+  }
+  if (!data) {
+    throw new Error('רשומת פרטי החברה חסרה ב-company_profile');
+  }
   return {
     company_legal_name: data?.company_legal_name ?? '',
     company_legal_id: data?.company_legal_id ?? '',
@@ -174,7 +179,7 @@ export async function updateCompanySettings(
   await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   const { error } = await supabase
-    .from('app_settings')
+    .from('company_profile')
     .update({
       company_legal_name: input.company_legal_name || null,
       company_legal_id: input.company_legal_id || null,
@@ -186,8 +191,12 @@ export async function updateCompanySettings(
       warranty_text: input.warranty_text || null,
       company_instagram_url: input.company_instagram_url || null,
     })
-    .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון פרטי החברה נכשל');
+    .eq('id', SETTINGS_ID)
+    .select('id')
+    .single();
+  if (error) {
+    throw new Error('עדכון פרטי החברה נכשל', { cause: error });
+  }
 }
 
 // Exchange (Microsoft Graph — the IONOS-hosted mailbox's calendar, reached

@@ -34,13 +34,21 @@ export function toE164Israel(raw: string): string {
 export async function getCompanyLegal(): Promise<CompanyLegal> {
   const admin = createAdminClient();
   const { data, error } = await admin
-    .from('app_settings')
+    .from('company_profile')
     .select(
       'company_legal_name, company_legal_id, company_legal_address, company_contact_phone, company_contact_email, privacy_url, terms_url, warranty_text, company_instagram_url',
     )
     .eq('id', true)
     .maybeSingle();
-  if (error) throw new Error('טעינת פרטי החברה נכשלה');
+  if (error) {
+    throw new Error('טעינת פרטי החברה נכשלה', {
+      cause: error,
+    });
+  }
+
+  if (!data) {
+    throw new Error('רשומת פרטי החברה חסרה ב-company_profile');
+  }
   return {
     name: data?.company_legal_name ?? '',
     id: data?.company_legal_id ?? '',

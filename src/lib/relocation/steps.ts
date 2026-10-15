@@ -237,6 +237,13 @@ async function elAgentKbPlan(
   return { items, stale };
 }
 
+function companyProfileSqlLiteral(
+  value: string | null | undefined,
+): string {
+  if (value == null) return 'NULL';
+  return "'" + value.replace(/'/g, "''") + "'";
+}
+
 /** The full intended sequence (plan doc §5). Stage A runs OUTSIDE the engine
  * as the read-only preflight; stages B–H are engine steps. */
 export function buildStepDefinitions(): StepDefinition[] {
@@ -1042,9 +1049,9 @@ export function buildStepDefinitions(): StepDefinition[] {
     step({
       id: "G1",
       stage: "G",
-      label: { en: "app_settings URL rows", he: "עדכון שורות URL ב-app_settings" },
+      label: { en: "company_profile URL rows", he: "עדכון שורות URL ב-company_profile" },
       plan: (ctx) => [
-        `UPDATE app_settings SET privacy_url = '${ctx.targetOrigin}/privacy', terms_url = '${ctx.targetOrigin}/terms'`,
+        `UPDATE company_profile SET privacy_url = ${companyProfileSqlLiteral(`${ctx.targetOrigin}/privacy`)}, terms_url = ${companyProfileSqlLiteral(`${ctx.targetOrigin}/terms`)} WHERE id = true`,
       ],
       check: async (ctx) => {
         const env = readEnv(ctx.repoRoot);
@@ -1053,7 +1060,7 @@ export function buildStepDefinitions(): StepDefinition[] {
         return "pending";
       },
       apply: async (ctx) => {
-        assertExecuteLatch("G1 app_settings URL rows");
+        assertExecuteLatch("G1 company_profile URL rows");
         const env = readEnv(ctx.repoRoot);
         const resolved = supabaseMgmtToken({ env });
         if (!resolved) throw new Error("Supabase Management token unavailable");
@@ -1061,17 +1068,24 @@ export function buildStepDefinitions(): StepDefinition[] {
         const before = await runSupabaseSql({
           token: resolved.token,
           projectRef,
-          query: "SELECT privacy_url, terms_url FROM app_settings WHERE id = true",
+          query: "SELECT privacy_url, terms_url FROM company_profile WHERE id = true",
           readOnly: true,
         });
-        if (before.ok) savePrevValue(ctx.repoRoot, "G1", before.value);
+        if (
+          !before.ok ||
+          !Array.isArray(before.value) ||
+          before.value.length !== 1
+        ) {
+          throw new Error("G1: cannot capture previous company_profile values");
+        }
+        savePrevValue(ctx.repoRoot, "G1", before.value);
         const update = await runSupabaseSql({
           token: resolved.token,
           projectRef,
-          query: `UPDATE app_settings SET privacy_url = '${ctx.targetOrigin}/privacy', terms_url = '${ctx.targetOrigin}/terms' WHERE id = true`,
+          query: `UPDATE company_profile SET privacy_url = ${companyProfileSqlLiteral(`${ctx.targetOrigin}/privacy`)}, terms_url = ${companyProfileSqlLiteral(`${ctx.targetOrigin}/terms`)} WHERE id = true`,
           readOnly: false,
         });
-        if (!update.ok) throw new Error(`app_settings UPDATE failed: ${update.detail}`);
+        if (!update.ok) throw new Error(`company_profile UPDATE failed: ${update.detail}`);
       },
       verify: async (ctx) => {
         const env = readEnv(ctx.repoRoot);
@@ -1081,11 +1095,18 @@ export function buildStepDefinitions(): StepDefinition[] {
         const after = await runSupabaseSql({
           token: resolved.token,
           projectRef,
-          query: "SELECT privacy_url FROM app_settings WHERE id = true",
+          query: "SELECT privacy_url, terms_url FROM company_profile WHERE id = true",
           readOnly: true,
         });
-        const rows = after.value as { privacy_url?: string }[] | undefined;
-        const ok = after.ok && rows?.[0]?.privacy_url === `${ctx.targetOrigin}/privacy`;
+        const rows = after.value as {
+          privacy_url?: string | null;
+          terms_url?: string | null;
+        }[] | undefined;
+        const ok = Boolean(
+          after.ok &&
+          rows?.[0]?.privacy_url === `${ctx.targetOrigin}/privacy` &&
+          rows?.[0]?.terms_url === `${ctx.targetOrigin}/terms`
+        );
         return { ok, checks: [{ label: { en: "privacy_url updated", he: "privacy_url עודכן" }, ok }] };
       },
       rollback: async (ctx) => {
@@ -1098,7 +1119,7 @@ export function buildStepDefinitions(): StepDefinition[] {
         await runSupabaseSql({
           token: resolved.token,
           projectRef,
-          query: `UPDATE app_settings SET privacy_url = '${row.privacy_url}', terms_url = '${row.terms_url}' WHERE id = true`,
+          query: `UPDATE company_profile SET privacy_url = ${companyProfileSqlLiteral(row.privacy_url)}, terms_url = ${companyProfileSqlLiteral(row.terms_url)} WHERE id = true`,
           readOnly: false,
         });
       },
