@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 
-import { resolveTestDb } from '@/lib/outreach/test-db-guard';
+import { resolveTestDb, testDbSsl } from '@/lib/outreach/test-db-guard';
 
 const RUN = process.env.OUTREACH_DB_IT === '1';
 const TEST = RUN ? resolveTestDb() : null;
@@ -10,7 +10,7 @@ const TEST = RUN ? resolveTestDb() : null;
 describe.skipIf(!RUN)('fill_authorized_set — rollback-isolated', () => {
   let pool: Pool;
   beforeAll(() => {
-    pool = new Pool({ connectionString: TEST!.dbUrl, ssl: { rejectUnauthorized: false }, max: 1, application_name: 'kalfa-fill-it' });
+    pool = new Pool({ connectionString: TEST!.dbUrl, ssl: testDbSsl(TEST!.dbUrl), max: 1, application_name: 'kalfa-fill-it' });
   });
   afterAll(async () => { if (pool) await pool.end(); });
 

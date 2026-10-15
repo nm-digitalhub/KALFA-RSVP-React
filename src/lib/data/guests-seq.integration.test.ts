@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 
 import { Pool } from 'pg';
 
-import { resolveTestDb } from '@/lib/outreach/test-db-guard';
+import { resolveTestDb, testDbSsl } from '@/lib/outreach/test-db-guard';
 
 // guests.seq must increase in the order rows are produced by ONE multi-row insert (what a bulk import is).
 // Gated like reconcile.integration.test.ts: a TEST-ONLY database, never the linked prod project.
@@ -16,7 +16,7 @@ describe.skipIf(!RUN)('guests.seq — rollback-isolated', () => {
   beforeAll(() => {
     pool = new Pool({
       connectionString: TEST!.dbUrl,
-      ssl: { rejectUnauthorized: false },
+      ssl: testDbSsl(TEST!.dbUrl),
       max: 1,
       application_name: 'kalfa-guests-seq-it',
     });

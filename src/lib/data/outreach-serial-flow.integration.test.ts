@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 
 vi.mock('server-only', () => ({}));
 
-import { resolveTestDb } from '@/lib/outreach/test-db-guard';
+import { resolveTestDb, testDbSsl } from '@/lib/outreach/test-db-guard';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // §12 FINAL — serial-flow RPC integration (§8/§11.11). Exercises the applied
@@ -42,7 +42,7 @@ describe.skipIf(!RUN)('serial-flow RPCs — test/local schema, rollback-isolated
     // wraps the whole test deterministically (no cross-connection leakage).
     pool = new Pool({
       connectionString: TEST!.dbUrl,
-      ssl: { rejectUnauthorized: false },
+      ssl: testDbSsl(TEST!.dbUrl),
       max: 1,
       application_name: 'kalfa-serial-flow-it',
     });

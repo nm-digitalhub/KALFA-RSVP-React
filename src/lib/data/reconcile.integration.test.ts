@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 
 import { Pool } from 'pg';
 
-import { resolveTestDb } from '@/lib/outreach/test-db-guard';
+import { resolveTestDb, testDbSsl } from '@/lib/outreach/test-db-guard';
 
 // P0-1 integration: reconcile_authorized_set verdicts + the exposure-based pin,
 // against the applied public schema, ROLLBACK-isolated. Each case runs inside a
@@ -25,7 +25,7 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
   beforeAll(() => {
     pool = new Pool({
       connectionString: TEST!.dbUrl,
-      ssl: { rejectUnauthorized: false },
+      ssl: testDbSsl(TEST!.dbUrl),
       max: 1,
       application_name: 'kalfa-reconcile-it',
     });
