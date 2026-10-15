@@ -67,6 +67,35 @@
 
 תוצאת לוואי שכדאי להכיר: `getAnalyticsDashboard` דורש `view_customer_data`, ולכן `ops_engineer` רואה את `/admin/analytics` במצב "אין הרשאה" ו-`billing_clerk`/`support_agent` רואים אותו. זה לא חור; זו החלטת מוצר אם זה הרצוי.
 
+## סוכנים אוטונומיים ושירותים — מי נכנס איך (אימות נוסף, 15.10.2026 ערב)
+
+**הגבלת היקף:** הסריקה למעלה כיסתה את 226 נקודות הכניסה של **האדמין** בלבד, ושם ההרשאה היא הרשאת צוות לפי תפקיד. סוכנים אוטונומיים לא נכנסים דרך השערים האלה — לכל סוג יש מנגנון משלו. נבדק כאן: אין שער-צוות שנועל אותם בטעות, ואין להם דרך עוקפת.
+
+מיפוי כל 89 ה-Route Handlers לפי סימני הרשאה בקוד [נמדד]: ב-60 יש סימן מוכר בקובץ עצמו; ב-29 אין סימן כזה, ולכן נבדקו אחד-אחד לפי הטבלה: חלקם נקראו במלואם, וחלקם דרך ה-helper המשותף שהם מייבאים (העמודה "נקרא בפועל").
+
+| סוג | איך מזדהה | נקרא בפועל | תוצאה |
+|---|---|---|---|
+| סוכני Fleet (תזמון Claude) | `service_role` דרך `scripts/fleet-agent-cli.ts`; ה-RPC‏ `fleet_consume_request`, `fleet_goal_progress`, `fleet_goal_close` ניתנים ל-`service_role` **בלבד** ואין בהם שער-צוות | הגדרות החיות (`pg_proc` + grants) | לא מושפע ממטריצת התפקידים ✓ |
+| ה-6 RPC של הממשק (`fleet_owner_request`, `answer`, `goal_create/pause/resume/abandon`) | `has_platform_permission('manage_settings')` על `auth.uid()` | כל הקוראים בריפו, פונקציות DB, `cron.job` | הקורא היחיד: `src/lib/data/admin/fleet.ts` (cookie של איש צוות). אף סוכן לא קורא להם — אחרת `auth.uid()` ריק היה נכשל ב-`42501` ✓ |
+| סוכן הבעלים (`/api/mcp`) | OAuth של Supabase (ES256 מול JWKS, `client_id` מרשימה סגורה) ואז `has_platform_permission_for_user` לכל אחד מ-6 מפתחות: `view_customer_data`, `manage_billing`, `view_billing`, `manage_voice`, `view_events`, `view_webhooks` | `oauth.ts`, `route.ts`, הגדרת הפונקציה החיה (`service_role` בלבד) | בעל המערכת מחזיק את כולם. כלי ה-web-traffic נשען על `view_customer_data` — אותו מפתח של `/admin/analytics` ✓ |
+| נציגי מוקד (`/api/agents/*`, `/api/console-calls/*`) | JWT מאומת מול שרת ה-Auth + `is_console_agent`; פקודות AI דורשות בנוסף `manage_voice` | `src/lib/auth/console-agent.ts` | ✓. `/admin/voice/console` מכוון לא דורש `manage_voice` |
+| סוכני קול (15 נתיבי `*/tool/*/[token]`) | טוקן אטום לכל שיחה: rate-limit שנכשל סגור, תקרת גוף, חיפוש שורת-ניסיון, תוקף; הזהות מהשורה ולא מהגוף | `agent-tool-guard.ts` במלואו ודוגמאות מ-3 נתיבים | כל ה-15 מייבאים את אותו guard ✓ |
+| Webhooks של ספקים | ElevenLabs: `verifyElevenLabsWebhook`; Resend: svix (timing-safe); WhatsApp: `x-hub-signature-256`; CardCom-document: סוד עם `timingSafeEqual`; CardCom-webhook: **ללא אימות במכוון** (לפי הנחיית CardCom) — הבקשה רק מציינת session ו-`GetLpResult` נשאל מול CardCom; Microsoft Graph: `clientState` | שורות הבדיקה בלבד, חוץ משלושת ה-webhooks שנקראו במלואם | ✓ (ראו הערה) |
+| נתיבי אדמין שאין בהם שער בקובץ | `jobs.data` ו-`jobs/[[...path]]` ← `proxyToDashboard` ← `requirePlatformPermission('manage_settings')` (`dashboard-proxy.ts:61`); `workflows/[id]/runs/latest` ← `workflowRunsFingerprint` ← `manage_settings` | נקראו | ✓ |
+| תשלום | `purchase/settle` ← `guardCampaignRoute`: בדיקת Origin, `requireUser`, `requireOwnedEvent` | נקרא | ✓ |
+| ציבורי במכוון | `health`, `auth/callback` (חסימת open-redirect), `auth/logout`, `[...catchAll]` (404), `guest-list-template.csv`, `llms.txt`, `call-me-now/*` (OTP + rate-limit) | הקריאה במלואה רק ל-`health`, `auth/*`, `catchAll`; השאר נקבעו לפי הערות הקובץ | ללא נתונים רגישים בלי טוקן/OTP |
+
+**לא נקרא בעומק (מסומן [מוסק]):** גוף האימות של `voximplant/console/*` (בדקתי רק שהסוד `KALFA_CONSOLE_SECRET` נבדק ושהכשל מחזיר 401, לא אם ההשוואה timing-safe), `workflows/hook/[endpoint]`, `rdp-gateway/*`, `widget/*`, ופנים `verifyElevenLabsWebhook`. אלה נתיבים שבהם הסוכן מציג סוד/חתימה ולא הרשאת צוות.
+
+**הערה קטנה (לא תוקן):** `webhooks/microsoft-graph` משווה `clientState` עם `!==` רגיל ואין בו rate-limit, בניגוד לשאר ה-webhooks. הסיכון נמוך (סוד משותף, התשובה תמיד 202), אבל זה חריג בסגנון — החלטת בעלים אם לתקן.
+
+**אימות שהמיגרציות (שלב 1 ושלב 2) לא פגעו בסוכנים [נמדד]:**
+- יומני pm2 (כל הקבצים השמורים, כולל worker, fleet, owner-agent): אפס שורות `42501` / `permission denied` / `has_role` / `user_roles` / `app_role`.
+- ריצות Fleet: 15:30 `support-drafter`, 16:30 `brand-director`, 17:30 `chief-of-staff` — `is_error=false`, קובץ `.err` ריק, אפס אזכורי הרשאה. ריצת 17:30 היא אחרי שני השלבים (שלב 2 הוחל מיד אחרי יצירתו, 16:47 IDT לפי גרסת הקובץ). ריצות 15:30 ו-16:30 הן אחרי יצירת שלב 1 (14:46 IDT), אבל מועד ההחלה המדויק שלו ב-DB לא נמדד, ולכן הן ראיה חלקית בלבד. ‏"permission_denials" יחיד אצל `brand-director` הוא חסימת כלי Bash של Claude (`find -exec sh -c`) ולא קשור למסד.
+- שתי מדיניות ה-RLS שהוחלפו (`voice_purposes_admin_all`, `voice_purpose_attempts_admin_read`) משמשות רק את ממשק הצוות; סוכני הקול והמנוע עובדים עם `service_role`.
+
+**שלושת שורות `user_roles` שנמחקו:** בעלים ✓, `billing_clerk` ✓ (שניהם עם `platform_staff`), והשלישית — `play-review@kalfa.me` (חשבון הבודק של Google Play, נוצר 18.8) — **ללא** שורת `platform_staff` ו-`console_agents`, ללא התחברות מעולם וללא session. כלומר מחיקת תפקיד האדמין שלה לא שינתה דבר בפועל. **נשאר:** משתמש ה-auth עצמו (עם סיסמה) עדיין קיים, וכנראה גם משתמש ה-SDK ב-Voximplant (`agent_f21060b5…` — לא נבדק). לפי רשימת הזיכרון, חשבון הבודק היה אמור להימחק אחרי אישור האפליקציה (18.8). מחיקה רק דרך `/admin/users` — לא נעשה.
+
 ## הערה אחת על דיוק (לא חור)
 
 `admin-data-layer-coverage.test.ts:277-280` (ושורות סמוכות) מנמק את הרצפה הגסה של `analytics.ts` / `search-console.ts` בכך ש"אין נתוני לקוח" ו"אין מפתח בקטלוג". בפועל הקוד בודק `view_customer_data` (מאז `b5b5f045`, 27.7.2026). הנימוק במבחן לא מעודכן; ההתנהגות נכונה. לא שיניתי — זה קובץ מבחן והנימוק הוא החלטת בעלים.
