@@ -1,97 +1,43 @@
-# פרישת `user_roles` — שלב 2 (מחיקת הטבלה, הפונקציה וה-enum)
+# פרישת `user_roles` — שלב 2 (מחיקת `has_role`, `user_roles`, `app_role`)
 
-נכתב 2026-10-15. **זו תוכנית, לא מיגרציה.** הקובץ הזה במכוון לא נמצא ב-`supabase/migrations/`: `supabase db push`
-מחיל כל קובץ ממתין, והמיגרציה הזו חייבת לרוץ רק אחרי ש-deploy של הבילד החדש הושלם.
+נכתב 15.10.2026. **נוצרה, לא הוחלה, ממתינה לסקירה ולאישור.** המיגרציה נוצרה בפקודה `supabase migration new retire_user_roles_stage_2` (הקובץ `supabase/migrations/20261015134735_retire_user_roles_stage_2.sql`). **אין להריץ `supabase db push` לפני אישור** — הוא מחיל כל מיגרציה ממתינה, כולל את זו.
 
-## הקשר
+הקובץ הפועל: [`supabase/migrations/20261015134735_retire_user_roles_stage_2.sql`](../supabase/migrations/20261015134735_retire_user_roles_stage_2.sql). הוא כולל בדיקות קדם שמבטלות את המיגרציה אם משהו עדיין בשימוש, `DROP` **בלי `CASCADE`**, והוכחה בסוף באותה טרנזקציה.
 
-שלב 1 (`supabase/migrations/20261015114659_retire_user_roles_admin_consumers.sql`) העביר את הצרכנים האחרונים של
-`has_role('admin')` — שש פונקציות `fleet_*` ושתי policies של הקול — ל-`has_platform_permission`, מחק את
-`claim_first_admin`, ושלל מ-`authenticated` את `org_role_rank`. בקוד נמחקו `requireAdmin()`/`isAdmin()` ועמוד
-`/app/admin-access`. אחרי זה `has_role` ו-`user_roles` הם קוד מת: אף policy, פונקציה, trigger, view או קריאת RPC
-לא פונים אליהם (נמדד ב-15.10.2026, ראו "מפקד צרכנים").
+## הרקע
+שלב 1 (`20261015114659`) הוחל במסד החי ב-15.10 והבילד שלו נפרס באותו יום ב-15:59. מאז הדגל הישן `user_roles.admin` לא מכריע על שום דבר. נשארו רק האובייקטים עצמם.
 
-## תנאים מקדימים (כולם, לפי הסדר)
+## מה נבדק מול המסד החי (נמדד, 15.10.2026)
 
-1. מיגרציית שלב 1 הוחלה ב-DB החי, וה-DO block שבה עבר (המיגרציה נכשלת כולה אם משהו לא תקין).
-2. הבילד שמכיל את שינויי הקוד (בלי `isAdmin`/`requireAdmin`/`admin-access`) נפרס. אחרת הבילד הישן, שעדיין קורא
-   `rpc('has_role')`, יקבל שגיאה ויסתיר את קישור הניהול בתפריט עד ה-deploy.
-3. `npm run gen:types` הורץ אחרי שלב 1 (ה-types לא כוללים עוד `claim_first_admin`).
-4. מפקד הצרכנים (למטה) נקי — מורץ מחדש מיד לפני המחיקה, לא נסמך על המדידה הזו.
-5. בעל המערכת אישר במפורש (מחיקת טבלה היא SQL הרסני; 3 שורות admin נמחקות).
+| בדיקה | תוצאה |
+|---|---|
+| מפתחות זרים **אל** `user_roles` | אין |
+| מפתח זר **מ**-`user_roles` | `user_id → auth.users ON DELETE CASCADE`. מחיקת הטבלה לא נוגעת ב-`auth.users`; הכיוון ההפוך (מחיקת משתמש) כבר לא רלוונטי |
+| טריגרים על הטבלה | אין |
+| views / materialized views תלויים | אין |
+| policies שמפנות אליה או ל-`has_role` | רק `ur_self_read` על הטבלה עצמה (נמחקת איתה) |
+| פונקציות שמפנות אליהן | אין, חוץ מ-`has_role` עצמה |
+| תלויות `pg_depend` ב-`has_role` | אין |
+| עמודות מסוג `app_role` | רק `user_roles.role` |
+| הרשאות | טבלה: `authenticated` SELECT/REFERENCES/TRIGGER, `service_role` מלא. פונקציה: `authenticated`, `service_role`. נמחקות יחד עם האובייקטים |
+| קוד, סקריפטים, worker, edge functions, אשף ההעברה, בדיקות, seed | אפס הפניות. רק types מחוללים ומיגרציות היסטוריות (הן מתנגנות לפי הסדר, ולכן עדיין תקינות) |
+| bootstrap / שחזור מנהלים | `claim_first_admin` נמחקה בשלב 1. מנהל ראשון נוצר ב-SQL ל-`platform_staff` (`docs/project/02-auth-and-authorization.md` §6.2) |
+| נתונים | 3 שורות, כולן `admin`. ל-2 מהן יש גם שורה ב-`platform_staff`; החשבון השלישי מעולם לא התחבר |
 
-## מפקד צרכנים — חייב להחזיר 0 בכל השורות
+## גיבוי ושחזור של 3 השורות
+- גיבוי מחוץ למסד ומחוץ ל-git: `ops-evidence/user_roles-backup-20261015.sql` (הספרייה מוחרגת ב-`.git/info/exclude`, הקובץ בהרשאה 600). הוא כולל `INSERT` לשלוש השורות.
+- שחזור מלא: סעיף ה-ROLLBACK בראש קובץ ה-SQL (יוצר מחדש את ה-enum, הטבלה, ה-policy, ההרשאות והפונקציה), ואז הרצת קובץ הגיבוי.
+- בדיקת הקדם במיגרציה מסרבת להמשיך אם יש בטבלה שורה שאינה `admin`, כי הגיבוי מכסה רק אותן.
 
-```sql
-select 'policy' as kind, tablename || '.' || policyname as name
-  from pg_policies
- where schemaname = 'public'
-   and (coalesce(qual,'') ilike '%has_role(%' or coalesce(with_check,'') ilike '%has_role(%'
-        or coalesce(qual,'') ilike '%user_roles%' or coalesce(with_check,'') ilike '%user_roles%')
-   and not (tablename = 'user_roles')            -- המדיניות של הטבלה עצמה נמחקת איתה
-union all
-select 'function', p.proname
-  from pg_proc p
- where p.pronamespace = 'public'::regnamespace and p.prokind = 'f' and p.proname <> 'has_role'
-   and (pg_get_functiondef(p.oid) ilike '%has_role(%' or pg_get_functiondef(p.oid) ilike '%user_roles%')
-union all
-select 'view', schemaname || '.' || viewname
-  from pg_views
- where schemaname = 'public' and (definition ilike '%has_role(%' or definition ilike '%user_roles%')
-union all
-select 'trigger', c.relname || '.' || t.tgname
-  from pg_trigger t join pg_class c on c.oid = t.tgrelid
- where not t.tgisinternal and pg_get_triggerdef(t.oid) ilike '%has_role%'
-union all
-select 'fk_into_user_roles', conrelid::regclass::text || '.' || conname
-  from pg_constraint where confrelid = 'public.user_roles'::regclass
-union all
-select 'column_of_type_app_role', c.relname || '.' || a.attname
-  from pg_attribute a join pg_class c on c.oid = a.attrelid join pg_type t on t.oid = a.atttypid
- where t.typname = 'app_role' and a.attnum > 0 and not a.attisdropped
-   and c.relnamespace = 'public'::regnamespace and c.relname <> 'user_roles'
-   and c.relkind <> 'i';                         -- האינדקס של user_roles עצמו אינו צרכן
+## הוכחה על מסד מקומי (בטרנזקציה שנגמרת ב-ROLLBACK)
+1. הרצה נקייה: אחרי המחיקות `has_role=0`, `user_roles` לא קיימת, `app_role=0`. אחרי ה-ROLLBACK המצב חזר לקדמותו.
+2. `policy` תלויה ב-`has_role` → המיגרציה **נעצרת** ("1 policy(ies) still reference").
+3. `view` תלוי ב-`user_roles` → **נעצרת**.
+4. שורה שאינה `admin` → **נעצרת**.
+אחרי הבדיקות לא נשאר שום אובייקט זמני.
 
--- נמדד על ה-DB החי לפני שלב 1 (15.10.2026): 9 שורות — claim_first_admin, שש פונקציות fleet_*, ושתי ה-policies של הקול;
--- בדיוק מה ששלב 1 מטפל בו. אחרי שלב 1 חייב להחזיר 0 שורות (נבדק על ה-DB המקומי אחרי החלת המיגרציה).
-```
-
-ובקוד: `grep -rnE "has_role|'user_roles'|\"user_roles\"" src scripts supabase/functions --include=*.ts --include=*.tsx`
-חייב להחזיר רק הערות והטיפוסים המחוללים.
-
-## המיגרציה (לייצר בפקודה `supabase migration new retire_user_roles_stage_2`, ואז למלא)
-
-```sql
--- גיבוי לפני מחיקה (נשמר ב-rollback למטה): select * from public.user_roles;
-drop function public.has_role(uuid, public.app_role);
-drop table public.user_roles;     -- מוחק איתו את ur_self_read ואת user_roles_user_id_role_key
-drop type public.app_role;
-```
-
-## Rollback
-
-```sql
-create type public.app_role as enum ('admin', 'user');
-create table public.user_roles (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users (id) on delete cascade,
-  role public.app_role not null,
-  created_at timestamptz not null default now(),
-  constraint user_roles_user_id_role_key unique (user_id, role)
-);
-alter table public.user_roles enable row level security;
-create policy ur_self_read on public.user_roles for select to authenticated
-  using (user_id = (select auth.uid()));
-create or replace function public.has_role(_user_id uuid, _role public.app_role)
-  returns boolean language sql stable security definer set search_path to 'public' as $$
-  select exists (select 1 from public.user_roles where user_id = _user_id and role = _role);
-$$;
--- ואז לשחזר את 3 שורות ה-admin מהגיבוי.
-```
-
-(הגדרת `has_role` ו-`ur_self_read` לפי ה-DB החי ב-15.10.2026; לוודא מול `pg_get_functiondef` לפני שימוש ב-rollback.)
-
-## אחרי המחיקה
-
-`npm run gen:types`, הרצת Security Advisor, ועדכון `docs/project/02-auth-and-authorization.md` §6.1 ו-`03-database-schema.md`
-(`user_roles`) מ"יצא משימוש" ל"נמחק".
+## מה נשאר
+1. סקירה של קובץ המיגרציה על ידי הבעלים.
+2. אישור מפורש להחלה (מחיקת טבלה).
+3. אז: `supabase db push`, `npm run gen:types` (השער `types:check` ב-deploy משווה את ה-types למסד החי), וקומיט.
+4. אחרי ההחלה: עדכון `docs/project/02-auth-and-authorization.md` §6.1 ו-`03-database-schema.md` מ"יצא משימוש" ל"נמחק", והרצת Security Advisor (צפוי: `has_role` נעלמת מרשימת ה-SECURITY DEFINER הניתנות להרצה).
