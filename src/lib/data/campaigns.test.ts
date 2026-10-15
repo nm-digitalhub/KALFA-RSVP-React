@@ -14,7 +14,6 @@ vi.mock('@/lib/data/events', () => ({
 // approveCampaign reads the session user; wind-down transitions require a platform permission.
 vi.mock('@/lib/auth/dal', () => ({
   requireUser: vi.fn(),
-  requireAdmin: vi.fn(),
   requirePlatformPermission: vi.fn(),
 }));
 // The staff branch of updateThankyouSchedule writes a fail-closed audit row;
@@ -66,7 +65,7 @@ import { getCurrentPricing } from '@/lib/data/campaign-pricing';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { requireOwnedEvent } from '@/lib/data/events';
-import { requireUser, requireAdmin, requirePlatformPermission } from '@/lib/auth/dal';
+import { requireUser, requirePlatformPermission } from '@/lib/auth/dal';
 import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { logActivity } from '@/lib/data/activity';
@@ -143,10 +142,7 @@ beforeEach(() => {
   vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 150, credit: 0, committed: 0 });
   vi.mocked(getCurrentPricing).mockResolvedValue({ roundId: 'round-1', version: 1, listPrice: 150, discountAmount: 0, price: 150, lockedAt: '2026-10-07T00:00:00Z', couponAssignmentId: null });
   // clearAllMocks resets call history but NOT implementations — a test that
-  // makes requireAdmin reject (non-admin) would otherwise leak into the next.
-  vi.mocked(requireAdmin).mockResolvedValue(
-    { id: 'admin' } as unknown as Awaited<ReturnType<typeof requireAdmin>>,
-  );
+  // makes requirePlatformPermission reject (non-staff) would otherwise leak into the next.
   vi.mocked(requirePlatformPermission).mockResolvedValue(
     { id: 'admin' } as unknown as Awaited<ReturnType<typeof requirePlatformPermission>>,
   );
@@ -389,8 +385,8 @@ describe('campaign lifecycle transitions', () => {
   });
 
   // Wind-down is staff-only and NAMED: pause/close/cancel gate on
-  // `campaigns.runstate` (NOT event ownership, and not the coarse
-  // requireAdmin floor). The regression below (activateCampaign) proves the
+  // `campaigns.runstate` (NOT event ownership, and not the retired coarse
+  // admin flag). The regression below (activateCampaign) proves the
   // owner path is unchanged for forward transitions.
   it('pauseCampaign: admin allowed → active → paused, WITHOUT an ownership check', async () => {
     const { builder } = adminWith({

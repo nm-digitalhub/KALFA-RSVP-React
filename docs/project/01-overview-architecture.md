@@ -126,10 +126,9 @@ src/app/
 │   ├── events/           # new, [id] (פרטי אירוע)
 │   │   └── [id]/guests/  # רשימה, new, import (CSV), [guestId]
 │   │   └── [id]/campaign/[campaignId]/   # קמפיין: agreement, approve, payment
-│   ├── settings/  team/  # הגדרות משתמש; ניהול חברי ארגון
-│   └── admin-access/     # מעבר מאומת לקונסולת האדמין
+│   └── settings/  team/  # הגדרות משתמש; ניהול חברי ארגון
 │
-├── (admin)/admin/        # קונסולת אדמין (prefix /admin) — requireAdmin ב-layout
+├── (admin)/admin/        # קונסולת אדמין (prefix /admin) — requirePlatformStaff ב-layout
 │   ├── activity/ agreement/ callbacks/ channels/ company/
 │   ├── contacts/ settings/ sumit-test/ templates/
 │   ├── packages/ ([id], new)  users/ ([id])  webhooks/
@@ -168,7 +167,7 @@ src/app/
 
 | מודול | אחריות |
 |---|---|
-| `auth/` | ‏`dal.ts` — ‏Data Access Layer‏: `getUser` (מאומת מול שרת Auth), ‏`requireUser`, ‏`isAdmin`/`requireAdmin`, ממוזכר עם `cache()` של React; ‏`signup-helpers.ts` |
+| `auth/` | ‏`dal.ts` — ‏Data Access Layer‏: `getUser` (מאומת מול שרת Auth), ‏`requireUser`, ‏`isPlatformStaff`/`requirePlatformStaff`/`requirePlatformPermission`, ממוזכר עם `cache()` של React; ‏`signup-helpers.ts` |
 | `data/` | ליבת הלוגיקה העסקית, קובץ פר-דומיין: events, guests, rsvp, campaigns, contacts, payments, billing, close-charge, outreach(-engine/-config), interactions, message-templates, agreements(-doc/-config), webhooks + webhook-processing, otp, orgs, profiles, user-settings, activity, company, event-date. כל שאילתה עוברת דרך גבול הבעלות (owner/org) |
 | `data/admin/` | שכבת נתונים לקונסולת האדמין: users, packages, channels, contacts, callbacks, agreements, dashboard, activity, settings, webhook-inbox, labels, shared |
 | `supabase/` | ארבעה קליינטים מופרדים: `client.ts` (דפדפן), `server.ts` (cookie-based SSR), `admin.ts` (service-role, שרת-בלבד), `env.ts` (קריאת env), ‏`types.ts` (types שנוצרו מהסכימה החיה) |
@@ -234,7 +233,7 @@ src/app/
 Browser
   → reverse proxy (nginx) → pm2 kalfa-beta (next start :3002)
     → src/proxy.ts            # רענון סשן + redirect אופטימי
-      → layout.tsx            # requireUser / requireAdmin (DAL)
+      → layout.tsx            # requireUser / requirePlatformStaff (DAL)
         → page.tsx (RSC) או Server Action / Route Handler
           → src/lib/validation (Zod)  → src/lib/data (בעלות + לוגיקה)
             → Supabase (RLS)  [+ logActivity]

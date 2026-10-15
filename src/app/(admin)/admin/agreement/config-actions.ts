@@ -54,7 +54,7 @@ export async function saveAgreementConfigAction(
   }
 
   try {
-    // `manage_settings`, not `requireAdmin()`. The agreement config decides the
+    // `manage_settings`, not the retired coarse `requireAdmin()` flag. The agreement config decides the
     // terms a customer approves.
     await requirePlatformPermission('manage_settings');
     const supabase = await createClient();

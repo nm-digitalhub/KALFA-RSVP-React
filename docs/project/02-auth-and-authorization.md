@@ -15,7 +15,7 @@
 
 1. הדפדפן שולח בקשה עם cookies של ה‑session (נכתבו ע"י `@supabase/ssr`).
 2. `src/proxy.ts` מרענן את ה‑session (`getUser()` → refresh נכתב ל‑cookies) ומבצע הפניה אופטימית בלבד.
-3. ה‑layout של האזור (`(customer)/app` או `(admin)/admin`) קורא `requireUser()` / `requireAdmin()` מה‑DAL — זהו שער האימות/תפקיד האמיתי.
+3. ה‑layout של האזור (`(customer)/app` או `(admin)/admin`) קורא `requireUser()` / `requirePlatformStaff()` מה‑DAL — זהו שער האימות/תפקיד האמיתי.
 4. הדף/Action קורא לפונקציה בשכבת הנתונים (`src/lib/data/*`), שנפתחת בשער בעלות (`requireOwnedEvent`) או הרשאה ארגונית (`requirePermission`).
 5. השאילתה עצמה רצה עם ה‑client מבוסס ה‑cookies — RLS במסד מגדר אותה שוב (defense‑in‑depth). קריאות service‑role (`createAdminClient`) מותרות רק אחרי שהשערים בשכבות 3–4 עברו.
 
@@ -29,7 +29,7 @@
 | **לקוח / ארגון** | `organization_members` + `org_roles` | `has_org_permission(_org_id,_res,_act)` | רק את הארגון שלו |
 | **מוקד שיחות** | `console_agents` | `is_console_agent()` | פיד השיחות של כל האירועים |
 
-בנוסף קיים **דגל admin ישן ונפרד** — `user_roles` + `has_role(_user_id,'admin')` (§6). הוא **אינו** זהה ל‑`platform_staff`: `has_role` הוא דגל בוליאני גס משלב מוקדם, בעוד `platform_staff` הוא ציר עם תפקידים והרשאות עדינות. שניהם חיים במקביל היום — 10 policies עדיין מגודרות ב‑`has_role`.
+**הדגל הישן `user_roles` + `has_role(_user_id,'admin')` יצא משימוש** (§6.1). מאז 2026‑09‑10 (`20260910090301`) 21 policies נבדקות מול `is_platform_staff()`, ומאז 2026‑10‑15 (`20261015114659`) גם שש פונקציות `fleet_*` ושתי policies של הקול נבדקות מול `has_platform_permission`. `requireAdmin()`/`isAdmin()` נמחקו מה‑DAL. הטבלה והפונקציה נשארות רק עד שלב 2 של הפרישה (`plans/user-roles-retirement-stage-2.md`).
 
 **כלל הזהב — אין הצלבת צירים.** ציר הצוות רואה הכול; ציר הלקוח רואה רק את עצמו. אם משתמש‑לקוח מצליח להיכנס לציר צוות או מוקד, כל הבידוד הרב‑דיירותי קורס. זו בדיוק הייתה סדרת התקלות של 2026‑07‑19/20:
 
@@ -98,8 +98,7 @@ e.owner_id = auth.uid()
 |---|---|---|
 | `getUser()` | `dal.ts:14` | המשתמש המאומת או `null`. משתמש ב‑`supabase.auth.getUser()` שמאמת את הטוקן מול שרת ה‑Auth — **לעולם לא** `getSession()` להרשאות |
 | `requireUser()` | `dal.ts:23` | דורש משתמש מחובר; אחרת `redirect('/auth/login')` |
-| `isAdmin()` | `dal.ts:36` | האם המשתמש admin — לא מפנה; ל‑UI מותנה בלבד (למשל קישור ניווט), לעולם לא שער הרשאה |
-| `requireAdmin()` | `dal.ts:51` | דורש admin דרך RPC `has_role`; אחרת `redirect('/app')` |
+| ~~`isAdmin()` / `requireAdmin()`~~ | — | **נמחקו 2026‑10‑15.** במקומן: `isPlatformStaff()` (UI מותנה, לא שער) ו‑`requirePlatformStaff()` / `requirePlatformPermission(key)` (שערים) |
 | `ACTIVE_ORG_COOKIE` | `dal.ts:70` | שם ה‑cookie של הארגון הפעיל (`'active_org'`) |
 | `getOrgContext()` | `dal.ts:91` | הארגונים של המשתמש + הארגון הפעיל. ה‑cookie הוא **העדפה בלבד** — הערך מאומת מול שורות `organization_members` של המשתמש; org id שלא ברשימת החברויות נופל לארגון הראשון (`dal.ts:118-120`) |
 | `requireActiveOrg()` | `dal.ts:132` | דורש ארגון פעיל; אחרת `redirect('/app')` |
@@ -108,9 +107,9 @@ e.owner_id = auth.uid()
 
 ### 3.2 היכן משתמשים
 
-- `src/app/(customer)/app/layout.tsx:11` — `requireUser()` על כל תת‑העץ `/app`, בתוספת `isAdmin()` ו‑`getOrgContext()` לבניית ה‑shell.
-- `src/app/(admin)/admin/layout.tsx:13` — `requireAdmin()` הוא גבול ההרשאה של כל תת‑העץ `/admin`.
-- שכבת הנתונים `src/lib/data/*` — כמעט כל פונקציה נפתחת ב‑`requireUser()` (למשל `src/lib/data/events.ts:32`), וקבצי ה‑admin ב‑`src/lib/data/admin/*` נפתחים ב‑`requireAdmin()`.
+- `src/app/(customer)/app/layout.tsx:11` — `requireUser()` על כל תת‑העץ `/app`, בתוספת `isPlatformStaff()` ו‑`getOrgContext()` לבניית ה‑shell.
+- `src/app/(admin)/admin/layout.tsx:13` — `requirePlatformStaff()` הוא גבול ההרשאה של כל תת‑העץ `/admin`.
+- שכבת הנתונים `src/lib/data/*` — כמעט כל פונקציה נפתחת ב‑`requireUser()` (למשל `src/lib/data/events.ts:32`), וקבצי ה‑admin ב‑`src/lib/data/admin/*` נפתחים ב‑`requirePlatformPermission(<key>)` (נעול בבדיקה `admin-data-layer-coverage.test.ts`).
 - Route Handlers רגישים — למשל `src/app/api/campaigns/[id]/authorize/route.ts:83` קורא `requireUser()` ומחזיר redirect ללוגין בכשל.
 
 ### 3.3 סטטוס מעבר `getClaims()` → DAL
@@ -158,20 +157,29 @@ e.owner_id = auth.uid()
 
 ## 6. הרשאת Admin — מקור התפקיד האמין
 
-### 6.1 `user_roles` + `has_role()`
+### 6.1 `user_roles` + `has_role()` — יצא משימוש (2026‑10‑15)
 
-- מקור האמת: טבלת `public.user_roles` (`user_id`, `role` מסוג enum `app_role = 'admin' | 'user'`) — ראו הטיפוסים המחוללים `src/lib/supabase/types.ts:1676-1696,1860`.
-- הבדיקה: פונקציית `public.has_role(_user_id, _role)` — SECURITY DEFINER, משמשת גם את שכבת האפליקציה (RPC מ‑`requireAdmin`/`isAdmin`) וגם policies של RLS על טבלאות admin. הטבלה והפונקציה הן חלק מהסכמה הבסיסית שקיימת ב‑DB החי; קבצי המיגרציה המוקדמים בריפו (`20260621214435_*.sql`, `20260622*.sql`) הם placeholders מסונכרנים (`;` בלבד) — הגדרותיהן אומתו מול ה‑DB החי (`plans/authz-current-state-verification.md` §1.4).
+- הדגל הישן (`public.user_roles`, enum `app_role = 'admin' | 'user'`, הפונקציה `has_role(_user_id,_role)`) כבר לא מכריע על שום דבר. 21 policies עברו ל‑`is_platform_staff()` ב‑`20260910090301`; שש פונקציות ה‑`fleet_*` (SECURITY DEFINER) ושתי policies של הקול (`voice_purposes`, `voice_purpose_attempts`) עברו ל‑`has_platform_permission('manage_settings')` / `('manage_voice')` ב‑`20261015114659_retire_user_roles_admin_consumers.sql`; `requireAdmin`/`isAdmin` נמחקו מה‑DAL.
+- הטבלה, הפונקציה וה‑enum עדיין קיימים ב‑DB (3 שורות admin). הם נמחקים בשלב 2, רק אחרי שהמיגרציה הוחלה והבילד נפרס: `plans/user-roles-retirement-stage-2.md`.
 - שום תפקיד אינו נקרא מ‑JWT claims, מ‑cookie או מקלט דפדפן — תמיד RPC מול הטבלה.
 
-### 6.2 Bootstrap — `claim_first_admin`
+### 6.2 Bootstrap של בעל המערכת הראשון
 
-- RPC ללא ארגומנטים (`types.ts:1792` — `Args: never; Returns: boolean`), SECURITY DEFINER: בודק אטומית שאין עדיין admin, ורק אז מעניק לקורא את התפקיד. חוזה: `true` = הקורא הפך ל‑admin הראשון; `false` = כבר קיים admin והבקשה נדחית; שגיאה = לא מאומת וכד'.
-- ה‑Server Action: `claimFirstAdminAction` ב‑`src/app/(customer)/app/admin-access/actions.ts:21-46` — `requireUser()` ואז RPC; על `false` מוחזרת שגיאה בלי להדליף מי/כמה admins קיימים; על הצלחה `revalidatePath('/app','layout')` ו‑redirect ל‑`/admin`.
+- `claim_first_admin()` **נמחקה** (`20261015114659`). היא אפשרה לכל משתמש מחובר להכניס את עצמו ל‑`user_roles` כ‑admin כשאין admin, ולא הייתה אטומית (ספירה והכנסה בלי נעילה). הדף `/app/admin-access` וה‑Server Action שלו נמחקו. אין יותר מסלול "תפיסה עצמית" של הרשאות.
+- בעל מערכת קיים מוסיף חברי צוות מ‑`/admin/users/[id]` (`assignStaffRole`, `requirePlatformOwner`; מגן last‑owner ויומן ביקורת).
+- בהתקנה חדשה, או כשאין אף בעל מערכת, מריצים פעם אחת כמנהל ה‑DB (`granted_by` הוא NOT NULL, ולבעלים הראשון הוא המשתמש עצמו):
+
+```sql
+insert into public.platform_staff (user_id, role_id, granted_by)
+select '<USER_ID>'::uuid, r.id, '<USER_ID>'::uuid
+from public.platform_roles r
+where r.is_owner_role
+on conflict (user_id) do nothing;
+```
 
 ### 6.3 טבלאות admin — cookie client, לא service‑role
 
-שכבת הנתונים של ה‑admin (`src/lib/data/admin/*`) עובדת עם ה‑client רגיל מבוסס ה‑cookies (`createClient` מ‑`server.ts`), ולא עם service‑role: טבלאות ה‑admin (`app_settings`, `webhook_inbox`, `message_templates`, `outreach_state`, `agreement_documents` ועוד) מוגנות ב‑policies בסגנון `has_role(auth.uid(),'admin'::app_role)` (למשל `202606240005_app_settings.sql:17-20`, `202606290035_webhook_inbox.sql:37-40`), כך ש‑RLS עצמו אוכף את התפקיד גם אם קוד האפליקציה שגה.
+שכבת הנתונים של ה‑admin (`src/lib/data/admin/*`) עובדת עם ה‑client רגיל מבוסס ה‑cookies (`createClient` מ‑`server.ts`), ולא עם service‑role: טבלאות ה‑admin (`app_settings`, `webhook_inbox`, `message_templates`, `outreach_state`, `agreement_documents` ועוד) מוגנות ב‑policies שבודקות `( SELECT is_platform_staff() )` (מאז `20260910090301`; לפניו `has_role(auth.uid(),'admin'::app_role)`), ופעולות מסוימות — `fleet_*` ומדיניות הקול — בודקות `has_platform_permission(...)` ישירות. כך ש‑RLS עצמו אוכף את התפקיד גם אם קוד האפליקציה שגה.
 
 ## 6A. ציר צוות הפלטפורמה — `platform_staff`
 
@@ -400,7 +408,8 @@ public.has_org_permission(_org_id uuid, _resource text, _action text) returns bo
 |---|---|---|
 | **נעולות ל‑service_role בלבד** | `submit_rsvp`, `get_rsvp_by_token`, `claim_webhook_events`, `try_record_billed_result`, `campaign_billing_summary` | anon ✗, authenticated ✗, service_role ✓ |
 | helpers של RLS (חייבות להישאר ל‑authenticated) | `owns_event`, `has_role`, `has_org_permission`, `is_org_member` | authenticated ✓ |
-| RPCs אפליקטיביים | `accept_invitation`, `claim_first_admin`, `create_organization`, `can_access_event`, `org_role_rank` | anon/auth ✓ (hardening P2/P3 פתוח) |
+| RPCs אפליקטיביים | `accept_invitation`, `create_organization`, `can_access_event` | anon/auth ✓ (hardening P2/P3 פתוח) |
+| **הוסרו 2026‑10‑15** (`20261015114659`) | `claim_first_admin` (נמחקה), `org_role_rank` (EXECUTE נשלל מ‑authenticated; נשאר ל‑service_role) | — |
 | trigger/util | `handle_new_user`, `set_updated_at`, `rls_auto_enable`, פונקציות ה‑lifecycle | לא רלוונטי כ‑RPC |
 
 - **מיגרציה `202606300038_lock_billing_rpcs.sql` (P0, סגור ומאומת‑חי)**: שתי פונקציות ה‑billing — `try_record_billed_result` (כותבת חיוב אמיתי) ו‑`campaign_billing_summary` (חושפת נתוני חיוב) — היו SECURITY DEFINER עם EXECUTE ל‑anon/authenticated/PUBLIC וללא בדיקת זהות פנימית; הוכח חי שקריאת REST אנונימית עבדה. המיגרציה עושה `revoke execute ... from anon, authenticated, public` ו‑`grant ... to service_role` (`0038:29-45`), במקביל לנעילה שכבר הייתה על `submit_rsvp`/`get_rsvp_by_token`/`claim_webhook_events`.
@@ -422,27 +431,27 @@ public.has_org_permission(_org_id uuid, _resource text, _action text) returns bo
 
 - **Rate limiting** בשרת: `src/lib/security/rate-limit.ts`, בשימוש בפעולות ה‑RSVP הציבוריות (`src/app/(public)/r/[token]/actions.ts`), בפעולות קמפיין וב‑OTP.
 - **בדיקת Origin** במסלולי `/api` כספיים (`isAllowedOrigin`, ראו §9.2) כהגנת CSRF משלימה ל‑cookies.
-- **שגיאות בטוחות**: כשלונות auth מוחזרים גנריים (login, callback → `/auth/login?error=auth`, claim_first_admin) בלי חשיפת פרטי ספק/DB.
+- **שגיאות בטוחות**: כשלונות auth מוחזרים גנריים (login, callback → `/auth/login?error=auth`) בלי חשיפת פרטי ספק/DB.
 
 ## 11. סיכום — מי מקור האמת לכל שאלה
 
 | שאלה | מקור האמת | נקודת הכניסה בקוד |
 |---|---|---|
 | מי המשתמש? | Supabase Auth (token מאומת מול השרת) | `getUser()` / `requireUser()` — `src/lib/auth/dal.ts:14,23` |
-| האם admin פלטפורמה? (דגל ישן) | טבלת `user_roles` דרך RPC `has_role` | `requireAdmin()` / `isAdmin()` — `dal.ts:36,51` |
+| ~~האם admin פלטפורמה? (דגל ישן)~~ | **יצא משימוש** (`user_roles`/`has_role`, §6.1) — במקומו `platform_staff` | `requireAdmin()`/`isAdmin()` נמחקו 2026‑10‑15 |
 | האם חבר צוות פלטפורמה? | טבלת `platform_staff` דרך RPC `is_staff` | `isStaff()` — `dal.ts:100` |
 | מותר לבצע פעולת צוות ספציפית? | `platform_role_permissions` דרך `has_platform_permission` | `hasPlatformPermission()` / `requirePlatformPermission()` — `dal.ts:117,135` |
 | האם נציג מוקד שיחות? | `console_agents` **∧** `platform_staff` דרך `is_console_agent` | ה‑views ו‑policies של `console_*` |
 | מה הארגון הפעיל? | `organization_members` (cookie = העדפה בלבד) | `getOrgContext()` / `requireActiveOrg()` — `dal.ts:91,132` |
 | מותר לבצע פעולה ארגונית? | RPC `has_org_permission` (קטלוג data‑driven) | `can()` / `requirePermission()` — `src/lib/permissions.ts:23,44` |
 | האם האירוע שלי? | `events.owner_id` (או `can_access_event` המודע‑org) | `requireOwnedEvent()` / `requireEventAccess()` — `src/lib/data/events.ts:31,55` |
-| בידוד שורות ב‑DB | RLS על כל הטבלאות הציבוריות | policies מבוססות `auth.uid()` / `owns_event` / `has_role` / `is_org_member` |
+| בידוד שורות ב‑DB | RLS על כל הטבלאות הציבוריות | policies מבוססות `auth.uid()` / `owns_event` / `is_platform_staff` / `has_platform_permission` / `is_org_member` |
 | RSVP ציבורי | RPCs נעולים ל‑service_role עם token אטום | `src/lib/data/rsvp.ts:79,102` |
 
 ## 12. פערים ידועים ופריטים פתוחים (נמדד 2026‑07‑21)
 
 - מעבר `getClaims()` ב‑DAL — מתוכנן, טרם מומש (§3.3).
-- **שני מנגנוני admin במקביל**: `user_roles`+`has_role('admin')` (§6) ו‑`platform_staff`+`is_staff` (§6A) חיים זה לצד זה; 10 policies עדיין מגודרות ב‑`has_role`. אין כאן חור, אבל יש כפילות מושגית שכדאי לאחד.
+- ~~שני מנגנוני admin במקביל~~ — **נסגר 2026‑10‑15**: אין עוד צרכן של `user_roles`/`has_role` בקוד או ב‑DB (`20260910090301` + `20261015114659`). נשאר שלב 2 — מחיקת הטבלה, הפונקציה וה‑enum אחרי deploy: `plans/user-roles-retirement-stage-2.md`.
 - הגנת leaked‑password של Supabase Auth כבויה (הגדרת דשבורד).
 - 6 אזהרות `security_definer_view` על ה‑views של `console_*` — **מכוונות** ומוסברות ב‑§6B; `security_invoker` היה שובר את המוקד.
 - אזהרות `function_search_path_mutable` על פונקציות בסכמת `pgboss` (קוד צד‑שלישי, לא שלנו).

@@ -48,7 +48,7 @@ const FIELDS = {
 
 beforeEach(() => vi.clearAllMocks());
 
-describe('updateTemplateAction — Next.js control-flow signals (requireAdmin)', () => {
+describe('updateTemplateAction — Next.js control-flow signals (requirePlatformPermission)', () => {
   it('propagates a NEXT_REDIRECT from updateMessageTemplate instead of returning { error }', async () => {
     vi.mocked(updateMessageTemplate).mockRejectedValue(NEXT_REDIRECT);
 

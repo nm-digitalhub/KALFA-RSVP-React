@@ -30,7 +30,7 @@ beforeEach(() => {
   vi.mocked(approveAgreement).mockReset();
 });
 
-describe('saveAgreementAction — Next.js control-flow signals (requireAdmin)', () => {
+describe('saveAgreementAction — Next.js control-flow signals (requirePlatformPermission)', () => {
   it('propagates a NEXT_REDIRECT from updateAgreement instead of returning { error }', async () => {
     vi.mocked(updateAgreement).mockRejectedValue(NEXT_REDIRECT);
 

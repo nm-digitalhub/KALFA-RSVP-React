@@ -20,6 +20,10 @@ import {
 import { parseFleetRoleRegistry, type FleetRoleInfo } from '@/lib/fleet/handoff';
 import type { Database, Tables } from '@/lib/supabase/types';
 
+// SQLSTATE the fleet_* RPCs raise (insufficient_privilege) when the caller lacks
+// manage_settings. Matched on the code, not on message text.
+const PG_INSUFFICIENT_PRIVILEGE = '42501';
+
 // Admin: the owner<->autonomous-fleet request ledger (public.fleet_requests).
 // Fleet roles file approval/question/fyi requests via the service-role CLI;
 // the owner reads and answers them here. Authorization: manage_settings (the
@@ -345,7 +349,7 @@ export type OwnerRequestKind = 'approval' | 'question' | 'fyi';
 // The INSERT itself is impossible from here by design — `authenticated` holds
 // SELECT only and the single RLS policy is SELECT-only — so this goes through
 // the fleet_owner_request SECURITY DEFINER function, the same shape as the
-// answer path. The function re-checks admin membership itself, marks
+// answer path. The function re-checks the manage_settings permission itself, marks
 // payload.origin='owner' (what the scheduler's owner_direct_request trigger
 // counts) and derives a deterministic request_key.
 //
@@ -374,7 +378,7 @@ export async function createOwnerFleetRequest(input: {
   });
 
   if (error) {
-    if (error.message.includes('admin only')) throw new Error('אין לך הרשאה לפתוח פנייה');
+    if (error.code === PG_INSUFFICIENT_PRIVILEGE) throw new Error('אין לך הרשאה לפתוח פנייה');
     if (error.message.includes('kind must be')) throw new Error('סוג פנייה לא תקין');
     if (error.message.includes('tier must be')) throw new Error('דרגה לא תקינה');
     if (error.message.includes('are required')) throw new Error('כותרת ותוכן הם שדות חובה');
@@ -459,7 +463,7 @@ export async function createOwnerFleetContinuation(input: {
 export type FleetVerdict = 'approved' | 'denied' | 'answered';
 
 // Record the owner's verdict via the fleet_answer_request RPC. The function
-// re-checks admin membership itself (SECURITY DEFINER) and stamps
+// re-checks the manage_settings permission itself (SECURITY DEFINER) and stamps
 // answered_by/answered_at server-side; kind<->verdict validity, pending-only
 // and not-expired are all enforced in the DB. DB errors are mapped to safe
 // Hebrew messages — provider/DB details never reach the browser.
@@ -496,6 +500,7 @@ export async function answerFleetRequest(input: {
   });
 
   if (error) {
+    if (error.code === PG_INSUFFICIENT_PRIVILEGE) throw new Error('אין לך הרשאה להשיב לפנייה');
     if (error.message.includes('not pending')) {
       throw new Error('הפנייה כבר נענתה או פגה');
     }
@@ -532,7 +537,7 @@ export async function answerFleetRequest(input: {
 }
 
 // ── Fleet goals: persistent goal + self-scheduling ──────────────────────────
-// Owner creates via fleet_goal_create (SECDEF, admin only); the role advances
+// Owner creates via fleet_goal_create (SECDEF, manage_settings); the role advances
 // itself between runs via the CLI's goal-progress/goal-close (service_role
 // only — no grant to authenticated, so neither is reachable from here or the
 // browser). Reads go through the cookie client + fleet_goals_admin_select RLS,
@@ -592,7 +597,7 @@ export async function createFleetGoal(input: {
     p_body: input.body,
   });
   if (error) {
-    if (error.message.includes('admin only')) throw new Error('אין לך הרשאה ליצור מטרה');
+    if (error.code === PG_INSUFFICIENT_PRIVILEGE) throw new Error('אין לך הרשאה ליצור מטרה');
     if (error.message.includes('role ~')) throw new Error('שם סוכן לא תקין');
     throw new Error('יצירת המטרה נכשלה');
   }
@@ -643,7 +648,7 @@ export async function pauseFleetGoal(id: string, note?: string): Promise<GoalPau
     p_note: note ?? undefined,
   });
   if (error) {
-    if (error.message.includes('admin only')) throw new Error('אין לך הרשאה להשהות מטרה');
+    if (error.code === PG_INSUFFICIENT_PRIVILEGE) throw new Error('אין לך הרשאה להשהות מטרה');
     throw new Error('השהיית המטרה נכשלה');
   }
   return data as GoalPauseOutcome;
@@ -660,7 +665,7 @@ export async function resumeFleetGoal(
     p_next_wake_at: nextWakeAt ?? undefined,
   });
   if (error) {
-    if (error.message.includes('admin only')) throw new Error('אין לך הרשאה לשחרר מטרה');
+    if (error.code === PG_INSUFFICIENT_PRIVILEGE) throw new Error('אין לך הרשאה לשחרר מטרה');
     if (error.message.includes('next_wake_at must be within')) {
       throw new Error('מועד ההתעוררות חייב להיות בעתיד, ולא יותר מ-30 יום מהיום');
     }
@@ -680,7 +685,7 @@ export async function abandonFleetGoal(id: string, note: string): Promise<GoalAb
     p_note: note,
   });
   if (error) {
-    if (error.message.includes('admin only')) throw new Error('אין לך הרשאה לסגור מטרה');
+    if (error.code === PG_INSUFFICIENT_PRIVILEGE) throw new Error('אין לך הרשאה לסגור מטרה');
     if (error.message.includes('note is required')) throw new Error('נדרשת סיבה לסגירה');
     throw new Error('סגירת המטרה נכשלה');
   }

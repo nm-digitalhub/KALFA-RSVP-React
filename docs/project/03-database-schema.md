@@ -222,7 +222,9 @@
 
 ### `user_roles`
 
-תפקידי **פלטפורמה** (staff) — נפרדים לחלוטין מתפקידי הארגון (§8). מקור האמת של `has_role`.
+> **יצאה משימוש (2026‑10‑15).** הדגל הזה כבר לא מכריע על דבר: הצוות מוגדר ב‑`platform_staff` (§14א), ואחרון הצרכנים שלה (`fleet_*` ו‑policies של הקול) עבר ל‑`has_platform_permission` ב‑`20261015114659`. הטבלה נמחקת בשלב 2: `plans/user-roles-retirement-stage-2.md`.
+
+תפקידי **פלטפורמה** (staff) הישנים — נפרדים לחלוטין מתפקידי הארגון (§8). מקור האמת של `has_role`.
 
 | עמודה | טיפוס | NULL | הערות |
 |---|---|---|---|
@@ -232,7 +234,7 @@
 | `created_at` | `timestamptz` | לא | `now()` |
 
 - **UNIQUE**: `user_roles_user_id_role_key (user_id, role)`.
-- **RLS**: ‏`ur_self_read` — SELECT עבור `user_id = auth.uid() OR has_role(...,'admin')`; ‏`ur_admin_all`. מינוי האדמין הראשון נעשה דרך ה‑RPC ‏`claim_first_admin` (§15).
+- **RLS**: ‏`ur_self_read` — SELECT עבור `user_id = auth.uid() OR has_role(...,'admin')`; ‏`ur_admin_all`. ה‑RPC ‏`claim_first_admin` נמחקה ב‑`20261015114659`; בעל המערכת הראשון נוצר ב‑`platform_staff` (נוהל ב‑`02-auth-and-authorization.md` §6.2).
 
 ### `user_settings`
 
@@ -682,13 +684,12 @@
 | `has_org_permission` | `_org_id uuid, _resource text, _action text` | `boolean` | ✔ | PUBLIC | **מקור האמת היחיד** להרשאות ארגון — קורא `organization_members` × `role_permissions` × `permission_definitions` |
 | `is_org_member` | `_org_id uuid` | `boolean` | ✔ | PUBLIC | פרימיטיב הבידוד לפי ארגון ב‑RLS |
 | `can_access_event` | `_event_id uuid, _resource text default 'events', _action text default 'view'` | `boolean` | ✔ | PUBLIC | שער גישה org‑aware ל‑DAL; ה‑owner הקלאסי תמיד עובר |
-| `org_role_rank` | `_role_id uuid` | `int` | ✔ | PUBLIC | דירוג תפקיד לבדיקות anti‑escalation |
+| `org_role_rank` | `_role_id uuid` | `int` | ✔ | service_role בלבד (נשלל מ‑authenticated ב‑`20261015114659`; אין שום צרכן) | דירוג תפקיד לבדיקות anti‑escalation |
 
 ### RPCs עסקיים
 
 | פונקציה | ארגומנטים | מחזירה | SECDEF | EXECUTE | תפקיד |
 |---|---|---|---|---|---|
-| `claim_first_admin` | — (ללא ארגומנטים) | `boolean` | ✔ | anon, authenticated, service_role | ‏bootstrap: אם אין עדיין admin — ממנה את הקורא המאומת ומחזירה `true`; אם קיים admin — ‏`false`; לא‑מאומת — exception |
 | `create_organization` | `_name text` | `uuid` | ✔ | PUBLIC | יצירת ארגון + חברות owner לקורא, אטומית |
 | `accept_invitation` | `_token text` | `uuid` | ✔ | PUBLIC | קבלת הזמנה: בתוקף, לא‑מבוטלת, חד‑פעמית, מותאמת‑email; נועלת `FOR UPDATE` |
 | `get_rsvp_by_token` | `_token text` | `jsonb` | ✔ | **service_role בלבד** | השער הציבורי היחיד לקריאת RSVP: מאמתת טוקן לא‑מבוטל + אירוע `active`; מחזירה guest+event+questions+`can_respond` (משוקלל גם מול יום האירוע וגם מול ה‑deadline, בלוח שנה Asia/Jerusalem). נקראת רק מהשרת אחרי rate limiter |

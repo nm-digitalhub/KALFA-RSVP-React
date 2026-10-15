@@ -150,8 +150,8 @@ export async function startManualRunAction(
   // half should be enough on its own: `view_customer_data` without
   // `manage_voice` must not become a way to place calls, and `manage_voice`
   // without `view_customer_data` must not become a way to enumerate guests.
-  // `requireAdmin()` is neither; it is the coarse `has_role('admin')` flag that
-  // `support_agent` and `auditor` also carry.
+  // The retired `requireAdmin()` was neither; it was the coarse `has_role('admin')`
+  // flag that `support_agent` and `auditor` also carried.
   await requirePlatformPermission('view_customer_data');
   await requirePlatformPermission('manage_voice');
 

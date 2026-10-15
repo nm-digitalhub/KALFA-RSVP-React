@@ -121,7 +121,7 @@ function LogoutMenuItem() {
 export function AppShell({
   userEmail,
   userName,
-  isAdmin = false,
+  isStaff = false,
   orgs = [],
   activeOrgId = null,
   showTeam = false,
@@ -132,9 +132,10 @@ export function AppShell({
   // trigger). The account menu shows the name as the primary identity and the
   // email as a secondary line, falling back to the email when the name is empty.
   userName?: string;
-  // Whether to reveal the admin nav link. Determined server-side by the layout;
-  // this is a convenience link only — the /admin layout enforces authorization.
-  isAdmin?: boolean;
+  // Whether to reveal the admin nav link (platform staff at any role). Determined
+  // server-side by the layout; this is a convenience link only — the /admin layout
+  // enforces authorization.
+  isStaff?: boolean;
   // Organizations the user belongs to + the active one (for the switcher) and
   // whether to reveal the user-management nav link (members.manage). All resolved
   // server-side in the layout; the /app/team route re-checks the permission.
@@ -148,15 +149,15 @@ export function AppShell({
   const initials = getInitials(displayName);
 
   // Events, then the team link (if permitted), then the secondary group, then
-  // the admin link (admins only). The /app/team and /admin routes re-check
-  // their own authorization server-side.
+  // the admin link (platform staff only). The /app/team and /admin routes
+  // re-check their own authorization server-side.
   const nav: NavItem[] = [
     ...NAV_PRIMARY,
     ...(showTeam
       ? [{ href: '/app/team', label: 'ניהול משתמשים', icon: Users }]
       : []),
     ...NAV_SECONDARY,
-    ...(isAdmin ? [{ href: '/admin', label: 'ניהול', icon: Shield }] : []),
+    ...(isStaff ? [{ href: '/admin', label: 'ניהול', icon: Shield }] : []),
   ];
 
   return (

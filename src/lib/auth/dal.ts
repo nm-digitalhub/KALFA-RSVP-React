@@ -28,48 +28,8 @@ export const requireUser = cache(async () => {
   return user;
 });
 
-// Whether the current user is an administrator. Non-redirecting — for
-// conditional UI (e.g. showing an admin nav link). Returns false for
-// anonymous users. Authorization for admin routes is enforced by
-// requirePlatformStaff in the admin layout and by a named permission in each
-// data-layer function; this is convenience only, never a gate.
-// Memoized per render pass so repeated calls share one RPC round-trip.
-export const isAdmin = cache(async (): Promise<boolean> => {
-  const user = await getUser();
-  if (!user) {
-    return false;
-  }
-  const supabase = await createClient();
-  const { data } = await supabase.rpc('has_role', {
-    _role: 'admin',
-    _user_id: user.id,
-  });
-  return data === true;
-});
-
-// Require an administrator. Role is checked server-side via the trusted
-// has_role() RPC against the user_roles table (not browser-supplied data).
-// Delegates to isAdmin() rather than issuing its own RPC call so the two stay
-// in sync and a shared render pass reuses one round-trip via cache().
-/**
- * @deprecated NOT the admin floor — that is `requirePlatformStaff` below.
- *
- * Checks `has_role(uid,'admin')` on `user_roles`, a separate axis from
- * platform_staff that exists for historical reasons and is being retired. Do not
- * reach for it in new code: a data-layer function names a permission, and the
- * area floor is platform staff.
- */
-export const requireAdmin = cache(async () => {
-  const user = await requireUser();
-  if (!(await isAdmin())) {
-    redirect('/app');
-  }
-  return user;
-});
-
 // ---------------------------------------------------------------------------
-// Platform (Owner/Staff) RBAC layer. A SECOND platform role layer, orthogonal to
-// the coarse has_role('admin') flag above and to the customer ORG roles below.
+// Platform (Owner/Staff) RBAC layer, orthogonal to the customer ORG roles below.
 // Authorization facts live in the DB as DATA (platform_roles /
 // platform_role_permissions / platform_permission_definitions) and are read via
 // SECURITY DEFINER RPCs. NOTE: "owner" here means PLATFORM owner (KALFA staff),
@@ -83,7 +43,7 @@ export const requireAdmin = cache(async () => {
 // Decided 2026-09-10, and the reason is a blocking bug rather than tidiness.
 //
 // There used to be TWO axes for "is this person staff": `user_roles.admin`
-// (checked by requireAdmin/isAdmin above) and `platform_staff` (the table that
+// (checked by requireAdmin/isAdmin, both since deleted) and `platform_staff` (the table that
 // carries roles, permissions, granted_by, an audit log and a last-owner guard).
 // Nothing tied them together — no foreign key, no trigger — and they were
 // written by two flows that did not know about each other: `setPlatformAdmin`
@@ -104,6 +64,14 @@ export const requireAdmin = cache(async () => {
 // is_platform_staff(), 0 still call has_role, and 0 lost the `( SELECT … )`
 // initplan wrapper that keeps the check once-per-query instead of once-per-row.
 // One axis from here on — do not reintroduce the second.
+//
+// 2026-10-15: requireAdmin()/isAdmin() are DELETED. The consumers 20260910090301
+// missed — six fleet_* SECURITY DEFINER RPCs and two voice policies — now ask
+// has_platform_permission('manage_settings' / 'manage_voice'), claim_first_admin()
+// is dropped (migration 20261015114659_retire_user_roles_admin_consumers.sql), and the
+// /app nav link asks isPlatformStaff(). has_role and the user_roles table are dropped in
+// stage 2, after that migration is applied and this build is deployed
+// (plans/user-roles-retirement-stage-2.md).
 //
 // ⚠️ THE LAYOUT IS NOT THE GATE. `(admin)/admin/layout.tsx` calls
 // requirePlatformStaff(), and that is defense in depth, NOT authority. Next's own

@@ -49,7 +49,6 @@
 | `guests/guest-list-controls` | `search` (query only) | — (read/filter) | ✓ |
 | **`admin/users/[id]/user-actions`** | `setPlatformAdmin`, `setUserSuspended`, `grantBillingCredit`, `updatePlan` | `user_roles`, auth ban, `billing_credits` (event_id, amount, reason), `orders.package_id` | ✓ |
 | `admin/packages/[id]/delete-package-form` | `deletePackageAction` | `packages` (delete) | ✓ |
-| `admin-access/claim-admin-form` | `claim_first_admin` RPC | `user_roles` | ✓ |
 | `join/[token]/page` | `accept_invitation` RPC | `organization_members`, `organization_invitations` | ✓ |
 
 **Net:** the event-detail lifecycle (activate/pause/close/settle), J5 hold, order pay, guest micro-actions, groups,

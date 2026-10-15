@@ -37,8 +37,7 @@ Route Handlers ייעודיים לאדמין:
 - `POST /api/admin/sumit-test` — `src/app/api/admin/sumit-test/route.ts` (ה-PoC של SUMIT).
 - `POST /api/admin/orders/[id]/reconcile` — `src/app/api/admin/orders/[id]/reconcile/route.ts` (יישוב הזמנה תקועה).
 
-עמוד ה-bootstrap (תביעת האדמין הראשון) יושב מחוץ לתת-העץ, באזור הלקוח:
-`src/app/(customer)/app/admin-access/page.tsx`.
+(עמוד ה-bootstrap `/app/admin-access` נמחק ב-2026-10-15 — ראו "Bootstrap" למטה.)
 
 ### פירוט קצר לכל מסך
 
@@ -75,28 +74,26 @@ Route Handlers ייעודיים לאדמין:
 
 ### אכיפת תפקיד אדמין בצד-שרת
 
-- ה-layout של תת-העץ (`(admin)/admin/layout.tsx:13`) קורא ל-`requireAdmin()` — זהו גבול ההרשאה של כל `/admin`; קישור-הניווט באזור הלקוח הוא נוחות בלבד.
-- `requireAdmin` (`src/lib/auth/dal.ts:51-62`): `requireUser()` (מבוסס `supabase.auth.getUser()` — אימות מול שרת ה-Auth, לא `getSession()`), ואז RPC `has_role(_role: 'admin', _user_id)` מול טבלת `user_roles` (enum `app_role = 'admin' | 'user'`, `src/lib/supabase/types.ts:1860`). כישלון → redirect ל-`/app`.
-- `isAdmin` (`dal.ts:36-47`) — גרסה לא-מפנה עבור UI מותנה (הצגת קישור ניהול); לעולם לא משמשת כשער.
-- בנוסף לשער ה-layout, **כל** reader/מוטציה בשכבת `src/lib/data/admin/*` קוראים ל-`requireAdmin()` בעצמם — הגנה כפולה שאינה תלויה בהרכב העמודים.
-- שכבת התפקיד הפלטפורמי (admin) אורתוגונלית לשכבת תפקידי-הארגון של הלקוחות (`users.ts:10-14`).
+- ה-layout של תת-העץ (`(admin)/admin/layout.tsx`) קורא ל-`requirePlatformStaff()` — זהו גבול ההרשאה הכללי של `/admin` (חברות ב-`platform_staff`, בכל תפקיד); קישור-הניווט באזור הלקוח (`isPlatformStaff()`) הוא נוחות בלבד.
+- `requireAdmin()` / `isAdmin()` (הדגל הישן `user_roles` + `has_role`) **נמחקו ב-2026-10-15**. כל reader/מוטציה בשכבת `src/lib/data/admin/*` קורא ל-`requirePlatformPermission(<key>)` בעצמו (נעול בבדיקה `admin-data-layer-coverage.test.ts`) — הגנה כפולה שאינה תלויה בהרכב העמודים.
+- שכבת התפקיד הפלטפורמי אורתוגונלית לשכבת תפקידי-הארגון של הלקוחות.
 
-### Bootstrap — `claim_first_admin`
+### Bootstrap של בעל המערכת הראשון
 
-- העמוד `src/app/(customer)/app/admin-access/page.tsx` מציג לכל משתמש מחובר כפתור "תביעת גישת מנהל ראשונה". זה בטוח כי האכיפה כולה ב-RPC.
-- ה-Server Action (`admin-access/actions.ts:21-46`) קורא ל-RPC `claim_first_admin()` (SECURITY DEFINER, ללא ארגומנטים — `types.ts:1792`): בודק אטומית שאין עדיין אדמין ורק אז מעניק את התפקיד. חוזה: `true` = הפכת לאדמין הראשון; `false` = כבר קיים אדמין (נדחה בלי להדליף מי/כמה); שגיאה = כשל אימות. הצלחה → `revalidatePath('/app','layout')` + redirect ל-`/admin`.
-- הפונקציות `has_role` / `claim_first_admin` וטבלת `user_roles` מוגדרות ב-DB החי (סכימה קיימת-מראש); הן אינן מופיעות כ-`CREATE FUNCTION` במיגרציות הריפו, אך policies במיגרציות מפנים אליהן וה-types שנוצרו מהסכימה כוללים אותן.
+- אין יותר עמוד תפיסה עצמית: `/app/admin-access` ו-`claimFirstAdminAction` נמחקו, וה-RPC `claim_first_admin()` נמחקה במיגרציה `20261015114659_retire_user_roles_admin_consumers.sql` (היא אפשרה לכל משתמש מחובר להפוך ל-admin כשאין admin, ולא הייתה אטומית).
+- בעל מערכת קיים מוסיף חברי צוות מ-`/admin/users/[id]`. בהתקנה חדשה, או כשאין אף בעל מערכת, מריצים `insert` יחיד ל-`platform_staff` כמנהל ה-DB — הנוהל המלא ב-`docs/project/02-auth-and-authorization.md` §6.2.
 
 ### RLS ושני דפוסי client
 
 טבלאות האדמין מוגנות ב-policies בסגנון `app_settings_admin_all`
 (`supabase/migrations/202606240005_app_settings.sql`):
-`using / with check (public.has_role(auth.uid(), 'admin'::app_role))`.
+`using / with check (public.has_role(auth.uid(), 'admin'::app_role))`
+(זו הצורה המקורית; מאז `20260910090301` ה-policies האלה בודקות `( SELECT is_platform_staff() )`, ומאז `20261015114659` ה-policies של הקול ו-`fleet_*` בודקות `has_platform_permission`).
 
-בקוד קיימים שני דפוסים, שניהם מאחורי `requireAdmin()`:
+בקוד קיימים שני דפוסים, שניהם מאחורי `requirePlatformPermission(<key>)`:
 
 1. **Session (cookie) client + RLS** — עבור נתונים שה-policy מכסה במלואם: `settings.ts`, `channels.ts`, `packages.ts`, `agreement-config.ts` (צד הטופס). כאן ה-RLS פעיל כשכבת אכיפה שנייה בפועל.
-2. **Service-role client (`createAdminClient`)** — עבור נתונים שה-cookie client אינו יכול לקרוא: `users.ts` (אימיילים ב-`auth.users`, `user_roles`/`profiles` שהם self-only), `admin/agreements.ts`, `webhook-inbox.ts`, וכן ה-readers התפעוליים ב-`payments.ts`/`outreach-config.ts` (רצים גם בהקשר לקוח/worker, לא רק אדמין). service-role עוקף RLS, ולכן שם ה-policy היא **defence-in-depth** והשער האמיתי הוא `requireAdmin()` (ראו ההערה במיגרציה `202606290035_webhook_inbox.sql:33-35`).
+2. **Service-role client (`createAdminClient`)** — עבור נתונים שה-cookie client אינו יכול לקרוא: `users.ts` (אימיילים ב-`auth.users`, `user_roles`/`profiles` שהם self-only), `admin/agreements.ts`, `webhook-inbox.ts`, וכן ה-readers התפעוליים ב-`payments.ts`/`outreach-config.ts` (רצים גם בהקשר לקוח/worker, לא רק אדמין). service-role עוקף RLS, ולכן שם ה-policy היא **defence-in-depth** והשער האמיתי הוא `requirePlatformPermission(<key>)` (ראו ההערה במיגרציה `202606290035_webhook_inbox.sql:33-35`).
 
 ## מערכת ההגדרות — `app_settings`
 

@@ -111,7 +111,6 @@ Billing / outreach-approval / payment flows.
 |---|---|---|---|---|
 | `/app/settings` | `(customer)/app/settings/page.tsx` | Server | AppShell | User settings — profile, email change, password. |
 | `/app/team` | `(customer)/app/team/page.tsx` | Server | AppShell | Team/members management (org multi-tenancy — members list, invite, roles). |
-| `/app/admin-access` | `(customer)/app/admin-access/page.tsx` | Server | AppShell | Claim admin access (`claim_first_admin`). |
 
 ---
 

@@ -94,7 +94,7 @@ describe.each([
   });
 });
 
-describe('updateWhatsAppChannelAction — Next.js control-flow signals (requireAdmin)', () => {
+describe('updateWhatsAppChannelAction — Next.js control-flow signals (requirePlatformPermission)', () => {
   it('propagates a NEXT_REDIRECT from updateWhatsAppChannelConfig instead of returning { error }', async () => {
     vi.mocked(updateWhatsAppChannelConfig).mockRejectedValue(NEXT_REDIRECT);
 

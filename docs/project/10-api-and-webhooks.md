@@ -4,6 +4,10 @@
 > (‏`"use server"`), מקלטי Webhooks, וה‑worker שמעבד אירועים out‑of‑band.
 > נכון לתאריך 2026‑07‑02, מבוסס על קריאת הקוד עצמו (לא על תיעוד קודם).
 >
+> **עדכון 2026‑10‑15:** `requireAdmin()` נמחקה מה‑DAL, וכל ההפניות אליה במסמך הזה הן היסטוריות. השער בפועל הוא
+> `requirePlatformStaff()` ב‑layout ו‑`requirePlatformPermission(<key>)` בכל פונקציית נתונים/פעולה (נעול בבדיקה
+> `admin-data-layer-coverage.test.ts`). הפעולה `claimFirstAdminAction` נמחקה יחד עם `/app/admin-access`.
+>
 > שיטת האיסוף: `find src/app -name "route.ts"` (‏10 קבצים, כולל אחד מחוץ ל‑`/api`)
 > ו‑`grep -rl '"use server"' src` (‏21 קבצים, 56 פעולות מיוצאות).
 
@@ -316,7 +320,6 @@ same‑origin (למעלה) והתאמת אדמין יזומה (`reconcile`). א�
 | | `inviteMemberAction` | יצירת הזמנת חבר + קישור הצטרפות (`getAppUrl`) | `requireActiveOrg` + הרשאות ב‑`orgs.ts` |
 | | `changeMemberRoleAction` / `removeMemberAction` | ניהול חברים | כנ"ל |
 | | `resendInvitationAction` / `revokeInvitationAction` | ניהול הזמנות | כנ"ל |
-| `src/app/(customer)/app/admin-access/actions.ts` | `claimFirstAdminAction` | תביעת אדמין ראשון דרך RPC‏ `claim_first_admin` (‏SECURITY DEFINER, אטומי, בלי ארגומנטים) | `requireUser`; ההרשאה בתוך ה‑RPC |
 
 ### אדמין (`(admin)/admin/*`) — כולן נשענות על `requireAdmin()`
 ההרשאה נאכפת בתוך שכבת הנתונים `src/lib/data/admin/*` (או בפעולה עצמה כשמצוין),

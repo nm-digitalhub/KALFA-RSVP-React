@@ -7,11 +7,16 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { readFile } from 'node:fs/promises';
 import {
+  abandonFleetGoal,
   answerFleetRequest,
+  createFleetGoal,
+  createOwnerFleetRequest,
   getFleetConversation,
   getFleetRequestRole,
   listFleetConversations,
   parseConversationCursor,
+  pauseFleetGoal,
+  resumeFleetGoal,
 } from './fleet';
 
 vi.mock('server-only', () => ({}));
@@ -88,6 +93,58 @@ describe('answerFleetRequest — B1: the owner cannot answer a request they open
     await expect(
       answerFleetRequest({ id: REQUEST_ID, verdict: 'approved', answer: null }),
     ).rejects.toThrow('הפנייה כבר נענתה או פגה');
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+});
+
+// The six fleet_* RPCs refuse a caller without manage_settings with SQLSTATE 42501
+// (migration 20261015114659). The module matches on that CODE, never on message
+// text, and anything else — including a message that merely sounds like a refusal —
+// stays the generic failure.
+describe('fleet RPC refusals are matched on SQLSTATE 42501', () => {
+  const refusal = { data: null, error: { message: 'fleet_x: not permitted', code: '42501' } };
+  const other = { data: null, error: { message: 'not permitted (but another code)', code: '08006' } };
+
+  const cases: [string, () => Promise<unknown>, string, string][] = [
+    [
+      'createOwnerFleetRequest',
+      () => createOwnerFleetRequest({ role: 'ops-monitor', kind: 'question', tier: 0, title: 't', body: 'b' }),
+      'אין לך הרשאה לפתוח פנייה',
+      'פתיחת הפנייה נכשלה',
+    ],
+    [
+      'createFleetGoal',
+      () => createFleetGoal({ role: 'ops-monitor', title: 'title', body: 'body body body' }),
+      'אין לך הרשאה ליצור מטרה',
+      'יצירת המטרה נכשלה',
+    ],
+    ['pauseFleetGoal', () => pauseFleetGoal(REQUEST_ID), 'אין לך הרשאה להשהות מטרה', 'השהיית המטרה נכשלה'],
+    ['resumeFleetGoal', () => resumeFleetGoal(REQUEST_ID), 'אין לך הרשאה לשחרר מטרה', 'שחרור המטרה נכשל'],
+    [
+      'abandonFleetGoal',
+      () => abandonFleetGoal(REQUEST_ID, 'reason'),
+      'אין לך הרשאה לסגור מטרה',
+      'סגירת המטרה נכשלה',
+    ],
+  ];
+
+  it.each(cases)('%s: 42501 → permission message, any other code → generic failure', async (_name, call, denied, generic) => {
+    const { client } = useClient({ data: null, error: null });
+    client.rpc.mockResolvedValueOnce(refusal);
+    await expect(call()).rejects.toThrow(denied);
+    client.rpc.mockResolvedValueOnce(other);
+    await expect(call()).rejects.toThrow(generic);
+  });
+
+  it('answerFleetRequest: 42501 → permission message, and nothing is posted to Slack', async () => {
+    const { client } = useClient({
+      data: { role: 'ops-monitor', title: 'x', payload: {} },
+      error: null,
+    });
+    client.rpc.mockResolvedValueOnce(refusal);
+    await expect(
+      answerFleetRequest({ id: REQUEST_ID, verdict: 'approved', answer: null }),
+    ).rejects.toThrow('אין לך הרשאה להשיב לפנייה');
     expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 });

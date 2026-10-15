@@ -40,7 +40,7 @@ const TEMPLATE_COLUMNS =
   'id, message_key, channel, label, name, language, body, active, category, requested_category, quality_score, meta_status, rejected_reason, pending_category_change_at, pending_correct_category, last_synced_at';
 
 export async function listMessageTemplates(): Promise<MessageTemplate[]> {
-  // `manage_settings`, not `requireAdmin()`. These are the message bodies sent to
+  // `manage_settings`, not the retired coarse `requireAdmin()` flag. These are the message bodies sent to
 // guests; editing one changes what every future campaign says.
   await requirePlatformPermission('manage_settings');
   const supabase = await createClient();

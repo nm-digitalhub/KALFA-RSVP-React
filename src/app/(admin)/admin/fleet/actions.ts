@@ -208,7 +208,7 @@ export async function answerFleetRequestAction(
 }
 
 // ── Fleet goals: owner creates, pauses, resumes, or abandons ────────────────
-// Shape only. The real gates: has_role inside each SECDEF RPC, the CAS
+// Shape only. The real gates: has_platform_permission('manage_settings') inside each SECDEF RPC, the CAS
 // (step_count) and range checks inside fleet_goal_progress, and the table's
 // own CHECK constraints. Numbers here mirror the DB CHECKs (title 3..200,
 // body 10..8000) so the owner gets a field error, not a raised exception.

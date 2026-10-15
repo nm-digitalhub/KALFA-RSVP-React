@@ -172,7 +172,7 @@ export async function saveCallbackPolicyAction(
   }
 
   try {
-    // `manage_settings`, not `requireAdmin()`. Callback policy governs when the
+    // `manage_settings`, not the retired coarse `requireAdmin()` flag. Callback policy governs when the
 // system calls people back.
   await requirePlatformPermission('manage_settings');
     const supabase = await createClient();

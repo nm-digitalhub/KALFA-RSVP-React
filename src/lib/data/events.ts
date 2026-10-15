@@ -642,7 +642,7 @@ export async function getEventClosureReasons(
 // Thin boolean VISIBILITY helper ONLY (NOT an auth gate).
 // FAIL-CLOSED: returns false on denied OR on any RPC/client error. The only effect is
 // hiding an optional UI section or showing a permission_limited state. Every mandatory
-// gate stays on requireEventAccess/requireUser/requireAdmin. Reuses the exact same
+// gate stays on requireEventAccess/requireUser/requirePlatformPermission. Reuses the exact same
 // can_access_event RPC as requireEventAccess; never reads owner_id/org_id; never duplicates
 // authorization logic. Mirrors `can` in src/lib/permissions.ts (cache + false-on-error).
 // HARD USAGE BOUNDARY: call ONLY after the `reports.view` page gate has passed, and ONLY

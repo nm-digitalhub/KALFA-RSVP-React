@@ -55,7 +55,7 @@ export async function proxyToDashboard(
   upstreamPath: string,
 ): Promise<Response> {
   // Redirects unauthenticated users and non-admins (server-side, trusted).
-  // `manage_settings`, not `requireAdmin()`. The proxied dashboard can retry,
+  // `manage_settings`, not the retired coarse `requireAdmin()` flag. The proxied dashboard can retry,
 // delete and purge pg-boss jobs — the queue that sends messages and places
 // calls.
   await requirePlatformPermission('manage_settings');

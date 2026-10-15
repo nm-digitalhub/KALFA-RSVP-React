@@ -136,8 +136,8 @@ describe('updatePackageAction — an invalid quota is rejected before the data l
   });
 });
 
-describe('updatePackageAction — Next.js control-flow signals (requireAdmin / getPackage 404)', () => {
-  it('propagates a NEXT_REDIRECT from updatePackage (requireAdmin) instead of returning { error }', async () => {
+describe('updatePackageAction — Next.js control-flow signals (requirePlatformPermission / getPackage 404)', () => {
+  it('propagates a NEXT_REDIRECT from updatePackage (requirePlatformPermission) instead of returning { error }', async () => {
     vi.mocked(updatePackage).mockRejectedValue(NEXT_REDIRECT);
 
     await expect(

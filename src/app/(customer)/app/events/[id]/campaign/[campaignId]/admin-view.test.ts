@@ -35,7 +35,7 @@ function bodyOf(src: string, decl: string): string {
 }
 
 describe('campaign page — admin cross-tenant view', () => {
-  it('branches EVERY customer-data read on isAdmin(), not just the campaign', () => {
+  it('branches EVERY customer-data read on the admin flag, not just the campaign', () => {
     for (const reader of [
       'getEventForAdminView',
       'getCampaignForAdminView',

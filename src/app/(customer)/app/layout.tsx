@@ -1,4 +1,4 @@
-import { requireUser, isAdmin, getOrgContext } from '@/lib/auth/dal';
+import { requireUser, isPlatformStaff, getOrgContext } from '@/lib/auth/dal';
 import { can } from '@/lib/permissions';
 import { getProfile } from '@/lib/data/profiles';
 import { AppShell } from '@/components/app-shell';
@@ -13,9 +13,9 @@ export default async function CustomerLayout({
 }) {
   // Defense-in-depth redirect; the data layer also enforces this per request.
   const user = await requireUser();
-  // Role check is server-side and memoized; used only to reveal the admin nav
+  // Staff check is server-side and memoized; used only to reveal the admin nav
   // link. The /admin layout still enforces authorization independently.
-  const admin = await isAdmin();
+  const staff = await isPlatformStaff();
 
   // Org context for the switcher + whether to reveal the user-management link.
   // The /app/team route re-checks members.manage independently.
@@ -36,7 +36,7 @@ export default async function CustomerLayout({
     <AppShell
       userEmail={user.email}
       userName={userName}
-      isAdmin={admin}
+      isStaff={staff}
       orgs={orgCtx.orgs.map((o) => ({ id: o.id, name: o.name }))}
       activeOrgId={orgCtx.activeOrgId}
       showTeam={showTeam}

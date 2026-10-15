@@ -26,7 +26,7 @@ const FIELDS = { payments_enabled: 'on', billing_exposure_gate: 'on' };
 
 beforeEach(() => vi.clearAllMocks());
 
-describe('updateSettingsAction — Next.js control-flow signals (requireAdmin)', () => {
+describe('updateSettingsAction — Next.js control-flow signals (requirePlatformPermission)', () => {
   it('propagates a NEXT_REDIRECT from updateAppSettings instead of returning { error }', async () => {
     vi.mocked(updateAppSettings).mockRejectedValue(NEXT_REDIRECT);
 
