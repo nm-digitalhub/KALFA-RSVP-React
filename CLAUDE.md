@@ -188,7 +188,7 @@ A task is complete only when:
 2. Authorization and ownership are enforced server-side where applicable.
 3. Validation and relevant UI states are handled.
 4. Relevant tests are added or updated.
-5. `npm run lint`, `npx tsc --noEmit`, and `npm run build` pass.
+5. `npm run lint`, `npm run typecheck`, and `npm run build` pass.
 6. The final report includes changed files, verification results, security considerations, and known limitations.
 
 When tests exist, run the relevant focused tests first. Run the complete test suite when practical.
