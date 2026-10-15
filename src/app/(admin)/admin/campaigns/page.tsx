@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 
@@ -20,7 +21,7 @@ import {
 
 import { PageHeading, EmptyState, Badge } from '../_components';
 
-export const metadata = { title: 'קמפיינים' };
+export const metadata: Metadata = { title: 'קמפיינים' };
 
 // The payment-status cell: ONE badge (campaign-payment-status.ts) and no amounts. The badge is the way to the
 // details: it opens the campaign page at its payments list, where the amounts, the order number and every operation

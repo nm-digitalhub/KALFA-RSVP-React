@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 
@@ -30,7 +31,7 @@ import { WebhookDetail } from './webhook-detail';
 import { InspectorDrawer } from './webhook-inspector-client';
 import { DateSelectIL } from '@/components/date-select-il';
 
-export const metadata = { title: 'בדיקת Webhooks' };
+export const metadata: Metadata = { title: 'בדיקת Webhooks' };
 
 type SearchParams = {
   page?: string | string[];

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { MailOpen, PhoneCall } from 'lucide-react';
 
@@ -11,7 +12,7 @@ const TITLE = 'יצירת קשר ותמיכה';
 const DESCRIPTION =
   'יצירת קשר עם KALFA: שליחת פנייה לתמיכה או שאלה לפני הרשמה, או בקשת חזרה טלפונית מהצוות.';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   // Nested metadata objects are REPLACED, not merged: a page that sets no

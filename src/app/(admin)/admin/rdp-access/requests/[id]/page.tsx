@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { ChevronLeft, Terminal } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -11,7 +12,7 @@ import { stationStatesFor, type RdpDisplayStatus } from '@/lib/rdp-access/status
 import { AccessTrack } from '../../access-track';
 import { Badge, type BadgeVariant } from '../../../_components';
 
-export const metadata = { title: 'פרטי בקשת גישה' };
+export const metadata: Metadata = { title: 'פרטי בקשת גישה' };
 export const dynamic = 'force-dynamic';
 
 // One request, read-only: where it stands on the track, the facts, and the audit timeline in the order it happened.

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { Terminal } from 'lucide-react';
 import Link from 'next/link';
 
@@ -10,7 +11,7 @@ import { cn } from '@/lib/utils';
 
 import { ProgressDots } from './progress-dots';
 
-export const metadata = { title: 'בקשות גישה לשולחן עבודה' };
+export const metadata: Metadata = { title: 'בקשות גישה לשולחן עבודה' };
 export const dynamic = 'force-dynamic';
 
 // The owner's read-only list of every remote-desktop request. There is nothing to press here by design: deciding

@@ -1,9 +1,10 @@
+import type { Metadata } from 'next';
 import { requireActiveOrg, requireOrgOwner } from '@/lib/auth/dal';
 import { getOrgRolePermissionMatrix } from '@/lib/data/orgs';
 
 import { OrgRolesClient } from './org-roles-client';
 
-export const metadata = { title: 'הרשאות תפקידים' };
+export const metadata: Metadata = { title: 'הרשאות תפקידים' };
 
 // Customer: UI-editable ORG (per-organization) RBAC matrix editor. Sibling to
 // ../page.tsx (member/invitation management). Owner-only — requireOrgOwner()

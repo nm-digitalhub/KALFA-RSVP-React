@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { hasPlatformPermission, requirePlatformPermission } from '@/lib/auth/dal';
 import { getConsoleCallRecording, listConsoleCalls } from '@/lib/data/admin/console-history';
 import {
@@ -19,7 +20,7 @@ import {
   parsePageParam,
 } from '../../_components';
 
-export const metadata = { title: 'היסטוריית מוקד' };
+export const metadata: Metadata = { title: 'היסטוריית מוקד' };
 
 // Admin history for the browser call-center (console_calls):
 // manual outbound, inbound-customer, and linked ai_handoff rows. Distinct from

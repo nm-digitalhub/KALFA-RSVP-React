@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 import { CalendarClock, FileCheck2, FileClock, FileX2 } from 'lucide-react';
@@ -29,7 +30,7 @@ import { RefreshButton, RunLogExportButton } from './platform-actions';
 import { WiringControls } from './wiring-card';
 import { ElevenLabsKeyForm } from './elevenlabs-key-form';
 
-export const metadata = { title: 'פלטפורמה — מוקד שיחות AI' };
+export const metadata: Metadata = { title: 'פלטפורמה — מוקד שיחות AI' };
 
 const sectionClass = 'space-y-3 rounded-lg border border-border bg-card p-5';
 

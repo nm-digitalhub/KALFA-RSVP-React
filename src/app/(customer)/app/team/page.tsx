@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { requireUser, requireActiveOrg, isOrgOwner } from '@/lib/auth/dal';
 import { can } from '@/lib/permissions';
@@ -5,7 +6,7 @@ import { listMembers, listInvitations, listRoles } from '@/lib/data/orgs';
 
 import { TeamClient } from './team-client';
 
-export const metadata = { title: 'ניהול משתמשים' };
+export const metadata: Metadata = { title: 'ניהול משתמשים' };
 
 // User Management Area. Server-loads the org's members, pending invitations and
 // the role catalog. Access to this management screen is gated by members.manage;

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 import { AlertTriangle, PhoneCall, PhoneForwarded, Wallet } from 'lucide-react';
@@ -28,7 +29,7 @@ import {
 import { balanceVariant, formatBalance } from './_helpers';
 import { AnswerRateRing, BalanceMeter } from './_meters';
 
-export const metadata = { title: 'מוקד שיחות AI' };
+export const metadata: Metadata = { title: 'מוקד שיחות AI' };
 
 const sectionClass = 'space-y-3 rounded-lg border border-border bg-card p-5';
 

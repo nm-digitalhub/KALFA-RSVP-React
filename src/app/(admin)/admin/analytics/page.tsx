@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import {
   Banknote,
   Clock3,
@@ -44,7 +45,7 @@ import { CONSENT_REVISION } from '@/lib/consent/cookie-consent-config';
 // hasPlatformPermission('view_customer_data') + the safe-config gate.
 export const dynamic = 'force-dynamic';
 
-export const metadata = { title: 'אנליטיקת אתר' };
+export const metadata: Metadata = { title: 'אנליטיקת אתר' };
 
 export default async function AdminAnalyticsPage({
   searchParams,

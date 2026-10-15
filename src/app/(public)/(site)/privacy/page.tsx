@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { getCompanyLegal } from '@/lib/data/company';
@@ -13,7 +14,7 @@ const TITLE = 'מדיניות פרטיות';
 const DESCRIPTION =
   'מדיניות הפרטיות של KALFA: איזה מידע נאסף על בעלי האירוע ועל המוזמנים, מטרות העיבוד, שיתוף עם ספקי שירות, משך השמירה והזכויות שלכם.';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   // Nested metadata objects are REPLACED, not merged: a page that sets no

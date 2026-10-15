@@ -1,8 +1,9 @@
+import type { Metadata } from 'next';
 import { listCallRecordings } from '@/lib/data/admin/voice-ops';
 import { validateRecordingUrl } from '@/lib/voximplant/recording-url';
 import { EmptyState, PageHeading, formatDateTime } from '../_components';
 
-export const metadata = { title: 'הקלטות שיחות AI' };
+export const metadata: Metadata = { title: 'הקלטות שיחות AI' };
 
 // Read-only ADMIN surface for Voximplant call recordings.
 //

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { MailCheck } from 'lucide-react';
 
@@ -5,7 +6,7 @@ import { GaFlagListener } from '@/components/consent/ga-flag-listener';
 import { GoogleAnalyticsGated } from '@/components/consent/google-analytics-gated';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'ההרשמה הצליחה',
   description: 'החשבון ב‑KALFA נוצר; נשלח אליכם מייל לאימות הכתובת.',
 };

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { Monitor } from 'lucide-react';
 import Link from 'next/link';
 
@@ -16,7 +17,7 @@ import { isOutcome, OutcomeNotice } from './outcome-notice';
 import { PendingPanel } from './pending-panel';
 import { RequestForm } from './request-form';
 
-export const metadata = { title: PAGE_TITLE };
+export const metadata: Metadata = { title: PAGE_TITLE };
 
 // The state is per signed-in person and changes while the page is open (the owner answers, the window ends).
 export const dynamic = 'force-dynamic';

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 
@@ -5,7 +6,7 @@ import { listAllUsers } from '@/lib/data/admin/users';
 
 import { PageHeading, EmptyState, Badge, Pagination, parsePageParam } from '../_components';
 
-export const metadata = { title: 'משתמשים' };
+export const metadata: Metadata = { title: 'משתמשים' };
 
 // Admin user management — list of all platform users (search by name, email,
 // phone or id + pagination). Authorization is enforced by listAllUsers

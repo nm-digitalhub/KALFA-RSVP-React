@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { getCompanyLegal } from '@/lib/data/company';
 import { ManageCookiesButton } from '@/components/consent/manage-cookies-button';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
@@ -10,7 +11,7 @@ const TITLE = 'מדיניות עוגיות';
 const DESCRIPTION =
   'מדיניות העוגיות של KALFA: אילו עוגיות חיוניות, אנליטיקה ושיווק פועלות באתר, מי הספקים, ואיך לנהל או לבטל את ההסכמה בכל רגע.';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   // Nested metadata objects are REPLACED, not merged: a page that sets no

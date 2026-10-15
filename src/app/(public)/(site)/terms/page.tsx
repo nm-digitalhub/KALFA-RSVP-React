@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { getCompanyLegal } from '@/lib/data/company';
 import { LegalShell, LegalSection } from '../_legal';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
@@ -8,7 +9,7 @@ const TITLE = 'תקנון ותנאי שירות';
 const DESCRIPTION =
   'תנאי השימוש בשירות KALFA: תיאור השירות, תמחור וחיוב, אישור קמפיין והסכם, זכות הביטול לפי חוק הגנת הצרכן וחלוקת האחריות בין הצדדים.';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   // Nested metadata objects are REPLACED, not merged: a page that sets no

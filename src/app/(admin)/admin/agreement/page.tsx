@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getCompanyLegal } from '@/lib/data/company';
 import { getAgreementForAdmin } from '@/lib/data/admin/agreements';
@@ -11,7 +12,7 @@ import { PageHeading, Badge } from '../_components';
 import { AgreementEditor } from './agreement-client';
 import { AgreementConfigForm } from './agreement-config-form';
 
-export const metadata = { title: 'חוזה' };
+export const metadata: Metadata = { title: 'חוזה' };
 
 // Admin: manage + edit the package contract. Approve removes the draft marker; editing returns it to draft. The
 // preview uses sample event data but reflects the saved version/status/body.

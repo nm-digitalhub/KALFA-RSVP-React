@@ -1,9 +1,10 @@
+import type { Metadata } from 'next';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 
 import { PageHeading } from '../_components';
 import { SupportClient } from './support-client';
 
-export const metadata = { title: 'תמיכת לקוחות' };
+export const metadata: Metadata = { title: 'תמיכת לקוחות' };
 
 // Dedicated, READ-ONLY customer-support surface. Gated on the
 // 'view_customer_data' platform permission — a staff member without it is

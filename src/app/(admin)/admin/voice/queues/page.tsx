@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
@@ -5,7 +6,7 @@ import { getQueueMemberIds, listAllConsoleAgents, listQueuesForAdmin } from '@/l
 import { PageHeading } from '../../_components';
 import { QueuesClient } from './queues-client';
 
-export const metadata = { title: 'מחלקות — מוקד שיחות AI' };
+export const metadata: Metadata = { title: 'מחלקות — מוקד שיחות AI' };
 
 // Admin management surface for department queues. NOT SmartQueue — a plain
 // admin-managed grouping of console_agents that the inbound ring order

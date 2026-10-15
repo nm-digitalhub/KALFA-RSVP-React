@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { requirePlatformOwner } from '@/lib/auth/dal';
 import { PageHeading } from '../_components';
 import { getAppOrigin } from '@/lib/url';
@@ -20,7 +21,7 @@ import {
 } from './_panels';
 import { AutoRefreshToggle } from './_auto-refresh-toggle';
 
-export const metadata = { title: 'Debug Mode' };
+export const metadata: Metadata = { title: 'Debug Mode' };
 
 // Force-dynamic: this page reads live process/DB/sidecar state on every
 // request — it must never be statically optimized or cached.

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { requireUser } from '@/lib/auth/dal';
 import { createClient } from '@/lib/supabase/server';
 import { PageHeading } from '../../_components';
@@ -8,7 +9,7 @@ import { ConsolePhoneDev } from './_console-client';
 // sdk-auth: being able to log in as yourself IS the membership — manage_voice
 // would lock enrolled agents out of their own phone). The (admin) layout's
 // requirePlatformStaff already ran; console_me self-scopes to auth.uid().
-export const metadata = { title: 'קונסולת נציג — התחברות' };
+export const metadata: Metadata = { title: 'קונסולת נציג — התחברות' };
 
 export default async function ConsoleDevPage() {
   await requireUser();

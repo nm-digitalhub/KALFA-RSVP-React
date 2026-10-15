@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { requirePlatformOwner } from '@/lib/auth/dal';
 import { getRelocationState } from '@/lib/data/admin/relocation';
 import { PageHeading } from '../_components';
@@ -14,7 +15,7 @@ import {
 } from './_panels';
 import { AutoRefreshToggle } from './_auto-refresh-toggle';
 
-export const metadata = { title: 'העברת דומיין' };
+export const metadata: Metadata = { title: 'העברת דומיין' };
 
 // Force-dynamic: renders the live `.relocation-state.json` written by the CLI
 // wizard (npm run relocate) on every request — never statically optimized.
