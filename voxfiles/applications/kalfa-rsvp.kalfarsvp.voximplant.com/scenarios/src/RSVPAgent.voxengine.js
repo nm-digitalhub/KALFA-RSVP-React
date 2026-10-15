@@ -4,7 +4,7 @@
 // rule OutCallAgent).
 //
 // It dials the recipient, opens the Hebrew RSVP agent
-// (agent_9701kxj3n54ye518a3s518cexd48: language he, eleven_v3_conversational,
+// (agent_9701kxj3n54ye518a3s518cexd48: language he, eleven_v4_turbo,
 // voice Kalfa), injects dynamic variables so the agent's {{guest_name}},
 // {{event_name}}, {{event_date}}, {{event_venue}} placeholders resolve, records
 // the call, logs transcript events, forwards the agent's client tools

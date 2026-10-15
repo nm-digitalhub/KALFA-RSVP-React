@@ -36,7 +36,7 @@
       }
     },
     "tts": {
-      "model_id": "eleven_v3_conversational",
+      "model_id": "eleven_v4_turbo",
       "voice_id": "eac91g6mnNRvS4L6tF5P",
       "stability": 0.4,                      // נמוך = יותר רגש (ElevenLabs)
       "similarity_boost": 0.8,
@@ -333,14 +333,25 @@ npm run voximplant -- recording --session <session_id> --output call.mp3
 
 | סוכן | `llm` | `tts.model_id` | `temperature` | `turn_eagerness` | `optimize_streaming_latency` | `speed` |
 |---|---|---|---|---|---|---|
-| KALFA RSVP (`agent_9701…`) | `claude-haiku-4-5` | `eleven_v3_conversational` | 0.56 | `normal` | 3 | 1 |
-| KALFA Sales Close (`agent_4101…`) | `claude-haiku-4-5` | **`eleven_v4_turbo`** | 0.4 | `normal` | 3 | 1 |
-| KALFA Meeting Confirm (`agent_3601…`) | `claude-haiku-4-5` | `eleven_v3_conversational` | 0.4 | `normal` | 3 | 1 |
-| KALFA RSVP - שירות לקוחות (`agent_8801…`) | `gemini-2.5-flash` | `eleven_v3_conversational` | 0 | `normal` | 3 | 1 |
+| KALFA RSVP (`agent_9701…`) | `claude-haiku-4-5` | `eleven_v4_turbo` | 0.56 | `normal` | 3 | 1 |
+| KALFA Sales Close (`agent_4101…`) | `claude-sonnet-5-5` | `eleven_v4_turbo` | לא מוגדר | `normal` | 3 | 1 |
+| KALFA Meeting Confirm (`agent_3601…`) | `claude-haiku-4-5` | `eleven_v4_turbo` | 0.4 | `normal` | 3 | 1 |
+| KALFA RSVP - שירות לקוחות (`agent_8801…`) | `gemini-2.5-flash` | `eleven_v4_turbo` | 0 | `normal` | 3 | 1 |
+
+> **עדכון 15.10.2026 (באישור הבעלים):** RSVP, Meeting Confirm וסוכן שירות הלקוחות הועברו מ-`eleven_v3_conversational`
+> ל-`eleven_v4_turbo` (שדה אחד, `pull --update` → `push` → `pull` מאמת: `model_id` נשמר, אפס הבדלים אחרים). שורת Sales Close
+> תוקנה לפי הקונפיג המקומי (`claude-sonnet-5-5`, ללא temperature) — הטבלה מ-7.10 עוד הראתה `claude-haiku-4-5` / 0.4.
+> **לא נמדד:** איכות העברית של `eleven_v4_turbo` בשיחה מוקלטת (§6.4), ואם חוקי ה-phoneme במילון ההגייה נקלטים בו.
 
 - `thinking_budget` **לא מוגדר** (unset) באף אחד מארבעת הסוכנים.
-- רק Sales Close רץ על `eleven_v4_turbo`; שלושת האחרים עדיין על `eleven_v3_conversational`.
-  איכות העברית של `eleven_v4_turbo` לא נמדדה במסמך הזה.
+- כל ארבעת הסוכנים רצים על `eleven_v4_turbo`. ElevenLabs מגדירה את `eleven_v3_conversational` כ-"previous generation"
+  ואת v4 Turbo כמודל לסוכני שיחה בזמן אמת (docs: overview/models, נקרא 15.10.2026). לפי אותו תיעוד **אין ב-v4 מחוון Speed** —
+  הערך `speed: 1` בקונפיג נשאר אך אינו אמור להשפיע (לא נבדק). חוקי phoneme במילון ההגייה פועלים לפי התיעוד רק ב-`eleven_v4`,
+  `eleven_flash_v2` ו-`eleven_v3`. מאמר ElevenLabs "Pronunciation dictionary guide"
+  (1.10.2026) מפרט בטבלת התמיכה ש-**Eleven v4 Turbo תומך** ב-phoneme rules במילון, ב-inline IPA (`/…/`) וב-alias, ולא ב-SSML
+  (הבעלים אישר ב-15.10 ש-v4 כולל את ה-turbo). דף התיעוד של הסוכנים נוקב רק ב-ID `eleven_v4` ושותק על turbo — מקור משני.
+  לא אומת בשיחה מוקלטת שלנו.
+  `tts.enable_phoneme_tags: true` בכל ארבעת הסוכנים (ה-OpenAPI מתאר אותו כ-"for V3 models").
 - `optimize_streaming_latency`: ⚠️ **חסר משמעות** — השדה deprecated ו-no-op ("this field is a no-op and is ignored",
   openapi.json). אל תכוונן אותו כדי לשפר latency; הוא לא עושה כלום.
 

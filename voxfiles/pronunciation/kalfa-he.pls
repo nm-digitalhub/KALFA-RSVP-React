@@ -2,8 +2,16 @@
 <!--
   KALFA — מילון הגייה עברי, לכל סוכני הקול (מכירות / אישורי הגעה / אישור פגישה).
 
-  חוקי phoneme ב-IPA. נתמכים ב-eleven_v3, שהוא המודל שלנו
-  (eleven_v3_conversational).
+  חוקי phoneme ב-IPA. לפי תיעוד ElevenLabs (elevenlabs.io/docs/eleven-agents/
+  customization/voice/pronunciation-dictionary, נקרא 15.10.2026) הם פועלים רק
+  ב-eleven_v4, eleven_flash_v2 ו-eleven_v3 — "other models skip dictionary
+  phoneme tags". כל הסוכנים שלנו רצים על eleven_v4_turbo (מ-15.10.2026; קודם
+  eleven_v3_conversational). מאמר ElevenLabs "Pronunciation dictionary guide"
+  (1.10.2026, elevenlabs.io/blog/pronunciation-dictionary-guide) מפרט בטבלה
+  ש-Eleven v4 Turbo תומך ב-phoneme rules במילון, ב-IPA בתוך הטקסט וב-alias
+  (SSML — לא). דף התיעוד של הסוכנים נוקב רק ב-eleven_v4 / eleven_v3 /
+  eleven_flash_v2 ושותק על turbo. לא אומת בשיחה מוקלטת שלנו. חוקי alias פועלים
+  בכל מודל.
 
   תעתיק עברית ישראלית מודרנית:
     ר = ʁ (ענבלית)   ח = χ   ע = ʔ (או נבלעת)   צ = ts
