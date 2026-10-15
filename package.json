@@ -62,7 +62,7 @@
     "test:scraper": "node --test scripts/docs-scraper/scraper.test.mjs",
     "test:fleet-scheduler": "node --test .claude/fleet/bin/verdict-guard.test.mjs",
     "verify:db": "node --env-file=.env.local scripts/verify-db-contracts.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "NEXT_DIST_DIR=.next-typecheck next typegen && tsc --noEmit -p tsconfig.typecheck.json",
     "transcribe": "node scripts/transcribe-he.mjs",
     "voximplant": "tsx scripts/voximplant/cli.ts",
     "relocate": "tsx scripts/relocate/cli.ts",

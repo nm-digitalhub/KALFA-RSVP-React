@@ -1,0 +1,24 @@
+{
+  // Used only by `npm run typecheck`. Same compiler options and excludes as tsconfig.json
+  // (inherited), but `include` names exactly ONE generated-types directory.
+  //
+  // Why: Next appends "<distDir>/types/**/*.ts" to tsconfig.json's `include` for every
+  // distDir a build has used (.next, .next-verify, .next-stage, .next-verify-claude, …).
+  // A stale route stub left in ANY of them — e.g. for a page that was deleted — then
+  // fails `tsc --noEmit` even though the source is fine (measured 15.10.2026: 8 errors,
+  // all in .next/types and .next-verify/types, none in src/).
+  //
+  // The documented flow is `next typegen && tsc --noEmit`
+  // (node_modules/next/dist/docs/01-app/03-api-reference/06-cli/next.md, "next typegen").
+  // typegen writes to <distDir>/types and loads next.config.ts, which maps NEXT_DIST_DIR to
+  // `distDir` (docs: next-config-js/distDir), so the types land in a directory of their own
+  // and the live `.next` that pm2 serves is never touched.
+  "extends": "./tsconfig.json",
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.mts",
+    ".next-typecheck/types/**/*.ts"
+  ]
+}

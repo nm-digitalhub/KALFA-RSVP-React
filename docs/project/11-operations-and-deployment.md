@@ -189,8 +189,10 @@ NEXT_DIST_DIR=.next-stage next build --webpack \
 ### 4.2 זרימת הפריסה המלאה (pre-deploy gate)
 
 ```bash
-npx tsc --noEmit && npm run lint && npm run test && npm run deploy
+npm run typecheck && npm run lint && npm run test && npm run deploy
 ```
+
+(`npm run typecheck` במקום `npx tsc --noEmit` — ראו בהמשך הסעיף: הוא לא נשבר מקבצי types ישנים.)
 
 שני כללים חשובים:
 
@@ -204,6 +206,28 @@ npx tsc --noEmit && npm run lint && npm run test && npm run deploy
 
 `next.config.ts` מכבד `NEXT_DIST_DIR` (`distDir: process.env.NEXT_DIST_DIR || '.next'`),
 וזה מה שמאפשר את הפרדת `.next-verify` / `.next-stage` / `.next`.
+
+**מה מתועד ומה שלנו (נבדק מול `node_modules/next/dist/docs`, Next 16.4.1, 15.10.2026):**
+`distDir` נפרד ל"בנייה מבודדת" מתועד במפורש (`guides/building.md`), וכך גם `deploymentId`
+(`guides/self-hosting.md`, "Version Skew") ומפתח ההצפנה `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`.
+ההחלפה `mv .next-stage .next` **אינה** מתועדת בשום מדריך — זה קוד שלנו. נמדד: ה-`.next` שאחרי
+ההחלפה מכיל את הנתיב `.next-stage` ב-99 קבצים (למשל `required-server-files.json` עם
+`distDir: ".next-stage"`), והאתר עובד תקין מאז 29.6 — אבל "עובד", לא "נתמך רשמית".
+
+**בדיקת טיפוסים עמידה לקבצים ישנים — `npm run typecheck`:** Next מוסיף ל-`tsconfig.json` שורה
+`<distDir>/types/**/*.ts` לכל `distDir` שבנייה השתמשה בו. קובץ route ישן באחת התיקיות האלה
+(למשל על דף שנמחק) שובר `tsc --noEmit` למרות שהקוד תקין (נמדד 15.10: 8 שגיאות, כולן ב-`.next*/types`).
+הסקריפט מריץ את הרצף המתועד (`cli/next.md`, "next typegen"):
+`NEXT_DIST_DIR=.next-typecheck next typegen && tsc --noEmit -p tsconfig.typecheck.json`.
+`tsconfig.typecheck.json` יורש את `tsconfig.json` ומציין **תיקיית types אחת** (`.next-typecheck`),
+ולכן לא תלוי בתיקיות הישנות ולא נוגע ב-`.next` החי. אומת: עם קובץ ישן שהוטמן בכוונה ב-`.next-verify/types`,
+`tsc --noEmit` נכשל (שגיאה אחת) ו-`npm run typecheck` נקי. ‏`next typegen` מוסיף בעצמו את
+`.next-typecheck/types/**/*.ts` ל-`tsconfig.json` בהרצה הראשונה — זה צפוי.
+
+**ניקוי תיקיות build:** כל `.next-*` מתעלמים ב-git (`.gitignore: /.next-*/`) וב-ESLint, ונוצרות מחדש
+בבנייה הבאה: `.next-verify` (`npm run build`), `.next-stage` (`npm run deploy`, נעלמת אחרי ההחלפה),
+`.next-typecheck` (`npm run typecheck`, קטנה). אפשר למחוק את כולן חוץ מ-`.next` (החי) כשאין בנייה רצה.
+‏15.10.2026 נמחקו `.next-verify` (4.7GB) ו-`.next-local-e2e` (439MB).
 
 **מודל סביבת הריצה (ecosystem.config.cjs, ‏2026-07-06):** שני התהליכים
 מוגדרים בקובץ ecosystem עם env מינימלי ומפורש (`NODE_ENV` בלבד); את הסודות
@@ -332,7 +356,7 @@ verbatim, עם תוצאות, החלטות, rollback ו-sign-off.
 
 ```bash
 npm run lint        # ESLint 9 (flat config — eslint.config.mjs)
-npx tsc --noEmit    # בדיקת טיפוסים מלאה
+npm run typecheck   # next typegen + tsc, עמיד לקבצי types ישנים (§4.2)
 npm run test        # vitest run
 npm run build       # next build --webpack אל .next-verify (לא נוגע ב-.next החי)
 ```
