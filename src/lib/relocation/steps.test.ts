@@ -107,7 +107,9 @@ describe(`buildStepDefinitions (relocation, ${EXPECTED_IDS.length} steps)`, () =
     expect(all).toContain("deploy-recovery-email-template.mjs");
     expect(all).toContain("/subscriptions");
     expect(all).toContain("dataStreams.patch");
-    expect(all).toContain("UPDATE company_profile SET privacy_url = 'https://new.example/privacy'");
+    expect(all).toContain(
+      `UPDATE company_profile SET privacy_url = '${ctx.targetOrigin}/privacy'`,
+    );
     expect(all).toContain("POST /{waba}/message_templates");
     expect(all).toContain("meta-approval-override");
     expect(all).toContain("SetAccountInfo");
