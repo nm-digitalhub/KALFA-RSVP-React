@@ -9,11 +9,11 @@ import { Input } from '@/components/ui/input';
 import { PhoneInput } from '@/components/ui/phone-input';
 
 // Floating call-center widget — capability A, THIRD design: OTP-verified,
-// PSTN-out, no browser Voximplant identity at all. Replaces
-// call-widget.tsx/call-widget-lazy.tsx (kept in place as dead code pending
-// an explicit cleanup decision — see console-calls.ts's
-// evaluateWidgetCallCaps header for why that design was accepted as
-// blocked). See evaluateCallMeNowCaps's header in console-calls.ts for the
+// PSTN-out, no browser Voximplant identity at all. Replaced the earlier
+// WebRTC browser widget (call-widget.tsx / call-widget-lazy.tsx — since
+// deleted; see console-calls.ts's evaluateWidgetCallCaps header for why
+// that design was accepted as blocked). See evaluateCallMeNowCaps's header
+// in console-calls.ts for the
 // full research trail (OTP reuse, StartScenarios reuse, consent reasoning).
 //
 // Mounted CONFIG-GATED in (public)/(site)/layout.tsx: getCallMeNowWidgetEnabled
