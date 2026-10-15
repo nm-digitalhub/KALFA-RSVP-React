@@ -114,7 +114,7 @@ export async function approveAgreement(version: string): Promise<void> {
     throw new Error(`לא ניתן לאשר את החוזה משום שחלק מהנוסח אינו ניתן לייצוג ב-PDF: ${pdfIssues.join('; ')}`);
   }
   // The body above still holds {{tokens}}. The links the privacy/terms tokens expand to come from the company settings
-  // (app_settings), so also check what the customer's PDF is really made of: the body rendered with the REAL company
+  // (company_profile), so also check what the customer's PDF is really made of: the body rendered with the REAL company
   // data and the config tokens, and representative package figures (they only change the text, never the structure).
   // renderAgreementPdf parses the same HTML again when a customer approves (pdf.ts) and stays the last guard, for
   // company data that changes after this approval.

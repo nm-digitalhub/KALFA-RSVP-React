@@ -8,8 +8,9 @@
 // Authorization: requirePlatformPermission('manage_settings') gates the write, and the write goes through the
 // request-scoped cookie session client (createClient) — NOT the service-role
 // client — so the app_settings_admin_all RLS policy still applies. This mirrors
-// updateCompanySettings()/updateAppSettings(), which write the same row the same
-// way; RLS is kept as a defence-in-depth layer rather than being bypassed.
+// updateCompanySettings() (company_profile, policy company_profile_admin_all) and
+// updateAppSettings(), which write the same way under the same permission; RLS is
+// kept as a defence-in-depth layer rather than being bypassed.
 //
 // camelCase form keys (matching the getAgreementConfigForAdmin() prop shape) are
 // mapped to the snake_case agr_* columns on save.
