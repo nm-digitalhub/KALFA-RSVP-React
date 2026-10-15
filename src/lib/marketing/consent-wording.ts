@@ -2,7 +2,7 @@
 //
 // The server renders it and the server records it: the browser never supplies the text or the version, so the
 // recorded wording is exactly what the customer was shown. The advertiser's name comes from the company legal name in
-// app_settings (getCompanyLegal), so the text names whoever is configured as the legal entity.
+// company_profile (getCompanyLegal), so the text names whoever is configured as the legal entity.
 //
 // STATUS: approved by the owner on 11.10.2026 (version 2026-10-11.1); the owner ruled that no lawyer review is
 // needed. The feature is switched on separately (app_settings.marketing_consent_enabled).

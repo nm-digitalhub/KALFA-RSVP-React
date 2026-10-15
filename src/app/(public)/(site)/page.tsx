@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { HeroParallax, ParallaxLayer } from '@/components/motion/hero-parallax';
@@ -53,7 +54,7 @@ import {
 // openGraph is declared here too (same title/description as the root layout)
 // so the home page carries og:url like every other (site) page; the helper
 // restates og:image, which the page-level object would otherwise drop.
-export const metadata = {
+export const metadata: Metadata = {
   alternates: { canonical: '/' },
   openGraph: pageOpenGraph(
     'KALFA — ניהול אישורי הגעה',
@@ -161,7 +162,7 @@ export default async function HomePage() {
 
   // Structured data (Organization / WebSite / SoftwareApplication) for search
   // and AI answer engines. Company details come from the admin-managed
-  // app_settings (same reader the legal pages use) — never hardcoded; on a
+  // company_profile (same reader the legal pages use) — never hardcoded; on a
   // read failure the optional fields are simply omitted (the page must not
   // break over JSON-LD).
   const origin = await getAppOrigin();
