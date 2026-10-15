@@ -117,19 +117,19 @@ Route Handlers ייעודיים לאדמין:
 | SMS (ExtrA) | `sms_enabled`, `extra_sms_token`, `extra_sms_sender` | 0015 |
 | אימייל (SMTP) | `email_enabled`, `smtp_host`, `smtp_port`, `smtp_secure`, `smtp_user`, `smtp_password`, `smtp_from` | 0018 |
 | DKIM | `dkim_domain`, `dkim_selector`, `dkim_private_key` | 0019 |
-| פרטי חברה/הסכם | `company_legal_name`, `company_legal_id`, `company_legal_address`, `company_contact_phone`, `company_contact_email`, `privacy_url`, `terms_url`, `warranty_text` | 0016, 0017 |
+| פרטי חברה/הסכם | הועברו לטבלה `company_profile` (ראו "פאנל פרטי חברה"); העמודות הישנות ב-`app_settings` (`company_*`, `privacy_url`, `terms_url`, `warranty_text`) מוסרות במיגרציה `20261015091806` | 0016, 0017 |
 | פרמטרי הסכם | `agr_service_activation_window`, `agr_offer_validity_days`, `agr_charge_window_days`, `agr_hold_release_days`, `agr_liability_cap`, `agr_retention_days`, `agr_record_retention_months` | 0023 |
 | קמפיינים/חיוב | `campaign_holds_enabled`, `close_charge_enabled`, `reasonable_coverage_contacts`, `extreme_threshold_contacts` | 0020, 0024, 0028 |
 | Outreach / WhatsApp | `outreach_enabled`, `whatsapp_phone_number_id`, `whatsapp_waba_id`, `whatsapp_access_token`, `whatsapp_app_secret`, `whatsapp_verify_token` | 0028, 0033 |
 
 ### Accessors מוטפסים ב-`src/lib`
 
-- `src/lib/data/admin/settings.ts` — `getAppSettings` / `updateAppSettings` (סליקה+SMS+SMTP; טיפוס `AppSettings`, שורות 15-31), `getCompanySettings` / `updateCompanySettings` (שורות 124-178), `getInfraConfigStatus` (שורות 187-205 — סטטוס-נוכחות בלבד של `SUPABASE_SERVICE_ROLE_KEY` ו-`APP_ORIGIN` מה-env, לעולם לא ערכים).
+- `src/lib/data/admin/settings.ts` — `getAppSettings` / `updateAppSettings` (סליקה+SMS+SMTP; טיפוס `AppSettings`, שורות 15-31), `getCompanySettings` / `updateCompanySettings` (קוראים וכותבים ל-`company_profile`, לא ל-`app_settings`), `getInfraConfigStatus` (שורות 187-205 — סטטוס-נוכחות בלבד של `SUPABASE_SERVICE_ROLE_KEY` ו-`APP_ORIGIN` מה-env, לעולם לא ערכים).
 - `src/lib/data/admin/channels.ts` — `getWhatsAppChannelConfig` / `updateWhatsAppChannelConfig` / `testWhatsAppConnection` (בדיקת חיבור read-only מול Graph API, שורות 83-113).
 - `src/lib/data/agreement-config.ts` — `getAgreementConfigTokens` (קריאה חיה להסכם, service-role) ו-`getAgreementConfigForAdmin` (prefill לטופס, session client); מיפוי camelCase↔`agr_*` מתועד בשורות 28-34.
 - `src/lib/data/payments.ts` — readers תפעוליים fail-safe (מחזירים "כבוי" במקום לזרוק): `getPaymentsEnabled`, `getCampaignHoldsEnabled`, `getCloseChargeEnabled`, `getSumitPublicConfig`, `getSumitServerConfig`.
 - `src/lib/data/outreach-config.ts` — `getOutreachEnabled`, `getWhatsAppConfig` (צריכת ה-worker/route, fail-closed).
-- `src/lib/data/company.ts` — `getCompanyLegal` לקריאת ההסכם החיה; `src/lib/email/sender.ts` ו-`src/lib/sms/sender.ts` צורכים את מפתחות ה-SMTP/DKIM/ExtrA בזמן שליחה.
+- `src/lib/data/company.ts` — `getCompanyLegal` לקריאת ההסכם החיה (מ-`company_profile`); `src/lib/email/sender.ts` ו-`src/lib/sms/sender.ts` צורכים את מפתחות ה-SMTP/DKIM/ExtrA בזמן שליחה.
 - ולידציה: `appSettingsSchema` / `companySettingsSchema` ב-`src/lib/validation/admin.ts` (Zod בגבול ה-Server Action).
 
 ### איזה טופס עורך אילו מפתחות
@@ -141,7 +141,7 @@ Route Handlers ייעודיים לאדמין:
 | `/admin/integrations/voximplant` | `voximplant_*`, `call_consent_required` |
 | `/admin/integrations/slack` | `slack_*` |
 | `/admin/integrations/owner-agent` | `owner_agent_enabled`, `owner_agent_phone_number_id`, `owner_agent_daily_cap` (ובנוסף הטבלה `owner_agent_allowlist`, שנכתבת רק ב-service role) |
-| `/admin/company` | `company_*`, `privacy_url`, `terms_url`, `warranty_text` |
+| `/admin/company` | `company_*`, `privacy_url`, `terms_url`, `warranty_text` (בטבלה `company_profile`) |
 | `/admin/agreement` (מקטע "פרמטרים של ההסכם") | שבעת מפתחות ה-`agr_*` |
 
 סודות (מפתח SUMIT, טוקן ExtrA, סיסמת SMTP, טוקן/סוד WhatsApp) מוחזרים לטופס האדמין
@@ -174,8 +174,9 @@ Route Handlers ייעודיים לאדמין:
 מנהל את זהות החברה והמסמכים המשפטיים המוטמעים בהסכם שהלקוח חותם עליו (גילויי חובה
 לפי חוק הגנת הצרכן §14ג + קישורי פרטיות/תנאים + נוסח אחריות). הטופס
 (`company/company-form.tsx` + `company/actions.ts`) כותב לעמודות `company_*` /
-`privacy_url` / `terms_url` / `warranty_text` שב-`app_settings`; ההסכם קורא אותן **חי** דרך
-`getCompanyLegal` (`src/lib/data/company.ts`), כך שכל עדכון משתקף מיידית בהסכמים חדשים.
+`privacy_url` / `terms_url` / `warranty_text` שב-`company_profile` (טבלת singleton נפרדת מ-`app_settings`,
+ראו `03-database-schema.md` §14א); ההסכם והדפים הציבוריים (`/privacy`, `/terms`, `/cookies`, `/about`, ה-JSON-LD של דף הבית)
+קוראים אותן **חי** דרך `getCompanyLegal` (`src/lib/data/company.ts`), כך שכל עדכון משתקף מיידית.
 הערה בעמוד ממליצה על אישור עו"ד לפני הפעלה מסחרית.
 
 ## ניהול החוזה — `/admin/agreement`
@@ -235,7 +236,7 @@ REST לפני/לצד זרימת הייצור:
 - **מחירי חבילות ותמחור per-reached** — טבלת `packages` (`price_with_vat` בקטלוג; `price_per_reached`, `channels`, `outreach_schedule`, `min_hold_floor`, `hold_buffer_pct` לתבניות המסחריות). תבניות הקמפיין נקראות מהחבילות הפעילות (`listCampaignTemplates`, `src/lib/data/campaigns.ts:97`), ובעת אישור קמפיין המחיר **ננעל כהעתק** מהתבנית הקנונית (שם:157-166) — כך שגם שינוי עתידי בחבילה לא משנה קמפיין קיים.
 - **ספי כיסוי** — `reasonable_coverage_contacts` / `extreme_threshold_contacts` נקראים מ-`app_settings` בזמן חישוב ה-hold (`campaigns.ts:398-427`), לא מקבועים.
 - **פרמטרי החוזה** — שבעת ה-`agr_*` מוזרקים לתבנית ההסכם כ-tokens; ההערה ב-`agreement-config.ts:16-17` מנסחת את העיקרון במפורש: "Storing them as admin DB config (not code constants) keeps the agreement free of hardcoded business facts".
-- **פרטי חברה ומסמכים משפטיים** — נקראים חיים מ-`app_settings` לתוך ההסכם.
+- **פרטי חברה ומסמכים משפטיים** — נקראים חיים מ-`company_profile` לתוך ההסכם.
 - **תוכן פניות** — `message_templates` מנוהל ב-`/admin/templates`; מפתח ללא תוכן-פעיל לא שולח (fail-closed), כך ששום נוסח אינו קשיח בקוד השליחה.
 - **דגלי הפעלה** — כל יכולת בתשלום (payments / holds / close-charge / outreach / sms / email) כבויה כברירת מחדל ונדלקת רק מהגדרת אדמין ב-DB (readers fail-safe ב-`payments.ts` / `outreach-config.ts`).
 
