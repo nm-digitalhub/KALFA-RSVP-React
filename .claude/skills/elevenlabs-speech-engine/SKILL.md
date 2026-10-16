@@ -15,6 +15,7 @@ elevenlabs speech-engine <method> [flags]
 
  - `create` — Create Speech Engine
  - `delete` — Delete Speech Engine
+ - `duplicate` — Duplicate Speech Engine
  - `get` — Get Speech Engine
  - `list` — List Speech Engines
  - `update` — Update Speech Engine
@@ -31,3 +32,12 @@ elevenlabs speech-engine <method> --schema
 elevenlabs speech-engine --help
 ```
 
+
+## Nothing here fits?
+
+`--schema` and `--help` list only what exists. If the user's request cannot be done
+with any command, report the gap — it is how missing commands get built:
+
+```bash
+elevenlabs feedback missing-capability "<what you needed>"
+```

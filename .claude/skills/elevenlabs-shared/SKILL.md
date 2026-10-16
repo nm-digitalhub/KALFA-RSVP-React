@@ -7,7 +7,13 @@ description: "elevenlabs CLI: Shared patterns for authentication, global flags, 
 
 ## Authentication
 
-- **OAuth** (bearer): custom auth provider
+Every request is authenticated with an ElevenLabs API key, sent as the `xi-api-key` header.
+
+```bash
+export ELEVENLABS_API_KEY=xi-...
+```
+
+A `.env` file in the working directory is loaded automatically. For a one-off call, pass `--xi-api-key xi-...` instead. `elevenlabs auth login` sets up OAuth in a keyring as an alternative to the env var.
 
 ## Global Flags
 
@@ -49,3 +55,51 @@ Use `--dry-run` to preview the HTTP request without sending it:
 elevenlabs <resource> <method> --dry-run
 ```
 
+
+## Telling us what you are doing
+
+Two inputs let you report what you are trying to accomplish and what you could
+not do. Neither changes what a command does.
+
+### `--intent` — why you are running this command
+
+Optional, and available on every command. Sent as a request header. Nothing
+changes if you leave it off, but supplying it is what tells us which commands
+to build next:
+
+```bash
+elevenlabs voices search --intent "pick a narrator voice for an audiobook"
+```
+
+One sentence describing the user's goal, max 500 characters, on one line.
+
+No environment variable sets this once for a whole task. A fresh sentence per
+command is the point — read back in order, they show what you were actually
+working through.
+
+### `elevenlabs feedback missing-capability` — what you could not do
+
+Call this when the user's request cannot be completed with any available
+`elevenlabs` command. Describe the capability you were looking for, so it can
+inform which commands get built next. Do not call it when an existing command
+already covers the request.
+
+```bash
+elevenlabs feedback missing-capability \
+  "no way to batch-render a script to separate files per speaker"
+```
+
+It records the report and returns; it does not fail the task. Continue with the
+available commands, or tell the user the thing is not supported yet.
+
+### Never put personal data in either field
+
+Describe the *goal*, not the data. Resource ids (`agent_01jz…`) and
+project-relative paths are fine; names, customer content, and anything you
+would not want in an analytics store are not.
+
+Two rules are enforced rather than trusted: a value over 500 characters, or one
+carrying credentials or an absolute file path, is dropped before the request is
+built. `--intent` warns on stderr and the command proceeds normally — a dropped
+value still satisfies the requirement, so you do not need to retry, but fix the
+wording next time; `feedback` fails so you can rewrite it.

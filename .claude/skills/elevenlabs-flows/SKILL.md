@@ -20,6 +20,17 @@ elevenlabs flows <method> [flags]
  - `get` — Get Image Generation
  - `list` — List Image Generations
 
+### templates
+
+ - `get` — Get Template
+ - `list` — List Templates
+
+#### runs
+
+ - `create` — Create Template Run
+ - `get` — Get Template Run
+ - `list` — List Template Runs
+
 ### text-to-speech
 
  - `create` — Create Speech Generation
@@ -44,3 +55,12 @@ elevenlabs flows <method> --schema
 elevenlabs flows --help
 ```
 
+
+## Nothing here fits?
+
+`--schema` and `--help` list only what exists. If the user's request cannot be done
+with any command, report the gap — it is how missing commands get built:
+
+```bash
+elevenlabs feedback missing-capability "<what you needed>"
+```

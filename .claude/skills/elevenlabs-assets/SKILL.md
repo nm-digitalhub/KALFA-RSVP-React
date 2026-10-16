@@ -30,3 +30,12 @@ elevenlabs assets <method> --schema
 elevenlabs assets --help
 ```
 
+
+## Nothing here fits?
+
+`--schema` and `--help` list only what exists. If the user's request cannot be done
+with any command, report the gap — it is how missing commands get built:
+
+```bash
+elevenlabs feedback missing-capability "<what you needed>"
+```

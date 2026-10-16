@@ -27,6 +27,16 @@ elevenlabs voices <method> [flags]
 
  - `get` — Get Voice Accents
 
+### collections
+
+ - `add_voice` — Add Voice To Collection
+ - `create` — Create Voice Collection
+ - `delete` — Delete Voice Collection
+ - `get` — Get Voice Collection
+ - `list` — List Voice Collections
+ - `remove_voice` — Remove Voice From Collection
+ - `update` — Update Voice Collection
+
 ### ivc
 
  - `create` — Create voice clone
@@ -94,3 +104,12 @@ elevenlabs voices <method> --schema
 elevenlabs voices --help
 ```
 
+
+## Nothing here fits?
+
+`--schema` and `--help` list only what exists. If the user's request cannot be done
+with any command, report the gap — it is how missing commands get built:
+
+```bash
+elevenlabs feedback missing-capability "<what you needed>"
+```
