@@ -69,6 +69,7 @@
                         "interruption_mode": "allow",
                         "name": "skip_turn",
                         "params": {
+                            "omit_from_transcript": false,
                             "system_tool_type": "skip_turn",
                             "wait_timeout_secs": -1.0
                         },
@@ -634,6 +635,7 @@
                         "interruption_mode": "allow",
                         "name": "skip_turn",
                         "params": {
+                            "omit_from_transcript": false,
                             "system_tool_type": "skip_turn",
                             "wait_timeout_secs": -1.0
                         },
