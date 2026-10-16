@@ -14,6 +14,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
 import { writeReach } from '@/lib/data/outreach-engine';
 import { submitRsvp, type RsvpFailureReason } from '@/lib/data/rsvp';
+import { ownerNoteHash } from '@/lib/voximplant/agent-tool-hash';
 import { validateRecordingUrl } from '@/lib/voximplant/recording-url';
 import {
   voxCallbackSchema,
@@ -287,6 +288,12 @@ export async function processCallRsvp(
 // matches on, so the very next dial attempt to this number is skipped. Guest-
 // initiated (no admin session): written via the service-role client; added_by stays
 // null (the reason string marks provenance). Idempotent: re-adding is an upsert.
+//
+// Same contract as processCallRsvp: `{ok:false}` is a TERMINAL answer (no attempt,
+// no phone to list — retrying cannot change it), while a database failure is
+// THROWN, so the drain's retry path re-runs it. Returning ok:false for a DB error
+// would let the drain mark the row processed with nothing written — an opt-out
+// the guest was told had been honoured, silently lost.
 export async function processCallDnc(attemptId: string): Promise<{ ok: boolean }> {
   const attempt = await getCallAttemptById(attemptId);
   if (!attempt) return { ok: false };
@@ -298,7 +305,8 @@ export async function processCallDnc(attemptId: string): Promise<{ ok: boolean }
     { normalized_phone: normalized, reason: 'בקשת אורח בשיחה קולית' },
     { onConflict: 'normalized_phone' },
   );
-  if (error) return { ok: false };
+  // Never the provider message: a DB error can echo the row, i.e. the phone.
+  if (error) throw new Error(`call_dnc_list upsert failed (${error.code ?? 'unknown'})`);
   return { ok: true };
 }
 
@@ -312,6 +320,15 @@ export async function processCallDncRow(row: WebhookInboxRow): Promise<void> {
 // `notify_owner` (conversation-design §4.2): relay a guest question/message/flag to
 // the event owner via the event's activity log (the same PII-discipline as
 // recordRsvpFromCall: guest-authored text only, never phone/transcript/recording).
+//
+// Applied TWICE per note by design: synchronously by the agent-tool route (for a
+// truthful answer to the agent) and again by the drain from the durable inbox row.
+// An activity_log insert is not idempotent on its own, so each row carries the note's
+// content hash and a re-application finds it and stops — before this every note
+// reached the owner twice (12 rows for 6 notes, measured 2026-10-16).
+//
+// `{ok:false}` is terminal (no attempt); a database failure is THROWN so the drain
+// retries instead of marking the row processed with nothing written.
 export async function processOwnerNote(
   attemptId: string,
   body: VoxNotifyOwner,
@@ -321,11 +338,27 @@ export async function processOwnerNote(
 
   type ActivityLogInsert = TablesInsert<'activity_log'>;
   const admin = createAdminClient();
+  const noteHash = ownerNoteHash(body);
+
+  const existing = await admin
+    .from('activity_log')
+    .select('id')
+    .eq('action', 'call.owner_note')
+    .eq('meta->>call_attempt_id', attemptId)
+    .eq('meta->>note_hash', noteHash)
+    .limit(1);
+  // Never the provider message: a DB error can echo the filter, i.e. the note.
+  if (existing.error) {
+    throw new Error(`activity_log owner-note lookup failed (${existing.error.code ?? 'unknown'})`);
+  }
+  if ((existing.data ?? []).length > 0) return { ok: true };
+
   const meta = {
     kind: body.kind,
     text: body.text,
     guest_id: attempt.guest_id,
     call_attempt_id: attemptId,
+    note_hash: noteHash,
   };
   const row: ActivityLogInsert = {
     event_id: attempt.event_id,
@@ -334,7 +367,7 @@ export async function processOwnerNote(
     meta: meta as unknown as ActivityLogInsert['meta'],
   };
   const { error } = await admin.from('activity_log').insert(row);
-  if (error) return { ok: false };
+  if (error) throw new Error(`activity_log owner-note insert failed (${error.code ?? 'unknown'})`);
   return { ok: true };
 }
 

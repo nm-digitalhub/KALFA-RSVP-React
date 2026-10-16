@@ -1,10 +1,9 @@
-import { createHash } from 'node:crypto';
-
 import { NextResponse } from 'next/server';
 
 import { insertWebhookEvents } from '@/lib/data/webhooks';
 import { processOwnerNote } from '@/lib/data/call-result-processing';
 import { guardAgentToolRequest } from '@/lib/voximplant/agent-tool-guard';
+import { ownerNoteHash } from '@/lib/voximplant/agent-tool-hash';
 import type { TablesInsert } from '@/lib/supabase/types';
 import { voxNotifyOwnerSchema } from '@/lib/validation/voximplant';
 
@@ -58,10 +57,7 @@ export async function POST(
   const body = parsed.data;
 
   // Distinct notes in the same call are distinct rows; an exact resend is a no-op.
-  const noteHash = createHash('sha256')
-    .update(`${body.kind}:${body.text}`)
-    .digest('hex')
-    .slice(0, 16);
+  const noteHash = ownerNoteHash(body);
   try {
     const row: WebhookInboxInsert = {
       provider: 'voximplant',

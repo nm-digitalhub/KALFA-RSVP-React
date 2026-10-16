@@ -18,11 +18,28 @@ vi.mock('@/lib/data/call-attempts', () => ({
 // chainable stub: from(table).upsert/insert resolve {error:null} by default.
 const adminUpsert = vi.fn(async (..._args: unknown[]) => ({ error: null as { message: string } | null }));
 const adminInsert = vi.fn(async (..._args: unknown[]) => ({ error: null as { message: string } | null }));
+// The owner-note idempotency lookup: from(t).select().eq()…limit() → {data,error}.
+// Default = no matching row yet.
+const adminSelectLimit = vi.fn(async (..._args: unknown[]) => ({
+  data: [] as { id: string }[] | null,
+  error: null as { message: string; code?: string } | null,
+}));
+const adminEqs: unknown[][] = [];
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: (table: string) => ({
       upsert: (...args: unknown[]) => adminUpsert(table, ...args),
       insert: (...args: unknown[]) => adminInsert(table, ...args),
+      select: () => {
+        const chain = {
+          eq: (...args: unknown[]) => {
+            adminEqs.push(args);
+            return chain;
+          },
+          limit: (...args: unknown[]) => adminSelectLimit(table, ...args),
+        };
+        return chain;
+      },
     }),
   }),
 }));
@@ -35,11 +52,14 @@ vi.mock('@/lib/data/rsvp', () => ({ submitRsvp: vi.fn() }));
 
 import {
   processCallDnc,
+  processCallDncRow,
   processCallResult,
   processCallRsvp,
   processCallRsvpRow,
   processOwnerNote,
+  processOwnerNoteRow,
 } from './call-result-processing';
+import { ownerNoteHash } from '@/lib/voximplant/agent-tool-hash';
 import {
   getCallAttemptById,
   setCallAttemptRsvpOutcome,
@@ -72,6 +92,7 @@ function row(payload: unknown, messageId: string | null = AID) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  adminEqs.length = 0;
   vi.mocked(getCallAttemptById).mockResolvedValue({ ...ATTEMPT } as never);
   vi.mocked(getContactNormalizedPhone).mockResolvedValue('+972501234567');
   vi.mocked(recordCallOutcome).mockResolvedValue({ applied: true });
@@ -394,9 +415,33 @@ describe('processCallDnc (mark_dnc tool)', () => {
     expect(await processCallDnc(AID)).toEqual({ ok: false });
     expect(adminUpsert).not.toHaveBeenCalled();
   });
-  it('DB error → ok:false (agent must not confirm removal)', async () => {
-    adminUpsert.mockResolvedValueOnce({ error: { message: 'x' } } as never);
-    expect(await processCallDnc(AID)).toEqual({ ok: false });
+  it('DB error → THROWS, so the drain retries (an opt-out is never marked processed unwritten)', async () => {
+    adminUpsert.mockResolvedValueOnce({ error: { message: 'row +972501234567', code: '57014' } } as never);
+    const err = await processCallDnc(AID).catch((e: unknown) => e as Error);
+    expect(err).toBeInstanceOf(Error);
+    // The provider message can echo the row — only the code may surface.
+    expect((err as Error).message).toBe('call_dnc_list upsert failed (57014)');
+    expect((err as Error).message).not.toContain('972');
+  });
+});
+
+describe('the drain contract for processCallDncRow / processOwnerNoteRow', () => {
+  const dncRow = () => row({}, AID);
+  const noteRow = () => row({ kind: 'message', text: 'מזל טוב' }, AID);
+
+  it('transient DB failure propagates → the drain marks the row failed and retries it', async () => {
+    adminUpsert.mockResolvedValueOnce({ error: { message: 'x', code: '08006' } } as never);
+    await expect(processCallDncRow(dncRow())).rejects.toThrow(/call_dnc_list upsert failed/);
+    adminInsert.mockResolvedValueOnce({ error: { message: 'x', code: '08006' } } as never);
+    await expect(processOwnerNoteRow(noteRow())).rejects.toThrow(/owner-note insert failed/);
+  });
+
+  it('a TERMINAL ok:false (no attempt) returns normally → the row closes, no retry storm', async () => {
+    vi.mocked(getCallAttemptById).mockResolvedValue(null);
+    await expect(processCallDncRow(dncRow())).resolves.toBeUndefined();
+    await expect(processOwnerNoteRow(noteRow())).resolves.toBeUndefined();
+    expect(adminUpsert).not.toHaveBeenCalled();
+    expect(adminInsert).not.toHaveBeenCalled();
   });
 });
 
@@ -419,8 +464,41 @@ describe('processOwnerNote (notify_owner tool)', () => {
     expect(await processOwnerNote(AID, { kind: 'flag', text: 'x' })).toEqual({ ok: false });
     expect(adminInsert).not.toHaveBeenCalled();
   });
-  it('insert error → ok:false (agent softens "אעביר")', async () => {
-    adminInsert.mockResolvedValueOnce({ error: { message: 'x' } } as never);
-    expect(await processOwnerNote(AID, { kind: 'message', text: 'x' })).toEqual({ ok: false });
+  it('insert error → THROWS, so the drain retries (the agent route answers "queued")', async () => {
+    adminInsert.mockResolvedValueOnce({ error: { message: 'x', code: '40001' } } as never);
+    await expect(processOwnerNote(AID, { kind: 'message', text: 'x' })).rejects.toThrow(
+      'activity_log owner-note insert failed (40001)',
+    );
+  });
+  it('stamps the content hash, and looks the note up by attempt + hash before writing', async () => {
+    const note = { kind: 'question', text: 'יש חניה?' } as const;
+    await processOwnerNote(AID, note);
+    const hash = ownerNoteHash(note);
+    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(adminEqs).toEqual([
+      ['action', 'call.owner_note'],
+      ['meta->>call_attempt_id', AID],
+      ['meta->>note_hash', hash],
+    ]);
+    expect(adminInsert).toHaveBeenCalledWith(
+      'activity_log',
+      expect.objectContaining({ meta: expect.objectContaining({ note_hash: hash }) }),
+    );
+  });
+  it('the same note applied twice (route sync + drain) writes ONE activity_log row', async () => {
+    const note = { kind: 'message', text: 'מזל טוב' } as const;
+    expect(await processOwnerNote(AID, note)).toEqual({ ok: true });
+    expect(adminInsert).toHaveBeenCalledTimes(1);
+    // Second application: the first row is now visible to the lookup.
+    adminSelectLimit.mockResolvedValueOnce({ data: [{ id: 'row1' }], error: null });
+    expect(await processOwnerNote(AID, note)).toEqual({ ok: true });
+    expect(adminInsert).toHaveBeenCalledTimes(1);
+  });
+  it('lookup error → THROWS and writes nothing (never guesses the note is new)', async () => {
+    adminSelectLimit.mockResolvedValueOnce({ data: null, error: { message: 'x', code: '57P01' } });
+    await expect(processOwnerNote(AID, { kind: 'flag', text: 'x' })).rejects.toThrow(
+      'activity_log owner-note lookup failed (57P01)',
+    );
+    expect(adminInsert).not.toHaveBeenCalled();
   });
 });

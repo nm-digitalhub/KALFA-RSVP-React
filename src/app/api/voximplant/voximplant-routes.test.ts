@@ -12,6 +12,7 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/data/call-attempts', () => ({
   getCallContextByAccessToken: vi.fn(),
   getCallAttemptByAccessToken: vi.fn(),
+  recordCallbackRequest: vi.fn(async () => ({ applied: true })),
 }));
 vi.mock('@/lib/data/webhooks', () => ({ insertWebhookEvents: vi.fn(async () => {}) }));
 vi.mock('@/lib/data/console-monitor', () => ({ advanceLegStatus: vi.fn(async () => {}) }));
@@ -34,6 +35,7 @@ import {
 import {
   getCallContextByAccessToken,
   getCallAttemptByAccessToken,
+  recordCallbackRequest,
 } from '@/lib/data/call-attempts';
 import { insertWebhookEvents } from '@/lib/data/webhooks';
 import { advanceLegStatus } from '@/lib/data/console-monitor';
@@ -291,6 +293,43 @@ describe('cb POST', () => {
     expect((await cbCall(TOK, b)).status).toBe(400);
     expect(advanceLegStatus).not.toHaveBeenCalled();
   });
+
+  // schedule_callback is handled OUT-OF-BAND (no inbox row). The scenario tells the
+  // guest "נחזור אליך" only on a 200, so a 200 must mean the request IS recorded.
+  describe('schedule_callback (callback_requested)', () => {
+    const body = JSON.stringify({
+      call_status: 'callback_requested',
+      callback_when_text: 'מחר בשמונה בערב',
+      callback_iso: '2026-10-17T17:00:00Z',
+    });
+    it('recorded → 200, written for the TOKEN attempt, never queued to the drain', async () => {
+      const res = await cbCall(TOK, body);
+      expect(res.status).toBe(200);
+      expect(recordCallbackRequest).toHaveBeenCalledWith(AID, 'מחר בשמונה בערב', '2026-10-17T17:00:00Z');
+      expect(insertWebhookEvents).not.toHaveBeenCalled();
+    });
+    it('without an ISO time → still recorded with the guest\'s words (iso null)', async () => {
+      const b = JSON.stringify({ call_status: 'callback_requested', callback_when_text: 'אחרי החג' });
+      expect((await cbCall(TOK, b)).status).toBe(200);
+      expect(recordCallbackRequest).toHaveBeenCalledWith(AID, 'אחרי החג', null);
+    });
+    it('the write FAILS → 500, never a 200 (the guest must not be told "נחזור אליך")', async () => {
+      vi.mocked(recordCallbackRequest).mockRejectedValueOnce(new Error('callback request stamp failed (57014)'));
+      const res = await cbCall(TOK, body);
+      expect(res.status).toBe(500);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      expect(await res.text()).toBe(''); // no DB detail in the body
+    });
+    it('the attempt no longer exists (applied:false) → 404, never a 200', async () => {
+      vi.mocked(recordCallbackRequest).mockResolvedValueOnce({ applied: false });
+      expect((await cbCall(TOK, body)).status).toBe(404);
+    });
+    it('unknown token → 404 and nothing is written', async () => {
+      vi.mocked(getCallAttemptByAccessToken).mockResolvedValue(null);
+      expect((await cbCall(TOK, body)).status).toBe(404);
+      expect(recordCallbackRequest).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('agent-tool save_rsvp POST', () => {
@@ -438,6 +477,13 @@ describe('agent-tool mark_dnc POST', () => {
     expect(await res.json()).toEqual({ ok: false });
     expect(insertWebhookEvents).toHaveBeenCalled();
   });
+  it('sync THROWS (transient DB failure) → 200 {ok:false}; the durable row persisted for the drain retry', async () => {
+    vi.mocked(processCallDnc).mockRejectedValueOnce(new Error('call_dnc_list upsert failed (57014)'));
+    const res = await dncCall(TOK, '{}');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: false });
+    expect(insertWebhookEvents).toHaveBeenCalled();
+  });
 });
 
 describe('agent-tool notify_owner POST', () => {
@@ -460,6 +506,13 @@ describe('agent-tool notify_owner POST', () => {
       AID,
       expect.objectContaining({ kind: 'question', text: 'האם יש חניה באולם?' }),
     );
+  });
+  it('sync THROWS (transient DB failure) → 200 {ok:false}; the durable row persisted for the drain retry', async () => {
+    vi.mocked(processOwnerNote).mockRejectedValueOnce(new Error('activity_log owner-note insert failed (40001)'));
+    const res = await noteCall(TOK, noteBody);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: false });
+    expect(insertWebhookEvents).toHaveBeenCalled();
   });
   it('missing text → 400', async () => {
     expect((await noteCall(TOK, JSON.stringify({ kind: 'question' }))).status).toBe(400);

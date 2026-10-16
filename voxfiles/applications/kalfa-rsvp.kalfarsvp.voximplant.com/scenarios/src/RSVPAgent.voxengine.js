@@ -1402,9 +1402,11 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     // called back later. Reported to the EXISTING cb endpoint as an
                     // additive {call_status:'callback_requested', callback_when_text,
                     // callback_iso?}. cb persists it OUT-OF-BAND (not via the drain, so
-                    // it never becomes a call_attempts.status). Best-effort; the agent
-                    // gets a truthful 'noted'/'queued'. Actual re-dispatch is a KALFA
-                    // follow-up (the dispatcher must re-enqueue — flagged).
+                    // it never becomes a call_attempts.status). cb answers 200 ONLY
+                    // once the request is recorded; any other code means nothing was
+                    // written, and there is no retry queue behind it — so the agent
+                    // hears 'noted' on 200 and 'error' otherwise, never 'queued'.
+                    // The re-dial itself is the callback sweep (call-callbacks.ts).
                     if (toolName === 'schedule_callback') {
                         if (!state.callbackUrl) {
                             reply('error', true);
@@ -1423,7 +1425,9 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             postData: safeStringify(cbBody)
                         }).then(function (r) {
                             log('schedule_callback -> ' + (r && r.code));
-                            reply(r.code === 200 ? 'noted' : 'queued', false);
+                            // is_error stays FALSE like every non-200 above: the WS
+                            // must survive so the agent can say the failure wording.
+                            reply(r.code === 200 ? 'noted' : 'error', false);
                         }).catch(function (err) {
                             log('schedule_callback failed: ' + err);
                             reply('error', true);

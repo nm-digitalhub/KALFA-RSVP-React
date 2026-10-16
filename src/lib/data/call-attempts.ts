@@ -633,9 +633,17 @@ export async function recordManualDialOutcome(args: {
 }
 
 // schedule_callback: persist a guest's request to be called back later. Identity
-// is the token-resolved attempt id (never the body). Writes a durable,
-// event-scoped activity_log row and stamps the requested time on the attempt,
-// which the callback re-dial sweep (call-callbacks.ts) acts on.
+// is the token-resolved attempt id (never the body). Stamps the requested time on
+// the attempt, which the callback re-dial sweep (call-callbacks.ts) acts on, and
+// writes an event-scoped activity_log row.
+//
+// `{applied:false}` = the attempt does not exist (terminal). A database failure
+// THROWS: the caller answers the agent with a failure, never a "noted". Both
+// writes used to ignore Supabase's `{error}` result, so a failed write still came
+// back as `applied:true` — three schedule_callback calls were acknowledged to
+// guests while no call_attempts / activity_log row existed (measured 2026-10-16).
+// The idempotent stamp goes first; the non-idempotent log row last, so an agent
+// retry after a failure cannot duplicate a row that already landed.
 export async function recordCallbackRequest(
   id: string,
   whenText: string,
@@ -644,6 +652,22 @@ export async function recordCallbackRequest(
   const admin = createAdminClient();
   const attempt = await getCallAttemptById(id);
   if (!attempt) return { applied: false };
+
+  // callback_iso is timestamptz, so only write a PARSEABLE value (else null) — a
+  // malformed ISO from the agent must never fail the whole update.
+  const iso = callbackIso && !Number.isNaN(Date.parse(callbackIso)) ? callbackIso : null;
+  const stamp = await admin
+    .from('call_attempts')
+    .update({
+      callback_requested_at: new Date().toISOString(),
+      callback_when_text: whenText,
+      callback_iso: iso,
+    })
+    .eq('id', id);
+  // Never the provider message: a DB error can echo the guest's words.
+  if (stamp.error) {
+    throw new Error(`callback request stamp failed (${stamp.error.code ?? 'unknown'})`);
+  }
 
   // Durable, event-scoped record (activity_log).
   type ActivityLogInsert = TablesInsert<'activity_log'>;
@@ -654,21 +678,10 @@ export async function recordCallbackRequest(
     action: 'call.callback_requested',
     meta: meta as unknown as ActivityLogInsert['meta'],
   };
-  await admin.from('activity_log').insert(logRow);
-
-  // Stamp the requested time on the attempt for the callback re-dial sweep.
-  // callback_iso is timestamptz, so only write a PARSEABLE value (else null) — a
-  // malformed ISO from the agent must never fail the whole update. Best-effort;
-  // the activity_log row above is the durable record.
-  const iso = callbackIso && !Number.isNaN(Date.parse(callbackIso)) ? callbackIso : null;
-  await admin
-    .from('call_attempts')
-    .update({
-      callback_requested_at: new Date().toISOString(),
-      callback_when_text: whenText,
-      callback_iso: iso,
-    })
-    .eq('id', id);
+  const log = await admin.from('activity_log').insert(logRow);
+  if (log.error) {
+    throw new Error(`callback request log failed (${log.error.code ?? 'unknown'})`);
+  }
 
   return { applied: true };
 }

@@ -91,16 +91,23 @@ export async function POST(
   // webhook_inbox, so the drain's processCallResult never sees it (it would
   // otherwise write status:'callback_requested'). Tried BEFORE the shared schema;
   // a normal cb body (completed/…) does not match the literal and falls through.
+  //
+  // The scenario tells the guest "נחזור אליך" only on a 200, so a 200 here means the
+  // request IS recorded. Anything else is a non-200 the scenario relays to the agent
+  // as a failure (it then falls back to its tool-failure wording / notify_owner).
+  // Nothing is queued for a retry: the request is not in webhook_inbox, so no
+  // "queued" is ever promised for it.
   const scheduleReq = voxCallbackRequestSchema.safeParse(json);
   if (scheduleReq.success) {
     try {
-      await recordCallbackRequest(
+      const { applied } = await recordCallbackRequest(
         attemptId,
         scheduleReq.data.callback_when_text,
         scheduleReq.data.callback_iso ?? null,
       );
+      if (!applied) return bad(404);
     } catch {
-      /* best-effort — never leak DB detail; the agent already softened its wording */
+      return bad(500); // never leak DB detail
     }
     return new NextResponse('ok', { status: 200, headers: NO_STORE });
   }
