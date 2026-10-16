@@ -21,7 +21,10 @@ The codebase already solves a sibling problem: `deferForRegistry` (src/lib/dnc/r
 | `skipped: concurrent_owner` | final | another dispatch owns the call |
 | `skipped: waiting_for_quota` | final here | the package quota shows waiting guests visibly |
 | `failed_to_start`, `start_unknown`, `dialed`, `already_*` | final | provider outcomes; an ambiguous or failed start is never dialled again (the attempt row records it) |
-| `skipped: outreach_disabled`, `blocked: live_calls_disabled`, `blocked: config_missing`, `skipped: campaign_not_active` | **owner decision** | an admin stop or a pause is deliberate; see Open decisions |
+| `skipped: outreach_disabled`, `blocked: live_calls_disabled`, `blocked: config_missing` | **wait** (owner direction 16.10.2026, not yet built) | a temporary operational stop: ask again later and revalidate on return, as long as the round is still legal before the event; ops alert when it settles |
+| `skipped: campaign_not_active` while the campaign is `paused` | **wait** (same direction, not yet built) | a pause ends; revalidate on resume |
+| `skipped: campaign_not_active` for any other status (cancelled, closed, not started) and an event in the past | final | a business refusal, not a pause |
+| `skipped: waiting_for_quota` | **wait** (same direction, not yet built) | a seat can open after an upgrade or a swap; the guest stays visibly waiting meanwhile |
 
 A manual console dial and the workflow callback action (`isManual`) are never in the wait class: an operator is waiting for the answer.
 
@@ -50,9 +53,11 @@ A manual console dial and the workflow callback action (`isManual`) are never in
 - The worker handler now needs `boss`; the registration closure already has it.
 - `CallDispatchResult` gains a member; the typechecker proved every consumer, including `mapDispatchResult` in voice-agent-actions.ts (a manual dial, never deferred, mapped as the old refusal) and the ops script.
 
-## Open decisions (owner)
+## Owner direction (16.10.2026) and what is built
 
-Rounds refused because of an admin stop are final today and stay so until decided: should a round missed during a kill switch (`outreach_disabled`, `live_calls_disabled`, `config_missing`) or a campaign pause be re-sent when the stop ends, or stay lost? A deliberate stop that silently resumes a call later is as risky as a lost round. Out of scope here; not assumed.
+Separate temporary operational blocks from permanent business refusals: a temporary block (capacity, window, quota, balance, a kill switch off for now, missing configuration, a paused campaign) is deferred and revalidated when it ends; a permanent refusal (consent, removal list, no longer eligible, a cancelled or closed campaign, an event in the past, a guest who already answered, a provider outcome) is final. Built and deployed: the dial window, concurrency, hourly cap and balance. Not built yet: the kill switches, missing configuration, paused campaign and quota rows above (tasks section 5).
+
+One consequence the owner should confirm before section 5: a kill switch used as an EMERGENCY stop would no longer cancel pending call rounds; they would wait and resume by themselves when it is switched back on (still gated by consent, removal list, dial window, caps and the event end). If a switch must mean "stop everything, for good", that switch needs to stay final.
 
 ## Out of scope
 

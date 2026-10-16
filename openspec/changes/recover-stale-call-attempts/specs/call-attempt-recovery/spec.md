@@ -13,14 +13,18 @@ The system SHALL exclude from the active-call count any attempt whose status is 
 - **WHEN** an attempt in an active status is younger than the ceiling
 - **THEN** it is counted
 
-### Requirement: Rows with no confirmed provider session settle as start_unknown
+### Requirement: Rows with no confirmed provider session settle through their surface's own "unknown" helper
 
-The system SHALL settle an attempt that has been in an active status longer than the stale threshold and has no provider session id as `start_unknown`, through the existing `markStartUnknown`, and SHALL NOT dial it again.
+The system SHALL settle an attempt that has been in an active status longer than the stale threshold and has no provider session id through the closing helper of its own surface (`markStartUnknown` for RSVP calls, `markCallbackDispatchUnknown` for meeting confirmation, `markSalesDispatchUnknown` for sales), and SHALL NOT dial it again. The settle is deliberately conservative: it may mark an attempt that never reached the provider.
 
 #### Scenario: Worker stopped between creating the row and the provider call
 - **WHEN** an attempt has no provider session id and is older than the stale threshold
-- **THEN** its status becomes `start_unknown` with a recorded reason
+- **THEN** its status becomes the surface's "unknown" status with a recorded reason
 - **AND** an ops alert names the table and the count
+
+#### Scenario: The ceiling does not change a row
+- **WHEN** a row older than the capacity ceiling later receives its terminal callback
+- **THEN** it settles as usual, because the ceiling only changed the count
 
 #### Scenario: A real outcome is never overwritten
 - **WHEN** the attempt reached a terminal status between the read and the settle
@@ -28,15 +32,23 @@ The system SHALL settle an attempt that has been in an active status longer than
 
 ### Requirement: Rows with a provider session are settled from the provider's record
 
-The system SHALL, for a stale attempt that has a provider session id, read the provider's record of that session and settle by it. When the session has ended, the outcome SHALL be applied through the same processing the post-call webhook uses. When the provider reports the session still running, the row SHALL be left unchanged. When the provider has no record of the session after a proof window, the row SHALL settle as `start_unknown`.
+The system SHALL, for a stale attempt that has a provider session id, read the provider's record of that session by session id and settle by it, never twice and never with a conversation result the provider cannot supply.
 
 #### Scenario: Session ended, callback lost
 - **WHEN** the provider shows the session ended and the row is still active
-- **THEN** the outcome is applied once, by the webhook's own processing, so billing and RSVP effects are not duplicated
+- **THEN** the row is settled once, with no billing or RSVP effect applied twice
+
+#### Scenario: The lookup by session id is proven
+- **WHEN** the provider is asked for a known session id
+- **THEN** exactly one record is returned for it
 
 #### Scenario: Session still running
 - **WHEN** the provider shows the session running
 - **THEN** the row is left unchanged and no alert about the row repeats
+
+#### Scenario: Provider has no record of the session
+- **WHEN** the provider has no record of the session two hours after the attempt was created
+- **THEN** the row settles through its surface's "unknown" helper and is never dialled again
 
 #### Scenario: Provider unreachable
 - **WHEN** the provider lookup fails

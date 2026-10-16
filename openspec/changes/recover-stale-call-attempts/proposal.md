@@ -6,11 +6,11 @@ The concurrency cap that every outbound call dispatcher enforces counts our own 
 
 ## What Changes
 
-- Two independent layers, so one failing cannot leave the other exposed:
-  1. **Capacity ceiling**: the active-call count ignores rows older than a ceiling that no real call can reach, so a stuck row can never hold a slot longer than that.
-  2. **Recovery**: the reconcile job settles rows it can prove stale, using existing helpers, and keeps its alert.
-- A row with no confirmed provider session that is stale settles as `start_unknown` through the existing `markStartUnknown` (the call may have gone out and is never redialled).
-- A row with a provider session id is checked against the provider's call record and, when the session has ended, settled through the same processing the post-call webhook uses; when the provider says it is still running it is left alone; when the provider has no record after a longer proof window it settles as `start_unknown`.
+- Two independent layers, so one failing cannot leave the other exposed (numbers decided 16.10.2026):
+  1. **Capacity ceiling, 45 minutes**: the active-call count ignores rows older than the ceiling. It limits what a row consumes, it does not close the row: the row keeps its status, its alert and its recovery.
+  2. **Automatic recovery**: the reconcile job settles rows it can prove stale, using each surface's own helper, and keeps its alert.
+- A stale row with no provider session id settles through the surface's own "unknown" helper (`markStartUnknown`, `markCallbackDispatchUnknown`, `markSalesDispatchUnknown`): conservative, never redialled.
+- A stale row with a provider session id is checked against the provider's record by session id: running is left alone, absent for the 2-hour proof window settles as "unknown". How an ended session is settled depends on a lookup that is not yet proven and on what data the provider can supply (design D4); proving the lookup is a prerequisite task.
 - No change to any status value, no migration, no new table.
 
 ## Capabilities

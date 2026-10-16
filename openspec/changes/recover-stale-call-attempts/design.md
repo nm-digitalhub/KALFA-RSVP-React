@@ -1,40 +1,46 @@
 # Design
 
-## Facts (each read in code or measured, 16.10.2026)
+## Facts (read in code, measured, or marked as coming from a comment)
 
-- `countActiveCallsAllSurfaces()` = `countActiveCalls()` + `countActiveCallbackDispatches()` + `countActiveSalesDispatches()`. Each counts rows in `['queued','dialing','in_progress']` of its own table, with no age bound (src/lib/data/call-attempts.ts, callback-request-attempts.ts, sales-call-attempts.ts).
-- `createCallAttempt` inserts the row as `dialing` before the provider is called; `recordDialConfirmed` stores the provider session id afterwards. So a row stuck without a session id is a worker that stopped in that gap, and the call may or may not have started.
-- Terminal statuses are `completed`, `failed`, `no_answer`, `no_response`, `cancelled`, `handed_off`. `failed_to_start` and `start_unknown` are written by `markFailedToStart` / `markStartUnknown` and are in neither the terminal nor the active set, so they free the slot. `recordCallOutcome` only moves a row that is still active, so settling cannot overwrite a real outcome.
-- Terminal outcomes arrive through the post-call result processing (`call-result-processing.ts`), fed by the Voximplant callback. If that callback never arrives, nothing else settles the row.
-- The reconcile job runs every 10 minutes (`QUEUES.callReconcile`), selects rows older than `STUCK_AFTER_MS` = 15 minutes in an active status, and only calls `sendSlackAlert` (the alerter function contains no write).
-- Longest call by configuration: the agents' `max_duration_seconds` are 600 (RSVP), 300 (Meeting Confirm) and 300 (Sales Close).
-- Right now `call_attempts` has no row in an active status, and `callback_request_attempts` (13) and `sales_call_attempts` (25) are all `concluded`.
+- `countActiveCallsAllSurfaces()` = `countActiveCalls()` + `countActiveCallbackDispatches()` + `countActiveSalesDispatches()`. Each counts rows in `['queued','dialing','in_progress']` of its own table, with no age bound.
+- Nothing writes a row as `queued` (no insert in src does). `createCallAttempt` inserts as `dialing` before the provider is called; `recordDialConfirmed` stores the provider session id after `StartScenarios`. `created_at` is therefore the dial moment on all three surfaces. `call_attempts` also has `last_callback_at`; the other two tables only `created_at` and `updated_at`.
+- Terminal statuses are `completed`, `failed`, `no_answer`, `no_response`, `cancelled`, `handed_off`. `failed_to_start` and `start_unknown` are in neither the terminal nor the active set, so they free the slot. `recordCallOutcome` only moves a row that is still active, so settling cannot overwrite a real outcome.
+- The three surfaces have their own closing helpers, not one: RSVP `markStartUnknown` (call_attempts.status), meeting-confirm `markCallbackDispatchUnknown` (callback_request_attempts.dispatch_status), sales `markSalesDispatchUnknown` (sales_call_attempts.dispatch_status).
+- The reconcile job runs every 10 minutes, selects rows older than 15 minutes in an active status and only calls `sendSlackAlert` (no write; read in `voximplant-reconcile.ts`). Its alert is edge-triggered on the stuck SET, with its own state per table: it sends at once when the set of ids changes (a new row or a partial resolve), again every 6 hours while the same set persists, and resets when the set clears. State is per process.
+- From comments only, not verified: an earlier incident left a test row stuck for four days (2026-07-19), and a 2026-07-21 incident was a terminal callback rejected by the schema. The same comment explains why the reconciler was made alert-only: an automated reconciler risks double-calling a call that is merely mid-flight. This design never redials, so that risk does not apply, but it is why recovery only ever settles to `start_unknown` or to a provider-proven end.
+- The terminal callback payload (`voxCallbackSchema`) carries `call_status`, duration, `rsvp_method`, `finish_reason`, recording and transcript. Those come from the scenario's own knowledge of the conversation. `processCallResult` takes a persisted `webhook_inbox` row; it does no HTTP or token work itself (the route verifies and persists first), but its input is that scenario payload.
+- Provider history by session id: the low-level `GetCallHistoryRequest` type has a `call_session_history_id` filter, but the helper the app uses (`fetchVoxCallHistory`) filters by window, direction, outcome, duration and phone only, and the project CLI creates asynchronous reports. A lookup by session id that returns exactly one record is NOT proven in this repository.
+- Longest call by configuration: `max_duration_seconds` 600 (RSVP), 300 (Meeting Confirm), 300 (Sales Close). Today every row of the three tables is settled.
 
 ## Decisions
 
-**D1. A ceiling on the count, independent of recovery.** The three counts add `created_at >= now - CEILING`. The ceiling is three times the longest configured call plus ring time, 45 minutes as a starting value. It is a safety net: even if the reconcile job fails or is slow, no orphan holds a slot beyond it. It cannot undercount a real call, because no call lasts that long.
+**D1. A ceiling on the capacity count, 45 minutes.** The three counts add `created_at >= now - 45 min`. It means "above 45 minutes the row stops consuming capacity", not "the row is closed": the row keeps its status, stays in the stuck-row alert and stays eligible for recovery. It is an operational safety net, not a proof that no real call lasts that long. Age is `created_at` on all three tables (D6).
 
-**D2. The stale threshold stays a trigger for checking, not for closing.** Fifteen minutes decides when to look at a row, as today. What the row becomes is decided by what is known about it (D3, D4).
+**D2. The 15-minute stale threshold only decides when to look.** What a row becomes depends on what is known about it (D3, D4). The 45-minute ceiling and the 2-hour proof window below are separate numbers with separate jobs.
 
-**D3. No provider session id: settle as `start_unknown`.** That is the status the code already uses for "the call may have gone out; never redial". It frees the slot without claiming a failure or risking a second dial. Written through `markStartUnknown`, which only acts on an active row.
+**D3. No provider session id: the surface's own "unknown" helper, after the stale threshold.** RSVP `markStartUnknown`, meeting-confirm `markCallbackDispatchUnknown`, sales `markSalesDispatchUnknown`. One rule, three writers. It is deliberately conservative: it may mark an attempt that never reached the provider, because nothing separates "the worker stopped before the request" from "the request left and the session id was lost". It frees the slot and never redials.
 
-**D4. With a provider session id: ask the provider, then act.** Reuse the existing Voximplant history helpers (src/lib/voximplant/call-snapshot.ts, call-history-normalize.ts, `fetchReturnableCall`). Ended: apply the outcome through the same function the webhook path uses, so billing and RSVP effects happen once and idempotently. Running: leave the row. Not found after a proof window (2 hours as a starting value): `start_unknown`. Lookup error: do nothing this run.
+**D4. With a provider session id: look the session up, then act. Not yet implementable as first written.**
+- Needs a proven lookup by session id (task 2.1).
+- Applying the outcome "through the webhook's processing" is not possible from provider history alone: the data `processCallResult` needs (`call_status` meaning, `finish_reason`, `rsvp_method`, transcript) is the scenario's, not the provider's. Two ways forward, to be decided after 2.1: (a) split `processCallResult` into parse and `applyCallOutcome(attemptId, body)` and have the reconciler pass only what the provider can truthfully supply, or (b) settle an ended session without business effects as the surface's "unknown" status and recover the conversation's real outcome from ElevenLabs (the row already carries `el_conversation_id`) in a separate step. Until then, an ended session settles as the "unknown" status with a recorded reason; the in-call tools have already written the RSVP, so what is lost is the reach stop, not the answer.
+- Session still running: leave the row. Provider has no record after the 2-hour proof window: the "unknown" status. Lookup error: do nothing this run.
 
-**D5. One alert per run.** The existing stuck-row alert stays; a settle adds a single summary alert (table, count, path), no personal data.
+**D5. Alert semantics.** The stuck-set alert stays as is. A recovery summary is sent separately, once per run that settled anything (table, count, path, no personal data). After a settle the next stuck set is computed from what remains, so the existing edge-triggered logic alerts for the remainder and not for rows already settled; a row settled in a run is not reported as stuck in the same run.
 
-**D6. All three tables, one rule.** The three surfaces share the cap, so they share the ceiling and the settle rules; only the status column name differs (`status` and `dispatch_status`).
+**D6. Age source.** `created_at`, because no surface creates `queued` rows and a row is created at the dial moment. A guard test fails if a future insert uses `queued`, because then `created_at` would stop meaning "dial time".
+
+**D7. The ceiling changes the count only.** A row older than 45 minutes whose callback arrives later is settled as usual; the ceiling never writes a row.
 
 ## Risks
 
-- D4 depends on the provider's history being queryable by session id promptly; if it is not, the proof window decides, which is why the window is long.
-- Applying an ended session through the webhook's own processing must stay idempotent; the existing guard in `recordCallOutcome` and the reach recorder's `billed_results` uniqueness are what make a double application harmless. A test must prove it.
-- The ceiling hides a row from the count but not from the reconcile alert, which is the intent.
+- D4 is the unresolved part. D1 and D3 stand alone and remove the jam without it.
+- Provider history can lag; the proof window is long for that reason.
+- The first reconcile run after deploy settles whatever aged rows exist; today there are none.
 
-## Open decisions (owner)
+## Open decisions
 
-1. The ceiling (45 minutes proposed) and the proof window (2 hours proposed).
-2. Should the reconcile job settle rows automatically, or only alert as today and let the ceiling alone remove the jam? The ceiling alone is the smaller change; settling also repairs the data (and any lost RSVP outcome).
+None for the owner on the numbers (45 minutes capacity ceiling only, 2-hour proof window, automatic recovery: decided 16.10.2026). Open technically: D4 (a) or (b), after the session lookup is proven.
 
 ## Out of scope
 
-Re-dialling a `start_unknown` call, and any change to a status value or table.
+Redialling a settled row, any change to a status value or table, and the retry rules for refused scheduled calls (change `retry-scheduled-calls-on-transient-skips`).
