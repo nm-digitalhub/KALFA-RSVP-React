@@ -1,21 +1,27 @@
 import { describe, expect, it } from 'vitest';
 
 import { documentTypeOfReportNumber, refundDocumentFor } from './document-types';
-import { buildRefundTransaction, expiryMMYY, type CardcomRefundInput } from './refund-request';
+import { buildCreditDocument, buildRefundByTransactionId, type CardcomCreditDocumentInput, type CardcomRefundInput } from './refund-request';
 
-// The refund request (Do Transaction with Advanced.IsRefund) and the credit document it issues. Pure: every rule from
-// CardCom's OpenAPI and its "Do Transaction" article is pinned here.
+// The two requests of a refund, pure: the money (Transactions/RefundByTransactionId, owner 18.10.2026) and its credit document
+// (Documents/CreateDocument, linked to the refund's deal by DealNumbers). Every rule is pinned here, from CardCom's OpenAPI.
 
-const TOKEN = '4cf8e168-261e-4613-8d20-000332986b24';
 const input = (over: Partial<CardcomRefundInput> = {}): CardcomRefundInput => ({
-  terminalNumber: 172204,
   apiName: 'kalfa-api',
   apiPassword: 'secret',
   operationId: '01a120cb-3c91-7333-8c69-c9933843db5c',
+  transactionId: 555,
   amount: 105,
-  token: TOKEN,
-  expMonth: 9,
-  expYear: 2031,
+  paidAmount: 105,
+  earlierRefund: false,
+  ...over,
+});
+
+const docInput = (over: Partial<CardcomCreditDocumentInput> = {}): CardcomCreditDocumentInput => ({
+  apiName: 'kalfa-api',
+  apiPassword: 'secret',
+  refundTransactionId: 777,
+  amount: 105,
   document: refundDocumentFor('Receipt')!,
   holder: { name: 'דנה כהן', email: 'dana@example.test' },
   line: 'KALFA — זיכוי ביטול חבילת אישורי הגעה לאירוע',
@@ -53,55 +59,74 @@ describe('documentTypeOfReportNumber — the report\'s type number, by CardCom\'
   });
 });
 
-describe('expiryMMYY', () => {
-  it.each([
-    [9, 2031, '0931'],
-    [12, 2030, '1230'],
-    [1, 31, '0131'],
-  ])('%i/%i → %s', (m, y, out) => {
-    expect(expiryMMYY(m, y)).toBe(out);
+describe('buildRefundByTransactionId', () => {
+  it('a WHOLE refund of the payment\'s own transaction: its id, the password, our row id — no partial sum, no document', () => {
+    expect(buildRefundByTransactionId(input())).toEqual({
+      ApiName: 'kalfa-api',
+      ApiPassword: 'secret',
+      TransactionId: 555,
+      ExternalRefundDealId: '01a120cb-3c91-7333-8c69-c9933843db5c',
+    });
   });
 
-  it.each([[0, 2031], [13, 2031], [9.5, 2031], [9, -1], [9, Number.NaN]])('%s/%s is not an expiry', (m, y) => {
-    expect(expiryMMYY(m, y)).toBeNull();
+  it('a PARTIAL refund names its sum', () => {
+    expect(buildRefundByTransactionId(input({ amount: 12.5 })).PartialSum).toBe(12.5);
+  });
+
+  it('a refund after an earlier one tells CardCom another refund of the transaction is allowed', () => {
+    expect(buildRefundByTransactionId(input({ amount: 50, earlierRefund: true }))).toMatchObject({ PartialSum: 50, AllowMultipleRefunds: true });
+    expect(buildRefundByTransactionId(input())).not.toHaveProperty('AllowMultipleRefunds');
+  });
+
+  it('sends no card and no document: no token, no expiry, no card number', () => {
+    expect(Object.keys(buildRefundByTransactionId(input())).sort()).toEqual(['ApiName', 'ApiPassword', 'ExternalRefundDealId', 'TransactionId']);
+  });
+
+  it.each([
+    ['an empty API name', { apiName: '  ' }],
+    ['an empty password', { apiPassword: '' }],
+    ['no transaction id', { transactionId: 0 }],
+    ['a transaction id that is not a whole number', { transactionId: 55.5 }],
+    ['an amount of zero', { amount: 0 }],
+    ['a negative amount', { amount: -5 }],
+    ['more than whole agorot', { amount: 1.005 }],
+    ['more than the payment took', { amount: 106 }],
+  ])('refuses %s: nothing is sent that CardCom would have to guess at', (_label, over) => {
+    expect(() => buildRefundByTransactionId(input(over as Partial<CardcomRefundInput>))).toThrow();
   });
 });
 
-describe('buildRefundTransaction', () => {
-  it('a refund to the token, with the password, our row id as the idempotency key, and the credit document', () => {
-    expect(buildRefundTransaction(input())).toEqual({
-      TerminalNumber: 172204,
+describe('buildCreditDocument', () => {
+  it('the credit document of the refund, linked to the REFUND\'s deal, in shekels and Hebrew, for the amount that went back', () => {
+    expect(buildCreditDocument(docInput())).toEqual({
       ApiName: 'kalfa-api',
-      Amount: 105,
-      Token: TOKEN,
-      CardExpirationMMYY: '0931',
-      ExternalUniqTranId: '01a120cb-3c91-7333-8c69-c9933843db5c',
-      ExternalUniqUniqTranIdResponse: true,
-      NumOfPayments: 1,
-      ISOCoinId: 1,
-      Advanced: { IsRefund: true, ApiPassword: 'secret' },
+      ApiPassword: 'secret',
       Document: {
         DocumentTypeToCreate: 'ReceiptRefund',
         Name: 'דנה כהן',
         Email: 'dana@example.test',
         Languge: 'he',
+        ISOCoinID: 1,
         Products: [{ Description: 'KALFA — זיכוי ביטול חבילת אישורי הגעה לאירוע', Quantity: 1, UnitCost: 105 }],
       },
+      DealNumbers: [{ DealNumber: 777 }],
     });
   });
 
-  it('the document line is the amount that goes back, so the credit document adds up to it', () => {
-    const r = buildRefundTransaction(input({ amount: 12.5 }));
-    expect(r.Amount).toBe(12.5);
-    expect(r.Document?.Products?.[0]?.UnitCost).toBe(12.5);
+  it('a partial refund\'s document adds up to the amount that went back', () => {
+    expect(buildCreditDocument(docInput({ amount: 12.5 })).Document?.Products?.[0]?.UnitCost).toBe(12.5);
+  });
+
+  it('a tax invoice + receipt is credited by its own counterpart', () => {
+    expect(buildCreditDocument(docInput({ document: refundDocumentFor('TaxInvoiceAndReceipt')! })).Document?.DocumentTypeToCreate).toBe('TaxInvoiceAndReceiptRefund');
   });
 
   it('no email: the document carries none (CardCom then sends it nowhere)', () => {
-    expect(buildRefundTransaction(input({ holder: { name: 'דנה', email: null } })).Document).not.toHaveProperty('Email');
+    expect(buildCreditDocument(docInput({ holder: { name: 'דנה', email: null } })).Document).not.toHaveProperty('Email');
   });
 
   it('names and emails longer than CardCom accepts (50) are cut, never refused', () => {
-    const r = buildRefundTransaction(input({ holder: { name: 'א'.repeat(60), email: `${'a'.repeat(60)}@x.test` } }));
+    const r = buildCreditDocument(docInput({ holder: { name: 'א'.repeat(60), email: `${'a'.repeat(60)}@x.test` } }));
     expect(r.Document?.Name).toHaveLength(50);
     expect(r.Document?.Email).toHaveLength(50);
   });
@@ -109,14 +134,13 @@ describe('buildRefundTransaction', () => {
   it.each([
     ['an empty API name', { apiName: '  ' }],
     ['an empty password', { apiPassword: '' }],
-    ['a token that is not a guid', { token: 'tok-1' }],
-    ['an impossible expiry', { expMonth: 13 }],
+    ['no refund transaction id', { refundTransactionId: 0 }],
+    ['a refund transaction id that is not a whole number', { refundTransactionId: 7.5 }],
     ['no cardholder name', { holder: { name: ' ', email: null } }],
     ['an amount of zero', { amount: 0 }],
-    ['a negative amount', { amount: -5 }],
     ['more than whole agorot', { amount: 1.005 }],
     ['an empty document line', { line: ' ' }],
-  ])('refuses %s: nothing is sent that CardCom would have to guess at', (_label, over) => {
-    expect(() => buildRefundTransaction(input(over as Partial<CardcomRefundInput>))).toThrow();
+  ])('refuses %s: no tax document is asked for that CardCom would have to guess at', (_label, over) => {
+    expect(() => buildCreditDocument(docInput(over as Partial<CardcomCreditDocumentInput>))).toThrow();
   });
 });

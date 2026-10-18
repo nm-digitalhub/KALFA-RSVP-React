@@ -1,9 +1,9 @@
 import { DocumentToCreate, DocumentType } from './generated/models';
 
-// The credit document a refund issues, from the document the payment issued. A refund is a Do Transaction with
-// Advanced.IsRefund and a Document object ("will create document if transaction succeeded" — CardCom's OpenAPI): the document
-// to create is named, and CardCom answers with the type it created. Both sides are CardCom's own names, from the generated
-// enums (DocumentToCreate for the request, DocumentType for the answer) — no numbers are involved.
+// The credit document a refund issues, from the document the payment issued. The money goes back by
+// Transactions/RefundByTransactionId, and the document is issued after it by Documents/CreateDocument, linked to the refund's deal
+// (refund-request.ts): the document to create is named, and CardCom's answer names the type it created. Both sides are CardCom's
+// own names, from the generated enums (DocumentToCreate for the request, DocumentType for the answer) — no numbers are involved.
 //
 // Deliberately tiny: only the two types a package purchase can produce. The purchase sends "Auto", and the account's settings
 // pick the type (for an exempt dealer a "Receipt"). Anything else — a test terminal's order confirmation, a type not stored —

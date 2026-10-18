@@ -52,7 +52,7 @@ export type CardcomTransactionFacts = {
   IssuerAuthCodeDescription?: unknown;
 };
 
-// What GetLpResult says at its TOP level, outside TranzactionInfo. A refund's answer (Transactions/Transaction) has none of it.
+// What GetLpResult says at its TOP level, outside TranzactionInfo. A refund's answer (Transactions/RefundByTransactionId) has none of it.
 export type CardcomTopLevelFacts = {
   ExternalPaymentVector?: unknown;
 };

@@ -9,12 +9,14 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/data/payments', () => ({ getPaymentsEnabled: vi.fn() }));
 vi.mock('@/lib/data/cardcom-config', () => ({ getCardcomServerConfig: vi.fn(), getCardcomApiPassword: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
-vi.mock('@/lib/cardcom/generated/transactions/transactions', () => ({ transactionsTransaction: vi.fn() }));
+vi.mock('@/lib/cardcom/generated/transactions/transactions', () => ({ transactionsRefundByTransactionId: vi.fn() }));
+vi.mock('@/lib/cardcom/generated/documents/documents', () => ({ documentsCreateDocument: vi.fn() }));
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { CardcomError } from '@/lib/cardcom/mutator';
-import type { TransactionReq } from '@/lib/cardcom/generated/models';
-import { transactionsTransaction } from '@/lib/cardcom/generated/transactions/transactions';
+import { documentsCreateDocument } from '@/lib/cardcom/generated/documents/documents';
+import type { CreateDocumentRequest, RefundByTransactionIdReq } from '@/lib/cardcom/generated/models';
+import { transactionsRefundByTransactionId } from '@/lib/cardcom/generated/transactions/transactions';
 import { logActivity } from '@/lib/data/activity';
 import { getCardcomApiPassword, getCardcomServerConfig } from '@/lib/data/cardcom-config';
 import { getPaymentsEnabled } from '@/lib/data/payments';
@@ -30,9 +32,11 @@ import { cardcomRefundSummary, checkCardcomRefund, refundCardcomPayment } from '
 //   - a clear refusal can be retried; "we do not know" goes to REVIEW and is never retried by the code;
 //   - a confirmed refund is never downgraded by a failure of something that comes after it;
 //   - the API password and the card token never reach a log line or an alert.
-// And CardCom's own (a Do Transaction refund, owner's choice 9.10.2026): the money goes back to the payment's TOKEN, any amount
-// up to what is refundable; the credit document is the counterpart of the payment's own; our row id is the idempotency key;
-// and an answer that is not a refund that created that document is not believed.
+// And CardCom's own (owner's choice 18.10.2026): the payment's OWN transaction is refunded by Transactions/RefundByTransactionId, by
+// its id — any amount up to what is refundable, a partial one naming its sum; then its credit document, the counterpart of the
+// payment's own, is issued by Documents/CreateDocument linked to the REFUND's deal (the refund issues none: 18.10.2026 21:05). The
+// money decides the outcome (code 0 with a refund transaction id); a credit document that is not confirmed is flagged to staff and
+// never asked for a second time.
 
 const PASSWORD = 'API-PASSWORD-SECRET-123';
 const TOKEN = '4cf8e168-261e-4613-8d20-000332986b24';
@@ -60,9 +64,10 @@ const PURCHASE = seed('package_purchase', 'succeeded', {
   citizen_id_secret: 'vault-secret-1',
 });
 const DOC_URL = 'https://secure.cardcom.solutions/api/v11/documents/DownloadDoc/?c=1&code=x';
-const okAnswer = (over: Record<string, unknown> = {}) => ({
-  ResponseCode: 0, Description: 'העסקה בוצעה בהצלחה', TranzactionId: 777, IsRefund: true,
-  DocumentNumber: 78, DocumentType: 'ReceiptRefund', DocumentUrl: DOC_URL, ...over,
+// The refund's three documented fields (RefundByTransactionIdResp), and the credit document's answer (DocumentInfo).
+const okAnswer = (over: Record<string, unknown> = {}) => ({ ResponseCode: 0, Description: 'עסקה זוכתה בהצלחה', NewTranzactionId: 777, ...over });
+const docAnswer = (over: Record<string, unknown> = {}) => ({
+  ResponseCode: 0, Description: 'OK', DocumentType: 'ReceiptRefund', DocumentNumber: 78, AccountId: 12, DocumentUrl: DOC_URL, ...over,
 });
 
 let db: FakeTableClient;
@@ -74,9 +79,14 @@ function useDb(rows: TableRow[] = [PURCHASE]) {
 const REQ = { campaignId: 'c1', eventId: 'e1', cancellationRequestId: 'req1' };
 const refundRows = () => db.rows('payment_operations').filter((r) => r.kind === 'refund');
 const everythingLogged = () => JSON.stringify([errorLog.mock.calls, vi.mocked(sendSlackAlert).mock.calls, vi.mocked(logActivity).mock.calls]);
-const sent = (): TransactionReq => {
-  const request = vi.mocked(transactionsTransaction).mock.calls[0][0];
+const sent = (): RefundByTransactionIdReq => {
+  const request = vi.mocked(transactionsRefundByTransactionId).mock.calls[0][0];
   if (!request) throw new Error('no request was sent');
+  return request;
+};
+const sentDocument = (): CreateDocumentRequest => {
+  const request = vi.mocked(documentsCreateDocument).mock.calls[0][0];
+  if (!request) throw new Error('no document request was sent');
   return request;
 };
 
@@ -88,10 +98,11 @@ beforeEach(() => {
   vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false, googlePayMode: 'off' });
   vi.mocked(getCardcomApiPassword).mockResolvedValue(PASSWORD);
   vi.mocked(logActivity).mockResolvedValue(undefined);
-  vi.mocked(transactionsTransaction).mockResolvedValue(okAnswer() as never);
+  vi.mocked(transactionsRefundByTransactionId).mockResolvedValue(okAnswer() as never);
+  vi.mocked(documentsCreateDocument).mockResolvedValue(docAnswer() as never);
 });
 
-// The whole of CardCom's answer to a refund, as Do Transaction (TransactionInfo) returns it — every field it sends is kept.
+// Whatever else CardCom may send with a refund beyond its documented fields — every field it sends is kept.
 const FULL_ANSWER = okAnswer({
   TerminalNumber: 1001, Amount: 149, CoinId: 1, CouponNumber: '38024607', CreateDate: '2026-10-09T17:40:12',
   Last4CardDigits: 8, Last4CardDigitsString: '0008', FirstCardDigits: 458028, JParameter: '0', CardMonth: 9, CardYear: 31,
@@ -104,7 +115,7 @@ const FULL_ANSWER = okAnswer({
 describe('refundCardcomPayment: a refund', () => {
   it('writes the pending row BEFORE asking CardCom, then records the refund with its transaction and credit document', async () => {
     let pendingWhenAsked = 0;
-    vi.mocked(transactionsTransaction).mockImplementation(async () => {
+    vi.mocked(transactionsRefundByTransactionId).mockImplementation(async () => {
       pendingWhenAsked = refundRows().filter((r) => r.outcome === 'pending').length;
       return okAnswer() as never;
     });
@@ -120,27 +131,38 @@ describe('refundCardcomPayment: a refund', () => {
     }]);
   });
 
-  it('sends a Do Transaction REFUND to the payment\'s token, with the password, the credit document and our row id as the idempotency key', async () => {
+  it('refunds the payment\'s OWN transaction by its id, with the password and our row id — and sends no card', async () => {
     await refundCardcomPayment({ ...REQ, amount: 149 });
     const rowId = refundRows()[0].id;
-    expect(transactionsTransaction).toHaveBeenCalledWith(
+    expect(transactionsRefundByTransactionId).toHaveBeenCalledWith(
+      { ApiName: 'kalfa-api', ApiPassword: PASSWORD, TransactionId: 555, ExternalRefundDealId: rowId },
+      { cardcom: { timeoutMs: 30_000 } },
+    );
+    expect(JSON.stringify(sent())).not.toContain(TOKEN);
+  });
+
+  it('THEN issues the credit document, once, linked to the REFUND\'s deal (its NewTranzactionId), to the cardholder, for the amount', async () => {
+    await refundCardcomPayment({ ...REQ, amount: 149 });
+    expect(documentsCreateDocument).toHaveBeenCalledTimes(1);
+    expect(documentsCreateDocument).toHaveBeenCalledWith(
       {
-        TerminalNumber: 1001, ApiName: 'kalfa-api', Amount: 149, Token: TOKEN, CardExpirationMMYY: '0931',
-        ExternalUniqTranId: rowId, ExternalUniqUniqTranIdResponse: true, NumOfPayments: 1, ISOCoinId: 1,
-        Advanced: { IsRefund: true, ApiPassword: PASSWORD },
+        ApiName: 'kalfa-api', ApiPassword: PASSWORD,
         Document: {
-          DocumentTypeToCreate: 'ReceiptRefund', Name: 'דנה כהן', Email: 'dana@example.test', Languge: 'he',
+          DocumentTypeToCreate: 'ReceiptRefund', Name: 'דנה כהן', Email: 'dana@example.test', Languge: 'he', ISOCoinID: 1,
           Products: [{ Description: 'KALFA — זיכוי ביטול חבילת אישורי הגעה לאירוע', Quantity: 1, UnitCost: 149 }],
         },
+        DealNumbers: [{ DealNumber: 777 }],
       },
       { cardcom: { timeoutMs: 30_000 } },
     );
+    expect(vi.mocked(transactionsRefundByTransactionId).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(documentsCreateDocument).mock.invocationCallOrder[0]);
   });
 
   // Owner 8.10.2026: nothing CardCom returns is dropped. The refund's answer goes to the row through the same field-by-field
   // mappers the purchase uses; the cardholder's ID is not stored again — the row points at the purchase's Vault secret.
   it('records EVERYTHING CardCom answered about the refund: references, terminal, card, cardholder, and when it happened', async () => {
-    vi.mocked(transactionsTransaction).mockResolvedValue(FULL_ANSWER as never);
+    vi.mocked(transactionsRefundByTransactionId).mockResolvedValue(FULL_ANSWER as never);
     await refundCardcomPayment({ ...REQ, amount: 149 });
     expect(refundRows()[0]).toMatchObject({
       outcome: 'succeeded', provider_payment_id: 777, provider_auth_ref: '0123456', provider_terminal_echo: 1001,
@@ -162,23 +184,25 @@ describe('refundCardcomPayment: a refund', () => {
   });
 
   it('a field CardCom sends malformed is left empty and never keeps the refund from being recorded', async () => {
-    vi.mocked(transactionsTransaction).mockResolvedValue(okAnswer({ CardMonth: 13, Last4CardDigitsString: 'abcd', CreateDate: 'not a date', TerminalNumber: '1001' }) as never);
+    vi.mocked(transactionsRefundByTransactionId).mockResolvedValue(okAnswer({ CardMonth: 13, Last4CardDigitsString: 'abcd', CreateDate: 'not a date', TerminalNumber: '1001' }) as never);
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toMatchObject({ status: 'refunded' });
     expect(refundRows()[0]).toMatchObject({ outcome: 'succeeded' });
     expect(refundRows()[0].provider_terminal_echo ?? null).toBeNull();
   });
 
   it('a document link that is not CardCom\'s own https address is not kept', async () => {
-    vi.mocked(transactionsTransaction).mockResolvedValue(okAnswer({ DocumentUrl: 'https://evil.example/doc' }) as never);
+    vi.mocked(documentsCreateDocument).mockResolvedValue(docAnswer({ DocumentUrl: 'https://evil.example/doc' }) as never);
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({
       status: 'refunded', amount: 149, document: { id: null, number: 78, url: null }, alreadyDone: false,
     });
   });
 
   it('a PARTIAL refund (a cancellation fee stays with us) goes back as its own amount, with a credit document for it', async () => {
-    vi.mocked(transactionsTransaction).mockResolvedValue(okAnswer() as never);
+    vi.mocked(transactionsRefundByTransactionId).mockResolvedValue(okAnswer() as never);
     await expect(refundCardcomPayment({ ...REQ, amount: 129 })).resolves.toMatchObject({ status: 'refunded', amount: 129 });
-    expect(sent()).toMatchObject({ Amount: 129, Document: { Products: [{ UnitCost: 129 }] } });
+    expect(sent()).toMatchObject({ PartialSum: 129 });
+    expect(sentDocument()).toMatchObject({ Document: { Products: [{ UnitCost: 129 }] } });
+    expect(sent()).not.toHaveProperty('AllowMultipleRefunds');
     expect(refundRows()).toMatchObject([{ outcome: 'succeeded', amount: 129 }]);
   });
 
@@ -186,6 +210,8 @@ describe('refundCardcomPayment: a refund', () => {
     useDb([PURCHASE, seed('refund', 'succeeded', { id: 'r1', amount: 20, parent_operation_id: 'pur1', meta: { cancellation_request_id: 'other' } })]);
     // 149 paid, 20 already back: 100 more goes back, then only 29 is left.
     await expect(refundCardcomPayment({ ...REQ, amount: 100 })).resolves.toMatchObject({ status: 'refunded', amount: 100 });
+    // CardCom is told another refund of the same transaction is allowed.
+    expect(sent()).toMatchObject({ PartialSum: 100, AllowMultipleRefunds: true });
     await expect(refundCardcomPayment({ ...REQ, cancellationRequestId: 'req2', amount: 30 })).resolves.toEqual({ status: 'refused', reason: 'exceeds_refundable' });
   });
 
@@ -199,24 +225,25 @@ describe('refundCardcomPayment: a refund', () => {
 
   it('a retry of the same request that already refunded returns what went back, and does not ask CardCom again', async () => {
     await refundCardcomPayment({ ...REQ, amount: 149 });
-    vi.mocked(transactionsTransaction).mockClear();
+    vi.mocked(transactionsRefundByTransactionId).mockClear();
     const again = await refundCardcomPayment({ ...REQ, amount: 149 });
     expect(again).toMatchObject({ status: 'refunded', amount: 149, alreadyDone: true });
-    expect(transactionsTransaction).not.toHaveBeenCalled();
+    expect(transactionsRefundByTransactionId).not.toHaveBeenCalled();
     expect(refundRows()).toHaveLength(1);
   });
 
   it('a tax invoice + receipt is credited by its own counterpart', async () => {
     useDb([{ ...PURCHASE, meta: { provider: 'cardcom', cardcom_document_type: 'TaxInvoiceAndReceipt' } }]);
-    vi.mocked(transactionsTransaction).mockResolvedValue(okAnswer({ DocumentType: 'TaxInvoiceAndReceiptRefund' }) as never);
+    vi.mocked(documentsCreateDocument).mockResolvedValue(docAnswer({ DocumentType: 'TaxInvoiceAndReceiptRefund' }) as never);
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toMatchObject({ status: 'refunded' });
-    expect(sent().Document).toMatchObject({ DocumentTypeToCreate: 'TaxInvoiceAndReceiptRefund' });
+    expect(sentDocument().Document).toMatchObject({ DocumentTypeToCreate: 'TaxInvoiceAndReceiptRefund' });
+    expect(refundRows()[0].note ?? null).toBeNull();
   });
 
   it('a cardholder with no email gets a credit document with no email field', async () => {
     useDb([{ ...PURCHASE, card_owner_email: null }]);
     await refundCardcomPayment({ ...REQ, amount: 149 });
-    expect(sent().Document).not.toHaveProperty('Email');
+    expect(sentDocument().Document).not.toHaveProperty('Email');
   });
 
   it('refunds a TEST payment on the test terminal like any other: the refund row is test money too (the database copies it from the parent), and every alert says so', async () => {
@@ -244,7 +271,8 @@ describe('refundCardcomPayment: a refund', () => {
 describe('refundCardcomPayment: refused before anything is written or sent', () => {
   const nothingHappened = () => {
     expect(refundRows()).toHaveLength(0);
-    expect(transactionsTransaction).not.toHaveBeenCalled();
+    expect(transactionsRefundByTransactionId).not.toHaveBeenCalled();
+    expect(documentsCreateDocument).not.toHaveBeenCalled();
   };
 
   it.each([
@@ -273,7 +301,7 @@ describe('refundCardcomPayment: refused before anything is written or sent', () 
     nothingHappened();
   });
 
-  it('refuses a payment made on ANOTHER terminal than the connection uses now: its token belongs to that terminal', async () => {
+  it('refuses a payment made on ANOTHER terminal than the connection uses now: the refund goes through the connection\'s own account', async () => {
     useDb([{ ...PURCHASE, provider_terminal: 1000, is_test: true }]);
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'refused', reason: 'terminal_changed' });
     nothingHappened();
@@ -293,17 +321,19 @@ describe('refundCardcomPayment: refused before anything is written or sent', () 
   });
 
   it.each([
-    ['no token', { card_token_ref: null }],
-    ['a token that is not CardCom\'s guid', { card_token_ref: 'tok-abc' }],
-    ['no expiry month', { card_exp_month: null }],
-    ['an impossible expiry month', { card_exp_month: 13 }],
-    ['no expiry year', { card_exp_year: null }],
+    ['no CardCom transaction id', { provider_payment_id: null }],
+    ['a transaction id of zero', { provider_payment_id: 0 }],
     ['no cardholder name', { card_owner_name: null }],
     ['a blank cardholder name', { card_owner_name: '  ' }],
-  ])('refuses a payment with %s: there is no card to send the money back to', async (_label, over) => {
+  ])('refuses a payment with %s: there is no transaction to refund, or no one to address the credit document to', async (_label, over) => {
     useDb([{ ...PURCHASE, ...over }]);
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'refused', reason: 'no_card' });
     nothingHappened();
+  });
+
+  it('does NOT need the card: a payment with no token and no expiry is refunded by its transaction', async () => {
+    useDb([{ ...PURCHASE, card_token_ref: null, card_exp_month: null, card_exp_year: null }]);
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toMatchObject({ status: 'refunded' });
   });
 
   it.each([
@@ -320,26 +350,28 @@ describe('refundCardcomPayment: refused before anything is written or sent', () 
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'in_progress' });
     useDb([PURCHASE, seed('refund', 'review', { id: 'r1', amount: 149, meta: { cancellation_request_id: 'req1' } })]);
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'review' });
-    expect(transactionsTransaction).not.toHaveBeenCalled();
+    expect(transactionsRefundByTransactionId).not.toHaveBeenCalled();
   });
 
   it('an unreadable ledger is an error, and nothing is sent', async () => {
     db.fail('payment_operations', '42501', 'select');
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'error' });
-    expect(transactionsTransaction).not.toHaveBeenCalled();
+    expect(transactionsRefundByTransactionId).not.toHaveBeenCalled();
   });
 });
 
 describe('refundCardcomPayment: what CardCom answers', () => {
   it('a refusal (ResponseCode not 0) closes the row as failed, so it may be tried again — and CardCom\'s text stays with the ledger', async () => {
-    vi.mocked(transactionsTransaction).mockResolvedValue({ ResponseCode: 5, Description: 'card blocked' } as never);
+    vi.mocked(transactionsRefundByTransactionId).mockResolvedValue({ ResponseCode: 5, Description: 'card blocked' } as never);
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'declined' });
     expect(refundRows()).toMatchObject([{ outcome: 'failed', provider_status: '5', provider_status_description: 'card blocked' }]);
     expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'warn' }));
+    // No money went back, so no credit document is asked for.
+    expect(documentsCreateDocument).not.toHaveBeenCalled();
   });
 
   it('a request CardCom rejected outright (a 4xx) is a clear refusal too', async () => {
-    vi.mocked(transactionsTransaction).mockRejectedValue(new CardcomError('http_error', 'x', false, 401));
+    vi.mocked(transactionsRefundByTransactionId).mockRejectedValue(new CardcomError('http_error', 'x', false, 401));
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'declined' });
     expect(refundRows()[0].outcome).toBe('failed');
   });
@@ -347,7 +379,7 @@ describe('refundCardcomPayment: what CardCom answers', () => {
   // 9.10.2026: two refusals were recorded with no reason. The reason CardCom gives (its ErrorInfo body) is kept in the row and
   // the staff alert; the log gets the numbers only.
   it('a 4xx keeps WHY: the HTTP status in the note, CardCom\'s code and text in the row and the alert, numbers only in the log', async () => {
-    vi.mocked(transactionsTransaction).mockRejectedValue(
+    vi.mocked(transactionsRefundByTransactionId).mockRejectedValue(
       new CardcomError('http_error', 'x', false, 400, { ResponseCode: 7, Description: 'ApiPassword is not valid' }),
     );
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'declined' });
@@ -363,14 +395,14 @@ describe('refundCardcomPayment: what CardCom answers', () => {
   });
 
   it('a 4xx with no reason in it keeps the status and claims no CardCom code', async () => {
-    vi.mocked(transactionsTransaction).mockRejectedValue(new CardcomError('http_error', 'x', false, 403));
+    vi.mocked(transactionsRefundByTransactionId).mockRejectedValue(new CardcomError('http_error', 'x', false, 403));
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'declined' });
     expect(refundRows()[0]).toMatchObject({ outcome: 'failed', note: expect.stringContaining('(HTTP 403)') });
     expect(refundRows()[0].provider_status ?? null).toBeNull();
   });
 
   it('a 5xx goes to REVIEW and keeps what it carried, too', async () => {
-    vi.mocked(transactionsTransaction).mockRejectedValue(new CardcomError('http_error', 'x', true, 502, { ResponseCode: 99, Description: 'gateway' }));
+    vi.mocked(transactionsRefundByTransactionId).mockRejectedValue(new CardcomError('http_error', 'x', true, 502, { ResponseCode: 99, Description: 'gateway' }));
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'review' });
     expect(refundRows()[0]).toMatchObject({
       outcome: 'review', provider_status: '99', provider_status_description: 'gateway', note: expect.stringContaining('(HTTP 502)'),
@@ -378,31 +410,91 @@ describe('refundCardcomPayment: what CardCom answers', () => {
   });
 
   it('a call that may have been processed (timeout, 5xx) goes to REVIEW and is never retried by this code', async () => {
-    vi.mocked(transactionsTransaction).mockRejectedValue(new CardcomError('unreachable', 'x', true));
+    vi.mocked(transactionsRefundByTransactionId).mockRejectedValue(new CardcomError('unreachable', 'x', true));
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'review' });
     expect(refundRows()[0].outcome).toBe('review');
-    expect(transactionsTransaction).toHaveBeenCalledTimes(1);
+    expect(transactionsRefundByTransactionId).toHaveBeenCalledTimes(1);
     expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'error' }));
     // ...and a second attempt of the same request is stopped by that review row.
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'review' });
-    expect(transactionsTransaction).toHaveBeenCalledTimes(1);
+    expect(transactionsRefundByTransactionId).toHaveBeenCalledTimes(1);
+    expect(documentsCreateDocument).not.toHaveBeenCalled();
   });
 
   it.each([
-    ['no document number', okAnswer({ DocumentNumber: null })],
-    ['an answer that is not a refund', okAnswer({ IsRefund: false })],
-    ['a document that is not the credit of a receipt', okAnswer({ DocumentType: 'Receipt' })],
-    ['a document of an unrelated type', okAnswer({ DocumentType: 'TaxInvoiceAndReceiptRefund' })],
-  ])('success with %s is not believed: the row goes to review WITH what CardCom said, and an admin is told', async (_label, answer) => {
-    vi.mocked(transactionsTransaction).mockResolvedValue(answer as never);
+    ['no refund transaction id', okAnswer({ NewTranzactionId: null })],
+    ['a refund transaction id of zero', okAnswer({ NewTranzactionId: 0 })],
+    ['a refund transaction id that is not a number', okAnswer({ NewTranzactionId: '777' })],
+  ])('success with %s leaves the MONEY in doubt: the row goes to review WITH what CardCom said, and an admin is told', async (_label, answer) => {
+    vi.mocked(transactionsRefundByTransactionId).mockResolvedValue(answer as never);
     await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'review' });
     expect(refundRows()[0]).toMatchObject({ outcome: 'review', provider_status: '0', meta: { cancellation_request_id: 'req1', provider: 'cardcom' } });
     expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'error' }));
+    // A document is linked to a refund deal; with none named, none is asked for.
+    expect(documentsCreateDocument).not.toHaveBeenCalled();
+  });
+
+  // Design D4: the money is confirmed by code 0 and the refund transaction id. Whatever the credit document call then does, the
+  // refund is recorded — review would say the money may not be back — with a note saying why the document is not confirmed, a
+  // warning to staff to check it (and issue it) in CardCom, and never a second CreateDocument.
+  const flaggedNotRetried = (noteHas: string) => {
+    expect(refundRows()[0]).toMatchObject({ outcome: 'succeeded', provider_payment_id: 777, note: expect.stringContaining('credit document') });
+    expect(refundRows()[0].note).toContain(noteHas);
+    expect(vi.mocked(sendSlackAlert).mock.calls.map(([a]) => a.level)).toEqual(['warn']);
+    expect(vi.mocked(sendSlackAlert).mock.calls[0][0].title).toContain('מסמך הזיכוי');
+    expect(documentsCreateDocument).toHaveBeenCalledTimes(1);
+  };
+
+  it('a document answer with NO document number: succeeded, flagged, not asked again', async () => {
+    vi.mocked(documentsCreateDocument).mockResolvedValue({ ResponseCode: 0, Description: 'OK' } as never);
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'refunded', amount: 149, document: null, alreadyDone: false });
+    flaggedNotRetried('no document number');
+    expect(refundRows()[0].provider_document_number ?? null).toBeNull();
+    expect(logActivity).toHaveBeenCalledWith(expect.objectContaining({ meta: expect.objectContaining({ documentNumber: null }) }));
+  });
+
+  it('CardCom REFUSES the document (code not 0): succeeded, the note keeps its code and text, the alert its code only', async () => {
+    vi.mocked(documentsCreateDocument).mockResolvedValue({ ResponseCode: 512, Description: 'שם הלקוח דנה אינו תקין' } as never);
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'refunded', amount: 149, document: null, alreadyDone: false });
+    flaggedNotRetried('code 512 "שם הלקוח דנה אינו תקין"');
+    expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ fields: expect.objectContaining({ document_response_code: 512 }) }));
+    expect(everythingLogged()).not.toContain('דנה');
+  });
+
+  it('the document call is rejected outright (a 4xx): succeeded, flagged with what it carried', async () => {
+    vi.mocked(documentsCreateDocument).mockRejectedValue(new CardcomError('http_error', 'x', false, 400, { ResponseCode: 7, Description: 'bad request' }));
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toMatchObject({ status: 'refunded', document: null });
+    flaggedNotRetried('CardCom refused the document: HTTP 400 code 7 "bad request"');
+  });
+
+  it('the document answer is UNCLEAR (a timeout): succeeded, flagged that the document may exist — and never asked for again', async () => {
+    vi.mocked(documentsCreateDocument).mockRejectedValue(new CardcomError('unreachable', 'x', true));
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toMatchObject({ status: 'refunded', document: null });
+    flaggedNotRetried('the document may exist');
+    // A retry of the same request returns the recorded refund: no second refund, no second document.
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toMatchObject({ status: 'refunded', alreadyDone: true });
+    expect(transactionsRefundByTransactionId).toHaveBeenCalledTimes(1);
+    expect(documentsCreateDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('a credit document of ANOTHER type than asked for is kept as CardCom named it, and flagged the same way', async () => {
+    vi.mocked(documentsCreateDocument).mockResolvedValue(docAnswer({ DocumentType: 'Receipt' }) as never);
+    await expect(refundCardcomPayment({ ...REQ, amount: 149 })).resolves.toMatchObject({ status: 'refunded', document: { number: 78 } });
+    flaggedNotRetried('CardCom created Receipt, not ReceiptRefund');
+    expect(refundRows()[0]).toMatchObject({
+      provider_document_number: 78, meta: { cancellation_request_id: 'req1', provider: 'cardcom', cardcom_document_type: 'Receipt' },
+    });
+  });
+
+  it('the credit document asked for, confirmed: no note, and staff get the usual notice', async () => {
+    await refundCardcomPayment({ ...REQ, amount: 149 });
+    expect(refundRows()[0].note ?? null).toBeNull();
+    expect(vi.mocked(sendSlackAlert).mock.calls.map(([a]) => a.level)).toEqual(['info']);
   });
 
   it('a confirmed refund that cannot be recorded is parked in review with CardCom\'s references, never lost', async () => {
     let fail = true;
-    vi.mocked(transactionsTransaction).mockImplementation(async () => {
+    vi.mocked(transactionsRefundByTransactionId).mockImplementation(async () => {
       if (fail) {
         db.fail('payment_operations', 'XX000', 'update');
         fail = false;
@@ -421,11 +513,15 @@ describe('refundCardcomPayment: what CardCom answers', () => {
   });
 
   it('never writes the API password or the token to any log or alert, in any outcome', async () => {
-    vi.mocked(transactionsTransaction).mockRejectedValue(new Error(`boom ${PASSWORD} ${TOKEN}`));
+    vi.mocked(transactionsRefundByTransactionId).mockRejectedValue(new Error(`boom ${PASSWORD} ${TOKEN}`));
     await refundCardcomPayment({ ...REQ, amount: 149 });
     useDb();
-    vi.mocked(transactionsTransaction).mockResolvedValue({ ResponseCode: 9, Description: `echo ${PASSWORD}` } as never);
+    vi.mocked(transactionsRefundByTransactionId).mockResolvedValue({ ResponseCode: 9, Description: `echo ${PASSWORD}` } as never);
     await refundCardcomPayment({ ...REQ, cancellationRequestId: 'req2', amount: 149 });
+    useDb();
+    vi.mocked(transactionsRefundByTransactionId).mockResolvedValue(okAnswer() as never);
+    vi.mocked(documentsCreateDocument).mockRejectedValue(new CardcomError('http_error', `boom ${PASSWORD}`, false, 400, { ResponseCode: 1, Description: `echo ${PASSWORD}` }));
+    await refundCardcomPayment({ ...REQ, cancellationRequestId: 'req3', amount: 149 });
     expect(everythingLogged()).not.toContain(PASSWORD);
     expect(everythingLogged()).not.toContain(TOKEN);
   });
@@ -436,11 +532,12 @@ describe('checkCardcomRefund: the look before the promise', () => {
     await expect(checkCardcomRefund({ ...REQ, amount: 149 })).resolves.toBeNull();
     await expect(checkCardcomRefund({ ...REQ, amount: 129 })).resolves.toBeNull();
     expect(refundRows()).toHaveLength(0);
-    expect(transactionsTransaction).not.toHaveBeenCalled();
+    expect(transactionsRefundByTransactionId).not.toHaveBeenCalled();
+    expect(documentsCreateDocument).not.toHaveBeenCalled();
   });
 
   it('answers with the same refusal the refund would give', async () => {
-    useDb([{ ...PURCHASE, card_token_ref: null }]);
+    useDb([{ ...PURCHASE, provider_payment_id: null }]);
     await expect(checkCardcomRefund({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'refused', reason: 'no_card' });
     vi.mocked(getCardcomApiPassword).mockResolvedValue(null);
     await expect(checkCardcomRefund({ ...REQ, amount: 149 })).resolves.toEqual({ status: 'refused', reason: 'disabled' });
@@ -462,7 +559,7 @@ describe('cardcomRefundSummary', () => {
   });
 
   it.each([
-    ['no token', { card_token_ref: null }],
+    ['no CardCom transaction id', { provider_payment_id: null }],
     ['a document type with no credit counterpart', { meta: { provider: 'cardcom', cardcom_document_type: 'SiteCustomerOrder' } }],
   ])('says a payment with %s cannot be refunded by itself (the screen\'s "no card" state)', async (_label, over) => {
     useDb([{ ...PURCHASE, ...over }]);

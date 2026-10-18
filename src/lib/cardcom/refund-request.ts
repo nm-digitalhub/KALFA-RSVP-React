@@ -1,32 +1,47 @@
-import type { TransactionReq } from './generated/models';
+import type { CreateDocumentRequest, RefundByTransactionIdReq } from './generated/models';
 import type { RefundDocument } from './document-types';
 
-// Builds the request that gives a package payment back (Transactions/Transaction, CardCom's "Do Transaction"). Pure: it reads
-// nothing and sends nothing, so every rule can be pinned by a test. The owner chose this operation (9.10.2026) because it
-// refunds AND issues the credit document in one call — RefundByTransactionId issues none, and Documents/CancelDoc answered 9006.
+// Builds the two requests that give a package payment back (openspec/changes/refund-cardcom-by-transaction-id). Pure: they read
+// nothing and send nothing, so every rule can be pinned by a test.
 //
-// The rules, from CardCom's OpenAPI and its "Do Transaction" article:
-//   - Advanced.IsRefund makes it a refund, and then Advanced.ApiPassword is required ("Required only if 'IsRefund' is true");
-//   - it charges a TOKEN (the payment's, kept on its ledger row) with its expiry as MMYY ("תאריך תוקף של האסימון - חיוני");
-//   - Document "will create document if transaction succeeded"; Name is required; without Products no document is produced
-//     ("אמנם מערך של products הוא לא חובה אך בלעדיו לא יופק המסמך"); the type is the credit counterpart of the payment's
-//     document (document-types.ts);
-//   - ExternalUniqTranId is our ledger row id: if the same id is sent again CardCom does not move money again, and with
-//     ExternalUniqUniqTranIdResponse it answers with the ORIGINAL transaction instead of error 608;
-//   - one payment, in shekels.
-// The amount is the money that goes back, as a positive number: CardCom's material shows no refund example, and IsRefund is
-// what marks the direction. The first real refund confirms it.
+// 1. The money: Transactions/RefundByTransactionId (owner, 18.10.2026). It refunds THE payment's own CardCom transaction, by its id, so
+//    the refund is linked to the payment. Transactions/Transaction with Advanced.IsRefund, used before, charged a new credit
+//    transaction to the card's token and issued a credit document linked to neither.
+// 2. The credit document: Documents/CreateDocument, linked to the REFUND deal through DealNumbers (CardCom's OpenAPI: DealNumbers,
+//    items { DealNumber }). The operation in 1 issues none: the first real refund (18.10.2026 21:05) carried the `Document` object
+//    CardCom's support had named for it, and CardCom issued no document (its answer had none, and the owner found none).
+//
+// The rules of 1:
+//   - TransactionId is the payment's CardCom transaction id, kept on its ledger row (provider_payment_id); ApiPassword is required;
+//   - PartialSum only when less than the payment goes back: without it CardCom refunds the whole transaction, which is then the amount;
+//   - AllowMultipleRefunds only when an earlier refund of the same payment exists, so CardCom accepts another one;
+//   - ExternalRefundDealId is our refund row's id, to find the refund in CardCom's reports. CardCom documents no deduplication by it,
+//     and nothing here relies on one: an unclear refund is never sent again (cardcom-refund.ts).
+// The rules of 2:
+//   - the type is the credit counterpart of the payment's document (document-types.ts); it is to the cardholder CardCom recorded on
+//     the payment, with one line for the amount that went back, in shekels;
+//   - DealNumbers names the refund's own transaction (RefundByTransactionId's NewTranzactionId), not the original charge.
 
 export type CardcomRefundInput = {
-  terminalNumber: number;
   apiName: string;
   apiPassword: string;
-  /** Our pending ledger row for this refund: the idempotency key CardCom keeps. */
+  /** Our pending ledger row for this refund. */
   operationId: string;
+  /** The payment's CardCom transaction id. */
+  transactionId: number;
   amount: number;
-  token: string;
-  expMonth: number;
-  expYear: number;
+  /** What the payment took, to tell a partial refund from a whole one. */
+  paidAmount: number;
+  /** An earlier refund of the same payment exists (succeeded, or one whose outcome is not known). */
+  earlierRefund: boolean;
+};
+
+export type CardcomCreditDocumentInput = {
+  apiName: string;
+  apiPassword: string;
+  /** The refund's own CardCom transaction (RefundByTransactionId's NewTranzactionId). */
+  refundTransactionId: number;
+  amount: number;
   document: RefundDocument;
   /** Who the credit document is to: the cardholder CardCom recorded on the payment. */
   holder: { name: string; email: string | null };
@@ -34,44 +49,48 @@ export type CardcomRefundInput = {
   line: string;
 };
 
+const toCents = (n: number) => Math.round(n * 100);
 const hasMoreDecimals = (n: number, places: number) => Math.abs(n * 10 ** places - Math.round(n * 10 ** places)) > 1e-6;
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isMoney = (n: number) => Number.isFinite(n) && n > 0 && !hasMoreDecimals(n, 2);
+const isId = (n: number) => Number.isInteger(n) && n > 0;
 
-// "MMYY" from a month (1-12) and a year (2031 or 31). Null when either cannot be one.
-export function expiryMMYY(month: number, year: number): string | null {
-  if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year) || year < 0) return null;
-  const yy = year >= 100 ? year % 100 : year;
-  return `${String(month).padStart(2, '0')}${String(yy).padStart(2, '0')}`;
-}
-
-export function buildRefundTransaction(input: CardcomRefundInput): TransactionReq {
+export function buildRefundByTransactionId(input: CardcomRefundInput): RefundByTransactionIdReq {
   const apiName = input.apiName.trim();
-  const name = input.holder.name.trim().slice(0, 50);
-  const expiry = expiryMMYY(input.expMonth, input.expYear);
   if (
-    apiName === '' || input.apiPassword === '' || name === '' || input.line.trim() === '' || !expiry ||
-    !GUID.test(input.token) || !Number.isFinite(input.amount) || input.amount <= 0 || hasMoreDecimals(input.amount, 2)
+    apiName === '' || input.apiPassword === '' || !isId(input.transactionId) ||
+    !isMoney(input.amount) || !isMoney(input.paidAmount) || toCents(input.amount) > toCents(input.paidAmount)
   ) {
     throw new Error('בקשת זיכוי ל-CardCom אינה תקינה');
   }
+  const partial = toCents(input.amount) < toCents(input.paidAmount);
+  return {
+    ApiName: apiName,
+    ApiPassword: input.apiPassword,
+    TransactionId: input.transactionId,
+    ExternalRefundDealId: input.operationId,
+    ...(partial ? { PartialSum: input.amount } : {}),
+    ...(input.earlierRefund ? { AllowMultipleRefunds: true } : {}),
+  };
+}
+
+export function buildCreditDocument(input: CardcomCreditDocumentInput): CreateDocumentRequest {
+  const apiName = input.apiName.trim();
+  const name = input.holder.name.trim().slice(0, 50);
+  if (apiName === '' || input.apiPassword === '' || name === '' || input.line.trim() === '' || !isId(input.refundTransactionId) || !isMoney(input.amount)) {
+    throw new Error('בקשת מסמך זיכוי ל-CardCom אינה תקינה');
+  }
   const email = input.holder.email?.trim();
   return {
-    TerminalNumber: input.terminalNumber,
     ApiName: apiName,
-    Amount: input.amount,
-    Token: input.token,
-    CardExpirationMMYY: expiry,
-    ExternalUniqTranId: input.operationId,
-    ExternalUniqUniqTranIdResponse: true,
-    NumOfPayments: 1,
-    ISOCoinId: 1,
-    Advanced: { IsRefund: true, ApiPassword: input.apiPassword },
+    ApiPassword: input.apiPassword,
     Document: {
       DocumentTypeToCreate: input.document.create,
       Name: name,
       ...(email ? { Email: email.slice(0, 50) } : {}),
       Languge: 'he',
+      ISOCoinID: 1,
       Products: [{ Description: input.line, Quantity: 1, UnitCost: input.amount }],
     },
+    DealNumbers: [{ DealNumber: input.refundTransactionId }],
   };
 }

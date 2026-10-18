@@ -19,7 +19,7 @@ export type PackageRefundRefusal =
   | 'no_payment' // the campaign has no succeeded package payment, or nothing left on it
   | 'exceeds_refundable'
   | 'no_customer' // SUMIT: the payer has no customer number: a credit must never open a second customer
-  | 'no_card' // no saved card (SUMIT: card, expiry, holder id; CardCom: token, expiry, holder name): the admin refunds by hand
+  | 'no_card' // nothing to refund automatically (SUMIT: no saved card, expiry or holder id; CardCom: no recorded transaction id or cardholder name): the admin refunds by hand
   | 'no_document' // CardCom: the payment's document type has no credit counterpart we can name: refund by hand
   | 'terminal_changed'; // CardCom: the payment was made on a terminal that is not the one the connection uses now, or on one never recorded (an old row)
 
