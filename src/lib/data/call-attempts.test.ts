@@ -16,12 +16,28 @@ const db = {
   writes: [] as string[],
   stamped: null as Record<string, unknown> | null,
   logged: null as Record<string, unknown> | null,
+  eqs: [] as unknown[][],
+  existingLog: [] as { id: string }[] | null,
+  lookupError: null as DbError,
 };
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: (table: string) => ({
       select: () => ({
-        eq: () => ({ maybeSingle: async () => ({ data: db.attempt, error: null }) }),
+        // attempt lookup: select().eq().maybeSingle(); audit-row lookup:
+        // select().eq().eq().eq().limit() — one chainable object serves both.
+        eq: (...a: unknown[]) => {
+          db.eqs.push(a);
+          const chain = {
+            maybeSingle: async () => ({ data: db.attempt, error: null }),
+            eq: (...b: unknown[]) => {
+              db.eqs.push(b);
+              return chain;
+            },
+            limit: async () => ({ data: db.existingLog, error: db.lookupError }),
+          };
+          return chain;
+        },
       }),
       update: (patch: Record<string, unknown>) => ({
         eq: async () => {
@@ -40,6 +56,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 }));
 
 import { TERMINAL_STATUSES, recordCallbackRequest } from './call-attempts';
+import { callbackRequestHash } from '@/lib/voximplant/agent-tool-hash';
 
 beforeEach(() => {
   db.attempt = { id: 'att1', event_id: 'ev1' };
@@ -48,6 +65,9 @@ beforeEach(() => {
   db.writes = [];
   db.stamped = null;
   db.logged = null;
+  db.eqs = [];
+  db.existingLog = [];
+  db.lookupError = null;
 });
 
 // 'handed_off' (a KALFA console agent took over the call) must be
@@ -114,5 +134,45 @@ describe('recordCallbackRequest', () => {
     await expect(recordCallbackRequest('att1', 'x', null)).rejects.toThrow(
       'callback request log failed (23503)',
     );
+  });
+
+  it('stamps the request hash and looks the audit row up by attempt + hash before writing', async () => {
+    await recordCallbackRequest('att1', 'מחר בערב', '2026-10-17T17:00:00Z');
+    const hash = callbackRequestHash({ whenText: 'מחר בערב', iso: '2026-10-17T17:00:00Z' });
+    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(db.eqs).toEqual(
+      expect.arrayContaining([
+        ['action', 'call.callback_requested'],
+        ['meta->>call_attempt_id', 'att1'],
+        ['meta->>request_hash', hash],
+      ]),
+    );
+    expect(db.logged).toMatchObject({ meta: { request_hash: hash } });
+  });
+
+  it('the same request twice → the stamp is repeated (idempotent) but ONE audit row', async () => {
+    await recordCallbackRequest('att1', 'מחר בערב', '2026-10-17T17:00:00Z');
+    expect(db.writes.filter((w) => w === 'insert:activity_log')).toHaveLength(1);
+    db.existingLog = [{ id: 'row1' }]; // the first audit row is now visible to the lookup
+    expect(await recordCallbackRequest('att1', 'מחר בערב', '2026-10-17T17:00:00Z')).toEqual({
+      applied: true,
+    });
+    expect(db.writes.filter((w) => w === 'insert:activity_log')).toHaveLength(1);
+    expect(db.writes.filter((w) => w === 'update:call_attempts')).toHaveLength(2);
+  });
+
+  it('different words in the same call → a second audit row (the hash is per request)', () => {
+    expect(callbackRequestHash({ whenText: 'מחר', iso: null })).not.toBe(
+      callbackRequestHash({ whenText: 'מחרתיים', iso: null }),
+    );
+  });
+
+  it('the lookup FAILS → throws and writes no audit row (never guesses the request is new)', async () => {
+    db.lookupError = { message: 'x', code: '57P01' };
+    db.existingLog = null;
+    await expect(recordCallbackRequest('att1', 'x', null)).rejects.toThrow(
+      'callback request lookup failed (57P01)',
+    );
+    expect(db.writes).not.toContain('insert:activity_log');
   });
 });

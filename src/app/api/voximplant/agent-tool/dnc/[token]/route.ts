@@ -71,12 +71,24 @@ export async function POST(
     return bad(500);
   }
 
-  let ok = false;
+  // The business outcome travels in the body, apart from the HTTP status (a 200 means
+  // "accepted and durably captured", never "removed"):
+  //   removed — the number is on call_dnc_list. The ONLY value that is a success.
+  //   queued  — a transient failure; the durable row above is retried by the drain,
+  //             so this promise is real.
+  //   failed  — terminal (no such attempt, no number to list). A retry cannot change
+  //             it, so it is reported as a failure and never as "queued".
+  // `ok` is kept for a consumer that reads only the boolean.
+  let status: 'removed' | 'queued' | 'failed';
   try {
-    ({ ok } = await processCallDnc(attemptId));
+    const { ok } = await processCallDnc(attemptId);
+    status = ok ? 'removed' : 'failed';
   } catch {
-    ok = false;
+    status = 'queued';
   }
 
-  return NextResponse.json({ ok }, { status: 200, headers: NO_STORE });
+  return NextResponse.json(
+    { ok: status === 'removed', status },
+    { status: 200, headers: NO_STORE },
+  );
 }

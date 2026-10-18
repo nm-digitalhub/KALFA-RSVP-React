@@ -447,7 +447,7 @@ describe('agent-tool mark_dnc POST', () => {
     const res = await dncCall(TOK, JSON.stringify({ tool_call_id: 'tc9' }));
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('no-store');
-    expect(await res.json()).toEqual({ ok: true });
+    expect(await res.json()).toEqual({ ok: true, status: 'removed' });
     expect(insertWebhookEvents).toHaveBeenCalledWith([
       expect.objectContaining({
         provider: 'voximplant',
@@ -471,18 +471,24 @@ describe('agent-tool mark_dnc POST', () => {
   it('extra field → 400 (strictObject)', async () => {
     expect((await dncCall(TOK, JSON.stringify({ phone: '0501234567' }))).status).toBe(400);
   });
-  it('sync failure → 200 {ok:false} with durable row persisted', async () => {
+  it('terminal failure (no attempt / no number) → 200 {ok:false, status:"failed"} — never "queued"', async () => {
     vi.mocked(processCallDnc).mockResolvedValueOnce({ ok: false });
     const res = await dncCall(TOK, '{}');
-    expect(await res.json()).toEqual({ ok: false });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: false, status: 'failed' });
     expect(insertWebhookEvents).toHaveBeenCalled();
   });
-  it('sync THROWS (transient DB failure) → 200 {ok:false}; the durable row persisted for the drain retry', async () => {
+  it('transient failure (sync THROWS) → 200 {ok:false, status:"queued"}; the durable row persisted for the drain retry', async () => {
     vi.mocked(processCallDnc).mockRejectedValueOnce(new Error('call_dnc_list upsert failed (57014)'));
     const res = await dncCall(TOK, '{}');
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: false });
+    expect(await res.json()).toEqual({ ok: false, status: 'queued' });
     expect(insertWebhookEvents).toHaveBeenCalled();
+  });
+  it('persist FAILS → 500 and the sync apply is never attempted', async () => {
+    vi.mocked(insertWebhookEvents).mockRejectedValueOnce(new Error('db down'));
+    expect((await dncCall(TOK, '{}')).status).toBe(500);
+    expect(processCallDnc).not.toHaveBeenCalled();
   });
 });
 
@@ -493,7 +499,7 @@ describe('agent-tool notify_owner POST', () => {
     const res = await noteCall(TOK, noteBody);
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('no-store');
-    expect(await res.json()).toEqual({ ok: true });
+    expect(await res.json()).toEqual({ ok: true, status: 'recorded' });
     expect(insertWebhookEvents).toHaveBeenCalledWith([
       expect.objectContaining({
         provider: 'voximplant',
@@ -507,12 +513,28 @@ describe('agent-tool notify_owner POST', () => {
       expect.objectContaining({ kind: 'question', text: 'האם יש חניה באולם?' }),
     );
   });
-  it('sync THROWS (transient DB failure) → 200 {ok:false}; the durable row persisted for the drain retry', async () => {
+  it('transient failure (sync THROWS) → 200 {ok:false, status:"queued"}; the durable row persisted for the drain retry', async () => {
     vi.mocked(processOwnerNote).mockRejectedValueOnce(new Error('activity_log owner-note insert failed (40001)'));
     const res = await noteCall(TOK, noteBody);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: false });
+    expect(await res.json()).toEqual({ ok: false, status: 'queued' });
     expect(insertWebhookEvents).toHaveBeenCalled();
+  });
+  it('terminal failure (no attempt) → 200 {ok:false, status:"failed"} — never "queued"', async () => {
+    vi.mocked(processOwnerNote).mockResolvedValueOnce({ ok: false });
+    const res = await noteCall(TOK, noteBody);
+    expect(await res.json()).toEqual({ ok: false, status: 'failed' });
+  });
+  it('the same words in two different calls are two notes (the hash never replaces the attempt scope)', async () => {
+    await noteCall(TOK, noteBody);
+    const first = vi.mocked(insertWebhookEvents).mock.calls[0]![0]![0]!.dedupe_key;
+    vi.mocked(getCallAttemptByAccessToken).mockResolvedValue({
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      token_expires_at: FUTURE(),
+    } as never);
+    await noteCall(TOK, noteBody);
+    const second = vi.mocked(insertWebhookEvents).mock.calls[1]![0]![0]!.dedupe_key;
+    expect(first).not.toBe(second);
   });
   it('missing text → 400', async () => {
     expect((await noteCall(TOK, JSON.stringify({ kind: 'question' }))).status).toBe(400);

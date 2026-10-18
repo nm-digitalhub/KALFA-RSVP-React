@@ -492,10 +492,14 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         });
     }
     // --- customData ({to, from, tok, u}) ---
+    // customData carries the per-call access token (tok) and the guest's and caller's
+    // numbers (to/from). It is NEVER logged raw — Voximplant session logs outlive the
+    // call and the token stays valid for hours to days. Only its size and the names of
+    // its fields are logged.
     var raw;
     try {
         raw = VoxEngine.customData();
-        log('raw customData: ' + raw);
+        log('customData received: ' + (raw ? raw.length + ' bytes' : 'empty'));
     }
     catch (err) {
         log('Failed to read VoxEngine.customData(): ' + err);
@@ -506,9 +510,11 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     if (raw) {
         try {
             customData = JSON.parse(raw);
+            log('customData fields: ' + Object.keys(customData).join(','));
         }
-        catch (err) {
-            log('Failed to parse customData JSON: ' + err);
+        catch (_err) {
+            // Fixed message: a parser error can quote the start of the text.
+            log('Failed to parse customData JSON');
         }
     }
     if (!customData) {
@@ -519,7 +525,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     state.to = customData.to || '';
     state.from = customData.from || '';
     if (!state.to || !state.from) {
-        log('Missing required customData fields (to/from): ' + safeStringify(customData));
+        log('Missing required customData fields (to/from); present: ' + Object.keys(customData).join(','));
         VoxEngine.terminate();
         return;
     }
@@ -1336,16 +1342,51 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 //   save_rsvp    → agent-tool/rsvp  → saved | rejected | queued
                 //   mark_dnc     → agent-tool/dnc   → removed | queued
                 //   notify_owner → agent-tool/note  → noted | queued
+                // Tool arguments arrive as an object; a JSON string is accepted too. Absent
+                // arguments are `{}` (mark_dnc has none). Anything else — unparseable text,
+                // an array, a number — is null, and the caller answers with a tool error
+                // instead of guessing what was meant.
+                function parseToolArgs(raw) {
+                    if (raw === undefined || raw === null || raw === '')
+                        return {};
+                    if (typeof raw === 'string') {
+                        try {
+                            raw = JSON.parse(raw);
+                        }
+                        catch (_e) {
+                            return null;
+                        }
+                    }
+                    if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+                        return null;
+                    return raw;
+                }
                 var TOOL_ROUTES = {
                     save_rsvp: {
                         path: 'rsvp',
                         // No okResult: save_rsvp replies via the three-state
                         // pass-through below, never the generic boolean mapping.
+                        invalidMessage: 'invalid_arguments: status must be attending, declined or maybe',
+                        // Returns null when the call names no valid answer. There is NO
+                        // default: a call without a status says nothing about the guest's
+                        // answer, and posting "declined" for it would save a refusal that
+                        // nobody gave. Only an explicit boolean `attending` (the legacy
+                        // argument) is still understood.
                         body: function (args) {
+                            var status = null;
+                            if (args.status === 'attending' || args.status === 'declined' || args.status === 'maybe') {
+                                status = args.status;
+                            }
+                            else if (args.attending === true) {
+                                status = 'attending';
+                            }
+                            else if (args.attending === false) {
+                                status = 'declined';
+                            }
+                            if (!status)
+                                return null;
                             return {
-                                status: (args.status === 'attending' || args.status === 'declined' || args.status === 'maybe')
-                                    ? args.status
-                                    : (args.attending ? 'attending' : 'declined'),
+                                status: status,
                                 adults: Number(args.adults) || 0,
                                 children: Number(args.children) || 0
                             };
@@ -1374,7 +1415,9 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     var ctc = payload.client_tool_call || payload;
                     var toolName = ctc.tool_name || ctc.name;
                     var toolCallId = ctc.tool_call_id || ctc.id;
-                    var args = ctc.parameters || ctc.arguments || {};
+                    var args = parseToolArgs(ctc.parameters !== undefined && ctc.parameters !== null
+                        ? ctc.parameters
+                        : ctc.arguments);
                     log('CLIENT_TOOL_CALL: ' + safeStringify(payload));
                     // ElevenLabs REQUIRES is_error on the client-tool-result frame —
                     // omitting it closes the WebSocket with 1008 (policy violation),
@@ -1396,6 +1439,13 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     if (!appOrigin || !accessToken) {
                         log(toolName + ' called but no tok/u — cannot persist');
                         reply('error', true);
+                        return;
+                    }
+                    // Unusable arguments: the tool could not run, so is_error TRUE — and
+                    // nothing is sent to KALFA.
+                    if (args === null) {
+                        log(toolName + ' called with unusable arguments');
+                        reply('invalid_arguments', true);
                         return;
                     }
                     // schedule_callback (combination feature): the agent asked to be
@@ -1456,6 +1506,11 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                         return;
                     }
                     var postBody = route.body(args);
+                    if (!postBody) {
+                        log(toolName + ' called with invalid arguments — nothing sent');
+                        reply(route.invalidMessage || 'invalid_arguments', true);
+                        return;
+                    }
                     postBody.tool_call_id = toolCallId;
                     Net.httpRequestAsync(appOrigin + '/api/voximplant/agent-tool/' + route.path + '/' + accessToken, {
                         method: 'POST',
@@ -1504,9 +1559,16 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             reply(result, false);
                             return;
                         }
-                        // Other tools keep the boolean contract ({ok} only).
-                        // 'queued' is not an error (durably persisted; agent softens
-                        // wording) — is_error=false so the WS stays open either way.
+                        // mark_dnc / notify_owner: the server answers {ok, status} with
+                        // status removed|recorded (done), queued (transient — the
+                        // durable row is retried) or failed (terminal — a retry cannot
+                        // change it). 'failed' must reach the agent as a failure, never
+                        // as 'queued'. A reply without a status (an older server) keeps
+                        // the boolean contract. is_error=false so the WS stays open.
+                        if (body && body.status === 'failed') {
+                            reply('error', false);
+                            return;
+                        }
                         reply(ok ? route.okResult : 'queued', false);
                     }).catch(function (err) {
                         log(toolName + ' request failed: ' + err);

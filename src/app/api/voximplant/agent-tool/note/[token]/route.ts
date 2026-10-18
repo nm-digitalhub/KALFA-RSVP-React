@@ -72,12 +72,22 @@ export async function POST(
     return bad(500);
   }
 
-  let ok = false;
+  // The business outcome travels in the body, apart from the HTTP status:
+  //   recorded — the note is in the event's activity log. That is all it means: this
+  //              route has no delivery step, so it is NOT "the owner was notified".
+  //   queued   — a transient failure; the durable row above is retried by the drain.
+  //   failed   — terminal (no such attempt); never reported as "queued".
+  // `ok` is kept for a consumer that reads only the boolean.
+  let status: 'recorded' | 'queued' | 'failed';
   try {
-    ({ ok } = await processOwnerNote(attemptId, body));
+    const { ok } = await processOwnerNote(attemptId, body);
+    status = ok ? 'recorded' : 'failed';
   } catch {
-    ok = false;
+    status = 'queued';
   }
 
-  return NextResponse.json({ ok }, { status: 200, headers: NO_STORE });
+  return NextResponse.json(
+    { ok: status === 'recorded', status },
+    { status: 200, headers: NO_STORE },
+  );
 }

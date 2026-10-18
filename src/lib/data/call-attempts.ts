@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { callbackRequestHash } from '@/lib/voximplant/agent-tool-hash';
 import type { Enums, Json, Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
 // Local alias of events.ts's EventType (same Database enum). Deliberately NOT
 // imported from '@/lib/data/events': that module is request-scoped (notFound,
@@ -669,9 +670,32 @@ export async function recordCallbackRequest(
     throw new Error(`callback request stamp failed (${stamp.error.code ?? 'unknown'})`);
   }
 
-  // Durable, event-scoped record (activity_log).
+  // Durable, event-scoped record (activity_log). The same request twice (an agent
+  // retry, a double tool call) is ONE audit row: the lookup is scoped to this attempt
+  // AND the request's content hash. A select-then-insert, so two truly simultaneous
+  // identical requests can still both land — a database constraint would be needed to
+  // close that, and the dial itself is protected separately (claimCallback is a
+  // compare-and-set on callback_dispatched_at, one claim per attempt).
+  const requestHash = callbackRequestHash({ whenText, iso: callbackIso });
+  const existing = await admin
+    .from('activity_log')
+    .select('id')
+    .eq('action', 'call.callback_requested')
+    .eq('meta->>call_attempt_id', id)
+    .eq('meta->>request_hash', requestHash)
+    .limit(1);
+  if (existing.error) {
+    throw new Error(`callback request lookup failed (${existing.error.code ?? 'unknown'})`);
+  }
+  if ((existing.data ?? []).length > 0) return { applied: true };
+
   type ActivityLogInsert = TablesInsert<'activity_log'>;
-  const meta = { call_attempt_id: id, when_text: whenText, callback_iso: callbackIso };
+  const meta = {
+    call_attempt_id: id,
+    when_text: whenText,
+    callback_iso: callbackIso,
+    request_hash: requestHash,
+  };
   const logRow: ActivityLogInsert = {
     event_id: attempt.event_id,
     user_id: null,
