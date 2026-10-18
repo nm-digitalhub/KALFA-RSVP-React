@@ -15,7 +15,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import type { Json } from '@/lib/supabase/types';
 import { getAppUrl } from '@/lib/url';
 
-import { CARDCOM_ABANDON_AFTER_MINUTES, settleCardcomSession } from './cardcom-settle';
+import { settleCardcomSession } from './cardcom-settle';
 import { beginOperation, completeOperation } from './ledger';
 import { getPackagePaymentState } from './package-paid';
 import { receiptLineFor } from './package-receipt';
@@ -80,14 +80,19 @@ async function closeFailed(admin: AdminClient, operationId: string, note: string
   }
 }
 
-// A pending purchase on this campaign: whose is it, and is it still alive? Only a CardCom session can be asked.
-//   resume       it is the buyer's own, young and unpaid: the SAME session is handed back (a reload, a second tab, a double
-//                click). Nothing new is written and CardCom is not asked to open another page.
-type Pending = { next: 'proceed' | 'already_paid' | 'in_progress' | 'review' } | { next: 'resume'; lowProfileId: string };
+// A pending purchase on this campaign: what became of it? Only a CardCom session can be asked.
+// CardCom's Open Fields guide: "each time you submit a payment form, create a NEW LowProfile". A session is therefore never handed
+// to a second opening of the form (a reload, another tab or device): the pending one is settled first, then
+//   paid         → already_paid (the buyer paid, e.g. in the other tab; nothing new is opened);
+//   not paid     → closed as failed, marked as REPLACED (no staff alert: nothing was declined), and the caller opens a new session;
+//   unreadable   → in_progress (never overwritten on a guess).
+// A payment that still lands on the replaced session (another tab was open) is the case settleCardcomSession already raises an alert
+// for, because its row is closed as failed.
+type Pending = { next: 'proceed' | 'already_paid' | 'in_progress' | 'review' };
 async function resolvePending(admin: AdminClient, campaignId: string): Promise<Pending> {
   const { data: pending, error } = await admin
     .from('payment_operations')
-    .select('id, recorded_at, meta')
+    .select('id, meta')
     .eq('campaign_id', campaignId)
     .eq('kind', 'package_purchase')
     .eq('outcome', 'pending')
@@ -99,13 +104,11 @@ async function resolvePending(admin: AdminClient, campaignId: string): Promise<P
   const { data: session } = await admin.from('cardcom_payment_sessions').select('low_profile_id').eq('operation_id', pending.id).maybeSingle();
   if (!session) return { next: 'in_progress' };
 
-  const ageMinutes = (Date.now() - Date.parse(pending.recorded_at)) / 60_000;
-  const settled = await settleCardcomSession(session.low_profile_id, { finalizeUnpaid: ageMinutes > CARDCOM_ABANDON_AFTER_MINUTES });
-  if (settled.status === 'unpaid') return { next: 'resume', lowProfileId: session.low_profile_id }; // young and unpaid: still the buyer's
+  const settled = await settleCardcomSession(session.low_profile_id, { finalizeUnpaid: true, replacedByNewSession: true });
   if (settled.status !== 'settled') return { next: 'in_progress' }; // unreadable, or not found: never overwrite on a guess
   if (settled.outcome === 'succeeded') return { next: 'already_paid' };
   if (settled.outcome === 'review') return { next: 'review' };
-  return { next: 'proceed' }; // failed: the buyer may try again
+  return { next: 'proceed' }; // failed (replaced): the buyer gets a new session
 }
 
 export async function startCardcomPurchase(input: CardcomStartInput): Promise<CardcomStartOutcome> {
@@ -137,7 +140,6 @@ export async function startCardcomPurchase(input: CardcomStartInput): Promise<Ca
         return { status: 'review' };
       case 'pending': {
         const pending = await resolvePending(admin, campaignId);
-        if (pending.next === 'resume') return { status: 'ready', lowProfileId: pending.lowProfileId };
         if (pending.next !== 'proceed') return { status: pending.next };
         break;
       }

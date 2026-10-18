@@ -2,10 +2,10 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 
-// Is the purchase waiting on this campaign a CardCom form the buyer can pick up again? The payment page asks, because a
-// pending payment shows the form again (the server hands back the SAME session) only for CardCom: a SUMIT charge that is
-// pending may already have charged the card, so it stays "in progress". Reads only; false on any error — the safe answer,
-// "in progress", is what the page shows then.
+// Is the purchase waiting on this campaign a CardCom form the buyer can open again? The payment page asks, because a pending
+// payment shows the form again only for CardCom (opening it settles the old session and, when it was not paid, replaces it with a
+// NEW one): a SUMIT charge that is pending may already have charged the card, so it stays "in progress". Reads only; false on any
+// error — the safe answer, "in progress", is what the page shows then.
 export async function isCardcomPurchasePending(campaignId: string): Promise<boolean> {
   try {
     const { data, error } = await createAdminClient()

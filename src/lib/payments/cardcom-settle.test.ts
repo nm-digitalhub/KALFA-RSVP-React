@@ -300,6 +300,29 @@ describe('settleCardcomSession: a payment that did not happen', () => {
     expect(String(ledger().note)).not.toContain('step');
   });
 
+  // The caller opening a NEW session (CardCom: a new LowProfile for each submission of the form) replaces the old one: it is closed as
+  // failed with a note that says so, and no "declined by the card company" alert goes out — nothing was declined.
+  it('a session replaced by a new one is closed as failed with a note that says it was replaced, and no decline alert goes out', async () => {
+    answer(DECLINED);
+    await expect(settleCardcomSession(LP, { replacedByNewSession: true })).resolves.toEqual({ status: 'settled', outcome: 'failed', alreadyDone: false });
+    expect(ledger()).toMatchObject({ outcome: 'failed', provider_status: '5033' });
+    expect(String(ledger().note)).toContain('replaced');
+    expect(String(ledger().note)).toContain('nothing was charged');
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('a payment that CardCom confirms is paid even when the caller wanted the session replaced', async () => {
+    answer(PAID);
+    await expect(settleCardcomSession(LP, { replacedByNewSession: true })).resolves.toMatchObject({ status: 'settled', outcome: 'succeeded' });
+    expect(String(ledger().note ?? '')).not.toContain('replaced');
+  });
+
+  it('an ordinary decline still raises its alert', async () => {
+    answer(DECLINED);
+    await settleCardcomSession(LP);
+    expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ title: expect.stringContaining('נדחתה') }));
+  });
+
   it('an empty report leaves the plain note', async () => {
     answer(DECLINED);
     await settleCardcomSession(LP, { browserReport: {} });

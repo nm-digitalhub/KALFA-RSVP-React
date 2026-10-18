@@ -155,23 +155,22 @@ describe('startCardcomPurchase: what the ledger already says', () => {
       await expect(startCardcomPurchase(input())).resolves.toEqual({ status: 'already_paid' });
     });
 
-    it('that is not paid YET and young is RESUMED: the same session id comes back, and nothing new is written or opened', async () => {
-      pending(5);
-      vi.mocked(settleCardcomSession).mockResolvedValue({ status: 'unpaid' });
-      await expect(startCardcomPurchase(input())).resolves.toEqual({ status: 'ready', lowProfileId: 'lp-old' });
-      expect(settleCardcomSession).toHaveBeenCalledWith('lp-old', { finalizeUnpaid: false });
-      expect(lowProfileCreate).not.toHaveBeenCalled();
-      expect(ops()).toHaveLength(1);
-    });
-
-    it('that is old and unpaid is closed as failed, and a fresh session opens', async () => {
-      pending(90);
+    it.each([[5], [90]])('that is not paid, however young or old (%i minutes), is REPLACED: closed as failed, and a NEW session opens — the old id is never handed back', async (age) => {
+      pending(age);
       vi.mocked(settleCardcomSession).mockImplementation(async () => {
         ops()[0].outcome = 'failed';
         return { status: 'settled', outcome: 'failed', alreadyDone: false };
       });
       await expect(startCardcomPurchase(input())).resolves.toMatchObject({ status: 'ready', lowProfileId: 'lp-new' });
-      expect(settleCardcomSession).toHaveBeenCalledWith('lp-old', { finalizeUnpaid: true });
+      expect(settleCardcomSession).toHaveBeenCalledWith('lp-old', { finalizeUnpaid: true, replacedByNewSession: true });
+      expect(ops().map((o) => o.outcome)).toEqual(['failed', 'pending']);
+    });
+
+    it('that is "in review" answers review and opens nothing', async () => {
+      pending(5);
+      vi.mocked(settleCardcomSession).mockResolvedValue({ status: 'settled', outcome: 'review', alreadyDone: false });
+      await expect(startCardcomPurchase(input())).resolves.toEqual({ status: 'review' });
+      expect(lowProfileCreate).not.toHaveBeenCalled();
     });
 
     it('whose answer cannot be had is "in progress": it is never overwritten on a guess', async () => {
@@ -282,13 +281,20 @@ describe('startCardcomPurchase: opening the session', () => {
     expect(ops()).toMatchObject([{ outcome: 'failed', provider: 'cardcom', provider_terminal: 1001 }]);
   });
 
-  it('a second click (or a reload) while the first session is still open gets the SAME session back, never a second row', async () => {
+  // CardCom's guide: a NEW LowProfile for each submission of the form. A reload (or another tab) therefore never gets the old session
+  // back: the old one is settled first and, when CardCom says it was not paid, replaced.
+  it('a second opening (a reload, another tab) while the first session is still open gets a NEW session, and the first row is closed as replaced', async () => {
     await startCardcomPurchase(input());
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'pending' } as never);
-    vi.mocked(settleCardcomSession).mockResolvedValue({ status: 'unpaid' });
-    await expect(startCardcomPurchase(input())).resolves.toEqual({ status: 'ready', lowProfileId: 'lp-new' });
-    expect(ops()).toHaveLength(1);
-    expect(lowProfileCreate).toHaveBeenCalledTimes(1);
+    vi.mocked(settleCardcomSession).mockImplementation(async () => {
+      ops()[0].outcome = 'failed';
+      return { status: 'settled', outcome: 'failed', alreadyDone: false };
+    });
+    vi.mocked(lowProfileCreate).mockResolvedValueOnce({ ResponseCode: 0, Description: 'ok', LowProfileId: 'lp-second' } as never);
+    await expect(startCardcomPurchase(input())).resolves.toEqual({ status: 'ready', lowProfileId: 'lp-second' });
+    expect(settleCardcomSession).toHaveBeenCalledWith('lp-new', { finalizeUnpaid: true, replacedByNewSession: true });
+    expect(ops().map((o) => o.outcome)).toEqual(['failed', 'pending']);
+    expect(lowProfileCreate).toHaveBeenCalledTimes(2);
   });
 
   it('CardCom refusing to open the session closes the row as failed, tells an admin, and says "error" to the buyer', async () => {

@@ -129,6 +129,12 @@ export type SettleOptions = {
    * the browser's word — it is never read to decide anything, and it is lost when another caller closes the row first.
    */
   browserReport?: BrowserPaymentReport;
+  /**
+   * The caller is opening a NEW payment session and wants the old one gone (CardCom: a new LowProfile for each submission of the form).
+   * Only meaningful with finalizeUnpaid: a session CardCom says is not paid is closed as failed with a note that says it was REPLACED,
+   * and no "declined by the card company" alert goes out — nothing was declined. A session that WAS paid is settled as paid, as ever.
+   */
+  replacedByNewSession?: boolean;
 };
 
 export type BrowserPaymentReport = {
@@ -140,6 +146,7 @@ export type BrowserPaymentReport = {
 };
 
 const DECLINED_NOTE = 'declined or not completed at CardCom; nothing was charged';
+const REPLACED_NOTE = 'not paid at CardCom; the buyer opened a new payment form, so this session was replaced; nothing was charged';
 
 // The failed row's note, with what the browser reported appended when there is something to say. Own words and numbers only.
 function declinedNote(report: BrowserPaymentReport | undefined): string {
@@ -318,8 +325,8 @@ export async function settleCardcomSession(lowProfileId: string, options: Settle
       // CardCom's own text: for an admin screen and the ledger, never for the buyer.
       providerStatusDescription: result.Description ?? null,
       ...echoColumn,
-      note: declinedNote(options.browserReport),
-    });
+      note: options.replacedByNewSession ? REPLACED_NOTE : declinedNote(options.browserReport),
+    }, { quiet: options.replacedByNewSession === true });
   }
 
   // The link is CardCom's, from TranzactionInfo (DocumentInfo's came back null on the first real run). Kept only when it is
@@ -447,6 +454,8 @@ type CloseOptions = {
   // The alert's title when the row goes to review for a reason the generic sentence does not describe, and the facts to put in it.
   reviewTitle?: string;
   extraFields?: Record<string, string | number>;
+  // A session replaced by a new one is closed as failed without the "declined" alert (nothing was declined).
+  quiet?: boolean;
 };
 
 // Moves the row out of pending, once.
@@ -485,7 +494,7 @@ async function close(admin: AdminClient, operation: OperationRow, details: Close
       title: labelTestMoney(reviewTitle ?? 'תשלום חבילה ב-CardCom בבדיקה ידנית — התשובה אינה חד-משמעית', operation.is_test),
       fields: { campaign_id: operation.campaign_id, event_id: operation.event_id, operation_id: operation.id, ...extraFields },
     });
-  } else if (details.outcome === 'failed') {
+  } else if (details.outcome === 'failed' && !options.quiet) {
     // A decline on the test terminal is part of a test run, not a customer's trouble: information, not a warning.
     void sendSlackAlert({
       level: operation.is_test ? 'info' : 'warn', category: CATEGORY, source: SOURCE,

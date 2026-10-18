@@ -177,3 +177,19 @@ While the bank checks the cardholder (3D Secure), the payment form SHALL say so,
 #### Scenario: The report is only numbers and fixed labels
 - **WHEN** a report holds anything other than a number and a fixed label, or arrives without the form having submitted
 - **THEN** the server ignores it and the payment is settled exactly as it would be without it
+
+### Requirement: Every opening of the payment form gets a new session
+
+CardCom's guide says to create a new LowProfile each time a payment form is submitted. Opening the payment form SHALL therefore never hand back an earlier session: an earlier unpaid session SHALL be settled first and, when CardCom says it was not paid, closed as replaced, and a new session SHALL open. A session CardCom says was paid SHALL be reported as paid and nothing new SHALL open.
+
+#### Scenario: Reload or another tab
+- **WHEN** the buyer opens the payment form while an earlier session is still unpaid
+- **THEN** the earlier session is closed as replaced, with a note that says so and no "declined" alert, and the form opens with a new session
+
+#### Scenario: Paid in the other tab
+- **WHEN** the earlier session turns out to have been paid
+- **THEN** the page reports the payment and no new session opens
+
+#### Scenario: The earlier session cannot be read
+- **WHEN** CardCom cannot be asked about the earlier session
+- **THEN** it is left as it is and the page says the payment is in progress; nothing is overwritten on a guess

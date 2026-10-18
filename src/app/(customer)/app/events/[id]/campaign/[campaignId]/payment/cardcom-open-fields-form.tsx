@@ -41,8 +41,10 @@ import { PURCHASE_ERROR_MESSAGES, type PurchaseErrorCode } from '@/lib/payments/
 //   3. CardCom's frame answers HandleSubmit / HandleEror — only a reason to ask the server, via POST …/purchase/settle;
 //   4. the server's state (paid / declined / review / in progress) decides the screen.
 // The payment page is reached right after the terms are approved, so the session opens by itself and the buyer sees the card
-// fields at once. Opening writes a pending ledger row; coming back to the page (a reload, a second tab) hands back the SAME
-// young unpaid session instead of opening a new one (resolvePending in cardcom-purchase.ts). The button stays for a retry.
+// fields at once. Opening writes a pending ledger row. Every opening of the form gets a NEW session, as CardCom's guide asks ("each
+// time you submit a payment form, create a new LowProfile"): coming back to the page (a reload, a second tab) settles the old one
+// first — paid → the page shows it; not paid → it is closed as replaced and a new one opens (resolvePending in cardcom-purchase.ts).
+// The button stays for a retry.
 
 type Phase = 'opening' | 'ready' | 'paying' | 'declined' | 'failed' | 'waiting';
 

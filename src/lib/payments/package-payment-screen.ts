@@ -28,8 +28,9 @@ export interface PackagePaymentScreenInput {
   eventActive: boolean;
   // payments + the package model + the provider's public configuration are all on.
   gatesOpen: boolean;
-  // A pending payment the BUYER can pick up again: a CardCom Open Fields session still open in a form (a reload, a second
-  // tab). The form is shown and asks the server for the same session. A SUMIT charge in flight is never resumable — its
+  // A pending payment the BUYER can open again: a CardCom Open Fields session still open in a form (a reload, a second
+  // tab). The form is shown, and opening it settles the old session and replaces it with a new one (CardCom: a new LowProfile for
+  // each submission of the form). A SUMIT charge in flight is never resumable — its
   // card may already have been charged — so it stays "in progress". Defaults to false.
   pendingIsResumable?: boolean;
   // The form would take the payment on CardCom's no-money test terminal (only someone who may configure the integration is ever
