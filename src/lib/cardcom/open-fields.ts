@@ -308,8 +308,10 @@ export function postToFrame(frame: Window, message: InitMessage | DoTransactionM
 
 // The three steps of 3D Secure that CardCom's frames announce to our page (read in the master script `OpenFields.js?v=5.0.9784.18617`
 // and in `3DS.js`, 18.10.2026): the device check (`StartDeviceFingerPrint`, the page waits up to ~11 s for the issuer), the
-// cardholder's own challenge (`CardHolderChallenge`, the bank's one-time-code page) and its closing. Only the NAME of the step is
-// kept: the messages carry the issuer's address and transaction ids, which nothing here reads.
+// cardholder's own challenge (`CardHolderChallenge`, the bank's one-time-code page) and its closing (`CloseCardHolderChallenge`: `3DS.js`
+// acts on it, but none of CardCom's scripts posts it — master, Google Pay and `3DS.js` read again on 18.10.2026, v5.0.9787.22463 — so
+// the page never waits for it). Only the NAME of the step is kept: the messages carry the issuer's address and transaction ids, which
+// nothing here reads.
 export type ThreeDsStep = 'fingerprint' | 'challenge' | 'closed';
 
 // Which of CardCom's own 3D Secure sentences came with an error. Code 333 is posted from several branches of the master frame and the

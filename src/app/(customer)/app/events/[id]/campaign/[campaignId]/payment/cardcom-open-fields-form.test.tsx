@@ -684,6 +684,7 @@ describe('CardcomOpenFieldsForm — Google Pay', () => {
 // also tells the buyer what the wait is, and does not call a 3D Secure timeout or refusal "the card was declined".
 describe('CardcomOpenFieldsForm — 3D Secure', () => {
   const script = () => document.querySelectorAll('script[data-cardcom-3ds]');
+  const BANK_CHECK = 'מאמתים את התשלום מול הבנק. אל תסגרו את העמוד ואל תלחצו שוב.';
 
   it('puts CardCom\'s 3D Secure script on the page as soon as the form is shown — before the session opens and before any frame exists', () => {
     render(<CardcomOpenFieldsForm {...props} />);
@@ -708,26 +709,29 @@ describe('CardcomOpenFieldsForm — 3D Secure', () => {
     expect(script()).toHaveLength(1);
   });
 
-  it('tells the buyer what the wait is while the bank checks the device and while it asks for more, and stops when it is over', async () => {
+  // One sentence for every step (owner, 18.10.2026): CardCom never says when the bank's own window has closed, so the old "complete it in
+  // the window that opened" stayed on screen after the buyer had entered the code.
+  it('tells the buyer to wait while the bank checks — one sentence for every step, never "complete it in the window" — and stops when it is over', async () => {
     render(<CardcomOpenFieldsForm {...props} />);
     await openSession();
-    expect(screen.queryByText(/מאמתים את הכרטיס מול הבנק/)).toBeNull();
+    expect(screen.queryByText(BANK_CHECK)).toBeNull();
     cardcomMessage({ action: 'StartDeviceFingerPrint', params: { _3ds_trxid: 'abc', _3ds_method: 'https://acs.example/m' } });
-    expect((await screen.findByText(/מאמתים את הכרטיס מול הבנק/)).getAttribute('role')).toBe('status');
+    expect((await screen.findByText(BANK_CHECK)).getAttribute('role')).toBe('status');
     cardcomMessage({ action: 'CardHolderChallenge', params: 'https://acs.example/c' });
-    expect(await screen.findByText(/הבנק מבקש אימות נוסף/)).toBeTruthy();
-    expect(screen.queryByText(/מאמתים את הכרטיס מול הבנק/)).toBeNull();
+    expect(screen.getByText(BANK_CHECK)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/בחלון שנפתח|הבנק מבקש אימות/);
     cardcomMessage({ action: 'CloseCardHolderChallenge' });
-    await waitFor(() => expect(screen.queryByText(/הבנק מבקש אימות נוסף/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(BANK_CHECK)).toBeNull());
     expect(document.body.textContent).not.toMatch(/acs\.example|abc/);
   });
 
-  it('shows no 3D Secure status for a step announced from another origin', async () => {
+  it('shows no 3D Secure status, and locks nothing, for a step announced from another origin', async () => {
     render(<CardcomOpenFieldsForm {...props} />);
     await openSession();
     cardcomMessage({ action: 'StartDeviceFingerPrint' }, 'https://evil.example');
     cardcomMessage('ThreeDSecureDeviceFingerprintResult_{"ResponseCode":1}');
-    expect(screen.queryByText(/מאמתים את הכרטיס מול הבנק/)).toBeNull();
+    expect(screen.queryByText(BANK_CHECK)).toBeNull();
+    expect((screen.getByRole('button', { name: /^שלם/ }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('clears the status when CardCom reports a result or an error', async () => {
@@ -735,9 +739,56 @@ describe('CardcomOpenFieldsForm — 3D Secure', () => {
     render(<CardcomOpenFieldsForm {...props} pollDelayMs={1} />);
     await openSession();
     cardcomMessage({ action: 'StartDeviceFingerPrint' });
-    await screen.findByText(/מאמתים את הכרטיס מול הבנק/);
+    await screen.findByText(BANK_CHECK);
     cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true } });
-    await waitFor(() => expect(screen.queryByText(/מאמתים את הכרטיס מול הבנק/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(BANK_CHECK)).toBeNull());
+  });
+
+  // The defect of 18.10.2026: a wallet payment's 3D Secure left the form "ready", so Google Pay and "pay" still worked while the bank was
+  // checking, and a second tap started another payment over the one in CardCom's single payment state — the bank asked again.
+  it('locks the whole form from the first 3D Secure step of a Google Pay payment — the wallet, "pay" and every field — until the server settles a result', async () => {
+    render(<CardcomOpenFieldsForm {...props} googlePayTerminal={TERMINAL} />);
+    await openSession();
+    const post = masterWindow();
+    await masterLoaded(post);
+    await waitForDetails(post, 1);
+    await waitFor(() => expect(walletUnusable()).toBe(false));
+    solveCaptcha();
+    fillDetails();
+    fill(/חודש/, '12');
+    fill(/שנה/, '39');
+    // the wallet's payment reached the bank: CardCom's master frame announces the device check, then the cardholder's own check
+    cardcomMessage({ action: 'StartDeviceFingerPrint' });
+    expect(walletUnusable()).toBe(true);
+    const busy = screen.getByRole('button', { name: /מעבד/ }) as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
+    expect((screen.getByLabelText(/שם בעל הכרטיס/) as HTMLInputElement).disabled).toBe(true);
+    cardcomMessage({ action: 'CardHolderChallenge', params: 'https://acs.example/c' });
+    // CardCom never announces that the bank's window closed; even if something did, the payment is still under way
+    cardcomMessage({ action: 'CloseCardHolderChallenge' });
+    expect(walletUnusable()).toBe(true);
+    fireEvent.submit(busy.closest('form')!);
+    expect(post.mock.calls.some((c) => (c[0] as { action?: string }).action === 'doTransaction')).toBe(false);
+    expect(callsTo(SETTLE_URL)).toHaveLength(0);
+    // the result is settled exactly as before
+    cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true } });
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1'));
+    expect(JSON.parse(callsTo(SETTLE_URL)[0][1].body as string)).toEqual({ submitted: true, method: 'google_pay' });
+  });
+
+  it('keeps a card payment that reached 3D Secure in flight, as it was', async () => {
+    render(<CardcomOpenFieldsForm {...props} />);
+    await openSession();
+    const post = masterWindow();
+    solveCaptcha();
+    fillDetails();
+    fill(/חודש/, '12');
+    fill(/שנה/, '39');
+    fireEvent.click(screen.getByRole('button', { name: /^שלם/ }));
+    cardcomMessage({ action: 'CardHolderChallenge', params: 'https://acs.example/c' });
+    expect(screen.getByText(BANK_CHECK)).toBeTruthy();
+    expect((screen.getByRole('button', { name: /מעבד/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(post.mock.calls.filter((c) => (c[0] as { action?: string }).action === 'doTransaction')).toHaveLength(1);
   });
 
   it.each([

@@ -23,7 +23,6 @@ import {
   validateCardholder,
   type CardholderField,
   type ThreeDsReason,
-  type ThreeDsStep,
   type WalletDetailField,
 } from '@/lib/cardcom/open-fields';
 import { formatAmount } from '@/lib/format';
@@ -74,6 +73,11 @@ const FIELD_MESSAGE: Record<CardholderField, string> = {
 };
 
 const CAPTCHA_MESSAGE = 'יש לסמן «אני לא רובוט» לפני התשלום.';
+
+// While the bank checks the payment (3D Secure), whichever step it is on. It never asks the buyer to complete anything: the bank's own
+// window does that, and CardCom never says when that window has closed (none of its scripts posts `CloseCardHolderChallenge`), so a
+// sentence asking for the verification stayed on screen after the buyer had done it (owner, 18.10.2026).
+const BANK_CHECK_MESSAGE = 'מאמתים את התשלום מול הבנק. אל תסגרו את העמוד ואל תלחצו שוב.';
 
 // Google Pay (add-google-pay-cardcom, D4). CardCom needs the buyer's name, email and phone before the buyer taps the wallet, because
 // Google Pay does not supply them and 3D Secure requires them. The page keeps CardCom's copy current as the buyer edits (after a short
@@ -154,10 +158,10 @@ export function CardcomOpenFieldsForm({
   const masterLoaded = lowProfileId !== null && masterLoadedFor === lowProfileId;
   const walletSentKey = walletSent !== null && walletSent.session === lowProfileId ? walletSent.key : null;
 
-  // Which 3D Secure step CardCom's frames announced (the bank checking the device, or asking the cardholder), so the buyer is told
-  // what the wait is. The last error code CardCom reported (a number, never its text), so a 3D Secure failure is not told to the
-  // buyer as "the card was declined". Both are the browser's word and only shape the sentence: the server still decides the payment.
-  const [threeDs, setThreeDs] = useState<ThreeDsStep | null>(null);
+  // Whether CardCom's frames announced that the bank is checking this payment (3D Secure: the device check or the cardholder's own),
+  // so the buyer is told to wait. The last error code CardCom reported (a number, never its text), so a 3D Secure failure is not told
+  // to the buyer as "the card was declined". Both are the browser's word and only shape the screen: the server still decides the payment.
+  const [bankChecking, setBankChecking] = useState(false);
   const lastErrorCode = useRef<number | null>(null);
   // What the frames said about 3D Secure, kept to be told to the server with the payment's settlement, where it lands in the failed
   // row's note as the BROWSER's report (never a decision): the last error's code and which of CardCom's fixed sentences came with it,
@@ -186,7 +190,7 @@ export function CardcomOpenFieldsForm({
   const fail = useCallback((code: PurchaseErrorCode, next: Phase = 'failed') => {
     setMessage(PURCHASE_ERROR_MESSAGES[code]);
     setPhase(next);
-    setThreeDs(null);
+    setBankChecking(false);
   }, []);
 
   // The buyer returned to a payment that is already recorded. One call, no polling: the ledger decides what the page shows, so a
@@ -208,7 +212,7 @@ export function CardcomOpenFieldsForm({
   const openSession = useCallback(async () => {
     setMessage(null);
     setCaptchaSolved(false);
-    setThreeDs(null);
+    setBankChecking(false);
     lastErrorCode.current = null;
     lastErrorReason.current = null;
     lastThreeDsStep.current = null;
@@ -323,15 +327,23 @@ export function CardcomOpenFieldsForm({
         // Names of steps only: nothing the bank or CardCom sent along with them is read. `console.info` is for whoever has the
         // browser's console open while a payment is not going through; it carries no card, person or address.
         console.info('[payment] 3D Secure step:', frameMessage.step);
-        if (frameMessage.step !== 'closed') lastThreeDsStep.current = frameMessage.step;
-        setThreeDs(frameMessage.step === 'closed' ? null : frameMessage.step);
+        if (frameMessage.step !== 'closed') {
+          lastThreeDsStep.current = frameMessage.step;
+          // The bank is checking a payment that is already under way. A card is only submitted from here, which already moved the form
+          // to "paying", so a step that arrives while it still says "ready" is a wallet's: lock it now, as a submitted card does. While
+          // 3D Secure runs, CardCom's script keeps ONE payment state (the wallet's token, the 3D Secure transaction and its answer:
+          // `googlePay3DS` and `submitPayment` in its OpenFields.ts, read 18.10.2026), so a second tap on Google Pay, or on "pay", would
+          // start another payment over the one the bank is checking.
+          setPhase((current) => (current === 'ready' ? 'paying' : current));
+        }
+        setBankChecking(frameMessage.step !== 'closed');
       } else if (frameMessage?.kind === 'submit' || frameMessage?.kind === 'error') {
         if (frameMessage.kind === 'error') {
           lastErrorCode.current = frameMessage.code;
           lastErrorReason.current = frameMessage.reason;
           console.warn('[payment] CardCom reported an error, code:', frameMessage.code, 'reason:', frameMessage.reason);
         }
-        setThreeDs(null);
+        setBankChecking(false);
         // A result that arrives while the form still says "ready" is a wallet's (a card is only ever submitted from here, which
         // already moved to "paying"): show the same in-flight state, then ask the server like every other result.
         setPhase((current) => (current === 'ready' ? 'paying' : current));
@@ -580,11 +592,9 @@ export function CardcomOpenFieldsForm({
             }}
           />
 
-          {threeDs === null ? null : (
+          {!bankChecking ? null : (
             <p role="status" className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-              {threeDs === 'fingerprint'
-                ? 'מאמתים את הכרטיס מול הבנק (3D Secure). זה יכול לקחת עד כ-15 שניות. אל תסגרו את העמוד.'
-                : 'הבנק מבקש אימות נוסף. יש להשלים אותו בחלון שנפתח.'}
+              {BANK_CHECK_MESSAGE}
             </p>
           )}
 
