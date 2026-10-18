@@ -25,6 +25,11 @@ See proposal.md (Why). The facts this design rests on, each read in the code on 
   - deterministic job ids.
 
   The project already uses them through retry constants, `isFinalDelivery()`, `deterministicJobId()` and `guardedWorker` in `worker/main.ts`, and shows every job's state on `/admin/jobs` (the pg-boss dashboard). Job payloads carry ids only.
+- **Two approvals of one request at once are already safe, and this change keeps it so.** The refund's pending ledger row is written before the clearing company is called. Two unique indexes stop a second one:
+  - `payment_operations_cancellation_uq`: one live money operation per cancellation request;
+  - `payment_operations_one_pending_uq`: one pending operation per campaign and kind.
+
+  A concurrent approval fails at that insert (23505 → `alreadyInProgress`), before anything is sent. The final request update stays guarded by `status = 'pending'`. A message's dedupe key protects only the message, not the refund.
 - **Admin customer page:** `/admin/users/[id]` is gated by `manage_staff`. Another customer's details load only after a break-glass reason and are audited (`getUserDetail` → `recordStaffAccess`). The cancellation page is gated by `manage_billing`.
 
 ## Goals / Non-Goals
@@ -52,7 +57,7 @@ See proposal.md (Why). The facts this design rests on, each read in the code on 
 - **what:** `purpose` (here `cancellation.resolved`), `channel`, `destination` (the address or phone), `subject`, `body_text`, and `body_html` for e-mail;
 - **state:** `status`, `skip_reason`, `attempts`, `last_attempt_at`, `sent_at`, `provider`, `provider_message_id`, `last_error_kind`, `last_error_code`;
 - **delivery:** `delivery_status` (the provider's own event name, free text) and `delivery_at`;
-- **identity:** `dedupe_key` (unique), plus `created_at` and `updated_at`.
+- **identity:** `dedupe_key` (unique), `job_id` (the pg-boss job currently responsible for the row: the first one, or the latest resend's), plus `created_at` and `updated_at`.
 
 The rules on its columns:
 - `purpose`, `subject_type` and `delivery_status` are free text, so a new flow or a new provider event needs no migration.
@@ -119,7 +124,13 @@ The rules on its columns:
 **D6. The queue, configured, not hand-built.**
 - `QUEUES.customerMessageSend` carries the payload `{ messageId }` and the job id `deterministicJobId('customer-message:' + messageId)`, so one row has one job.
 - Its retry constant is `CUSTOMER_MESSAGE_RETRY = { retryLimit: 6, retryDelay: 300, retryBackoff: true, retryDelayMax: 21600 }`: pg-boss's exponential backoff from 5 minutes, capped at 6 hours, about 5 hours in all. It has `expireInSeconds: 120` and no `deadLetter`, for the reason `queues.ts` gives (`QUEUES.dead`'s consumer expects an outreach step).
-- The sweep `QUEUES.customerMessageSweep` (every 5 minutes) only re-enqueues a row still `queued` with `attempts = 0` after 2 minutes: one whose enqueue in D5 failed. It sends nothing itself, and the deterministic job id makes a second enqueue a no-op.
+- The sweep `QUEUES.customerMessageSweep` (every 5 minutes) sends nothing itself. It does two things:
+  - **Never enqueued:** it re-enqueues a row still `queued` with `attempts = 0` after 2 minutes, one whose enqueue in D5 failed. The deterministic job id makes a second enqueue a no-op.
+  - **Left in flight:** for a row in `sending` or `retry_wait` it asks pg-boss for the row's `job_id` (`getJobById`). When that job has ended (completed, failed, cancelled, or no longer found) while the row still says in flight, the last delivery died before our handler could record it:
+    - `sending` becomes `unknown`;
+    - `retry_wait` becomes `failed`, with an alert.
+
+    A job still created, retrying or active is left alone.
 - Both run in `worker/main.ts` under `guardedWorker`. Their jobs show on `/admin/jobs` like every other queue.
 
 **D7. Delivery reports, joined in the existing route's processing.**
@@ -132,7 +143,8 @@ The rules on its columns:
 - RLS is on, with no policy and no grant to `anon` or `authenticated`. Every read and write goes through server code with the admin client, after a permission check. The table holds addresses, phones and texts, including a receipt link with an access code.
 - **The customer page:** the "תקשורת" list loads in the same gated path as the customer's details, after the reason, under the same `recordStaffAccess` audit.
 - **The cancellation page** (`manage_billing`): it lists the request's messages and offers "שלח שוב" on `failed` and `unknown` rows.
-  - A resend is a server action under `manage_billing`. It moves the row back to `queued` (the same text) and enqueues a fresh job with a new deterministic id per resend. It writes `logActivity` with who asked.
+  - A resend is a server action under `manage_billing`. It moves the row back to `queued` (the same text), enqueues a fresh job with a new deterministic id per resend, stores that id in `job_id`, and writes `logActivity` with who asked.
+  - **An `unknown` row needs an explicit confirmation.** Before resending it, the page shows that the customer may already have received the message and would get it twice, and staff confirm in the page. The server action refuses an `unknown` row unless the request carries that confirmation. The check is the server's, not only the screen's. A `failed` row was never accepted by the provider and needs no confirmation.
   - Resend lives on the flow's page and under the flow's permission: the permission belongs to the flow that produced the message.
 
 **D9. What the screen says.**
@@ -149,7 +161,8 @@ The rules on its columns:
 
 - **Approval no longer fails on an e-mail failure.** → The failure is visible on the request and on the customer page, staff are alerted when retries run out, and a missing e-mail configuration still blocks the approval up front (D5).
 - **A message is sent a little later than today** (the job runs within seconds). → Accepted. Nothing in the flow waits on the send.
-- **A double send** after a crash mid-send. → An e-mail over Resend carries the row id as its idempotency key; an SMS and an SMTP e-mail go to `unknown` and wait for staff (D2).
+- **A double send** after a crash mid-send. → An e-mail over Resend carries the row id as its idempotency key; an SMS and an SMTP e-mail go to `unknown` and wait for staff (D2). A staff resend of an `unknown` row needs an explicit confirmation of that risk (D8).
+- **A row stuck in flight when pg-boss's last delivery dies.** → The sweep reads the job's state and settles the row (D6).
 - **No delivery status while `EMAIL_PROVIDER` is `smtp`.** → The screen shows "נמסר לספק"; delivery appears once Resend is the transport. Which transport is live is read from the environment, which this plan did not inspect.
 - **Personal data in a new table.** → It is server-only, permission-gated, audited on the customer page, deleted with the account, and kept out of jobs and logs.
 - **ExtrA's refusal codes are not documented as permanent or temporary.** → Labelled as our rule (D3). Staff can resend a failed row.

@@ -74,6 +74,22 @@ When a send may have reached the provider but its result was not recorded, the m
 - **WHEN** a message was being sent and its result was never recorded
 - **THEN** it is marked unknown, and no automatic resend happens
 
+### Requirement: A message left in flight is settled
+
+When the background job responsible for a message has ended while the message is still recorded as being sent or waiting for a retry, the system SHALL settle it: a message being sent SHALL become unknown, and a message waiting for a retry SHALL become failed, with a staff alert.
+
+#### Scenario: The last attempt died mid-send
+- **WHEN** a message is recorded as being sent and its job has ended without recording a result
+- **THEN** the message becomes unknown, and it is not sent again automatically
+
+#### Scenario: No retry is left
+- **WHEN** a message is waiting for a retry and its job has ended
+- **THEN** the message becomes failed and staff are alerted
+
+#### Scenario: A live job
+- **WHEN** a message is waiting for a retry and its job is still scheduled
+- **THEN** the message is left as it is
+
 ### Requirement: Retrying a message does not repeat the action behind it
 
 Sending or resending a message SHALL NOT repeat the business action it reports, such as a refund.
@@ -81,6 +97,10 @@ Sending or resending a message SHALL NOT repeat the business action it reports, 
 #### Scenario: Cancellation e-mail retried
 - **WHEN** the e-mail of an approved cancellation is retried
 - **THEN** only the e-mail is sent again; no refund or other cancellation step runs
+
+#### Scenario: Two approvals at once
+- **WHEN** two staff members approve the same cancellation request at the same moment
+- **THEN** one refund is made at most, the second approval is told the request is already being handled, and its messages are recorded once
 
 ### Requirement: Approving a cancellation still needs a way to tell the customer
 
@@ -131,8 +151,16 @@ A flow's own admin page SHALL show the messages of the item it displays. Staff w
 - **THEN** its e-mail and SMS are listed with their state
 
 #### Scenario: Resend an unknown SMS
-- **WHEN** staff resend a message marked unknown
-- **THEN** it is sent again once, and the resend and who asked for it are recorded
+- **WHEN** staff resend a message marked unknown, after confirming that the customer may already have received it
+- **THEN** it is sent again once, and the resend, the confirmation and who asked for it are recorded
+
+#### Scenario: Unknown resend without confirmation
+- **WHEN** a resend of a message marked unknown reaches the server without that confirmation
+- **THEN** it is refused and nothing is sent
+
+#### Scenario: Resend a failed message
+- **WHEN** staff resend a message marked failed
+- **THEN** it is sent again without a duplicate warning, since the provider never accepted it
 
 ### Requirement: Personal data stays on the server
 

@@ -20,14 +20,21 @@ Planning approved by the owner on 18.10.2026 ("כן" to the plan and to the comm
   - the send;
   - the outcome per D3: refused → `failed` and return; temporary or channel unavailable → `retry_wait` and throw; final delivery by `isFinalDelivery` → `failed` and an alert.
 
-  Plus `enqueueCustomerMessage` (deterministic job id, `CUSTOMER_MESSAGE_RETRY`), `requeueUnsentMessages` (the D6 sweep), and `resendMessage` (`failed`/`unknown` → `queued` + a fresh job). No scheduling of its own.
+  Plus:
+  - `enqueueCustomerMessage`: deterministic job id stored in `job_id`, `CUSTOMER_MESSAGE_RETRY`;
+  - `sweepCustomerMessages`: the D6 sweep, both parts. It re-enqueues the never-enqueued rows, and settles in-flight rows whose job has ended (by `getJobById`);
+  - `resendMessage`: `failed`/`unknown` → `queued` + a fresh job. It refuses `unknown` without an explicit confirmation flag (D8).
+
+  No scheduling of its own.
 
   Verify: unit tests with the fake table client and a fake job cover:
   - two concurrent deliveries send once;
   - a delivery finding `sending` resends an e-mail over Resend with the same key, and marks an SMS `unknown` without sending;
   - a refusal returns without throwing;
   - a temporary failure throws;
-  - a temporary failure on the final delivery marks `failed` and alerts.
+  - a temporary failure on the final delivery marks `failed` and alerts;
+  - the sweep turns `sending` with an ended job into `unknown`, and `retry_wait` with an ended job into `failed` with an alert, and leaves rows with a live job alone;
+  - `resendMessage` refuses `unknown` without confirmation and accepts `failed` without one.
 
   No address, phone or text appears in a log line, an alert or a job payload.
 - [ ] 3.2 Add `customerMessageSend`, `customerMessageSweep` and `CUSTOMER_MESSAGE_RETRY` (D6, with `expireInSeconds: 120`, no `deadLetter`) to `src/lib/queue/queues.ts`. Register both in `worker/main.ts` under `guardedWorker` with `includeMetadata` (for `isFinalDelivery`), and schedule the sweep every 5 minutes. Verify: the worker bundle check (`scripts/check-worker-bundle.mjs`) passes; the queue tests assert the payload carries only the id, and that the expiry is above the transport timeouts.
@@ -56,7 +63,7 @@ Planning approved by the owner on 18.10.2026 ("כן" to the plan and to the comm
 ## 5. The screens
 
 - [ ] 5.1 The admin customer page: a "תקשורת" section in `user-detail-view.tsx`, loaded in the same gated path as the details (after the reason, under the same `recordStaffAccess` audit), newest first. It shows the time, channel, purpose, state, delivery, attempts and last failure class and code; the text opens on demand. The labels per design D9, for every state of D2 and every event of D7; an unknown event shows raw. RTL, keyboard-accessible, with existing components. Verify: page tests render each state, each delivery event, an unknown event and a skipped reason; they show "נמסר לספק" for `sent` without a report, and fail without the reason gate. Plus a check in the browser in both themes.
-- [ ] 5.2 The cancellation page: the request's messages with their state, and "שלח שוב" on `failed`/`unknown` rows, a server action under `manage_billing` that calls `resendMessage` and writes `logActivity`. Verify: tests cover the list, the resend of each allowed state, the refusal for other states and without the permission, and the audit entry.
+- [ ] 5.2 The cancellation page: the request's messages with their state, and "שלח שוב" on `failed`/`unknown` rows, a server action under `manage_billing` that calls `resendMessage` and writes `logActivity`. An `unknown` row first shows an in-page confirmation that the customer may already have received it (existing dialog component, no browser `confirm`), and the action passes the confirmation to the server. Verify: tests cover the list, the resend of each allowed state, an `unknown` resend refused by the server without the confirmation, the refusal for other states and without the permission, and the audit entry recording the confirmation.
 
 ## 6. Integration
 
