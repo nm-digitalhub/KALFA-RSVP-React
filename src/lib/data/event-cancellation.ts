@@ -158,7 +158,8 @@ export type CancellationRequestForAdmin = {
   resolution: 'full_cancellation' | 'partial_charge' | 'declined' | null;
   resolutionAmount: number | null;
   captureOutcome: 'captured' | 'refunded' | 'manual_refund_required' | 'not_applicable' | null;
-  sumitDocumentUrl: string | null;
+  // The refund's credit document, whichever company issued it (its column still carries an old provider name).
+  refundDocumentUrl: string | null;
   resolutionNote: string | null;
   createdAt: string;
   // When staff resolved it. The resolve flow sends the customer's e-mail BEFORE it writes this, so a resolved request
@@ -201,7 +202,7 @@ function mapAdminRow(r: {
     resolution: r.resolution as CancellationRequestForAdmin['resolution'],
     resolutionAmount: r.resolution_amount,
     captureOutcome: r.capture_outcome as CancellationRequestForAdmin['captureOutcome'],
-    sumitDocumentUrl: r.sumit_document_url,
+    refundDocumentUrl: r.sumit_document_url,
     resolutionNote: r.resolution_note,
     createdAt: r.created_at,
     resolvedAt: r.resolved_at,
@@ -585,8 +586,8 @@ export async function resolveCancellationRequest(
   // Which money outcome this resolve has, decided before anything is sent.
   let captureOutcome: 'refunded' | 'not_applicable';
   let finalAmount = 0;
-  let sumitDocumentId: number | null = null;
-  let sumitDocumentUrl: string | null = null;
+  let refundDocumentId: number | null = null;
+  let refundDocumentUrl: string | null = null;
 
   if (resolution !== 'declined' && isPackage && packagePlan && packagePlan.refund > 0) {
     captureOutcome = 'refunded';
@@ -645,8 +646,8 @@ export async function resolveCancellationRequest(
     if (refund.status !== 'refunded') throw new CancellationResolveError(packageRefundMessage(refund), packageRefundRetry(refund));
     // What the ledger says went back is what is recorded — on a resumed request that is the earlier refund.
     finalAmount = refund.amount;
-    sumitDocumentId = refund.document?.id ?? null;
-    sumitDocumentUrl = refund.document?.url ?? null;
+    refundDocumentId = refund.document?.id ?? null;
+    refundDocumentUrl = refund.document?.url ?? null;
     // The customer is told only now, and of what really went back. If the e-mail fails the money is already back: the
     // request stays open, and approving it again resumes it (no second refund) and sends the e-mail.
     try {
@@ -673,8 +674,9 @@ export async function resolveCancellationRequest(
         fullName: ownerName,
         requestCode: reqRow.request_code,
         resolution,
+        // With a refund, its credit document's link, as the ledger recorded it.
         ...(refundFirst
-          ? { resolutionAmount, refundedAmount: finalAmount }
+          ? { resolutionAmount, refundedAmount: finalAmount, documentUrl: refundDocumentUrl }
           : { resolutionAmount: finalAmount || undefined }),
       });
       await smsSender.send({ to: ownerPhone, text: smsText });
@@ -709,8 +711,8 @@ export async function resolveCancellationRequest(
       resolution,
       resolution_amount: finalAmount || null,
       capture_outcome: captureOutcome,
-      sumit_document_id: sumitDocumentId,
-      sumit_document_url: sumitDocumentUrl,
+      sumit_document_id: refundDocumentId,
+      sumit_document_url: refundDocumentUrl,
       resolution_note: input.resolutionNote,
       resolved_at: now,
     })

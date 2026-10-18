@@ -528,10 +528,10 @@ export default async function AdminCancellationDetailPage({
                     ) : null}
                   </dl>
                 )}
-                {refundDocument?.number != null || refundDocument?.url || request.sumitDocumentUrl ? (
+                {refundDocument?.number != null || refundDocument?.url || request.refundDocumentUrl ? (
                   <DocumentCard
                     number={refundDocument?.number ?? null}
-                    url={refundDocument?.url ?? request.sumitDocumentUrl}
+                    url={refundDocument?.url ?? request.refundDocumentUrl}
                     amount={isPackage && refunded > 0 ? refunded : null}
                   />
                 ) : null}

@@ -56,7 +56,7 @@ const request = (over: Record<string, unknown> = {}) => ({
   resolution: null,
   resolutionAmount: null,
   captureOutcome: null,
-  sumitDocumentUrl: null,
+  refundDocumentUrl: null,
   resolutionNote: null,
   ...over,
 });
@@ -330,7 +330,7 @@ describe('a request that was already resolved', () => {
         resolution: 'full_cancellation',
         resolutionAmount: 120,
         captureOutcome: 'refunded',
-        sumitDocumentUrl: 'https://example.test/doc/1',
+        refundDocumentUrl: 'https://example.test/doc/1',
         resolutionNote: 'הוחזר במלואו',
         resolvedAt: '2026-10-05 14:04',
       }) as never,

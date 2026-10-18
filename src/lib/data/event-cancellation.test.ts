@@ -626,6 +626,12 @@ describe('resolveCancellationRequest', () => {
       expect(smsSend).toHaveBeenCalled();
       expect(buildCancellationSmsText).toHaveBeenCalledWith(expect.objectContaining({ resolution: 'full_cancellation', refundedAmount: 120 }));
     });
+
+    it('the SMS links to the refund\'s credit document, as the refund returned it', async () => {
+      pkg();
+      await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' });
+      expect(buildCancellationSmsText).toHaveBeenCalledWith(expect.objectContaining({ documentUrl: 'https://example.test/doc/9001' }));
+    });
   });
 
   // A campaign created under the earlier pay-per-result model: the resolve moves no money, sends the e-mail first and
