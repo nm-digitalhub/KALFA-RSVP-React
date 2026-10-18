@@ -3132,6 +3132,8 @@ export type Database = {
           id: string
           owner_id: string
           reason: string
+          refund_document_id: number | null
+          refund_document_url: string | null
           request_code: string
           request_number: number
           resolution: string | null
@@ -3141,8 +3143,6 @@ export type Database = {
           resolved_by: string | null
           sms_consent: boolean
           status: string
-          sumit_document_id: number | null
-          sumit_document_url: string | null
           updated_at: string
         }
         Insert: {
@@ -3152,6 +3152,8 @@ export type Database = {
           id?: string
           owner_id: string
           reason: string
+          refund_document_id?: number | null
+          refund_document_url?: string | null
           request_code?: string
           request_number?: never
           resolution?: string | null
@@ -3161,8 +3163,6 @@ export type Database = {
           resolved_by?: string | null
           sms_consent?: boolean
           status?: string
-          sumit_document_id?: number | null
-          sumit_document_url?: string | null
           updated_at?: string
         }
         Update: {
@@ -3172,6 +3172,8 @@ export type Database = {
           id?: string
           owner_id?: string
           reason?: string
+          refund_document_id?: number | null
+          refund_document_url?: string | null
           request_code?: string
           request_number?: never
           resolution?: string | null
@@ -3181,8 +3183,6 @@ export type Database = {
           resolved_by?: string | null
           sms_consent?: boolean
           status?: string
-          sumit_document_id?: number | null
-          sumit_document_url?: string | null
           updated_at?: string
         }
         Relationships: [

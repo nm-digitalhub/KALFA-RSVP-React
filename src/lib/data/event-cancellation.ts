@@ -158,7 +158,7 @@ export type CancellationRequestForAdmin = {
   resolution: 'full_cancellation' | 'partial_charge' | 'declined' | null;
   resolutionAmount: number | null;
   captureOutcome: 'captured' | 'refunded' | 'manual_refund_required' | 'not_applicable' | null;
-  // The refund's credit document, whichever company issued it (its column still carries an old provider name).
+  // The refund's credit document, whichever company issued it.
   refundDocumentUrl: string | null;
   resolutionNote: string | null;
   createdAt: string;
@@ -169,7 +169,7 @@ export type CancellationRequestForAdmin = {
 
 const ADMIN_SELECT =
   'id, request_code, event_id, owner_id, reason, sms_consent, status, resolution, resolution_amount, ' +
-  'capture_outcome, sumit_document_url, resolution_note, created_at, resolved_at, events(name, status, event_date)';
+  'capture_outcome, refund_document_url, resolution_note, created_at, resolved_at, events(name, status, event_date)';
 
 function mapAdminRow(r: {
   id: string;
@@ -181,7 +181,7 @@ function mapAdminRow(r: {
   resolution: string | null;
   resolution_amount: number | null;
   capture_outcome: string | null;
-  sumit_document_url: string | null;
+  refund_document_url: string | null;
   resolution_note: string | null;
   created_at: string;
   resolved_at: string | null;
@@ -202,7 +202,7 @@ function mapAdminRow(r: {
     resolution: r.resolution as CancellationRequestForAdmin['resolution'],
     resolutionAmount: r.resolution_amount,
     captureOutcome: r.capture_outcome as CancellationRequestForAdmin['captureOutcome'],
-    refundDocumentUrl: r.sumit_document_url,
+    refundDocumentUrl: r.refund_document_url,
     resolutionNote: r.resolution_note,
     createdAt: r.created_at,
     resolvedAt: r.resolved_at,
@@ -711,8 +711,8 @@ export async function resolveCancellationRequest(
       resolution,
       resolution_amount: finalAmount || null,
       capture_outcome: captureOutcome,
-      sumit_document_id: refundDocumentId,
-      sumit_document_url: refundDocumentUrl,
+      refund_document_id: refundDocumentId,
+      refund_document_url: refundDocumentUrl,
       resolution_note: input.resolutionNote,
       resolved_at: now,
     })

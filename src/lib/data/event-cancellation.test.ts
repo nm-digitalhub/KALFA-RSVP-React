@@ -412,7 +412,7 @@ describe('resolveCancellationRequest', () => {
       expect(refundPackagePayment).toHaveBeenCalledWith({ campaignId: 'camp1', eventId: 'e1', amount: 120, cancellationRequestId: 'r1' });
       expect(closeCampaign).toHaveBeenCalledWith('camp1');
       expect(update).toHaveBeenCalledWith(expect.objectContaining({
-        capture_outcome: 'refunded', resolution_amount: 120, sumit_document_id: 9001, sumit_document_url: DOC.url, status: 'resolved',
+        capture_outcome: 'refunded', resolution_amount: 120, refund_document_id: 9001, refund_document_url: DOC.url, status: 'resolved',
       }));
     });
 
@@ -491,7 +491,7 @@ describe('resolveCancellationRequest', () => {
         // The SMS says the fee that stayed (₪15) and what went back (₪105) — never the refund as if it were a charge.
         expect(buildCancellationSmsText).toHaveBeenCalledWith(expect.objectContaining({ resolution: 'partial_charge', resolutionAmount: 15, refundedAmount: 105 }));
         expect(update).toHaveBeenCalledWith(expect.objectContaining({
-          resolution: 'partial_charge', resolution_amount: 105, capture_outcome: 'refunded', sumit_document_id: 9001, status: 'resolved',
+          resolution: 'partial_charge', resolution_amount: 105, capture_outcome: 'refunded', refund_document_id: 9001, status: 'resolved',
         }));
       });
 

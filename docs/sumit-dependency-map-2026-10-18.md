@@ -63,7 +63,7 @@
 | אובייקט | פירוט |
 |---|---|
 | טבלאות | `sumit_customers` (3 שורות, טריגר `trg_sumit_customers_updated`), `sumit_test_transactions` (6 שורות, מפתח זר `RESTRICT` לעצמה) |
-| עמודות | `app_settings`: `sumit_api_key`, `sumit_api_public_key`, `sumit_company_id` · `campaigns`: `sumit_customer_id`, `sumit_order_document_id`, `sumit_charge_document_id` · `event_cancellation_requests`: `sumit_document_id`, `sumit_document_url` |
+| עמודות | `app_settings`: `sumit_api_key`, `sumit_api_public_key`, `sumit_company_id` · `campaigns`: `sumit_customer_id`, `sumit_order_document_id`, `sumit_charge_document_id` (ב-18.10.2026 `event_cancellation_requests.sumit_document_id`/`sumit_document_url` שונו ל-`refund_document_id`/`refund_document_url`: הן שומרות את מסמך הזיכוי של כל סולק) |
 | פונקציות SQL | `integrations_configured_flags`, `test_event_purge_blocker` (שתיהן SECURITY DEFINER) |
 | תור | `sumit-health-check` ב-pg-boss |
 | לא נמצא | views, מדיניות RLS, אינדקסים מעבר לטבלאות לעיל, סודות Vault ששמם כולל "sumit". 52 קבצי מיגרציה היסטוריים מזכירים SUMIT (היסטוריה, לא לשינוי) |
