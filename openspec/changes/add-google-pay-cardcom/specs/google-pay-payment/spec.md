@@ -144,15 +144,19 @@ A succeeded Google Pay payment SHALL be refundable through the same refund path 
 
 ### Requirement: The buyer is told what 3D Secure is doing and why it failed
 
-While the bank checks the cardholder (3D Secure), the payment form SHALL say so, for a card payment and for a wallet payment alike. When 3D Secure does not complete or is refused, the form SHALL say that the bank's check did not complete, and SHALL NOT say the card was declined. The server SHALL still decide whether a payment happened.
+While the bank checks the cardholder (3D Secure), the payment form SHALL say so, for a card payment and for a wallet payment alike, and SHALL accept no other payment until a result is settled. When 3D Secure does not complete or is refused, the form SHALL say that the bank's check did not complete, and SHALL NOT say the card was declined. The server SHALL still decide whether a payment happened.
 
 #### Scenario: The bank checks the device
 - **WHEN** CardCom announces the device check
-- **THEN** the form shows that the card is being verified with the bank and that the page must stay open
+- **THEN** the form says the payment is being verified with the bank, that the page must stay open, and that nothing should be pressed again
 
 #### Scenario: The bank asks the cardholder
 - **WHEN** CardCom announces the cardholder challenge
-- **THEN** the form tells the buyer to complete the extra verification in the window that opened
+- **THEN** the form shows the same sentence, and never asks the buyer to complete the verification, because CardCom never says when the bank's window has closed
+
+#### Scenario: The form is locked while the bank checks
+- **WHEN** CardCom announces a 3D Secure step for a wallet payment, while the form still accepts payments
+- **THEN** the wallet, the pay button and every field become unusable until the server settles a result, as they are for a submitted card
 
 #### Scenario: The check times out
 - **WHEN** CardCom reports that 3D Secure timed out and the server settles the session as not paid
