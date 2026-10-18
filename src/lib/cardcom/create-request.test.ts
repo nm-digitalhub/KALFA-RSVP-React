@@ -33,10 +33,9 @@ describe('buildCreateLowProfile', () => {
     });
   });
 
-  it('leaves 3-D Secure to the terminal: no ThreeDSecureState and no AdvancedDefinition is sent', () => {
-    const r = buildCreateLowProfile(input());
-    expect(r).not.toHaveProperty('AdvancedDefinition');
-    expect(JSON.stringify(r)).not.toContain('ThreeDSecureState');
+  // Owner, 18.10.2026 20:03: put back after the revert of 14:25 the same day.
+  it('forces 3-D Secure on every payment', () => {
+    expect(buildCreateLowProfile(input()).AdvancedDefinition).toEqual({ ThreeDSecureState: 'Enabled' });
   });
 
   it('sends the buyer back to the payment page whatever the outcome', () => {

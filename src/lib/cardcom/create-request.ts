@@ -1,4 +1,4 @@
-import { DocumentToCreate, Operation, type CreateLowProfile } from './generated/models';
+import { DocumentToCreate, Operation, ThreeDSecureState, type CreateLowProfile } from './generated/models';
 
 // Builds the request that opens a CardCom payment session (docs/superpowers/plans/2026-10-07-cardcom-pilot-plan.md, 4.3).
 // Pure: it reads nothing and sends nothing, so every rule of CardCom's integration guide can be pinned by a test.
@@ -8,11 +8,12 @@ import { DocumentToCreate, Operation, type CreateLowProfile } from './generated/
 //   - DocumentTypeToCreate is "Auto" and IsAllowEditDocument is true (CardCom's own settings pick the document type);
 //   - the document needs a name; the operation is ChargeOnly (the package is paid in one charge);
 //   - ReturnValue carries our operation id for reference only — the payment is matched by LowProfileId, never by it;
-//   - 3-D Secure is left to CardCom: the request carries NO AdvancedDefinition.ThreeDSecureState, so the terminal's own setting
-//     (Auto) decides whether a given card is challenged. Forcing it (ThreeDSecureState.Enabled, commit 537b26a8, 11.10.2026)
-//     was reverted by the owner on 18.10.2026: every real payment after it ended as code 5119 (4 of 4, desktop and a phone on
-//     a mobile carrier), while the 3 real payments before it, sent without the field, were paid. Whatever the issuer asks for,
-//     the form still handles: it loads CardCom's 3DS.js and sends the cardholder's phone with doTransaction (open-fields.ts).
+//   - every payment goes through 3-D Secure: AdvancedDefinition.ThreeDSecureState = Enabled ("Force 3DS"). History, all owner
+//     decisions: forced on 11.10.2026 (commit 537b26a8); taken out at 14:25 on 18.10.2026 (commit c3d681c5), because every real
+//     payment after it had ended as code 5119; put back at 20:03 the same day, because payments kept failing with 5119 without
+//     it, and CardCom's own settings for a session showed 3-D Secure on anyway (`Is3DSecureEnabled: true`). Without the field,
+//     the terminal's own setting decides. 3DS needs the cardholder's phone, which the payment form sends, and CardCom's 3DS.js,
+//     which the form loads (open-fields.ts).
 //
 // The lines are the ones the caller read from the payment ledger on the server. A deduction (a credit applied to the
 // price) cannot be a document product, so it is refused here rather than sent as a negative price: the caller refuses a
@@ -84,5 +85,6 @@ export function buildCreateLowProfile(input: CardcomCreateInput): CreateLowProfi
       Language: 'he',
       Products: products,
     },
+    AdvancedDefinition: { ThreeDSecureState: ThreeDSecureState.Enabled },
   };
 }
