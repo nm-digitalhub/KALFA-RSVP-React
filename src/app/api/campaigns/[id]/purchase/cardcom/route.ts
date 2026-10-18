@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server';
 
 import { hasPlatformPermission } from '@/lib/auth/dal';
+import { normalizeIsraeliPhone } from '@/lib/cardcom/open-fields';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { getProfile } from '@/lib/data/profiles';
 import { startCardcomPurchase, type CardcomStartOutcome } from '@/lib/payments/cardcom-purchase';
@@ -31,12 +32,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // Cardholder name for the receipt — the same fallback chain as the SUMIT purchase and the package-terms approval.
   const profile = await getProfile();
   const name = profile?.full_name?.trim() || user.email || 'לקוח KALFA';
+  // The buyer's phone, when the profile has a valid Israeli one, goes into the session (UIDefinition.CardOwnerPhoneValue): CardCom's
+  // 3-D Secure and its Google Pay both need the name, the phone or e-mail and the e-mail, and the master frame starts from what the
+  // session carries. The form can still change it; this only means the session does not start without a phone.
+  const phone = normalizeIsraeliPhone(profile?.phone ?? '');
 
   let outcome: CardcomStartOutcome;
   try {
     outcome = await startCardcomPurchase({
       campaign,
-      payer: { userId: user.id, email: user.email ?? '', name },
+      payer: { userId: user.id, email: user.email ?? '', name, ...(phone === null ? {} : { phone }) },
       // Only someone who may configure the integration may buy on CardCom's test terminal; decided from the session.
       mayUseTestTerminal: await hasPlatformPermission('integrations.manage'),
     });

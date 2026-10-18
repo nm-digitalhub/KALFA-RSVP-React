@@ -61,6 +61,15 @@ describe('POST /api/campaigns/[id]/purchase/cardcom', () => {
     });
   });
 
+  it('puts the profile\'s phone into the session, in its plain local form, and nothing when it is not an Israeli number', async () => {
+    vi.mocked(getProfile).mockResolvedValue({ full_name: 'דנה כהן', phone: '+972 50-123-4567' } as never);
+    await call();
+    expect(vi.mocked(startCardcomPurchase).mock.calls[0][0].payer).toEqual({ userId: 'u1', email: 'dana@example.com', name: 'דנה כהן', phone: '0501234567' });
+    vi.mocked(getProfile).mockResolvedValue({ full_name: 'דנה כהן', phone: 'abc' } as never);
+    await call();
+    expect(vi.mocked(startCardcomPurchase).mock.calls[1][0].payer).toEqual({ userId: 'u1', email: 'dana@example.com', name: 'דנה כהן' });
+  });
+
   it('falls back to the e-mail, then a fixed name, when the profile has no name', async () => {
     vi.mocked(getProfile).mockResolvedValue({ full_name: '  ' } as never);
     await call();
