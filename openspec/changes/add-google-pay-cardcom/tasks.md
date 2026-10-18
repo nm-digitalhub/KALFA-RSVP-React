@@ -1,0 +1,63 @@
+# Tasks
+
+Nothing here is deployed, pushed, charged or switched on without the owner's explicit approval at that step. Owner decision 18.10.2026: the code is written behind the `off` setting while the answers of tasks 1.2–1.4 are awaited; those answers gate the release (6.2–6.4), not the writing. Every real-money run is a separate approval.
+
+## 1. Gates and verification
+
+- [x] 1.1 Re-read CardCom's raw sample files (`form.html`, `form.js` in `CardCom/OpenFields-FrontEnd`) and the live Open Fields support article, and record in a "Verified facts" section of `design.md` the Google Pay frame markup, the `setCardOwnerDetails` target frame and fields, and the date read. Verify: the section exists and any difference from D3–D5 is corrected in the design.
+- [ ] 1.2 (Terminal 172204 shows Google Pay ticked as active in CardCom's editor, 18.10.2026; awaiting the owner's confirmation that the save message appeared.) The owner asks CardCom to confirm Google Pay is enabled on the live terminal and what registration (domain, merchant) it needs. Verify: CardCom's written answer is recorded in `design.md`. Owner decision 18.10.2026: code proceeds behind the `off` setting meanwhile; this answer gates the release (6.2, 6.3), not the writing of code.
+- [ ] 1.3 (CardCom's terminal article answered the one-payment, currency, Google-account and iframe-attribute questions, see `design.md`; still open: reCAPTCHA, cardholder ID, receipt, token.) The owner asks CardCom whether a wallet payment needs reCAPTCHA, the cardholder ID or address, which receipt it produces, and whether it returns a token when `ChargeAndCreateToken` is requested. Verify: each answer is recorded in `design.md`; D8 is confirmed or revised.
+- [ ] 1.4 Investigate the 5 failed real refunds (all on 9.10.2026): read their ledger rows (status codes and descriptions only, no personal data) and CardCom's refund documentation. Verify: the cause, or "unknown" with the next step, is recorded in `design.md`, and the owner decides whether wallet money may be accepted before it is fixed.
+- [x] 1.5 Find out why `provider_payment_vector` is null on every live card payment from a stored answer, the code history and CardCom's documentation. Verify: the finding is recorded in `design.md` (corrected 18.10: the three payments predate the code that keeps the channel).
+
+## 2. The setting
+
+- [x] 2.1 `npx supabase migration new cardcom_google_pay_mode`: add `google_pay_mode text not null default 'off'` with a check for `off | admins | all`, and extend `cardcom_config_save` with a parameter, starting from the live function body and `20261012030027`. Verify in a rolled-back block on the live database: the default is `off`, an invalid value is refused, and saving without the parameter keeps the stored value. The owner pushes it.
+- [x] 2.2 After the owner pushes 2.1, run `npm run gen:types` and `npm run typecheck`. Verify: types come from the script, not by hand, and typecheck passes.
+- [x] 2.3 `getCardcomServerConfig` returns `googlePayMode`, `off` on any problem. Verify: tests for each stored value, a missing column value and a read error.
+- [x] 2.4 Admin data layer, Zod schema, server action, a three-position control in the CardCom form with a Hebrew hint, and the value in the activity-log entry. Verify: tests show a non-administrator is refused, an invalid value is rejected, and the saved value round-trips.
+- [ ] 2.5 Grant `UPDATE` on `save_card_on_purchase` and `google_pay_mode` to `service_role` (migration `20261018072228_cardcom_config_update_grants`). Found live 18.10.2026: `cardcom_config` gives the application column-level `UPDATE` only, so every save through the admin form failed with 42501 (the save-card column had the same gap since 12.10.2026). Verify: in a rolled-back block AS `service_role` the application's own `cardcom_config_save` call succeeds for both columns and no table-level or client privilege appears (done 18.10); after the owner pushes it, saving the form on production succeeds and the stored position round-trips.
+
+## 3. Protocol and form
+
+- [x] 3.1 In `open-fields.ts`: extract the shared name, email and phone validators, add the typed `setCardOwnerDetails` message with its builder, `googlePayFrameSrc(terminal)` and the frame id; update the header comment that says Google Pay is not built. Verify: unit tests cover invalid details refused, only a positive integer terminal accepted, and the message is posted only to CardCom's origin and addressed to the master frame.
+- [x] 3.2 `page.tsx` computes whether the option is offered (setting × buyer × provider × save-card) and passes `googlePayTerminal` or `null`. Verify: page tests for every combination in the spec's scenarios.
+- [x] 3.3 In `cardcom-open-fields-form.tsx`: the Google Pay frame with `allow="payment"`, the divider, `inert` and `aria-disabled` gating, detail pushing after the master loads and on every valid edit (debounced), and `paying` on a wallet result. Verify: component tests for option absent, option present, details sent once valid, re-sent after an edit, not-ready sentence when invalid, other-origin and action-less messages ignored, and the card form paying normally when the wallet frame is absent.
+- [ ] 3.4 Layout and accessibility with the `building-rtl-ui` skill (reviewed 18.10: logical properties only, the shared `RadioGroup` for the admin control, a labelled group with `aria-describedby` for the wallet, the hint as `role="status"`). The browser check at both widths needs the setting on `admins`, so it runs with 6.3. Verify: manual check in a browser at desktop and phone width (RTL order, focus, labels), plus a component test for the unavailable state.
+
+## 4. Redirect return
+
+- [x] 4.1 On `already_paid`, the form calls the settle route once (without `submitted`) and handles the answer like `settle()`. Verify: tests show a paid answer replaces the URL with `?paid=1`, an error shows the existing message, and no loop occurs.
+- [x] 4.2 Confirm the settle route starts the campaign only while it is `approved`. Verify: a route test shows a campaign already started by the webhook is not started again.
+
+## 5. Ledger and review
+
+- [x] 5.1 Add synthetic wallet-shaped `GetLpResult` fixtures to the settle tests, with the channel as a string such as `GooglePay` (CardCom sent `_3DS` as a string on 11.10.2026). Verify: a success is recorded with the channel stored, an amount mismatch still goes to review, a channel of another type stays null, and the extractor is unchanged.
+- [x] 5.2 Payment review shows the channel, mapped from values actually observed and shown raw when unmapped, and shows nothing when absent. Verify: component tests for mapped, unmapped and absent.
+
+## 6. Verification and release
+
+- [ ] 6.1 Run `npm run lint`, `npm run typecheck`, `npm run build` and the full test suite; fix every failing test whoever's change caused it. Verify: all four pass.
+- [ ] 6.2 With the owner's approval, deploy with the setting at `off`. Verify: the production card flow is unchanged and no buyer sees a wallet option.
+- [ ] 6.3 With the owner's approval, set `admins`; run on real devices (Android Chrome, desktop Chrome, and iOS if available), then one real ₪1 wallet payment and its refund on the real terminal. Verify: session, ledger rows, channel value, receipt and refund outcome are reported with identifiers only.
+- [ ] 6.4 The owner decides whether to set `everyone`, after 6.3 is clean and task 1.4 has an answer. Verify: the decision and date are recorded in `design.md`.
+
+## 7. Documentation
+
+- [x] 7.1 Update `docs/superpowers/plans/2026-10-07-cardcom-pilot-plan.md` (Google Pay built, behind the setting) and the admin hint text. Verify: no statement in those files says Google Pay is not built.
+
+## 8. 3D Secure (added 18.10.2026, after the owner's second failed attempt)
+
+- [x] 8.1 Load CardCom's `3DS.js` when the form is shown, before any frame; show the step the bank is on; keep the `ResponseCode` of a CardCom error and tell a 3D Secure timeout (408) or refusal (333), once the server settles the session as declined, in sentences that do not call it a declined card. Verify: unit tests cover the message parsing (steps, numeric code only, other origins ignored), the sentences, script placement and single loading, the status lines, the code being forgotten after use, and the console carrying only step names and a numeric code (done 18.10).
+- [x] 8.2 Check the whole 3D Secure hand-off against CardCom's scripts once more at apply time and record the script version read. Verify: the version string `OpenFields.js?v=…` and `3DS.js` byte size are recorded in `design.md`, and any difference from D12 is corrected. (done 18.10: `5.0.9784.18617`, `3DS.js` 6,922 bytes; the read also found and fixed the `setCardOwnerDetails` key spelling and the top-level `address`/`city` of `doTransaction`, see design.md.)
+- [ ] 8.3 With the owner's approval, run one real card payment that goes through 3D Secure on the real terminal, from an ordinary home or mobile network (not a cloud machine), with the browser's Network tab open on `3DSecure/`, `ShouldCanStart3DSecure` and `ChargeLowProfileDeal`. Verify: the report states which of fingerprint, challenge, success or failure happened, with the CardCom response codes and no card data, and the ledger row's outcome and status code.
+- [ ] 8.4 Ask CardCom why `DeviceFingerPrintFail` can answer `null`, and whether a bank's device check from a datacenter address is expected to fail. Verify: CardCom's answer is recorded in `design.md`.
+
+- [x] 8.5 Record which branch of CardCom's 3D Secure handling ended a failed payment (owner approved 18.10.2026): the form maps the four fixed sentences that come with an error to labels and tells the server the code, the last step and the label with the settlement; the server writes them into the failed row's note as the browser's report and decides nothing from them. Verify: unit tests cover the sentence-to-label mapping (exact match only, `constructor` and free text give no label), the form's request body (report only after an error, forgotten after use, no CardCom text), the route's validation (numbers and labels only, only with `submitted`), and the settlement note (plain without a report, never changes the outcome) (done 18.10: 460 focused tests).
+- [x] 8.7 Send the wallet's cardholder details again once CardCom's master frame reports the session's settings loaded (`initialized`), once per session, keeping the wallet unusable until they have gone. Verify: unit tests cover the new message kind (only from CardCom, nothing carried), the single resend, the wallet being unusable meanwhile, and no third send when `initialized` repeats (done 18.10: 463 focused tests).
+- [ ] 8.6 After the next real attempts, read the failed rows' notes and write down which branch fired. Verify: the finding is recorded in `design.md` and attached to the question to CardCom (8.4).
+
+## Workflow follow-up
+
+- Archive the change after every task is verified and the owner approves.
+- Open separate changes for Apple Pay (domain registration with Apple) and for any other wallet.
