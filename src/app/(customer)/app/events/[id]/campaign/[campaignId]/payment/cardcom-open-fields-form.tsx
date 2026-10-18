@@ -165,6 +165,11 @@ export function CardcomOpenFieldsForm({
   const lastThreeDsStep = useRef<'fingerprint' | 'challenge' | null>(null);
   // The session whose settings CardCom's master frame has already reported loaded (see the `settingsLoaded` handling below).
   const settingsSeenFor = useRef<string | null>(null);
+  // Which way the buyer is paying. A card is only ever submitted from THIS form (submit() below), so a result that arrives with no card
+  // submitted is a wallet's: the wallet's button lives in CardCom's own frame, where this page cannot see the tap. Told to the server with
+  // the settlement, so a failed payment says whether it was the card or Google Pay that failed (CardCom reports the channel itself only
+  // for a payment that went through).
+  const cardSubmitted = useRef(false);
 
   const masterRef = useRef<HTMLIFrameElement>(null);
   const settling = useRef(false);
@@ -206,6 +211,7 @@ export function CardcomOpenFieldsForm({
     lastErrorCode.current = null;
     lastErrorReason.current = null;
     lastThreeDsStep.current = null;
+    cardSubmitted.current = false;
     setPhase('opening');
     try {
       const answer = await postJson<StartAnswer>(`/api/campaigns/${campaignId}/purchase/cardcom`);
@@ -254,7 +260,11 @@ export function CardcomOpenFieldsForm({
       for (let attempt = 0; attempt < MAX_POLLS; attempt += 1) {
         let answer: SettleAnswer;
         try {
-          answer = await postJson<SettleAnswer>(`/api/campaigns/${campaignId}/purchase/settle`, { submitted: true, ...(errored ? { threeDs } : {}) });
+          answer = await postJson<SettleAnswer>(`/api/campaigns/${campaignId}/purchase/settle`, {
+            submitted: true,
+            method: cardSubmitted.current ? 'card' : 'google_pay',
+            ...(errored ? { threeDs } : {}),
+          });
         } catch {
           answer = { state: 'error' };
         }
@@ -380,6 +390,7 @@ export function CardcomOpenFieldsForm({
     if (!frame) return;
     setMessage(null);
     setPhase('paying');
+    cardSubmitted.current = true;
     postToFrame(frame, buildDoTransactionMessage(check.value));
   };
 

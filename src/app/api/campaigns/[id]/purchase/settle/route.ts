@@ -29,7 +29,13 @@ const threeDsReportSchema = z.object({
   step: z.enum(['fingerprint', 'challenge']).optional(),
   reason: z.enum(['fail_auth', 'auth_error', 'general_error', 'timeout']).optional(),
 });
-const bodySchema = z.object({ submitted: z.literal(true).optional(), threeDs: threeDsReportSchema.optional().catch(undefined) });
+// `method`: how the buyer paid as the form knows it — a card is only ever submitted from the form, so a result with none submitted is a
+// wallet's. Same status as the rest of the report: written into a failed row's note, never read to decide anything.
+const bodySchema = z.object({
+  submitted: z.literal(true).optional(),
+  method: z.enum(['card', 'google_pay']).optional().catch(undefined),
+  threeDs: threeDsReportSchema.optional().catch(undefined),
+});
 
 type State = 'paid' | 'declined' | 'review' | 'in_progress' | 'none' | 'error';
 type Answer = { state: Exclude<State, 'paid'> } | { state: 'paid'; activation: ActivationResult | 'not_needed' };
@@ -58,12 +64,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { campaign } = guard;
 
   let submitted = false;
-  let browserReport: z.infer<typeof threeDsReportSchema> | undefined;
+  let browserReport: (z.infer<typeof threeDsReportSchema> & { method?: 'card' | 'google_pay' }) | undefined;
   try {
     const body = bodySchema.safeParse(await request.json()).data;
     submitted = body?.submitted === true;
     // Only meaningful (and only used) when the form says it submitted.
-    if (submitted && body?.threeDs !== undefined && Object.keys(body.threeDs).length > 0) browserReport = body.threeDs;
+    if (submitted) {
+      const report = { ...(body?.method === undefined ? {} : { method: body.method }), ...(body?.threeDs ?? {}) };
+      if (Object.keys(report).length > 0) browserReport = report;
+    }
   } catch {
     // No body, or not JSON: it carries nothing that matters. Treated as "not submitted".
   }

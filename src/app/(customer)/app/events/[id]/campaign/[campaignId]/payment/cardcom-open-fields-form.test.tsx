@@ -321,7 +321,7 @@ describe('CardcomOpenFieldsForm', () => {
     await openSession();
     cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: false, Description: 'whatever the iframe says' } });
     await waitFor(() => expect(callsTo(SETTLE_URL)).toHaveLength(1));
-    expect(JSON.parse(callsTo(SETTLE_URL)[0][1].body)).toEqual({ submitted: true });
+    expect(JSON.parse(callsTo(SETTLE_URL)[0][1].body)).toEqual({ submitted: true, method: 'google_pay' });
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1'));
   });
 
@@ -633,7 +633,7 @@ describe('CardcomOpenFieldsForm — Google Pay', () => {
     masterWindow();
     cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true, Description: 'whatever the wallet says' } });
     await waitFor(() => expect(callsTo(SETTLE_URL)).toHaveLength(1));
-    expect(JSON.parse(callsTo(SETTLE_URL)[0][1].body)).toEqual({ submitted: true });
+    expect(JSON.parse(callsTo(SETTLE_URL)[0][1].body)).toEqual({ submitted: true, method: 'google_pay' });
     expect(screen.getByRole('button', { name: /מעבד/ })).toBeTruthy();
     expect(walletUnusable()).toBe(true);
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1'));
@@ -806,7 +806,7 @@ describe('CardcomOpenFieldsForm — 3D Secure', () => {
     cardcomMessage({ action: 'HandleEror', ResponseCode: 333, message: '3DS אימות נכשל' });
     await screen.findByRole('alert');
     const body = callsTo(SETTLE_URL)[0][1].body as string;
-    expect(JSON.parse(body)).toEqual({ submitted: true, threeDs: { code: 333, step: 'fingerprint', reason: 'fail_auth' } });
+    expect(JSON.parse(body)).toEqual({ submitted: true, method: 'google_pay', threeDs: { code: 333, step: 'fingerprint', reason: 'fail_auth' } });
     expect(body).not.toMatch(/abc|acs\.example/);
   });
 
@@ -817,7 +817,7 @@ describe('CardcomOpenFieldsForm — 3D Secure', () => {
     cardcomMessage({ action: 'HandleEror', ResponseCode: 333, message: 'secret detail 4580-1234' });
     await screen.findByRole('alert');
     const body = callsTo(SETTLE_URL)[0][1].body as string;
-    expect(JSON.parse(body)).toEqual({ submitted: true, threeDs: { code: 333 } });
+    expect(JSON.parse(body)).toEqual({ submitted: true, method: 'google_pay', threeDs: { code: 333 } });
     expect(body).not.toContain('secret');
   });
 
@@ -828,7 +828,33 @@ describe('CardcomOpenFieldsForm — 3D Secure', () => {
     cardcomMessage({ action: 'StartDeviceFingerPrint' });
     cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true } });
     await waitFor(() => expect(callsTo(SETTLE_URL)).toHaveLength(1));
-    expect(JSON.parse(callsTo(SETTLE_URL)[0][1].body as string)).toEqual({ submitted: true });
+    expect(JSON.parse(callsTo(SETTLE_URL)[0][1].body as string)).toEqual({ submitted: true, method: 'google_pay' });
+  });
+
+  // A card is only ever submitted from this form; a result that arrives with none submitted is a wallet's. Told to the server so a failed
+  // payment says which way the buyer was paying (CardCom reports the channel itself only for a payment that went through).
+  it('tells the server the buyer was paying by CARD when the form submitted the card, and by GOOGLE PAY when a result arrives with none submitted', async () => {
+    answerWith(START_URL, { status: 'ready', lowProfileId: 'lp-1' }, { status: 'ready', lowProfileId: 'lp-2' });
+    answerWith(SETTLE_URL, { state: 'declined' });
+    render(<CardcomOpenFieldsForm {...props} />);
+    await openSession();
+    masterWindow();
+    fillDetails();
+    fill(/חודש/, '12');
+    fill(/שנה/, '39');
+    cardcomMessage({ action: 'handleValidations', field: 'reCaptcha', isValid: true });
+    fireEvent.click(screen.getByRole('button', { name: /^שלם/ }));
+    cardcomMessage({ action: 'HandleEror', ResponseCode: 333, message: '3DS אימות נכשל' });
+    await screen.findByRole('alert');
+    expect(JSON.parse(callsTo(SETTLE_URL)[0][1].body as string)).toMatchObject({ submitted: true, method: 'card', threeDs: { code: 333, reason: 'fail_auth' } });
+    // the next session: a result with no card submitted
+    fireEvent.click(screen.getByRole('button', { name: 'ניסיון נוסף' }));
+    await waitFor(() => expect(callsTo(START_URL)).toHaveLength(2));
+    await waitFor(() => expect(frame(OPEN_FIELDS_FRAME_ID.master)).not.toBeNull());
+    await act(async () => {});
+    cardcomMessage({ action: 'HandleEror', ResponseCode: 333, message: '3DS אימות נכשל' });
+    await waitFor(() => expect(callsTo(SETTLE_URL)).toHaveLength(2));
+    expect(JSON.parse(callsTo(SETTLE_URL)[1][1].body as string)).toMatchObject({ submitted: true, method: 'google_pay' });
   });
 
   it('forgets the report once it was used: the next attempt carries only its own', async () => {
@@ -845,6 +871,6 @@ describe('CardcomOpenFieldsForm — 3D Secure', () => {
     await act(async () => {});
     cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: false } });
     await waitFor(() => expect(callsTo(SETTLE_URL)).toHaveLength(2));
-    expect(JSON.parse(callsTo(SETTLE_URL)[1][1].body as string)).toEqual({ submitted: true });
+    expect(JSON.parse(callsTo(SETTLE_URL)[1][1].body as string)).toEqual({ submitted: true, method: 'google_pay' });
   });
 });

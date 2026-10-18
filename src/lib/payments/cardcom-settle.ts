@@ -128,10 +128,12 @@ export type SettleOptions = {
    * the route has already reduced it to numbers and fixed labels). It is written into the note of a row THIS call closes as failed, as
    * the browser's word — it is never read to decide anything, and it is lost when another caller closes the row first.
    */
-  browserReport?: BrowserThreeDsReport;
+  browserReport?: BrowserPaymentReport;
 };
 
-export type BrowserThreeDsReport = {
+export type BrowserPaymentReport = {
+  /** How the buyer paid, as the form knows it: a card is only ever submitted from the form, so a result with none submitted is a wallet's. */
+  method?: 'card' | 'google_pay';
   code?: number;
   step?: 'fingerprint' | 'challenge';
   reason?: 'fail_auth' | 'auth_error' | 'general_error' | 'timeout';
@@ -140,8 +142,9 @@ export type BrowserThreeDsReport = {
 const DECLINED_NOTE = 'declined or not completed at CardCom; nothing was charged';
 
 // The failed row's note, with what the browser reported appended when there is something to say. Own words and numbers only.
-function declinedNote(report: BrowserThreeDsReport | undefined): string {
+function declinedNote(report: BrowserPaymentReport | undefined): string {
   const parts = [
+    report?.method === undefined ? null : `paying by ${report.method}`,
     report?.code === undefined ? null : `error code ${report.code}`,
     report?.step === undefined ? null : `last 3-D Secure step ${report.step}`,
     report?.reason === undefined ? null : `CardCom's message ${report.reason}`,

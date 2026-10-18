@@ -64,6 +64,17 @@ describe('POST /api/campaigns/[id]/purchase/settle', () => {
     expect(settleCardcomSession).toHaveBeenCalledWith('lp-1', { finalizeUnpaid: true, browserReport: { code: 333, step: 'fingerprint', reason: 'fail_auth' } });
   });
 
+  it('passes on how the buyer was paying, alone or with the 3D Secure report, and ignores anything else', async () => {
+    await call({ submitted: true, method: 'google_pay' });
+    expect(vi.mocked(settleCardcomSession).mock.calls[0][1]).toEqual({ finalizeUnpaid: true, browserReport: { method: 'google_pay' } });
+    await call({ submitted: true, method: 'card', threeDs: { code: 333, reason: 'fail_auth' } });
+    expect(vi.mocked(settleCardcomSession).mock.calls[1][1]).toEqual({ finalizeUnpaid: true, browserReport: { method: 'card', code: 333, reason: 'fail_auth' } });
+    await call({ submitted: true, method: 'apple_pay' });
+    expect(vi.mocked(settleCardcomSession).mock.calls[2][1]).toEqual({ finalizeUnpaid: true });
+    await call({ method: 'card' });
+    expect(vi.mocked(settleCardcomSession).mock.calls[3][1]).toEqual({ finalizeUnpaid: false });
+  });
+
   it('passes on a report that has only some of its parts, and none when it is empty', async () => {
     await call({ submitted: true, threeDs: { code: 408 } });
     expect(vi.mocked(settleCardcomSession).mock.calls[0][1]).toEqual({ finalizeUnpaid: true, browserReport: { code: 408 } });

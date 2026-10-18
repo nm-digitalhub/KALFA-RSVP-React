@@ -286,6 +286,13 @@ describe('settleCardcomSession: a payment that did not happen', () => {
     expect(note).toContain('fail_auth');
   });
 
+  it('the note says how the buyer was paying, as the browser reported it', async () => {
+    answer(DECLINED);
+    await settleCardcomSession(LP, { browserReport: { method: 'google_pay' } });
+    expect(String(ledger().note)).toContain('paying by google_pay');
+    expect(String(ledger().note)).toContain("buyer's browser");
+  });
+
   it('a report that has only some of its parts writes only those', async () => {
     answer(DECLINED);
     await settleCardcomSession(LP, { browserReport: { code: 408 } });
