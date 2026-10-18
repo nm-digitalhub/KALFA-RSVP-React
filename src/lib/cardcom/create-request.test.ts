@@ -33,8 +33,10 @@ describe('buildCreateLowProfile', () => {
     });
   });
 
-  it('forces 3-D Secure on every payment', () => {
-    expect(buildCreateLowProfile(input()).AdvancedDefinition).toEqual({ ThreeDSecureState: 'Enabled' });
+  it('leaves 3-D Secure to the terminal: no ThreeDSecureState and no AdvancedDefinition is sent', () => {
+    const r = buildCreateLowProfile(input());
+    expect(r).not.toHaveProperty('AdvancedDefinition');
+    expect(JSON.stringify(r)).not.toContain('ThreeDSecureState');
   });
 
   it('sends the buyer back to the payment page whatever the outcome', () => {

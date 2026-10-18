@@ -1,4 +1,4 @@
-import { DocumentToCreate, Operation, ThreeDSecureState, type CreateLowProfile } from './generated/models';
+import { DocumentToCreate, Operation, type CreateLowProfile } from './generated/models';
 
 // Builds the request that opens a CardCom payment session (docs/superpowers/plans/2026-10-07-cardcom-pilot-plan.md, 4.3).
 // Pure: it reads nothing and sends nothing, so every rule of CardCom's integration guide can be pinned by a test.
@@ -8,9 +8,11 @@ import { DocumentToCreate, Operation, ThreeDSecureState, type CreateLowProfile }
 //   - DocumentTypeToCreate is "Auto" and IsAllowEditDocument is true (CardCom's own settings pick the document type);
 //   - the document needs a name; the operation is ChargeOnly (the package is paid in one charge);
 //   - ReturnValue carries our operation id for reference only — the payment is matched by LowProfileId, never by it;
-//   - every payment goes through 3-D Secure: AdvancedDefinition.ThreeDSecureState = Enabled ("Force 3DS"; owner decision
-//     11.10.2026). Without it CardCom applies the terminal's own setting (Auto). 3DS needs the cardholder's phone, which the
-//     payment form sends with doTransaction (open-fields.ts), and CardCom's 3DS.js, which the form loads.
+//   - 3-D Secure is left to CardCom: the request carries NO AdvancedDefinition.ThreeDSecureState, so the terminal's own setting
+//     (Auto) decides whether a given card is challenged. Forcing it (ThreeDSecureState.Enabled, commit 537b26a8, 11.10.2026)
+//     was reverted by the owner on 18.10.2026: every real payment after it ended as code 5119 (4 of 4, desktop and a phone on
+//     a mobile carrier), while the 3 real payments before it, sent without the field, were paid. Whatever the issuer asks for,
+//     the form still handles: it loads CardCom's 3DS.js and sends the cardholder's phone with doTransaction (open-fields.ts).
 //
 // The lines are the ones the caller read from the payment ledger on the server. A deduction (a credit applied to the
 // price) cannot be a document product, so it is refused here rather than sent as a negative price: the caller refuses a
@@ -82,6 +84,5 @@ export function buildCreateLowProfile(input: CardcomCreateInput): CreateLowProfi
       Language: 'he',
       Products: products,
     },
-    AdvancedDefinition: { ThreeDSecureState: ThreeDSecureState.Enabled },
   };
 }
