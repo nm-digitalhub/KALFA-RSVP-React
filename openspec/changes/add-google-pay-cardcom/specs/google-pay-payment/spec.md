@@ -64,7 +64,7 @@ The page SHALL send the buyer's name, email and phone to CardCom's payment frame
 
 ### Requirement: Messages travel only between the page and CardCom
 
-The page SHALL send messages to CardCom's frames only to CardCom's exact origin, except the message that updates the cardholder's details, which SHALL be sent exactly as CardCom documents it (`postMessage({ action: 'setCardOwnerDetails', data }, '*')`, by the owner's decision of 18.10.2026) and only to CardCom's coordinating frame. The page SHALL act only on messages whose origin is CardCom's. A message with no action name SHALL be ignored.
+The page SHALL send every message to CardCom's coordinating frame exactly as CardCom's sample and documentation write the call, with `'*'` as the target (`postMessage(message, '*')`, by the owner's decisions of 18.10.2026: first for the cardholder's details, then for `init` and `doTransaction` too), and to no other frame. The page SHALL act only on messages whose origin is CardCom's. A message with no action name SHALL be ignored.
 
 #### Scenario: Message from another origin
 - **WHEN** a message claiming to be a payment result arrives from any other origin
@@ -76,7 +76,11 @@ The page SHALL send messages to CardCom's frames only to CardCom's exact origin,
 
 #### Scenario: Details message target
 - **WHEN** the page sends the buyer's details
-- **THEN** the message is CardCom's documented call, `{ action: 'setCardOwnerDetails', data }` with a wildcard target, posted to CardCom's coordinating frame and to no other frame; every other message is addressed to CardCom's exact origin
+- **THEN** the message is CardCom's documented call, `{ action: 'setCardOwnerDetails', data }` with `'*'` as the target, posted to CardCom's coordinating frame and to no other frame
+
+#### Scenario: Init and payment target
+- **WHEN** the page initialises CardCom's frames or submits a card payment
+- **THEN** `init` and `doTransaction` are posted to CardCom's coordinating frame with `'*'` as the target, as in CardCom's sample
 
 ### Requirement: A wallet payment is settled by the server, never by the browser
 
