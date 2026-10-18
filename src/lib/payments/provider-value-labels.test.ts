@@ -12,6 +12,8 @@ describe('providerValueLabel', () => {
     ['acquirer', 'CardCom', 'קארדקום'],
     ['cardBrand', 'Visa', 'ויזה'],
     ['cardIssuer', 'Laumicard', 'מקס (לאומי קארד)'],
+    ['paymentVector', '_3DS', 'אימות 3D Secure'],
+    ['paymentVector', 'GooglePay', 'Google Pay'],
     ['provider', 'sumit', 'סאמיט'],
     ['source', 'app', 'המערכת'],
     ['source', 'manual_backfill', 'הזנה ידנית'],
@@ -25,6 +27,9 @@ describe('providerValueLabel', () => {
     ['dealType', 'SomethingNew'],
     ['documentType', 'a.b'],
     ['source', 'ns:key'],
+    ['paymentVector', 'NoneOrUnknown'],
+    ['paymentVector', 'ApplePay'],
+    ['paymentVector', 'googlepay'],
   ] as const)('a value with no name (%s %s) is shown as stored, never guessed', (field, value) => {
     expect(providerValueLabel(field, value)).toBe(value);
   });

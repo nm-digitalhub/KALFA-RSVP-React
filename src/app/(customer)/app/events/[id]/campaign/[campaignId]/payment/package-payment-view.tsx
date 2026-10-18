@@ -38,6 +38,7 @@ export function PackagePaymentView({
   campaignId,
   formConfig,
   provider = 'sumit',
+  googlePayTerminal = null,
   signerName,
   signerEmail = '',
   signerPhone = '',
@@ -54,6 +55,8 @@ export function PackagePaymentView({
   formConfig: { companyId: number; apiPublicKey: string } | null;
   // Which clearing company takes the purchase (resolvePurchaseProvider). CardCom's form needs no public configuration.
   provider?: 'sumit' | 'cardcom';
+  // The CardCom terminal for the Google Pay frame, or null when Google Pay is not offered to this buyer (decided by the page).
+  googlePayTerminal?: number | null;
   signerName: string;
   signerEmail?: string;
   signerPhone?: string;
@@ -168,6 +171,7 @@ export function PackagePaymentView({
                 defaultName={signerName}
                 defaultEmail={signerEmail}
                 defaultPhone={signerPhone}
+                googlePayTerminal={googlePayTerminal}
               />
             ) : formConfig ? (
               <SumitCardForm

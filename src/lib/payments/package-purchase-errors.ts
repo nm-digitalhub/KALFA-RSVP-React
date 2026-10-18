@@ -13,6 +13,9 @@ export const PURCHASE_ERROR = {
   IN_PROGRESS: 'purchase_in_progress',
   REVIEW: 'purchase_review',
   DECLINED: 'purchase_declined',
+  // 3D Secure (the bank's own check of the cardholder) did not complete: not the issuer declining the card.
+  THREE_DS_TIMEOUT: 'three_ds_timeout',
+  THREE_DS_FAILED: 'three_ds_failed',
   FAILED: 'purchase_failed',
   CREDIT: 'credit_unsupported',
   EVENT_PAST: 'event_past',
@@ -31,6 +34,8 @@ export const PURCHASE_ERROR_MESSAGES: Record<PurchaseErrorCode, string> = {
   purchase_in_progress: 'תשלום כבר מתבצע עבור הקמפיין הזה. המתינו מספר שניות ורעננו את העמוד — אין לשלם שוב.',
   purchase_review: 'לא התקבל אישור חד-משמעי על התשלום. אין לשלם שוב — נבדוק את הנושא ונחזור אליכם.',
   purchase_declined: 'התשלום נדחה על ידי חברת האשראי. בדקו את פרטי הכרטיס ונסו שוב.',
+  three_ds_timeout: 'אימות הכרטיס מול הבנק (3D Secure) לא הושלם בזמן. נסו שוב. אם זה חוזר, נסו מכשיר או רשת אחרים, או כרטיס אחר.',
+  three_ds_failed: 'אימות הכרטיס מול הבנק (3D Secure) לא אושר. נסו שוב או בכרטיס אחר.',
   purchase_failed: 'הרכישה לא הושלמה בגלל תקלה. נסו שוב בעוד רגע, ואם הבעיה נמשכת פנו לתמיכה.',
   credit_unsupported: 'לאירוע הזה יש קרדיט פתוח, ורכישה עם קרדיט עדיין לא נתמכת. פנו לתמיכה להשלמת הרכישה.',
   event_past: 'מועד האירוע כבר חלף — לא ניתן לרכוש חבילה עבור אירוע שעבר.',

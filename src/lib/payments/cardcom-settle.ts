@@ -123,7 +123,31 @@ export type SettleOptions = {
    * leave the row pending and say "unpaid".
    */
   finalizeUnpaid?: boolean;
+  /**
+   * What the buyer's browser says CardCom's frames announced about 3D Secure when they reported an error (the buyer's own call only;
+   * the route has already reduced it to numbers and fixed labels). It is written into the note of a row THIS call closes as failed, as
+   * the browser's word — it is never read to decide anything, and it is lost when another caller closes the row first.
+   */
+  browserReport?: BrowserThreeDsReport;
 };
+
+export type BrowserThreeDsReport = {
+  code?: number;
+  step?: 'fingerprint' | 'challenge';
+  reason?: 'fail_auth' | 'auth_error' | 'general_error' | 'timeout';
+};
+
+const DECLINED_NOTE = 'declined or not completed at CardCom; nothing was charged';
+
+// The failed row's note, with what the browser reported appended when there is something to say. Own words and numbers only.
+function declinedNote(report: BrowserThreeDsReport | undefined): string {
+  const parts = [
+    report?.code === undefined ? null : `error code ${report.code}`,
+    report?.step === undefined ? null : `last 3-D Secure step ${report.step}`,
+    report?.reason === undefined ? null : `CardCom's message ${report.reason}`,
+  ].filter((part): part is string => part !== null);
+  return parts.length === 0 ? DECLINED_NOTE : `${DECLINED_NOTE}. As the buyer's browser reported it (not CardCom's answer): ${parts.join(', ')}`;
+}
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 type OperationRow = {
@@ -291,7 +315,7 @@ export async function settleCardcomSession(lowProfileId: string, options: Settle
       // CardCom's own text: for an admin screen and the ledger, never for the buyer.
       providerStatusDescription: result.Description ?? null,
       ...echoColumn,
-      note: 'declined or not completed at CardCom; nothing was charged',
+      note: declinedNote(options.browserReport),
     });
   }
 

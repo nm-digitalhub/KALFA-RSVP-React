@@ -19,6 +19,15 @@ describe('package purchase error codes', () => {
     }
   });
 
+  it('a 3D Secure failure is never described as the card being declined, and asks for no retyping of a card that was fine', () => {
+    for (const code of ['three_ds_timeout', 'three_ds_failed'] as const) {
+      const text = PURCHASE_ERROR_MESSAGES[code];
+      expect(text, code).toContain('3D Secure');
+      expect(text, code).not.toContain('נדחה');
+      expect(text, code).not.toContain('בדקו את פרטי הכרטיס');
+    }
+  });
+
   it('a payment that may or may not have gone through tells the customer NOT to pay again', () => {
     expect(PURCHASE_ERROR_MESSAGES.purchase_review).toContain('אין לשלם שוב');
     expect(PURCHASE_ERROR_MESSAGES.purchase_in_progress).toContain('אין לשלם שוב');

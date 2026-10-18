@@ -51,7 +51,7 @@ const answer = (value: unknown) => vi.mocked(lowProfileGetLpResult).mockResolved
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false });
+  vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false, googlePayMode: 'off' });
   fake = createFakeTableClient({ payment_operations: [op()], cardcom_payment_sessions: [session()], activity_log: [] });
   answer(PAID);
 });
@@ -86,6 +86,50 @@ describe('settleCardcomSession: a paid session', () => {
     answer({ ...PAID, ExternalPaymentVector: '_3DS' });
     await settleCardcomSession(LP);
     expect(ledger()).toMatchObject({ outcome: 'succeeded', provider_payment_vector: '_3DS' });
+  });
+
+  // Google Pay (add-google-pay-cardcom): a wallet payment comes back through the same GetLpResult, with the channel named. The
+  // spelling CardCom uses for it is not measured yet (it sent `_3DS` as a string for 3-D Secure), so these are synthetic.
+  describe('a wallet payment', () => {
+    // A wallet gives CardCom no typed card and no cardholder ID: only what the wallet and our setCardOwnerDetails supplied.
+    const WALLET = { ...PAID, ExternalPaymentVector: 'GooglePay', UIValues: { CardOwnerName: 'Dana Cohen', CardOwnerEmail: 'dana@example.com', CardOwnerPhone: '0501234567' } };
+
+    it('is recorded as succeeded with the channel the answer names, like a card payment', async () => {
+      answer(WALLET);
+      await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
+      expect(ledger()).toMatchObject({ outcome: 'succeeded', provider_payment_id: 555, provider_payment_vector: 'GooglePay', provider_document_number: 77 });
+    });
+
+    it('needs no cardholder ID: none is stored and the payment is still recorded', async () => {
+      answer(WALLET);
+      await settleCardcomSession(LP);
+      expect(ledger().citizen_id_secret ?? null).toBeNull();
+      expect(ledger().outcome).toBe('succeeded');
+    });
+
+    it('keeps the cardholder details our page sent (they are what 3-D Secure needed), in the private payment facts', async () => {
+      answer(WALLET);
+      await settleCardcomSession(LP);
+      expect(ledger()).toMatchObject({ card_owner_name: 'Dana Cohen', card_owner_email: 'dana@example.com', card_owner_phone: '0501234567' });
+    });
+
+    it('still goes to review, never paid, when the amount CardCom reports is not the ledger\'s', async () => {
+      answer({ ...WALLET, TranzactionInfo: { ApprovalNumber: '0123456', Amount: 1, CoinId: 1 } });
+      await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'review', alreadyDone: false });
+      expect(ledger().outcome).toBe('review');
+    });
+
+    it('is recorded even when the channel comes back in a form we do not read (a number): the channel stays empty, the payment is kept', async () => {
+      answer({ ...WALLET, ExternalPaymentVector: 15 });
+      await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
+      expect(ledger().provider_payment_vector ?? null).toBeNull();
+    });
+
+    it('a wallet payment that was cancelled or declined is closed as failed with nothing charged', async () => {
+      answer({ ...DECLINED, ExternalPaymentVector: 'GooglePay' });
+      await expect(settleCardcomSession(LP, { finalizeUnpaid: true })).resolves.toEqual({ status: 'settled', outcome: 'failed', alreadyDone: false });
+      expect(ledger().outcome).toBe('failed');
+    });
   });
 
   it('keeps what the card looks like and the link to the document, so an admin screen can show them', async () => {
@@ -224,6 +268,47 @@ describe('settleCardcomSession: a payment that did not happen', () => {
     answer(DECLINED);
     await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'failed', alreadyDone: false });
     expect(ledger()).toMatchObject({ outcome: 'failed', provider_status: '5033', provider_status_description: 'declined by issuer' });
+    // No browser report: the note is the plain one it always was.
+    expect(ledger().note).toBe('declined or not completed at CardCom; nothing was charged');
+  });
+
+  // What the buyer's browser said CardCom's frames announced (a 3D Secure refusal shows as code 5119 here, with no payment), kept in the
+  // note as the browser's word so a refusal can be told apart afterwards. It is not read to decide anything.
+  it('a decline the buyer\'s own call closes keeps what the browser reported about 3D Secure in the note, as the browser\'s word', async () => {
+    answer(DECLINED);
+    await expect(settleCardcomSession(LP, { browserReport: { code: 333, step: 'fingerprint', reason: 'fail_auth' } })).resolves.toEqual({ status: 'settled', outcome: 'failed', alreadyDone: false });
+    expect(ledger()).toMatchObject({ outcome: 'failed', provider_status: '5033' });
+    const note = String(ledger().note);
+    expect(note).toContain('nothing was charged');
+    expect(note).toContain("buyer's browser");
+    expect(note).toContain('error code 333');
+    expect(note).toContain('last 3-D Secure step fingerprint');
+    expect(note).toContain('fail_auth');
+  });
+
+  it('a report that has only some of its parts writes only those', async () => {
+    answer(DECLINED);
+    await settleCardcomSession(LP, { browserReport: { code: 408 } });
+    expect(String(ledger().note)).toContain('error code 408');
+    expect(String(ledger().note)).not.toContain('step');
+  });
+
+  it('an empty report leaves the plain note', async () => {
+    answer(DECLINED);
+    await settleCardcomSession(LP, { browserReport: {} });
+    expect(ledger().note).toBe('declined or not completed at CardCom; nothing was charged');
+  });
+
+  it('a report never turns an unpaid session into a failed one: with finalizeUnpaid off the row stays pending', async () => {
+    answer(DECLINED);
+    await expect(settleCardcomSession(LP, { finalizeUnpaid: false, browserReport: { code: 333, reason: 'fail_auth' } })).resolves.toEqual({ status: 'unpaid' });
+    expect(ledger().outcome).toBe('pending');
+  });
+
+  it('a report never turns a confirmed payment into anything but paid', async () => {
+    answer(PAID);
+    await expect(settleCardcomSession(LP, { browserReport: { code: 333, step: 'fingerprint', reason: 'fail_auth' } })).resolves.toMatchObject({ status: 'settled', outcome: 'succeeded' });
+    expect(String(ledger().note ?? '')).not.toContain('browser');
   });
 
   it('with finalizeUnpaid off (the sweeper, a retry) a non-zero answer leaves the row pending: it may just not be paid YET', async () => {
@@ -340,7 +425,7 @@ describe('settleCardcomSession: the terminal of the payment', () => {
       activity_log: [],
     });
   };
-  const connectedTo = (terminalNumber: number) => vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false });
+  const connectedTo = (terminalNumber: number) => vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false, googlePayMode: 'off' });
   const paidReporting = (terminal: unknown) => answer({ ...PAID, TerminalNumber: terminal });
   const alertsSent = () => vi.mocked(sendSlackAlert).mock.calls.map(([a]) => a);
 

@@ -124,6 +124,13 @@ const HE = {
     Fallback: 'גיבוי',
     EmptyCandidateList: 'רשימת מועמדים ריקה',
   } satisfies Record<CardNumberEntryMode, string>,
+  // The channel CardCom reports for a payment (ExternalPaymentVector). Only names that are known to be CardCom's are here: `_3DS` was
+  // measured on 11.10.2026 (a string, with the underscore), `GooglePay` is the name in CardCom's reference and is shown as
+  // Google Pay's own name. Any other value (including a differently spelled wallet) stays as stored, so unknown stays unknown.
+  paymentVector: {
+    _3DS: 'אימות 3D Secure',
+    GooglePay: 'Google Pay',
+  } satisfies Record<string, string>,
   cardInfo: {
     Israeli: 'ישראלי',
     NonIsraeli: 'זר',

@@ -19,7 +19,17 @@ export const dynamic = 'force-dynamic';
 // The one thing the browser may say is `submitted: true`, after the form really submitted. It decides whether a session that
 // CardCom says is unpaid is closed as failed (the buyer was declined and must try again) or left open (the buyer may still be
 // typing). Lying about it only hurts the liar: a paid-after-failed payment raises an alert in settleCardcomSession.
-const bodySchema = z.object({ submitted: z.literal(true).optional() });
+//
+// It may also carry what CardCom's frames announced about 3D Secure when they reported an error (`threeDs`: the error's number,
+// the last step, and the label of CardCom's own fixed sentence — never text). It is written into the note of a row that this very
+// call closes as failed, as "what the browser reported", so a refused 3D Secure can be told apart afterwards. It decides nothing, and a
+// report that does not fit the shape is dropped without touching `submitted`.
+const threeDsReportSchema = z.object({
+  code: z.number().int().min(0).max(99_999_999).optional(),
+  step: z.enum(['fingerprint', 'challenge']).optional(),
+  reason: z.enum(['fail_auth', 'auth_error', 'general_error', 'timeout']).optional(),
+});
+const bodySchema = z.object({ submitted: z.literal(true).optional(), threeDs: threeDsReportSchema.optional().catch(undefined) });
 
 type State = 'paid' | 'declined' | 'review' | 'in_progress' | 'none' | 'error';
 type Answer = { state: Exclude<State, 'paid'> } | { state: 'paid'; activation: ActivationResult | 'not_needed' };
@@ -48,8 +58,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { campaign } = guard;
 
   let submitted = false;
+  let browserReport: z.infer<typeof threeDsReportSchema> | undefined;
   try {
-    submitted = bodySchema.safeParse(await request.json()).data?.submitted === true;
+    const body = bodySchema.safeParse(await request.json()).data;
+    submitted = body?.submitted === true;
+    // Only meaningful (and only used) when the form says it submitted.
+    if (submitted && body?.threeDs !== undefined && Object.keys(body.threeDs).length > 0) browserReport = body.threeDs;
   } catch {
     // No body, or not JSON: it carries nothing that matters. Treated as "not submitted".
   }
@@ -59,7 +73,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const lowProfileId = await latestCardcomSession(campaignId);
     if (!lowProfileId) return noStoreJson({ state: 'none' } satisfies Answer);
 
-    const settled = await settleCardcomSession(lowProfileId, { finalizeUnpaid: submitted });
+    const settled = await settleCardcomSession(lowProfileId, { finalizeUnpaid: submitted, ...(browserReport ? { browserReport } : {}) });
     if (settled.status === 'not_found') answer = { state: 'none' };
     else if (settled.status === 'error') answer = { state: 'error' };
     else if (settled.status === 'unpaid') answer = { state: 'in_progress' };

@@ -25,6 +25,7 @@ vi.mock('./package-payment-view', () => ({
     errorMessage: string | null;
     formConfig: unknown;
     provider?: string;
+    googlePayTerminal?: number | null;
     signerEmail?: string;
     signerPhone?: string;
     activateAction?: unknown;
@@ -39,6 +40,7 @@ vi.mock('./package-payment-view', () => ({
       data-error={props.errorMessage ?? ''}
       data-config={props.formConfig ? 'yes' : 'no'}
       data-provider={props.provider ?? ''}
+      data-google-pay={props.googlePayTerminal == null ? 'no' : String(props.googlePayTerminal)}
       data-email={props.signerEmail ?? ''}
       data-phone={props.signerPhone ?? ''}
       data-can-activate={props.activateAction ? 'yes' : 'no'}
@@ -180,7 +182,7 @@ describe('payment page — a campaign without a package', () => {
 // Which clearing company's form the package screen shows is decided by resolvePurchaseProvider, with the same inputs the
 // purchase routes use. SUMIT unless the CardCom pilot is on; on CardCom's test terminal only for someone who may configure it.
 describe('payment page — the CardCom pilot', () => {
-  const cardcom = (over: Record<string, unknown> = {}) => ({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, ...over });
+  const cardcom = (over: Record<string, unknown> = {}) => ({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false, googlePayMode: 'off', ...over });
   beforeEach(() => {
     vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
   });
@@ -253,5 +255,60 @@ describe('payment page — the CardCom pilot', () => {
     vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom() as never);
     vi.mocked(getPackageModelEnabled).mockResolvedValue(false);
     expect(await render()).toContain('data-screen="unavailable"');
+  });
+});
+
+// Google Pay (add-google-pay-cardcom): the PAGE decides whether it is offered, from the server-side setting, the buyer's rights,
+// the provider and the save-card setting, and hands the form the terminal of the same configuration that opens the session.
+describe('payment page — Google Pay', () => {
+  const cardcom = (over: Record<string, unknown> = {}) => ({ terminalNumber: 172204, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false, googlePayMode: 'off', ...over });
+  beforeEach(() => {
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
+  });
+
+  it('is not offered while the setting is off, to a buyer or to an administrator', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ googlePayMode: 'off' }) as never);
+    expect(await render()).toContain('data-google-pay="no"');
+    vi.mocked(hasPlatformPermission).mockResolvedValue(true);
+    expect(await render()).toContain('data-google-pay="no"');
+  });
+
+  it('is offered to every buyer through CardCom when the setting is all, with the terminal of the connection', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ googlePayMode: 'all' }) as never);
+    const html = await render();
+    expect(html).toContain('data-provider="cardcom"');
+    expect(html).toContain('data-google-pay="172204"');
+  });
+
+  it('is offered only to someone who may configure the integration when the setting is admins', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ googlePayMode: 'admins' }) as never);
+    expect(await render()).toContain('data-google-pay="no"');
+    vi.mocked(hasPlatformPermission).mockResolvedValue(true);
+    expect(await render()).toContain('data-google-pay="172204"');
+    expect(hasPlatformPermission).toHaveBeenCalledWith('integrations.manage');
+  });
+
+  it('is never offered on SUMIT\'s form, whatever the setting is', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ googlePayMode: 'all', enabled: false }) as never);
+    const html = await render();
+    expect(html).toContain('data-provider="sumit"');
+    expect(html).toContain('data-google-pay="no"');
+  });
+
+  it('is withheld while the card must be saved', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ googlePayMode: 'all', saveCardOnPurchase: true }) as never);
+    expect(await render()).toContain('data-google-pay="no"');
+  });
+
+  it('is not offered when the CardCom connection cannot be read', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(null);
+    expect(await render()).toContain('data-google-pay="no"');
+  });
+
+  it('is not offered to an ordinary buyer on CardCom\'s test terminal even when the setting is all (they stay on SUMIT)', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ googlePayMode: 'all', terminalNumber: 1000 }) as never);
+    const html = await render();
+    expect(html).toContain('data-provider="sumit"');
+    expect(html).toContain('data-google-pay="no"');
   });
 });

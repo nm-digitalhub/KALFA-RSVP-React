@@ -170,7 +170,22 @@ describe('PackagePaymentView — which form', () => {
     render(<PackagePaymentView {...base} provider="cardcom" signerEmail="dana@example.com" signerPhone="0501234567" screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
     expect(screen.getByTestId('cardcom-form')).toBeTruthy();
     expect(screen.queryByTestId('card-form')).toBeNull();
-    expect(cardcomProps).toHaveBeenCalledWith({ eventId: 'e1', campaignId: 'c1', amount: 149, defaultName: 'דנה כהן', defaultEmail: 'dana@example.com', defaultPhone: '0501234567' });
+    expect(cardcomProps).toHaveBeenCalledWith({ eventId: 'e1', campaignId: 'c1', amount: 149, defaultName: 'דנה כהן', defaultEmail: 'dana@example.com', defaultPhone: '0501234567', googlePayTerminal: null });
+  });
+
+  it('hands CardCom\'s form the Google Pay terminal the page decided on, and none by default', () => {
+    render(<PackagePaymentView {...base} provider="cardcom" googlePayTerminal={172204} screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
+    expect(cardcomProps).toHaveBeenLastCalledWith(expect.objectContaining({ googlePayTerminal: 172204 }));
+    cleanup();
+    render(<PackagePaymentView {...base} provider="cardcom" screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
+    expect(cardcomProps).toHaveBeenLastCalledWith(expect.objectContaining({ googlePayTerminal: null }));
+  });
+
+  it('never gives the SUMIT form a Google Pay terminal', () => {
+    render(<PackagePaymentView {...base} provider="sumit" googlePayTerminal={172204} screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
+    expect(formProps).toHaveBeenCalled();
+    expect(JSON.stringify(formProps.mock.calls)).not.toContain('172204');
+    expect(cardcomProps).not.toHaveBeenCalled();
   });
 
   it('needs no SUMIT public configuration for CardCom, but never shows an empty SUMIT form without it', () => {

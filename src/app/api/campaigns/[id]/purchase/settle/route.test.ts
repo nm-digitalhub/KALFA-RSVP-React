@@ -57,6 +57,34 @@ describe('POST /api/campaigns/[id]/purchase/settle', () => {
     expect(res.headers.get('cache-control')).toBe('no-store');
   });
 
+  // What CardCom's frames announced about 3D Secure when they reported an error: numbers and fixed labels, passed on to the settlement
+  // as the browser's word. Anything else in it, and a report with no `submitted`, is dropped.
+  it('passes on a 3D Secure report of an error — code, last step and the label of CardCom\'s sentence — with the submitted form', async () => {
+    await call({ submitted: true, threeDs: { code: 333, step: 'fingerprint', reason: 'fail_auth' } });
+    expect(settleCardcomSession).toHaveBeenCalledWith('lp-1', { finalizeUnpaid: true, browserReport: { code: 333, step: 'fingerprint', reason: 'fail_auth' } });
+  });
+
+  it('passes on a report that has only some of its parts, and none when it is empty', async () => {
+    await call({ submitted: true, threeDs: { code: 408 } });
+    expect(vi.mocked(settleCardcomSession).mock.calls[0][1]).toEqual({ finalizeUnpaid: true, browserReport: { code: 408 } });
+    await call({ submitted: true, threeDs: {} });
+    expect(vi.mocked(settleCardcomSession).mock.calls[1][1]).toEqual({ finalizeUnpaid: true });
+  });
+
+  it('drops a report that is not numbers and fixed labels — free text, an unknown label, another type — and still honours `submitted`', async () => {
+    await call({ submitted: true, threeDs: { code: 333, reason: 'a sentence CardCom wrote 4580-1234', step: 'fingerprint' } });
+    expect(vi.mocked(settleCardcomSession).mock.calls[0][1]).toEqual({ finalizeUnpaid: true });
+    await call({ submitted: true, threeDs: 'fail_auth' });
+    expect(vi.mocked(settleCardcomSession).mock.calls[1][1]).toEqual({ finalizeUnpaid: true });
+    await call({ submitted: true, threeDs: { code: '333' } });
+    expect(vi.mocked(settleCardcomSession).mock.calls[2][1]).toEqual({ finalizeUnpaid: true });
+  });
+
+  it('ignores a report that does not come with `submitted`: a returning buyer cannot write a note on a row', async () => {
+    await call({ threeDs: { code: 333, reason: 'fail_auth' } });
+    expect(settleCardcomSession).toHaveBeenCalledWith('lp-1', { finalizeUnpaid: false });
+  });
+
   it('takes the NEWEST purchase of the campaign when there are several attempts', async () => {
     fake = createFakeTableClient({
       payment_operations: [op({ id: 'old', outcome: 'failed', recorded_at: '2026-10-07T09:00:00.000Z' }), op({ id: 'new', recorded_at: '2026-10-07T11:00:00.000Z' })],
@@ -77,6 +105,20 @@ describe('POST /api/campaigns/[id]/purchase/settle', () => {
     vi.mocked(getCampaignForPurchase).mockResolvedValue({ ...CAMPAIGN, status: 'active' } as never);
     expect(await (await call()).json()).toEqual({ state: 'paid', activation: 'not_needed' });
     expect(activateAfterPayment).not.toHaveBeenCalled();
+  });
+
+  // The buyer returns from a redirect (3D Secure, a wallet) to a session CardCom already settled: the page asks with no body, the
+  // session is already recorded as paid, and only this route can start the campaign.
+  it('starts a campaign that still waits for its payment when a RETURNING buyer asks (no body, session already settled), and only once', async () => {
+    vi.mocked(settleCardcomSession).mockResolvedValue({ status: 'settled', outcome: 'succeeded', alreadyDone: true });
+    const body = '';
+    expect(await (await call(body)).json()).toEqual({ state: 'paid', activation: 'started' });
+    expect(settleCardcomSession).toHaveBeenCalledWith('lp-1', { finalizeUnpaid: false });
+    expect(activateAfterPayment).toHaveBeenCalledTimes(1);
+    // The campaign is running now: a second ask (a reload, another tab) does not start it again.
+    vi.mocked(getCampaignForPurchase).mockResolvedValue({ ...CAMPAIGN, status: 'active' } as never);
+    expect(await (await call(body)).json()).toEqual({ state: 'paid', activation: 'not_needed' });
+    expect(activateAfterPayment).toHaveBeenCalledTimes(1);
   });
 
   it('passes on that the start was refused, so the page can say so', async () => {

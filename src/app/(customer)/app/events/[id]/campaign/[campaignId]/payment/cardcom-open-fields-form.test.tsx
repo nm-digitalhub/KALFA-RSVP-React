@@ -141,7 +141,7 @@ describe('CardcomOpenFieldsForm', () => {
     fill(/שנה/, '39');
     fireEvent.click(screen.getByRole('button', { name: /^שלם/ }));
     expect(post).toHaveBeenCalledTimes(1);
-    expect(post.mock.calls[0][0]).toMatchObject({ action: 'doTransaction', cardOwnerId: VALID_ID, cardOwnerName: 'דנה כהן', cardOwnerEmail: 'dana@example.com', cardOwnerPhone: '0501234567', document: { AddressLine1: ADDRESS, City: CITY, Mobile: '0501234567' }, expirationMonth: '12', expirationYear: '39', numberOfPayments: '1' });
+    expect(post.mock.calls[0][0]).toMatchObject({ action: 'doTransaction', cardOwnerId: VALID_ID, cardOwnerName: 'דנה כהן', cardOwnerEmail: 'dana@example.com', cardOwnerPhone: '0501234567', address: ADDRESS, city: CITY, document: { AddressLine1: ADDRESS, City: CITY, Mobile: '0501234567' }, expirationMonth: '12', expirationYear: '39', numberOfPayments: '1' });
     expect(post.mock.calls[0][1]).toBe(OPEN_FIELDS_ORIGIN);
     expect((screen.getByRole('button', { name: /מעבד/ }) as HTMLButtonElement).disabled).toBe(true);
   });
@@ -398,10 +398,54 @@ describe('CardcomOpenFieldsForm', () => {
     expect(document.querySelector('iframe')).toBeNull();
   });
 
-  it('an already-paid answer refreshes the page to the paid screen', async () => {
+  it('an already-paid answer (the buyer came back from a redirect) asks the settle route once, bare, and shows the paid screen', async () => {
     answerWith(START_URL, { status: 'already_paid' });
     render(<CardcomOpenFieldsForm {...props} />);
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1'));
+    expect(callsTo(SETTLE_URL)).toHaveLength(1);
+    // It never says "submitted": a returning buyer must not be able to close a session as failed.
+    expect(callsTo(SETTLE_URL)[0][1].body).toBeUndefined();
+    expect(refreshMock).toHaveBeenCalled();
+    // ...and it opens no card fields: there is nothing left to pay.
+    expect(document.querySelector('iframe')).toBeNull();
+  });
+
+  it('on a return, passes on that the automatic start was refused, so the page shows the notice and the start button', async () => {
+    answerWith(START_URL, { status: 'already_paid' });
+    answerWith(SETTLE_URL, { state: 'paid', activation: 'failed' });
+    render(<CardcomOpenFieldsForm {...props} />);
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1&activate=failed'));
+  });
+
+  it('on a return, a paid answer whose start was not needed (the webhook or another tab already started the campaign) shows the paid screen without a notice', async () => {
+    answerWith(START_URL, { status: 'already_paid' });
+    answerWith(SETTLE_URL, { state: 'paid', activation: 'not_needed' });
+    render(<CardcomOpenFieldsForm {...props} />);
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1'));
+  });
+
+  it.each([
+    ['an error', { state: 'error' }],
+    ['no session found', { state: 'none' }],
+    ['a payment still in progress', { state: 'in_progress' }],
+  ])('on a return, %s from the settle route only refreshes to what the ledger says — one call, no loop, no replace', async (_label, settled) => {
+    answerWith(START_URL, { status: 'already_paid' });
+    answerWith(SETTLE_URL, settled);
+    render(<CardcomOpenFieldsForm {...props} />);
     await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    expect(replaceMock).not.toHaveBeenCalled();
+    expect(callsTo(SETTLE_URL)).toHaveLength(1);
+  });
+
+  it('on a return, a network failure only refreshes: the ledger still decides the screen', async () => {
+    answerWith(START_URL, { status: 'already_paid' });
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === SETTLE_URL) throw new Error('offline');
+      return new Response(JSON.stringify({ status: 'already_paid' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    render(<CardcomOpenFieldsForm {...props} />);
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    expect(replaceMock).not.toHaveBeenCalled();
   });
 
   it('a network failure is the generic error, not a crash', async () => {
@@ -418,5 +462,389 @@ describe('CardcomOpenFieldsForm', () => {
     unmount();
     cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true } });
     expect(callsTo(SETTLE_URL)).toHaveLength(0);
+  });
+});
+
+// Google Pay (add-google-pay-cardcom). The page hands the form a terminal only when the SERVER decided to offer the wallet. What is
+// defended: the frame is CardCom's own, in the right place and with the payment permission; CardCom is told the buyer's name, email
+// and phone before any tap and again after every edit, only valid and only at its origin and only to the MASTER frame; the wallet
+// cannot be used until CardCom has the CURRENT details; its result is only ever a reason to ask the server.
+
+const TERMINAL = 172204;
+const WALLET_SRC = `https://secure.cardcom.solutions/api/openfields/GooglePay?terminalNumber=${TERMINAL}`;
+const walletBlock = () => document.querySelector('[data-testid="google-pay-block"]') as HTMLElement | null;
+const walletUnusable = () => walletBlock()?.querySelector('[inert]') !== null;
+const detailsPosts = (post: ReturnType<typeof vi.fn>) => post.mock.calls.filter((c) => (c[0] as { action?: string }).action === 'setCardOwnerDetails');
+
+// The master frame has loaded: CardCom's side is ready for the details.
+async function masterLoaded(post: ReturnType<typeof vi.fn>) {
+  await act(async () => { fireEvent.load(frame(OPEN_FIELDS_FRAME_ID.master)!); });
+  return post;
+}
+const waitForDetails = (post: ReturnType<typeof vi.fn>, count: number) => waitFor(() => expect(detailsPosts(post)).toHaveLength(count), { timeout: 2000 });
+
+describe('CardcomOpenFieldsForm — Google Pay', () => {
+  it('shows no wallet at all when the page offered none, and none for a terminal that cannot be an address', async () => {
+    render(<CardcomOpenFieldsForm {...props} />);
+    await openSession();
+    expect(frame(OPEN_FIELDS_FRAME_ID.googlePay)).toBeNull();
+    expect(walletBlock()).toBeNull();
+    cleanup();
+    render(<CardcomOpenFieldsForm {...props} googlePayTerminal={0} />);
+    await openSession();
+    expect(frame(OPEN_FIELDS_FRAME_ID.googlePay)).toBeNull();
+  });
+
+  it('shows CardCom\'s Google Pay frame above the card fields, under the id AND name its scripts use, with the payment permission', async () => {
+    render(<CardcomOpenFieldsForm {...props} googlePayTerminal={TERMINAL} />);
+    await openSession();
+    const wallet = frame(OPEN_FIELDS_FRAME_ID.googlePay)!;
+    expect(wallet.id).toBe('CardComGooglePay');
+    expect(wallet.name).toBe('CardComGooglePay');
+    expect(wallet.src).toBe(WALLET_SRC);
+    // Both permission attributes, as CardCom's article for the terminal setting asks.
+    expect(wallet.getAttribute('allow')).toBe('payment');
+    expect(wallet.getAttribute('allowpaymentrequest')).toBe('true');
+    expect(wallet.title).toContain('Google Pay');
+    expect(wallet.compareDocumentPosition(frame(OPEN_FIELDS_FRAME_ID.cardNumber)!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('gives the payment permission to the Google Pay frame and to no other frame', async () => {
+    render(<CardcomOpenFieldsForm {...props} googlePayTerminal={TERMINAL} />);
+    await openSession();
+    const withPermission = Array.from(document.querySelectorAll('iframe')).filter((f) => f.hasAttribute('allow') || f.hasAttribute('allowpaymentrequest')).map((f) => f.id);
+    expect(withPermission).toEqual(['CardComGooglePay']);
+  });
+
+  it('is unusable until CardCom has the details, then tells the MASTER frame who the buyer is — valid, at CardCom\'s origin only', async () => {
+    render(<CardcomOpenFieldsForm {...props} googlePayTerminal={TERMINAL} />);
+    await openSession();
+    const post = masterWindow();
+    const walletPost = vi.fn();
+    Object.defineProperty(frame(OPEN_FIELDS_FRAME_ID.googlePay)!, 'contentWindow', { value: { postMessage: walletPost }, configurable: true });
+    await masterLoaded(post);
+    expect(walletUnusable()).toBe(true);
+    await waitForDetails(post, 1);
+    expect(detailsPosts(post)[0][0]).toEqual({
+      action: 'setCardOwnerDetails',
+      data: {
+        CardOwnerName: 'דנה כהן', CardOwnerEmail: 'dana@example.com', CardOwnerPhone: '0501234567',
+        cardOwnerName: 'דנה כהן', cardOwnerEmail: 'dana@example.com', cardOwnerPhone: '0501234567',
+      },
+    });
+    // exactly CardCom's documented call: `postMessage({ action: 'setCardOwnerDetails', data }, '*')`, to the master frame
+    expect(detailsPosts(post)[0][1]).toBe('*');
+    // never to the Google Pay frame
+    expect(walletPost).not.toHaveBeenCalled();
+    await waitFor(() => expect(walletUnusable()).toBe(false));
+  });
+
+  it('makes the wallet unusable in the same render as an edit, and sends the new value before it is usable again', async () => {
+    render(<CardcomOpenFieldsForm {...props} googlePayTerminal={TERMINAL} />);
+    await openSession();
+    const post = masterWindow();
+    await masterLoaded(post);
+    await waitForDetails(post, 1);
+    await waitFor(() => expect(walletUnusable()).toBe(false));
+    fill(/אימייל/, 'dana.new@example.com');
+    expect(walletUnusable()).toBe(true);
+    await waitForDetails(post, 2);
+    expect(detailsPosts(post)[1][0]).toMatchObject({ data: { CardOwnerEmail: 'dana.new@example.com', cardOwnerEmail: 'dana.new@example.com' } });
+    await waitFor(() => expect(walletUnusable()).toBe(false));
+  });
+
+  // CardCom's master frame puts the session's own name and e-mail into its state when it loads the session's settings (and then hands
+  // the wallet frame a snapshot of that state), which is AFTER the first send if the settings are slow: what the buyer typed must go again.
+  it('sends the details again once CardCom says the session\'s settings are loaded — once per session — and keeps the wallet unusable until it has', async () => {
+    render(<CardcomOpenFieldsForm {...props} googlePayTerminal={TERMINAL} />);
+    await openSession();
+    const post = masterWindow();
+    await masterLoaded(post);
+    await waitForDetails(post, 1);
+    await waitFor(() => expect(walletUnusable()).toBe(false));
+    cardcomMessage({ action: 'initialized', lowProfileCode: 'lp-1', isGooglePayAvailable: true });
+    expect(walletUnusable()).toBe(true);
+    await waitForDetails(post, 2);
+    expect(detailsPosts(post)[1][0]).toEqual(detailsPosts(post)[0][0]);
+    await waitFor(() => expect(walletUnusable()).toBe(false));
+    // CardCom announces it again as each wallet frame reports its status: no third send.
+    cardcomMessage({ action: 'initialized', lowProfileCode: 'lp-1', isGooglePayAvailable: true });
+    cardcomMessage({ action: 'initialized', lowProfileCode: 'lp-1' });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    expect(detailsPosts(post)).toHaveLength(2);
+  });
+
+  it('ignores a "settings loaded" signal from another origin', async () => {
+    render(<CardcomOpenFieldsForm {...props} googlePayTerminal={TERMINAL} />);
+    await openSession();
+    const post = masterWindow();
+    await masterLoaded(post);
+    await waitForDetails(post, 1);
+    cardcomMessage({ action: 'initialized' }, 'https://evil.example');
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    expect(detailsPosts(post)).toHaveLength(1);
+  });
+
+  it('sends the phone in its plain local form, as it does for a card', async () => {
+    render(<CardcomOpenFieldsForm {...props} defaultPhone="+972 52-765-4321" googlePayTerminal={TERMINAL} />);
+    await openSession();
+    const post = masterWindow();
+    await masterLoaded(post);
+    await waitForDetails(post, 1);
+    expect(detailsPosts(post)[0][0]).toMatchObject({ data: { CardOwnerPhone: '0527654321', cardOwnerPhone: '0527654321' } });
+  });
+
+  it.each([
+    ['name', /שם בעל הכרטיס/, '', 'שם בעל הכרטיס'],
+    ['email', /אימייל/, 'not-an-email', 'אימייל תקין'],
+    ['phone', /טלפון/, 'abc', 'טלפון נייד תקין'],
+  ])('with an invalid %s it says which detail is missing, stays unusable and sends nothing', async (_name, label, bad, sentence) => {
+    render(<CardcomOpenFieldsForm {...props} googlePayTerminal={TERMINAL} />);
+    await openSession();
+    const post = masterWindow();
+    fill(label, bad);
+    await masterLoaded(post);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(detailsPosts(post)).toHaveLength(0);
+    expect(walletUnusable()).toBe(true);
+    expect(document.getElementById('google-pay-hint')?.textContent).toContain(sentence);
+  });
+
+  it('names every missing detail at once', async () => {
+    render(<CardcomOpenFieldsForm {...props} defaultName="" defaultEmail="" defaultPhone="" googlePayTerminal={TERMINAL} />);
+    await openSession();
+    const hint = document.getElementById('google-pay-hint')?.textContent ?? '';
+    for (const sentence of ['שם בעל הכרטיס', 'אימייל תקין', 'טלפון נייד תקין']) expect(hint).toContain(sentence);
+  });
+
+  it('sends the details again when the master frame reloads: a reloaded frame knows nothing', async () => {
+    render(<CardcomOpenFieldsForm {...props} googlePayTerminal={TERMINAL} />);
+    await openSession();
+    const post = masterWindow();
+    await masterLoaded(post);
+    await waitForDetails(post, 1);
+    await masterLoaded(post);
+    await waitForDetails(post, 2);
+  });
+
+  it('treats a result from the Google Pay frame like a card\'s: it only asks the SERVER, and shows the payment as in flight', async () => {
+    render(<CardcomOpenFieldsForm {...props} googlePayTerminal={TERMINAL} />);
+    await openSession();
+    masterWindow();
+    cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true, Description: 'whatever the wallet says' } });
+    await waitFor(() => expect(callsTo(SETTLE_URL)).toHaveLength(1));
+    expect(JSON.parse(callsTo(SETTLE_URL)[0][1].body)).toEqual({ submitted: true });
+    expect(screen.getByRole('button', { name: /מעבד/ })).toBeTruthy();
+    expect(walletUnusable()).toBe(true);
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1'));
+  });
+
+  it('ignores a wallet "success" from another origin, and 3DS traffic with no action', async () => {
+    render(<CardcomOpenFieldsForm {...props} googlePayTerminal={TERMINAL} />);
+    await openSession();
+    cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true } }, 'https://evil.example');
+    cardcomMessage({ some: 'threeDS' });
+    expect(callsTo(SETTLE_URL)).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /מעבד/ })).toBeNull();
+  });
+
+  it('is unusable while a card payment is in flight', async () => {
+    render(<CardcomOpenFieldsForm {...props} googlePayTerminal={TERMINAL} />);
+    await openSession();
+    const post = masterWindow();
+    await masterLoaded(post);
+    await waitForDetails(post, 1);
+    await waitFor(() => expect(walletUnusable()).toBe(false));
+    solveCaptcha();
+    fillDetails();
+    fill(/חודש/, '12');
+    fill(/שנה/, '39');
+    fireEvent.click(screen.getByRole('button', { name: /^שלם/ }));
+    expect(walletUnusable()).toBe(true);
+  });
+
+  it('leaves the card payment exactly as it was: the same doTransaction, to the master frame, at CardCom\'s origin', async () => {
+    render(<CardcomOpenFieldsForm {...props} googlePayTerminal={TERMINAL} />);
+    await openSession();
+    const post = masterWindow();
+    solveCaptcha();
+    fillDetails();
+    fill(/חודש/, '12');
+    fill(/שנה/, '39');
+    fireEvent.click(screen.getByRole('button', { name: /^שלם/ }));
+    const charge = post.mock.calls.filter((c) => (c[0] as { action?: string }).action === 'doTransaction');
+    expect(charge).toHaveLength(1);
+    expect(charge[0][0]).toMatchObject({ cardOwnerId: VALID_ID, numberOfPayments: '1' });
+    expect(charge[0][1]).toBe(OPEN_FIELDS_ORIGIN);
+  });
+});
+
+// 3D Secure (found 18.10.2026 reading CardCom's own scripts). CardCom's `3DS.js` must be on the page BEFORE its frames exist, because the
+// master frame asks this page for the screen's size the moment it initialises and starts every 3D Secure step by posting to it. The page
+// also tells the buyer what the wait is, and does not call a 3D Secure timeout or refusal "the card was declined".
+describe('CardcomOpenFieldsForm — 3D Secure', () => {
+  const script = () => document.querySelectorAll('script[data-cardcom-3ds]');
+
+  it('puts CardCom\'s 3D Secure script on the page as soon as the form is shown — before the session opens and before any frame exists', () => {
+    render(<CardcomOpenFieldsForm {...props} />);
+    // Synchronously after the first render: no fetch has answered, so no frame has been drawn yet.
+    expect(frame(OPEN_FIELDS_FRAME_ID.master)).toBeNull();
+    expect(script()).toHaveLength(1);
+    expect(script()[0].getAttribute('src')).toContain('https://secure.cardcom.solutions/External/OpenFields/3DS.js');
+  });
+
+  it('adds it once however many times the form is shown, and never twice for a new session', async () => {
+    answerWith(START_URL, { status: 'ready', lowProfileId: 'lp-1' }, { status: 'ready', lowProfileId: 'lp-2' });
+    answerWith(SETTLE_URL, { state: 'declined' });
+    const { unmount } = render(<CardcomOpenFieldsForm {...props} />);
+    await openSession();
+    cardcomMessage({ action: 'HandleEror', ResponseCode: 400 });
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'ניסיון נוסף' }));
+    await waitFor(() => expect(callsTo(START_URL)).toHaveLength(2));
+    expect(script()).toHaveLength(1);
+    unmount();
+    render(<CardcomOpenFieldsForm {...props} />);
+    expect(script()).toHaveLength(1);
+  });
+
+  it('tells the buyer what the wait is while the bank checks the device and while it asks for more, and stops when it is over', async () => {
+    render(<CardcomOpenFieldsForm {...props} />);
+    await openSession();
+    expect(screen.queryByText(/מאמתים את הכרטיס מול הבנק/)).toBeNull();
+    cardcomMessage({ action: 'StartDeviceFingerPrint', params: { _3ds_trxid: 'abc', _3ds_method: 'https://acs.example/m' } });
+    expect((await screen.findByText(/מאמתים את הכרטיס מול הבנק/)).getAttribute('role')).toBe('status');
+    cardcomMessage({ action: 'CardHolderChallenge', params: 'https://acs.example/c' });
+    expect(await screen.findByText(/הבנק מבקש אימות נוסף/)).toBeTruthy();
+    expect(screen.queryByText(/מאמתים את הכרטיס מול הבנק/)).toBeNull();
+    cardcomMessage({ action: 'CloseCardHolderChallenge' });
+    await waitFor(() => expect(screen.queryByText(/הבנק מבקש אימות נוסף/)).toBeNull());
+    expect(document.body.textContent).not.toMatch(/acs\.example|abc/);
+  });
+
+  it('shows no 3D Secure status for a step announced from another origin', async () => {
+    render(<CardcomOpenFieldsForm {...props} />);
+    await openSession();
+    cardcomMessage({ action: 'StartDeviceFingerPrint' }, 'https://evil.example');
+    cardcomMessage('ThreeDSecureDeviceFingerprintResult_{"ResponseCode":1}');
+    expect(screen.queryByText(/מאמתים את הכרטיס מול הבנק/)).toBeNull();
+  });
+
+  it('clears the status when CardCom reports a result or an error', async () => {
+    answerWith(SETTLE_URL, { state: 'in_progress' });
+    render(<CardcomOpenFieldsForm {...props} pollDelayMs={1} />);
+    await openSession();
+    cardcomMessage({ action: 'StartDeviceFingerPrint' });
+    await screen.findByText(/מאמתים את הכרטיס מול הבנק/);
+    cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true } });
+    await waitFor(() => expect(screen.queryByText(/מאמתים את הכרטיס מול הבנק/)).toBeNull());
+  });
+
+  it.each([
+    [408, 'three_ds_timeout'],
+    [333, 'three_ds_failed'],
+  ] as const)('a 3D Secure error (code %i) that the server settles as declined is told as its own sentence, not as a declined card', async (code, key) => {
+    answerWith(SETTLE_URL, { state: 'declined' });
+    render(<CardcomOpenFieldsForm {...props} />);
+    await openSession();
+    cardcomMessage({ action: 'StartDeviceFingerPrint' });
+    cardcomMessage({ action: 'HandleEror', ResponseCode: code, message: 'whatever CardCom says' });
+    expect((await screen.findByRole('alert')).textContent).toBe(PURCHASE_ERROR_MESSAGES[key]);
+    expect(document.body.textContent).not.toContain('whatever CardCom says');
+    expect(document.body.textContent).not.toContain(PURCHASE_ERROR_MESSAGES.purchase_declined);
+    // the buyer can still try again, with a new session
+    expect(screen.getByRole('button', { name: 'ניסיון נוסף' })).toBeTruthy();
+  });
+
+  it.each([[400], [null], [500]] as const)('any other error code (%j) that the server settles as declined keeps the declined sentence', async (code) => {
+    answerWith(SETTLE_URL, { state: 'declined' });
+    render(<CardcomOpenFieldsForm {...props} />);
+    await openSession();
+    cardcomMessage({ action: 'HandleEror', ...(code === null ? {} : { ResponseCode: code }) });
+    expect((await screen.findByRole('alert')).textContent).toBe(PURCHASE_ERROR_MESSAGES.purchase_declined);
+  });
+
+  it('forgets the code once it was used: the next plain decline is told as a decline', async () => {
+    answerWith(START_URL, { status: 'ready', lowProfileId: 'lp-1' }, { status: 'ready', lowProfileId: 'lp-2' });
+    answerWith(SETTLE_URL, { state: 'declined' });
+    render(<CardcomOpenFieldsForm {...props} />);
+    await openSession();
+    cardcomMessage({ action: 'HandleEror', ResponseCode: 408 });
+    expect((await screen.findByRole('alert')).textContent).toBe(PURCHASE_ERROR_MESSAGES.three_ds_timeout);
+    fireEvent.click(screen.getByRole('button', { name: 'ניסיון נוסף' }));
+    await waitFor(() => expect(callsTo(START_URL)).toHaveLength(2));
+    await waitFor(() => expect(frame(OPEN_FIELDS_FRAME_ID.master)).not.toBeNull());
+    await act(async () => {});
+    cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: false } });
+    await waitFor(() => expect((screen.getByRole('alert')).textContent).toBe(PURCHASE_ERROR_MESSAGES.purchase_declined));
+  });
+
+  it('writes only step names and a numeric code to the browser console: no text from CardCom, no address, no card', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    answerWith(SETTLE_URL, { state: 'declined' });
+    render(<CardcomOpenFieldsForm {...props} />);
+    await openSession();
+    cardcomMessage({ action: 'StartDeviceFingerPrint', params: { _3ds_trxid: 'abc' } });
+    cardcomMessage({ action: 'HandleEror', ResponseCode: 408, message: 'secret detail' });
+    await screen.findByRole('alert');
+    const logged = JSON.stringify([...info.mock.calls, ...warn.mock.calls]);
+    expect(logged).toContain('fingerprint');
+    expect(logged).toContain('408');
+    for (const never of ['abc', 'secret detail', 'dana@example.com', VALID_ID]) expect(logged).not.toContain(never);
+    info.mockRestore();
+    warn.mockRestore();
+  });
+
+  // The browser's report of an error, told to the server with the settlement so a failed row says which branch of CardCom's 3D Secure
+  // fired: the error's code, the last step and the label of its fixed sentence. Labels and numbers only; it decides nothing.
+  it('tells the server what it saw when CardCom reported a 3D Secure error: the code, the last step and the label of the sentence', async () => {
+    answerWith(SETTLE_URL, { state: 'declined' });
+    render(<CardcomOpenFieldsForm {...props} />);
+    await openSession();
+    cardcomMessage({ action: 'StartDeviceFingerPrint', params: { _3ds_trxid: 'abc', _3ds_method: 'https://acs.example/m' } });
+    cardcomMessage({ action: 'HandleEror', ResponseCode: 333, message: '3DS אימות נכשל' });
+    await screen.findByRole('alert');
+    const body = callsTo(SETTLE_URL)[0][1].body as string;
+    expect(JSON.parse(body)).toEqual({ submitted: true, threeDs: { code: 333, step: 'fingerprint', reason: 'fail_auth' } });
+    expect(body).not.toMatch(/abc|acs\.example/);
+  });
+
+  it('reports a sentence it does not know as a code alone, and never passes on CardCom\'s text', async () => {
+    answerWith(SETTLE_URL, { state: 'declined' });
+    render(<CardcomOpenFieldsForm {...props} />);
+    await openSession();
+    cardcomMessage({ action: 'HandleEror', ResponseCode: 333, message: 'secret detail 4580-1234' });
+    await screen.findByRole('alert');
+    const body = callsTo(SETTLE_URL)[0][1].body as string;
+    expect(JSON.parse(body)).toEqual({ submitted: true, threeDs: { code: 333 } });
+    expect(body).not.toContain('secret');
+  });
+
+  it('sends no 3D Secure report with a payment that went through, even after the bank checked the device', async () => {
+    answerWith(SETTLE_URL, { state: 'paid', activation: 'started' });
+    render(<CardcomOpenFieldsForm {...props} />);
+    await openSession();
+    cardcomMessage({ action: 'StartDeviceFingerPrint' });
+    cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true } });
+    await waitFor(() => expect(callsTo(SETTLE_URL)).toHaveLength(1));
+    expect(JSON.parse(callsTo(SETTLE_URL)[0][1].body as string)).toEqual({ submitted: true });
+  });
+
+  it('forgets the report once it was used: the next attempt carries only its own', async () => {
+    answerWith(START_URL, { status: 'ready', lowProfileId: 'lp-1' }, { status: 'ready', lowProfileId: 'lp-2' });
+    answerWith(SETTLE_URL, { state: 'declined' });
+    render(<CardcomOpenFieldsForm {...props} />);
+    await openSession();
+    cardcomMessage({ action: 'StartDeviceFingerPrint' });
+    cardcomMessage({ action: 'HandleEror', ResponseCode: 333, message: '3DS שגיאת אימות' });
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'ניסיון נוסף' }));
+    await waitFor(() => expect(callsTo(START_URL)).toHaveLength(2));
+    await waitFor(() => expect(frame(OPEN_FIELDS_FRAME_ID.master)).not.toBeNull());
+    await act(async () => {});
+    cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: false } });
+    await waitFor(() => expect(callsTo(SETTLE_URL)).toHaveLength(2));
+    expect(JSON.parse(callsTo(SETTLE_URL)[1][1].body as string)).toEqual({ submitted: true });
   });
 });

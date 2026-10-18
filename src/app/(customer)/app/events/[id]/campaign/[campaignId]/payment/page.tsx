@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { hasPlatformPermission, requireUser } from '@/lib/auth/dal';
+import { isGooglePayOffered } from '@/lib/cardcom/google-pay-mode';
 import { getCardcomServerConfig, isCardcomTestTerminal } from '@/lib/data/cardcom-config';
 import { getCampaign } from '@/lib/data/campaigns';
 import { requireOwnedEvent } from '@/lib/data/events';
@@ -81,6 +82,18 @@ export default async function CampaignPaymentPage({
   ]);
   // Which clearing company takes this purchase — the same decision the purchase routes make (resolvePurchaseProvider).
   const provider = resolvePurchaseProvider(cardcomConfig, mayUseTestTerminal);
+  // Google Pay is offered by the SERVER's rule (add-google-pay-cardcom, D2): the form is handed the terminal of the very
+  // configuration that opens the session, or null. The browser never decides who is eligible.
+  const googlePayTerminal =
+    cardcomConfig !== null &&
+    isGooglePayOffered({
+      mode: cardcomConfig.googlePayMode,
+      usesCardcom: provider === 'cardcom',
+      mayConfigureIntegration: mayUseTestTerminal,
+      saveCardOnPurchase: cardcomConfig.saveCardOnPurchase,
+    })
+      ? cardcomConfig.terminalNumber
+      : null;
   // A pending CardCom payment is a form the buyer can pick up again; a pending SUMIT charge never is.
   const pendingIsResumable = provider === 'cardcom' && payment?.status === 'pending' && (await isCardcomPurchasePending(campaignId));
   const screen = packagePaymentScreen({
@@ -104,6 +117,7 @@ export default async function CampaignPaymentPage({
         campaignId={campaignId}
         formConfig={publicConfig}
         provider={provider}
+        googlePayTerminal={googlePayTerminal}
         signerName={profile?.full_name?.trim() || 'לקוח KALFA'}
         signerEmail={user.email ?? ''}
         signerPhone={profile?.phone ?? ''}

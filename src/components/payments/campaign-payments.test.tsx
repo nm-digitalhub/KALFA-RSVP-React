@@ -40,6 +40,7 @@ const staffFacts: StaffDisplayedOperation['staff'] = {
   dealType: 'Refund',
   paymentType: null,
   acquirer: 'Isracard',
+  paymentVector: null,
   uniqueId: null,
   rrn: null,
   couponNumber: null,
@@ -87,6 +88,29 @@ describe('CampaignPayments', () => {
     expect(screen.queryByText('ReceiptRefund')).toBeNull();
     expect(screen.getByText('נכשל')).toBeTruthy();
     expect(screen.queryByText('RRN')).toBeNull();
+  });
+
+  it('staff see the payment channel CardCom reported, in a name they know — and nothing when it reported none', () => {
+    render(<CampaignPayments audience="staff" operations={[{ ...refund, staff: { ...staffFacts, paymentVector: 'GooglePay' } }]} />);
+    expect(screen.getByText('ערוץ תשלום')).toBeTruthy();
+    expect(screen.getByText('Google Pay')).toBeTruthy();
+    cleanup();
+    render(<CampaignPayments audience="staff" operations={[{ ...refund, staff: { ...staffFacts, paymentVector: '_3DS' } }]} />);
+    expect(screen.getByText('אימות 3D Secure')).toBeTruthy();
+    cleanup();
+    render(<CampaignPayments audience="staff" operations={[{ ...refund, staff: staffFacts }]} />);
+    expect(screen.queryByText('ערוץ תשלום')).toBeNull();
+  });
+
+  it('shows a channel it has no name for exactly as recorded, never guessed', () => {
+    render(<CampaignPayments audience="staff" operations={[{ ...refund, staff: { ...staffFacts, paymentVector: 'SomeNewWallet' } }]} />);
+    expect(screen.getByText('SomeNewWallet')).toBeTruthy();
+  });
+
+  it('never shows the payment channel to a customer', () => {
+    const { container } = render(<CampaignPayments audience="customer" operations={[{ ...refund, staff: { ...staffFacts, paymentVector: 'GooglePay' } } as never]} />);
+    expect(container.textContent).not.toContain('ערוץ תשלום');
+    expect(container.textContent).not.toContain('Google Pay');
   });
 
   it('staff without the technical section: every attempt and its code, but no provider facts', () => {

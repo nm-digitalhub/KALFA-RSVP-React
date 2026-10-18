@@ -491,6 +491,8 @@ export type OperationStaffFacts = {
   dealType: string | null;
   paymentType: string | null;
   acquirer: string | null;
+  /** The channel CardCom reports for the payment (`_3DS`, `GooglePay`, …) exactly as it was recorded; null when it reported none. */
+  paymentVector: string | null;
   uniqueId: string | null;
   rrn: string | null;
   couponNumber: string | null;
@@ -509,7 +511,7 @@ export type StaffDisplayedOperation = DisplayedOperation & { staff: OperationSta
 const DISPLAY_COLUMNS =
   'id, kind, outcome, amount, occurred_at, is_test, card_last4, provider_document_number, provider_document_url, payment_operation_kinds!inner(label_he, effect)';
 const STAFF_COLUMNS =
-  `${DISPLAY_COLUMNS}, provider, provider_terminal, provider_terminal_echo, provider_payment_id, provider_auth_ref, provider_status, provider_status_description, provider_auth_description, provider_document_type, provider_deal_type, provider_payment_type, provider_acquirer, provider_unique_id, provider_rrn, provider_coupon_number, card_brand, card_issuer, card_is_abroad, number_of_payments, credit_applied, source, note, recorded_at`;
+  `${DISPLAY_COLUMNS}, provider, provider_terminal, provider_terminal_echo, provider_payment_id, provider_auth_ref, provider_status, provider_status_description, provider_auth_description, provider_document_type, provider_deal_type, provider_payment_type, provider_acquirer, provider_payment_vector, provider_unique_id, provider_rrn, provider_coupon_number, card_brand, card_issuer, card_is_abroad, number_of_payments, credit_applied, source, note, recorded_at`;
 
 type DisplayDbRow = {
   id: string;
@@ -585,6 +587,7 @@ export async function staffDisplayedOperations(admin: AdminClient, campaignId: s
       dealType: row.provider_deal_type,
       paymentType: row.provider_payment_type,
       acquirer: row.provider_acquirer,
+      paymentVector: row.provider_payment_vector,
       uniqueId: row.provider_unique_id,
       rrn: row.provider_rrn,
       couponNumber: row.provider_coupon_number,
