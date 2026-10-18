@@ -168,7 +168,11 @@ While the bank checks the cardholder (3D Secure), the payment form SHALL say so,
 
 #### Scenario: A failed payment says what the browser reported
 - **WHEN** the buyer's form asks the server to settle after CardCom reported a 3D Secure error, and the server closes the payment as failed
-- **THEN** the failed record's note carries the error's number, the last 3D Secure step and the label of CardCom's sentence, worded as what the buyer's browser reported, and that report decides nothing about whether the payment happened
+- **THEN** the failed record's note carries how the buyer was paying (card or Google Pay), the error's number, the last 3D Secure step and the label of CardCom's sentence, worded as what the buyer's browser reported, and that report decides nothing about whether the payment happened
+
+#### Scenario: Card or Google Pay is told apart
+- **WHEN** a result arrives and the form had submitted a card
+- **THEN** the report says the buyer was paying by card; and when a result arrives with no card submitted, it says Google Pay, because a card is only ever submitted from the form while the wallet's button is inside CardCom's frame
 
 #### Scenario: The report is only numbers and fixed labels
 - **WHEN** a report holds anything other than a number and a fixed label, or arrives without the form having submitted
