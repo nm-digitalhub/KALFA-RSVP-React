@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { parseGooglePayMode, type GooglePayMode } from '@/lib/cardcom/google-pay-mode';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 // Server-side readers of the CardCom connection (docs/superpowers/plans/2026-10-07-cardcom-pilot-plan.md, D1). The
@@ -28,6 +29,11 @@ export type CardcomServerConfig = {
    * Only an explicit true tokenizes, same posture as `enabled`.
    */
   saveCardOnPurchase: boolean;
+  /**
+   * Who is offered Google Pay on the payment form (admin, 18.10.2026): off, admins or all. Any stored value that is none of
+   * the three reads as `off`, same fail-closed posture as the switches above, and it never makes the connection unreadable.
+   */
+  googlePayMode: GooglePayMode;
 };
 
 export async function getCardcomServerConfig(): Promise<CardcomServerConfig | null> {
@@ -35,7 +41,7 @@ export async function getCardcomServerConfig(): Promise<CardcomServerConfig | nu
     const admin = createAdminClient();
     const { data, error } = await admin
       .from('cardcom_config')
-      .select('terminal_number, api_name, enabled, save_card_on_purchase')
+      .select('terminal_number, api_name, enabled, save_card_on_purchase, google_pay_mode')
       .eq('id', true)
       .maybeSingle();
     if (error || !data) return null;
@@ -43,7 +49,13 @@ export async function getCardcomServerConfig(): Promise<CardcomServerConfig | nu
     const apiName = typeof data.api_name === 'string' ? data.api_name.trim() : '';
     if (typeof terminalNumber !== 'number' || !Number.isInteger(terminalNumber) || terminalNumber <= 0) return null;
     if (apiName === '' || typeof data.enabled !== 'boolean') return null;
-    return { terminalNumber, apiName, enabled: data.enabled, saveCardOnPurchase: data.save_card_on_purchase === true };
+    return {
+      terminalNumber,
+      apiName,
+      enabled: data.enabled,
+      saveCardOnPurchase: data.save_card_on_purchase === true,
+      googlePayMode: parseGooglePayMode(data.google_pay_mode),
+    };
   } catch {
     return null;
   }

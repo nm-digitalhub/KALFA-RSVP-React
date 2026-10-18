@@ -559,14 +559,14 @@ describe('getPackagePaymentState', () => {
 // While CardCom takes the purchase, SUMIT must refuse — whoever posts to the route (resolvePurchaseProvider).
 describe('purchasePackage — refuses while CardCom is the provider', () => {
   it('CardCom switched on (a real terminal) → disabled, nothing written, SUMIT never asked', async () => {
-    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 172204, apiName: 'kalfa', enabled: true, saveCardOnPurchase: false });
+    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 172204, apiName: 'kalfa', enabled: true, saveCardOnPurchase: false, googlePayMode: 'off' });
     expect(await purchasePackage(input())).toBe('disabled');
     expect(chargeSumit).not.toHaveBeenCalled();
     expect(db.rows('payment_operations')).toHaveLength(0);
   });
 
   it('CardCom on its test terminal: a customer stays on SUMIT, an integration admin does not', async () => {
-    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'kalfa', enabled: true, saveCardOnPurchase: false });
+    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'kalfa', enabled: true, saveCardOnPurchase: false, googlePayMode: 'off' });
     expect(await purchasePackage(input())).toBe('paid');
     vi.mocked(chargeSumit).mockClear();
     useDb();
@@ -575,7 +575,7 @@ describe('purchasePackage — refuses while CardCom is the provider', () => {
   });
 
   it('CardCom configured but switched off → SUMIT charges as before', async () => {
-    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 172204, apiName: 'kalfa', enabled: false, saveCardOnPurchase: false });
+    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 172204, apiName: 'kalfa', enabled: false, saveCardOnPurchase: false, googlePayMode: 'off' });
     expect(await purchasePackage(input())).toBe('paid');
   });
 });

@@ -1,0 +1,21 @@
+-- cardcom_config_save has been failing for every save since 12.10.2026 with 42501 "permission denied for table cardcom_config".
+--
+-- WHY. 20261007215705 closed cardcom_config on purpose: service_role got table-level SELECT and INSERT only, and UPDATE
+-- ONLY on the six columns the connection form edits (terminal_number, api_name, api_password_secret, enabled, updated_at,
+-- updated_by). That is a column-level grant, so a column added later is read-only to the application until it is granted.
+-- Two columns were added without the grant:
+--   20261012030027  save_card_on_purchase   (the save-card switch)
+--   20261018062823  google_pay_mode         (Google Pay, openspec/changes/add-google-pay-cardcom)
+-- cardcom_config_save is SECURITY INVOKER and its ON CONFLICT DO UPDATE sets both, so the application's save fails as soon as the
+-- row exists. Nobody had saved since 9.10.2026 (cardcom_config.updated_at), which is why the first failure was the first one seen.
+-- Reads were never affected (SELECT is table-level), so the payment page and settlement kept working.
+--
+-- Measured 18.10.2026 as service_role inside a rolled-back block: UPDATE of enabled succeeded; UPDATE of save_card_on_purchase and
+-- of google_pay_mode were each refused with 42501. The Supabase log shows the two POSTs to /rest/v1/rpc/cardcom_config_save
+-- answered 403 "permission denied for table cardcom_config".
+--
+-- THE FIX is the same posture as the original: a column-level grant, nothing at table level, nothing for any client role.
+--
+-- ROLLBACK: revoke update (save_card_on_purchase, google_pay_mode) on public.cardcom_config from service_role;
+
+grant update (save_card_on_purchase, google_pay_mode) on public.cardcom_config to service_role;

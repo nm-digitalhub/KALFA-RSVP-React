@@ -3,15 +3,27 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { EditableField } from '@/app/(admin)/admin/_form-fields';
+import type { GooglePayMode } from '@/lib/cardcom/google-pay-mode';
 
 import { updateCardcomConfigAction } from './actions';
+
+// The three positions of the Google Pay setting, in the order an operator moves through them: nobody, only people who may
+// configure the integration (the real-money acceptance), everybody.
+export const GOOGLE_PAY_OPTIONS: ReadonlyArray<{ value: GooglePayMode; label: string; hint: string }> = [
+  { value: 'off', label: 'כבוי', hint: 'אף לקוח לא רואה Google Pay. טופס הכרטיס נשאר כפי שהוא.' },
+  { value: 'admins', label: 'מנהלים בלבד', hint: 'רק מי שמורשה לנהל את האינטגרציה רואה Google Pay. כך מריצים את בדיקת ה-₪1 האמיתית בלי לחשוף לקוחות.' },
+  { value: 'all', label: 'כולם', hint: 'כל קונה שהרכישה שלו עוברת ל-CardCom רואה Google Pay.' },
+];
 
 export type CardcomConfigFormValues = {
   terminal_number: string;
   api_name: string;
   enabled: boolean;
   save_card_on_purchase: boolean;
+  /** Who is offered Google Pay on the payment form. */
+  google_pay_mode: GooglePayMode;
   /** Whether a password is stored. The password itself is never sent to the form. */
   has_password: boolean;
   /** Whether the document report secret is stored. The secret itself is never sent to the form. */
@@ -109,6 +121,39 @@ export function CardcomConfigForm({ values }: { values: CardcomConfigFormValues 
           </span>
         </span>
       </label>
+
+      {/* Google Pay (add-google-pay-cardcom): who is offered it above the card fields. Takes effect on the NEXT page load — no
+          deploy. It is also withheld while the save-card switch above is on (a wallet payment may not return the token that
+          switch promises), and it needs the terminal enabled for Google Pay at CardCom before it is moved past "admins". */}
+      <fieldset className="space-y-2" aria-describedby="google-pay-mode-hint">
+        <legend className="text-sm font-medium">Google Pay בטופס התשלום</legend>
+        <p id="google-pay-mode-hint" className="text-xs text-muted-foreground">
+          מופיע מעל שדות הכרטיס, רק ברכישה שעוברת ל-CardCom, ולא כשהמתג &quot;שמירת כרטיס ברכישה&quot; דולק. לפני מעבר ל&quot;כולם&quot; יש לוודא מול
+          CardCom שהמסוף מאופשר ל-Google Pay.
+        </p>
+        {/* The shared radio group (Base UI): it renders the hidden input that makes the chosen position part of the form's data. */}
+        <RadioGroup name="google_pay_mode" defaultValue={values.google_pay_mode} aria-label="Google Pay בטופס התשלום">
+          {GOOGLE_PAY_OPTIONS.map((option) => {
+            const hintId = `google-pay-option-${option.value}`;
+            return (
+              <label key={option.value} className="flex cursor-pointer items-start gap-3">
+                <RadioGroupItem value={option.value} aria-describedby={hintId} className="mt-1" />
+                <span>
+                  <span className="block text-sm font-medium">{option.label}</span>
+                  <span id={hintId} className="block text-xs text-muted-foreground">
+                    {option.hint}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </RadioGroup>
+        {e?.google_pay_mode ? (
+          <p role="alert" className="text-sm text-destructive">
+            {e.google_pay_mode[0]}
+          </p>
+        ) : null}
+      </fieldset>
 
       <SubmitButton>שמירה</SubmitButton>
     </form>

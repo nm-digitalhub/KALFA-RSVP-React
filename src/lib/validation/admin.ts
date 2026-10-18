@@ -9,6 +9,7 @@ import { z } from 'zod';
 // `LABELS[s] ?? s` fallback so legacy/foreign values never break the UI.
 
 import { agreementLinkUrlSchema } from '@/lib/agreements/link-url';
+import { GOOGLE_PAY_MODES } from '@/lib/cardcom/google-pay-mode';
 import { Constants } from '@/lib/supabase/types';
 import { wallClockToDate } from '@/lib/data/event-date';
 import { ISRAEL_TIME_ZONE } from '@/lib/date';
@@ -502,6 +503,9 @@ export const cardcomConfigSchema = z.object({
   enabled: z.boolean(),
   // The save-card switch: purchases request ChargeAndCreateToken (charge + save the card) instead of ChargeOnly.
   save_card_on_purchase: z.boolean(),
+  // Who is offered Google Pay on the payment form (add-google-pay-cardcom). The form always submits one position, so a missing or
+  // unknown value is an error, never a silent change of the setting.
+  google_pay_mode: z.enum(GOOGLE_PAY_MODES, { error: 'נא לבחור מצב ל-Google Pay' }),
 });
 
 export const extraSmsSchema = z.object({

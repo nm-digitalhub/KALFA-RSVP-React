@@ -3,7 +3,15 @@ import { TriangleAlert } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { AdminCardcomConfig } from '@/lib/data/admin/integrations/cardcom-config';
 
+import type { GooglePayMode } from '@/lib/cardcom/google-pay-mode';
+
 import { Badge } from '../../_components';
+
+const GOOGLE_PAY_LABEL: Record<GooglePayMode, string> = {
+  off: 'כבוי',
+  admins: 'מנהלים בלבד',
+  all: 'כולם',
+};
 
 // Its own file and its own test, like the other status cards: nested inside a page it would be invisible to the render
 // walk, which does not invoke function components.
@@ -36,6 +44,8 @@ export function CardcomStatusCard({ config }: { config: AdminCardcomConfig }) {
         <dd dir="ltr" className="text-start">{config.terminalNumber}</dd>
         <dt className="text-muted-foreground">שם API</dt>
         <dd dir="ltr" className="text-start">{config.apiName}</dd>
+        <dt className="text-muted-foreground">Google Pay</dt>
+        <dd>{GOOGLE_PAY_LABEL[config.googlePayMode]}</dd>
       </dl>
       {config.isTestTerminal ? (
         <Alert>

@@ -59,6 +59,7 @@ export default async function CardcomPage() {
             api_name: config.apiName ?? '',
             enabled: config.enabled,
             save_card_on_purchase: config.saveCardOnPurchase,
+            google_pay_mode: config.googlePayMode,
             has_password: config.hasPassword,
             has_document_report_secret: config.hasDocumentReportSecret,
             document_report_url: documentReportUrl,

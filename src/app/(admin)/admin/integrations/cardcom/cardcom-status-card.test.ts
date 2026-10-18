@@ -15,7 +15,7 @@ function textOf(node: unknown): string {
 }
 
 const config = (over = {}) => ({
-  exists: true, terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false, hasPassword: true, hasDocumentReportSecret: true, isTestTerminal: false,
+  exists: true, terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false, googlePayMode: 'off' as const, hasPassword: true, hasDocumentReportSecret: true, isTestTerminal: false,
   updatedAt: '2026-10-07T10:00:00.000Z', ...over,
 });
 
@@ -39,6 +39,16 @@ describe('CardcomStatusCard', () => {
     const text = textOf(CardcomStatusCard({ config: config({ terminalNumber: 1000, isTestTerminal: true }) }));
     expect(text).toContain('מסוף בדיקות');
     expect(text).toContain('מנהל פלטפורמה בלבד');
+  });
+
+  it.each([
+    ['off', 'כבוי'],
+    ['admins', 'מנהלים בלבד'],
+    ['all', 'כולם'],
+  ] as const)('shows the Google Pay position %s as "%s"', (googlePayMode, label) => {
+    const text = textOf(CardcomStatusCard({ config: config({ googlePayMode }) }));
+    expect(text).toContain('Google Pay');
+    expect(text).toContain(label);
   });
 
   it('does not warn on a real terminal', () => {

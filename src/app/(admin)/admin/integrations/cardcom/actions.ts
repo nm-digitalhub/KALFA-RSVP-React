@@ -25,6 +25,7 @@ export async function updateCardcomConfigAction(
     document_report_secret: formData.get('document_report_secret') ?? '',
     enabled: formData.get('enabled') === 'on',
     save_card_on_purchase: formData.get('save_card_on_purchase') === 'on',
+    google_pay_mode: formData.get('google_pay_mode') ?? '',
   });
   if (!parsed.success) {
     return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
@@ -37,12 +38,17 @@ export async function updateCardcomConfigAction(
       documentReportSecret: parsed.data.document_report_secret,
       enabled: parsed.data.enabled,
       saveCardOnPurchase: parsed.data.save_card_on_purchase,
+      googlePayMode: parsed.data.google_pay_mode,
     });
     if (!result.ok) {
       return { fieldErrors: { api_password: ['כדי להפעיל את CardCom חובה סיסמת API שמורה (היא נדרשת להחזרים)'] } };
     }
   } catch (err) {
     unstable_rethrow(err);
+    // The form gets one safe sentence, so the cause has to be findable somewhere else: the database's error code (42501 = a privilege
+    // is missing, 22023 = a value was refused, ...). Only the code — never the message, which can carry a value.
+    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : 'none';
+    console.error('[cardcom-config] save failed', { code });
     return { error: 'שמירת פרטי CardCom נכשלה. נסו שוב.' };
   }
   revalidatePath('/admin/integrations/cardcom');

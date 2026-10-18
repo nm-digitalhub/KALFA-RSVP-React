@@ -63,7 +63,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   vi.mocked(getPaymentsEnabled).mockResolvedValue(true);
   vi.mocked(getPackageModelEnabled).mockResolvedValue(true);
-  vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true , saveCardOnPurchase: false });
+  vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true , saveCardOnPurchase: false, googlePayMode: 'off' });
   vi.mocked(getCampaignCreditTotal).mockResolvedValue(0);
   vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'none' } as never);
   vi.mocked(lowProfileCreate).mockResolvedValue({ ResponseCode: 0, Description: 'ok', LowProfileId: 'lp-new', Url: 'https://secure.cardcom.solutions/EA/LPC6/1001/x' } as never);
@@ -79,8 +79,8 @@ describe('startCardcomPurchase: gates (all fail closed)', () => {
     ['payments are off', () => vi.mocked(getPaymentsEnabled).mockResolvedValue(false)],
     ['the package model is off', () => vi.mocked(getPackageModelEnabled).mockResolvedValue(false)],
     ['CardCom is not configured', () => vi.mocked(getCardcomServerConfig).mockResolvedValue(null)],
-    ['the pilot switch is off', () => vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'x', enabled: false , saveCardOnPurchase: false })],
-    ['it is the test terminal and the buyer is not an admin', () => vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'x', enabled: true , saveCardOnPurchase: false })],
+    ['the pilot switch is off', () => vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'x', enabled: false , saveCardOnPurchase: false, googlePayMode: 'off' })],
+    ['it is the test terminal and the buyer is not an admin', () => vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'x', enabled: true , saveCardOnPurchase: false, googlePayMode: 'off' })],
   ])('refuses when %s, and touches nothing', async (_label, arrange) => {
     arrange();
     await expect(startCardcomPurchase(input())).resolves.toEqual({ status: 'disabled' });
@@ -89,7 +89,7 @@ describe('startCardcomPurchase: gates (all fail closed)', () => {
   });
 
   it('lets a platform admin buy on the test terminal', async () => {
-    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'x', enabled: true , saveCardOnPurchase: false });
+    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'x', enabled: true , saveCardOnPurchase: false, googlePayMode: 'off' });
     await expect(startCardcomPurchase(input({ mayUseTestTerminal: true }))).resolves.toMatchObject({ status: 'ready' });
   });
 
@@ -257,7 +257,7 @@ describe('startCardcomPurchase: opening the session', () => {
   });
 
   it('the save-card switch flips the request to ChargeAndCreateToken, and the stamp follows the same value', async () => {
-    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: true });
+    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: true, googlePayMode: 'off' });
     await expect(startCardcomPurchase(input())).resolves.toMatchObject({ status: 'ready' });
     expect(vi.mocked(lowProfileCreate).mock.calls[0][0]).toMatchObject({ Operation: 'ChargeAndCreateToken' });
     expect(ops()).toMatchObject([{ provider_operation: 'ChargeAndCreateToken' }]);
@@ -270,7 +270,7 @@ describe('startCardcomPurchase: opening the session', () => {
   });
 
   it('on the test terminal the row is born as test money, and the request names the same terminal', async () => {
-    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'kalfa-api', enabled: true , saveCardOnPurchase: false });
+    vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'kalfa-api', enabled: true , saveCardOnPurchase: false, googlePayMode: 'off' });
     await expect(startCardcomPurchase(input({ mayUseTestTerminal: true }))).resolves.toMatchObject({ status: 'ready' });
     expect(ops()).toMatchObject([{ provider: 'cardcom', provider_terminal: 1000, is_test: true }]);
     expect(vi.mocked(lowProfileCreate).mock.calls[0][0]).toMatchObject({ TerminalNumber: 1000 });

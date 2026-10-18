@@ -19,6 +19,7 @@ const row = (over: TableRow = {}): TableRow => ({
   api_name: 'kalfa-api',
   enabled: true,
   save_card_on_purchase: false,
+  google_pay_mode: 'off',
   ...over,
 });
 
@@ -33,6 +34,7 @@ describe('getCardcomServerConfig', () => {
       apiName: 'kalfa-api',
       enabled: true,
       saveCardOnPurchase: false,
+      googlePayMode: 'off',
     });
   });
 
@@ -43,7 +45,29 @@ describe('getCardcomServerConfig', () => {
       apiName: 'kalfa-api',
       enabled: false,
       saveCardOnPurchase: false,
+      googlePayMode: 'off',
     });
+  });
+
+  it.each(['off', 'admins', 'all'] as const)('carries the Google Pay position %s as stored', async (mode) => {
+    fake = createFakeTableClient({ cardcom_config: [row({ google_pay_mode: mode })] });
+    await expect(getCardcomServerConfig()).resolves.toMatchObject({ googlePayMode: mode });
+  });
+
+  it.each([
+    ['an unknown word', 'everyone'],
+    ['a different case', 'ALL'],
+    ['null', null],
+    ['a type that makes no sense', 7],
+  ])('reads %s as off for Google Pay and still returns the connection', async (_label, stored) => {
+    fake = createFakeTableClient({ cardcom_config: [row({ google_pay_mode: stored })] });
+    await expect(getCardcomServerConfig()).resolves.toMatchObject({ terminalNumber: 1001, enabled: true, googlePayMode: 'off' });
+  });
+
+  it('reads the Google Pay column along with the rest, in one query', async () => {
+    await getCardcomServerConfig();
+    expect(fake.ops).toHaveLength(1);
+    expect(JSON.stringify(fake.ops[0])).toContain('google_pay_mode');
   });
 
   it('carries the save-card switch when it is on, and only an explicit true turns it on', async () => {

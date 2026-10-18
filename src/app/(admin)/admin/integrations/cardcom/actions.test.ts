@@ -9,7 +9,7 @@ import { updateCardcomConfigAction } from './actions';
 
 const form = (over: Record<string, string> = {}) => {
   const f = new FormData();
-  const values: Record<string, string> = { terminal_number: '1001', api_name: 'kalfa-api', api_password: 'pw', enabled: 'on', ...over };
+  const values: Record<string, string> = { terminal_number: '1001', api_name: 'kalfa-api', api_password: 'pw', enabled: 'on', google_pay_mode: 'off', ...over };
   for (const [k, v] of Object.entries(values)) f.set(k, v);
   return f;
 };
@@ -29,6 +29,7 @@ describe('updateCardcomConfigAction', () => {
       documentReportSecret: '',
       enabled: true,
       saveCardOnPurchase: false,
+      googlePayMode: 'off',
     });
     expect(state).toEqual({ notice: 'פרטי CardCom נשמרו' });
     expect(revalidateMock).toHaveBeenCalledWith('/admin/integrations/cardcom');
@@ -46,12 +47,36 @@ describe('updateCardcomConfigAction', () => {
       documentReportSecret: '',
       enabled: false,
       saveCardOnPurchase: false,
+      googlePayMode: 'off',
     });
   });
 
   it('the save-card checkbox reaches the save as a boolean', async () => {
     await updateCardcomConfigAction(null, form({ save_card_on_purchase: 'on' }));
     expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ saveCardOnPurchase: true }));
+  });
+
+  it.each(['off', 'admins', 'all'])('the Google Pay position %s reaches the save as it was chosen', async (mode) => {
+    await updateCardcomConfigAction(null, form({ google_pay_mode: mode }));
+    expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ googlePayMode: mode }));
+  });
+
+  it.each([
+    ['an unknown word', 'everyone'],
+    ['a different case', 'ALL'],
+    ['an empty choice', ''],
+  ])('rejects %s for Google Pay without saving, never silently turning it off', async (_label, value) => {
+    const state = await updateCardcomConfigAction(null, form({ google_pay_mode: value }));
+    expect(state).toMatchObject({ fieldErrors: { google_pay_mode: [expect.any(String)] } });
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a submit that carries no Google Pay choice at all', async () => {
+    const f = form();
+    f.delete('google_pay_mode');
+    const state = await updateCardcomConfigAction(null, f);
+    expect(state).toMatchObject({ fieldErrors: { google_pay_mode: [expect.any(String)] } });
+    expect(saveMock).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -80,6 +105,19 @@ describe('updateCardcomConfigAction', () => {
     const state = await updateCardcomConfigAction(null, form({ api_password: '' }));
     expect(state).toMatchObject({ fieldErrors: { api_password: [expect.stringContaining('סיסמ')] } });
     expect(revalidateMock).not.toHaveBeenCalled();
+  });
+
+  it('logs only the database error code of a failed save, so the cause can be found without the form ever showing it', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    saveMock.mockRejectedValue(Object.assign(new Error('permission denied for table cardcom_config'), { code: '42501', details: 'api_name=kalfa-api' }));
+    await updateCardcomConfigAction(null, form({ api_password: 'typed-secret' }));
+    expect(log).toHaveBeenCalledWith('[cardcom-config] save failed', { code: '42501' });
+    const logged = JSON.stringify(log.mock.calls);
+    for (const never of ['kalfa-api', 'typed-secret', 'permission denied']) expect(logged).not.toContain(never);
+    saveMock.mockRejectedValue(new Error('no code at all'));
+    await updateCardcomConfigAction(null, form());
+    expect(log).toHaveBeenLastCalledWith('[cardcom-config] save failed', { code: 'none' });
+    log.mockRestore();
   });
 
   it('answers a failed save with a safe message, never the error', async () => {

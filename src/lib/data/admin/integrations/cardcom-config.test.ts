@@ -24,6 +24,7 @@ const row = (over: TableRow = {}): TableRow => ({
   api_name: 'kalfa-api',
   enabled: true,
   save_card_on_purchase: false,
+  google_pay_mode: 'off',
   api_password_secret: SECRET_ID,
   updated_at: '2026-10-07T10:00:00.000Z',
   ...over,
@@ -35,6 +36,7 @@ const input = (over: Partial<Parameters<typeof saveCardcomConfig>[0]> = {}) => (
   documentReportSecret: '',
   enabled: true,
   saveCardOnPurchase: false,
+  googlePayMode: 'off' as const,
   ...over,
 });
 
@@ -58,12 +60,23 @@ describe('readCardcomAdminConfig', () => {
       apiName: 'kalfa-api',
       enabled: true,
       saveCardOnPurchase: false,
+      googlePayMode: 'off',
       hasPassword: true,
       hasDocumentReportSecret: false,
       isTestTerminal: false,
       updatedAt: '2026-10-07T10:00:00.000Z',
     });
     expect(JSON.stringify(view)).not.toContain(SECRET_ID);
+  });
+
+  it.each(['off', 'admins', 'all'] as const)('shows the stored Google Pay position %s', async (mode) => {
+    fake = createFakeTableClient({ cardcom_config: [row({ google_pay_mode: mode })] });
+    expect((await readCardcomAdminConfig()).googlePayMode).toBe(mode);
+  });
+
+  it('reads a stored Google Pay value that is none of the three as off', async () => {
+    fake = createFakeTableClient({ cardcom_config: [row({ google_pay_mode: 'everyone' })] });
+    expect((await readCardcomAdminConfig()).googlePayMode).toBe('off');
   });
 
   it('says whether the document report secret is saved, from a boolean the database answers', async () => {
@@ -98,7 +111,7 @@ describe('saveCardcomConfig', () => {
     expect(fake.rpcCalls).toEqual([
       {
         fn: 'cardcom_config_save',
-        args: { p_terminal_number: 1001, p_api_name: 'kalfa-api', p_api_password: 'new-password', p_enabled: true, p_updated_by: 'session-user', p_save_card_on_purchase: false },
+        args: { p_terminal_number: 1001, p_api_name: 'kalfa-api', p_api_password: 'new-password', p_enabled: true, p_updated_by: 'session-user', p_save_card_on_purchase: false, p_google_pay_mode: 'off' },
       },
     ]);
   });
@@ -107,6 +120,19 @@ describe('saveCardcomConfig', () => {
     await expect(saveCardcomConfig(input({ saveCardOnPurchase: true }))).resolves.toEqual({ ok: true });
     expect(fake.rpcCalls[0].args).toMatchObject({ p_save_card_on_purchase: true });
     expect(logActivityMock.mock.calls[0][0].meta).toMatchObject({ saveCardOnPurchase: true });
+  });
+
+  it.each(['off', 'admins', 'all'] as const)('the Google Pay position %s travels to the database function and into the audit record', async (googlePayMode) => {
+    await expect(saveCardcomConfig(input({ googlePayMode }))).resolves.toEqual({ ok: true });
+    expect(fake.rpcCalls[0].args).toMatchObject({ p_google_pay_mode: googlePayMode });
+    expect(logActivityMock.mock.calls[0][0].meta).toMatchObject({ googlePayMode });
+  });
+
+  it('refuses a user who may not manage the integration: nothing is saved, nothing is logged, Google Pay included', async () => {
+    permMock.mockRejectedValue(new Error('forbidden'));
+    await expect(saveCardcomConfig(input({ googlePayMode: 'all' }))).rejects.toThrow('forbidden');
+    expect(fake.rpcCalls).toEqual([]);
+    expect(logActivityMock).not.toHaveBeenCalled();
   });
 
   it('keeps the stored password when the field is blank, and the switch can still be turned on', async () => {
@@ -136,7 +162,7 @@ describe('saveCardcomConfig', () => {
     await saveCardcomConfig(input({ apiPassword: 'super-secret' }));
     expect(logActivityMock).toHaveBeenCalledWith({
       action: 'admin.cardcom_config.saved',
-      meta: { terminalNumber: 1001, enabled: true, saveCardOnPurchase: false, passwordSubmitted: true, documentReportSecretSubmitted: false },
+      meta: { terminalNumber: 1001, enabled: true, saveCardOnPurchase: false, googlePayMode: 'off', passwordSubmitted: true, documentReportSecretSubmitted: false },
     });
     expect(JSON.stringify(logActivityMock.mock.calls)).not.toContain('super-secret');
   });

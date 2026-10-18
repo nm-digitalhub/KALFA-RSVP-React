@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
+import { parseGooglePayMode, type GooglePayMode } from '@/lib/cardcom/google-pay-mode';
 import { logActivity } from '@/lib/data/activity';
 import { isCardcomTestTerminal } from '@/lib/data/cardcom-config';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -26,6 +27,8 @@ export type AdminCardcomConfig = {
   enabled: boolean;
   /** The save-card switch: purchases ask CardCom to also save the card (ChargeAndCreateToken) for upgrade charges. */
   saveCardOnPurchase: boolean;
+  /** Who is offered Google Pay on the payment form: off, admins (only someone who may configure the integration) or all. */
+  googlePayMode: GooglePayMode;
   /** A password is stored in the vault (needed to refund, and to switch the pilot on). */
   hasPassword: boolean;
   /** The document report webhook secret is stored in the vault. */
@@ -41,6 +44,7 @@ export const UNCONFIGURED_CARDCOM: AdminCardcomConfig = {
   apiName: null,
   enabled: false,
   saveCardOnPurchase: false,
+  googlePayMode: 'off',
   hasPassword: false,
   hasDocumentReportSecret: false,
   isTestTerminal: false,
@@ -53,7 +57,7 @@ export async function readCardcomAdminConfig(): Promise<AdminCardcomConfig> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('cardcom_config')
-    .select('terminal_number, api_name, enabled, save_card_on_purchase, api_password_secret, updated_at')
+    .select('terminal_number, api_name, enabled, save_card_on_purchase, google_pay_mode, api_password_secret, updated_at')
     .eq('id', true)
     .maybeSingle();
 
@@ -71,6 +75,7 @@ export async function readCardcomAdminConfig(): Promise<AdminCardcomConfig> {
     apiName: data.api_name,
     enabled: data.enabled,
     saveCardOnPurchase: data.save_card_on_purchase,
+    googlePayMode: parseGooglePayMode(data.google_pay_mode),
     // The vault secret id collapses to a boolean HERE and is never returned.
     hasPassword: data.api_password_secret !== null,
     hasDocumentReportSecret: secretSaved === true,
@@ -91,6 +96,8 @@ export async function saveCardcomConfig(input: {
   enabled: boolean;
   /** The save-card switch; the form always decides it, so no "keep stored" sentinel here. */
   saveCardOnPurchase: boolean;
+  /** Who is offered Google Pay; the form always decides it, so no "keep stored" sentinel here either. */
+  googlePayMode: GooglePayMode;
 }): Promise<SaveCardcomConfigResult> {
   const user = await requirePlatformPermission('integrations.manage');
   const admin = createAdminClient();
@@ -111,6 +118,7 @@ export async function saveCardcomConfig(input: {
     // From the SESSION, never from the form: auth.uid() is NULL under the service role, so this is the only provenance.
     p_updated_by: user.id,
     p_save_card_on_purchase: input.saveCardOnPurchase,
+    p_google_pay_mode: input.googlePayMode,
   });
   if (error) throw error;
 
@@ -128,6 +136,7 @@ export async function saveCardcomConfig(input: {
       terminalNumber: input.terminalNumber,
       enabled: input.enabled,
       saveCardOnPurchase: input.saveCardOnPurchase,
+      googlePayMode: input.googlePayMode,
       passwordSubmitted: input.apiPassword !== '',
       documentReportSecretSubmitted: input.documentReportSecret !== '',
     },

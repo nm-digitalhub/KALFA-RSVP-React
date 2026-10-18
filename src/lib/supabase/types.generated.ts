@@ -1847,6 +1847,7 @@ export type Database = {
           api_name: string
           api_password_secret: string | null
           enabled: boolean
+          google_pay_mode: string
           id: boolean
           save_card_on_purchase: boolean
           terminal_number: number
@@ -1857,6 +1858,7 @@ export type Database = {
           api_name: string
           api_password_secret?: string | null
           enabled?: boolean
+          google_pay_mode?: string
           id?: boolean
           save_card_on_purchase?: boolean
           terminal_number: number
@@ -1867,6 +1869,7 @@ export type Database = {
           api_name?: string
           api_password_secret?: string | null
           enabled?: boolean
+          google_pay_mode?: string
           id?: boolean
           save_card_on_purchase?: boolean
           terminal_number?: number
@@ -8204,6 +8207,7 @@ export type Database = {
           p_api_name: string
           p_api_password: string
           p_enabled: boolean
+          p_google_pay_mode?: string
           p_save_card_on_purchase?: boolean
           p_terminal_number: number
           p_updated_by: string
