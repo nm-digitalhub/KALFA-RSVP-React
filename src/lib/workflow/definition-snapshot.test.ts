@@ -27,6 +27,12 @@ import type { handleWorkflowRun } from './enqueue';
 // reads as never-reached and RUNS on resume. The protection people assume they
 // have covers the steps that happened, not the steps that appeared.
 
+// ⚠️ THE TIMEOUT IS FOR THE COLD IMPORT, NOT FOR THE ASSERTIONS. The first test to reach `await import('./enqueue')` loads that
+// module's real graph (the integration runtime, the queues, the stores' callers) after `vi.resetModules()`. MEASURED 2026-10-18:
+// ~1 s when the file runs alone, 6.6 s for the file (the first test over the default 5 s) inside the full 12,922-test run, where
+// the same worker pool is busy transforming thousands of other files. The assertions never changed; only the clock did.
+const COLD_IMPORT_TIMEOUT_MS = 30_000;
+
 const WAITED = { nodes: [{ id: 'old' }] };
 const EDITED_SINCE = { nodes: [{ id: 'old' }, { id: 'added-while-asleep' }] };
 
@@ -69,7 +75,7 @@ describe('which definition a run executes', () => {
     expect(runWorkflow).toHaveBeenCalledWith(
       expect.objectContaining({ storedDefinition: expected }),
     );
-  });
+  }, COLD_IMPORT_TIMEOUT_MS);
 
   it('⚠️ a run created BEFORE the column falls back to the live definition', async () => {
     // The column is nullable and nothing was backfilled, so every run already in
@@ -101,5 +107,5 @@ describe('which definition a run executes', () => {
     expect(runWorkflow).toHaveBeenCalledWith(
       expect.objectContaining({ storedDefinition: EDITED_SINCE }),
     );
-  });
+  }, COLD_IMPORT_TIMEOUT_MS);
 });
