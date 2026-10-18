@@ -13,7 +13,6 @@ import {
   isValidCardholderEmail,
   isValidCardholderName,
   parseFrameMessage,
-  postCardOwnerDetails,
   postToFrame,
   threeDsErrorOf,
   validateCardholder,
@@ -23,7 +22,7 @@ import {
 
 // The protocol between our payment page and CardCom's Open Fields iframes (docs/superpowers/plans/2026-10-07-cardcom-pilot-plan.md,
 // 1ב). Everything here is pure: what we SEND, what we ACCEPT, and what we refuse. The two rules that matter most:
-//   - we post only to CardCom's origin, never '*', and accept messages only FROM it;
+//   - we post exactly as CardCom's sample does, with '*' (the owner's instruction of 18.10.2026), and accept messages only FROM its origin;
 //   - nothing the iframe says decides a payment (the server asks CardCom): a message is at most a reason to ask.
 
 const NOW = new Date('2026-10-07T12:00:00Z');
@@ -236,19 +235,18 @@ describe('postToFrame', () => {
     return { calls, window: { postMessage: (message: unknown, target: string) => void calls.push([message, target]) } as unknown as Window };
   };
 
-  it('posts init and doTransaction to CardCom\'s exact origin and never to a wildcard', () => {
+  // The owner's instruction, 18.10.2026: every message goes exactly as CardCom's sample writes the call, with '*' as the target.
+  it('posts init and doTransaction with \'*\', as CardCom\'s sample does', () => {
     const { calls, window } = frame();
     postToFrame(window, buildInitMessage({ lowProfileCode: 'lp-1' }));
     postToFrame(window, buildDoTransactionMessage({ ...valid }));
-    expect(calls.map(([, target]) => target)).toEqual([OPEN_FIELDS_ORIGIN, OPEN_FIELDS_ORIGIN]);
-    expect(calls.some(([, target]) => target === '*')).toBe(false);
+    expect(calls.map(([, target]) => target)).toEqual(['*', '*']);
     expect(calls.map(([message]) => (message as { action: string }).action)).toEqual(['init', 'doTransaction']);
   });
 
-  // The owner's instruction, 18.10.2026: the cardholder's details go exactly as CardCom writes the call, with '*' as the target.
   it('posts the cardholder details exactly as CardCom documents the call: { action: \'setCardOwnerDetails\', data } with \'*\'', () => {
     const { calls, window } = frame();
-    postCardOwnerDetails(window, buildSetCardOwnerDetailsMessage({ name: 'דנה כהן', email: 'dana@example.com', phone: '0501234567' }));
+    postToFrame(window, buildSetCardOwnerDetailsMessage({ name: 'דנה כהן', email: 'dana@example.com', phone: '0501234567' }));
     expect(calls).toHaveLength(1);
     expect(calls[0][1]).toBe('*');
     expect(Object.keys(calls[0][0] as object).sort()).toEqual(['action', 'data']);

@@ -109,14 +109,14 @@ describe('CardcomOpenFieldsForm', () => {
     expect(names).not.toMatch(/cc-number|cardnumber|cvv|cvc/);
   });
 
-  it('initialises the frames once the master frame has loaded, posting only to CardCom\'s origin', async () => {
+  it('initialises the frames once the master frame has loaded, posting with \'*\' as CardCom\'s sample does', async () => {
     render(<CardcomOpenFieldsForm {...props} />);
     await openSession();
     const post = masterWindow();
     fireEvent.load(frame(OPEN_FIELDS_FRAME_ID.master)!);
     expect(post).toHaveBeenCalledTimes(1);
     expect(post.mock.calls[0][0]).toMatchObject({ action: 'init', lowProfileCode: 'lp-1' });
-    expect(post.mock.calls[0][1]).toBe(OPEN_FIELDS_ORIGIN);
+    expect(post.mock.calls[0][1]).toBe('*');
   });
 
   it('refuses to submit a card that has expired, and says which field, without posting anything', async () => {
@@ -142,7 +142,7 @@ describe('CardcomOpenFieldsForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /^שלם/ }));
     expect(post).toHaveBeenCalledTimes(1);
     expect(post.mock.calls[0][0]).toMatchObject({ action: 'doTransaction', cardOwnerId: VALID_ID, cardOwnerName: 'דנה כהן', cardOwnerEmail: 'dana@example.com', cardOwnerPhone: '0501234567', address: ADDRESS, city: CITY, document: { AddressLine1: ADDRESS, City: CITY, Mobile: '0501234567' }, expirationMonth: '12', expirationYear: '39', numberOfPayments: '1' });
-    expect(post.mock.calls[0][1]).toBe(OPEN_FIELDS_ORIGIN);
+    expect(post.mock.calls[0][1]).toBe('*');
     expect((screen.getByRole('button', { name: /מעבד/ }) as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -208,7 +208,7 @@ describe('CardcomOpenFieldsForm', () => {
     fill(/שנה/, '39');
     fireEvent.click(screen.getByRole('button', { name: /^שלם/ }));
     expect(post.mock.calls[0][0]).toMatchObject({ cardOwnerPhone: '0527654321' });
-    expect(post.mock.calls[0][1]).toBe(OPEN_FIELDS_ORIGIN);
+    expect(post.mock.calls[0][1]).toBe('*');
     cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true } });
     await waitFor(() => expect(callsTo(SETTLE_URL)).toHaveLength(1));
     const bodies = fetchMock.mock.calls.map((c) => String(c[1]?.body ?? '')).join('|');
@@ -227,7 +227,7 @@ describe('CardcomOpenFieldsForm', () => {
     fill(/שנה/, '39');
     fireEvent.click(screen.getByRole('button', { name: /^שלם/ }));
     expect(post.mock.calls[0][0]).toMatchObject({ cardOwnerId: '000000018' });
-    expect(post.mock.calls[0][1]).toBe(OPEN_FIELDS_ORIGIN);
+    expect(post.mock.calls[0][1]).toBe('*');
     // ...and it never reaches OUR server: no request body of ours carries it.
     cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true } });
     await waitFor(() => expect(callsTo(SETTLE_URL)).toHaveLength(1));
@@ -675,7 +675,7 @@ describe('CardcomOpenFieldsForm — Google Pay', () => {
     const charge = post.mock.calls.filter((c) => (c[0] as { action?: string }).action === 'doTransaction');
     expect(charge).toHaveLength(1);
     expect(charge[0][0]).toMatchObject({ cardOwnerId: VALID_ID, numberOfPayments: '1' });
-    expect(charge[0][1]).toBe(OPEN_FIELDS_ORIGIN);
+    expect(charge[0][1]).toBe('*');
   });
 });
 

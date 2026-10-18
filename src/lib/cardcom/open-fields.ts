@@ -3,7 +3,8 @@
 // inside OUR form as iframes, so the card number never touches our servers or our DOM.
 //
 // Pure on purpose — no DOM, no React — so what we send, what we accept and what we refuse are all unit-tested:
-//   - we post ONLY to CardCom's origin, never '*' (CardCom's own sample uses '*'), and we accept messages ONLY from it;
+//   - we post exactly as CardCom's sample does, with '*' as the target (the owner's instruction of 18.10.2026), and only to the master
+//     frame our own form renders from CardCom's address; we accept messages ONLY from CardCom's origin;
 //   - a message is never believed about money: HandleSubmit/HandleEror are reasons for the server to ask CardCom
 //     (GetLpResult), which alone decides whether a payment happened;
 //   - CardCom's own text (Description, message) is never passed on: the page shows its own generic sentences;
@@ -278,7 +279,7 @@ export type SetCardOwnerDetailsMessage = {
   };
 };
 
-// Posted to the MASTER frame with postCardOwnerDetails (CardCom's sample does the same; the Google Pay frame is not the target). Never built from details
+// Posted to the MASTER frame with postToFrame (CardCom's sample does the same; the Google Pay frame is not the target). Never built from details
 // that do not pass checkWalletDetails: a wallet payment started with half a cardholder would fail at 3D Secure, after the buyer
 // has already approved it in their wallet.
 export function buildSetCardOwnerDetailsMessage(details: WalletDetails): SetCardOwnerDetailsMessage {
@@ -298,16 +299,10 @@ export function buildSetCardOwnerDetailsMessage(details: WalletDetails): SetCard
   };
 }
 
-// Posts to a CardCom frame, and only to CardCom's origin.
-export function postToFrame(frame: Window, message: InitMessage | DoTransactionMessage): void {
-  frame.postMessage(message, OPEN_FIELDS_ORIGIN);
-}
-
-// The cardholder's details, EXACTLY as CardCom's documentation writes the call: `iframe.contentWindow.postMessage({ action:
-// 'setCardOwnerDetails', data }, '*')` — the owner's instruction of 18.10.2026 ("you must work exactly like that"). It is the one
-// message sent with a wildcard target, and it is posted only to the master frame our own form renders from CardCom's address; the
-// payload is the buyer's own name, e-mail and phone, which they typed into this same page.
-export function postCardOwnerDetails(frame: Window, message: SetCardOwnerDetailsMessage): void {
+// Posts to CardCom's master frame EXACTLY as CardCom's sample and documentation write every call: `iframe.contentWindow.postMessage(
+// message, '*')` — the owner's instruction of 18.10.2026 ("you must work exactly like that"; first for setCardOwnerDetails, then for
+// init and doTransaction too). The frame is the master frame our own form renders from CardCom's address.
+export function postToFrame(frame: Window, message: InitMessage | DoTransactionMessage | SetCardOwnerDetailsMessage): void {
   frame.postMessage(message, '*');
 }
 

@@ -18,7 +18,6 @@ import {
   checkWalletDetails,
   googlePayFrameSrc,
   parseFrameMessage,
-  postCardOwnerDetails,
   postToFrame,
   threeDsErrorOf,
   validateCardholder,
@@ -357,13 +356,13 @@ export function CardcomOpenFieldsForm({
   }, [lowProfileId]);
 
   // Tell CardCom's master frame who the buyer is, once all three details are valid and again whenever they change. Only valid details
-  // are ever sent (buildSetCardOwnerDetailsMessage refuses the rest), exactly as CardCom documents the call (postCardOwnerDetails).
+  // are ever sent (buildSetCardOwnerDetailsMessage refuses the rest), exactly as CardCom documents the call (postToFrame).
   useEffect(() => {
     if (walletSrc === null || !masterLoaded || lowProfileId === null || !walletDetails.ok || walletKey === null || walletKey === walletSentKey) return;
     const frame = masterRef.current?.contentWindow;
     if (!frame) return;
     const timer = setTimeout(() => {
-      postCardOwnerDetails(frame, buildSetCardOwnerDetailsMessage(walletDetails.value));
+      postToFrame(frame, buildSetCardOwnerDetailsMessage(walletDetails.value));
       setWalletSent({ session: lowProfileId, key: walletKey });
     }, WALLET_DETAILS_DEBOUNCE_MS);
     return () => clearTimeout(timer);
