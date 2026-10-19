@@ -60,6 +60,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:scraper": "node --test scripts/docs-scraper/scraper.test.mjs",
+    "test:permission-matrix": "node --test scripts/permission-matrix/analyze.test.mjs",
     "test:fleet-scheduler": "node --test .claude/fleet/bin/verdict-guard.test.mjs",
     "verify:db": "node --env-file=.env.local scripts/verify-db-contracts.mjs",
     "typecheck": "NEXT_DIST_DIR=.next-typecheck next typegen && tsc --noEmit -p tsconfig.typecheck.json",
