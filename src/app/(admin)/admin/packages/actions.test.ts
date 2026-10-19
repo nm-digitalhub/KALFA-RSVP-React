@@ -11,15 +11,18 @@ vi.mock('@/lib/data/admin/packages', () => ({
   deletePackage: vi.fn(),
   validateOutreachScheduleForPackage: vi.fn().mockResolvedValue([]),
 }));
+vi.mock('@/lib/auth/platform-ability', () => ({ requirePlatformAction: vi.fn() }));
 
 import { redirect } from 'next/navigation';
 
 import {
   createPackage,
   updatePackage,
+  deletePackage,
   validateOutreachScheduleForPackage,
 } from '@/lib/data/admin/packages';
-import { createPackageAction, updatePackageAction } from './actions';
+import { requirePlatformAction } from '@/lib/auth/platform-ability';
+import { createPackageAction, deletePackageAction, updatePackageAction } from './actions';
 
 const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
   digest: 'NEXT_REDIRECT;replace;/app;307;',
@@ -47,7 +50,10 @@ function fd(entries: Record<string, string>): FormData {
   return f;
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(requirePlatformAction).mockResolvedValue({ id: 'staff-1' } as Awaited<ReturnType<typeof requirePlatformAction>>);
+});
 
 describe('createPackageAction — campaign-enabled gating of template validation ', () => {
   it('skips template validation for a non-campaign package (no quota) even when touchpoints exist', async () => {
@@ -234,4 +240,34 @@ describe('fixed-price package with a contact quota', () => {
     expect(validateOutreachScheduleForPackage).not.toHaveBeenCalled();
     expect(createPackage).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ contact_quota: null }));
   });
+});
+
+// pilot-casl-package-permissions, task 3.3: a Server Action is reachable by direct POST, so each one checks the caller's
+// right to its action FIRST — before it parses the form, and so before any field error could be returned.
+describe('every package Server Action checks its action before anything else', () => {
+  const ACCESS_DENIED = Object.assign(new Error('NEXT_REDIRECT'), {
+    digest: 'NEXT_REDIRECT;replace;/access-denied;307;',
+  });
+  const INVALID = fd({ name: '', price_with_vat: 'not a number' });
+  const CASES = [
+    { name: 'createPackageAction', action: 'create', run: () => createPackageAction(null, INVALID) },
+    { name: 'updatePackageAction', action: 'update', run: () => updatePackageAction('p-1', null, INVALID) },
+    { name: 'deletePackageAction', action: 'delete', run: () => deletePackageAction('p-1', null, INVALID) },
+  ] as const;
+
+  for (const c of CASES) {
+    it(`${c.name} asks for ${c.action} Package`, async () => {
+      await c.run();
+      expect(requirePlatformAction).toHaveBeenCalledWith(c.action, 'Package');
+    });
+
+    it(`${c.name} called without the right lets the redirect through and returns nothing, even for invalid input`, async () => {
+      vi.mocked(requirePlatformAction).mockRejectedValue(ACCESS_DENIED);
+      await expect(c.run()).rejects.toMatchObject({ digest: expect.stringContaining('/access-denied') });
+      expect(createPackage).not.toHaveBeenCalled();
+      expect(updatePackage).not.toHaveBeenCalled();
+      expect(deletePackage).not.toHaveBeenCalled();
+      expect(validateOutreachScheduleForPackage).not.toHaveBeenCalled();
+    });
+  }
 });

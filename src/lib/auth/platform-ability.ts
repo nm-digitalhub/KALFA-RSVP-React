@@ -65,7 +65,7 @@ export interface SafeActionPair<S extends PlatformSubject = PlatformSubject> {
  * Returns the authenticated user, or redirects to /auth/login or /access-denied.
  */
 export async function requireAnyPlatformAction(
-  pairs: SafeActionPair[]
+  pairs: readonly SafeActionPair[]
 ) {
   // הגנה ראשונה (The Floor): וידוא שהמשתמש מחובר בכלל, למניעת ניתוב שגוי ל-/access-denied
   const user = await requireUser();

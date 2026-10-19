@@ -1,7 +1,8 @@
 'use server';
 
 import { unstable_rethrow } from 'next/navigation';
-import { requirePlatformPermission } from '@/lib/auth/dal';
+import { requireAnyPlatformAction } from '@/lib/auth/platform-ability';
+import { PACKAGE_FORM_ACTIONS } from '@/lib/casl';
 import { packageBaseSchema } from '@/lib/validation/admin';
 import { runPackageCopy, PackageCopyError } from '@/lib/ai/package-copy';
 import type { PackageCopyField, PackageCopyResult } from './package-copy-types';
@@ -18,7 +19,7 @@ export async function rewritePackageCopyAction(
   field: unknown, rawText: unknown,
 ): Promise<PackageCopyResult> {
   // Outside the catch: auth redirects must keep their normal Next.js behavior.
-  const user = await requirePlatformPermission('manage_billing');
+  const user = await requireAnyPlatformAction(PACKAGE_FORM_ACTIONS);
   if ((field !== 'description' && field !== 'includes') || typeof rawText !== 'string') {
     return { ok: false, error: 'בקשת הניסוח אינה תקינה.' };
   }

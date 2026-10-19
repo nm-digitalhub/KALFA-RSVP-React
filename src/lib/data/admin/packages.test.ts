@@ -4,7 +4,8 @@ import type { User } from '@supabase/supabase-js';
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { requirePlatformPermission } from '@/lib/auth/dal';
+import { requirePlatformPermission, requireUser } from '@/lib/auth/dal';
+import { requireAnyPlatformAction, requirePlatformAction } from '@/lib/auth/platform-ability';
 import { logActivity } from '@/lib/data/activity';
 import {
   listPackages,
@@ -27,7 +28,21 @@ import type {
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
-vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({
+  requirePlatformPermission: vi.fn(),
+  requireUser: vi.fn(),
+  hasPlatformPermission: vi.fn(),
+}));
+// The real action gates, wrapped so the pair each function asks for can be asserted. They still delegate to the
+// mocked requirePlatformPermission above, so every existing case keeps testing the same refusal.
+vi.mock('@/lib/auth/platform-ability', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/auth/platform-ability')>();
+  return {
+    ...actual,
+    requirePlatformAction: vi.fn(actual.requirePlatformAction),
+    requireAnyPlatformAction: vi.fn(actual.requireAnyPlatformAction),
+  };
+});
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 // notFound throws a distinguishable error so we can assert it.
 vi.mock('next/navigation', () => ({
@@ -95,6 +110,7 @@ const fullOperational: OperationalFieldsInput = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requirePlatformPermission).mockResolvedValue(adminUser());
+  vi.mocked(requireUser).mockResolvedValue(adminUser());
 });
 
 describe('listPackages', () => {
@@ -621,4 +637,64 @@ describe('getSuggestedSchedule — what a NEW package starts with', () => {
     wire({ data: null, error: { message: 'boom' } });
     await expect(getSuggestedSchedule()).rejects.toThrow('טעינת החבילות נכשלה');
   });
+});
+
+// pilot-casl-package-permissions, design D4: every package function asks for its action through the shared action
+// map (src/lib/casl.ts) instead of naming a key, and refuses before it builds any database client.
+describe('the action gate of every package function', () => {
+  const redirectSignal = () =>
+    Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;replace;/access-denied;307;' });
+  const whatsappStep = [
+    { days_before: 7, channel: 'whatsapp', message_key: 'k1' },
+  ] satisfies OutreachTouchpointInput[];
+  const FORM_HELPER = [
+    { action: 'create', subject: 'Package' },
+    { action: 'update', subject: 'Package' },
+  ];
+
+  type Case = {
+    name: string;
+    run: () => Promise<unknown>;
+    single?: readonly [string, string];
+    any?: typeof FORM_HELPER;
+  };
+  const CASES: Case[] = [
+    { name: 'listPackages', run: () => listPackages(), single: ['read', 'Package'] },
+    { name: 'getPackage', run: () => getPackage('p-1'), single: ['read', 'Package'] },
+    { name: 'createPackage', run: () => createPackage(input, operational), single: ['create', 'Package'] },
+    { name: 'updatePackage', run: () => updatePackage('p-1', input, operational), single: ['update', 'Package'] },
+    { name: 'deletePackage', run: () => deletePackage('p-1'), single: ['delete', 'Package'] },
+    { name: 'getSuggestedSchedule', run: () => getSuggestedSchedule(), single: ['create', 'Package'] },
+    { name: 'getScheduleStepOptions', run: () => getScheduleStepOptions(), any: FORM_HELPER },
+    {
+      name: 'validateOutreachScheduleForPackage',
+      run: () => validateOutreachScheduleForPackage(whatsappStep),
+      any: FORM_HELPER,
+    },
+  ];
+
+  beforeEach(() => {
+    const { client } = createMockSupabase<AdminPackage>({ data: row(), error: null });
+    vi.mocked(createClient).mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>);
+    vi.mocked(createAdminClient).mockReturnValue(client as unknown as ReturnType<typeof createAdminClient>);
+  });
+
+  for (const c of CASES) {
+    it(`${c.name} asks for ${c.single ? c.single.join(' ') : 'create or update Package'}`, async () => {
+      // Only the gate is asserted here; each function's own behaviour is covered by its suite above.
+      await c.run().catch(() => undefined);
+      if (c.single) {
+        expect(requirePlatformAction).toHaveBeenCalledWith(...c.single);
+      } else {
+        expect(requireAnyPlatformAction).toHaveBeenCalledWith(c.any);
+      }
+    });
+
+    it(`${c.name} refuses before it creates a database client`, async () => {
+      vi.mocked(requirePlatformPermission).mockRejectedValue(redirectSignal());
+      await expect(c.run()).rejects.toMatchObject({ digest: expect.stringContaining('/access-denied') });
+      expect(createClient).not.toHaveBeenCalled();
+      expect(createAdminClient).not.toHaveBeenCalled();
+    });
+  }
 });

@@ -11,7 +11,8 @@ import {
 } from '@/lib/data/schedule-options';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { requirePlatformPermission } from '@/lib/auth/dal';
+import { requireAnyPlatformAction, requirePlatformAction } from '@/lib/auth/platform-ability';
+import { PACKAGE_FORM_ACTIONS } from '@/lib/casl';
 import type { Json, Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
 import { outreachTouchpointSchema } from '@/lib/validation/admin';
 import type {
@@ -21,8 +22,10 @@ import type {
 } from '@/lib/validation/admin';
 
 // Admin: packages CRUD. Authorized by the request-scoped session under the
-// `packages_admin_all` RLS policy plus a server-side
-// requirePlatformPermission('manage_billing') gate.
+// `packages_admin_all` RLS policy plus a server-side gate per action: each
+// function asks for its action on `Package` through requirePlatformAction /
+// requireAnyPlatformAction, which take the key from the action map in
+// src/lib/casl.ts (pilot-casl-package-permissions, design D4). No key is named here.
 // Reads of active packages are public (`packages_public_read`); writes are
 // admin-only. Prices are server-validated (see validation/admin.ts) and never
 // trusted from the browser.
@@ -57,7 +60,7 @@ export const PACKAGE_COLUMNS =
 // curated sort order then name. Not paginated: the catalogue is small and
 // admins manage the full set at once.
 export async function listPackages(): Promise<AdminPackage[]> {
-  await requirePlatformPermission('manage_billing');
+  await requirePlatformAction('read', 'Package');
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -75,7 +78,7 @@ export async function listPackages(): Promise<AdminPackage[]> {
 
 // Fetch one package by id; notFound() (404) if it does not exist.
 export async function getPackage(id: string): Promise<AdminPackage> {
-  await requirePlatformPermission('manage_billing');
+  await requirePlatformAction('read', 'Package');
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -192,7 +195,7 @@ function packageChangedFields(
 export async function validateOutreachScheduleForPackage(
   schedule: OutreachTouchpointInput[],
 ): Promise<{ index: number; message: string }[]> {
-  await requirePlatformPermission('manage_billing');
+  await requireAnyPlatformAction(PACKAGE_FORM_ACTIONS);
   const whatsappTouchpoints = schedule
     .map((tp, index) => ({ tp, index }))
     .filter(({ tp }) => tp.channel === 'whatsapp');
@@ -232,7 +235,7 @@ export async function validateOutreachScheduleForPackage(
 // type a key into. Reads with the service-role client strictly AFTER the permission gate (message_templates and its
 // routes are not readable by the packages page's own session), the same way the save-time validation above does.
 export async function getScheduleStepOptions(): Promise<ScheduleStepOption[]> {
-  await requirePlatformPermission('manage_billing');
+  await requireAnyPlatformAction(PACKAGE_FORM_ACTIONS);
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('message_templates')
@@ -252,7 +255,7 @@ export type SuggestedSchedule = {
 // active package, in catalogue order, that has a valid one. The stored JSON is parsed with the same schema the form is
 // saved with, so a damaged value yields no suggestion rather than a half-filled form. null = nothing to suggest.
 export async function getSuggestedSchedule(): Promise<SuggestedSchedule | null> {
-  await requirePlatformPermission('manage_billing');
+  await requirePlatformAction('create', 'Package');
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('packages')
@@ -281,7 +284,7 @@ export async function createPackage(
   input: PackageInput,
   operational: OperationalFieldsInput,
 ): Promise<{ id: string }> {
-  await requirePlatformPermission('manage_billing');
+  await requirePlatformAction('create', 'Package');
 
   const supabase = await createClient();
   const writable = toWritable(input, operational);
@@ -314,7 +317,7 @@ export async function updatePackage(
   input: PackageInput,
   operational: OperationalFieldsInput,
 ): Promise<void> {
-  await requirePlatformPermission('manage_billing');
+  await requirePlatformAction('update', 'Package');
 
   const supabase = await createClient();
   const writable = toWritable(input, operational);
@@ -338,7 +341,7 @@ export async function updatePackage(
 
 // Delete a package by id.
 export async function deletePackage(id: string): Promise<void> {
-  await requirePlatformPermission('manage_billing');
+  await requirePlatformAction('delete', 'Package');
 
   const supabase = await createClient();
   const previous = await getPackage(id);

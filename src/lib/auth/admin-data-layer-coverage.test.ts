@@ -3,6 +3,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { PLATFORM_PERMISSION_KEYS } from './platform-permission-keys.generated';
+import {
+  PACKAGE_FORM_ACTIONS,
+  PLATFORM_ACTIONS,
+  PLATFORM_ACTION_PAIRS,
+} from '@/lib/casl';
 
 // Regression guard, not a unit test of behavior: proves every admin-only
 // data-layer function gates on requireAdmin() BEFORE touching data, so a
@@ -84,6 +89,10 @@ const GATES = [
   'requirePlatformStaff',
   'requirePlatformOwner',
   'requirePlatformPermission',
+  // The action gates (src/lib/auth/platform-ability.ts): the key comes from the action map in src/lib/casl.ts and
+  // is enforced through requirePlatformPermission. pilot-casl-package-permissions, design D3.
+  'requirePlatformAction',
+  'requireAnyPlatformAction',
 ] as const;
 
 // The permission each module is expected to enforce. Pinning this (rather than
@@ -113,7 +122,8 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   'src/lib/data/admin/offers.ts': 'manage_billing',
   // Staff assignment of a personal benefit (D13/D18) — the same billing key as the offers.
   'src/lib/data/admin/coupon-assignments.ts': 'manage_billing',
-  'src/lib/data/admin/packages.ts': 'manage_billing',
+  // Through the action map: the keys the map binds to Package (the map itself is pinned in src/lib/casl.test.ts).
+  'src/lib/data/admin/packages.ts': [...new Set(Object.values(PLATFORM_ACTIONS.Package))],
   // Payment operations stuck in `review`: listing them, looking one up at the provider, and deciding it. The same key
   // as every other payment surface; the two targeted functions also record a staff-access audit row (AUDIT_REQUIRED).
   'src/lib/data/admin/payment-review.ts': 'manage_billing',
@@ -310,6 +320,67 @@ const COARSE_GATE_ALLOWED: Record<string, string> = {
 // redirected with no explanation.
 const PERMISSION_CATALOGUE = PLATFORM_PERMISSION_KEYS;
 
+// The named action lists a module may pass to requireAnyPlatformAction, from the same map module.
+const NAMED_ACTION_LISTS: Record<string, readonly { action: string; subject: string }[]> = { PACKAGE_FORM_ACTIONS };
+
+function resolveActionKey(
+  action: string,
+  subject: string,
+): string {
+  const pair = PLATFORM_ACTION_PAIRS.find(
+    (entry) =>
+      entry.action === action &&
+      entry.subject === subject,
+  );
+
+  if (!pair) {
+    throw new Error(
+      `Unknown CASL action: ${action} ${subject}`,
+    );
+  }
+
+  return pair.key;
+}
+
+// Every key a module's source enforces: the literal keys of requirePlatformPermission, and the keys the action map
+// binds to each requirePlatformAction(action, subject) / requireAnyPlatformAction(LIST) call.
+function enforcedKeys(source: string): string[] {
+  const literal = [
+    ...source.matchAll(
+      /requirePlatformPermission\(\s*'([a-z_.]+)'\s*\)/g,
+    ),
+  ].map((match) => match[1]);
+
+  const viaAction = [
+    ...source.matchAll(
+      /requirePlatformAction\(\s*'(\w+)'\s*,\s*'(\w+)'\s*\)/g,
+    ),
+  ].map((match) =>
+    resolveActionKey(match[1], match[2]),
+  );
+
+  const viaList = [
+    ...source.matchAll(
+      /requireAnyPlatformAction\(\s*(\w+)\s*\)/g,
+    ),
+  ].flatMap((match) => {
+    const name = match[1];
+    const list = NAMED_ACTION_LISTS[name];
+
+    if (!list) {
+      throw new Error(
+        `Unknown CASL action list: ${name}`,
+      );
+    }
+
+    return list.map((pair) =>
+      resolveActionKey(pair.action, pair.subject),
+    );
+  });
+
+  return [...literal, ...viaAction, ...viaList];
+}
+
 // Targeted readers of an identified customer subject that MUST record a
 // staff-access audit row. A new such reader shipping without
 // an audit call — the exact gap that let staff data-access go dark — fails here.
@@ -454,10 +525,12 @@ describe('every admin data-layer module is accounted for', () => {
   it('no module that writes to the database gates on requireAdmin alone', () => {
     for (const relPath of MODULES) {
       const source = readFileSync(join(ROOT, relPath), 'utf8');
-      const writes = /\.(insert|update|upsert|delete)\(\s*\{/.test(source);
+      const writes =
+        /\.(?:insert|update|upsert|delete)\s*\(/.test(source);
       if (!writes || relPath in WRITE_EXEMPT) continue;
       const fine =
-        /requirePlatformPermission\('/.test(source) || source.includes('requirePlatformOwner(');
+        enforcedKeys(source).length > 0 ||
+        /\brequirePlatformOwner\s*\(/.test(source);
       expect(
         fine,
         `${relPath} writes to the database but gates only on requireAdmin(). ` +
@@ -510,11 +583,7 @@ describe('pinned modules enforce exactly the permission they are pinned to', () 
     const expected = (Array.isArray(expectedKey) ? expectedKey : [expectedKey]).sort();
 
     it(`${relPath}: enforces exactly ${expected.length ? expected.join(' + ') : 'owner-only (no key)'}`, () => {
-      const used = [
-        ...new Set(
-          [...source.matchAll(/requirePlatformPermission\('([a-z_.]+)'\)/g)].map((m) => m[1]),
-        ),
-      ].sort();
+      const used = [...new Set(enforcedKeys(source))].sort();
       // An empty expectation means owner-only: no key, but a gate all the same.
       if (expected.length === 0) {
         expect(used).toEqual([]);

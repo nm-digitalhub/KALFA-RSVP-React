@@ -45,14 +45,14 @@ Ground rules for every group:
 
 ## 3. The package data functions and Server Actions
 
-- [ ] 3.1 Extend `src/lib/data/admin/packages.test.ts` first. For each of the eight functions, with the
+- [x] 3.1 Extend `src/lib/data/admin/packages.test.ts` first. For each of the eight functions, with the
   gate refusing, assert the refusal propagates and neither `createClient` nor `createAdminClient` was
   called. For the allowed path, assert the gate was called with the pair in design D4. Verify: red on
   the pair assertions.
-- [ ] 3.2 In `src/lib/data/admin/packages.ts`, replace each `requirePlatformPermission('manage_billing')`
+- [x] 3.2 In `src/lib/data/admin/packages.ts`, replace each `requirePlatformPermission('manage_billing')`
   with the D4 pair, and update the module comment to name the map. Verify: 3.1 green; existing
   package tests green.
-- [ ] 3.3 Extend `src/app/(admin)/admin/packages/actions.test.ts` and `rewrite-action.test.ts` first.
+- [x] 3.3 Extend `src/app/(admin)/admin/packages/actions.test.ts` and `rewrite-action.test.ts` first.
   Each Server Action, called directly with the gate refusing:
   - lets the `/access-denied` redirect propagate;
   - returns no `FormState`, including no field errors for invalid input;

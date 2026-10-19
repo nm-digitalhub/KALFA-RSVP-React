@@ -44,6 +44,13 @@ export const PLATFORM_ACTION_PAIRS: readonly PlatformActionPair[] = (
   }));
 });
 
+// Code that serves both package forms (new and edit) — their readers, the schedule check, the copy rewrite — is
+// allowed when the caller may create OR update a package.
+export const PACKAGE_FORM_ACTIONS = [
+  { action: 'create', subject: 'Package' },
+  { action: 'update', subject: 'Package' },
+] as const satisfies readonly { action: PlatformAction<'Package'>; subject: 'Package' }[];
+
 // The key an action needs.
 export function platformActionKey<S extends PlatformSubject>(
   action: PlatformAction<S>,

@@ -3,6 +3,8 @@
 import { redirect, unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 
+import { requirePlatformAction } from '@/lib/auth/platform-ability';
+
 import {
   createPackage,
   updatePackage,
@@ -78,6 +80,10 @@ export async function createPackageAction(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  // First, outside any try: a Server Action is reachable by direct POST, so the caller's right to the action is
+  // checked before the form is parsed, and the access-denied redirect propagates as it does from the DAL.
+  await requirePlatformAction('create', 'Package');
+
   const parsed = packageBaseSchema.safeParse(readPackageForm(formData));
   const operationalParsed = operationalFieldsSchema.safeParse(readOperationalForm(formData));
   if (!parsed.success || !operationalParsed.success) {
@@ -122,6 +128,10 @@ export async function updatePackageAction(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  // First, outside any try: a Server Action is reachable by direct POST, so the caller's right to the action is
+  // checked before the form is parsed, and the access-denied redirect propagates as it does from the DAL.
+  await requirePlatformAction('update', 'Package');
+
   const parsed = packageBaseSchema.safeParse(readPackageForm(formData));
   const operationalParsed = operationalFieldsSchema.safeParse(readOperationalForm(formData));
   if (!parsed.success || !operationalParsed.success) {
@@ -165,6 +175,10 @@ export async function deletePackageAction(
   _prevState: FormState,
   _formData: FormData,
 ): Promise<FormState> {
+  // First, outside any try: a Server Action is reachable by direct POST, so the caller's right to the action is
+  // checked before the form is parsed, and the access-denied redirect propagates as it does from the DAL.
+  await requirePlatformAction('delete', 'Package');
+
   // Bound with the id; useActionState always supplies (state, formData), neither
   // of which this destructive action reads. Marked intentionally unused.
   void _prevState;

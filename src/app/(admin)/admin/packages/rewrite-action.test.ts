@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 const { permission, run } = vi.hoisted(() => ({ permission: vi.fn(), run: vi.fn() }));
-vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: permission }));
+vi.mock('@/lib/auth/platform-ability', () => ({ requireAnyPlatformAction: permission }));
 vi.mock('next/navigation', () => ({ unstable_rethrow: vi.fn() }));
 vi.mock('@/lib/ai/package-copy', () => ({
   runPackageCopy: run,
@@ -17,6 +17,19 @@ beforeEach(() => {
 });
 
 describe('package copy action', () => {
+  it('asks for create or update Package, since it serves both package forms', async () => {
+    run.mockResolvedValue('Improved');
+    await rewritePackageCopyAction('description', 'Original');
+    expect(permission).toHaveBeenCalledWith([
+      { action: 'create', subject: 'Package' },
+      { action: 'update', subject: 'Package' },
+    ]);
+  });
+  it('called without the right, rejects even an invalid field before validating it', async () => {
+    permission.mockRejectedValue(new Error('denied'));
+    await expect(rewritePackageCopyAction('price', ' ')).rejects.toThrow('denied');
+    expect(run).not.toHaveBeenCalled();
+  });
   it('does not start Claude when authorization fails', async () => {
     permission.mockRejectedValue(new Error('denied'));
     await expect(rewritePackageCopyAction('description', 'Original')).rejects.toThrow('denied');
