@@ -44,8 +44,15 @@ text read from the live catalog.
   row cites the file or catalog query that settled it.
 - [ ] 1.2 Add `src/lib/auth/staff-table-permissions.ts` (table → key list, group A/B) and a vitest that
   asserts it equals the module pins of `admin-data-layer-coverage.test.ts` for every Group B table
-  and lists exactly the 25 tables. Verify: `npx vitest run src/lib/auth` passes, and changing one key
-  in the map makes it fail naming the table.
+  and lists exactly the 25 tables. Its keys come from the one shared TypeScript list of permission keys
+  (design D10), never typed again:
+  - first check with `rg` whether that list already exists, and do not assume it does;
+  - if it does not, create it in this task, with a test that it equals the catalogue seeded in
+    `supabase/migrations` (`platform_permission_definitions`).
+
+  Verify: `npx vitest run src/lib/auth` passes; changing one key in the map makes it fail naming the
+  table; a key absent from the shared list fails the type check. This task stays open until the shared
+  list and the map are implemented and their tests pass.
 - [ ] 1.3 Spike the runner: start the local stack, make sure `pgtap` is available, add
   `supabase/tests/database/000-harness.test.sql` (always-green plan plus a fixture that creates a staff
   user in a chosen role and in a temporary role holding exactly one permission, all inside the
@@ -96,8 +103,9 @@ text read from the live catalog.
   current local database.
 - [ ] 4.2 `migration new staff_tables_voice_permission`: rebuild grants (revoke all from `anon` and
   `authenticated`, grant back the exact operations), create per-operation policies keyed as in
-  `design.md`, replace the retired `has_role` policies on the two voice tables. Verify: applied
-  locally; S3, S2, S1 and guard files green.
+  `design.md`, and split the two voice tables' existing `manage_voice` policy (`for all` / `select`,
+  since `20261015114659`) into per-operation policies. Verify: applied locally; S3, S2, S1 and guard
+  files green.
 - [ ] 4.3 Regression: vitest for `call-dnc`, `voximplant-channel`, `voice-purposes` and
   `provider-numbers` modules and their routes; the map consistency test from 1.2; local Advisors;
   `verification-s3.md`. Verify: all green.
@@ -120,12 +128,16 @@ text read from the live catalog.
   `fleet_request_slack_threads`: inventories and the behaviour matrix (holder of `manage_settings`
   allowed; `billing_clerk`, `auditor`, `support_agent`, non-staff, anon refused; public read policies
   on `channels` and `faq_items` unchanged), plus the six `fleet_*` RPCs: holder succeeds, non-holder is
-  refused, and a user holding only the retired admin flag is refused. Verify: red on the current local
-  database.
-- [ ] 6.2 `migration new fleet_rpcs_manage_settings_gate`: re-create the six functions from
-  `pg_get_functiondef` with only the gate line changed to `has_platform_permission('manage_settings')`
-  and `set search_path = ''` if missing. Verify: a diff of old and new bodies shows only the gate and
-  `search_path` lines; the RPC part of the S5 file is green.
+  refused. The retired admin flag no longer exists (`user_roles` dropped in `20261015134735`), so there
+  is no case for it. Verify: red on the current local database for the tables; the RPC cases are
+  green already, because the gate is live since `20261015114659`.
+- [x] 6.2 Re-gate the six `fleet_*` functions to `has_platform_permission('manage_settings')` with
+  `search_path = ''`.
+  - **Completed by migration `20261015114659_retire_user_roles_admin_consumers.sql` (15.10.2026)**,
+    not by a migration of this change.
+  - Verified on the live catalog on 19.10.2026: every `fleet_*` body calls that key, `proconfig` is
+    `search_path=""`, and 0 functions reference `has_role`.
+  - No migration is written here.
 - [ ] 6.3 `migration new staff_tables_settings_permission`: per-operation policies and rebuilt grants for
   the eight tables, scope `channels_admin_all` away from `public`. Verify: applied locally; S5 and all
   earlier files green.

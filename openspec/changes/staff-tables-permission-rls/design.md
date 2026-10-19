@@ -13,9 +13,14 @@ what the *tables* admit. The permission catalog has 17 permissions and 5 roles (
 `ops_engineer`: settings, voice, integrations, webhooks, runstate; `billing_clerk`: billing,
 customer data; `auditor`: `view_*`, `integrations.read`; `support_agent`: view-only).
 
-**Why the model is no longer uniform.** `rdp_access_*` (6.10) and `app_settings` (13.10, by hand on
-the live database, recorded in `20261013021137`) already call `has_platform_permission` inside RLS;
-the other 23 tables sit on the floor. The `dal.ts` reason for avoiding permissions in RLS (cost per
+**Why the model is no longer uniform.** These already call `has_platform_permission` inside RLS:
+- `rdp_access_*` (6.10);
+- `app_settings` (13.10, by hand on the live database, recorded in `20261013021137`);
+- `company_profile`;
+- `voice_purposes` and `voice_purpose_attempts` (15.10, `20261015114659`).
+
+The other 23 tables sit on the floor. This was re-read on the live catalog on 19.10.2026: 6 policies
+call `has_platform_permission`. The `dal.ts` reason for avoiding permissions in RLS (cost per
 row; JWT claims going stale) does not apply to the table-lookup approach with the `(select …)`
 initplan wrapper, which the project already uses.
 
@@ -28,10 +33,15 @@ initplan wrapper, which the project already uses.
   `authenticated` holds truncate/trigger/references on most. Systemic: 35 of 125 public tables give
   `anon` a write grant; all 125 have RLS enabled.
 - `SECURITY DEFINER` functions touching these tables: 13. Seven are service-role only (EXECUTE
-  revoked from `authenticated`). Six are callable by `authenticated` and gate on the retired
-  `has_role(uid,'admin')`: `fleet_answer_request`, `fleet_goal_abandon`, `fleet_goal_create`,
-  `fleet_goal_pause`, `fleet_goal_resume`, `fleet_owner_request`. Two policies still use `has_role`:
-  `voice_purposes_admin_all`, `voice_purpose_attempts_admin_read`.
+  revoked from `authenticated`). Six are callable by `authenticated`: `fleet_answer_request`,
+  `fleet_goal_abandon`, `fleet_goal_create`, `fleet_goal_pause`, `fleet_goal_resume`,
+  `fleet_owner_request`.
+  - On 13.10 these six gated on the retired `has_role(uid,'admin')`, and so did the policies
+    `voice_purposes_admin_all` and `voice_purpose_attempts_admin_read`.
+  - **Update 19.10.2026 (live catalog):** `20261015114659` moved the six RPCs to
+    `has_platform_permission('manage_settings')` and the two policies to `manage_voice`. All six RPCs run
+    with `search_path = ''`. Stage 2 (`20261015134735`) dropped `has_role`, `user_roles` and `app_role`.
+    0 functions and 0 policies reference `has_role`.
 - `SECURITY INVOKER` functions touching them: `upsert_provider_number` (called with the user
   session from `provider-numbers.ts`); three fleet trigger functions (`fleet_goals_guard`,
   `fleet_requests_guard`, `fleet_requests_no_truncate`); `fleet_consume_request`,
@@ -65,7 +75,7 @@ means the cookie client (the staff member's own JWT); "service" means `createAdm
 | callback_schedule_policies | medium (call windows) | `callbacks/policy/actions.ts` update (`manage_settings`); `readPolicyRow(client)` mixed | S,U / – | – | `manage_settings` select, update |
 | fleet_requests, fleet_goals, fleet_request_slack_threads | medium | `admin/fleet.ts` select (`manage_settings`); RPCs | S / – | – | `manage_settings` select |
 | ops_alerts | low-med | `admin/alerts.ts` select (`manage_settings`); `app-health.ts` select (Debug page, owner only) | all / all | – | `manage_settings` select |
-| voice_purposes, voice_purpose_attempts | medium (decides which agent dials) | `admin/voice-purposes.ts` (`manage_voice`) | (to confirm in 1.1) | – | `manage_voice`; replace retired `has_role` |
+| voice_purposes, voice_purpose_attempts | medium (decides which agent dials) | `admin/voice-purposes.ts` (`manage_voice`) | (to confirm in 1.1) | today: one `for all` / `select` policy on `manage_voice` (15.10) | `manage_voice` per operation |
 
 **Sources read in full on 13.10.2026 and what each changed in this plan.**
 - [Securing your API](https://supabase.com/docs/guides/api/securing-your-api): grants and RLS are two
@@ -168,18 +178,21 @@ from anon, authenticated;` then `grant <exact ops> … to authenticated;` — th
 gives, so truncate/trigger/references/maintain disappear with everything else. `service_role` is
 untouched.
 
-**D7 — Entry-point functions.** Re-create the six `fleet_*` RPCs with the gate changed from
-`has_role(auth.uid(),'admin')` to `has_platform_permission('manage_settings')` (`fleet.ts` is pinned to
-`manage_settings`), generated mechanically from `pg_get_functiondef` and diffed so only the gate line
-changes; check each has `set search_path = ''` (add if missing). Set `search_path = ''` on
-`is_platform_staff()` and `has_platform_permission()` (their bodies already schema-qualify
-`public.…` and `auth.uid()`; verify with `pg_get_functiondef`). `EXECUTE` grants are not widened; the
-seven service-only definers stay revoked. `upsert_provider_number` runs under the caller's RLS, so the
-policy keys for `provider_numbers` must admit exactly its callers (tested).
+**D7 — Entry-point functions.**
+- **The `fleet_*` re-gate is done; it is no longer part of this change.** `20261015114659` moved the six
+  RPCs from `has_role(auth.uid(),'admin')` to `has_platform_permission('manage_settings')`, which is the
+  key `fleet.ts` is pinned to. They already run with `search_path = ''` (verified live 19.10.2026).
+  This change only tests them, for a holder and for a non-holder.
+- **What remains:** set `search_path = ''` on `is_platform_staff()` and `has_platform_permission()`.
+  Today both have `search_path = public`. Their bodies already schema-qualify `public.…` and
+  `auth.uid()`; verify with `pg_get_functiondef`.
+- `EXECUTE` grants are not widened; the seven service-only definers stay revoked.
+- `upsert_provider_number` runs under the caller's RLS, so the policy keys for `provider_numbers` must
+  admit exactly its callers (tested).
 
-**D8 — The retired axis.** `voice_purposes_admin_all` and `voice_purpose_attempts_admin_read` move to
-`manage_voice`. Included because the defect is identical and `voice-purposes.ts` is already pinned to
-that key.
+**D8 — The retired axis (done outside this change).** `voice_purposes_admin_all` and
+`voice_purpose_attempts_admin_read` moved to `manage_voice` in `20261015114659`. What remains for these
+two tables is the D3 split into per-operation policies with rebuilt grants, in stage S3.
 
 **D9 — Proof with pgTAP, raw, no external helpers.** Files under `supabase/tests/database/`
 (`supabase test new <name>`), run by `supabase test db` against the local stack. Impersonation by
@@ -199,7 +212,20 @@ test file.
 
 **D10 — One source of truth for the key map.** `src/lib/auth/staff-table-permissions.ts` (table →
 key list) is read by a vitest that asserts it equals the data-layer pins and equals the keys named in
-the pgTAP file (text check). Vitest remains hermetic and cannot prove DB behaviour; that is the pgTAP
+the pgTAP file (text check). The file does not exist yet (task 1.2).
+
+**Shared permission keys, recorded 19.10.2026 (owner).**
+- **Who decides.** The permission catalogue in Supabase (`platform_permission_definitions`) is the
+  authority on which keys exist and who holds them.
+- **One key list in TypeScript.** The TypeScript side keeps one shared, maintained list of those keys,
+  as far as code needs them. A test checks it against the catalogue seeded in `supabase/migrations`.
+- **Two maps, both reading from that list.** This change's table map (table → keys, read by the RLS
+  consistency test) and the action map planned in `pilot-casl-package-permissions` (subject → action →
+  key, for CASL) both take their keys from it.
+- **The maps themselves differ.** UI actions and database tables are different shapes, so the two maps
+  need not be the same; what must not repeat is a key typed by hand.
+- **Nothing exists yet.** As of 19.10.2026 neither the list nor either map exists. Task 1.2 checks
+  before creating anything and does not assume another change already made it. Vitest remains hermetic and cannot prove DB behaviour; that is the pgTAP
 suite's job. Per-path regression: each user-session path in the map gets a pgTAP case that issues the
 same query shape as the data layer for a holder and a non-holder.
 
@@ -219,7 +245,8 @@ policies, why the JWT-claims pattern is still not used, where the proof lives).
   → The access map lists each path; D10 ties app pins to policy keys; each path has a pgTAP case.
   Group A, by contrast, fails loudly.
 - **`upsert_provider_number` and the fleet triggers run under the caller.** → Tested per key; the
-  fleet RPCs are re-gated first (S5) before the `fleet_*` policies.
+  fleet RPCs already gate on `manage_settings` (`20261015114659`), the same key as the `fleet_*`
+  policies of S5.
 - **Hidden readers.** Parameter-typed clients (`readPolicyRow`), `scripts/*.ts`, the worker, pg-boss
   and direct SQL use `postgres`/`service_role` and bypass RLS (unaffected), but a user-session caller
   of `readPolicyRow` would not. → Task 1.1 resolves every caller before the stage that touches it.
@@ -250,14 +277,15 @@ tests green, Advisors run, owner push, live read-only check.
    `provider_number_roles` (with the `upsert_provider_number` case).
 5. **S4** — `manage_billing`: `packages` (public read kept).
 6. **S5** — `manage_settings`: `message_templates`, `channels`, `faq_items`,
-   `callback_schedule_policies`, `ops_alerts`, then the fleet RPC re-gate and
-   `fleet_requests`, `fleet_goals`, `fleet_request_slack_threads`.
+   `callback_schedule_policies`, `ops_alerts`, `fleet_requests`, `fleet_goals`,
+   `fleet_request_slack_threads`. The fleet RPC re-gate is already live (`20261015114659`) and is only
+   tested here.
 7. **S6** — `search_path` on the helper functions, the `dal.ts` rewrite, final full matrix run, a
    verification document.
 
 **Rollback** is per stage and written in each migration header: re-grant the recorded privileges,
-re-create the staff-floor policy (`using ((select public.is_platform_staff()))`), restore the previous
-function bodies. No data is changed, so nothing needs restoring.
+re-create the staff-floor policy (`using ((select public.is_platform_staff()))`), and restore the
+previous `search_path` of the two helper functions. No data is changed, so nothing needs restoring.
 
 ## Open Questions
 

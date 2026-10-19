@@ -125,8 +125,8 @@ calls.
 - **THEN** the call is refused and no row is created
 
 #### Scenario: Retired axis
-- **WHEN** a user holds the retired admin flag but no platform permission
-- **THEN** no function or policy of this capability admits them
+- **WHEN** the current database schema is inspected (function bodies, policies and views in the catalog, not the historical migration files)
+- **THEN** no active object references `has_role` or `user_roles`
 
 ### Requirement: The enforced permission matches the application gate
 For every user-session table, the permission named by the database policy SHALL equal the permission

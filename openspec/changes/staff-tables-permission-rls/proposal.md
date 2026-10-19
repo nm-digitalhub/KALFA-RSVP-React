@@ -23,9 +23,13 @@ skips that layer. Measured on the live catalog, 13.10.2026 (read-only):
   `service_role` through the default ACL. `anon` still holds all of it on 9 of the 23 tables, and
   `authenticated` holds truncate/trigger/references on most. RLS is the only barrier
   ([Supabase: "adding policies doesn't remove them"](https://supabase.com/docs/guides/database/postgres/row-level-security)).
-- **Six `SECURITY DEFINER` RPCs callable by `authenticated`** (`fleet_*`) still gate on the retired
-  `has_role(uid,'admin')` axis, and two policies (`voice_purposes`, `voice_purpose_attempts`) do too,
-  although `dal.ts` and migration `20260910090301` say that axis is gone.
+- **The retired `has_role('admin')` axis is gone (done outside this change).** Measured on 13.10, the
+  six `fleet_*` `SECURITY DEFINER` RPCs and two policies (`voice_purposes`, `voice_purpose_attempts`)
+  still used it. Migration `20261015114659` (15.10) moved the RPCs to
+  `has_platform_permission('manage_settings')` and the policies to `manage_voice`. Stage 2
+  (`20261015134735`) dropped `has_role`, `user_roles` and `app_role`. Verified on the live catalog on
+  19.10.2026: no function or policy references `has_role`, and all six RPCs run with
+  `search_path = ''`.
 - `app_settings` was moved to `has_platform_permission('manage_settings')` on the live database by
   hand (recorded in `20261013021137`), so the system is now inconsistent and `src/lib/auth/dal.ts`
   documents the old model ("permissions appear in ZERO policies" is already false: `rdp_access_*`,
@@ -56,8 +60,9 @@ skips that layer. Measured on the live catalog, 13.10.2026 (read-only):
 - **Grants rebuilt table by table** in the same migration as the policies: revoke all from `anon`
   and `authenticated`, grant back only what a user-session path uses (`anon` keeps `SELECT` only on
   `packages` and `faq_items`).
-- **RPC entry points:** re-gate the six `fleet_*` RPCs from `has_role('admin')` to
-  `has_platform_permission('manage_settings')`; pin `search_path = ''` on the helper functions.
+- **Helper functions:** pin `search_path = ''` on `is_platform_staff()` and
+  `has_platform_permission()`. The `fleet_*` RPC re-gate is already live (`20261015114659`) and is
+  not part of this change.
 - **Proof:** automated pgTAP tests (`supabase/tests/database/`, run with `supabase test db`) on a local
   database: policy and privilege inventories plus a role × table × operation behaviour matrix, and a
   consistency check between the policy keys and the data-layer pins.
@@ -66,9 +71,11 @@ skips that layer. Measured on the live catalog, 13.10.2026 (read-only):
   access. Group B denials are **silent zero rows** (RLS), so a user-session reader gated by a
   different permission fails silently; every such path is listed in the map and tested.
 
-Scope note: `voice_purposes`, `voice_purpose_attempts` and the six `fleet_*` RPCs were found while
-gathering evidence; they carry the identical defect, so they are included. Remove them if you
-disagree.
+Scope note:
+- `voice_purposes` and `voice_purpose_attempts` stay in Group B. Since 15.10 they have one `for all`
+  policy on `manage_voice`, which this change splits per operation like the other tables.
+- The six `fleet_*` RPCs need no change: `20261015114659` re-gated them, and their tests here only
+  prove holder and non-holder behaviour.
 
 Out of scope, explicitly: moving provider secrets out of `app_settings` into a closed table (separate
 change, separate approval); cleaning the existing `authenticated` grants of the tables outside this
@@ -87,10 +94,11 @@ Migrations only through the Supabase CLI, local first.
 
 ## Impact
 
-- **Database (future migrations, local first):** policies, grants and six functions across 25 tables;
-  no data changes.
+- **Database (future migrations, local first):** policies and grants across 25 tables, and
+  `search_path` on two helper functions; no data changes.
 - **Code:** `src/lib/auth/dal.ts` (comments); a single table-to-permission map and its consistency
-  test; no change expected in data-layer modules except where the access map finds a reader that
+  test. Its keys come from one shared TypeScript list of the catalogue's permission keys, which the
+  action map of `pilot-casl-package-permissions` also uses (see design D10); no change expected in data-layer modules except where the access map finds a reader that
   depends on the old floor (none found so far; callers of `readPolicyRow(client)` still to resolve).
 - **Tests:** new `supabase/tests/database/` suite (the project has none today).
 - **Risk:** silent zero-row failures; mitigated by the map, per-path tests and a staged rollout
