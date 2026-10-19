@@ -64,8 +64,11 @@ re-verified inside each one (`07-mutating-data.md:32`, `02-guides/data-security.
 ## Decisions
 
 ### D1. The map is a typed constant; the ability is derived from it
-`src/lib/auth/platform-actions.ts` is an isomorphic module: no `server-only`, no server imports. It holds
-one `as const` object, subject → action → permission key:
+The module is `src/lib/casl.ts`, the file added in `2c7c723c`. It is rewritten to this design rather
+than adding a second module next to it (owner, 19.10.2026: no parallel mechanism). Its keys are typed by
+`PlatformPermissionKey` from `src/lib/auth/platform-permission-keys.generated.ts`, which is generated from
+the database catalogue. It is an isomorphic module: no `server-only`, no server imports. It holds one
+`as const` object, subject → action → permission key:
 
 ```ts
 export const PLATFORM_ACTIONS = {
@@ -79,7 +82,9 @@ this object and from CASL's own types, never written by hand. The same module ex
 `createMongoAbility`, and adds `can(action, subject)` for each entry whose key is in `held`.
 
 A key absent from `held` produces no rule, so the action is denied: the code fails closed. A test checks
-every key in the map against the catalogue seeded in `supabase/migrations`, so a typo fails CI rather
+every key in the map against the generated catalogue (`PlatformPermissionKey` at compile time,
+`isPlatformPermissionKey` at run time; the generated file itself is checked against the database by
+`npm run check:permissions:generated`), so a typo fails CI rather
 than silently hiding a control.
 
 *Alternative: a plain constant map and a helper, without CASL.* It removes the same duplication on the
@@ -147,8 +152,8 @@ does today. This closes the gap where validation ran before the check.
   it. The coverage test learns that an item names either `permission` or `can`.
 
 ### D6. Proof
-- **`platform-actions.test.ts`:**
-  - every key exists in the seeded catalogue;
+- **`src/lib/casl.test.ts`:**
+  - every key exists in the generated catalogue;
   - parity for every subset of the map's keys plus `view_billing`;
   - a JSON round trip of the rules gives the same decisions.
 - **Refusal tests**, extending the existing package suites with the DAL mocked to refuse:

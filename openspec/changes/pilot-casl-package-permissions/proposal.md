@@ -70,7 +70,8 @@ without changing who may do what.
 ## Impact
 
 - **New code:**
-  - an isomorphic action map and ability builder under `src/lib/auth/`;
+  - an isomorphic action map and ability builder in `src/lib/casl.ts` (the file added in `2c7c723c`,
+    rewritten; no second module), keyed by the generated `PlatformPermissionKey`;
   - a server-only ability resolver and gate;
   - a `'use client'` provider wrapper, because `@casl/react` ships no `'use client'` directive and is
     built on React context, which Server Components cannot use.
