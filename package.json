@@ -117,6 +117,7 @@
     "@modelcontextprotocol/server": "2.1.0",
     "@pg-boss/dashboard": "^1.12.0",
     "@phosphor-icons/core": "^2.1.1",
+    "@playwright/cli": "^0.1.22",
     "@pnp/cli-microsoft365": "^11.10.0",
     "@react-pdf/renderer": "^4.9.0",
     "@react-pdf/tailwind": "^0.2.0",

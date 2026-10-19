@@ -210,3 +210,5 @@ voxfiles/pronunciation/audit/results/
 
 # rdpgw build output (ops/rdpgw/build.sh)
 ops/rdpgw/build/
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
