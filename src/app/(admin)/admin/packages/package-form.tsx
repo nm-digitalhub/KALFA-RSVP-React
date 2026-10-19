@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useId, useState } from 'react';
+import { Can } from '@casl/react';
 import { PackageCopyField } from './package-copy-field';
 
 import {
@@ -10,6 +11,7 @@ import {
   SubmitButton,
 } from '@/components/forms';
 import type { FormState } from '@/lib/validation/result';
+import type { PlatformAbility } from '@/lib/casl';
 import type { ChannelCatalogEntry } from '@/lib/data/channel-catalog';
 import { firstSelectableKey, type ScheduleStepOption } from '@/lib/data/schedule-picker';
 
@@ -250,6 +252,8 @@ export function PackageForm({
 }) {
   const [state, formAction] = useActionState(action, null);
   const seed = initial === EMPTY ? scheduleSeed : null;
+  // The form edits when an `initial` was given and creates otherwise; its save button follows that action.
+  const saveAction = initial === EMPTY ? 'create' : 'update';
   const [channels, setChannels] = useState<string[]>(seed?.channels ?? initial.channels);
   const [schedule, setSchedule] = useState<OutreachTouchpointFormValue[]>(
     seed?.schedule ?? initial.outreach_schedule,
@@ -495,7 +499,11 @@ export function PackageForm({
         />
       </div>
 
-      <SubmitButton>{submitLabel}</SubmitButton>
+      {/* Display only: createPackageAction / updatePackageAction check the same action themselves
+          (pilot-casl-package-permissions, design D5). */}
+      <Can<PlatformAbility> I={saveAction} a="Package">
+        <SubmitButton>{submitLabel}</SubmitButton>
+      </Can>
     </form>
   );
 }

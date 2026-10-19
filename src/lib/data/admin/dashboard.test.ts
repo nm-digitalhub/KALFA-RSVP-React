@@ -29,9 +29,12 @@ beforeEach(() => {
   vi.mocked(requirePlatformStaff).mockResolvedValue(adminUser());
 });
 
+// The packages count follows `read Package` from the action map (pilot-casl-package-permissions, design D5), resolved
+// through the real getPlatformAbility() over the mocked DAL: today that action binds to manage_billing, the key its
+// card's target (/admin/packages) enforces.
 describe('getDashboardCounts — per-domain permission gating', () => {
-  it('with both view_customer_data + view_billing → all three counts', async () => {
-    grant('view_customer_data', 'view_billing');
+  it('with view_customer_data + manage_billing → all three counts', async () => {
+    grant('view_customer_data', 'manage_billing');
     const { client, builder } = createMockSupabase<null>({
       data: null,
       error: null,
@@ -86,8 +89,8 @@ describe('getDashboardCounts — per-domain permission gating', () => {
     );
   });
 
-  it('billing-only viewer → only packages is counted, customer counts null', async () => {
-    grant('view_billing');
+  it('package manager (manage_billing only) → only packages is counted, customer counts null', async () => {
+    grant('manage_billing');
     const { client } = createMockSupabase<null>({
       data: null,
       error: null,
@@ -104,6 +107,26 @@ describe('getDashboardCounts — per-domain permission gating', () => {
     expect(tables).toEqual(['packages']);
   });
 
+  // The listed behavior change: view_billing used to show this card, whose target refuses a viewer without
+  // manage_billing. It is now decided by `read Package`, and view_billing is no longer asked at all.
+  it('view_billing only → packages is null and is NOT queried', async () => {
+    grant('view_billing');
+    const { client } = createMockSupabase<null>({
+      data: null,
+      error: null,
+      count: 5,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const counts = await getDashboardCounts();
+
+    expect(counts).toEqual({ contacts: null, callbacks: null, packages: null });
+    expect(client.from).not.toHaveBeenCalled();
+    expect(hasPlatformPermission).not.toHaveBeenCalledWith('view_billing');
+  });
+
   it('no domain permissions → all null, zero queries', async () => {
     grant();
     const { client } = createMockSupabase<null>({ data: null, error: null });
@@ -118,7 +141,7 @@ describe('getDashboardCounts — per-domain permission gating', () => {
   });
 
   it('returns 0 (not null) for a permitted table whose count query errors', async () => {
-    grant('view_customer_data', 'view_billing');
+    grant('view_customer_data', 'manage_billing');
     const { client } = createMockSupabase<null>({
       data: null,
       error: { message: 'boom' },

@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { hasPlatformPermission, requirePlatformStaff } from '@/lib/auth/dal';
+import { getPlatformAbility } from '@/lib/auth/platform-ability';
 import { countNewCallbacks, countNewContacts } from './nav-counts';
 
 // Admin dashboard: headline counts. Each is a count-only query (head: true,
@@ -10,7 +11,10 @@ import { countNewCallbacks, countNewContacts } from './nav-counts';
 // blanket admin check. The dashboard is a cross-domain aggregate (customer data +
 // billing), so no single permission fits it; per-count gating is the consistent
 // resolution — a support agent sees the contacts/callbacks counts (view_customer_data)
-// but not the packages count (view_billing). A count the viewer may not see is
+// but not the packages count. That one follows `read Package` from the action map
+// (src/lib/casl.ts), the action its card's target, /admin/packages, enforces
+// (openspec/changes/pilot-casl-package-permissions, design D5), so the card is never
+// shown to a viewer the page would refuse. A count the viewer may not see is
 // `null`, and the page omits its card. Reads run via service_role; the permission
 // check is the authorization, exactly as every other admin reader.
 //
@@ -51,15 +55,16 @@ export async function getDashboardCounts(): Promise<DashboardCounts> {
 
   // Resolve permissions once (cache()-memoized) and only run a count the caller
   // is entitled to see.
-  const [canCustomer, canBilling] = await Promise.all([
+  const [canCustomer, ability] = await Promise.all([
     hasPlatformPermission('view_customer_data'),
-    hasPlatformPermission('view_billing'),
+    getPlatformAbility(),
   ]);
+  const canReadPackages = ability.can('read', 'Package');
 
   const [contacts, callbacks, packages] = await Promise.all([
     canCustomer ? countNewContacts(supabase) : Promise.resolve(null),
     canCustomer ? countNewCallbacks(supabase) : Promise.resolve(null),
-    canBilling ? countTable(supabase, 'packages') : Promise.resolve(null),
+    canReadPackages ? countTable(supabase, 'packages') : Promise.resolve(null),
   ]);
 
   return { contacts, callbacks, packages };

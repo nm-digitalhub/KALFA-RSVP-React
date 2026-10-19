@@ -22,7 +22,7 @@ export type PlatformSubject = keyof typeof PLATFORM_ACTIONS;
 export type PlatformAction<S extends PlatformSubject = PlatformSubject> = keyof (typeof PLATFORM_ACTIONS)[S];
 
 // One [action, subject] tuple per subject, so an action is only valid on the subject that declares it.
-type PlatformAbilityTuple = { [S in PlatformSubject]: [PlatformAction<S>, S] }[PlatformSubject];
+export type PlatformAbilityTuple ={ [S in PlatformSubject]: [PlatformAction<S>, S] }[PlatformSubject];
 export type PlatformAbility = MongoAbility<PlatformAbilityTuple>;
 
 export interface PlatformActionPair {

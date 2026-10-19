@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { DirectionProvider } from '@base-ui/react/direction-provider';
+import type { RawRuleOf } from '@casl/ability';
+import { useAbility } from '@casl/react';
 import {
   Activity,
   Ban,
@@ -84,6 +86,8 @@ import type {
 } from '@/lib/data/exchange-availability';
 import { SoftphonePanelLazy } from '@/components/console/softphone-panel-lazy';
 import type { SoftphoneGateInfo } from '@/components/console/softphone-panel';
+import { PlatformAbilityProvider } from '@/components/platform-ability-provider';
+import type { PlatformAbility, PlatformAbilityTuple } from '@/lib/casl';
 import { cn, getInitials } from '@/lib/utils';
 
 // Admin app shell: a fixed right-side sidebar (RTL) plus a top bar. Dedicated to
@@ -109,6 +113,13 @@ type NavItem = {
    * listed in NAV_PERMISSION_KEYS (admin-nav-coverage.test.ts enforces that).
    */
   permission?: string | 'OWNER';
+  /**
+   * In place of `permission`: the action pair the destination enforces through the action map in
+   * src/lib/casl.ts (openspec/changes/pilot-casl-package-permissions, design D5). Decided by the viewer's
+   * ability, from the rules the layout resolved. The same caveat holds: the page's requirePlatformAction is
+   * the gate.
+   */
+  can?: PlatformAbilityTuple;
 };
 
 // Groups are ordered by workflow, top to bottom. The first group is unlabelled
@@ -141,7 +152,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'מוצר וחוזה',
     items: [
-      { href: '/admin/packages', label: 'חבילות', icon: Package, permission: 'manage_billing' },
+      { href: '/admin/packages', label: 'חבילות', icon: Package, can: ['read', 'Package'] },
       // The staff-managed benefit offers (personal-coupons D14) — managed like the packages.
       { href: '/admin/offers', label: 'הצעות להטבה', icon: BadgePercent, permission: 'manage_billing' },
       // Personal benefit assignments (task 7.3): who holds which benefit, assign and void.
@@ -212,6 +223,25 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
 ];
+
+// The nav this viewer actually gets. An item with `can` is shown when the viewer's ability allows that action;
+// one with no gate is shown to every staff member; 'OWNER' asks the owner flag; anything else must be present
+// AND true in the grants map, so an unknown key hides the item rather than exposing it. A group whose every
+// item was filtered out is dropped, so no empty section header is left behind.
+export function visibleNavGroups(navGrants: AdminNavGrants, ability: PlatformAbility): NavGroup[] {
+  return NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) =>
+      item.can
+        ? ability.can(...item.can)
+        : !item.permission
+          ? true
+          : item.permission === 'OWNER'
+            ? navGrants.owner
+            : navGrants.permissions[item.permission] === true,
+    ),
+  })).filter((group) => group.items.length > 0);
+}
 
 // '/admin' is active only on an exact match; the rest match their subtree so
 // e.g. /admin/packages/new keeps "חבילות" highlighted.
@@ -300,7 +330,24 @@ function LogoutMenuItem() {
   );
 }
 
+// The shell under PlatformAbilityProvider, so the sidebar below and every admin page's client components decide
+// from the same rules (design D5).
 export function AdminShell({
+  abilityRules,
+  ...props
+}: React.ComponentProps<typeof AdminShellFrame> & {
+  // The viewer's ability rules, resolved server-side by getPlatformAbility(): plain JSON, and only the viewer's
+  // own grants, the same information navGrants carries. Convenience, never authorization.
+  abilityRules: RawRuleOf<PlatformAbility>[];
+}) {
+  return (
+    <PlatformAbilityProvider rules={abilityRules}>
+      <AdminShellFrame {...props} />
+    </PlatformAbilityProvider>
+  );
+}
+
+function AdminShellFrame({
   userEmail,
   userName,
   availabilityBlocks,
@@ -342,26 +389,9 @@ export function AdminShell({
   const pathname = usePathname();
   const displayName = userName || userEmail || '';
   const initials = getInitials(displayName);
+  const ability = useAbility<PlatformAbility>();
 
-  // The nav this viewer actually gets. An item with no `permission` is shown to
-  // every staff member; 'OWNER' asks the owner flag; anything else must be
-  // present AND true in the grants map, so an unknown key hides the item rather
-  // than exposing it. A group whose every item was filtered out is dropped, so
-  // no empty section header is left behind.
-  const visibleGroups = useMemo(
-    () =>
-      NAV_GROUPS.map((group) => ({
-        ...group,
-        items: group.items.filter((item) =>
-          !item.permission
-            ? true
-            : item.permission === 'OWNER'
-              ? navGrants.owner
-              : navGrants.permissions[item.permission] === true,
-        ),
-      })).filter((group) => group.items.length > 0),
-    [navGrants],
-  );
+  const visibleGroups = useMemo(() => visibleNavGroups(navGrants, ability), [navGrants, ability]);
 
   // Expanded/collapsed state for every labelled group, keyed by label. Each
   // group starts from its `defaultOpen` (open unless explicitly false). Driven

@@ -2,6 +2,9 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { RawRuleOf } from '@casl/ability';
+import { PlatformAbilityProvider } from '@/components/platform-ability-provider';
+import type { PlatformAbility } from '@/lib/casl';
 import type { ScheduleStepOption } from '@/lib/data/schedule-picker';
 import { PackageForm, type PackageFormInitial, type ScheduleSeed } from './package-form';
 
@@ -13,6 +16,18 @@ vi.mock('./rewrite-action', () => ({ rewritePackageCopyAction: vi.fn() }));
 // pricing model, so the form has no per-reached formula, no card-hold field and no model choice.
 
 afterEach(cleanup);
+
+// The save button follows the action the form serves (pilot-casl-package-permissions, design D5), so every render sits
+// under the provider the admin shell supplies; by default the viewer may both create and update.
+type Rules = RawRuleOf<PlatformAbility>[];
+const MAY_SAVE: Rules = [
+  { action: 'create', subject: 'Package' },
+  { action: 'update', subject: 'Package' },
+];
+const under = (rules: Rules) =>
+  function Wrapper({ children }: { children: React.ReactNode }) {
+    return <PlatformAbilityProvider rules={rules}>{children}</PlatformAbilityProvider>;
+  };
 
 const CHANNELS = [
   { key: 'whatsapp', display_name: 'וואטסאפ', is_built: true },
@@ -39,7 +54,7 @@ const STEPS: ScheduleStepOption[] = [
   { channel: 'whatsapp', messageKey: 'final', label: 'הודעה אחרונה', problem: 'אין תבנית מאושרת ב-Meta' },
 ];
 
-function form(initial: Partial<PackageFormInitial> = {}) {
+function form(initial: Partial<PackageFormInitial> = {}, rules: Rules = MAY_SAVE) {
   return render(
     <PackageForm
       action={vi.fn()}
@@ -49,11 +64,12 @@ function form(initial: Partial<PackageFormInitial> = {}) {
       channelOptions={CHANNELS}
       scheduleOptions={STEPS}
     />,
+    { wrapper: under(rules) },
   );
 }
 
 // The create page passes no `initial`: the form is empty, and may start from the schedule of an existing package.
-function createForm(scheduleSeed: ScheduleSeed | null = null) {
+function createForm(scheduleSeed: ScheduleSeed | null = null, rules: Rules = MAY_SAVE) {
   return render(
     <PackageForm
       action={vi.fn()}
@@ -63,6 +79,7 @@ function createForm(scheduleSeed: ScheduleSeed | null = null) {
       scheduleOptions={STEPS}
       scheduleSeed={scheduleSeed}
     />,
+    { wrapper: under(rules) },
   );
 }
 const submitted = (container: HTMLElement) =>
@@ -203,6 +220,7 @@ describe('PackageForm — a new package does not start with an empty schedule', 
           scheduleOptions={STEPS}
         scheduleSeed={SEED}
       />,
+      { wrapper: under(MAY_SAVE) },
     );
     expect(submitted(container)).toEqual([{ days_before: 5, channel: 'whatsapp', message_key: 'final' }]);
     expect(screen.queryByText(/הלוח והערוצים הועתקו מהחבילה/)).toBeNull();
@@ -212,5 +230,34 @@ describe('PackageForm — a new package does not start with an empty schedule', 
     const { container } = createForm(SEED);
     fireEvent.click(screen.getAllByText('הסרה')[0]);
     expect(submitted(container)).toEqual([SEED.schedule[1]]);
+  });
+});
+
+describe('the save button follows the action the form serves', () => {
+  const saveButton = (label: string) => screen.queryByRole('button', { name: label });
+
+  it('the edit form shows it to a viewer who may update a package', () => {
+    form({}, [{ action: 'update', subject: 'Package' }]);
+    expect(saveButton('שמירה')).not.toBeNull();
+  });
+
+  it('the edit form has none for a viewer who may only read packages', () => {
+    form({}, [{ action: 'read', subject: 'Package' }]);
+    expect(saveButton('שמירה')).toBeNull();
+  });
+
+  it('the edit form has none for a viewer who may create but not update', () => {
+    form({}, [{ action: 'create', subject: 'Package' }]);
+    expect(saveButton('שמירה')).toBeNull();
+  });
+
+  it('the create form shows it to a viewer who may create a package', () => {
+    createForm(null, [{ action: 'create', subject: 'Package' }]);
+    expect(saveButton('יצירה')).not.toBeNull();
+  });
+
+  it('the create form has none for a viewer who may update but not create', () => {
+    createForm(null, [{ action: 'update', subject: 'Package' }]);
+    expect(saveButton('יצירה')).toBeNull();
   });
 });

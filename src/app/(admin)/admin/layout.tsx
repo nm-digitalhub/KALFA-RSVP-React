@@ -1,4 +1,5 @@
 import { requirePlatformStaff } from '@/lib/auth/dal';
+import { getPlatformAbility } from '@/lib/auth/platform-ability';
 import { getProfile } from '@/lib/data/profiles';
 import { getMyActiveExchangeConnection } from '@/lib/data/exchange-connections';
 import {
@@ -48,11 +49,14 @@ export default async function AdminLayout({
   // is shown at all) are independent of the profile read — fetched in parallel
   // rather than as sequential awaits. Both resolve the caller's permissions
   // through the same cache()-memoized DAL helpers, so the overlapping keys cost
-  // one RPC each for the whole render pass, not one per caller.
-  const [profile, navCounts, navGrants] = await Promise.all([
+  // one RPC each for the whole render pass, not one per caller. The ability (the
+  // action map's rules for this viewer, pilot-casl-package-permissions design D5)
+  // asks the same helpers, so its keys are among the ones navGrants already asks.
+  const [profile, navCounts, navGrants, ability] = await Promise.all([
     getProfile(),
     getAdminNavCounts(),
     getAdminNavGrants(),
+    getPlatformAbility(),
   ]);
   const userName = profile?.full_name?.trim() || undefined;
 
@@ -150,6 +154,7 @@ export default async function AdminLayout({
       hasExchangeConnection={hasExchangeConnection}
       navCounts={navCounts}
       navGrants={navGrants}
+      abilityRules={ability.rules}
       softphone={softphone}
     >
       {children}

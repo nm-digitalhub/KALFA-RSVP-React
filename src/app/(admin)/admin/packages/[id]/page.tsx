@@ -94,9 +94,7 @@ export default async function EditPackagePage({
         scheduleOptions={scheduleOptions}
       />
 
-      <div className="border-t border-border pt-6">
-        <DeletePackageForm id={id} name={pkg.name} />
-      </div>
+      <DeletePackageForm id={id} name={pkg.name} />
     </div>
   );
 }

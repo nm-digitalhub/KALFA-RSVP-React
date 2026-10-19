@@ -72,22 +72,22 @@ Ground rules for every group:
   a="Package">` rendered through the wrapper shows its child for rules that allow it and hides it
   otherwise. Then create the `'use client'` wrapper per design D5, with `createMongoAbility(rules)`
   memoized on the rules and `<AbilityProvider value={ability}>`. Verify: test green.
-- [ ] 4.3 Pass `getPlatformAbility().rules` from `src/app/(admin)/admin/layout.tsx` into `AdminShell`.
+- [x] 4.3 Pass `getPlatformAbility().rules` from `src/app/(admin)/admin/layout.tsx` into `AdminShell`.
   Wrap the children in the provider. Add the `can` field to `NavItem`, filter on it with `useAbility()`,
   and move the packages item to `can: ['read', 'Package']`. Update `admin-nav-coverage.test.ts` so an
   item names `permission` or `can`, and so a `can` pair must exist in `PLATFORM_ACTIONS`. Verify: the
   nav coverage suite green; a nav test shows the item for allowing rules and hides it otherwise.
-- [ ] 4.4 Gate the delete control (`delete Package`) and the edit page's save button (`update Package`)
+- [x] 4.4 Gate the delete control (`delete Package`) and the edit page's save button (`update Package`)
   with `<Can>` or `useAbility()`. Verify: the `package-form` and delete-form tests cover shown vs hidden.
   3.3 still proves the actions refuse whatever is hidden.
-- [ ] 4.5 In `src/lib/data/admin/dashboard.ts`, gate the packages count on `read Package` through
+- [x] 4.5 In `src/lib/data/admin/dashboard.ts`, gate the packages count on `read Package` through
   `getPlatformAbility()` instead of `hasPlatformPermission('view_billing')`, and update the module
   comment. Verify: the dashboard test shows the count for `manage_billing`, and `null` for a viewer who
   holds `view_billing` only. That is the listed behavior change.
 
 ## 5. The guards that keep the duplication gone
 
-- [ ] 5.1 Write `src/lib/casl-pilot-static.test.ts`. Over the pilot's files it asserts:
+- [x] 5.1 Write `src/lib/casl-pilot-static.test.ts`. Over the pilot's files it asserts:
   - no string literal equal to any catalogue key;
   - no direct `requirePlatformPermission(` or `hasPlatformPermission(` call;
   - every gate goes through `requirePlatformAction` or `requireAnyPlatformAction`.

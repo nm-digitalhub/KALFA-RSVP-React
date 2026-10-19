@@ -15,14 +15,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createMongoAbility } from '@casl/ability';
 
 // nav-visibility.ts is `import 'server-only'`; this suite reads one exported
 // const from it and never calls the resolver, so the marker is stubbed exactly
 // as the other suites do it (see src/lib/workflow/manual-run.test.ts).
 vi.mock('server-only', () => ({}));
 
-import { NAV_GROUPS } from './admin-shell';
-import { NAV_PERMISSION_KEYS } from '@/lib/data/admin/nav-visibility';
+import { NAV_GROUPS, visibleNavGroups } from './admin-shell';
+import { NAV_PERMISSION_KEYS, type AdminNavGrants } from '@/lib/data/admin/nav-visibility';
+import { PLATFORM_ACTIONS, type PlatformAbility } from '@/lib/casl';
 
 const ROOT = join(__dirname, '..', '..');
 const ITEMS = NAV_GROUPS.flatMap((group) => group.items);
@@ -37,18 +39,41 @@ describe('every sidebar link is classified', () => {
   const NO_PERMISSION_BY_DESIGN = new Set(['/admin', '/admin/analytics', '/admin/integrations']);
 
   for (const item of ITEMS) {
-    it(`${item.href} names a permission or is a documented exception`, () => {
+    it(`${item.href} names a permission or an action, or is a documented exception`, () => {
       if (NO_PERMISSION_BY_DESIGN.has(item.href)) {
         expect(item.permission).toBeUndefined();
+        expect(item.can).toBeUndefined();
         return;
       }
       expect(
-        item.permission,
-        `${item.href} has no permission. Add the key its page enforces, 'OWNER' ` +
-          `for an owner-only page, or add it to NO_PERMISSION_BY_DESIGN with a reason.`,
-      ).toBeDefined();
+        (item.permission === undefined) !== (item.can === undefined),
+        `${item.href} must name exactly one of 'permission' (the key its page enforces, or ` +
+          `'OWNER' for an owner-only page) and 'can' (the action pair its page enforces), or ` +
+          `be added to NO_PERMISSION_BY_DESIGN with a reason.`,
+      ).toBe(true);
     });
   }
+
+  // The action-gated items (pilot-casl-package-permissions, design D5). The pair is typed, but a runtime check
+  // keeps the failure readable: a pair the map does not declare builds no rule, so the item would disappear
+  // for every viewer.
+  it('every action pair a nav item names is declared in the action map', () => {
+    for (const item of ITEMS) {
+      if (!item.can) continue;
+      const [action, subject] = item.can;
+      expect(
+        Object.hasOwn(PLATFORM_ACTIONS, subject) && Object.hasOwn(PLATFORM_ACTIONS[subject], action),
+        `${item.href} is shown under '${action} ${subject}', which PLATFORM_ACTIONS in src/lib/casl.ts ` +
+          `does not declare — the item would silently disappear for every viewer.`,
+      ).toBe(true);
+    }
+  });
+
+  it('the packages item follows read Package', () => {
+    const packages = ITEMS.find((item) => item.href === '/admin/packages');
+    expect(packages?.can).toEqual(['read', 'Package']);
+    expect(packages?.permission).toBeUndefined();
+  });
 
   // THE ONE THAT MATTERS. nav-visibility.ts lists its keys separately from
   // NAV_GROUPS (a server module must not import a 'use client' one just to read
@@ -89,7 +114,7 @@ describe('the nav agrees with the page it links to', () => {
   // page.tsx declares for ITSELF. A page that correctly leaves the gate to its
   // data layer (the house pattern, and what Next's own guidance asks for) has
   // nothing to compare against, so it is skipped rather than guessed at.
-  const gateOf = (href: string): { key?: string; owner?: boolean } | null => {
+  const gateOf = (href: string): { key?: string; owner?: boolean; can?: [string, string] } | null => {
     const path = join(ROOT, 'src/app/(admin)', href, 'page.tsx');
     let source: string;
     try {
@@ -98,6 +123,8 @@ describe('the nav agrees with the page it links to', () => {
       return null;
     }
     if (/await requirePlatformOwner\(\)/.test(source)) return { owner: true };
+    const action = source.match(/await requirePlatformAction\('(\w+)', '(\w+)'\)/);
+    if (action) return { can: [action[1], action[2]] };
     const m = source.match(/await requirePlatformPermission\('([a-z_.]+)'\)/);
     return m ? { key: m[1] } : null;
   };
@@ -114,6 +141,12 @@ describe('the nav agrees with the page it links to', () => {
     it(`${item.href} is shown under the same rule its page enforces`, () => {
       if (gate.owner) {
         expect(item.permission).toBe('OWNER');
+      } else if (gate.can) {
+        expect(
+          item.can,
+          `the page enforces '${gate.can.join(' ')}' but the nav shows the link under ` +
+            `${item.can ? `'${item.can.join(' ')}'` : `'${item.permission}'`}.`,
+        ).toEqual(gate.can);
       } else {
         expect(
           item.permission,
@@ -124,4 +157,33 @@ describe('the nav agrees with the page it links to', () => {
       }
     });
   }
+});
+
+describe('the sidebar shows an action-gated item only under rules that allow it', () => {
+  // visibleNavGroups is the filter AdminShell runs; the ability is what PlatformAbilityProvider hands it from
+  // the rules the layout resolved. Keys and rules are given separately on purpose: the packages item must
+  // follow the rules, not the key its action happens to bind to today.
+  const noGrants: AdminNavGrants = { owner: false, permissions: {} };
+  const hrefs = (grants: AdminNavGrants, ability: PlatformAbility) =>
+    visibleNavGroups(grants, ability).flatMap((group) => group.items.map((item) => item.href));
+
+  it('shows חבילות to a viewer whose rules allow read Package', () => {
+    const ability = createMongoAbility<PlatformAbility>([{ action: 'read', subject: 'Package' }]);
+    expect(hrefs(noGrants, ability)).toContain('/admin/packages');
+  });
+
+  it('hides it from a viewer whose rules do not', () => {
+    expect(hrefs(noGrants, createMongoAbility<PlatformAbility>([]))).not.toContain('/admin/packages');
+  });
+
+  it('hides it even when the viewer holds the bound key but no rule says read Package', () => {
+    const grants: AdminNavGrants = { owner: false, permissions: { [PLATFORM_ACTIONS.Package.read]: true } };
+    expect(hrefs(grants, createMongoAbility<PlatformAbility>([]))).not.toContain('/admin/packages');
+  });
+
+  it('leaves the key-gated items to the grants', () => {
+    const grants: AdminNavGrants = { owner: false, permissions: { [PLATFORM_ACTIONS.Package.read]: true } };
+    expect(hrefs(grants, createMongoAbility<PlatformAbility>([]))).toContain('/admin/cancellations');
+    expect(hrefs(noGrants, createMongoAbility<PlatformAbility>([]))).not.toContain('/admin/cancellations');
+  });
 });
