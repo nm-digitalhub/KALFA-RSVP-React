@@ -59,7 +59,7 @@ Ground rules for every group:
   - never calls a data function.
 
   Verify: red, because today `actions.ts` parses before any check.
-- [ ] 3.4 Add the D4 gate as the first statement of `createPackageAction`, `updatePackageAction` and
+- [x] 3.4 Add the D4 gate as the first statement of `createPackageAction`, `updatePackageAction` and
   `deletePackageAction`, outside any `try`, and switch `rewritePackageCopyAction` to
   `requireAnyPlatformAction`. Verify: 3.3 green; existing action tests green.
 
@@ -95,7 +95,7 @@ Ground rules for every group:
   The pilot's files are `packages.ts`, everything under `src/app/(admin)/admin/packages/`, and the
   packages lines of the dashboard and the sidebar. Verify: green now; a temporary reintroduced literal
   turns it red, then is reverted.
-- [ ] 5.2 Update `src/lib/auth/admin-data-layer-coverage.test.ts`: add the two gates to its accepted
+- [x] 5.2 Update `src/lib/auth/admin-data-layer-coverage.test.ts`: add the two gates to its accepted
   gates, and resolve the `packages.ts` pin through `PLATFORM_ACTIONS` instead of the literal. Verify: the
   suite is green, and a package function stripped of its gate turns it red.
 

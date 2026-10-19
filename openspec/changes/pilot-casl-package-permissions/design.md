@@ -73,13 +73,17 @@ the database catalogue. It is an isomorphic module: no `server-only`, no server 
 ```ts
 export const PLATFORM_ACTIONS = {
   Package: { read: 'manage_billing', create: 'manage_billing', update: 'manage_billing', delete: 'manage_billing' },
-} as const;
+} as const satisfies Record<string, Record<string, PlatformPermissionKey>>;
 ```
 
-The action and subject types and `PlatformAbility = MongoAbility<[Action, Subject]>` are derived from
-this object and from CASL's own types, never written by hand. The same module exports
-`buildPlatformAbility(held: ReadonlySet<string>)`, a pure function. It runs `AbilityBuilder` with
-`createMongoAbility`, and adds `can(action, subject)` for each entry whose key is in `held`.
+The action and subject types are derived from this object and from CASL's own types, never written by
+hand. `PlatformAbility` is a `MongoAbility` over one `[action, subject]` tuple per subject, so an action
+is valid only on the subject that declares it. The same module exports:
+- `platformActionKey(action, subject)`, the one place a pair is resolved to its key; the server gate and
+  the coverage test both call it;
+- `PACKAGE_FORM_ACTIONS`, the pairs `create Package` and `update Package` (see D4);
+- `buildPlatformAbility(held: ReadonlySet<string>)`, a pure function. It runs `AbilityBuilder` with
+  `createMongoAbility`, and adds `can(action, subject)` for each entry whose key is in `held`.
 
 A key absent from `held` produces no rule, so the action is denied: the code fails closed. A test checks
 every key in the map against the generated catalogue (`PlatformPermissionKey` at compile time,
@@ -105,6 +109,9 @@ change, and the pilot is meant to change none.
 The same module exports `requirePlatformAction(action, subject)`. It resolves the key from the map and
 returns `requirePlatformPermission(key)`. For a reader that serves either form, it also exports
 `requireAnyPlatformAction(pairs)`:
+- it first calls `requireUser()`, so a signed-out caller gets the sign-in redirect, as with
+  `requirePlatformPermission`, not `/access-denied`;
+- an empty list is refused with `/access-denied`;
 - if every pair resolves to the same key, it makes one `requirePlatformPermission` call;
 - otherwise it checks `hasPlatformPermission` for each key, and redirects to `/access-denied` when none
   passes.
@@ -127,6 +134,9 @@ next to the DAL's, and a bug in rule building would become an enforcement bug, n
 | `updatePackage`, `updatePackageAction` | `update Package` |
 | `deletePackage`, `deletePackageAction` | `delete Package` |
 | `getScheduleStepOptions`, `validateOutreachScheduleForPackage`, `rewritePackageCopyAction` (they serve both forms) | any of `create`, `update Package` |
+
+The last row is declared once, as `PACKAGE_FORM_ACTIONS` in `src/lib/casl.ts`; `packages.ts` and
+`rewrite-action.ts` both pass that constant.
 
 Each Server Action calls its gate on the first line, outside any `try`, so the redirect propagates as it
 does today. This closes the gap where validation ran before the check.
@@ -165,8 +175,10 @@ does today. This closes the gap where validation ran before the check.
   - no direct `requirePlatformPermission(` or `hasPlatformPermission(` call;
   - every gate goes through `requirePlatformAction` or `requireAnyPlatformAction`.
 - **The coverage tests:**
-  - `admin-data-layer-coverage.test.ts` adds the two gates to its gate list and resolves the pin of
-    `packages.ts` through `PLATFORM_ACTIONS`;
+  - `admin-data-layer-coverage.test.ts` adds the two gates to its gate list, resolves every
+    `requirePlatformAction(action, subject)` and `requireAnyPlatformAction(LIST)` call through
+    `platformActionKey`, and takes the `packages.ts` pin from `PLATFORM_ACTIONS`. A list is resolved
+    only if the test registers it by name, so an unregistered list fails the test;
   - `admin-nav-coverage.test.ts` accepts `can`.
 - **The project gates:** focused tests, the full suite, `npm run lint`, `npm run typecheck` and
   `npm run build`.
@@ -176,8 +188,8 @@ does today. This closes the gap where validation ran before the check.
 - **Two authorization paths live side by side until the decision gate.**
   → The static test keeps the pilot's files on the new path only, and the rest of the app is untouched.
 - **`@casl/ability` 7.0.2 was published on 15.10.2026, four days before this plan.**
-  → The lockfile already pins it. Read its release notes before apply, and fall back to 7.0.1 (6.7.2026)
-  if anything in them touches the APIs in D1.
+  → The lockfile pins it. Task 1.1 read its release notes: the only change fixes `rulesToFields`, which
+  the pilot does not use, so no fallback to 7.0.1 was needed (`evaluation.md`, 1.1).
 - **The README contradicts the types on `AbilityProvider`'s prop.**
   → Follow the shipped `.d.ts` (`value`). The provider test renders `<Can>` through the wrapper, so a wrong
   prop fails loudly with "AbilityContext is not provided".

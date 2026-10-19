@@ -86,8 +86,8 @@ without changing who may do what.
   - the package tests;
   - new parity, refusal and static tests.
 - **Dependencies:**
-  - `@casl/ability` 7.0.2 and `@casl/react` 7.0.1 are already declared, as part of the uncommitted
-    `package.json` change. 7.0.2 was published on 15.10.2026.
+  - `@casl/ability` 7.0.2 and `@casl/react` 7.0.1 are declared in `package.json` (`eb39644b`).
+    7.0.2 was published on 15.10.2026.
   - Nothing new is installed.
 - **Out of scope:**
   - the `packages` RLS policy, which admits any staff member (`staff-tables-permission-rls`, Group B);
