@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import nextConfig from '../../next.config';
+import getNextConfig from '../../next.config';
 
 // THE GUARD FOR RETIRING A PAGE.
 //
@@ -39,11 +39,13 @@ function pageFileExists(route: string): boolean {
 
 describe('retired routes keep a redirect, and it points somewhere real', () => {
   it('the config actually declares redirects (a silent empty list is the bug this replaces)', async () => {
+    const nextConfig = await getNextConfig();
     const redirects = await nextConfig.redirects!();
     expect(redirects.length).toBeGreaterThan(0);
   });
 
   it('every redirect SOURCE is a page that no longer exists', async () => {
+    const nextConfig = await getNextConfig();
     for (const r of await nextConfig.redirects!()) {
       // A source that still has a page would never be reached — Next matches the
       // page first — so the redirect would be dead config pretending to work.
@@ -56,6 +58,7 @@ describe('retired routes keep a redirect, and it points somewhere real', () => {
   });
 
   it('every redirect DESTINATION is a page that does exist', async () => {
+    const nextConfig = await getNextConfig();
     for (const r of await nextConfig.redirects!()) {
       expect(
         pageFileExists(r.destination),
@@ -66,6 +69,7 @@ describe('retired routes keep a redirect, and it points somewhere real', () => {
   });
 
   it('the two Task 0.6 pages are retired, and land on the surfaces that replaced them', async () => {
+    const nextConfig = await getNextConfig();
     const bySource = Object.fromEntries(
       (await nextConfig.redirects!()).map((r) => [r.source, r]),
     );

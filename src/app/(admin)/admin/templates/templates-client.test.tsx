@@ -1,11 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+// @vitest-environment jsdom
+import { cleanup, render } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-// useActionState throws outside a React render; everything under test is what the
-// component PUTS IN THE TREE for a given template row.
-vi.mock('react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react')>();
-  return { ...actual, useActionState: () => [null, vi.fn(), false] };
-});
 vi.mock('./actions', () => ({
   updateTemplateAction: vi.fn(),
   acknowledgeTemplateCategoryAction: vi.fn(),
@@ -13,51 +9,30 @@ vi.mock('./actions', () => ({
 
 import { TemplatesClient } from './templates-client';
 
-type El = { type?: unknown; props?: Record<string, unknown> & { children?: unknown } };
+// Everything under test is what the component PUTS ON THE PAGE for a given template row, so React renders it,
+// useActionState included. Calling it as a plain function, as this suite once did, is what React forbids ("Never
+// call component functions directly", react.dev Rules of React): the hooks then ran outside a render and printed
+// "Invalid hook call".
 
-function collect(node: unknown, out: El[] = [], depth = 0): El[] {
-  if (!node || typeof node !== 'object' || depth > 60) return out;
-  if (Array.isArray(node)) {
-    node.forEach((n) => collect(n, out, depth + 1));
-    return out;
-  }
-  const el = node as El;
-  out.push(el);
-  if (typeof el.type === 'function') {
-    try {
-      collect((el.type as (p: unknown) => unknown)(el.props ?? {}), out, depth + 1);
-    } catch {
-      /* a component needing a runtime we lack is simply not descended into */
-    }
-  }
-  collect(el.props?.children, out, depth + 1);
-  return out;
+afterEach(cleanup);
+
+function renderClient(templates: Row[]): HTMLElement {
+  return render(<TemplatesClient templates={templates} />).container;
 }
 
-function text(tree: unknown): string {
-  return collect(tree)
-    .flatMap((el) => {
-      const c = el.props?.children;
-      return Array.isArray(c) ? c : [c];
-    })
-    .filter((t): t is string => typeof t === 'string')
-    .join(' ');
+const text = (container: HTMLElement) => container.textContent ?? '';
+
+function hiddenInputs(container: HTMLElement): Map<string, string> {
+  return new Map(
+    [...container.querySelectorAll<HTMLInputElement>('input[type="hidden"][name]')].map((input) => [
+      input.name,
+      input.value,
+    ]),
+  );
 }
 
-function hiddenInputs(tree: unknown): Map<string, unknown> {
-  const out = new Map<string, unknown>();
-  for (const el of collect(tree)) {
-    if (el.type === 'input' && el.props?.type === 'hidden' && typeof el.props.name === 'string') {
-      out.set(el.props.name, el.props.value);
-    }
-  }
-  return out;
-}
-
-/** Does any button carry a formAction (the acknowledge button is the only one)? */
-function hasFormActionButton(tree: unknown): boolean {
-  return collect(tree).some((el) => el.type === 'button' && el.props?.formAction != null);
-}
+/** Does any button carry a formAction (the acknowledge button is the only one)? React renders it as `formaction`. */
+const hasFormActionButton = (container: HTMLElement) => container.querySelector('button[formaction]') !== null;
 
 type Row = Parameters<typeof TemplatesClient>[0]['templates'][number];
 
@@ -84,19 +59,19 @@ const DRIFTED: Row = { ...BASE, requested_category: 'UTILITY' };
 
 describe('the category-drift acknowledgement (D4)', () => {
   it('offers nothing to acknowledge when the category matches', () => {
-    const tree = TemplatesClient({ templates: [BASE] });
+    const tree = renderClient([BASE]);
     expect(hasFormActionButton(tree)).toBe(false);
     expect(text(tree)).not.toContain('אישור הקטגוריה');
   });
 
   it('offers the button only on a template that actually drifted', () => {
-    const tree = TemplatesClient({ templates: [DRIFTED] });
+    const tree = renderClient([DRIFTED]);
     expect(hasFormActionButton(tree)).toBe(true);
     expect(text(tree)).toContain('אישור הקטגוריה');
   });
 
   it('carries the category that is ON SCREEN, so the write can be pinned to it', () => {
-    const hidden = hiddenInputs(TemplatesClient({ templates: [DRIFTED] }));
+    const hidden = hiddenInputs(renderClient([DRIFTED]));
     expect(hidden.get('observed_category')).toBe('MARKETING');
     expect(hidden.get('id')).toBe(DRIFTED.id);
   });
@@ -104,7 +79,7 @@ describe('the category-drift acknowledgement (D4)', () => {
   it('says the billing and the limits do NOT change', () => {
     // The badge clearing must not read as the problem going away — Meta classifies
     // by message body, and acknowledging changes the record, not the classification.
-    const t = text(TemplatesClient({ templates: [DRIFTED] }));
+    const t = text(renderClient([DRIFTED]));
     expect(t).toContain('אינו');
     expect(t).toContain('מחויבת ומוגבלת');
     expect(t).toContain('יתריע מחדש');
@@ -113,9 +88,7 @@ describe('the category-drift acknowledgement (D4)', () => {
   it('a call template has no category surface at all', () => {
     // Meta categories are a WhatsApp concept; `call` rows have name='' and would
     // otherwise render a drift badge against a category Meta never assigned.
-    const tree = TemplatesClient({
-      templates: [{ ...DRIFTED, channel: 'call', message_key: 'call_1', name: '' }],
-    });
+    const tree = renderClient([{ ...DRIFTED, channel: 'call', message_key: 'call_1', name: '' }]);
     expect(hasFormActionButton(tree)).toBe(false);
     expect(text(tree)).not.toContain('ירדה בקטגוריה');
   });

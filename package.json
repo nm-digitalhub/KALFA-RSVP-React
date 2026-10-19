@@ -221,6 +221,7 @@
     "@crawlee/playwright": "^3.18.2",
     "@lacspace/seo": "^1.10.0",
     "@microsoft/microsoft-graph-types": "^2.43.1",
+    "@next/bundle-analyzer": "^16.4.2",
     "@tailwindcss/postcss": "^4",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",

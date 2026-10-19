@@ -1,12 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+// @vitest-environment jsdom
+import { cleanup, render } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-// The form calls useActionState, which throws outside a React render. Everything
-// under test here is what the component PUTS IN THE TREE for a given policy, so the
-// hook is replaced with its untouched initial state rather than dragging in a DOM.
-vi.mock('react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react')>();
-  return { ...actual, useActionState: () => [null, vi.fn()] };
-});
 vi.mock('@/app/(admin)/admin/integrations/actions', () => ({
   updateSendPolicyAction: vi.fn(),
 }));
@@ -15,48 +10,24 @@ import { DEFAULT_SEND_POLICY } from '@/lib/outreach/send-policy';
 import type { AdminSendPolicy } from '@/lib/data/admin/integrations/send-policy';
 import { SendPolicyForm } from './send-policy-form';
 
-type El = { type?: unknown; props?: Record<string, unknown> & { children?: unknown } };
+// Everything under test is what the form PUTS ON THE PAGE for a given policy, so React renders it, hooks and
+// nested components included. Calling the component as a plain function, as this suite once did, is what React
+// forbids ("Never call component functions directly", react.dev Rules of React): its hooks then ran outside a
+// render, printed "Invalid hook call", and the components behind them were never looked at.
 
-// Nested function components are INVOKED — TimeInput, NumberInput and Badge are
-// where the values actually land, and a walker that only descends `children` would
-// see unexecuted elements and assert nothing.
-function collect(node: unknown, out: El[] = [], depth = 0): El[] {
-  if (!node || typeof node !== 'object' || depth > 60) return out;
-  if (Array.isArray(node)) {
-    node.forEach((n) => collect(n, out, depth + 1));
-    return out;
-  }
-  const el = node as El;
-  out.push(el);
-  if (typeof el.type === 'function') {
-    try {
-      collect((el.type as (p: unknown) => unknown)(el.props ?? {}), out, depth + 1);
-    } catch {
-      /* a component needing a runtime we lack is simply not descended into */
-    }
-  }
-  collect(el.props?.children, out, depth + 1);
-  return out;
+afterEach(cleanup);
+
+function renderForm(policy: AdminSendPolicy): HTMLElement {
+  return render(<SendPolicyForm policy={policy} />).container;
 }
 
-function text(tree: unknown): string {
-  return collect(tree)
-    .flatMap((el) => {
-      const c = el.props?.children;
-      return Array.isArray(c) ? c : [c];
-    })
-    .filter((t): t is string => typeof t === 'string')
-    .join(' ');
-}
+const text = (container: HTMLElement) => container.textContent ?? '';
 
 /** Every rendered input, by name. */
-function inputs(tree: unknown): Map<string, El['props']> {
-  const out = new Map<string, El['props']>();
-  for (const el of collect(tree)) {
-    const name = el.props?.name;
-    if (typeof name === 'string' && el.type === 'input') out.set(name, el.props);
-  }
-  return out;
+function inputs(container: HTMLElement): Map<string, HTMLInputElement> {
+  return new Map(
+    [...container.querySelectorAll<HTMLInputElement>('input[name]')].map((input) => [input.name, input]),
+  );
 }
 
 const STORED: AdminSendPolicy = {
@@ -67,7 +38,7 @@ const STORED: AdminSendPolicy = {
 
 describe('SendPolicyForm — what it renders', () => {
   it('gives every editable weekday a start and an end, pre-filled', () => {
-    const found = inputs(SendPolicyForm({ policy: STORED }));
+    const found = inputs(renderForm(STORED));
     for (let d = 0; d <= 5; d++) {
       expect(found.get(`weekday.${d}.start`)?.defaultValue).toBe(
         DEFAULT_SEND_POLICY.weekday[d]!.start,
@@ -81,20 +52,20 @@ describe('SendPolicyForm — what it renders', () => {
   it('renders NO Saturday input at all', () => {
     // Not disabled — absent. A disabled control says "you may not", which invites
     // "who may?". There is no answer: Shabbat sends need a code change.
-    const found = inputs(SendPolicyForm({ policy: STORED }));
+    const found = inputs(renderForm(STORED));
     expect(found.has('weekday.6.start')).toBe(false);
     expect(found.has('weekday.6.end')).toBe(false);
-    expect(text(SendPolicyForm({ policy: STORED }))).toContain('נעול בקוד');
+    expect(text(document.body)).toContain('נעול בקוד');
   });
 
   it('shows the spread in MINUTES, not milliseconds', () => {
-    const found = inputs(SendPolicyForm({ policy: STORED }));
+    const found = inputs(renderForm(STORED));
     expect(found.get('spreadSpanMinutes')?.defaultValue).toBe('90');
     expect(found.has('spreadSpanMs')).toBe(false);
   });
 
   it('renders one row per stored preferred time PLUS one blank row', () => {
-    const found = inputs(SendPolicyForm({ policy: STORED }));
+    const found = inputs(renderForm(STORED));
     const keys = Object.keys(DEFAULT_SEND_POLICY.preferredTimeByDaysBefore);
     for (let i = 0; i < keys.length; i++) {
       expect(found.get(`preferred.${i}.days`)?.defaultValue).not.toBe('');
@@ -106,14 +77,14 @@ describe('SendPolicyForm — what it renders', () => {
   });
 
   it('sorts the preferred rows by days-before descending — send order', () => {
-    const found = inputs(SendPolicyForm({ policy: STORED }));
+    const found = inputs(renderForm(STORED));
     expect(found.get('preferred.0.days')?.defaultValue).toBe('7');
     expect(found.get('preferred.1.days')?.defaultValue).toBe('3');
     expect(found.get('preferred.2.days')?.defaultValue).toBe('1');
   });
 
   it('uses time inputs, so the browser posts HH:MM the schema already accepts', () => {
-    const found = inputs(SendPolicyForm({ policy: STORED }));
+    const found = inputs(renderForm(STORED));
     expect(found.get('weekday.0.start')?.type).toBe('time');
     expect(found.get('hardCap')?.type).toBe('time');
   });
@@ -121,15 +92,11 @@ describe('SendPolicyForm — what it renders', () => {
 
 describe('SendPolicyForm — the three sources are three different sentences', () => {
   it('stored says these values are what runs', () => {
-    expect(text(SendPolicyForm({ policy: STORED }))).toContain('מנוע השליחה משתמש בו כרגע');
+    expect(text(renderForm(STORED))).toContain('מנוע השליחה משתמש בו כרגע');
   });
 
   it('default says nothing is saved — not that something is wrong', () => {
-    const t = text(
-      SendPolicyForm({
-        policy: { policy: DEFAULT_SEND_POLICY, source: 'default', invalidReason: null },
-      }),
-    );
+    const t = text(renderForm({ policy: DEFAULT_SEND_POLICY, source: 'default', invalidReason: null }));
     expect(t).toContain('לא נשמרה מדיניות');
     expect(t).not.toContain('אינה עוברת אימות');
   });
@@ -139,12 +106,10 @@ describe('SendPolicyForm — the three sources are three different sentences', (
     // and schedules against the default, so the panel showed a policy nothing
     // obeyed. "We could not read it" and "it is not in use" are different problems.
     const t = text(
-      SendPolicyForm({
-        policy: {
-          policy: DEFAULT_SEND_POLICY,
-          source: 'invalid',
-          invalidReason: 'hardCap לא יכול לעבור 21:00',
-        },
+      renderForm({
+        policy: DEFAULT_SEND_POLICY,
+        source: 'invalid',
+        invalidReason: 'hardCap לא יכול לעבור 21:00',
       }),
     );
     expect(t).toContain('אינה עוברת אימות');
