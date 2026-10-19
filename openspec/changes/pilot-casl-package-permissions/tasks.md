@@ -68,7 +68,7 @@ Ground rules for every group:
 - [x] 4.1 Switch the three page gates to the D4 pairs. Render the list page's "חבילה חדשה" link only
   when `getPlatformAbility()` allows `create Package`. Verify: page tests cover allowed vs refused for
   the link, and `npm run typecheck` passes.
-- [ ] 4.2 Write `src/components/platform-ability-provider.test.tsx` first: `<Can I="delete"
+- [x] 4.2 Write `src/components/platform-ability-provider.test.tsx` first: `<Can I="delete"
   a="Package">` rendered through the wrapper shows its child for rules that allow it and hides it
   otherwise. Then create the `'use client'` wrapper per design D5, with `createMongoAbility(rules)`
   memoized on the rules and `<AbilityProvider value={ability}>`. Verify: test green.
