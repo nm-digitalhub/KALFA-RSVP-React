@@ -8,13 +8,13 @@ Ground rules for every group:
 
 ## 1. The action map and the ability (isomorphic)
 
-- [ ] 1.1 Read the `@casl/ability` 7.0.2 and `@casl/react` 7.0.1 release notes and confirm the APIs in
+- [x] 1.1 Read the `@casl/ability` 7.0.2 and `@casl/react` 7.0.1 release notes and confirm the APIs in
   design D1/D5 are unchanged from what `node_modules/@casl/*/dist/types` shows: `createMongoAbility`,
   `AbilityBuilder`, `MongoAbility`, and `AbilityProvider({ value })`. Verify: findings recorded at the
   top of `evaluation.md`; if anything differs, stop and report before 1.2.
-- [ ] 1.2 Write `src/lib/auth/platform-actions.test.ts` first:
-  - every key in `PLATFORM_ACTIONS` exists in the catalogue seeded by `insert into
-    public.platform_permission_definitions` under `supabase/migrations`;
+- [x] 1.2 Write `src/lib/casl.test.ts` first:
+  - every key in `PLATFORM_ACTIONS` is a key of the generated catalogue
+    (`isPlatformPermissionKey` from `src/lib/auth/platform-permission-keys.generated.ts`);
   - for every subset of the map's keys plus `view_billing`, `buildPlatformAbility(held).can(a, s) ===
     held.has(PLATFORM_ACTIONS[s][a])`;
   - `JSON.parse(JSON.stringify(ability.rules))` rebuilt with `createMongoAbility` gives identical
@@ -22,13 +22,17 @@ Ground rules for every group:
   - every `Package` action is bound to `manage_billing`, which pins "no access change".
 
   Verify: the suite fails because the module does not exist.
-- [ ] 1.3 Create `src/lib/auth/platform-actions.ts` per design D1: the `as const` map; types derived from
-  it and from CASL's generics, with no hand-written unions; and the pure `buildPlatformAbility`. Verify:
-  1.2 green.
+- [x] 1.3 Rewrite `src/lib/casl.ts` (added in `2c7c723c`) per design D1, as the one module and not a
+  second one next to it:
+  - the `as const` map, its values typed by the generated `PlatformPermissionKey`;
+  - types derived from the map and from CASL's generics, with no hand-written unions;
+  - the pure `buildPlatformAbility`, with no owner rule and no subject inferred from a key's name.
+
+  Verify: 1.2 green; `rg "lib/casl"` shows no other permission module.
 
 ## 2. The server gate
 
-- [ ] 2.1 Write `src/lib/auth/platform-ability.test.ts` first, with `@/lib/auth/dal` mocked:
+- [x] 2.1 Write `src/lib/auth/platform-ability.test.ts` first, with `@/lib/auth/dal` mocked:
   - `requirePlatformAction` calls `requirePlatformPermission` with the mapped key;
   - `requireAnyPlatformAction` makes one call when its pairs share a key, passes when any key passes,
     and redirects to `/access-denied` when none does;
@@ -36,7 +40,7 @@ Ground rules for every group:
     ability.
 
   Verify: red because the module does not exist.
-- [ ] 2.2 Create the server-only `src/lib/auth/platform-ability.ts` per design D2/D3: a `cache()`-wrapped
+- [x] 2.2 Create the server-only `src/lib/auth/platform-ability.ts` per design D2/D3: a `cache()`-wrapped
   `getPlatformAbility`, `requirePlatformAction` and `requireAnyPlatformAction`. Verify: 2.1 green.
 
 ## 3. The package data functions and Server Actions
@@ -83,7 +87,7 @@ Ground rules for every group:
 
 ## 5. The guards that keep the duplication gone
 
-- [ ] 5.1 Write `src/lib/auth/platform-actions-pilot-static.test.ts`. Over the pilot's files it asserts:
+- [ ] 5.1 Write `src/lib/casl-pilot-static.test.ts`. Over the pilot's files it asserts:
   - no string literal equal to any catalogue key;
   - no direct `requirePlatformPermission(` or `hasPlatformPermission(` call;
   - every gate goes through `requirePlatformAction` or `requireAnyPlatformAction`.

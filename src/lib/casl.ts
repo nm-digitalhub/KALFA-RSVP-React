@@ -1,67 +1,68 @@
-// lib/casl.ts
-import { createMongoAbility, MongoAbility, AbilityBuilder } from '@casl/ability';
+// src/lib/casl.ts
+// Isomorphic: no server-only import, so a client component can rebuild the ability
+// from the rules the server hands it. (openspec/changes/pilot-casl-package-permissions, design D1).
+
+import { AbilityBuilder, createMongoAbility, type MongoAbility } from '@casl/ability';
 import type { PlatformPermissionKey } from '@/lib/auth/platform-permission-keys.generated';
 
 export type { PlatformPermissionKey };
 
-export type CASLAction = PlatformPermissionKey | 'manage';
+// subject -> action -> the key that action needs. `satisfies` makes every value a key of the
+// generated catalogue at compile time.
+export const PLATFORM_ACTIONS = {
+  Package: {
+    read: 'manage_billing',
+    create: 'manage_billing',
+    update: 'manage_billing',
+    delete: 'manage_billing',
+  },
+} as const satisfies Record<string, Record<string, PlatformPermissionKey>>;
 
-// מפת ה-Subjects מתוך ישויות המסד והטבלאות שברשותך (לפי הסכימה של Supabase ששלחת)
-export type CASLSubject = 
+export type PlatformSubject = keyof typeof PLATFORM_ACTIONS;
+export type PlatformAction<S extends PlatformSubject = PlatformSubject> = keyof (typeof PLATFORM_ACTIONS)[S];
 
-  | 'campaigns' | 'events' | 'integrations' | 'rdp' | 'roles' | 'billing' 
-  | 'settings' | 'staff' | 'voice' | 'activity_log' | 'customer_data' 
-  | 'recordings' | 'webhooks' | 'packages' | 'all';
+// One [action, subject] tuple per subject, so an action is only valid on the subject that declares it.
+type PlatformAbilityTuple = { [S in PlatformSubject]: [PlatformAction<S>, S] }[PlatformSubject];
+export type PlatformAbility = MongoAbility<PlatformAbilityTuple>;
 
-export type AppAbility = MongoAbility<[CASLAction, CASLSubject]>;
+export interface PlatformActionPair {
+  subject: PlatformSubject;
+  action: PlatformAction;
+  key: PlatformPermissionKey;
+}
 
-export interface CASLContextProfile {
-  isStaff: boolean;
-  isPlatformOwner: boolean;
-  activeOrgId: string | null;
-  activeRoleName: string | null;
-  activePermissions: PlatformPermissionKey[]; // הרשאות שחזרו מהשרת אקטיבית
+// The map flattened, for code that walks every action (the ability below, the tests).
+// We cast the mapped subjects and actions strictly to guarantee compile-time alignment.
+export const PLATFORM_ACTION_PAIRS: readonly PlatformActionPair[] = (
+  Object.keys(PLATFORM_ACTIONS) as PlatformSubject[]
+).flatMap((subject) => {
+  const actionsMap = PLATFORM_ACTIONS[subject];
+  return (Object.keys(actionsMap) as PlatformAction<typeof subject>[]).map((action) => ({
+    subject,
+    action,
+    key: actionsMap[action] as PlatformPermissionKey, // Type safe cast directly matching the catalogue union
+  }));
+});
+
+// The key an action needs.
+export function platformActionKey<S extends PlatformSubject>(
+  action: PlatformAction<S>,
+  subject: S,
+): PlatformPermissionKey {
+  return PLATFORM_ACTIONS[subject][action] as PlatformPermissionKey;
 }
 
 /**
- * מפעל ליצירת ה-Ability - מיישם Default Deny מוחלט
+ * The ability of a caller who holds exactly `held` (the keys the database granted them).
+ * A key absent from `held` adds no rule: default deny.
  */
-export function createAppAbility(profile: CASLContextProfile | null): AppAbility {
-  const { can, build } = new AbilityBuilder<AppAbility>(createMongoAbility);
+export function buildPlatformAbility(held: ReadonlySet<string>): PlatformAbility {
+  const { can, build } = new AbilityBuilder<PlatformAbility>(createMongoAbility);
 
-  // Default Deny: אין פרופיל או הרשאות - חסימה מלאה מיידית
-  if (!profile) {
-    return build();
-  }
-
-  // הגנת על לצוות הפלטפורמה הבכיר (Platform Owner / Super Admin)
-  if (profile.isPlatformOwner) {
-    can('manage', 'all');
-    return build();
-  }
-
-  // החלת חוקים לצוות פלטפורמה רגיל (Staff) או למשתמשי ארגון
-  if (profile.activePermissions && Array.isArray(profile.activePermissions)) {
-    profile.activePermissions.forEach((perm) => {
-      if (typeof perm !== 'string') return;
-
-      if (perm.includes('.')) {
-        // מבנה של resource.action (כמו campaigns.runstate או events.mark_test)
-        const [resource] = perm.split('.');
-        
-        can(perm as CASLAction, resource as CASLSubject);
-      } else {
-        // מבנה של מפתח גלובלי שטוח (כמו manage_billing)
-        let subject: CASLSubject = 'all';
-        if (perm.includes('billing')) subject = 'billing';
-        if (perm.includes('settings')) subject = 'settings';
-        if (perm.includes('staff')) subject = 'staff';
-        if (perm.includes('voice')) subject = 'voice';
-        if (perm.includes('packages')) subject = 'packages';
-
-        can(perm as CASLAction, subject);
-      }
-    });
+  for (const { subject, action, key } of PLATFORM_ACTION_PAIRS) {
+    if (held.has(key)) {
+      can(action, subject);
+    }
   }
 
   return build();
