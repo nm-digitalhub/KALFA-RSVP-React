@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { PLATFORM_PERMISSION_KEYS } from './platform-permission-keys.generated';
+
 // Regression guard, not a unit test of behavior: proves every admin-only
 // data-layer function gates on requireAdmin() BEFORE touching data, so a
 // future function that forgets the check fails CI loudly instead of shipping
@@ -300,32 +302,13 @@ const COARSE_GATE_ALLOWED: Record<string, string> = {
     'In-process memo of one non-customer number (the Voximplant balance), read by gated voice readers. Verified 2026-09-10: no database access at all — it exports a getter and a test reset, nothing more.',
 };
 
-// The permission catalogue as seeded in platform_permission_definitions,
-// MEASURED against the live database 2026-09-10, re-measured 2026-09-16 after
-// 20260916005200 seeded the two `integrations.*` keys, plus the two `events.*`
-// test-event keys seeded by 20260929001415. Pinned rather than queried so
-// the suite stays hermetic; a key used in code that is not here is either a typo
-// or a permission nobody created, and both mean the gate never matches and the
-// user is redirected with no explanation.
-const PERMISSION_CATALOGUE = [
-  'campaigns.runstate',
-  'events.mark_test',
-  'events.purge_test',
-  'integrations.manage',
-  'integrations.read',
-  'manage_billing',
-  'manage_settings',
-  'manage_staff',
-  'manage_voice',
-  'rdp.request',
-  'roles.manage',
-  'view_activity_log',
-  'view_billing',
-  'view_customer_data',
-  'view_events',
-  'view_recordings',
-  'view_webhooks',
-] as const;
+// The permission catalogue of platform_permission_definitions, from the file
+// generated out of the database (`npm run gen:permissions`; verified against it
+// by `npm run check:permissions:generated`). Committed, so the suite stays
+// hermetic. A key used in code that is not here is either a typo or a permission
+// nobody created, and both mean the gate never matches and the user is
+// redirected with no explanation.
+const PERMISSION_CATALOGUE = PLATFORM_PERMISSION_KEYS;
 
 // Targeted readers of an identified customer subject that MUST record a
 // staff-access audit row. A new such reader shipping without
