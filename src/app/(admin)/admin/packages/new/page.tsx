@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requirePlatformPermission } from '@/lib/auth/dal';
+import { requirePlatformAction } from '@/lib/auth/platform-ability';
 import Link from 'next/link';
 import { unstable_rethrow } from 'next/navigation';
 
@@ -20,11 +20,11 @@ export const metadata: Metadata = { title: 'חבילה חדשה' };
 export default async function NewPackagePage() {
   // Optimistic gate: redirect early instead of rendering an empty page. The
   // real enforcement is per-function in the DAL.
-  await requirePlatformPermission('manage_billing');
+  await requirePlatformAction('create', 'Package');
   // Real 3-state dial status of the AI-voice channel, so a `call` touchpoint shows
   // an accurate note (not_configured / configured_off / live).
   // getVoximplantConfig() reads app_settings via the
-  // service-role client (no manage_voice needed on this manage_billing page).
+  // service-role client (no manage_voice needed on this package page).
   const voxCfg = await getVoximplantConfig();
   const callChannelStatus: CallChannelStatus =
     voxCfg == null ? 'not_configured' : voxCfg.liveCallsEnabled ? 'live' : 'configured_off';

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { requirePlatformPermission } from '@/lib/auth/dal';
+import { getPlatformAbility, requirePlatformAction } from '@/lib/auth/platform-ability';
 
 import { listPackages } from '@/lib/data/admin/packages';
 import { PageHeading, EmptyState, Badge, formatCurrency } from '../_components';
@@ -14,19 +14,23 @@ export const metadata: Metadata = { title: 'חבילות' };
 export default async function AdminPackagesPage() {
   // Optimistic gate (Next.js term): redirects early so the operator does not
   // land on an empty page. The real enforcement is per-function in the DAL.
-  await requirePlatformPermission('manage_billing');
-  const packages = await listPackages();
+  await requirePlatformAction('read', 'Package');
+  const [packages, ability] = await Promise.all([listPackages(), getPlatformAbility()]);
+  // Display only: createPackageAction checks `create Package` itself.
+  const canCreate = ability.can('create', 'Package');
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <PageHeading>חבילות</PageHeading>
-        <Link
-          href="/admin/packages/new"
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-        >
-          חבילה חדשה
-        </Link>
+        {canCreate && (
+          <Link
+            href="/admin/packages/new"
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            חבילה חדשה
+          </Link>
+        )}
       </div>
 
       {packages.length === 0 ? (

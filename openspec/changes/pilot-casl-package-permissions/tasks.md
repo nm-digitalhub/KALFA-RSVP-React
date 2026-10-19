@@ -65,7 +65,7 @@ Ground rules for every group:
 
 ## 4. The pages, the dashboard and the sidebar
 
-- [ ] 4.1 Switch the three page gates to the D4 pairs. Render the list page's "חבילה חדשה" link only
+- [x] 4.1 Switch the three page gates to the D4 pairs. Render the list page's "חבילה חדשה" link only
   when `getPlatformAbility()` allows `create Package`. Verify: page tests cover allowed vs refused for
   the link, and `npm run typecheck` passes.
 - [ ] 4.2 Write `src/components/platform-ability-provider.test.tsx` first: `<Can I="delete"
