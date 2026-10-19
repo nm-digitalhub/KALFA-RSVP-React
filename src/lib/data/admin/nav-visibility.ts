@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { hasPlatformPermission, isPlatformOwner, requirePlatformStaff } from '@/lib/auth/dal';
+import type { PlatformPermissionKey } from '@/lib/auth/platform-permission-keys.generated';
 
 // Which sidebar links this viewer should be shown. Sibling of ./nav-counts.ts —
 // same shape, same discipline: resolve the caller's own permissions server-side,
@@ -40,7 +41,7 @@ export const NAV_PERMISSION_KEYS = [
   'view_activity_log',
   'view_webhooks',
   'rdp.request',
-] as const;
+] as const satisfies readonly PlatformPermissionKey[];
 
 export interface AdminNavGrants {
   /** Owner-only links (roles, debug, relocation) hang off this, not a key. */

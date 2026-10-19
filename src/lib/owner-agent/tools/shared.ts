@@ -2,6 +2,7 @@ import type { MCPToolProperties } from '@mastra/core/tools';
 import { z } from 'zod';
 
 import { OWNER_AGENT_RANGES } from '@/lib/owner-agent/range';
+import type { PlatformPermissionKey } from '@/lib/auth/platform-permission-keys.generated';
 
 // Shared pieces of the owner agent's nine read-only Mastra tools (plan §5,
 // stage 5). Nothing here runs a model: the MCP servers (../mcp/server.ts for
@@ -20,7 +21,7 @@ export const OWNER_AGENT_PERMISSIONS = [
   'manage_voice',
   'view_events',
   'view_webhooks',
-] as const;
+] as const satisfies readonly PlatformPermissionKey[];
 export type OwnerAgentPermission = (typeof OWNER_AGENT_PERMISSIONS)[number];
 
 // THE input of every tool: one range literal and nothing else (plan §5: "no
