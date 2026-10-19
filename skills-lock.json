@@ -13,6 +13,12 @@
       "skillPath": "skills/ab-test-setup/SKILL.md",
       "computedHash": "37ed183c18c265525ff062a71c3b2a13a5d4b05f3acfd4071716c9903e2d8a63"
     },
+    "access-control-designer": {
+      "source": "Kaakati/sdh-claude-skills",
+      "sourceType": "github",
+      "skillPath": "skills/access-control-designer/SKILL.md",
+      "computedHash": "fa64eecfccfc143cd95986ee3c4901e14a7ef3564d78e515f4384fddfd5a86a5"
+    },
     "active-listening": {
       "source": "louisblythe/salesskills",
       "sourceType": "github",
@@ -79,6 +85,12 @@
       "skillPath": "skills/callback-scheduling/SKILL.md",
       "computedHash": "9742dba18299aa9d9d50354cff89016a90d57c04822b77a1fa7ac3dd49b00c76"
     },
+    "cardcom-payment-gateway": {
+      "source": "skills-il/tax-and-finance",
+      "sourceType": "github",
+      "skillPath": "cardcom-payment-gateway/SKILL.md",
+      "computedHash": "9116231dbe90d56323f7117875e10bd50fbcb8298bdaa5a3723fb6b66ce74252"
+    },
     "channel-fallback-logic": {
       "source": "louisblythe/salesskills",
       "sourceType": "github",
@@ -96,6 +108,12 @@
       "sourceType": "github",
       "skillPath": "skills/closing/SKILL.md",
       "computedHash": "73ac5615b997caf70a8404b338e514a5d7287d7e630abace24f328ec4fdc75e2"
+    },
+    "codeql": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/codeql/SKILL.md",
+      "computedHash": "a7d80450799b2141ddff9ec614477e237c1f50acb9eeade2dd869aeac3d004a9"
     },
     "competitive-intelligence-gathering": {
       "source": "louisblythe/salesskills",
