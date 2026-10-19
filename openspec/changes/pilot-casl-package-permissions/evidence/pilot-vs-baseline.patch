@@ -1,0 +1,848 @@
+diff --git a/src/app/(admin)/admin/layout.tsx b/src/app/(admin)/admin/layout.tsx
+index 73f9d5f0..10ba4f81 100644
+--- a/src/app/(admin)/admin/layout.tsx
++++ b/src/app/(admin)/admin/layout.tsx
+@@ -1,4 +1,5 @@
+ import { requirePlatformStaff } from '@/lib/auth/dal';
++import { getPlatformAbility } from '@/lib/auth/platform-ability';
+ import { getProfile } from '@/lib/data/profiles';
+ import { getMyActiveExchangeConnection } from '@/lib/data/exchange-connections';
+ import {
+@@ -48,11 +49,14 @@ export default async function AdminLayout({
+   // is shown at all) are independent of the profile read — fetched in parallel
+   // rather than as sequential awaits. Both resolve the caller's permissions
+   // through the same cache()-memoized DAL helpers, so the overlapping keys cost
+-  // one RPC each for the whole render pass, not one per caller.
+-  const [profile, navCounts, navGrants] = await Promise.all([
++  // one RPC each for the whole render pass, not one per caller. The ability (the
++  // action map's rules for this viewer, pilot-casl-package-permissions design D5)
++  // asks the same helpers, so its keys are among the ones navGrants already asks.
++  const [profile, navCounts, navGrants, ability] = await Promise.all([
+     getProfile(),
+     getAdminNavCounts(),
+     getAdminNavGrants(),
++    getPlatformAbility(),
+   ]);
+   const userName = profile?.full_name?.trim() || undefined;
+ 
+@@ -150,6 +154,7 @@ export default async function AdminLayout({
+       hasExchangeConnection={hasExchangeConnection}
+       navCounts={navCounts}
+       navGrants={navGrants}
++      abilityRules={ability.rules}
+       softphone={softphone}
+     >
+       {children}
+diff --git a/src/app/(admin)/admin/packages/[id]/delete-package-form.tsx b/src/app/(admin)/admin/packages/[id]/delete-package-form.tsx
+index adb9ce5a..ce428f8d 100644
+--- a/src/app/(admin)/admin/packages/[id]/delete-package-form.tsx
++++ b/src/app/(admin)/admin/packages/[id]/delete-package-form.tsx
+@@ -1,35 +1,44 @@
+ 'use client';
+ 
+ import { useActionState } from 'react';
++import { Can } from '@casl/react';
+ 
+ import { FormError } from '@/components/forms';
++import type { PlatformAbility } from '@/lib/casl';
+ import { deletePackageAction } from '../actions';
+ 
+ // Confirm-gated delete. The action is pre-bound with the id; on success it
+ // redirects to the list (so no success state is rendered here). A native
+ // confirm() guards the destructive action. Errors surface via FormError.
++// Rendered, divider included, only for a viewer who may `delete Package`; display
++// only, deletePackageAction checks the same action itself
++// (pilot-casl-package-permissions, design D5).
+ export function DeletePackageForm({ id, name }: { id: string; name: string }) {
+   const action = deletePackageAction.bind(null, id);
+   const [state, formAction, pending] = useActionState(action, null);
+ 
+   return (
+-    <form
+-      action={formAction}
+-      onSubmit={(e) => {
+-        if (!window.confirm(`למחוק את החבילה "${name}"? פעולה זו אינה הפיכה.`)) {
+-          e.preventDefault();
+-        }
+-      }}
+-      className="space-y-2"
+-    >
+-      <FormError message={state?.error} />
+-      <button
+-        type="submit"
+-        disabled={pending}
+-        className="rounded-md bg-destructive/10 px-4 py-2 text-sm font-medium text-destructive transition-opacity hover:opacity-90 disabled:opacity-60"
+-      >
+-        {pending ? 'מוחק…' : 'מחיקת החבילה'}
+-      </button>
+-    </form>
++    <Can<PlatformAbility> I="delete" a="Package">
++      <div className="border-t border-border pt-6">
++        <form
++          action={formAction}
++          onSubmit={(e) => {
++            if (!window.confirm(`למחוק את החבילה "${name}"? פעולה זו אינה הפיכה.`)) {
++              e.preventDefault();
++            }
++          }}
++          className="space-y-2"
++        >
++          <FormError message={state?.error} />
++          <button
++            type="submit"
++            disabled={pending}
++            className="rounded-md bg-destructive/10 px-4 py-2 text-sm font-medium text-destructive transition-opacity hover:opacity-90 disabled:opacity-60"
++          >
++            {pending ? 'מוחק…' : 'מחיקת החבילה'}
++          </button>
++        </form>
++      </div>
++    </Can>
+   );
+ }
+diff --git a/src/app/(admin)/admin/packages/[id]/page.tsx b/src/app/(admin)/admin/packages/[id]/page.tsx
+index 03f2a83f..cf101431 100644
+--- a/src/app/(admin)/admin/packages/[id]/page.tsx
++++ b/src/app/(admin)/admin/packages/[id]/page.tsx
+@@ -1,5 +1,5 @@
+ import type { Metadata } from 'next';
+-import { requirePlatformPermission } from '@/lib/auth/dal';
++import { requirePlatformAction } from '@/lib/auth/platform-ability';
+ import Link from 'next/link';
+ 
+ import { getPackage, getScheduleStepOptions } from '@/lib/data/admin/packages';
+@@ -27,13 +27,13 @@ export default async function EditPackagePage({
+ }) {
+   // Optimistic gate: redirect early instead of rendering an empty page. The
+   // real enforcement is per-function in the DAL.
+-  await requirePlatformPermission('manage_billing');
++  await requirePlatformAction('read', 'Package');
+   const { id } = await params;
+   const pkg = await getPackage(id);
+   // Real 3-state dial status of the AI-voice channel (not_configured /
+   // configured_off / live) so a `call` touchpoint shows an accurate note.
+   // getVoximplantConfig() reads app_settings
+-  // via the service-role client (no manage_voice needed on this manage_billing page).
++  // via the service-role client (no manage_voice needed on this package page).
+   const voxCfg = await getVoximplantConfig();
+   const callChannelStatus: CallChannelStatus =
+     voxCfg == null ? 'not_configured' : voxCfg.liveCallsEnabled ? 'live' : 'configured_off';
+@@ -94,9 +94,7 @@ export default async function EditPackagePage({
+         scheduleOptions={scheduleOptions}
+       />
+ 
+-      <div className="border-t border-border pt-6">
+-        <DeletePackageForm id={id} name={pkg.name} />
+-      </div>
++      <DeletePackageForm id={id} name={pkg.name} />
+     </div>
+   );
+ }
+diff --git a/src/app/(admin)/admin/packages/actions.ts b/src/app/(admin)/admin/packages/actions.ts
+index 7966e80c..77dd052e 100644
+--- a/src/app/(admin)/admin/packages/actions.ts
++++ b/src/app/(admin)/admin/packages/actions.ts
+@@ -3,6 +3,8 @@
+ import { redirect, unstable_rethrow } from 'next/navigation';
+ import { revalidatePath } from 'next/cache';
+ 
++import { requirePlatformAction } from '@/lib/auth/platform-ability';
++
+ import {
+   createPackage,
+   updatePackage,
+@@ -78,6 +80,10 @@ export async function createPackageAction(
+   _prevState: FormState,
+   formData: FormData,
+ ): Promise<FormState> {
++  // First, outside any try: a Server Action is reachable by direct POST, so the caller's right to the action is
++  // checked before the form is parsed, and the access-denied redirect propagates as it does from the DAL.
++  await requirePlatformAction('create', 'Package');
++
+   const parsed = packageBaseSchema.safeParse(readPackageForm(formData));
+   const operationalParsed = operationalFieldsSchema.safeParse(readOperationalForm(formData));
+   if (!parsed.success || !operationalParsed.success) {
+@@ -122,6 +128,10 @@ export async function updatePackageAction(
+   _prevState: FormState,
+   formData: FormData,
+ ): Promise<FormState> {
++  // First, outside any try: a Server Action is reachable by direct POST, so the caller's right to the action is
++  // checked before the form is parsed, and the access-denied redirect propagates as it does from the DAL.
++  await requirePlatformAction('update', 'Package');
++
+   const parsed = packageBaseSchema.safeParse(readPackageForm(formData));
+   const operationalParsed = operationalFieldsSchema.safeParse(readOperationalForm(formData));
+   if (!parsed.success || !operationalParsed.success) {
+@@ -165,6 +175,10 @@ export async function deletePackageAction(
+   _prevState: FormState,
+   _formData: FormData,
+ ): Promise<FormState> {
++  // First, outside any try: a Server Action is reachable by direct POST, so the caller's right to the action is
++  // checked before the form is parsed, and the access-denied redirect propagates as it does from the DAL.
++  await requirePlatformAction('delete', 'Package');
++
+   // Bound with the id; useActionState always supplies (state, formData), neither
+   // of which this destructive action reads. Marked intentionally unused.
+   void _prevState;
+diff --git a/src/app/(admin)/admin/packages/new/page.tsx b/src/app/(admin)/admin/packages/new/page.tsx
+index 23d02f7b..ac3c58c9 100644
+--- a/src/app/(admin)/admin/packages/new/page.tsx
++++ b/src/app/(admin)/admin/packages/new/page.tsx
+@@ -1,5 +1,5 @@
+ import type { Metadata } from 'next';
+-import { requirePlatformPermission } from '@/lib/auth/dal';
++import { requirePlatformAction } from '@/lib/auth/platform-ability';
+ import Link from 'next/link';
+ import { unstable_rethrow } from 'next/navigation';
+ 
+@@ -20,11 +20,11 @@ export const metadata: Metadata = { title: 'חבילה חדשה' };
+ export default async function NewPackagePage() {
+   // Optimistic gate: redirect early instead of rendering an empty page. The
+   // real enforcement is per-function in the DAL.
+-  await requirePlatformPermission('manage_billing');
++  await requirePlatformAction('create', 'Package');
+   // Real 3-state dial status of the AI-voice channel, so a `call` touchpoint shows
+   // an accurate note (not_configured / configured_off / live).
+   // getVoximplantConfig() reads app_settings via the
+-  // service-role client (no manage_voice needed on this manage_billing page).
++  // service-role client (no manage_voice needed on this package page).
+   const voxCfg = await getVoximplantConfig();
+   const callChannelStatus: CallChannelStatus =
+     voxCfg == null ? 'not_configured' : voxCfg.liveCallsEnabled ? 'live' : 'configured_off';
+diff --git a/src/app/(admin)/admin/packages/package-form.tsx b/src/app/(admin)/admin/packages/package-form.tsx
+index 5b8019ee..65705e5e 100644
+--- a/src/app/(admin)/admin/packages/package-form.tsx
++++ b/src/app/(admin)/admin/packages/package-form.tsx
+@@ -1,6 +1,7 @@
+ 'use client';
+ 
+ import { useActionState, useId, useState } from 'react';
++import { Can } from '@casl/react';
+ import { PackageCopyField } from './package-copy-field';
+ 
+ import {
+@@ -10,6 +11,7 @@ import {
+   SubmitButton,
+ } from '@/components/forms';
+ import type { FormState } from '@/lib/validation/result';
++import type { PlatformAbility } from '@/lib/casl';
+ import type { ChannelCatalogEntry } from '@/lib/data/channel-catalog';
+ import { firstSelectableKey, type ScheduleStepOption } from '@/lib/data/schedule-picker';
+ 
+@@ -250,6 +252,8 @@ export function PackageForm({
+ }) {
+   const [state, formAction] = useActionState(action, null);
+   const seed = initial === EMPTY ? scheduleSeed : null;
++  // The form edits when an `initial` was given and creates otherwise; its save button follows that action.
++  const saveAction = initial === EMPTY ? 'create' : 'update';
+   const [channels, setChannels] = useState<string[]>(seed?.channels ?? initial.channels);
+   const [schedule, setSchedule] = useState<OutreachTouchpointFormValue[]>(
+     seed?.schedule ?? initial.outreach_schedule,
+@@ -495,7 +499,11 @@ export function PackageForm({
+         />
+       </div>
+ 
+-      <SubmitButton>{submitLabel}</SubmitButton>
++      {/* Display only: createPackageAction / updatePackageAction check the same action themselves
++          (pilot-casl-package-permissions, design D5). */}
++      <Can<PlatformAbility> I={saveAction} a="Package">
++        <SubmitButton>{submitLabel}</SubmitButton>
++      </Can>
+     </form>
+   );
+ }
+diff --git a/src/app/(admin)/admin/packages/page.tsx b/src/app/(admin)/admin/packages/page.tsx
+index 01aa452d..b85c05fd 100644
+--- a/src/app/(admin)/admin/packages/page.tsx
++++ b/src/app/(admin)/admin/packages/page.tsx
+@@ -1,6 +1,6 @@
+ import type { Metadata } from 'next';
+ import Link from 'next/link';
+-import { requirePlatformPermission } from '@/lib/auth/dal';
++import { getPlatformAbility, requirePlatformAction } from '@/lib/auth/platform-ability';
+ 
+ import { listPackages } from '@/lib/data/admin/packages';
+ import { PageHeading, EmptyState, Badge, formatCurrency } from '../_components';
+@@ -14,19 +14,23 @@ export const metadata: Metadata = { title: 'חבילות' };
+ export default async function AdminPackagesPage() {
+   // Optimistic gate (Next.js term): redirects early so the operator does not
+   // land on an empty page. The real enforcement is per-function in the DAL.
+-  await requirePlatformPermission('manage_billing');
+-  const packages = await listPackages();
++  await requirePlatformAction('read', 'Package');
++  const [packages, ability] = await Promise.all([listPackages(), getPlatformAbility()]);
++  // Display only: createPackageAction checks `create Package` itself.
++  const canCreate = ability.can('create', 'Package');
+ 
+   return (
+     <div className="space-y-6">
+       <div className="flex flex-wrap items-center justify-between gap-4">
+         <PageHeading>חבילות</PageHeading>
+-        <Link
+-          href="/admin/packages/new"
+-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+-        >
+-          חבילה חדשה
+-        </Link>
++        {canCreate && (
++          <Link
++            href="/admin/packages/new"
++            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
++          >
++            חבילה חדשה
++          </Link>
++        )}
+       </div>
+ 
+       {packages.length === 0 ? (
+diff --git a/src/app/(admin)/admin/packages/rewrite-action.ts b/src/app/(admin)/admin/packages/rewrite-action.ts
+index f521b280..db87be09 100644
+--- a/src/app/(admin)/admin/packages/rewrite-action.ts
++++ b/src/app/(admin)/admin/packages/rewrite-action.ts
+@@ -1,7 +1,8 @@
+ 'use server';
+ 
+ import { unstable_rethrow } from 'next/navigation';
+-import { requirePlatformPermission } from '@/lib/auth/dal';
++import { requireAnyPlatformAction } from '@/lib/auth/platform-ability';
++import { PACKAGE_FORM_ACTIONS } from '@/lib/casl';
+ import { packageBaseSchema } from '@/lib/validation/admin';
+ import { runPackageCopy, PackageCopyError } from '@/lib/ai/package-copy';
+ import type { PackageCopyField, PackageCopyResult } from './package-copy-types';
+@@ -18,7 +19,7 @@ export async function rewritePackageCopyAction(
+   field: unknown, rawText: unknown,
+ ): Promise<PackageCopyResult> {
+   // Outside the catch: auth redirects must keep their normal Next.js behavior.
+-  const user = await requirePlatformPermission('manage_billing');
++  const user = await requireAnyPlatformAction(PACKAGE_FORM_ACTIONS);
+   if ((field !== 'description' && field !== 'includes') || typeof rawText !== 'string') {
+     return { ok: false, error: 'בקשת הניסוח אינה תקינה.' };
+   }
+diff --git a/src/components/admin-shell.tsx b/src/components/admin-shell.tsx
+index 86ab1e8a..8bc49bb1 100644
+--- a/src/components/admin-shell.tsx
++++ b/src/components/admin-shell.tsx
+@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react';
+ import Link from 'next/link';
+ import { usePathname } from 'next/navigation';
+ import { DirectionProvider } from '@base-ui/react/direction-provider';
++import type { RawRuleOf } from '@casl/ability';
++import { useAbility } from '@casl/react';
+ import {
+   Activity,
+   Ban,
+@@ -84,6 +86,8 @@ import type {
+ } from '@/lib/data/exchange-availability';
+ import { SoftphonePanelLazy } from '@/components/console/softphone-panel-lazy';
+ import type { SoftphoneGateInfo } from '@/components/console/softphone-panel';
++import { PlatformAbilityProvider } from '@/components/platform-ability-provider';
++import type { PlatformAbility, PlatformAbilityTuple } from '@/lib/casl';
+ import { cn, getInitials } from '@/lib/utils';
+ 
+ // Admin app shell: a fixed right-side sidebar (RTL) plus a top bar. Dedicated to
+@@ -109,6 +113,13 @@ type NavItem = {
+    * listed in NAV_PERMISSION_KEYS (admin-nav-coverage.test.ts enforces that).
+    */
+   permission?: string | 'OWNER';
++  /**
++   * In place of `permission`: the action pair the destination enforces through the action map in
++   * src/lib/casl.ts (openspec/changes/pilot-casl-package-permissions, design D5). Decided by the viewer's
++   * ability, from the rules the layout resolved. The same caveat holds: the page's requirePlatformAction is
++   * the gate.
++   */
++  can?: PlatformAbilityTuple;
+ };
+ 
+ // Groups are ordered by workflow, top to bottom. The first group is unlabelled
+@@ -141,7 +152,7 @@ export const NAV_GROUPS: NavGroup[] = [
+   {
+     label: 'מוצר וחוזה',
+     items: [
+-      { href: '/admin/packages', label: 'חבילות', icon: Package, permission: 'manage_billing' },
++      { href: '/admin/packages', label: 'חבילות', icon: Package, can: ['read', 'Package'] },
+       // The staff-managed benefit offers (personal-coupons D14) — managed like the packages.
+       { href: '/admin/offers', label: 'הצעות להטבה', icon: BadgePercent, permission: 'manage_billing' },
+       // Personal benefit assignments (task 7.3): who holds which benefit, assign and void.
+@@ -213,6 +224,25 @@ export const NAV_GROUPS: NavGroup[] = [
+   },
+ ];
+ 
++// The nav this viewer actually gets. An item with `can` is shown when the viewer's ability allows that action;
++// one with no gate is shown to every staff member; 'OWNER' asks the owner flag; anything else must be present
++// AND true in the grants map, so an unknown key hides the item rather than exposing it. A group whose every
++// item was filtered out is dropped, so no empty section header is left behind.
++export function visibleNavGroups(navGrants: AdminNavGrants, ability: PlatformAbility): NavGroup[] {
++  return NAV_GROUPS.map((group) => ({
++    ...group,
++    items: group.items.filter((item) =>
++      item.can
++        ? ability.can(...item.can)
++        : !item.permission
++          ? true
++          : item.permission === 'OWNER'
++            ? navGrants.owner
++            : navGrants.permissions[item.permission] === true,
++    ),
++  })).filter((group) => group.items.length > 0);
++}
++
+ // '/admin' is active only on an exact match; the rest match their subtree so
+ // e.g. /admin/packages/new keeps "חבילות" highlighted.
+ function isActive(pathname: string, href: string): boolean {
+@@ -300,7 +330,24 @@ function LogoutMenuItem() {
+   );
+ }
+ 
++// The shell under PlatformAbilityProvider, so the sidebar below and every admin page's client components decide
++// from the same rules (design D5).
+ export function AdminShell({
++  abilityRules,
++  ...props
++}: React.ComponentProps<typeof AdminShellFrame> & {
++  // The viewer's ability rules, resolved server-side by getPlatformAbility(): plain JSON, and only the viewer's
++  // own grants, the same information navGrants carries. Convenience, never authorization.
++  abilityRules: RawRuleOf<PlatformAbility>[];
++}) {
++  return (
++    <PlatformAbilityProvider rules={abilityRules}>
++      <AdminShellFrame {...props} />
++    </PlatformAbilityProvider>
++  );
++}
++
++function AdminShellFrame({
+   userEmail,
+   userName,
+   availabilityBlocks,
+@@ -342,26 +389,9 @@ export function AdminShell({
+   const pathname = usePathname();
+   const displayName = userName || userEmail || '';
+   const initials = getInitials(displayName);
++  const ability = useAbility<PlatformAbility>();
+ 
+-  // The nav this viewer actually gets. An item with no `permission` is shown to
+-  // every staff member; 'OWNER' asks the owner flag; anything else must be
+-  // present AND true in the grants map, so an unknown key hides the item rather
+-  // than exposing it. A group whose every item was filtered out is dropped, so
+-  // no empty section header is left behind.
+-  const visibleGroups = useMemo(
+-    () =>
+-      NAV_GROUPS.map((group) => ({
+-        ...group,
+-        items: group.items.filter((item) =>
+-          !item.permission
+-            ? true
+-            : item.permission === 'OWNER'
+-              ? navGrants.owner
+-              : navGrants.permissions[item.permission] === true,
+-        ),
+-      })).filter((group) => group.items.length > 0),
+-    [navGrants],
+-  );
++  const visibleGroups = useMemo(() => visibleNavGroups(navGrants, ability), [navGrants, ability]);
+ 
+   // Expanded/collapsed state for every labelled group, keyed by label. Each
+   // group starts from its `defaultOpen` (open unless explicitly false). Driven
+diff --git a/src/components/platform-ability-provider.tsx b/src/components/platform-ability-provider.tsx
+new file mode 100644
+index 00000000..66d24591
+--- /dev/null
++++ b/src/components/platform-ability-provider.tsx
+@@ -0,0 +1,23 @@
++'use client';
++
++import { useMemo } from 'react';
++import { createMongoAbility, type RawRuleOf } from '@casl/ability';
++import { AbilityProvider } from '@casl/react';
++
++import type { PlatformAbility } from '@/lib/casl';
++
++// The client side of the action map (openspec/changes/pilot-casl-package-permissions, design D5). The admin
++// layout resolves the viewer's ability on the server and hands down its rules, which are plain JSON; this
++// wrapper rebuilds the ability so <Can> and useAbility() below it decide from the same rules. It is a client
++// component because @casl/react ships no 'use client' directive and is built on React context. Display only:
++// every server entry point checks the action itself.
++export function PlatformAbilityProvider({
++  rules,
++  children,
++}: {
++  rules: RawRuleOf<PlatformAbility>[];
++  children: React.ReactNode;
++}) {
++  const ability = useMemo(() => createMongoAbility<PlatformAbility>(rules), [rules]);
++  return <AbilityProvider value={ability}>{children}</AbilityProvider>;
++}
+diff --git a/src/lib/auth/platform-ability.ts b/src/lib/auth/platform-ability.ts
+new file mode 100644
+index 00000000..ea229048
+--- /dev/null
++++ b/src/lib/auth/platform-ability.ts
+@@ -0,0 +1,94 @@
++// src/lib/auth/platform-ability.ts
++import 'server-only';
++
++import { cache } from 'react';
++import { redirect } from 'next/navigation';
++import { hasPlatformPermission, requirePlatformPermission, requireUser } from '@/lib/auth/dal';
++import {
++  buildPlatformAbility,
++  platformActionKey,
++  PLATFORM_ACTION_PAIRS,
++  type PlatformAbility,
++  type PlatformSubject,
++  type PlatformAction,
++  type PlatformPermissionKey
++} from '@/lib/casl';
++
++/**
++ * Resolves the user's platform ability based on active DB grants.
++ * Memoized per render pass via React cache().
++ */
++export const getPlatformAbility = cache(async (): Promise<PlatformAbility> => {
++  const heldKeys = new Set<string>();
++
++  const distinctKeys = Array.from(new Set(PLATFORM_ACTION_PAIRS.map((p) => p.key)));
++
++  const checks = await Promise.all(
++    distinctKeys.map(async (key) => ({
++      key,
++      hasIt: await hasPlatformPermission(key),
++    }))
++  );
++
++  checks.forEach(({ key, hasIt }) => {
++    if (hasIt) {
++      heldKeys.add(key);
++    }
++  });
++
++  return buildPlatformAbility(heldKeys);
++});
++
++/**
++ * Server enforcement gate for a single admin action.
++ * Resolves the key through the map and delegates to requirePlatformPermission.
++ * Returns the authenticated user.
++ */
++export async function requirePlatformAction<S extends PlatformSubject>(
++  action: PlatformAction<S>,
++  subject: S
++) {
++  const neededKey = platformActionKey(action, subject);
++  return await requirePlatformPermission(neededKey);
++}
++
++/**
++ * Helper structural type to safely hold mapped pairs without losing generic validation
++ */
++export interface SafeActionPair<S extends PlatformSubject = PlatformSubject> {
++  subject: S;
++  action: PlatformAction<S>;
++}
++
++/**
++ * Server enforcement gate for hybrid actions serving multiple entry points.
++ * Returns the authenticated user, or redirects to /auth/login or /access-denied.
++ */
++export async function requireAnyPlatformAction(
++  pairs: readonly SafeActionPair[]
++) {
++  // הגנה ראשונה (The Floor): וידוא שהמשתמש מחובר בכלל, למניעת ניתוב שגוי ל-/access-denied
++  const user = await requireUser();
++
++  if (pairs.length === 0) {
++    redirect('/access-denied');
++  }
++
++  // מיפוי נקי ללא any וללא השלכות lint
++  const mappedKeys = pairs.map((p) => platformActionKey(p.action, p.subject));
++  const distinctKeys: PlatformPermissionKey[] = Array.from(new Set(mappedKeys));
++
++  // אופטימיזציה: אם כל הפעולות דורשות את אותו המפתח, נשתמש בנתיב המהיר של requirePlatformPermission
++  if (distinctKeys.length === 1 && distinctKeys[0]) {
++    return await requirePlatformPermission(distinctKeys[0]);
++  }
++
++  const results = await Promise.all(distinctKeys.map((key) => hasPlatformPermission(key)));
++  const isGranted = results.some((hasKey) => hasKey === true);
++
++  if (!isGranted) {
++    redirect('/access-denied');
++  }
++
++  return user;
++}
+diff --git a/src/lib/casl.ts b/src/lib/casl.ts
+index c3ec7677..41721c4d 100644
+--- a/src/lib/casl.ts
++++ b/src/lib/casl.ts
+@@ -1,67 +1,75 @@
+-// lib/casl.ts
+-import { createMongoAbility, MongoAbility, AbilityBuilder } from '@casl/ability';
++// src/lib/casl.ts
++// Isomorphic: no server-only import, so a client component can rebuild the ability
++// from the rules the server hands it. (openspec/changes/pilot-casl-package-permissions, design D1).
++
++import { AbilityBuilder, createMongoAbility, type MongoAbility } from '@casl/ability';
+ import type { PlatformPermissionKey } from '@/lib/auth/platform-permission-keys.generated';
+ 
+ export type { PlatformPermissionKey };
+ 
+-export type CASLAction = PlatformPermissionKey | 'manage';
+-
+-// מפת ה-Subjects מתוך ישויות המסד והטבלאות שברשותך (לפי הסכימה של Supabase ששלחת)
+-export type CASLSubject = 
++// subject -> action -> the key that action needs. `satisfies` makes every value a key of the
++// generated catalogue at compile time.
++export const PLATFORM_ACTIONS = {
++  Package: {
++    read: 'manage_billing',
++    create: 'manage_billing',
++    update: 'manage_billing',
++    delete: 'manage_billing',
++  },
++} as const satisfies Record<string, Record<string, PlatformPermissionKey>>;
+ 
+-  | 'campaigns' | 'events' | 'integrations' | 'rdp' | 'roles' | 'billing' 
+-  | 'settings' | 'staff' | 'voice' | 'activity_log' | 'customer_data' 
+-  | 'recordings' | 'webhooks' | 'packages' | 'all';
++export type PlatformSubject = keyof typeof PLATFORM_ACTIONS;
++export type PlatformAction<S extends PlatformSubject = PlatformSubject> = keyof (typeof PLATFORM_ACTIONS)[S];
+ 
+-export type AppAbility = MongoAbility<[CASLAction, CASLSubject]>;
++// One [action, subject] tuple per subject, so an action is only valid on the subject that declares it.
++export type PlatformAbilityTuple ={ [S in PlatformSubject]: [PlatformAction<S>, S] }[PlatformSubject];
++export type PlatformAbility = MongoAbility<PlatformAbilityTuple>;
+ 
+-export interface CASLContextProfile {
+-  isStaff: boolean;
+-  isPlatformOwner: boolean;
+-  activeOrgId: string | null;
+-  activeRoleName: string | null;
+-  activePermissions: PlatformPermissionKey[]; // הרשאות שחזרו מהשרת אקטיבית
++export interface PlatformActionPair {
++  subject: PlatformSubject;
++  action: PlatformAction;
++  key: PlatformPermissionKey;
+ }
+ 
+-/**
+- * מפעל ליצירת ה-Ability - מיישם Default Deny מוחלט
+- */
+-export function createAppAbility(profile: CASLContextProfile | null): AppAbility {
+-  const { can, build } = new AbilityBuilder<AppAbility>(createMongoAbility);
+-
+-  // Default Deny: אין פרופיל או הרשאות - חסימה מלאה מיידית
+-  if (!profile) {
+-    return build();
+-  }
++// The map flattened, for code that walks every action (the ability below, the tests).
++// We cast the mapped subjects and actions strictly to guarantee compile-time alignment.
++export const PLATFORM_ACTION_PAIRS: readonly PlatformActionPair[] = (
++  Object.keys(PLATFORM_ACTIONS) as PlatformSubject[]
++).flatMap((subject) => {
++  const actionsMap = PLATFORM_ACTIONS[subject];
++  return (Object.keys(actionsMap) as PlatformAction<typeof subject>[]).map((action) => ({
++    subject,
++    action,
++    key: actionsMap[action] as PlatformPermissionKey, // Type safe cast directly matching the catalogue union
++  }));
++});
+ 
+-  // הגנת על לצוות הפלטפורמה הבכיר (Platform Owner / Super Admin)
+-  if (profile.isPlatformOwner) {
+-    can('manage', 'all');
+-    return build();
+-  }
++// Code that serves both package forms (new and edit) — their readers, the schedule check, the copy rewrite — is
++// allowed when the caller may create OR update a package.
++export const PACKAGE_FORM_ACTIONS = [
++  { action: 'create', subject: 'Package' },
++  { action: 'update', subject: 'Package' },
++] as const satisfies readonly { action: PlatformAction<'Package'>; subject: 'Package' }[];
+ 
+-  // החלת חוקים לצוות פלטפורמה רגיל (Staff) או למשתמשי ארגון
+-  if (profile.activePermissions && Array.isArray(profile.activePermissions)) {
+-    profile.activePermissions.forEach((perm) => {
+-      if (typeof perm !== 'string') return;
++// The key an action needs.
++export function platformActionKey<S extends PlatformSubject>(
++  action: PlatformAction<S>,
++  subject: S,
++): PlatformPermissionKey {
++  return PLATFORM_ACTIONS[subject][action] as PlatformPermissionKey;
++}
+ 
+-      if (perm.includes('.')) {
+-        // מבנה של resource.action (כמו campaigns.runstate או events.mark_test)
+-        const [resource] = perm.split('.');
+-        
+-        can(perm as CASLAction, resource as CASLSubject);
+-      } else {
+-        // מבנה של מפתח גלובלי שטוח (כמו manage_billing)
+-        let subject: CASLSubject = 'all';
+-        if (perm.includes('billing')) subject = 'billing';
+-        if (perm.includes('settings')) subject = 'settings';
+-        if (perm.includes('staff')) subject = 'staff';
+-        if (perm.includes('voice')) subject = 'voice';
+-        if (perm.includes('packages')) subject = 'packages';
++/**
++ * The ability of a caller who holds exactly `held` (the keys the database granted them).
++ * A key absent from `held` adds no rule: default deny.
++ */
++export function buildPlatformAbility(held: ReadonlySet<string>): PlatformAbility {
++  const { can, build } = new AbilityBuilder<PlatformAbility>(createMongoAbility);
+ 
+-        can(perm as CASLAction, subject);
+-      }
+-    });
++  for (const { subject, action, key } of PLATFORM_ACTION_PAIRS) {
++    if (held.has(key)) {
++      can(action, subject);
++    }
+   }
+ 
+   return build();
+diff --git a/src/lib/data/admin/dashboard.ts b/src/lib/data/admin/dashboard.ts
+index f63f91b6..6c71ab86 100644
+--- a/src/lib/data/admin/dashboard.ts
++++ b/src/lib/data/admin/dashboard.ts
+@@ -2,6 +2,7 @@ import 'server-only';
+ 
+ import { createAdminClient } from '@/lib/supabase/admin';
+ import { hasPlatformPermission, requirePlatformStaff } from '@/lib/auth/dal';
++import { getPlatformAbility } from '@/lib/auth/platform-ability';
+ import { countNewCallbacks, countNewContacts } from './nav-counts';
+ 
+ // Admin dashboard: headline counts. Each is a count-only query (head: true,
+@@ -10,7 +11,10 @@ import { countNewCallbacks, countNewContacts } from './nav-counts';
+ // blanket admin check. The dashboard is a cross-domain aggregate (customer data +
+ // billing), so no single permission fits it; per-count gating is the consistent
+ // resolution — a support agent sees the contacts/callbacks counts (view_customer_data)
+-// but not the packages count (view_billing). A count the viewer may not see is
++// but not the packages count. That one follows `read Package` from the action map
++// (src/lib/casl.ts), the action its card's target, /admin/packages, enforces
++// (openspec/changes/pilot-casl-package-permissions, design D5), so the card is never
++// shown to a viewer the page would refuse. A count the viewer may not see is
+ // `null`, and the page omits its card. Reads run via service_role; the permission
+ // check is the authorization, exactly as every other admin reader.
+ //
+@@ -51,15 +55,16 @@ export async function getDashboardCounts(): Promise<DashboardCounts> {
+ 
+   // Resolve permissions once (cache()-memoized) and only run a count the caller
+   // is entitled to see.
+-  const [canCustomer, canBilling] = await Promise.all([
++  const [canCustomer, ability] = await Promise.all([
+     hasPlatformPermission('view_customer_data'),
+-    hasPlatformPermission('view_billing'),
++    getPlatformAbility(),
+   ]);
++  const canReadPackages = ability.can('read', 'Package');
+ 
+   const [contacts, callbacks, packages] = await Promise.all([
+     canCustomer ? countNewContacts(supabase) : Promise.resolve(null),
+     canCustomer ? countNewCallbacks(supabase) : Promise.resolve(null),
+-    canBilling ? countTable(supabase, 'packages') : Promise.resolve(null),
++    canReadPackages ? countTable(supabase, 'packages') : Promise.resolve(null),
+   ]);
+ 
+   return { contacts, callbacks, packages };
+diff --git a/src/lib/data/admin/packages.ts b/src/lib/data/admin/packages.ts
+index 5ac36993..1942ab3b 100644
+--- a/src/lib/data/admin/packages.ts
++++ b/src/lib/data/admin/packages.ts
+@@ -11,7 +11,8 @@ import {
+ } from '@/lib/data/schedule-options';
+ import { createClient } from '@/lib/supabase/server';
+ import { createAdminClient } from '@/lib/supabase/admin';
+-import { requirePlatformPermission } from '@/lib/auth/dal';
++import { requireAnyPlatformAction, requirePlatformAction } from '@/lib/auth/platform-ability';
++import { PACKAGE_FORM_ACTIONS } from '@/lib/casl';
+ import type { Json, Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
+ import { outreachTouchpointSchema } from '@/lib/validation/admin';
+ import type {
+@@ -21,8 +22,10 @@ import type {
+ } from '@/lib/validation/admin';
+ 
+ // Admin: packages CRUD. Authorized by the request-scoped session under the
+-// `packages_admin_all` RLS policy plus a server-side
+-// requirePlatformPermission('manage_billing') gate.
++// `packages_admin_all` RLS policy plus a server-side gate per action: each
++// function asks for its action on `Package` through requirePlatformAction /
++// requireAnyPlatformAction, which take the key from the action map in
++// src/lib/casl.ts (pilot-casl-package-permissions, design D4). No key is named here.
+ // Reads of active packages are public (`packages_public_read`); writes are
+ // admin-only. Prices are server-validated (see validation/admin.ts) and never
+ // trusted from the browser.
+@@ -57,7 +60,7 @@ export const PACKAGE_COLUMNS =
+ // curated sort order then name. Not paginated: the catalogue is small and
+ // admins manage the full set at once.
+ export async function listPackages(): Promise<AdminPackage[]> {
+-  await requirePlatformPermission('manage_billing');
++  await requirePlatformAction('read', 'Package');
+ 
+   const supabase = await createClient();
+   const { data, error } = await supabase
+@@ -75,7 +78,7 @@ export async function listPackages(): Promise<AdminPackage[]> {
+ 
+ // Fetch one package by id; notFound() (404) if it does not exist.
+ export async function getPackage(id: string): Promise<AdminPackage> {
+-  await requirePlatformPermission('manage_billing');
++  await requirePlatformAction('read', 'Package');
+ 
+   const supabase = await createClient();
+   const { data, error } = await supabase
+@@ -192,7 +195,7 @@ function packageChangedFields(
+ export async function validateOutreachScheduleForPackage(
+   schedule: OutreachTouchpointInput[],
+ ): Promise<{ index: number; message: string }[]> {
+-  await requirePlatformPermission('manage_billing');
++  await requireAnyPlatformAction(PACKAGE_FORM_ACTIONS);
+   const whatsappTouchpoints = schedule
+     .map((tp, index) => ({ tp, index }))
+     .filter(({ tp }) => tp.channel === 'whatsapp');
+@@ -232,7 +235,7 @@ export async function validateOutreachScheduleForPackage(
+ // type a key into. Reads with the service-role client strictly AFTER the permission gate (message_templates and its
+ // routes are not readable by the packages page's own session), the same way the save-time validation above does.
+ export async function getScheduleStepOptions(): Promise<ScheduleStepOption[]> {
+-  await requirePlatformPermission('manage_billing');
++  await requireAnyPlatformAction(PACKAGE_FORM_ACTIONS);
+   const admin = createAdminClient();
+   const { data, error } = await admin
+     .from('message_templates')
+@@ -252,7 +255,7 @@ export type SuggestedSchedule = {
+ // active package, in catalogue order, that has a valid one. The stored JSON is parsed with the same schema the form is
+ // saved with, so a damaged value yields no suggestion rather than a half-filled form. null = nothing to suggest.
+ export async function getSuggestedSchedule(): Promise<SuggestedSchedule | null> {
+-  await requirePlatformPermission('manage_billing');
++  await requirePlatformAction('create', 'Package');
+   const supabase = await createClient();
+   const { data, error } = await supabase
+     .from('packages')
+@@ -281,7 +284,7 @@ export async function createPackage(
+   input: PackageInput,
+   operational: OperationalFieldsInput,
+ ): Promise<{ id: string }> {
+-  await requirePlatformPermission('manage_billing');
++  await requirePlatformAction('create', 'Package');
+ 
+   const supabase = await createClient();
+   const writable = toWritable(input, operational);
+@@ -314,7 +317,7 @@ export async function updatePackage(
+   input: PackageInput,
+   operational: OperationalFieldsInput,
+ ): Promise<void> {
+-  await requirePlatformPermission('manage_billing');
++  await requirePlatformAction('update', 'Package');
+ 
+   const supabase = await createClient();
+   const writable = toWritable(input, operational);
+@@ -338,7 +341,7 @@ export async function updatePackage(
+ 
+ // Delete a package by id.
+ export async function deletePackage(id: string): Promise<void> {
+-  await requirePlatformPermission('manage_billing');
++  await requirePlatformAction('delete', 'Package');
+ 
+   const supabase = await createClient();
+   const previous = await getPackage(id);

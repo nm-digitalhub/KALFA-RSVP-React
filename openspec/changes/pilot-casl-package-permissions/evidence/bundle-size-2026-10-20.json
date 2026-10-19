@@ -1,0 +1,1140 @@
+{
+  "measuredOn": "2026-10-20",
+  "unit": "bytes",
+  "compression": {
+    "gzip": 9,
+    "brotli": 11
+  },
+  "sharedEntries": [
+    "main-app",
+    "app/layout",
+    "app/not-found",
+    "app/global-error",
+    "app/(admin)/admin/layout",
+    "app/(admin)/admin/error",
+    "app/(admin)/admin/loading"
+  ],
+  "routeEntries": {
+    "/admin": "app/(admin)/admin/page",
+    "/admin/packages": "app/(admin)/admin/packages/page",
+    "/admin/packages/new": "app/(admin)/admin/packages/new/page",
+    "/admin/packages/[id]": "app/(admin)/admin/packages/[id]/page"
+  },
+  "phases": {
+    "before": {
+      "assets": {
+        "static/chunks/616-e19b9e0841855565.js": {
+          "raw": 243196,
+          "gzip": 66806,
+          "brotli": 54474,
+          "sha256": "3c2729e08db42a96f97c6b548cc4ac2eed65adfc99da7e458f1661ad78825dae",
+          "entries": [
+            "main-app"
+          ]
+        },
+        "static/chunks/46d6ff13-06d845b26542c914.js": {
+          "raw": 203726,
+          "gzip": 63916,
+          "brotli": 54689,
+          "sha256": "498c43c0ed31b571fcb1c38d68d82847dfdb7852d0eb7af994dc5c1f7c08c0de",
+          "entries": [
+            "main-app"
+          ]
+        },
+        "static/chunks/940-16bd8fe37b84f5d8.js": {
+          "raw": 176006,
+          "gzip": 59776,
+          "brotli": 50761,
+          "sha256": "a2243646a687bdf80de6952f1302c702f84c9d6253c8711487bcef66df8da112",
+          "entries": [
+            "app/(admin)/admin/layout"
+          ]
+        },
+        "static/chunks/414-50485d4554f3a034.js": {
+          "raw": 41066,
+          "gzip": 16606,
+          "brotli": 14805,
+          "sha256": "18c8c17b78566d670aecf75057839c9df8114a44dc6650c35efa7ef9baab1e8c",
+          "entries": [
+            "app/(admin)/admin/layout",
+            "app/(admin)/admin/packages/[id]/page",
+            "app/(admin)/admin/packages/new/page"
+          ]
+        },
+        "static/chunks/app/(admin)/admin/layout-c533bbc18f251325.js": {
+          "raw": 34045,
+          "gzip": 9811,
+          "brotli": 8629,
+          "sha256": "989d96e7dbc155684111394325b994ffbd2beaaea097cb3fadb38736369aa55b",
+          "entries": [
+            "app/(admin)/admin/layout"
+          ]
+        },
+        "static/chunks/573-b68144deddff79f6.js": {
+          "raw": 20280,
+          "gzip": 6236,
+          "brotli": 5475,
+          "sha256": "55c810545fbf4099d288b6a04acc6aa9aa39352d9a619f94fe74c423ced166f2",
+          "entries": [
+            "app/(admin)/admin/packages/[id]/page",
+            "app/(admin)/admin/packages/new/page"
+          ]
+        },
+        "static/chunks/612-59853ef3f357d783.js": {
+          "raw": 17222,
+          "gzip": 6582,
+          "brotli": 5881,
+          "sha256": "bc3e7f783bd9e06de035cf9e27b70c1af54acc52031acf2f1110ed7fc0ffb962",
+          "entries": [
+            "app/not-found"
+          ]
+        },
+        "static/chunks/733-4bc875b3ea64eeb1.js": {
+          "raw": 8576,
+          "gzip": 3129,
+          "brotli": 2748,
+          "sha256": "941945918da9e2dc8d1bc9f4fbb403f3a09396363ed07a101dca53b9a0c599c8",
+          "entries": [
+            "app/global-error",
+            "app/(admin)/admin/error"
+          ]
+        },
+        "static/chunks/959-5fa918e4830bcba4.js": {
+          "raw": 7672,
+          "gzip": 3267,
+          "brotli": 2874,
+          "sha256": "ebe834049416262b722d4edf7c78c24fe71ce7415339779caba3814097875262",
+          "entries": [
+            "app/not-found",
+            "app/(admin)/admin/layout",
+            "app/(admin)/admin/packages/[id]/page",
+            "app/(admin)/admin/packages/new/page",
+            "app/(admin)/admin/packages/page",
+            "app/(admin)/admin/page"
+          ]
+        },
+        "static/chunks/app/layout-12956d2acb18202a.js": {
+          "raw": 4887,
+          "gzip": 1738,
+          "brotli": 1565,
+          "sha256": "236d552515f516a673ffe8d4d1ec7c998488704256cb473d44e4dd62a0c297e6",
+          "entries": [
+            "app/layout"
+          ]
+        },
+        "static/chunks/webpack-cc17e8c18a2b6897.js": {
+          "raw": 4867,
+          "gzip": 2364,
+          "brotli": 2094,
+          "sha256": "a93171ce7ced5e861588f7c335fccebccbc3e6c7dc2d68a2a917d1023860adea",
+          "entries": [
+            "main-app"
+          ]
+        },
+        "static/chunks/app/(admin)/admin/page-eb490debacf84f56.js": {
+          "raw": 2825,
+          "gzip": 1332,
+          "brotli": 1222,
+          "sha256": "c62fd804270afe7557e2206d3ed8d5b200f8d253f723e174b7a4338be8cec41f",
+          "entries": [
+            "app/(admin)/admin/page"
+          ]
+        },
+        "static/chunks/app/global-error-36f6fc4bae9a294d.js": {
+          "raw": 2220,
+          "gzip": 1146,
+          "brotli": 971,
+          "sha256": "75606d8b952bad31cc2382b48ac6f9ea9055ba4af47014175472b4d4d42ebf10",
+          "entries": [
+            "app/global-error"
+          ]
+        },
+        "static/chunks/app/(admin)/admin/error-eae39cb05702feef.js": {
+          "raw": 2183,
+          "gzip": 1031,
+          "brotli": 878,
+          "sha256": "97fd854694ddaa160a29915e3edc4f40626ae8f4e7a86879bcf03fb33cd957e4",
+          "entries": [
+            "app/(admin)/admin/error"
+          ]
+        },
+        "static/chunks/app/(admin)/admin/packages/[id]/page-b6186303cf70dade.js": {
+          "raw": 1123,
+          "gzip": 737,
+          "brotli": 625,
+          "sha256": "c90d2cea45c51b6387ab0fa58b6252b8f8a02e3e4aab483cc4c7d3d1fe7ae58f",
+          "entries": [
+            "app/(admin)/admin/packages/[id]/page"
+          ]
+        },
+        "static/chunks/app/not-found-5af0af49f89d3053.js": {
+          "raw": 621,
+          "gzip": 414,
+          "brotli": 350,
+          "sha256": "70e72ce55cc0c4158c17ec4d3b304dcc814fa39d5bc3a4ec2d817ef8c5c2950d",
+          "entries": [
+            "app/not-found"
+          ]
+        },
+        "static/chunks/main-app-dfbafd2cac9adf70.js": {
+          "raw": 480,
+          "gzip": 225,
+          "brotli": 206,
+          "sha256": "80796d93a3f83450556ee1c9da946b9410909e9beafd4ca7097b2f9fefca8797",
+          "entries": [
+            "main-app"
+          ]
+        },
+        "static/chunks/app/(admin)/admin/packages/page-e5c5dbbc17cacb71.js": {
+          "raw": 386,
+          "gzip": 278,
+          "brotli": 253,
+          "sha256": "21a20e0d641b249453bbbf6b4e7de24f5b78e1ffded9647174a610e811df270b",
+          "entries": [
+            "app/(admin)/admin/packages/page"
+          ]
+        },
+        "static/chunks/app/(admin)/admin/packages/new/page-ce3738ed3039b9f7.js": {
+          "raw": 274,
+          "gzip": 186,
+          "brotli": 172,
+          "sha256": "2c9bf60e535f0ec7660dd346194eeab45bdbbd2dc52837f9ab7d810b3556b4f2",
+          "entries": [
+            "app/(admin)/admin/packages/new/page"
+          ]
+        },
+        "static/chunks/app/(admin)/admin/loading-51342bb3583d9114.js": {
+          "raw": 153,
+          "gzip": 140,
+          "brotli": 140,
+          "sha256": "cf8da0f17a6909ccb20d878d1c70d2194212918bf1f705da041ce078dcd8c8cd",
+          "entries": [
+            "app/(admin)/admin/loading"
+          ]
+        }
+      },
+      "shared": {
+        "total": {
+          "raw": 746920,
+          "gzip": 236951,
+          "brotli": 201065
+        },
+        "assetIds": [
+          "static/chunks/414-50485d4554f3a034.js",
+          "static/chunks/46d6ff13-06d845b26542c914.js",
+          "static/chunks/612-59853ef3f357d783.js",
+          "static/chunks/616-e19b9e0841855565.js",
+          "static/chunks/733-4bc875b3ea64eeb1.js",
+          "static/chunks/940-16bd8fe37b84f5d8.js",
+          "static/chunks/959-5fa918e4830bcba4.js",
+          "static/chunks/app/(admin)/admin/error-eae39cb05702feef.js",
+          "static/chunks/app/(admin)/admin/layout-c533bbc18f251325.js",
+          "static/chunks/app/(admin)/admin/loading-51342bb3583d9114.js",
+          "static/chunks/app/global-error-36f6fc4bae9a294d.js",
+          "static/chunks/app/layout-12956d2acb18202a.js",
+          "static/chunks/app/not-found-5af0af49f89d3053.js",
+          "static/chunks/main-app-dfbafd2cac9adf70.js",
+          "static/chunks/webpack-cc17e8c18a2b6897.js"
+        ]
+      },
+      "routes": {
+        "/admin": {
+          "total": {
+            "raw": 749745,
+            "gzip": 238283,
+            "brotli": 202287
+          },
+          "exclusive": {
+            "raw": 2825,
+            "gzip": 1332,
+            "brotli": 1222
+          },
+          "assetIds": [
+            "static/chunks/414-50485d4554f3a034.js",
+            "static/chunks/46d6ff13-06d845b26542c914.js",
+            "static/chunks/612-59853ef3f357d783.js",
+            "static/chunks/616-e19b9e0841855565.js",
+            "static/chunks/733-4bc875b3ea64eeb1.js",
+            "static/chunks/940-16bd8fe37b84f5d8.js",
+            "static/chunks/959-5fa918e4830bcba4.js",
+            "static/chunks/app/(admin)/admin/error-eae39cb05702feef.js",
+            "static/chunks/app/(admin)/admin/layout-c533bbc18f251325.js",
+            "static/chunks/app/(admin)/admin/loading-51342bb3583d9114.js",
+            "static/chunks/app/(admin)/admin/page-eb490debacf84f56.js",
+            "static/chunks/app/global-error-36f6fc4bae9a294d.js",
+            "static/chunks/app/layout-12956d2acb18202a.js",
+            "static/chunks/app/not-found-5af0af49f89d3053.js",
+            "static/chunks/main-app-dfbafd2cac9adf70.js",
+            "static/chunks/webpack-cc17e8c18a2b6897.js"
+          ],
+          "exclusiveAssetIds": [
+            "static/chunks/app/(admin)/admin/page-eb490debacf84f56.js"
+          ],
+          "overlapAssetIds": [
+            "static/chunks/959-5fa918e4830bcba4.js"
+          ],
+          "entryReferences": 19,
+          "uniqueAssetCount": 16,
+          "duplicateReferencesRemoved": 3
+        },
+        "/admin/packages": {
+          "total": {
+            "raw": 747306,
+            "gzip": 237229,
+            "brotli": 201318
+          },
+          "exclusive": {
+            "raw": 386,
+            "gzip": 278,
+            "brotli": 253
+          },
+          "assetIds": [
+            "static/chunks/414-50485d4554f3a034.js",
+            "static/chunks/46d6ff13-06d845b26542c914.js",
+            "static/chunks/612-59853ef3f357d783.js",
+            "static/chunks/616-e19b9e0841855565.js",
+            "static/chunks/733-4bc875b3ea64eeb1.js",
+            "static/chunks/940-16bd8fe37b84f5d8.js",
+            "static/chunks/959-5fa918e4830bcba4.js",
+            "static/chunks/app/(admin)/admin/error-eae39cb05702feef.js",
+            "static/chunks/app/(admin)/admin/layout-c533bbc18f251325.js",
+            "static/chunks/app/(admin)/admin/loading-51342bb3583d9114.js",
+            "static/chunks/app/(admin)/admin/packages/page-e5c5dbbc17cacb71.js",
+            "static/chunks/app/global-error-36f6fc4bae9a294d.js",
+            "static/chunks/app/layout-12956d2acb18202a.js",
+            "static/chunks/app/not-found-5af0af49f89d3053.js",
+            "static/chunks/main-app-dfbafd2cac9adf70.js",
+            "static/chunks/webpack-cc17e8c18a2b6897.js"
+          ],
+          "exclusiveAssetIds": [
+            "static/chunks/app/(admin)/admin/packages/page-e5c5dbbc17cacb71.js"
+          ],
+          "overlapAssetIds": [
+            "static/chunks/959-5fa918e4830bcba4.js"
+          ],
+          "entryReferences": 19,
+          "uniqueAssetCount": 16,
+          "duplicateReferencesRemoved": 3
+        },
+        "/admin/packages/new": {
+          "total": {
+            "raw": 767474,
+            "gzip": 243373,
+            "brotli": 206712
+          },
+          "exclusive": {
+            "raw": 20554,
+            "gzip": 6422,
+            "brotli": 5647
+          },
+          "assetIds": [
+            "static/chunks/414-50485d4554f3a034.js",
+            "static/chunks/46d6ff13-06d845b26542c914.js",
+            "static/chunks/573-b68144deddff79f6.js",
+            "static/chunks/612-59853ef3f357d783.js",
+            "static/chunks/616-e19b9e0841855565.js",
+            "static/chunks/733-4bc875b3ea64eeb1.js",
+            "static/chunks/940-16bd8fe37b84f5d8.js",
+            "static/chunks/959-5fa918e4830bcba4.js",
+            "static/chunks/app/(admin)/admin/error-eae39cb05702feef.js",
+            "static/chunks/app/(admin)/admin/layout-c533bbc18f251325.js",
+            "static/chunks/app/(admin)/admin/loading-51342bb3583d9114.js",
+            "static/chunks/app/(admin)/admin/packages/new/page-ce3738ed3039b9f7.js",
+            "static/chunks/app/global-error-36f6fc4bae9a294d.js",
+            "static/chunks/app/layout-12956d2acb18202a.js",
+            "static/chunks/app/not-found-5af0af49f89d3053.js",
+            "static/chunks/main-app-dfbafd2cac9adf70.js",
+            "static/chunks/webpack-cc17e8c18a2b6897.js"
+          ],
+          "exclusiveAssetIds": [
+            "static/chunks/573-b68144deddff79f6.js",
+            "static/chunks/app/(admin)/admin/packages/new/page-ce3738ed3039b9f7.js"
+          ],
+          "overlapAssetIds": [
+            "static/chunks/414-50485d4554f3a034.js",
+            "static/chunks/959-5fa918e4830bcba4.js"
+          ],
+          "entryReferences": 21,
+          "uniqueAssetCount": 17,
+          "duplicateReferencesRemoved": 4
+        },
+        "/admin/packages/[id]": {
+          "total": {
+            "raw": 768323,
+            "gzip": 243924,
+            "brotli": 207165
+          },
+          "exclusive": {
+            "raw": 21403,
+            "gzip": 6973,
+            "brotli": 6100
+          },
+          "assetIds": [
+            "static/chunks/414-50485d4554f3a034.js",
+            "static/chunks/46d6ff13-06d845b26542c914.js",
+            "static/chunks/573-b68144deddff79f6.js",
+            "static/chunks/612-59853ef3f357d783.js",
+            "static/chunks/616-e19b9e0841855565.js",
+            "static/chunks/733-4bc875b3ea64eeb1.js",
+            "static/chunks/940-16bd8fe37b84f5d8.js",
+            "static/chunks/959-5fa918e4830bcba4.js",
+            "static/chunks/app/(admin)/admin/error-eae39cb05702feef.js",
+            "static/chunks/app/(admin)/admin/layout-c533bbc18f251325.js",
+            "static/chunks/app/(admin)/admin/loading-51342bb3583d9114.js",
+            "static/chunks/app/(admin)/admin/packages/[id]/page-b6186303cf70dade.js",
+            "static/chunks/app/global-error-36f6fc4bae9a294d.js",
+            "static/chunks/app/layout-12956d2acb18202a.js",
+            "static/chunks/app/not-found-5af0af49f89d3053.js",
+            "static/chunks/main-app-dfbafd2cac9adf70.js",
+            "static/chunks/webpack-cc17e8c18a2b6897.js"
+          ],
+          "exclusiveAssetIds": [
+            "static/chunks/573-b68144deddff79f6.js",
+            "static/chunks/app/(admin)/admin/packages/[id]/page-b6186303cf70dade.js"
+          ],
+          "overlapAssetIds": [
+            "static/chunks/414-50485d4554f3a034.js",
+            "static/chunks/959-5fa918e4830bcba4.js"
+          ],
+          "entryReferences": 21,
+          "uniqueAssetCount": 17,
+          "duplicateReferencesRemoved": 4
+        }
+      },
+      "allFourUnion": {
+        "total": {
+          "raw": 771808,
+          "gzip": 245720,
+          "brotli": 208812
+        },
+        "assetIds": [
+          "static/chunks/414-50485d4554f3a034.js",
+          "static/chunks/46d6ff13-06d845b26542c914.js",
+          "static/chunks/573-b68144deddff79f6.js",
+          "static/chunks/612-59853ef3f357d783.js",
+          "static/chunks/616-e19b9e0841855565.js",
+          "static/chunks/733-4bc875b3ea64eeb1.js",
+          "static/chunks/940-16bd8fe37b84f5d8.js",
+          "static/chunks/959-5fa918e4830bcba4.js",
+          "static/chunks/app/(admin)/admin/error-eae39cb05702feef.js",
+          "static/chunks/app/(admin)/admin/layout-c533bbc18f251325.js",
+          "static/chunks/app/(admin)/admin/loading-51342bb3583d9114.js",
+          "static/chunks/app/(admin)/admin/packages/[id]/page-b6186303cf70dade.js",
+          "static/chunks/app/(admin)/admin/packages/new/page-ce3738ed3039b9f7.js",
+          "static/chunks/app/(admin)/admin/packages/page-e5c5dbbc17cacb71.js",
+          "static/chunks/app/(admin)/admin/page-eb490debacf84f56.js",
+          "static/chunks/app/global-error-36f6fc4bae9a294d.js",
+          "static/chunks/app/layout-12956d2acb18202a.js",
+          "static/chunks/app/not-found-5af0af49f89d3053.js",
+          "static/chunks/main-app-dfbafd2cac9adf70.js",
+          "static/chunks/webpack-cc17e8c18a2b6897.js"
+        ]
+      }
+    },
+    "after": {
+      "assets": {
+        "static/chunks/616-e19b9e0841855565.js": {
+          "raw": 243196,
+          "gzip": 66806,
+          "brotli": 54474,
+          "sha256": "3c2729e08db42a96f97c6b548cc4ac2eed65adfc99da7e458f1661ad78825dae",
+          "entries": [
+            "main-app"
+          ]
+        },
+        "static/chunks/46d6ff13-06d845b26542c914.js": {
+          "raw": 203726,
+          "gzip": 63916,
+          "brotli": 54689,
+          "sha256": "498c43c0ed31b571fcb1c38d68d82847dfdb7852d0eb7af994dc5c1f7c08c0de",
+          "entries": [
+            "main-app"
+          ]
+        },
+        "static/chunks/250-e1bfbead5ac25b37.js": {
+          "raw": 192086,
+          "gzip": 65734,
+          "brotli": 55728,
+          "sha256": "91c04ea0b2fb0230dbfcbdd72282fbf2e2f4dd3d8ca4ede158b9657a5e26d0f9",
+          "entries": [
+            "app/(admin)/admin/layout"
+          ]
+        },
+        "static/chunks/765-96af64d247c1db59.js": {
+          "raw": 41873,
+          "gzip": 16991,
+          "brotli": 15091,
+          "sha256": "cf030b1426e9974c7aa9ac2c1f4b08e658c26a90c1454a419b1309ef201ddcb6",
+          "entries": [
+            "app/(admin)/admin/layout",
+            "app/(admin)/admin/packages/[id]/page",
+            "app/(admin)/admin/packages/new/page"
+          ]
+        },
+        "static/chunks/app/(admin)/admin/layout-040cb57df46c9fa7.js": {
+          "raw": 34329,
+          "gzip": 9927,
+          "brotli": 8729,
+          "sha256": "60c676fbfbaacdff040069858b5705e5ba97c3c9c8971f43668e851495fa4201",
+          "entries": [
+            "app/(admin)/admin/layout"
+          ]
+        },
+        "static/chunks/573-0ad13e18d4fb4cab.js": {
+          "raw": 20360,
+          "gzip": 6267,
+          "brotli": 5523,
+          "sha256": "018e5dc65930764c0f609ac26362eef6e318f9e8a651ed892ecbfcd213cb7caf",
+          "entries": [
+            "app/(admin)/admin/packages/[id]/page",
+            "app/(admin)/admin/packages/new/page"
+          ]
+        },
+        "static/chunks/612-59853ef3f357d783.js": {
+          "raw": 17222,
+          "gzip": 6582,
+          "brotli": 5881,
+          "sha256": "bc3e7f783bd9e06de035cf9e27b70c1af54acc52031acf2f1110ed7fc0ffb962",
+          "entries": [
+            "app/not-found"
+          ]
+        },
+        "static/chunks/733-4bc875b3ea64eeb1.js": {
+          "raw": 8576,
+          "gzip": 3129,
+          "brotli": 2748,
+          "sha256": "941945918da9e2dc8d1bc9f4fbb403f3a09396363ed07a101dca53b9a0c599c8",
+          "entries": [
+            "app/global-error",
+            "app/(admin)/admin/error"
+          ]
+        },
+        "static/chunks/959-5fa918e4830bcba4.js": {
+          "raw": 7672,
+          "gzip": 3267,
+          "brotli": 2874,
+          "sha256": "ebe834049416262b722d4edf7c78c24fe71ce7415339779caba3814097875262",
+          "entries": [
+            "app/not-found",
+            "app/(admin)/admin/layout",
+            "app/(admin)/admin/packages/[id]/page",
+            "app/(admin)/admin/packages/page",
+            "app/(admin)/admin/packages/new/page",
+            "app/(admin)/admin/page"
+          ]
+        },
+        "static/chunks/app/layout-12956d2acb18202a.js": {
+          "raw": 4887,
+          "gzip": 1738,
+          "brotli": 1565,
+          "sha256": "236d552515f516a673ffe8d4d1ec7c998488704256cb473d44e4dd62a0c297e6",
+          "entries": [
+            "app/layout"
+          ]
+        },
+        "static/chunks/webpack-cc17e8c18a2b6897.js": {
+          "raw": 4867,
+          "gzip": 2364,
+          "brotli": 2094,
+          "sha256": "a93171ce7ced5e861588f7c335fccebccbc3e6c7dc2d68a2a917d1023860adea",
+          "entries": [
+            "main-app"
+          ]
+        },
+        "static/chunks/app/(admin)/admin/page-eb490debacf84f56.js": {
+          "raw": 2825,
+          "gzip": 1332,
+          "brotli": 1222,
+          "sha256": "c62fd804270afe7557e2206d3ed8d5b200f8d253f723e174b7a4338be8cec41f",
+          "entries": [
+            "app/(admin)/admin/page"
+          ]
+        },
+        "static/chunks/app/global-error-36f6fc4bae9a294d.js": {
+          "raw": 2220,
+          "gzip": 1146,
+          "brotli": 971,
+          "sha256": "75606d8b952bad31cc2382b48ac6f9ea9055ba4af47014175472b4d4d42ebf10",
+          "entries": [
+            "app/global-error"
+          ]
+        },
+        "static/chunks/app/(admin)/admin/error-eae39cb05702feef.js": {
+          "raw": 2183,
+          "gzip": 1031,
+          "brotli": 878,
+          "sha256": "97fd854694ddaa160a29915e3edc4f40626ae8f4e7a86879bcf03fb33cd957e4",
+          "entries": [
+            "app/(admin)/admin/error"
+          ]
+        },
+        "static/chunks/app/(admin)/admin/packages/[id]/page-1b5c11dc74f6aef9.js": {
+          "raw": 1252,
+          "gzip": 788,
+          "brotli": 665,
+          "sha256": "6510b8eaa643fa9aa9b6ee54451cf02a6069dcca845762a4dcbb0cb3bee66fc5",
+          "entries": [
+            "app/(admin)/admin/packages/[id]/page"
+          ]
+        },
+        "static/chunks/app/not-found-5af0af49f89d3053.js": {
+          "raw": 621,
+          "gzip": 414,
+          "brotli": 350,
+          "sha256": "70e72ce55cc0c4158c17ec4d3b304dcc814fa39d5bc3a4ec2d817ef8c5c2950d",
+          "entries": [
+            "app/not-found"
+          ]
+        },
+        "static/chunks/main-app-dfbafd2cac9adf70.js": {
+          "raw": 480,
+          "gzip": 225,
+          "brotli": 206,
+          "sha256": "80796d93a3f83450556ee1c9da946b9410909e9beafd4ca7097b2f9fefca8797",
+          "entries": [
+            "main-app"
+          ]
+        },
+        "static/chunks/app/(admin)/admin/packages/page-e5c5dbbc17cacb71.js": {
+          "raw": 386,
+          "gzip": 278,
+          "brotli": 253,
+          "sha256": "21a20e0d641b249453bbbf6b4e7de24f5b78e1ffded9647174a610e811df270b",
+          "entries": [
+            "app/(admin)/admin/packages/page"
+          ]
+        },
+        "static/chunks/app/(admin)/admin/packages/new/page-60fa36d0475c7028.js": {
+          "raw": 274,
+          "gzip": 186,
+          "brotli": 172,
+          "sha256": "982a91fe95a47b1b85f291d412b7609aea667ace487418e2e388a8bc584dbed3",
+          "entries": [
+            "app/(admin)/admin/packages/new/page"
+          ]
+        },
+        "static/chunks/app/(admin)/admin/loading-51342bb3583d9114.js": {
+          "raw": 153,
+          "gzip": 140,
+          "brotli": 140,
+          "sha256": "cf8da0f17a6909ccb20d878d1c70d2194212918bf1f705da041ce078dcd8c8cd",
+          "entries": [
+            "app/(admin)/admin/loading"
+          ]
+        }
+      },
+      "shared": {
+        "total": {
+          "raw": 764091,
+          "gzip": 243410,
+          "brotli": 206418
+        },
+        "assetIds": [
+          "static/chunks/250-e1bfbead5ac25b37.js",
+          "static/chunks/46d6ff13-06d845b26542c914.js",
+          "static/chunks/612-59853ef3f357d783.js",
+          "static/chunks/616-e19b9e0841855565.js",
+          "static/chunks/733-4bc875b3ea64eeb1.js",
+          "static/chunks/765-96af64d247c1db59.js",
+          "static/chunks/959-5fa918e4830bcba4.js",
+          "static/chunks/app/(admin)/admin/error-eae39cb05702feef.js",
+          "static/chunks/app/(admin)/admin/layout-040cb57df46c9fa7.js",
+          "static/chunks/app/(admin)/admin/loading-51342bb3583d9114.js",
+          "static/chunks/app/global-error-36f6fc4bae9a294d.js",
+          "static/chunks/app/layout-12956d2acb18202a.js",
+          "static/chunks/app/not-found-5af0af49f89d3053.js",
+          "static/chunks/main-app-dfbafd2cac9adf70.js",
+          "static/chunks/webpack-cc17e8c18a2b6897.js"
+        ]
+      },
+      "routes": {
+        "/admin": {
+          "total": {
+            "raw": 766916,
+            "gzip": 244742,
+            "brotli": 207640
+          },
+          "exclusive": {
+            "raw": 2825,
+            "gzip": 1332,
+            "brotli": 1222
+          },
+          "assetIds": [
+            "static/chunks/250-e1bfbead5ac25b37.js",
+            "static/chunks/46d6ff13-06d845b26542c914.js",
+            "static/chunks/612-59853ef3f357d783.js",
+            "static/chunks/616-e19b9e0841855565.js",
+            "static/chunks/733-4bc875b3ea64eeb1.js",
+            "static/chunks/765-96af64d247c1db59.js",
+            "static/chunks/959-5fa918e4830bcba4.js",
+            "static/chunks/app/(admin)/admin/error-eae39cb05702feef.js",
+            "static/chunks/app/(admin)/admin/layout-040cb57df46c9fa7.js",
+            "static/chunks/app/(admin)/admin/loading-51342bb3583d9114.js",
+            "static/chunks/app/(admin)/admin/page-eb490debacf84f56.js",
+            "static/chunks/app/global-error-36f6fc4bae9a294d.js",
+            "static/chunks/app/layout-12956d2acb18202a.js",
+            "static/chunks/app/not-found-5af0af49f89d3053.js",
+            "static/chunks/main-app-dfbafd2cac9adf70.js",
+            "static/chunks/webpack-cc17e8c18a2b6897.js"
+          ],
+          "exclusiveAssetIds": [
+            "static/chunks/app/(admin)/admin/page-eb490debacf84f56.js"
+          ],
+          "overlapAssetIds": [
+            "static/chunks/959-5fa918e4830bcba4.js"
+          ],
+          "entryReferences": 19,
+          "uniqueAssetCount": 16,
+          "duplicateReferencesRemoved": 3
+        },
+        "/admin/packages": {
+          "total": {
+            "raw": 764477,
+            "gzip": 243688,
+            "brotli": 206671
+          },
+          "exclusive": {
+            "raw": 386,
+            "gzip": 278,
+            "brotli": 253
+          },
+          "assetIds": [
+            "static/chunks/250-e1bfbead5ac25b37.js",
+            "static/chunks/46d6ff13-06d845b26542c914.js",
+            "static/chunks/612-59853ef3f357d783.js",
+            "static/chunks/616-e19b9e0841855565.js",
+            "static/chunks/733-4bc875b3ea64eeb1.js",
+            "static/chunks/765-96af64d247c1db59.js",
+            "static/chunks/959-5fa918e4830bcba4.js",
+            "static/chunks/app/(admin)/admin/error-eae39cb05702feef.js",
+            "static/chunks/app/(admin)/admin/layout-040cb57df46c9fa7.js",
+            "static/chunks/app/(admin)/admin/loading-51342bb3583d9114.js",
+            "static/chunks/app/(admin)/admin/packages/page-e5c5dbbc17cacb71.js",
+            "static/chunks/app/global-error-36f6fc4bae9a294d.js",
+            "static/chunks/app/layout-12956d2acb18202a.js",
+            "static/chunks/app/not-found-5af0af49f89d3053.js",
+            "static/chunks/main-app-dfbafd2cac9adf70.js",
+            "static/chunks/webpack-cc17e8c18a2b6897.js"
+          ],
+          "exclusiveAssetIds": [
+            "static/chunks/app/(admin)/admin/packages/page-e5c5dbbc17cacb71.js"
+          ],
+          "overlapAssetIds": [
+            "static/chunks/959-5fa918e4830bcba4.js"
+          ],
+          "entryReferences": 19,
+          "uniqueAssetCount": 16,
+          "duplicateReferencesRemoved": 3
+        },
+        "/admin/packages/new": {
+          "total": {
+            "raw": 784725,
+            "gzip": 249863,
+            "brotli": 212113
+          },
+          "exclusive": {
+            "raw": 20634,
+            "gzip": 6453,
+            "brotli": 5695
+          },
+          "assetIds": [
+            "static/chunks/250-e1bfbead5ac25b37.js",
+            "static/chunks/46d6ff13-06d845b26542c914.js",
+            "static/chunks/573-0ad13e18d4fb4cab.js",
+            "static/chunks/612-59853ef3f357d783.js",
+            "static/chunks/616-e19b9e0841855565.js",
+            "static/chunks/733-4bc875b3ea64eeb1.js",
+            "static/chunks/765-96af64d247c1db59.js",
+            "static/chunks/959-5fa918e4830bcba4.js",
+            "static/chunks/app/(admin)/admin/error-eae39cb05702feef.js",
+            "static/chunks/app/(admin)/admin/layout-040cb57df46c9fa7.js",
+            "static/chunks/app/(admin)/admin/loading-51342bb3583d9114.js",
+            "static/chunks/app/(admin)/admin/packages/new/page-60fa36d0475c7028.js",
+            "static/chunks/app/global-error-36f6fc4bae9a294d.js",
+            "static/chunks/app/layout-12956d2acb18202a.js",
+            "static/chunks/app/not-found-5af0af49f89d3053.js",
+            "static/chunks/main-app-dfbafd2cac9adf70.js",
+            "static/chunks/webpack-cc17e8c18a2b6897.js"
+          ],
+          "exclusiveAssetIds": [
+            "static/chunks/573-0ad13e18d4fb4cab.js",
+            "static/chunks/app/(admin)/admin/packages/new/page-60fa36d0475c7028.js"
+          ],
+          "overlapAssetIds": [
+            "static/chunks/765-96af64d247c1db59.js",
+            "static/chunks/959-5fa918e4830bcba4.js"
+          ],
+          "entryReferences": 21,
+          "uniqueAssetCount": 17,
+          "duplicateReferencesRemoved": 4
+        },
+        "/admin/packages/[id]": {
+          "total": {
+            "raw": 785703,
+            "gzip": 250465,
+            "brotli": 212606
+          },
+          "exclusive": {
+            "raw": 21612,
+            "gzip": 7055,
+            "brotli": 6188
+          },
+          "assetIds": [
+            "static/chunks/250-e1bfbead5ac25b37.js",
+            "static/chunks/46d6ff13-06d845b26542c914.js",
+            "static/chunks/573-0ad13e18d4fb4cab.js",
+            "static/chunks/612-59853ef3f357d783.js",
+            "static/chunks/616-e19b9e0841855565.js",
+            "static/chunks/733-4bc875b3ea64eeb1.js",
+            "static/chunks/765-96af64d247c1db59.js",
+            "static/chunks/959-5fa918e4830bcba4.js",
+            "static/chunks/app/(admin)/admin/error-eae39cb05702feef.js",
+            "static/chunks/app/(admin)/admin/layout-040cb57df46c9fa7.js",
+            "static/chunks/app/(admin)/admin/loading-51342bb3583d9114.js",
+            "static/chunks/app/(admin)/admin/packages/[id]/page-1b5c11dc74f6aef9.js",
+            "static/chunks/app/global-error-36f6fc4bae9a294d.js",
+            "static/chunks/app/layout-12956d2acb18202a.js",
+            "static/chunks/app/not-found-5af0af49f89d3053.js",
+            "static/chunks/main-app-dfbafd2cac9adf70.js",
+            "static/chunks/webpack-cc17e8c18a2b6897.js"
+          ],
+          "exclusiveAssetIds": [
+            "static/chunks/573-0ad13e18d4fb4cab.js",
+            "static/chunks/app/(admin)/admin/packages/[id]/page-1b5c11dc74f6aef9.js"
+          ],
+          "overlapAssetIds": [
+            "static/chunks/765-96af64d247c1db59.js",
+            "static/chunks/959-5fa918e4830bcba4.js"
+          ],
+          "entryReferences": 21,
+          "uniqueAssetCount": 17,
+          "duplicateReferencesRemoved": 4
+        }
+      },
+      "allFourUnion": {
+        "total": {
+          "raw": 789188,
+          "gzip": 252261,
+          "brotli": 214253
+        },
+        "assetIds": [
+          "static/chunks/250-e1bfbead5ac25b37.js",
+          "static/chunks/46d6ff13-06d845b26542c914.js",
+          "static/chunks/573-0ad13e18d4fb4cab.js",
+          "static/chunks/612-59853ef3f357d783.js",
+          "static/chunks/616-e19b9e0841855565.js",
+          "static/chunks/733-4bc875b3ea64eeb1.js",
+          "static/chunks/765-96af64d247c1db59.js",
+          "static/chunks/959-5fa918e4830bcba4.js",
+          "static/chunks/app/(admin)/admin/error-eae39cb05702feef.js",
+          "static/chunks/app/(admin)/admin/layout-040cb57df46c9fa7.js",
+          "static/chunks/app/(admin)/admin/loading-51342bb3583d9114.js",
+          "static/chunks/app/(admin)/admin/packages/[id]/page-1b5c11dc74f6aef9.js",
+          "static/chunks/app/(admin)/admin/packages/new/page-60fa36d0475c7028.js",
+          "static/chunks/app/(admin)/admin/packages/page-e5c5dbbc17cacb71.js",
+          "static/chunks/app/(admin)/admin/page-eb490debacf84f56.js",
+          "static/chunks/app/global-error-36f6fc4bae9a294d.js",
+          "static/chunks/app/layout-12956d2acb18202a.js",
+          "static/chunks/app/not-found-5af0af49f89d3053.js",
+          "static/chunks/main-app-dfbafd2cac9adf70.js",
+          "static/chunks/webpack-cc17e8c18a2b6897.js"
+        ]
+      }
+    }
+  },
+  "measurement": {
+    "baselineSourceCommit": "c9b961808bcdc0faa04b2760e060a9d7a90d2d78",
+    "afterHeadAnchor": "6bed436d07228d21746b66d824517ab457c476cd",
+    "comparison": "Working-tree snapshot against the same snapshot with only pilot paths restored to baselineSourceCommit; not two clean commit builds.",
+    "pilotPaths": [
+      "src/app/(admin)/admin/layout.tsx",
+      "src/app/(admin)/admin/packages/[id]/delete-package-form.tsx",
+      "src/app/(admin)/admin/packages/[id]/page.tsx",
+      "src/app/(admin)/admin/packages/actions.ts",
+      "src/app/(admin)/admin/packages/new/page.tsx",
+      "src/app/(admin)/admin/packages/package-copy-field.tsx",
+      "src/app/(admin)/admin/packages/package-copy-types.ts",
+      "src/app/(admin)/admin/packages/package-form.tsx",
+      "src/app/(admin)/admin/packages/page.tsx",
+      "src/app/(admin)/admin/packages/rewrite-action.ts",
+      "src/components/admin-shell.tsx",
+      "src/components/platform-ability-provider.tsx",
+      "src/lib/auth/platform-ability.ts",
+      "src/lib/casl.ts",
+      "src/lib/data/admin/dashboard.ts",
+      "src/lib/data/admin/packages.ts"
+    ],
+    "versions": {
+      "node": "v24.22.0",
+      "next": "16.4.1",
+      "ability": "7.0.2",
+      "react": "7.0.1",
+      "analyzer": "16.4.2",
+      "zlib": "1.3.2.1-motley-285e94b"
+    },
+    "bundler": "webpack",
+    "buildMode": "compile",
+    "selectiveBuildPaths": [
+      "src/app/(admin)/admin/page.tsx",
+      "src/app/(admin)/admin/packages/page.tsx",
+      "src/app/(admin)/admin/packages/new/page.tsx",
+      "src/app/(admin)/admin/packages/\\[id\\]/page.tsx"
+    ],
+    "sourcePatch": "pilot-vs-baseline.patch",
+    "sourcePatchSha256": "0124bd2e244ab84b2feae40a2af37a66aaa3bcba9a085e5958d6b2d576110075",
+    "rawArtifactsDirectory": "/tmp/kalfa-casl-size-e8k9hllv"
+  },
+  "libraryAttribution": {
+    "before": [],
+    "after": [
+      {
+        "runtime": "client",
+        "asset": "static/chunks/250-e1bfbead5ac25b37.js",
+        "label": "@casl/ability/dist/esm",
+        "path": "./../../var/www/vhosts/kalfa.me/beta/node_modules/@casl/ability/dist/esm",
+        "statSize": 25461,
+        "parsedSize": 16073,
+        "gzipSize": 5789
+      },
+      {
+        "runtime": "client",
+        "asset": "static/chunks/765-96af64d247c1db59.js",
+        "label": "@casl/react/dist/esm",
+        "path": "./../../var/www/vhosts/kalfa.me/beta/node_modules/@casl/react/dist/esm",
+        "statSize": 1095,
+        "parsedSize": 800,
+        "gzipSize": 501
+      },
+      {
+        "runtime": "nodejs",
+        "asset": "467.js",
+        "label": "ability/dist/esm",
+        "path": "./../../var/www/vhosts/kalfa.me/beta/node_modules/@casl/ability/dist/esm",
+        "statSize": 50922,
+        "parsedSize": 32751,
+        "gzipSize": 6234
+      },
+      {
+        "runtime": "nodejs",
+        "asset": "467.js",
+        "label": "react/dist/esm",
+        "path": "./../../var/www/vhosts/kalfa.me/beta/node_modules/@casl/react/dist/esm",
+        "statSize": 1095,
+        "parsedSize": 813,
+        "gzipSize": 521
+      },
+      {
+        "runtime": "nodejs",
+        "asset": "691.js",
+        "label": "@casl/ability/dist/esm",
+        "path": "./../../var/www/vhosts/kalfa.me/beta/node_modules/@casl/ability/dist/esm",
+        "statSize": 25461,
+        "parsedSize": 16665,
+        "gzipSize": 6016
+      }
+    ]
+  },
+  "sourceChange": {
+    "productionFiles": 14,
+    "added": 329,
+    "removed": 127,
+    "numstat": [
+      {
+        "file": "src/app/(admin)/admin/layout.tsx",
+        "added": 7,
+        "removed": 2
+      },
+      {
+        "file": "src/app/(admin)/admin/packages/[id]/delete-package-form.tsx",
+        "added": 27,
+        "removed": 18
+      },
+      {
+        "file": "src/app/(admin)/admin/packages/[id]/page.tsx",
+        "added": 4,
+        "removed": 6
+      },
+      {
+        "file": "src/app/(admin)/admin/packages/actions.ts",
+        "added": 14,
+        "removed": 0
+      },
+      {
+        "file": "src/app/(admin)/admin/packages/new/page.tsx",
+        "added": 3,
+        "removed": 3
+      },
+      {
+        "file": "src/app/(admin)/admin/packages/package-form.tsx",
+        "added": 9,
+        "removed": 1
+      },
+      {
+        "file": "src/app/(admin)/admin/packages/page.tsx",
+        "added": 13,
+        "removed": 9
+      },
+      {
+        "file": "src/app/(admin)/admin/packages/rewrite-action.ts",
+        "added": 3,
+        "removed": 2
+      },
+      {
+        "file": "src/components/admin-shell.tsx",
+        "added": 50,
+        "removed": 20
+      },
+      {
+        "file": "src/components/platform-ability-provider.tsx",
+        "added": 23,
+        "removed": 0
+      },
+      {
+        "file": "src/lib/auth/platform-ability.ts",
+        "added": 94,
+        "removed": 0
+      },
+      {
+        "file": "src/lib/casl.ts",
+        "added": 59,
+        "removed": 51
+      },
+      {
+        "file": "src/lib/data/admin/dashboard.ts",
+        "added": 9,
+        "removed": 4
+      },
+      {
+        "file": "src/lib/data/admin/packages.ts",
+        "added": 14,
+        "removed": 11
+      }
+    ],
+    "permissionSitesBefore": [
+      {
+        "file": "src/lib/data/admin/packages.ts",
+        "before": [
+          {
+            "line": 60,
+            "text": "await requirePlatformPermission('manage_billing');"
+          },
+          {
+            "line": 78,
+            "text": "await requirePlatformPermission('manage_billing');"
+          },
+          {
+            "line": 195,
+            "text": "await requirePlatformPermission('manage_billing');"
+          },
+          {
+            "line": 235,
+            "text": "await requirePlatformPermission('manage_billing');"
+          },
+          {
+            "line": 255,
+            "text": "await requirePlatformPermission('manage_billing');"
+          },
+          {
+            "line": 284,
+            "text": "await requirePlatformPermission('manage_billing');"
+          },
+          {
+            "line": 317,
+            "text": "await requirePlatformPermission('manage_billing');"
+          },
+          {
+            "line": 341,
+            "text": "await requirePlatformPermission('manage_billing');"
+          }
+        ]
+      },
+      {
+        "file": "src/app/(admin)/admin/packages/page.tsx",
+        "before": [
+          {
+            "line": 17,
+            "text": "await requirePlatformPermission('manage_billing');"
+          }
+        ]
+      },
+      {
+        "file": "src/app/(admin)/admin/packages/new/page.tsx",
+        "before": [
+          {
+            "line": 23,
+            "text": "await requirePlatformPermission('manage_billing');"
+          }
+        ]
+      },
+      {
+        "file": "src/app/(admin)/admin/packages/[id]/page.tsx",
+        "before": [
+          {
+            "line": 30,
+            "text": "await requirePlatformPermission('manage_billing');"
+          }
+        ]
+      },
+      {
+        "file": "src/app/(admin)/admin/packages/rewrite-action.ts",
+        "before": [
+          {
+            "line": 21,
+            "text": "const user = await requirePlatformPermission('manage_billing');"
+          }
+        ]
+      },
+      {
+        "file": "src/lib/data/admin/dashboard.ts",
+        "before": [
+          {
+            "line": 56,
+            "text": "hasPlatformPermission('view_billing'),"
+          }
+        ]
+      },
+      {
+        "file": "src/components/admin-shell.tsx",
+        "before": [
+          {
+            "line": 144,
+            "text": "{ href: '/admin/packages', label: '\u05d7\u05d1\u05d9\u05dc\u05d5\u05ea', icon: Package, permission: 'manage_billing' },"
+          }
+        ]
+      }
+    ],
+    "permissionLiteralScope": "Executable Package checks in data functions, pages, copy action, sidebar item and dashboard count; comments, tests, the old unused factory, and other domains excluded.",
+    "beforeSites": 14,
+    "afterBusinessSites": 0,
+    "afterCentralMapBindings": 4
+  },
+  "focusedVerification": {
+    "date": "2026-10-20",
+    "exitCode": 0,
+    "filesPassed": 17,
+    "testsPassed": 619,
+    "durationSeconds": 6.43,
+    "command": [
+      "node_modules/.bin/vitest",
+      "run",
+      "src/lib/casl.test.ts",
+      "src/lib/casl-pilot-static.test.ts",
+      "src/lib/auth/platform-ability.test.ts",
+      "src/lib/auth/admin-data-layer-coverage.test.ts",
+      "src/lib/auth/dal.test.ts",
+      "src/lib/data/admin/packages.test.ts",
+      "src/lib/data/admin/dashboard.test.ts",
+      "src/components/admin-nav-coverage.test.ts",
+      "src/components/platform-ability-provider.test.tsx",
+      "src/app/(admin)/admin/packages/[id]/delete-package-form.test.tsx",
+      "src/app/(admin)/admin/packages/[id]/page.test.tsx",
+      "src/app/(admin)/admin/packages/actions.test.ts",
+      "src/app/(admin)/admin/packages/new/page.test.tsx",
+      "src/app/(admin)/admin/packages/package-copy-field.test.tsx",
+      "src/app/(admin)/admin/packages/package-form.test.tsx",
+      "src/app/(admin)/admin/packages/page.test.tsx",
+      "src/app/(admin)/admin/packages/rewrite-action.test.ts"
+    ],
+    "scope": "Mocked unit/component and source-coverage tests; not live database, HTTP Server Action, browser or deployment verification."
+  }
+}
