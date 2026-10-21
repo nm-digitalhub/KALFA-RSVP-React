@@ -124,7 +124,7 @@
   - a filterless `PATCH` on `console_agent_shift`: `400/21000`.
 
   Add agent personas only if 1.4 allows. Verify: green; no row is committed; fingerprint unchanged.
-- [ ] 4.4 Local Advisors, and `verification-console.md` in this change. It holds the before/after
+- [x] 4.4 Local Advisors, and `verification-console.md` in this change. It holds the before/after
   catalog, the test runs with counts, and Appendix A's 73 findings with where each is closed. Verify:
   the document lists 73 unique IDs, and every claim the design marks "not verified" is still open or
   decided by the owner.
