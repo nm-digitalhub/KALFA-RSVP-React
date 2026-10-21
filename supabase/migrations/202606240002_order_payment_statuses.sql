@@ -29,7 +29,7 @@
 -- Every downstream migration that touches these tables/types already uses
 -- IF NOT EXISTS / ADD COLUMN IF NOT EXISTS / a duplicate_object-guarded
 -- `do $$ … exception when duplicate_object then null; end $$` (verified for
--- campaign_channel in 202606240007_outcome_billing_schema.sql), so creating
+-- campaign_channel in 20260624000700_outcome_billing_schema.sql), so creating
 -- the full current shape here and letting later migrations no-op forward is
 -- safe and matches this repo's own established migration idiom.
 

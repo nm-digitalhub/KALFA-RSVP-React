@@ -1,7 +1,11 @@
 -- HISTORICAL BASE MIGRATION #2 — the five dashboard-era campaigns columns. Written 12.10.2026 (the drift-repair
 -- procedure; sibling of 20260713143940_drift_base_tables.sql). The version 2026062400075 deliberately sorts BETWEEN
--- 202606240007 (which runs `create table if not exists public.campaigns (id, event_id)` — a no-op on production,
+-- 20260624000700 (which runs `create table if not exists public.campaigns (id, event_id)` — a no-op on production,
 -- where the table already existed from the 21–22.06 dashboard era) and 202606240008.
+-- 21.10.2026: that sibling was renamed from 202606240007 (history repaired on production). As a prefix of
+-- 2026062400075 it sorted AFTER it by filename but BEFORE it by version, so the Supabase GitHub-integration
+-- migrate step (Go CLI FindPendingMigrations) reported it missing on every push. Never give a migration a
+-- version that is a prefix of another one.
 --
 -- MEASURED (12.10.2026): a full masked-column scan across all live tables created with `if not exists` found exactly
 -- these five — campaigns attnums 3–7, declared by no migration and added by none: the original manual table's
