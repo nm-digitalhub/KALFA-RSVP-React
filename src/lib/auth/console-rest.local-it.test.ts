@@ -123,4 +123,34 @@ describe.skipIf(!RUN)('console surface over local PostgREST (task 4.3)', () => {
     });
     expect(r).toEqual({ status: 403, code: '42501', rows: null });
   });
+
+  // Advisors (authenticated_security_definer_function_executable, production after S1-S3) flag the two S1/S2
+  // helpers as callable through /rest/v1/rpc. Both are gated on is_console_agent(), so a caller who is not an active
+  // agent learns nothing, even about an event that IS in scope; anon cannot call them at all.
+  async function rpc(fn: string, args: Record<string, unknown>, token: string | null) {
+    const headers = new Headers({ apikey: ENV!.anonKey!, 'Content-Type': 'application/json' });
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    const r = await fetch(`${ENV!.supabaseUrl}/rest/v1/rpc/${fn}`, { method: 'POST', headers, body: JSON.stringify(args) });
+    const body: unknown = await r.json().catch(() => null);
+    return { status: r.status, body: typeof body === 'boolean' ? body : ((body as { code?: string } | null)?.code ?? null) };
+  }
+
+  it('helper RPCs: anon is refused (401 / 42501); a regular user gets false even for an in-scope event', async () => {
+    const inScope = (
+      await pool.query(`select e.id from public.events e where e.with_ai_calls or exists (select 1 from public.campaigns c where c.event_id = e.id) limit 1`)
+    ).rows[0]?.id as string | undefined;
+    expect(inScope, 'the local database needs one in-scope event for this case').toBeDefined();
+    const anyUser = regular.id;
+    expect({
+      anonScope: await rpc('console_event_in_scope', { p_event_id: inScope }, null),
+      anonProvisioned: await rpc('console_agent_provisioned', { p_user_id: anyUser }, null),
+      regularScope: await rpc('console_event_in_scope', { p_event_id: inScope }, regular.session.access_token),
+      regularProvisioned: await rpc('console_agent_provisioned', { p_user_id: anyUser }, regular.session.access_token),
+    }).toEqual({
+      anonScope: { status: 401, body: '42501' },
+      anonProvisioned: { status: 401, body: '42501' },
+      regularScope: { status: 200, body: false },
+      regularProvisioned: { status: 200, body: false },
+    });
+  });
 });
