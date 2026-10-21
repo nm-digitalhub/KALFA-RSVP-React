@@ -4,6 +4,8 @@ Ground rules for every group: migrations are created only with `npx supabase mig
 and applied to the **local** database only (`npx supabase migration up --db-url
 "postgresql://postgres:postgres@127.0.0.1:54322/postgres?sslmode=disable"`); the local stack starts
 with `SUPABASE_DB_PORT=54322 npx supabase@2.120.0 start` (the `.env.local` value 5432 otherwise wins);
+the local port is passed on the command line only and is **never written to `.env.local`** (that file
+also feeds the production worker; see design, Risks);
 no deploy, no `db push`, no change to the live database; tests are written first and must be red on
 the current local database for the stated reason before the migration is written. Each migration
 bundles grants and policies and carries a `ROLLBACK:` header with the exact prior grants and policy
@@ -44,15 +46,14 @@ text read from the live catalog.
   row cites the file or catalog query that settled it.
 - [ ] 1.2 Add `src/lib/auth/staff-table-permissions.ts` (table → key list, group A/B) and a vitest that
   asserts it equals the module pins of `admin-data-layer-coverage.test.ts` for every Group B table
-  and lists exactly the 25 tables. Its keys come from the one shared TypeScript list of permission keys
-  (design D10), never typed again:
-  - first check with `rg` whether that list already exists, and do not assume it does;
-  - if it does not, create it in this task, with a test that it equals the catalogue seeded in
-    `supabase/migrations` (`platform_permission_definitions`).
+  and lists exactly the 25 tables. Its keys come from the existing shared list
+  `PLATFORM_PERMISSION_KEYS` (`src/lib/auth/platform-permission-keys.generated.ts`, generated from
+  `platform_permission_definitions`, checked by `npm run check:permissions:generated`; design D10);
+  no key is typed again and no second list is created.
 
   Verify: `npx vitest run src/lib/auth` passes; changing one key in the map makes it fail naming the
-  table; a key absent from the shared list fails the type check. This task stays open until the shared
-  list and the map are implemented and their tests pass.
+  table; a key absent from `PLATFORM_PERMISSION_KEYS` fails the type check. This task stays open
+  until the map is implemented and its tests pass.
 - [ ] 1.3 Spike the runner: start the local stack, make sure `pgtap` is available, add
   `supabase/tests/database/000-harness.test.sql` (always-green plan plus a fixture that creates a staff
   user in a chosen role and in a temporary role holding exactly one permission, all inside the
@@ -72,8 +73,12 @@ text read from the live catalog.
   and drop the three staff policies, RLS stays on. Verify: applied locally; `supabase test db` green
   (S1 file plus the guard); `psql` shows no policy and no client privilege on the three tables.
 - [ ] 2.3 Application regression: run the vitest suites that touch the three tables (`src/lib/data`,
-  the OTP, agreement-archive and webhook-inbox code, worker stores). Verify: green, and the access
-  map still shows no user-session path for them.
+  the OTP, agreement-archive and webhook-inbox code, worker stores), and run
+  `SUPABASE_DB_PORT=54322 bash scripts/integration/run-local.sh src/lib/auth/permissions.local-it.test.ts`.
+  Its `webhook_inbox` cases record today's permissive behaviour and turn red with this stage; flip them
+  in the same commit to the new expectation (every staff session, `anon` and a customer get `42501`
+  on read, update, insert and delete). Verify: green, and the access map still shows no
+  user-session path for them.
 - [ ] 2.4 Run the local Advisors (`npx supabase@2.120.0 db advisors --db-url "<local>"`) and write
   `verification-s1.md` with the grants/policies before and after and each finding judged (an
   `rls_enabled_no_policy` info on a closed table is the intended shape, like `cardcom_config`). Verify:
@@ -119,7 +124,11 @@ text read from the live catalog.
 - [ ] 5.2 `migration new packages_billing_permission`: per-operation `manage_billing` policies, keep
   `packages_public_read`, `anon` keeps `SELECT` only. Verify: applied locally; S4 and earlier files green.
 - [ ] 5.3 Regression: vitest for `admin/packages`, `agent-benefits` and the public pages that list
-  packages; Advisors; `verification-s4.md`. Verify: all green.
+  packages; run `SUPABASE_DB_PORT=54322 bash scripts/integration/run-local.sh
+  src/lib/auth/permissions.local-it.test.ts` and flip its `packages` cases in the same commit
+  (`auditor` and `ops_engineer` refused insert, update and delete and no longer see inactive packages;
+  `billing_clerk` unchanged; the "Server Action refuses, PostgREST allows" case becomes "both refuse");
+  Advisors; `verification-s4.md`. Verify: all green.
 
 ## 6. Stage S5 — `manage_settings` tables and the fleet RPCs
 

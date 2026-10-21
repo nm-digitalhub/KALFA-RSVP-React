@@ -20,9 +20,18 @@ customer data; `auditor`: `view_*`, `integrations.read`; `support_agent`: view-o
 - `voice_purposes` and `voice_purpose_attempts` (15.10, `20261015114659`).
 
 The other 23 tables sit on the floor. This was re-read on the live catalog on 19.10.2026: 6 policies
-call `has_platform_permission`. The `dal.ts` reason for avoiding permissions in RLS (cost per
+call `has_platform_permission`. On 21.10.2026 the 23 tables were re-read again: 23 policies on the
+floor, 2 on a permission (the two `voice_*` tables). The `dal.ts` reason for avoiding permissions in RLS (cost per
 row; JWT claims going stale) does not apply to the table-lookup approach with the `(select …)`
 initplan wrapper, which the project already uses.
+
+**A local end-to-end reproduction exists and records today's behaviour.**
+`src/lib/auth/permissions.local-it.test.ts` (21.10.2026, run with `scripts/integration/run-local.sh`)
+drives real local GoTrue users through PostgREST, the DAL, CASL and the package Server Action. Its
+`packages` and `webhook_inbox` cases assert the CURRENT, permissive results (every staff member reads,
+writes and deletes). They pass today and are expected to fail once S1 (`webhook_inbox` closed) and S4
+(`packages` on `manage_billing`) apply locally, so each of those stages flips the matching cases in the
+same commit as its migration (tasks 2.3 and 5.3).
 
 **Measured on the live catalog, 13.10.2026 (read-only):**
 - 23 tables on the floor: 20 with a single policy, 3 (`channels`, `faq_items`, `packages`) with an
@@ -75,7 +84,7 @@ means the cookie client (the staff member's own JWT); "service" means `createAdm
 | callback_schedule_policies | medium (call windows) | `callbacks/policy/actions.ts` update (`manage_settings`); `readPolicyRow(client)` mixed | S,U / – | – | `manage_settings` select, update |
 | fleet_requests, fleet_goals, fleet_request_slack_threads | medium | `admin/fleet.ts` select (`manage_settings`); RPCs | S / – | – | `manage_settings` select |
 | ops_alerts | low-med | `admin/alerts.ts` select (`manage_settings`); `app-health.ts` select (Debug page, owner only) | all / all | – | `manage_settings` select |
-| voice_purposes, voice_purpose_attempts | medium (decides which agent dials) | `admin/voice-purposes.ts` (`manage_voice`) | (to confirm in 1.1) | today: one `for all` / `select` policy on `manage_voice` (15.10) | `manage_voice` per operation |
+| voice_purposes, voice_purpose_attempts | medium (decides which agent dials) | `admin/voice-purposes.ts` (`manage_voice`) | `voice_purposes` DIUS / –; `voice_purpose_attempts` S / – (live, 21.10.2026) | today: one `for all` / `select` policy on `manage_voice` (15.10) | `manage_voice` per operation |
 
 **Sources read in full on 13.10.2026 and what each changed in this plan.**
 - [Securing your API](https://supabase.com/docs/guides/api/securing-your-api): grants and RLS are two
@@ -224,8 +233,13 @@ the pgTAP file (text check). The file does not exist yet (task 1.2).
   key, for CASL) both take their keys from it.
 - **The maps themselves differ.** UI actions and database tables are different shapes, so the two maps
   need not be the same; what must not repeat is a key typed by hand.
-- **Nothing exists yet.** As of 19.10.2026 neither the list nor either map exists. Task 1.2 checks
-  before creating anything and does not assume another change already made it. Vitest remains hermetic and cannot prove DB behaviour; that is the pgTAP
+- **The shared key list exists (since 19.10.2026, `e52ed393`).**
+  `src/lib/auth/platform-permission-keys.generated.ts` exports `PLATFORM_PERMISSION_KEYS`, generated from
+  `public.platform_permission_definitions` by `npm run gen:permissions` and checked by
+  `npm run check:permissions:generated`. `src/lib/casl.ts` and `admin-data-layer-coverage.test.ts`
+  already import it. What does not exist yet is this change's table map
+  (`src/lib/auth/staff-table-permissions.ts`); task 1.2 builds it on `PLATFORM_PERMISSION_KEYS` and
+  creates no second list. Vitest remains hermetic and cannot prove DB behaviour; that is the pgTAP
 suite's job. Per-path regression: each user-session path in the map gets a pgTAP case that issues the
 same query shape as the data layer for a holder and a non-holder.
 
@@ -255,8 +269,18 @@ policies, why the JWT-claims pattern is still not used, where the proof lives).
   CLAUDE.md line for the owner; `service_role` is untouched so the server keeps working.
 - **Two descriptions of the same fact (DAL pins, SQL keys).** → D10.
 - **Test runner dependencies.** `supabase test db` needs the local stack and the `pgtap` extension;
-  the pinned CLI had start/status problems earlier and `SUPABASE_DB_PORT=54322` must be set (memory
-  note). → Task 1.3 is a spike that fixes the invocation before any test depends on it.
+  the pinned CLI had start/status problems earlier. → Task 1.3 is a spike that fixes the invocation
+  before any test depends on it.
+- **The local DB port must never be written to `.env.local`.** Verified 21.10.2026 with a controlled
+  experiment: the Supabase CLI loads `.env.local` (and `.env`) from its working directory, and a
+  `SUPABASE_DB_PORT` there overrides `[db] port` from `config.toml`. The project's `.env.local` holds
+  `SUPABASE_DB_PORT=5432` for the production pooler, so in this checkout `supabase status` reports
+  `127.0.0.1:5432` while the local container listens on `54322`, and `127.0.0.1:5432` is a different
+  server (the host's PostgreSQL 16 cluster). On 20.10.2026 the value in `.env.local` was changed to
+  `54322`, which made local tooling work and sent the production worker into a crash loop against the
+  pooler (fixed; `dc862599` now refuses that pairing in production). → Pass the port on the command
+  only (`SUPABASE_DB_PORT=54322 <command>`); `scripts/integration/run-local.sh` refuses to run without
+  it, which is the correct outcome.
 - **Policy cost.** `has_platform_permission` reads three small tables once per statement
   (initplan); the tables are tiny. → Not measured as a risk; check with `explain` on the largest
   (`webhook_inbox` is closed; `message_templates`, `packages` are small).
@@ -295,3 +319,25 @@ previous `search_path` of the two helper functions. No data is changed, so nothi
   `view_webhooks` for the webhook tables)? Deferrable: a later product decision; D3 makes it a
   one-line change.
 - Clean the existing `authenticated` grants of the other ~100 tables: a follow-up change after S6.
+- **`integrations_configured_flags()` gates on the staff floor; should it gate on a key?
+  (security audit, 21.10.2026, finding M2, corrected the same day).** Live definition: `SECURITY
+  DEFINER`, `search_path=public`, `EXECUTE` to `authenticated` (not `anon`), exposed as
+  `/rpc/integrations_configured_flags`; its only gate is `if not public.is_platform_staff() then
+  return;`. It returns 13 booleans (configured / enabled for WhatsApp, Voximplant, SMS, email, SUMIT,
+  Slack, ElevenLabs), no secret and no side effect. Its reader is `getIntegrationsConfiguredFlags()`
+  (cookie client, `src/lib/ops/integrations.ts`), used by:
+  - `/admin/integrations` through `getIntegrationsIndex()` → `getIntegrationsStatus()`, gated by
+    `requirePlatformStaff()` on purpose (`src/app/(admin)/admin/integrations/page.tsx:18`); every card
+    shows `configured` / `enabled` to every staff member;
+  - `/admin/integrations/numbers`, gated by `requirePlatformPermission('manage_settings')`;
+  - `/admin/debug`, gated by `requirePlatformOwner()`.
+  The audit first read this as the database admitting more than the application. It does not: the
+  widest application reader is the staff floor too, so the function equals the application today.
+  The open question is whether the flags themselves should need a key:
+  - `manage_settings`: the key of the settings screens. It would hide the status column of
+    `/admin/integrations` from staff without it; today `getIntegrationsStatus()` throws when the RPC
+    answers nothing, so that page would have to handle "no flags" before the gate changes.
+  - `integrations.read`: the catalogue's read key for integration status, held by the read-only roles
+    (`auditor`). Same page consequence for staff who lack it.
+  Deferred: `app_settings` and its functions are outside this change (Non-Goals), so no task here
+  implements it; whichever key wins, the same edit should pin `search_path = ''` (today `public`).

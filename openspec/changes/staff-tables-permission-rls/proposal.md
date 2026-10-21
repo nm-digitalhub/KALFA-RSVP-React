@@ -18,11 +18,23 @@ skips that layer. Measured on the live catalog, 13.10.2026 (read-only):
 - `auditor` is defined read-only (`view_*`, `integrations.read`) yet can write these tables.
   Today the only staff are the owner and one `billing_clerk`, so the exposure is small; it grows with
   every role that gets staffed.
-- **Grants are wider than RLS needs.** New tables in `public` receive `arwdDxtm` (insert, select,
+- **Reproduced end to end on a local database, 21.10.2026.** `src/lib/auth/permissions.local-it.test.ts`
+  signs in real local GoTrue users and talks to PostgREST with their own tokens:
+  - an `auditor` (no `view_webhooks`) reads `webhook_inbox` payloads, marks an event processed,
+    inserts a forged inbound event and deletes rows;
+  - `auditor` and `ops_engineer` (no `manage_billing`) insert, re-price and delete `packages`, and read
+    inactive ones;
+  - `deletePackageAction` refuses the `auditor`, and the same `auditor` deletes the package straight
+    through PostgREST.
+  The live policies were re-read on 21.10.2026 and are unchanged (`packages_admin_all`,
+  `webhook_inbox_admin_all`: `for all to authenticated using is_platform_staff()`).
+- **Grants are wider than RLS needs.** New tables in `public` received `arwdDxtm` (insert, select,
   update, delete, truncate, references, trigger, maintain) for `anon`, `authenticated` and
-  `service_role` through the default ACL. `anon` still holds all of it on 9 of the 23 tables, and
-  `authenticated` holds truncate/trigger/references on most. RLS is the only barrier
-  ([Supabase: "adding policies doesn't remove them"](https://supabase.com/docs/guides/database/postgres/row-level-security)).
+  `service_role` through the default ACL, and `anon` held all of it on 9 of the 23 tables (13.10).
+  Stage 0 of this change is live (`20261013030310`, `20261013030533`, `20261013033311`; checked
+  21.10.2026): `anon` now holds only `SELECT` on `packages` and `faq_items`. Still open:
+  `authenticated` holds `TRUNCATE`, `TRIGGER` and `REFERENCES` on 9 of the 23 tables. RLS is the only
+  barrier ([Supabase: "adding policies doesn't remove them"](https://supabase.com/docs/guides/database/postgres/row-level-security)).
 - **The retired `has_role('admin')` axis is gone (done outside this change).** Measured on 13.10, the
   six `fleet_*` `SECURITY DEFINER` RPCs and two policies (`voice_purposes`, `voice_purpose_attempts`)
   still used it. Migration `20261015114659` (15.10) moved the RPCs to
