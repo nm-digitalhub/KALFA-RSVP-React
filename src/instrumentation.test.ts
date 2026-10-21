@@ -425,12 +425,22 @@ describe('register — database configuration startup check (report-only)', () =
     expect((globalThis as unknown as Record<symbol, unknown>)[FLAG]).toBeUndefined();
   });
 
-  it('a failing alert transport does not reject register() or delay it', async () => {
+  it('the alert is fired, not awaited: register() settles while the alert is still pending, and a failing alert never rejects it', async () => {
     setEnv({ NEXT_RUNTIME: 'nodejs', NODE_ENV: 'production', SUPABASE_DB_HOST: POOLER, SUPABASE_DB_PORT: '54322' });
-    sendSlackAlert.mockImplementation(() => new Promise((_, reject) => setTimeout(() => reject(new Error('slack down')), 50)));
-    const t0 = Date.now();
-    await expect(register()).resolves.toBeUndefined();
-    expect(Date.now() - t0).toBeLessThan(40); // returned before the alert settled
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    // A controlled promise instead of a timer: the alert stays pending until the test settles it.
+    let failAlert!: (e: Error) => void;
+    sendSlackAlert.mockReturnValue(new Promise((_, reject) => (failAlert = reject)));
+    let settled = false;
+    const run = register().then(() => {
+      settled = true;
+    });
+    const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
+    for (let i = 0; i < 50 && sendSlackAlert.mock.calls.length === 0; i++) await turn();
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1);
+    await turn();
+    expect(settled).toBe(true); // register() is done although the alert has not settled
+    failAlert(new Error('slack down'));
+    await expect(run).resolves.toBeUndefined();
+    await turn();
   });
 });
