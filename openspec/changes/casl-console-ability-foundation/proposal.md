@@ -20,9 +20,6 @@ server gate and the UI. It cannot yet carry a domain whose permissions depend on
 - **Real console defects follow from this:**
   - The softphone shows consult and conference (`call-bar.tsx:339`), and monitor, takeover and close
     (`softphone-panel.tsx:1042`), on feature flags alone. The routes refuse without `manage_voice`.
-  - The panel mounts on `console_me.vox_username` (`admin/layout.tsx:116,136`,
-    `softphone-panel.tsx:222`), which an inactive agent also has. The agent then gets 403 from
-    `/api/agents/sdk-auth`.
   - Operational constants are copied by hand between server and client (`call-bar.tsx:66-71`,
     `ai-handoff-section.tsx:37`, "KEEP IN SYNC").
 
@@ -60,7 +57,6 @@ There are at least 366 hard-coded key decisions in 142 files.
   The 12 route literals are replaced by `requireConsoleAction`.
 - **Console UI:**
   - the call-bar and AI-handoff controls show only when `canOn(...)` AND the feature flag allow;
-  - the softphone mounts on `is_console_agent()`, not on `console_me.vox_username`;
   - a 403 from a console route triggers `router.refresh()`, which reloads the rules.
 - **Reserved names:** no subject or action is named `manage` or `all`, because CASL treats them as
   wildcards.
@@ -88,6 +84,10 @@ There are at least 366 hard-coded key decisions in 142 files.
 
 ## Impact
 
+- **Already fixed outside this change:** the softphone used to mount on `console_me.vox_username`, which
+  an inactive agent also has. `admin/layout.tsx` now requires `is_console_agent()`, and
+  `layout.test.tsx` covers it. It needed no CASL.
+
 - **Code:**
   - `src/lib/casl.ts` (extended, Package entries unchanged);
   - `src/lib/auth/platform-ability.ts`, `src/lib/auth/dal.ts`, `src/lib/auth/console-agent.ts`;
@@ -96,7 +96,6 @@ There are at least 366 hard-coded key decisions in 142 files.
   - `src/lib/data/console-calls.ts` and `src/lib/data/call-attempts.ts` (re-export the constants;
     their API is unchanged);
   - `src/components/console/call-bar.tsx`, `ai-handoff-section.tsx` and `softphone-panel.tsx`;
-  - `src/app/(admin)/admin/layout.tsx`;
   - 12 route files under `src/app/api/{console-calls,calls,campaigns,events}`.
 - **Database:** one migration with the function only, `SECURITY DEFINER` with `search_path=''`,
   EXECUTE for `authenticated` only. No table, policy or grant change.

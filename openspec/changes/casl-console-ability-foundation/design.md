@@ -178,9 +178,6 @@ The route tests mock `callerHasPlatformPermission`, so they stay valid unchanged
   - `softphone-panel.tsx:1042` and the controls in `ai-handoff-section.tsx`: `handoffEnabled &&
     canOn(ability, 'monitor' | 'command' | 'end', 'AiCall', row)`.
   - The ability comes from the existing `PlatformAbilityProvider`, which already wraps the admin shell.
-- **Mount gate.** `admin/layout.tsx` adds `rpc('is_console_agent')` to its `Promise.all`, and
-  `softphone.enabled` requires it. That is one extra RPC, offset by D1. `console_me` is still read for
-  `vox_username` and `display_name`.
 - **Refresh contract.** A console fetch that receives 403 calls `router.refresh()` once. The layout then
   re-renders and the provider gets fresh rules. Plain navigation does not re-render the layout (Next
   docs), which is why the refresh is needed. There is no Realtime on RBAC tables and no polling.
@@ -222,8 +219,7 @@ parallel catalogue.
   that say yes while the database says no, and expects 403. This is the pilot's open evaluation item 4.
 - **UI (component tests).**
   - an agent without the key sees none of the six controls;
-  - an agent with the key sees them only in the right call state;
-  - an inactive agent gets no panel.
+  - an agent with the key sees them only in the right call state.
 - **Cost.**
   - one key RPC per admin render, measured with a counting mock;
   - the bundle delta, re-measured with the pilot's `evidence/measure-bundle-size.cjs`.
@@ -232,9 +228,6 @@ parallel catalogue.
 
 ## Risks / Trade-offs
 
-- **[The mount gate hides the panel from an agent who should have it]** → The gate is
-  `is_console_agent()`, the same check `sdk-auth` already makes, so such an agent could not sign in to
-  the SDK today anyway. Verify in a browser as an active and as an inactive agent.
 - **[The new function drifts from `has_platform_permission`]** → P1 runs in the local suite. Both
   functions read the same three tables.
 - **[A type-only check over-grants in the UI]** → The P4 guard. In any case the server refuses (D5).
@@ -253,7 +246,7 @@ Steps:
 4. `call-rules.ts`. The routes and data modules re-export from it.
 5. The console subjects, the condition table, and the P2, P3 and P4 checks.
 6. `requireConsoleAction` in the 12 routes.
-7. The UI: `canOn`, the mount gate, the refresh contract.
+7. The UI: `canOn` and the refresh contract.
 
 Deploy:
 - The function migration is additive. Pushing it to `main` deploys it through the Supabase GitHub

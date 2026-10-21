@@ -63,19 +63,6 @@ client can see SHALL pass. The server may still refuse for facts only it can see
 - **THEN** every combination for which a control is shown passes the server's corresponding operational
   checks
 
-### Requirement: The softphone mounts only for an active agent
-The softphone SHALL be mounted only for a caller who is an active console agent. A registered agent who
-is not active SHALL keep seeing its profile, so the interface can say "not active", but SHALL get no
-softphone.
-
-#### Scenario: Inactive agent
-- **WHEN** an agent whose `vox_active` is false opens the admin area
-- **THEN** no softphone is mounted and no SDK sign-in request is sent
-
-#### Scenario: Active agent
-- **WHEN** an active agent opens the admin area with the softphone flag on
-- **THEN** the softphone is mounted as today
-
 ### Requirement: Decisions that stay outside the action ability
 The following SHALL NOT be decided by the action ability:
 - being an active agent;

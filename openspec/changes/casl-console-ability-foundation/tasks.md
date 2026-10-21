@@ -79,9 +79,6 @@ Ground rules:
   flag. A 403 from these fetches calls `router.refresh()` once. Verify, in component tests:
   - an agent without `manage_voice` sees none of the six controls;
   - an agent with the key sees them only for a connected, consultable or non-terminal call.
-- [ ] 6.2 `admin/layout.tsx`: the mount gate requires `rpc('is_console_agent')`. Verify:
-  - a layout test shows that an inactive agent gets `enabled: false` and no `sdk-auth` request;
-  - an active agent is unchanged.
 
 ## 7. Verification
 
@@ -93,10 +90,9 @@ Ground rules:
 
   Record the counts, the RPC count and the bundle delta in `verification.md` in this change, with one
   section per layer (unit/mock, local SQL, PostgREST, CI).
-- [ ] 7.2 Browser check by the owner, as an active agent with `manage_voice`, an active agent without it,
-  and an inactive agent:
+- [ ] 7.2 Browser check by the owner, as an active agent with `manage_voice` and an active agent without
+  it:
   - controls per call state;
-  - no panel for the inactive agent;
   - revoke a key while the page is open: 403, then refresh, then the control is gone.
 
   Record the results in `verification.md`.
