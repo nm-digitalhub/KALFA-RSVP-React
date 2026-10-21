@@ -281,9 +281,15 @@ async function processGraphMail(row: WebhookInboxRow): Promise<void> {
 // typed-in reply (the common "כן אגיע" / "הסר" case, not a swipe/button) — so a
 // billable reach AND any opt-out it carries are never silently dropped (the
 // context.id path adds precision on top of it). Double-bill-safe either way:
-// insertInteraction's
-// UNIQUE(channel, provider_id) on this inbound message_id + the `fresh` gate bill
-// at most once. Only when NEITHER context nor phone resolves is it recorded
+// billed_results UNIQUE(event_id, contact_id) makes recordReached idempotent
+// ('already_billed' on replay). Like processCallResult, every side effect here
+// is idempotent on its own, so a retry after a partial failure re-runs whatever
+// did not complete. `fresh` (insertInteraction's UNIQUE(channel, provider_id))
+// gates ONLY the non-idempotent effects: outbound WhatsApp messages.
+// Accepted costs: a retry of an old row may overwrite a newer RSVP
+// (submit_rsvp is last-write-wins), and a crash between submitRsvp and
+// recordRsvpFromWhatsapp leaves no marker (the retry sees unchanged:true).
+// Only when NEITHER context nor phone resolves is it recorded
 // processed without billing.
 async function processMessage(
   row: WebhookInboxRow,
@@ -361,8 +367,11 @@ async function processMessage(
     (payload.from ? await resolveInboundContact(payload.from) : null);
   if (!resolved) return;
 
-  // Dedupe FIRST (UNIQUE(channel, provider_id)) so a re-processed/duplicate row
-  // can't double-bill; recordReached then stays gated by `fresh`.
+  // Interaction row first (UNIQUE(channel, provider_id)). `fresh` is true only on
+  // the call that inserted it. It is NOT a gate for billing: if the process died
+  // after this insert but before billing, the retry would see fresh=false and
+  // the reach would be lost forever. recordReached is idempotent, so it runs
+  // on every attempt.
   const fresh = await insertInteraction({
     event_id: resolved.eventId,
     campaign_id: resolved.campaignId,
@@ -375,7 +384,7 @@ async function processMessage(
     billable: true,
   });
 
-  if (fresh) {
+  {
     const outcome = await recordReached({
       eventId: resolved.eventId,
       campaignId: resolved.campaignId,
@@ -389,7 +398,8 @@ async function processMessage(
     });
     // Keep the RPC's verdict next to the classification so the inspector shows
     // "billed" vs "refused: not_active / not_authorized / …" per inbound message.
-    if (typeof outcome === 'string') {
+    // Last write wins: a replay may report 'already_billed' over 'billed'.
+    if (typeof outcome === 'string' && outcome !== 'already_billed') {
       await setInteractionBillingOutcome({
         channel: 'whatsapp',
         providerId: messageId,
@@ -408,8 +418,10 @@ async function processMessage(
 
   // A recognized RSVP quick-reply BUTTON records the RSVP through the same
   // atomic submit_rsvp gate the public form uses — no RSVP rule is reimplemented
-  // here. Gated on `fresh` (NOT just the RPC's data-idempotency) so a Meta retry
-  // of the same inbound wamid cannot append duplicate audit rows. attending needs
+  // here. NOT gated on `fresh`: submit_rsvp is idempotent, so a retry after a
+  // partial failure re-applies it safely, and the source marker is written only
+  // when the RSVP actually changed (no duplicate audit rows). Only the headcount
+  // question — an outbound WhatsApp message — stays gated on `fresh`. attending needs
   // >= 1 attendee (submit_rsvp rejects 0), so it defaults to a single adult and
   // the guest refines exact counts via the link; declined/maybe carry no counts
   // (the RPC zeroes them). A non-RSVP reply id leaves rsvpStatus undefined → no
@@ -417,7 +429,7 @@ async function processMessage(
   // submit_rsvp gates a revoked/closed/expired one (outcome.ok === false → no
   // source marker).
   const rsvpStatus = replyId ? RSVP_BUTTON_MAP[replyId] : undefined;
-  if (fresh && rsvpStatus) {
+  if (rsvpStatus) {
     // ריבוי-אורחים: contact אחד (טלפון) יכול לגבות כמה guests — ל-guests.contact_id
     // אין ייחודיות, ו-contacts ייחודי רק לפי (event_id, normalized_phone). לכן
     // לחיצת "מגיע" מטלפון משותף דו-משמעית לגבי איזה אורח התכוון. רושמים RSVP רק
@@ -436,13 +448,14 @@ async function processMessage(
         adults: rsvpStatus === 'attending' ? 1 : 0,
         kids: 0,
       });
-      if (outcome.ok) {
+      if (outcome.ok && !outcome.unchanged) {
         await recordRsvpFromWhatsapp(resolved.eventId, guest.id, rsvpStatus);
-        // Headcount flow: right after an ATTENDING press, ask "כמה תגיעו?"
-        // inside the 24h window the press just opened. Fail-soft inside.
-        if (rsvpStatus === 'attending') {
-          await requestHeadcount(guest.id, resolved.contactId);
-        }
+      }
+      // Headcount flow: right after an ATTENDING press, ask "כמה תגיעו?"
+      // inside the 24h window the press just opened. Fail-soft inside.
+      // Not idempotent (sends a WhatsApp message), so only on the first delivery.
+      if (fresh && outcome.ok && rsvpStatus === 'attending') {
+        await requestHeadcount(guest.id, resolved.contactId);
       }
     }
   }

@@ -61,6 +61,7 @@ import {
 } from '@/lib/data/interactions';
 import { recordReached } from '@/lib/data/billing';
 import { submitRsvp } from '@/lib/data/rsvp';
+import { requestHeadcount } from '@/lib/data/headcount';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { recordOwnerAgentDelivery } from '@/lib/owner-agent/delivery';
 import {
@@ -205,11 +206,27 @@ describe('processWebhookEvent — message', () => {
     });
   });
 
-  it('does not touch the billing verdict when the interaction was a duplicate (no RPC call)', async () => {
+  it('a duplicate interaction still runs the idempotent billing RPC (a crash after the insert must not lose the reach)', async () => {
+    // fresh === false: the interaction row exists from an earlier attempt that
+    // may have died before billing. recordReached is idempotent on
+    // billed_results UNIQUE(event_id, contact_id), so it runs again; on replay it
+    // answers 'already_billed', which must NOT overwrite the stored 'billed' verdict.
+    vi.mocked(insertInteraction).mockResolvedValueOnce(false);
+    vi.mocked(recordReached).mockResolvedValueOnce('already_billed');
+    await processWebhookEvent(messageRow());
+    expect(recordReached).toHaveBeenCalledTimes(1);
+    expect(setInteractionBillingOutcome).not.toHaveBeenCalled();
+  });
+
+  it('a duplicate interaction whose first attempt never billed is billed now (verdict recorded)', async () => {
     vi.mocked(insertInteraction).mockResolvedValueOnce(false);
     await processWebhookEvent(messageRow());
-    expect(recordReached).not.toHaveBeenCalled();
-    expect(setInteractionBillingOutcome).not.toHaveBeenCalled();
+    expect(recordReached).toHaveBeenCalledTimes(1);
+    expect(setInteractionBillingOutcome).toHaveBeenCalledWith({
+      channel: 'whatsapp',
+      providerId: 'wamid.in',
+      outcome: 'billed',
+    });
   });
 
   it('a removal reply bills FIRST, then sets removal_requested', async () => {
@@ -228,14 +245,16 @@ describe('processWebhookEvent — message', () => {
     );
   });
 
-  it('honors removal on a deduped re-process without re-billing', async () => {
+  it('honors removal on a deduped re-process; the replayed billing RPC is idempotent (already_billed)', async () => {
     vi.mocked(insertInteraction).mockResolvedValue(false);
+    vi.mocked(recordReached).mockResolvedValue('already_billed');
 
     await processWebhookEvent(
       messageRow({ payload: { type: 'text', text: { body: 'הסר' } } }),
     );
 
-    expect(recordReached).not.toHaveBeenCalled();
+    expect(recordReached).toHaveBeenCalledTimes(1);
+    expect(setInteractionBillingOutcome).not.toHaveBeenCalled();
     expect(markContactRemovalRequested).toHaveBeenCalledWith('k1');
   });
 
@@ -433,19 +452,62 @@ describe('processWebhookEvent — RSVP from a quick-reply button (C9)', () => {
     expect(recordRsvpFromWhatsapp).not.toHaveBeenCalled();
   });
 
-  it('skips the RSVP submit on a deduped re-process (no duplicate audit rows)', async () => {
-    // fresh === false: the reach was already billed; the RSVP block must not
-    // re-run submit_rsvp/marker, or a Meta retry would double the audit rows.
+  it('a deduped re-process re-applies the idempotent submit_rsvp but writes no duplicate marker when unchanged', async () => {
+    // fresh === false: an earlier attempt may have died between the interaction
+    // insert and the RSVP write, so submit_rsvp re-runs (idempotent). The source
+    // marker is written only when the RSVP actually changed — a Meta retry of an
+    // already-applied press adds no audit row.
+    vi.mocked(insertInteraction).mockResolvedValue(false);
+    vi.mocked(recordReached).mockResolvedValue('already_billed');
+    vi.mocked(submitRsvp).mockResolvedValue({ ok: true, status: 'attending', unchanged: true });
+
+    await processWebhookEvent(
+      buttonRow({ type: 'button', button: { payload: 'rsvp_attending' } }),
+    );
+
+    expect(submitRsvp).toHaveBeenCalledTimes(1);
+    expect(recordRsvpFromWhatsapp).not.toHaveBeenCalled();
+  });
+
+  it('a deduped re-process whose first attempt never applied the RSVP applies it now (marker written)', async () => {
     vi.mocked(insertInteraction).mockResolvedValue(false);
 
     await processWebhookEvent(
       buttonRow({ type: 'button', button: { payload: 'rsvp_attending' } }),
     );
 
-    expect(recordReached).not.toHaveBeenCalled();
-    expect(getGuestsForContact).not.toHaveBeenCalled();
-    expect(submitRsvp).not.toHaveBeenCalled();
+    expect(submitRsvp).toHaveBeenCalledTimes(1);
+    expect(recordRsvpFromWhatsapp).toHaveBeenCalledWith('e1', 'g1', 'attending');
+  });
+
+  it('an ATTENDING press asks the headcount question on the first delivery only', async () => {
+    await processWebhookEvent(
+      buttonRow({ type: 'button', button: { payload: 'rsvp_attending' } }),
+    );
+    expect(requestHeadcount).toHaveBeenCalledWith('g1', 'k1');
+  });
+
+  it('a deduped re-process NEVER re-sends the headcount question (outbound WhatsApp is not idempotent)', async () => {
+    vi.mocked(insertInteraction).mockResolvedValue(false);
+
+    await processWebhookEvent(
+      buttonRow({ type: 'button', button: { payload: 'rsvp_attending' } }),
+    );
+
+    expect(submitRsvp).toHaveBeenCalledTimes(1);
+    expect(requestHeadcount).not.toHaveBeenCalled();
+  });
+
+  it('an unchanged first-delivery ATTENDING press still asks the headcount question', async () => {
+    // unchanged gates only the audit marker; the question follows `fresh`.
+    vi.mocked(submitRsvp).mockResolvedValue({ ok: true, status: 'attending', unchanged: true });
+
+    await processWebhookEvent(
+      buttonRow({ type: 'button', button: { payload: 'rsvp_attending' } }),
+    );
+
     expect(recordRsvpFromWhatsapp).not.toHaveBeenCalled();
+    expect(requestHeadcount).toHaveBeenCalledWith('g1', 'k1');
   });
 
   it('does NOT write the source marker when submit_rsvp rejects (e.g. revoked/closed)', async () => {
