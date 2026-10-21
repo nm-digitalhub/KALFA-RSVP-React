@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
 const sendSlackAlert = vi.fn();
 const readDeployId = vi.fn(() => null as string | null);
@@ -16,7 +16,31 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }));
 
+// register()'s startup check must never construct a database client or a pg-boss
+// instance — these count any attempt.
+const db = vi.hoisted(() => ({ pgClients: 0, bosses: 0 }));
+vi.mock('pg', () => ({
+  Client: class {
+    constructor() {
+      db.pgClients++;
+    }
+  },
+  Pool: class {
+    constructor() {
+      db.pgClients++;
+    }
+  },
+}));
+vi.mock('pg-boss', () => ({
+  PgBoss: class {
+    constructor() {
+      db.bosses++;
+    }
+  },
+}));
+
 import {
+  register,
   isDestinationStreamClosedError,
   isRouterStateParseError,
   isClientDisconnectError,
@@ -330,5 +354,83 @@ describe('onRequestError writes ops_errors independent of Slack', () => {
       ctx,
     );
     expect(opsErrorInsert).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('register — database configuration startup check (report-only)', () => {
+  const FLAG = Symbol.for('kalfa.instrumentation.db-config-checked');
+  const POOLER = 'aws-1-ap-south-1.pooler.supabase.com';
+  const setEnv = (env: Record<string, string>) => {
+    for (const [k, v] of Object.entries(env)) vi.stubEnv(k, v);
+  };
+  const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 5));
+  let log: MockInstance<typeof console.log>;
+  let err: MockInstance<typeof console.error>;
+
+  beforeEach(() => {
+    delete (globalThis as unknown as Record<symbol, unknown>)[FLAG];
+    sendSlackAlert.mockReset();
+    db.pgClients = 0;
+    db.bosses = 0;
+    log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    return () => {
+      vi.unstubAllEnvs();
+      log.mockRestore();
+      err.mockRestore();
+    };
+  });
+
+  it('a refused target is logged and alerted once — the server is not stopped and nothing connects', async () => {
+    setEnv({ NEXT_RUNTIME: 'nodejs', NODE_ENV: 'production', SUPABASE_DB_HOST: POOLER, SUPABASE_DB_PORT: '54322', SUPABASE_DB_PASSWORD: 'pw-secret', SUPABASE_DB_USER: 'postgres.refsecret' });
+    await expect(register()).resolves.toBeUndefined(); // report-only: no throw, boot continues
+    await flush();
+    const line = err.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(line).toMatch(/\[db-config\] startup check FAILED .*SUPABASE_DB_PORT=54322/);
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1);
+    expect(sendSlackAlert.mock.calls[0][0]).toMatchObject({ level: 'error', source: 'kalfa-beta-startup' });
+    const everything = JSON.stringify([err.mock.calls, log.mock.calls, sendSlackAlert.mock.calls]);
+    for (const secret of [POOLER, 'pw-secret', 'postgres.refsecret']) expect(everything).not.toContain(secret);
+    expect(db).toEqual({ pgClients: 0, bosses: 0 });
+  });
+
+  it('a valid target logs one clear pass line and sends no alert', async () => {
+    setEnv({ NEXT_RUNTIME: 'nodejs', NODE_ENV: 'production', SUPABASE_DB_HOST: POOLER, SUPABASE_DB_PORT: '5432' });
+    await register();
+    await flush();
+    expect(log.mock.calls.map((c) => c.join(' '))).toEqual(['[db-config] startup check passed (web sender database target)']);
+    expect(err).not.toHaveBeenCalled();
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+    expect(db).toEqual({ pgClients: 0, bosses: 0 });
+  });
+
+  it('runs once per process: a second register() call is a no-op', async () => {
+    setEnv({ NEXT_RUNTIME: 'nodejs', NODE_ENV: 'production', SUPABASE_DB_HOST: POOLER, SUPABASE_DB_PORT: '54322' });
+    await register();
+    await register();
+    await flush();
+    expect(err.mock.calls.filter((c) => String(c[0]).includes('[db-config]'))).toHaveLength(1);
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing outside the Node.js server runtime (edge, or unset)', async () => {
+    for (const NEXT_RUNTIME of ['edge', '']) {
+      setEnv({ NEXT_RUNTIME, NODE_ENV: 'production', SUPABASE_DB_HOST: POOLER, SUPABASE_DB_PORT: '54322' });
+      await register();
+    }
+    await flush();
+    expect(log).not.toHaveBeenCalled();
+    expect(err).not.toHaveBeenCalled();
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+    expect((globalThis as unknown as Record<symbol, unknown>)[FLAG]).toBeUndefined();
+  });
+
+  it('a failing alert transport does not reject register() or delay it', async () => {
+    setEnv({ NEXT_RUNTIME: 'nodejs', NODE_ENV: 'production', SUPABASE_DB_HOST: POOLER, SUPABASE_DB_PORT: '54322' });
+    sendSlackAlert.mockImplementation(() => new Promise((_, reject) => setTimeout(() => reject(new Error('slack down')), 50)));
+    const t0 = Date.now();
+    await expect(register()).resolves.toBeUndefined();
+    expect(Date.now() - t0).toBeLessThan(40); // returned before the alert settled
+    await new Promise((resolve) => setTimeout(resolve, 80));
   });
 });

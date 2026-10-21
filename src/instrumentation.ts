@@ -7,10 +7,11 @@ import { rateLimit } from '@/lib/security/rate-limit';
 // inside `src` alongside `pages` and `app`"
 // (node_modules/next/dist/docs/01-app/02-guides/instrumentation.md).
 //
-// We only need `onRequestError`, the optional hook Next calls when the server
+// We need `onRequestError`, the optional hook Next calls when the server
 // captures a request error (docs: 01-app/03-api-reference/03-file-conventions/
-// instrumentation.md). The `register` export is for run-once startup code and
-// is not required for error capture, so it is intentionally omitted.
+// instrumentation.md), and `register` — called ONCE per server instance before
+// it serves requests, never during `next build` — for the database
+// configuration startup check below.
 //
 // `@slack/web-api` depends on Node's HTTP stack, so the actual send is loaded
 // (dynamic import) and invoked ONLY in the Node.js runtime — mirroring the
@@ -246,3 +247,55 @@ export const onRequestError: Instrumentation.onRequestError = async (err, reques
     // Fail-safe: an error hook must never throw.
   }
 };
+
+// ── Database configuration startup check (kalfa-beta) ─────────────────────────
+//
+// The web tier opens its database connection LAZILY (src/lib/queue/web-sender.ts:
+// only on the first pg-boss send), so a refused database host / port pairing
+// would otherwise surface only when a user action first enqueues a job — the
+// 2026-10-20/21 incident. This check reports it at server start instead.
+//
+//   - CONFIGURATION ONLY: checkSupabaseDbTarget is pure — no connection, no DNS,
+//     no pg / pg-boss import; the web sender stays lazy and is not touched.
+//   - REPORT-ONLY, by decision: a failure is logged and alerted, and the server
+//     starts as before. Pages, auth and Supabase REST do not use this connection,
+//     so refusing to boot would turn a partial fault into a full outage; the
+//     sends themselves are still refused at the connection site (supabaseDbPort).
+//     The worker and the owner agent, whose only job needs the pooler, do refuse
+//     to start.
+//   - ONCE: Next calls register once per server instance and never during
+//     `next build`; the process-wide flag below also makes a repeated call a no-op.
+//   - Never delays readiness: the alert is fired, not awaited, and every failure
+//     of the check itself is swallowed after one log line.
+const DB_CONFIG_CHECKED = Symbol.for('kalfa.instrumentation.db-config-checked');
+
+export async function register(): Promise<void> {
+  if (process.env.NEXT_RUNTIME !== 'nodejs') return;
+  const flags = globalThis as unknown as Record<symbol, boolean | undefined>;
+  if (flags[DB_CONFIG_CHECKED]) return;
+  flags[DB_CONFIG_CHECKED] = true;
+  try {
+    const { checkSupabaseDbTarget } = await import('@/lib/relocation/env-validation');
+    const outcome = checkSupabaseDbTarget(process.env);
+    if (outcome.ok) {
+      console.log('[db-config] startup check passed (web sender database target)');
+      return;
+    }
+    console.error(
+      `[db-config] startup check FAILED — every pg-boss send from the web tier will be refused until fixed: ${outcome.reason}`,
+    );
+    void import('@/lib/alerts/slack')
+      .then(({ sendSlackAlert }) =>
+        sendSlackAlert({
+          level: 'error',
+          title: 'web database configuration invalid',
+          detail: outcome.reason, // names the port only — no host, user or password
+          source: 'kalfa-beta-startup',
+          category: 'errors',
+        }),
+      )
+      .catch(() => undefined);
+  } catch (e) {
+    console.error('[db-config] startup check could not run:', (e as Error)?.name ?? 'Error');
+  }
+}
