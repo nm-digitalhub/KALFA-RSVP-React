@@ -187,7 +187,7 @@ describe.skipIf(!RUN)(`console findings — behavioural verification (local, rol
     expect(v).toEqual({ agentInactive: 1, regular: 0, staffNotAgent: 0 });
   });
 
-  it('G2/P02: an INACTIVE agent cannot insert its shift row (42501); UPDATE with WHERE hits 0 rows (SELECT policy applies), UPDATE without WHERE is recorded', async () => {
+  it('G2/P02: an INACTIVE agent cannot insert its shift row (42501); after S1 UPDATE with or without WHERE hits 0 rows (update policy requires is_console_agent())', async () => {
     const ins = await as('agentInactive', `insert into public.console_agent_shift (agent_id, active) values ($1, true)`, [ids.agentInactive]);
     await c.query(`insert into public.console_agent_shift (agent_id, active) values ($1, false)`, [ids.agentInactive]);
     const upd = await as('agentInactive', `update public.console_agent_shift set active = true where agent_id = $1`, [ids.agentInactive]);
@@ -199,10 +199,10 @@ describe.skipIf(!RUN)(`console findings — behavioural verification (local, rol
       update_no_where: updNoWhere.ok ? updNoWhere.count : updNoWhere.code,
       update_no_where_returning: updReturning.ok ? updReturning.count : updReturning.code,
     });
-    expect(v).toMatchObject({ insert: '42501', update_where: 0 });
+    expect(v).toMatchObject({ insert: '42501', update_where: 0, update_no_where: 0 });
   });
 
-  it('G3/S-07: a non-agent gets different outcomes per operation (insert 42501, update/delete 0 rows, TRUNCATE allowed)', async () => {
+  it('G3/S-07: a non-agent gets different outcomes per operation (insert 42501, feed update 0 rows; after S1 shift DELETE/TRUNCATE refused)', async () => {
     const v = record('nonagent_ops', {
       chat_insert: n(await as('regular', `insert into public.console_chat_messages (author_id, body) values ($1, 'x')`, [ids.regular])),
       shift_insert: n(await as('regular', `insert into public.console_agent_shift (agent_id, active) values ($1, true)`, [ids.regular])),
@@ -217,19 +217,18 @@ describe.skipIf(!RUN)(`console findings — behavioural verification (local, rol
       shift_insert: '42501',
       agent_status_insert: '42501',
       call_feed_update: 0,
-      shift_delete: 0,
-      shift_truncate: 'ALLOWED',
+      shift_delete: '42501',
+      shift_truncate: 'refused',
       call_pii_select: '42501',
     });
   });
 
-  it('G1/G6: authenticated holds MAINTAIN on console_agent_shift (ANALYZE runs without a permission warning)', async () => {
+  it('G1/G6: after S1 authenticated holds no MAINTAIN on console_agent_shift (ANALYZE is skipped with a permission warning)', async () => {
     notices.length = 0;
     const r = await as('regular', `analyze public.console_agent_shift`);
     const warned = notices.some((m) => /permission denied/i.test(m));
     record('maintain_analyze', { ok: r.ok, warned, notices: [...notices] });
-    expect(r.ok).toBe(true);
-    expect(warned).toBe(false);
+    expect(!r.ok || warned).toBe(true);
     // Control: anon has no MAINTAIN and gets a refusal or a skip warning.
     notices.length = 0;
     const a = await as('anon', `analyze public.console_agent_shift`);
@@ -238,13 +237,13 @@ describe.skipIf(!RUN)(`console findings — behavioural verification (local, rol
     expect(anonWarned).toBe(true);
   });
 
-  it('V-02: an active agent reads guests and RSVP answers of an event OUTSIDE the console_events scope', async () => {
+  it('V-02 after S2: an active agent reads NO guests or RSVP answers of an event outside the console scope', async () => {
     const v = record('scope_eventB', {
       console_events: n(await as('agentNoVcd', `select count(*)::int n from public.console_events where event_id = $1`, [eventB])),
       console_event_guests: n(await as('agentNoVcd', `select count(*)::int n from public.console_event_guests where event_id = $1 and guest_name = $2`, [eventB, `${MARK}-guestB`])),
       console_rsvp_results: n(await as('agentNoVcd', `select count(*)::int n from public.console_rsvp_results where event_id = $1 and note = $2`, [eventB, `${MARK}-noteB`])),
     });
-    expect(v).toEqual({ console_events: 0, console_event_guests: 1, console_rsvp_results: 1 });
+    expect(v).toEqual({ console_events: 0, console_event_guests: 0, console_rsvp_results: 0 });
   });
 
   it('V-04/S-01: the roster reports provisioned=true for every fixture agent, computed from console_agent_secrets', async () => {
@@ -254,26 +253,14 @@ describe.skipIf(!RUN)(`console findings — behavioural verification (local, rol
     expect(v).toMatchObject({ agentNoVcd: true, agentVcd: true });
   });
 
-  it('S-01/W-04/P11 (simulated D4 main option): own-row secrets policy makes every COLLEAGUE provisioned=false', async () => {
-    const v = await simulated(
-      `drop policy console_agent_secrets_select on public.console_agent_secrets;
-       create policy console_agent_secrets_select on public.console_agent_secrets for select to authenticated
-         using (user_id = (select auth.uid()) and (select public.is_console_agent()))`,
-      async () => {
-        const r = await as('agentNoVcd', `select user_id::text, provisioned from public.console_agents_roster where user_id = any($1::uuid[])`, [Object.values(ids)]);
-        return r.ok ? Object.fromEntries(r.rows.map((x) => [Object.entries(ids).find(([, id]) => id === x.user_id)?.[0], x.provisioned])) : r.code;
-      },
+  it('S-01/W-04/P11 after S1: the roster no longer reads console_agent_secrets — removing every client privilege on it cannot change the roster', async () => {
+    const before = n(await as('agentNoVcd', `select count(*)::int n from public.console_agents_roster where provisioned`));
+    const v = await simulated(`revoke all on public.console_agent_secrets from anon, authenticated, public`, async () =>
+      n(await as('agentNoVcd', `select count(*)::int n from public.console_agents_roster where provisioned`)),
     );
-    record('roster_d4_own_row', v);
-    expect(v).toMatchObject({ agentNoVcd: true, agentVcd: false });
-  });
-
-  it('S-01/W-04/P11 (simulated D4 alternative): revoking the user_id column grant makes the roster query fail with 42501', async () => {
-    const v = await simulated(`revoke select (user_id) on public.console_agent_secrets from authenticated`, async () =>
-      n(await as('agentNoVcd', `select count(*)::int n from public.console_agents_roster`)),
-    );
-    record('roster_d4_revoke', v);
-    expect(v).toBe('42501');
+    record('roster_after_s1_independent_of_secret_grants', { before, after: v });
+    expect(v).toBe(before);
+    expect(before).toBe(3);
   });
 
   it('V-08/P20: an agent WITHOUT view_customer_data reads rsvp_digit, chat body and console_calls guest/contact/caller columns', async () => {
@@ -365,126 +352,5 @@ describe.skipIf(!RUN)(`console findings — behavioural verification (local, rol
       insert_queues: n(await as('agentVcd', `insert into public.console_queues default values`)),
     });
     expect(v).toEqual({ select_queues: true, select_agent_queues: true, select_presence: true, insert_queues: '42501' });
-  });
-});
-
-// ── Proposed design, simulated (each block: apply inside a SAVEPOINT, observe as clients, roll back) ──
-
-const ROSTER_NEW = `
-  create function public.console_agent_provisioned(p_user_id uuid) returns boolean
-    language sql stable security definer set search_path = ''
-    as $f$ select (select public.is_console_agent())
-              and exists (select 1 from public.console_agent_secrets s where s.user_id = p_user_id) $f$;
-  revoke all on function public.console_agent_provisioned(uuid) from public, anon;
-  grant execute on function public.console_agent_provisioned(uuid) to authenticated;
-  create or replace view public.console_agents_roster with (security_invoker = on) as
-    select ca.user_id, ca.display_name, coalesce(ast.status, 'not_ready'::text) as status,
-           ast.updated_at as status_updated_at,
-           ((ca.vox_username is not null) and public.console_agent_provisioned(ca.user_id)) as provisioned,
-           cp.busy_until as calendar_busy_until, cp.show_as as calendar_show_as
-      from public.console_agents ca
-      left join public.agent_status ast on ast.agent_id = ca.user_id
-      left join public.console_agent_calendar_presence cp on cp.agent_id = ca.user_id
-     where public.is_console_agent();
-  drop policy console_agent_secrets_select on public.console_agent_secrets;
-  revoke all on public.console_agent_secrets from anon, authenticated;`;
-
-const rosterMap = async (who: Persona) => {
-  const r = await as(who, `select user_id::text, provisioned from public.console_agents_roster where user_id = any($1::uuid[])`, [Object.values(ids)]);
-  return r.ok ? Object.fromEntries(r.rows.map((x) => [Object.entries(ids).find(([, id]) => id === x.user_id)?.[0], x.provisioned])) : r.code;
-};
-
-describe.skipIf(!RUN)(`console design — simulated proposals (local, rolled back) [${MARK}]`, () => {
-  it('NEW D4: provisioned via a definer helper keeps the roster identical while console_agent_secrets closes to every client', async () => {
-    const before = { agentNoVcd: await rosterMap('agentNoVcd'), agentVcd: await rosterMap('agentVcd') };
-    const after = await simulated(ROSTER_NEW, async () => ({
-      roster_agentNoVcd: await rosterMap('agentNoVcd'),
-      roster_agentVcd: await rosterMap('agentVcd'),
-      roster_regular: n(await as('regular', `select count(*)::int n from public.console_agents_roster`)),
-      roster_anon: n(await as('anon', `select count(*)::int n from public.console_agents_roster`)),
-      secrets_user_id_agent: n(await as('agentVcd', `select count(*)::int n from public.console_agent_secrets`)),
-      secrets_password_agent: n(await as('agentVcd', `select vox_password from public.console_agent_secrets`)),
-      rpc_regular: (await as('regular', `select public.console_agent_provisioned($1) v`, [ids.agentVcd])) as R,
-      rpc_anon: n(await as('anon', `select public.console_agent_provisioned($1) v`, [ids.agentVcd])),
-    }));
-    const flat = { ...after, rpc_regular: after.rpc_regular.ok ? after.rpc_regular.rows[0].v : after.rpc_regular.code };
-    record('sim_new_d4', { before, after: flat });
-    expect(flat.roster_agentNoVcd).toEqual(before.agentNoVcd);
-    expect(flat.roster_agentVcd).toEqual(before.agentVcd);
-    expect(flat).toMatchObject({ roster_regular: 0, roster_anon: '42501', secrets_user_id_agent: '42501', secrets_password_agent: '42501', rpc_regular: false, rpc_anon: '42501' });
-  });
-
-  it('NEW D4: an agent WITHOUT a secret still shows provisioned=false (semantics preserved)', async () => {
-    const v = await simulated(`${ROSTER_NEW} delete from public.console_agent_secrets where user_id = '${ids.agentInactive}';`, async () => rosterMap('agentNoVcd'));
-    record('sim_new_d4_no_secret', v);
-    expect(v).toMatchObject({ agentNoVcd: true, agentVcd: true, agentInactive: false });
-  });
-
-  it('NEW scope rule: guests/RSVP limited to console-scope events — in-scope work unchanged, out-of-scope event hidden', async () => {
-    const g = (await q(`select pg_get_viewdef('public.console_event_guests') d`))[0].d as string;
-    const r = (await q(`select pg_get_viewdef('public.console_rsvp_results') d`))[0].d as string;
-    const replaceWhere = (d: string, col: string) => {
-      if (!/WHERE is_console_agent\(\);\s*$/.test(d)) throw new Error('unexpected view tail');
-      return d.replace(/WHERE is_console_agent\(\);\s*$/, `WHERE is_console_agent() AND public.console_event_in_scope(${col});`);
-    };
-    const ddl = `
-      create function public.console_event_in_scope(p_event_id uuid) returns boolean
-        language sql stable security definer set search_path = ''
-        as $f$ select (select public.is_console_agent()) and exists (
-                 select 1 from public.events e where e.id = p_event_id
-                   and (e.with_ai_calls or exists (select 1 from public.campaigns c where c.event_id = e.id))) $f$;
-      revoke all on function public.console_event_in_scope(uuid) from public, anon;
-      grant execute on function public.console_event_in_scope(uuid) to authenticated;
-      create or replace view public.console_event_guests as ${replaceWhere(g, 'g.event_id')}
-      create or replace view public.console_rsvp_results as ${replaceWhere(r, 'r.event_id')}`;
-    const v = await simulated(ddl, async () => ({
-      guests_A: n(await as('agentNoVcd', `select count(*)::int n from public.console_event_guests where event_id = $1 and guest_name = $2`, [eventA, `${MARK}-guestA`])),
-      guests_B: n(await as('agentNoVcd', `select count(*)::int n from public.console_event_guests where event_id = $1`, [eventB])),
-      rsvp_A: n(await as('agentNoVcd', `select count(*)::int n from public.console_rsvp_results where event_id = $1 and note = $2`, [eventA, `${MARK}-noteA`])),
-      rsvp_B: n(await as('agentNoVcd', `select count(*)::int n from public.console_rsvp_results where event_id = $1`, [eventB])),
-      phone_A_vcd: n(await as('agentVcd', `select count(*)::int n from public.console_event_guests where event_id = $1 and phone = $2`, [eventA, PHONE])),
-      phone_A_noVcd: n(await as('agentNoVcd', `select count(*)::int n from public.console_event_guests where event_id = $1 and phone is not null`, [eventA])),
-      regular: n(await as('regular', `select count(*)::int n from public.console_event_guests`)),
-    }));
-    record('sim_scope', v);
-    expect(v).toEqual({ guests_A: 1, guests_B: 0, rsvp_A: 1, rsvp_B: 0, phone_A_vcd: 1, phone_A_noVcd: 0, regular: 0 });
-  });
-
-  it('NEW shift hardening: rebuilt grants + is_console_agent() on update keep the PostgREST upsert working and close TRUNCATE/MAINTAIN', async () => {
-    const ddl = `
-      revoke all on public.console_agent_shift from anon, authenticated;
-      grant select on public.console_agent_shift to authenticated;
-      grant insert (agent_id, active, updated_at), update (agent_id, active, updated_at) on public.console_agent_shift to authenticated;
-      alter policy console_agent_shift_update_own on public.console_agent_shift
-        using (agent_id = (select auth.uid()) and (select public.is_console_agent()))
-        with check (agent_id = (select auth.uid()) and (select public.is_console_agent()));`;
-    // The statement shape PostgREST sends for .upsert({...}, { onConflict: 'agent_id' }) — with RETURNING, as PostgREST does.
-    const upsert = `with s as (insert into public.console_agent_shift (agent_id, active, updated_at) values ($1, $2, now())
-                    on conflict (agent_id) do update set agent_id = excluded.agent_id, active = excluded.active, updated_at = excluded.updated_at
-                    returning 1) select count(*)::int n from s`;
-    const v = await simulated(ddl, async () => {
-      await c.query(`insert into public.console_agent_shift (agent_id, active) values ($1, false) on conflict (agent_id) do nothing`, [ids.agentInactive]);
-      const insertPath = n(await as('agentVcd', upsert, [ids.agentVcd, true]));
-      await c.query(`insert into public.console_agent_shift (agent_id, active) values ($1, false) on conflict (agent_id) do nothing`, [ids.agentVcd]);
-      return {
-        active_upsert_insert_path: insertPath,
-        active_upsert_conflict_path: n(await as('agentVcd', upsert, [ids.agentVcd, true])),
-        inactive_upsert: n(await as('agentInactive', upsert, [ids.agentInactive, true])),
-        inactive_update_no_where: n(await as('agentInactive', `update public.console_agent_shift set active = true`)),
-        regular_truncate: n(await as('regular', `truncate public.console_agent_shift`)),
-        maintain: (await q(`select has_table_privilege('authenticated', 'public.console_agent_shift', 'MAINTAIN') v`))[0].v,
-        trigger: (await q(`select has_table_privilege('authenticated', 'public.console_agent_shift', 'TRIGGER') v`))[0].v,
-      };
-    });
-    record('sim_shift', v);
-    expect(v).toEqual({
-      active_upsert_insert_path: 1,
-      active_upsert_conflict_path: 1,
-      inactive_upsert: '42501',
-      inactive_update_no_where: 0,
-      regular_truncate: '42501',
-      maintain: false,
-      trigger: false,
-    });
   });
 });

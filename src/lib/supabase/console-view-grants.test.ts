@@ -184,4 +184,46 @@ describe('console_* view bodies — latest definition invariants', () => {
       expect(body, `${view} must never select locked_price`).not.toContain('locked_price');
     }
   });
+
+  // harden-console-agent-permissions D4 (20261021194728): the roster's
+  // `provisioned` flag comes from the definer helper, so no client needs a
+  // privilege on console_agent_secrets. A roster body that reads the secrets
+  // table again would need that grant back — and would hand every agent the
+  // list of every agent with a stored credential.
+  it('console_agents_roster computes provisioned through console_agent_provisioned(), not the secrets table', () => {
+    const roster = latest.get('console_agents_roster');
+    expect(roster, 'console_agents_roster must still be defined').toBeDefined();
+    expect(roster?.body).toContain('console_agent_provisioned(');
+    expect(roster?.body).not.toContain('console_agent_secrets');
+  });
+
+  // No console view may read the secrets table at all (it is server-only since D4).
+  it('no console view reads console_agent_secrets', () => {
+    for (const [view, { body }] of latest) {
+      expect(body, `${view} must not read console_agent_secrets`).not.toContain('console_agent_secrets');
+    }
+  });
+
+  // harden-console-agent-permissions D3a (20261021195228): every console data
+  // view applies the one scope rule, so no view returns rows of an event the
+  // console does not work on (no AI calls, no campaign). Exempt: console_me (the
+  // caller's own row) and console_agents_roster (the colleague directory) carry
+  // no event; console_campaigns is in scope by definition (a campaign puts its
+  // event in scope).
+  const SCOPED_VIEWS = [
+    'console_call_analysis',
+    'console_campaign_targets',
+    'console_event_guests',
+    'console_events',
+    'console_rsvp_results',
+  ] as const;
+  for (const view of SCOPED_VIEWS) {
+    it(`${view} latest definition applies console_event_in_scope()`, () => {
+      expect(latest.get(view)?.body, `${view} must be limited to console-scope events`).toContain('console_event_in_scope(');
+    });
+  }
+  it('the event-scoped set is every console view except console_me, the roster and console_campaigns', () => {
+    const exempt = new Set(['console_me', 'console_agents_roster', 'console_campaigns']);
+    expect([...latest.keys()].filter((v) => !exempt.has(v)).sort()).toEqual([...SCOPED_VIEWS]);
+  });
 });
