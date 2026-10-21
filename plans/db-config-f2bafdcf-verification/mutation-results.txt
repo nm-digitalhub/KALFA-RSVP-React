@@ -1,0 +1,85 @@
+B1|CAUGHT|exit=1|failed=2|load=0|kinds=assertion,code-under-test-throw|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: recognises pooler hosts on label boundaries only
+    assert: AssertionError: evilpooler.supabase.com: expected true to be false // Object.is equality
+B2|CAUGHT|exit=1|failed=9|load=0|kinds=assertion,matcher|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: 54322 (the incident) and every other port fail
+    assert: AssertionError: expected true to be false // Object.is equality
+B3|CAUGHT|exit=1|failed=2|load=0|kinds=code-under-test-throw|expected-kind=code-under-test-throw|restored=True|verify=69/69|net=0
+    test: development, test and non-pooler hosts keep the existing behaviour
+    assert: DbConfigError: invalid database configuration: SUPABASE_DB_PORT=54322 with a Supabase pooler host in production; allowed: 5432 (session pooler) or 6543 (transaction poole
+B4|CAUGHT|exit=1|failed=2|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: refuses the target without opening a connection
+    assert: AssertionError: expected { ok: false, class: 'network', …(1) } to match object { ok: false, class: 'format' }
+B5|CAUGHT|exit=1|failed=2|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: message carries no host, user, password or connection string
+    assert: AssertionError: expected 'invalid database configuration: SUPAB…' not to contain 'aws-1-ap-south-1.pooler.supabase.com'
+B6|CAUGHT|exit=1|failed=2|load=0|kinds=assertion,matcher|expected-kind=matcher|restored=True|verify=69/69|net=0
+    test: is a rejection before any PgBoss exists
+    assert: Error: promise resolved "PgBoss{ stopped: false, …(2) }" instead of rejecting
+B7|CAUGHT|exit=1|failed=1|load=0|kinds=code-under-test-throw|expected-kind=code-under-test-throw|restored=True|verify=69/69|net=0
+    test: is a rejection before any PgBoss exists
+    assert: DbConfigError: invalid database configuration: SUPABASE_DB_PORT=54322 with a Supabase pooler host in production; allowed: 5432 (session pooler) or 6543 (transaction poole
+B8|CAUGHT|exit=1|failed=1|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: every source connection site takes its port through supabaseDbPort
+    assert: AssertionError: expected { …(4) } to deeply equal { …(4) }
+C1|CAUGHT|exit=1|failed=1|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: whitespace around SUPABASE_DB_PORT is normalised ONCE
+    assert: AssertionError: production blank: expected +0 to be 5432 // Object.is equality
+C2|CAUGHT|exit=1|failed=2|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: whitespace around SUPABASE_DB_PORT is normalised ONCE
+    assert: AssertionError: production blank: expected { ok: false, class: 'format', …(1) } to deeply equal { ok: true }
+C3|CAUGHT|exit=1|failed=4|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: whitespace around SUPABASE_DB_PORT is normalised ONCE
+    assert: AssertionError: production blank: expected +0 to be 5432 // Object.is equality
+C4|CAUGHT|exit=1|failed=1|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: connects to the same normalised port the rule judged
+    assert: AssertionError: expected [ 6543, +0 ] to deeply equal [ 6543, 5432 ]
+P1|CAUGHT|exit=1|failed=1|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: cannot switch the production rule off
+    assert: AssertionError: development: expected { ok: false, class: 'network', …(1) } to match object { ok: false, class: 'format' }
+P2|CAUGHT|exit=1|failed=1|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: cannot switch the production rule off
+    assert: AssertionError: development: expected { ok: false, class: 'network', …(1) } to match object { ok: false, class: 'format' }
+P3|CAUGHT|exit=1|failed=1|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: cannot switch the production rule off
+    assert: AssertionError: test: expected { ok: false, class: 'network', …(1) } to match object { ok: false, class: 'format' }
+P4|CAUGHT|exit=1|failed=1|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: connects to the same normalised port the rule judged
+    assert: AssertionError: expected [ 5432, 5432 ] to deeply equal [ 6543, 5432 ]
+D1|CAUGHT|exit=1|failed=1|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: does nothing outside the Node.js server runtime
+    assert: AssertionError: expected "error" to not be called at all, but actually been called 1 times[90m
+D2|CAUGHT|exit=1|failed=1|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: runs once per process
+    assert: AssertionError: expected [ …(2) ] to have a length of 1 but got 2
+D3|CAUGHT|exit=1|failed=3|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: a refused target is logged and alerted once
+    assert: AssertionError: expected '' to match /\[db-config\] startup check FAILED .*…/
+D4|CAUGHT|exit=1|failed=2|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: a refused target is logged and alerted once
+    assert: AssertionError: expected '' to match /\[db-config\] startup check FAILED .*…/
+D5|CAUGHT|exit=1|failed=3|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: a refused target is logged and alerted once
+    assert: AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+D6|CAUGHT|exit=1|failed=1|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: the alert is fired, not awaited
+    assert: AssertionError: expected false to be true // Object.is equality
+D7|CAUGHT|exit=1|failed=3|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: a refused target is logged and alerted once
+    assert: AssertionError: expected '[db-config] startup check could not r…' to match /\[db-config\] startup check FAILED .*…/
+D8|CAUGHT|exit=1|failed=2|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: a valid target logs one clear pass line
+    assert: AssertionError: expected { pgClients: 1, bosses: +0 } to deeply equal { pgClients: +0, bosses: +0 }
+E1|CAUGHT|exit=1|failed=2|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: withCallbackSchedulingLock: PgClient
+    assert: AssertionError: withCallbackSchedulingLock: port of new PgClient: expected 'Number(process.env.SUPABASE_DB_PORT |…' to be 'supabaseDbPort(process.env)' // Object.is equal
+    E-failed: ['configuration check before any connection every source conne', 'each database connection takes its port through supabaseDbPo']
+E2|CAUGHT|exit=1|failed=2|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: startCallbackWorkListener: PgClient
+    assert: AssertionError: startCallbackWorkListener: port of new PgClient: expected 'Number(process.env.SUPABASE_DB_PORT |…' to be 'supabaseDbPort(process.env)' // Object.is equali
+    E-failed: ['configuration check before any connection every source conne', 'each database connection takes its port through supabaseDbPo']
+E3|CAUGHT|exit=1|failed=2|load=0|kinds=assertion|expected-kind=assertion|restored=True|verify=69/69|net=0
+    test: main: PgBoss
+    assert: AssertionError: main: port of new PgBoss: expected 'Number(process.env.SUPABASE_DB_PORT |…' to be 'supabaseDbPort(process.env)' // Object.is equality
+    E-failed: ['configuration check before any connection every source conne', 'each database connection takes its port through supabaseDbPo']
+ALL CAUGHT: True
