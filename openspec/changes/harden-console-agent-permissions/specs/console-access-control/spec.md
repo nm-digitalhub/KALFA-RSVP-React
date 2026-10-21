@@ -39,8 +39,10 @@ console view or console table, and SHALL change no console row.
 - **THEN** zero rows are returned; tables it holds no privilege on answer `42501`
 
 #### Scenario: Write attempts
-- **WHEN** such a caller inserts into, updates or deletes from any console table through the Data API
-- **THEN** inserts are refused with `42501`, and updates and deletes affect zero rows
+- **WHEN** such a caller inserts into, updates or deletes from any console table
+- **THEN** inserts are refused with `42501`; an update or delete of a table or column the caller holds no
+  privilege on is refused with `42501`; an update the grants allow affects zero rows; and through the
+  Data API an update or delete without a filter is refused with `400` / `21000` before it runs
 
 ### Requirement: An inactive agent keeps only its own profile
 An agent whose `console_agents.vox_active` is false SHALL see its own `console_me` row, so the
