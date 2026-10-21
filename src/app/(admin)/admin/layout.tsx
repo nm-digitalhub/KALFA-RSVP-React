@@ -83,12 +83,15 @@ export default async function AdminLayout({
     hasExchangeConnection = false;
   }
 
-  // Browser call-center softphone gate: is this admin
-  // an enrolled console agent (console_me self-scopes to auth.uid()), AND is
-  // the feature flag on. Read here — once, at the shell level — so the panel
-  // mounts once and survives navigation instead of being re-derived per page.
-  // Fails SOFT like the Exchange reads above: a lookup failure just means no
-  // panel, never a broken admin area.
+  // Browser call-center softphone gate: is this admin an ACTIVE console agent
+  // (is_console_agent(): staff + console_agents.vox_active — the same check
+  // /api/agents/sdk-auth makes through requireConsoleAgent), AND is the feature
+  // flag on. console_me alone is not enough: it also returns an inactive agent's
+  // own row (so the app can say "not active"), which used to mount a softphone
+  // that sdk-auth then refused with 403. Read here — once, at the shell level —
+  // so the panel mounts once and survives navigation instead of being re-derived
+  // per page. Fails SOFT like the Exchange reads above: a lookup failure just
+  // means no panel, never a broken admin area.
   let softphone: SoftphoneGateInfo = {
     enabled: false,
     voxUsername: null,
@@ -112,6 +115,7 @@ export default async function AdminLayout({
       // (console_agent_shift_select via is_console_agent()) as console_me above,
       // not a service-role fetch: this is self-scoped, an agent's own toggle.
       { data: shiftRow },
+      { data: isConsoleAgent, error: isConsoleAgentErr },
     ] = await Promise.all([
       supabase.from('console_me').select('vox_username, display_name').maybeSingle(),
       consoleSoftphoneEnabled(),
@@ -130,9 +134,11 @@ export default async function AdminLayout({
         .select('active, updated_at')
         .eq('agent_id', user.id)
         .maybeSingle(),
+      supabase.rpc('is_console_agent'),
     ]);
     softphone = {
-      enabled: softphoneEnabled,
+      // Fail closed: an RPC error or anything but `true` means no panel.
+      enabled: softphoneEnabled && !isConsoleAgentErr && isConsoleAgent === true,
       voxUsername: consoleMe?.vox_username ?? null,
       displayName: consoleMe?.display_name ?? '',
       handoffEnabled,
