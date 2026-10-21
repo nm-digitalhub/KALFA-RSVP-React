@@ -19,6 +19,7 @@
 import { randomUUID } from 'node:crypto';
 import net from 'node:net';
 
+import { createClient as createSupabaseClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { Pool, type PoolClient } from 'pg';
 import { vi } from 'vitest';
 
@@ -29,6 +30,16 @@ export const IT_TAG_PREFIX = 'it-';
 export const LOCAL_PORTS: readonly number[] = [LOCAL_DB_PORT, LOCAL_API_PORT];
 
 export type LocalIntegrationEnv = TestDbConfig & { anonKey: string | null };
+
+// A real local Auth user: the session came from GoTrue sign-in; `client` is a
+// PostgREST client that sends that user's access token. Never log `session`.
+export interface AuthUser {
+  id: string;
+  tag: string;
+  email: string;
+  session: Session;
+  client: SupabaseClient;
+}
 
 // Fail-fast entry point for every integration file: target is local AND the
 // egress guard is active in this worker (i.e. the file runs under the
@@ -151,6 +162,16 @@ export interface FixtureOptions {
   authorized?: boolean; // add the contact to the campaign's authorized set
   campaignStatus?: 'active' | 'paused';
   expectedCount?: number | null;
+  // Scheduling (finding 5). Omitted → the previous defaults (event in 30 days, the
+  // campaign's column defaults). Applied while the campaign is still a draft.
+  eventDate?: string;
+  outreachSchedule?: Array<{ days_before: number; channel: 'whatsapp' | 'call'; message_key: string }>;
+  allowedChannels?: Array<'whatsapp' | 'call'>;
+  startAt?: string | null;
+  closeAt?: string | null;
+  // Skip the outbound template interaction. With it, events_guard_update (R5) locks
+  // the event date ("a message has already been sent").
+  noOutbound?: boolean;
 }
 
 export interface FixtureIds {
@@ -160,6 +181,14 @@ export interface FixtureIds {
   contacts: string[];
   guests: string[];
   tags: string[];
+  // Rows a test created that are not reachable from a fixture owner (e.g. packages).
+  // Deleted by EXACT id only, so a pre-existing row can never be touched.
+  own?: OwnRow[];
+}
+
+export interface OwnRow {
+  table: 'public.packages';
+  id: string;
 }
 
 function newFixtureIds(): Fixture {
@@ -192,8 +221,8 @@ async function insertFixture(pool: Pool, f: Fixture, opts: FixtureOptions): Prom
     );
     await c.query(
       `insert into public.events (id, name, owner_id, event_date, show_meal_pref)
-       values ($1, $2, $3, now() + interval '30 days', true)`,
-      [f.eventId, f.tag, f.ownerId],
+       values ($1, $2, $3, coalesce($4::timestamptz, now() + interval '30 days'), true)`,
+      [f.eventId, f.tag, f.ownerId, opts.eventDate ?? null],
     );
     await c.query(`update public.events set status = 'active' where id = $1`, [f.eventId]);
     await c.query(`insert into public.contacts (id, event_id, normalized_phone) values ($1, $2, $3)`, [f.contactId, f.eventId, f.phone]);
@@ -204,6 +233,25 @@ async function insertFixture(pool: Pool, f: Fixture, opts: FixtureOptions): Prom
     );
     f.rsvpToken = g.rows[0].rsvp_token as string;
     await c.query(`insert into public.campaigns (id, event_id, max_contacts, status) values ($1, $2, 10, 'draft')`, [f.campaignId, f.eventId]);
+    if (opts.outreachSchedule || opts.allowedChannels || opts.startAt !== undefined || opts.closeAt !== undefined) {
+      await c.query(
+        `update public.campaigns set
+           outreach_schedule = coalesce($2::jsonb, outreach_schedule),
+           allowed_channels  = coalesce($3::public.campaign_channel[], allowed_channels),
+           start_at = case when $4 then $5::timestamptz else start_at end,
+           close_at = case when $6 then $7::timestamptz else close_at end
+         where id = $1`,
+        [
+          f.campaignId,
+          opts.outreachSchedule ? JSON.stringify(opts.outreachSchedule) : null,
+          opts.allowedChannels ?? null,
+          opts.startAt !== undefined,
+          opts.startAt ?? null,
+          opts.closeAt !== undefined,
+          opts.closeAt ?? null,
+        ],
+      );
+    }
     for (const s of ['pending_approval', 'approved', opts.campaignStatus ?? 'active']) {
       await c.query(`update public.campaigns set status = $2::public.campaign_status where id = $1`, [f.campaignId, s]);
     }
@@ -214,11 +262,13 @@ async function insertFixture(pool: Pool, f: Fixture, opts: FixtureOptions): Prom
       );
     }
     // The outbound template message the guest will answer (resolveByContextId target).
-    await c.query(
-      `insert into public.contact_interactions (channel, direction, kind, provider_id, contact_id, event_id, campaign_id, guest_id)
-       values ('whatsapp', 'out', 'template', $1, $2, $3, $4, $5)`,
-      [f.outboundWamid, f.contactId, f.eventId, f.campaignId, f.guestId],
-    );
+    if (!opts.noOutbound) {
+      await c.query(
+        `insert into public.contact_interactions (channel, direction, kind, provider_id, contact_id, event_id, campaign_id, guest_id)
+         values ('whatsapp', 'out', 'template', $1, $2, $3, $4, $5)`,
+        [f.outboundWamid, f.contactId, f.eventId, f.campaignId, f.guestId],
+      );
+    }
     await c.query('commit');
   } catch (e) {
     // Undoes only this connection's own uncommitted inserts; the scope still runs
@@ -260,20 +310,70 @@ export class FixtureScope {
   // Inbox row as the webhook route would persist it (dedupe_key carries the tag).
   async insertInbox(
     f: Fixture,
-    opts: { messageId: string; payload: Record<string, unknown>; contextId?: string | null },
+    opts: { messageId: string; payload: Record<string, unknown>; contextId?: string | null; eventKind?: string },
   ): Promise<Record<string, unknown>> {
     const r = await this.track(
       this.pool.query(
         `insert into public.webhook_inbox (dedupe_key, event_kind, payload, message_id, context_message_id, phone_number_id)
-         values ($1, 'message', $2::jsonb, $3, $4, null) returning *`,
-        [`${f.tag}:${opts.messageId}`, JSON.stringify(opts.payload), opts.messageId, opts.contextId ?? null],
+         values ($1, $5, $2::jsonb, $3, $4, null) returning *`,
+        [`${f.tag}:${opts.messageId}`, JSON.stringify(opts.payload), opts.messageId, opts.contextId ?? null, opts.eventKind ?? 'message'],
       ),
     );
     return r.rows[0];
   }
 
   ids(): FixtureIds {
-    return idsOf(this.fixtures);
+    const base = idsOf(this.fixtures);
+    return {
+      ...base,
+      owners: [...base.owners, ...this.users.map((u) => u.id)],
+      tags: [...base.tags, ...this.users.map((u) => u.tag)],
+      own: [...this.own],
+    };
+  }
+
+  // ── users through the LOCAL Supabase Auth (GoTrue admin API + password sign-in) ──
+  // The id is registered BEFORE the GoTrue call, so a half-created user is still
+  // cleaned. Tokens stay in memory and are never logged. A platform staff role, when
+  // asked for, is a fixture row in platform_staff (removed with the user).
+  private readonly users: Array<{ id: string; tag: string }> = [];
+  private readonly own: OwnRow[] = [];
+
+  async createAuthUser(env: LocalIntegrationEnv, opts: { staffRole?: string } = {}): Promise<AuthUser> {
+    if (!env.anonKey) throw new Error('createAuthUser: OUTREACH_TEST_ANON_KEY (local anon key) is required');
+    const tag = `${IT_TAG_PREFIX}${randomUUID().slice(0, 8)}`;
+    const id = randomUUID();
+    this.users.push({ id, tag });
+    const email = `${tag}@${IT_EMAIL_DOMAIN}`;
+    const password = randomUUID();
+    const noSession = { auth: { persistSession: false, autoRefreshToken: false } } as const;
+    const admin = createSupabaseClient(env.supabaseUrl, env.serviceKey, noSession);
+    const created = await this.track(admin.auth.admin.createUser({ id, email, password, email_confirm: true }));
+    if (created.error) throw new Error(`createAuthUser: GoTrue refused (${created.error.message})`);
+    if (opts.staffRole) {
+      const r = await this.track(
+        this.pool.query(
+          `insert into public.platform_staff (user_id, role_id, granted_by) select $1, id, $1 from public.platform_roles where name = $2 returning id`,
+          [id, opts.staffRole],
+        ),
+      );
+      if (r.rowCount !== 1) throw new Error(`createAuthUser: unknown platform role ${opts.staffRole}`);
+    }
+    const anon = createSupabaseClient(env.supabaseUrl, env.anonKey, noSession);
+    const signed = await this.track(anon.auth.signInWithPassword({ email, password }));
+    if (signed.error || !signed.data.session) throw new Error('createAuthUser: sign-in failed');
+    const session = signed.data.session;
+    const client = createSupabaseClient(env.supabaseUrl, env.anonKey, {
+      ...noSession,
+      global: { headers: { Authorization: `Bearer ${session.access_token}` } },
+      db: { retry: false },
+    });
+    return { id, tag, email, session, client };
+  }
+
+  // Register a row the test is about to create outside the fixture tree.
+  ownRow(row: OwnRow): void {
+    this.own.push(row);
   }
 
   // Safe to call more than once and concurrently (deletes are idempotent and take
@@ -323,53 +423,154 @@ const ROOTS: Record<string, keyof FixtureIds> = {
   'public.contacts': 'contacts',
   'public.guests': 'guests',
 };
+// Second phase: RESTRICT / NO ACTION referrers of the fixture USERS (organizations
+// they created, platform_staff rows, audit rows naming them). Matched on the fixture
+// user ids only — rows of pre-existing users are never selected.
+const USER_ROOTS: Record<string, keyof FixtureIds> = { 'auth.users': 'owners' };
+// GoTrue's admin actor in auth.audit_log_entries; never a test user.
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
-// Single-column FKs that would BLOCK the cascade from auth.users (RESTRICT / NO ACTION)
-// onto the fixture roots, read live from pg_constraint so a new table is covered
-// without editing this file.
-async function blockingReferrers(c: PoolClient): Promise<Array<{ table: string; column: string; root: keyof FixtureIds }>> {
+type Referrer = { table: string; column: string; root: string };
+
+// Single-column FKs that would BLOCK a delete of the given root tables (RESTRICT /
+// NO ACTION by default), read live from pg_constraint so a new table is covered
+// without editing this file. `root` is the referenced table.
+async function blockingReferrers(c: PoolClient, roots: readonly string[], deleteRules: readonly string[] = ['a', 'r']): Promise<Referrer[]> {
   const r = await c.query(
-    `select format('%I.%I', rn.nspname, rt.relname) as tbl, a.attname as col, fn.nspname || '.' || ft.relname as root
+    `select format('%I.%I', rn.nspname, rt.relname) as tbl, format('%I', a.attname) as col, fn.nspname || '.' || ft.relname as root
        from pg_constraint k
        join pg_class rt on rt.oid = k.conrelid join pg_namespace rn on rn.oid = rt.relnamespace
        join pg_class ft on ft.oid = k.confrelid join pg_namespace fn on fn.oid = ft.relnamespace
        join pg_attribute a on a.attrelid = k.conrelid and a.attnum = k.conkey[1]
-      where k.contype = 'f' and k.confdeltype in ('a', 'r') and cardinality(k.conkey) = 1
+      where k.contype = 'f' and k.confdeltype = any($3::"char"[]) and cardinality(k.conkey) = 1
         and fn.nspname || '.' || ft.relname = any($1::text[])
-        and rn.nspname || '.' || rt.relname <> all($1::text[])`,
-    [Object.keys(ROOTS)],
+        and rn.nspname || '.' || rt.relname <> all($2::text[])`,
+    [roots, [...Object.keys(ROOTS), ...Object.keys(USER_ROOTS)], deleteRules],
   );
-  return r.rows.map((x) => ({ table: x.tbl as string, column: x.col as string, root: ROOTS[x.root as string] }));
+  return r.rows.map((x) => ({ table: x.tbl as string, column: x.col as string, root: x.root as string }));
 }
 
-export async function cleanupIds(pool: Pool, given: FixtureIds): Promise<void> {
+// Audit rows the test users' actions produced that no FK ties to them:
+//   - public.* uuid columns actor_id / target_user_id (e.g. platform_role_audit_log,
+//     written by the platform_staff_audit trigger);
+//   - auth.audit_log_entries (GoTrue: signup → traits.user_id/user_email,
+//     login → actor_id/actor_username).
+// Matched on the fixture users' exact ids / emails only.
+async function deleteUserAuditRows(c: PoolClient, ids: FixtureIds): Promise<void> {
+  // Never let the nil uuid (GoTrue's admin actor) stand for a test user.
+  const owners = ids.owners.filter((id) => id !== NIL_UUID);
+  if (owners.length === 0) return;
+  const emails = ids.tags.filter(Boolean).map((t) => `${t}@${IT_EMAIL_DOMAIN}`);
+  const cols = await c.query(
+    `select format('%I.%I', table_schema, table_name) t, format('%I', column_name) col
+       from information_schema.columns
+      where table_schema = 'public' and data_type = 'uuid' and column_name in ('actor_id', 'target_user_id')`,
+  );
+  for (const x of cols.rows) {
+    await c.query(`delete from ${x.t} where ${x.col} = any($1::uuid[])`, [owners]);
+  }
+  await c.query(
+    `delete from auth.audit_log_entries
+      where payload->>'actor_id' = any($1::text[]) or payload->'traits'->>'user_id' = any($1::text[])
+         or payload->>'actor_username' = any($2::text[]) or payload->'traits'->>'user_email' = any($2::text[])`,
+    [owners, emails],
+  );
+}
+
+// A cleanup failure must carry its cause: the step, the SQLSTATE / constraint /
+// table from Postgres, and (for referrers) how many rows are left. Only ids and
+// counts are reported — never row contents (payloads may hold personal data).
+function pgDetail(e: unknown): string {
+  const x = e as { code?: string; message?: string; constraint?: string; table?: string; schema?: string };
+  const where = [x.constraint && `constraint ${x.constraint}`, x.table && `table ${x.schema ? `${x.schema}.` : ''}${x.table}`].filter(Boolean);
+  return `${x.code ?? '?'} ${x.message ?? String(e)}${where.length ? ` (${where.join(', ')})` : ''}`;
+}
+
+export class CleanupError extends Error {
+  constructor(step: string, detail: string, options?: { cause?: unknown }) {
+    super(`integration cleanup failed at ${step}: ${detail}`, options);
+    this.name = 'CleanupError';
+  }
+}
+
+async function step<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof CleanupError) throw e;
+    throw new CleanupError(label, pgDetail(e), { cause: e });
+  }
+}
+
+// Referrers may reference each other; retry in passes until all succeed. A referrer
+// that still fails after the passes is an ERROR (thrown with its cause and the rows
+// left) — never skipped, so the later parent delete cannot hide the real reason.
+async function deleteReferrers(c: PoolClient, phase: string, refs: Referrer[], values: (r: Referrer) => string[]): Promise<void> {
+  let todo = refs.filter((r) => values(r).length > 0);
+  const lastError = new Map<Referrer, unknown>();
+  for (let pass = 0; todo.length > 0 && pass < 6; pass++) {
+    const failed: Referrer[] = [];
+    for (const ref of todo) {
+      await c.query('savepoint ref');
+      try {
+        await c.query(`delete from ${ref.table} where ${ref.column}::text = any($1::text[])`, [values(ref)]);
+        await c.query('release savepoint ref');
+        lastError.delete(ref);
+      } catch (e) {
+        await c.query('rollback to savepoint ref');
+        lastError.set(ref, e);
+        failed.push(ref);
+      }
+    }
+    if (failed.length === todo.length) break;
+    todo = failed;
+  }
+  if (todo.length === 0) return;
+  const lines: string[] = [];
+  for (const ref of todo) {
+    const left = await c.query(
+      `select count(*)::int n, (array_agg(to_jsonb(t)->>'id'))[1:5] ids from ${ref.table} t where ${ref.column}::text = any($1::text[])`,
+      [values(ref)],
+    );
+    const ids = (left.rows[0].ids as Array<string | null> | null)?.filter(Boolean) ?? [];
+    lines.push(
+      `${ref.table}.${ref.column} → ${ref.root}: ${pgDetail(lastError.get(ref))}; ${left.rows[0].n} row(s) left${ids.length ? ` [id ${ids.join(', ')}]` : ''}`,
+    );
+  }
+  throw new CleanupError(`${phase} referrers`, lines.join(' | '));
+}
+
+export async function cleanupIds(pool: Pool, given: FixtureIds, opts: { lockTimeoutMs?: number } = {}): Promise<void> {
   const c = await pool.connect();
   let ids = given;
   try {
     await c.query('begin');
+    // A row locked by work that is still running fails the cleanup (reported, see
+    // deleteReferrers) instead of hanging the suite.
+    await c.query(`select set_config('lock_timeout', $1, true)`, [`${opts.lockTimeoutMs ?? 15_000}ms`]);
     ids = await expandIds(c, given);
-    const refs = await blockingReferrers(c);
-    // Referrers may reference each other; retry in passes until all succeed.
-    let todo = refs;
-    for (let pass = 0; todo.length > 0 && pass < 6; pass++) {
-      const failed: typeof refs = [];
-      for (const ref of todo) {
-        await c.query('savepoint ref');
-        try {
-          await c.query(`delete from ${ref.table} where ${ref.column}::text = any($1::text[])`, [ids[ref.root]]);
-          await c.query('release savepoint ref');
-        } catch {
-          await c.query('rollback to savepoint ref');
-          failed.push(ref);
-        }
-      }
-      if (failed.length === todo.length) break;
-      todo = failed;
-    }
-    await c.query('delete from public.webhook_inbox where dedupe_key like any($1::text[])', [ids.tags.map((t) => `${t}:%`)]);
-    // ON DELETE CASCADE from here: profiles, events → campaigns, contacts, guests,
-    // interactions, rsvp_responses, activity_log, …
-    await c.query('delete from auth.users where id = any($1::uuid[])', [ids.owners]);
+    const fixtureValues = (r: Referrer) => ids[ROOTS[r.root]] as string[];
+    await deleteReferrers(c, 'fixture', await blockingReferrers(c, Object.keys(ROOTS)), fixtureValues);
+    await step('webhook_inbox', () =>
+      c.query('delete from public.webhook_inbox where dedupe_key like any($1::text[])', [ids.tags.map((t) => `${t}:%`)]),
+    );
+    // Events first (ON DELETE CASCADE: campaigns, contacts, guests, interactions,
+    // rsvp_responses, activity_log, …): that releases campaigns.template_id and
+    // events.package_id on the test packages, and the organizations events point at.
+    await step('public.events', () => c.query('delete from public.events where id = any($1::uuid[])', [ids.events]));
+    // Every row that names a fixture USER — blocking (RESTRICT / NO ACTION) and also
+    // SET NULL / SET DEFAULT referrers, which would otherwise survive as orphans
+    // (e.g. activity_log.user_id; offers.created_by → offer_packages by CASCADE).
+    // Only test users can be named by these rows.
+    const owners = ids.owners.filter((id) => id !== NIL_UUID);
+    await deleteReferrers(c, 'user', await blockingReferrers(c, Object.keys(USER_ROOTS), ['a', 'r', 'n', 'd']), () => owners);
+    await step('audit rows', () => deleteUserAuditRows(c, ids));
+    // Own rows (packages) by exact id, AFTER their test referrers are gone. A row the
+    // scope does not own that still points at one makes this fail (reported with the
+    // constraint) — it is never deleted to make room.
+    for (const o of ids.own ?? []) await step(o.table, () => c.query(`delete from ${o.table} where id = $1`, [o.id]));
+    // ON DELETE CASCADE from here: profiles, auth identities / sessions, …
+    await step('auth.users', () => c.query('delete from auth.users where id = any($1::uuid[])', [owners]));
     await c.query('commit');
   } catch (e) {
     await c.query('rollback').catch(() => {});
@@ -379,6 +580,10 @@ export async function cleanupIds(pool: Pool, given: FixtureIds): Promise<void> {
   }
   // Proof is a NEW query after COMMIT, not a rollback.
   const left = await residue(pool, ids);
+  for (const o of ids.own ?? []) {
+    const n = (await pool.query(`select count(*)::int n from ${o.table} where id = $1`, [o.id])).rows[0].n as number;
+    if (n > 0) left.push(`${o.table}.id=${o.id}`);
+  }
   if (left.length > 0) throw new Error(`integration cleanup left residue: ${left.join(', ')}`);
 }
 
@@ -394,7 +599,7 @@ export async function residue(pool: Pool, ids: FixtureIds): Promise<string[]> {
          from information_schema.columns c
          join information_schema.tables tb on tb.table_schema = c.table_schema and tb.table_name = c.table_name
         where tb.table_type = 'BASE TABLE' and c.table_schema in ('public', 'auth')
-          and c.column_name in ('event_id', 'campaign_id', 'contact_id', 'guest_id', 'owner_id', 'user_id')
+          and c.column_name in ('event_id', 'campaign_id', 'contact_id', 'guest_id', 'owner_id', 'user_id', 'created_by', 'granted_by')
        union all select 'public', 'events', 'id', $1::text[]
        union all select 'public', 'campaigns', 'id', $2::text[]
        union all select 'public', 'contacts', 'id', $3::text[]
@@ -416,11 +621,29 @@ export async function residue(pool: Pool, ids: FixtureIds): Promise<string[]> {
   return r.rows.map((x) => `${x.where_}=${x.n}`);
 }
 
+// Packages a crashed run left behind. No FK ties a package to its creator, so they
+// are found by the suite's naming convention — BOTH markers must hold: tier 'it'
+// and a name starting with an `it-xxxxxxxx ` tag. cleanupIds deletes them as own
+// rows (after their test referrers; a foreign referrer fails the sweep loudly).
+async function testPackages(pool: Pool): Promise<OwnRow[]> {
+  const r = await pool.query(`select id::text from public.packages where tier = 'it' and name ~ '^it-[0-9a-f]{8} '`);
+  return r.rows.map((x) => ({ table: 'public.packages' as const, id: x.id as string }));
+}
+
 // Crash recovery: everything owned by an `it-…@kalfa.test` user, plus tagged inbox rows.
+// Users already deleted by an earlier run are recovered from the GoTrue audit log
+// (their ids name the trigger-written audit rows that outlive them).
 export async function sweepLeftovers(pool: Pool): Promise<number> {
-  const o = await pool.query(`select id, split_part(email, '@', 1) tag from auth.users where email like $1`, [
-    `${IT_TAG_PREFIX}%@${IT_EMAIL_DOMAIN}`,
-  ]);
+  const o = await pool.query(
+    `select id::text, split_part(email, '@', 1) tag from auth.users where email like $1
+     union
+     select coalesce(payload->'traits'->>'user_id', payload->>'actor_id'),
+            split_part(coalesce(payload->'traits'->>'user_email', payload->>'actor_username'), '@', 1)
+       from auth.audit_log_entries
+      where coalesce(payload->'traits'->>'user_email', payload->>'actor_username') like $1
+        and coalesce(payload->'traits'->>'user_id', payload->>'actor_id') <> $2`,
+    [`${IT_TAG_PREFIX}%@${IT_EMAIL_DOMAIN}`, NIL_UUID],
+  );
   const ids: FixtureIds = {
     owners: o.rows.map((r) => r.id as string),
     events: [],
@@ -428,10 +651,18 @@ export async function sweepLeftovers(pool: Pool): Promise<number> {
     contacts: [],
     guests: [],
     tags: o.rows.map((r) => r.tag as string),
+    own: await testPackages(pool),
   };
   await cleanupIds(pool, ids);
   await pool.query(`delete from public.webhook_inbox where dedupe_key like $1`, [`${IT_TAG_PREFIX}%:%`]);
-  return ids.owners.length;
+  // Package audit rows whose user_id was already nulled by ON DELETE SET NULL: only
+  // packages the suite created carry an `it-xxxxxxxx` name.
+  await pool.query(
+    `delete from public.activity_log
+      where user_id is null and event_id is null and action like 'package.%'
+        and meta->>'packageName' ~ '^it-[0-9a-f]{8} '`,
+  );
+  return new Set(ids.owners).size;
 }
 
 // ── whole-database fingerprint ─────────────────────────────────────────────────
