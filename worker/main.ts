@@ -267,10 +267,13 @@ async function handleCallRequest(boss: PgBoss, job: CallJob): Promise<void> {
   // is STRICT — its failure throws, failing the job so pg-boss redelivers and
   // the answer is retried, so a job never completes with its dispatch row stuck
   // 'accepted'.
-  // ⚠️ NOT dial-safe for isManual jobs (checked 11.10.2026): each delivery takes a
-  // NEW touchpoint index (nextManualTouchpoint, outreach-calls.ts) and nothing looks
-  // the attempt up by dispatch_id, so a redelivery after a confirmed start can dial
-  // again. Tracked as its own fix (openspec dnc-registry-dial-gate, design D12).
+  // Dial-safe for isManual jobs: each delivery would take a NEW touchpoint index
+  // (nextManualTouchpoint, outreach-calls.ts), so dispatchOutreachCall first looks
+  // the attempt up by dispatch_id (getCallAttemptByDispatchId) and reconciles it
+  // instead of dialling again. Post-dial bookkeeping failures are swallowed there
+  // too, so they never trigger a redelivery. Remaining gap: a crash between
+  // createCallAttempt and startScenarios yields concurrent_owner on retry — the call
+  // is lost, never doubled (runCallReconcile alerts on such rows).
   if (job.data.isManual) {
     await recordManualDialOutcome({
       eventId: job.data.eventId,

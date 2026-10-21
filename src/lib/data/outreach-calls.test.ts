@@ -13,6 +13,7 @@ vi.mock('@/lib/data/call-attempts', () => ({
   createCallAttempt: vi.fn(),
   nextManualTouchpoint: vi.fn(),
   getCallAttemptByTouchpoint: vi.fn(),
+  getCallAttemptByDispatchId: vi.fn(),
   recordDialConfirmed: vi.fn(),
   markFailedToStart: vi.fn(),
   markStartUnknown: vi.fn(),
@@ -71,6 +72,7 @@ import {
   createCallAttempt,
   nextManualTouchpoint,
   getCallAttemptByTouchpoint,
+  getCallAttemptByDispatchId,
   recordDialConfirmed,
   markFailedToStart,
   markStartUnknown,
@@ -98,6 +100,7 @@ import { todayIL } from '@/lib/data/event-date';
 import { getAccountInfo, VoximplantApiError, VoximplantNetworkError } from '@/lib/voximplant/core';
 import { startScenarios } from '@/lib/voximplant/mutations';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { getAppOrigin } from '@/lib/url';
 import type { OutreachCallRequest } from '@/lib/queue/queues';
 
 const CID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -151,6 +154,7 @@ beforeEach(() => {
   vi.mocked(createCallAttempt).mockResolvedValue({ id: AID });
   vi.mocked(nextManualTouchpoint).mockResolvedValue(100001);
   vi.mocked(getCallAttemptByTouchpoint).mockResolvedValue(null);
+  vi.mocked(getCallAttemptByDispatchId).mockResolvedValue(null);
   vi.mocked(countActiveCallsAllSurfaces).mockResolvedValue(0);
   vi.mocked(countCampaignCallsSince).mockResolvedValue(0);
   vi.mocked(recordDialConfirmed).mockResolvedValue({ applied: true });
@@ -515,11 +519,17 @@ describe('provider outcomes', () => {
       expect.objectContaining({ mediaSessionAccessSecureUrl: null }),
     );
   });
-  it('16. dial ok then interaction throws → dispatch throws; retry completes WITHOUT a second StartScenarios', async () => {
+  it('16. dial ok then interaction throws → still dialed + warn alert (no redelivery); retry completes WITHOUT a second StartScenarios', async () => {
+    // The call HAS been placed, so a bookkeeping failure must not escape: a throw
+    // would make pg-boss redeliver the job. It is alerted instead, and a later
+    // delivery completes the bookkeeping through the reconcile path.
     vi.mocked(insertInteraction).mockRejectedValueOnce(new Error('db down'));
-    await expect(dispatchOutreachCall(job())).rejects.toThrow();
+    expect(await dispatchOutreachCall(job())).toEqual({ kind: 'dialed', attemptId: AID, callSessionHistoryId: HISTORY });
     expect(startScenarios).toHaveBeenCalledTimes(1);
     expect(recordDialConfirmed).toHaveBeenCalledTimes(1);
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ level: 'warn', title: 'Voximplant dial confirmed but bookkeeping failed' }),
+    );
     // retry: row already exists WITH the history id → reconcile, no second dial
     vi.mocked(createCallAttempt).mockResolvedValue(null);
     vi.mocked(getCallAttemptByTouchpoint).mockResolvedValue({ id: AID, status: 'dialing', vox_call_session_history_id: String(HISTORY) } as never);
@@ -528,6 +538,55 @@ describe('provider outcomes', () => {
     expect(r2).toEqual({ kind: 'already_dispatched', attemptId: AID });
     expect(insertInteraction).toHaveBeenCalledTimes(2);
     expect(setContactOpStatus).toHaveBeenCalledWith(CTID, 'call_dialed');
+  });
+});
+
+describe('manual-dial redelivery — attempt looked up by dispatch_id', () => {
+  // A manual dial takes a NEW touchpoint index on every delivery, so the
+  // touchpoint UNIQUE cannot catch a pg-boss redelivery of the same job. The
+  // attempt is found by the dispatch_id instead, and reconciled — never redialled.
+  it('19a. prior attempt with a confirmed start → already_dispatched, bookkeeping completed, no dial', async () => {
+    vi.mocked(getCallAttemptByDispatchId).mockResolvedValue({ id: AID, status: 'dialing', vox_call_session_history_id: String(HISTORY) } as never);
+    const r = await dispatchOutreachCall(job({ isManual: true, dispatchId: 'd1' }));
+    expect(r).toEqual({ kind: 'already_dispatched', attemptId: AID });
+    expect(getCallAttemptByDispatchId).toHaveBeenCalledWith('d1');
+    expect(startScenarios).not.toHaveBeenCalled();
+    expect(createCallAttempt).not.toHaveBeenCalled();
+    expect(nextManualTouchpoint).not.toHaveBeenCalled();
+    expect(setContactOpStatus).toHaveBeenCalledWith(CTID, 'call_dialed');
+  });
+  it('19b. prior attempt still in flight (no history id) → skipped/concurrent_owner, status untouched, no dial', async () => {
+    vi.mocked(getCallAttemptByDispatchId).mockResolvedValue({ id: AID, status: 'dialing', vox_call_session_history_id: null } as never);
+    expect(await dispatchOutreachCall(job({ isManual: true, dispatchId: 'd1' }))).toEqual({ kind: 'skipped', reason: 'concurrent_owner' });
+    expect(startScenarios).not.toHaveBeenCalled();
+    expect(markFailedToStart).not.toHaveBeenCalled();
+    expect(markStartUnknown).not.toHaveBeenCalled();
+  });
+  it('19c. prior attempt already concluded → already_concluded, no dial', async () => {
+    vi.mocked(getCallAttemptByDispatchId).mockResolvedValue({ id: AID, status: 'failed_to_start', vox_call_session_history_id: null } as never);
+    expect(await dispatchOutreachCall(job({ isManual: true, dispatchId: 'd1' }))).toEqual({
+      kind: 'already_concluded',
+      attemptId: AID,
+      status: 'failed_to_start',
+    });
+    expect(startScenarios).not.toHaveBeenCalled();
+  });
+  it('19d. no prior attempt for the dispatch_id → the manual dial proceeds normally', async () => {
+    const r = await dispatchOutreachCall(job({ isManual: true, dispatchId: 'd1' }));
+    expect(r.kind).toBe('dialed');
+    expect(startScenarios).toHaveBeenCalledTimes(1);
+  });
+  it('19e. a non-manual job never consults the dispatch_id lookup', async () => {
+    await dispatchOutreachCall(job({ dispatchId: 'd1' }));
+    expect(getCallAttemptByDispatchId).not.toHaveBeenCalled();
+  });
+  it('19f. a pre-dial input read failing (app origin) throws BEFORE an attempt row exists', async () => {
+    // 6b: everything that can fail before the dial is resolved before the row is
+    // created, so a failure here can never strand a created 'queued' row.
+    vi.mocked(getAppOrigin).mockRejectedValueOnce(new Error('settings down'));
+    await expect(dispatchOutreachCall(job())).rejects.toThrow('settings down');
+    expect(createCallAttempt).not.toHaveBeenCalled();
+    expect(startScenarios).not.toHaveBeenCalled();
   });
 });
 

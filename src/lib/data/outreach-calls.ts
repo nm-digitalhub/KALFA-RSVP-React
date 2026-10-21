@@ -10,6 +10,7 @@ import {
   createCallAttempt,
   nextManualTouchpoint,
   getCallAttemptByTouchpoint,
+  getCallAttemptByDispatchId,
   recordDialConfirmed,
   markFailedToStart,
   markStartUnknown,
@@ -145,10 +146,49 @@ async function finishDialed(
   await setContactOpStatus(job.contactId, 'call_dialed');
 }
 
+type ExistingAttempt = NonNullable<Awaited<ReturnType<typeof getCallAttemptByTouchpoint>>>;
+
+// An attempt row already exists for this dial. RECONCILE — never redial, and
+// NEVER write the row's status (a racing loser or a redelivery must not corrupt
+// the in-flight winner). Shared by the lost-race path and the manual-dial
+// redelivery lookup by dispatch_id.
+async function reconcileExisting(
+  job: OutreachCallRequest,
+  existing: ExistingAttempt,
+): Promise<CallDispatchResult> {
+  if (existing.vox_call_session_history_id) {
+    // Winner already confirmed a start — complete the missing idempotent
+    // bookkeeping (e.g. it crashed after recordDialConfirmed).
+    await finishDialed(job, Number(existing.vox_call_session_history_id));
+    return { kind: 'already_dispatched', attemptId: existing.id };
+  }
+  if (
+    existing.status === 'queued' ||
+    existing.status === 'dialing' ||
+    existing.status === 'in_progress'
+  ) {
+    // The winner is presumably still in-flight (between INSERT and
+    // balance/payload/StartScenarios, or a pg-boss re-delivery of a slow
+    // winner). Do NOT touch the status; do NOT dial. A genuinely stuck row is
+    // resolved by a separate time-based reconciler, never here.
+    return { kind: 'skipped', reason: 'concurrent_owner' };
+  }
+  // Already concluded (failed_to_start / start_unknown / terminal).
+  return { kind: 'already_concluded', attemptId: existing.id, status: existing.status };
+}
+
 export async function dispatchOutreachCall(
   job: OutreachCallRequest,
 ): Promise<CallDispatchResult> {
   const { campaignId, eventId, contactId, normalizedPhone, touchpointIndex } = job;
+
+  // 0. Redelivery of a manual dial. Each manual delivery would otherwise take a NEW
+  //    touchpoint index (nextManualTouchpoint) and could dial again after a confirmed
+  //    start. If an attempt already carries this dispatch_id, reconcile it instead.
+  if (job.isManual && job.dispatchId) {
+    const prior = await getCallAttemptByDispatchId(job.dispatchId);
+    if (prior) return reconcileExisting(job, prior);
+  }
 
   // 1. Master outreach switch (defense-in-depth — the job may have sat queued).
   if (!(await getOutreachEnabled())) return { kind: 'skipped', reason: 'outreach_disabled' };
@@ -308,6 +348,19 @@ export async function dispatchOutreachCall(
     // proceed — warn only.
   }
 
+  // 6b. Read-only inputs for the scenario payload, resolved BEFORE the attempt row
+  //     exists: once the row is created, only buildScriptCustomData (synchronous)
+  //     and startScenarios may run before the dial, so a failure here can never
+  //     strand a created row.
+  //     Origin: the scenario builds the ctx/cb URLs from it + the opaque access
+  //     token (Branch B). No signed token, no key in the payload.
+  const origin = await getAppOrigin();
+  //     Stage 6 DTMF-'9' handoff smoke test: the first routable console agent (if
+  //     any) + the owner knob. Read fresh per dial (never cached).
+  const routableAgents = await findRoutableAgentVoxUsernames();
+  const consoleAgentUsername = routableAgents[0] ?? '';
+  const dtmfHandoffEnabled = await consoleDtmfHandoffEnabled();
+
   // 7. ATOMIC create — the ONLY concurrency mechanism (INSERT ... ON CONFLICT DO
   //    NOTHING against UNIQUE(campaign,contact,touchpoint); never read-then-insert).
   //    access_token is the opaque per-call bearer (Branch B): it satisfies the NOT
@@ -344,38 +397,9 @@ export async function dispatchOutreachCall(
     // (a racing loser must not corrupt the in-flight winner).
     const existing = await getCallAttemptByTouchpoint(campaignId, contactId, resolvedTouchpoint);
     if (!existing) return { kind: 'skipped', reason: 'concurrent_owner' }; // fail-closed
-    if (existing.vox_call_session_history_id) {
-      // Winner already confirmed a start — complete the missing idempotent
-      // bookkeeping (e.g. it crashed after recordDialConfirmed).
-      await finishDialed(job, Number(existing.vox_call_session_history_id));
-      return { kind: 'already_dispatched', attemptId: existing.id };
-    }
-    if (
-      existing.status === 'queued' ||
-      existing.status === 'dialing' ||
-      existing.status === 'in_progress'
-    ) {
-      // The winner is presumably still in-flight (between INSERT and
-      // balance/payload/StartScenarios, or a pg-boss re-delivery of a slow
-      // winner). Do NOT touch the status; do NOT dial. A genuinely stuck row is
-      // resolved by a separate time-based reconciler, never here.
-      return { kind: 'skipped', reason: 'concurrent_owner' };
-    }
-    // Already concluded (failed_to_start / start_unknown / terminal).
-    return { kind: 'already_concluded', attemptId: existing.id, status: existing.status };
+    return await reconcileExisting(job, existing);
   }
   const attemptId = created.id;
-
-  // 8. Resolve the app origin — the scenario builds the ctx/cb URLs from it +
-  //    the opaque access token (Branch B). No signed token, no key in the payload.
-  const origin = await getAppOrigin();
-
-  // 8b. Stage 6 DTMF-'9' handoff smoke test: the first routable
-  //     console agent (if any) + the owner knob. Read fresh per dial (never
-  //     cached) — same freshness discipline as every other gate above.
-  const routableAgents = await findRoutableAgentVoxUsernames();
-  const consoleAgentUsername = routableAgents[0] ?? '';
-  const dtmfHandoffEnabled = await consoleDtmfHandoffEnabled();
 
   // 9. Assemble the payload (single source of truth) — log ONLY the byte count.
   const { payload, bytes } = buildScriptCustomData({
@@ -392,12 +416,27 @@ export async function dispatchOutreachCall(
   try {
     const res = await startScenarios(config.auth, { rule_id: config.ruleId, script_custom_data: payload }, START_TIMEOUT_MS);
     if (res.result === 1 && res.call_session_history_id != null) {
-      await recordDialConfirmed(attemptId, {
-        callSessionHistoryId: res.call_session_history_id,
-        mediaSessionAccessUrl: res.media_session_access_url ?? null,
-        mediaSessionAccessSecureUrl: res.media_session_access_secure_url ?? null,
-      });
-      await finishDialed(job, res.call_session_history_id);
+      // The call HAS been placed. A failure in the bookkeeping below must never
+      // escape: a throw would reach guardedWorker and make pg-boss redeliver the
+      // job. The dial cannot be retried, and a redelivery reconciles through
+      // reconcileExisting (which completes finishDialed) rather than dialling.
+      try {
+        await recordDialConfirmed(attemptId, {
+          callSessionHistoryId: res.call_session_history_id,
+          mediaSessionAccessUrl: res.media_session_access_url ?? null,
+          mediaSessionAccessSecureUrl: res.media_session_access_secure_url ?? null,
+        });
+        await finishDialed(job, res.call_session_history_id);
+      } catch (bookkeepingError) {
+        console.error('[outreach-calls] post-dial bookkeeping failed', {
+          campaignId,
+          attemptId,
+          detail: bookkeepingError instanceof Error ? bookkeepingError.message : 'unknown error',
+        });
+        await alert('warn', 'Voximplant dial confirmed but bookkeeping failed', {
+          campaignId, contactId, attemptId,
+        });
+      }
       return { kind: 'dialed', attemptId, callSessionHistoryId: res.call_session_history_id };
     }
     // result!==1, or result===1 without a history id → ambiguous, no redial.

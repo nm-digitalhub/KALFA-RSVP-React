@@ -19,6 +19,10 @@ const db = {
   eqs: [] as unknown[][],
   existingLog: [] as { id: string }[] | null,
   lookupError: null as DbError,
+  // getCallAttemptByDispatchId: select().eq().order().limit().maybeSingle()
+  byDispatch: null as { id: string } | null,
+  byDispatchError: null as DbError,
+  orders: [] as unknown[][],
 };
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
@@ -35,6 +39,14 @@ vi.mock('@/lib/supabase/admin', () => ({
               return chain;
             },
             limit: async () => ({ data: db.existingLog, error: db.lookupError }),
+            order: (...o: unknown[]) => {
+              db.orders.push(o);
+              return {
+                limit: () => ({
+                  maybeSingle: async () => ({ data: db.byDispatch, error: db.byDispatchError }),
+                }),
+              };
+            },
           };
           return chain;
         },
@@ -55,7 +67,11 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }));
 
-import { TERMINAL_STATUSES, recordCallbackRequest } from './call-attempts';
+import {
+  TERMINAL_STATUSES,
+  getCallAttemptByDispatchId,
+  recordCallbackRequest,
+} from './call-attempts';
 import { callbackRequestHash } from '@/lib/voximplant/agent-tool-hash';
 
 beforeEach(() => {
@@ -68,6 +84,28 @@ beforeEach(() => {
   db.eqs = [];
   db.existingLog = [];
   db.lookupError = null;
+  db.byDispatch = null;
+  db.byDispatchError = null;
+  db.orders = [];
+});
+
+// The redelivery lookup for an operator-initiated dial (outreach-calls.ts step 0).
+describe('getCallAttemptByDispatchId', () => {
+  it('filters on dispatch_id, newest first, and returns the row', async () => {
+    db.byDispatch = { id: 'att9' };
+    expect(await getCallAttemptByDispatchId('disp-1')).toEqual({ id: 'att9' });
+    expect(db.eqs).toEqual([['dispatch_id', 'disp-1']]);
+    expect(db.orders).toEqual([['created_at', { ascending: false }]]);
+  });
+
+  it('no attempt for the dispatch_id → null', async () => {
+    expect(await getCallAttemptByDispatchId('disp-1')).toBeNull();
+  });
+
+  it('a read error THROWS — never null, which the dispatcher would read as "dial"', async () => {
+    db.byDispatchError = { message: 'timeout', code: '57014' };
+    await expect(getCallAttemptByDispatchId('disp-1')).rejects.toThrow('טעינת ניסיון השיחה נכשלה');
+  });
 });
 
 // 'handed_off' (a KALFA console agent took over the call) must be

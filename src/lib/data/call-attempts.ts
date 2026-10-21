@@ -475,6 +475,25 @@ export async function getCallAttemptByTouchpoint(
   return data;
 }
 
+// The attempt created for an operator-initiated dial, found by the dispatch_id
+// the console was handed at 202. A manual dial takes a NEW touchpoint index on
+// every delivery, so this lookup is how a pg-boss redelivery of the same job
+// finds the attempt its earlier delivery already created instead of dialling again.
+export async function getCallAttemptByDispatchId(
+  dispatchId: string,
+): Promise<CallAttemptRow | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('call_attempts')
+    .select('*')
+    .eq('dispatch_id', dispatchId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error('טעינת ניסיון השיחה נכשלה');
+  return data;
+}
+
 // Record a CONFIRMED StartScenarios start (result===1 && call_session_history_id).
 // Writes the provider identity columns; does NOT change `status` (the row stays
 // 'dialing' — the real state transition arrives later from the cb callback).
