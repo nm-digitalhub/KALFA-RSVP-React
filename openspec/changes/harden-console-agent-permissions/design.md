@@ -24,7 +24,7 @@ queried the catalog on both the local and the production database; **REST** call
 | console_chat_messages | table | SELECT; column INSERT(author_id, body, created_at, id) | select `is_console_agent()`; insert own author |
 | agent_status | table | SELECT, INSERT, UPDATE | own + `is_console_agent()` (select: `is_console_agent()`) |
 | call_dispatch_status | table | SELECT | `is_console_agent()` |
-| human_agent_call_legs | table | SELECT | own AND `is_console_agent()` |
+| human_agent_call_legs | table | SELECT; column UPDATE(device_id, vox_sdk_call_id) | select own AND `is_console_agent()`; update own only |
 | console_call_pii, console_agent_commands | table | none | RLS on, no policy |
 | `is_console_agent()` | SECURITY DEFINER, `search_path=public`, EXECUTE authenticated | – | `public.is_staff() and exists(console_agents where user_id = auth.uid() and vox_active)` |
 
@@ -178,6 +178,19 @@ SIM results:
 - The inactive agent's upsert is refused with `42501`, and its update without `WHERE` changes 0 rows.
 - `TRUNCATE` is refused with `42501`, and `MAINTAIN` and `TRIGGER` are false.
 
+`human_agent_call_legs` (found by the 4.1 inventory; S3, migration `20261021195752`):
+- grants stay as they are: `SELECT`, and column `UPDATE (device_id, vox_sdk_call_id)` only. These are
+  the two columns the app reports from the SDK on its own monitor leg (`app-integration-reference.md`
+  §7). The server writes every other column, including the `requested` row;
+- `human_agent_call_legs_update_own` gets `AND (select public.is_console_agent())` in `USING` and in
+  `WITH CHECK`. No grant changes.
+
+Result, executed on the local database after the migration:
+- an active agent updates `device_id` and `vox_sdk_call_id` on its own leg, with or without `WHERE`;
+  1 row, and another agent's leg does not change;
+- an update of any other column (`status`, `agent_id`) is refused with `42501`;
+- an inactive agent changes 0 rows, both with `WHERE` and without it, in raw SQL.
+
 Every other console object keeps today's privileges, which equal the map below. They are pinned by the
 inventory test, not rebuilt.
 
@@ -187,16 +200,74 @@ these objects.
 | Object | Privileges |
 |---|---|
 | 8 console views | SELECT |
-| console_agents, console_calls, console_queues, console_agent_queues, console_agent_calendar_presence, call_dispatch_status, human_agent_call_legs | SELECT |
+| console_agents, console_calls, console_queues, console_agent_queues, console_agent_calendar_presence, call_dispatch_status | SELECT |
+| human_agent_call_legs | SELECT; UPDATE (device_id, vox_sdk_call_id) only, which the app writes on its own monitor leg (`app-integration-reference.md` §7) |
 | console_agent_shift | SELECT; INSERT, UPDATE (agent_id, active, updated_at) |
 | console_call_feed | SELECT; UPDATE (agent_id, handled_by, participation_state, takeover_claimed_at, takeover_request_id) |
-| console_chat_messages | SELECT; INSERT (author_id, body, created_at, id) |
+| console_chat_messages | SELECT, INSERT (table level; the insert policy requires an active agent writing as itself) |
 | agent_status | SELECT, INSERT, UPDATE |
 | console_agent_secrets, console_call_pii, console_agent_commands | none |
 | `is_console_agent()`, `console_event_in_scope(uuid)`, `console_agent_provisioned(uuid)` | EXECUTE |
 
 Task 1.1 confirms the SELECT grants on `console_queues` and `console_agent_queues`: there is no
 user-session reader in this repository, and the Android contract decides.
+
+**Correction found by the inventory (task 4.1, live on both databases, 21.10.2026).** Two rows of the
+first version of this map were wrong; the map above shows the live state:
+- `console_chat_messages` holds table-level INSERT, not column-level (`relacl authenticated=ar`).
+  `information_schema.column_privileges` expands a table grant per column, which is how the earlier
+  reading went wrong.
+- `human_agent_call_legs` holds column UPDATE on `device_id` and `vox_sdk_call_id`. Its update policy,
+  `human_agent_call_legs_update_own`, checked ownership only. That is the same flaw as the shift
+  (G2): an inactive agent could change its own leg with an `UPDATE` without `WHERE` in raw SQL. Of all
+  the client write policies on console objects, it is the only one without `is_console_agent()`
+  (checked in `pg_policies`). The spec requirement "An inactive agent keeps only its own profile"
+  covers it, so S3 adds the gate, with a red/green integration case.
+
+**Console access map: readers and writers (task 1.1, live sources, 21.10.2026).** Client types:
+- **U**: user session, either the browser `createClient` from `@/lib/supabase/client` or the server
+  cookie client;
+- **B**: the Bearer JWT client in `requireConsoleAgent`
+  (`src/lib/auth/console-agent.ts:43`), which acts as the agent;
+- **S**: service role (`createAdminClient`), which RLS and grants do not affect;
+- **A**: the Android app with the agent's JWT, per `docs/voice-agent/app-integration-reference.md` §2–4
+  and `docs/agent-console-api-contract.md:66,140-141`.
+
+| Object | Client reads (who, where) | Client writes (who, where) | Server-only access |
+|---|---|---|---|
+| console_me | U `admin/layout.tsx:116`, `admin/voice/console/page.tsx:18`; A §2 | – | – |
+| console_events, console_campaigns, console_rsvp_results, console_call_analysis | A §2 | – | – |
+| console_event_guests | U `softphone-panel.tsx:515` (guest card: guest_name, rsvp_status, phone); A §2 (the dial list) | – | – |
+| console_campaign_targets | A §2 | – | – |
+| console_agents_roster | U `softphone-panel.tsx:312` (provisioned gates dial/transfer/consult targets, `roster-dial-button.tsx:60`, `call-bar.tsx:230`) | – | – |
+| console_agents | through the roster (security invoker) | – | S provisioning, history |
+| console_agent_secrets | through the roster only (`cas.user_id`) | – | S `console-sdk-auth.ts:77-90` (reads vox_password, returns a hash); S provisioning writes |
+| console_agent_shift | U `admin/layout.tsx:129` (own row) | B `api/agents/shift/route.ts:76-81` upsert (agent_id, active, updated_at) | – |
+| agent_status | U `softphone-panel.tsx:303`; through the roster; A §2 | B `api/agents/status/route.ts:48` upsert own row; A (`agent-console-api-contract.md:140`) | – |
+| console_calls | U `softphone-panel.tsx:480`, `call-bar.tsx:144`; Realtime | – | S `console-calls.ts`, `admin/console-history.ts` |
+| console_call_feed | U `ai-handoff-section.tsx:112`; Realtime; A §2 | U `ai-handoff-section.tsx:199` claim/update (5 columns); A takeover columns | S |
+| console_chat_messages | U `softphone-panel.tsx:562`; Realtime | U `chat-section.tsx:77` insert (author_id, body) | – |
+| call_dispatch_status | A §2 (status channel after a 202); Realtime | – | S |
+| human_agent_call_legs | U `ai-handoff-section.tsx:138`; A §7; Realtime | – | S writes the `requested` row |
+| console_queues, console_agent_queues | none found in this repository or the Android contract | – | S `console-queues.ts` (layout membership read, writes) |
+| console_agent_calendar_presence | through the roster | – | S `console-agent-calendar-presence.ts`, worker cron `worker/main.ts:1608-1618` |
+| console_call_pii, console_agent_commands | none | – | S `console-calls.ts`, `console-agent-commands.ts:44` |
+| `is_console_agent()` | B `console-agent.ts:71` (route gate); every console policy | – | – |
+
+Notes:
+- `src/lib/voximplant/*` and `supabase/functions/*` reach no console object; their mentions are only
+  comments.
+- **Queues:** no user-session reader exists, so the SELECT on `console_queues` and
+  `console_agent_queues` is kept unchanged, as D5 requires. It becomes a candidate for revoking once the
+  Android source has been checked (OQ2).
+- **`route-inbound` and manual calls:**
+  - 1244 of the 1267 calls in production carry no event, and every call that has one is in console
+    scope.
+  - A manual `guest_service` call takes `(eventId, contactId)` from the client.
+    `src/lib/data/console-calls.ts:964-983` checks that the pair exists, but not that it is in console
+    scope.
+  - After S2 an agent can no longer list out-of-scope guests, so the UI never offers them. A crafted
+    request is a server-authorization question, recorded under Risks. RLS does not cover it.
 
 **D6: The verification is layered, and only real execution counts as proof.**
 - **Integration (primary).** Two `*.local-it.test.ts` files run through
@@ -217,6 +288,14 @@ user-session reader in this repository, and the Android contract decides.
   - Agent personas over HTTP need committed agent rows. They are added only if task 1.4 proves that
     `FixtureScope` cleanup removes `console_agents`, `console_agent_secrets` and `platform_staff` rows.
     Otherwise the transaction-level tests stand in, and the gap is recorded.
+  - **Decision (task 1.4, 21.10.2026): agent personas stay at transaction level.** The catalog shows the
+    cascade, so deleting the fixture's `auth.users` row would remove `platform_staff` → `console_agents`
+    → `console_agent_secrets` / `agent_status` / `console_agent_shift` (all `ON DELETE CASCADE`), and
+    `FixtureScope.cleanup` deletes `auth.users` last (`local-integration.ts:573`). But no cleanup case
+    proves it for console rows. Committing agent fixtures would also add risk to the shared local
+    database without new coverage: the REST layer is shown to be the same mechanism (role + claims)
+    through the anonymous and regular callers. The remaining gap: agent personas over HTTP and a live
+    Realtime subscription.
 - **Unit (static guards).**
   - `src/lib/supabase/console-view-grants.test.ts` is extended so the latest body of every console view
     contains `is_console_agent()`, and the four data views also contain `console_event_in_scope(`.
@@ -228,9 +307,9 @@ user-session reader in this repository, and the Android contract decides.
 
 - **[A future inbound call is linked to an event outside console scope, and the guest card goes
   empty.]** Today 0 of 1267 calls do this.
-  → Task 1.1 records how `route-inbound` sets `console_calls.event_id`.
-  → If it can pick out-of-scope events, the scope helper also admits events referenced by a call of the
-  caller.
+  → Task 1.1 measured that 1244 of 1267 calls carry no event, and those that do are all in scope (0).
+  → Manual calls take `(eventId, contactId)` from the client and the server checks only that they exist.
+  Adding a scope check there is a server-authorization follow-up, outside this RLS change.
 - **[A third client relies on reading `console_agent_secrets.user_id` directly.]**
   → None is found in the repository or the Android contract. Task 1.1 re-checks the contract before S1.
   → Rollback re-grants the column and restores the policy.
@@ -260,8 +339,9 @@ The stages:
 - **S1:** D4, which covers the roster helper and closing the secrets table, and D5 for
   `console_agent_shift`.
 - **S2:** D3a, the scope helper and the four views plus `console_events`.
-- **S3:** the `search_path` of `is_console_agent()`, the privilege inventory, the static guards and the
-  verification document.
+- **S3:** the `search_path` of `is_console_agent()`, the `is_console_agent()` gate on
+  `human_agent_call_legs_update_own` (found by the 4.1 inventory), the privilege inventory, the static
+  guards and the verification document.
 
 Rollback per stage re-creates the previous view definitions, policies, grants and function settings from
 the header. Nothing in this plan changes data.
@@ -276,6 +356,8 @@ the header. Nothing in this plan changes data.
   - Default until decided: treat them as work data.
   - Decision input: an aggregate-only measurement agreed with the owner (for example, how many event
     names equal the owner's profile name), or the owner's ruling.
+  - **Status (task 1.2):** open. The default (work data) applies to this implementation, and no column
+    changes class.
 - **OQ2 (W-07, W-11). How does the Android app handle these columns?** The in-repo contract models
   `phone` as nullable (`docs/voice-agent/app-integration-reference.md:42,87`). Neither point below is
   verified, because the app's source is in another repository and the contract was written from commit
@@ -285,6 +367,10 @@ the header. Nothing in this plan changes data.
 
   This plan adds no new `NULL` and removes no column. The risk is limited to tables the app might read
   directly. Decide before S1 by checking the app source.
+  - **Status (task 1.2, owner instruction 21.10.2026):** Android work is deferred to a separate round and
+    is out of scope here. The shared data-contract changes that may need app work later are recorded in
+    `verification-console.md`, section "Android contract impact". Before the production push, they are
+    re-checked against what was actually implemented.
 - **OQ3 (P22).** Does `openspec archive` drop the delta's `## Purpose` section? It has not been run,
   because archiving writes files. Check when archiving.
 

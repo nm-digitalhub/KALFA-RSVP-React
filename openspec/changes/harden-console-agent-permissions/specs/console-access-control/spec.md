@@ -59,6 +59,16 @@ change no console row, whatever the statement form.
 - **WHEN** an inactive agent updates its own `console_agent_shift` row, with or without a filter
 - **THEN** zero rows change
 
+#### Scenario: Own monitor-leg device columns
+- **WHEN** an active agent updates `device_id` and `vox_sdk_call_id` on its own `human_agent_call_legs`
+  row, with or without a filter
+- **THEN** its own row changes, and no other agent's row changes
+- **WHEN** any agent updates another column of `human_agent_call_legs`
+- **THEN** the statement is refused with `42501`
+- **WHEN** an inactive agent updates `device_id` or `vox_sdk_call_id` on its own leg, in direct SQL
+  or in the statement shape the Data API sends (`WHERE` + `RETURNING`), with or without a filter
+- **THEN** zero rows change
+
 ### Requirement: Active agents see the work data of console-scope events only
 For every event in console scope, an active agent SHALL see the work data needed to place and record
 calls: the event, its campaigns, campaign targets, guests and their names, RSVP state and answers
