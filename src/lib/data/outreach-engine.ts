@@ -127,6 +127,11 @@ export async function listActiveOutreach(
   return data ?? [];
 }
 
+// Contract: `null` means "not found" (no such campaign, or its event has no date).
+// A database error is THROWN — never folded into `null`, because callers read
+// `null` as a terminal answer (stepGate → 'stopped', the dialer → campaign_not_active)
+// and a transient outage must not end a contact's outreach for good. Every caller
+// runs inside a guardedWorker job, so a throw is alerted and retried.
 export async function getCampaignContext(
   campaignId: string,
 ): Promise<CampaignContext | null> {
@@ -136,12 +141,14 @@ export async function getCampaignContext(
     .select('status, event_id, allowed_channels, start_at, close_at, outreach_schedule')
     .eq('id', campaignId)
     .maybeSingle();
-  if (error || !c) return null;
-  const { data: ev } = await admin
+  if (error) throw new Error('טעינת הקמפיין נכשלה', { cause: error });
+  if (!c) return null;
+  const { data: ev, error: evErr } = await admin
     .from('events')
     .select('event_date, status, rsvp_deadline, name, event_type, venue_name, venue_address, celebrants, invite_image_path')
     .eq('id', c.event_id)
     .maybeSingle();
+  if (evErr) throw new Error('טעינת האירוע נכשלה', { cause: evErr });
   if (!ev?.event_date) return null;
   return {
     status: c.status,
@@ -173,11 +180,14 @@ export async function isContactReached(
   contactId: string,
 ): Promise<boolean> {
   const admin = createAdminClient();
-  const { count } = await admin
+  const { count, error } = await admin
     .from('billed_results')
     .select('contact_id', { count: 'exact', head: true })
     .eq('event_id', eventId)
     .eq('contact_id', contactId);
+  // Fail-closed for the caller: a read error must never look like "not reached",
+  // which would open the gate for a contact who already answered.
+  if (error) throw new Error('בדיקת הגעה נכשלה', { cause: error });
   return (count ?? 0) > 0;
 }
 
@@ -292,11 +302,12 @@ export async function setOutreachStatus(
   };
   if (stopReason) patch.stop_reason = stopReason;
   if (status === 'reached') patch.reached_at = new Date().toISOString();
-  await admin
+  const { error } = await admin
     .from('outreach_state')
     .update(patch)
     .eq('campaign_id', campaignId)
     .eq('contact_id', contactId);
+  if (error) throw new Error('עדכון סטטוס ה-outreach נכשל', { cause: error });
 }
 
 // Record the first-decided send instant for a contact's current step (the
@@ -477,7 +488,11 @@ export async function executeStep(
 // campaignId + attemptId.
 export async function writeReach(args: ReachedArgs): Promise<string> {
   const outcome = await recordReached(args);
-  if (outcome === 'billed') {
+  // 'already_billed' also means reached: a contact that was billed is reached, and
+  // a replay after a crash between the billing RPC and this status write must
+  // complete the marker that was lost. Idempotent — re-running only refreshes
+  // reached_at.
+  if (outcome === 'billed' || outcome === 'already_billed') {
     await setOutreachStatus(args.campaignId, args.contactId, 'reached', 'reached');
   }
   return outcome;

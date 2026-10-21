@@ -266,6 +266,15 @@ describe('POST /api/events/{eventId}/outreach-call', () => {
     expect(recordDispatchAccepted).not.toHaveBeenCalled();
   });
 
+  it('500s with a safe error (no job, no row) when the reached check cannot be read', async () => {
+    vi.mocked(isContactReached).mockRejectedValue(new Error('בדיקת הגעה נכשלה'));
+    const res = await call();
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toBe('בדיקת מצב האורח נכשלה');
+    expect(boss.send).not.toHaveBeenCalled();
+    expect(recordDispatchAccepted).not.toHaveBeenCalled();
+  });
+
   it('500s (and does NOT enqueue) when the accepted row cannot be recorded', async () => {
     vi.mocked(recordDispatchAccepted).mockResolvedValue(false);
     const res = await call();

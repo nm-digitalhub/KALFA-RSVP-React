@@ -123,7 +123,15 @@ export async function POST(
   // on `code`, never on the Hebrew string. No manual bypass exists; the sole
   // exemption is a guest-requested callback (isCallback), which the callback
   // sweep enqueues directly — it never passes through this route.
-  if (await isContactReached(eventId, guest.contact_id)) {
+  // isContactReached THROWS on a read error (never a fail-open "not reached"),
+  // so a database blip is refused with a safe 500 — no job, no row.
+  let reached: boolean;
+  try {
+    reached = await isContactReached(eventId, guest.contact_id);
+  } catch {
+    return json({ error: 'בדיקת מצב האורח נכשלה' }, 500);
+  }
+  if (reached) {
     return json({ error: 'כבר נוצר קשר באירוע זה', code: 'already_reached' }, 409);
   }
 

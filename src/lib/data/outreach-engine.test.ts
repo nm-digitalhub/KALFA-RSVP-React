@@ -32,6 +32,9 @@ import {
   executeStep,
   writeReach,
   hasCallConsent,
+  getCampaignContext,
+  isContactReached,
+  setOutreachStatus,
   type CampaignContext,
 } from '@/lib/data/outreach-engine';
 
@@ -221,7 +224,10 @@ describe('writeReach (shared reach path — stop on billed)', () => {
     expect(patch.status).toBe('reached');
   });
 
-  it('on already_billed: does NOT touch outreach_state (no double-stop)', async () => {
+  it('on already_billed: still marks outreach_state reached (replay after a crash completes the lost marker)', async () => {
+    // A crash between the billing RPC and the status write leaves the contact
+    // billed but not marked reached; the replay sees 'already_billed' and must
+    // complete the marker. Idempotent — a second run only refreshes reached_at.
     vi.mocked(recordReached).mockResolvedValue('already_billed');
     const { client, builder } = createMockSupabase<{ id: string }>({
       data: null,
@@ -232,7 +238,76 @@ describe('writeReach (shared reach path — stop on billed)', () => {
     );
     const outcome = await writeReach(reachArgs);
     expect(outcome).toBe('already_billed');
+    const patch = vi.mocked(builder.update).mock.calls[0][0] as Record<string, unknown>;
+    expect(patch).toMatchObject({ status: 'reached', stop_reason: 'reached' });
+  });
+
+  it('on a refused verdict (e.g. not_active): does NOT touch outreach_state', async () => {
+    vi.mocked(recordReached).mockResolvedValue('not_active');
+    const { client, builder } = createMockSupabase<{ id: string }>({
+      data: null,
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+    expect(await writeReach(reachArgs)).toBe('not_active');
     expect(builder.update).not.toHaveBeenCalled();
+  });
+});
+
+// A read/write error is THROWN, never folded into a terminal-looking answer:
+// callers read null / false as "no such campaign" / "not reached", and a
+// transient outage must neither end a contact's outreach nor reopen the gate
+// for a contact who already answered. Every caller runs inside a guardedWorker
+// job (or a route that maps the throw to a 500), so a throw is retried.
+describe('outreach-engine DB errors are thrown, not swallowed', () => {
+  function mockAdmin(result: { data: unknown; error: unknown; count?: number | null }) {
+    const { client, builder } = createMockSupabase<Record<string, unknown>>(
+      result as never,
+    );
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+    return builder;
+  }
+
+  it('getCampaignContext: campaign read error → throws', async () => {
+    mockAdmin({ data: null, error: { message: 'timeout' } });
+    await expect(getCampaignContext('c1')).rejects.toThrow('טעינת הקמפיין נכשלה');
+  });
+
+  it('getCampaignContext: no such campaign → null (a real "not found")', async () => {
+    mockAdmin({ data: null, error: null });
+    expect(await getCampaignContext('c1')).toBeNull();
+  });
+
+  it('getCampaignContext: event read error → throws', async () => {
+    const builder = mockAdmin({ data: null, error: null });
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) => (f as (v: unknown) => unknown)({ data: LIVE_ROW, error: null }))
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({ data: null, error: { message: 'timeout' } }),
+      );
+    await expect(getCampaignContext('c1')).rejects.toThrow('טעינת האירוע נכשלה');
+  });
+
+  it('stepGate: a campaign read error propagates — never answered as stopped', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    mockAdmin({ data: null, error: { message: 'timeout' } });
+    await expect(stepGate('c1', 'k1', 'e1')).rejects.toThrow();
+  });
+
+  it('isContactReached: count error → throws (never "not reached")', async () => {
+    mockAdmin({ data: null, error: { message: 'timeout' }, count: null });
+    await expect(isContactReached('e1', 'k1')).rejects.toThrow('בדיקת הגעה נכשלה');
+  });
+
+  it('setOutreachStatus: update error → throws', async () => {
+    mockAdmin({ data: null, error: { message: 'timeout' } });
+    await expect(setOutreachStatus('c1', 'k1', 'exhausted')).rejects.toThrow(
+      'עדכון סטטוס ה-outreach נכשל',
+    );
   });
 });
 
