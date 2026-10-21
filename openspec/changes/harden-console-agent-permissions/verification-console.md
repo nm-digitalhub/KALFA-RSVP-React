@@ -103,7 +103,7 @@ changed. `create or replace view` kept owners and grants.
 | same, regression | `src/lib/auth/permissions.local-it.test.ts` | **17 passed, 0 failed** | finding-4 matrix unaffected |
 | same, harness | `src/lib/testing/cleanup.local-it.test.ts` | **20 passed, 0 failed** | fixture cleanup and isolation |
 | PostgREST, local HTTP `127.0.0.1:54321` (real GoTrue user) | `src/lib/auth/console-rest.local-it.test.ts` | **8 passed, 0 failed** | anon 401/42501 on the 8 views, the server-only tables and the helper RPCs; regular user 0 rows on views and readable tables, 403/42501 on server-only tables incl. `console_agent_secrets.user_id`, filterless PATCH 400/21000, shift upsert 403/42501, helper RPCs return `false` |
-| Realtime, live | none | **not run** | see section 6 |
+| Realtime, live (local `ws://127.0.0.1:54321`, real GoTrue users, committed fixtures removed by exact id + FixtureScope) | `src/lib/auth/console-realtime.local-it.test.ts` | **2 passed, 0 failed** (two consecutive runs) | an active agent receives `console_chat_messages` INSERT, `console_calls` INSERT+UPDATE and `console_call_feed` INSERT+UPDATE; an inactive agent and a regular user receive none of them; control: after the inactive agent is activated, its same subscription receives the next change |
 | CI on `main` (`0e577c12`, run 39671088969) | `lint`, `tsc --noEmit`, `npx vitest run` | success | unit and static only. **The console `*.local-it` suites were skipped in CI**: console-views 44 skipped, console-findings 15, permissions 17, cleanup 20 (`describe.skipIf(!RUN)`, no `OUTREACH_DB_IT` and no database in CI). CI is not evidence for any integration row above. |
 
 Every integration file ran alone through `scripts/integration/run-local.sh <file>` against
@@ -268,14 +268,20 @@ Data API does not expose. That is listed as a deferred option (section 9).
 - The application routes (`/api/agents/*`, `/api/console-calls/*`, `/api/calls/*`) were not called over
   HTTP against the migrated database. Their unit tests use mocks.
 
-**Realtime:** no live subscription was run. What is proven:
-- `console_calls`, `console_call_feed` and `console_chat_messages` keep `SELECT` for `authenticated` and
-  their `is_console_agent()` select policies (VT "Realtime tables…");
-- S1-S3 did not touch any select policy of the 6 published tables (`agent_status`, `call_dispatch_status`
-  and `human_agent_call_legs` included; inventory test).
+**Realtime:** run live on the local stack after the change (`console-realtime.local-it`, section 3):
+- delivery to an active agent works on `console_chat_messages`, `console_calls` and `console_call_feed`;
+- an inactive agent and a regular user receive nothing;
+- the control (activating the inactive agent) proves the subscription itself works.
 
-Not proven: event delivery to a subscribed agent after the change, and non-delivery to an inactive agent.
-A live check needs committed agent fixtures and a Realtime client against `127.0.0.1:54321`.
+Still not run live:
+- `agent_status`, `call_dispatch_status` and `human_agent_call_legs`. Their select policies are unchanged
+  by S1-S3 (inventory test);
+- Realtime against production;
+- the browser softphone's own subscription code (`src/lib/realtime/console-channels.ts`). The test uses
+  the same `postgres_changes` API from Node.
+
+The first run needed a readiness wait: Realtime attaches the `postgres_changes` subscription a few
+seconds after `SUBSCRIBED`. The test now warms up until the active agent receives a probe row.
 
 **Production behaviour:** a read-only transaction as an active production agent returned counts only:
 
