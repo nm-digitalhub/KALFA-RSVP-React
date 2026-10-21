@@ -20,6 +20,7 @@ import { QUEUES, RETIRED_QUEUES, WORKFLOW_RUN_EXPIRE_SECONDS, isFinalDelivery, t
   type WorkflowRunJob,
 } from '@/lib/queue/queues';
 import { completedRetentionSeconds, PGBOSS_SEND_IT_QUEUE } from '@/lib/ops/queue-schedule';
+import { supabaseDbPort } from '@/lib/relocation/env-validation';
 import { runWhatsAppHealthCheck } from '@/lib/whatsapp/run-health-check';
 import { runEmailHealthCheck } from '@/lib/email/run-health-check';
 import { runExtraKeyCheck } from '@/lib/sms/run-key-check';
@@ -808,7 +809,7 @@ async function withCallbackSchedulingLock<T>(fn: () => Promise<T>): Promise<Lock
   try {
     client = new PgClient({
       host: process.env.SUPABASE_DB_HOST,
-      port: Number(process.env.SUPABASE_DB_PORT || 5432),
+      port: supabaseDbPort(process.env),
       user: process.env.SUPABASE_DB_USER,
       password: process.env.SUPABASE_DB_PASSWORD,
       database: process.env.SUPABASE_DB_NAME || 'postgres',
@@ -900,7 +901,7 @@ function startCallbackWorkListener(boss: PgBoss): () => Promise<void> {
     try {
       client = new PgClient({
         host: process.env.SUPABASE_DB_HOST,
-        port: Number(process.env.SUPABASE_DB_PORT || 5432),
+        port: supabaseDbPort(process.env),
         user: process.env.SUPABASE_DB_USER,
         password: process.env.SUPABASE_DB_PASSWORD,
         database: process.env.SUPABASE_DB_NAME || 'postgres',
@@ -1000,7 +1001,7 @@ const SWEEP_QUEUES = new Set<string>([
 async function main(): Promise<void> {
   const boss = new PgBoss({
     host: process.env.SUPABASE_DB_HOST,
-    port: Number(process.env.SUPABASE_DB_PORT || 5432),
+    port: supabaseDbPort(process.env),
     user: process.env.SUPABASE_DB_USER,
     password: process.env.SUPABASE_DB_PASSWORD,
     database: process.env.SUPABASE_DB_NAME || 'postgres',

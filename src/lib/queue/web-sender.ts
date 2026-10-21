@@ -3,6 +3,7 @@ import 'server-only';
 import { PgBoss, type ConstructorOptions } from 'pg-boss';
 
 import { reportPgBossError } from '@/lib/alerts/pg-boss-alert';
+import { supabaseDbPort } from '@/lib/relocation/env-validation';
 
 // The web tier's SEND-ONLY pg-boss connection.
 //
@@ -18,7 +19,7 @@ import { reportPgBossError } from '@/lib/alerts/pg-boss-alert';
 export function webSenderOptions(env: Record<string, string | undefined> = process.env): ConstructorOptions {
   return {
     host: env.SUPABASE_DB_HOST,
-    port: Number(env.SUPABASE_DB_PORT || 5432),
+    port: supabaseDbPort(env),
     user: env.SUPABASE_DB_USER,
     password: env.SUPABASE_DB_PASSWORD,
     database: env.SUPABASE_DB_NAME || 'postgres',
@@ -86,9 +87,15 @@ export async function createWebJobSender(options: ConstructorOptions): Promise<P
 let sender: Promise<PgBoss> | null = null;
 
 export function getWebJobSender(): Promise<PgBoss> {
-  sender ??= createWebJobSender(webSenderOptions()).catch((err: unknown) => {
-    sender = null; // the next call tries again
-    throw err;
-  });
+  // The options are built inside the promise chain, so an invalid database
+  // configuration (DbConfigError from supabaseDbPort) is a REJECTION of this
+  // call — before any PgBoss or connection exists — not a synchronous throw, and
+  // the sender stays lazy: nothing is validated or opened until the first send.
+  sender ??= Promise.resolve()
+    .then(() => createWebJobSender(webSenderOptions()))
+    .catch((err: unknown) => {
+      sender = null; // the next call tries again
+      throw err;
+    });
   return sender;
 }

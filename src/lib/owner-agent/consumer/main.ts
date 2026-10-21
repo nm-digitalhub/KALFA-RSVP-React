@@ -19,6 +19,7 @@ import { PgBoss, type Job } from 'pg-boss';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { getWhatsAppConfig } from '@/lib/data/outreach-config';
+import { DbConfigError, supabaseDbPort } from '@/lib/relocation/env-validation';
 import { REPORT_QUEUE_POLICY } from '@/lib/owner-agent/reports/budgets';
 import { buildReportContent } from '@/lib/owner-agent/reports/content';
 import { buildModelReportContent } from '@/lib/owner-agent/reports/model-content';
@@ -53,6 +54,9 @@ const SCHEDULE_TZ = 'Asia/Jerusalem';
 // a row or a URL — is reported as `unexpected`.
 const CODE_MESSAGE = /^[a-z][a-z0-9_]{0,80}$/;
 function errorCode(e: unknown): string {
+  // A DbConfigError message is built to carry no secret (env-validation.ts) and
+  // IS the diagnosis — "unexpected" would hide a refused database configuration.
+  if (e instanceof DbConfigError) return e.message;
   return e instanceof Error && CODE_MESSAGE.test(e.message) ? e.message : 'unexpected';
 }
 
@@ -87,7 +91,7 @@ async function main(): Promise<void> {
     // The worker's connection: the Supabase session pooler (port 5432) from
     // .env.local. See worker/main.ts for why every field is what it is.
     host: process.env.SUPABASE_DB_HOST,
-    port: Number(process.env.SUPABASE_DB_PORT || 5432),
+    port: supabaseDbPort(process.env),
     user: process.env.SUPABASE_DB_USER,
     password: process.env.SUPABASE_DB_PASSWORD,
     database: process.env.SUPABASE_DB_NAME || 'postgres',

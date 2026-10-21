@@ -122,4 +122,37 @@ describe('getWebJobSender', () => {
     listeners[0](err);
     expect(h.report).toHaveBeenCalledWith(err, 'kalfa-web-sender');
   });
+
+  it('a production pooler host on port 54322 is a rejection before any PgBoss exists; once fixed, the next call builds the sender', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('SUPABASE_DB_HOST', 'aws-1-ap-south-1.pooler.supabase.com');
+    vi.stubEnv('SUPABASE_DB_PORT', '54322');
+    try {
+      const { getWebJobSender } = await load();
+      const { DbConfigError } = await import('@/lib/relocation/env-validation');
+      const first = getWebJobSender(); // a promise, not a synchronous throw
+      expect(first).toBeInstanceOf(Promise);
+      await expect(first).rejects.toBeInstanceOf(DbConfigError);
+      await expect(getWebJobSender()).rejects.toThrow(/SUPABASE_DB_PORT=54322/);
+      expect(h.created).toHaveLength(0); // nothing was built, so nothing connected
+
+      vi.stubEnv('SUPABASE_DB_PORT', '5432');
+      await expect(getWebJobSender()).resolves.toBeDefined();
+      expect(h.created).toHaveLength(1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('importing the module validates nothing — the check runs on the first send only', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('SUPABASE_DB_HOST', 'aws-1-ap-south-1.pooler.supabase.com');
+    vi.stubEnv('SUPABASE_DB_PORT', '54322');
+    try {
+      await expect(load()).resolves.toBeDefined();
+      expect(h.created).toHaveLength(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });

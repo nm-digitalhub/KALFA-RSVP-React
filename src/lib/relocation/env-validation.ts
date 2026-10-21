@@ -304,13 +304,93 @@ export async function probeVapidLocal(env: Record<string, string>): Promise<Prob
   }
 }
 
+// ── Supabase DB connection TARGET — a configuration check, not a connection ──
+//
+// Incident 2026-10-20/21: SUPABASE_DB_PORT=54322 (the LOCAL Supabase database
+// port) was paired with the production pooler host in .env.local; the worker
+// crash-looped for ~12 h on "connection timeout" and the web sender silently
+// could not enqueue. This rule refuses that pairing BEFORE any connection is
+// attempted, with a message that names the cause. It is pure (no network, no
+// DNS) and is the ONE rule every connection site goes through (supabaseDbPort);
+// probeSupabaseDb below is the separate, live connectivity check.
+
+/** The ports a Supabase pooler serves: 5432 session mode, 6543 transaction mode. */
+export const SUPABASE_POOLER_PORTS: readonly number[] = [5432, 6543];
+const DEFAULT_DB_PORT = 5432;
+const HOST_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/** A syntactically valid hostname that is `pooler.supabase.com` or under it,
+ * compared label by label — never a substring match, so `evilpooler.supabase.com`
+ * or `pooler.supabase.com.example.net` are not poolers. */
+export function isSupabasePoolerHost(host: string | undefined): boolean {
+  if (!host) return false;
+  const h = host.trim().toLowerCase().replace(/\.$/, "");
+  if (h.length === 0 || h.length > 253) return false;
+  const labels = h.split(".");
+  if (!labels.every((l) => HOST_LABEL.test(l))) return false;
+  return labels.length >= 3 && labels.slice(-3).join(".") === "pooler.supabase.com";
+}
+
+type DbTargetEnv = Record<string, string | undefined>;
+
+/** The ONE normalisation of SUPABASE_DB_PORT, used by the rule AND for the port
+ * actually connected to: surrounding whitespace is ignored, unset / empty /
+ * whitespace-only means the default 5432, anything but digits is NaN. */
+function effectiveDbPort(raw: string | undefined): number {
+  const v = (raw ?? "").trim();
+  if (v === "") return DEFAULT_DB_PORT;
+  return /^\d+$/.test(v) ? Number(v) : Number.NaN;
+}
+
+/** Production + a Supabase pooler host ⇒ the port must be 5432 or 6543 (an unset
+ * port means the callers' default, 5432). Development / test and non-pooler
+ * hosts keep their existing behaviour, 54322 included. The reason names the
+ * port only — never the host, user, password or a connection string. */
+export function checkSupabaseDbTarget(env: DbTargetEnv): ProbeOutcome {
+  if (env.NODE_ENV !== "production" || !isSupabasePoolerHost(env.SUPABASE_DB_HOST)) return { ok: true };
+  const port = effectiveDbPort(env.SUPABASE_DB_PORT);
+  if (SUPABASE_POOLER_PORTS.includes(port)) return { ok: true };
+  const shown = Number.isNaN(port) ? "(not a number)" : String(port);
+  const local = port === 54322 ? " — 54322 is the LOCAL Supabase database port" : "";
+  return {
+    ok: false,
+    class: "format",
+    reason:
+      `SUPABASE_DB_PORT=${shown} with a Supabase pooler host in production; ` +
+      `allowed: 5432 (session pooler) or 6543 (transaction pooler)${local}`,
+  };
+}
+
+export class DbConfigError extends Error {
+  readonly code = "DB_CONFIG_INVALID";
+  constructor(reason: string) {
+    super(`invalid database configuration: ${reason}`);
+    this.name = "DbConfigError";
+  }
+}
+
+/** The port every connection site uses: validates the target first (throws
+ * DbConfigError, nothing is opened), then returns the SAME normalised value the
+ * rule judged (effectiveDbPort). */
+export function supabaseDbPort(env: DbTargetEnv): number {
+  const outcome = checkSupabaseDbTarget(env);
+  if (!outcome.ok) throw new DbConfigError(outcome.reason);
+  return effectiveDbPort(env.SUPABASE_DB_PORT);
+}
+
 /** Supabase DB (session pooler): connect + SELECT 1. 28P01 = bad password
- * (auth class); connection-level errors = network. */
+ * (auth class); connection-level errors = network. The configuration rule runs
+ * first: a refused target is a format failure and nothing is connected.
+ * NODE_ENV in the given map can only TIGHTEN the rule: when this process runs in
+ * production the rule applies whatever the map says. */
 export async function probeSupabaseDb(env: Record<string, string>): Promise<ProbeOutcome> {
+  const nodeEnv = process.env.NODE_ENV === "production" ? "production" : env.NODE_ENV;
+  const target = checkSupabaseDbTarget({ ...env, NODE_ENV: nodeEnv });
+  if (!target.ok) return target;
   const { Client } = await import("pg");
   const client = new Client({
     host: env.SUPABASE_DB_HOST,
-    port: Number(env.SUPABASE_DB_PORT ?? "5432"),
+    port: effectiveDbPort(env.SUPABASE_DB_PORT), // the value the rule above judged
     database: env.SUPABASE_DB_NAME,
     user: env.SUPABASE_DB_USER,
     password: env.SUPABASE_DB_PASSWORD,
