@@ -68,7 +68,7 @@ These were not re-run: no mutation against the shared local database.
 - **M3**: the failure happened on a different path from the one intended.
 - **M4b**: the teardown outcome is unknown.
 
-See `plans/kalfa-stage-9-incident-local-audit-deletion.md` (local, untracked).
+See `plans/kalfa-stage-9-incident-local-audit-deletion.md`.
 
 ## Raw evidence (outside git)
 
