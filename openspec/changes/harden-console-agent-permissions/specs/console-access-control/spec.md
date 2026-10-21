@@ -53,6 +53,10 @@ change no console row, whatever the statement form.
 - **WHEN** an inactive agent reads `console_me`
 - **THEN** exactly one row is returned, its own
 
+#### Scenario: No softphone
+- **WHEN** an inactive agent opens the admin area
+- **THEN** no softphone is mounted and no SDK sign-in request is sent
+
 #### Scenario: Other console data
 - **WHEN** an inactive agent reads any other console view or console table
 - **THEN** zero rows are returned

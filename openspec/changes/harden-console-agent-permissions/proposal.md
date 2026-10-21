@@ -86,6 +86,7 @@ Production has 2 agents, both active staff.
     - `src/lib/realtime/console-channels.ts`;
     - `src/app/(admin)/admin/layout.tsx`;
     - `src/app/(admin)/admin/voice/console/page.tsx`.
+    - `layout.tsx` now gates the softphone on `is_console_agent()`.
   - (c) The `requireConsoleAgent` API routes under `src/app/api/{agents,calls,console-calls,campaigns}`.
   - The service-role paths are not affected by RLS or grant changes:
     - queues and presence (`src/lib/data/console-queues.ts`, `console-agent-calendar-presence.ts`);

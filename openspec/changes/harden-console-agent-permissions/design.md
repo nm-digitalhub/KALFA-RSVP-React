@@ -114,6 +114,10 @@ it would stop agents from working. The reviewed defect is scope (D3a), not visib
 - `console_me` keeps returning the caller's own row to an inactive agent.
   `src/app/(admin)/admin/voice/console/page.tsx` and `layout.tsx` rely on it to tell "not registered"
   from "not active".
+- The softphone mounts only when `is_console_agent()` is true (`admin/layout.tsx`, `44df8c9e`), the same
+  check `/api/agents/sdk-auth` makes. Because `console_me` keeps returning the row to an inactive agent,
+  that agent used to get a mounted softphone, which sdk-auth then refused with 403. `console_me` still
+  supplies `vox_username` and `display_name`.
 - `is_console_agent()` gets `search_path = ''`. Every reference in its body is already qualified, and the
   SIM run showed the answers unchanged.
 

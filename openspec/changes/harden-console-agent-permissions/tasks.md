@@ -128,6 +128,9 @@
   catalog, the test runs with counts, and Appendix A's 73 findings with where each is closed. Verify:
   the document lists 73 unique IDs, and every claim the design marks "not verified" is still open or
   decided by the owner.
+- [x] 4.5 Softphone mount gate: `admin/layout.tsx` requires `rpc('is_console_agent')`, failing closed
+  on error (`44df8c9e`). Verify: `src/app/(admin)/admin/layout.test.tsx` 4/4 (red before the fix);
+  lint, unit 13,173 and build green.
 
 ## Workflow follow-up
 
