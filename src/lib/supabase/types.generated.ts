@@ -8310,6 +8310,11 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      console_agent_provisioned: {
+        Args: { p_user_id: string }
+        Returns: boolean
+      }
+      console_event_in_scope: { Args: { p_event_id: string }; Returns: boolean }
       create_organization: { Args: { _name: string }; Returns: string }
       create_package_campaign: {
         Args: {
