@@ -212,3 +212,6 @@ voxfiles/pronunciation/audit/results/
 ops/rdpgw/build/
 # Playwright CLI output (may contain credentials)
 .playwright-cli/
+.aider*
+# the shared aider ignore list is a team asset
+!.aiderignore

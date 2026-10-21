@@ -1,0 +1,47 @@
+# KALFA.ME - AIDER IGNORE
+
+# Claude instructions and memory
+/CLAUDE.md
+/AGENTS.md
+/.claude/
+/.claude-flow/
+/.agents/
+/.remember/
+
+# Large files
+/package-lock.json
+/typings/voxengine.d.ts
+
+# Generated code
+/src/lib/cardcom/generated/
+/src/lib/whatsapp/generated/
+*.generated.ts
+
+# Explicit exception
+!/src/lib/auth/platform-permission-keys.generated.ts
+
+# Third-party source
+/src/lib/workflow/vendor/
+
+# Optional
+# /docs/workflowbuilder/
+# /typings/
+# /voxfiles/
+# /scripts/
+**/*.test.ts
+**/*.test.tsx
+/src/test/
+
+# Third-party UI primitives (not authored here)
+/src/components/reui/
+
+# Build / runtime output
+/.next*/
+/storage/
+
+# Large non-code trees (remove a line if you need aider to edit there)
+/docs/
+/public/
+/supabase/migrations/
+/voxfiles/.voxengine-ci/
+/voxfiles/pronunciation/
