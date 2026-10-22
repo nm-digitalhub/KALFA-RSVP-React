@@ -18,6 +18,13 @@ An assistant that changes timing on top of this would inherit every defect, whic
 
 On 22.10 the owner added a fourth part: upgrading the package of a running service. Verified the same day, there is no path to change a package once its terms are approved or paid (Part D).
 
+Later the same day the owner asked for three more things in this one change:
+- a paid service must start even when the buyer's browser closes. Verified with a local integration test: a payment that reaches the server only through CardCom's webhook is recorded, but the service stays unstarted (Part E);
+- the still-unbuilt `separate-event-setup-from-management` merged in, after re-verifying it against the code and the database (Part F);
+- a staff campaign page separate from the customer's, with no duplicated logic or tables (Part G).
+
+Every part is verified end to end in a browser against local Supabase (D27).
+
 ## What Changes
 
 **Part A — one timing layer for every outbound message and call**
@@ -61,6 +68,26 @@ On 22.10 the owner added a fourth part: upgrading the package of a running servi
 - The board updates live through the same empty-signal broadcast pattern already used for permission changes.
 - The event owner gets no board. They get the summary and the assistant (owner decision 22.10).
 
+**Part E — the service starts when the payment is recorded (D23)**
+
+- One request-free activation function with a system actor. It moves only `approved → active`, inside the guarded update, so it never restarts a paused service.
+- It runs from a pg-boss job sent when the payment is recorded, from both the browser and the webhook path. 5 deliveries, then a Slack alert. The payment orphan sweep re-sends a missing job and retries a failed one.
+- Repeating it is safe: completion (thank-you default, activity row) checks before it writes.
+- The customer no longer sees an "activate now" button.
+
+**Part F — setup and management are separate (merged from `separate-event-setup-from-management`, D24)**
+
+- An event is in setup until the server records the payment, and in management from then on. The owner in setup sees only the setup flow, in one shell, with one step list and flat content. After payment the owner lands on the management page.
+- An unpaid service no longer blocks closing the event: one atomic, audited close retires it. Paid, in-flight or test money keeps the event open.
+- Guests can be added any time after purchase. The outreach list follows the quota and the order of addition, recovers from a missed admission, and shows each guest's status.
+- No "קמפיין" in customer text, guarded by a scan test.
+
+**Part G — a staff campaign page (D25)**
+
+- `/admin/campaigns/[campaignId]` for staff, inside the admin shell. The customer page loses every staff branch.
+- Both pages share the moved components and one pure board-state function, read the same tables and write through the same data functions.
+- Staff see only the controls their permissions allow. A paid campaign shows as paid to staff. Staff may restart a paused service.
+
 **Part D — package upgrade after approval or payment (owner decision 22.10)**
 
 - Today a package can be changed only before the terms are approved (`change_campaign_package`). After approval or payment there is no path, for the customer or for staff. Verified 22.10 in the code and the live catalog.
@@ -80,6 +107,10 @@ On 22.10 the owner added a fourth part: upgrading the package of a running servi
 - `event-assistant`: the customer-facing chat on an event, what it may read and propose, its confirmation contract, its budget and its privacy limits.
 - `staff-event-board`: the platform-staff board of events, its derived columns, staff tasks and live updates.
 - `package-upgrade`: upgrading the package of an event's service after approval or payment, as part of that service: who may start it, the customer's approval, the amount due, when it takes effect, failure, quota, schedule and history.
+- `package-activation`: how a server-recorded package payment starts the service, from every payment path, exactly once, without the buyer's browser.
+- `event-setup`: what a customer sees from creating an event until the payment is recorded, the hand-over to management, guests after purchase and the outreach list (from `separate-event-setup-from-management`, corrected).
+- `event-closure`: when a customer may close an event and how unpaid setup is retired (from the same change, extended for open upgrades).
+- `staff-campaign-page`: the staff view and controls of one campaign, separate from the customer's.
 
 ### Modified Capabilities
 None. `openspec/specs/` holds no capabilities today (`openspec list --specs`).
@@ -93,7 +124,8 @@ None. `openspec/specs/` holds no capabilities today (`openspec list --specs`).
 - **Blocking fast days, or per-venue candle-lighting times.** The window keeps Jerusalem times and today's blocked days. This is recorded as a known limit.
 - **Guests' own time zones.** Times are Israel wall-clock, as today.
 - **A board for event owners, kanban/Gantt views, and user-built board automations.** pg-boss and `workflows` remain the only automation engines.
-- **Routing between setup and management.** That belongs to `separate-event-setup-from-management`. This change mounts the assistant on the management page that change defines.
+- **A staff board for one campaign that `ops_engineer` can open.** Run-state operations without `manage_billing` stay in the console API (D25).
+- **Automated tests against the real providers.** E2E fakes them at the HTTP boundary; the real leg is an owner-run pass after deploy (D27).
 
 ## Impact
 
@@ -107,7 +139,9 @@ None. `openspec/specs/` holds no capabilities today (`openspec list --specs`).
   - assistant conversations and a cost ledger;
   - staff tasks and their notes;
   - the board's broadcast signal;
-  - package upgrades (`campaign_package_changes`, the link from the payment ledger, four SQL functions).
+  - package upgrades (`campaign_package_changes`, the link from the payment ledger, four SQL functions);
+  - one shared admission function replacing `reconcile_authorized_set`'s admission and used by `fill_authorized_set` (Part F);
+  - `close_event_retiring_setup` (Part F).
 - **Code:**
   - `src/lib/outreach/*` (projection; per-channel policy at plan time);
   - `src/lib/data/outreach-engine.ts` and `worker/main.ts` (store the planned time, record call skips);
@@ -117,13 +151,17 @@ None. `openspec/specs/` holds no capabilities today (`openspec list --specs`).
   - the admin package form;
   - a new `/admin/board`;
   - `src/lib/payments/status.ts`, `cardcom-purchase.ts`, `cardcom-settle.ts` and the payment page (Part D);
-  - `src/lib/relocation/env-validation.ts` and `.env.example`.
+  - `src/lib/relocation/env-validation.ts` and `.env.example`;
+  - Part E: `src/lib/payments/activate-paid-package.ts`, `cardcom-settle.ts`, both purchase routes, `src/lib/queue/queues.ts`, `worker/main.ts`, `src/lib/data/payment-orphans.ts`;
+  - Part F: `setup-steps.ts`, the event, setup, payment, results, guests and statistics pages, a new `SetupShell`, `events.ts` (`closeEvent`), `contacts.ts`, `guests.ts`, `outreach-engine.ts`, the import actions;
+  - Part G: a new `/admin/campaigns/[campaignId]`, `src/components/campaign-board/`, `src/lib/campaigns/board-state.ts`, `src/lib/data/admin/campaigns.ts`, the five staff link sources;
+  - E2E: `e2e/`, `scripts/e2e/run-local.sh`, and one loopback-only origin override per provider client.
 - **Dependencies:**
   - Added: `@ai-sdk/anthropic` 4.0.85 and `@ai-sdk/react` 4.0.152.
   - Bumped: `ai` 7.0.141 → 7.0.148, an exact requirement of `@ai-sdk/react`.
   - Removed: the unused direct `@anthropic-ai/sdk` line. It stays transitive under `@anthropic-ai/claude-agent-sdk`.
+  - Added (dev): `@playwright/test`, matching the installed `playwright` 1.64.1 (owner approval).
 - **Configuration and secrets:** a new API-key variable, which the owner creates in the Claude Console under the owner's API organization. The model choice, price list, monthly cap and on/off switch live in settings managed from the admin panel.
-- **Depends on:**
-  - `separate-event-setup-from-management` (the management page and its paid predicate);
-  - the corrected table-permission rule of `staff-tables-permission-rls` (D10), for the new staff tables.
-- **Deploy:** migrations first (owner-applied; pushing a migration to `main` deploys it to production), then worker and app together. Each part ships behind its own switch.
+- **Depends on:** the corrected table-permission rule of `staff-tables-permission-rls` (D10), for the new staff tables.
+- **Supersedes:** `separate-event-setup-from-management` (merged as Part F; archived only with the owner's approval).
+- **Deploy:** migrations first (owner-applied; pushing a migration to `main` deploys it to production), then worker and app together. Parts A, B and D ship behind their own switches. Parts E, F and G ship without one: E is a fix, F replaces the routing (a switch would keep two routings alive), G is staff-only. Their rollback is a revert commit (design, Migration Plan).

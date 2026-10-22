@@ -78,11 +78,15 @@ Path validity SHALL be derived when it is read, never stored. A path SHALL stop 
 
 ### Requirement: How the upgrade label is shown
 A package SHALL have no stored type. The label "שדרוג" SHALL be derived from the paths:
-- on the owner's service page, beside each package reachable from the current package, with the amount this owner would pay;
+- for the owner, beside each package reachable from the current package, with the amount this owner would pay;
 - in the staff offer screen, for the same list;
 - in the admin package list, as the targets each package can be upgraded to and the sources it can be reached from.
 
 A package that is an upgrade target SHALL still be offered for a new purchase as a regular package.
+
+#### Scenario: Where the owner sees the label
+- **WHEN** the owner's service is paid, or approved and not yet paid
+- **THEN** the labelled targets appear in "החבילה שלך" on the management page, or in the payment step of the setup flow
 
 #### Scenario: Same package, two owners
 - **WHEN** package B is a path target of A, one owner is on A, and another owner is buying a first package
@@ -93,7 +97,7 @@ A package that is an upgrade target SHALL still be offered for a new purchase as
 - **THEN** each package shows its upgrade targets and the packages that upgrade to it, and any path that is not valid is marked with its reason
 
 ### Requirement: Who may start an upgrade
-The event owner SHALL be able to start an upgrade from the event's service page, under the same rule that lets them buy the package. Staff holding the "manage billing" permission SHALL be able to offer an upgrade to the customer from the admin panel. No one else SHALL be able to start one.
+The event owner SHALL be able to start an upgrade from the event's management page once the service is paid, and from the payment step of the setup flow before that, under the same rule that lets them buy the package. Staff holding the "manage billing" permission SHALL be able to offer an upgrade to the customer from the admin panel. No one else SHALL be able to start one.
 
 #### Scenario: Org member without ownership
 - **WHEN** an organization member who is not the event owner tries to start an upgrade
@@ -115,7 +119,7 @@ Staff SHALL NOT approve, pay for or apply an upgrade on the customer's behalf.
 
 #### Scenario: Staff offer waits for the customer
 - **WHEN** staff offer an upgrade
-- **THEN** the service is unchanged; the owner sees the offer and its amount on the event's service page
+- **THEN** the service is unchanged; the owner sees the offer and its amount on the management page, or in the setup flow when the service is not paid
 
 #### Scenario: Approval records the agreement
 - **WHEN** the owner approves an upgrade
@@ -132,6 +136,10 @@ The owner then approves the terms and pays the full price through the regular pu
 #### Scenario: Approved but unpaid
 - **WHEN** an owner whose terms are approved but who has not paid approves an upgrade
 - **THEN** the campaign returns to awaiting approval with the new package and its full price, and no upgrade charge is created
+
+#### Scenario: Where the owner finds it before payment
+- **WHEN** the owner of an approved, unpaid service opens the event
+- **THEN** the upgrade is offered in the payment step of the setup flow, not on a management page
 
 ### Requirement: Upgrade after payment pays only the difference
 When the campaign has collected payment, the amount due SHALL be the customer's price for the new package minus the net amount paid for the service. The net amount is all succeeded collections minus every refund that has not failed. The amount SHALL be computed on the server.

@@ -281,7 +281,11 @@ The management page shows a summary card built from `getEventStats` + D9 + `than
 | Timing permission | `campaigns.schedule`, "תזמון ושליחה לאורחים"; org owner role only by default | `permission_definitions` |
 | Staff task permission | `tasks.manage`, "ניהול משימות אירוע" | `platform_permission_definitions` |
 | Board route / gate | `/admin/board` / `view_events`; customer-data columns need `view_customer_data` | fixed |
-| Assistant mount until `separate-event-setup-from-management` lands | today's event page, shown only when `packagePaymentOf` reports `collected` (`src/lib/payments/package-paid.ts:20`) | fixed; moves with that change |
+| Assistant, summary and "החבילה שלך" mount | the event page in `management` mode (D24 `eventMode`, D26) | fixed |
+| Activation after payment | system actor, `approved → active` only; pg-boss `package-activation`, 5 deliveries, Slack on the last; orphan sweep re-sends or retries | fixed (D23) |
+| Staff campaign page | `/admin/campaigns/[campaignId]`, `manage_billing`; pause/close/cancel/restart with `campaigns.runstate`; restart only from `paused` | fixed (D25) |
+| Admission switch for quota campaigns | `RECONCILE_AUTHORIZED_SET_ENABLED` ignored when the campaign has a `contact_quota` | fixed (D24) |
+| E2E | `@playwright/test`, git worktree, `env -i` allowlist, local Supabase, providers faked at HTTP | fixed (D27) |
 | Part switches | `timing_v2_enabled`, `assistant_enabled`, `package_upgrade_enabled` (all off at deploy), board has no switch (staff-only, read-mostly) | `app_settings` |
 | Upgrade validity | 7 days from the offer or approval, never past the event date | `app_settings.package_upgrade_valid_days` |
 | Who starts an upgrade | event owner (purchase rule, `requireOwnedEvent`); staff with `manage_billing` | fixed |
@@ -452,6 +456,132 @@ The admin list calls `upgradePathsReport()`, which returns every stored path wit
 - Extending `supersede_campaign_pricing` with an upgrade reason: it supersedes the round before payment, so the new price would be "current" while the old package still runs.
 - Reusing `events.package_id`: it is not the purchase record. It was locked on 22.10 and is not read by anything.
 
+### D23. Package activation after a server-recorded payment, through pg-boss (Part E)
+
+**Verified 22.10 (code, a local integration test, production read-only):**
+- CardCom reports a payment twice: the buyer's browser calls `POST /api/campaigns/[id]/purchase/settle`, and CardCom calls `POST /api/cardcom/webhook`. Both call `settleCardcomSession`. Only the browser route activates (`purchase/settle/route.ts:94-95`). The webhook's success path ends in `afterPaid` (`cardcom-settle.ts:510-525`), which writes an activity row and re-checks the tax ceiling, nothing more. The SUMIT purchase route activates inline in the buyer's request (`purchase/route.ts:119`).
+- `src/lib/payments/cardcom-webhook-activation.local-it.test.ts` runs the real routes against local Supabase with only CardCom's answer replaced. Browser alone → active. Webhook then browser → active. Webhook alone → payment `succeeded`, campaign stays `approved` (declared `it.fails`, a known gap).
+- The same test shows that calling today's activation from the webhook is not a fix: `activateCampaign` with the default `owner` actor goes through `requireOwnedEvent` → `requireUser` and redirects to `/auth/login` without a session (`campaigns.ts:561-564`). In the worker the same call throws on purpose (`worker/empty.js`).
+- `logActivity` also needs a session (`activity.ts:35`). Its failure is logged with `console.error` and not alerted (`campaigns.ts:679-683`).
+- `activateCampaign` accepts `approved`, `scheduled` and `paused` (`campaigns.ts:633-634`). A delayed retry could therefore restart a service that staff paused.
+- Production: 4 real package payments (8–18.10) were all activated within a minute by the browser path. No case of a webhook-only payment has happened yet.
+
+**Decision.**
+- **One system activation function,** `activatePaidPackage(campaignId)` in `src/lib/payments/activate-paid-package.ts`, request-free (admin client only):
+  1. calls `transitionCampaignStatus(campaignId, ['approved'], 'active', 'package', { rejectPastEvent: true, requireActiveEvent: true, preparePackage: requirePackageFunding }, { kind: 'system' })`. The `approved`-only `from` set is part of the guarded UPDATE (`campaigns.ts:587-591`), so a status changed by staff in the meantime is never overwritten, and a paused service is never restarted;
+  2. a new actor kind `system` in `CampaignActor`: the event is read with the service-role client and the same event guards run, exactly like the existing `console` branch (`campaigns.ts:565-577`). No ownership check: the authority is the payment recorded on the server, and `requirePackageFunding` re-reads it from the ledger;
+  3. **completion, safe to repeat:** when the campaign is `active` (just now, or already), it seeds `thankyou_send_at` only if it is null (today's guard, `campaigns.ts:691-699`), and writes the `campaign.activated` activity row through a direct admin insert (as `cardcom-settle.ts:512` does) only if no such row exists for the campaign. A crash between the status write and the completion is repaired by the next delivery;
+  4. returns `started`, `already_active`, `not_applicable` (status is neither `approved` nor `active`) or throws (ledger unreadable, event guards). The `owner` path of `activateCampaign` stays for the owner's own restart of a paused service.
+- **Queue.** `QUEUES.packageActivation = 'package-activation'`, payload `{ campaignId, operationId }` (ids only). Job id `deterministicJobId('package-activation:' + operationId)`. Retry policy `PACKAGE_ACTIVATION_RETRY = { retryLimit: 4, retryBackoff: true, retryDelayMax: 300 }`. `retryLimit` counts retries after the first delivery (`pg-boss/dist/plans.js:2560, 3025`), so this is 5 deliveries in total. No `deadLetter` (`QUEUES.dead` expects an outreach step, `queues.ts:316-317`).
+- **Enqueue points.** The job is sent right after the payment is recorded as `succeeded`, through `getWebJobSender()`:
+  - `afterPaid` in `cardcom-settle.ts`, so the browser call and the webhook both enqueue. `alreadyDone` settlements do not reach `afterPaid`, so a repeated webhook sends nothing;
+  - the SUMIT purchase route after its success.
+
+  A failure to enqueue is logged and caught by the sweep below. It never affects the recorded payment.
+- **Browser paths.** The browser settle route and the SUMIT route call `activatePaidPackage` inline as well, so a buyer who stays sees a running service at once. The job and the inline call are the same idempotent function; whichever runs second answers `already_active`.
+- **Worker.** `boss.work(QUEUES.packageActivation, { includeMetadata: true }, …)` calls `activatePaidPackage`. Slack only on the final delivery (`isFinalDelivery`, `queues.ts:407-409`), not through `guardedWorker`'s per-failure alert (`worker/main.ts:393-411`).
+- **Safety net.** `runPaymentOrphanSweep` (every 10 minutes, `worker/main.ts:1648-1650, 1743`) today reads only `pending` rows (`payment-orphans.ts:86`). It gains a second pass: campaigns in `approved` whose ledger shows `collected` for more than 10 minutes. For each, it sends the job with the same id. If pg-boss already holds that id in state `failed`, it calls `boss.retry(QUEUES.packageActivation, id)` (`pg-boss/dist/index.d.ts:58`) and alerts once per campaign per day. No other repair path exists.
+- **Customer UI.** `ActivateNowForm` and the setup `live` step's "הפעלת הקמפיין עכשיו" (`package-payment-view.tsx:84-92`, `setup/page.tsx:295-304`) are removed. A paid campaign that is not yet active shows "השירות מופעל" to the owner and the stage `awaiting_activation` to staff only (D24).
+
+**Alternatives.**
+- Inngest. Rejected: not installed, adds an external service and a second job system next to pg-boss, which already provides retries, deterministic ids and the worker.
+- `after()` in the webhook route (Next docs, `after.md`). Rejected: the work still has no session, and nothing retries it after a crash.
+- Calling the owner activation from the webhook. Rejected: proven to fail (test case D).
+
+### D24. Setup and management, merged from `separate-event-setup-from-management` (Part F)
+
+The separate change was re-verified item by item on 22.10 (`R6-separate-verify.md`; I re-checked the load-bearing facts in code and in the production catalog). It had 0 of 35 tasks done. Its intent is adopted here with these corrections. It is not edited; it is archived only with the owner's approval (task 30.3).
+
+- **Mode.** `eventMode(stage, viewer)` in `src/lib/data/setup-steps.ts` replaces `POST_ACTIVATION_STAGES` (`setup-steps.ts:129`, used at `setup/page.tsx:141`, `setup-steps.tsx:48`). Stages are `not_set, awaiting_terms, awaiting_payment, awaiting_activation, active, paused, closed, cancelled` (`event-labels.ts:99-107`; the separate change's `awaiting_signature` no longer exists).
+
+  | Stage | Mode (owner) |
+  |---|---|
+  | `not_set`, `awaiting_terms`, `awaiting_payment` | `setup` |
+  | `awaiting_activation`, `active`, `paused`, `closed` | `management` |
+  | `cancelled` | not reached: `getCampaignForEvent` skips cancelled rows (`campaigns.ts:334`), so a reset event reads `not_set` |
+  | ledger unreadable | `unavailable`: a notice in place, no redirect |
+
+  A non-owner with `campaigns.view` gets `readonly_setup` instead of `setup`; a viewer without it keeps the permission-limited card.
+- **One "paid" predicate.** The assistant (Part B), the summary card (13.1), routing and "החבילה שלך" all use `eventMode`. The D21 row "`packagePaymentOf` reports `collected`" is replaced. Reason: `deriveStatus` lets any in-flight row win over `collected` (`status.ts:41-47`), so a pending refund or upgrade charge would hide the assistant of a running service. `campaignStage` ignores the ledger once the campaign is `active`/`paused`/`closed` (`event-labels.ts:153-161`). For `approved`/`scheduled` it reads `isFunded` (`event-labels.ts:140-142`, `payment.status === 'collected'`), which an in-flight row turns false. Decision: for the mode, a campaign is funded when its settled history collected the package price and no succeeded return brought it below it, whatever is in flight (task 22.1). A pending refund or upgrade charge therefore never sends a paid owner back to setup, independently of D22's `upgradeInFlight` (15.1), which remains for the payment screens.
+- **Routing** (separate change D2, line references updated):
+  - `/app/events/[id]`: owner in `setup` → `/setup`; `readonly_setup` → read-only "בהקמה" card; `management` → the management page (D26) without `SetupSteps`;
+  - `/setup` and the payment page: `management` → the event page;
+  - the results page `campaign/[campaignId]` and the guests and statistics pages: owner in `setup` → `/setup`;
+  - after payment: the SUMIT route (`purchase/route.ts:113-121`), the CardCom form (`cardcom-open-fields-form.tsx:189, 207, 279`) and the CardCom settle route land on the event page. "מעבר לניהול הקמפיין" (`package-payment-view.tsx:102`) is removed;
+  - `/app`, login and verify are unchanged (`app/page.tsx:33-39`).
+- **Setup shell and flat content.** Separate change D3, without `AgreementStep` (deleted with pay-per-result, `23bf19b3`). The shell hosts today's extra content: the benefit banner in the pay step (`setup/page.tsx:112-126, 278-291`), the package re-choice while `pending_approval` (`setup/page.tsx:66-77`), CardCom Open Fields and Google Pay.
+- **Package change before payment lives in setup.** D22's "upgrade before any payment" (an `approved`, unpaid campaign) is offered in the setup pay step, next to the existing `pending_approval` re-choice. The management page offers only the post-payment upgrade. Reason: an owner in `setup` never reaches the management page.
+- **Purchase starts the service:** D23. No customer "activation" concept.
+- **Close during setup.** Separate change D5 and D7 (`close_event_retiring_setup(p_event, p_owner)`, invoker, `search_path ''`, service_role only, owner checked in the body, explicit `succeeded` check so test money is not reset by a close). Verified live: no such function, `cancel_campaign` is service_role only, `event.closed` rows have never been written by the owner path (production: only `closed_by_admin` 2, `closed_by_settlement` 2). Added for Part D: the close is blocked while a `campaign_package_changes` row is `approved` or its payment is pending or in review, and an `offered` row is cancelled and its held upgrade benefit released in the same transaction.
+- **Admission safety nets.** Separate change D9 (a)–(d), with two decisions taken:
+  - `RECONCILE_AUTHORIZED_SET_ENABLED` does not gate anything for a campaign with a `contact_quota`, at add time included. Production: every approved/active campaign has a quota. The switch remains for campaigns without one;
+  - a guest admitted late gets the steps still ahead of the event, as the engine does today (`ensureCurrentStep` starts at the current step). Task 22.4 records it; no change.
+
+  One migration owns the shared admission function. `reconcile_authorized_set`, `fill_authorized_set` and D22's `apply_package_upgrade` all call it, and that migration precedes Part D's. The replacement keeps the live same-contact `repoint` no-op (verified in the live definition).
+- **Vocabulary.** Separate change D8. The scan test (task 25.3) lands before any new customer UI of Parts A, B and D, so new strings cannot re-introduce "קמפיין". The payment title is already 'תשלום החבילה' (`payment/page.tsx:21`).
+
+### D25. A staff campaign page, without duplicated logic (Part G)
+
+**Verified (R7, checked 22.10):** staff run the customer page `campaign/[campaignId]` inside the customer chrome, gated by `manage_billing` (`page.tsx:60, 212`). Consequences in production code today:
+- a billing clerk sees pause, close and cancel, which need `campaigns.runstate` and redirect to `/access-denied`;
+- `getCampaignForAdminView` returns no price (`admin/campaigns.ts:139-155`), so a paid campaign reads as unpaid for staff;
+- staff see owner buttons (gift, event-day and thank-you sends) that answer `notFound()`;
+- the payments audience is decided per viewer, not per route.
+
+**Decision** (R7 §5, adopted):
+- **Route:** `/admin/campaigns/[campaignId]`, inside `AdminShell`.
+  - Page gate `requirePlatformPermission('manage_billing')`, the same as the list. The real gate stays in the audited admin readers.
+  - Pause, close and cancel render only for `hasPlatformPermission('campaigns.runstate')`.
+- **Shared, moved not copied:** `src/components/campaign-board/*` (status card, delivery breakdown, failure notice, action button, thank-you form) and the pure `src/lib/campaigns/board-state.ts` (moved from `manage-client.tsx:843-872`). One `withCurrentPrice` in `campaigns.ts`, used by `getCampaign` and `getCampaignForAdminView`. One `readPanel` helper.
+- **Actions:** staff actions move to `src/app/(admin)/admin/campaigns/[campaignId]/actions.ts`. Each is a thin wrapper over the same gated data function, and `eventId` is derived on the server. `updateThankyouSchedule` stays one data function with its identity fork; the customer and staff actions both call one parsing helper.
+- **Payments:** the audience is chosen by route. `customerCampaignPaymentsView` for the customer page; `getCampaignPaymentsForAdminView` (audited) for the staff page and for `/admin/cancellations/[id]`.
+- **Links:** the five staff link sources (R7 §1) point to the new route. For one release, the customer page redirects a staff viewer who cannot access the event to the staff page. The redirect reads no customer data.
+- **Staff restart of a paused service:** added. It goes through `activateCampaign` with a new `staff` actor narrowed to `from: ['paused']`, with the event guards on, gated by `campaigns.runstate`. This is the console's narrowing (`campaigns.ts:633-634`) for the web. `approved → active` is never a staff action; that is D23's system path.
+- **`ops_engineer`** (holds `campaigns.runstate`, not `manage_billing`) does not get the page. Every board reader is audited under `manage_billing`, and a second reader set would duplicate them. Run-state operations stay available through the console API (`/api/campaigns/[id]/status`).
+- No new table, no second write path: both pages read the same tables and write through the same data functions.
+
+### D26. The owner's management page (Parts B, D and F together)
+
+The event page in `management` mode is the owner's home. `/app` and login already land there (`app/page.tsx:38`). It hosts, top to bottom:
+1. the summary card (D20, task 13.1);
+2. **"החבילה שלך"**: package name, contact quota "X מתוך Y" (`countAuthorizedContacts`, as `CampaignStatusCard` shows it today, `manage-client.tsx:252-299`), channels, and the post-payment upgrade entry (D22) when `package_upgrade_enabled` is on and `upgradeTargetsFor` is not empty;
+3. the assistant (Part B);
+4. a link to the results page (`campaign/[campaignId]`), which stays the detailed delivery and results screen.
+
+Upgrade approval and payment are a sub-route that reuses the payment components (`…/campaign/[campaignId]/upgrade`). "The event's service page" in the package-upgrade spec means this page. Nothing exists today: "החבילה שלך" has 0 occurrences in `src`, `docs` and `openspec` (verified 22.10).
+
+### D27. End-to-end verification
+
+**Verified 22.10:** the repository has no E2E suite. `playwright` 1.64.1 and Chromium are installed. `@playwright/test` is not. Next recommends testing against a production build (`docs/01-app/02-guides/testing/playwright.md`).
+
+Environment files, from `docs/01-app/02-guides/environment-variables.md` and `@next/env`'s `loadEnvConfig`:
+- Next looks a variable up in this order and stops at the first hit: `process.env`, `.env.$(NODE_ENV).local`, `.env.local`, `.env.$(NODE_ENV)`, `.env`.
+- With `NODE_ENV=test`, `.env.local` is not read, nor `.env.development` / `.env.production`. `.env.test.local`, `.env.test` and `.env` are.
+- `NEXT_PUBLIC_*` values are inlined into the browser bundle at `next build`. Here that is `NEXT_PUBLIC_SUPABASE_URL` (also read by `next.config.ts:27` for image hosts), `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` and `NEXT_PUBLIC_GA_ID`. A build made for one environment cannot be reused for another.
+- `PORT` cannot come from a `.env` file (`docs/01-app/03-api-reference/06-cli/next.md`).
+
+In this repository: the files present are `.env.example` (tracked, read by nobody), `.env.local` (production credentials) and `.env.pgboss-dashboard`. `.gitignore` ignores `.env*` except `.env.example` (`git check-ignore` confirms `.env`, `.env.test`, `.env.test.local`). Two non-Next loaders read `.env.local`: `worker/start.mjs:34` (fixed to the repo root) and `worker/main.ts:139-149` (relative to the working directory, `process.cwd()`); neither overwrites a variable that is already set.
+
+**Decision.**
+- **Runner:** `@playwright/test` as a devDependency (owner approval to install, task 1.4). Specs in `e2e/`. One runner script, `scripts/e2e/run-local.sh`.
+- **Isolation, structural, not by convention:**
+  1. **A dedicated git worktree.** E2E builds and runs in `$TMPDIR/kalfa-e2e` (`git worktree add`). `.env.local` is untracked, so it does not exist there; neither Next nor `worker/start.mjs` can load it.
+  2. **Next's own test environment.** The script writes `.env.test.local` into the worktree (ignored by `.env*`) from `supabase status -o env` plus fixed test values, and runs `next build` and `next start -p 3999` with `NODE_ENV=test`. Next then reads only `.env.test.local` and `.env.test`; there is no `.env`. Every process is also started with `env -i` and a short allowlist (`PATH`, `HOME`, `NODE_ENV`), because `process.env` outranks every file.
+  3. **A dedicated build.** The E2E build carries the local Supabase URL and key in its browser bundle, so it is built in the worktree into `.next-e2e` and is never served outside it; the production `.next` is never used for E2E. `NEXT_PUBLIC_GA_ID` and `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` are left unset, so no analytics or maps request leaves the machine.
+  4. **Preflight guard.** The script exits before starting anything unless: `API_URL` is `http://127.0.0.1:54321`; the DB is `127.0.0.1:54322`; `OUTREACH_DB_IT=1`; `docker inspect supabase_db_beta` reports project `beta`; and every provider base URL in the allowlist is loopback.
+  5. **Processes:** `next build` (dist dir `.next-e2e`) + `next start -p 3999`, and the worker as `node dist/worker.cjs` with the worktree as its working directory, never `worker/start.mjs`. `worker/main.ts:140` then finds no `.env.local`; the worker reads its values from the same `.env.test.local` exported into its allowlist by the script.
+- **Providers are local fakes at their HTTP boundary.** One Node server in `e2e/fakes/` stands in for:
+  - CardCom: LowProfile create/GetLpResult/webhook sender, and an Open Fields page that posts the same window messages;
+  - Meta WhatsApp Cloud API: send, plus status webhooks back to the app;
+  - Voximplant: StartScenarios and the call result callback;
+  - Anthropic Messages: scripted replies, for Part B;
+  - Slack: a recorder.
+
+  E-mail uses local Supabase's mail catcher. The app reaches a fake through one origin override per provider, read in a single place per provider (the CardCom `mutator.ts` and `OPEN_FIELDS_ORIGIN`, the WhatsApp client, the Voximplant client, the Anthropic provider's `baseURL`, the Slack sender). The override is accepted only when its value is a loopback URL; otherwise the code throws at startup. Production never sets these variables, and a unit test pins that `.env.example` does not define them.
+- **Classification.** A test is called E2E only if it drives a browser through the app's real routes, the worker and the local database for a whole business flow. The providers are the only fakes. Every report states this boundary. The real-provider leg (CardCom test terminal, a real WhatsApp send) is an owner-run pass after deploy (task 30.2), never automated.
+- **Coverage rule.** Every part has an E2E group that maps each customer- or staff-visible spec scenario to a spec file, or records why the scenario is covered below E2E (pure function, SQL-only). Task 30.1 checks the map is complete.
+- **Data hygiene.** Each spec creates its own users and events through the app or the fixture API (`FixtureScope`) and deletes them in `afterAll`. The run fails if the table fingerprint differs after the run (the integration runner's existing check).
+
 ## Risks / Trade-offs
 
 - **[Planner change re-plans every live contact once]** → `SEND_TIMING_ALGORITHM_VERSION` bump is the intended mechanism. It ships with a dry-run report: for every active contact, old planned time vs new. Staff approve it before deploy.
@@ -461,7 +591,11 @@ The admin list calls `upgradePathsReport()`, which returns every stored path wit
 - **[Prompt injection through guest names or messages]** → tools return names only on request, tool output is data blocks, the model holds no write power (D3), and the scope rule is in the system prompt and in the tools (event bound server-side).
 - **[Board live triggers add work to hot tables (`outreach_state`)]** → the empty broadcast is one `realtime.send` per row change, and `realtime.send` swallows errors (verified in the permission-signal migration). If load becomes an issue, debounce with a statement-level trigger.
 - **[Dropping `next_run_at` breaks an unknown reader]** → grep shows readers only in console views. The views keep the column name; the drop is a separate later migration in this change, after the views switched.
-- **[Two dependent changes are pending]** (`separate-event-setup-from-management` 0/35, `staff-tables-permission-rls` 7/29) → Part A does not depend on them. Part B's mount point and Part C's key-map registration are tasks with an explicit fallback.
+- **[`staff-tables-permission-rls` is pending (7/29)]** → Part A does not depend on it. Part C's key-map registration is a task with an explicit fallback. `separate-event-setup-from-management` is merged here as Part F (D24).
+- **[A webhook-only payment stays unstarted until the fix ships]** → verified possible in code and by test case A (D23); not observed in production. Part E is first in the execution order.
+- **[The activation job and the browser both activate]** → one idempotent function with an `approved`-only guarded UPDATE and a completion that checks before it writes (D23).
+- **[Fakes drift from the real providers]** → each fake is built from the provider's typed client already in the repo (CardCom's generated types, the WhatsApp payload types), and the owner-run pass after deploy (task 30.2) covers the real leg.
+- **[Routing redirects could loop]** → `unavailable` mode never redirects (D24), with a test per route where the ledger read fails.
 - **[An upgrade charge in flight makes a running service read as unpaid]** (verified in `deriveStatus`) → D22 separates `upgradeInFlight` from `status`, with a test that a pending upgrade leaves `status = 'collected'` and the stage unchanged.
 - **[A charge succeeds but the apply fails]** → the apply runs in the settlement transaction where possible. A settled `package_upgrade` operation whose change is not `applied` is a review item: the existing orphan sweeper lists it, and a re-run of `apply_package_upgrade` is idempotent. The money is never lost and never applied twice.
 - **[The customer loses a discount the benefit does not cover]** → the approval screen states it before payment (spec scenario), and the amount is fixed at approval.
@@ -471,19 +605,26 @@ The admin list calls `upgradePathsReport()`, which returns every stored path wit
 
 **Order.** Each step is a separate migration created with `supabase migration new`, applied locally, tested, then pushed to `main` only after a separate deploy approval. A push to `main` applies migrations to production.
 
+0. Part E (D23): no migration. App + worker together, first, because every later part assumes paid ⇒ running.
+0a. Part F (D24): the shared admission function replacing `reconcile_authorized_set` and used by `fill_authorized_set`; then `close_event_retiring_setup`. Then the F app. Before Part D's migration.
+
 1. A1 schema: initiator columns, overrides, `schedule_version`, proposals, `thankyou_state`, `claim_manual_send`, permission row + seeds, outreach_schedule shape check, console views read `planned_at`.
 2. App + worker for Part A behind `timing_v2_enabled` (app_settings). Off means today's behaviour, except D11 (route removal), which is unconditional.
 3. Planner version bump (D4), with the dry-run report approved first.
 4. B schema: budget columns, ledger, conversations, assistant settings. Then the B app behind `assistant_enabled`, which is off until the D16 evaluation passes.
 5. C schema: tasks, notes, `tasks.manage`, board signal. Then the C app.
-6. D schema (after A, because the upgrade re-plans through D2's schedule layer): `campaign_package_changes`, `payment_operations.package_change_id`, the four functions, `package_upgrade_valid_days`. Then the D app behind `package_upgrade_enabled`.
-7. Drop `next_run_at` (last).
+6. D schema (after A, because the upgrade re-plans through D2's schedule layer, and after F, because `apply_package_upgrade` calls F's shared admission function): `campaign_package_changes`, `payment_operations.package_change_id`, the four functions, `package_upgrade_valid_days`. Then the D app behind `package_upgrade_enabled`.
+7. Part G (D25): no migration. The app only.
+8. Drop `next_run_at` (last).
 
 **Rollback.**
 - Each switch off restores the previous behaviour for its part.
 - Schema additions are additive and stay.
 - Restoring the removed route is a revert commit.
+- Parts E, F and G have no switch. Their rollback is a revert commit. For F, also `drop function public.close_event_retiring_setup(uuid, uuid)` and re-create the previous `reconcile_authorized_set` and `fill_authorized_set` from the rollback section of their migration (the shared admission function is dropped last). Records written by closes and admissions stay as history.
 
 ## Open Questions
 
 None. The owner decided on 22.10: who may change timing, how much may change, what the board contains, one combined change, and the upgrade behaviour (customer or staff may start it, the customer approves, only the difference is paid, effect only after payment, failure keeps the current package; downgrades and refunds excluded). The benefit rule, validity period and permissions of D22 are decided in D21. The remaining unknowns (Hebrew quality, real tokens per question) are measured by tasks, not assumed.
+
+Added 22.10, decided here: activation through pg-boss with a system actor (D23); the separate change's open questions (the admission switch is ignored for quota campaigns; a late guest keeps today's engine behaviour) (D24); `ops_engineer` uses the console API and does not get the staff campaign page, and staff may restart only a paused service (D25); the E2E boundary (D27). Hebrew wording of new labels is drafted during implementation and shown in the diff; it does not change the specs.
