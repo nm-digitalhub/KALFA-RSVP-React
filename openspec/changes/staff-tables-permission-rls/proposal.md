@@ -57,16 +57,17 @@ skips that layer. Measured on the live catalog, 13.10.2026 (read-only):
   not grants). Revoke every `anon` privilege on existing tables except `SELECT` on `packages` and
   `faq_items` — behaviour-neutral, because no policy admits `anon` anywhere else. From then on every
   new table or function needs an explicit `grant` in its migration.
-- **Group A — close 10 tables the app reaches only with the service role** (`otp_challenges`,
+- **Group A — close 11 tables the app reaches only with the service role** (`otp_challenges`,
   `agreement_documents`, `webhook_inbox`, `workflows`, `workflow_runs`, `workflow_run_events`,
-  `workflow_run_steps`, `webhook_deliveries`, `outreach_template_failures`, `vox_log_exports`):
-  revoke every `anon`/`authenticated` privilege and drop the staff-floor policy. RLS stays on with no
-  policy. No application code changes; user sessions get a loud `42501`.
-- **Group B — per-permission RLS on 15 tables staff reach with their own session** (`packages`,
+  `workflow_run_steps`, `webhook_deliveries`, `outreach_template_failures`, `vox_log_exports`,
+  `voice_purpose_attempts`): revoke every `anon`/`authenticated` privilege and drop the staff-floor
+  (or, for `voice_purpose_attempts`, the `manage_voice` read) policy. RLS stays on with no policy. No
+  application code changes; user sessions get a loud `42501`.
+- **Group B — per-permission RLS on 14 tables staff reach with their own session** (`packages`,
   `call_dnc_list`, `call_compliance_settings`, `provider_numbers`, `provider_number_roles`,
   `message_templates`, `channels`, `faq_items`, `callback_schedule_policies`, `fleet_requests`,
-  `fleet_goals`, `fleet_request_slack_threads`, `ops_alerts`, plus `voice_purposes` and
-  `voice_purpose_attempts`): one policy **per operation the app uses**, `to authenticated`, calling
+  `fleet_goals`, `fleet_request_slack_threads`, `ops_alerts`, plus `voice_purposes`): one policy
+  **per operation the app uses**, `to authenticated`, calling
   `has_platform_permission(<key>)` with the key the data-layer module already pins. Existing public
   read policies on `packages`, `faq_items` and `channels` stay.
 - **Grants rebuilt table by table** in the same migration as the policies: revoke all from `anon`
@@ -84,8 +85,12 @@ skips that layer. Measured on the live catalog, 13.10.2026 (read-only):
   different permission fails silently; every such path is listed in the map and tested.
 
 Scope note:
-- `voice_purposes` and `voice_purpose_attempts` stay in Group B. Since 15.10 they have one `for all`
-  policy on `manage_voice`, which this change splits per operation like the other tables.
+- `voice_purposes` stays in Group B. Since 15.10 it has one `for all` policy on `manage_voice`, which
+  this change splits per operation like the other tables.
+- `voice_purpose_attempts` moves to Group A (code map 22.10.2026, design D1). Every reader and writer
+  uses the service role, and the table holds the bearer `access_token` of the public ctx route. The
+  generic voice feature it serves has never run in production (0 attempt rows, 0 workflows with the
+  voice node, the only generic purpose disabled).
 - The six `fleet_*` RPCs need no change: `20261015114659` re-gated them, and their tests here only
   prove holder and non-holder behaviour.
 

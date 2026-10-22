@@ -39,7 +39,7 @@ text read from the live catalog.
 
 ## 1. Evidence and harness (no schema change)
 
-- [ ] 1.1 Resolve the unknowns in the access map: every caller of `readPolicyRow(client)`
+- [x] 1.1 Resolve the unknowns in the access map: every caller of `readPolicyRow(client)`
   (`src/lib/callbacks/policy-config.ts`), every use of the 25 tables in `scripts/**` and `worker/**`,
   and the current `anon`/`authenticated` grants of `voice_purposes` and `voice_purpose_attempts`.
   Update the table in `design.md`. Verify: no "mixed" or "to confirm" cell remains, and each resolved
@@ -54,6 +54,15 @@ text read from the live catalog.
   Verify: `npx vitest run src/lib/auth` passes; changing one key in the map makes it fail naming the
   table; a key absent from `PLATFORM_PERMISSION_KEYS` fails the type check. This task stays open
   until the map is implemented and its tests pass.
+
+  Tables whose module already decides through CASL (`packages` today; design D10): the map takes each
+  operation's key from `PLATFORM_ACTIONS` (`src/lib/casl.ts`), never as a typed literal, and the test
+  pairs the operations `read`/`SELECT`, `create`/`INSERT`, `update`/`UPDATE`, `delete`/`DELETE`.
+  `PLATFORM_ACTIONS` stays the only source of the key for every `Package` action. Verify, in addition:
+  changing one `Package` action's key in `PLATFORM_ACTIONS` only, or one `packages` operation in the
+  map only, fails the test with a message naming the table and the operation (proved with a mutation,
+  then restored); the public read of active packages is listed apart from the `Package` actions. No
+  CASL subject, action or module is added by this task.
 - [ ] 1.3 Spike the runner: start the local stack, make sure `pgtap` is available, add
   `supabase/tests/database/000-harness.test.sql` (always-green plan plus a fixture that creates a staff
   user in a chosen role and in a temporary role holding exactly one permission, all inside the
@@ -98,22 +107,34 @@ text read from the live catalog.
 ## 4. Stage S3 — `manage_voice` tables and the provider numbers
 
 - [ ] 4.1 Write `s3_voice.test.sql` for `call_dnc_list`, `call_compliance_settings`, `voice_purposes`,
-  `voice_purpose_attempts`, `provider_numbers`, `provider_number_roles`: policy inventory per
+  `provider_numbers`, `provider_number_roles`: policy inventory per
   operation, privilege inventory, and the behaviour matrix over owner, a role holding only
   `manage_voice`, a role holding only `manage_settings`, `billing_clerk`, `auditor`, `support_agent`,
   non-staff authenticated and anon; denials by filter assert zero rows plus an intact target row,
   allowed writes assert the `returning` value; include the exact query shapes of `call-dnc.ts`,
   `voximplant-channel.ts`, `voice-purposes.ts` and `provider-numbers.ts` and the
-  `upsert_provider_number` RPC called by each key holder alone and by a non-holder. Verify: red on the
-  current local database.
+  `upsert_provider_number` RPC called by each key holder alone and by a non-holder.
+  `voice_purpose_attempts` is a closed table here (Group A, design D1): `policies_are` = none, no
+  privilege for `anon` or `authenticated`, and every role above, the `manage_voice` holder and the owner
+  included, refused every operation with `throws_ok('42501')`; as `service_role`, the statement shapes
+  of `voice-purpose-dispatch.ts` (insert, select by step, update), `voice-purpose-attempts.ts` (select by
+  `access_token`, terminal update) and the ctx route's select succeed and return their row. Verify: red on
+  the current local database (the `manage_voice` read policy still admits its holder).
 - [ ] 4.2 `migration new staff_tables_voice_permission`: rebuild grants (revoke all from `anon` and
   `authenticated`, grant back the exact operations), create per-operation policies keyed as in
-  `design.md`, and split the two voice tables' existing `manage_voice` policy (`for all` / `select`,
-  since `20261015114659`) into per-operation policies. Verify: applied locally; S3, S2, S1 and guard
-  files green.
+  `design.md`, and split the existing `voice_purposes_admin_all` (`for all`, `manage_voice` since
+  `20261015114659`) into per-operation policies. Close `voice_purpose_attempts`: `revoke all … from
+  anon, authenticated` and drop `voice_purpose_attempts_admin_read`; RLS stays on, `service_role`
+  untouched; the rollback header restores `grant select … to authenticated` and the policy text read
+  from the live catalog. Verify: applied locally; S3, S2, S1 and guard files green.
 - [ ] 4.3 Regression: vitest for `call-dnc`, `voximplant-channel`, `voice-purposes` and
-  `provider-numbers` modules and their routes; the map consistency test from 1.2; local Advisors;
-  `verification-s3.md`. Verify: all green.
+  `provider-numbers` modules and their routes; for the server paths of `voice_purpose_attempts`:
+  `src/lib/data/voice-purpose-dispatch.test.ts`, `src/app/api/voximplant/purpose/purpose-cb.test.ts`,
+  `src/lib/data/elevenlabs-analysis.test.ts` and `src/lib/data/elevenlabs-analysis-processing.test.ts`,
+  plus a local service-role smoke (insert, select by `access_token`, update, delete of a tagged fixture
+  row, cleaned up) that proves the server still reaches the closed table; the map consistency test from
+  1.2; local Advisors; `verification-s3.md`. Verify: all green; the document records that the generic
+  voice feature has 0 production attempts, so the regression is proved locally and not by live traffic.
 
 ## 5. Stage S4 — `packages`
 
@@ -124,11 +145,14 @@ text read from the live catalog.
 - [ ] 5.2 `migration new packages_billing_permission`: per-operation `manage_billing` policies, keep
   `packages_public_read`, `anon` keeps `SELECT` only. Verify: applied locally; S4 and earlier files green.
 - [ ] 5.3 Regression: vitest for `admin/packages`, `agent-benefits` and the public pages that list
-  packages; run `SUPABASE_DB_PORT=54322 bash scripts/integration/run-local.sh
+  packages; the CASL tests `src/lib/casl.test.ts` and `src/lib/casl-pilot-static.test.ts` (the action map
+  and the guard that keeps package keys in it), in addition to the RLS proof; run
+  `SUPABASE_DB_PORT=54322 bash scripts/integration/run-local.sh
   src/lib/auth/permissions.local-it.test.ts` and flip its `packages` cases in the same commit
   (`auditor` and `ops_engineer` refused insert, update and delete and no longer see inactive packages;
   `billing_clerk` unchanged; the "Server Action refuses, PostgREST allows" case becomes "both refuse");
-  Advisors; `verification-s4.md`. Verify: all green.
+  the public read of active packages (`anon`, customer) is asserted as its own case, apart from the
+  `Package` actions; Advisors; `verification-s4.md`. Verify: all green.
 
 ## 6. Stage S5 — `manage_settings` tables and the fleet RPCs
 

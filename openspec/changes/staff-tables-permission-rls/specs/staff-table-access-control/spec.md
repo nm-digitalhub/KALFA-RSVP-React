@@ -31,7 +31,7 @@ A staff-managed table that the application reaches only with the service role SH
 from any user session (`anon` or `authenticated`), for every platform role including the owner. The
 set is: `otp_challenges`, `agreement_documents`, `webhook_inbox`, `workflows`, `workflow_runs`,
 `workflow_run_events`, `workflow_run_steps`, `webhook_deliveries`, `outreach_template_failures`,
-`vox_log_exports`.
+`vox_log_exports`, `voice_purpose_attempts`.
 
 #### Scenario: Staff member reads a closed table directly
 - **WHEN** an authenticated staff member of any role queries a closed table through the Data API
@@ -46,6 +46,17 @@ set is: `otp_challenges`, `agreement_documents`, `webhook_inbox`, `workflows`, `
 - **WHEN** an unauthenticated caller queries a closed table
 - **THEN** the request is refused with a permission error (`42501`)
 
+#### Scenario: Voice-purpose attempts keep working for the server
+- **WHEN** the server dispatches a voice-purpose call, serves its context route, records its
+  conclusion and links its post-call analysis, all with the service role
+- **THEN** each step reads and writes `voice_purpose_attempts` exactly as before, while every user
+  session, including a holder of `manage_voice`, is refused with `42501`
+
+#### Scenario: A future attempt-history view
+- **WHEN** an admin screen needs to show voice-purpose attempts
+- **THEN** it reads them through the server after its own permission check and returns named columns
+  only, never `access_token`; no user-session policy is added to the table
+
 ### Requirement: User-session staff tables require the permission their module is pinned to
 A staff-managed table that staff reach with their own session SHALL be readable and writable only by
 a user who holds the platform permission the table's application data-layer module already requires
@@ -54,8 +65,8 @@ scoped to `authenticated`.
 
 #### Scenario: Mapping for billing and voice tables
 - **WHEN** the policies are listed
-- **THEN** `packages` requires `manage_billing`, and `call_dnc_list`, `call_compliance_settings`,
-  `voice_purposes` and `voice_purpose_attempts` require `manage_voice`
+- **THEN** `packages` requires `manage_billing`, and `call_dnc_list`, `call_compliance_settings` and
+  `voice_purposes` require `manage_voice`
 
 #### Scenario: Mapping for settings tables
 - **WHEN** the policies are listed
@@ -136,6 +147,13 @@ its application data-layer module requires, and a check SHALL fail when the two 
 - **WHEN** a module is re-pinned to a different permission without changing the table policy, or the
   reverse
 - **THEN** the consistency check fails and names the table
+
+#### Scenario: Drift of one operation on a table gated through CASL
+- **WHEN** the key of one action of a subject in `PLATFORM_ACTIONS` (for example `read` on
+  `Package`) changes without the matching operation's policy on its table (`SELECT` on `packages`),
+  or the reverse
+- **THEN** the consistency check fails and names the table and the operation; the keys of that table
+  are taken from `PLATFORM_ACTIONS` and are not typed a second time
 
 ### Requirement: The model is provable and repeatable on a local database
 An automated database test suite SHALL cover every platform role, a non-staff authenticated user and

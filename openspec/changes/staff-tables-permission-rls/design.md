@@ -60,31 +60,46 @@ same commit as its migration (tasks 2.3 and 5.3).
   Edge Functions (`mcp`, `sms-hook`) do not touch them; the browser Supabase client is used only for
   passkeys, the Voximplant SDK and console channels.
 
-**Access map (static scan of `src/`, `worker/`, `scripts/` plus the live catalog).** "User session"
-means the cookie client (the staff member's own JWT); "service" means `createAdminClient`.
+**Access map, resolved 22.10.2026 (task 1.1).** "User session" means the cookie client
+(`createClient()`, the staff member's own JWT); "service" means `createAdminClient()`. Sources:
+- **Code:** every `.from('<table>')` of the 25 tables in `src/`, `worker/`, `scripts/` and
+  `supabase/functions/` (198 non-test sites), with the client created in the enclosing function and the
+  gate it calls. A function that takes the client as a parameter is resolved by its callers: every
+  such caller passes `createAdminClient()` (`nav-counts.ts:86`, `policy-config.ts:91`,
+  `outreach-engine.ts`, `vox-log-export.ts`, `store.ts`, `owner-agent/tools/system-health.ts:47`,
+  `worker/main.ts:1630`, `scripts/fleet-agent-cli.ts`), except `readPolicyRow`, below. `worker/` names
+  none of the tables directly; `scripts/` reach them only through `createAdminClient()`.
+- **Catalog (live, read-only, 22.10.2026; local identical):** grants via `has_table_privilege` for
+  `anon` and `authenticated`, policies from `pg_policies`. No view and no Realtime publication reads any
+  of the 25 tables. The client-executable functions that touch them are the six `fleet_*` RPCs
+  (definer, gated on `manage_settings`), the three fleet trigger functions and
+  `upsert_provider_number` (invoker); every other function that names one is service-only.
+- **Grant letters:** D delete, I insert, R references, S select, T truncate/trigger, U update; `–` none.
+  Stage 0 removed every `anon` privilege except `SELECT` on `packages` and `faq_items`.
 
-| Table | Sensitivity | User-session access in code (gate) | Today: authenticated / anon | Extra policy | Target |
+| Table | Sensitivity | User-session access in code (gate) | Today, live 22.10: authenticated / anon | Policies today | Target |
 |---|---|---|---|---|---|
-| otp_challenges | critical (OTP hashes) | none (service ×5) | all / all | – | **close** |
-| agreement_documents | critical (contract, approval) | none (service ×5) | all / all | – | **close** |
-| webhook_inbox | high (raw payloads) | none (service; reader gated `view_webhooks`) | all / all | – | **close** |
-| workflows | med-high (definitions) | none (service ×16) | DIUS / – | – | **close** |
-| workflow_runs, _events, _steps | medium | none (service) | S / – | – | **close** |
-| webhook_deliveries | medium | none (service) | S / – | – | **close** |
-| outreach_template_failures | low | none (service-typed param) | all / all | – | **close** |
-| vox_log_exports | medium | none (service-typed param) | all / all | – | **close** |
-| packages | high (prices) | `admin/packages.ts` select/insert/update/delete (`manage_billing`) | all / all | `packages_public_read` (active) | `manage_billing` ×4 ops; anon `SELECT` only |
-| call_dnc_list | high (legal) | `call-dnc.ts` select/upsert (`manage_voice`) | all / all | – | `manage_voice` select, insert, update |
-| call_compliance_settings | high (consent/DNC gates) | `call-dnc.ts`, `voximplant-channel.ts` select/update (`manage_voice`) | S,U / – | – | `manage_voice` select, update |
-| provider_numbers | med-high | `provider-numbers.ts` select/update + RPC; `owner-agent.ts` (owner) | DIUS / – | – | `manage_settings` OR `manage_voice`, select/insert/update |
-| provider_number_roles | medium | `provider-numbers.ts` upsert/delete | DIUS / – | – | same key pair, select/insert/update/delete |
-| message_templates | medium | `message-templates.ts` select/update (`manage_settings`) | all / all | – | `manage_settings` select, update |
-| channels | low-med | `admin/channel-catalog.ts` select/update (`manage_settings`); public `channel-catalog.ts` select | DIUS / – | `channels_auth_read` | `manage_settings` select, update; keep read policy |
-| faq_items | low (public content, integrity) | `admin/faq.ts` ×4 ops (`manage_settings`); public `faq.ts` select | DIUS / S | `faq_items_public_read` | `manage_settings` ×4 ops; anon `SELECT` only |
-| callback_schedule_policies | medium (call windows) | `callbacks/policy/actions.ts` update (`manage_settings`); `readPolicyRow(client)` mixed | S,U / – | – | `manage_settings` select, update |
-| fleet_requests, fleet_goals, fleet_request_slack_threads | medium | `admin/fleet.ts` select (`manage_settings`); RPCs | S / – | – | `manage_settings` select |
-| ops_alerts | low-med | `admin/alerts.ts` select (`manage_settings`); `app-health.ts` select (Debug page, owner only) | all / all | – | `manage_settings` select |
-| voice_purposes, voice_purpose_attempts | medium (decides which agent dials) | `admin/voice-purposes.ts` (`manage_voice`) | `voice_purposes` DIUS / –; `voice_purpose_attempts` S / – (live, 21.10.2026) | today: one `for all` / `select` policy on `manage_voice` (15.10) | `manage_voice` per operation |
+| otp_challenges | critical (OTP hashes) | none (service: `otp.ts` ×5) | DIRSTTU / – | `otp_challenges_admin_all` (all, floor) | **close** |
+| agreement_documents | critical (contract, approval) | none (service: `agreements-doc.ts`, `admin/agreements.ts`) | DIRSTTU / – | `agreement_documents_admin_all` (all, floor) | **close** |
+| webhook_inbox | high (raw payloads) | none (service: `webhooks.ts`, `admin/webhook-inbox.ts`, `whatsapp-import.ts`, `owner-agent/cores/system-health.ts`, `admin/webhooks/actions.ts`) | DIRSTTU / – | `webhook_inbox_admin_all` (all, floor) | **close** |
+| workflows | med-high (definitions) | none (service ×16: `admin/workflows.ts`, `workflow/store.ts`, `guest-actions.ts`, `sumit-trigger-subscriptions.ts`) | DISU / – | `workflows_admin_all` (all, `public`, floor) | **close** |
+| workflow_runs, _events, _steps | medium | none (service: `workflow/store.ts`, `stream.ts`, `admin/workflows.ts`, `runs/[runId]/stream/route.ts`) | S / – | one `select` policy each (`public`, floor) | **close** |
+| webhook_deliveries | medium | none (service: `webhooks.ts`, `admin/webhook-inbox.ts`) | S / – | `webhook_deliveries_admin_select` (`public`, floor) | **close** |
+| outreach_template_failures | low | none (service: `outreach.ts:172`, callers in `outreach-engine.ts`) | DIRSTTU / – | `outreach_template_failures_admin_all` (all, floor) | **close** |
+| vox_log_exports | medium | none (service: `vox-log-export.ts`, `admin/voice-ops.ts`) | DIRSTTU / – | `vox_log_exports_admin_read` (select, floor) | **close** |
+| voice_purpose_attempts | high (holds the bearer `access_token` of the public ctx route) | none (service: `voice-purpose-dispatch.ts:112`, `voice-purpose-attempts.ts:53,98,125,168`, `purpose/[purpose]/ctx/[token]/route.ts:49`, `elevenlabs-analysis.ts:71,185,286`) | S / – | `voice_purpose_attempts_admin_read` (select, `manage_voice`) | **close** (D1) |
+| packages | high (prices) | `admin/packages.ts` select/insert/update/delete through `requirePlatformAction(<op>, 'Package')` = `PLATFORM_ACTIONS.Package` (`manage_billing`); service readers: `package-offers.ts`, `agent-benefits.ts`, `admin/offers.ts`, `admin/coupon-assignments.ts` | DIRSTTU / S | `packages_admin_all` (all, floor); `packages_public_read` (select, anon+authenticated, `active = true`) | per operation from `PLATFORM_ACTIONS.Package` (D10); public read kept |
+| call_dnc_list | high (legal) | `admin/call-dnc.ts` `addToCallDnc` upsert, `listCallDnc` select (`manage_voice`); service writers: call-result, sales and callback voice processing | DIRSTTU / – | `call_dnc_list_admin_all` (all, floor) | `manage_voice` select, insert, update |
+| call_compliance_settings | high (consent/DNC gates) | `admin/call-dnc.ts` select/update, `admin/voximplant-channel.ts` select/update (`manage_voice`); service reader `call-compliance-settings.ts` | SU / – | `call_compliance_settings_staff_all` (all, floor) | `manage_voice` select, update |
+| provider_numbers | med-high | `admin/integrations/provider-numbers.ts`: `listProviderNumbers` select (`manage_settings`), `deactivateMissingMetaNumbers` update (from `syncMetaNumbers`, `manage_settings`), RPC `upsert_provider_number` (invoker; `manage_settings` or `manage_voice` by provider); `admin/owner-agent.ts` select (owner) | DISU / – | `provider_numbers_admin_all` (all, floor) | `manage_settings` OR `manage_voice`, select/insert/update |
+| provider_number_roles | medium | `provider-numbers.ts` `assignRole` upsert, `clearRole` delete (`manage_settings` or `manage_voice` by role); `admin/workflows.ts:393` calls `assignRole` | DISU / – | `provider_number_roles_admin_all` (all, floor) | same key pair, select/insert/update/delete |
+| message_templates | medium | `message-templates.ts` select/update (`manage_settings`); every other reader is service | DIRSTTU / – | `message_templates_admin_all` (all, floor) | `manage_settings` select, update |
+| channels | low-med | `admin/channel-catalog.ts` select/update (`manage_settings`); public `channel-catalog.ts:29` select (no gate, any signed-in user) | DISU / – | `channels_admin_all` (all, **`public`**, floor); `channels_auth_read` (select, authenticated, `true`) | `manage_settings` select, update; keep read policy |
+| faq_items | low (public content, integrity) | `admin/faq.ts` ×4 ops (`manage_settings`); public `faq.ts:21` select | DISU / S | `faq_items_admin_all` (all, floor); `faq_items_public_read` (select, anon+authenticated, `published = true`) | `manage_settings` ×4 ops; anon `SELECT` only |
+| callback_schedule_policies | medium (call windows) | `callbacks/policy/actions.ts:180` update (`manage_settings`); `readPolicyRow(client)` (`policy-config.ts:77`) has two callers: `policy-config.ts:91` with service, `policy-config-admin.ts:31` with the session after `requirePlatformPermission('manage_settings')` | SU / – | `callback_schedule_policies_admin_all` (all, floor) | `manage_settings` select, update |
+| fleet_requests, fleet_goals, fleet_request_slack_threads | medium | `admin/fleet.ts` select (`manage_settings`); writes only through the `fleet_*` RPCs; `nav-counts.ts` counts with service after `canSettings` | S / – | one `select` policy each (`public`, floor) | `manage_settings` select |
+| ops_alerts | low-med | `admin/alerts.ts:194` select (`manage_settings`); `ops/app-health.ts:55` select for `/admin/debug` (`requirePlatformOwner`, `debug/page.tsx:42`; the owner holds every key); writer `alerts/slack.ts` is service | DIRSTTU / – | `ops_alerts_admin_select` (select, floor) | `manage_settings` select |
+| voice_purposes | medium (decides which agent dials) | `admin/voice-purposes.ts` select/insert/update (`manage_voice`); runtime readers `voice-purposes.ts:75,125` are service | DISU / – | `voice_purposes_admin_all` (all, `manage_voice`) | `manage_voice` per operation |
 
 **Sources read in full on 13.10.2026 and what each changed in this plan.**
 - [Securing your API](https://supabase.com/docs/guides/api/securing-your-api): grants and RLS are two
@@ -153,7 +168,25 @@ its grants.
 **D1 — Two groups, decided by the access map, not by guess.** A table the application reaches only
 with the service role is *closed*; a table staff reach with their own session gets *per-permission
 policies*. Alternative: one model for all (every table per-permission) — rejected, because for the
-10 service-only tables a policy would only keep a path open that nothing uses (deny by default).
+11 service-only tables a policy would only keep a path open that nothing uses (deny by default).
+
+`voice_purpose_attempts` is classified by this rule, not by its feature's maturity (22.10.2026):
+- Every read and write in the code uses `createAdminClient()` (access-map row above); no file under
+  `src/app/(admin)` or `src/lib/data/admin` reads it, `admin-data-layer-coverage.test.ts` pins no module
+  for it, and no view, Realtime publication or client-executable function exposes it (live catalog).
+- It holds `access_token`, the bearer string that the public route `purpose/[purpose]/ctx/[token]`
+  accepts on its own (`route.ts:18-21`), which returns a guest's first name and the event details. Its
+  `manage_voice` read policy therefore lets `ops_engineer`, who holds no `view_customer_data`, read guest
+  context through a live token.
+- The generic voice feature it serves has never run in production: 0 rows ever, 0 workflows using the
+  voice node, the only generic purpose (`purchase_callback`) disabled
+  (`docs/voice-agent/plans/2026-09-15-generic-voice-primitive-plan.md:830`).
+- A future attempt-history screen, if one is needed, reads through the server after its own permission
+  check (`manage_voice`) and returns named columns only, never `access_token`. It does not reopen a
+  user-session path to the table.
+
+`voice_purposes` stays in Group B on `manage_voice`: `admin/voice-purposes.ts` reads and writes it
+with the staff session.
 
 **D2 — Closed tables: revoke grants and drop the staff policy; RLS stays on.** `revoke all … from
 anon, authenticated`, `drop policy …_admin_all`, no new policy: default-deny plus no grant, the same
@@ -200,8 +233,10 @@ untouched.
   admit exactly its callers (tested).
 
 **D8 — The retired axis (done outside this change).** `voice_purposes_admin_all` and
-`voice_purpose_attempts_admin_read` moved to `manage_voice` in `20261015114659`. What remains for these
-two tables is the D3 split into per-operation policies with rebuilt grants, in stage S3.
+`voice_purpose_attempts_admin_read` moved to `manage_voice` in `20261015114659`. What remains: the D3
+split into per-operation policies with rebuilt grants for `voice_purposes`, and closing
+`voice_purpose_attempts` (D1, Group A: revoke all from `anon` and `authenticated`, drop
+`voice_purpose_attempts_admin_read`), both in stage S3.
 
 **D9 — Proof with pgTAP, raw, no external helpers.** Files under `supabase/tests/database/`
 (`supabase test new <name>`), run by `supabase test db` against the local stack. Impersonation by
@@ -222,6 +257,21 @@ test file.
 **D10 — One source of truth for the key map.** `src/lib/auth/staff-table-permissions.ts` (table →
 key list) is read by a vitest that asserts it equals the data-layer pins and equals the keys named in
 the pgTAP file (text check). The file does not exist yet (task 1.2).
+
+**Tables whose module already decides through CASL compare per operation (22.10.2026).**
+- `packages` is the only one today. `src/lib/data/admin/packages.ts` gates through
+  `requirePlatformAction`, and `admin-data-layer-coverage.test.ts:126` already takes that module's pin
+  from `PLATFORM_ACTIONS.Package`.
+- That pin is a set per module, so it cannot see one operation drift. If `read` moved to another key
+  (the open `auditor` question below), the set would grow while the `SELECT` policy kept its old key.
+- So for such a table the map takes each operation's key from `PLATFORM_ACTIONS` (no key typed again)
+  and the check pairs the operations: `read` ↔ `SELECT`, `create` ↔ `INSERT`, `update` ↔ `UPDATE`,
+  `delete` ↔ `DELETE`.
+- `PLATFORM_ACTIONS` stays the source of the key for every `Package` action. The public read of active
+  packages (`packages_public_read`, `anon` and customers) has no CASL subject and is recorded and
+  tested separately.
+- This change does not extend CASL. Other modules adopt it through their own changes (the pilot and
+  `casl-console-ability-foundation`); when one does, its table joins this per-operation check.
 
 **Shared permission keys, recorded 19.10.2026 (owner).**
 - **Who decides.** The permission catalogue in Supabase (`platform_permission_definitions`) is the
@@ -296,9 +346,9 @@ tests green, Advisors run, owner push, live read-only check.
 2. **S1** — close `otp_challenges`, `agreement_documents`, `webhook_inbox`.
 3. **S2** — close `workflows`, `workflow_runs`, `workflow_run_events`, `workflow_run_steps`,
    `webhook_deliveries`, `outreach_template_failures`, `vox_log_exports`.
-4. **S3** — `manage_voice`: `call_dnc_list`, `call_compliance_settings`, `voice_purposes`,
-   `voice_purpose_attempts`, and the `manage_settings`/`manage_voice` pair `provider_numbers`,
-   `provider_number_roles` (with the `upsert_provider_number` case).
+4. **S3** — `manage_voice`: `call_dnc_list`, `call_compliance_settings`, `voice_purposes`, and the
+   `manage_settings`/`manage_voice` pair `provider_numbers`, `provider_number_roles` (with the
+   `upsert_provider_number` case); close `voice_purpose_attempts` (Group A, D1).
 5. **S4** — `manage_billing`: `packages` (public read kept).
 6. **S5** — `manage_settings`: `message_templates`, `channels`, `faq_items`,
    `callback_schedule_policies`, `ops_alerts`, `fleet_requests`, `fleet_goals`,
