@@ -4,6 +4,7 @@ import type { PgBoss } from 'pg-boss';
 import type { Pool } from 'pg';
 
 import { israelCalendarDay, ilWallTimeToIso } from '@/lib/data/event-date';
+import { buildJewishCalendar } from '@/lib/outreach/jewish-calendar';
 import {
   type Fixture,
   type FixtureOptions,
@@ -67,8 +68,32 @@ describe.skipIf(!RUN)('finding 5: outreach engine scheduling — real DB, contro
     }
   });
 
-  // An event `days` real days ahead, at 19:00 Israel time (publish needs ≥ tomorrow).
-  const eventInDays = (days: number) => ilWallTimeToIso(israelCalendarDay(Date.now() + days * DAY), '19:00');
+  // The event: at least 30 real days ahead (publish needs ≥ tomorrow), at 19:00 Israel time, on a date whose
+  // asserted days are ordinary sending days. The tests assert calendar days: the 7-day touchpoint lands on E−7, a
+  // move by 7 days lands it on E, and the controlled "now" is E−10 at 19:00 with E−11 as "yesterday". If one of
+  // those days is a Friday, a Shabbat or a Yom Tov, the engine correctly moves the slot (KALFA send window), and an
+  // assertion written for an open day fails on that run only. Example: run on 22.10.2026, today+30 is Saturday
+  // 21.11.2026, so E−7 (14.11) is Shabbat and the 7-day step was planned for Sunday 15.11. Choosing the event date
+  // from the real calendar keeps every assertion about an open day, whatever day the suite runs.
+  const OPEN_WEEKDAYS = new Set([0, 1, 2, 3, 4]); // Sunday–Thursday: full KALFA window (Friday closes at noon)
+  const weekdayOf = (day: string) => new Date(`${day}T12:00:00Z`).getUTCDay();
+  const calendar = buildJewishCalendar(Date.now(), Date.now() + 120 * DAY);
+  const isOpenDay = (ms: number) => {
+    const day = israelCalendarDay(ms);
+    return (
+      OPEN_WEEKDAYS.has(weekdayOf(day)) &&
+      !calendar.isBlocked(Date.parse(ilWallTimeToIso(day, '11:00'))) &&
+      !calendar.isBlocked(Date.parse(ilWallTimeToIso(day, '19:00')))
+    );
+  };
+  const eventOnOpenDays = () => {
+    for (let days = 30; days < 90; days += 1) {
+      const e = ilWallTimeToIso(israelCalendarDay(Date.now() + days * DAY), '19:00');
+      const t = Date.parse(e);
+      if ([0, 7, 10, 11].every((back) => isOpenDay(t - back * DAY))) return e;
+    }
+    throw new Error('no event date in 30–90 days with open asserted days');
+  };
   const SCHEDULE: NonNullable<FixtureOptions['outreachSchedule']> = [
     { days_before: 7, channel: 'whatsapp', message_key: 'it_7' },
     { days_before: 3, channel: 'whatsapp', message_key: 'it_3' },
@@ -93,7 +118,7 @@ describe.skipIf(!RUN)('finding 5: outreach engine scheduling — real DB, contro
     scope.track(engine.ensureCurrentStep(boss, f.campaignId, f.contactId, mode));
 
   it('plan: 10 days out, the 7-day touchpoint is deferred to its day; queue job and outreach_state carry the same slot', async () => {
-    const E = eventInDays(30);
+    const E = eventOnOpenDays();
     const f = await campaign({ eventDate: E });
     at(Date.parse(E) - 10 * DAY);
     await ensure(f);
@@ -107,7 +132,7 @@ describe.skipIf(!RUN)('finding 5: outreach engine scheduling — real DB, contro
   });
 
   it('date change (later, before any send): replan moves the plan to the new date; the old job is left queued with a stale planRev', async () => {
-    const E = eventInDays(30);
+    const E = eventOnOpenDays();
     const f = await campaign({ eventDate: E });
     at(Date.parse(E) - 10 * DAY);
     await ensure(f);
@@ -128,7 +153,7 @@ describe.skipIf(!RUN)('finding 5: outreach engine scheduling — real DB, contro
   });
 
   it('date change (earlier): the engine walks — 7-day skipped (audited), and the overdue 3-day reminder is enqueued to send NOW, a day late (5c through the engine)', async () => {
-    const E = eventInDays(30);
+    const E = eventOnOpenDays();
     const f = await campaign({ eventDate: E });
     at(Date.parse(E) - 10 * DAY);
     await ensure(f);
@@ -146,7 +171,7 @@ describe.skipIf(!RUN)('finding 5: outreach engine scheduling — real DB, contro
   });
 
   it('date change AFTER a send: the owner path is locked (R5); the staff RPC admin_reschedule_event (billing_clerk, real local Auth) moves it and the engine replans', async () => {
-    const E = eventInDays(30);
+    const E = eventOnOpenDays();
     const f = await campaign({ eventDate: E, noOutbound: false }); // an outbound message exists
     at(Date.parse(E) - 10 * DAY);
     await ensure(f);
@@ -163,7 +188,7 @@ describe.skipIf(!RUN)('finding 5: outreach engine scheduling — real DB, contro
   });
 
   it('event day passed: the cursor step is terminal — contact exhausted, nothing enqueued', async () => {
-    const E = eventInDays(30);
+    const E = eventOnOpenDays();
     const f = await campaign({ eventDate: E });
     at(Date.parse(E) + DAY);
     await ensure(f);
@@ -172,7 +197,7 @@ describe.skipIf(!RUN)('finding 5: outreach engine scheduling — real DB, contro
   });
 
   it('close_at: stepGate stops once now > close_at; before it the gate is not "stopped" (local master switch is OFF → "paused")', async () => {
-    const E = eventInDays(30);
+    const E = eventOnOpenDays();
     const closeAt = Date.parse(E) - 2 * DAY;
     const f = await campaign({ eventDate: E, closeAt: new Date(closeAt).toISOString() });
     const before = await engine.stepGate(f.campaignId, f.contactId, f.eventId, closeAt - DAY);
@@ -182,7 +207,7 @@ describe.skipIf(!RUN)('finding 5: outreach engine scheduling — real DB, contro
   });
 
   it('characterization: ensureCurrentStep itself does not check close_at — it still plans after the window closed (stepGate stops it at execution)', async () => {
-    const E = eventInDays(30);
+    const E = eventOnOpenDays();
     const closeAt = Date.parse(E) - 8 * DAY;
     const f = await campaign({ eventDate: E, closeAt: new Date(closeAt).toISOString() });
     at(Date.parse(E) - 7 * DAY + 3_600_000);
@@ -192,7 +217,7 @@ describe.skipIf(!RUN)('finding 5: outreach engine scheduling — real DB, contro
   });
 
   it('LATENT 5d: start_at is enforced by billing but not by the outreach engine — a reminder is planned BEFORE the window, and a reply now is refused billing', async () => {
-    const E = eventInDays(30);
+    const E = eventOnOpenDays();
     const startAt = new Date(Date.parse(E) - 5 * DAY).toISOString(); // window opens 5 days before the event
     const f = await campaign({ eventDate: E, startAt });
     at(Date.parse(E) - 10 * DAY);
