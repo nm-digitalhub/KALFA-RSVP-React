@@ -19,6 +19,7 @@ import { consoleWakeEnabled, isShiftActiveAndFresh } from '@/lib/data/console-ca
 import { getAgentQueueMemberships } from '@/lib/data/console-queues';
 import { createClient } from '@/lib/supabase/server';
 import { AdminShell } from '@/components/admin-shell';
+import { PermissionChangeListener } from '@/components/permission-change-listener';
 import type { SoftphoneGateInfo } from '@/components/console/softphone-panel';
 
 // Admin area layout. requirePlatformStaff() enforces authentication AND
@@ -43,6 +44,11 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }) {
   const user = await requirePlatformStaff();
+  // The Broadcast Replay `since` for the permission-change listener: this request's render time (a request-time
+  // value, as in node_modules/next/dist/docs/01-app/03-api-reference/04-functions/connection.md; this layout is
+  // already per-request through cookies). Each router.refresh() re-renders it, so the listener re-subscribes from here.
+  // eslint-disable-next-line react-hooks/purity -- a Server Component runs once per request; React's client-render purity rule does not apply
+  const renderedAt = Date.now();
   // Full name for the account menu (profile row is created at signup by the
   // handle_new_user trigger); falls back to the email in the shell when empty.
   // navCounts (per-item sidebar badges) and navGrants (which links this viewer
@@ -163,6 +169,7 @@ export default async function AdminLayout({
       abilityRules={ability.rules}
       softphone={softphone}
     >
+      <PermissionChangeListener userId={user.id} renderedAt={renderedAt} />
       {children}
     </AdminShell>
   );
