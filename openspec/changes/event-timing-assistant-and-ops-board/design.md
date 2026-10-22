@@ -286,6 +286,7 @@ The management page shows a summary card built from `getEventStats` + D9 + `than
 | Upgrade validity | 7 days from the offer or approval, never past the event date | `app_settings.package_upgrade_valid_days` |
 | Who starts an upgrade | event owner (purchase rule, `requireOwnedEvent`); staff with `manage_billing` | fixed |
 | Upgrade price source | the current round's benefit option for the target if one exists, else the target's catalog price at approval | fixed |
+| Upgrade targets | explicit paths per package (`package_upgrade_paths`), edited in the package form; not transitive; validity derived at read time | `/admin/packages` form |
 | Upgrade benefit | staff only (`manage_billing`), from `/admin/offers` + `/admin/assignments`; one per upgrade, lowest final wins; discount on the difference by the frozen rule; final > 0 | fixed |
 | Upgrade AI budget | the new package's `ai_budget_agorot` becomes the campaign budget; usage so far counts within it | fixed |
 
@@ -340,6 +341,45 @@ A partial unique index allows one open row (`offered`, `approved`) per campaign.
 Staff therefore control the targets from `/admin/packages`, by active, quota, channels and price, with no separate list. The browser sends only the target id, and price, quota, channels and schedule are read on the server, as `createCampaign` does.
 - At payment start the target is re-read. A target that is no longer offered cancels the upgrade (`cancelled`, reason `target_withdrawn`) and releases a held upgrade benefit.
 - The upgrade copies the target's catalogue schedule and AI budget at apply time, as `create_package_campaign` copies them at purchase.
+
+**Upgrade paths (owner decision 22.10: "מסלולי שדרוג בטופס החבילה").** Verified live: packages have no type. `tier` and `category` are free text shown only in `/admin/packages/page.tsx:49-52`, and nothing reads them in logic. So the label is derived, never stored.
+
+*Data:*
+- A new table `package_upgrade_paths(from_package_id, to_package_id, sort_order, created_by, created_at)`:
+  - primary key `(from_package_id, to_package_id)`;
+  - CHECK `from_package_id <> to_package_id`;
+  - both FKs `ON DELETE CASCADE`, because a path is configuration. A package that campaigns or upgrades reference cannot be deleted anyway.
+- RLS is on:
+  - select for `has_platform_permission('manage_billing')`, the key `PLATFORM_ACTIONS.Package.read` maps to;
+  - no client insert/update/delete. It does not copy the live `packages_admin_all` policy, which admits any staff.
+- Writes go only through `set_package_upgrade_paths(_package_id, _targets uuid[])`, security definer. It:
+  - checks `manage_billing`;
+  - checks the upgrade rule for every target (quota ≥, channels ⊇, higher `price_with_vat`), refusing with the failing target and reason;
+  - replaces the set in one transaction, unlike the offers delete-then-insert;
+  - writes `package.upgrade_paths_changed` to the activity log.
+
+*Rule:*
+- There is no transitivity: only listed pairs.
+- A cycle cannot be saved, because every hop must raise the price.
+
+*Validity is derived at read time.* One function, `upgradeTargetsFor(packageId)` in `src/lib/data/package-offers.ts`, returns the path targets that are in `listPackageOffers()` and pass the rule now. The same function is used:
+- by the owner's upgrade list;
+- by the staff offer screen;
+- by `offer_package_upgrade` in SQL, through the same table and rule, which closes the race between the list and the offer.
+
+The admin list calls `upgradePathsReport()`, which returns every stored path with `valid` and a reason code: `quota_lower`, `channel_missing`, `price_not_higher`, `target_not_offered`.
+
+*Form (`package-form.tsx`, CASL pilot folder):*
+- an "אפשר לשדרג ל" section: checkbox rows of the other packages, sent as one hidden `upgrade_targets_json` field, parsed like `outreach_schedule_json` (malformed → `[]`);
+- saved by the update action after the package fields;
+- per-target refusals map to `fieldErrors.upgrade_targets.<id>`;
+- gates stay CASL (`requireAnyPlatformAction(PACKAGE_FORM_ACTIONS)`), with no quoted key.
+
+*Display:*
+- **Owner:** an "upgrade package" section on the service page lists `upgradeTargetsFor(current)`, each labelled "שדרוג" with this owner's amount due (D22 price, including any upgrade benefit).
+- **Staff:** the offer screen shows the same list.
+- **Admin:** the package list shows "אפשר לשדרג ל: …" and "שדרוג מ: …" badges, and invalid paths with their reason.
+- **New purchase:** the catalogue offer for a new purchase is unchanged. A target package is a regular package there.
 
 **Package admin (`/admin/packages`, the CASL pilot folder).**
 - `campaign_package_changes.from_template_id` / `to_template_id` reference `packages` with RESTRICT, like `campaigns.template_id`. `deletePackage` (`src/lib/data/admin/packages.ts:343-357`) maps 23503 to "a campaign references it". Its message changes to "a campaign or a package upgrade references it", so the admin sees why.

@@ -28,7 +28,7 @@ Before approval (pending_approval) the existing package change applies instead.
 - **THEN** it is refused until a person resolves that payment
 
 ### Requirement: What counts as an upgrade
-The target package SHALL be one the catalogue offers for purchase at that moment, by the same rule the purchase uses. Compared with the current package, it SHALL have:
+The target package SHALL be listed in an upgrade path from the current package, and the catalogue SHALL offer it for purchase at that moment, by the same rule the purchase uses. Compared with the current package, it SHALL have:
 - a contact quota at least as large;
 - every channel of the current package;
 - a price for this customer higher than the net amount already paid for the service.
@@ -39,6 +39,10 @@ Any other target SHALL be refused as a downgrade or a lateral change.
 - **WHEN** staff deactivate the target package after the owner approved the upgrade and before payment
 - **THEN** the payment is refused, the upgrade is cancelled with that reason, any held upgrade benefit is released, and the current package stays
 
+#### Scenario: No path to the target
+- **WHEN** the owner's current package has no upgrade path to a larger package
+- **THEN** that package is not offered as an upgrade, even though it is larger
+
 #### Scenario: Smaller quota
 - **WHEN** the target package has a smaller contact quota than the current one
 - **THEN** the upgrade is refused as a downgrade
@@ -46,6 +50,47 @@ Any other target SHALL be refused as a downgrade or a lateral change.
 #### Scenario: Channel removed
 - **WHEN** the current package includes calls and the target package does not
 - **THEN** the upgrade is refused as a downgrade
+
+### Requirement: Upgrade paths are managed in the package form
+Staff who may edit packages SHALL choose, in each package's form, the packages it can be upgraded to. The paths SHALL be stored as data and edited only there. No package type, list or rule in code SHALL decide them. A path SHALL go from one package to another, never to itself, and only in the direction the staff chose.
+
+#### Scenario: Path added
+- **WHEN** staff mark package B as an upgrade target in the form of package A and save
+- **THEN** owners of a service on package A see B as an upgrade, and owners on B do not see A
+
+#### Scenario: Paths are not transitive
+- **WHEN** paths exist from A to B and from B to C, and none from A to C
+- **THEN** an owner on package A is offered B only
+
+### Requirement: A path is saved only when it is an upgrade
+Saving a path SHALL be refused unless the target, compared with the source, has a contact quota at least as large, every channel of the source, and a higher catalogue price. The form SHALL show the reason next to the target.
+
+#### Scenario: Cheaper target
+- **WHEN** staff choose as a target a package whose catalogue price is not higher than the source's
+- **THEN** the save is refused with the reason next to that target
+
+### Requirement: A path stays valid only while the packages allow it
+Path validity SHALL be derived when it is read, never stored. A path SHALL stop being offered when a later package edit breaks the upgrade rule, or when the target is no longer offered for purchase. The package list SHALL show such a path as not valid, with its reason, until staff fix it or remove it.
+
+#### Scenario: Quota lowered later
+- **WHEN** staff lower the target's contact quota below the source's after the path was saved
+- **THEN** the path is not offered to owners, and the package list marks it not valid with the reason
+
+### Requirement: How the upgrade label is shown
+A package SHALL have no stored type. The label "שדרוג" SHALL be derived from the paths:
+- on the owner's service page, beside each package reachable from the current package, with the amount this owner would pay;
+- in the staff offer screen, for the same list;
+- in the admin package list, as the targets each package can be upgraded to and the sources it can be reached from.
+
+A package that is an upgrade target SHALL still be offered for a new purchase as a regular package.
+
+#### Scenario: Same package, two owners
+- **WHEN** package B is a path target of A, one owner is on A, and another owner is buying a first package
+- **THEN** the first owner sees B labelled "שדרוג" with the difference, and the second sees B as a regular package at its full price
+
+#### Scenario: Admin list
+- **WHEN** staff open the package list
+- **THEN** each package shows its upgrade targets and the packages that upgrade to it, and any path that is not valid is marked with its reason
 
 ### Requirement: Who may start an upgrade
 The event owner SHALL be able to start an upgrade from the event's service page, under the same rule that lets them buy the package. Staff holding the "manage billing" permission SHALL be able to offer an upgrade to the customer from the admin panel. No one else SHALL be able to start one.

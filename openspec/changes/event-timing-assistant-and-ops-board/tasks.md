@@ -196,20 +196,27 @@ How to update it:
   - a second open upgrade of the same campaign is refused by the index;
   - a `package_upgrade` operation without a link, and a link on another kind, are refused;
   - an owner cannot select another event's rows.
-- [ ] 14.2 `offer_package_upgrade` and `approve_package_upgrade` (D22). Verify with pgTAP, one test per spec scenario:
+- [ ] 14.2 Upgrade paths: `package_upgrade_paths` (PK, self-path CHECK, cascading FKs, RLS select for `manage_billing`, no client writes) and `set_package_upgrade_paths`. Verify with pgTAP:
+  - a cheaper target, a smaller quota or a missing channel is refused with the target and reason;
+  - a self path is refused;
+  - the set is replaced atomically (a refused target leaves the old set);
+  - a staff member without `manage_billing` cannot select or call;
+  - deleting a package with no campaigns removes its paths;
+  - privileges for `authenticated` and `anon`, including MAINTAIN.
+- [ ] 14.3 `offer_package_upgrade` and `approve_package_upgrade` (D22). `offer_package_upgrade` also requires a path and refuses a target without one. Verify with pgTAP, one test per spec scenario:
   - closed/cancelled campaign, payment in review, second open upgrade refused;
   - smaller quota and removed channel refused as downgrades;
   - amount: no benefit 1,500 − 1,000 = 500; partial refund → 600; benefit option 1,300 − 800 = 500; no option 1,500 − 800 = 700;
   - approval stores the amount, the user and the agreement version;
   - with no collected money: new round at the full price, package fields switched, status `pending_approval`, no upgrade operation.
-- [ ] 14.3 `apply_package_upgrade` and `expire_package_upgrades` (D22). Verify with pgTAP:
+- [ ] 14.4 `apply_package_upgrade` and `expire_package_upgrades` (D22). Verify with pgTAP:
   - apply twice → applied once (one new round, one `campaign_quota_changes` row);
   - apply without a succeeded linked operation refused;
   - waiting contacts admitted up to the new quota (100 seated + 20 waiting, quota 150 → 120 seated);
   - expiry after `valid_days` and never past the event date;
   - a declined or expired upgrade leaves template, quota, channels, schedule and the current round unchanged;
   - a succeeded upgrade operation leaves `coupon_assignments` and `coupon_assignment_options` unchanged (the live consume trigger is a no-op on an already consumed benefit), and the new round carries the same `coupon_assignment_id` when its option priced the upgrade.
-- [ ] 14.4 Upgrade benefits, schema and SQL (D22 "Upgrade benefits"), in the same migration:
+- [ ] 14.5 Upgrade benefits, schema and SQL (D22 "Upgrade benefits"), in the same migration:
   - `offers.purpose` with its CHECK;
   - `coupon_assignments.purpose` + `for_campaign_id`, frozen by `coupon_assignments_freeze`;
   - the upgrade branch in `create_staff_coupon_assignment`;
@@ -228,7 +235,7 @@ How to update it:
   - expiry releases it;
   - void while held → `held_by_upgrade`;
   - an upgrade offer with `allow_agent = true` is refused.
-- [ ] 14.5 Apply locally through the CLI wrapper and run the pgTAP suite. Verify: all pass; `supabase db diff --local` shows nothing unexpected; no residue.
+- [ ] 14.6 Apply locally through the CLI wrapper and run the pgTAP suite. Verify: all pass; `supabase db diff --local` shows nothing unexpected; no residue.
 
 ## 15. Part D — payment state and payment path
 
@@ -257,7 +264,18 @@ How to update it:
 
 ## 17. Part D — screens
 
-- [ ] 17.1 Owner: on the event's service page, "upgrade package" with the target list (only valid upgrades), the approval card (current vs new package, quota, channels, remaining schedule, exact amount, agreement, the "benefit does not apply" notice), the payment step and the upgrade state. Gate: `requireOwnedEvent`. Verify: component tests per state; a local E2E (Next local + Supabase local, mocked provider): offer → approve → pay → the service shows the new package and quota.
+- [ ] 17.0 Upgrade paths in `/admin/packages`, the CASL pilot folder, following its `AGENTS.md`:
+  - the form gets the "אפשר לשדרג ל" section (`upgrade_targets_json`), saved through `set_package_upgrade_paths`;
+  - per-target refusals appear next to the target;
+  - the list gets "אפשר לשדרג ל" / "שדרוג מ" badges and invalid paths with their reason (`upgradePathsReport`);
+  - `upgradeTargetsFor` lives in `src/lib/data/package-offers.ts`.
+
+  Verify:
+  - `npx vitest run "src/app/(admin)/admin/packages" src/lib/casl-pilot-static.test.ts`, with the form, action and list tests extended;
+  - unit tests of `upgradeTargetsFor` for each reason code, no transitivity, and a target withdrawn from the catalogue;
+  - the folder's `AGENTS.md` documents the new field contract.
+
+- [ ] 17.1 Owner: on the event's service page, "upgrade package" with the target list from `upgradeTargetsFor`, each labelled "שדרוג" with this owner's amount (a target package stays a regular package in the new-purchase list), the approval card (current vs new package, quota, channels, remaining schedule, exact amount, agreement, the "benefit does not apply" notice), the payment step and the upgrade state. Gate: `requireOwnedEvent`. Verify: component tests per state; a local E2E (Next local + Supabase local, mocked provider): offer → approve → pay → the service shows the new package and quota.
 - [ ] 17.2 Staff: "offer upgrade" on the admin event/campaign page behind `manage_billing`; the history list (offers, approvals, payments, applications, failures) behind `view_billing`; the board shows "upgrade awaiting payment". Verify: component tests; an integration test that staff without `manage_billing` are refused and that staff cannot approve or pay.
 - [ ] 17.3 Benefit screens:
   - `/admin/offers` gets the purpose choice (agent fields hidden for upgrade);
