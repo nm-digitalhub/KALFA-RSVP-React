@@ -160,7 +160,7 @@ export interface Fixture {
 
 export interface FixtureOptions {
   authorized?: boolean; // add the contact to the campaign's authorized set
-  campaignStatus?: 'active' | 'paused';
+  campaignStatus?: 'active' | 'paused' | 'approved';
   expectedCount?: number | null;
   // Scheduling (finding 5). Omitted → the previous defaults (event in 30 days, the
   // campaign's column defaults). Applied while the campaign is still a draft.
