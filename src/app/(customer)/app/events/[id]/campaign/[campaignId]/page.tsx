@@ -27,7 +27,6 @@ import { campaignPaymentsView } from '@/lib/payments/campaign-payments-view';
 import { packagePaymentOf } from '@/lib/payments/package-paid';
 import { requireEventAccess } from '@/lib/data/events';
 import {
-  activateCampaignAction,
   cancelCampaignAction,
   closeCampaignAction,
   pauseCampaignAction,
@@ -141,7 +140,6 @@ export default async function CampaignManagePage({
   const paymentsView = await campaignPaymentsView(eventId, campaignId);
   const payments = paymentsView ? <CampaignPayments {...paymentsView} /> : null;
 
-  const activate = activateCampaignAction.bind(null, eventId, campaignId);
   const pause = pauseCampaignAction.bind(null, eventId, campaignId);
   const close = closeCampaignAction.bind(null, eventId, campaignId);
   const cancel = cancelCampaignAction.bind(null, eventId, campaignId);
@@ -193,7 +191,6 @@ export default async function CampaignManagePage({
         thankyouFailed={thankyouFailed}
         canEditThankyou={canEditThankyou}
         actions={{
-          activate,
           pause,
           close,
           cancel,

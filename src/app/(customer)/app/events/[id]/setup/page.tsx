@@ -18,6 +18,7 @@ import {
 } from '@/lib/data/setup-steps';
 import { formatIsraelDate, formatIsraelDateTime } from '@/lib/date';
 import { packagePaymentOf } from '@/lib/payments/package-paid';
+import { SERVICE_STARTING } from '@/lib/payments/package-payment-screen';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 
 import { acceptBenefitAction, choosePackageAction, setupCampaignAction } from '../campaign/campaign-actions';
@@ -292,14 +293,14 @@ export default async function SetupPage({
             </>
           ) : null}
 
-          {/* Paid but not yet activated: activation normally follows payment by
-              itself; this is the fallback for when it did not happen. */}
+          {/* Paid but not running yet: the payment starts the service by itself (design D23), so this says so and
+              offers nothing to press. (A paused service never reaches this step: POST_ACTIVATION_STAGES redirects.) */}
           {current === 'live' && base ? (
             <>
               <h2 className="text-lg font-semibold">{labels.live}</h2>
-              <Link href={`${base}/payment`} className={buttonVariants()}>
-                הפעלת הקמפיין עכשיו
-              </Link>
+              <p role="status" className="text-sm">
+                {SERVICE_STARTING}
+              </p>
             </>
           ) : null}
         </section>

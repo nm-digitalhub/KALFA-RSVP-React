@@ -24,9 +24,7 @@ vi.mock('./cardcom-open-fields-form', () => ({
   },
 }));
 
-vi.mock('./activate-now-form', () => ({
-  ActivateNowForm: () => <div data-testid="activate-form" />,
-}));
+import { SERVICE_STARTING } from '@/lib/payments/package-payment-screen';
 
 import { PackagePaymentView } from './package-payment-view';
 
@@ -134,34 +132,28 @@ describe('PackagePaymentView — unavailable', () => {
   });
 });
 
-describe('PackagePaymentView — paid: the way to start, and a notice when the automatic start did not happen', () => {
-  const activate = vi.fn();
-  const ready: PackagePaymentScreen = { kind: 'paid', amount: 120, activation: 'ready' };
-
-  it('ready, the automatic start was refused: a neutral sentence, the start button and a way to add guests', () => {
-    render(<PackagePaymentView {...base} screen={ready} errorMessage={null} activateAction={activate} activateReason="failed" />);
+describe('PackagePaymentView — paid: never a start control (D23)', () => {
+  it('paid and approved: says the service is being started, with no button and no "not started" notice', () => {
+    render(<PackagePaymentView {...base} screen={{ kind: 'paid', amount: 120, activation: 'starting' }} errorMessage={null} />);
     expect(screen.getByText('התשלום התקבל')).toBeTruthy();
-    expect(screen.getByRole('alert').textContent).toContain('עוד לא הופעל אוטומטית');
-    expect(screen.getByTestId('activate-form')).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toBe(SERVICE_STARTING);
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByRole('link', { name: 'הוספת מוזמנים' })).toBeTruthy();
   });
 
-  it('ready, no refused start (the customer simply came back): the button, and no alert', () => {
-    render(<PackagePaymentView {...base} screen={ready} errorMessage={null} activateAction={activate} />);
-    expect(screen.getByTestId('activate-form')).toBeTruthy();
-    expect(screen.queryByRole('alert')).toBeNull();
-  });
-
   it('active: says the campaign is running, and offers no start', () => {
-    const { container } = render(<PackagePaymentView {...base} screen={{ kind: 'paid', amount: 120, activation: 'active' }} errorMessage={null} activateAction={activate} />);
-    expect(screen.queryByTestId('activate-form')).toBeNull();
+    const { container } = render(<PackagePaymentView {...base} screen={{ kind: 'paid', amount: 120, activation: 'active' }} errorMessage={null} />);
     expect(container.textContent).toContain('הקמפיין פעיל');
+    expect(container.textContent).not.toContain(SERVICE_STARTING);
+    expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('not startable (the event passed): says they paid, offers no button', () => {
-    render(<PackagePaymentView {...base} screen={{ kind: 'paid', amount: 120, activation: 'unavailable' }} errorMessage={null} activateAction={activate} />);
+  it('neither (the event passed, or staff paused it): says they paid, nothing about starting, no button', () => {
+    const { container } = render(<PackagePaymentView {...base} screen={{ kind: 'paid', amount: 120, activation: 'unavailable' }} errorMessage={null} />);
     expect(screen.getByText('התשלום התקבל')).toBeTruthy();
-    expect(screen.queryByTestId('activate-form')).toBeNull();
+    expect(container.textContent).not.toContain(SERVICE_STARTING);
+    expect(screen.queryByRole('button')).toBeNull();
   });
 });
 

@@ -1,21 +1,17 @@
 import Link from 'next/link';
 
 import { buttonVariants } from '@/components/ui/button';
-import type { ActivationResult } from '@/lib/payments/activate-after-payment';
-import type { PackagePaymentScreen } from '@/lib/payments/package-payment-screen';
+import { type PackagePaymentScreen, SERVICE_STARTING } from '@/lib/payments/package-payment-screen';
 import { PURCHASE_ERROR_MESSAGES } from '@/lib/payments/package-purchase-errors';
 
 import { formatAmount } from '@/lib/format';
 
-import type { FormState } from '@/lib/validation/result';
-
-import { ActivateNowForm } from './activate-now-form';
 import { CardcomOpenFieldsForm } from './cardcom-open-fields-form';
 import { SumitCardForm } from './sumit-card-form';
 
 // The payment step of a fixed-price package campaign. Presentational: the page decides WHICH screen
-// (packagePaymentScreen, from the ledger) and this only draws it. The only start control is the "activate now" fallback
-// for a paid campaign whose automatic start was refused.
+// (packagePaymentScreen, from the ledger) and this only draws it. It never offers a start control: a recorded payment
+// starts the service by itself (design D23), so a paid service that is not running yet is said to be starting.
 
 const UNAVAILABLE_MESSAGE = {
   ledger: PURCHASE_ERROR_MESSAGES.purchase_failed,
@@ -42,8 +38,6 @@ export function PackagePaymentView({
   signerName,
   signerEmail = '',
   signerPhone = '',
-  activateAction,
-  activateReason = null,
 }: {
   screen: PackagePaymentScreen;
   // The sentence for `?error=` (purchaseErrorMessage), shown only above the form.
@@ -60,12 +54,6 @@ export function PackagePaymentView({
   signerName: string;
   signerEmail?: string;
   signerPhone?: string;
-  // Starts the campaign from here: the fallback for a payment whose automatic start was refused (the same Server Action
-  // as the manage page). Only used when the campaign can be started from this screen.
-  activateAction?: (prev: FormState, formData: FormData) => Promise<FormState>;
-  // How the automatic start after the payment ended, when it did not start (`?activate=`, set by the purchase route and by
-  // the CardCom form after settling); null = it was not refused. Derived from activateAfterPayment's own result type.
-  activateReason?: Exclude<ActivationResult, 'started'> | null;
 }) {
   switch (screen.kind) {
     case 'paid':
@@ -81,15 +69,10 @@ export function PackagePaymentView({
           {screen.activation === 'active' ? (
             <p className="text-sm">הקמפיין פעיל. הפניות לאורחים יישלחו לפי לוח הזמנים.</p>
           ) : null}
-          {screen.activation === 'ready' && activateAction ? (
-            <div className="space-y-3 text-start">
-              {activateReason ? (
-                <p role="alert" className={NOTICE_CLASS}>
-                  הקמפיין עוד לא הופעל אוטומטית. אפשר להפעיל אותו כעת.
-                </p>
-              ) : null}
-              <ActivateNowForm action={activateAction} />
-            </div>
+          {screen.activation === 'starting' ? (
+            <p role="status" className="text-sm">
+              {SERVICE_STARTING}
+            </p>
           ) : null}
           <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
             <Link href={`/app/events/${eventId}/guests`} className={buttonVariants()}>

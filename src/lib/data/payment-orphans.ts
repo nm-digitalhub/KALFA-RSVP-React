@@ -2,8 +2,11 @@ import 'server-only';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { CARDCOM_ABANDON_AFTER_MINUTES, settleCardcomSession } from '@/lib/payments/cardcom-settle';
-import { completeOperation, OperationStateError } from '@/lib/payments/ledger';
+import { completeOperation, loadOperationsOf, OperationStateError } from '@/lib/payments/ledger';
+import { deriveStatus } from '@/lib/payments/status';
+import { PACKAGE_ACTIVATION_RETRY, packageActivationJobId, QUEUES, type PackageActivationJob } from '@/lib/queue/queues';
 import type { createAdminClient } from '@/lib/supabase/admin';
+import type { PgBoss } from 'pg-boss';
 import type { Json } from '@/lib/supabase/types';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -40,6 +43,28 @@ export interface PaymentOrphanSweepResult {
   skipped: number;
   // A database error while closing the row: it is still pending, and the alert says so.
   failed: number;
+  activations: WaitingActivationResult;
+}
+
+// SECOND PASS (design D23): a campaign whose package is paid but whose service is still waiting to start. Every recorded
+// payment queues a package-activation job (package-activation-queue.ts), so a campaign that is still `approved` with a
+// collected ledger ACTIVATION_GRACE_MINUTES after its payment means the job was never queued, or it ran out of retries.
+//   - no job under the payment's id → queue it again, the same id (pg-boss ignores it if one appeared meanwhile);
+//   - the job is `failed` → boss.retry, at most once per campaign per RETRY_EVERY_MS, with one alert. The once-a-day
+//     limit is load-bearing: retry() adds one to the job's retry_limit (pg-boss plans.js retryJobs), so every retry ends
+//     in its own final delivery and its own alert from the job; a retry every ten minutes would page every ten minutes.
+//     The day is read from activity_log (`campaign.activation_retried`), so a worker restart does not reset it;
+//   - any other state (created, retry, active) → the job is still on its way: nothing.
+// No other repair path exists.
+export const ACTIVATION_GRACE_MINUTES = 10;
+export const RETRY_EVERY_MS = 24 * 60 * 60_000;
+
+export interface WaitingActivationResult {
+  found: number;
+  queued: number;
+  retried: number;
+  // A pg-boss or database error for one campaign; the others are still handled.
+  failed: number;
 }
 
 interface PendingRow {
@@ -75,10 +100,20 @@ async function sweepCardcomRow(admin: AdminClient, row: PendingRow, now: Date): 
   await settleCardcomSession(session.low_profile_id, { finalizeUnpaid: ageMinutes > CARDCOM_ABANDON_AFTER_MINUTES });
 }
 
+// The pg-boss calls the second pass makes. The worker passes its own instance.
+export type ActivationJobs = Pick<PgBoss, 'getJobById' | 'send' | 'retry'>;
+
 export async function runPaymentOrphanSweep(
   admin: AdminClient,
+  jobs: ActivationJobs,
   now: Date = new Date(),
 ): Promise<PaymentOrphanSweepResult> {
+  const pending = await sweepPendingOperations(admin, now);
+  const activations = await sweepWaitingActivations(admin, jobs, now);
+  return { ...pending, activations };
+}
+
+async function sweepPendingOperations(admin: AdminClient, now: Date): Promise<Omit<PaymentOrphanSweepResult, 'activations'>> {
   const cutoff = new Date(now.getTime() - ORPHAN_AFTER_MINUTES * 60_000).toISOString();
   const { data, error } = await admin
     .from('payment_operations')
@@ -151,4 +186,92 @@ export async function runPaymentOrphanSweep(
   }
 
   return { found: rows.length, swept: sweptRows.length, skipped, failed: failedIds.length };
+}
+
+// Exported for its local integration test only, which must not run the first pass against a shared database.
+export async function sweepWaitingActivations(admin: AdminClient, jobs: ActivationJobs, now: Date): Promise<WaitingActivationResult> {
+  const result: WaitingActivationResult = { found: 0, queued: 0, retried: 0, failed: 0 };
+  const READ_FAILED = 'סריקת השירותים ששולמו וממתינים להפעלה נכשלה';
+
+  const { data: campaigns, error } = await admin.from('campaigns').select('id, event_id').eq('status', 'approved');
+  if (error) throw new Error(READ_FAILED);
+  if (!campaigns || campaigns.length === 0) return result;
+
+  // The same ledger reading as the payment page and the activation (status.ts deriveStatus). Throws when unreadable.
+  const ledgers = await loadOperationsOf(admin, campaigns.map((c) => c.id));
+  const paid = campaigns.filter((c) => deriveStatus(ledgers.get(c.id) ?? []).status === 'collected');
+  if (paid.length === 0) return result;
+
+  const { data: ops, error: opsError } = await admin
+    .from('payment_operations')
+    .select('id, campaign_id, occurred_at')
+    .in('campaign_id', paid.map((c) => c.id))
+    .eq('kind', 'package_purchase')
+    .eq('outcome', 'succeeded')
+    .order('occurred_at', { ascending: false });
+  if (opsError) throw new Error(READ_FAILED);
+  // The latest succeeded purchase per campaign: the one the activation names (activate-paid-package.ts startPaidPackageNow).
+  const latest = new Map<string, { id: string; occurred_at: string }>();
+  for (const op of ops ?? []) if (!latest.has(op.campaign_id)) latest.set(op.campaign_id, op);
+
+  const cutoff = now.getTime() - ACTIVATION_GRACE_MINUTES * 60_000;
+  for (const campaign of paid) {
+    const op = latest.get(campaign.id);
+    if (!op || Date.parse(op.occurred_at) > cutoff) continue;
+    result.found += 1;
+    const ids = { campaignId: campaign.id, operationId: op.id };
+    try {
+      const jobId = packageActivationJobId(op.id);
+      const job = await jobs.getJobById(QUEUES.packageActivation, jobId);
+      if (!job) {
+        await jobs.send(QUEUES.packageActivation, ids satisfies PackageActivationJob, { id: jobId, ...PACKAGE_ACTIVATION_RETRY });
+        result.queued += 1;
+        console.warn('[payment-orphans] a paid package had no activation job; queued it', ids);
+        continue;
+      }
+      if (job.state !== 'failed') continue;
+      if (await retriedRecently(admin, campaign.id, now)) continue;
+      await jobs.retry(QUEUES.packageActivation, jobId);
+      result.retried += 1;
+      const { error: auditError } = await admin.from('activity_log').insert({
+        event_id: campaign.event_id,
+        user_id: null,
+        action: 'campaign.activation_retried',
+        meta: { campaignId: campaign.id, operationId: op.id, actor: 'system' },
+      });
+      if (auditError) console.error('[payment-orphans] could not record an activation retry', ids);
+      void sendSlackAlert({
+        level: 'error',
+        category: 'campaign_billing',
+        source: 'payment-orphans',
+        title: 'חבילה שולמה והשירות עדיין לא הופעל: נשלח ניסיון הפעלה נוסף',
+        detail: 'כל ניסיונות ההפעלה נכשלו. לבדוק את הקמפיין ואת האירוע לפני הניסיון הבא (פעם ביום).',
+        fields: { campaign_id: campaign.id, event_id: campaign.event_id, operation_id: op.id },
+      });
+    } catch (err) {
+      result.failed += 1;
+      console.error('[payment-orphans] could not check the activation job of a paid package', {
+        ...ids,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return result;
+}
+
+// Whether this campaign's failed activation was already retried within RETRY_EVERY_MS. An unreadable log answers true:
+// skipping one retry is safe, paging every ten minutes is not.
+async function retriedRecently(admin: AdminClient, campaignId: string, now: Date): Promise<boolean> {
+  const { data, error } = await admin
+    .from('activity_log')
+    .select('id')
+    .eq('action', 'campaign.activation_retried')
+    .eq('meta->>campaignId', campaignId)
+    .gte('created_at', new Date(now.getTime() - RETRY_EVERY_MS).toISOString())
+    .limit(1);
+  if (error) {
+    console.error('[payment-orphans] could not read the activation retry log', { campaignId });
+    return true;
+  }
+  return (data?.length ?? 0) > 0;
 }

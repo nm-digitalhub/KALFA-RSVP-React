@@ -15,7 +15,6 @@ import { packagePaymentScreen } from '@/lib/payments/package-payment-screen';
 import { getPackagePaymentState } from '@/lib/payments/package-purchase';
 import { purchaseErrorMessage } from '@/lib/payments/package-purchase-errors';
 import { resolvePurchaseProvider } from '@/lib/payments/provider';
-import { activateCampaignAction } from '../../campaign-actions';
 import { PackagePaymentView } from './package-payment-view';
 
 export const metadata: Metadata = { title: 'תשלום החבילה' };
@@ -28,10 +27,10 @@ export default async function CampaignPaymentPage({
   searchParams,
 }: {
   params: Promise<{ id: string; campaignId: string }>;
-  searchParams: Promise<{ error?: string; activate?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { id, campaignId } = await params;
-  const { error, activate } = await searchParams;
+  const { error } = await searchParams;
   const campaign = await getCampaign(campaignId);
   if (campaign.event_id !== id) notFound();
   const event = await requireOwnedEvent(id);
@@ -121,8 +120,6 @@ export default async function CampaignPaymentPage({
         signerName={profile?.full_name?.trim() || 'לקוח KALFA'}
         signerEmail={user.email ?? ''}
         signerPhone={profile?.phone ?? ''}
-        activateAction={activateCampaignAction.bind(null, id, campaignId)}
-        activateReason={activate === 'failed' ? 'failed' : null}
       />
     </div>
   );

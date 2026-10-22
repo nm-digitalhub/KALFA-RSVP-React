@@ -18,7 +18,6 @@ vi.mock('@/lib/payments/package-purchase', () => ({ getPackagePaymentState: vi.f
 vi.mock('@/lib/auth/dal', () => ({ hasPlatformPermission: vi.fn(), requireUser: vi.fn() }));
 vi.mock('@/lib/data/cardcom-config', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/lib/data/cardcom-config')>()), getCardcomServerConfig: vi.fn() }));
 vi.mock('@/lib/payments/cardcom-pending', () => ({ isCardcomPurchasePending: vi.fn() }));
-vi.mock('../../campaign-actions', () => ({ activateCampaignAction: vi.fn() }));
 vi.mock('./package-payment-view', () => ({
   PackagePaymentView: (props: {
     screen: { kind: string; activation?: string; testTerminal?: boolean; testMoney?: boolean };
@@ -28,8 +27,6 @@ vi.mock('./package-payment-view', () => ({
     googlePayTerminal?: number | null;
     signerEmail?: string;
     signerPhone?: string;
-    activateAction?: unknown;
-    activateReason?: string | null;
   }) => (
     <div
       data-marker="package-view"
@@ -43,8 +40,6 @@ vi.mock('./package-payment-view', () => ({
       data-google-pay={props.googlePayTerminal == null ? 'no' : String(props.googlePayTerminal)}
       data-email={props.signerEmail ?? ''}
       data-phone={props.signerPhone ?? ''}
-      data-can-activate={props.activateAction ? 'yes' : 'no'}
-      data-activate-reason={props.activateReason ?? ''}
     />
   ),
 }));
@@ -123,17 +118,13 @@ describe('payment page — a package campaign', () => {
     expect(await render({ paid: '1' })).toContain('data-screen="form"');
   });
 
-  it('a paid, approved package campaign can be started from here, and the page says the automatic start did not happen', async () => {
+  it('a paid, approved package campaign is being started: the page passes no start control (D23)', async () => {
     vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120, status: 'approved' }) as never);
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0 });
+    // `?activate=failed` from an older link changes nothing on the screen.
     const html = await render({ paid: '1', activate: 'failed' });
     expect(html).toContain('data-screen="paid"');
-    expect(html).toContain('data-activation="ready"');
-    expect(html).toContain('data-can-activate="yes"');
-    expect(html).toContain('data-activate-reason="failed"');
-    // an `?activate=` value the page does not know is ignored, never echoed — including the retired `no_contacts`
-    expect(await render({ activate: '<script>' })).toContain('data-activate-reason=""');
-    expect(await render({ activate: 'no_contacts' })).toContain('data-activate-reason=""');
+    expect(html).toContain('data-activation="starting"');
   });
 
   it('a paid package campaign that is already running says so', async () => {

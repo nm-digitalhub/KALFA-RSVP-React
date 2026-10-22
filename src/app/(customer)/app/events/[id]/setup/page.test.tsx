@@ -9,6 +9,11 @@ vi.mock('next/navigation', async (importOriginal) => ({ ...(await importOriginal
 vi.mock('@/lib/data/campaigns', () => ({ getCampaignForEvent: vi.fn(), listPackageOffers: vi.fn() }));
 vi.mock('@/lib/data/events', () => ({ getEvent: vi.fn() }));
 vi.mock('@/lib/storage/event-media', () => ({ signedInviteImageUrl: vi.fn() }));
+// The real reading by default (vi.fn(impl) survives resetAllMocks); one test answers "paid".
+vi.mock('@/lib/payments/package-paid', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/payments/package-paid')>();
+  return { ...actual, packagePaymentOf: vi.fn(actual.packagePaymentOf) };
+});
 vi.mock('../campaign/campaign-actions', () => ({ setupCampaignAction: vi.fn(), choosePackageAction: vi.fn() }));
 vi.mock('../campaign/[campaignId]/approve/package-terms-step', () => ({ PackageTermsStep: () => <div data-marker="package-terms" /> }));
 vi.mock('../edit-event-form', () => ({ EditEventForm: () => <div data-marker="details-form" /> }));
@@ -32,6 +37,8 @@ vi.mock('../package-choice-form', () => ({
 
 import { getCampaignForEvent, listPackageOffers } from '@/lib/data/campaigns';
 import { getEvent } from '@/lib/data/events';
+import { packagePaymentOf } from '@/lib/payments/package-paid';
+import { SERVICE_STARTING } from '@/lib/payments/package-payment-screen';
 import SetupPage from './page';
 
 // The setup page decides, on the server, which step is current. With a fixed-price package on offer a "בחירת חבילה"
@@ -192,5 +199,17 @@ describe('setup page — the way back', () => {
     vi.mocked(listPackageOffers).mockResolvedValue([OFFER as never]);
     vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'pending_approval', package_price: 150 } as never);
     expect(backOf(await render())).toEqual({ href: null, label: null });
+  });
+});
+
+describe('setup page — paid, not running yet (D23)', () => {
+  it('the live step says the service is being started and offers nothing to press', async () => {
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'approved', price: 150 } as never);
+    vi.mocked(packagePaymentOf).mockResolvedValue({ status: 'collected', collected: 150, credit: 0, committed: 0 });
+    const html = await render();
+    expect(html).toContain('live:current');
+    expect(html).toContain(SERVICE_STARTING);
+    expect(html).not.toMatch(/הפעלת (ה)?קמפיין/); // neither start label (payment page, manage page)
+    expect(html).not.toContain('/payment"');
   });
 });

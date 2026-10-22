@@ -15,6 +15,7 @@ import { cardFactsFromCardcom, documentUrlFromCardcom, holderIdFromCardcom, occu
 import { paymentFactsFromCardcom } from './cardcom-payment-facts';
 import { checkTerminalEcho, terminalEchoFromCardcom, type TerminalEchoVerdict } from './cardcom-terminal-echo';
 import { completeOperation, OperationStateError, type ProviderDocument } from './ledger';
+import { enqueuePackageActivation } from './package-activation-queue';
 import { labelTestMoney } from './test-money-label';
 
 // The ONE thing that closes a CardCom payment (docs/superpowers/plans/2026-10-07-cardcom-pilot-plan.md, 4.4). Three
@@ -522,4 +523,8 @@ async function afterPaid(admin: AdminClient, operation: OperationRow, documentNu
   // The revenue just grew: re-check the year against the עוסק פטור ceiling. Never throws or rejects. A TEST payment moved no money
   // and is not in the revenue, so there is nothing to re-check.
   if (!operation.is_test) void checkOsekPaturCeilingAfterCharge();
+  // Start the service whether or not the buyer's browser comes back (design D23). Reached once per settlement: the
+  // browser's call and the webhook both get here only for the settlement that recorded the payment, and the job id is
+  // the payment's, so a race between them still queues one job. Never throws.
+  await enqueuePackageActivation({ campaignId: operation.campaign_id, operationId: operation.id });
 }

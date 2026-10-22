@@ -80,7 +80,8 @@ import {
   getSignupReminderEnabled,
 } from '@/lib/data/signup-confirmation-reminder';
 import { runMarketingContactReconcile, syncMarketingContact } from '@/lib/data/marketing-contact-sync';
-import type { MarketingContactSyncJob } from '@/lib/queue/queues';
+import type { MarketingContactSyncJob, PackageActivationJob } from '@/lib/queue/queues';
+import { runPackageActivationJob } from '@/lib/payments/package-activation-job';
 import {
   runUnconfirmedCleanupSweep,
   getUnconfirmedCleanupEnabled,
@@ -1392,6 +1393,16 @@ async function main(): Promise<void> {
   // never throws and posts to Slack only when the version actually moved or the
   // run failed — a weekly "still current" message would just train people to
   // ignore the channel.
+  // One paid package to start (design D23). Not wrapped in guardedWorker: that alerts on every thrown attempt, and a
+  // refusal here is retried (PACKAGE_ACTIVATION_RETRY at send time). runPackageActivationJob alerts once, on the final
+  // delivery, and rethrows so pg-boss records the failure.
+  await boss.work(
+    QUEUES.packageActivation,
+    { includeMetadata: true },
+    async (jobs: JobWithMetadata<PackageActivationJob>[]) => {
+      for (const job of jobs) await runPackageActivationJob(job);
+    },
+  );
   // One customer's Resend contact made to match the consent ledger. A throw is retried by pg-boss
   // (MARKETING_CONTACT_SYNC_RETRY at send time); the daily reconcile below catches one that ran out of retries.
   await boss.work(
@@ -1648,7 +1659,7 @@ async function main(): Promise<void> {
     QUEUES.paymentOrphans,
     POLL_SLOW_CRON,
     guardedWorker(QUEUES.paymentOrphans, async () => {
-      await runPaymentOrphanSweep(createAdminClient());
+      await runPaymentOrphanSweep(createAdminClient(), boss);
     }),
   );
 

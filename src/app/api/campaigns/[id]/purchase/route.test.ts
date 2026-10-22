@@ -4,7 +4,8 @@ import type { NextRequest } from 'next/server';
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn(), hasPlatformPermission: vi.fn(async () => false) }));
 vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
-vi.mock('@/lib/data/campaigns', () => ({ getCampaignForPurchase: vi.fn(), activateCampaign: vi.fn() }));
+vi.mock('@/lib/data/campaigns', () => ({ getCampaignForPurchase: vi.fn() }));
+vi.mock('@/lib/payments/activate-paid-package', () => ({ startPaidPackageNow: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 vi.mock('@/lib/data/profiles', () => ({ getProfile: vi.fn() }));
 vi.mock('@/lib/payments/package-purchase', () => ({ purchasePackage: vi.fn() }));
@@ -12,7 +13,8 @@ vi.mock('@/lib/payments/package-purchase', () => ({ purchasePackage: vi.fn() }))
 import { POST } from './route';
 import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
-import { activateCampaign, getCampaignForPurchase } from '@/lib/data/campaigns';
+import { getCampaignForPurchase } from '@/lib/data/campaigns';
+import { startPaidPackageNow } from '@/lib/payments/activate-paid-package';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { getProfile } from '@/lib/data/profiles';
 import { purchasePackage, type PurchaseOutcome } from '@/lib/payments/package-purchase';
@@ -188,7 +190,7 @@ describe('POST /api/campaigns/[id]/purchase — the answer the customer gets', (
     async (outcome) => {
       vi.mocked(purchasePackage).mockResolvedValue(outcome);
       await callPost(request({ 'og-token': 'og-123' }));
-      expect(activateCampaign).not.toHaveBeenCalled();
+      expect(startPaidPackageNow).not.toHaveBeenCalled();
     },
   );
 
@@ -204,36 +206,26 @@ describe('POST /api/campaigns/[id]/purchase — the answer the customer gets', (
 });
 
 describe('POST /api/campaigns/[id]/purchase — after a payment that was just recorded', () => {
-  it('the campaign is activated, and the customer lands on the paid page', async () => {
+  it('the service is started inline, and the customer lands on the paid page', async () => {
     vi.mocked(purchasePackage).mockResolvedValue('paid');
-    vi.mocked(activateCampaign).mockResolvedValue(undefined);
+    vi.mocked(startPaidPackageNow).mockResolvedValue('started');
     const res = await callPost(request({ 'og-token': 'og-123' }));
-    expect(activateCampaign).toHaveBeenCalledWith(CAMPAIGN_ID);
+    expect(startPaidPackageNow).toHaveBeenCalledWith(CAMPAIGN_ID);
     const loc = location(res);
     expect(loc.pathname).toBe(PAY_PATH);
     expect(loc.searchParams.get('paid')).toBe('1');
     expect(loc.searchParams.get('activate')).toBeNull();
   });
 
-  it('a refused activation keeps the payment: paid, activate=failed, and Slack is told that a paying customer is not live', async () => {
+  // purchasePackage already queued the start (D23): the worker retries it and alerts only on its final delivery, so the
+  // route itself raises no alert.
+  it('an inline start not done yet keeps the payment: paid, activate=failed, and no alert from the route', async () => {
     vi.mocked(purchasePackage).mockResolvedValue('paid');
-    vi.mocked(activateCampaign).mockRejectedValue(new Error('connect ECONNREFUSED 10.0.0.5:5432'));
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(startPaidPackageNow).mockResolvedValue('failed');
     const res = await callPost(request({ 'og-token': 'og-123' }));
     const loc = location(res);
     expect(loc.searchParams.get('paid')).toBe('1');
     expect(loc.searchParams.get('activate')).toBe('failed');
-    expect(res.headers.get('location')).not.toContain('ECONNREFUSED');
-    expect(sendSlackAlert).toHaveBeenCalledWith(
-      expect.objectContaining({ level: 'warn', category: 'campaign_billing', source: 'package-activation' }),
-    );
-  });
-
-  it('a successful activation sends no alert', async () => {
-    vi.mocked(purchasePackage).mockResolvedValue('paid');
-    vi.mocked(activateCampaign).mockResolvedValue(undefined);
-    await callPost(request({ 'og-token': 'og-123' }));
     expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 });
-

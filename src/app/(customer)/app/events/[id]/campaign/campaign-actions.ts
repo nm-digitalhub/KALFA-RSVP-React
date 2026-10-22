@@ -9,7 +9,6 @@ import {
   createCampaign,
   changeCampaignPackage,
   acceptCampaignBenefit,
-  activateCampaign,
   pauseCampaign,
   closeCampaign,
   cancelCampaign,
@@ -213,35 +212,9 @@ export async function approvePackageTermsAction(
 
 // --- Campaign lifecycle (§9) ----------------------------------------------------
 // Each binds (eventId, campaignId) on the client; authorization is enforced inside
-// the data-layer transition (requireOwnedEvent for activate, `campaigns.runstate`
-// staff for pause/close). All revalidate the manage page.
-
-export async function activateCampaignAction(
-  eventId: string,
-  campaignId: string,
-  _prevState: FormState,
-  _formData: FormData,
-): Promise<FormState> {
-  try {
-    await activateCampaign(campaignId);
-  } catch (err) {
-    unstable_rethrow(err);
-    // Surface our own safe Hebrew message (e.g. "האירוע כבר חלף") instead of a
-    // fixed string, so the real reason reaches the user (mirrors setupCampaignAction).
-    return {
-      error:
-        err instanceof Error
-          ? err.message
-          : 'הפעלת הקמפיין נכשלה. נסו שוב.',
-    };
-  }
-  // The button lives on two screens (payment page, manage page) — refresh
-  // whichever one the owner clicked from, and the event page.
-  revalidatePath(`/app/events/${eventId}`);
-  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
-  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}/payment`);
-  return { notice: 'הקמפיין הופעל — הפניות יחלו לפי לוח הזמנים.' };
-}
+// the data-layer transition (`campaigns.runstate` staff for pause/close). All
+// revalidate the manage page. There is no customer start: a recorded payment
+// starts a package (design D23, activate-paid-package.ts).
 
 export async function pauseCampaignAction(
   eventId: string,

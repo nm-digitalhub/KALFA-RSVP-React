@@ -15,6 +15,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 import { cardFromSumit, saveCitizenId, type CardDetails } from './card';
 import { beginOperation, completeOperation, type ProviderDocument } from './ledger';
+import { enqueuePackageActivation } from './package-activation-queue';
 import { getPackagePaymentState } from './package-paid';
 import { receiptLineFor } from './package-receipt';
 import { resolvePurchaseProvider } from './provider';
@@ -347,6 +348,8 @@ export async function purchasePackage(input: PackagePurchaseInput): Promise<Purc
   // The revenue just grew: re-check the year's turnover against the עוסק פטור ceiling. Fire-and-forget — the check never
   // throws or rejects (tax-ceiling.ts), and it must not hold up or change this outcome.
   void checkOsekPaturCeilingAfterCharge();
+  // Start the service even if the buyer's request dies before the route answers (design D23). Never throws.
+  await enqueuePackageActivation({ campaignId, operationId });
 
   return 'paid';
 }

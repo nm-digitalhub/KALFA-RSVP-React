@@ -19,6 +19,8 @@ vi.mock('@/lib/data/cardcom-config', async (importOriginal) => ({
 vi.mock('@/lib/data/sumit-customers', () => ({ getSumitCustomerId: vi.fn(), recordSumitCustomerId: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/data/tax-ceiling', () => ({ checkOsekPaturCeilingAfterCharge: vi.fn() }));
+// The start of the service is queued, not run here (design D23).
+vi.mock('./package-activation-queue', () => ({ enqueuePackageActivation: vi.fn(async () => true) }));
 // D15 (task 5.3): the lapse decision is the benefits module's own job (its tests); the stub pins
 // only the routing — 'lapsed' → reapproval_required before any ledger write or charge.
 vi.mock('@/lib/data/coupon-benefits', () => ({ lapseExpiredBoundBenefit: vi.fn() }));
@@ -40,6 +42,7 @@ import { getCampaignCreditTotal } from '@/lib/data/billing';
 import { getSumitCustomerId, recordSumitCustomerId } from '@/lib/data/sumit-customers';
 import { logActivity } from '@/lib/data/activity';
 import { checkOsekPaturCeilingAfterCharge } from '@/lib/data/tax-ceiling';
+import { enqueuePackageActivation } from './package-activation-queue';
 import { chargeSumit, SumitDeclinedError, SumitNetworkError, type SumitChargeResult } from '@/lib/sumit/charge';
 import { saveCitizenId } from '@/lib/payments/card';
 import type { CampaignPurchaseState } from '@/lib/data/campaigns';
@@ -412,6 +415,12 @@ describe('purchasePackage — the charge', () => {
     });
   });
 
+  it('queues the start of the service with the recorded payment\'s ids (D23)', async () => {
+    await purchasePackage(input());
+    expect(enqueuePackageActivation).toHaveBeenCalledTimes(1);
+    expect(enqueuePackageActivation).toHaveBeenCalledWith({ campaignId: 'c1', operationId: purchaseRows()[0].id });
+  });
+
   it('a charge that returns no reusable card is still a confirmed payment: succeeded, no card, nothing sent to the vault', async () => {
     vi.mocked(chargeSumit).mockResolvedValue({ ...GOOD, paymentMethod: null });
     expect(await purchasePackage(input())).toBe('paid');
@@ -440,6 +449,7 @@ describe('purchasePackage — a decline is certain; everything else is not', () 
   it('a decline fails the row, alerts, and the customer can try again', async () => {
     vi.mocked(chargeSumit).mockRejectedValueOnce(new SumitDeclinedError());
     expect(await purchasePackage(input())).toBe('declined');
+    expect(enqueuePackageActivation).not.toHaveBeenCalled(); // a declined charge starts nothing
     expect(purchaseRows()[0].outcome).toBe('failed');
     expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'warn', category: 'campaign_billing' }));
     // the retry: a fresh pending row, a second charge, and the first row stays as the record of the decline

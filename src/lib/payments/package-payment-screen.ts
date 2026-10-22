@@ -1,5 +1,9 @@
 import type { PaymentState } from './status';
 
+// Paid, not running yet: the package-activation job is starting it (design D23). Said by the payment page and the setup
+// flow alike; never a button, never "not started".
+export const SERVICE_STARTING = 'השירות מופעל. הפניות לאורחים יישלחו לפי לוח הזמנים.';
+
 // What the payment page shows for a fixed-price package campaign. Pure on purpose: the page gathers the facts (the
 // ledger, the campaign, the event, the gates) and this decides, so every rule below is a one-line test.
 //
@@ -8,10 +12,10 @@ import type { PaymentState } from './status';
 // waiting for a person) never offers the card form again, because the card may already have been charged.
 
 export type PackagePaymentScreen =
-  // `activation`: what the customer can do next — the campaign is already running, it can be started from here, or
-  // it cannot be started (the event passed, or the campaign moved on). `testMoney`: what was paid is test money (a payment on the
+  // `activation`: the service is running, it is being started (paid and approved: the package-activation job starts it,
+  // design D23), or neither (the event passed, staff paused it, or the campaign moved on). Nothing here is a control. `testMoney`: what was paid is test money (a payment on the
   // no-money test terminal), which the screen says; present only when true.
-  | { kind: 'paid'; amount: number; activation: 'active' | 'ready' | 'unavailable'; testMoney?: true }
+  | { kind: 'paid'; amount: number; activation: 'active' | 'starting' | 'unavailable'; testMoney?: true }
   | { kind: 'in_progress' }
   | { kind: 'review' }
   // `testTerminal`: the form will take the payment on the no-money test terminal, which the screen says; present only when true.
@@ -38,9 +42,11 @@ export interface PackagePaymentScreenInput {
   testTerminal?: boolean;
 }
 
-function activationOf(i: PackagePaymentScreenInput): 'active' | 'ready' | 'unavailable' {
+// Only `approved` is being started: the job moves `approved → active` only. A paused service was stopped by staff and is
+// not restarted by anyone on the customer's side; `scheduled` has no writer.
+function activationOf(i: PackagePaymentScreenInput): 'active' | 'starting' | 'unavailable' {
   if (i.campaignStatus === 'active') return 'active';
-  if (!i.eventPast && ['approved', 'scheduled', 'paused'].includes(i.campaignStatus)) return 'ready';
+  if (!i.eventPast && i.campaignStatus === 'approved') return 'starting';
   return 'unavailable';
 }
 

@@ -35,6 +35,7 @@ import {
   campaignStage,
 } from '@/lib/data/event-labels';
 import { formatIsraelDateTime } from '@/lib/date';
+import { SERVICE_STARTING } from '@/lib/payments/package-payment-screen';
 import type { FormState } from '@/lib/validation/result';
 
 type BoundAction = (
@@ -92,7 +93,6 @@ type ThankyouSchedule = {
 } | null;
 
 type Actions = {
-  activate: BoundAction;
   pause: BoundAction;
   close: BoundAction;
   cancel: BoundAction;
@@ -641,7 +641,7 @@ function ActionsPanel({
   campaign,
   actions,
   eventId,
-  canActivate,
+  starting,
   needsPayment,
   isPast,
   canPause,
@@ -659,7 +659,8 @@ function ActionsPanel({
   campaign: Campaign;
   actions: Actions;
   eventId: string;
-  canActivate: boolean;
+  // Paid and approved: the package-activation job is starting it (D23). Said, never a button.
+  starting: boolean;
   needsPayment: boolean;
   isPast: boolean;
   canPause: boolean;
@@ -678,7 +679,7 @@ function ActionsPanel({
   const isActive = campaign.status === 'active';
   // A campaign whose only money is test money is reset, not "cancelled": the button says which.
   const cancelCopy = cancelActionCopy(paymentOf(campaign));
-  const hasOwnerActions = canActivate || needsPayment || isActive;
+  const hasOwnerActions = starting || needsPayment || isActive;
   const hasAdminActions = canPause || canClose || canCancel;
   const showThankyou = Boolean(thankyou) && thankyouRelevant;
   const showThankyouFailure = thankyouFailed && thankyouRelevant;
@@ -700,8 +701,10 @@ function ActionsPanel({
 
       {hasOwnerActions ? (
         <div className="mt-4 space-y-3">
-          {canActivate ? (
-            <ActionButton action={actions.activate} label="הפעלת קמפיין" variant="primary" />
+          {starting ? (
+            <p role="status" className="text-sm">
+              {SERVICE_STARTING}
+            </p>
           ) : null}
 
           {needsPayment ? (
@@ -855,7 +858,8 @@ export function ManageClient({
       : 0;
 
   const activatableState = ['approved', 'scheduled', 'paused'].includes(status);
-  const canActivate = !isPast && activatableState && funded;
+  // The customer never starts a paid package (D23): a recorded payment starts it, and only `approved → active`.
+  const starting = !isPast && status === 'approved' && funded;
   const needsPayment = !isPast && status === 'approved' && !funded;
   const canPause = viewerIsAdmin && status === 'active';
   const canClose =
@@ -965,7 +969,7 @@ export function ManageClient({
             campaign={campaign}
             actions={actions}
             eventId={eventId}
-            canActivate={canActivate}
+            starting={starting}
             needsPayment={needsPayment}
             isPast={isPast}
             canPause={canPause}

@@ -2,7 +2,7 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 
 import { getCampaignForPurchase } from '@/lib/data/campaigns';
-import { activateAfterPayment, type ActivationResult } from '@/lib/payments/activate-after-payment';
+import { startPaidPackageNow, type ActivationResult } from '@/lib/payments/activate-paid-package';
 import { settleCardcomSession } from '@/lib/payments/cardcom-settle';
 import { guardCampaignRoute, noStoreJson } from '@/lib/payments/cardcom-routes';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -61,7 +61,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const guard = await guardCampaignRoute(request, campaignId);
   if (!guard.ok) return guard.response;
-  const { campaign } = guard;
 
   let submitted = false;
   let browserReport: (z.infer<typeof threeDsReportSchema> & { method?: 'card' | 'google_pay' }) | undefined;
@@ -92,7 +91,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       // Paid. Start the campaign only while it is still waiting for its payment: the webhook may have settled first, and a
       // campaign that is already running (or was changed meanwhile) must not be started twice.
       const fresh = await getCampaignForPurchase(campaignId);
-      const activation = fresh?.status === 'approved' ? await activateAfterPayment(campaignId, campaign.event_id) : 'not_needed';
+      // The settlement that recorded the payment also queued the start (design D23); this inline call is the same
+      // idempotent function, so a buyer who stays sees a running service at once.
+      const activation = fresh?.status === 'approved' ? await startPaidPackageNow(campaignId) : 'not_needed';
       answer = { state: 'paid', activation };
     }
   } catch (err) {

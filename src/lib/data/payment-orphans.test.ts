@@ -15,7 +15,9 @@ import { beginOperation, completeOperation, OperationStateError } from '@/lib/pa
 import { createFakeTableClient, type TableRow } from '@/test/fake-table-client';
 import { withLedgerStamp } from '@/test/ledger-stamp-trigger';
 
-import { runPaymentOrphanSweep } from './payment-orphans';
+import { PACKAGE_ACTIVATION_RETRY, packageActivationJobId, QUEUES } from '@/lib/queue/queues';
+
+import { type ActivationJobs, runPaymentOrphanSweep } from './payment-orphans';
 
 // A payment operation is PENDING from just before the provider is called until just after it answers. A pending row
 // that is old means the process died in between: SUMIT may or may not have charged. The sweep must (1) never auto-retry,
@@ -47,13 +49,21 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+// The first pass's tests have no approved campaign, so the second pass finds nothing and never calls pg-boss.
+const NO_JOBS = {
+  getJobById: vi.fn(async () => null),
+  send: vi.fn(async () => null),
+  retry: vi.fn(async () => ({ jobs: [], requested: 0, affected: 0 })),
+} as unknown as ActivationJobs;
+const NO_ACTIVATIONS = { found: 0, queued: 0, retried: 0, failed: 0 };
+
 describe('runPaymentOrphanSweep', () => {
   it('a pending row older than 10 minutes becomes review, with an audit row and an alert that carry ids and no amounts', async () => {
     const db = createFakeTableClient({ payment_operations: [op({ amount: 120 })], activity_log: [] });
 
-    const result = await runPaymentOrphanSweep(db.client as never, NOW);
+    const result = await runPaymentOrphanSweep(db.client as never, NO_JOBS, NOW);
 
-    expect(result).toEqual({ found: 1, swept: 1, skipped: 0, failed: 0 });
+    expect(result).toEqual({ found: 1, swept: 1, skipped: 0, failed: 0, activations: NO_ACTIVATIONS });
     expect(db.rows('payment_operations')[0]).toMatchObject({ outcome: 'review' });
     expect(String(db.rows('payment_operations')[0].note)).toContain('orphaned');
     expect(db.rows('activity_log')).toEqual([
@@ -74,9 +84,9 @@ describe('runPaymentOrphanSweep', () => {
   it('a pending row that is still young is left alone — the process that owns it may still be running', async () => {
     const db = createFakeTableClient({ payment_operations: [op({ recorded_at: ago(2) })], activity_log: [] });
 
-    const result = await runPaymentOrphanSweep(db.client as never, NOW);
+    const result = await runPaymentOrphanSweep(db.client as never, NO_JOBS, NOW);
 
-    expect(result).toEqual({ found: 0, swept: 0, skipped: 0, failed: 0 });
+    expect(result).toEqual({ found: 0, swept: 0, skipped: 0, failed: 0, activations: NO_ACTIVATIONS });
     expect(db.rows('payment_operations')[0].outcome).toBe('pending');
     expect(sendSlackAlert).not.toHaveBeenCalled();
   });
@@ -91,7 +101,7 @@ describe('runPaymentOrphanSweep', () => {
       activity_log: [],
     });
 
-    const result = await runPaymentOrphanSweep(db.client as never, NOW);
+    const result = await runPaymentOrphanSweep(db.client as never, NO_JOBS, NOW);
 
     expect(result.found).toBe(0);
     expect(db.rows('payment_operations').map((r) => r.outcome)).toEqual(['review', 'succeeded', 'failed']);
@@ -101,7 +111,7 @@ describe('runPaymentOrphanSweep', () => {
   it('after the sweep the "pay once" lock is STILL closed: a new purchase cannot start until a person decides', async () => {
     const db = createFakeTableClient({ payment_operations: [op({})], activity_log: [] }, {}, { ...trigger, uniqueIndexes: INDEXES });
 
-    await runPaymentOrphanSweep(db.client as never, NOW);
+    await runPaymentOrphanSweep(db.client as never, NO_JOBS, NOW);
 
     expect(db.rows('payment_operations')[0].outcome).toBe('review');
     expect(await beginOperation(db.client as never, { campaignId: 'c1', eventId: 'e1', provider: 'sumit', kind: 'package_purchase', amount: 120 })).toEqual({ alreadyInProgress: true });
@@ -111,9 +121,9 @@ describe('runPaymentOrphanSweep', () => {
     const db = createFakeTableClient({ payment_operations: [op({})], activity_log: [] });
     vi.mocked(completeOperation).mockRejectedValueOnce(new OperationStateError());
 
-    const result = await runPaymentOrphanSweep(db.client as never, NOW);
+    const result = await runPaymentOrphanSweep(db.client as never, NO_JOBS, NOW);
 
-    expect(result).toEqual({ found: 1, swept: 0, skipped: 1, failed: 0 });
+    expect(result).toEqual({ found: 1, swept: 0, skipped: 1, failed: 0, activations: NO_ACTIVATIONS });
     expect(db.rows('activity_log')).toHaveLength(0);
     expect(sendSlackAlert).not.toHaveBeenCalled();
   });
@@ -122,9 +132,9 @@ describe('runPaymentOrphanSweep', () => {
     const db = createFakeTableClient({ payment_operations: [op({ id: 'a' }), op({ id: 'b', campaign_id: 'c2' })], activity_log: [] });
     vi.mocked(completeOperation).mockRejectedValueOnce(new Error('עדכון פעולת התשלום נכשל'));
 
-    const result = await runPaymentOrphanSweep(db.client as never, NOW);
+    const result = await runPaymentOrphanSweep(db.client as never, NO_JOBS, NOW);
 
-    expect(result).toEqual({ found: 2, swept: 1, skipped: 0, failed: 1 });
+    expect(result).toEqual({ found: 2, swept: 1, skipped: 0, failed: 1, activations: NO_ACTIVATIONS });
     expect(sendSlackAlert).toHaveBeenCalledTimes(1);
     expect(vi.mocked(sendSlackAlert).mock.calls[0][0].fields).toMatchObject({ swept: 1, failed: 1 });
   });
@@ -133,7 +143,7 @@ describe('runPaymentOrphanSweep', () => {
     const db = createFakeTableClient({ payment_operations: [], activity_log: [] });
     db.fail('payment_operations', '57014', 'select');
 
-    await expect(runPaymentOrphanSweep(db.client as never, NOW)).rejects.toThrow();
+    await expect(runPaymentOrphanSweep(db.client as never, NO_JOBS, NOW)).rejects.toThrow();
   });
 });
 
@@ -145,7 +155,7 @@ describe('runPaymentOrphanSweep: CardCom purchases', () => {
   it('asks CardCom instead of moving the row to review, and sends no "orphaned" alert of its own', async () => {
     const db = withSession([cardcomOp()]);
     vi.mocked(settleCardcomSession).mockResolvedValue({ status: 'unpaid' });
-    const result = await runPaymentOrphanSweep(db.client as never, NOW);
+    const result = await runPaymentOrphanSweep(db.client as never, NO_JOBS, NOW);
     expect(settleCardcomSession).toHaveBeenCalledWith('lp-1', { finalizeUnpaid: false });
     expect(db.rows('payment_operations')[0].outcome).toBe('pending');
     expect(db.rows('activity_log')).toHaveLength(0);
@@ -156,20 +166,20 @@ describe('runPaymentOrphanSweep: CardCom purchases', () => {
   it('lets CardCom close a session that is older than the abandon age, because then "unpaid" means walked away', async () => {
     const db = withSession([cardcomOp({ recorded_at: ago(61) })]);
     vi.mocked(settleCardcomSession).mockResolvedValue({ status: 'settled', outcome: 'failed', alreadyDone: false });
-    await runPaymentOrphanSweep(db.client as never, NOW);
+    await runPaymentOrphanSweep(db.client as never, NO_JOBS, NOW);
     expect(settleCardcomSession).toHaveBeenCalledWith('lp-1', { finalizeUnpaid: true });
   });
 
   it('settles a payment that was made and never reported, whatever its age', async () => {
     const db = withSession([cardcomOp({ recorded_at: ago(30) })]);
     vi.mocked(settleCardcomSession).mockResolvedValue({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
-    await runPaymentOrphanSweep(db.client as never, NOW);
+    await runPaymentOrphanSweep(db.client as never, NO_JOBS, NOW);
     expect(settleCardcomSession).toHaveBeenCalledTimes(1);
   });
 
   it('closes a purchase that has no session as failed: the buyer was never given an id, so nothing can have been paid', async () => {
     const db = createFakeTableClient({ payment_operations: [cardcomOp()], cardcom_payment_sessions: [], activity_log: [] });
-    await runPaymentOrphanSweep(db.client as never, NOW);
+    await runPaymentOrphanSweep(db.client as never, NO_JOBS, NOW);
     expect(db.rows('payment_operations')[0]).toMatchObject({ outcome: 'failed' });
     expect(settleCardcomSession).not.toHaveBeenCalled();
   });
@@ -177,7 +187,7 @@ describe('runPaymentOrphanSweep: CardCom purchases', () => {
   it('leaves the row alone when CardCom cannot be asked, to be tried again at the next run', async () => {
     const db = withSession([cardcomOp({ recorded_at: ago(90) })]);
     vi.mocked(settleCardcomSession).mockResolvedValue({ status: 'error' });
-    await runPaymentOrphanSweep(db.client as never, NOW);
+    await runPaymentOrphanSweep(db.client as never, NO_JOBS, NOW);
     expect(db.rows('payment_operations')[0].outcome).toBe('pending');
   });
 
@@ -187,15 +197,155 @@ describe('runPaymentOrphanSweep: CardCom purchases', () => {
       cardcom_payment_sessions: [],
       activity_log: [],
     });
-    await runPaymentOrphanSweep(db.client as never, NOW);
+    await runPaymentOrphanSweep(db.client as never, NO_JOBS, NOW);
     expect(db.rows('payment_operations')[0].outcome).toBe('review');
     expect(settleCardcomSession).not.toHaveBeenCalled();
   });
 
   it('still moves a SUMIT purchase (no provider in its meta) to review, as before', async () => {
     const db = createFakeTableClient({ payment_operations: [op({ meta: { payerUserId: 'u1' } })], activity_log: [] });
-    await runPaymentOrphanSweep(db.client as never, NOW);
+    await runPaymentOrphanSweep(db.client as never, NO_JOBS, NOW);
     expect(db.rows('payment_operations')[0].outcome).toBe('review');
     expect(settleCardcomSession).not.toHaveBeenCalled();
+  });
+});
+
+// SECOND PASS (D23): a paid campaign whose service is still waiting to start.
+describe('runPaymentOrphanSweep: paid packages still waiting to start', () => {
+  const paidOp = (over: TableRow = {}): TableRow => ({
+    id: 'op-paid',
+    campaign_id: 'c1',
+    event_id: 'e1',
+    kind: 'package_purchase',
+    outcome: 'succeeded',
+    amount: 149,
+    credit_applied: 0,
+    occurred_at: ago(11),
+    recorded_at: ago(11),
+    payment_operation_kinds: { effect: 'collect' },
+    payment_operation_lines: [],
+    ...over,
+  });
+  const db = (over: { ops?: TableRow[]; campaigns?: TableRow[]; activity?: TableRow[] } = {}) =>
+    createFakeTableClient({
+      payment_operations: over.ops ?? [paidOp()],
+      campaigns: over.campaigns ?? [{ id: 'c1', event_id: 'e1', status: 'approved' }],
+      activity_log: over.activity ?? [],
+    });
+  const jobs = (state: string | null) =>
+    ({
+      getJobById: vi.fn(async () => (state === null ? null : { id: 'j', state })),
+      send: vi.fn(async () => 'j'),
+      retry: vi.fn(async () => ({ jobs: [], requested: 1, affected: 1 })),
+    }) as unknown as ActivationJobs & Record<'getJobById' | 'send' | 'retry', ReturnType<typeof vi.fn>>;
+  const JOB_ID = packageActivationJobId('op-paid');
+
+  it('no job under the payment\'s id: queues it again with the same id and policy, no alert', async () => {
+    const j = jobs(null);
+    const r = await runPaymentOrphanSweep(db().client as never, j, NOW);
+    expect(r.activations).toEqual({ found: 1, queued: 1, retried: 0, failed: 0 });
+    expect(j.getJobById).toHaveBeenCalledWith(QUEUES.packageActivation, JOB_ID);
+    expect(j.send).toHaveBeenCalledWith(
+      QUEUES.packageActivation,
+      { campaignId: 'c1', operationId: 'op-paid' },
+      { id: JOB_ID, ...PACKAGE_ACTIVATION_RETRY },
+    );
+    expect(j.retry).not.toHaveBeenCalled();
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it.each(['created', 'retry', 'active'])('a job in state %s is still on its way: nothing', async (state) => {
+    const j = jobs(state);
+    const r = await runPaymentOrphanSweep(db().client as never, j, NOW);
+    expect(r.activations).toEqual({ found: 1, queued: 0, retried: 0, failed: 0 });
+    expect(j.send).not.toHaveBeenCalled();
+    expect(j.retry).not.toHaveBeenCalled();
+  });
+
+  it('a failed job is retried once, with an audit row and one alert naming the campaign and the event', async () => {
+    const j = jobs('failed');
+    const d = db();
+    const r = await runPaymentOrphanSweep(d.client as never, j, NOW);
+    expect(r.activations).toEqual({ found: 1, queued: 0, retried: 1, failed: 0 });
+    expect(j.retry).toHaveBeenCalledWith(QUEUES.packageActivation, JOB_ID);
+    expect(d.rows('activity_log')).toMatchObject([
+      { event_id: 'e1', user_id: null, action: 'campaign.activation_retried', meta: { campaignId: 'c1', operationId: 'op-paid' } },
+    ]);
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1);
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ level: 'error', fields: { campaign_id: 'c1', event_id: 'e1', operation_id: 'op-paid' } }),
+    );
+  });
+
+  it('a failed job already retried within the day is left alone: no second retry, no second alert', async () => {
+    const j = jobs('failed');
+    const activity = [{ id: 'a1', action: 'campaign.activation_retried', meta: { campaignId: 'c1' }, created_at: ago(23 * 60) }];
+    const r = await runPaymentOrphanSweep(db({ activity }).client as never, j, NOW);
+    expect(r.activations).toEqual({ found: 1, queued: 0, retried: 0, failed: 0 });
+    expect(j.retry).not.toHaveBeenCalled();
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('a retry older than a day, or of another campaign, does not hold this one back', async () => {
+    const j = jobs('failed');
+    const activity = [
+      { id: 'a1', action: 'campaign.activation_retried', meta: { campaignId: 'c1' }, created_at: ago(25 * 60) },
+      { id: 'a2', action: 'campaign.activation_retried', meta: { campaignId: 'c2' }, created_at: ago(5) },
+    ];
+    const r = await runPaymentOrphanSweep(db({ activity }).client as never, j, NOW);
+    expect(r.activations.retried).toBe(1);
+  });
+
+  it('a payment younger than the grace period is left to its own job', async () => {
+    const j = jobs(null);
+    const r = await runPaymentOrphanSweep(db({ ops: [paidOp({ occurred_at: ago(5), recorded_at: ago(5) })] }).client as never, j, NOW);
+    expect(r.activations.found).toBe(0);
+    expect(j.getJobById).not.toHaveBeenCalled();
+  });
+
+  it('only approved campaigns with a collected ledger: active, paused, refunded and unpaid ones are not touched', async () => {
+    const j = jobs(null);
+    const campaigns = [
+      { id: 'c1', event_id: 'e1', status: 'active' },
+      { id: 'c2', event_id: 'e2', status: 'paused' },
+      { id: 'c3', event_id: 'e3', status: 'approved' }, // refunded in full
+      { id: 'c4', event_id: 'e4', status: 'approved' }, // never paid
+    ];
+    const ops = [
+      paidOp({ id: 'o1', campaign_id: 'c1' }),
+      paidOp({ id: 'o2', campaign_id: 'c2' }),
+      paidOp({ id: 'o3', campaign_id: 'c3' }),
+      paidOp({ id: 'o3r', campaign_id: 'c3', kind: 'refund', occurred_at: ago(10), recorded_at: ago(10), payment_operation_kinds: { effect: 'return' } }),
+    ];
+    const r = await runPaymentOrphanSweep(db({ campaigns, ops }).client as never, j, NOW);
+    expect(r.activations).toEqual({ found: 0, queued: 0, retried: 0, failed: 0 });
+    expect(j.getJobById).not.toHaveBeenCalled();
+  });
+
+  it('a pg-boss error for one campaign is counted and the next campaign is still handled', async () => {
+    const j = jobs(null);
+    j.getJobById.mockRejectedValueOnce(new Error('connection reset'));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const campaigns = [{ id: 'c1', event_id: 'e1', status: 'approved' }, { id: 'c2', event_id: 'e2', status: 'approved' }];
+    const ops = [paidOp({ id: 'o1', campaign_id: 'c1' }), paidOp({ id: 'o2', campaign_id: 'c2' })];
+    const r = await runPaymentOrphanSweep(db({ campaigns, ops }).client as never, j, NOW);
+    expect(r.activations).toEqual({ found: 2, queued: 1, retried: 0, failed: 1 });
+  });
+
+  it('a failure to READ the campaigns is thrown, so the job is retried and visible', async () => {
+    const d = db();
+    d.fail('campaigns', 'XX000');
+    await expect(runPaymentOrphanSweep(d.client as never, jobs(null), NOW)).rejects.toThrow('סריקת השירותים');
+  });
+
+  it('an unreadable retry log skips the retry: one missed retry is safe, paging every ten minutes is not', async () => {
+    const j = jobs('failed');
+    const d = db();
+    d.fail('activity_log', 'XX000', 'select');
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const r = await runPaymentOrphanSweep(d.client as never, j, NOW);
+    expect(r.activations.retried).toBe(0);
+    expect(j.retry).not.toHaveBeenCalled();
+    expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 });

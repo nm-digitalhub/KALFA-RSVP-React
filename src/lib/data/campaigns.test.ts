@@ -101,6 +101,7 @@ import {
   acceptCampaignBenefit,
   approveCampaign,
   activateCampaign,
+  activateCampaignAfterPayment,
   pauseCampaign,
   closeCampaign,
   cancelCampaign,
@@ -890,6 +891,101 @@ describe('campaign run-state: console actor (owner decision 2026-07-21)', () => 
 
     expect(requireOwnedEvent).toHaveBeenCalledWith('e1');
     expect(builder.in).toHaveBeenCalledWith('status', ['approved', 'scheduled', 'paused']);
+  });
+});
+
+// Design D23: the server starts a paid package itself, with no session. The actor carries the recorded payment, the
+// transition re-reads it, and only `approved → active` is reachable.
+describe('campaign run-state: system actor after a recorded payment (D23)', () => {
+  const EVENT_OK = { event_date: '2999-01-01T00:00:00+00:00', status: 'active' };
+  const PAYMENT = { id: 'op1' };
+
+  it('activates approved → active with a succeeded package payment of this campaign', async () => {
+    const builders = adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1', package_price: 150 },
+      events: EVENT_OK,
+      payment_operations: PAYMENT,
+    });
+
+    await activateCampaignAfterPayment('c1', 'op1');
+
+    expect(builders.payment_operations.eq).toHaveBeenCalledWith('id', 'op1');
+    expect(builders.payment_operations.eq).toHaveBeenCalledWith('campaign_id', 'c1');
+    expect(builders.payment_operations.eq).toHaveBeenCalledWith('kind', 'package_purchase');
+    expect(builders.payment_operations.eq).toHaveBeenCalledWith('outcome', 'succeeded');
+    // approved only: a paused (staff-stopped) or scheduled campaign never matches the guarded UPDATE.
+    expect(builders.campaigns.in).toHaveBeenCalledWith('status', ['approved']);
+    expect(builders.campaigns.update).toHaveBeenCalledWith({ status: 'active' });
+    expect(getPackagePaymentState).toHaveBeenCalledWith('c1');
+  });
+
+  it('uses no session: neither the cookie ownership check nor the user nor the run-state gate', async () => {
+    adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1', package_price: 150 },
+      events: EVENT_OK,
+      payment_operations: PAYMENT,
+    });
+
+    await activateCampaignAfterPayment('c1', 'op1');
+
+    expect(requireOwnedEvent).not.toHaveBeenCalled();
+    expect(requireUser).not.toHaveBeenCalled();
+    expect(requirePlatformPermission).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the named payment is not a succeeded package purchase of this campaign', async () => {
+    const builders = adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1', package_price: 150 },
+      events: EVENT_OK,
+      payment_operations: null,
+    });
+
+    await expect(activateCampaignAfterPayment('c1', 'op-other')).rejects.toThrow('הפעלת מערכת נדחתה');
+    expect(builders.events).toBeUndefined(); // refused before the event is read
+    expect(builders.campaigns.update).not.toHaveBeenCalled();
+  });
+
+  it('still refuses a past event and a non-active event', async () => {
+    const past = adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1', package_price: 150 },
+      events: { event_date: '2020-01-01T00:00:00+00:00', status: 'active' },
+      payment_operations: PAYMENT,
+    });
+    await expect(activateCampaignAfterPayment('c1', 'op1')).rejects.toThrow('האירוע כבר חלף');
+    expect(past.campaigns.update).not.toHaveBeenCalled();
+
+    const draft = adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1', package_price: 150 },
+      events: { event_date: '2999-01-01T00:00:00+00:00', status: 'draft' },
+      payment_operations: PAYMENT,
+    });
+    await expect(activateCampaignAfterPayment('c1', 'op1')).rejects.toThrow('יש לאשר את פרטי האירוע לפני אישורי הגעה');
+    expect(draft.campaigns.update).not.toHaveBeenCalled();
+  });
+
+  it('still requires the ledger to show the package collected', async () => {
+    const builders = adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1', package_price: 150 },
+      events: EVENT_OK,
+      payment_operations: PAYMENT,
+    });
+    vi.mocked(getPackagePaymentState).mockResolvedValueOnce({ status: 'pending', collected: 0, credit: 0, committed: 0 });
+
+    await expect(activateCampaignAfterPayment('c1', 'op1')).rejects.toThrow(PACKAGE_NOT_PAID_ERROR);
+    expect(builders.campaigns.update).not.toHaveBeenCalled();
+  });
+
+  it('cannot be widened by another caller: the activation and pause paths refuse the system actor', async () => {
+    const builders = adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1', package_price: 150 },
+      events: EVENT_OK,
+      payment_operations: PAYMENT,
+    });
+    const SYSTEM = { kind: 'system' as const, paymentOperationId: 'op1' };
+
+    await expect(activateCampaign('c1', SYSTEM)).rejects.toThrow('הפעלת מערכת מותרת רק ממצב מאושר לפעיל');
+    await expect(pauseCampaign('c1', SYSTEM)).rejects.toThrow('הפעלת מערכת מותרת רק ממצב מאושר לפעיל');
+    expect(builders.campaigns.update).not.toHaveBeenCalled();
   });
 });
 

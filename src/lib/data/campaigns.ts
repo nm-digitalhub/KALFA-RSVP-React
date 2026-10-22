@@ -501,7 +501,37 @@ export type CampaignActor =
   // holding `campaigns.runstate`. Cross-tenant by design (staff), so there is no
   // ownership check here — the ROUTE is the authorization boundary, and what a
   // console actor may reach is narrowed at the call sites below, not here.
-  | { kind: 'console'; staffUserId: string };
+  | { kind: 'console'; staffUserId: string }
+  // No session: the server itself, after a package payment it recorded. It CARRIES the id of that payment, and the
+  // transition re-reads it (a succeeded package purchase of THIS campaign) before anything else, so it cannot be used
+  // without a real recorded payment. It is narrowed to `approved → active` inside the transition, whatever the caller
+  // passes. Used only by activateCampaignAfterPayment below (design D23).
+  | { kind: 'system'; paymentOperationId: string };
+
+// The system actor's whole authority (design D23): the transition it asks for is exactly `approved → active`, and the
+// payment it names is a succeeded package purchase of this very campaign, read from the ledger now. Anything else is
+// refused before the event is even read, so the actor cannot be reused for another transition or another campaign.
+async function requireSystemActivationProof(
+  admin: ReturnType<typeof createAdminClient>,
+  campaignId: string,
+  from: CampaignStatus[],
+  to: CampaignStatus,
+  paymentOperationId: string,
+): Promise<void> {
+  if (to !== 'active' || from.length !== 1 || from[0] !== 'approved') {
+    throw new Error('הפעלת מערכת מותרת רק ממצב מאושר לפעיל');
+  }
+  const { data, error } = await admin
+    .from('payment_operations')
+    .select('id')
+    .eq('id', paymentOperationId)
+    .eq('campaign_id', campaignId)
+    .eq('kind', 'package_purchase')
+    .eq('outcome', 'succeeded')
+    .maybeSingle();
+  if (error) throw new Error(PACKAGE_PAYMENT_UNVERIFIED_ERROR);
+  if (!data) throw new Error('הפעלת מערכת נדחתה: התשלום שצוין אינו רכישת חבילה שהצליחה עבור הקמפיין הזה');
+}
 
 // Race-safe guarded transition: the UPDATE only matches a row in one of `from`
 // (plus any extra column guard), so concurrent calls can't double-transition.
@@ -563,8 +593,9 @@ async function transitionCampaignStatus(
     applyEventGuards(event);
     eventDate = event.event_date;
   } else {
-    // Console (Bearer). Identity was verified by the route; read the event with
-    // the service-role client so the SAME guards run without the cookie DAL.
+    // Console (Bearer) or system. Identity was verified by the route (console), or is the recorded payment checked
+    // here (system). Read the event with the service-role client so the SAME guards run without the cookie DAL.
+    if (actor.kind === 'system') await requireSystemActivationProof(admin, campaign.id, from, to, actor.paymentOperationId);
     const { data: event, error: evErr } = await admin
       .from('events')
       .select('event_date, status')
@@ -697,6 +728,37 @@ export async function activateCampaign(
       .eq('id', campaignId)
       .is('thankyou_send_at', null);
   }
+}
+
+// The server's own start of a paid package (design D23): no session, `approved → active` only. The payment it names is
+// re-read by the transition (requireSystemActivationProof) and the funding by requirePackageFunding; the event guards
+// are the owner's. A paused, closed or cancelled campaign never matches the guarded UPDATE, so a late or repeated call
+// cannot restart what staff stopped. Completion (activity row, thank-you default) is the caller's, written so it can
+// run again safely (src/lib/payments/activate-paid-package.ts). Returns the event date for that completion.
+export async function activateCampaignAfterPayment(
+  campaignId: string,
+  paymentOperationId: string,
+): Promise<{ eventDate: string | null }> {
+  const result = await transitionCampaignStatus(
+    campaignId,
+    ['approved'],
+    'active',
+    'package',
+    {
+      rejectPastEvent: true,
+      requireActiveEvent: true,
+      preparePackage: (c) => requirePackageFunding(c.id),
+    },
+    { kind: 'system', paymentOperationId },
+  );
+  void sendSlackAlert({
+    level: 'info',
+    category: 'campaign_billing',
+    source: 'campaign-lifecycle',
+    title: 'קמפיין הופעל — הפניות מתחילות',
+    fields: { campaign_id: campaignId },
+  });
+  return result;
 }
 
 // Wind-down: `active → paused`. Platform admin on the web; a console agent with

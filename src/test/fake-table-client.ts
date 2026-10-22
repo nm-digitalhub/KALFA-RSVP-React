@@ -11,7 +11,7 @@
 //
 // Supported: select(cols, { count, head }), insert(row | rows),
 // update(patch), delete({ count }), eq, neq, in, gt, gte, lt, lte, is, not (is /
-// eq only), order, limit, maybeSingle, single, rows(table), partial UNIQUE
+// eq only) — on a column or on one JSON key as text (`meta->>campaignId`) — order, limit, maybeSingle, single, rows(table), partial UNIQUE
 // indexes (options.uniqueIndexes → 23505), a BEFORE INSERT hook
 // (options.beforeInsert), and rpc(fn, args) from handlers. Column lists are not
 // projected — a row comes back whole — so a test pins columns through `ops`.
@@ -158,7 +158,7 @@ export function createFakeTableClient(
 
     const filter = (name: string, col: string, val: unknown, pred: (v: unknown) => boolean) => {
       rec.filters.push([name, col, val]);
-      preds.push((r) => pred(r[col]));
+      preds.push((r) => pred(columnValue(r, col)));
       return b;
     };
 
@@ -319,4 +319,17 @@ export function createFakeTableClient(
     },
   };
   return fake;
+}
+
+// A filter's column: a plain column, or one key of a JSON column read as text (`meta->>campaignId`), as PostgREST reads
+// it. Deeper paths are not supported; they throw rather than match nothing.
+function columnValue(row: TableRow, col: string): unknown {
+  const at = col.indexOf('->>');
+  if (at < 0) return row[col];
+  const [column, key] = [col.slice(0, at), col.slice(at + 3)];
+  if (column.includes('->') || key.includes('->')) throw new Error(`fake-table-client: JSON path ${col} is unsupported`);
+  const json = row[column];
+  if (json === null || typeof json !== 'object' || Array.isArray(json)) return undefined;
+  const v = (json as Record<string, unknown>)[key];
+  return v === undefined || v === null ? v : typeof v === 'string' ? v : JSON.stringify(v);
 }

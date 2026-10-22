@@ -4,6 +4,8 @@
 // kalfa-owner-agent works.
 import type { JobWithMetadata } from 'pg-boss';
 
+import { deterministicJobId } from './deterministic-id';
+
 // Queues that no longer exist. pg-boss keeps a schedule row in the database
 // after the code stops calling schedule(), so a retired cron would keep filing
 // jobs that no worker drains; the worker unschedules and deletes these at
@@ -294,6 +296,35 @@ export const QUEUES = {
   // deterministicJobId('owner-report-model:' + runId)), whose single worker is
   // what keeps model runs one at a time.
   ownerAgentReport: 'owner-agent-report',
+  // One paid package to start (design D23). Event-driven: sent the moment a package payment is recorded as succeeded
+  // (cardcom-settle.ts afterPaid, the SUMIT purchase route), with id deterministicJobId('package-activation:' +
+  // operationId), so a payment reported twice queues one job. The payment orphan sweep re-sends a missing one and
+  // retries a failed one. The handler (src/lib/payments/package-activation-job.ts) runs activatePaidPackage, which is
+  // safe to repeat and never restarts a paused service.
+  packageActivation: 'package-activation',
+} as const;
+
+// The package-activation job payload. Ids only.
+export type PackageActivationJob = {
+  campaignId: string;
+  operationId: string;
+};
+
+// The package-activation job id, derived from the payment: the web tier (package-activation-queue.ts) and the payment
+// orphan sweep (payment-orphans.ts, in the worker) address the same job for the same payment.
+export function packageActivationJobId(operationId: string): string {
+  return deterministicJobId(`package-activation:${operationId}`);
+}
+
+// package-activation retry policy: 5 deliveries in total (retryLimit counts the retries AFTER the first delivery,
+// pg-boss plans.js fetch/fail statements). retryDelay 30s is longer than REPAIR_AFTER_MS (activate-paid-package.ts), so
+// a delivery that found the activation row still pending meets a quiet campaign next time. No deadLetter: QUEUES.dead
+// expects an outreach step. Slack only on the final delivery (the handler, not guardedWorker).
+export const PACKAGE_ACTIVATION_RETRY = {
+  retryLimit: 4,
+  retryDelay: 30,
+  retryBackoff: true,
+  retryDelayMax: 300,
 } as const;
 
 // The owner-agent-reply job payload. The intake row id ONLY — never the question,

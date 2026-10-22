@@ -21,7 +21,7 @@ const screen = (over: Partial<PackagePaymentScreenInput>) => packagePaymentScree
 
 describe('packagePaymentScreen — the ledger decides', () => {
   it('collected → the paid screen, with the amount the ledger recorded', () => {
-    expect(screen({ payment: { status: 'collected', collected: 120, credit: 0, committed: 0 } })).toEqual({ kind: 'paid', amount: 120, activation: 'ready' });
+    expect(screen({ payment: { status: 'collected', collected: 120, credit: 0, committed: 0 } })).toEqual({ kind: 'paid', amount: 120, activation: 'starting' });
   });
 
   it('a payment that exists is shown even when everything around it has moved on', () => {
@@ -92,9 +92,9 @@ describe('packagePaymentScreen — paid: what the customer can do next', () => {
 
   it.each([
     ['active', 'active'],
-    ['approved', 'ready'],
-    ['scheduled', 'ready'],
-    ['paused', 'ready'],
+    ['approved', 'starting'],
+    ['scheduled', 'unavailable'],
+    ['paused', 'unavailable'],
     ['closed', 'unavailable'],
     ['cancelled', 'unavailable'],
   ])('a %s campaign: activation is %s', (campaignStatus, activation) => {
@@ -110,7 +110,7 @@ describe('packagePaymentScreen — paid: what the customer can do next', () => {
 // the screen that says it was paid. Both flags exist only when true, so every other screen keeps exactly the shape it always had.
 describe('packagePaymentScreen — test money', () => {
   it('paid with test money only says so', () => {
-    expect(screen({ payment: { status: 'collected', collected: 120, credit: 0, committed: 0, testMoney: true } })).toEqual({ kind: 'paid', amount: 120, activation: 'ready', testMoney: true });
+    expect(screen({ payment: { status: 'collected', collected: 120, credit: 0, committed: 0, testMoney: true } })).toEqual({ kind: 'paid', amount: 120, activation: 'starting', testMoney: true });
   });
 
   it('paid with real money carries no test mark', () => {

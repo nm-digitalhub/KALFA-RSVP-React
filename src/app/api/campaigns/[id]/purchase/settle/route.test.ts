@@ -6,12 +6,12 @@ vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
 vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
 vi.mock('@/lib/data/campaigns', () => ({ getCampaignForPurchase: vi.fn() }));
 vi.mock('@/lib/payments/cardcom-settle', () => ({ settleCardcomSession: vi.fn() }));
-vi.mock('@/lib/payments/activate-after-payment', () => ({ activateAfterPayment: vi.fn() }));
+vi.mock('@/lib/payments/activate-paid-package', () => ({ startPaidPackageNow: vi.fn() }));
 
 import { requireUser } from '@/lib/auth/dal';
 import { getCampaignForPurchase } from '@/lib/data/campaigns';
 import { requireOwnedEvent } from '@/lib/data/events';
-import { activateAfterPayment } from '@/lib/payments/activate-after-payment';
+import { startPaidPackageNow } from '@/lib/payments/activate-paid-package';
 import { settleCardcomSession } from '@/lib/payments/cardcom-settle';
 import { createFakeTableClient, type FakeTableClient, type TableRow } from '@/test/fake-table-client';
 
@@ -43,7 +43,7 @@ beforeEach(() => {
   vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
   vi.mocked(getCampaignForPurchase).mockResolvedValue(CAMPAIGN as never);
   vi.mocked(requireOwnedEvent).mockResolvedValue({ id: EVENT_ID } as never);
-  vi.mocked(activateAfterPayment).mockResolvedValue('started');
+  vi.mocked(startPaidPackageNow).mockResolvedValue('started');
   vi.mocked(settleCardcomSession).mockResolvedValue({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
   fake = createFakeTableClient({ payment_operations: [op()], cardcom_payment_sessions: [sessionRow('op1', 'lp-1')] });
 });
@@ -53,7 +53,7 @@ describe('POST /api/campaigns/[id]/purchase/settle', () => {
     const res = await call();
     expect(await res.json()).toEqual({ state: 'paid', activation: 'started' });
     expect(settleCardcomSession).toHaveBeenCalledWith('lp-1', { finalizeUnpaid: true });
-    expect(activateAfterPayment).toHaveBeenCalledWith(CAMPAIGN_ID, EVENT_ID);
+    expect(startPaidPackageNow).toHaveBeenCalledWith(CAMPAIGN_ID);
     expect(res.headers.get('cache-control')).toBe('no-store');
   });
 
@@ -115,7 +115,7 @@ describe('POST /api/campaigns/[id]/purchase/settle', () => {
   it('does not activate a campaign that is already running, or one that is not waiting for its payment', async () => {
     vi.mocked(getCampaignForPurchase).mockResolvedValue({ ...CAMPAIGN, status: 'active' } as never);
     expect(await (await call()).json()).toEqual({ state: 'paid', activation: 'not_needed' });
-    expect(activateAfterPayment).not.toHaveBeenCalled();
+    expect(startPaidPackageNow).not.toHaveBeenCalled();
   });
 
   // The buyer returns from a redirect (3D Secure, a wallet) to a session CardCom already settled: the page asks with no body, the
@@ -125,15 +125,15 @@ describe('POST /api/campaigns/[id]/purchase/settle', () => {
     const body = '';
     expect(await (await call(body)).json()).toEqual({ state: 'paid', activation: 'started' });
     expect(settleCardcomSession).toHaveBeenCalledWith('lp-1', { finalizeUnpaid: false });
-    expect(activateAfterPayment).toHaveBeenCalledTimes(1);
+    expect(startPaidPackageNow).toHaveBeenCalledTimes(1);
     // The campaign is running now: a second ask (a reload, another tab) does not start it again.
     vi.mocked(getCampaignForPurchase).mockResolvedValue({ ...CAMPAIGN, status: 'active' } as never);
     expect(await (await call(body)).json()).toEqual({ state: 'paid', activation: 'not_needed' });
-    expect(activateAfterPayment).toHaveBeenCalledTimes(1);
+    expect(startPaidPackageNow).toHaveBeenCalledTimes(1);
   });
 
   it('passes on that the start was refused, so the page can say so', async () => {
-    vi.mocked(activateAfterPayment).mockResolvedValue('failed');
+    vi.mocked(startPaidPackageNow).mockResolvedValue('failed');
     expect(await (await call()).json()).toEqual({ state: 'paid', activation: 'failed' });
   });
 
@@ -146,7 +146,7 @@ describe('POST /api/campaigns/[id]/purchase/settle', () => {
   ])('maps %j to the state "%s", and never activates', async (outcome, state) => {
     vi.mocked(settleCardcomSession).mockResolvedValue(outcome as never);
     expect(await (await call()).json()).toEqual({ state });
-    expect(activateAfterPayment).not.toHaveBeenCalled();
+    expect(startPaidPackageNow).not.toHaveBeenCalled();
   });
 
   it('answers "none" when the campaign has no CardCom session to settle', async () => {

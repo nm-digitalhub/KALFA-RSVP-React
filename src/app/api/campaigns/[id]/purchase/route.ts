@@ -5,7 +5,7 @@ import { requireOwnedEvent } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { getCampaignForPurchase } from '@/lib/data/campaigns';
 import { getProfile } from '@/lib/data/profiles';
-import { activateAfterPayment } from '@/lib/payments/activate-after-payment';
+import { startPaidPackageNow } from '@/lib/payments/activate-paid-package';
 import { purchasePackage, type PurchaseOutcome } from '@/lib/payments/package-purchase';
 import { PURCHASE_ERROR, type PurchaseErrorCode } from '@/lib/payments/package-purchase-errors';
 import { purchasePackageSchema } from '@/lib/validation/campaigns';
@@ -114,9 +114,9 @@ export async function POST(
 
   if (outcome === 'paid') {
     // The payment was the customer's last real decision, so the campaign starts now instead of asking for one more
-    // click. FAIL-SAFE: see activateAfterPayment — the payment is recorded whatever happens, and a refused start lands
-    // the customer on the paid page with a notice and a start button.
-    const activation = await activateAfterPayment(campaignId, campaign.event_id);
+    // click. FAIL-SAFE: the payment is recorded whatever happens, and purchasePackage already queued the start
+    // (design D23), so a start refused here is retried by the worker. See startPaidPackageNow.
+    const activation = await startPaidPackageNow(campaignId);
     if (activation === 'failed') return r303(payUrl('paid=1&activate=failed'));
     return r303(payUrl('paid=1'));
   }

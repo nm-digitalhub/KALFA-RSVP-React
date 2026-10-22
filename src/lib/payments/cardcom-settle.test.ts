@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 vi.mock('@/lib/data/tax-ceiling', () => ({ checkOsekPaturCeilingAfterCharge: vi.fn() }));
+// The start of the service is queued, not run here (design D23); the queue module is its own test's concern.
+vi.mock('./package-activation-queue', () => ({ enqueuePackageActivation: vi.fn(async () => true) }));
 vi.mock('@/lib/data/cardcom-config', () => ({ getCardcomServerConfig: vi.fn() }));
 vi.mock('@/lib/cardcom/generated/low-profile/low-profile', () => ({ lowProfileGetLpResult: vi.fn() }));
 
@@ -11,6 +13,7 @@ import { CardcomError } from '@/lib/cardcom/mutator';
 import { lowProfileGetLpResult } from '@/lib/cardcom/generated/low-profile/low-profile';
 import { getCardcomServerConfig } from '@/lib/data/cardcom-config';
 import { checkOsekPaturCeilingAfterCharge } from '@/lib/data/tax-ceiling';
+import { enqueuePackageActivation } from './package-activation-queue';
 import { createFakeTableClient, type FakeTableClient, type TableRow } from '@/test/fake-table-client';
 
 let fake: FakeTableClient;
@@ -155,6 +158,21 @@ describe('settleCardcomSession: a paid session', () => {
     expect(checkOsekPaturCeilingAfterCharge).toHaveBeenCalledTimes(1);
   });
 
+  it('queues the start of the service with the payment\'s ids, once per recorded payment (D23)', async () => {
+    await settleCardcomSession(LP);
+    expect(enqueuePackageActivation).toHaveBeenCalledTimes(1);
+    expect(enqueuePackageActivation).toHaveBeenCalledWith({ campaignId: 'c1', operationId: 'op1' });
+    // The second report of the same payment (the other of browser / webhook) settles nothing and queues nothing.
+    await settleCardcomSession(LP);
+    expect(enqueuePackageActivation).toHaveBeenCalledTimes(1);
+  });
+
+  it('a start that could not be queued leaves the payment recorded as succeeded (D23: the sweep re-queues it)', async () => {
+    vi.mocked(enqueuePackageActivation).mockResolvedValueOnce(false);
+    await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'succeeded', alreadyDone: false });
+    expect(ledger()).toMatchObject({ outcome: 'succeeded' });
+  });
+
   it('does not ask CardCom again once the row is closed, whoever calls (webhook, buyer, sweeper)', async () => {
     await settleCardcomSession(LP);
     vi.mocked(lowProfileGetLpResult).mockClear();
@@ -267,6 +285,7 @@ describe('settleCardcomSession: a payment that did not happen', () => {
   it('a decline closes the row as failed, so the buyer may try again; CardCom\'s text stays with the admin', async () => {
     answer(DECLINED);
     await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'failed', alreadyDone: false });
+    expect(enqueuePackageActivation).not.toHaveBeenCalled(); // a declined payment starts nothing
     expect(ledger()).toMatchObject({ outcome: 'failed', provider_status: '5033', provider_status_description: 'declined by issuer' });
     // No browser report: the note is the plain one it always was.
     expect(ledger().note).toBe('declined or not completed at CardCom; nothing was charged');
