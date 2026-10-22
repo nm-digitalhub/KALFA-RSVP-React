@@ -8,7 +8,8 @@
 | A. Timing layer | 2–6 | not started | all Part A tests green locally; dry-run report approved | migration apply, dry-run report, push/deploy |
 | B. Event assistant | 7–10 | not started | the D16 eval passes (≥95%) | packages install, migration apply, eval result, push/deploy |
 | C. Staff board | 11–13 | not started | board tests green locally | migration apply, push/deploy |
-| Final | 14–15 | not started | every gate green | commit, push, deploy (each separately) |
+| D. Package upgrade | 14–17 | not started | Part A merged locally; all Part D tests green locally | migration apply, push/deploy, switch on |
+| Final | 18–19 | not started | every gate green | commit, push, deploy (each separately) |
 
 How to update it:
 - Set Status to `in progress` / `done` when a group's last box is ticked.
@@ -89,7 +90,7 @@ How to update it:
 ## 6. Part A — planner re-plan safety
 
 - [ ] 6.1 Write the dry-run script (read-only) that prints, for every active contact on production, the old planned time vs the new one from the bumped algorithm. Verify: it runs locally on seeded data with expected output; it contains no write statements (grep for insert/update/delete/rpc).
-- [ ] 6.2 Run the dry-run read-only against production and save the report under `$TMPDIR/etab/replan-report.md`. Verify: the owner approves the report before 15.x.
+- [ ] 6.2 Run the dry-run read-only against production and save the report under `$TMPDIR/etab/replan-report.md`. Verify: the owner approves the report before 19.x.
 
 ## 7. Part B — schema (local only)
 
@@ -114,7 +115,7 @@ How to update it:
   - devDependencies still installed (`ls node_modules/.bin/vitest`);
   - lint, tsc and vitest still match the 1.1 baseline.
 - [ ] 8.2 `KALFA_ANTHROPIC_API_KEY` in `.env.example` and `ENV_KEY_SPECS`, with a `GET /v1/models` probe. Verify: `env-validation.test.ts` passes (1:1 with `.env.example`); the probe returns `ok` on the server without printing the key.
-- [ ] 8.3 Admin settings section (behind `manage_settings`) for the assistant settings, and the package form field for the AI budget. Verify: component tests; an integration test that saving updates `app_settings` / `packages`; no value is hard-coded in `src/lib/assistant/` (grep for the model id and prices returns only defaults in the migration).
+- [ ] 8.3 Admin settings section (behind `manage_settings`) for the assistant settings, and the package form field for the AI budget, which goes into `operationalFieldsSchema` and follows `src/app/(admin)/admin/packages/AGENTS.md`: CASL gates only, no quoted permission key. Verify: `npx vitest run "src/app/(admin)/admin/packages" src/lib/casl-pilot-static.test.ts` passes; component tests; an integration test that saving updates `app_settings` / `packages`; no value is hard-coded in `src/lib/assistant/` (grep for the model id and prices returns only defaults in the migration).
 
 ## 9. Part B — assistant
 
@@ -183,19 +184,106 @@ How to update it:
 
 - [ ] 13.1 Summary card on the event management page: stage, attending/declined/pending, next contact, needs-attention items (thank-you will not send, failed deliveries). Uses `getEventStats` + 4.7 + thank-you state. Verify: component tests per state; local E2E shows the same next-contact time as the assistant's answer for the same event.
 
-## 14. Final verification and documentation
+## 14. Part D — schema (local only)
 
-- [ ] 14.1 Fresh gates: `npm run lint`, `npx tsc --noEmit`, `NODE_ENV=test npx vitest run`, `npm run build`, all integration suites through `bash -ic 'bash scripts/integration/run-local.sh …'`, and the pgTAP suite. Verify: all green; the results are recorded with exit codes; each test is classified (static / SQL-RPC / PostgREST / TS integration / Worker / E2E).
-- [ ] 14.2 Update documentation that describes timing, permissions and admin surfaces (`docs/project/02-auth-and-authorization.md` and the admin/settings docs touched by this change). Verify: the `update-documentation` checklist is run and every changed behavior is reflected.
-- [ ] 14.3 `openspec validate event-timing-assistant-and-ops-board` passes, and every task box above is ticked with its verification recorded.
+- [ ] 14.1 `npx supabase migration new package_upgrade`. In it add:
+  - `campaign_package_changes` (D22 columns; states; one-open partial unique index; RLS on, owner select via `can_access_event(event_id,'campaigns','view')`, staff select via `has_platform_permission('view_billing')`; no client insert/update/delete);
+  - `payment_operations.package_change_id` with the kind ⇔ link CHECK;
+  - `app_settings.package_upgrade_valid_days` (default 7) and `package_upgrade_enabled` (default false).
+  
+  Verify with pgTAP:
+  - privileges for `authenticated` and `anon`, including MAINTAIN;
+  - a second open upgrade of the same campaign is refused by the index;
+  - a `package_upgrade` operation without a link, and a link on another kind, are refused;
+  - an owner cannot select another event's rows.
+- [ ] 14.2 `offer_package_upgrade` and `approve_package_upgrade` (D22). Verify with pgTAP, one test per spec scenario:
+  - closed/cancelled campaign, payment in review, second open upgrade refused;
+  - smaller quota and removed channel refused as downgrades;
+  - amount: no benefit 1,500 − 1,000 = 500; partial refund → 600; benefit option 1,300 − 800 = 500; no option 1,500 − 800 = 700;
+  - approval stores the amount, the user and the agreement version;
+  - with no collected money: new round at the full price, package fields switched, status `pending_approval`, no upgrade operation.
+- [ ] 14.3 `apply_package_upgrade` and `expire_package_upgrades` (D22). Verify with pgTAP:
+  - apply twice → applied once (one new round, one `campaign_quota_changes` row);
+  - apply without a succeeded linked operation refused;
+  - waiting contacts admitted up to the new quota (100 seated + 20 waiting, quota 150 → 120 seated);
+  - expiry after `valid_days` and never past the event date;
+  - a declined or expired upgrade leaves template, quota, channels, schedule and the current round unchanged;
+  - a succeeded upgrade operation leaves `coupon_assignments` and `coupon_assignment_options` unchanged (the live consume trigger is a no-op on an already consumed benefit), and the new round carries the same `coupon_assignment_id` when its option priced the upgrade.
+- [ ] 14.4 Upgrade benefits, schema and SQL (D22 "Upgrade benefits"), in the same migration:
+  - `offers.purpose` with its CHECK;
+  - `coupon_assignments.purpose` + `for_campaign_id`, frozen by `coupon_assignments_freeze`;
+  - the upgrade branch in `create_staff_coupon_assignment`;
+  - the second branch of `payment_operations_consume_benefit`;
+  - `held_by_upgrade` in `void_staff_coupon_assignment`;
+  - the `purpose = 'purchase'` filter in `bind_coupon_assignment`, `change_campaign_package`, `supersede_campaign_pricing`, `replace_sales_coupon_assignment`, `release_coupon_assignment`, `payment_operations_open_guard`.
+  
+  Verify with pgTAP, one test per spec scenario of the five upgrade-benefit requirements:
+  - an upgrade benefit is never bound at purchase;
+  - another event's service and an unlisted target are refused;
+  - 20% of 500 → 400;
+  - a fixed 300 on 300 is skipped;
+  - two benefits → the lower final, the other stays assigned;
+  - consumed only when the upgrade operation succeeds;
+  - a decline keeps it bound;
+  - expiry releases it;
+  - void while held → `held_by_upgrade`;
+  - an upgrade offer with `allow_agent = true` is refused.
+- [ ] 14.5 Apply locally through the CLI wrapper and run the pgTAP suite. Verify: all pass; `supabase db diff --local` shows nothing unexpected; no residue.
 
-## 15. Commit, push, deploy (each a separate owner approval)
+## 15. Part D — payment state and payment path
 
-- [ ] 15.1 Commit per part (A, B, C) with explicit `git add <files>`. Before each commit, run `git status --short`, `git diff --stat`, `git diff --name-only` and `git ls-files --others --exclude-standard`, and confirm no unexpected files (`.env*`, `.agents/`, plans, unrelated migrations). Verify: each commit's file list matches its part.
-- [ ] 15.2 Before push: read-only production probes (precheck 1.2 again), `get_advisors` comparison, and the approved dry-run report (6.2). Verify: no new advisor findings caused by this change.
-- [ ] 15.3 Push to `main` only after explicit owner approval (applies the migrations to production). Verify: migration versions present in production (read-only query), triggers/policies present.
-- [ ] 15.4 Deploy app, worker and owner-agent together after explicit approval. Switches stay off. Verify: services healthy, `timing_v2_enabled` and `assistant_enabled` false.
-- [ ] 15.5 Turn on `timing_v2_enabled`, then `assistant_enabled`, each after explicit approval. Verify: the first real proposal is applied and audited; the first assistant answer settles a ledger row ≤ its reserve.
+- [ ] 15.1 `deriveStatus` returns `upgradeInFlight` and no longer lets an in-flight `package_upgrade` override `status`. Replace the test "an upgrade in flight beats the settled state" with its opposite. Verify: unit tests for pending, review, failed and succeeded upgrades over a collected purchase; `campaignStage` for a running service is unchanged with an upgrade pending.
+- [ ] 15.2 The CardCom purchase path accepts `kind = 'package_upgrade'` with the stored `amount_due` and the link; the receipt line is "שדרוג חבילה: <from> → <to>"; the saved card is offered when stored. Verify: unit tests with a mocked provider; the amount is read from the row, never from the request; a second click while pending is refused by the existing index.
+- [ ] 15.3 Targets and package admin:
+  - the target list and every target read go through `listPackageOffers` / `getPackageOffer`;
+  - the browser sends only the id;
+  - the payment start re-reads the target and cancels with `target_withdrawn` when it is no longer offered;
+  - `deletePackage` maps 23503 to the campaign-or-upgrade message, and the folder's `AGENTS.md` is updated.
+  
+  Verify:
+  - unit tests: an inactive, quota-less or switch-off target is not listed and is refused;
+  - an integration test through TS against local Supabase: deactivating the target after approval cancels the upgrade at payment start and releases the benefit;
+  - `actions.test.ts` in `/admin/packages` covers the new delete message;
+  - `src/lib/auth/permissions.local-it.test.ts` deletes a package referenced only by an upgrade and gets the message.
+- [ ] 15.4 Settlement of a succeeded `package_upgrade` calls `apply_package_upgrade`; a decline sets `declined` (retry allowed until expiry); review holds the row. A settled upgrade whose change is not applied is listed by the orphan sweeper. Verify: integration tests through TS against local Supabase (mocked provider): success applies once even when the settlement repeats; decline and review keep the current package.
+
+## 16. Part D — schedule, quota and audit
+
+- [ ] 16.1 On apply, rebuild the effective schedule over the new snapshot (D2): keep overrides of steps that exist, close the rest with reason `package_upgrade`, bump `schedule_version`, re-plan. A new step already past is recorded `outreach.step_skipped` / `added_after_due`. Verify: integration tests: a sent 14-day step is not re-sent; a moved 7-day step keeps its time; a new 21-day step with the event 10 days away is skipped and recorded.
+- [ ] 16.2 The campaign AI budget becomes the new package's budget (Part B column), usage counting within it. Verify: pgTAP that apply copies the budget and the used amount is unchanged.
+- [ ] 16.3 `logActivity` for every upgrade transition with change id, initiator and amounts. Verify: integration test asserting action names and meta keys, and that meta holds no card or personal fields.
+
+- [ ] 16.4 TS readers: `coupon-benefits.ts` and `agent-benefits.ts` exclude `purpose = 'upgrade'`; the upgrade price function applies the upgrade benefit with `computeOfferOption`. Verify: unit tests of the price function (percent, fixed, floor, two benefits); integration tests through TS against local Supabase that a purchase never sees an upgrade benefit and that the sales agent never offers one.
+
+## 17. Part D — screens
+
+- [ ] 17.1 Owner: on the event's service page, "upgrade package" with the target list (only valid upgrades), the approval card (current vs new package, quota, channels, remaining schedule, exact amount, agreement, the "benefit does not apply" notice), the payment step and the upgrade state. Gate: `requireOwnedEvent`. Verify: component tests per state; a local E2E (Next local + Supabase local, mocked provider): offer → approve → pay → the service shows the new package and quota.
+- [ ] 17.2 Staff: "offer upgrade" on the admin event/campaign page behind `manage_billing`; the history list (offers, approvals, payments, applications, failures) behind `view_billing`; the board shows "upgrade awaiting payment". Verify: component tests; an integration test that staff without `manage_billing` are refused and that staff cannot approve or pay.
+- [ ] 17.3 Benefit screens:
+  - `/admin/offers` gets the purpose choice (agent fields hidden for upgrade);
+  - `/admin/assignments/new` gets the event-service step and the per-target preview;
+  - the list and detail label the purpose;
+  - `VOID_REFUSALS` and `BLOCK_REASON_TEXT` get `held_by_upgrade`.
+  
+  Verify:
+  - the colocated `actions.test.ts` and page tests of both folders, extended;
+  - the run commands in both `AGENTS.md` files pass;
+  - both `AGENTS.md` files are updated with the new purpose rules.
+- [ ] 17.4 Every Part D surface renders only when `package_upgrade_enabled` is on. Verify: tests with the switch on and off; off shows no upgrade control and changes no payment behaviour.
+
+## 18. Final verification and documentation
+
+- [ ] 18.1 Fresh gates: `npm run lint`, `npx tsc --noEmit`, `NODE_ENV=test npx vitest run`, `npm run build`, all integration suites through `bash -ic 'bash scripts/integration/run-local.sh …'`, and the pgTAP suite. Verify: all green; the results are recorded with exit codes; each test is classified (static / SQL-RPC / PostgREST / TS integration / Worker / E2E).
+- [ ] 18.2 Update documentation that describes timing, permissions and admin surfaces (`docs/project/02-auth-and-authorization.md` and the admin/settings docs touched by this change). Verify: the `update-documentation` checklist is run and every changed behavior is reflected.
+- [ ] 18.3 `openspec validate event-timing-assistant-and-ops-board` passes, and every task box above is ticked with its verification recorded.
+
+## 19. Commit, push, deploy (each a separate owner approval)
+
+- [ ] 19.1 Commit per part (A, B, C, D) with explicit `git add <files>`. Before each commit, run `git status --short`, `git diff --stat`, `git diff --name-only` and `git ls-files --others --exclude-standard`, and confirm no unexpected files (`.env*`, `.agents/`, plans, unrelated migrations). Verify: each commit's file list matches its part.
+- [ ] 19.2 Before push: read-only production probes (precheck 1.2 again), `get_advisors` comparison, and the approved dry-run report (6.2). Verify: no new advisor findings caused by this change.
+- [ ] 19.3 Push to `main` only after explicit owner approval (applies the migrations to production). Verify: migration versions present in production (read-only query), triggers/policies present.
+- [ ] 19.4 Deploy app, worker and owner-agent together after explicit approval. Switches stay off. Verify: services healthy, `timing_v2_enabled`, `assistant_enabled` and `package_upgrade_enabled` false.
+- [ ] 19.5 Turn on `timing_v2_enabled`, then `assistant_enabled`, then `package_upgrade_enabled`, each after explicit approval. Verify: the first real proposal is applied and audited; the first assistant answer settles a ledger row ≤ its reserve.
 
 ## Workflow follow-up
 

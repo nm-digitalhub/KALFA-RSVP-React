@@ -282,7 +282,135 @@ The management page shows a summary card built from `getEventStats` + D9 + `than
 | Staff task permission | `tasks.manage`, "ניהול משימות אירוע" | `platform_permission_definitions` |
 | Board route / gate | `/admin/board` / `view_events`; customer-data columns need `view_customer_data` | fixed |
 | Assistant mount until `separate-event-setup-from-management` lands | today's event page, shown only when `packagePaymentOf` reports `collected` (`src/lib/payments/package-paid.ts:20`) | fixed; moves with that change |
-| Part switches | `timing_v2_enabled`, `assistant_enabled` (both off at deploy), board has no switch (staff-only, read-mostly) | `app_settings` |
+| Part switches | `timing_v2_enabled`, `assistant_enabled`, `package_upgrade_enabled` (all off at deploy), board has no switch (staff-only, read-mostly) | `app_settings` |
+| Upgrade validity | 7 days from the offer or approval, never past the event date | `app_settings.package_upgrade_valid_days` |
+| Who starts an upgrade | event owner (purchase rule, `requireOwnedEvent`); staff with `manage_billing` | fixed |
+| Upgrade price source | the current round's benefit option for the target if one exists, else the target's catalog price at approval | fixed |
+| Upgrade benefit | staff only (`manage_billing`), from `/admin/offers` + `/admin/assignments`; one per upgrade, lowest final wins; discount on the difference by the frozen rule; final > 0 | fixed |
+| Upgrade AI budget | the new package's `ai_budget_agorot` becomes the campaign budget; usage so far counts within it | fixed |
+
+### D22. Package upgrade after approval or payment (Part D)
+
+**Verified state (22.10.2026; evidence in `$TMPDIR/etab/UPGRADE-VERIFIED.md`).**
+- The package lives on the campaign (`template_id` plus a copy of quota, channels and schedule). The price lives in `campaign_pricing` rounds.
+- The only package change is `change_campaign_package`, and only in `pending_approval`. `supersede_campaign_pricing` changes the price but never the package, and refuses once money moved. So no path exists after approval.
+- The ledger already has the `package_upgrade` kind, with no writer. The CardCom purchase can already save the card "for the planned upgrade charges" (`cardcom-purchase.ts:204-206`).
+- `fill_authorized_set` already states that waiting contacts are admitted by an upgrade.
+- `campaign_quota_changes` exists, with no writer.
+- **Gap.** `deriveStatus` (`src/lib/payments/status.ts:42-60`) reports `pending`/`review` when any operation is in flight. An upgrade charge would make a paid, running service read as unpaid.
+
+**Model.** A new table `campaign_package_changes`, one row per upgrade:
+- `id`, `campaign_id`, `event_id`;
+- `from_template_id`, `to_template_id`, `from_pricing_round_id`, `to_pricing_round_id`;
+- `initiator` (`customer` | `staff`), `initiated_by`;
+- `state` (`offered` | `approved` | `applied` | `declined` | `expired` | `cancelled`; `declined` keeps the row retryable until `expires_at`);
+- `price_for_customer`, `net_paid_at_approval`, `amount_before_upgrade_benefit`, `upgrade_assignment_id`, `upgrade_discount`, `amount_due`, `benefit_option_id`;
+- `tos_version`, `approved_by`, `approved_at`, `expires_at`, `applied_at`, `created_at`.
+
+A partial unique index allows one open row (`offered`, `approved`) per campaign. RLS is on:
+- the owner selects their event's rows through `can_access_event(event_id,'campaigns','view')`;
+- staff select them through `has_platform_permission('view_billing')`;
+- there are no client writes.
+
+`payment_operations` gets a nullable `package_change_id`, with a CHECK that `kind = 'package_upgrade'` is equivalent to `package_change_id is not null`.
+
+**SQL functions (security definer, called by the server after its gate).**
+- `offer_package_upgrade(campaign, target, initiator, actor)`:
+  - checks every availability and "is an upgrade" rule;
+  - computes the price;
+  - writes an `offered` row.
+- `approve_package_upgrade(change, actor, tos_version)`:
+  - locks the campaign and re-checks every rule;
+  - recomputes and stores the amount;
+  - sets `approved`.
+  - With no collected money, it performs the pre-payment switch in the same transaction: a new round superseding the current one, the package fields, consent reset to `pending_approval`. The row becomes `applied` with `amount_due = 0`.
+- `apply_package_upgrade(change, operation)`:
+  - runs only from the settlement of a succeeded `package_upgrade` operation linked to the row;
+  - idempotent on `state = 'applied'`;
+  - writes the new locked round, the package fields, a `campaign_quota_changes` row (kind `upgrade`, `payment_ref` = operation id, idempotency key = change id), the AI budget, and `schedule_version + 1`;
+  - then calls `fill_authorized_set`.
+- `expire_package_upgrades()`: run by a pg-boss cron.
+
+**Target packages come from the catalogue, not from code.** The same server read that offers packages for purchase decides which packages may be upgrade targets: `listPackageOffers` / `getPackageOffer` (`src/lib/data/package-offers.ts:37-70`). It requires:
+- the package switch on;
+- an active package;
+- `contact_quota ≥ 1`;
+- a price > 0.
+
+Staff therefore control the targets from `/admin/packages`, by active, quota, channels and price, with no separate list. The browser sends only the target id, and price, quota, channels and schedule are read on the server, as `createCampaign` does.
+- At payment start the target is re-read. A target that is no longer offered cancels the upgrade (`cancelled`, reason `target_withdrawn`) and releases a held upgrade benefit.
+- The upgrade copies the target's catalogue schedule and AI budget at apply time, as `create_package_campaign` copies them at purchase.
+
+**Package admin (`/admin/packages`, the CASL pilot folder).**
+- `campaign_package_changes.from_template_id` / `to_template_id` reference `packages` with RESTRICT, like `campaigns.template_id`. `deletePackage` (`src/lib/data/admin/packages.ts:343-357`) maps 23503 to "a campaign references it". Its message changes to "a campaign or a package upgrade references it", so the admin sees why.
+- The Part B AI budget field in `package-form.tsx` follows the folder rules:
+  - the field goes into `operationalFieldsSchema`;
+  - the gates stay `requirePlatformAction` / `requireAnyPlatformAction(PACKAGE_FORM_ACTIONS)`;
+  - no permission key is quoted in the folder;
+  - `src/lib/casl-pilot-static.test.ts` must pass.
+
+**Price.** `price_for_customer` is the frozen `coupon_assignment_options.final_price` of the benefit on the current round for the target package, else the target's `price_with_vat`. `amount_due = price_for_customer − (collected − returned not failed)`, computed with `ledgerMoney`'s rule in SQL. It must be > 0. Why the benefit decides by its options: staff already decide per package which packages a benefit covers and for how much (`coupon_assignment_options`). Carrying a discount to a package the benefit does not cover would grant a discount nobody configured.
+
+**Payment.** The same CardCom purchase path with `kind = 'package_upgrade'`, the stored `amount_due` and the linked row:
+- one pending row per campaign+kind, which is the existing index;
+- the saved card is offered when one was stored, otherwise the card form;
+- the receipt line is "שדרוג חבילה: <from> → <to>";
+- the operation's `pricing_round_id` is the round that is current when the charge begins. The live trigger `payment_operations_consume_benefit` consumes the benefit of that round only while it is still `bound` to this campaign. After the original purchase it is already `consumed`, so an upgrade charge never consumes or re-binds a benefit.
+
+**Benefits stay frozen.** The upgrade only reads `coupon_assignment_options`, the per-package terms frozen when the benefit was assigned (personal-coupons D3; `src/app/(admin)/admin/offers/AGENTS.md`). It never writes `coupon_assignments`, `coupon_assignment_options`, `offers` or `offer_packages`. The new round keeps the same `coupon_assignment_id` when the option for the target is used, so the history shows which benefit priced it.
+
+**Upgrade benefits (owner decision 22.10).** These reuse the existing offers and assignments, with a purpose.
+
+*Verified live (22.10.2026):*
+- `offers` has `kind` (percent | amount), `value`, `validity_days`, `allow_agent` and `allow_staff`, plus `offer_packages(package_id, value_override)`.
+- `coupon_assignments` freezes `kind` and `value`, and has states assigned | bound | consumed | void and `bound_campaign_id`.
+- `coupon_assignment_options` holds per-package list, discount and final, with `final_price > 0` and the price math.
+- The consume trigger `payment_operations_consume_benefit` runs AFTER UPDATE OF outcome to `succeeded`. It consumes only the assignment of the operation's pricing round, so it never consumes an upgrade benefit (owner's point, confirmed).
+- `void_staff_coupon_assignment` already refuses with `held_by_payment`, `held_by_review` and `held_by_approved_terms`.
+
+*Schema:*
+- `offers.purpose`: `purchase` | `upgrade`, default `purchase`. A CHECK requires an upgrade offer to have `allow_agent = false` and `may_replace = false`, because the sales agent sells purchases only.
+- `coupon_assignments.purpose`, copied from the offer and frozen by the existing `coupon_assignments_freeze` trigger, which is extended to the column.
+- `coupon_assignments.for_campaign_id`: required exactly when `purpose = 'upgrade'`.
+- The options of an upgrade assignment are the listed target packages. At assignment, `list_price` holds the difference the staff preview showed, the discount comes from the frozen rule, and the final is the result.
+
+*Price.* At approval:
+- The frozen rule (the kind, with the option's value or the offer value) is applied to the current `amount_before_upgrade_benefit`, using `computeOfferOption` in TS and the same arithmetic in SQL.
+- The result must stay > 0. Otherwise the benefit is skipped with the reason shown to the owner.
+- When several upgrade benefits apply, the lowest final wins, as in the existing D18.
+- The rule is frozen and the amount follows the current difference, because the difference moves with catalog prices and refunds. Freezing a stale amount would either overcharge or refuse.
+
+*Hold, use and release:*
+- At approval, `approve_package_upgrade` binds the upgrade assignment: `state = 'bound'`, `bound_campaign_id` = the campaign, `upgrade_assignment_id` set on the change row.
+- `payment_operations_consume_benefit` gets a second branch. For `kind = 'package_upgrade'`, it consumes the change row's `upgrade_assignment_id`, only while it is `bound` to this campaign. It writes `coupon_assignment_events` `consumed`, with reason `upgrade payment succeeded` and the operation id.
+- `expire_package_upgrades` and the cancel path release the assignment to `assigned` through the existing release rule; an expired benefit goes to `void`.
+- A decline keeps it bound for the retry.
+
+*Purchase-only readers exclude `purpose = 'upgrade'`.* These are every live reader of `coupon_assignments` that prices or binds a purchase:
+- `src/lib/data/coupon-benefits.ts` (eligible list, `bindBestBenefit`, banners);
+- `src/lib/data/agent-benefits.ts`;
+- the SQL functions `bind_coupon_assignment`, `change_campaign_package`, `supersede_campaign_pricing`, `replace_sales_coupon_assignment`, `release_coupon_assignment` and `payment_operations_open_guard`.
+
+*Void.* A new refusal `held_by_upgrade` applies while an approved upgrade holds the assignment. It is added in step to `VoidRefusal` in the DAL, `VOID_REFUSALS` and `BLOCK_REASON_TEXT`, per `src/app/(admin)/admin/assignments/AGENTS.md`.
+
+*Screens:*
+- `/admin/offers` gets a purpose choice. An upgrade offer hides the agent fields. The floor rule (`assertPositiveFloors`) is checked against the cheapest difference the preview can show, and is enforced again at approval.
+- `/admin/assignments/new` shows, for an upgrade offer, a third step: choose the account's event service, then preview per target package the current difference, the discount and the final. The echoed `confirmed_terms` contract and the idempotency key stay as they are.
+- The list and the detail label the purpose.
+
+**Payment state.** `deriveStatus` is changed so that an in-flight `package_upgrade` does not override the settled state. It returns a separate `upgradeInFlight: 'pending' | 'review' | null`. The stage, the activation and the assistant mount keep reading `status`; the payment page and staff screens show `upgradeInFlight`. The existing test "an upgrade in flight beats the settled state" is replaced by the opposite assertion.
+
+**Schedule.** On apply, the effective schedule (D2) is rebuilt over the new package snapshot:
+- overrides keyed on steps that exist in the new snapshot are kept, the others are closed with reason `package_upgrade`;
+- the planner re-plans with the bumped `schedule_version`;
+- sent and claimed steps are never re-sent, because of the claims and the `contact_interactions` history;
+- a new step whose planned instant is already past is recorded as `outreach.step_skipped` with reason `added_after_due`.
+
+**Audit.** `logActivity` writes `campaign.upgrade_offered|approved|applied|declined|expired|cancelled`, with change id, initiator and amounts, and no card or personal data.
+
+**Alternatives rejected.**
+- Extending `supersede_campaign_pricing` with an upgrade reason: it supersedes the round before payment, so the new price would be "current" while the old package still runs.
+- Reusing `events.package_id`: it is not the purchase record. It was locked on 22.10 and is not read by anything.
 
 ## Risks / Trade-offs
 
@@ -294,6 +422,10 @@ The management page shows a summary card built from `getEventStats` + D9 + `than
 - **[Board live triggers add work to hot tables (`outreach_state`)]** → the empty broadcast is one `realtime.send` per row change, and `realtime.send` swallows errors (verified in the permission-signal migration). If load becomes an issue, debounce with a statement-level trigger.
 - **[Dropping `next_run_at` breaks an unknown reader]** → grep shows readers only in console views. The views keep the column name; the drop is a separate later migration in this change, after the views switched.
 - **[Two dependent changes are pending]** (`separate-event-setup-from-management` 0/35, `staff-tables-permission-rls` 7/29) → Part A does not depend on them. Part B's mount point and Part C's key-map registration are tasks with an explicit fallback.
+- **[An upgrade charge in flight makes a running service read as unpaid]** (verified in `deriveStatus`) → D22 separates `upgradeInFlight` from `status`, with a test that a pending upgrade leaves `status = 'collected'` and the stage unchanged.
+- **[A charge succeeds but the apply fails]** → the apply runs in the settlement transaction where possible. A settled `package_upgrade` operation whose change is not `applied` is a review item: the existing orphan sweeper lists it, and a re-run of `apply_package_upgrade` is idempotent. The money is never lost and never applied twice.
+- **[The customer loses a discount the benefit does not cover]** → the approval screen states it before payment (spec scenario), and the amount is fixed at approval.
+- **[An upgrade with a schedule change re-plans live contacts]** → the same planner path and `schedule_version` as a Part A schedule change, covered by the same re-plan tests.
 
 ## Migration Plan
 
@@ -304,7 +436,8 @@ The management page shows a summary card built from `getEventStats` + D9 + `than
 3. Planner version bump (D4), with the dry-run report approved first.
 4. B schema: budget columns, ledger, conversations, assistant settings. Then the B app behind `assistant_enabled`, which is off until the D16 evaluation passes.
 5. C schema: tasks, notes, `tasks.manage`, board signal. Then the C app.
-6. Drop `next_run_at` (last).
+6. D schema (after A, because the upgrade re-plans through D2's schedule layer): `campaign_package_changes`, `payment_operations.package_change_id`, the four functions, `package_upgrade_valid_days`. Then the D app behind `package_upgrade_enabled`.
+7. Drop `next_run_at` (last).
 
 **Rollback.**
 - Each switch off restores the previous behaviour for its part.
@@ -313,4 +446,4 @@ The management page shows a summary card built from `getEventStats` + D9 + `than
 
 ## Open Questions
 
-None. The owner decided on 22.10: who may change timing, how much may change, what the board contains, and one combined change. The remaining unknowns (Hebrew quality, real tokens per question) are measured by tasks, not assumed.
+None. The owner decided on 22.10: who may change timing, how much may change, what the board contains, one combined change, and the upgrade behaviour (customer or staff may start it, the customer approves, only the difference is paid, effect only after payment, failure keeps the current package; downgrades and refunds excluded). The benefit rule, validity period and permissions of D22 are decided in D21. The remaining unknowns (Hebrew quality, real tokens per question) are measured by tasks, not assumed.

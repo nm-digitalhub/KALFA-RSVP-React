@@ -16,6 +16,8 @@ The owner asked for three things that depend on each other (sessions 22.10.2026)
 
 An assistant that changes timing on top of this would inherit every defect, which is why the owner made the timing layer part of this change.
 
+On 22.10 the owner added a fourth part: upgrading the package of a running service. Verified the same day, there is no path to change a package once its terms are approved or paid (Part D).
+
 ## What Changes
 
 **Part A — one timing layer for every outbound message and call**
@@ -59,12 +61,25 @@ An assistant that changes timing on top of this would inherit every defect, whic
 - The board updates live through the same empty-signal broadcast pattern already used for permission changes.
 - The event owner gets no board. They get the summary and the assistant (owner decision 22.10).
 
+**Part D — package upgrade after approval or payment (owner decision 22.10)**
+
+- Today a package can be changed only before the terms are approved (`change_campaign_package`). After approval or payment there is no path, for the customer or for staff. Verified 22.10 in the code and the live catalog.
+- The customer or staff (with "manage billing") may start an upgrade. Only the customer approves it, after seeing the new package, the quota and the exact amount.
+- **Before payment:** the package is switched, and the terms are approved again at the new full price.
+- **After payment:** only the difference is paid. A previous benefit counts only if it has an option for the new package.
+- **Upgrade benefits:** staff may give a benefit for an upgrade from the existing assignment screen. It is marked for upgrades and for target packages, applies only to the difference, never stacks, and is marked used only when the upgrade payment succeeds.
+- The new package takes effect only after approval and a succeeded payment. Until then, and after a decline, a cancellation or an expiry, the service runs on the current package without interruption.
+- The new quota is the total quota, and waiting guests are admitted. Past messages and calls are never repeated. The remaining schedule is planned again.
+- Every step is recorded: offer, approval, payment, application and failure.
+- Downgrades and refunds are excluded; they need separate rules.
+
 ## Capabilities
 
 ### New Capabilities
 - `outreach-timing`: how every outbound message or call to a guest is initiated, scheduled, previewed, confirmed, changed per event, audited and explained, for KALFA-initiated and customer-initiated sends alike.
 - `event-assistant`: the customer-facing chat on an event, what it may read and propose, its confirmation contract, its budget and its privacy limits.
 - `staff-event-board`: the platform-staff board of events, its derived columns, staff tasks and live updates.
+- `package-upgrade`: upgrading the package of an event's service after approval or payment, as part of that service: who may start it, the customer's approval, the amount due, when it takes effect, failure, quota, schedule and history.
 
 ### Modified Capabilities
 None. `openspec/specs/` holds no capabilities today (`openspec list --specs`).
@@ -72,7 +87,8 @@ None. `openspec/specs/` holds no capabilities today (`openspec list --specs`).
 ## Non-goals
 
 - **The assistant on WhatsApp.** The same tools could serve it later; not in this change.
-- **Adding steps** to a package schedule per event, or changing a package's price or quota.
+- **Adding steps** to a package schedule per event, or changing a package's price or quota per event. A package change goes only through the Part D upgrade.
+- **Package downgrades and refunds tied to an upgrade.** They need separate rules.
 - **A customer pause/stop control.** Skipping every remaining step is possible through Part A; pausing the service stays a staff action.
 - **Blocking fast days, or per-venue candle-lighting times.** The window keeps Jerusalem times and today's blocked days. This is recorded as a known limit.
 - **Guests' own time zones.** Times are Israel wall-clock, as today.
@@ -90,7 +106,8 @@ None. `openspec/specs/` holds no capabilities today (`openspec list --specs`).
   - a per-package AI budget, copied to the campaign;
   - assistant conversations and a cost ledger;
   - staff tasks and their notes;
-  - the board's broadcast signal.
+  - the board's broadcast signal;
+  - package upgrades (`campaign_package_changes`, the link from the payment ledger, four SQL functions).
 - **Code:**
   - `src/lib/outreach/*` (projection; per-channel policy at plan time);
   - `src/lib/data/outreach-engine.ts` and `worker/main.ts` (store the planned time, record call skips);
@@ -99,6 +116,7 @@ None. `openspec/specs/` holds no capabilities today (`openspec list --specs`).
   - a new `src/lib/assistant/` and its route;
   - the admin package form;
   - a new `/admin/board`;
+  - `src/lib/payments/status.ts`, `cardcom-purchase.ts`, `cardcom-settle.ts` and the payment page (Part D);
   - `src/lib/relocation/env-validation.ts` and `.env.example`.
 - **Dependencies:**
   - Added: `@ai-sdk/anthropic` 4.0.85 and `@ai-sdk/react` 4.0.152.
