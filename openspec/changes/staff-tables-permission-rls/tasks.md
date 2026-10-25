@@ -44,7 +44,7 @@ text read from the live catalog.
   and the current `anon`/`authenticated` grants of `voice_purposes` and `voice_purpose_attempts`.
   Update the table in `design.md`. Verify: no "mixed" or "to confirm" cell remains, and each resolved
   row cites the file or catalog query that settled it.
-- [ ] 1.2 Add `src/lib/auth/staff-table-permissions.ts` (table → key list, group A/B) and a vitest that
+- [x] 1.2 Add `src/lib/auth/staff-table-permissions.ts` (table → key list, group A/B) and a vitest that
   asserts it equals the module pins of `admin-data-layer-coverage.test.ts` for every Group B table
   and lists exactly the 25 tables. Its keys come from the existing shared list
   `PLATFORM_PERMISSION_KEYS` (`src/lib/auth/platform-permission-keys.generated.ts`, generated from
@@ -63,6 +63,35 @@ text read from the live catalog.
   map only, fails the test with a message naming the table and the operation (proved with a mutation,
   then restored); the public read of active packages is listed apart from the `Package` actions. No
   CASL subject, action or module is added by this task.
+
+  **Done 25.10.2026.** `STAFF_TABLE_PERMISSIONS` lists the 25 tables (11 `closed`, 14 `permission`), typed by
+  `keyof Database['public']['Tables']` and `PlatformPermissionKey`; `packages` names actions of `Package`, resolved
+  through `PLATFORM_ACTIONS` by `staffTableOperationKeys`. The check is a `describe` in
+  `admin-data-layer-coverage.test.ts`, so it reads `EXPECTED_PERMISSION` itself; three modules that reach a table with
+  the staff session were pinned there (`src/lib/data/message-templates.ts`, `src/lib/callbacks/policy-config-admin.ts`,
+  `src/app/(admin)/admin/callbacks/policy/actions.ts`, all `manage_settings`). Evidence: `npx vitest run src/lib/auth
+  src/lib/casl.test.ts "src/app/(admin)/admin/packages"` 481 passed; `casl-pilot-static` 43 passed; `tsc --noEmit` 0;
+  eslint 0. Mutations, each restored:
+  - `ops_alerts` key changed in the map only: fails, `ops_alerts: RLS keys in staff-table-permissions.ts differ from
+    the data-layer pins`.
+  - a key absent from the catalogue (`manage_setting`): `tsc` TS2820.
+  - `packages` `SELECT` paired with `update` in the map only: fails, `packages SELECT must pair with the 'read' action`.
+  - `Package.read` changed in `PLATFORM_ACTIONS` only: fails in `casl.test.ts` and `platform-ability.test.ts`, **not**
+    with the table and operation. It cannot here: the map takes the key from `PLATFORM_ACTIONS`, so both sides move
+    together; only the SQL policy is an independent side. **Moved to 5.1** (owner decision 25.10.2026); not claimed as
+    passing until proved there.
+- [ ] 1.5 Shared template, not one hand-written solution per table (owner decision 25.10.2026; design D13). Add a
+  generator that reads `STAFF_TABLE_PERMISSIONS` and, for a list of tables, renders (a) the migration body: for a
+  `closed` table `revoke all … from anon, authenticated` and `drop policy` for each existing staff policy; for a
+  `permission` table `revoke all`, `grant <exact ops> … to authenticated` and one policy per operation keyed as in the
+  map; and (b) the pgTAP cases of design D9 families (a) to (c) for the same tables. The output is written into the file
+  that `npx supabase migration new <name>` created, never into a hand-created migration file. Exceptions stay
+  hand-written and are listed in the generator: the public reads (`packages_public_read`, `faq_items_public_read`,
+  `channels_auth_read`), the `upsert_provider_number` and `fleet_*` RPC cases, the service-role paths of
+  `voice_purpose_attempts`, and each `ROLLBACK:` header (prior grants and policy text from the live catalog). Verify: a
+  vitest renders the 11 closed and the 14 per-permission tables and asserts each output names exactly the keys and
+  operations of the map; changing one operation in the map changes exactly that policy and its test case.
+
 - [ ] 1.3 Spike the runner: start the local stack, make sure `pgtap` is available, add
   `supabase/tests/database/000-harness.test.sql` (always-green plan plus a fixture that creates a staff
   user in a chosen role and in a temporary role holding exactly one permission, all inside the
@@ -70,6 +99,10 @@ text read from the live catalog.
   prerequisites and any gotcha are written into `design.md` and, if new, into a memory note.
 - [ ] 1.4 Add the service-role guard test (`000-service-role.test.sql`): as `service_role`, select from
   every one of the 25 tables. Verify: PASS now (baseline) and it stays PASS after every stage.
+
+Stages S1 to S5 split the verification into groups and each produces one migration (design D11). They do not mean
+rewriting a solution per table: the SQL and the pgTAP cases of every stage come from the 1.5 template, applied to that
+stage's tables; only the exceptions listed in 1.5 are written by hand, and the database tests of a stage run together.
 
 ## 2. Stage S1 — close the critical service-only tables
 
@@ -142,6 +175,14 @@ text read from the live catalog.
   `auditor`, `support_agent` refused writes (auditor holds `view_billing` and still cannot write);
   `anon` and customer sessions read active rows only and cannot write (`42501`); inactive rows are
   invisible to them. Verify: red on the current local database (anon and every staff member can write).
+
+  **Consistency of the server key and the database rule (moved here from 1.2, 25.10.2026).** Add the D10 text check
+  for `packages`: a vitest reads the `packages` policies of the S4 migration and of `s4_packages.test.sql` and asserts,
+  per operation, that the key each policy names equals `staffTableOperationKeys('packages', op)` (the key
+  `PLATFORM_ACTIONS.Package` binds to the paired action). A difference fails with a message naming the table and the
+  operation (`packages SELECT: …`). Verify, by mutation then restore: (1) `Package.read` changed in `PLATFORM_ACTIONS`
+  only fails naming `packages SELECT`; (2) the key of one `packages` policy changed in the SQL only fails naming that
+  operation. **Not marked passing before both mutations are proved and recorded in `verification-s4.md`.**
 - [ ] 5.2 `migration new packages_billing_permission`: per-operation `manage_billing` policies, keep
   `packages_public_read`, `anon` keeps `SELECT` only. Verify: applied locally; S4 and earlier files green.
 - [ ] 5.3 Regression: vitest for `admin/packages`, `agent-benefits` and the public pages that list

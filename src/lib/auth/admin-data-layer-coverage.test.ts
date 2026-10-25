@@ -8,6 +8,12 @@ import {
   PLATFORM_ACTIONS,
   PLATFORM_ACTION_PAIRS,
 } from '@/lib/casl';
+import {
+  STAFF_TABLE_PERMISSIONS,
+  staffTableOperationKeys,
+  type StaffTable,
+  type TableOperation,
+} from './staff-table-permissions';
 
 // Regression guard, not a unit test of behavior: proves every admin-only
 // data-layer function gates on requireAdmin() BEFORE touching data, so a
@@ -244,6 +250,11 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // workflow using it, and that the person who triggered them cannot undo. The
   // two live apart so the weaker gate is never the one copied.
   'src/lib/data/admin/integrations/connection-lifecycle.ts': 'integrations.manage',
+  // Outside src/lib/data/admin, pinned because they reach a staff table with the staff session
+  // (staff-table-permissions.ts): the RLS keys of those tables are checked against these pins below.
+  'src/lib/data/message-templates.ts': 'manage_settings',
+  'src/lib/callbacks/policy-config-admin.ts': 'manage_settings',
+  'src/app/(admin)/admin/callbacks/policy/actions.ts': 'manage_settings',
 };
 
 // Modules that write but are correctly exempt from naming a permission, with the
@@ -969,3 +980,67 @@ describe('the Meta number lifecycle keeps its irreversible half owner-only', () 
     expect(uses).toBeLessThanOrEqual(6);
   });
 });
+
+// staff-tables-permission-rls, design D10: the table map the RLS policies are written from must admit exactly what the
+// data layer admits. A key in the map that no module of the table enforces would open the table wider in the database
+// than in the application; a pinned key missing from the map would lock a staff member out of a page they may use.
+describe('the staff-table map (RLS keys) equals the data-layer pins', () => {
+  const OPS: readonly TableOperation[] = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
+  const tables = Object.keys(STAFF_TABLE_PERMISSIONS) as StaffTable[];
+  const pinOf = (relPath: string): string[] => {
+    const pin = EXPECTED_PERMISSION[relPath];
+    return pin === undefined ? [] : Array.isArray(pin) ? pin : [pin];
+  };
+
+  it('lists exactly the 25 tables of the change: 11 closed, 14 per permission', () => {
+    expect(tables).toHaveLength(25);
+    const closed = tables.filter((t) => STAFF_TABLE_PERMISSIONS[t].group === 'closed');
+    expect(closed).toHaveLength(11);
+  });
+
+  for (const table of tables) {
+    const rule = STAFF_TABLE_PERMISSIONS[table];
+    if (rule.group === 'closed') continue;
+
+    it(`${table}: its keys equal the pins of the modules that reach it`, () => {
+      for (const relPath of rule.modules) {
+        expect(relPath in EXPECTED_PERMISSION, `${table}: module ${relPath} is not pinned in EXPECTED_PERMISSION`).toBe(true);
+      }
+      const mapKeys = [...new Set(OPS.flatMap((op) => staffTableOperationKeys(table, op)))].sort();
+      const pinKeys = [...new Set(rule.modules.flatMap(pinOf))].sort();
+      expect(mapKeys, `${table}: RLS keys in staff-table-permissions.ts differ from the data-layer pins`).toEqual(pinKeys);
+      expect(mapKeys.length, `${table}: a per-permission table needs at least one operation`).toBeGreaterThan(0);
+    });
+  }
+
+  // A table whose module decides through CASL: each SQL operation pairs with one action, and its key is the action's
+  // key in PLATFORM_ACTIONS. A set-per-module pin cannot see one operation drifting; this does.
+  const PAIRING: Record<TableOperation, string> = { SELECT: 'read', INSERT: 'create', UPDATE: 'update', DELETE: 'delete' };
+  for (const table of tables) {
+    const rule = STAFF_TABLE_PERMISSIONS[table];
+    if (rule.group === 'closed' || !('casl' in rule)) continue;
+    const actions: Record<string, string> = PLATFORM_ACTIONS[rule.casl.subject];
+
+    for (const op of OPS) {
+      it(`${table} ${op}: pairs with ${rule.casl.subject}.${PAIRING[op]} and takes its key from PLATFORM_ACTIONS`, () => {
+        const ops: Partial<Record<TableOperation, string>> = rule.casl.ops;
+        expect(ops[op], `${table} ${op} must pair with the '${PAIRING[op]}' action`).toBe(PAIRING[op]);
+        expect(staffTableOperationKeys(table, op), `${table} ${op}`).toEqual([actions[PAIRING[op]]]);
+      });
+    }
+
+    it(`${table}: every ${rule.casl.subject} action maps to one operation`, () => {
+      const mapped = Object.values(rule.casl.ops as Record<string, string>).sort();
+      expect(mapped, `${table}: actions of ${rule.casl.subject} without an operation, or extra ones`).toEqual(
+        Object.keys(actions).sort(),
+      );
+    });
+  }
+
+  it('the public read of active packages is recorded apart from the Package actions', () => {
+    const rule = STAFF_TABLE_PERMISSIONS.packages;
+    expect(rule.otherRead).toContain('packages_public_read');
+    expect(rule.otherRead).toContain('active = true');
+  });
+});
+

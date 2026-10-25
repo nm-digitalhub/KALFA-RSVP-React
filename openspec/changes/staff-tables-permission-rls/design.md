@@ -256,7 +256,11 @@ test file.
 
 **D10 — One source of truth for the key map.** `src/lib/auth/staff-table-permissions.ts` (table →
 key list) is read by a vitest that asserts it equals the data-layer pins and equals the keys named in
-the pgTAP file (text check). The file does not exist yet (task 1.2).
+the pgTAP file (text check). The map exists since 25.10.2026 (task 1.2); the check against the data-layer pins is a
+`describe` in `admin-data-layer-coverage.test.ts`. The text check against the SQL is written per stage; for `packages`
+it is task 5.1. Reason: the map takes the `packages` key from `PLATFORM_ACTIONS`, so a change made only there moves the
+map with it, and no TypeScript-only test can name the table and operation (measured by mutation, 25.10.2026); the SQL
+policy is the only independent side.
 
 **Tables whose module already decides through CASL compare per operation (22.10.2026).**
 - `packages` is the only one today. `src/lib/data/admin/packages.ts` gates through
@@ -292,6 +296,16 @@ the pgTAP file (text check). The file does not exist yet (task 1.2).
   creates no second list. Vitest remains hermetic and cannot prove DB behaviour; that is the pgTAP
 suite's job. Per-path regression: each user-session path in the map gets a pgTAP case that issues the
 same query shape as the data layer for a holder and a non-holder.
+
+**D13 — One template for all 25 tables (owner, 25.10.2026).** The SQL and the pgTAP cases are rendered from
+`STAFF_TABLE_PERMISSIONS` by one generator (task 1.5), not written per table: the 11 closed tables get the same
+revoke-and-drop body, the 14 per-permission tables get grants and per-operation policies from their map entry, and the
+pgTAP families of D9 are rendered the same way. Hand-written, and listed in the generator: the public reads
+(`packages_public_read`, `faq_items_public_read`, `channels_auth_read`), the `upsert_provider_number` and `fleet_*` RPC
+cases, the service-role paths of `voice_purpose_attempts`, and the rollback headers. The stages of D11 group the
+verification; they are not separate solutions. Migration files are still created only by `npx supabase migration new`,
+and the generator writes into them. Alternative: one hand-written migration per table, rejected: 25 copies of the same
+shape drift from the map and from each other.
 
 **D11 — Staged, local first, owner pushes.** Each stage is one migration created with
 `npx supabase migration new`, applied to the local database only, with a rollback header, grants and
