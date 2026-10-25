@@ -31,6 +31,7 @@ enabled = false
 # key_path = "../certs/my-key.pem"
 
 [db]
+password = "env(LOCAL_SUPABASE_DB_PASSWORD)"
 # Port to use for the local database URL.
 port = 54322
 # Port used by db diff command to initialize the shadow database.
