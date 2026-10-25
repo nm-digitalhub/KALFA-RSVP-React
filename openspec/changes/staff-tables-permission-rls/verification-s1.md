@@ -45,7 +45,7 @@ Not classified as end-to-end: no browser flow and no live traffic ran against th
 - Other differences between the two lists are not from this stage: unused-index counts depend on each database's
   traffic; production also lists pg-boss tables and functions, two extensions and the 24
   `authenticated_security_definer_function_executable` warnings, which the local run did not report. The local JSON held
-  exactly 200 findings, so it may be capped; the comparison above is limited to findings that name the three tables.
+  exactly 200 findings; the run after stage S2 returned 207, so the output is not capped at 200.
 
 ## Production, after the push (25.10.2026, read-only)
 

@@ -175,14 +175,18 @@ stage's tables; only the exceptions listed in 1.5 are written by hand, and the d
 
 ## 3. Stage S2 — close the remaining service-only tables
 
-- [ ] 3.1 Write `s2_closed_rest.test.sql` for `workflows`, `workflow_runs`, `workflow_run_events`,
+- [x] 3.1 Write `s2_closed_rest.test.sql` for `workflows`, `workflow_runs`, `workflow_run_events`,
   `workflow_run_steps`, `webhook_deliveries`, `outreach_template_failures`, `vox_log_exports`, same
   families as 2.1. Verify: red on the current local database.
-- [ ] 3.2 `migration new close_remaining_service_only_tables` (revoke all, drop the staff policies).
+- [x] 3.2 `migration new close_remaining_service_only_tables` (revoke all, drop the staff policies).
   Verify: applied locally; the S2 file, S1 file and guard are green.
-- [ ] 3.3 Regression: vitest for workflows, the latest-runs route, outreach template failures and
+- [x] 3.3 Regression: vitest for workflows, the latest-runs route, outreach template failures and
   vox-log export, plus a service-role smoke select per table; local Advisors; `verification-s2.md`.
   Verify: all green and the document lists the findings.
+
+  **Stage S2 done locally 25.10.2026; not pushed.** Generated test (140 assertions) red before for the stated reason
+  only (64 of 140), green after; migration `20261025143711_close_remaining_service_only_tables.sql` applied locally only;
+  all pgTAP files pass (Files=4, Tests=259). Evidence and Advisors: `verification-s2.md`.
 
 ## 4. Stage S3 — `manage_voice` tables and the provider numbers
 
