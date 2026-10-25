@@ -272,6 +272,8 @@ test file.
   for table <t>` versus `new row violates row-level security policy for table "<t>"` (measured). Every generated refusal
   asserts its message. Without it, the generated suite for the closed tables counted 6 refusals of a signed-in non-staff
   user as passing on today's open grants, because the `with check` of the staff policy raised the same code.
+- `has_table_privilege(role, table, 'SELECT,INSERT,…')` is true when ANY listed privilege is held (Postgres docs; caught
+  by a mutation on 25.10.2026). The template checks one privilege per call.
 - The generated suite for the 11 closed tables runs on Postgres without a SQL error: 220 assertions, 114 red on today's
   database, every red one explained by today's grants and policies (policies present, extra privileges, `MAINTAIN` on
   5 tables, refusals that do not happen). The per-permission tables need their row fixtures (stage tasks) before their

@@ -19,6 +19,7 @@ import {
   renderMigrationBody,
   renderPgTapFile,
   renderPgTapTests,
+  renderServiceRoleGuard,
   type RowFixture,
 } from '@/lib/auth/staff-table-rls';
 import { STAFF_TABLE_PERMISSIONS } from '@/lib/auth/staff-table-permissions';
@@ -49,7 +50,7 @@ const sqlList = (names: readonly string[]) => names.map((n) => `'${n.replace(/'/
 
 function main(): void {
   const kind = process.argv[2];
-  if (kind !== 'migration' && kind !== 'test') fail('first argument: migration | test');
+  if (kind !== 'migration' && kind !== 'test' && kind !== 'service-role') fail('first argument: migration | test | service-role');
   const tables = (arg('tables') ?? '').split(',').map((t) => t.trim()).filter(Boolean);
   const file = arg('file');
   if (!tables.length) fail('--tables is required');
@@ -59,7 +60,18 @@ function main(): void {
   const path = file ? resolve(file) : null;
   const rel = path ? relative(process.cwd(), path) : '(stdout)';
   if (path && !existsSync(path)) fail(`${rel} does not exist; create it with \`npx supabase ${kind === 'migration' ? 'migration' : 'test'} new\``);
-  const existing = path ? readFileSync(path, 'utf8') : '';
+  const existing = () => (path ? readFileSync(path, 'utf8') : '');
+  if (kind === 'service-role') {
+    if (path && !/^supabase\/tests\/.+[._]test\.sql$/.test(rel)) fail(`${rel} is not a test file under supabase/tests`);
+    if (path && !canOverwriteTestFile(existing())) fail(`${rel} holds hand-written cases`);
+    const out = renderPgTapFile(renderServiceRoleGuard(tables), `staff-tables-permission-rls: service_role reaches ${tables.length} tables`);
+    if (dryRun || !path) process.stdout.write(out);
+    else {
+      writeFileSync(path, out);
+      console.error(`wrote ${rel}`);
+    }
+    return;
+  }
 
   let output: string;
   if (kind === 'migration') {
@@ -71,11 +83,11 @@ function main(): void {
       const [t, name] = line.split('|');
       policies[t].push(name);
     }
-    output = mergeIntoMigration(existing, renderMigrationBody(tables, policies));
+    output = mergeIntoMigration(existing(), renderMigrationBody(tables, policies));
   } else {
     // `supabase test new <name>` creates `<name>_test.sql` (CLI 2.122.0); `.test.sql` is the docs' spelling.
     if (path && !/^supabase\/tests\/.+[._]test\.sql$/.test(rel)) fail(`${rel} is not a test file under supabase/tests`);
-    if (!canOverwriteTestFile(existing)) fail(`${rel} holds hand-written cases; generated cases go in their own file`);
+    if (!canOverwriteTestFile(existing())) fail(`${rel} holds hand-written cases; generated cases go in their own file`);
     const fixturesPath = arg('fixtures');
     const fixtures: Record<string, RowFixture> = fixturesPath ? JSON.parse(readFileSync(resolve(fixturesPath), 'utf8')) : {};
     const columns: Record<string, string> = {};

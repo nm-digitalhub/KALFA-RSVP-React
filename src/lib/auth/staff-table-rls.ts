@@ -345,6 +345,25 @@ export function renderPgTapTests(
   return { sql: out.join('\n'), plan, skipped };
 }
 
+// Task 1.4: the server keeps reaching every table, before and after each stage. service_role bypasses RLS but not grants
+// (design D0), so this proves no stage revoked from it.
+export function renderServiceRoleGuard(tables: readonly string[], rules: Rules = STAFF_TABLE_PERMISSIONS): RenderedTests {
+  const cases: string[] = ['set local role service_role;'];
+  let plan = 0;
+  for (const [table] of rulesFor(rules, tables)) {
+    const label = (s: string) => literal(`${table}: ${s}`);
+    cases.push(`select lives_ok(${dollar(`select count(*) from public.${ident(table)}`)}, ${label('service_role reads')});`);
+    // One call per privilege: has_table_privilege with a list answers whether ANY of them is held (a mutation that
+    // revoked SELECT alone still passed a 'SELECT,INSERT,UPDATE,DELETE' check, 25.10.2026).
+    const all = ['SELECT', 'INSERT', 'UPDATE', 'DELETE']
+      .map((p) => `has_table_privilege('service_role', ${literal(`public.${table}`)}, '${p}')`)
+      .join(' and ');
+    cases.push(`select ok(${all}, ${label('service_role holds select, insert, update and delete')});`);
+    plan += 2;
+  }
+  return { sql: cases.join('\n'), plan, skipped: [] };
+}
+
 export function renderPgTapFile(rendered: RenderedTests, title: string): string {
   return [
     `-- ${title}`,

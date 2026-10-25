@@ -128,9 +128,18 @@ text read from the live catalog.
   Tests=9, with CLI 2.122.0 and with `supabase@2.120.0`; the local fingerprint unchanged after each run. Command,
   prerequisites and gotchas: design, "Running the pgTAP suite". No memory note: the facts are specific to this change.
   Found while validating 1.5 on Postgres: a refusal must assert its message, not only `42501`; the template now does.
-- [ ] 1.4 Add the service-role guard test (`000-service-role.test.sql`): as `service_role`, select from
+- [x] 1.4 Add the service-role guard test (`000-service-role.test.sql`): as `service_role`, select from
   every one of the 25 tables. Verify: PASS now (baseline) and it stays PASS after every stage.
 
+  **Baseline done 25.10.2026.** `supabase/tests/database/000-service-role_test.sql`, created by `npx supabase test new
+  database/000-service-role` and written by `scripts/gen-staff-table-rls.ts service-role` (`renderServiceRoleGuard`):
+  per table, `lives_ok` on a read as `service_role` and `ok` on SELECT, INSERT, UPDATE and DELETE, one
+  `has_table_privilege` call each; 50 assertions. `SUPABASE_DB_PORT=54322 npx supabase test db --local
+  supabase/tests/database`: `Result: PASS`, Files=2, Tests=59; local fingerprint unchanged. Mutations inside the
+  rolled-back transaction: `revoke select … otp_challenges from service_role` fails 2 cases; `revoke delete … packages`
+  fails 1. The first version passed `'SELECT,INSERT,UPDATE,DELETE'` to one `has_table_privilege` call, which answers
+  whether ANY is held, and the delete mutation stayed green; fixed and tested. "Stays PASS after every stage" is checked
+  in each stage's verify step.
 
 Stages S1 to S5 split the verification into groups and each produces one migration (design D11). They do not mean
 rewriting a solution per table: the SQL and the pgTAP cases of every stage come from the 1.5 template, applied to that
