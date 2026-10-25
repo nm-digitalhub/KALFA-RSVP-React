@@ -230,6 +230,15 @@ describe('renderPgTapTests: behaviour comes from the rules, not from the SQL', (
     });
   });
 
+  it('a refused INSERT is followed by a cleanup of its row, so a red run is not cut short by a unique key', () => {
+    const l = r.sql.split('\n');
+    const refused = l.flatMap((line, i) => (line.includes('refused INSERT (with check)') ? [i] : []));
+    expect(refused.length).toBeGreaterThan(0);
+    for (const i of refused) {
+      expect(l.slice(i + 1, i + 3).join('\n'), l[i]).toMatch(/^reset role;\ndelete from public\."packages" where \(id\)::text = '[^']+';$/);
+    }
+  });
+
   it('each refusal asserts its reason: a missing grant or a with check violation', () => {
     for (const line of r.sql.split('\n').filter((l) => l.startsWith('select throws_ok('))) {
       if (line.includes('(no grant)')) expect(line).toMatch(/'42501', 'permission denied for table \w+',/);

@@ -316,6 +316,10 @@ export function renderPgTapTests(
         }
         if (op === 'INSERT') {
           add(`${actAs(a)}\nselect throws_ok(${dollar(statement(op, false))}, '42501', ${WITH_CHECK(table)}, ${label(`${a.id} refused INSERT (with check)`)});`);
+          // On a database that wrongly admits the insert (the red run before a stage's migration), the row it left would
+          // make the next allowed INSERT abort the file on its unique key; remove it as postgres. Asserts nothing.
+          if (f.insertValue === undefined) throw new Error(`${table}: the fixture has no insertValue`);
+          raw(`reset role;\ndelete from ${t} where (${f.probe})::text = ${literal(f.insertValue)};`);
         } else if (op === 'SELECT') {
           add(`${actAs(a)}\nselect is_empty(${dollar(statement(op, false))}, ${label(`${a.id} reads no row`)});`);
         } else {
