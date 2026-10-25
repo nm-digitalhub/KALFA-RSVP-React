@@ -254,6 +254,29 @@ must be local-only). The existing `check:permissions` stays as it is. Heavy FK f
 needs a long fixture chain, assert inventories and privileges for it and record the exception in the
 test file.
 
+**Running the pgTAP suite (task 1.3, measured 25.10.2026).**
+- Create a file: `npx supabase test new database/<name>`. CLI 2.122.0 writes `supabase/tests/database/<name>_test.sql`
+  (underscore, not the docs' `.test.sql`), with a template that runs `plan(1)` and no assertion.
+- Run: `SUPABASE_DB_PORT=54322 npx supabase test db --local <file or directory>`. Passed with the project CLI (2.122.0)
+  and with `npx -y supabase@2.120.0`. `SUPABASE_DB_PORT` is needed because `.env.local` holds 5432; the port is passed
+  on the command line only.
+- Prerequisites: the local stack running (`supabase_db_beta`, label `com.supabase.cli.project=beta`, 54322/54321);
+  Docker pulls `public.ecr.aws/supabase/pg_prove:3.36` on the first run.
+- The CLI installs `pgtap` for the run and removes it after: the extension list was identical before and after. The
+  file's own `create extension if not exists pgtap with schema extensions` (inside the transaction) only prints a
+  NOTICE under the CLI and makes the file runnable with plain `psql`.
+- Isolation proof per run: a fingerprint before and after (extension list; counts of `auth.users`, `platform_staff`,
+  `platform_roles`, `platform_role_permissions`, `platform_role_audit_log`; an md5 of every `public` policy). Unchanged
+  after each run of 25.10.2026.
+- **Both a missing grant and a `with check` violation raise `42501`.** The message tells them apart: `permission denied
+  for table <t>` versus `new row violates row-level security policy for table "<t>"` (measured). Every generated refusal
+  asserts its message. Without it, the generated suite for the closed tables counted 6 refusals of a signed-in non-staff
+  user as passing on today's open grants, because the `with check` of the staff policy raised the same code.
+- The generated suite for the 11 closed tables runs on Postgres without a SQL error: 220 assertions, 114 red on today's
+  database, every red one explained by today's grants and policies (policies present, extra privileges, `MAINTAIN` on
+  5 tables, refusals that do not happen). The per-permission tables need their row fixtures (stage tasks) before their
+  generated suite can run.
+
 **D10 — One source of truth for the key map.** `src/lib/auth/staff-table-permissions.ts` (table →
 key list) is read by a vitest that asserts it equals the data-layer pins and equals the keys named in
 the pgTAP file (text check). The map exists since 25.10.2026 (task 1.2); the check against the data-layer pins is a

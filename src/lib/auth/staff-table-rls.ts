@@ -199,6 +199,11 @@ const holds = (a: Actor, keys: readonly PlatformPermissionKey[]): boolean =>
 
 const dollar = (sql: string): string => `$$${sql}$$`;
 
+// Both a missing grant and a `with check` violation raise 42501; the message tells them apart (Postgres 17, measured on
+// the local stack 25.10.2026), so each refusal asserts its reason, not only its code.
+const NO_GRANT = (table: string) => literal(`permission denied for table ${table}`);
+const WITH_CHECK = (table: string) => literal(`new row violates row-level security policy for table "${table}"`);
+
 export interface RenderedTests {
   sql: string;
   plan: number;
@@ -273,7 +278,7 @@ export function renderPgTapTests(
     };
     for (const op of OPS.filter((o) => !ops.includes(o))) {
       for (const a of actors) {
-        add(`${actAs(a)}\nselect throws_ok(${dollar(noGrant[op])}, '42501', null, ${label(`${a.id} refused ${op} (no grant)`)});`);
+        add(`${actAs(a)}\nselect throws_ok(${dollar(noGrant[op])}, '42501', ${NO_GRANT(table)}, ${label(`${a.id} refused ${op} (no grant)`)});`);
       }
     }
     if (rule.group === 'closed') continue;
@@ -306,11 +311,11 @@ export function renderPgTapTests(
           continue;
         }
         if (!a.uid && !(op === 'SELECT' && ANON_SELECT.includes(table))) {
-          add(`${actAs(a)}\nselect throws_ok(${dollar(statement(op, false))}, '42501', null, ${label(`anon refused ${op} (no grant)`)});`);
+          add(`${actAs(a)}\nselect throws_ok(${dollar(statement(op, false))}, '42501', ${NO_GRANT(table)}, ${label(`anon refused ${op} (no grant)`)});`);
           continue;
         }
         if (op === 'INSERT') {
-          add(`${actAs(a)}\nselect throws_ok(${dollar(statement(op, false))}, '42501', null, ${label(`${a.id} refused INSERT (with check)`)});`);
+          add(`${actAs(a)}\nselect throws_ok(${dollar(statement(op, false))}, '42501', ${WITH_CHECK(table)}, ${label(`${a.id} refused INSERT (with check)`)});`);
         } else if (op === 'SELECT') {
           add(`${actAs(a)}\nselect is_empty(${dollar(statement(op, false))}, ${label(`${a.id} reads no row`)});`);
         } else {

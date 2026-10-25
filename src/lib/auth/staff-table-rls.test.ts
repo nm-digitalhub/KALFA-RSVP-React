@@ -229,6 +229,14 @@ describe('renderPgTapTests: behaviour comes from the rules, not from the SQL', (
     });
   });
 
+  it('each refusal asserts its reason: a missing grant or a with check violation', () => {
+    for (const line of r.sql.split('\n').filter((l) => l.startsWith('select throws_ok('))) {
+      if (line.includes('(no grant)')) expect(line).toMatch(/'42501', 'permission denied for table \w+',/);
+      else if (line.includes('(with check)')) expect(line).toMatch(/'42501', 'new row violates row-level security policy for table "\w+"',/);
+      else throw new Error(`a refusal without a stated reason: ${line}`);
+    }
+  });
+
   it('never proves an allowed write with lives_ok', () => {
     expect(r.sql).not.toContain('lives_ok');
   });

@@ -73,7 +73,8 @@ function main(): void {
     }
     output = mergeIntoMigration(existing, renderMigrationBody(tables, policies));
   } else {
-    if (path && !/^supabase\/tests\/.+\.test\.sql$/.test(rel)) fail(`${rel} is not a test file under supabase/tests`);
+    // `supabase test new <name>` creates `<name>_test.sql` (CLI 2.122.0); `.test.sql` is the docs' spelling.
+    if (path && !/^supabase\/tests\/.+[._]test\.sql$/.test(rel)) fail(`${rel} is not a test file under supabase/tests`);
     if (!canOverwriteTestFile(existing)) fail(`${rel} holds hand-written cases; generated cases go in their own file`);
     const fixturesPath = arg('fixtures');
     const fixtures: Record<string, RowFixture> = fixturesPath ? JSON.parse(readFileSync(resolve(fixturesPath), 'utf8')) : {};

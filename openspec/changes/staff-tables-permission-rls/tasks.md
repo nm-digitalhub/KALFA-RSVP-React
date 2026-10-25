@@ -115,13 +115,22 @@ text read from the live catalog.
   - **Not yet proved:** the rendered SQL and pgTAP have not run on Postgres. First run: task 1.3 (harness) and 2.1,
     on the local stack. The generated actors create a temporary `platform_roles` row with `rank = 0`; whether a
     constraint refuses it is known only then.
-- [ ] 1.3 Spike the runner: start the local stack, make sure `pgtap` is available, add
+- [x] 1.3 Spike the runner: start the local stack, make sure `pgtap` is available, add
   `supabase/tests/database/000-harness.test.sql` (always-green plan plus a fixture that creates a staff
   user in a chosen role and in a temporary role holding exactly one permission, all inside the
   rolled-back transaction). Verify: `npx supabase@2.120.0 test db` reports PASS; the exact command,
   prerequisites and any gotcha are written into `design.md` and, if new, into a memory note.
+
+  **Done 25.10.2026.** `supabase/tests/database/000-harness_test.sql` (created by `npx supabase test new
+  database/000-harness`): `pass`, a staff member on the seeded `billing_clerk` role, one on a temporary role holding only
+  `manage_voice` (the generated actors' statements, `rank = 0` accepted), a signed-in non-staff user, anon; 9 assertions.
+  `SUPABASE_DB_PORT=54322 npx supabase test db --local supabase/tests/database/000-harness_test.sql`: `Result: PASS`,
+  Tests=9, with CLI 2.122.0 and with `supabase@2.120.0`; the local fingerprint unchanged after each run. Command,
+  prerequisites and gotchas: design, "Running the pgTAP suite". No memory note: the facts are specific to this change.
+  Found while validating 1.5 on Postgres: a refusal must assert its message, not only `42501`; the template now does.
 - [ ] 1.4 Add the service-role guard test (`000-service-role.test.sql`): as `service_role`, select from
   every one of the 25 tables. Verify: PASS now (baseline) and it stays PASS after every stage.
+
 
 Stages S1 to S5 split the verification into groups and each produces one migration (design D11). They do not mean
 rewriting a solution per table: the SQL and the pgTAP cases of every stage come from the 1.5 template, applied to that
