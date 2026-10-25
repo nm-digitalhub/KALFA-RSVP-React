@@ -260,6 +260,19 @@ CASL centralizes the rules. It does not replace the check at each server entry p
 - **The server** checks again at every entry point: each package data function, each Server Action on its first line, and each page (`requirePlatformAction` → `has_platform_permission`).
 - **The database** must enforce too, for anyone who calls PostgREST directly. **For packages it does not yet.** The same local integration file reproduces it (`SECURITY FINDING (reproduced)`): the auditor, refused by the Server Action, deletes the package directly through PostgREST. Production has the same policy (read-only query, 25.10.2026): `packages_admin_all`, `FOR ALL TO authenticated USING (is_platform_staff())`. Any staff member, not only `manage_billing`, may write the table directly. The pilot changes no grant; the fix is in scope of `staff-tables-permission-rls` (its finding 4), which is paused at task 1.2.
 
+Production read-only probe, 25.10.2026, of the three layers the Data API goes through (https://supabase.com/docs/guides/api: "Row Level Security, Roles, and Grants"):
+
+| Layer | `packages` | `webhook_inbox` |
+|---|---|---|
+| Exposed through the Data API | yes: an anon `GET /rest/v1/packages?select=id&limit=1` answers 200 | yes |
+| Table grants to `authenticated` | `SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER` | the same |
+| RLS | enabled (not forced); `packages_admin_all` `FOR ALL USING/WITH CHECK (is_platform_staff())`, plus `packages_public_read` | enabled (not forced); `webhook_inbox_admin_all` `FOR ALL USING/WITH CHECK (is_platform_staff())` |
+| Anon | reads active packages only | refused (401, 42501) |
+
+So any signed-in platform staff member may read, write and delete both tables directly, whatever their permission keys. Production holds two staff rows (`platform_staff`): one `owner` and one `billing_clerk`. For `packages` the gap is latent today, because `billing_clerk` holds `manage_billing`. For `webhook_inbox` it is live: `billing_clerk` lacks `view_webhooks` (its keys: `manage_billing, view_activity_log, view_billing, view_customer_data, view_events`) yet the policy lets it read and change the table. No write was attempted on production; the delete is proven on the local stack, built from the same 386 migrations.
+
+`staff-tables-permission-rls` is the fix for this whole class, not a per-finding patch: it covers 25 tables, closes direct access to internal tables (server only, after a permission check), checks the matching key per operation in the database for tables users need, and sets a closed default for new tables. It does not cover organization permissions, event ownership or tables outside its list, which need their own mapping. CASL does not replace it: CASL decides what the screen shows and which key the server checks; only the database stops a direct PostgREST call.
+
 ### 3.6 Places that name a key, before and after
 
 The decision sites are in section 2.5 (14 → 0). As a mechanical check, the quoted billing keys (`'manage_billing'` or `'view_billing'`) per file, before (`git show c9b96180:<file>`) and at HEAD:
