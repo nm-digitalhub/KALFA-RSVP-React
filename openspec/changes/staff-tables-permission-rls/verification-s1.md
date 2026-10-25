@@ -47,8 +47,18 @@ Not classified as end-to-end: no browser flow and no live traffic ran against th
   `authenticated_security_definer_function_executable` warnings, which the local run did not report. The local JSON held
   exactly 200 findings, so it may be capped; the comparison above is limited to findings that name the three tables.
 
-## Still to do for this stage
+## Production, after the push (25.10.2026, read-only)
 
-- The owner reviews the migration and decides the push (it deploys to production).
-- After the push: read-only comparison of the live catalog with the table above (privileges and policies of the three
-  tables), recorded here.
+The owner pushed `ea6876a0..b019bb4e`; GitHub checks on `b019bb4e`: `Supabase Preview` success, `verify` success.
+
+| Check | Result |
+|---|---|
+| `supabase_migrations.schema_migrations` | 387 rows, latest `20261025141452` (the S1 migration) |
+| Privileges and policies of the three tables (`has_table_privilege` for authenticated, anon, service_role; `pg_policies`; `relrowsecurity`), live vs local | identical: RLS on, no privilege for `authenticated` or `anon`, `service_role` SELECT/INSERT/UPDATE/DELETE, no policy |
+| Data API, anon key, `GET /rest/v1/<table>?select=id&limit=1` | 42501 on all three |
+| Data API, service-role key, `HEAD` of the same request (no row printed) | 200 on all three: the server path still reaches them |
+| Logs 12:00–14:30 UTC (`postgres_logs` "permission denied for table" on the three; `edge_logs` requests to them) | none |
+
+Not proved in production: an application request through these tables after the push. The logs show no request to
+them in the window, and the last `webhook_inbox` row arrived at 06:30 UTC, before the push. The next inbound webhook,
+OTP or agreement action is the first live use; the service-role read above shows the grant it needs is in place.
