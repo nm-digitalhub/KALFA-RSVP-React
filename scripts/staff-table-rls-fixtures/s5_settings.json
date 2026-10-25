@@ -1,0 +1,56 @@
+{
+  "message_templates": {
+    "seed": "insert into public.message_templates (message_key, channel, label) values ('rls_fixture', 'whatsapp', 'RLS fixture')",
+    "row": "message_key = 'rls_fixture'",
+    "probe": "message_key",
+    "probeValue": "rls_fixture",
+    "update": "label = 'RLS updated'"
+  },
+  "channels": {
+    "seed": "insert into public.channels (key, display_name) values ('rls_fixture', 'RLS fixture')",
+    "row": "key = 'rls_fixture'",
+    "probe": "key",
+    "probeValue": "rls_fixture",
+    "update": "display_name = 'RLS updated'"
+  },
+  "faq_items": {
+    "seed": "insert into public.faq_items (item_key, category, question, published) values ('rls_fixture', 'about', 'RLS fixture?', false)",
+    "row": "item_key = 'rls_fixture'",
+    "probe": "item_key",
+    "probeValue": "rls_fixture",
+    "insert": "(item_key, category, question, published) values ('rls_insert', 'about', 'RLS insert?', false)",
+    "insertValue": "rls_insert",
+    "update": "question = 'RLS updated?'"
+  },
+  "callback_schedule_policies": {
+    "seed": "insert into public.callback_schedule_policies (id) values (true) on conflict (id) do nothing",
+    "row": "id",
+    "probe": "id",
+    "probeValue": "true",
+    "update": "daily_cap = daily_cap"
+  },
+  "ops_alerts": {
+    "seed": "insert into public.ops_alerts (id, level, title) values ('00000000-0000-4000-8000-00000000c501', 'info', 'RLS fixture')",
+    "row": "id = '00000000-0000-4000-8000-00000000c501'",
+    "probe": "id",
+    "probeValue": "00000000-0000-4000-8000-00000000c501"
+  },
+  "fleet_requests": {
+    "seed": "insert into public.fleet_requests (id, request_key, role, kind, title, body) values ('00000000-0000-4000-8000-00000000c511', 'rls:fixture', 'rls', 'fyi', 'RLS fixture', 'RLS fixture body')",
+    "row": "id = '00000000-0000-4000-8000-00000000c511'",
+    "probe": "request_key",
+    "probeValue": "rls:fixture"
+  },
+  "fleet_goals": {
+    "seed": "insert into public.fleet_goals (id, role, title, body, next_wake_at) values ('00000000-0000-4000-8000-00000000c521', 'rls', 'RLS fixture goal', 'RLS fixture goal body', now())",
+    "row": "id = '00000000-0000-4000-8000-00000000c521'",
+    "probe": "title",
+    "probeValue": "RLS fixture goal"
+  },
+  "fleet_request_slack_threads": {
+    "seed": "insert into public.fleet_requests (id, request_key, role, kind, title, body) values ('00000000-0000-4000-8000-00000000c531', 'rls:thread', 'rls', 'fyi', 'RLS thread', 'RLS thread body') on conflict (id) do nothing; insert into public.fleet_request_slack_threads (request_id, thread_ts) values ('00000000-0000-4000-8000-00000000c531', '1700000000.000100')",
+    "row": "request_id = '00000000-0000-4000-8000-00000000c531'",
+    "probe": "thread_ts",
+    "probeValue": "1700000000.000100"
+  }
+}

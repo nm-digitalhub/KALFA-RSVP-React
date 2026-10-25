@@ -28,8 +28,8 @@ const PG_INSUFFICIENT_PRIVILEGE = '42501';
 // Fleet roles file approval/question/fyi requests via the service-role CLI;
 // the owner reads and answers them here. Authorization: manage_settings (the
 // fleet is platform configuration/operations surface, same axis as alerts),
-// plus RLS (fleet_requests_admin_select) under the request-scoped cookie
-// client as the second layer.
+// plus RLS (fleet_requests_select_permission, manage_settings) under the
+// request-scoped cookie client as the second layer.
 //
 // Writes go EXCLUSIVELY through the fleet_answer_request RPC — authenticated
 // has no UPDATE grant on the table, and the DB trigger enforces the state
@@ -540,7 +540,7 @@ export async function answerFleetRequest(input: {
 // Owner creates via fleet_goal_create (SECDEF, manage_settings); the role advances
 // itself between runs via the CLI's goal-progress/goal-close (service_role
 // only — no grant to authenticated, so neither is reachable from here or the
-// browser). Reads go through the cookie client + fleet_goals_admin_select RLS,
+// browser). Reads go through the cookie client + fleet_goals_select_permission RLS,
 // same second layer as fleet_requests above.
 
 type FleetGoalRow = Tables<'fleet_goals'>;

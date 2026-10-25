@@ -8,8 +8,9 @@
 //
 // Same authorization shape as config-actions.ts (agreement config): manage_settings
 // gates the write, and the write goes through the request-scoped cookie session
-// client (createClient) — NOT the service-role client — so
-// callback_schedule_policies_admin_all RLS still applies as a second layer.
+// client (createClient) — NOT the service-role client — so the per-operation RLS
+// of callback_schedule_policies (manage_settings, staff-tables-permission-rls)
+// still applies as a second layer.
 //
 // Time-of-day fields arrive from <input type="time"> as "HH:MM" and are
 // converted to minutes-since-midnight here — the DB's own CHECK constraints

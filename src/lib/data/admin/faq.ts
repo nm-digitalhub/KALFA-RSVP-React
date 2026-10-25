@@ -9,8 +9,8 @@ import { PROTECTED_FAQ_ITEM_KEY, type FaqCategory } from '@/lib/faq/page-model';
 // admin-managed DATA, not hardcoded strings in a page component, the same
 // rule the project already applies to business facts). Modeled on
 // src/lib/data/admin/channel-catalog.ts: manage_settings gate here, plus the
-// staff-only RLS policy (faq_items_admin_all, is_platform_staff()) as the second
-// layer. Uses the normal cookie-authenticated client (not service-role), so
+// per-operation RLS policies (faq_items_<op>_permission, manage_settings) as the
+// second layer. Uses the normal cookie-authenticated client (not service-role), so
 // every write is attributable to and re-checked against the signed-in
 // admin's own session, not a service-role bypass.
 //

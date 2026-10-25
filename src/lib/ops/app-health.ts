@@ -5,8 +5,8 @@ import type { Tables } from '@/lib/supabase/types';
 // Reads ops_errors (written by src/instrumentation.ts, independent of the
 // Slack alert gates) and ops_alerts (delivery history) for the Debug page's
 // app-health panel. RLS already restricts SELECT — ops_errors to the platform
-// owner (ops_errors_owner_select), ops_alerts to platform staff
-// (ops_alerts_admin_select) — this module adds no authorization of its own,
+// owner (ops_errors_owner_select), ops_alerts to holders of manage_settings
+// (ops_alerts_select_permission; the owner holds it) — this module adds no authorization of its own,
 // matching src/lib/data/admin/alerts.ts.
 
 type OpsErrorRow = Tables<'ops_errors'>;

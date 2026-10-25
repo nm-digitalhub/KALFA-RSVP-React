@@ -274,7 +274,7 @@ stage's tables; only the exceptions listed in 1.5 are written by hand, and the d
 
 ## 6. Stage S5 — `manage_settings` tables and the fleet RPCs
 
-- [ ] 6.1 Write `s5_settings.test.sql` for `message_templates`, `channels`, `faq_items`,
+- [x] 6.1 Write `s5_settings.test.sql` for `message_templates`, `channels`, `faq_items`,
   `callback_schedule_policies`, `ops_alerts`, `fleet_requests`, `fleet_goals`,
   `fleet_request_slack_threads`: inventories and the behaviour matrix (holder of `manage_settings`
   allowed; `billing_clerk`, `auditor`, `support_agent`, non-staff, anon refused; public read policies
@@ -289,12 +289,24 @@ stage's tables; only the exceptions listed in 1.5 are written by hand, and the d
   - Verified on the live catalog on 19.10.2026: every `fleet_*` body calls that key, `proconfig` is
     `search_path=""`, and 0 functions reference `has_role`.
   - No migration is written here.
-- [ ] 6.3 `migration new staff_tables_settings_permission`: per-operation policies and rebuilt grants for
+- [x] 6.3 `migration new staff_tables_settings_permission`: per-operation policies and rebuilt grants for
   the eight tables, scope `channels_admin_all` away from `public`. Verify: applied locally; S5 and all
   earlier files green.
-- [ ] 6.4 Regression: vitest for `message-templates`, `channel-catalog`, `faq`, `alerts`, `fleet`,
+- [x] 6.4 Regression: vitest for `message-templates`, `channel-catalog`, `faq`, `alerts`, `fleet`,
   callbacks policy and `app-health`; fix any reader found in 1.1 to read with the service role after its
   gate (test first), like the integrations card; Advisors; `verification-s5.md`. Verify: all green.
+
+  **Stage S5 done locally 25.10.2026; applied to production by the owner (`supabase db push --linked`, 16:26 UTC) and
+  compared read-only with the local result, see `verification-s5.md`, "Production, after the push".**
+  `s5_settings_test.sql` (generated from the map and
+  `scripts/staff-table-rls-fixtures/s5_settings.json`, 230 assertions) red before for the stated reasons only (88 of
+  230); `s5_settings_paths_test.sql` (written by hand into the CLI-created file, 191 assertions: seeded roles, a
+  `support_agent` stand-in, a customer and anon against the data-layer shapes and the kept reads, and the six `fleet_*`
+  RPCs) red before (60 of 191) while every RPC case was already green; both green after. Migration
+  `20261025161814_staff_tables_settings_permission.sql` applied locally first; all pgTAP files pass (Files=10,
+  Tests=1237); the D10 check covers the eight tables. No reader needed to move to the service role: every user-session
+  path gates on `manage_settings` or reads under a kept policy. Evidence, Advisors and the live comparison:
+  `verification-s5.md`.
 
 ## 7. Stage S6 — hardening, documentation and integration
 

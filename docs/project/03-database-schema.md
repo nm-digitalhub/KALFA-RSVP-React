@@ -474,7 +474,7 @@
 | `active` | `boolean` | לא | default `false` |
 | `created_at`, `updated_at` | `timestamptz` | לא | `now()`; טריגר `set_message_templates_updated_at` |
 
-- **RLS**: admin‑only ‏(`message_templates_admin_all`); הקורא בשרת הוא service‑role.
+- **RLS**: ‏`message_templates_select_permission`, ‏`message_templates_update_permission` — `to authenticated`, דורשות `manage_settings` (staff-tables-permission-rls, מיגרציה `20261025161814`); אין INSERT או DELETE ל‑client roles; הקוראים בשרת הם service‑role.
 
 ### `contact_interactions`
 
