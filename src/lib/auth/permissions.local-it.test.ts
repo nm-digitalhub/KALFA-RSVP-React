@@ -172,8 +172,12 @@ describe.skipIf(!RUN)('finding 4: permissions across CASL / DAL / Server Action 
     });
   });
 
-  describe('webhook_inbox through PostgREST', () => {
-    it('SELECT the payload — anon: GRANT; regular: RLS; every staff member reads it, with or without view_webhooks', async () => {
+  // Closed by staff-tables-permission-rls stage S1 (20261025141452): no client role holds any privilege, so every
+  // session, staff or not, is refused by the GRANT before RLS runs; only the service role reaches the table.
+  describe('webhook_inbox through PostgREST (closed: service role only)', () => {
+    const SESSIONS = ['anon', 'regular', 'auditor', 'billing', 'ops'] as const;
+
+    it('SELECT the payload — every session is refused by the GRANT; only the service role reads it', async () => {
       const got: Record<string, Outcome> = {};
       const sawPayload: Record<string, boolean> = {};
       for (const who of WHO) {
@@ -182,24 +186,24 @@ describe.skipIf(!RUN)('finding 4: permissions across CASL / DAL / Server Action 
         const rows = (res.data ?? []) as Array<{ payload: { text?: { body?: string } } }>;
         sawPayload[who] = rows.some((r) => r.payload?.text?.body === MARKER);
       }
-      expect(got).toEqual({ anon: 'grant-denied', regular: 'rls-filtered', auditor: 'ok', billing: 'ok', ops: 'ok', service: 'ok' });
-      expect(sawPayload).toEqual({ anon: false, regular: false, auditor: true, billing: true, ops: true, service: true });
+      expect(got).toEqual({ anon: 'grant-denied', regular: 'grant-denied', auditor: 'grant-denied', billing: 'grant-denied', ops: 'grant-denied', service: 'ok' });
+      expect(sawPayload).toEqual({ anon: false, regular: false, auditor: false, billing: false, ops: false, service: true });
     });
 
-    it('UPDATE (mark processed, suppressing the worker) — auditor succeeds without view_webhooks', async () => {
+    it('UPDATE (mark processed) — refused for every session, the row stays unprocessed', async () => {
       const row = await scope.insertInbox(f, { messageId: `wamid.${f.tag}.upd`, payload: { type: 'text', text: { body: MARKER } } });
       const got: Record<string, Outcome> = {};
-      for (const who of ['regular', 'auditor'] as const) {
+      for (const who of SESSIONS) {
         const o = outcome(await clientOf(who).from('webhook_inbox').update({ processed_at: new Date().toISOString() }).eq('id', row.id as string).select('id'));
         record('webhook_inbox UPDATE processed_at', who, (got[who] = o));
       }
-      expect(got).toEqual({ regular: 'rls-filtered', auditor: 'ok' });
-      expect((await pool.query(`select processed_at is not null p from public.webhook_inbox where id = $1`, [row.id])).rows[0].p).toBe(true);
+      expect(got).toEqual({ anon: 'grant-denied', regular: 'grant-denied', auditor: 'grant-denied', billing: 'grant-denied', ops: 'grant-denied' });
+      expect((await pool.query(`select processed_at is null p from public.webhook_inbox where id = $1`, [row.id])).rows[0].p).toBe(true);
     });
 
-    it('INSERT a forged inbound event — auditor can enqueue it for the billing/RSVP worker', async () => {
+    it('INSERT a forged inbound event — refused for every session, nothing reaches the worker queue', async () => {
       const got: Record<string, Outcome> = {};
-      for (const who of ['anon', 'regular', 'auditor'] as const) {
+      for (const who of SESSIONS) {
         const o = outcome(
           await clientOf(who)
             .from('webhook_inbox')
@@ -208,19 +212,19 @@ describe.skipIf(!RUN)('finding 4: permissions across CASL / DAL / Server Action 
         );
         record('webhook_inbox INSERT', who, (got[who] = o));
       }
-      expect(got).toEqual({ anon: 'grant-denied', regular: 'rls-denied', auditor: 'ok' });
-      const claimable = await pool.query(
-        `select count(*)::int n from public.webhook_inbox where dedupe_key = $1 and processed_at is null and attempts < 5`,
-        [`${f.tag}:forged-auditor`],
-      );
-      expect(claimable.rows[0].n).toBe(1); // the worker's claim_webhook_events would pick it up
+      expect(got).toEqual({ anon: 'grant-denied', regular: 'grant-denied', auditor: 'grant-denied', billing: 'grant-denied', ops: 'grant-denied' });
+      const forged = await pool.query(`select count(*)::int n from public.webhook_inbox where dedupe_key like $1`, [`${f.tag}:forged-%`]);
+      expect(forged.rows[0].n).toBe(0);
     });
 
-    it('DELETE — auditor removes an inbox row without view_webhooks', async () => {
+    it('DELETE — refused for every session, the row is still there', async () => {
       const row = await scope.insertInbox(f, { messageId: `wamid.${f.tag}.del`, payload: { type: 'text', text: { body: MARKER } } });
-      const o = outcome(await users.auditor.client.from('webhook_inbox').delete().eq('id', row.id as string).select('id'));
-      record('webhook_inbox DELETE', 'auditor', o);
-      expect(o).toBe('ok');
+      const got: Record<string, Outcome> = {};
+      for (const who of SESSIONS) {
+        record('webhook_inbox DELETE', who, (got[who] = outcome(await clientOf(who).from('webhook_inbox').delete().eq('id', row.id as string).select('id'))));
+      }
+      expect(got).toEqual({ anon: 'grant-denied', regular: 'grant-denied', auditor: 'grant-denied', billing: 'grant-denied', ops: 'grant-denied' });
+      expect((await pool.query(`select count(*)::int n from public.webhook_inbox where id = $1`, [row.id])).rows[0].n).toBe(1);
     });
   });
 
