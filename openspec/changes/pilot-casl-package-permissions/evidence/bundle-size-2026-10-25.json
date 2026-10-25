@@ -1,0 +1,224 @@
+{
+  "date": "2026-10-25",
+  "task": "6.1",
+  "conditions": {
+    "build": "ANALYZE=true NEXT_TELEMETRY_DISABLED=1 NEXT_DIST_DIR=.next-m ./node_modules/.bin/next build --webpack (full production build, all routes)",
+    "worktrees": "clean git worktrees of each commit; node_modules and .env.local linked from the main tree; next.config.ts taken from HEAD in all three (adds only the analyzer wrapper); .deploy-id fixed to the same value",
+    "node": "v24.22.1",
+    "npm": "12.2.1",
+    "next": "16.4.1",
+    "casl": {
+      "@casl/ability": "7.0.2",
+      "@casl/react": "7.0.1"
+    },
+    "measure": "openspec/changes/pilot-casl-package-permissions/evidence/measure-bundle-size.cjs (unchanged), gzip level 9, brotli quality 11, 1 KiB = 1024 bytes"
+  },
+  "builds": {
+    "before": {
+      "commit": "c9b96180",
+      "rc": "1",
+      "seconds": "345",
+      "note": "webpack compile and analyzer reports completed; the type-check step then failed only in src/app/retired-routes.test.ts (5 errors), which predates the next.config.ts default export used for all three builds. Type checking does not change emitted chunks."
+    },
+    "after": {
+      "commit": "2a9faa0e",
+      "rc": "1",
+      "seconds": "331",
+      "note": "webpack compile and analyzer reports completed; the type-check step then failed only in src/app/retired-routes.test.ts (5 errors), which predates the next.config.ts default export used for all three builds. Type checking does not change emitted chunks."
+    },
+    "head": {
+      "commit": "e9978437",
+      "rc": "0",
+      "seconds": "364"
+    }
+  },
+  "comparisons": {
+    "pilot": {
+      "label": "before (c9b96180) vs after (2a9faa0e): the pilot alone",
+      "routes": {
+        "/admin": {
+          "raw": {
+            "before": 807785,
+            "after": 824947,
+            "delta": 17162
+          },
+          "gzip": {
+            "before": 272265,
+            "after": 278582,
+            "delta": 6317
+          },
+          "brotli": {
+            "before": 232693,
+            "after": 238369,
+            "delta": 5676
+          },
+          "files": {
+            "before": 30,
+            "after": 30
+          }
+        },
+        "/admin/packages": {
+          "raw": {
+            "before": 805375,
+            "after": 822537,
+            "delta": 17162
+          },
+          "gzip": {
+            "before": 271227,
+            "after": 277544,
+            "delta": 6317
+          },
+          "brotli": {
+            "before": 231733,
+            "after": 237409,
+            "delta": 5676
+          },
+          "files": {
+            "before": 30,
+            "after": 30
+          }
+        },
+        "/admin/packages/new": {
+          "raw": {
+            "before": 837277,
+            "after": 855326,
+            "delta": 18049
+          },
+          "gzip": {
+            "before": 282007,
+            "after": 288715,
+            "delta": 6708
+          },
+          "brotli": {
+            "before": 241284,
+            "after": 247329,
+            "delta": 6045
+          },
+          "files": {
+            "before": 32,
+            "after": 32
+          }
+        },
+        "/admin/packages/[id]": {
+          "raw": {
+            "before": 838127,
+            "after": 856305,
+            "delta": 18178
+          },
+          "gzip": {
+            "before": 282556,
+            "after": 289318,
+            "delta": 6762
+          },
+          "brotli": {
+            "before": 241721,
+            "after": 247820,
+            "delta": 6099
+          },
+          "files": {
+            "before": 32,
+            "after": 32
+          }
+        }
+      },
+      "casl_client_modules_parsed_bytes": {
+        "before": 0,
+        "after": 17673
+      }
+    },
+    "head": {
+      "label": "before (c9b96180) vs head (e9978437): the current revision",
+      "routes": {
+        "/admin": {
+          "raw": {
+            "before": 807785,
+            "after": 1087870,
+            "delta": 280085
+          },
+          "gzip": {
+            "before": 272265,
+            "after": 347957,
+            "delta": 75692
+          },
+          "brotli": {
+            "before": 232693,
+            "after": 297924,
+            "delta": 65231
+          },
+          "files": {
+            "before": 30,
+            "after": 32
+          }
+        },
+        "/admin/packages": {
+          "raw": {
+            "before": 805375,
+            "after": 1085460,
+            "delta": 280085
+          },
+          "gzip": {
+            "before": 271227,
+            "after": 346919,
+            "delta": 75692
+          },
+          "brotli": {
+            "before": 231733,
+            "after": 296964,
+            "delta": 65231
+          },
+          "files": {
+            "before": 30,
+            "after": 32
+          }
+        },
+        "/admin/packages/new": {
+          "raw": {
+            "before": 837277,
+            "after": 1118249,
+            "delta": 280972
+          },
+          "gzip": {
+            "before": 282007,
+            "after": 358088,
+            "delta": 76081
+          },
+          "brotli": {
+            "before": 241284,
+            "after": 306882,
+            "delta": 65598
+          },
+          "files": {
+            "before": 32,
+            "after": 34
+          }
+        },
+        "/admin/packages/[id]": {
+          "raw": {
+            "before": 838127,
+            "after": 1119224,
+            "delta": 281097
+          },
+          "gzip": {
+            "before": 282556,
+            "after": 358689,
+            "delta": 76133
+          },
+          "brotli": {
+            "before": 241721,
+            "after": 307378,
+            "delta": 65657
+          },
+          "files": {
+            "before": 32,
+            "after": 34
+          }
+        }
+      },
+      "casl_client_modules_parsed_bytes": {
+        "before": 0,
+        "after": 17673
+      },
+      "attribution": "growth after the pilot is the Supabase browser client (@supabase/*, @supabase/auth-js, buffer) brought into the admin shell by 8826e7a6 (permission-change-listener.tsx -> lib/realtime/permission-changes.ts -> lib/supabase/client); @casl modules are the same 17673 parsed bytes in after and head"
+    }
+  }
+}

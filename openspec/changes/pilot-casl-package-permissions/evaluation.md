@@ -47,7 +47,7 @@ The 7.0.0 breaking changes:
 
 **Provisional outcome: the bundle cost does not justify rejecting CASL. The pilot is ready for code review, but this report does not approve a wider migration.** The central action map removes scattered permission-key decisions and the server still enforces the database-backed permission. CASL adds shared client rule evaluation and React integration. Its value over a plain typed map remains a separate architectural question; the current pilot has no conditional rules and all four actions map to the same permission.
 
-This section records fresh bundle calculations, source inspection and focused tests. It does not mark tasks 6.1/6.2 complete: full integration verification, a comparison of committed production snapshots, and the owner’s role-based browser checks remain outstanding.
+This section records fresh bundle calculations, source inspection and focused tests from 20.10.2026. The full integration gate and the build of committed snapshots (task 6.1) were run on 25.10.2026 and are in section 3, which supersedes the size estimate here. The owner’s role-based browser checks remain open (tasks 6.3 to 6.5).
 
 ### 2.1 Exactly what was measured
 
@@ -206,3 +206,80 @@ These are remaining verification items, not evidence that a bypass was found. Th
 **Decision for review:** approximately 6.4 KiB gzip is an acceptable provisional size tradeoff for evaluating the shared permission infrastructure. The pilot demonstrates centralized policy and retained server delegation, with passing focused refusal tests. It has not yet demonstrated a maintenance advantage over the simpler typed-map alternative across multiple domains, and it has not completed the integration/live-security gate. Retain the pilot for review; do not treat this document as approval to migrate the entire administration system.
 
 If the owner approves expansion after those gates, use a separate change and migrate one domain at a time: inventory its DAL/Server Actions/pages and existing key semantics; add typed action mappings without silently changing grants; migrate server enforcement first and verify direct refusal; then align sidebar/UI rules; extend static coverage and rerun the role matrix and size checks. Keep the remaining legacy nav-key handling until each affected domain is migrated. Evaluate the need for Mongo condition matching and permission-resolution scaling before adding domains that change those assumptions.
+
+## 3. Task 6.1 results: committed snapshots, full builds (25.10.2026)
+
+**Result: the pilot adds 6.17 to 6.60 KiB gzip (+2.3% to +2.4%) to the four routes, measured on two clean commits with full production builds. The 20.10 estimate (about 6.4 KiB) holds.** Every number below comes from [`evidence/bundle-size-2026-10-25.json`](evidence/bundle-size-2026-10-25.json) or from a command named here.
+
+### 3.1 What was built, and under which conditions
+
+| Item | Value |
+|---|---|
+| Before | `c9b96180`, the parent of the first pilot code commit `2f616e46` |
+| After | `2a9faa0e`, the last pilot code commit. Between the two there are only pilot commits, tests, skills, OpenSpec files and `@playwright/cli` (a devDependency). |
+| Current revision | `e9978437` (HEAD, 25.10.2026) |
+| Build | `ANALYZE=true NEXT_TELEMETRY_DISABLED=1 NEXT_DIST_DIR=.next-m next build --webpack`: a full production build of all routes, not the selective `compile` of section 2 |
+| Same conditions | each commit in its own clean git worktree; the same `node_modules` and `.env.local` (linked from the main tree); the same `next.config.ts` (HEAD's, which differs from the old ones only by the analyzer wrapper); the same fixed `.deploy-id` |
+| Tools | Node v24.22.1, npm 12.2.1, Next.js 16.4.1, `@casl/ability` 7.0.2, `@casl/react` 7.0.1 |
+| Measurement | the unchanged [`measure-bundle-size.cjs`](evidence/measure-bundle-size.cjs); gzip level 9, Brotli quality 11, 1 KiB = 1,024 bytes |
+| Not done | no `npm run deploy`, no pm2 restart; the served `.next` and `dist/` were not touched |
+
+The before and after builds completed the Webpack compile and wrote the analyzer reports; their type-check step then failed with 5 errors, all in `src/app/retired-routes.test.ts`, because that old test reads `nextConfig.redirects` from the HEAD `next.config.ts` default export (now a function). Type checking runs after the compile and does not change emitted chunks. The HEAD build completed with exit code 0.
+
+### 3.2 The pilot alone (before → after)
+
+| Route | Gzip before (KiB) | Gzip after (KiB) | Delta | Brotli delta | Minified delta | Files |
+|---|---:|---:|---:|---:|---:|---:|
+| `/admin` | 265.88 | 272.05 | +6.17 (+2.32%) | +5.54 (+2.44%) | +16.76 (+2.12%) | 30 → 30 |
+| `/admin/packages` | 264.87 | 271.04 | +6.17 (+2.33%) | +5.54 (+2.45%) | +16.76 (+2.13%) | 30 → 30 |
+| `/admin/packages/new` | 275.40 | 281.95 | +6.55 (+2.38%) | +5.90 (+2.51%) | +17.63 (+2.16%) | 32 → 32 |
+| `/admin/packages/[id]` | 275.93 | 282.54 | +6.60 (+2.39%) | +5.96 (+2.52%) | +17.75 (+2.17%) | 32 → 32 |
+
+The client-side `@casl`/`@ucast` modules are 0 bytes before and 17,673 parsed bytes after. The absolute route sizes are larger than in section 2 because these are full builds with every route, which split shared chunks differently; the deltas agree.
+
+### 3.3 The current revision (before → HEAD), for context
+
+The same four routes are 73.92 to 74.35 KiB gzip larger at HEAD than before the pilot (+27% to +28%). This is **not** CASL: the CASL modules are the same 17,673 parsed bytes after the pilot and at HEAD. The analyzer attributes the growth after the pilot to the Supabase browser client (`@supabase/*` about +164 KiB parsed, `@supabase/auth-js` about +66 KiB, `buffer` about +20 KiB) in the shared admin shell. It arrived with `8826e7a6` (22.10.2026, refreshing an open admin page when the user's permissions change): `permission-change-listener.tsx` → `src/lib/realtime/permission-changes.ts` → `@/lib/supabase/client`. Whether that cost is acceptable is a separate question from this pilot.
+
+### 3.4 Verification of the final revision
+
+| Check | Result |
+|---|---|
+| Focused suites (packages folder, `casl`, `casl-pilot-static`, `platform-ability`, `platform-ability-provider`, `admin-data-layer-coverage`, `packages`, `dashboard`, `dal`, `admin-nav-coverage`) | 17 files, 620 tests, exit 0 |
+| `npm run lint`, `npx tsc --noEmit`, `NODE_ENV=test npx vitest run`, `npm run build` (on the tree that became HEAD) | 0, 0, 0 (13,219 passed, 2 expected fail, 239 skipped), 0 |
+| `src/lib/auth/permissions.local-it.test.ts` against local Supabase (`scripts/integration/run-local.sh`) | 17 passed; table fingerprint unchanged |
+| Full production build of HEAD (3.1) | exit 0 |
+
+The local integration file proves, for four fixture users (regular, auditor, billing clerk, ops) and anonymous: CASL's `read`/`update`/`delete Package` equals `has_platform_permission('manage_billing')`; `listPackages` refuses exactly where CASL says no (`/access-denied`, or `/auth/login` without a session); `deletePackageAction` refuses the auditor and lets the billing clerk delete.
+
+### 3.5 Who enforces what
+
+CASL centralizes the rules. It does not replace the check at each server entry point:
+
+- **The screen** uses the rules only to decide what to show (`<Can>`, the sidebar item, the dashboard card).
+- **The server** checks again at every entry point: each package data function, each Server Action on its first line, and each page (`requirePlatformAction` → `has_platform_permission`).
+- **The database** must enforce too, for anyone who calls PostgREST directly. **For packages it does not yet.** The same local integration file reproduces it (`SECURITY FINDING (reproduced)`): the auditor, refused by the Server Action, deletes the package directly through PostgREST. Production has the same policy (read-only query, 25.10.2026): `packages_admin_all`, `FOR ALL TO authenticated USING (is_platform_staff())`. Any staff member, not only `manage_billing`, may write the table directly. The pilot changes no grant; the fix is in scope of `staff-tables-permission-rls` (its finding 4), which is paused at task 1.2.
+
+### 3.6 Places that name a key, before and after
+
+The decision sites are in section 2.5 (14 → 0). As a mechanical check, the quoted billing keys (`'manage_billing'` or `'view_billing'`) per file, before (`git show c9b96180:<file>`) and at HEAD:
+
+| File | Before | HEAD |
+|---|---:|---:|
+| `src/lib/data/admin/packages.ts` | 9 | 0 |
+| `packages/page.tsx`, `new/page.tsx`, `[id]/page.tsx` | 1 each | 0 |
+| `packages/rewrite-action.ts` | 1 | 0 |
+| `src/lib/data/admin/dashboard.ts` | 1 | 0 |
+| `src/components/admin-shell.tsx` | 7 | 6 (the other billing menu items, not migrated) |
+
+The production-source change of the pilot commits, `git diff --numstat c9b96180 2a9faa0e -- src` without test files: **16 files, 333 lines added, 129 removed**. Section 2.5's 329/127 in 14 files measured a different snapshot (the working tree of 20.10 with uncommitted changes) and a path list not kept in the evidence, so the two counts are not reconciled here. The 16 files of this count include `src/app/(admin)/admin/layout.tsx` (7/2) and `src/lib/owner-agent/tools/shared.ts` (2/1, from `1e74c98f`, typing the key list).
+
+### 3.7 Gaps that remain
+
+- **Owner browser checks after a deploy (task 6.3):** the package pages as owner and as billing clerk; refusal for staff without `manage_billing` (including `view_billing` only) and without a session; the Server Actions sent for real, not only rendered.
+- **Revocation with the page open (task 6.4):** revoke `manage_billing` while a package page is open; the next server operation must be refused whatever the client still holds.
+- **Database enforcement (task 6.5):** `packages_admin_all` (3.5). Until `staff-tables-permission-rls` changes it, the server check is the only barrier for a staff member who calls PostgREST.
+- Not measured: load and hydration time, RSC payload size, live RPC counts per render.
+
+**Decision for review, updated:** the measured cost of the pilot is 6.2 to 6.6 KiB gzip on these routes, and the server path is unchanged in kind. This document does not approve a wider migration; that is the owner's decision, after tasks 6.3 to 6.5.
+

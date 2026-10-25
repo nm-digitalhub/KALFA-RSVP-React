@@ -101,10 +101,10 @@ Ground rules for every group:
 
 ## 6. Integration and the decision gate
 
-- [ ] 6.1 Run the relevant focused suites, then the full suite, `npm run lint`, `npm run typecheck` and
+- [x] 6.1 Run the relevant focused suites, then the full suite, `npm run lint`, `npm run typecheck` and
   `npm run build`. Verify: all green. Record the `next build` route sizes of `/admin`, `/admin/packages`,
   `/admin/packages/new` and `/admin/packages/[id]` against a build of the parent commit.
-- [ ] 6.2 Write `openspec/changes/pilot-casl-package-permissions/evaluation.md` with:
+- [x] 6.2 Write `openspec/changes/pilot-casl-package-permissions/evaluation.md` with:
   - the places that named a key before and after, with line references;
   - the lines added and removed;
   - the bundle delta from 6.1;
@@ -112,6 +112,14 @@ Ground rules for every group:
   - the work and the order needed to move the remaining flows.
 
   Verify: every number in it traces to a command output or a file reference.
+- [ ] 6.3 Owner browser check after a deploy: the package pages as `owner` and as the billing clerk; refusal for
+  staff without `manage_billing` (including `view_billing` only) and for an unauthenticated caller, with the Server
+  Actions actually sent. Verify: the results recorded in `evaluation.md` section 3.7.
+- [ ] 6.4 Revocation with the page open: revoke `manage_billing` while a package page is open; the next Server Action
+  is refused whatever rules the client still holds. Verify: recorded in `evaluation.md` section 3.7.
+- [ ] 6.5 Database enforcement for `packages`: `packages_admin_all` lets any platform staff member write the table
+  through PostgREST (`evaluation.md` 3.5). Closed by `staff-tables-permission-rls`, not by this change. Verify: the
+  `SECURITY FINDING (reproduced)` case in `src/lib/auth/permissions.local-it.test.ts` is turned into a refusal there.
 
 ## Workflow follow-up
 
