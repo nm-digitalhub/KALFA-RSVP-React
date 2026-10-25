@@ -80,7 +80,7 @@ text read from the live catalog.
     with the table and operation. It cannot here: the map takes the key from `PLATFORM_ACTIONS`, so both sides move
     together; only the SQL policy is an independent side. **Moved to 5.1** (owner decision 25.10.2026); not claimed as
     passing until proved there.
-- [ ] 1.5 Shared template, not one hand-written solution per table (owner decision 25.10.2026; design D13). Add a
+- [x] 1.5 Shared template, not one hand-written solution per table (owner decision 25.10.2026; design D13). Add a
   generator that reads `STAFF_TABLE_PERMISSIONS` and, for a list of tables, renders (a) the migration body: for a
   `closed` table `revoke all … from anon, authenticated` and `drop policy` for each existing staff policy; for a
   `permission` table `revoke all`, `grant <exact ops> … to authenticated` and one policy per operation keyed as in the
@@ -92,6 +92,29 @@ text read from the live catalog.
   vitest renders the 11 closed and the 14 per-permission tables and asserts each output names exactly the keys and
   operations of the map; changing one operation in the map changes exactly that policy and its test case.
 
+  **Done 25.10.2026 (tool and its tests only; nothing applied, no migration or test file created).**
+  - `src/lib/auth/staff-table-rls.ts`: `renderMigrationBody` (closed: `revoke all` and `drop policy` for each existing
+    policy; per permission: `revoke all`, `grant <ops>`, one policy per operation `to authenticated` with
+    `(select public.has_platform_permission(...))`, UPDATE with both `using` and `with check`), `renderPgTapTests`
+    (inventory: `policies_are`, `policy_cmd_is`, `policy_roles_are`, `table_privs_are` for both client roles, no
+    `MAINTAIN`; behaviour: no-grant operations refused with `42501` for every actor, the owner included; holders allowed
+    with `results_eq … returning`; non-holders `42501` on INSERT, `is_empty` plus an intact-row read on UPDATE/DELETE,
+    `is_empty` on SELECT; each actor's keys checked with `has_platform_permission`), the exception lists
+    (`KEEP_POLICIES`, `ANON_SELECT`, `HAND_WRITTEN`), and the file writers (marked block in a migration; a test file only
+    over itself or the untouched `supabase test new` template).
+  - Behaviour cases are computed from the map, never from the migration text, so a fault in the SQL template is caught
+    by statements run as real roles (owner decision: independent behaviour tests).
+  - Guards from the Supabase RLS guide: an UPDATE or DELETE key that cannot SELECT is refused; policy names over 63
+    bytes are refused; `drop policy` without `if exists`, so catalog drift fails loudly.
+  - `scripts/gen-staff-table-rls.ts`: reads policy names and one column per table from the LOCAL container only
+    (`supabase_db_beta`, label checked), writes into a file the CLI created, `--dry-run` prints. Dry run on
+    `webhook_inbox,packages,channels` read the local catalog and printed the expected body; no file was written.
+  - Evidence: `src/lib/auth/staff-table-rls.test.ts` 62 passed; `tsc --noEmit` 0; eslint 0. Mutations, each restored:
+    INSERT rendered with `using` (4 tables fail); every signed-in actor treated as a holder (2 fail); the read-covers-write
+    guard removed (1 fails).
+  - **Not yet proved:** the rendered SQL and pgTAP have not run on Postgres. First run: task 1.3 (harness) and 2.1,
+    on the local stack. The generated actors create a temporary `platform_roles` row with `rank = 0`; whether a
+    constraint refuses it is known only then.
 - [ ] 1.3 Spike the runner: start the local stack, make sure `pgtap` is available, add
   `supabase/tests/database/000-harness.test.sql` (always-green plan plus a fixture that creates a staff
   user in a chosen role and in a temporary role holding exactly one permission, all inside the

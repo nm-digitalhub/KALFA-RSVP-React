@@ -307,6 +307,21 @@ verification; they are not separate solutions. Migration files are still created
 and the generator writes into them. Alternative: one hand-written migration per table, rejected: 25 copies of the same
 shape drift from the map and from each other.
 
+Implementation notes (task 1.5, 25.10.2026), checked against the Supabase RLS guide and the 28.04.2026 Data API
+changelog:
+- Policy names are `<table>_<op>_permission`, not D3's `"<table>: <op> needs <key>"`: with two keys the D3 form passes
+  Postgres' 63-byte limit (`provider_number_roles: DELETE needs manage_settings or manage_voice`) and would be truncated.
+  The key stays visible in the policy body and in the pgTAP description.
+- The guide: "To perform an UPDATE operation, a corresponding SELECT policy is required"; a DELETE with `where` reads its
+  rows too. The template refuses a map where a key may update or delete but not select. All 14 tables pass.
+- No sequence grants: none of the 14 tables has a `nextval` default or an identity column (local catalog, 25.10.2026).
+- Behaviour cases follow the guide's table: a missing grant and a `with check` violation raise `42501` (`throws_ok`); a
+  `using` filter matches zero rows (`is_empty` with `returning`, then a read proving the row intact); allowed writes are
+  proved with `results_eq … returning`, never `lives_ok`.
+- The Data API change (new tables in `public` not exposed by default, applied to existing projects on 30.10.2026) leaves
+  existing tables and their grants as they are. It also stops the default grant to `service_role` on NEW tables, so a
+  future server-only table needs an explicit `grant … to service_role`; D0 kept that default for existing objects.
+
 **D11 — Staged, local first, owner pushes.** Each stage is one migration created with
 `npx supabase migration new`, applied to the local database only, with a rollback header, grants and
 policies together. The owner runs `db push`; afterwards verification on the live database is read-only
