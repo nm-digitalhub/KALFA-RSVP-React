@@ -1,7 +1,8 @@
 # Verification, stage S2: the remaining service-only tables
 
 Date: 25.10.2026. Local stack only (`supabase_db_beta`, label `com.supabase.cli.project=beta`, DB 127.0.0.1:54322,
-API 127.0.0.1:54321). Production was only read. The migration is not pushed: pushing to `main` applies it to production.
+API 127.0.0.1:54321). Production was only read. The sections up to Advisors were written before the push; the
+owner's push and the live comparison are in the last section.
 
 ## What changed
 
@@ -43,7 +44,24 @@ not touch these tables; not run. Not classified as end-to-end: no browser flow a
 findings): the only new findings are `rls_enabled_no_policy` (INFO) on the seven tables, the intended closed shape
 (design D2). Nothing disappeared. No ERROR or WARN finding names any of the seven tables.
 
-## Still to do for this stage
+## Production, after the push (25.10.2026, read-only)
 
-- The owner reviews the migration and decides the push (it deploys to production).
-- After the push: read-only comparison of the live catalog with the table above, recorded here.
+The owner applied the migration with `supabase db push --linked` (not through a push to `main`): the migration's
+statements run in `postgres_logs` at 14:43:49 UTC. `faede5df` was still not on `origin/main` at the time of this check.
+
+| Check | Result |
+|---|---|
+| `supabase migration list --linked` | 388 local, 388 remote, none missing on either side; latest `20261025143711` (the S2 migration) |
+| Privileges and policies of the seven tables (`has_table_privilege` for authenticated, anon, service_role; `pg_policies`; `relrowsecurity`), live vs local | identical: RLS on, no privilege for `authenticated` or `anon`, `service_role` SELECT/INSERT/UPDATE/DELETE, no policy |
+| Data API, anon key, `GET /rest/v1/<table>?select=<column>&limit=1` | 42501 on all seven (`workflow_run_events` has no `id` column; probed with `seq`) |
+| Data API, service-role key, `HEAD` of the same request (no row printed) | 200 on all seven |
+| `edge_logs` 14:43:49–14:49:00 UTC, requests to the seven tables | the worker's workflow sweep (`node`): 17 requests (`GET workflows`, `GET workflow_runs`, `GET workflow_run_steps`), all 200, 14:44:05 to 14:48:05. Everything else is the probes above (`curl`). `edge_logs` holds 5 of the 7 anon probe GETs (`postgres_logs` has all 7), so it is not a complete record of requests |
+| `postgres_logs` "permission denied", 14:35–14:49:00 UTC | seven, 14:45:20 to 14:45:41: exactly the seven anon probes; none from the application |
+| Newest row per table (read at 14:48 UTC) | `workflow_run_events` 06.10.2026 05:15 UTC; `webhook_deliveries` 25.10.2026 06:30 UTC; `vox_log_exports` 11.09.2026 00:20 UTC (`greatest(created_at, updated_at)`); `outreach_template_failures` empty. No row written after the push |
+| `supabase db advisors --linked --type all --level info` (268 findings) | for the seven tables: `rls_enabled_no_policy` (INFO) on each, the intended closed shape; plus earlier performance INFOs (`unused_index` on `vox_log_exports`, `webhook_deliveries`, `workflow_runs`; `unindexed_foreign_keys` on `workflow_runs`), not from this stage. No ERROR or WARN finding names any of them |
+
+Proved in production: the server path reaches `workflows`, `workflow_runs` and `workflow_run_steps` after the push
+(the worker's live requests, 200, with no client role holding a privilege). Not proved by live traffic:
+`workflow_run_events`, `webhook_deliveries`, `outreach_template_failures` and `vox_log_exports`: no application request
+in `edge_logs` and no row written since the push. The next workflow event, inbound provider webhook, template failure
+or vox-log export is their first live use; the service-role read above shows the grant it needs is in place.
