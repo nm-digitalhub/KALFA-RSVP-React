@@ -36,7 +36,7 @@ How to update it:
   - `platform_permission_definitions` has no `tasks.manage`;
   - the `supabase_realtime` publication list.
 - [ ] 1.3 Owner creates an API key in the Claude Console under the owner's API organization and stores it as `KALFA_ANTHROPIC_API_KEY` in the server env. Verify: the env-validation probe (task 8.2) reports `ok` without printing the value.
-- [ ] 1.4 Owner approves installing `@playwright/test` as a devDependency at the installed `playwright` version (1.64.1). Verify: `npm ls @playwright/test playwright` shows one matching version; `.npmrc include=dev` keeps it under `NODE_ENV=production`.
+- [x] 1.4 Owner approves installing `@playwright/test` as a devDependency at the installed `playwright` version (1.64.1). Verify: `npm ls @playwright/test playwright` shows one matching version; `.npmrc include=dev` keeps it under `NODE_ENV=production`.
 
 ## 2. Part A — schema (one migration, local only)
 
