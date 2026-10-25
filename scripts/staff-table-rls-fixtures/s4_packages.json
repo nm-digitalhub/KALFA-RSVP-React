@@ -1,0 +1,11 @@
+{
+  "packages": {
+    "seed": "insert into public.packages (id, name, tier, price_with_vat, active) values ('00000000-0000-4000-8000-00000000c401', 'RLS fixture', 'rls', 1, false)",
+    "row": "id = '00000000-0000-4000-8000-00000000c401'",
+    "probe": "id",
+    "probeValue": "00000000-0000-4000-8000-00000000c401",
+    "insert": "(id, name, tier, price_with_vat, active) values ('00000000-0000-4000-8000-00000000c402', 'RLS insert', 'rls', 1, false)",
+    "insertValue": "00000000-0000-4000-8000-00000000c402",
+    "update": "price_with_vat = 2"
+  }
+}

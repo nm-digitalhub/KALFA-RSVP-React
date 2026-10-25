@@ -21,14 +21,16 @@ import type {
   OutreachTouchpointInput,
 } from '@/lib/validation/admin';
 
-// Admin: packages CRUD. Authorized by the request-scoped session under the
-// `packages_admin_all` RLS policy plus a server-side gate per action: each
-// function asks for its action on `Package` through requirePlatformAction /
-// requireAnyPlatformAction, which take the key from the action map in
-// src/lib/casl.ts (pilot-casl-package-permissions, design D4). No key is named here.
-// Reads of active packages are public (`packages_public_read`); writes are
-// admin-only. Prices are server-validated (see validation/admin.ts) and never
-// trusted from the browser.
+// Admin: packages CRUD. Authorized by a server-side gate per action plus the
+// request-scoped session under per-operation RLS: each function asks for its action
+// on `Package` through requirePlatformAction / requireAnyPlatformAction, which take
+// the key from the action map in src/lib/casl.ts (pilot-casl-package-permissions,
+// design D4), and the policies `packages_<op>_permission` require the same key
+// (staff-tables-permission-rls; src/lib/auth/staff-table-sql-consistency.test.ts
+// fails when the two differ). No key is named here. Reads of active packages are
+// public (`packages_public_read`); every other read and every write needs the key of
+// its Package action. Prices are server-validated (see validation/admin.ts) and
+// never trusted from the browser.
 
 type PackageRow = Tables<'packages'>;
 type PackageInsert = TablesInsert<'packages'>;

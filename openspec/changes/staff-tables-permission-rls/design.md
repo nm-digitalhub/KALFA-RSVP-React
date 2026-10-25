@@ -282,8 +282,10 @@ test file.
 **D10 — One source of truth for the key map.** `src/lib/auth/staff-table-permissions.ts` (table →
 key list) is read by a vitest that asserts it equals the data-layer pins and equals the keys named in
 the pgTAP file (text check). The map exists since 25.10.2026 (task 1.2); the check against the data-layer pins is a
-`describe` in `admin-data-layer-coverage.test.ts`. The text check against the SQL is written per stage; for `packages`
-it is task 5.1. Reason: the map takes the `packages` key from `PLATFORM_ACTIONS`, so a change made only there moves the
+`describe` in `admin-data-layer-coverage.test.ts`. The text check against the SQL is
+`src/lib/auth/staff-table-sql-consistency.test.ts` (task 5.1, 25.10.2026): it reads the migrations and the generated
+pgTAP files and covers every per-permission table whose stage has landed, so each later stage joins it without a new
+test. Reason: the map takes the `packages` key from `PLATFORM_ACTIONS`, so a change made only there moves the
 map with it, and no TypeScript-only test can name the table and operation (measured by mutation, 25.10.2026); the SQL
 policy is the only independent side.
 

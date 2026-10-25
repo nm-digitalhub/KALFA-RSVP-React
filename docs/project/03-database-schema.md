@@ -368,7 +368,7 @@
 | `hold_buffer_pct` | `numeric` | לא | default `0` — buffer לתמחור רב‑ערוצי |
 | `created_at` | `timestamptz` | לא | `now()` |
 
-- **RLS**: ‏`packages_public_read` — SELECT ל‑anon+authenticated עבור `active = true`; ‏`packages_admin_all`.
+- **RLS**: ‏`packages_public_read` — SELECT ל‑anon+authenticated עבור `active = true`; ‏`packages_select_permission`, ‏`packages_insert_permission`, ‏`packages_update_permission`, ‏`packages_delete_permission` — כל אחת `to authenticated` ודורשת `manage_billing` (המפתח ש‑`PLATFORM_ACTIONS.Package` נותן לכל פעולה; staff-tables-permission-rls, מיגרציה `20261025155204`). ל‑anon יש SELECT בלבד.
 - הערה היסטורית: עמודות מדיניות הניסיונות הקבועה (`whatsapp_attempts` וכו', מיגרציה 0011) הוסרו ב‑0014 לטובת `outreach_schedule`.
 
 ## 10. קמפיינים ו‑outreach

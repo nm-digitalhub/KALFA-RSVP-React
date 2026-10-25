@@ -237,7 +237,7 @@ stage's tables; only the exceptions listed in 1.5 are written by hand, and the d
 
 ## 5. Stage S4 — `packages`
 
-- [ ] 5.1 Write `s4_packages.test.sql`: `billing_clerk` and owner read/insert/update/delete; `ops_engineer`,
+- [x] 5.1 Write `s4_packages.test.sql`: `billing_clerk` and owner read/insert/update/delete; `ops_engineer`,
   `auditor`, `support_agent` refused writes (auditor holds `view_billing` and still cannot write);
   `anon` and customer sessions read active rows only and cannot write (`42501`); inactive rows are
   invisible to them. Verify: red on the current local database (anon and every staff member can write).
@@ -249,9 +249,9 @@ stage's tables; only the exceptions listed in 1.5 are written by hand, and the d
   operation (`packages SELECT: …`). Verify, by mutation then restore: (1) `Package.read` changed in `PLATFORM_ACTIONS`
   only fails naming `packages SELECT`; (2) the key of one `packages` policy changed in the SQL only fails naming that
   operation. **Not marked passing before both mutations are proved and recorded in `verification-s4.md`.**
-- [ ] 5.2 `migration new packages_billing_permission`: per-operation `manage_billing` policies, keep
+- [x] 5.2 `migration new packages_billing_permission`: per-operation `manage_billing` policies, keep
   `packages_public_read`, `anon` keeps `SELECT` only. Verify: applied locally; S4 and earlier files green.
-- [ ] 5.3 Regression: vitest for `admin/packages`, `agent-benefits` and the public pages that list
+- [x] 5.3 Regression: vitest for `admin/packages`, `agent-benefits` and the public pages that list
   packages; the CASL tests `src/lib/casl.test.ts` and `src/lib/casl-pilot-static.test.ts` (the action map
   and the guard that keeps package keys in it), in addition to the RLS proof; run
   `SUPABASE_DB_PORT=54322 bash scripts/integration/run-local.sh
@@ -260,6 +260,17 @@ stage's tables; only the exceptions listed in 1.5 are written by hand, and the d
   `billing_clerk` unchanged; the "Server Action refuses, PostgREST allows" case becomes "both refuse");
   the public read of active packages (`anon`, customer) is asserted as its own case, apart from the
   `Package` actions; Advisors; `verification-s4.md`. Verify: all green.
+
+  **Stage S4 done locally 25.10.2026; applied to production by the owner (`supabase db push --linked`, 16:05 UTC) and
+  compared read-only with the local result, see `verification-s4.md`, "Production, after the push".**
+  `s4_packages_test.sql` (generated, 39 assertions) red before for
+  the stated reasons only (21 of 39); `s4_packages_paths_test.sql` (hand-written, 59 assertions: seeded roles, a
+  `support_agent` stand-in, a customer and anon against the shapes of `admin/packages.ts` and the public read) red
+  before (17 of 59); both green after. The D10 text check is `src/lib/auth/staff-table-sql-consistency.test.ts`, over
+  every per-permission table whose stage has landed (packages and the five S3 tables); both mutations fail naming
+  `packages SELECT` and `packages UPDATE`. Migration `20261025155204_packages_billing_permission.sql` applied locally
+  first; all pgTAP files pass (Files=8, Tests=816); `permissions.local-it` `packages` cases flipped in the same change,
+  17/17. Evidence, Advisors and the live comparison: `verification-s4.md`.
 
 ## 6. Stage S5 — `manage_settings` tables and the fleet RPCs
 

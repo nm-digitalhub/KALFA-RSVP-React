@@ -120,8 +120,12 @@ describe.skipIf(!RUN)('finding 4: permissions across CASL / DAL / Server Action 
   const WHO = ['anon', 'regular', 'auditor', 'billing', 'ops', 'service'] as const;
 
   // ═══ GRANT + RLS through PostgREST ═════════════════════════════════════════════
+  // Since staff-tables-permission-rls stage S4 (20261025155204): one policy per operation on manage_billing, the key
+  // PLATFORM_ACTIONS.Package gives every action, and the public read `packages_public_read` (active rows) kept apart.
+  // A session without the key is refused by its mechanism: anon has no write grant; an authenticated session holds
+  // the grant (billing_clerk needs it), so its INSERT fails the policy's check and its UPDATE or DELETE matches no row.
   describe('packages through PostgREST', () => {
-    it('SELECT an ACTIVE package — the planned public read (anon and every user)', async () => {
+    it('the public read (packages_public_read, not a Package action): an ACTIVE package reads for anon and every user', async () => {
       const id = await pkg(true);
       for (const who of WHO) {
         const o = outcome(await clientOf(who).from('packages').select('id').eq('id', id));
@@ -130,14 +134,14 @@ describe.skipIf(!RUN)('finding 4: permissions across CASL / DAL / Server Action 
       }
     });
 
-    it('SELECT an INACTIVE package (admin data) — hidden from anon/regular; visible to ANY staff (auditor too)', async () => {
+    it('SELECT an INACTIVE package (admin data) — hidden from every session without manage_billing, auditor and ops included', async () => {
       const id = await pkg(false);
       const got: Record<string, Outcome> = {};
       for (const who of WHO) record('packages SELECT inactive', who, (got[who] = outcome(await clientOf(who).from('packages').select('id').eq('id', id))));
-      expect(got).toEqual({ anon: 'rls-filtered', regular: 'rls-filtered', auditor: 'ok', billing: 'ok', ops: 'ok', service: 'ok' });
+      expect(got).toEqual({ anon: 'rls-filtered', regular: 'rls-filtered', auditor: 'rls-filtered', billing: 'ok', ops: 'rls-filtered', service: 'ok' });
     });
 
-    it('INSERT — anon: GRANT; regular: RLS; ANY staff without manage_billing (auditor, ops) succeeds', async () => {
+    it('INSERT — anon: GRANT; regular, auditor and ops (no manage_billing): RLS; billing_clerk succeeds', async () => {
       const got: Record<string, Outcome> = {};
       for (const who of WHO) {
         const id = randomUUID();
@@ -147,10 +151,10 @@ describe.skipIf(!RUN)('finding 4: permissions across CASL / DAL / Server Action 
         );
         record('packages INSERT', who, (got[who] = o));
       }
-      expect(got).toEqual({ anon: 'grant-denied', regular: 'rls-denied', auditor: 'ok', billing: 'ok', ops: 'ok', service: 'ok' });
+      expect(got).toEqual({ anon: 'grant-denied', regular: 'rls-denied', auditor: 'rls-denied', billing: 'ok', ops: 'rls-denied', service: 'ok' });
     });
 
-    it('UPDATE price — regular filtered; auditor and ops (no manage_billing) change it', async () => {
+    it('UPDATE price — regular, auditor and ops (no manage_billing) change no row; billing_clerk changes it', async () => {
       const got: Record<string, Outcome> = {};
       for (const who of WHO) {
         const id = await pkg(true);
@@ -159,16 +163,19 @@ describe.skipIf(!RUN)('finding 4: permissions across CASL / DAL / Server Action 
         const p = (await pool.query(`select price_with_vat::int p from public.packages where id = $1`, [id])).rows[0].p;
         expect(p === 999, `${who} price changed`).toBe(o === 'ok');
       }
-      expect(got).toEqual({ anon: 'grant-denied', regular: 'rls-filtered', auditor: 'ok', billing: 'ok', ops: 'ok', service: 'ok' });
+      expect(got).toEqual({ anon: 'grant-denied', regular: 'rls-filtered', auditor: 'rls-filtered', billing: 'ok', ops: 'rls-filtered', service: 'ok' });
     });
 
-    it('DELETE — regular filtered; auditor and ops (no manage_billing) delete it', async () => {
+    it('DELETE — regular, auditor and ops (no manage_billing) delete no row; billing_clerk deletes it', async () => {
       const got: Record<string, Outcome> = {};
       for (const who of WHO) {
         const id = await pkg(false);
-        record('packages DELETE', who, (got[who] = outcome(await clientOf(who).from('packages').delete().eq('id', id).select('id'))));
+        const o = outcome(await clientOf(who).from('packages').delete().eq('id', id).select('id'));
+        record('packages DELETE', who, (got[who] = o));
+        const n = (await pool.query(`select count(*)::int n from public.packages where id = $1`, [id])).rows[0].n;
+        expect(n, `${who} row count`).toBe(o === 'ok' ? 0 : 1);
       }
-      expect(got).toEqual({ anon: 'grant-denied', regular: 'rls-filtered', auditor: 'ok', billing: 'ok', ops: 'ok', service: 'ok' });
+      expect(got).toEqual({ anon: 'grant-denied', regular: 'rls-filtered', auditor: 'rls-filtered', billing: 'ok', ops: 'rls-filtered', service: 'ok' });
     });
   });
 
@@ -356,7 +363,7 @@ describe.skipIf(!RUN)('finding 4: permissions across CASL / DAL / Server Action 
       });
     });
 
-    it('SECURITY FINDING (reproduced): the Server Action refuses the auditor, yet the same auditor deletes the package straight through PostgREST', async () => {
+    it('the Server Action and PostgREST both refuse the auditor deleting a package (finding closed by stage S4)', async () => {
       const { deletePackageAction } = await import('@/app/(admin)/admin/packages/actions');
       const id = await pkg(false);
       await asUser(users.auditor);
@@ -365,8 +372,9 @@ describe.skipIf(!RUN)('finding 4: permissions across CASL / DAL / Server Action 
       expect(viaAction).toBe('redirect:/access-denied');
       expect((await pool.query(`select count(*)::int n from public.packages where id = $1`, [id])).rows[0].n).toBe(1);
       const direct = outcome(await users.auditor.client.from('packages').delete().eq('id', id).select('id'));
-      expect(direct).toBe('ok');
-      expect((await pool.query(`select count(*)::int n from public.packages where id = $1`, [id])).rows[0].n).toBe(0);
+      record('PostgREST packages DELETE', 'auditor', direct);
+      expect(direct).toBe('rls-filtered');
+      expect((await pool.query(`select count(*)::int n from public.packages where id = $1`, [id])).rows[0].n).toBe(1);
     });
 
     it('control: the Server Action lets billing_clerk delete (manage_billing)', async () => {
