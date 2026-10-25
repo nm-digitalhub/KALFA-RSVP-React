@@ -226,11 +226,15 @@ describe('runPaymentOrphanSweep: paid packages still waiting to start', () => {
     payment_operation_lines: [],
     ...over,
   });
-  const db = (over: { ops?: TableRow[]; campaigns?: TableRow[]; activity?: TableRow[] } = {}) =>
+  // Every fixture event is active and 30 days after NOW unless a test says otherwise.
+  const IN_A_MONTH = new Date(NOW.getTime() + 30 * 86_400_000).toISOString();
+  const event = (id: string, over: TableRow = {}): TableRow => ({ id, event_date: IN_A_MONTH, status: 'active', ...over });
+  const db = (over: { ops?: TableRow[]; campaigns?: TableRow[]; activity?: TableRow[]; events?: TableRow[] } = {}) =>
     createFakeTableClient({
       payment_operations: over.ops ?? [paidOp()],
       campaigns: over.campaigns ?? [{ id: 'c1', event_id: 'e1', status: 'approved' }],
       activity_log: over.activity ?? [],
+      events: over.events ?? ['e1', 'e2', 'e3', 'e4'].map((id) => event(id)),
     });
   const jobs = (state: string | null) =>
     ({
@@ -330,6 +334,38 @@ describe('runPaymentOrphanSweep: paid packages still waiting to start', () => {
     const ops = [paidOp({ id: 'o1', campaign_id: 'c1' }), paidOp({ id: 'o2', campaign_id: 'c2' })];
     const r = await runPaymentOrphanSweep(db({ campaigns, ops }).client as never, j, NOW);
     expect(r.activations).toEqual({ found: 2, queued: 1, retried: 0, failed: 1 });
+  });
+
+  it('an event whose day has passed is left out: no job looked up, queued or retried, and no alert', async () => {
+    for (const state of [null, 'failed']) {
+      const j = jobs(state);
+      const r = await runPaymentOrphanSweep(db({ events: [event('e1', { event_date: ago(2 * 24 * 60) })] }).client as never, j, NOW);
+      expect(r.activations).toEqual({ found: 0, queued: 0, retried: 0, failed: 0 });
+      expect(j.getJobById).not.toHaveBeenCalled();
+      expect(j.send).not.toHaveBeenCalled();
+      expect(j.retry).not.toHaveBeenCalled();
+    }
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('the event day itself still counts: an event later today is handled', async () => {
+    const j = jobs(null);
+    const laterToday = new Date(NOW.getTime() + 2 * 60 * 60_000).toISOString();
+    const r = await runPaymentOrphanSweep(db({ events: [event('e1', { event_date: laterToday })] }).client as never, j, NOW);
+    expect(r.activations.queued).toBe(1);
+  });
+
+  it.each(['draft', 'closed'])('an event in status %s is left out', async (status) => {
+    const j = jobs('failed');
+    const r = await runPaymentOrphanSweep(db({ events: [event('e1', { status })] }).client as never, j, NOW);
+    expect(r.activations.found).toBe(0);
+    expect(j.retry).not.toHaveBeenCalled();
+  });
+
+  it('a failure to READ the events is thrown, never read as "nothing to start"', async () => {
+    const d = db();
+    d.fail('events', 'XX000');
+    await expect(runPaymentOrphanSweep(d.client as never, jobs(null), NOW)).rejects.toThrow('סריקת השירותים');
   });
 
   it('a failure to READ the campaigns is thrown, so the job is retried and visible', async () => {

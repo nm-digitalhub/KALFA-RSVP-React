@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { isPastEventDay } from '@/lib/data/event-date';
 import { CARDCOM_ABANDON_AFTER_MINUTES, settleCardcomSession } from '@/lib/payments/cardcom-settle';
 import { completeOperation, loadOperationsOf, OperationStateError } from '@/lib/payments/ledger';
 import { deriveStatus } from '@/lib/payments/status';
@@ -55,6 +56,10 @@ export interface PaymentOrphanSweepResult {
 //     in its own final delivery and its own alert from the job; a retry every ten minutes would page every ten minutes.
 //     The day is read from activity_log (`campaign.activation_retried`), so a worker restart does not reset it;
 //   - any other state (created, retry, active) → the job is still on its way: nothing.
+// A campaign whose event can no longer start (its day has passed, or the event is not active: the same two checks the
+// activation applies, campaigns.ts rejectPastEvent / requireActiveEvent) is left out entirely. Retrying it can only be
+// refused again, and each retry ends in its own alert, so a paid service whose event passed would page every day for
+// good. The job's own final delivery already told staff once.
 // No other repair path exists.
 export const ACTIVATION_GRACE_MINUTES = 10;
 export const RETRY_EVERY_MS = 24 * 60 * 60_000;
@@ -199,7 +204,18 @@ export async function sweepWaitingActivations(admin: AdminClient, jobs: Activati
 
   // The same ledger reading as the payment page and the activation (status.ts deriveStatus). Throws when unreadable.
   const ledgers = await loadOperationsOf(admin, campaigns.map((c) => c.id));
-  const paid = campaigns.filter((c) => deriveStatus(ledgers.get(c.id) ?? []).status === 'collected');
+  const collected = campaigns.filter((c) => deriveStatus(ledgers.get(c.id) ?? []).status === 'collected');
+  if (collected.length === 0) return result;
+
+  const { data: events, error: eventsError } = await admin
+    .from('events')
+    .select('id, event_date, status')
+    .in('id', [...new Set(collected.map((c) => c.event_id))]);
+  if (eventsError) throw new Error(READ_FAILED);
+  const startable = new Set(
+    (events ?? []).filter((e) => e.status === 'active' && !isPastEventDay(e.event_date, now.getTime())).map((e) => e.id),
+  );
+  const paid = collected.filter((c) => startable.has(c.event_id));
   if (paid.length === 0) return result;
 
   const { data: ops, error: opsError } = await admin

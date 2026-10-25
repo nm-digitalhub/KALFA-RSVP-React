@@ -126,6 +126,18 @@ describe.skipIf(!RUN)('payment orphan sweep, second pass, with pg-boss (local)',
     expect(await retryRows(f.campaignId)).toBe(0);
   });
 
+  it('leaves out a paid campaign whose event day has passed: no job, however many sweeps', async () => {
+    // The database refuses a past event date (events_before_insert), so the sweep's clock is moved past the fixture's
+    // event (30 days out) instead, as the activation test does.
+    const { f, operationId } = await paidWaitingCampaign();
+    const { packageActivationJobId } = await import('@/lib/queue/queues');
+    const afterTheEvent = new Date(Date.now() + 40 * 86_400_000);
+    await sweep(afterTheEvent);
+    await sweep(new Date(afterTheEvent.getTime() + 86_400_000));
+    expect(await jobRows(packageActivationJobId(operationId))).toHaveLength(0);
+    expect(await retryRows(f.campaignId)).toBe(0);
+  });
+
   it('leaves a fresh payment to its own job: nothing queued inside the grace period', async () => {
     const { operationId } = await paidWaitingCampaign();
     const { packageActivationJobId } = await import('@/lib/queue/queues');
