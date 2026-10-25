@@ -17,6 +17,7 @@
                 "built_in_tools": {
                     "end_call": null,
                     "flag_issue_for_review": null,
+                    "identity_challenge": null,
                     "language_detection": null,
                     "memory_entry_search": null,
                     "play_keypad_touch_tone": null,
@@ -145,7 +146,10 @@
                 ]
             },
             "silence_end_call_message": "",
-            "subagents": [],
+            "subagent_config": {
+                "agents": [],
+                "self_subagent": null
+            },
             "text_behavior_overrides": null
         },
         "asr": {
@@ -210,7 +214,7 @@
             "text_only": false
         },
         "language_presets": {},
-        "realtime_model": null,
+        "realtime_model": "eleven_realtime_v1_mini",
         "tts": {
             "agent_output_audio_format": "pcm_16000",
             "audio_effects": {
@@ -221,6 +225,7 @@
                 "pan": 0.0,
                 "send_level": 1.0
             },
+            "clone_strength": 0.0,
             "enable_phoneme_tags": true,
             "expressive_mode": true,
             "model_id": "eleven_v4_turbo",
@@ -247,6 +252,8 @@
             ],
             "merge_with_default_ignore_terms": false,
             "mode": "turn",
+            "noisy_environment_detection": false,
+            "noisy_environment_message": "Uhh ... sorry, I'm picking up some noise in the background. Could you move somewhere quieter?",
             "retranscribe_on_turn_timeout": false,
             "silence_end_call_timeout": -1.0,
             "soft_timeout_config": {
@@ -380,6 +387,7 @@
                     "text_only": true
                 },
                 "tts": {
+                    "clone_strength": false,
                     "model_id": false,
                     "pronunciation_dictionary_locators": false,
                     "similarity_boost": false,
@@ -389,6 +397,7 @@
                     "voice_id": false
                 },
                 "turn": {
+                    "noisy_environment_message": false,
                     "soft_timeout_config": {
                         "additional_soft_timeout_messages": false,
                         "message": false
@@ -414,6 +423,7 @@
             "record_voice": true,
             "retention_days": -1,
             "user_memory": {
+                "accept_unverified_identities": false,
                 "enabled": false,
                 "scale": "balanced"
             },
@@ -438,6 +448,7 @@
         },
         "smb_metadata": null,
         "summary_language": "he",
+        "summary_schedule": null,
         "testing": {
             "attached_tests": [],
             "referenced_tests_ids": []
@@ -482,6 +493,7 @@
             "markdown_link_allowed_hosts": [],
             "markdown_link_include_www": true,
             "mic_muting_enabled": false,
+            "mobile_fullscreen": true,
             "override_link": null,
             "placement": "bottom-right",
             "shareable_page_show_terms": true,

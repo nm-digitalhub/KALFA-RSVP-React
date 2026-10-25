@@ -338,6 +338,14 @@ npm run voximplant -- recording --session <session_id> --output call.mp3
 | KALFA Meeting Confirm (`agent_3601…`) | `claude-haiku-4-5` | `eleven_v4_turbo` | 0.4 | `normal` | 3 | 1 |
 | KALFA RSVP - שירות לקוחות (`agent_8801…`) | `gemini-2.5-flash` | `eleven_v4_turbo` | 0 | `normal` | 3 | 1 |
 
+> **עדכון 25.10.2026 (הוראת הבעלים): כל ארבעת הסוכנים במצב Realtime, `realtime_model: eleven_realtime_v1_mini`.**
+> במצב הזה ElevenLabs מנהלת את ה-LLM, ה-reasoning, ה-thinking budget, ה-parallel tool calls, ה-cascade timeout, מודל ה-TTS,
+> ה-expressive mode וספק ה-ASR, והערכים בטבלה למטה **נשמרים בקונפיג אך אינם בשימוש** עד שמחזירים `realtime_model: null`
+> (docs: eleven-agents/customization/realtime-models, נקרא 25.10.2026). הפרומפט, הקול, השפה, ה-temperature, הכלים וה-turn נשארים
+> בשימוש. השינוי בוצע בתהליך §6.1 (שדה אחד לכל סוכן, `pull --update` → `push` → `pull` מאמת זהה למה שנדחף; ה-API מחזיר את הערך).
+> **לא נמדד:** שיחה מוקלטת לפי §6.4 (latency, הפרעות, דליפת אנגלית, איכות העברית) — כלל המדידה למטה חל.
+> **החזרה:** `realtime_model: null` באותו תהליך.
+>
 > **עדכון 15.10.2026 (באישור הבעלים):** RSVP, Meeting Confirm וסוכן שירות הלקוחות הועברו מ-`eleven_v3_conversational`
 > ל-`eleven_v4_turbo` (שדה אחד, `pull --update` → `push` → `pull` מאמת: `model_id` נשמר, אפס הבדלים אחרים). שורת Sales Close
 > תוקנה לפי הקונפיג המקומי (`claude-sonnet-5-5`, ללא temperature) — הטבלה מ-7.10 עוד הראתה `claude-haiku-4-5` / 0.4.

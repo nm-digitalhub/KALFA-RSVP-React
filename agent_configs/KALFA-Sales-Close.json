@@ -40,6 +40,7 @@
                         "type": "system"
                     },
                     "flag_issue_for_review": null,
+                    "identity_challenge": null,
                     "language_detection": {
                         "assignments": [],
                         "description": "עברית היא שפת ברירת המחדל — פתח והמשך תמיד בעברית. החלף שפה רק אם האורח מדבר באופן ברור ועקבי בשפה אחרת נתמכת (אנגלית / רוסית / ערבית) — משפט שלם, לא מילה בודדת ולא עברית מעורבת. אם הדיבור בעברית, מעורב, קצר או לא ברור — הישאר בעברית ואל תחליף. אם החלפת והאורח חוזר לעברית — חזור לעברית.",
@@ -101,6 +102,7 @@
                         "interruption_mode": "allow",
                         "name": "update_state",
                         "params": {
+                            "config_overrides": {},
                             "system_tool_type": "update_state",
                             "updates": [
                                 {
@@ -567,6 +569,7 @@
                         "interruption_mode": "allow",
                         "name": "update_state",
                         "params": {
+                            "config_overrides": {},
                             "system_tool_type": "update_state",
                             "updates": [
                                 {
@@ -667,7 +670,10 @@
                 ]
             },
             "silence_end_call_message": "",
-            "subagents": [],
+            "subagent_config": {
+                "agents": [],
+                "self_subagent": null
+            },
             "text_behavior_overrides": {}
         },
         "asr": {
@@ -741,10 +747,11 @@
             "text_only": false
         },
         "language_presets": {},
-        "realtime_model": null,
+        "realtime_model": "eleven_realtime_v1_mini",
         "tts": {
             "agent_output_audio_format": "pcm_16000",
             "audio_effects": null,
+            "clone_strength": 0.0,
             "enable_phoneme_tags": true,
             "expressive_mode": true,
             "model_id": "eleven_v4_turbo",
@@ -821,6 +828,8 @@
             ],
             "merge_with_default_ignore_terms": false,
             "mode": "turn",
+            "noisy_environment_detection": false,
+            "noisy_environment_message": "Uhh ... sorry, I'm picking up some noise in the background. Could you move somewhere quieter?",
             "retranscribe_on_turn_timeout": false,
             "silence_end_call_timeout": -1.0,
             "soft_timeout_config": {
@@ -852,30 +861,35 @@
             "data_collection": [
                 {
                     "analysis_item_id": "aitem_1601m1batd2jf308zre6qb3ytydn",
+                    "run_conditions": null,
                     "scope": "conversation",
                     "source": "user",
                     "version_id": null
                 },
                 {
                     "analysis_item_id": "aitem_3701m1bbtc8wexfarkem6rb5ce0b",
+                    "run_conditions": null,
                     "scope": "conversation",
                     "source": "user",
                     "version_id": null
                 },
                 {
                     "analysis_item_id": "aitem_4701m1bbtc8nexx9f0ez37dc24k7",
+                    "run_conditions": null,
                     "scope": "conversation",
                     "source": "user",
                     "version_id": null
                 },
                 {
                     "analysis_item_id": "aitem_9301m1bcgk1ee5w9ks234td4myg5",
+                    "run_conditions": null,
                     "scope": "conversation",
                     "source": "user",
                     "version_id": null
                 },
                 {
                     "analysis_item_id": "aitem_6201m1bcgk13e8cbj6k89vwx9nkt",
+                    "run_conditions": null,
                     "scope": "conversation",
                     "source": "user",
                     "version_id": null
@@ -885,6 +899,7 @@
                 {
                     "additional_version_ids": [],
                     "analysis_item_id": "aitem_6901m0my2g0qfttspkpvrt01n4gp",
+                    "run_conditions": null,
                     "scope": "conversation",
                     "source": "user",
                     "version_id": null,
@@ -893,6 +908,7 @@
                 {
                     "additional_version_ids": [],
                     "analysis_item_id": "aitem_6401m0my2g14e40axxwypjb65sc8",
+                    "run_conditions": null,
                     "scope": "conversation",
                     "source": "user",
                     "version_id": null,
@@ -901,6 +917,7 @@
                 {
                     "additional_version_ids": [],
                     "analysis_item_id": "aitem_0701m0my2g1afj5a6thaf2kphx05",
+                    "run_conditions": null,
                     "scope": "conversation",
                     "source": "user",
                     "version_id": null,
@@ -909,6 +926,7 @@
                 {
                     "additional_version_ids": [],
                     "analysis_item_id": "aitem_9301m0my2g1ge0prmeg75746551v",
+                    "run_conditions": null,
                     "scope": "conversation",
                     "source": "user",
                     "version_id": null,
@@ -917,6 +935,7 @@
                 {
                     "additional_version_ids": [],
                     "analysis_item_id": "aitem_8101m0my2g1pfgaa201fdzqbxg0z",
+                    "run_conditions": null,
                     "scope": "conversation",
                     "source": "user",
                     "version_id": null,
@@ -925,6 +944,7 @@
                 {
                     "additional_version_ids": [],
                     "analysis_item_id": "aitem_6001m0my2g1wfeqtqsv1kwj52gqh",
+                    "run_conditions": null,
                     "scope": "conversation",
                     "source": "user",
                     "version_id": null,
@@ -933,6 +953,7 @@
                 {
                     "additional_version_ids": [],
                     "analysis_item_id": "aitem_4601m0my2g21ebsr62mnrmh7wedb",
+                    "run_conditions": null,
                     "scope": "conversation",
                     "source": "user",
                     "version_id": null,
@@ -941,6 +962,7 @@
                 {
                     "additional_version_ids": [],
                     "analysis_item_id": "aitem_3201m0my2g26e26bnkxe6kcqpce5",
+                    "run_conditions": null,
                     "scope": "conversation",
                     "source": "user",
                     "version_id": null,
@@ -1265,6 +1287,7 @@
                     "text_only": false
                 },
                 "tts": {
+                    "clone_strength": false,
                     "model_id": false,
                     "pronunciation_dictionary_locators": false,
                     "similarity_boost": false,
@@ -1274,6 +1297,7 @@
                     "voice_id": false
                 },
                 "turn": {
+                    "noisy_environment_message": false,
                     "soft_timeout_config": {
                         "additional_soft_timeout_messages": false,
                         "message": false
@@ -1299,6 +1323,7 @@
             "record_voice": true,
             "retention_days": -1,
             "user_memory": {
+                "accept_unverified_identities": false,
                 "enabled": false,
                 "scale": "balanced"
             },
@@ -1323,6 +1348,7 @@
         },
         "smb_metadata": null,
         "summary_language": null,
+        "summary_schedule": null,
         "testing": {
             "attached_tests": [
                 {
@@ -1374,6 +1400,7 @@
             "markdown_link_allowed_hosts": [],
             "markdown_link_include_www": true,
             "mic_muting_enabled": false,
+            "mobile_fullscreen": true,
             "override_link": null,
             "placement": "bottom-right",
             "shareable_page_show_terms": true,
