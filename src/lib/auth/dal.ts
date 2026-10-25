@@ -37,41 +37,52 @@ export const requireUser = cache(async () => {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// THE FLOOR: platform_staff membership.
+// THE PERMISSION MODEL IN THE DATABASE (staff-tables-permission-rls, 25.10.2026)
 // ---------------------------------------------------------------------------
 //
-// Decided 2026-09-10, and the reason is a blocking bug rather than tidiness.
+// Two layers, both required. The DAL functions below are the application gate. Row
+// Level Security and table grants are a second, independent layer, so a staff member
+// who calls PostgREST with their own session gets no more than the application gives:
 //
-// There used to be TWO axes for "is this person staff": `user_roles.admin`
-// (checked by requireAdmin/isAdmin, both since deleted) and `platform_staff` (the table that
-// carries roles, permissions, granted_by, an audit log and a last-owner guard).
-// Nothing tied them together — no foreign key, no trigger — and they were
-// written by two flows that did not know about each other: `setPlatformAdmin`
-// (since removed) touched only user_roles, `assignStaffRole` only platform_staff.
+// - THE FLOOR. is_platform_staff() — a platform_staff row — is what
+//   requirePlatformStaff() checks for the admin area. No RLS policy calls it any more
+//   (0 policies, local and live, 25.10.2026): the 25 tables below replaced it. One axis
+//   since 2026-09-10 (20260910090301): user_roles, has_role and app_role are dropped
+//   (20261015114659, 20261015134735) and requireAdmin()/isAdmin() are deleted. Do not
+//   reintroduce a second axis.
+// - CLOSED TABLES. The 11 tables only the server reaches (otp_challenges,
+//   agreement_documents, webhook_inbox, workflows and its three run tables,
+//   webhook_deliveries, outreach_template_failures, vox_log_exports,
+//   voice_purpose_attempts) keep RLS on with no policy and no grant for anon or
+//   authenticated: a user session gets 42501; the service role is untouched.
+// - PER-PERMISSION POLICIES. The 14 tables staff reach with their own session (packages,
+//   call_dnc_list, call_compliance_settings, voice_purposes, provider_numbers,
+//   provider_number_roles, message_templates, channels, faq_items,
+//   callback_schedule_policies, ops_alerts and the three fleet tables) have one policy
+//   per operation their module performs, `to authenticated`, calling
+//   (select public.has_platform_permission('<key>')) with the key the module is pinned
+//   to, and grants for exactly those operations. The public reads packages_public_read,
+//   faq_items_public_read and channels_auth_read are kept apart. The table → key map is
+//   src/lib/auth/staff-table-permissions.ts; packages takes its keys from PLATFORM_ACTIONS.
+// - THE HELPERS. is_platform_staff() and has_platform_permission() are SECURITY DEFINER
+//   with search_path = '' (20261025163727); every name in their bodies is
+//   schema-qualified.
 //
-// The consequence: adding a `billing_clerk` through /admin/roles produced a
-// person the admin layout REDIRECTED to /app, because the layout asked the other
-// axis. Every non-owner role shipped unusable.
+// ⚠️ A DENIAL BY POLICY IS SILENT. On a per-permission table a session without the key
+// reads zero rows, and its UPDATE or DELETE changes zero rows, with no error. A reader
+// gated by a different key than the table's policy fails quietly, so a new user-session
+// reader of a staff table uses that table's key (or the service role after its own
+// gate) and gets a pgTAP case.
 //
-// `user_roles.admin` has no independent job to protect: all 21 RLS policies that
-// reference it sit on platform-management tables (app_settings, channels,
-// workflows, packages, webhook_inbox, fleet_*, …) and not one on a customer
-// table. It is a platform-staff proxy.
-//
-// ⚠️ STATUS: IN FORCE since 2026-09-10. Migration
-// `20260910090301_platform_staff_is_the_admin_floor.sql` is applied. Verified
-// against the live database afterwards: 21 policies now call
-// is_platform_staff(), 0 still call has_role, and 0 lost the `( SELECT … )`
-// initplan wrapper that keeps the check once-per-query instead of once-per-row.
-// One axis from here on — do not reintroduce the second.
-//
-// 2026-10-15: requireAdmin()/isAdmin() are DELETED. The consumers 20260910090301
-// missed — six fleet_* SECURITY DEFINER RPCs and two voice policies — now ask
-// has_platform_permission('manage_settings' / 'manage_voice'), claim_first_admin()
-// is dropped (migration 20261015114659_retire_user_roles_admin_consumers.sql), and the
-// /app nav link asks isPlatformStaff(). has_role, the user_roles table and the app_role
-// enum are DROPPED (stage 2, migration 20261015134735_retire_user_roles_stage_2.sql,
-// applied 2026-10-15; plans/user-roles-retirement-stage-2.md).
+// WHERE THE PROOF LIVES. supabase/tests/database/*.sql (pgTAP, local stack only:
+// inventories, privileges, the role × table × operation matrix, the data-layer statement
+// shapes, the fleet RPCs, the service-role guard, the helpers);
+// src/lib/auth/staff-table-sql-consistency.test.ts (each policy names the map's key);
+// admin-data-layer-coverage.test.ts (the map equals the module pins, and every module
+// under src/lib/data/admin is pinned or carries a documented exemption);
+// src/lib/auth/permissions.local-it.test.ts (real sessions through PostgREST and the
+// Server Action); scripts/check-permission-deny-matrix.sql (the role grants). Each stage
+// is recorded in openspec/changes/staff-tables-permission-rls/verification-*.md.
 //
 // ⚠️ THE LAYOUT IS NOT THE GATE. `(admin)/admin/layout.tsx` calls
 // requirePlatformStaff(), and that is defense in depth, NOT authority. Next's own
@@ -84,19 +95,18 @@ export const requireUser = cache(async () => {
 // src/lib/data/admin is pinned to a permission (or carries a documented
 // exemption) and the coverage test fails closed on a new one.
 //
-// ⚠️ WHY THESE ARE RPCs AND NOT JWT CLAIMS. Supabase documents RBAC through a
-// Custom Access Token Auth Hook that stamps the role into the token, and
-// `authorize()` then reads `auth.jwt()`. We deliberately do not. Two measured
-// reasons: (1) that pattern exists to make the check cheap INSIDE RLS, where it
-// would otherwise run per row — our fine-grained permissions appear in ZERO
-// policies and run once per render pass behind React `cache()`, so there is no
-// per-row cost to remove, and Supabase's own auth_rls_initplan lint reports no
-// finding on the policies that do use one; (2) a claim is stale until the token
-// refreshes — Supabase's sign-out guide states that "Access Tokens of revoked
-// sessions remain valid until their expiry time" — whereas a table read revokes
-// instantly, which is what we want for permissions that gate charging a card and
-// dialling a guest. Revisit ONLY if has_platform_permission ever enters an RLS
-// policy; that is the trigger, not team size.
+// ⚠️ WHY THESE ARE TABLE READS AND NOT JWT CLAIMS. Supabase documents RBAC through a
+// Custom Access Token Auth Hook that stamps the role into the token, so `authorize()`
+// reads `auth.jwt()` cheaply inside RLS. We deliberately do not, for two measured
+// reasons: (1) the cost the hook removes is a check run per row; every policy here wraps
+// the helper as `(select …)`, which Postgres evaluates once per statement as an InitPlan
+// — measured 25.10.2026 on the local stack, a manage_settings holder reading 2,012
+// faq_items rows ran InitPlan 1 once (loops=1) — and the helper reads three small
+// tables; (2) a claim is stale until the token refreshes — Supabase's sign-out guide
+// states that "Access Tokens of revoked sessions remain valid until their expiry time" —
+// whereas a table read revokes instantly, which is what we want for permissions that
+// gate charging a card and dialling a guest. Revisit if a plan ever shows the check per
+// row, or the initplan cost is measured to matter on a large table.
 
 // Whether the current user is platform staff, at any role. Non-redirecting —
 // for conditional UI. Returns false for anonymous users. Memoized per render

@@ -98,3 +98,45 @@ describe('the key each table policy names equals the map (design D10)', () => {
     });
   }
 });
+
+// Requirement "The model is provable and repeatable on a local database": every pgTAP file runs in one transaction that
+// it rolls back (no side effects whether it passes, fails or aborts) and installs nothing from the network.
+describe('the pgTAP suite is hermetic', () => {
+  const dir = join(ROOT, 'supabase', 'tests', 'database');
+  const files = readdirSync(dir).filter((f) => f.endsWith('.sql'));
+
+  it('has the files of every stage', () => {
+    expect(files.length).toBeGreaterThanOrEqual(12);
+  });
+
+  for (const file of files) {
+    it(`${file}: begins, rolls back, never commits, fetches nothing`, () => {
+      const code = stripComments(readFileSync(join(dir, file), 'utf8'))
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      expect(code[0]?.toLowerCase(), `${file}: first statement`).toBe('begin;');
+      expect(code.at(-1)?.toLowerCase(), `${file}: last statement`).toBe('rollback;');
+      const body = code.join('\n').toLowerCase();
+      // A statement that is itself COMMIT or END (`on commit drop` on a temp table is not one).
+      expect(body, `${file}: commit`).not.toMatch(/^(commit|end)(\s+(work|transaction))?\s*;/m);
+      expect(body, `${file}: network or package installer`).not.toMatch(/dbdev|pg_tle|http_get|https?:\/\/|\bcopy\b.*\bprogram\b/);
+    });
+  }
+});
+
+// Requirement "The documented permission model is accurate" (task 7.2): the notes in dal.ts name the closed tables
+// and the per-permission policies, and no longer say that no policy uses a fine-grained permission.
+describe('dal.ts describes the model as it is', () => {
+  const dal = readFileSync(join(ROOT, 'src', 'lib', 'auth', 'dal.ts'), 'utf8');
+
+  it('does not claim that permissions appear in no policy', () => {
+    expect(dal).not.toMatch(/zero policies/i);
+  });
+
+  it('names the floor, the closed tables, the per-permission policies and where the proof lives', () => {
+    for (const heading of ['THE FLOOR', 'CLOSED TABLES', 'PER-PERMISSION POLICIES', 'WHERE THE PROOF LIVES']) {
+      expect(dal, heading).toContain(heading);
+    }
+  });
+});

@@ -310,11 +310,11 @@ stage's tables; only the exceptions listed in 1.5 are written by hand, and the d
 
 ## 7. Stage S6 — hardening, documentation and integration
 
-- [ ] 7.1 `migration new permission_helpers_empty_search_path`: `set search_path = ''` on
+- [x] 7.1 `migration new permission_helpers_empty_search_path`: `set search_path = ''` on
   `is_platform_staff()` and `has_platform_permission()`. Verify: `pg_get_functiondef` shows every name
   schema-qualified; pgTAP `is_definer` and `function_returns` pass; the whole matrix and the existing
   `check:permissions` script's logic (run locally against the same statements) still pass.
-- [ ] 7.2 Rewrite the permission-model notes in `src/lib/auth/dal.ts` (floor, closed tables,
+- [x] 7.2 Rewrite the permission-model notes in `src/lib/auth/dal.ts` (floor, closed tables,
   per-permission policies, why not JWT claims, where the proof lives). Verify: the text no longer says
   fine-grained permissions appear in zero policies, `npx tsc --noEmit` and eslint on the file pass.
 - [ ] 7.3 Integration: full `supabase test db` run, full vitest, `npx tsc --noEmit`, lint and
