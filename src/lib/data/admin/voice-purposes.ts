@@ -5,8 +5,9 @@ import { createClient } from '@/lib/supabase/server';
 
 // Admin writes for the voice-purpose registry.
 //
-// ⚠️ COOKIE CLIENT, NOT THE SERVICE ROLE. `voice_purposes` carries RLS
-// (`voice_purposes_admin_all`), and going through the caller's session means the
+// ⚠️ COOKIE CLIENT, NOT THE SERVICE ROLE. `voice_purposes` carries per-operation
+// RLS on manage_voice (`voice_purposes_<op>_permission`: select, insert, update;
+// staff-tables-permission-rls), and going through the caller's session means the
 // policy is a second, independent check rather than something bypassed by every
 // write. The permission gate below is the first. Same discipline as
 // `admin/channel-catalog.ts`.

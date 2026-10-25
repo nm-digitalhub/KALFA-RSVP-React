@@ -1,0 +1,45 @@
+{
+  "call_dnc_list": {
+    "seed": "insert into public.call_dnc_list (normalized_phone, reason) values ('+972500000901', 'rls fixture')",
+    "row": "normalized_phone = '+972500000901'",
+    "probe": "normalized_phone",
+    "probeValue": "+972500000901",
+    "insert": "(normalized_phone, reason) values ('+972500000902', 'rls insert')",
+    "insertValue": "+972500000902",
+    "update": "reason = 'rls updated'"
+  },
+  "call_compliance_settings": {
+    "seed": "insert into public.call_compliance_settings (id) values (true) on conflict (id) do nothing",
+    "row": "id",
+    "probe": "id",
+    "probeValue": "true",
+    "update": "dnc_registry_gate_enabled = dnc_registry_gate_enabled"
+  },
+  "voice_purposes": {
+    "seed": "insert into public.voice_purposes (key, display_name) values ('rls_fixture', 'RLS fixture')",
+    "row": "key = 'rls_fixture'",
+    "probe": "key",
+    "probeValue": "rls_fixture",
+    "insert": "(key, display_name) values ('rls_insert', 'RLS insert')",
+    "insertValue": "rls_insert",
+    "update": "display_name = 'RLS updated'"
+  },
+  "provider_numbers": {
+    "seed": "insert into public.provider_numbers (id, provider, e164, source) values ('00000000-0000-4000-8000-00000000c001', 'company', '+97230000901', 'admin')",
+    "row": "id = '00000000-0000-4000-8000-00000000c001'",
+    "probe": "id",
+    "probeValue": "00000000-0000-4000-8000-00000000c001",
+    "insert": "(id, provider, e164, source) values ('00000000-0000-4000-8000-00000000c002', 'company', '+97230000902', 'admin')",
+    "insertValue": "00000000-0000-4000-8000-00000000c002",
+    "update": "display_label = 'rls updated'"
+  },
+  "provider_number_roles": {
+    "seed": "insert into public.provider_numbers (id, provider, e164, source) values ('00000000-0000-4000-8000-00000000c101', 'company', '+97230000911', 'admin') on conflict (id) do nothing; insert into public.provider_number_roles (role, number_id) values ('company_contact', '00000000-0000-4000-8000-00000000c101')",
+    "row": "role = 'company_contact'",
+    "probe": "role",
+    "probeValue": "company_contact",
+    "insert": "(role, number_id) values ('sms_sender', '00000000-0000-4000-8000-00000000c101')",
+    "insertValue": "sms_sender",
+    "update": "number_id = number_id"
+  }
+}

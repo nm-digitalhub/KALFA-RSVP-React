@@ -194,7 +194,7 @@ stage's tables; only the exceptions listed in 1.5 are written by hand, and the d
 
 ## 4. Stage S3 — `manage_voice` tables and the provider numbers
 
-- [ ] 4.1 Write `s3_voice.test.sql` for `call_dnc_list`, `call_compliance_settings`, `voice_purposes`,
+- [x] 4.1 Write `s3_voice.test.sql` for `call_dnc_list`, `call_compliance_settings`, `voice_purposes`,
   `provider_numbers`, `provider_number_roles`: policy inventory per
   operation, privilege inventory, and the behaviour matrix over owner, a role holding only
   `manage_voice`, a role holding only `manage_settings`, `billing_clerk`, `auditor`, `support_agent`,
@@ -208,14 +208,14 @@ stage's tables; only the exceptions listed in 1.5 are written by hand, and the d
   of `voice-purpose-dispatch.ts` (insert, select by step, update), `voice-purpose-attempts.ts` (select by
   `access_token`, terminal update) and the ctx route's select succeed and return their row. Verify: red on
   the current local database (the `manage_voice` read policy still admits its holder).
-- [ ] 4.2 `migration new staff_tables_voice_permission`: rebuild grants (revoke all from `anon` and
+- [x] 4.2 `migration new staff_tables_voice_permission`: rebuild grants (revoke all from `anon` and
   `authenticated`, grant back the exact operations), create per-operation policies keyed as in
   `design.md`, and split the existing `voice_purposes_admin_all` (`for all`, `manage_voice` since
   `20261015114659`) into per-operation policies. Close `voice_purpose_attempts`: `revoke all … from
   anon, authenticated` and drop `voice_purpose_attempts_admin_read`; RLS stays on, `service_role`
   untouched; the rollback header restores `grant select … to authenticated` and the policy text read
   from the live catalog. Verify: applied locally; S3, S2, S1 and guard files green.
-- [ ] 4.3 Regression: vitest for `call-dnc`, `voximplant-channel`, `voice-purposes` and
+- [x] 4.3 Regression: vitest for `call-dnc`, `voximplant-channel`, `voice-purposes` and
   `provider-numbers` modules and their routes; for the server paths of `voice_purpose_attempts`:
   `src/lib/data/voice-purpose-dispatch.test.ts`, `src/app/api/voximplant/purpose/purpose-cb.test.ts`,
   `src/lib/data/elevenlabs-analysis.test.ts` and `src/lib/data/elevenlabs-analysis-processing.test.ts`,
@@ -223,6 +223,17 @@ stage's tables; only the exceptions listed in 1.5 are written by hand, and the d
   row, cleaned up) that proves the server still reaches the closed table; the map consistency test from
   1.2; local Advisors; `verification-s3.md`. Verify: all green; the document records that the generic
   voice feature has 0 production attempts, so the regression is proved locally and not by live traffic.
+
+  **Stage S3 done locally 25.10.2026; applied to production by the owner (`supabase db push --linked`, 15:38 UTC) and
+  compared read-only with the local result, see `verification-s3.md`, "Production, after the push".**
+  `s3_voice_test.sql` (generated from the map and
+  `scripts/staff-table-rls-fixtures/s3_voice.json`, 233 assertions) red before for the stated reasons only (87 of 233);
+  `s3_voice_paths_test.sql` (hand-written: seeded roles, a `support_agent` stand-in with its live keys, the data-layer
+  shapes including the upserts and every `upsert_provider_number` path, the service-role statements of
+  `voice_purpose_attempts`; 226 assertions) red before (81 of 226); both green after. Migration
+  `20261025151809_staff_tables_voice_permission.sql` applied locally first; all pgTAP files pass (Files=6, Tests=718).
+  The generator now cleans up after a refused INSERT so a red run reaches `finish()`. Evidence, Advisors and the live
+  comparison: `verification-s3.md`.
 
 ## 5. Stage S4 — `packages`
 

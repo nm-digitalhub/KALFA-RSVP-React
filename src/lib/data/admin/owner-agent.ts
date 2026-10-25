@@ -33,7 +33,8 @@ import type { NumberRole } from '@/lib/validation/provider-numbers';
 //
 // CLIENTS. The cookie client wherever RLS already lets the owner through, so the
 // policy stays a second layer rather than decoration: app_settings (staff policy),
-// provider_numbers (staff policy), platform_staff and platform_roles (owner-select
+// provider_numbers and its embedded provider_number_roles (manage_settings OR
+// manage_voice policies; the owner holds both), platform_staff and platform_roles (owner-select
 // policies), and the allow-list and audit READS (owner-select policies from the
 // migration). The SERVICE-ROLE client only where RLS cannot serve:
 //   * owner_agent_allowlist WRITES — the table deliberately has no write policy, so

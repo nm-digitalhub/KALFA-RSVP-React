@@ -23,9 +23,11 @@ import {
 // area by requirePlatformPermission rather than shown a narrower list. Writes take
 // their gate from what they touch (see ROLE_PERMISSION and PROVIDER_PERMISSION).
 //
-// Cookie client, not service-role: provider_numbers carries RLS gated on
-// is_platform_staff(), and the whole point of that policy is that the caller stays
-// the subject of the check. Service-role would bypass it and make the policy
+// Cookie client, not service-role: provider_numbers and provider_number_roles carry
+// per-operation RLS that needs manage_settings OR manage_voice
+// (staff-tables-permission-rls), and the whole point of that policy is that the
+// caller stays the subject of the check. upsert_provider_number is SECURITY
+// INVOKER for the same reason. Service-role would bypass it and make the policy
 // decorative.
 
 export interface ProviderNumber {

@@ -12,8 +12,9 @@ import { checkRegistry, type RegistryCheck } from '@/lib/dnc/registry-check';
 //
 // The local list (call_dnc_list) is the people who asked KALFA itself never to be called. A phone on it is skipped by
 // every dial gate (isDncListed, outreach-engine.ts), matching on the SAME canonical form, so the stored key MUST be the
-// normalizePhone() E.164 form. It is governed by the RLS policy `call_dnc_list_admin_all` (is_platform_staff()), so it
-// is read and written through the cookie-based server client. Columns: normalized_phone (PK) / reason / added_by /
+// normalizePhone() E.164 form. Its RLS needs manage_voice for each operation this module performs (select, insert,
+// update; `call_dnc_list_<op>_permission`, staff-tables-permission-rls), so it is read and written through the
+// cookie-based server client and the policy is a second check. Columns: normalized_phone (PK) / reason / added_by /
 // created_at (added_by + created_at default at the DB — never client-supplied).
 //
 // The decision record (dnc_registry_checks) is server-only — no grant to authenticated — so it is read with the
@@ -173,7 +174,7 @@ export async function getRegistryConnectionStatus(): Promise<RegistryConnectionS
   };
 }
 
-/** Turns the national-registry dial gate on or off (call_compliance_settings, staff-only RLS). */
+/** Turns the national-registry dial gate on or off (call_compliance_settings; its RLS needs manage_voice). */
 export async function setRegistryGateEnabled(enabled: boolean): Promise<void> {
   await requirePlatformPermission('manage_voice');
   const supabase = await createClient();
