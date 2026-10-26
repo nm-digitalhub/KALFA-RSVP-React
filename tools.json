@@ -69,6 +69,26 @@
             "type": "webhook",
             "config": "tool_configs/lookup_guest_rsvp.json",
             "id": "tool_5701m0d6w5nze4b8wvtyxe11q26j"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/notify_owner-1.json",
+            "id": "tool_3401m5w8r12gen2rc9jy67v8h13z"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/mark_dnc-1.json",
+            "id": "tool_4401m5w8r0qxecqa9p18s6y70tw4"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/schedule_callback-1.json",
+            "id": "tool_6801m5w8r19pe22a0cv9e4pm3gmc"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/save_rsvp-1.json",
+            "id": "tool_2501m5w8qk3cec3tx9z4e03e8da5"
         }
     ]
 }

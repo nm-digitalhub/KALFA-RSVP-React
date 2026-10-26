@@ -1,47 +1,52 @@
 {
-    "type": "client",
-    "name": "schedule_callback",
-    "description": "\u05db\u05d0\u05e9\u05e8 \u05d4\u05e4\u05d5\u05e0\u05d4 \u05de\u05d1\u05e7\u05e9 \u05d7\u05d6\u05e8\u05d4 \u05d1\u05de\u05d5\u05e2\u05d3 \u05d0\u05d7\u05e8, \u05e9\u05d5\u05dc\u05d7\u05d9\u05dd callback_when_text \u05db\u05dc\u05e9\u05d5\u05e0\u05d5 \u05d5-callback_iso \u05e2\u05ea\u05d9\u05d3\u05d9 \u05d1\u05e4\u05d5\u05e8\u05de\u05d8 ISO 8601. \u05d0\u05dd \u05d4\u05de\u05d5\u05e2\u05d3 \u05e2\u05de\u05d5\u05dd, \u05de\u05d1\u05e7\u05e9\u05d9\u05dd \u05d4\u05d1\u05d4\u05e8\u05d4 \u05dc\u05e4\u05e0\u05d9 \u05ea\u05d6\u05de\u05d5\u05df. \u05d0\u05d9\u05df \u05dc\u05d0\u05e9\u05e8 \u05e9\u05e0\u05e7\u05d1\u05e2\u05d4 \u05d7\u05d6\u05e8\u05d4 \u05d1\u05dc\u05d9 \u05ea\u05d5\u05e6\u05d0\u05d4 \u05de\u05d5\u05e6\u05dc\u05d7\u05ea \u05de\u05d4\u05db\u05dc\u05d9. \u05d0\u05ea \u05d4\u05e9\u05e2\u05d4 \u05d0\u05d5\u05de\u05e8\u05d9\u05dd \u05d1\u05e9\u05e2\u05d5\u05df \u05d9\u05e9\u05e8\u05d0\u05dc. \u05dc\u05d0\u05d7\u05e8 \u05d4\u05e6\u05dc\u05d7\u05d4 \u05de\u05e1\u05d9\u05d9\u05de\u05d9\u05dd \u05dc\u05e4\u05d9 \u05d4\u05d5\u05e8\u05d0\u05d5\u05ea \u05d4\u05e1\u05d5\u05db\u05df.",
-    "response_timeout_secs": 10,
-    "disable_interruptions": false,
-    "interruption_mode": "allow",
-    "force_pre_tool_speech": false,
-    "pre_tool_speech": "auto",
     "assignments": [],
-    "tool_call_sound_behavior": "auto",
-    "tool_error_handling_mode": "auto",
+    "description": "כאשר הפונה מבקש חזרה במועד אחר, שולחים callback_when_text כלשונו ו-callback_iso עתידי בפורמט ISO 8601. אם המועד עמום, מבקשים הבהרה לפני תזמון. אין לאשר שנקבעה חזרה בלי תוצאה מוצלחת מהכלי. את השעה אומרים בשעון ישראל. לאחר הצלחה מסיימים לפי הוראות הסוכן.",
+    "disable_interruptions": false,
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    },
+    "execution_mode": "immediate",
+    "expects_response": true,
+    "force_pre_tool_speech": false,
+    "interruption_mode": "allow",
+    "name": "schedule_callback",
     "parameters": {
         "description": "",
         "dynamic_variable": "",
         "is_omitted": false,
-        "type": "object",
+        "properties": {
+            "callback_iso": {
+                "allowed_values": null,
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "description": "מועד מוחלט בעתיד בפורמט ISO 8601, עד 40 תווים. חישוב זמן יחסי מתבסס על {{system__time_utc}}; מועד שנאמר בשעון ישראל מפורש לפי Asia/Jerusalem בתאריך המבוקש, כולל שעון קיץ או חורף. אין להניח הפרש UTC קבוע לפי חודש. לדוגמת פורמט בלבד: 2026-10-13T17:00:00Z. אם המועד אינו ברור, יש לשאול הבהרה. אין להשאיר ריק ולהבטיח תזמון.",
+                "dynamic_variable": "",
+                "enum": null,
+                "is_omitted": false,
+                "is_system_provided": false,
+                "type": "string"
+            },
+            "callback_when_text": {
+                "allowed_values": null,
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "description": "מועד החזרה שהפונה ציין במילותיו, עד 200 תווים. לדוגמה: \"מחר בשמונה בערב\". אין להמציא מועד שלא התבקש.",
+                "dynamic_variable": "",
+                "enum": null,
+                "is_omitted": false,
+                "is_system_provided": false,
+                "type": "string"
+            }
+        },
         "required": [
             "callback_when_text"
         ],
-        "properties": {
-            "callback_when_text": {
-                "type": "string",
-                "description": "\u05de\u05d5\u05e2\u05d3 \u05d4\u05d7\u05d6\u05e8\u05d4 \u05e9\u05d4\u05e4\u05d5\u05e0\u05d4 \u05e6\u05d9\u05d9\u05df \u05d1\u05de\u05d9\u05dc\u05d5\u05ea\u05d9\u05d5, \u05e2\u05d3 200 \u05ea\u05d5\u05d5\u05d9\u05dd. \u05dc\u05d3\u05d5\u05d2\u05de\u05d4: \"\u05de\u05d7\u05e8 \u05d1\u05e9\u05de\u05d5\u05e0\u05d4 \u05d1\u05e2\u05e8\u05d1\". \u05d0\u05d9\u05df \u05dc\u05d4\u05de\u05e6\u05d9\u05d0 \u05de\u05d5\u05e2\u05d3 \u05e9\u05dc\u05d0 \u05d4\u05ea\u05d1\u05e7\u05e9.",
-                "is_system_provided": false,
-                "dynamic_variable": "",
-                "allowed_values_dynamic_variable": "",
-                "constant_value": "",
-                "is_omitted": false
-            },
-            "callback_iso": {
-                "type": "string",
-                "description": "\u05de\u05d5\u05e2\u05d3 \u05de\u05d5\u05d7\u05dc\u05d8 \u05d1\u05e2\u05ea\u05d9\u05d3 \u05d1\u05e4\u05d5\u05e8\u05de\u05d8 ISO 8601, \u05e2\u05d3 40 \u05ea\u05d5\u05d5\u05d9\u05dd. \u05d7\u05d9\u05e9\u05d5\u05d1 \u05d6\u05de\u05df \u05d9\u05d7\u05e1\u05d9 \u05de\u05ea\u05d1\u05e1\u05e1 \u05e2\u05dc {{system__time_utc}}; \u05de\u05d5\u05e2\u05d3 \u05e9\u05e0\u05d0\u05de\u05e8 \u05d1\u05e9\u05e2\u05d5\u05df \u05d9\u05e9\u05e8\u05d0\u05dc \u05de\u05e4\u05d5\u05e8\u05e9 \u05dc\u05e4\u05d9 Asia/Jerusalem \u05d1\u05ea\u05d0\u05e8\u05d9\u05da \u05d4\u05de\u05d1\u05d5\u05e7\u05e9, \u05db\u05d5\u05dc\u05dc \u05e9\u05e2\u05d5\u05df \u05e7\u05d9\u05e5 \u05d0\u05d5 \u05d7\u05d5\u05e8\u05e3. \u05d0\u05d9\u05df \u05dc\u05d4\u05e0\u05d9\u05d7 \u05d4\u05e4\u05e8\u05e9 UTC \u05e7\u05d1\u05d5\u05e2 \u05dc\u05e4\u05d9 \u05d7\u05d5\u05d3\u05e9. \u05dc\u05d3\u05d5\u05d2\u05de\u05ea \u05e4\u05d5\u05e8\u05de\u05d8 \u05d1\u05dc\u05d1\u05d3: 2026-10-13T17:00:00Z. \u05d0\u05dd \u05d4\u05de\u05d5\u05e2\u05d3 \u05d0\u05d9\u05e0\u05d5 \u05d1\u05e8\u05d5\u05e8, \u05d9\u05e9 \u05dc\u05e9\u05d0\u05d5\u05dc \u05d4\u05d1\u05d4\u05e8\u05d4. \u05d0\u05d9\u05df \u05dc\u05d4\u05e9\u05d0\u05d9\u05e8 \u05e8\u05d9\u05e7 \u05d5\u05dc\u05d4\u05d1\u05d8\u05d9\u05d7 \u05ea\u05d6\u05de\u05d5\u05df.",
-                "is_system_provided": false,
-                "dynamic_variable": "",
-                "allowed_values_dynamic_variable": "",
-                "constant_value": "",
-                "is_omitted": false
-            }
-        }
+        "type": "object"
     },
-    "expects_response": true,
-    "dynamic_variables": {
-        "dynamic_variable_placeholders": {}
-    },
-    "execution_mode": "immediate"
+    "pre_tool_speech": "auto",
+    "response_timeout_secs": 10,
+    "tool_call_sound": null,
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "auto",
+    "type": "client"
 }

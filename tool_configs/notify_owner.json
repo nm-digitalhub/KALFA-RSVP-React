@@ -1,53 +1,57 @@
 {
-    "type": "client",
-    "name": "notify_owner",
-    "description": "מעביר שאלה/מסר/דגל לבעלי האירוע. לקרוא כשהאורח שואל שאלה שאין עליה תשובה במשתנים, מבקש בקשה מיוחדת, או מוסר ברכה. מחזיר noted בהצלחה.",
-    "response_timeout_secs": 10,
-    "disable_interruptions": false,
-    "interruption_mode": "allow",
-    "force_pre_tool_speech": false,
-    "pre_tool_speech": "auto",
     "assignments": [],
-    "tool_call_sound_behavior": "auto",
-    "tool_error_handling_mode": "auto",
+    "description": "מעביר שאלה/מסר/דגל לבעלי האירוע. לקרוא כשהאורח שואל שאלה שאין עליה תשובה במשתנים, מבקש בקשה מיוחדת, או מוסר ברכה. מחזיר noted בהצלחה.",
+    "disable_interruptions": false,
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    },
+    "execution_mode": "immediate",
+    "expects_response": true,
+    "force_pre_tool_speech": false,
+    "interruption_mode": "allow",
+    "name": "notify_owner",
     "parameters": {
         "description": "",
         "dynamic_variable": "",
         "is_omitted": false,
-        "type": "object",
-        "required": [
-            "kind",
-            "text"
-        ],
         "properties": {
             "kind": {
-                "type": "string",
+                "allowed_values": null,
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
                 "description": "question=שאלה שדורשת מענה, message=מסר/ברכה, flag=דגל חריג (מספר שגוי, בקשת מחיקה)",
+                "dynamic_variable": "",
                 "enum": [
                     "question",
                     "message",
                     "flag"
                 ],
+                "is_omitted": false,
                 "is_system_provided": false,
-                "dynamic_variable": "",
-                "allowed_values_dynamic_variable": "",
-                "constant_value": "",
-                "is_omitted": false
+                "type": "string"
             },
             "text": {
-                "type": "string",
-                "description": "ניסוח קצר בעברית של הפנייה, עד 500 תווים",
-                "is_system_provided": false,
-                "dynamic_variable": "",
+                "allowed_values": null,
                 "allowed_values_dynamic_variable": "",
                 "constant_value": "",
-                "is_omitted": false
+                "description": "ניסוח קצר בעברית של הפנייה, עד 500 תווים",
+                "dynamic_variable": "",
+                "enum": null,
+                "is_omitted": false,
+                "is_system_provided": false,
+                "type": "string"
             }
-        }
+        },
+        "required": [
+            "kind",
+            "text"
+        ],
+        "type": "object"
     },
-    "expects_response": true,
-    "dynamic_variables": {
-        "dynamic_variable_placeholders": {}
-    },
-    "execution_mode": "immediate"
+    "pre_tool_speech": "auto",
+    "response_timeout_secs": 10,
+    "tool_call_sound": null,
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "auto",
+    "type": "client"
 }

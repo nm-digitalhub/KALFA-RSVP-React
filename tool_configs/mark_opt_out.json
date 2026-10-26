@@ -1,26 +1,27 @@
 {
-    "type": "client",
-    "name": "mark_opt_out",
-    "description": "קראי לכלי הזה מיד כשהליד מבקש לא להתקשר אליו יותר, בכל ניסוח. אין פרמטרים. אל תנסי לשכנע ואל תשאלי שאלות נוספות.",
-    "response_timeout_secs": 10,
-    "disable_interruptions": false,
-    "interruption_mode": "allow",
-    "force_pre_tool_speech": false,
-    "pre_tool_speech": "auto",
     "assignments": [],
-    "tool_call_sound_behavior": "auto",
-    "tool_error_handling_mode": "auto",
+    "description": "קראי לכלי הזה מיד כשהליד מבקש לא להתקשר אליו יותר, בכל ניסוח. אין פרמטרים. אל תנסי לשכנע ואל תשאלי שאלות נוספות.",
+    "disable_interruptions": false,
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    },
+    "execution_mode": "immediate",
+    "expects_response": true,
+    "force_pre_tool_speech": false,
+    "interruption_mode": "allow",
+    "name": "mark_opt_out",
     "parameters": {
         "description": "",
         "dynamic_variable": "",
         "is_omitted": false,
-        "type": "object",
+        "properties": {},
         "required": [],
-        "properties": {}
+        "type": "object"
     },
-    "expects_response": true,
-    "dynamic_variables": {
-        "dynamic_variable_placeholders": {}
-    },
-    "execution_mode": "immediate"
+    "pre_tool_speech": "auto",
+    "response_timeout_secs": 10,
+    "tool_call_sound": null,
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "auto",
+    "type": "client"
 }

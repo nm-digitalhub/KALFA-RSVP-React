@@ -1,0 +1,52 @@
+{
+    "assignments": [],
+    "description": "כאשר הפונה מבקש חזרה במועד אחר, שולחים callback_when_text כלשונו ו-callback_iso עתידי בפורמט ISO 8601. אם המועד עמום, מבקשים הבהרה לפני תזמון. אין לאשר שנקבעה חזרה בלי תוצאה מוצלחת מהכלי. את השעה אומרים בשעון ישראל. לאחר הצלחה מסיימים לפי הוראות הסוכן.",
+    "disable_interruptions": false,
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    },
+    "execution_mode": "immediate",
+    "expects_response": true,
+    "force_pre_tool_speech": false,
+    "interruption_mode": "allow",
+    "name": "schedule_callback",
+    "parameters": {
+        "description": "",
+        "dynamic_variable": "",
+        "is_omitted": false,
+        "properties": {
+            "callback_iso": {
+                "allowed_values": null,
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "description": "מועד מוחלט בעתיד בפורמט ISO 8601, עד 40 תווים. חישוב זמן יחסי מתבסס על התאריך והשעה הנוכחיים; מועד שנאמר בשעון ישראל מפורש לפי Asia/Jerusalem בתאריך המבוקש, כולל שעון קיץ או חורף. אין להניח הפרש UTC קבוע לפי חודש. לדוגמת פורמט בלבד: 2026-10-13T17:00:00Z. אם המועד אינו ברור, יש לשאול הבהרה. אין להשאיר ריק ולהבטיח תזמון.",
+                "dynamic_variable": "",
+                "enum": null,
+                "is_omitted": false,
+                "is_system_provided": false,
+                "type": "string"
+            },
+            "callback_when_text": {
+                "allowed_values": null,
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "description": "מועד החזרה שהפונה ציין במילותיו, עד 200 תווים. לדוגמה: \"מחר בשמונה בערב\". אין להמציא מועד שלא התבקש.",
+                "dynamic_variable": "",
+                "enum": null,
+                "is_omitted": false,
+                "is_system_provided": false,
+                "type": "string"
+            }
+        },
+        "required": [
+            "callback_when_text"
+        ],
+        "type": "object"
+    },
+    "pre_tool_speech": "off",
+    "response_timeout_secs": 10,
+    "tool_call_sound": null,
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "passthrough",
+    "type": "client"
+}

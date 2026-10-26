@@ -1,0 +1,57 @@
+{
+    "assignments": [],
+    "description": "מעביר שאלה/מסר/דגל לבעלי האירוע. לקרוא כשהאורח שואל שאלה שאין עליה תשובה במשתנים, מבקש בקשה מיוחדת, או מוסר ברכה. מחזיר noted בהצלחה.",
+    "disable_interruptions": false,
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    },
+    "execution_mode": "immediate",
+    "expects_response": true,
+    "force_pre_tool_speech": false,
+    "interruption_mode": "allow",
+    "name": "notify_owner",
+    "parameters": {
+        "description": "",
+        "dynamic_variable": "",
+        "is_omitted": false,
+        "properties": {
+            "kind": {
+                "allowed_values": null,
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "description": "question=שאלה שדורשת מענה, message=מסר/ברכה, flag=דגל חריג (מספר שגוי, בקשת מחיקה)",
+                "dynamic_variable": "",
+                "enum": [
+                    "question",
+                    "message",
+                    "flag"
+                ],
+                "is_omitted": false,
+                "is_system_provided": false,
+                "type": "string"
+            },
+            "text": {
+                "allowed_values": null,
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "description": "ניסוח קצר בעברית של הפנייה, עד 500 תווים",
+                "dynamic_variable": "",
+                "enum": null,
+                "is_omitted": false,
+                "is_system_provided": false,
+                "type": "string"
+            }
+        },
+        "required": [
+            "kind",
+            "text"
+        ],
+        "type": "object"
+    },
+    "pre_tool_speech": "off",
+    "response_timeout_secs": 10,
+    "tool_call_sound": null,
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "passthrough",
+    "type": "client"
+}

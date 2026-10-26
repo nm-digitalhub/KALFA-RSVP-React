@@ -1,0 +1,27 @@
+{
+    "assignments": [],
+    "description": "מסיר את המספר מרשימת השיחות לצמיתות. לקרוא מיד כשהאורח מבקש לא להתקשר יותר, בכל ניסוח. מחזיר removed בהצלחה.",
+    "disable_interruptions": false,
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    },
+    "execution_mode": "immediate",
+    "expects_response": true,
+    "force_pre_tool_speech": false,
+    "interruption_mode": "allow",
+    "name": "mark_dnc",
+    "parameters": {
+        "description": "",
+        "dynamic_variable": "",
+        "is_omitted": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+    },
+    "pre_tool_speech": "off",
+    "response_timeout_secs": 10,
+    "tool_call_sound": null,
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "passthrough",
+    "type": "client"
+}
