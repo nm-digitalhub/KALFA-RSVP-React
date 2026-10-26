@@ -1,6 +1,6 @@
 /**
  * ===
- * VoxEngine version: 7.64.1
+ * VoxEngine version: 7.75.0
  * ===
  */
 
@@ -37,9 +37,9 @@ declare interface ACDEnqueueParameters {
    */
   displayName?: string;
   /**
-   * Optional. Internal information about codecs taken from the [AppEvents.CallAlerting] event.
+   * Optional. Internal information about codecs. Pass the value received from a call event as-is. Do not inspect or modify the object. Reconstructing or mutating the payload can break codec negotiation.
    */
-  scheme?: { [id: string]: any };
+  scheme?: Scheme;
 }
 
 /**
@@ -52,42 +52,42 @@ declare interface ACDEnqueueParameters {
 declare enum ACDEvents {
   /**
    * Triggered when an agent is reached.
-   * @typedef _ACDReachedEvent
+   * @eventpayload _ACDReachedEvent
    */
   OperatorReached = 'ACD.OperatorReached',
   /**
    * Triggered when an ACD makes a call to a user via the [callUser] method.
-   * @typedef _ACDCallAttempt
+   * @eventpayload _ACDCallAttempt
    */
   OperatorCallAttempt = 'ACD.OperatorCallAttempt',
   /**
    * Triggered when an ACD request tries to reach an agent, but the agent declines the call. Note that this is just a notification, the request processing does not stop. The ACD request automatically redirects to the next free agent.
-   * @typedef _ACDFailedEvent
+   * @eventpayload _ACDFailedEvent
    */
   OperatorFailed = 'ACD.OperatorFailed',
   /**
    * Triggers if the ACD service returns an internal error. The JS scenarios are not able to cause internal errors because these errors depend on internal and network issues.
-   * @typedef _ACDErrorEvent
+   * @eventpayload _ACDErrorEvent
    */
   Error = 'ACD.Error',
   /**
    * Triggers as a result of the [ACDRequest.getStatus] method call.
-   * @typedef _ACDWaitingEvent
+   * @eventpayload _ACDWaitingEvent
    */
   Waiting = 'ACD.Waiting',
   /**
    * Triggered when an [ACDRequest] is put to the queue.
-   * @typedef _ACDQueuedEvent
+   * @eventpayload _ACDQueuedEvent
    */
   Queued = 'ACD.Queued',
   /**
    * Triggers if all agents that can handle a request in the specified queue are offline. In this case, the request is not queued.
-   * @typedef _ACDOfflineEvent
+   * @eventpayload _ACDOfflineEvent
    */
   Offline = 'ACD.Offline',
   /**
    * Triggered when we have one more request to put in the queue but the maximum number of requests (max_queue_size) is already reached. In this case, the new request is not queued. The max_queue_size and max_waiting_time default values are “unlimited”, you can change these values for every new or existing queue in the [control panel](https://manage.voximplant.com/applications).
-   * @typedef _ACDQueueFullEvent
+   * @eventpayload _ACDQueueFullEvent
    */
   QueueFull = 'ACD.QueueFull',
 }
@@ -248,7 +248,7 @@ declare namespace Agentic {
 }
 declare namespace Agentic {
   /**
-   * [Hush.NoiseSuppressionParameters] based. Can be passed as [Agentic.VoiceDSPParameters.noiseSuppressionParameters] to [Agentic.createVoiceDSP].
+   * [Hush.NoiseSuppressionParameters] based. Can be passed as [Agentic.VoiceDSPParameters.noiseSuppressionParameters] to [Agentic.createVoiceDSP]. Omit this field to keep noise suppression disabled.
    */
   interface NoiseSuppressionParameters extends Hush.NoiseSuppressionParameters {
   }
@@ -276,54 +276,58 @@ declare namespace Agentic {
 
 declare namespace Agentic {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.Agentic);
+   * ```
    * @event
    */
   enum VoiceDSPEvents {
     /**
      * Triggered when the user's turn starts (mirrors Pipecat `on_user_turn_started`). Only fires when [Agentic.VoiceDSPParameters.startStrategies] are configured via [Agentic.createVoiceDSP].
-     * @typedef _VoiceDSPTurnStartedEvent
+     * @eventpayload _VoiceDSPTurnStartedEvent
      */
     TurnStarted = 'Agentic.VoiceDSP.TurnStarted',
 
     /**
      * Triggered when a stop strategy has enough signal to start LLM inference for the current turn (mirrors Pipecat `on_user_turn_inference_triggered`). Fires before [Agentic.VoiceDSPEvents.TurnStopped] when [Agentic.VoiceDSPParameters.asr] is configured and the turn analyzer completes before the final transcript arrives. [Agentic.VoiceDSPParameters.asrGraceTimeout] starts from this event.
-     * @typedef _VoiceDSPTurnInferenceTriggeredEvent
+     * @eventpayload _VoiceDSPTurnInferenceTriggeredEvent
      */
     TurnInferenceTriggered = 'Agentic.VoiceDSP.TurnInferenceTriggered',
 
     /**
      * Triggered when the user's turn ends with the accumulated transcript (mirrors Pipecat `on_user_turn_stopped`).
-     * @typedef _VoiceDSPTurnStoppedEvent
+     * @eventpayload _VoiceDSPTurnStoppedEvent
      */
     TurnStopped = 'Agentic.VoiceDSP.TurnStopped',
 
     /**
      * Triggered before [Agentic.VoiceDSPEvents.TurnStopped] when a turn stop timeout fires. **reason** is **stop_secs** when the turn analyzer classified the turn as incomplete and silence exceeded [Agentic.TurnDetectorParameters.stopSecs], or **controller_timeout** when no stop strategy finalized the turn within [Agentic.VoiceDSPParameters.userTurnStopTimeout].
-     * @typedef _VoiceDSPTurnStopTimeoutEvent
+     * @eventpayload _VoiceDSPTurnStopTimeoutEvent
      */
     TurnStopTimeout = 'Agentic.VoiceDSP.TurnStopTimeout',
 
     /**
      * Triggered when the user has been idle for [Agentic.VoiceDSPParameters.userTurnIdleTimeout] after [Agentic.VoiceDSP.signalAssistantTurnEnded] (mirrors Pipecat `on_user_turn_idle`). Can fire multiple times if the scenario calls [Agentic.VoiceDSP.signalAssistantTurnEnded] again after handling each idle event.
-     * @typedef _VoiceDSPTurnIdleEvent
+     * @eventpayload _VoiceDSPTurnIdleEvent
      */
     TurnIdle = 'Agentic.VoiceDSP.TurnIdle',
 
     /**
      * The [Agentic.VoiceDSP] is reset.
-     * @typedef _VoiceDSPResetEvent
+     * @eventpayload _VoiceDSPResetEvent
      */
     Reset = 'Agentic.VoiceDSP.Reset',
 
     /**
      * The error response event.
-     * @typedef _VoiceDSPErrorEvent
+     * @eventpayload _VoiceDSPErrorEvent
      */
     Error = 'Agentic.VoiceDSP.Error',
 
     /**
      * Contains information about connector.
-     * @typedef _VoiceDSPConnectorInformationEvent
+     * @eventpayload _VoiceDSPConnectorInformationEvent
      */
     ConnectorInformation = 'Agentic.VoiceDSP.ConnectorInformation',
   }
@@ -463,7 +467,7 @@ declare namespace Agentic {
      */
     turnDetectorParameters?: TurnDetectorParameters;
     /**
-     * Optional. Noise suppression configuration forwarded to the bundled voice DSP connector (server-side processing). NOTE: if the parameters are NOT provided, the voice DSP connector will NOT use the noise suppression.
+     * Optional. [Hush] noise suppression configuration forwarded to the bundled voice DSP connector (server-side processing). Same parameter shape as [Hush.NoiseSuppressionParameters]. NOTE: if this field is omitted, the connector does **not** run noise suppression.
      */
     noiseSuppressionParameters?: NoiseSuppressionParameters;
     /**
@@ -776,8 +780,8 @@ declare namespace AI {
    * ```
    * require(Modules.AI);
    * ```
-   * @param call
-   * @param parameters
+   * @param call Call to analyze
+   * @param parameters Detection parameters
    * @deprecated Use [AMD] instead
    */
   function detectVoicemail(
@@ -822,7 +826,7 @@ declare namespace AI {
    */
   class DialogflowInstance {
     /**
-     * @param id
+     * @param id Dialogflow instance id
      * @param parameters Dialogflow parameters
      */
     constructor(id: string, parameters: Object);
@@ -1063,7 +1067,7 @@ declare namespace AI {
 
 declare namespace AI {
   /**
-   * Settings for setting up a new Dialogflow instance
+   * Settings for a new Dialogflow instance.
    * <br>
    * Add the following line to your scenario code to use the interface:
    * ```
@@ -1080,15 +1084,15 @@ declare namespace AI {
      */
     phraseHints?: any[];
     /**
-     * Initial query parameters.
+     * Optional. Initial query parameters.
      */
     queryParameters?: DialogflowQueryParameters;
     /**
-     * Whether to enable single utterance.
+     * Optional. Whether to enable single utterance.
      */
     singleUtterance?: boolean;
     /**
-     * Instructs the speech synthesizer how to generate the output audio content.
+     * Optional. Instructs the speech synthesizer how to generate the output audio content.
      */
     outputAudioConfig?: DialogflowOutputAudioConfig;
     /**
@@ -1241,53 +1245,53 @@ declare namespace AI {
   enum Events {
     /**
      * Triggered when a Dialogflow instance returns a query result.
-     * @typedef _DialogflowQueryResultEvent
+     * @eventpayload _DialogflowQueryResultEvent
      */
     DialogflowQueryResult = 'AI.Events.DialogflowQueryResult',
     /**
      * Triggered when a Dialogflow instance returns a recognition result.
-     * @typedef _DialogflowRecognitionResultEvent
+     * @eventpayload _DialogflowRecognitionResultEvent
      */
     DialogflowRecognitionResult = 'AI.Events.DialogflowRecognitionResult',
     /**
      * Triggered when a Dialogflow instance returns an intent response.
-     * @typedef _DialogflowResponseEvent
+     * @eventpayload _DialogflowResponseEvent
      */
     DialogflowResponse = 'AI.Events.DialogflowResponse',
     /**
      * Triggered when a Dialogflow instance causes error.
-     * @typedef _DialogflowErrorEvent
+     * @eventpayload _DialogflowErrorEvent
      */
     DialogflowError = 'AI.Events.DialogflowError',
     /**
      * Triggered when a Dialogflow instance is stopped.
-     * @typedef _DialogflowStoppedEvent
+     * @eventpayload _DialogflowStoppedEvent
      */
     DialogflowStopped = 'AI.Events.DialogflowStopped',
     /**
      * Triggered when a playback of a single phrase is finished successfully or in case of playback error.
-     * @typedef _DialogflowPlaybackFinishedEvent
+     * @eventpayload _DialogflowPlaybackFinishedEvent
      */
     DialogflowPlaybackFinished = 'AI.Events.DialogflowPlaybackFinished',
     /**
      * Triggered when a playback of a single phrase is started.
-     * @typedef _DialogflowPlaybackStartedEvent
+     * @eventpayload _DialogflowPlaybackStartedEvent
      */
     DialogflowPlaybackStarted = 'AI.Events.DialogflowPlaybackStarted',
     /**
      * Triggered when 'DialogflowInstance.addMarker' is reached.
-     * @typedef _DialogflowPlaybackMarkerReachedEvent
+     * @eventpayload _DialogflowPlaybackMarkerReachedEvent
      */
     DialogflowPlaybackMarkerReached = 'AI.Events.DialogflowPlaybackMarkerReached',
     /**
      * Triggered when an answering machine or voicemail is detected.
-     * @typedef _VoicemailDetectedEvent
+     * @eventpayload _VoicemailDetectedEvent
      * @deprecated Use [AMD] instead
      */
     VoicemailDetected = 'AI.Events.VoicemailDetected',
     /**
      * Triggered when an answering machine or voicemail is not detected.
-     * @typedef _VoicemailNotDetectedEvent
+     * @eventpayload _VoicemailNotDetectedEvent
      * @deprecated Use [AMD] instead
      */
     VoicemailNotDetected = 'AI.Events.VoicemailNotDetected',
@@ -1484,12 +1488,12 @@ declare namespace AMD {
   enum Events {
     /**
      * Triggered when answering machine or voicemail detection is complete.
-     * @typedef AMD._DetectionCompleteEvent
+     * @eventpayload AMD._DetectionCompleteEvent
      */
     DetectionComplete = 'AMD.Events.DetectionComplete',
     /**
-     * Triggered when answering machine detector throw an error.
-     * @typedef AMD._DetectionErrorEvent
+     * Triggered when answering machine detector throws an error.
+     * @eventpayload AMD._DetectionErrorEvent
      */
     DetectionError = 'AMD.Events.DetectionError',
   }
@@ -1529,7 +1533,8 @@ declare namespace AMD {
      */
     resultClass: AMD.ResultClass;
     /**
-     * Answering machine result subtype, such as MIMIC or NONE.
+     * Answering machine result subtype, such as MIMIC, SILENCE or NONE.
+     * [AMD.ResultSubtype.MIMIC] is reported only with the [AMD.ResultClass.VOICEMAIL] result class. [AMD.ResultSubtype.SILENCE] is reported only with the [AMD.ResultClass.TIMEOUT] result class.
      */
     resultSubtype?: AMD.ResultSubtype;
     /**
@@ -1647,13 +1652,19 @@ declare namespace AMD {
 
 declare namespace AMD {
   /**
-   * Answering machine result subtype, such as mimic or none.
+   * Answering machine result subtype, such as mimic, silence or none.
    */
   enum ResultSubtype {
     /**
      * AI-powered answering machine that mimics human voice and conversation style.
+     * Reported only with the [AMD.ResultClass.VOICEMAIL] result class.
      */
     MIMIC = 'MIMIC',
+    /**
+     * Prolonged silence on the line.
+     * Reported only with the [AMD.ResultClass.TIMEOUT] result class.
+     */
+    SILENCE = 'SILENCE',
     /**
      * Other types of answering machines.
      */
@@ -1663,7 +1674,7 @@ declare namespace AMD {
 
 declare namespace AMD {
   /**
-   * Detection threshold in the range **0.0** - **1.0**
+   * Detection threshold in the range **0.0** - **1.0**.
    */
   interface Thresholds {
     human?: number;
@@ -1678,7 +1689,7 @@ declare namespace AMD {
 declare enum AppEvents {
   /**
    * Triggered when an incoming call arrives.
-   * @typedef _CallAlertingEvent
+   * @eventpayload _CallAlertingEvent
    */
   CallAlerting = 'Application.CallAlerting',
   /**
@@ -1687,21 +1698,21 @@ declare enum AppEvents {
    * 2) when the [VoxEngine.terminate](/docs/references/voxengine/voxengine/terminate) method is called. Timers and any other external resources are not available after this event is triggered,
    * but you can perform one HTTP request inside the event handler (e.g. to notify an external system about the fact that the session is finished).
    * When that request is finished (or no such request is made), the [AppEvents.Terminated] event is triggered.
-   * @typedef _TerminatingEvent
+   * @eventpayload _TerminatingEvent
    */
   Terminating = 'Application.Terminating',
   /**
    * Triggered when a session is terminated and after the [AppEvents.Terminating] event is triggered.
    * The time between these events depends on handler for [AppEvents.Terminating] event.
    * Use the event just for debugging, only the [Logger.write] method could be used in a handler.
-   * @typedef _TerminatedEvent
+   * @eventpayload _TerminatedEvent
    */
   Terminated = 'Application.Terminated',
   /**
    * The very first event is triggered due to incoming call or HTTP request to Voximplant cloud over the internet.
    * Triggers only once in a session, so if you execute the same HTTP request again it creates the new, separate session.
    * Note that usage of the event in your JS scenario is optional.
-   * @typedef _StartedEvent
+   * @eventpayload _StartedEvent
    */
   Started = 'Application.Started',
   /**
@@ -1711,19 +1722,19 @@ declare enum AppEvents {
    * The property's value is the managing URL for the specified session, so it can be used in managing HTTP request that triggers [AppEvents.HttpRequest] event.
    *
    * You can find more information in the [Remote session management](/docs/guides/voxengine/remote-sessions) article.
-   * @typedef _HttpRequestEvent
+   * @eventpayload _HttpRequestEvent
    */
   HttpRequest = 'Application.HttpRequest',
 
   /**
    * Triggered when there is a new connection to a WebSocket.
-   * @typedef _NewWebSocketEvent
+   * @eventpayload _NewWebSocketEvent
    */
   WebSocket = 'AppEvents.NewWebSocketConnection',
 
   /**
    * Triggered when a WebSocket fails. It can happen when the number of incoming WebSocket connections exceeds the number of calls in one session + 3.
-   * @typedef _NewWebSocketFailedEvent
+   * @eventpayload _NewWebSocketFailedEvent
    */
   NewWebSocketFailed = 'Application.OnNewWebSocketFailed',
 }
@@ -1869,9 +1880,9 @@ declare interface _CallAlertingEvent {
    */
   customData?: string;
   /**
-   * Internal information about codecs, should be passed to the [VoxEngine.callUser], [VoxEngine.callUserDirect], [VoxEngine.callSIP], [VoxEngine.callConference], [Call.answer], [Call.answerDirect], [Call.startEarlyMedia] methods call.
+   * Internal information about codecs. Pass the value as-is to [VoxEngine.callUser], [VoxEngine.callSIP], [VoxEngine.callConference], [Call.answer], [Call.answerDirect], or [Call.startEarlyMedia]. Do not inspect or modify the object. Reconstructing or mutating the payload can break codec negotiation.
    */
-  scheme: { [id: string]: { audio: any; video: any } };
+  scheme: Scheme;
 }
 
 /**
@@ -2011,37 +2022,37 @@ declare enum ASRDictionary {
 declare enum ASREvents {
   /**
    * Triggers in case of errors during the recognition process.
-   * @typedef _ASRErrorEvent
+   * @eventpayload _ASRErrorEvent
    */
   ASRError = 'ASR.Error',
   /**
    * Triggers after ASR instance is created.
-   * @typedef _ASRStartedEvent
+   * @eventpayload _ASRStartedEvent
    */
   Started = 'ASR.Started',
   /**
    * Triggers after ASR detected voice input and started collecting audio data for ASR.
-   * @typedef _ASRCaptureStartedEvent
+   * @eventpayload _ASRCaptureStartedEvent
    */
   CaptureStarted = 'ASR.CaptureStarted',
   /**
    * Triggers after ASR captured audio data, before recognition process.
-   * @typedef _ASRSpeechCapturedEvent
+   * @eventpayload _ASRSpeechCapturedEvent
    */
   SpeechCaptured = 'ASR.SpeechCaptured',
   /**
    * Triggered when a speech recognition result has been received from ASR. We strongly recommend to create recognition timeout manually to prevent unexpectedly long recognition time. NOTE: we recommend to take a decision about continuing speech recognition in this event's handler. Otherwise, speech recognition continues automatically.
-   * @typedef _ASRResultEvent
+   * @eventpayload _ASRResultEvent
    */
   Result = 'ASR.Result',
   /**
    * Triggered when interim recognition result received from ASR. Note that event could be triggered only if the [ASRParameters.interimResults] option is set to **true**.
-   * @typedef _ASRInterimResultEvent
+   * @eventpayload _ASRInterimResultEvent
    */
   InterimResult = 'ASR.InterimResult',
   /**
    * Triggers as a result of the [ASR.stop] method call.
-   * @typedef _ASRStoppedEvent
+   * @eventpayload _ASRStoppedEvent
    */
   Stopped = 'ASR.Stopped',
 }
@@ -2764,9 +2775,9 @@ declare enum ASRLanguage {
  */
 declare class ASR {
   /**
-   * @param id
-   * @param language
-   * @param dictionary
+   * @param id ASR id
+   * @param language Recognition language
+   * @param dictionary Recognition dictionary
    */
   constructor(id: string, language: string, dictionary: string);
 
@@ -2812,16 +2823,6 @@ declare class ASR {
 }
 
 /**
- * @hidden
- * List of available values for the [CallRecordParameters.audioQuality] and [RecorderParameters.audioQuality] parameters.
- */
-declare enum AudioQuality {
-  DEFAULT = 'DEFAULT',
-  HD = 'HD',
-  MEDIUM = 'MEDIUM',
-}
-
-/**
  * @private
  */
 declare interface BaseCallParameters {
@@ -2830,9 +2831,9 @@ declare interface BaseCallParameters {
    */
   displayName?: string;
   /**
-   * Optional. Internal information about codecs.
+   * Optional. Internal information about codecs. Pass the value received from a call event as-is. Do not inspect or modify the object. Reconstructing or mutating the payload can break codec negotiation.
    */
-  scheme?: { [id: string]: { audio: any; video: any } };
+  scheme?: Scheme;
   /**
    * Optional. Sets the maximum possible video bitrate for the customer device in kbps.
    */
@@ -3006,43 +3007,42 @@ declare enum CallEvents {
    * Triggers after remote peer answered the call or set the call into the [Call.startEarlyMedia] state. Note that event is not triggered in P2P mode.
    * 
    * This event occurs after receiving the 183 Session Progress SIP message regardless of receiving actual media packets.
-   * @typedef _AudioStartedEvent
+   * @eventpayload _AudioStartedEvent
    * */
   AudioStarted = 'Call.AudioStarted',
   /**
    * Triggers when [voicemail detection](/docs/guides/calls/voicemail-detection) system connects to the VMD/AMD server and starts detecting voicemail.
-   * @typedef _AudioIdentificationStartedEvent
+   * @eventpayload _AudioIdentificationStartedEvent
    * */
   AudioIdentificationStarted = 'Call.AudioIdentificationStarted',
   /**
    * Triggers when [voicemail detection](/docs/guides/calls/voicemail-detection) ends detecting voicemail and the audio identification result is received.
-   * @typedef _AudioIdentificationResultEvent
-   * @hidden
+   * @eventpayload _AudioIdentificationResultEvent
    */
   AudioIdentificationResult = 'Call.AudioIdentificationResult',
   /**
    * Triggers when [voicemail detection](/docs/guides/calls/voicemail-detection) stops detecting voicemail.
-   * @typedef _AudioIdentificationStoppedEvent
+   * @eventpayload _AudioIdentificationStoppedEvent
    * */
   AudioIdentificationStopped = 'Call.AudioIdentificationStopped',
   /**
    * Triggers when [voicemail detection](/docs/guides/calls/voicemail-detection) occurs an error.
-   * @typedef _AudioIdentificationErrorEvent
+   * @eventpayload _AudioIdentificationErrorEvent
    */
   AudioIdentificationError = 'Call.AudioIdentificationError',
   /**
    * Triggered when blind transfers are enabled by [Call.handleBlindTransfer].
-   * @typedef _BlindTransferRequestedEvent
+   * @eventpayload _BlindTransferRequestedEvent
    */
   BlindTransferRequested = 'Call.BlindTransferRequested',
   /**
    * Triggers after an incoming/outgoing call is connected. For incoming call, it happens after the [Call.answer] is called. For outgoing call, it happens when a remote peer answers the call.
-   * @typedef _ConnectedEvent
+   * @eventpayload _ConnectedEvent
    */
   Connected = 'Call.Connected',
   /**
    * Triggers on an incoming/outgoing call forwarding.
-   * @typedef _ForwardingEvent
+   * @eventpayload _ForwardingEvent
    */
   Forwarding = 'Call.Forwarding',
   /**
@@ -3065,7 +3065,7 @@ declare enum CallEvents {
    * Note that this event does not mean the end of the JavaScript session.
    * The session without calls and/or ACD requests are automatically terminated after some time (see the [session limits](/docs/guides/voxengine/limits) for details).
    * It is a good idea to explicitly terminate the session with [VoxEngine.terminate](/docs/references/voxengine/voxengine/terminate) after it is no longer needed.
-   * @typedef _DisconnectedEvent
+   * @eventpayload _DisconnectedEvent
    */
   Disconnected = 'Call.Disconnected',
   /**
@@ -3083,60 +3083,60 @@ declare enum CallEvents {
    * <tr><td>408</td><td>Call was not answered within 60 seconds</td></tr>
    * </tbody>
    * </table>
-   * @typedef _FailedEvent
+   * @eventpayload _FailedEvent
    */
   Failed = 'Call.Failed',
   /**
    * Triggered when an INFO message is received.
-   * @typedef _InfoReceivedEvent
+   * @eventpayload _InfoReceivedEvent
    */
   InfoReceived = 'Call.InfoReceived',
   /**
    * Triggered when a text message is received.
-   * @typedef _MessageReceivedEvent
+   * @eventpayload _MessageReceivedEvent
    */
   MessageReceived = 'Call.MessageReceived',
   /**
    * Triggers each time when microphone status changes. There is the method for enabling status analyzing - [Call.handleMicStatus].
-   * @typedef _MicStatusChangeEvent
+   * @eventpayload _MicStatusChangeEvent
    * */
   MicStatusChange = 'Call.MicStatusChange',
   /**
    * Triggered when a call is taken off hold.
-   * @typedef _OffHoldEvent
+   * @eventpayload _OffHoldEvent
    */
   OffHold = 'Call.OffHold',
   /**
    * Triggered when a call is put on hold.
-   * @typedef _OnHoldEvent
+   * @eventpayload _OnHoldEvent
    */
   OnHold = 'Call.OnHold',
   /**
    * Triggered when the audio/voice playback is completed.
    * Note that the [Call.stopPlayback] method finishes any media**, so the [CallEvents.PlaybackFinished] event is not triggered. The playback may be started by the [Call.say] or [Call.startPlayback] methods.
-   * @typedef _PlaybackFinishedEvent
+   * @eventpayload _PlaybackFinishedEvent
    */
   PlaybackFinished = 'Call.PlaybackFinished',
   /**
    * Triggers by the [Call.startPlayback] and [Call.say] methods when:<br>
    * 1) the audio file download to the Voximplant cache is finished;<br>
    * 2) the audio file is found in the cache (i.e., it is in the cache before).
-   * @typedef _PlaybackReadyEvent
+   * @eventpayload _PlaybackReadyEvent
    */
   PlaybackReady = 'Call.PlaybackReady',
   /**
    * Triggers by the [Call.startPlayback] and [Call.say] methods when audio/voice playback is started.
-   * @typedef _PlaybackStartedEvent
+   * @eventpayload _PlaybackStartedEvent
    */
   PlaybackStarted = 'Call.PlaybackStarted',
   /**
    * Triggered when a push notification is sent.
-   * @typedef _PushSentEvent
+   * @eventpayload _PushSentEvent
    */
   PushSent = 'Call.PushSent',
   /**
    * Triggered when the Voximplant cloud receives the **ReInviteAccepted** message. This message means that a call received video from the other participant.
-   * @typedef _ReInviteAcceptedEvent
+   * @eventpayload _ReInviteAcceptedEvent
    */
   ReInviteAccepted = 'Call.ReInviteAccepted',
   /**
@@ -3144,43 +3144,43 @@ declare enum CallEvents {
    * 1) started sending video;<br>
    * 2) started/stopped screensharing;<br>
    * 3) put a call on hold / took a call off hold.
-   * @typedef _ReInviteReceivedEvent
+   * @eventpayload _ReInviteReceivedEvent
    */
   ReInviteReceived = 'Call.ReInviteReceived',
   /**
    * Triggered when the Voximplant cloud receives the **ReInviteRejected** message. This message means that a call does not receive video from the other participant.
-   * @typedef _ReInviteRejectedEvent
+   * @eventpayload _ReInviteRejectedEvent
    */
   ReInviteRejected = 'Call.ReInviteRejected',
   /**
    * Triggered when call recording is started. The recording may be started by the [Call.record] method.
-   * @typedef _RecordStartedEvent
+   * @eventpayload _RecordStartedEvent
    */
   RecordStarted = 'Call.RecordStarted',
   /**
    * Triggered when call recording is stopped. This happens after the [CallEvents.Disconnected] event is triggered.
-   * @typedef _RecordStoppedEvent
+   * @eventpayload _RecordStoppedEvent
    */
   RecordStopped = 'Call.RecordStopped',
   /**
    * Triggers in case of errors during the recording process.
-   * @typedef _RecordErrorEvent
+   * @eventpayload _RecordErrorEvent
    */
   RecordError = 'Call.RecordError',
   /**
    * Triggers after outgoing call receives progress signal from a remote peer.
-   * @typedef _RingingEvent
+   * @eventpayload _RingingEvent
    */
   Ringing = 'Call.Ringing',
   /**
    * Triggered when a call status is changed.
-   * @typedef _StateChangedEvent
+   * @eventpayload _StateChangedEvent
    */
   StateChanged = 'Call.StateChanged',
   /**
    * Triggered when call statistics change.
    * @deprecated
-   * @typedef _StatisticsEvent
+   * @eventpayload _StatisticsEvent
    */
   Statistics = 'Call.Statistics',
   /**
@@ -3188,67 +3188,67 @@ declare enum CallEvents {
    * There is the deprecated method for enabling the tone detection - 'Call.detectProgressTone'. Note that:<br>
    * 1) triggers only if the [CallEvents.Connected] event is triggered;<br>
    * 2) the event is only triggered once in a call session.
-   * @typedef _ToneDetectedEvent
+   * @eventpayload _ToneDetectedEvent
    */
   ToneDetected = 'Call.ToneDetected',
   /**
    * Triggered when a DTMF signal is received. Note that by default DTMF signals do not trigger this event, this behavior needs to be set explicitly via the [Call.handleTones] method.
-   * @typedef _ToneReceivedEvent
+   * @eventpayload _ToneReceivedEvent
    */
   ToneReceived = 'Call.ToneReceived',
   /**
    * Triggered when a call transfer is complete.
-   * @typedef _TransferCompleteEvent
+   * @eventpayload _TransferCompleteEvent
    */
   TransferComplete = 'Call.TransferComplete',
   /**
    * Triggered when a call transfer is failed.
-   * @typedef _TransferFailedEvent
+   * @eventpayload _TransferFailedEvent
    */
   TransferFailed = 'Call.TransferFailed',
   /**
    * Triggers after the video track is created. This could happen only if the [Call.record] method with **{video: true}** parameters is called.
-   * @typedef _VideoTrackCreatedEvent
+   * @eventpayload _VideoTrackCreatedEvent
    */
   VideoTrackCreated = 'Call.Video.TrackCreated',
   /**
    * Triggers after the first audio packet is received.
-   * @typedef _FirstAudioPacketReceivedEvent
+   * @eventpayload _FirstAudioPacketReceivedEvent
    */
   FirstAudioPacketReceived = 'Call.FirstAudioPacketReceived',
   /**
    * Triggers after the first video packet is received.
-   * @typedef _FirstVideoPacketReceivedEvent
+   * @eventpayload _FirstVideoPacketReceivedEvent
    */
   FirstVideoPacketReceived = 'Call.FirstVideoPacketReceived',
   /**
    * Triggers within **7 seconds** after the RTP/RTCP has stopped. Applies to all types of calls (users, SIP, and PSTN).
-   * @typedef _RtpStoppedEvent
+   * @eventpayload _RtpStoppedEvent
    */
   RtpStopped = 'Call.RtpStopped',
   /**
    * Triggers after the RTP resumed.
-   * @typedef _RtpResumedEvent
+   * @eventpayload _RtpResumedEvent
    */
   RtpResumed = 'Call.RtpResumed',
   /**
    * Triggers after the beep detection is complete. The beep detection may be started by the [Call.enableBeepDetection] method.
-   * @typedef _BeepDetectionComplete
+   * @eventpayload _BeepDetectionComplete
    */
   BeepDetectionComplete = 'Call.BeepDetectionComplete',
   /**
    * Error during beep detection.
-   * @typedef _BeepDetectionError
+   * @eventpayload _BeepDetectionError
    */
   BeepDetectionError = 'Call.BeepDetectionError',
   /**
    * Triggers after the audio quality detected.
-   * @typedef _AudioQualityDetectedEvent
+   * @eventpayload _AudioQualityDetectedEvent
    */
   AudioQualityDetected = 'Call.AudioQualityDetected',
   /**
    * Triggers after media statistics has been recieved. To enable, call the [Call.monitorMediaStatistics] method.
-   * @typedef _MediaStatisticsReceived
+   * @eventpayload _MediaStatisticsReceived
    */
   MediaStatisticsReceived = 'Call.MediaStatisticsReceived'
 }
@@ -3332,6 +3332,10 @@ declare interface _CallHeaderEvent extends _CallEvent {
  * @private
  */
 declare interface _AudioStartedEvent extends _CallHeaderEvent {
+  /**
+   * Internal information about codecs. Pass the value as-is to [Call.startEarlyMedia]. Do not inspect or modify the object. Reconstructing or mutating the payload can break codec negotiation.
+   */
+  scheme?: Scheme;
 }
 
 /**
@@ -3384,9 +3388,9 @@ declare interface _ConnectedEvent extends _CallEvent {
    */
   headers?: { [header: string]: string };
   /**
-   * Optional. Internal information about codecs.
+   * Internal information about codecs. Pass the value as-is to [Call.answer], [Call.answerDirect], or [Call.startEarlyMedia]. Do not inspect or modify the object. Reconstructing or mutating the payload can break codec negotiation.
    */
-  scheme?: { [id: string]: { audio: any, video: any } };
+  scheme: Scheme;
 }
 
 /**
@@ -3829,11 +3833,6 @@ declare interface CallRecordParameters extends BaseRecorderParameters {
    * Optional. Transcription format. Could be specified as "json". In that case the transcription result is saved in JSON format. The parameter is not available for the [Recorder module](/docs/references/voxengine/modules#recorder).
    */
   format?: string;
-  /**
-   * @hidden
-   * Optional. Recording audio quality preset. Default value is "DEFAULT".
-   */
-  audioQuality?: AudioQuality;
 }
 
 /**
@@ -3901,9 +3900,9 @@ declare interface CallSIPParameters {
    */
   amd?: AMD.AnsweringMachineDetector;
   /**
-   * Optional. Internal information about codecs.
+   * Optional. Internal information about codecs. Pass the value received from a call event as-is. Do not inspect or modify the object. Reconstructing or mutating the payload can break codec negotiation.
    */
-  scheme?: { [id: string]: { audio: any; video: any } };
+  scheme?: Scheme;
   /**
    * Optional. Internal flag enables strict audio codec in scheme. The default value is **false**.
    */
@@ -4139,7 +4138,7 @@ declare class Call {
   /**
    * Informs the call endpoint that early media is sent before accepting the call. It allows playing voicemail prompt or music before establishing the connection. It does not allow to listen to call endpoint. Note that unanswered call can be in "early media" state only for 60 seconds, see the [session limits](/docs/guides/voxengine/limits) for details.
    * @param extraHeaders Optional. Custom parameters (SIP headers) that should be passed with the request. Custom header names have to begin with the 'X-' prefix. The "X-" headers could be handled by a SIP phone or WEB SDK (e.g. see the [incomingCall](/docs/references/websdk/voximplant/events#incomingcall) event). Example: {'X-header':'value'}
-   * @param scheme Optional. Internal information about codecs from the [AppEvents.CallAlerting] event
+   * @param scheme Optional. Internal information about codecs. Pass the value received from a call event as-is. Do not inspect or modify the object. Reconstructing or mutating the payload can break codec negotiation.
    * @param maxVideoBitrate Optional. Set the maximum possible video bitrate for the customer device in kbps
    * @param audioLevelExtension Optional. Audio level extension
    * @param conferenceCall Optional. Whether the call is coming from a conference. The default value is **false**
@@ -4147,7 +4146,7 @@ declare class Call {
    */
   startEarlyMedia(
     extraHeaders?: { [header: string]: string },
-    scheme?: { [id: string]: { audio: any; video: any } },
+    scheme?: Scheme,
     maxVideoBitrate?: number,
     audioLevelExtension?: boolean,
     conferenceCall?: boolean,
@@ -4313,7 +4312,7 @@ declare namespace CallList {
 
 declare namespace CallList {
   /**
-   * Report progress to the CallList module
+   * Reports progress to the CallList module.
    * @param progress Progress description string or JSON
    */
   function reportProgressAsync(progress: string | Object): Promise<Net.HttpRequestResult>;
@@ -4321,7 +4320,7 @@ declare namespace CallList {
 
 declare namespace CallList {
   /**
-   * Report progress to the CallList module
+   * Reports progress to the CallList module.
    * @param progress Progress description string or JSON
    * @param callback Optional. Callback to execute when a result is processed
    */
@@ -4478,17 +4477,17 @@ declare namespace Cartesia {
 
     /**
      * Initializes the audio stream configuration. [https://docs.cartesia.ai/line/integrations/web-calls#start-event](https://docs.cartesia.ai/line/integrations/web-calls#start-event)
-     * @param parameters
+     * @param parameters Event parameters
      */
     start(parameters: Object): void
     /**
      * Sends DTMF (dual-tone multi-frequency) tones. [https://docs.cartesia.ai/line/integrations/web-calls#dtmf-event](https://docs.cartesia.ai/line/integrations/web-calls#dtmf-event)
-     * @param parameters
+     * @param parameters Event parameters
      */
     dtmf(parameters: Object): void
     /**
      * Sends custom metadata to the agent. [https://docs.cartesia.ai/line/integrations/web-calls#custom-event](https://docs.cartesia.ai/line/integrations/web-calls#custom-event)
-     * @param parameters
+     * @param parameters Event parameters
      */
     custom(parameters: Object): void
   }
@@ -4496,54 +4495,58 @@ declare namespace Cartesia {
   
 declare namespace Cartesia {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.Cartesia);
+   * ```
    * @event
    */
   enum AgentsEvents {
     /**
      * The unknown event.
-     * @typedef _CartesiaAgentsEvent
+     * @eventpayload _CartesiaAgentsEvent
      */
     Unknown = 'Cartesia.Agents.Unknown',
 
     /**
      * The HTTP response event.
-     * @typedef _CartesiaAgentsEvent
+     * @eventpayload _CartesiaAgentsEvent
      */
     HTTPResponse = 'Cartesia.Agents.HTTPResponse',
 
     /**
      * Server acknowledgment of the start event, confirming stream configuration. [https://docs.cartesia.ai/line/integrations/web-calls#ack-event](https://docs.cartesia.ai/line/integrations/web-calls#ack-event)
-     * @typedef _CartesiaAgentsEvent
+     * @eventpayload _CartesiaAgentsEvent
      */
     ACK = 'Cartesia.Agents.ACK',
 
     /**
      * Indicates the agent wants to clear/interrupt the current audio stream. [https://docs.cartesia.ai/line/integrations/web-calls#clear-event](https://docs.cartesia.ai/line/integrations/web-calls#clear-event)
-     * @typedef _CartesiaAgentsEvent
+     * @eventpayload _CartesiaAgentsEvent
      */
     Clear = 'Cartesia.Agents.Clear',
 
     /**
      * Server sends DTMF tones from the agent. [https://docs.cartesia.ai/line/integrations/web-calls#dtmf-event-2](https://docs.cartesia.ai/line/integrations/web-calls#dtmf-event-2)
-     * @typedef _CartesiaAgentsEvent
+     * @eventpayload _CartesiaAgentsEvent
      */
     DTMF = 'Cartesia.Agents.DTMF',
 
     /**
      * Server sends custom metadata from the agent. [https://docs.cartesia.ai/line/integrations/web-calls#custom-event-2](https://docs.cartesia.ai/line/integrations/web-calls#custom-event-2)
-     * @typedef _CartesiaAgentsEvent
+     * @eventpayload _CartesiaAgentsEvent
      */
     Custom = 'Cartesia.Agents.Custom',
 
     /**
      * The WebSocket error response event.
-     * @typedef _CartesiaAgentsEvent
+     * @eventpayload _CartesiaAgentsEvent
      */
     WebSocketError = 'Cartesia.Agents.WebSocketError',
 
      /**
      * Contains information about connector.
-     * @typedef _CartesiaAgentsEvent
+     * @eventpayload _CartesiaAgentsEvent
      */
     ConnectorInformation = 'Cartesia.Agents.ConnectorInformation',
   }
@@ -4598,17 +4601,21 @@ declare namespace Cartesia {
 
 declare namespace Cartesia {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.Cartesia);
+   * ```
    * @event
    */
   enum Events {
     /**
-     * Triggered when the audio stream sent by a third party through a Cartesia WebSocket is started playing.
-     * @typedef _WebSocketMediaStartedCartesiaEvent
+     * Triggered when the audio stream sent by a third party through a Cartesia WebSocket starts playing.
+     * @eventpayload _WebSocketMediaStartedCartesiaEvent
      */
     WebSocketMediaStarted = 'Cartesia.Events.WebSocketMediaStarted',
     /**
-     * Triggers after the end of the audio stream sent by a third party through a Cartesia WebSocket (**1 second of silence**).
-     * @typedef _WebSocketMediaEndedCartesiaEvent
+     * Triggered after the end of the audio stream sent by a third party through a Cartesia WebSocket (**1 second of silence**).
+     * @eventpayload _WebSocketMediaEndedCartesiaEvent
      */
     WebSocketMediaEnded = 'Cartesia.Events.WebSocketMediaEnded',
   }
@@ -4644,6 +4651,22 @@ declare namespace Cartesia {
   }
 }
 declare namespace Cartesia {
+  /**
+   * [Cartesia.RealtimeTTSPlayer] parameters. Can be passed as arguments to the [Cartesia.createRealtimeTTSPlayer] method.
+   */
+  interface RealtimeTTSPlayerParameters extends _WebSocketBasedClientParameters {
+    /**
+     * Optional. Object to provide parameters directly to the Cartesia provider Generation Request message. Find more information in the [documentation](https://docs.cartesia.ai/api-reference/tts/websocket).
+     */
+    generationRequestParameters?: Object;
+    /**
+     * Optional. Cartesia API key. Use your Cartesia API key if you have your own Cartesia account.
+     */
+    apiKey?: string;
+  }
+}
+
+declare namespace Cartesia {
   class RealtimeTTSPlayer extends BasePlayer {
     /**
      * Appends text to a [Cartesia.RealtimeTTSPlayer].
@@ -4663,22 +4686,6 @@ declare namespace Cartesia {
      * Clears a [Cartesia.RealtimeTTSPlayer] buffer.
      */
     clearBuffer(): void;
-  }
-}
-
-declare namespace Cartesia {
-  /**
-   * [Cartesia.RealtimeTTSPlayer] parameters. Can be passed as arguments to the [Cartesia.createRealtimeTTSPlayer] method.
-   */
-  interface RealtimeTTSPlayerParameters extends _WebSocketBasedClientParameters {
-    /**
-     * Object to provide parameters directly to the Cartesia provider Generation Request message. Find more information in the [documentation](https://docs.cartesia.ai/2024-11-13/api-reference/tts/tts#send.Generation-Request).
-     */
-    generationRequestParameters?: Object;
-    /**
-     * Optional. Cartesia API key. Use your Cartesia API key if you have your own Cartesia account.
-     */
-    apiKey?: string;
   }
 }
 
@@ -4808,12 +4815,12 @@ declare namespace CCAI {
     enum Agent {
       /**
        * Triggers after the [CCAI.Agent] instance is created.
-       * @typedef _AgentStartedEvent
+       * @eventpayload _AgentStartedEvent
        */
       Started = 'AI.Events.CcaiAgentStarted',
       /**
        * Triggers after the [CCAI.Agent] instance is destroyed.
-       * @typedef _AgentStoppedEvent
+       * @eventpayload _AgentStoppedEvent
        */
       Stopped = 'AI.Events.CcaiAgentStopped',
     }
@@ -4859,22 +4866,22 @@ declare namespace CCAI {
     enum Conversation {
       /**
        * Triggers after the [CCAI.Conversation] instance is created.
-       * @typedef _ConversationCreatedEvent
+       * @eventpayload _ConversationCreatedEvent
        */
       Created = 'AI.Events.CcaiConversationCreated',
       /**
        * Triggered when a conversation profile is created in the specified project.
-       * @typedef _ConversationProfileCreatedEvent
+       * @eventpayload _ConversationProfileCreatedEvent
        */
       ProfileCreated = 'AI.Events.CcaiConversationProfileCreated',
       /**
        * Triggered when the conversation is completed.
-       * @typedef _ConversationCompletedEvent
+       * @eventpayload _ConversationCompletedEvent
        */
       Completed = 'AI.Events.CcaiConversationCompleted',
       /**
        * Triggered when a [CCAI.Conversation] instance causes an error.
-       * @typedef _ConversationErrorEvent
+       * @eventpayload _ConversationErrorEvent
        */
       Error = 'AI.Events.CcaiConversationError',
     }
@@ -4944,37 +4951,37 @@ declare namespace CCAI {
     enum Participant {
       /**
        * Triggers after the [CCAI.Participant] instance is created.
-       * @typedef _ParticipantCreatedEvent
+       * @eventpayload _ParticipantCreatedEvent
        */
       Created = 'AI.Events.CcaiParticipantCreated',
       /**
        * Triggered when a [CCAI.Participant] instance returns an intent response.
-       * @typedef _ParticipantResponseEvent
+       * @eventpayload _ParticipantResponseEvent
        */
       Response = 'AI.Events.CcaiParticipantResponse',
       /**
        * Triggered when playback of a single phrase has finished successfully or in case of a playback error.
-       * @typedef _ParticipantPlaybackFinishedEvent
+       * @eventpayload _ParticipantPlaybackFinishedEvent
        */
       PlaybackFinished = 'AI.Events.CcaiParticipantPlaybackFinished',
       /**
        * Triggered when playback of a single phrase has started.
-       * @typedef _ParticipantPlaybackStartedEvent
+       * @eventpayload _ParticipantPlaybackStartedEvent
        */
       PlaybackStarted = 'AI.Events.CcaiParticipantPlaybackStarted',
       /**
        * Triggered when playback of a single phrase has stoped.
-       * @typedef _ParticipantPlaybackStoppedEvent
+       * @eventpayload _ParticipantPlaybackStoppedEvent
        */
       PlaybackStopped = 'AI.Events.CcaiParticipantPlaybackStopped',
       /**
        * Triggered when **audio_segments** from Google are ready to be played.
-       * @typedef _ParticipantPlaybackReadyEvent
+       * @eventpayload _ParticipantPlaybackReadyEvent
        */
       PlaybackReady = 'AI.Events.CcaiParticipantPlaybackReady',
       /**
        * Triggered when [CCAI.Participant.addPlaybackMarker] is reached.
-       * @typedef _ParticipantMarkerReachedEvent
+       * @eventpayload _ParticipantMarkerReachedEvent
        */
       MarkerReached = 'AI.Events.CcaiParticipantMarkerReached',
     }
@@ -5218,7 +5225,7 @@ declare namespace CCAI {
        */
       name: string;
       /**
-       * The collection of parameters associated with the event.
+       * Optional. The collection of parameters associated with the event.
        * Depending on your protocol or client library language, this is a map, associative array, symbol table, dictionary, or JSON object composed of a collection of (MapKey, MapValue) pairs:
        * * MapKey type: string
        * * MapKey value: parameter name
@@ -5365,37 +5372,37 @@ declare enum ConferenceDirection {
 declare enum ConferenceEvents {
   /**
    * Triggers in case of errors in the conference.
-   * @typedef _ConferenceErrorEvent
+   * @eventpayload _ConferenceErrorEvent
    */
   ConferenceError = 'Conference.Error',
   /**
    * Triggered when the conference has started. I.e., the call of [VoxEngine.createConference] triggers the event.
-   * @typedef _ConferenceEvent
+   * @eventpayload _ConferenceEvent
    */
   Started = 'Conference.Started',
   /**
    * Triggered when the conference is stopped. I.e., the call of [Conference.stop] triggers the event.
-   * @typedef _ConferenceStoppedEvent
+   * @eventpayload _ConferenceStoppedEvent
    */
   Stopped = 'Conference.Stopped',
   /**
    * Triggered when the endpoint is added.
-   * @typedef _ConferenceEndpointEvent
+   * @eventpayload _ConferenceEndpointEvent
    */
   EndpointAdded = 'Conference.EndpointAdded',
   /**
    * Triggered when the endpoint is updated.
-   * @typedef _ConferenceEndpointEvent
+   * @eventpayload _ConferenceEndpointEvent
    */
   EndpointUpdated = 'Conference.EndpointUpdated',
   /**
    * Triggered when the endpoint is removed.
-   * @typedef _ConferenceEndpointEvent
+   * @eventpayload _ConferenceEndpointEvent
    */
   EndpointRemoved = 'Conference.EndpointRemoved',
   /**
    * Triggered when the endpoint is manged.
-   * @typedef _ConferenceEndpointEvent
+   * @eventpayload _ConferenceEndpointEvent
    */
   EndpointManaged = 'Conference.EndpointManaged',
 }
@@ -5677,17 +5684,21 @@ declare namespace Deepgram {
 }
 declare namespace Deepgram {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.Deepgram);
+   * ```
    * @event
    */
   enum Events {
     /**
-     * Triggered when the audio stream sent by a third party through a Deepgram WebSocket is started playing.
-     * @typedef _WebSocketMediaStartedDeepgramEvent
+     * Triggered when the audio stream sent by a third party through a Deepgram WebSocket starts playing.
+     * @eventpayload _WebSocketMediaStartedDeepgramEvent
      */
     WebSocketMediaStarted = 'Deepgram.Events.WebSocketMediaStarted',
     /**
-     * Triggers after the end of the audio stream sent by a third party through a Deepgram WebSocket (**1 second of silence**).
-     * @typedef _WebSocketMediaEndedDeepgramEvent
+     * Triggered after the end of the audio stream sent by a third party through a Deepgram WebSocket (**1 second of silence**).
+     * @eventpayload _WebSocketMediaEndedDeepgramEvent
      */
     WebSocketMediaEnded = 'Deepgram.Events.WebSocketMediaEnded',
   }
@@ -5730,7 +5741,7 @@ declare namespace Deepgram {
    */
   interface RealtimeTTSPlayerParameters extends _WebSocketBasedClientParameters {
     /**
-     * Object to provide parameters directly to the Deepgram provider Speak WebSocket connection. Find more information in the [documentation](https://developers.deepgram.com/reference/text-to-speech/speak-streaming).
+     * Optional. Object to provide parameters directly to the Deepgram provider Speak WebSocket connection. Find more information in the [documentation](https://developers.deepgram.com/reference/text-to-speech/speak-streaming).
      *
      * Supported fields:
      * - **model** — required. One of the available Deepgram TTS models (model + voice + language). See the [TTS models list](https://developers.deepgram.com/docs/tts-models).
@@ -5858,35 +5869,35 @@ declare namespace Deepgram {
     /**
      * Send a message to change the Speak model in the middle of a conversation.
      * [https://developers.deepgram.com/reference/voice-agent/voice-agent#send.AgentV1UpdateSpeak](https://developers.deepgram.com/reference/voice-agent/voice-agent#send.AgentV1UpdateSpeak)
-     * @param input
+     * @param input Request payload
      */
     sendUpdateSpeak(input: Object): void
 
     /**
      * Send a message to update the system prompt of the agent.
      * [https://developers.deepgram.com/reference/voice-agent/voice-agent#send.AgentV1UpdatePrompt](https://developers.deepgram.com/reference/voice-agent/voice-agent#send.AgentV1UpdatePrompt)
-     * @param input
+     * @param input Request payload
      */
     sendUpdatePrompt(input: Object): void
 
     /**
      * Send a message to immediately trigger an Agent statement.
      * [https://developers.deepgram.com/reference/voice-agent/voice-agent#send.AgentV1InjectAgentMessage](https://developers.deepgram.com/reference/voice-agent/voice-agent#send.AgentV1InjectAgentMessage)
-     * @param input
+     * @param input Request payload
      */
     sendInjectAgentMessage(input: Object): void
 
     /**
      * Send a text based message to the agent.
      * [https://developers.deepgram.com/reference/voice-agent/voice-agent#send.AgentV1InjectUserMessage](https://developers.deepgram.com/reference/voice-agent/voice-agent#send.AgentV1InjectUserMessage)
-     * @param input
+     * @param input Request payload
      */
     sendInjectUserMessage(input: Object): void
 
     /**
      * Send a message to provide a function call response in the middle of a conversation.
      * [https://developers.deepgram.com/reference/voice-agent/voice-agent#send.AgentV1SendFunctionCallResponse](https://developers.deepgram.com/reference/voice-agent/voice-agent#send.AgentV1SendFunctionCallResponse)
-     * @param input
+     * @param input Request payload
      */
     sendFunctionCallResponse(input: Object): void
   }
@@ -5894,114 +5905,118 @@ declare namespace Deepgram {
 
 declare namespace Deepgram {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.Deepgram);
+   * ```
    * @event
    */
   enum VoiceAgentEvents {
     /**
      * The unknown event.
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     Unknown = 'Deepgram.VoiceAgent.Unknown',
 
     /**
      * The HTTP response event.
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     HTTPResponse = 'Deepgram.Agents.HTTPResponse',
 
     /**
      * Receive a welcome message from the server to confirm the websocket has opened. [https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1Welcome](https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1Welcome)
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     Welcome = 'Deepgram.VoiceAgent.Welcome',
 
     /**
      * Confirms the server has successfully received and applied the Settings message. [https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1SettingsApplied](https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1SettingsApplied)
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     SettingsApplied = 'Deepgram.VoiceAgent.SettingsApplied',
 
     /**
      * Facilitates real-time communication by relaying spoken statements from both the user and the agent. [https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1ConversationText](https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1ConversationText)
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     ConversationText = 'Deepgram.VoiceAgent.ConversationText',
 
     /**
      * Notifies the client that the user has begun speaking. [https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1UserStartedSpeaking](https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1UserStartedSpeaking)
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     UserStartedSpeaking = 'Deepgram.VoiceAgent.UserStartedSpeaking',
 
     /**
      * Informs the client when the agent is processing information. [https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1AgentThinking](https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1AgentThinking)
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     AgentThinking = 'Deepgram.VoiceAgent.AgentThinking',
 
     /**
      * Server-initiated message requesting a function call, to be handled by either client or server. [https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1FunctionCallRequest](https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1FunctionCallRequest)
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     FunctionCallRequest = 'Deepgram.VoiceAgent.FunctionCallRequest',
 
     /**
      * Message containing the result of a function call, sent by client or server. [https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1ReceiveFunctionCallResponse](https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1ReceiveFunctionCallResponse)
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     FunctionCallResponse = 'Deepgram.VoiceAgent.FunctionCallResponse',
 
     /**
      * Confirms that a Prompt Configuration change has been applied. [https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1PromptUpdated](https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1PromptUpdated)
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     PromptUpdated = 'Deepgram.VoiceAgent.PromptUpdated',
 
     /**
      * Confirms that a Speak Configuration change has been applied. [https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1SpeakUpdated](https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1SpeakUpdated)
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     SpeakUpdated = 'Deepgram.VoiceAgent.SpeakUpdated',
 
     /**
      * Get signals that the server has finished sending the final audio segment to the client. [https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1AgentAudioDone](https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1AgentAudioDone)
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     AgentAudioDone = 'Deepgram.VoiceAgent.AgentAudioDone',
 
     /**
      * Provides a detailed STT, LLM, and TTS latency breakdown for each turn. [https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1AgentAudioDone#receive.AgentV1LatencyReport](https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1AgentAudioDone#receive.AgentV1LatencyReport)
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     LatencyReport = 'Deepgram.VoiceAgent.LatencyReport',
 
     /**
      * Receive errors from the server if an issue has occurred. [https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1Error](https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1Error)
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     Error = 'Deepgram.VoiceAgent.Error',
 
     /**
      * Receive warnings from the server if an issue has occurred. [https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1Warning](https://developers.deepgram.com/reference/voice-agent/voice-agent#receive.AgentV1Warning)
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     Warning = 'Deepgram.VoiceAgent.Warning',
 
     /**
      * Provide conversation and function call history when starting a new Voice Agent session. [https://developers.deepgram.com/docs/voice-agent-history](https://developers.deepgram.com/docs/voice-agent-history)
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     History = 'Deepgram.VoiceAgent.History',
 
     /**
      * The WebSocket error response event.
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     WebSocketError = 'Deepgram.VoiceAgent.WebSocketError',
 
     /**
      * Contains information about connector.
-     * @typedef _VoiceAgentEvent
+     * @eventpayload _VoiceAgentEvent
      */
     ConnectorInformation = 'Deepgram.VoiceAgent.ConnectorInformation',
   }
@@ -6747,23 +6762,23 @@ declare namespace ElevenLabs {
 
     /**
      * Defines what can be customized when starting a conversation. [https://elevenlabs.io/docs/agents-platform/api-reference/agents-platform/websocket#send.Conversation-Initiation-Client-Data](https://elevenlabs.io/docs/agents-platform/api-reference/agents-platform/websocket#send.Conversation-Initiation-Client-Data)
-     * @param parameters
+     * @param parameters Event parameters
      */
     conversationInitiationClientData(parameters: Object): void
     /**
      * Result of the client tool call. [https://elevenlabs.io/docs/agents-platform/api-reference/agents-platform/websocket#send.Client-Tool-Result](https://elevenlabs.io/docs/agents-platform/api-reference/agents-platform/websocket#send.Client-Tool-Result)
-     * @param parameters
+     * @param parameters Event parameters
      */
     clientToolResult(parameters: Object): void
     /**
      * Allows to send non-interrupting background information to the conversation. [https://elevenlabs.io/docs/agents-platform/api-reference/agents-platform/websocket#send.Contextual-Update](https://elevenlabs.io/docs/agents-platform/api-reference/agents-platform/websocket#send.Contextual-Update)
-     * @param parameters
+     * @param parameters Event parameters
      */
     contextualUpdate(parameters: Object): void
 
     /**
      * Allows to send user text messages to the conversation. [https://elevenlabs.io/docs/agents-platform/customization/events/client-to-server-events#user-messages](https://elevenlabs.io/docs/agents-platform/customization/events/client-to-server-events#user-messages)
-     * @param parameters
+     * @param parameters Event parameters
      */
     userMessage(parameters: Object): void
   }
@@ -6771,97 +6786,101 @@ declare namespace ElevenLabs {
   
 declare namespace ElevenLabs {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.ElevenLabs);
+   * ```
    * @event
    */
   enum AgentsEvents {
     /**
      * The unknown event.
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     Unknown = 'ElevenLabs.Agents.Unknown',
 
     /**
      * The HTTP response event.
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     HTTPResponse = 'ElevenLabs.Agents.HTTPResponse',
 
     /**
      * Automatically sent when starting a conversation. Initializes conversation settings and parameters. [https://elevenlabs.io/docs/agents-platform/customization/events/client-events#conversation_initiation_metadata](https://elevenlabs.io/docs/agents-platform/customization/events/client-events#conversation_initiation_metadata)
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     ConversationInitiationMetadata = 'ElevenLabs.Agents.ConversationInitiationMetadata',
 
     /**
      * Health check event requiring immediate response. Used to maintain WebSocket connection. [https://elevenlabs.io/docs/agents-platform/customization/events/client-events#ping](https://elevenlabs.io/docs/agents-platform/customization/events/client-events#ping)
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     Ping = 'ElevenLabs.Agents.Ping',
 
 
     /**
      * Contains finalized speech-to-text results. Represents complete user utterances. Used for conversation history. [https://elevenlabs.io/docs/agents-platform/customization/events/client-events#user_transcript](https://elevenlabs.io/docs/agents-platform/customization/events/client-events#user_transcript)
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     UserTranscript = 'ElevenLabs.Agents.UserTranscript',
 
     /**
      * Contains complete agent message. Sent with first audio chunk. Used for display and history. [https://elevenlabs.io/docs/agents-platform/customization/events/client-events#agent_response](https://elevenlabs.io/docs/agents-platform/customization/events/client-events#agent_response)
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     AgentResponse = 'ElevenLabs.Agents.AgentResponse',
 
     /**
      * Contains truncated response after interruption. Updates displayed message. Maintains conversation accuracy. [https://elevenlabs.io/docs/agents-platform/customization/events/client-events#agent_response_correction](https://elevenlabs.io/docs/agents-platform/customization/events/client-events#agent_response_correction)
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     AgentResponseCorrection = 'ElevenLabs.Agents.AgentResponseCorrection',
 
     /**
      * Contains event id of interrupted event. [https://elevenlabs.io/docs/agents-platform/api-reference/agents-platform/websocket#receive.Interruption](https://elevenlabs.io/docs/agents-platform/api-reference/agents-platform/websocket#receive.Interruption)
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     Interruption = 'ElevenLabs.Agents.Interruption',
 
     /**
      * Contains contextual information to be added to the conversation state. [https://elevenlabs.io/docs/agents-platform/api-reference/agents-platform/websocket#receive.Contextual-Update](https://elevenlabs.io/docs/agents-platform/api-reference/agents-platform/websocket#receive.Contextual-Update)
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     ContextualUpdate = 'ElevenLabs.Agents.ContextualUpdate',
 
     /**
      * Represents a function call the agent wants the client to execute. Contains tool name, tool call ID, and parameters. Requires client-side execution of the function and sending the result back to the server. [https://elevenlabs.io/docs/agents-platform/customization/events/client-events#client_tool_call](https://elevenlabs.io/docs/agents-platform/customization/events/client-events#client_tool_call)
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     ClientToolCall = 'ElevenLabs.Agents.ClientToolCall',
 
     /**
      * Voice Activity Detection score event. Indicates the probability that the user is speaking. Values range from 0 to 1, where higher values indicate higher confidence of speech. [https://elevenlabs.io/docs/agents-platform/customization/events/client-events#vad_score](https://elevenlabs.io/docs/agents-platform/customization/events/client-events#vad_score)
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     VadScore = 'ElevenLabs.Agents.VadScore',
 
     /**
      * Contains preliminary text from the agent. [https://elevenlabs.io/docs/agents-platform/api-reference/agents-platform/websocket#receive.Internal-Tentative-Agent-Response](https://elevenlabs.io/docs/agents-platform/api-reference/agents-platform/websocket#receive.Internal-Tentative-Agent-Response)
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     InternalTentativeAgentResponse = 'ElevenLabs.Agents.InternalTentativeAgentResponse',
 
     /**
      * The WebSocket error response event.
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     WebSocketError = 'ElevenLabs.Agents.WebSocketError',
 
      /**
      * Contains information about connector.
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     ConnectorInformation = 'ElevenLabs.Agents.ConnectorInformation',
 
     /**
      * Indicates when the agent has executed a tool function. Contains tool metadata and execution status. Provides visibility into agent tool usage during conversations. [https://elevenlabs.io/docs/agents-platform/customization/events/client-events#agent_tool_response](https://elevenlabs.io/docs/agents-platform/customization/events/client-events#agent_tool_response)
-     * @typedef _AgentsEvent
+     * @eventpayload _AgentsEvent
      */
     AgentToolResponse = 'ElevenLabs.Agents.AgentToolResponse',
   }
@@ -6925,17 +6944,21 @@ declare namespace ElevenLabs {
 }
 declare namespace ElevenLabs {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.ElevenLabs);
+   * ```
    * @event
    */
   enum Events {
     /**
-     * Triggered when the audio stream sent by a third party through an ElevenLabs WebSocket is started playing.
-     * @typedef _WebSocketMediaStartedElevenLabsEvent
+     * Triggered when the audio stream sent by a third party through an ElevenLabs WebSocket starts playing.
+     * @eventpayload _WebSocketMediaStartedElevenLabsEvent
      */
     WebSocketMediaStarted = 'ElevenLabs.Events.WebSocketMediaStarted',
     /**
-     * Triggers after the end of the audio stream sent by a third party through an ElevenLabs WebSocket (**1 second of silence**).
-     * @typedef _WebSocketMediaEndedElevenLabsEvent
+     * Triggered after the end of the audio stream sent by a third party through an ElevenLabs WebSocket (**1 second of silence**).
+     * @eventpayload _WebSocketMediaEndedElevenLabsEvent
      */
     WebSocketMediaEnded = 'ElevenLabs.Events.WebSocketMediaEnded',
   }
@@ -6970,31 +6993,6 @@ declare namespace ElevenLabs {
   interface _WebSocketMediaEndedElevenLabsEvent extends _Event, _WebSocketMediaEndedWithoutWebSocketEvent {
   }
 }
-declare namespace ElevenLabs {
-  class RealtimeTTSPlayer extends BasePlayer {
-    /**
-     * Append text to a [ElevenLabs.RealtimeTTSPlayer].
-     * 
-     * The [PlayerEvents.PlaybackFinished] event is triggered only if this method is called.
-     * @param text A text string to append
-     * @param endOfTurn Whether to force audio generation. Set this value to true when you have finished sending text, but want to keep the websocket connection open<br><br>This is useful when you want to ensure that the last chunk of audio is generated even when the length of text sent is smaller than the value set in chunk_length_schedule (e.g. 120 or 50)
-     * @deprecated Use [RealtimeTTSPlayer.sendText] instead
-     */
-    append(text: string, endOfTurn?: boolean): void;
-
-    /**
-     * Append text to a [ElevenLabs.RealtimeTTSPlayer].
-     * @param parameters Object provides the parameters directly to the ElevenLabs provider sendText method. Find more information in the [documentation](https://elevenlabs.io/docs/api-reference/text-to-speech/v-1-text-to-speech-voice-id-stream-input#send.sendText).
-     */
-    sendText(parameters: Object): void;
-
-    /**
-     * Clear a [ElevenLabs.RealtimeTTSPlayer] buffer.
-     */
-    clearBuffer(): void;
-  }
-}
-
 declare namespace ElevenLabs {
   /**
    * The [ElevenLabs.RealtimeTTSPlayerParameters] header. Can be passed via the [ElevenLabs.RealtimeTTSPlayerParameters.headers] parameter.
@@ -7041,6 +7039,31 @@ declare namespace ElevenLabs {
   }
 }
 
+declare namespace ElevenLabs {
+  class RealtimeTTSPlayer extends BasePlayer {
+    /**
+     * Append text to a [ElevenLabs.RealtimeTTSPlayer].
+     * 
+     * The [PlayerEvents.PlaybackFinished] event is triggered only if this method is called.
+     * @param text A text string to append
+     * @param endOfTurn Whether to force audio generation. Set this value to true when you have finished sending text, but want to keep the websocket connection open<br><br>This is useful when you want to ensure that the last chunk of audio is generated even when the length of text sent is smaller than the value set in chunk_length_schedule (e.g. 120 or 50)
+     * @deprecated Use [RealtimeTTSPlayer.sendText] instead
+     */
+    append(text: string, endOfTurn?: boolean): void;
+
+    /**
+     * Append text to a [ElevenLabs.RealtimeTTSPlayer].
+     * @param parameters Object provides the parameters directly to the ElevenLabs provider sendText method. Find more information in the [documentation](https://elevenlabs.io/docs/api-reference/text-to-speech/v-1-text-to-speech-voice-id-stream-input#send.sendText).
+     */
+    sendText(parameters: Object): void;
+
+    /**
+     * Clear a [ElevenLabs.RealtimeTTSPlayer] buffer.
+     */
+    clearBuffer(): void;
+  }
+}
+
 /**
  * [Endpoint] parameters. Can be passed as arguments to the [Conference.add] method.
  * <br>
@@ -7063,9 +7086,9 @@ declare interface EndpointParameters {
    */
   direction: 'SEND' | 'RECEIVE' | 'BOTH';
   /**
-   * Internal information about codecs.
+   * Optional. Internal information about codecs. Pass the value received from a call event as-is. Do not inspect or modify the object. Reconstructing or mutating the payload can break codec negotiation.
    */
-  scheme: any;
+  scheme?: Scheme;
   /**
    * Human-readable endpoint's name.
    */
@@ -7107,7 +7130,7 @@ declare class Endpoint {
 
   /**
    * Sets the display name for the specified endpoint. When the display name is set, all SDK clients receive 'EndpointEvents.InfoUpdated' event.
-   * @param displayName
+   * @param displayName Display name
    */
   setDisplayName(displayName: string): void;
 
@@ -7150,17 +7173,21 @@ declare namespace Gemini {
 
 declare namespace Gemini {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.Gemini);
+   * ```
    * @event
    */
   enum Events {
     /**
-     * Triggered when the audio stream sent by a third party through a Gemini WebSocket is started playing.
-     * @typedef _WebSocketMediaStartedGeminiEvent
+     * Triggered when the audio stream sent by a third party through a Gemini WebSocket starts playing.
+     * @eventpayload _WebSocketMediaStartedGeminiEvent
      */
     WebSocketMediaStarted = 'Gemini.Events.WebSocketMediaStarted',
     /**
-     * Triggers after the end of the audio stream sent by a third party through a Gemini WebSocket (**1 second of silence**).
-     * @typedef _WebSocketMediaEndedGeminiEvent
+     * Triggered after the end of the audio stream sent by a third party through a Gemini WebSocket (**1 second of silence**).
+     * @eventpayload _WebSocketMediaEndedGeminiEvent
      */
     WebSocketMediaEnded = 'Gemini.Events.WebSocketMediaEnded',
   }
@@ -7248,7 +7275,7 @@ declare namespace Gemini {
 
 declare namespace Gemini {
   /**
-   * Note that the [Gemini.LiveAPIClient] using the [Google Gen AI Go SDK v1.71.0](https://pkg.go.dev/google.golang.org/genai@v1.71.0).
+   * Note that the [Gemini.LiveAPIClient] uses the [Google Gen AI Go SDK v1.71.0](https://pkg.go.dev/google.golang.org/genai@v1.71.0).
    */
   class LiveAPIClient {
     /**
@@ -7308,21 +7335,21 @@ declare namespace Gemini {
     /**
      * Transmits a LiveClientContent over the established connection. 
      * [https://pkg.go.dev/google.golang.org/genai@v1.71.0#Session.SendClientContent](https://pkg.go.dev/google.golang.org/genai@v1.71.0#Session.SendClientContent)
-     * @param input
+     * @param input Request payload
      */
     sendClientContent(input: Object): void
 
     /**
      * Transmits a LiveClientRealtimeInput over the established connection. 
      * [https://pkg.go.dev/google.golang.org/genai@v1.71.0#Session.SendRealtimeInput](https://pkg.go.dev/google.golang.org/genai@v1.71.0#Session.SendRealtimeInput)
-     * @param input
+     * @param input Request payload
      */
     sendRealtimeInput(input: Object): void
 
     /**
      * Transmits a LiveClientToolResponse over the established connection. 
      * [https://pkg.go.dev/google.golang.org/genai@v1.71.0#Session.SendToolResponse](https://pkg.go.dev/google.golang.org/genai@v1.71.0#Session.SendToolResponse)
-     * @param input
+     * @param input Request payload
      */
     sendToolResponse(input: Object): void
   }
@@ -7330,36 +7357,40 @@ declare namespace Gemini {
 
 declare namespace Gemini {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.Gemini);
+   * ```
    * @event
    */
   enum LiveAPIEvents {
     /**
      * The unknown event.
-     * @typedef _LiveAPIEvent
+     * @eventpayload _LiveAPIEvent
      */
     Unknown = 'Gemini.LiveAPI.Unknown',
 
     /**
      * Content generated by the model in response to client messages. [https://pkg.go.dev/google.golang.org/genai@v1.71.0#LiveServerContent](https://pkg.go.dev/google.golang.org/genai@v1.71.0#LiveServerContent)
-     * @typedef _LiveAPIEvent
+     * @eventpayload _LiveAPIEvent
      */
     ServerContent = 'Gemini.LiveAPI.ServerContent',
 
     /**
      * Request for the client to execute the `function_calls` and return the responses with the matching `id`s. [https://pkg.go.dev/google.golang.org/genai@v1.71.0#LiveServerToolCall](https://pkg.go.dev/google.golang.org/genai@v1.71.0#LiveServerToolCall)
-     * @typedef _LiveAPIEvent
+     * @eventpayload _LiveAPIEvent
      */
     ToolCall = 'Gemini.LiveAPI.ToolCall',
 
     /**
      * Notification for the client that a previously issued `ToolCallMessage` with the specified `id`s should have been not executed and should be cancelled. [https://pkg.go.dev/google.golang.org/genai@v1.71.0#LiveServerToolCallCancellation](https://pkg.go.dev/google.golang.org/genai@v1.71.0#LiveServerToolCallCancellation)
-     * @typedef _LiveAPIEvent
+     * @eventpayload _LiveAPIEvent
      */
     ToolCallCancellation = 'Gemini.LiveAPI.ToolCallCancellation',
 
     /**
      * Contains information about connector.
-     * @typedef _LiveAPIEvent
+     * @eventpayload _LiveAPIEvent
      */
     ConnectorInformation = 'Gemini.LiveAPI.ConnectorInformation',
   }
@@ -7451,6 +7482,244 @@ declare namespace Google {
   }
 }
 
+declare namespace Hush {
+  /**
+   * Creates a [Hush.NoiseSuppression] instance.
+   * @param parameters The [Hush.NoiseSuppression] parameters
+   */
+  function createNoiseSuppression(
+    parameters: NoiseSuppressionParameters
+  ): Promise<Hush.NoiseSuppression>;
+}
+
+declare namespace Hush {
+  /**
+   * @event
+   */
+  enum Events {
+    /**
+     * Triggered when media sending to the NoiseSuppression WebSocket starts.
+     * @eventpayload _HushWebSocketMediaStartedEvent
+     */
+    WebSocketMediaStarted = 'Hush.Events.WebSocketMediaStarted',
+
+    /**
+     * Triggered when media sending to the NoiseSuppression WebSocket ends.
+     * @eventpayload _HushWebSocketMediaEndedEvent
+     */
+    WebSocketMediaEnded = 'Hush.Events.WebSocketMediaEnded',
+  }
+
+  /**
+   * @private
+   */
+  interface _HushEvents {
+    [Events.WebSocketMediaStarted]: _HushWebSocketMediaStartedEvent;
+    [Events.WebSocketMediaEnded]: _HushWebSocketMediaEndedEvent;
+  }
+
+  /**
+   * @private
+   */
+  interface _HushEvent {
+    /**
+     * The [Hush.NoiseSuppression] instance.
+     */
+    noiseSuppression: NoiseSuppression;
+  }
+
+  /**
+   * @private
+   */
+  interface _HushWebSocketMediaStartedEvent extends _HushEvent {
+    /**
+     * Optional. The media tag.
+     */
+    tag?: string;
+    /**
+     * Optional. The media encoding.
+     */
+    encoding?: string;
+    /**
+     * Optional. Custom parameters.
+     */
+    customParameters?: { [key: string]: string };
+  }
+
+  /**
+   * @private
+   */
+  interface _HushWebSocketMediaEndedEvent extends _HushEvent {
+    /**
+     * Optional. The media tag.
+     */
+    tag?: string;
+    /**
+     * Optional. Media information.
+     */
+    mediaInfo?: WebSocketMediaInfo;
+  }
+
+  /**
+   * @private
+   */
+  interface _HushNoiseSuppressionClientEvents
+    extends _HushNoiseSuppressionEvents,
+      _HushEvents {}
+}
+
+declare namespace Hush {
+}
+
+declare namespace Hush {
+  /**
+   * @event
+   */
+  enum NoiseSuppressionEvents {
+    /**
+     * The [Hush.NoiseSuppression] ONNX state was reset.
+     * @eventpayload _HushNoiseSuppressionResetEvent
+     */
+    Reset = 'Hush.NoiseSuppression.Reset',
+
+    /**
+     * The error response event.
+     * @eventpayload _HushNoiseSuppressionErrorEvent
+     */
+    Error = 'Hush.NoiseSuppression.Error',
+
+    /**
+     * Contains information about connector.
+     * @eventpayload _HushNoiseSuppressionConnectorInformationEvent
+     */
+    ConnectorInformation = 'Hush.NoiseSuppression.ConnectorInformation',
+  }
+
+  /**
+   * @private
+   */
+  interface _HushNoiseSuppressionEvents {
+    [NoiseSuppressionEvents.Reset]: _HushNoiseSuppressionResetEvent;
+    [NoiseSuppressionEvents.Error]: _HushNoiseSuppressionErrorEvent;
+    [NoiseSuppressionEvents.ConnectorInformation]: _HushNoiseSuppressionConnectorInformationEvent;
+  }
+
+  /**
+   * @private
+   */
+  interface _HushNoiseSuppressionEvent {
+    /**
+     * The [Hush.NoiseSuppression] instance.
+     */
+    noiseSuppression: NoiseSuppression;
+  }
+
+  /**
+   * @private
+   */
+  interface _HushNoiseSuppressionResetEvent extends _HushNoiseSuppressionEvent {}
+
+  /**
+   * @private
+   */
+  interface _HushNoiseSuppressionErrorEvent extends _HushNoiseSuppressionEvent {
+    /**
+     * The error text.
+     */
+    text: string;
+  }
+
+  /**
+   * @private
+   */
+  interface _HushNoiseSuppressionConnectorInformationEvent extends _HushNoiseSuppressionEvent {
+    /**
+     * The event's data.
+     */
+    data?: Object;
+  }
+}
+
+declare namespace Hush {
+  /**
+   * [Hush.NoiseSuppression] parameters. Can be passed as arguments to the [Hush.createNoiseSuppression] method.
+   */
+  interface NoiseSuppressionParameters extends _WebSocketBasedClientParameters {
+    /**
+     * Optional. Attenuation limit in dB. **0** means no limit. The default value is **0**.
+     */
+    attenLimDb?: number;
+  }
+}
+
+declare namespace Hush {
+  class NoiseSuppression {
+    /**
+     * Returns the NoiseSuppression id.
+     */
+    id(): string;
+
+    /**
+     * Returns the NoiseSuppression WebSocket id.
+     */
+    webSocketId(): string;
+
+    /**
+     * Closes the NoiseSuppression connection (over WebSocket) or connection attempt.
+     */
+    close(): void;
+
+    /**
+     * Starts sending denoised media from the NoiseSuppression (via WebSocket) to the media unit.
+     * @param mediaUnit Media unit that receives media
+     * @param parameters Optional interaction parameters
+     */
+    sendMediaTo(mediaUnit: VoxMediaUnit, parameters?: SendMediaParameters): void;
+
+    /**
+     * Stops sending media from the NoiseSuppression (via WebSocket) to the media unit.
+     * @param mediaUnit Media unit that stops receiving media
+     */
+    stopMediaTo(mediaUnit: VoxMediaUnit): void;
+
+    /**
+     * Clears the NoiseSuppression WebSocket media buffer.
+     * @param parameters Optional. Media buffer clearing parameters
+     */
+    clearMediaBuffer(parameters?: ClearMediaBufferParameters): void;
+
+    /**
+     * Resets the Hush ONNX streaming state and resampler buffers.
+     */
+    reset(): void;
+
+    /**
+     * Stops the noise suppression session on the connector.
+     */
+    stop(): void;
+
+    /**
+     * Adds a handler for the specified [Hush.NoiseSuppressionEvents] or [Hush.Events] event. Use only functions as handlers; anything except a function leads to the error and scenario termination when a handler is called.
+     * @param event Event class (i.e., [Hush.NoiseSuppressionEvents.Reset])
+     * @param callback Handler function. A single parameter is passed - object with event information
+     */
+    addEventListener<T extends keyof Hush._HushNoiseSuppressionClientEvents>(
+      event: Hush.NoiseSuppressionEvents | Hush.Events | T,
+      callback: (event: Hush._HushNoiseSuppressionClientEvents[T]) => any
+    ): void;
+
+    /**
+     * Removes a handler for the specified [Hush.NoiseSuppressionEvents] or [Hush.Events] event.
+     * @param event Event class (i.e., [Hush.NoiseSuppressionEvents.Reset])
+     * @param callback Optional. Handler function. If not specified, all handler functions are removed
+     */
+    removeEventListener<T extends keyof Hush._HushNoiseSuppressionClientEvents>(
+      event: Hush.NoiseSuppressionEvents | Hush.Events | T,
+      callback?: (event: Hush._HushNoiseSuppressionClientEvents[T]) => any
+    ): void;
+  }
+}
+
 declare namespace Inworld {
   /**
    * Creates a new [Inworld.RealtimeAPIClient] instance.
@@ -7469,17 +7738,21 @@ declare namespace Inworld {
 
 declare namespace Inworld {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.Inworld);
+   * ```
    * @event
    */
   enum Events {
     /**
-     * Triggered when the audio stream sent by a third party through an Inworld WebSocket is started playing.
-     * @typedef _WebSocketMediaStartedInworldEvent
+     * Triggered when the audio stream sent by a third party through an Inworld WebSocket starts playing.
+     * @eventpayload _WebSocketMediaStartedInworldEvent
      */
     WebSocketMediaStarted = 'Inworld.Events.WebSocketMediaStarted',
     /**
-     * Triggers after the end of the audio stream sent by a third party through an Inworld WebSocket (**1 second of silence**).
-     * @typedef _WebSocketMediaEndedInworldEvent
+     * Triggered after the end of the audio stream sent by a third party through an Inworld WebSocket (**1 second of silence**).
+     * @eventpayload _WebSocketMediaEndedInworldEvent
      */
     WebSocketMediaEnded = 'Inworld.Events.WebSocketMediaEnded',
   }
@@ -7541,7 +7814,7 @@ declare namespace Inworld {
     sessionKey: string;
 
     /**
-     * The authentication scheme (**basic** or **bearer**) for the Inworld Realtime API. The default value is **bearer**.
+     * Optional. The authentication scheme (**basic** or **bearer**) for the Inworld Realtime API. The default value is **bearer**.
      */
     authScheme?: string;
   }
@@ -7673,187 +7946,191 @@ declare namespace Inworld {
 
 declare namespace Inworld {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.Inworld);
+   * ```
    * @event
    */
   enum RealtimeAPIEvents {
     /**
      * The unknown event.
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     Unknown = 'Inworld.RealtimeAPI.Unknown',
     /**
      * The HTTP response event.
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     HTTPResponse = 'Inworld.RealtimeAPI.HTTPResponse',
     /**
      * Indicates an error occurred. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     Error = 'Inworld.RealtimeAPI.Error',
     /**
      * Sent by the server immediately when the WebSocket connection is established, carrying the session's default configuration. Send a session.update to configure the session. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     SessionCreated = 'Inworld.RealtimeAPI.SessionCreated',
     /**
      * Confirms a session.update was applied. The server responds with a session.updated event. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     SessionUpdated = 'Inworld.RealtimeAPI.SessionUpdated',
     /**
      * A new item was added to the conversation. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemAdded = 'Inworld.RealtimeAPI.ConversationItemAdded',
     /**
      * An item finished being populated. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemDone = 'Inworld.RealtimeAPI.ConversationItemDone',
     /**
      * An item was deleted from the conversation. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemDeleted = 'Inworld.RealtimeAPI.ConversationItemDeleted',
     /**
      * Response to conversation.item.retrieve. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemRetrieved = 'Inworld.RealtimeAPI.ConversationItemRetrieved',
     /**
      * An assistant audio item was truncated. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemTruncated = 'Inworld.RealtimeAPI.ConversationItemTruncated',
     /**
      * Streaming partial transcription for user audio. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemInputAudioTranscriptionDelta = 'Inworld.RealtimeAPI.ConversationItemInputAudioTranscriptionDelta',
     /**
      * Final transcription for a user audio item. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemInputAudioTranscriptionCompleted = 'Inworld.RealtimeAPI.ConversationItemInputAudioTranscriptionCompleted',
     /**
      * A new response was created. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseCreated = 'Inworld.RealtimeAPI.ResponseCreated',
     /**
      * The response finished. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseDone = 'Inworld.RealtimeAPI.ResponseDone',
     /**
      * An output item was added to the response. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseOutputItemAdded = 'Inworld.RealtimeAPI.ResponseOutputItemAdded',
     /**
      * An output item finished. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseOutputItemDone = 'Inworld.RealtimeAPI.ResponseOutputItemDone',
     /**
      * A content part was added to an output item. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseContentPartAdded = 'Inworld.RealtimeAPI.ResponseContentPartAdded',
     /**
      * A content part finished. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseContentPartDone = 'Inworld.RealtimeAPI.ResponseContentPartDone',
     /**
      * Streaming text chunk from the model. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseOutputTextDelta = 'Inworld.RealtimeAPI.ResponseOutputTextDelta',
     /**
      * Text output finished. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseOutputTextDone = 'Inworld.RealtimeAPI.ResponseOutputTextDone',
     /**
      * Audio output for a content part finished. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseOutputAudioDone = 'Inworld.RealtimeAPI.ResponseOutputAudioDone',
     /**
      * Streaming transcript for generated audio. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseOutputAudioTranscriptDelta = 'Inworld.RealtimeAPI.ResponseOutputAudioTranscriptDelta',
     /**
      * Final transcript for generated audio. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseOutputAudioTranscriptDone = 'Inworld.RealtimeAPI.ResponseOutputAudioTranscriptDone',
     /**
      * Streaming function call arguments. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseFunctionCallArgumentsDelta = 'Inworld.RealtimeAPI.ResponseFunctionCallArgumentsDelta',
     /**
      * Function call arguments finished. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseFunctionCallArgumentsDone = 'Inworld.RealtimeAPI.ResponseFunctionCallArgumentsDone',
     /**
      * Voice activity detected: user started speaking. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     InputAudioBufferSpeechStarted = 'Inworld.RealtimeAPI.InputAudioBufferSpeechStarted',
     /**
      * Voice activity ended: user stopped speaking. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     InputAudioBufferSpeechStopped = 'Inworld.RealtimeAPI.InputAudioBufferSpeechStopped',
     /**
      * Buffered audio was committed as a conversation item. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     InputAudioBufferCommitted = 'Inworld.RealtimeAPI.InputAudioBufferCommitted',
     /**
      * Input audio buffer was cleared. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     InputAudioBufferCleared = 'Inworld.RealtimeAPI.InputAudioBufferCleared',
     /**
      * An idle timeout was triggered on the input buffer. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     InputAudioBufferTimeoutTriggered = 'Inworld.RealtimeAPI.InputAudioBufferTimeoutTriggered',
     /**
      * Server started sending output audio. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     OutputAudioBufferStarted = 'Inworld.RealtimeAPI.OutputAudioBufferStarted',
     /**
      * Server stopped sending output audio. [https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket](https://docs.inworld.ai/api-reference/realtimeAPI/realtime/realtime-websocket)
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     OutputAudioBufferStopped = 'Inworld.RealtimeAPI.OutputAudioBufferStopped',
     /**
      * Output audio buffer was cleared.
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     OutputAudioBufferCleared = 'Inworld.RealtimeAPI.OutputAudioBufferCleared',
     /**
      * Reports current rate limit state.
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     RateLimitsUpdated = 'Inworld.RealtimeAPI.RateLimitsUpdated',
     /**
      * The WebSocket error response event.
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     WebSocketError = 'Inworld.RealtimeAPI.WebSocketError',
     /**
      * Contains information about connector.
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     ConnectorInformation = 'Inworld.RealtimeAPI.ConnectorInformation',
   }
@@ -7916,20 +8193,6 @@ declare namespace Inworld {
 }
 
 declare namespace Inworld {
-  class RealtimeTTSPlayer extends BasePlayer {
-    /**
-     * Send message object to the Inworld provider context.
-     * @param parameters Object provides the parameters directly to the Inworld provider context. Find more information in the [documentation](https://docs.inworld.ai/api-reference/ttsAPI/texttospeech/synthesize-speech-websocket)
-     */
-    send(parameters: Object): void;
-    /**
-     * Clears an [Inworld.RealtimeTTSPlayer] buffer.
-     */
-    clearBuffer(): void;
-  }
-}
-
-declare namespace Inworld {
   /**
    * [Inworld.RealtimeTTSPlayer] parameters. Can be passed as arguments to the [Inworld.createRealtimeTTSPlayer] method.
    */
@@ -7942,6 +8205,20 @@ declare namespace Inworld {
      * Optional. Inworld API key. Use your Inworld API key if you have your own Inworld account.
      */
     apiKey?: string;
+  }
+}
+
+declare namespace Inworld {
+  class RealtimeTTSPlayer extends BasePlayer {
+    /**
+     * Send message object to the Inworld provider context.
+     * @param parameters Object provides the parameters directly to the Inworld provider context. Find more information in the [documentation](https://docs.inworld.ai/api-reference/ttsAPI/texttospeech/synthesize-speech-websocket)
+     */
+    send(parameters: Object): void;
+    /**
+     * Clears an [Inworld.RealtimeTTSPlayer] buffer.
+     */
+    clearBuffer(): void;
   }
 }
 
@@ -8141,7 +8418,7 @@ declare namespace MCP {
 }
 declare namespace MCP {
   /**
-   * Note that the [MCP.Client] using the [Model Context Protocol Go SDK v1.5.0](https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk@v1.5.0).
+   * Note that the [MCP.Client] uses the [Model Context Protocol Go SDK v1.5.0](https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk@v1.5.0).
    */
   class Client {
     /**
@@ -8181,13 +8458,13 @@ declare namespace MCP {
 
     /**
      * List the tools available from the MCP server. [https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk@v1.5.0/mcp#ListToolsParams](https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk@v1.5.0/mcp#ListToolsParams)
-     * @param parameters
+     * @param parameters Request parameters
      */
     listTools(parameters: Object): void
 
     /**
      * Call a tool from the MCP server. [https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk@v1.5.0/mcp#CallToolParams](https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk@v1.5.0/mcp#CallToolParams)
-     * @param parameters
+     * @param parameters Request parameters
      */
     callTool(parameters: Object): void
   }
@@ -8200,94 +8477,44 @@ declare namespace MCP {
      */
     function createClient(parameters: ClientParameters): Promise<Client>
 }
-/**
- * @hidden
- * NOTE: MCP doesn't use WebSocket events
- */
-declare namespace MCP {
-  /**
-   * @event
-   */
-  enum Events {
-    /**
-     * Triggered when the audio stream sent by a third party through an WebSocket is started playing.
-     * @typedef _WebSocketMediaStartedMCPEvent
-     * @hidden
-     */
-    WebSocketMediaStarted = 'MCP.Events.WebSocketMediaStarted',
-    /**
-     * Triggers after the end of the audio stream sent by a third party through an WebSocket (**1 second of silence**).
-     * @typedef _WebSocketMediaEndedMCPEvent
-     * @hidden
-     */
-    WebSocketMediaEnded = 'MCP.Events.WebSocketMediaEnded',
-  }
-
-  /**
-   * @private
-   */
-  interface _Events {
-    [MCP.Events.WebSocketMediaStarted]: _WebSocketMediaStartedMCPEvent;
-    [MCP.Events.WebSocketMediaEnded]: _WebSocketMediaEndedMCPEvent;
-  }
-
-  /**
-   * @private
-   */
-  interface _Event {
-    /**
-     * The [MCP.Client] instance.
-     */
-    client: Client;
-  }
-
-  /**
-   * @private
-   */
-  interface _WebSocketMediaStartedMCPEvent extends _Event, _WebSocketMediaStartedWithoutWebSocketEvent {
-  }
-
-  /**
-   * @private
-   */
-  interface _WebSocketMediaEndedMCPEvent extends _Event, _WebSocketMediaEndedWithoutWebSocketEvent {
-  }
-}
-
 declare namespace MCP {
 }
 declare namespace MCP {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.MCP);
+   * ```
    * @event
    */
   enum ServerEvents {
     /**
      * The unknown event.
-     * @typedef _ServerEvent
+     * @eventpayload _ServerEvent
      */
     Unknown = 'MCP.Server.Unknown',
 
     /**
      * The tools list returned from the MCP server. [https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk@v1.5.0/mcp#ListToolsResult](https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk@v1.5.0/mcp#ListToolsResult)
-     * @typedef _ServerEvent
+     * @eventpayload _ServerEvent
      */
     ToolsList = 'MCP.Server.ToolsList',
 
     /**
      * The tool result returned from the MCP server. [https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk@v1.5.0/mcp#CallToolResult](https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk@v1.5.0/mcp#CallToolResult)
-     * @typedef _ServerEvent
+     * @eventpayload _ServerEvent
      */
     ToolResult = 'MCP.Server.ToolResult',
 
     /**
      * The MCP error event.
-     * @typedef _ServerEvent
+     * @eventpayload _ServerEvent
      */
     MCPError = 'MCP.Server.MCPError',
 
     /**
     * Contains information about connector.
-    * @typedef _ServerEvent
+    * @eventpayload _ServerEvent
     */
     ConnectorInformation = 'MCP.Server.ConnectorInformation',
   }
@@ -8344,8 +8571,8 @@ declare namespace MeasurementProtocol {
 
 declare namespace MeasurementProtocol {
   /**
-   * Send an event to the Universal Analytics
-   * @param {SendEventOptions} options
+   * Sends an event to Universal Analytics.
+   * @param options Event options
    * @returns {MeasurementProtocol}
    */
   function sendEvent(options: SendEventOptions): typeof MeasurementProtocol;
@@ -8361,8 +8588,8 @@ declare namespace MeasurementProtocol {
 
 declare namespace MeasurementProtocol {
   /**
-   * Sends a record about exception
-   * @param {SendExceptionOptions} options
+   * Sends a record about an exception.
+   * @param options Exception options
    * @returns {MeasurementProtocol}
    */
   function sendException(options: SendExceptionOptions): typeof MeasurementProtocol;
@@ -8382,8 +8609,8 @@ declare namespace MeasurementProtocol {
 
 declare namespace MeasurementProtocol {
   /**
-   * Sends an item to E-commerce
-   * @param {SendItemOptions} options
+   * Sends an item to E-commerce.
+   * @param options Item options
    * @returns {MeasurementProtocol}
    */
   function sendItem(options: SendItemOptions): typeof MeasurementProtocol;
@@ -8400,8 +8627,8 @@ declare namespace MeasurementProtocol {
 
 declare namespace MeasurementProtocol {
   /**
-   * Sends a social interaction
-   * @param {SendSocialOptions} options
+   * Sends a social interaction.
+   * @param options Social interaction options
    * @returns {MeasurementProtocol}
    */
   function sendSocial(options: SendSocialOptions): typeof MeasurementProtocol;
@@ -8419,8 +8646,8 @@ declare namespace MeasurementProtocol {
 
 declare namespace MeasurementProtocol {
   /**
-   * Measures the user's timings
-   * @param {SendTimingOptions} options
+   * Measures the user's timings.
+   * @param options Timing options
    * @returns {MeasurementProtocol}
    */
   function sendTiming(options: SendTimingOptions): typeof MeasurementProtocol;
@@ -8439,8 +8666,8 @@ declare namespace MeasurementProtocol {
 
 declare namespace MeasurementProtocol {
   /**
-   * Sends a transaction to E-commerce
-   * @param {SendTransactionOptions} options
+   * Sends a transaction to E-commerce.
+   * @param options Transaction options
    * @returns {MeasurementProtocol}
    */
   function sendTransaction(options: SendTransactionOptions): typeof MeasurementProtocol;
@@ -8457,8 +8684,8 @@ declare namespace MeasurementProtocol {
 
 declare namespace MeasurementProtocol {
   /**
-   * Sets application name and version
-   * @param {SetApplicationInfoOptions} options
+   * Sets the application name and version.
+   * @param options Application info options
    * @returns {MeasurementProtocol}
    */
   function setApplicationInfo(options: SetApplicationInfoOptions): typeof MeasurementProtocol;
@@ -8496,7 +8723,7 @@ declare namespace MeasurementProtocol {
 declare namespace MeasurementProtocol {
   /**
    * Sets traffic source values.
-   * @param {SetTrafficSourceOptions} options
+   * @param options Traffic source options
    * @returns {MeasurementProtocol}
    */
   function setTrafficSource(options: SetTrafficSourceOptions): typeof MeasurementProtocol;
@@ -8504,7 +8731,7 @@ declare namespace MeasurementProtocol {
 
 declare namespace MeasurementProtocol {
   /**
-   * Setups the most required tracking parameters
+   * Sets up the required tracking parameters.
    */
   function setup(
     trackingId: string,
@@ -8526,7 +8753,7 @@ declare namespace MeasurementProtocol {
 declare namespace MeasurementProtocol {
   /**
    * Forces a new session to start with this hit. All other values are ignored.
-   * @param {StartSessionOptions} options
+   * @param options Session options
    * @returns {MeasurementProtocol}
    */
   function startSession(options: StartSessionOptions): typeof MeasurementProtocol;
@@ -8547,11 +8774,16 @@ declare enum Modules {
   /**
    * Provides the functionality for creating voice agents that can analyze the call context and react accordingly.
    * <br>
-   * This module is based on AI and NLP technologies, and allows you to create voice assistants that can solve business tasks in more productive way.
+   * This module is based on AI and NLP technologies, and allows you to create voice assistants that can solve business tasks in a more productive way.
+   * <br>
+   * Add the following line to your scenario code to use the module:
+   * ```
+   * require(Modules.Agentic);
+   * ```
    */
   Agentic = 'agentic',
   /**
-   * Provides additional methods that use Artificial Intelligence. These methods allow solving business tasks in more productive way.
+   * Provides additional methods that use Artificial Intelligence. These methods allow you to solve business tasks in a more productive way.
    * <br>
    * Add the following line to your scenario code to use the module:
    * ```
@@ -8715,6 +8947,15 @@ declare enum Modules {
    */
   PushService = 'pushservice',
   /**
+   * Provides the [Qwen Cloud](https://docs.qwencloud.com/developer-guides/speech/qwen-audio-realtime) realtime voice functionality.
+   * <br>
+   * Add the following line to your scenario code to use the module:
+   * ```
+   * require(Modules.QwenCloud);
+   * ```
+   */
+  QwenCloud = 'qwencloud',
+  /**
    * Provides the [call recording](/docs/guides/calls/record) and [conference recording](/docs/guides/conferences/record) functionality.
    * <br>
    * Add the following line to your scenario code to use the module:
@@ -8769,7 +9010,7 @@ declare enum Modules {
    */
   VoximplantAPI = 'voximplantapi',
    /**
-   * Provides the [VoxTTS](/docs/guides/speech/realtime-tts#voxtts) functionality.
+    * Provides the [VoxTTS](/docs/guides/speech/realtime-tts#voxtts) functionality.
     * <br>
     * Add the following line to your scenario code to use the module:
     * ```
@@ -8835,13 +9076,13 @@ declare namespace Net {
 
 declare namespace Net {
   /**
-   * Send an email via a specified email server
+   * Sends an email via a specified email server.
    * @param mailServerAddress SMTP server address
    * @param from From address of the email
    * @param to To address or list of addresses
    * @param title Message title
    * @param body Message body
-   * @param options Advanced settings
+   * @param options Optional. Advanced settings
    */
   function sendMailAsync(
     mailServerAddress: string,
@@ -8855,31 +9096,31 @@ declare namespace Net {
 
 declare namespace Net {
   /**
-   * Advanced options for sendMail method
+   * Advanced options for the [Net.sendMail] method.
    */
   interface SendMailOptions {
     /**
-     * Alternative HTML body
+     * Optional. Alternative HTML body.
      */
     html?: string;
     /**
-     * CC addresses
+     * Optional. CC addresses.
      */
     cc?: string[];
     /**
-     * BCC addresses
+     * Optional. BCC addresses.
      */
     bcc?: string[];
     /**
-     * Mail server port
+     * Mail server port.
      */
     port: number;
     /**
-     * Login for mail server
+     * Login for the mail server.
      */
     login: string;
     /**
-     * Password for mail server
+     * Password for the mail server.
      */
     password: string;
   }
@@ -8887,11 +9128,11 @@ declare namespace Net {
 
 declare namespace Net {
   /**
-   * Result of sending an email
+   * Result of sending an email.
    */
   interface SendMailResult {
     /**
-     * SMTP server response code
+     * SMTP server response code.
      */
     code: number;
     /**
@@ -8903,14 +9144,14 @@ declare namespace Net {
 
 declare namespace Net {
   /**
-   * Send email via the specified email server
+   * Sends an email via the specified email server.
    * @param mailServerAddress SMTP server to send email
    * @param from From address of email
    * @param to To address or list of addresses
    * @param title Message title
    * @param body Message body
    * @param callback Function to be called on completion. The function receives a response object of type [SendMailResult] as a first argument
-   * @param options Advanced settings
+   * @param options Optional. Advanced settings
    */
   function sendMail(
     mailServerAddress: string,
@@ -8942,17 +9183,21 @@ declare namespace OpenAI {
 declare namespace OpenAI {
   namespace Beta {
     /**
+     * Add the following line to your scenario code to use the events:
+     * ```
+     * require(Modules.OpenAI);
+     * ```
      * @event
      */
     enum Events {
       /**
-       * Triggered when the audio stream sent by a third party through an OpenAI WebSocket is started playing.
-       * @typedef _WebSocketMediaStartedOpenAIBetaEvent
+       * Triggered when the audio stream sent by a third party through an OpenAI WebSocket starts playing.
+       * @eventpayload _WebSocketMediaStartedOpenAIBetaEvent
        */
       WebSocketMediaStarted = 'OpenAI.Beta.Events.WebSocketMediaStarted',
       /**
-       * Triggers after the end of the audio stream sent by a third party through an OpenAI WebSocket (**1 second of silence**).
-       * @typedef _WebSocketMediaEndedOpenAIBetaEvent
+       * Triggered after the end of the audio stream sent by a third party through an OpenAI WebSocket (**1 second of silence**).
+       * @eventpayload _WebSocketMediaEndedOpenAIBetaEvent
        */
       WebSocketMediaEnded = 'OpenAI.Beta.Events.WebSocketMediaEnded',
     }
@@ -9131,157 +9376,161 @@ declare namespace OpenAI {
 declare namespace OpenAI {
   namespace Beta {
     /**
+     * Add the following line to your scenario code to use the events:
+     * ```
+     * require(Modules.OpenAI);
+     * ```
      * @event
      */
     enum RealtimeAPIEvents {
       /**
        * The unknown event.
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       Unknown = 'OpenAI.Beta.RealtimeAPI.Unknown',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/error](https://platform.openai.com/docs/api-reference/realtime_server_events/error)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       Error = 'OpenAI.Beta.RealtimeAPI.Error',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/session/created](https://platform.openai.com/docs/api-reference/realtime_server_events/session/created)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       SessionCreated = 'OpenAI.Beta.RealtimeAPI.SessionCreated',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/session/updated](https://platform.openai.com/docs/api-reference/realtime_server_events/session/updated)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       SessionUpdated = 'OpenAI.Beta.RealtimeAPI.SessionUpdated',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/conversation/created](https://platform.openai.com/docs/api-reference/realtime_server_events/conversation/created)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ConversationCreated = 'OpenAI.Beta.RealtimeAPI.ConversationCreated',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/conversation/item/created](https://platform.openai.com/docs/api-reference/realtime_server_events/conversation/item/created)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ConversationItemCreated = 'OpenAI.Beta.RealtimeAPI.ConversationItemCreated',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/conversation/item/retrieved](https://platform.openai.com/docs/api-reference/realtim_server_events/conversation/item/retrieved)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ConversationItemRetrieved = 'OpenAI.Beta.RealtimeAPI.ConversationItemRetrieved',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/conversation/item/input_audio_transcription/completed](https://platform.openai.com/docs/api-reference/realtime_server_events/conversation/item/input_audio_transcription/completed)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ConversationItemInputAudioTranscriptionCompleted = 'OpenAI.Beta.RealtimeAPI.ConversationItemInputAudioTranscriptionCompleted',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/conversation/item/input_audio_transcription/delta](https://platform.openai.com/docs/api-reference/realtime_server_events/conversation/item/input_audio_transcription/delta)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ConversationItemInputAudioTranscriptionDelta = 'OpenAI.Beta.RealtimeAPI.ConversationItemInputAudioTranscriptionDelta',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/conversation/item/input_audio_transcription/failed](https://platform.openai.com/docs/api-reference/realtime_server_events/conversation/item/input_audio_transcription/failed)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ConversationItemInputAudioTranscriptionFailed = 'OpenAI.Beta.RealtimeAPI.ConversationItemInputAudioTranscriptionFailed',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/conversation/item/truncated](https://platform.openai.com/docs/api-reference/realtime_server_events/conversation/item/truncated)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ConversationItemTruncated = 'OpenAI.Beta.RealtimeAPI.ConversationItemTruncated',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/conversation/item/deleted](https://platform.openai.com/docs/api-reference/realtime_server_events/conversation/item/deleted)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ConversationItemDeleted = 'OpenAI.Beta.RealtimeAPI.ConversationItemDeleted',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/input_audio_buffer/committed](https://platform.openai.com/docs/api-reference/realtime_server_events/input_audio_buffer/committed)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       InputAudioBufferCommitted = 'OpenAI.Beta.RealtimeAPI.InputAudioBufferCommitted',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/input_audio_buffer/cleared](https://platform.openai.com/docs/api-reference/realtime_server_events/input_audio_buffer/cleared)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       InputAudioBufferCleared = 'OpenAI.Beta.RealtimeAPI.InputAudioBufferCleared',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/input_audio_buffer/speech_started](https://platform.openai.com/docs/api-reference/realtime_server_events/input_audio_buffer/speech_started)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       InputAudioBufferSpeechStarted = 'OpenAI.Beta.RealtimeAPI.InputAudioBufferSpeechStarted',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/input_audio_buffer/speech_stopped](https://platform.openai.com/docs/api-reference/realtime_server_events/input_audio_buffer/speech_stopped)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       InputAudioBufferSpeechStopped = 'OpenAI.Beta.RealtimeAPI.InputAudioBufferSpeechStopped',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/response/created](https://platform.openai.com/docs/api-reference/realtime_server_events/response/created)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ResponseCreated = 'OpenAI.Beta.RealtimeAPI.ResponseCreated',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/response/done](https://platform.openai.com/docs/api-reference/realtime_server_events/response/done)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ResponseDone = 'OpenAI.Beta.RealtimeAPI.ResponseDone',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/response/output_item/added](https://platform.openai.com/docs/api-reference/realtime_server_events/response/output_item/added)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ResponseOutputItemAdded = 'OpenAI.Beta.RealtimeAPI.ResponseOutputItemAdded',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/response/output_item/done](https://platform.openai.com/docs/api-reference/realtime_server_events/response/output_item/done)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ResponseOutputItemDone = 'OpenAI.Beta.RealtimeAPI.ResponseOutputItemDone',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/response/content_part/added](https://platform.openai.com/docs/api-reference/realtime_server_events/response/content_part/added)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ResponseContentPartAdded = 'OpenAI.Beta.RealtimeAPI.ResponseContentPartAdded',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/response/content_part/done](https://platform.openai.com/docs/api-reference/realtime_server_events/response/content_part/done)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ResponseContentPartDone = 'OpenAI.Beta.RealtimeAPI.ResponseContentPartDone',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/response/text/delta](https://platform.openai.com/docs/api-reference/realtime_server_events/response/text/delta)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ResponseTextDelta = 'OpenAI.Beta.RealtimeAPI.ResponseTextDelta',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/response/text/done](https://platform.openai.com/docs/api-reference/realtime_server_events/response/text/done)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ResponseTextDone = 'OpenAI.Beta.RealtimeAPI.ResponseTextDone',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/response/audio_transcript/delta](https://platform.openai.com/docs/api-reference/realtime_server_events/response/audio_transcript/delta)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ResponseAudioTranscriptDelta = 'OpenAI.Beta.RealtimeAPI.ResponseAudioTranscriptDelta',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/response/audio_transcript/done](https://platform.openai.com/docs/api-reference/realtime_server_events/response/audio_transcript/done)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ResponseAudioTranscriptDone = 'OpenAI.Beta.RealtimeAPI.ResponseAudioTranscriptDone',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/response/audio/done](https://platform.openai.com/docs/api-reference/realtime_server_events/response/audio/done)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ResponseAudioDone = 'OpenAI.Beta.RealtimeAPI.ResponseAudioDone',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/response/function_call_arguments/delta](https://platform.openai.com/docs/api-reference/realtime_server_events/response/function_call_arguments/delta)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ResponseFunctionCallArgumentsDelta = 'OpenAI.Beta.RealtimeAPI.ResponseFunctionCallArgumentsDelta',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/response/function_call_arguments/done](https://platform.openai.com/docs/api-reference/realtime_server_events/response/function_call_arguments/done)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       ResponseFunctionCallArgumentsDone = 'OpenAI.Beta.RealtimeAPI.ResponseFunctionCallArgumentsDone',
       /**
        * [https://platform.openai.com/docs/api-reference/realtime_server_events/rate_limits/updated](https://platform.openai.com/docs/api-reference/realtime_server_events/rate_limits/updated)
-       * @typedef _RealtimeAPIEvent
+       * @eventpayload _RealtimeAPIEvent
        */
       RateLimitsUpdated = 'OpenAI.Beta.RealtimeAPI.RateLimitsUpdated',
     }
@@ -9438,7 +9687,7 @@ declare namespace OpenAI {
      * Creates a model response for the given chat conversation. [https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
      *
      * You can use this API not only with OpenAI, but also with other OpenAI-compatible providers (configure the connector via [OpenAI.ChatCompletionsAPIClientParameters.baseUrl]). Third-party providers often pass custom model settings through the **chat_template_kwargs** request parameter.
-     * @param parameters
+     * @param parameters Chat completion parameters
      */
     createChatCompletions(parameters: Object): void
   }
@@ -9446,96 +9695,100 @@ declare namespace OpenAI {
   
 declare namespace OpenAI {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.OpenAI);
+   * ```
    * @event
    */
   enum ChatCompletionsAPIEvents {
     /**
      * The unknown event.
-     * @typedef _ChatCompletionsAPIEvent
+     * @eventpayload _ChatCompletionsAPIEvent
      */
     Unknown = 'OpenAI.ChatCompletionsAPI.Unknown',
 
     /**
      * Represents a streamed chunk of a chat completion response returned by the model, based on the provided input. [https://developers.openai.com/api/reference/resources/chat/subresources/completions#(resource)%20chat.completions%20%3E%20(model)%20chat_completion_chunk%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/chat/subresources/completions#(resource)%20chat.completions%20%3E%20(model)%20chat_completion_chunk%20%3E%20(schema))
-     * @typedef _ChatCompletionsAPIEvent
+     * @eventpayload _ChatCompletionsAPIEvent
      */
     Chunk = 'OpenAI.ChatCompletionsAPI.Chunk',
 
     /**
      * The chat completion content event.
-     * @typedef _ChatCompletionsAPIEvent
+     * @eventpayload _ChatCompletionsAPIEvent
      */
     Content = 'OpenAI.ChatCompletionsAPI.Content',
 
     /**
      * The chat completion content delta event.
-     * @typedef _ChatCompletionsAPIEvent
+     * @eventpayload _ChatCompletionsAPIEvent
      */
     ContentDelta = 'OpenAI.ChatCompletionsAPI.ContentDelta',
 
     /**
      * The chat completion content done event.
-     * @typedef _ChatCompletionsAPIEvent
+     * @eventpayload _ChatCompletionsAPIEvent
      */
     ContentDone = 'OpenAI.ChatCompletionsAPI.ContentDone',
 
     /**
      * The chat completion refusal delta event.
-     * @typedef _ChatCompletionsAPIEvent
+     * @eventpayload _ChatCompletionsAPIEvent
      */
     RefusalDelta = 'OpenAI.ChatCompletionsAPI.RefusalDelta',
 
     /**
      * The chat completion refusal done event.
-     * @typedef _ChatCompletionsAPIEvent
+     * @eventpayload _ChatCompletionsAPIEvent
      */
     RefusalDone = 'OpenAI.ChatCompletionsAPI.RefusalDone',
 
     /**
      * The chat completion function tool call arguments delta event.
-     * @typedef _ChatCompletionsAPIEvent
+     * @eventpayload _ChatCompletionsAPIEvent
      */
     FunctionToolCallArgumentsDelta = 'OpenAI.ChatCompletionsAPI.FunctionToolCallArgumentsDelta',
 
     /**
      * The chat completion function tool call arguments done event.
-     * @typedef _ChatCompletionsAPIEvent
+     * @eventpayload _ChatCompletionsAPIEvent
      */
     FunctionToolCallArgumentsDone = 'OpenAI.ChatCompletionsAPI.FunctionToolCallArgumentsDone',
 
     /**
      * The chat completion log probs content delta event.
-     * @typedef _ChatCompletionsAPIEvent
+     * @eventpayload _ChatCompletionsAPIEvent
      */
     LogProbsContentDelta = 'OpenAI.ChatCompletionsAPI.LogProbsContentDelta',
 
     /**
      * The chat completion log probs content done event.
-     * @typedef _ChatCompletionsAPIEvent
+     * @eventpayload _ChatCompletionsAPIEvent
      */
     LogProbsContentDone = 'OpenAI.ChatCompletionsAPI.LogProbsContentDone',
 
     /**
      * The chat completion log probs refusal delta event.
-     * @typedef _ChatCompletionsAPIEvent
+     * @eventpayload _ChatCompletionsAPIEvent
      */
     LogProbsRefusalDelta = 'OpenAI.ChatCompletionsAPI.LogProbsRefusalDelta',
 
     /**
      * The chat completion log probs refusal done event.
-     * @typedef _ChatCompletionsAPIEvent
+     * @eventpayload _ChatCompletionsAPIEvent
      */
     LogProbsRefusalDone = 'OpenAI.ChatCompletionsAPI.LogProbsRefusalDone',
 
     /**
      * Contains Chat Completions API error.
-     * @typedef _ChatCompletionsAPIEvent
+     * @eventpayload _ChatCompletionsAPIEvent
      */
     ChatCompletionsAPIError = 'OpenAI.ChatCompletionsAPI.ChatCompletionsAPIError',
 
     /**
     * Contains information about connector.
-    * @typedef _ChatCompletionsAPIEvent
+    * @eventpayload _ChatCompletionsAPIEvent
     */
     ConnectorInformation = 'OpenAI.ChatCompletionsAPI.ConnectorInformation',
   }
@@ -9589,6 +9842,14 @@ declare namespace OpenAI {
 }
 declare namespace OpenAI {
     /**
+     * Creates a new [OpenAI.LiveAPIClient] instance.
+     * @param parameters The [OpenAI.LiveAPIClient] parameters
+     */
+    function createLiveAPIClient(parameters: LiveAPIClientParameters): Promise<OpenAI.LiveAPIClient>
+}
+
+declare namespace OpenAI {
+    /**
      * Creates a new [OpenAI.RealtimeAPIClient] instance.
      * @param parameters The [OpenAI.RealtimeAPIClient] parameters
      */
@@ -9603,17 +9864,21 @@ declare namespace OpenAI {
 }
 declare namespace OpenAI {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.OpenAI);
+   * ```
    * @event
    */
   enum Events {
     /**
-     * Triggered when the audio stream sent by a third party through an OpenAI WebSocket is started playing.
-     * @typedef _WebSocketMediaStartedOpenAIEvent
+     * Triggered when the audio stream sent by a third party through an OpenAI WebSocket starts playing.
+     * @eventpayload _WebSocketMediaStartedOpenAIEvent
      */
     WebSocketMediaStarted = 'OpenAI.Events.WebSocketMediaStarted',
     /**
-     * Triggers after the end of the audio stream sent by a third party through an OpenAI WebSocket (**1 second of silence**).
-     * @typedef _WebSocketMediaEndedOpenAIEvent
+     * Triggered after the end of the audio stream sent by a third party through an OpenAI WebSocket (**1 second of silence**).
+     * @eventpayload _WebSocketMediaEndedOpenAIEvent
      */
     WebSocketMediaEnded = 'OpenAI.Events.WebSocketMediaEnded',
   }
@@ -9631,9 +9896,9 @@ declare namespace OpenAI {
    */
   interface _Event {
     /**
-     * The [OpenAI.RealtimeAPIClient] or [OpenAI.ResponsesAPIClient] | [OpenAI.ChatCompletionsAPIClient] instance.
+     * The [OpenAI.RealtimeAPIClient], [OpenAI.LiveAPIClient], [OpenAI.ResponsesAPIClient], or [OpenAI.ChatCompletionsAPIClient] instance.
      */
-    client: RealtimeAPIClient | ResponsesAPIClient | ChatCompletionsAPIClient;
+    client: RealtimeAPIClient | LiveAPIClient | ResponsesAPIClient | ChatCompletionsAPIClient;
   }
 
   /**
@@ -9648,6 +9913,313 @@ declare namespace OpenAI {
   interface _WebSocketMediaEndedOpenAIEvent extends _Event, _WebSocketMediaEndedWithoutWebSocketEvent {
   }
 }
+declare namespace OpenAI {
+  /**
+   * @private
+   */
+  interface _LiveAPIClientEvents extends _Events, _LiveAPIEvents {
+  }
+}
+
+declare namespace OpenAI {
+  /**
+   * [OpenAI.LiveAPIClient] parameters. Can be passed as arguments to the [OpenAI.createLiveAPIClient] method.
+   */
+  interface LiveAPIClientParameters extends _VoiceAIClientParameters {
+    /**
+     * The API key for the OpenAI Live API.
+     */
+    apiKey: string;
+    /**
+     * Optional. The base URL for the OpenAI Live API. 
+     */
+    baseUrl?: string;
+  }
+}
+
+declare namespace OpenAI {
+  class LiveAPIClient {
+    /**
+     * Returns the LiveAPIClient id.
+     */
+    id(): string;
+
+    /**
+     * Returns the OpenAI WebSocket id.
+     */
+    webSocketId(): string;
+
+    /**
+     * Closes the OpenAI connection (over WebSocket) or connection attempt.
+     */
+    close(): void;
+
+    /**
+     * Starts sending media from the OpenAI Live session (via WebSocket) to the media unit.
+     * @param mediaUnit Media unit that receives media
+     * @param parameters Optional interaction parameters
+     */
+    sendMediaTo(mediaUnit: VoxMediaUnit, parameters?: SendMediaParameters): void;
+
+    /**
+     * Stops sending media from the OpenAI Live session (via WebSocket) to the media unit.
+     * @param mediaUnit Media unit that stops receiving media
+     */
+    stopMediaTo(mediaUnit: VoxMediaUnit): void;
+
+    /**
+     * Adds a handler for the specified [OpenAI.LiveAPIEvents] or [OpenAI.Events] event. Use only functions as handlers; anything except a function leads to the error and scenario termination when a handler is called.
+     * @param event Event class (i.e., [OpenAI.LiveAPIEvents.SessionStarted])
+     * @param callback Handler function. A single parameter is passed - object with event information
+     */
+    addEventListener<T extends keyof OpenAI._LiveAPIClientEvents>(
+      event: OpenAI.Events | OpenAI.LiveAPIEvents | T,
+      callback: (event: OpenAI._LiveAPIClientEvents[T]) => any,
+    ): void;
+
+    /**
+     * Removes a handler for the specified [OpenAI.LiveAPIEvents] or [OpenAI.Events] event.
+     * @param event Event class (i.e., [OpenAI.LiveAPIEvents.SessionStarted])
+     * @param callback Optional. Handler function. If not specified, all handler functions are removed
+     */
+    removeEventListener<T extends keyof OpenAI._LiveAPIClientEvents>(
+      event: OpenAI.Events | OpenAI.LiveAPIEvents | T,
+      callback?: (event: OpenAI._LiveAPIClientEvents[T]) => any,
+    ): void;
+
+    /**
+     * Start a Live session. Send this as the first custom event after [OpenAI.createLiveAPIClient]. Wait for [OpenAI.LiveAPIEvents.SessionStarted] before sending media or other commands. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.start](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.start)
+     * @param parameters Event parameters
+     */
+    sessionStart(parameters: Object): void
+
+    /**
+     * Update the delegation settings of an active Live session. The server acknowledges accepted changes with [OpenAI.LiveAPIEvents.SessionUpdated]. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.update](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.update)
+     * @param parameters Event parameters
+     */
+    sessionUpdate(parameters: Object): void
+
+    /**
+     * Request that the Live session close. The terminal [OpenAI.LiveAPIEvents.SessionClosed] event contains the close reason and final usage. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.close](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.close)
+     * @param parameters Optional. Event parameters
+     */
+    sessionClose(parameters?: Object): void
+
+    /**
+     * Mute audio input to the Live model without closing the session. Muting input does not stop the assistant's output. The server acknowledges with [OpenAI.LiveAPIEvents.SessionInputAudioMuted]. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.input_audio.mute](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.input_audio.mute)
+     * @param parameters Optional. Event parameters
+     */
+    sessionInputAudioMute(parameters?: Object): void
+
+    /**
+     * Unmute audio input so it is sent to the Live model again. The server acknowledges with [OpenAI.LiveAPIEvents.SessionInputAudioUnmuted]. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.input_audio.unmute](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.input_audio.unmute)
+     * @param parameters Optional. Event parameters
+     */
+    sessionInputAudioUnmute(parameters?: Object): void
+
+    /**
+     * Append instructions to the Live conversation while it is running. Always include `delegation_id` (`null` for session-wide context). Content is a plain string of at most 500 tokens. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.instructions.append](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.instructions.append)
+     * @param parameters Event parameters
+     */
+    sessionInstructionsAppend(parameters: Object): void
+
+    /**
+     * Provide silent reasoning or progress context to the Live model. Always include `delegation_id` (`null` for session-wide context). Content is a plain string of at most 500 tokens. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.thinking.append](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.thinking.append)
+     * @param parameters Event parameters
+     */
+    sessionThinkingAppend(parameters: Object): void
+
+    /**
+     * Append a verified result the user should hear. Always include `delegation_id` (`null` for session-wide context). Content is a plain string of at most 500 tokens. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.commentary.append](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.commentary.append)
+     * @param parameters Event parameters
+     */
+    sessionCommentaryAppend(parameters: Object): void
+
+    /**
+     * Add an input item to the Live session's Responses backend, such as a `function_call_output`. Requires Responses delegation. Send [OpenAI.LiveAPIClient.responseCreate] after the required results to continue backend work. [https://developers.openai.com/api/reference/resources/live/primary-websocket#response.item.create](https://developers.openai.com/api/reference/resources/live/primary-websocket#response.item.create)
+     * @param parameters Event parameters
+     */
+    responseItemCreate(parameters: Object): void
+
+    /**
+     * Request a response from the Live session's Responses backend, or continue a delegated response that is waiting for tool results. Requires Responses delegation. This does not grant the voice model permission to speak. [https://developers.openai.com/api/reference/resources/live/primary-websocket#response.create](https://developers.openai.com/api/reference/resources/live/primary-websocket#response.create)
+     * @param parameters Event parameters
+     */
+    responseCreate(parameters: Object): void
+  }
+}
+
+declare namespace OpenAI {
+  /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.OpenAI);
+   * ```
+   * @event
+   */
+  enum LiveAPIEvents {
+    /**
+     * The unknown event.
+     * @eventpayload _LiveAPIEvent
+     */
+    Unknown = 'OpenAI.LiveAPI.Unknown',
+
+    /**
+     * The HTTP response event.
+     * @eventpayload _LiveAPIEvent
+     */
+    HTTPResponse = 'OpenAI.LiveAPI.HTTPResponse',
+
+    /**
+     * Reports an error in the Live session, such as an invalid client command. Use `error.client_event_id`, when present, to identify the command that caused the error. [https://developers.openai.com/api/reference/resources/live/primary-websocket#error](https://developers.openai.com/api/reference/resources/live/primary-websocket#error)
+     * @eventpayload _LiveAPIEvent
+     */
+    Error = 'OpenAI.LiveAPI.Error',
+
+    /**
+     * Returned when a Live session has started. Contains the resolved session configuration, including server defaults. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.started](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.started)
+     * @eventpayload _LiveAPIEvent
+     */
+    SessionStarted = 'OpenAI.LiveAPI.SessionStarted',
+
+    /**
+     * Returned when a Live session update is accepted. Contains the resolved session configuration after the update. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.updated](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.updated)
+     * @eventpayload _LiveAPIEvent
+     */
+    SessionUpdated = 'OpenAI.LiveAPI.SessionUpdated',
+
+    /**
+     * Returned after the Live session finishes finalizing, with the close reason, final session snapshot, and cumulative audio usage. A connection that closes without this event does not confirm successful finalization. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.closed](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.closed)
+     * @eventpayload _LiveAPIEvent
+     */
+    SessionClosed = 'OpenAI.LiveAPI.SessionClosed',
+
+    /**
+     * A transcript fragment for user input audio. Append each fragment in delivery order. These events do not define complete turns and have no transcript-done event. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.input_transcript.delta](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.input_transcript.delta)
+     * @eventpayload _LiveAPIEvent
+     */
+    SessionInputTranscriptDelta = 'OpenAI.LiveAPI.SessionInputTranscriptDelta',
+
+    /**
+     * A transcript fragment for assistant output audio. Append each fragment in delivery order. These events do not define complete turns and have no transcript-done event. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.output_transcript.delta](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.output_transcript.delta)
+     * @eventpayload _LiveAPIEvent
+     */
+    SessionOutputTranscriptDelta = 'OpenAI.LiveAPI.SessionOutputTranscriptDelta',
+
+    /**
+     * Emitted when the agent started speaking. Derived by AI Connector from output audio. Marks when audio enters the media path, before the caller hears it.
+     * @eventpayload _LiveAPIEvent
+     */
+    AgentStartedSpeaking = 'OpenAI.LiveAPI.AgentStartedSpeaking',
+
+    /**
+     * Emitted when the agent stopped speaking. Derived by AI Connector from output audio. Marks when audio stops entering the media path, before the caller hears the speech end.
+     * @eventpayload _LiveAPIEvent
+     */
+    AgentStoppedSpeaking = 'OpenAI.LiveAPI.AgentStoppedSpeaking',
+
+    /**
+     * Returned when the Live model delegates work to your application or a Responses backend. The payload carries delegation metadata and timeline position, not the task text or tool arguments. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.delegation.created](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.delegation.created)
+     * @eventpayload _LiveAPIEvent
+     */
+    SessionDelegationCreated = 'OpenAI.LiveAPI.SessionDelegationCreated',
+
+    /**
+     * A streaming Responses API event from a backend delegated to by the Live session. Unwrap `data.payload.event` and preserve the outer `delegation_id`. [https://developers.openai.com/api/reference/resources/live/primary-websocket#response.event](https://developers.openai.com/api/reference/resources/live/primary-websocket#response.event)
+     * @eventpayload _LiveAPIEvent
+     */
+    ResponseEvent = 'OpenAI.LiveAPI.ResponseEvent',
+
+    /**
+     * Returned when a [OpenAI.LiveAPIClient.sessionInstructionsAppend] command is accepted into the Live session timeline. Match the command through `client_event_id`. This acknowledges the instructions and does not guarantee that the model has acted on them. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.instructions.appended](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.instructions.appended)
+     * @eventpayload _LiveAPIEvent
+     */
+    SessionInstructionsAppended = 'OpenAI.LiveAPI.SessionInstructionsAppended',
+
+    /**
+     * Returned when a [OpenAI.LiveAPIClient.sessionThinkingAppend] command is accepted into the Live session timeline. Match the command through `client_event_id`. This acknowledges the reasoning context and does not guarantee spoken output. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.thinking.appended](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.thinking.appended)
+     * @eventpayload _LiveAPIEvent
+     */
+    SessionThinkingAppended = 'OpenAI.LiveAPI.SessionThinkingAppended',
+
+    /**
+     * Returned when a [OpenAI.LiveAPIClient.sessionCommentaryAppend] command is accepted into the Live session timeline. Match the command through `client_event_id`. This acknowledges the commentary and does not guarantee exact wording or completed audio playback. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.commentary.appended](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.commentary.appended)
+     * @eventpayload _LiveAPIEvent
+     */
+    SessionCommentaryAppended = 'OpenAI.LiveAPI.SessionCommentaryAppended',
+
+    /**
+     * Returned when a [OpenAI.LiveAPIClient.sessionInputAudioMute] command is accepted. Input audio is no longer sent to the model. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.input_audio.muted](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.input_audio.muted)
+     * @eventpayload _LiveAPIEvent
+     */
+    SessionInputAudioMuted = 'OpenAI.LiveAPI.SessionInputAudioMuted',
+
+    /**
+     * Returned when a [OpenAI.LiveAPIClient.sessionInputAudioUnmute] command is accepted. Input audio is sent to the model again. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.input_audio.unmuted](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.input_audio.unmuted)
+     * @eventpayload _LiveAPIEvent
+     */
+    SessionInputAudioUnmuted = 'OpenAI.LiveAPI.SessionInputAudioUnmuted',
+
+    /**
+     * Reports cumulative Live audio usage and, when available, the most recent context-window usage. Do not sum `usage.seconds` across events. Delegated Responses token usage is reported separately in [OpenAI.LiveAPIEvents.ResponseEvent]. [https://developers.openai.com/api/reference/resources/live/primary-websocket#session.usage.updated](https://developers.openai.com/api/reference/resources/live/primary-websocket#session.usage.updated)
+     * @eventpayload _LiveAPIEvent
+     */
+    SessionUsageUpdated = 'OpenAI.LiveAPI.SessionUsageUpdated',
+
+    /**
+     * The WebSocket error response event.
+     * @eventpayload _LiveAPIEvent
+     */
+    WebSocketError = 'OpenAI.LiveAPI.WebSocketError',
+
+    /**
+     * Contains information about connector.
+     * @eventpayload _LiveAPIEvent
+     */
+    ConnectorInformation = 'OpenAI.LiveAPI.ConnectorInformation',
+  }
+
+  /**
+   * @private
+   */
+  interface _LiveAPIEvents {
+    [LiveAPIEvents.Unknown]: _LiveAPIEvent;
+    [LiveAPIEvents.HTTPResponse]: _LiveAPIEvent;
+    [LiveAPIEvents.Error]: _LiveAPIEvent;
+    [LiveAPIEvents.SessionStarted]: _LiveAPIEvent;
+    [LiveAPIEvents.SessionUpdated]: _LiveAPIEvent;
+    [LiveAPIEvents.SessionClosed]: _LiveAPIEvent;
+    [LiveAPIEvents.SessionInputTranscriptDelta]: _LiveAPIEvent;
+    [LiveAPIEvents.SessionOutputTranscriptDelta]: _LiveAPIEvent;
+    [LiveAPIEvents.AgentStartedSpeaking]: _LiveAPIEvent;
+    [LiveAPIEvents.AgentStoppedSpeaking]: _LiveAPIEvent;
+    [LiveAPIEvents.SessionDelegationCreated]: _LiveAPIEvent;
+    [LiveAPIEvents.ResponseEvent]: _LiveAPIEvent;
+    [LiveAPIEvents.SessionInstructionsAppended]: _LiveAPIEvent;
+    [LiveAPIEvents.SessionThinkingAppended]: _LiveAPIEvent;
+    [LiveAPIEvents.SessionCommentaryAppended]: _LiveAPIEvent;
+    [LiveAPIEvents.SessionInputAudioMuted]: _LiveAPIEvent;
+    [LiveAPIEvents.SessionInputAudioUnmuted]: _LiveAPIEvent;
+    [LiveAPIEvents.SessionUsageUpdated]: _LiveAPIEvent;
+    [LiveAPIEvents.WebSocketError]: _LiveAPIEvent;
+    [LiveAPIEvents.ConnectorInformation]: _LiveAPIEvent;
+  }
+
+  /**
+   * @private
+   */
+  interface _LiveAPIEvent {
+    /**
+     * The [OpenAI.LiveAPIClient] instance.
+     */
+    client: LiveAPIClient;
+    /**
+     * The 'payload' parameter contains the event's data.
+     */
+    data?: { customEvent?: string; payload?: Object; }
+  }
+}
+
 declare namespace OpenAI {
 }
 declare namespace OpenAI {
@@ -9671,7 +10243,7 @@ declare namespace OpenAI {
      */
     model?: string;
     /**
-     * Optional. The type of the client. The default value is **OpenAI.RealtimeAPIClientType.REALTIME**. Use [OpenAI.RealtimeAPIClientType.TRANSLATION] for realtime translation sessions.
+     * Optional. The type of the client. The default value is **OpenAI.RealtimeAPIClientType.REALTIME**. Use [OpenAI.RealtimeAPIClientType.TRANSLATION] for realtime translation sessions. GPT-Live sessions use [OpenAI.createLiveAPIClient].
      */
     type?: OpenAI.RealtimeAPIClientType;
     /**
@@ -9757,62 +10329,62 @@ declare namespace OpenAI {
     ): void;
 
     /**
-     * Send this event to update the session’s configuration. [https://developers.openai.com/api/reference/resources/realtime/client-events#session.update](https://developers.openai.com/api/reference/resources/realtime/client-events#session.update)
-     * @param parameters
+     * Send this event to update the session’s configuration. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @param parameters Event parameters
      */
     sessionUpdate(parameters: Object): void
 
     /**
-     * Send this event to clear the audio bytes in the buffer. [https://developers.openai.com/api/reference/resources/realtime/client-events#input_audio_buffer.clear](https://developers.openai.com/api/reference/resources/realtime/client-events#input_audio_buffer.clear)
-     * @param parameters
+     * Send this event to clear the audio bytes in the buffer. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @param parameters Event parameters
      */
     inputAudioBufferClear(parameters: Object): void
 
     /**
-     * Send this event to commit the user input audio buffer, which will create a new user message item in the conversation. [https://developers.openai.com/api/reference/resources/realtime/client-events#input_audio_buffer.commit](https://developers.openai.com/api/reference/resources/realtime/client-events#input_audio_buffer.commit)
-     * @param parameters
+     * Send this event to commit the user input audio buffer, which will create a new user message item in the conversation. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @param parameters Event parameters
      */
     inputAudioBufferCommit(parameters: Object): void
 
     /**
-     * Add a new Item to the Conversation's context. [https://developers.openai.com/api/reference/resources/realtime/client-events#conversation.item.create](https://developers.openai.com/api/reference/resources/realtime/client-events#conversation.item.create)
-     * @param parameters
+     * Add a new Item to the Conversation's context. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @param parameters Event parameters
      */
     conversationItemCreate(parameters: Object): void
 
     /**
-     * Send this event when you want to retrieve the server's representation of a specific item in the conversation history. [https://developers.openai.com/api/reference/resources/realtime/client-events#conversation.item.retrieve](https://developers.openai.com/api/reference/resources/realtime/client-events#conversation.item.retrieve)
-     * @param parameters
+     * Send this event when you want to retrieve the server's representation of a specific item in the conversation history. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @param parameters Event parameters
      */
     conversationItemRetrieve(parameters: Object): void
 
     /**
-     * Send this event to truncate a previous assistant message’s audio. [https://developers.openai.com/api/reference/resources/realtime/client-events#conversation.item.truncate](https://developers.openai.com/api/reference/resources/realtime/client-events#conversation.item.truncate)
-     * @param parameters
+     * Send this event to truncate a previous assistant message’s audio. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @param parameters Event parameters
      */
     conversationItemTruncate(parameters: Object): void
 
     /**
-     * Send this event when you want to remove any item from the conversation history. [https://developers.openai.com/api/reference/resources/realtime/client-events#conversation.item.delete](https://developers.openai.com/api/reference/resources/realtime/client-events#conversation.item.delete)
-     * @param parameters
+     * Send this event when you want to remove any item from the conversation history. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @param parameters Event parameters
      */
     conversationItemDelete(parameters: Object): void
 
     /**
-     * This event instructs the server to create a Response, which means triggering model inference. [https://developers.openai.com/api/reference/resources/realtime/client-events#response.create](https://developers.openai.com/api/reference/resources/realtime/client-events#response.create)
-     * @param parameters
+     * This event instructs the server to create a Response, which means triggering model inference. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @param parameters Event parameters
      */
     responseCreate(parameters: Object): void
 
     /**
-     * Send this event to cancel an in-progress response. [https://developers.openai.com/api/reference/resources/realtime/client-events#response.cancel](https://developers.openai.com/api/reference/resources/realtime/client-events#response.cancel)
-     * @param parameters
+     * Send this event to cancel an in-progress response. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @param parameters Event parameters
      */
     responseCancel(parameters: Object): void
 
     /**
-     * Gracefully close a realtime translation session. The server flushes pending input audio and emits any remaining translated output before sending [OpenAI.RealtimeAPIEvents.SessionClosed]. Supported only for [OpenAI.RealtimeAPIClientType.TRANSLATION]. [https://developers.openai.com/api/reference/resources/realtime/translation-client-events#session.close](https://developers.openai.com/api/reference/resources/realtime/translation-client-events#session.close)
-     * @param parameters
+     * Gracefully close a realtime translation session. The server flushes pending input audio and emits remaining output before sending [OpenAI.RealtimeAPIEvents.SessionClosed]. Supported for [OpenAI.RealtimeAPIClientType.TRANSLATION]. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @param parameters Optional. Event parameters
      */
     sessionClose(parameters?: Object): void
   }
@@ -9820,282 +10392,286 @@ declare namespace OpenAI {
   
 declare namespace OpenAI {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.OpenAI);
+   * ```
    * @event
    */
   enum RealtimeAPIEvents {
     /**
      * The unknown event.
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     Unknown = 'OpenAI.RealtimeAPI.Unknown',
 
     /**
      * The HTTP response event.
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     HTTPResponse = 'OpenAI.RealtimeAPI.HTTPResponse',
 
     /**
-     * Returned when an error occurs, which could be a client problem or a server problem. [https://developers.openai.com/api/reference/resources/realtime/server-events#error](https://developers.openai.com/api/reference/resources/realtime/server-events#error)
-     * @typedef _RealtimeAPIEvent
+     * Returned when an error occurs, which could be a client problem or a server problem. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     Error = 'OpenAI.RealtimeAPI.Error',
 
     /**
-     * Returned when a Session is created. [https://developers.openai.com/api/reference/resources/realtime/server-events#session.created](https://developers.openai.com/api/reference/resources/realtime/server-events#session.created)
-     * @typedef _RealtimeAPIEvent
+     * Returned when a Session is created. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     SessionCreated = 'OpenAI.RealtimeAPI.SessionCreated',
 
     /**
-     * Returned when a session is updated with a session.update event, unless there is an error. [https://developers.openai.com/api/reference/resources/realtime/server-events#session.updated](https://developers.openai.com/api/reference/resources/realtime/server-events#session.updated)
-     * @typedef _RealtimeAPIEvent
+     * Returned when a session is updated with a session.update event, unless there is an error. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     SessionUpdated = 'OpenAI.RealtimeAPI.SessionUpdated',
 
     /**
-     * Returned when a realtime translation session is closed after [OpenAI.RealtimeAPIClient.sessionClose]. [https://developers.openai.com/api/reference/resources/realtime/translation-server-events#session.closed](https://developers.openai.com/api/reference/resources/realtime/translation-server-events#session.closed)
-     * @typedef _RealtimeAPIEvent
+     * Returned when a realtime translation session is closed after [OpenAI.RealtimeAPIClient.sessionClose]. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     SessionClosed = 'OpenAI.RealtimeAPI.SessionClosed',
 
     /**
-     * Returned when source-language transcript text is available in a realtime translation session. [https://developers.openai.com/api/reference/resources/realtime/translation-server-events#session.input_transcript.delta](https://developers.openai.com/api/reference/resources/realtime/translation-server-events#session.input_transcript.delta)
-     * @typedef _RealtimeAPIEvent
+     * Returned when source-language transcript text is available in a realtime translation session. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     SessionInputTranscriptDelta = 'OpenAI.RealtimeAPI.SessionInputTranscriptDelta',
 
     /**
-     * Returned when translated transcript text is available in a realtime translation session. [https://developers.openai.com/api/reference/resources/realtime/translation-server-events#session.output_transcript.delta](https://developers.openai.com/api/reference/resources/realtime/translation-server-events#session.output_transcript.delta)
-     * @typedef _RealtimeAPIEvent
+     * Returned when translated transcript text is available in a realtime translation session. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     SessionOutputTranscriptDelta = 'OpenAI.RealtimeAPI.SessionOutputTranscriptDelta',
 
     /**
-     * Sent by the server when an Item is added to the default Conversation. [https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.added](https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.added)
-     * @typedef _RealtimeAPIEvent
+     * Sent by the server when an Item is added to the default Conversation. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemAdded = 'OpenAI.RealtimeAPI.ConversationItemAdded',
 
     /**
-     * Returned when a conversation item is finalized. [https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.done](https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.done)
-     * @typedef _RealtimeAPIEvent
+     * Returned when a conversation item is finalized. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemDone = 'OpenAI.RealtimeAPI.ConversationItemDone',
 
     /**
-     * Returned when a conversation item is retrieved with conversation.item.retrieve.
-     * @typedef _RealtimeAPIEvent
+     * Returned when a conversation item is retrieved with conversation.item.retrieve. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemRetrieved = 'OpenAI.RealtimeAPI.ConversationItemRetrieved',
 
     /**
-     * This event is the output of audio transcription for user audio written to the user audio buffer. [https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.input_audio_transcription.completed](https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.input_audio_transcription.completed)
-     * @typedef _RealtimeAPIEvent
+     * This event is the output of audio transcription for user audio written to the user audio buffer. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemInputAudioTranscriptionCompleted = 'OpenAI.RealtimeAPI.ConversationItemInputAudioTranscriptionCompleted',
 
     /**
-     * Returned when the text value of an input audio transcription content part is updated with incremental transcription results. [https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.input_audio_transcription.delta](https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.input_audio_transcription.delta)
-     * @typedef _RealtimeAPIEvent
+     * Returned when the text value of an input audio transcription content part is updated with incremental transcription results. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemInputAudioTranscriptionDelta = 'OpenAI.RealtimeAPI.ConversationItemInputAudioTranscriptionDelta',
 
     /**
-     * Returned when an input audio transcription segment is identified for an item. [https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.input_audio_transcription.segment](https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.input_audio_transcription.segment)
-     * @typedef _RealtimeAPIEvent
+     * Returned when an input audio transcription segment is identified for an item. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemInputAudioTranscriptionSegment = 'OpenAI.RealtimeAPI.ConversationItemInputAudioTranscriptionSegment',
 
     /**
-     * Returned when input audio transcription is configured, and a transcription request for a user message failed.  [https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.input_audio_transcription.failed](https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.input_audio_transcription.failed)
-     * @typedef _RealtimeAPIEvent
+     * Returned when input audio transcription is configured, and a transcription request for a user message failed.  [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemInputAudioTranscriptionFailed = 'OpenAI.RealtimeAPI.ConversationItemInputAudioTranscriptionFailed',
 
     /**
-     * Returned when an earlier assistant audio message item is truncated by the client with a conversation.item.truncate event. [https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.truncated](https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.truncated)
-     * @typedef _RealtimeAPIEvent
+     * Returned when an earlier assistant audio message item is truncated by the client with a conversation.item.truncate event. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemTruncated = 'OpenAI.RealtimeAPI.ConversationItemTruncated',
 
     /**
-     * Returned when an item in the conversation is deleted by the client with a conversation.item.delete event. [https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.deleted](https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.deleted)
-     * @typedef _RealtimeAPIEvent
+     * Returned when an item in the conversation is deleted by the client with a conversation.item.delete event. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ConversationItemDeleted = 'OpenAI.RealtimeAPI.ConversationItemDeleted',
 
     /**
-     * Returned when an input audio buffer is committed. [https://developers.openai.com/api/reference/resources/realtime/server-events#input_audio_buffer.committed](https://developers.openai.com/api/reference/resources/realtime/server-events#input_audio_buffer.committed)
-     * @typedef _RealtimeAPIEvent
+     * Returned when an input audio buffer is committed. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     InputAudioBufferCommitted = 'OpenAI.RealtimeAPI.InputAudioBufferCommitted',
 
     /**
-     * Returned when the input audio buffer is cleared by the client with an input_audio_buffer.clear event. [https://developers.openai.com/api/reference/resources/realtime/server-events#input_audio_buffer.cleared](https://developers.openai.com/api/reference/resources/realtime/server-events#input_audio_buffer.cleared)
-     * @typedef _RealtimeAPIEvent
+     * Returned when the input audio buffer is cleared by the client with an input_audio_buffer.clear event. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     InputAudioBufferCleared = 'OpenAI.RealtimeAPI.InputAudioBufferCleared',
 
     /**
-     * Sent by the server when in server_vad mode to indicate that speech has been detected in the audio buffer. [https://developers.openai.com/api/reference/resources/realtime/server-events#input_audio_buffer.speech_started](https://developers.openai.com/api/reference/resources/realtime/server-events#input_audio_buffer.speech_started)
-     * @typedef _RealtimeAPIEvent
+     * Sent by the server when in server_vad mode to indicate that speech has been detected in the audio buffer. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     InputAudioBufferSpeechStarted = 'OpenAI.RealtimeAPI.InputAudioBufferSpeechStarted',
 
     /**
-     * Returned in server_vad mode when the server detects the end of speech in the audio buffer. [https://developers.openai.com/api/reference/resources/realtime/server-events#input_audio_buffer.speech_stopped](https://developers.openai.com/api/reference/resources/realtime/server-events#input_audio_buffer.speech_stopped)
-     * @typedef _RealtimeAPIEvent
+     * Returned in server_vad mode when the server detects the end of speech in the audio buffer. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     InputAudioBufferSpeechStopped = 'OpenAI.RealtimeAPI.InputAudioBufferSpeechStopped',
 
     /**
-     * Returned when the Server VAD timeout is triggered for the input audio buffer. [https://developers.openai.com/api/reference/resources/realtime/server-events#input_audio_buffer.timeout_triggered](https://developers.openai.com/api/reference/resources/realtime/server-events#input_audio_buffer.timeout_triggered)
-     * @typedef _RealtimeAPIEvent
+     * Returned when the Server VAD timeout is triggered for the input audio buffer. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     InputAudioBufferTimeoutTriggered = 'OpenAI.RealtimeAPI.InputAudioBufferTimeoutTriggered',
 
     /**
-     * Returned when a new Response is created. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.created](https://developers.openai.com/api/reference/resources/realtime/server-events#response.created)
-     * @typedef _RealtimeAPIEvent
+     * Returned when a new Response is created. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseCreated = 'OpenAI.RealtimeAPI.ResponseCreated',
 
     /**
-     * Returned when a Response is done streaming. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.done](https://developers.openai.com/api/reference/resources/realtime/server-events#response.done)
-     * @typedef _RealtimeAPIEvent
+     * Returned when a Response is done streaming. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseDone = 'OpenAI.RealtimeAPI.ResponseDone',
 
     /**
-     * Returned when a new Item is created during Response generation. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.output_item.added](https://developers.openai.com/api/reference/resources/realtime/server-events#response.output_item.added)
-     * @typedef _RealtimeAPIEvent
+     * Returned when a new Item is created during Response generation. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseOutputItemAdded = 'OpenAI.RealtimeAPI.ResponseOutputItemAdded',
 
     /**
-     * Returned when an Item is done streaming. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.output_item.done](https://developers.openai.com/api/reference/resources/realtime/server-events#response.output_item.done)
-     * @typedef _RealtimeAPIEvent
+     * Returned when an Item is done streaming. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseOutputItemDone = 'OpenAI.RealtimeAPI.ResponseOutputItemDone',
 
     /**
-     * Returned when a new content part is added to an assistant message item during response generation. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.content_part.added](https://developers.openai.com/api/reference/resources/realtime/server-events#response.content_part.added)
-     * @typedef _RealtimeAPIEvent
+     * Returned when a new content part is added to an assistant message item during response generation. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseContentPartAdded = 'OpenAI.RealtimeAPI.ResponseContentPartAdded',
 
     /**
-     * Returned when a content part is done streaming in an assistant message item. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.content_part.done](https://developers.openai.com/api/reference/resources/realtime/server-events#response.content_part.done)
-     * @typedef _RealtimeAPIEvent
+     * Returned when a content part is done streaming in an assistant message item. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseContentPartDone = 'OpenAI.RealtimeAPI.ResponseContentPartDone',
 
     /**
-     * Returned when the text value of an "output_text" content part is updated. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.output_text.delta](https://developers.openai.com/api/reference/resources/realtime/server-events#response.output_text.delta)
-     * @typedef _RealtimeAPIEvent
+     * Returned when the text value of an "output_text" content part is updated. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseOutputTextDelta = 'OpenAI.RealtimeAPI.ResponseOutputTextDelta',
 
     /**
-     * Returned when the text value of an "output_text" content part is done streaming. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.output_text.done](https://developers.openai.com/api/reference/resources/realtime/server-events#response.output_text.done)
-     * @typedef _RealtimeAPIEvent
+     * Returned when the text value of an "output_text" content part is done streaming. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseOutputTextDone = 'OpenAI.RealtimeAPI.ResponseOutputTextDone',
 
     /**
-     * Returned when the model-generated transcription of audio output is updated. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.output_audio_transcript.delta](https://developers.openai.com/api/reference/resources/realtime/server-events#response.output_audio_transcript.delta)
-     * @typedef _RealtimeAPIEvent
+     * Returned when the model-generated transcription of audio output is updated. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseOutputAudioTranscriptDelta = 'OpenAI.RealtimeAPI.ResponseOutputAudioTranscriptDelta',
 
     /**
-     * Returned when the model-generated transcription of audio output is done streaming. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.output_audio_transcript.done](https://developers.openai.com/api/reference/resources/realtime/server-events#response.output_audio_transcript.done)
-     * @typedef _RealtimeAPIEvent
+     * Returned when the model-generated transcription of audio output is done streaming. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseOutputAudioTranscriptDone = 'OpenAI.RealtimeAPI.ResponseOutputAudioTranscriptDone',
 
     /**
-     * Returned when the model-generated audio is done. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.output_audio.done](https://developers.openai.com/api/reference/resources/realtime/server-events#response.output_audio.done)
-     * @typedef _RealtimeAPIEvent
+     * Returned when the model-generated audio is done. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseOutputAudioDone = 'OpenAI.RealtimeAPI.ResponseOutputAudioDone',
 
     /**
-     * Returned when the model-generated function call arguments are updated. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.function_call_arguments.delta](https://developers.openai.com/api/reference/resources/realtime/server-events#response.function_call_arguments.delta)
-     * @typedef _RealtimeAPIEvent
+     * Returned when the model-generated function call arguments are updated. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseFunctionCallArgumentsDelta = 'OpenAI.RealtimeAPI.ResponseFunctionCallArgumentsDelta',
 
     /**
-     * Returned when the model-generated function call arguments are done streaming. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.function_call_arguments.done](https://developers.openai.com/api/reference/resources/realtime/server-events#response.function_call_arguments.done)
-     * @typedef _RealtimeAPIEvent
+     * Returned when the model-generated function call arguments are done streaming. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseFunctionCallArgumentsDone = 'OpenAI.RealtimeAPI.ResponseFunctionCallArgumentsDone',
 
     /**
-     * Returned when MCP tool call arguments are updated during response generation. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.mcp_call_arguments.delta](https://developers.openai.com/api/reference/resources/realtime/server-events#response.mcp_call_arguments.delta)
-     * @typedef _RealtimeAPIEvent
+     * Returned when MCP tool call arguments are updated during response generation. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseMCPCallArgumentsDelta = 'OpenAI.RealtimeAPI.ResponseMCPCallArgumentsDelta',
 
     /**
-     * Returned when MCP tool call arguments are finalized during response generation. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.mcp_call_arguments.done](https://developers.openai.com/api/reference/resources/realtime/server-events#response.mcp_call_arguments.done)
-     * @typedef _RealtimeAPIEvent
+     * Returned when MCP tool call arguments are finalized during response generation. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseMCPCallArgumentsDone = 'OpenAI.RealtimeAPI.ResponseMCPCallArgumentsDone',
 
     /**
-     * Returned when an MCP tool call has started and is in progress. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.mcp_call.in_progress](https://developers.openai.com/api/reference/resources/realtime/server-events#response.mcp_call.in_progress)
-     * @typedef _RealtimeAPIEvent
+     * Returned when an MCP tool call has started and is in progress. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseMCPCallInProgress = 'OpenAI.RealtimeAPI.ResponseMCPCallInProgress',
 
     /**
-     * Returned when an MCP tool call has completed successfully. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.mcp_call.completed](https://developers.openai.com/api/reference/resources/realtime/server-events#response.mcp_call.completed)
-     * @typedef _RealtimeAPIEvent
+     * Returned when an MCP tool call has completed successfully. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseMCPCallCompleted = 'OpenAI.RealtimeAPI.ResponseMCPCallCompleted',
 
     /**
-     * Returned when an MCP tool call has failed. [https://developers.openai.com/api/reference/resources/realtime/server-events#response.mcp_call.failed](https://developers.openai.com/api/reference/resources/realtime/server-events#response.mcp_call.failed)
-     * @typedef _RealtimeAPIEvent
+     * Returned when an MCP tool call has failed. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     ResponseMCPCallFailed = 'OpenAI.RealtimeAPI.ResponseMCPCallFailed',
 
     /**
-     * Returned when listing MCP tools is in progress for an item. [https://developers.openai.com/api/reference/resources/realtime/server-events#mcp_list_tools.in_progress](https://developers.openai.com/api/reference/resources/realtime/server-events#mcp_list_tools.in_progress)
-     * @typedef _RealtimeAPIEvent
+     * Returned when listing MCP tools is in progress for an item. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     MCPListToolsInProgress = 'OpenAI.RealtimeAPI.MCPListToolsInProgress',
 
     /**
-     * Returned when listing MCP tools has completed for an item. [https://developers.openai.com/api/reference/resources/realtime/server-events#mcp_list_tools.completed](https://developers.openai.com/api/reference/resources/realtime/server-events#mcp_list_tools.completed)
-     * @typedef _RealtimeAPIEvent
+     * Returned when listing MCP tools has completed for an item. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     MCPListToolsCompleted = 'OpenAI.RealtimeAPI.MCPListToolsCompleted',
 
     /**
-     * Returned when listing MCP tools has failed for an item. [https://developers.openai.com/api/reference/resources/realtime/server-events#mcp_list_tools.failed](https://developers.openai.com/api/reference/resources/realtime/server-events#mcp_list_tools.failed)
-     * @typedef _RealtimeAPIEvent
+     * Returned when listing MCP tools has failed for an item. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     MCPListToolsFailed = 'OpenAI.RealtimeAPI.MCPListToolsFailed',
 
     /**
-     * Emitted at the beginning of a Response to indicate the updated rate limits. [https://developers.openai.com/api/reference/resources/realtime/server-events#rate_limits.updated](https://developers.openai.com/api/reference/resources/realtime/server-events#rate_limits.updated)
-     * @typedef _RealtimeAPIEvent
+     * Emitted at the beginning of a Response to indicate the updated rate limits. [https://developers.openai.com/api/reference/overview](https://developers.openai.com/api/reference/overview)
+     * @eventpayload _RealtimeAPIEvent
      */
     RateLimitsUpdated = 'OpenAI.RealtimeAPI.RateLimitsUpdated',
 
     /**
      * The WebSocket error response event.
-     * @typedef _RealtimeAPIEvent
+     * @eventpayload _RealtimeAPIEvent
      */
     WebSocketError = 'OpenAI.RealtimeAPI.WebSocketError',
 
     /**
     * Contains information about connector.
-    * @typedef _RealtimeAPIEvent
+    * @eventpayload _RealtimeAPIEvent
     */
     ConnectorInformation = 'OpenAI.RealtimeAPI.ConnectorInformation',
   }
@@ -10236,7 +10812,7 @@ declare namespace OpenAI {
 
     /**
      * Creates a model response. [https://developers.openai.com/api/reference/resources/responses/methods/create](https://developers.openai.com/api/reference/resources/responses/methods/create)
-     * @param parameters
+     * @param parameters Response parameters
      */
     createResponses(parameters: Object): void
   }
@@ -10244,318 +10820,322 @@ declare namespace OpenAI {
   
 declare namespace OpenAI {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.OpenAI);
+   * ```
    * @event
    */
   enum ResponsesAPIEvents {
     /**
      * The unknown event.
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     Unknown = 'OpenAI.ResponsesAPI.Unknown',
 
     /**
      * Emitted when a partial code snippet is streamed by the code interpreter. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseCodeInterpreterCallCodeDelta = 'OpenAI.ResponsesAPI.ResponseCodeInterpreterCallCodeDelta',
 
     /**
      * Emitted when the code snippet is finalized by the code interpreter. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseCodeInterpreterCallCodeDone = 'OpenAI.ResponsesAPI.ResponseCodeInterpreterCallCodeDone',
 
     /**
      * Emitted when the code interpreter call is completed. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseCodeInterpreterCallCompleted = 'OpenAI.ResponsesAPI.ResponseCodeInterpreterCallCompleted',
 
     /**
      * Emitted when a code interpreter call is in progress. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseCodeInterpreterCallInProgress = 'OpenAI.ResponsesAPI.ResponseCodeInterpreterCallInProgress',
 
     /**
      * Emitted when the code interpreter is actively interpreting the code snippet. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseCodeInterpreterCallInterpreting = 'OpenAI.ResponsesAPI.ResponseCodeInterpreterCallInterpreting',
 
     /**
      * Emitted when the model response is complete. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseCompleted = 'OpenAI.ResponsesAPI.ResponseCompleted',
 
     /**
      * Emitted when a new content part is added. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseContentPartAdded = 'OpenAI.ResponsesAPI.ResponseContentPartAdded',
 
     /**
      * Emitted when a content part is done. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseContentPartDone = 'OpenAI.ResponsesAPI.ResponseContentPartDone',
 
     /**
      * An event that is emitted when a response is created. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseCreated = 'OpenAI.ResponsesAPI.ResponseCreated',
 
     /**
      * Emitted when an error occurs. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseError = 'OpenAI.ResponsesAPI.ResponseError',
 
     /**
      * Emitted when a file search call is completed (results found). [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseFileSearchCallCompleted = 'OpenAI.ResponsesAPI.ResponseFileSearchCallCompleted',
 
     /**
      * Emitted when a file search call is initiated. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseFileSearchCallInProgress = 'OpenAI.ResponsesAPI.ResponseFileSearchCallInProgress',
 
     /**
      * Emitted when a file search is currently searching. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseFileSearchCallSearching = 'OpenAI.ResponsesAPI.ResponseFileSearchCallSearching',
 
     /**
      * Emitted when there is a partial function-call arguments delta. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseFunctionCallArgumentsDelta = 'OpenAI.ResponsesAPI.ResponseFunctionCallArgumentsDelta',
 
     /**
      * Emitted when function-call arguments are finalized. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseFunctionCallArgumentsDone = 'OpenAI.ResponsesAPI.ResponseFunctionCallArgumentsDone',
 
     /**
      * Emitted when the response is in progress. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseInProgress = 'OpenAI.ResponsesAPI.ResponseInProgress',
 
     /**
      * An event that is emitted when a response fails. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseFailed = 'OpenAI.ResponsesAPI.ResponseFailed',
 
     /**
      * An event that is emitted when a response finishes as incomplete. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseIncomplete = 'OpenAI.ResponsesAPI.ResponseIncomplete',
 
     /**
      * Emitted when a new output item is added. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseOutputItemAdded = 'OpenAI.ResponsesAPI.ResponseOutputItemAdded',
 
     /**
      * Emitted when an output item is marked done. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseOutputItemDone = 'OpenAI.ResponsesAPI.ResponseOutputItemDone',
 
     /**
      * Emitted when a new reasoning summary part is added. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseReasoningSummaryPartAdded = 'OpenAI.ResponsesAPI.ResponseReasoningSummaryPartAdded',
 
     /**
      * Emitted when a reasoning summary part is completed. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseReasoningSummaryPartDone = 'OpenAI.ResponsesAPI.ResponseReasoningSummaryPartDone',
 
     /**
      * Emitted when a delta is added to a reasoning summary text. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseReasoningSummaryTextDelta = 'OpenAI.ResponsesAPI.ResponseReasoningSummaryTextDelta',
 
     /**
      * Emitted when a reasoning summary text is completed. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseReasoningSummaryTextDone = 'OpenAI.ResponsesAPI.ResponseReasoningSummaryTextDone',
 
     /**
      * Emitted when a delta is added to a reasoning text. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseReasoningTextDelta = 'OpenAI.ResponsesAPI.ResponseReasoningTextDelta',
 
     /**
      * Emitted when a reasoning text is completed. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseReasoningTextDone = 'OpenAI.ResponsesAPI.ResponseReasoningTextDone',
 
     /**
      * Emitted when there is a partial refusal text. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseRefusalDelta = 'OpenAI.ResponsesAPI.ResponseRefusalDelta',
 
     /**
      * Emitted when refusal text is finalized. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseRefusalDone = 'OpenAI.ResponsesAPI.ResponseRefusalDone',
 
     /**
      * Emitted when there is an additional text delta. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseTextDelta = 'OpenAI.ResponsesAPI.ResponseTextDelta',
 
     /**
      * Emitted when text content is finalized. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseTextDone = 'OpenAI.ResponsesAPI.ResponseTextDone',
 
     /**
      * Emitted when a web search call is completed. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseWebSearchCallCompleted = 'OpenAI.ResponsesAPI.ResponseWebSearchCallCompleted',
 
     /**
      * Emitted when a web search call is initiated. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseWebSearchCallInProgress = 'OpenAI.ResponsesAPI.ResponseWebSearchCallInProgress',
 
     /**
      * Emitted when a web search call is executing. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseWebSearchCallSearching = 'OpenAI.ResponsesAPI.ResponseWebSearchCallSearching',
 
     /**
      * Emitted when an image generation tool call has completed and the final image is available. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseImageGenCallCompleted = 'OpenAI.ResponsesAPI.ResponseImageGenCallCompleted',
 
     /**
      * Emitted when an image generation tool call is actively generating an image (intermediate state). [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseImageGenCallGenerating = 'OpenAI.ResponsesAPI.ResponseImageGenCallGenerating',
 
     /**
      * Emitted when an image generation tool call is in progress. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseImageGenCallInProgress = 'OpenAI.ResponsesAPI.ResponseImageGenCallInProgress',
 
     /**
      * Emitted when a partial image is available during image generation streaming. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseImageGenCallPartialImage = 'OpenAI.ResponsesAPI.ResponseImageGenCallPartialImage',
 
     /**
      * Emitted when there is a delta (partial update) to the arguments of an MCP tool call. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseMCPCallArgumentsDelta = 'OpenAI.ResponsesAPI.ResponseMCPCallArgumentsDelta',
 
     /**
      * Emitted when the arguments for an MCP tool call are finalized. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseMCPCallArgumentsDone = 'OpenAI.ResponsesAPI.ResponseMCPCallArgumentsDone',
 
     /**
      * Emitted when an MCP tool call has completed successfully. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseMCPCallCompleted = 'OpenAI.ResponsesAPI.ResponseMCPCallCompleted',
 
     /**
      * Emitted when an MCP tool call has failed. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseMCPCallFailed = 'OpenAI.ResponsesAPI.ResponseMCPCallFailed',
 
     /**
      * Emitted when an MCP tool call is in progress. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseMCPCallInProgress = 'OpenAI.ResponsesAPI.ResponseMCPCallInProgress',
 
     /**
      * Emitted when the list of available MCP tools has been successfully retrieved. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseMCPListToolsCompleted = 'OpenAI.ResponsesAPI.ResponseMCPListToolsCompleted',
 
     /**
      * Emitted when the attempt to list available MCP tools has failed. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseMCPListToolsFailed = 'OpenAI.ResponsesAPI.ResponseMCPListToolsFailed',
 
     /**
      * Emitted when the system is in the process of retrieving the list of available MCP tools. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseMCPListToolsInProgress = 'OpenAI.ResponsesAPI.ResponseMCPListToolsInProgress',
 
     /**
      * Emitted when an annotation is added to output text content. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseOutputTextAnnotationAdded = 'OpenAI.ResponsesAPI.ResponseOutputTextAnnotationAdded',
 
     /**
      * Emitted when a response is queued and waiting to be processed. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseQueued = 'OpenAI.ResponsesAPI.ResponseQueued',
 
     /**
      * Event representing a delta (partial update) to the input of a custom tool call. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseCustomToolCallInputDelta = 'OpenAI.ResponsesAPI.ResponseCustomToolCallInputDelta',
 
     /**
      * Event indicating that input for a custom tool call is complete. [https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema)](https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_stream_event%20%3E%20(schema))
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponseCustomToolCallInputDone = 'OpenAI.ResponsesAPI.ResponseCustomToolCallInputDone',
 
     /**
      * Contains Responses API error.
-     * @typedef _ResponsesAPIEvent
+     * @eventpayload _ResponsesAPIEvent
      */
     ResponsesAPIError = 'OpenAI.ResponsesAPI.ResponsesAPIError',
 
     /**
     * Contains information about connector.
-    * @typedef _ResponsesAPIEvent
+    * @eventpayload _ResponsesAPIEvent
     */
     ConnectorInformation = 'OpenAI.ResponsesAPI.ConnectorInformation',
   }
@@ -10644,11 +11224,11 @@ declare namespace OpenAI {
  */
 interface ParticipantReceiveParameters {
   /**
-   * Video streams to receive.
+   * Optional. Video streams to receive.
    */
   video?: Array<'default' | string>;
   /**
-   * Audio streams to receive.
+   * Optional. Audio streams to receive.
    */
   audio?: Array<'default' | string>;
 }
@@ -10781,30 +11361,34 @@ declare namespace Pipecat {
 
 declare namespace Pipecat {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.Pipecat);
+   * ```
    * @event
    */
   enum TurnEvents {
     /**
      * The [Pipecat.TurnDetector] result.
-     * @typedef _PipecatTurnResultEvent
+     * @eventpayload _PipecatTurnResultEvent
      */
     Result = 'Pipecat.Turn.Result',
 
     /**
      * The [Pipecat.TurnDetector] is reset.
-     * @typedef _PipecatTurnResetEvent
+     * @eventpayload _PipecatTurnResetEvent
      */
     Reset = 'Pipecat.Turn.Reset',
 
     /**
      * The error response event.
-     * @typedef _PipecatTurnErrorEvent
+     * @eventpayload _PipecatTurnErrorEvent
      */
     Error = 'Pipecat.Turn.Error',
 
     /**
      * Contains information about connector.
-     * @typedef _PipecatTurnConnectorInformationEvent
+     * @eventpayload _PipecatTurnConnectorInformationEvent
      */
     ConnectorInformation = 'Pipecat.Turn.ConnectorInformation',
   }
@@ -10876,7 +11460,7 @@ declare namespace Pipecat {
 declare enum PlayerEvents {
   /**
    * Triggered when [Player] created.
-   * @typedef _PlayerCreatedEvent
+   * @eventpayload _PlayerCreatedEvent
    */
   Created = 'Player.Created',
 
@@ -10884,49 +11468,51 @@ declare enum PlayerEvents {
    * Triggers by the [createURLPlayer] and [createTTSPlayer] methods when<br>
    * 1) the audio file download to the Voximplant cache is finished;<br>
    * 2) the audio file is found in the cache (i.e., it is in the cache before).
-   * @typedef _PlayerPlaybackReadyEvent
+   * @eventpayload _PlayerPlaybackReadyEvent
    */
   PlaybackReady = 'Player.PlaybackReady',
 
   /**
    * Triggered when playback is started. Note that if the [createURLPlayer] method is called with the **onPause** parameter set to true, the event is not triggered; it is triggered after the [Player.resume] method call.
-   * @typedef _PlayerStartedEvent
+   * @eventpayload _PlayerStartedEvent
    */
   Started = 'Player.Started',
 
   /**
    * Triggers as a result of the [Player.stop] method call.
-   * @typedef _PlayerStoppedEvent
+   * @eventpayload _PlayerStoppedEvent
    */
   Stopped = 'Player.Stopped',
 
   /**
    * Triggered when playback has finished successfully or with an error.
-   * @typedef _PlayerPlaybackFinishedEvent
+   * @eventpayload _PlayerPlaybackFinishedEvent
    */
   PlaybackFinished = 'Player.PlaybackFinished',
 
   /**
    * Triggered when playback has finished with an error.
-   * @typedef _PlayerErrorEvent
+   * @eventpayload _PlayerErrorEvent
    */
   Error = 'Player.Error',
 
   /**
    * Triggered when [Player.addMarker] is reached.
-   * @typedef _PlayerPlaybackMarkerReachedEvent
+   * @eventpayload _PlayerPlaybackMarkerReachedEvent
    */
   PlaybackMarkerReached = 'Player.PlaybackMarkerReached',
 
   /**
    * Triggered when an audio file is playing faster than it is being loaded.
-   * @typedef _PlayerPlaybackBufferingEvent
+   * @eventpayload _PlayerPlaybackBufferingEvent
    */
   PlaybackBuffering = 'Player.Buffering',
 
   /**
    * Triggered when an audio chunk playback is finished. Note that this event is triggered only for RealtimeTTSPlayer instances.
-   * @typedef _PlayerAudioChunksPlaybackFinishedEvent
+   *
+   * For [VoxTTS.RealtimeTTSPlayer], the optional **final** field indicates whether the completed flush ends the current phrase or is an intermediate auto-flush.
+   * @eventpayload _PlayerAudioChunksPlaybackFinishedEvent
    */
   AudioChunksPlaybackFinished = 'Player.AudioChunksPlaybackFinished'
 }
@@ -11025,7 +11611,15 @@ declare interface _PlayerAudioChunksPlaybackFinishedEvent extends _PlayerEvent {
    * Represents the delay between sending the request and receiving the first byte of audio data.
    */
   timeToFirstByte: number;
+  /**
+   * Optional. Whether the completed flush ends the current phrase.
+   * Present only for [VoxTTS.RealtimeTTSPlayer] (`true` or `false`); omitted for other RealtimeTTS providers.
+   * - `true` — final (normal) flush; phrase playback is complete.
+   * - `false` — intermediate auto-flush; more audio is expected.
+   */
+  final?: boolean;
 }
+
 /**
  * Represents an instance of an audio player.
  * <br>
@@ -11041,6 +11635,472 @@ declare class Player extends BasePlayer {
   addMarker(offset: number): void;
 }
 
+declare namespace QwenCloud {
+  /**
+   * Creates a new [QwenCloud.VoiceAgentAPIClient] instance.
+   * @param parameters The [QwenCloud.VoiceAgentAPIClient] parameters
+   */
+  function createVoiceAgentAPIClient(
+    parameters: VoiceAgentAPIClientParameters
+  ): Promise<QwenCloud.VoiceAgentAPIClient>;
+}
+
+declare namespace QwenCloud {
+  /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.QwenCloud);
+   * ```
+   * @event
+   */
+  enum Events {
+    /**
+     * Triggered when the audio stream sent through a Qwen Cloud WebSocket starts playing.
+     * @eventpayload _WebSocketMediaStartedQwenCloudEvent
+     */
+    WebSocketMediaStarted = 'QwenCloud.Events.WebSocketMediaStarted',
+    /**
+     * Triggered after the end of the audio stream sent through a Qwen Cloud WebSocket (**1 second of silence**).
+     * @eventpayload _WebSocketMediaEndedQwenCloudEvent
+     */
+    WebSocketMediaEnded = 'QwenCloud.Events.WebSocketMediaEnded',
+  }
+
+  /**
+   * @private
+   */
+  interface _Events {
+    [QwenCloud.Events.WebSocketMediaStarted]: _WebSocketMediaStartedQwenCloudEvent;
+    [QwenCloud.Events.WebSocketMediaEnded]: _WebSocketMediaEndedQwenCloudEvent;
+  }
+
+  /**
+   * @private
+   */
+  interface _Event {
+    /**
+     * The [QwenCloud.VoiceAgentAPIClient] instance.
+     */
+    client: VoiceAgentAPIClient;
+  }
+
+  /**
+   * @private
+   */
+  interface _WebSocketMediaStartedQwenCloudEvent extends _Event, _WebSocketMediaStartedWithoutWebSocketEvent {}
+
+  /**
+   * @private
+   */
+  interface _WebSocketMediaEndedQwenCloudEvent extends _Event, _WebSocketMediaEndedWithoutWebSocketEvent {}
+}
+
+declare namespace QwenCloud {
+}
+
+declare namespace QwenCloud {
+  /**
+   * @private
+   */
+  interface _VoiceAgentAPIClientEvents extends _Events, _VoiceAgentAPIEvents {}
+}
+
+declare namespace QwenCloud {
+  /**
+   * [QwenCloud.VoiceAgentAPIClient] parameters. Can be passed as arguments to the [QwenCloud.createVoiceAgentAPIClient] method.
+   */
+  interface VoiceAgentAPIClientParameters extends _VoiceAIClientParameters {
+    /**
+     * The Qwen Cloud API key. Sent as `Authorization: Bearer`.
+     */
+    apiKey: string;
+    /**
+     * Optional. The realtime model. [https://www.qwencloud.com/models/qwen-audio-3.1-realtime-plus](https://www.qwencloud.com/models/qwen-audio-3.1-realtime-plus).
+     * Note: The default value is **qwen-audio-3.1-realtime-plus**.
+     */
+    model?: string;
+    /**
+     * Optional. Qwen Cloud workspace id. Sent as the `X-DashScope-WorkSpace` header.
+     */
+    workspace?: string;
+  }
+}
+
+declare namespace QwenCloud {
+  class VoiceAgentAPIClient {
+    /**
+     * Returns the VoiceAgentAPIClient id.
+     */
+    id(): string;
+
+    /**
+     * Returns the Qwen Cloud WebSocket id.
+     */
+    webSocketId(): string;
+
+    /**
+     * Closes the Qwen Cloud connection (over WebSocket) or connection attempt.
+     */
+    close(): void;
+
+    /**
+     * Starts sending media from Qwen Cloud (via WebSocket) to the media unit. Qwen Cloud works in real time.
+     * @param mediaUnit Media unit that receives media
+     * @param parameters Optional interaction parameters
+     */
+    sendMediaTo(mediaUnit: VoxMediaUnit, parameters?: SendMediaParameters): void;
+
+    /**
+     * Stops sending media from Qwen Cloud (via WebSocket) to the media unit.
+     * @param mediaUnit Media unit that stops receiving media
+     */
+    stopMediaTo(mediaUnit: VoxMediaUnit): void;
+
+    /**
+     * Clears the Qwen Cloud WebSocket media buffer.
+     * @param parameters Optional. Media buffer clearing parameters
+     */
+    clearMediaBuffer(parameters?: ClearMediaBufferParameters): void;
+
+    /**
+     * Adds a handler for the specified [QwenCloud.VoiceAgentAPIEvents] or [QwenCloud.Events] event. Use only functions as handlers; anything except a function leads to the error and scenario termination when a handler is called.
+     * @param event Event class (i.e., [QwenCloud.VoiceAgentAPIEvents.SessionCreated])
+     * @param callback Handler function. A single parameter is passed - object with event information
+     */
+    addEventListener<T extends keyof QwenCloud._VoiceAgentAPIClientEvents>(
+      event: QwenCloud.Events | QwenCloud.VoiceAgentAPIEvents | T,
+      callback: (event: QwenCloud._VoiceAgentAPIClientEvents[T]) => any
+    ): void;
+
+    /**
+     * Removes a handler for the specified [QwenCloud.VoiceAgentAPIEvents] or [QwenCloud.Events] event.
+     * @param event Event class (i.e., [QwenCloud.VoiceAgentAPIEvents.SessionCreated])
+     * @param callback Optional. Handler function. If not specified, all handler functions are removed
+     */
+    removeEventListener<T extends keyof QwenCloud._VoiceAgentAPIClientEvents>(
+      event: QwenCloud.Events | QwenCloud.VoiceAgentAPIEvents | T,
+      callback?: (event: QwenCloud._VoiceAgentAPIClientEvents[T]) => any
+    ): void;
+
+    /**
+     * Updates the session configuration. Send this before the first audio frame. `turn_detection: null` selects push-to-talk. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#session-update](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#session-update)
+     * @param parameters Event parameters
+     */
+    sessionUpdate(parameters: Object): void;
+
+    /**
+     * Clears uncommitted input audio. Push-to-talk mode only. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#input-audio-buffer-clear](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#input-audio-buffer-clear)
+     * @param parameters Optional. Event parameters
+     */
+    inputAudioBufferClear(parameters?: Object): void;
+
+    /**
+     * Commits the input audio buffer. Push-to-talk mode only. Does not start a response; call [QwenCloud.VoiceAgentAPIClient.responseCreate] after this. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#input-audio-buffer-commit](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#input-audio-buffer-commit)
+     * @param parameters Optional. Event parameters
+     */
+    inputAudioBufferCommit(parameters?: Object): void;
+
+    /**
+     * Inserts a conversation item (message, function_call, or function_call_output). [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#conversation-item-create](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#conversation-item-create)
+     * @param parameters Event parameters
+     */
+    conversationItemCreate(parameters: Object): void;
+
+    /**
+     * Retrieves a conversation item. Audio content is returned as a transcript. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#conversation-item-retrieve](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#conversation-item-retrieve)
+     * @param parameters Event parameters
+     */
+    conversationItemRetrieve(parameters: Object): void;
+
+    /**
+     * Deletes a conversation item. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#conversation-item-delete](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#conversation-item-delete)
+     * @param parameters Event parameters
+     */
+    conversationItemDelete(parameters: Object): void;
+
+    /**
+     * Starts a response. Required in push-to-talk mode and after a function_call_output. Optional overrides: response.modalities, response.voice. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#response-create](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#response-create)
+     * @param parameters Optional. Event parameters
+     */
+    responseCreate(parameters?: Object): void;
+
+    /**
+     * Cancels the response currently being generated. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#response-cancel](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events#response-cancel)
+     * @param parameters Optional. Event parameters
+     */
+    responseCancel(parameters?: Object): void;
+  }
+}
+
+declare namespace QwenCloud {
+  /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.QwenCloud);
+   * ```
+   * @event
+   */
+  enum VoiceAgentAPIEvents {
+    /**
+     * The unknown event.
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    Unknown = 'QwenCloud.VoiceAgentAPI.Unknown',
+
+    /**
+     * Sent when an error occurs. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#error](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#error)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    Error = 'QwenCloud.VoiceAgentAPI.Error',
+
+    /**
+     * Returned when a session is created. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#session-created](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#session-created)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    SessionCreated = 'QwenCloud.VoiceAgentAPI.SessionCreated',
+
+    /**
+     * Returned after session.update is applied. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#session-updated](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#session-updated)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    SessionUpdated = 'QwenCloud.VoiceAgentAPI.SessionUpdated',
+
+    /**
+     * VAD detected the start of speech. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#input-audio-buffer-speech-started](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#input-audio-buffer-speech-started)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    InputAudioBufferSpeechStarted = 'QwenCloud.VoiceAgentAPI.InputAudioBufferSpeechStarted',
+
+    /**
+     * VAD detected the end of speech. In smart_turn mode, reason turn_invalid means the turn was rejected. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#input-audio-buffer-speech-stopped](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#input-audio-buffer-speech-stopped)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    InputAudioBufferSpeechStopped = 'QwenCloud.VoiceAgentAPI.InputAudioBufferSpeechStopped',
+
+    /**
+     * The input audio buffer was committed as a user message. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#input-audio-buffer-committed](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#input-audio-buffer-committed)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    InputAudioBufferCommitted = 'QwenCloud.VoiceAgentAPI.InputAudioBufferCommitted',
+
+    /**
+     * The input audio buffer was cleared (push-to-talk). [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#input-audio-buffer-cleared](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#input-audio-buffer-cleared)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    InputAudioBufferCleared = 'QwenCloud.VoiceAgentAPI.InputAudioBufferCleared',
+
+    /**
+     * A conversation item was created. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-created](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-created)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ConversationItemCreated = 'QwenCloud.VoiceAgentAPI.ConversationItemCreated',
+
+    /**
+     * A conversation item was deleted. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-deleted](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-deleted)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ConversationItemDeleted = 'QwenCloud.VoiceAgentAPI.ConversationItemDeleted',
+
+    /**
+     * A conversation item was retrieved. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-retrieved](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-retrieved)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ConversationItemRetrieved = 'QwenCloud.VoiceAgentAPI.ConversationItemRetrieved',
+
+    /**
+     * Incremental input audio transcription. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-input-audio-transcription-delta](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-input-audio-transcription-delta)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ConversationItemInputAudioTranscriptionDelta = 'QwenCloud.VoiceAgentAPI.ConversationItemInputAudioTranscriptionDelta',
+
+    /**
+     * Final input audio transcription. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-input-audio-transcription-completed](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-input-audio-transcription-completed)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ConversationItemInputAudioTranscriptionCompleted = 'QwenCloud.VoiceAgentAPI.ConversationItemInputAudioTranscriptionCompleted',
+
+    /**
+     * Input audio transcription failed. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-input-audio-transcription-failed](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-input-audio-transcription-failed) 
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ConversationItemInputAudioTranscriptionFailed = 'QwenCloud.VoiceAgentAPI.ConversationItemInputAudioTranscriptionFailed',
+
+    /**
+     * Incremental ambient audio transcription in smart_turn mode. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-ambient-audio-transcription-delta](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-ambient-audio-transcription-delta)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ConversationItemAmbientAudioTranscriptionDelta = 'QwenCloud.VoiceAgentAPI.ConversationItemAmbientAudioTranscriptionDelta',
+
+    /**
+     * Final ambient audio transcription in smart_turn mode. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-ambient-audio-transcription-completed](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#conversation-item-ambient-audio-transcription-completed)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ConversationItemAmbientAudioTranscriptionCompleted = 'QwenCloud.VoiceAgentAPI.ConversationItemAmbientAudioTranscriptionCompleted',
+
+    /**
+     * A model response started. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-created](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-created)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ResponseCreated = 'QwenCloud.VoiceAgentAPI.ResponseCreated',
+
+    /**
+     * A model response finished. status can be completed, cancelled, or failed. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-done](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-done)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ResponseDone = 'QwenCloud.VoiceAgentAPI.ResponseDone',
+
+    /**
+     * An output item was added to the response. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-output-item-added](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-output-item-added)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ResponseOutputItemAdded = 'QwenCloud.VoiceAgentAPI.ResponseOutputItemAdded',
+
+    /**
+     * An output item finished. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-output-item-done](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-output-item-done)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ResponseOutputItemDone = 'QwenCloud.VoiceAgentAPI.ResponseOutputItemDone',
+
+    /**
+     * A content part was added to an output item. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-content-part-added](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-content-part-added)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ResponseContentPartAdded = 'QwenCloud.VoiceAgentAPI.ResponseContentPartAdded',
+
+    /**
+     * A content part finished. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-content-part-done](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-content-part-done)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ResponseContentPartDone = 'QwenCloud.VoiceAgentAPI.ResponseContentPartDone',
+
+    /**
+     * Incremental text in text-only mode. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-text-delta](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-text-delta)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ResponseTextDelta = 'QwenCloud.VoiceAgentAPI.ResponseTextDelta',
+
+    /**
+     * Text output finished in text-only mode. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-text-done](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-text-done)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ResponseTextDone = 'QwenCloud.VoiceAgentAPI.ResponseTextDone',
+
+    /**
+     * Incremental assistant caption in audio mode. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-audio-transcript-delta](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-audio-transcript-delta)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ResponseAudioTranscriptDelta = 'QwenCloud.VoiceAgentAPI.ResponseAudioTranscriptDelta',
+
+    /**
+     * Assistant caption finished in audio mode. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-audio-transcript-done](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-audio-transcript-done) 
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ResponseAudioTranscriptDone = 'QwenCloud.VoiceAgentAPI.ResponseAudioTranscriptDone',
+
+    /**
+     * Assistant audio output finished. Audio bytes arrive as media, not this event. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-audio-done](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-audio-done) 
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ResponseAudioDone = 'QwenCloud.VoiceAgentAPI.ResponseAudioDone',
+
+    /**
+     * Incremental function-call arguments. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-function-call-arguments-delta](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-function-call-arguments-delta)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ResponseFunctionCallArgumentsDelta = 'QwenCloud.VoiceAgentAPI.ResponseFunctionCallArgumentsDelta',
+
+    /**
+     * Function-call arguments are complete. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-function-call-arguments-done](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#response-function-call-arguments-done)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ResponseFunctionCallArgumentsDone = 'QwenCloud.VoiceAgentAPI.ResponseFunctionCallArgumentsDone',
+
+    /**
+     * Voiceprint enrollment started. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#voiceprint-audio-list-in-progress](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#voiceprint-audio-list-in-progress)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    VoiceprintAudioListInProgress = 'QwenCloud.VoiceAgentAPI.VoiceprintAudioListInProgress',
+
+    /**
+     * Voiceprint enrollment completed. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#voiceprint-audio-list-completed](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#voiceprint-audio-list-completed)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    VoiceprintAudioListCompleted = 'QwenCloud.VoiceAgentAPI.VoiceprintAudioListCompleted',
+
+    /**
+     * Voiceprint enrollment failed. The conversation continues. [https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#voiceprint-audio-list-failed](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events#voiceprint-audio-list-failed)
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    VoiceprintAudioListFailed = 'QwenCloud.VoiceAgentAPI.VoiceprintAudioListFailed',
+
+    /**
+     * The WebSocket error response event.
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    WebSocketError = 'QwenCloud.VoiceAgentAPI.WebSocketError',
+
+    /**
+     * Contains information about the connector.
+     * @eventpayload _VoiceAgentAPIEvent
+     */
+    ConnectorInformation = 'QwenCloud.VoiceAgentAPI.ConnectorInformation',
+  }
+
+  /**
+   * @private
+   */
+  interface _VoiceAgentAPIEvents {
+    [VoiceAgentAPIEvents.Unknown]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.Error]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.SessionCreated]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.SessionUpdated]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.InputAudioBufferSpeechStarted]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.InputAudioBufferSpeechStopped]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.InputAudioBufferCommitted]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.InputAudioBufferCleared]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConversationItemCreated]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConversationItemDeleted]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConversationItemRetrieved]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConversationItemInputAudioTranscriptionDelta]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConversationItemInputAudioTranscriptionCompleted]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConversationItemInputAudioTranscriptionFailed]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConversationItemAmbientAudioTranscriptionDelta]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConversationItemAmbientAudioTranscriptionCompleted]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseCreated]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseDone]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseOutputItemAdded]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseOutputItemDone]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseContentPartAdded]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseContentPartDone]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseTextDelta]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseTextDone]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseAudioTranscriptDelta]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseAudioTranscriptDone]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseAudioDone]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseFunctionCallArgumentsDelta]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ResponseFunctionCallArgumentsDone]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.VoiceprintAudioListInProgress]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.VoiceprintAudioListCompleted]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.VoiceprintAudioListFailed]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.WebSocketError]: _VoiceAgentAPIEvent;
+    [VoiceAgentAPIEvents.ConnectorInformation]: _VoiceAgentAPIEvent;
+  }
+
+  /**
+   * @private
+   */
+  interface _VoiceAgentAPIEvent {
+    /**
+     * The [QwenCloud.VoiceAgentAPIClient] instance.
+     */
+    client: VoiceAgentAPIClient;
+    /**
+     * The event payload from the connector.
+     */
+    data?: { customEvent?: string; payload?: Object };
+  }
+}
+
 /**
  * An object that specifies what media streams to receive from each [Endpoint]. Can be passed via the [EndpointParameters.receiveParameters] parameter or an argument to the [Endpoint.manageEndpoint] method.
  * <br>
@@ -11051,7 +12111,7 @@ declare class Player extends BasePlayer {
  *     <li>The <b>new</b> keyword. Applies the setting for the new endpoints only.</li>
  * </ul>
  */
-interface ReceiveParameters {
+declare interface ReceiveParameters {
   /**
    * Substitute one of the available keys from the description.
    */
@@ -11128,17 +12188,17 @@ declare interface RecorderDrawArea {
 declare enum RecorderEvents {
   /**
    * Triggers in case of errors during the recording process.
-   * @typedef _RecorderErrorEvent
+   * @eventpayload _RecorderErrorEvent
    */
   RecorderError = 'Recorder.Error',
   /**
    * Triggers after the recording's start.
-   * @typedef _RecorderURLEvent
+   * @eventpayload _RecorderURLEvent
    */
   Started = 'Recorder.Started',
   /**
    * Triggers after the recording's stop.
-   * @typedef _RecorderStoppedEvent
+   * @eventpayload _RecorderStoppedEvent
    */
   Stopped = 'Recorder.Stopped',
 }
@@ -11540,7 +12600,7 @@ declare enum RecorderObjectFit {
 /**
  * [Recorder] and [ConferenceRecorder] parameters. Can be passed as arguments to the [VoxEngine.createRecorder] method.
  */
-declare interface RecorderParameters extends BaseRecorderParameters{
+declare interface RecorderParameters extends BaseRecorderParameters {
   /**
    * Optional. Name of the recorder for the call history.
    */
@@ -11550,8 +12610,7 @@ declare interface RecorderParameters extends BaseRecorderParameters{
    */
   provider?: ASRProfile;
   /**
-   * @hidden
-   * Optional. Recording audio quality preset. Default value is "DEFAULT".
+   * Optional. Recording audio quality preset. Default value is **[AudioQuality.DEFAULT]**.
    */
   audioQuality?: AudioQuality;
 }
@@ -11676,11 +12735,29 @@ declare class Recorder {
 declare function require(module: Modules): void;
 
 /**
+ * Internal information about codecs. Receive this object from call events and pass it as-is to methods that accept `scheme`. Do not inspect or modify the object. Reconstructing or mutating the payload can break codec negotiation.
+ */
+declare interface Scheme {
+  endpoints: {
+    [id: string]: { audio?: any, video?: any }
+  }
+}
+
+/**
  * Custom parameters for [WebSocket] interaction. Can be passed as arguments to the [VoxMediaUnit] **sendMediaTo** method.
  */
 declare interface SendMediaParameters {
+  /**
+   * Optional. A tag that can be used to identify the media being sent.
+   */
   tag?: string;
+  /**
+   * Optional. Custom parameters for the media being sent.
+   */
   customParameters?: any;
+  /**
+   * Optional. The encoding format for the audio being sent.
+   */
   encoding?: WebSocketAudioEncoding;
 }
 
@@ -11690,7 +12767,7 @@ declare interface SendMediaParameters {
 declare enum SequencePlayerEvents {
   /**
    * Triggered when [SequencePlayer] created.
-   * @typedef _SequencePlayerCreatedEvent
+   * @eventpayload _SequencePlayerCreatedEvent
    */
   Created = 'SequencePlayer.Created',
 
@@ -11698,37 +12775,37 @@ declare enum SequencePlayerEvents {
    * Triggered by the [VoxEngine.createSequencePlayer] methods when<br>
    * 1) all the segments audio files download to the Voximplant cache is finished;<br>
    * 2) all the audio files is found in the cache (i.e., it is in the cache before).
-   * @typedef _SequencePlayerPlaybackReadyEvent
+   * @eventpayload _SequencePlayerPlaybackReadyEvent
    */
   PlaybackReady = 'SequencePlayer.PlaybackReady',
 
   /**
    * Triggered when playback of the first SequencePlayer segment starts.
-   * @typedef _SequencePlayerStartedEvent
+   * @eventpayload _SequencePlayerStartedEvent
    */
   Started = 'SequencePlayer.Started',
 
   /**
    * Triggers as a result of the [SequencePlayer.stop] method call.
-   * @typedef _SequencePlayerStoppedEvent
+   * @eventpayload _SequencePlayerStoppedEvent
    */
   Stopped = 'SequencePlayer.Stopped',
 
   /**
    * Triggered when playback has finished successfully or with an error.
-   * @typedef _SequencePlayerPlaybackFinishedEvent
+   * @eventpayload _SequencePlayerPlaybackFinishedEvent
    */
   PlaybackFinished = 'SequencePlayer.PlaybackFinished',
 
   /**
    * Triggered when playback has finished with an error
-   * @typedef _SequencePlayerErrorEvent
+   * @eventpayload _SequencePlayerErrorEvent
    */
   Error = 'SequencePlayer.Error',
 
   /**
    * Triggered when [SequencePlayer.addMarker] is reached.
-   * @typedef _SequencePlayerPlaybackMarkerReachedEvent
+   * @eventpayload _SequencePlayerPlaybackMarkerReachedEvent
    */
   PlaybackMarkerReached = 'SequencePlayer.PlaybackMarkerReached',
 }
@@ -11889,30 +12966,34 @@ declare namespace Silero {
 }
 declare namespace Silero {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.Silero);
+   * ```
    * @event
    */
   enum VADEvents {
     /**
      * The [Silero.VAD] result.
-     * @typedef _SileroVADResultEvent
+     * @eventpayload _SileroVADResultEvent
      */
     Result = 'Silero.VAD.Result',
 
     /**
      * The [Silero.VAD] is reset.
-     * @typedef _SileroVADResetEvent
+     * @eventpayload _SileroVADResetEvent
      */
     Reset = 'Silero.VAD.Reset',
 
     /**
      * The error response event.
-     * @typedef _SileroVADErrorEvent
+     * @eventpayload _SileroVADErrorEvent
      */
     Error = 'Silero.VAD.Error',
 
      /**
      * Contains information about connector.
-     * @typedef _SileroVADConnectorInformationEvent
+     * @eventpayload _SileroVADConnectorInformationEvent
      */
     ConnectorInformation = 'Silero.VAD.ConnectorInformation',
   }
@@ -12053,37 +13134,37 @@ declare namespace Silero {
 declare enum SmartQueueEvents {
   /**
    * The task is waiting for distribution to an agent. This event occurs every 10 or 15 seconds and contains information about task's position in a queue and approximate response time.
-   * @typedef _SmartQueueWaitingEvent
+   * @eventpayload _SmartQueueWaitingEvent
    */
   Waiting = 'SmartQueue.Waiting',
   /**
    * An agent responded to the task, e.g. answered the call. This event indicates that SmartQueue processed the task successfully.
-   * @typedef _SmartQueueOperatorReachedEvent
+   * @eventpayload _SmartQueueOperatorReachedEvent
    */
   OperatorReached = 'SmartQueue.OperatorReached',
   /**
    * The task has been enqueued successfully.
-   * @typedef _SmartQueueEnqueueSuccessEvent
+   * @eventpayload _SmartQueueEnqueueSuccessEvent
    */
   EnqueueSuccess = 'SmartQueue.EnqueueSuccess',
   /**
    * SmartQueue distributed the task to an agent. This event can occur multiple times if an agent does not respond during the timeout.
-   * @typedef _SmartQueueTaskDistributedEvent
+   * @eventpayload _SmartQueueTaskDistributedEvent
    */
   TaskDistributed = 'SmartQueue.DistributeTask',
   /**
    * The client disconnected.<br><br>When you process the <b>ClientDisconnected</b> event, call the <code>e.cancel()</code> method inside the event manually to cancel the task.
-   * @typedef _SmartQueueClientDisconnectedEvent
+   * @eventpayload _SmartQueueClientDisconnectedEvent
    */
   ClientDisconnected = 'SmartQueue.ClientDisconnected',
   /**
    * The task is cancelled.
-   * @typedef _SmartQueueTaskCanceledEvent
+   * @eventpayload _SmartQueueTaskCanceledEvent
    */
   TaskCanceled = 'SmartQueue.TaskCanceled',
   /**
    * An error occurred.
-   * @typedef _SmartQueueErrorEvent
+   * @eventpayload _SmartQueueErrorEvent
    */
   Error = 'SmartQueue.Error',
 }
@@ -12273,23 +13354,23 @@ declare interface SmartQueueSkill {
  */
 declare interface SmartQueueTaskParameters {
   /**
-   * Current task's Call object.
+   * Optional. Current task's Call object.
    */
   call?: Call;
   /**
-   * Task's operator settings.
+   * Optional. Task's operator settings.
    */
   operatorSettings?: SmartQueueOperatorSettings;
   /**
-   * A timeout in seconds for the task to be accepted by an agent.
+   * Optional. A timeout in seconds for the task to be accepted by an agent.
    */
   timeout?: number;
   /**
-   * The task's priority. Accept values from 1 to 100. The default value is **50**.
+   * Optional. The task's priority. Accept values from 1 to 100. The default value is **50**.
    */
   priority?: number;
   /**
-   * Required [skills](/docs/references/voxengine/smartqueueskill) for the task.
+   * Optional. [Skills](/docs/references/voxengine/smartqueueskill) required for the task.
    */
   skills?: SmartQueueSkill[];
   /**
@@ -12297,7 +13378,7 @@ declare interface SmartQueueTaskParameters {
    */
   queue: SmartQueue;
   /**
-   * Custom data text string for the current task. After you specify the data in this field, you can find it in the [SmartQueueState_Task](/docs/references/httpapi/structure/smartqueuestate_task) object for this task. To get this object, call the [GetSQState](/docs/references/httpapi/smartqueue#getsqstate) method.
+   * Optional. Custom data text string for the current task. After you specify the data in this field, you can find it in the [SmartQueueState_Task](/docs/references/httpapi/structure/smartqueuestate_task) object for this task. To get this object, call the [GetSQState](/docs/references/httpapi/smartqueue#getsqstate) method.
    */
   customData?: string;
   /**
@@ -12305,15 +13386,15 @@ declare interface SmartQueueTaskParameters {
    */
   extraHeaders?: { [header: string]: string };
   /**
-   * Whether the call has video support. Please note that prices for audio only and video calls are different.
+   * Optional. Whether the call has video support. Please note that prices for audio only and video calls are different.
    */
   video?: boolean;
   /**
-   * Internal information about codecs.
+   * Optional. Internal information about codecs. Pass the value received from a call event as-is. Do not inspect or modify the object. Reconstructing or mutating the payload can break codec negotiation.
    */
-  scheme?: { [id: string]: { audio: any, video: any } };
+  scheme?: Scheme;
   /**
-   * Maximum possible video bitrate for the customer device in kbps
+   * Optional. Maximum possible video bitrate for the customer device in kbps.
    */
   maxVideoBitrate?: number;
 }
@@ -12434,11 +13515,11 @@ declare type SmartQueue =
  */
 declare interface StartPlaybackParameters {
   /**
-   * Whether to loop playback.
+   * Optional. Whether to loop playback.
    */
   loop?: boolean;
   /**
-   * Whether to use progressive playback. If **true**, the file is delivered in chunks which reduces delay before a method call and playback. The default value is **false**.
+   * Optional. Whether to use progressive playback. If **true**, the file is delivered in chunks which reduces delay before a method call and playback. The default value is **false**.
    */
   progressivePlayback?: boolean;
 }
@@ -12491,57 +13572,57 @@ declare interface StoragePage {
 declare enum StreamingAgentEvents {
   /**
    * Triggered when a streaming object is connected to a streaming platform.
-   * @typedef _StreamingAgentConnectedEvent
+   * @eventpayload _StreamingAgentConnectedEvent
    */
   Connected = 'StreamingAgent.Connected',
   /**
    * Triggered when connection to a streaming platform is failed.
-   * @typedef _StreamingAgentConnectionFailedEvent
+   * @eventpayload _StreamingAgentConnectionFailedEvent
    */
   ConnectionFailed = 'StreamingAgent.ConnectionFailed',
   /**
    * Triggers if a streaming object cannot be created, *e.g., due to incorrect server url*.
-   * @typedef _StreamingAgentErrorEvent
+   * @eventpayload _StreamingAgentErrorEvent
    */
   Error = 'StreamingAgent.Error',
   /**
    * Triggered when a streaming object is disconnected from a streaming platform.
-   * @typedef _StreamingAgentDisconnectedEvent
+   * @eventpayload _StreamingAgentDisconnectedEvent
    */
   Disconnected = 'StreamingAgent.Disconnected',
   /**
    * Triggered when a stream is successfully started.
-   * @typedef _StreamingAgentStreamStartedEvent
+   * @eventpayload _StreamingAgentStreamStartedEvent
    */
   StreamStarted = 'StreamingAgent.Stream.Started',
   /**
    * Triggered when a stream is stopped.
-   * @typedef _StreamingAgentStreamStoppedEvent
+   * @eventpayload _StreamingAgentStreamStoppedEvent
    */
   StreamStopped = 'StreamingAgent.Stream.Stopped',
   /**
    * Triggered when a streaming object caused an error, *e.g., due to a codec mismatch*.
-   * @typedef _StreamingAgentStreamErrorEvent
+   * @eventpayload _StreamingAgentStreamErrorEvent
    */
   StreamError = 'StreamingAgent.Stream.Error',
   /**
    * Triggered when there is audio data in the stream.
-   * @typedef _StreamingAgentAudioStreamCreatedEvent
+   * @eventpayload _StreamingAgentAudioStreamCreatedEvent
    */
   AudioStreamCreated = 'StreamingAgent.Stream.AudioStarted',
   /**
    * Triggered when there is video data in the stream.
-   * @typedef _StreamingAgentVideoStreamCreatedEvent
+   * @eventpayload _StreamingAgentVideoStreamCreatedEvent
    */
   VideoStreamCreated = 'StreamingAgent.Stream.VideoStarted',
   /**
    * Triggered when the audio stream is switched.
-   * @typedef _StreamingAgentAudioSwitchedEvent
+   * @eventpayload _StreamingAgentAudioSwitchedEvent
    */
   AudioSwitched = 'StreamingAgent.Stream.AudioSwitched',
   /**
    * Triggered when the video stream is switched.
-   * @typedef _StreamingAgentVideoSwitchedEvent
+   * @eventpayload _StreamingAgentVideoSwitchedEvent
    */
   VideoSwitched = 'StreamingAgent.Stream.VideoSwitched',
 }
@@ -12663,7 +13744,7 @@ declare interface _StreamingAgentVideoStreamCreatedEvent extends _StreamingAgent
  */
 declare interface _StreamingAgentSwitchedEvent extends _StreamingAgentReasonedEvent {
   /**
-   * Id of an audio or video track. Equals to -1 if there is no track.
+   * ID of an audio or video track. Equals to -1 if there is no track.
    */
   trackId: number;
 }
@@ -12698,33 +13779,33 @@ declare interface StreamingAgentParameters {
    */
   url: string;
   /**
-   * URL of another streaming server to use if the server specified in **url** does not respond.
+   * Optional. URL of another streaming server to use if the server specified in **url** does not respond.
    */
   backupUrl?: string;
   /**
-   * Unique stream name, use along with the **url**. Can be retrieved from a live-streaming CDN provider.
+   * Optional. Unique stream name, use along with the **url**. Can be retrieved from a live-streaming CDN provider.
    */
   streamName?: string;
   /**
-   * How often a keyframe in a stream is created (seconds). The default value is **2**. Any value less than "2" yields "2".
+   * Optional. How often a keyframe in a stream is created (seconds). The default value is **2**. Any value less than "2" yields "2".
    */
   keyframeInterval?: number;
   /**
-   * Part of **streamName**, e.g, *live2*. The parameter is platform dependent, use it if it is required by the streaming platform.
+   * Optional. Part of **streamName**, e.g, *live2*. The parameter is platform dependent, use it if it is required by the streaming platform.
    */
   applicationName?: string;
 }
 
 /**
- * The [StreamingAgent] termination status
+ * The [StreamingAgent] termination status.
  */
 declare interface StreamingAgentTrack {
   /**
-   * The kind of the track
+   * The kind of the track.
    */
   kind: string,
   /**
-   * The id of the track
+   * The id of the track.
    */
   trackId: string,
 }
@@ -12799,7 +13880,7 @@ declare class StreamingAgent {
 }
 
 /**
- * The [SmartQueue] task's waiting code
+ * The [SmartQueue] task's waiting code.
  */
 declare enum TaskWaitingCode {
   /**
@@ -12972,17 +14053,21 @@ declare namespace Ultravox {
 }
 declare namespace Ultravox {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.Ultravox);
+   * ```
    * @event
    */
   enum Events {
     /**
-     * Triggered when the audio stream sent by a third party through an Ultravox WebSocket is started playing.
-     * @typedef _WebSocketMediaStartedUltravoxEvent
+     * Triggered when the audio stream sent by a third party through an Ultravox WebSocket starts playing.
+     * @eventpayload _WebSocketMediaStartedUltravoxEvent
      */
     WebSocketMediaStarted = 'Ultravox.Events.WebSocketMediaStarted',
     /**
-     * Triggers after the end of the audio stream sent by a third party through an Ultravox WebSocket (**1 second of silence**).
-     * @typedef _WebSocketMediaEndedUltravoxEvent
+     * Triggered after the end of the audio stream sent by a third party through an Ultravox WebSocket (**1 second of silence**).
+     * @eventpayload _WebSocketMediaEndedUltravoxEvent
      */
     WebSocketMediaEnded = 'Ultravox.Events.WebSocketMediaEnded',
   }
@@ -13121,43 +14206,43 @@ declare namespace Ultravox {
     /**
      * @deprecated
      * Used to send a user message to the agent via text.<br>NOTE: this method is deprecated, use **userTextMessage** instead.
-     * @param parameters
+     * @param parameters Event parameters
      */
     inputTextMessage(parameters: Object): void
 
     /**
      * A user message sent via text. The message appears to the agent as if it came from the user. [https://docs.ultravox.ai/apps/datamessages#usertextmessage](https://docs.ultravox.ai/apps/datamessages#usertextmessage)
-     * @param parameters
+     * @param parameters Event parameters
      */
     userTextMessage(parameters: Object): void
 
     /**
      * Sets server’s output medium to text or voice. [https://docs.ultravox.ai/datamessages#setoutputmedium](https://docs.ultravox.ai/datamessages#setoutputmedium)
-     * @param parameters
+     * @param parameters Event parameters
      */
     setOutputMedium(parameters: Object): void
 
     /**
      * Contains the result of a client tool invocation. [https://docs.ultravox.ai/apps/datamessages#clienttoolresult-and-dataconnectiontoolresult](https://docs.ultravox.ai/apps/datamessages#clienttoolresult-and-dataconnectiontoolresult)
-     * @param parameters
+     * @param parameters Event parameters
      */
     clientToolResult(parameters: Object): void
 
     /**
      * Contains the result of a client tool invocation. [https://docs.ultravox.ai/apps/datamessages#clienttoolresult-and-dataconnectiontoolresult](https://docs.ultravox.ai/apps/datamessages#clienttoolresult-and-dataconnectiontoolresult)
-     * @param parameters
+     * @param parameters Event parameters
      */
     dataConnectionToolResult(parameters: Object): void
 
     /**
      * Forces the agent to say a specific message or invoke tools. [https://docs.ultravox.ai/apps/datamessages#forcedagentmessage](https://docs.ultravox.ai/apps/datamessages#forcedagentmessage)
-     * @param parameters
+     * @param parameters Event parameters
      */
     forcedAgentMessage(parameters: Object): void
 
     /**
      * Instructs the agent to end the call with an optional farewell message. [https://docs.ultravox.ai/apps/datamessages#hangup](https://docs.ultravox.ai/apps/datamessages#hangup)
-     * @param parameters
+     * @param parameters Event parameters
      */
     hangUp(parameters: Object): void
   }
@@ -13165,66 +14250,70 @@ declare namespace Ultravox {
   
 declare namespace Ultravox {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.Ultravox);
+   * ```
    * @event
    */
   enum WebSocketAPIEvents {
     /**
      * The unknown event.
-     * @typedef _WebSocketAPIEvent
+     * @eventpayload _WebSocketAPIEvent
      */
     Unknown = 'Ultravox.WebSocketAPI.Unknown',
 
     /**
      * The HTTP response event.
-     * @typedef _WebSocketAPIEvent
+     * @eventpayload _WebSocketAPIEvent
      */
     HTTPResponse = 'Ultravox.WebSocketAPI.HTTPResponse',
 
     /**
      * Indicates the server’s current state. [https://docs.ultravox.ai/apps/datamessages#state](https://docs.ultravox.ai/apps/datamessages#state)
-     * @typedef _WebSocketAPIEvent
+     * @eventpayload _WebSocketAPIEvent
      */
     State = 'Ultravox.WebSocketAPI.State',
 
     /**
      * Contains text for an utterance made during the call. [https://docs.ultravox.ai/apps/datamessages#transcript](https://docs.ultravox.ai/apps/datamessages#transcript)
-     * @typedef _WebSocketAPIEvent
+     * @eventpayload _WebSocketAPIEvent
      */
     Transcript = 'Ultravox.WebSocketAPI.Transcript',
 
     /**
      * Sent by the server to ask the client or data connection to invoke a tool with the given parameters. [https://docs.ultravox.ai/apps/datamessages#clienttoolinvocation-and-dataconnectiontoolinvocation](https://docs.ultravox.ai/apps/datamessages#clienttoolinvocation-and-dataconnectiontoolinvocation)
-     * @typedef _WebSocketAPIEvent
+     * @eventpayload _WebSocketAPIEvent
      */
     ClientToolInvocation = 'Ultravox.WebSocketAPI.ClientToolInvocation',
 
     /**
      * Sent by the server to ask the client or data connection to invoke a tool with the given parameters. [https://docs.ultravox.ai/apps/datamessages#clienttoolinvocation-and-dataconnectiontoolinvocation](https://docs.ultravox.ai/apps/datamessages#clienttoolinvocation-and-dataconnectiontoolinvocation)
-     * @typedef _WebSocketAPIEvent
+     * @eventpayload _WebSocketAPIEvent
      */
     DataConnectionToolInvocation = 'Ultravox.WebSocketAPI.DataConnectionToolInvocation',
 
     /**
      * Useful for application debugging. [https://docs.ultravox.ai/apps/datamessages#debug](https://docs.ultravox.ai/apps/datamessages#debug)
-     * @typedef _WebSocketAPIEvent
+     * @eventpayload _WebSocketAPIEvent
      */
     Debug = 'Ultravox.WebSocketAPI.Debug',
 
     /**
      * Used to clear buffered output audio. WebSocket only. [https://docs.ultravox.ai/apps/datamessages#playbackclearbuffer](https://docs.ultravox.ai/apps/datamessages#playbackclearbuffer)
-     * @typedef _WebSocketAPIEvent
+     * @eventpayload _WebSocketAPIEvent
      */
     PlaybackClearBuffer = 'Ultravox.WebSocketAPI.PlaybackClearBuffer',
 
     /**
      * The WebSocket error response event.
-     * @typedef _WebSocketAPIEvent
+     * @eventpayload _WebSocketAPIEvent
      */
     WebSocketError = 'Ultravox.WebSocketAPI.WebSocketError',
 
      /**
      * Contains information about connector.
-     * @typedef _WebSocketAPIEvent
+     * @eventpayload _WebSocketAPIEvent
      */
     ConnectorInformation = 'Ultravox.WebSocketAPI.ConnectorInformation',
   }
@@ -13341,28 +14430,35 @@ interface _VoiceAIClientParameters extends _WebSocketBasedClientParameters {
   onWebSocketClose?: (event: _WebSocketCloseEvent) => void;
 }
 
-declare type VoxMediaUnit =
-  | Call
-  | Player
-  | SequencePlayer
-  | ASR
-  | Conference
-  | Recorder
-  | WebSocket
-  | StreamingAgent
-  | Gemini.LiveAPIClient
-  | OpenAI.Beta.RealtimeAPIClient
-  | OpenAI.RealtimeAPIClient
-  | ElevenLabs.AgentsClient
-  | Ultravox.WebSocketAPIClient
-  | Yandex.RealtimeAPIClient
-  | Cartesia.AgentsClient
-  | Deepgram.VoiceAgentClient
-  | XAI.VoiceAgentAPIClient
-  | Silero.VAD
-  | Pipecat.TurnDetector
-  | DeepFilterNet.NoiseSuppression
-  | Hush.NoiseSuppression;
+/**
+ * @private
+ */
+declare interface VoxMediaUnitMap {
+  ['Call']: Call,
+  ['Player']: Player,
+  ['SequencePlayer']: SequencePlayer,
+  ['ASR']: ASR,
+  ['Conference']: Conference,
+  ['Recorder']: Recorder,
+  ['WebSocket']: WebSocket,
+  ['StreamingAgent']: StreamingAgent,
+  ['Gemini.LiveAPIClient']: Gemini.LiveAPIClient,
+  ['OpenAI.Beta.RealtimeAPIClient']: OpenAI.Beta.RealtimeAPIClient,
+  ['OpenAI.RealtimeAPIClient']: OpenAI.RealtimeAPIClient,
+  ['ElevenLabs.AgentsClient']: ElevenLabs.AgentsClient,
+  ['Ultravox.WebSocketAPIClient']: Ultravox.WebSocketAPIClient,
+  ['Yandex.RealtimeAPIClient']: Yandex.RealtimeAPIClient,
+  ['Cartesia.AgentsClient']: Cartesia.AgentsClient,
+  ['Deepgram.VoiceAgentClient']: Deepgram.VoiceAgentClient,
+  ['XAI.VoiceAgentAPIClient']: XAI.VoiceAgentAPIClient,
+  ['Silero.VAD']: Silero.VAD,
+  ['Pipecat.TurnDetector']: Pipecat.TurnDetector,
+  ['Hush.NoiseSuppression']: Hush.NoiseSuppression,
+  ['Agentic.VoiceDSP']: Agentic.VoiceDSP,
+  ['Inworld.RealtimeAPIClient']: Inworld.RealtimeAPIClient,
+}
+
+declare type VoxMediaUnit = VoxMediaUnitMap[keyof VoxMediaUnitMap];
 
 declare namespace VoxEngine {
   /**
@@ -13391,14 +14487,14 @@ declare namespace VoxEngine {
    * @param callerid CallerID of the caller that is displayed to the user. Spaces usage is not allowed. Normally it is some phone number that can be used for callback. IMPORTANT: you cannot use test numbers rented from Voximplant as CallerID, use only real numbers
    * @param displayName Name of the caller that is displayed to the user. Normally it is a human-readable version of CallerID, e.g. a person's name
    * @param headers Optional. SIP headers to be passed with a call to conference. Custom header names have to begin with the 'X-' prefix. The "X-" headers can be handled by a SIP phone or WEB SDK (e.g. see the [incomingCall](/docs/references/websdk/voximplant/events#incomingcall) event). Example: {'X-header':'value'}
-   * @param scheme Optional. Internal information about codecs from the [AppEvents.CallAlerting] event
+   * @param scheme Optional. Internal information about codecs. Pass the value received from a call event as-is. Do not inspect or modify the object. Reconstructing or mutating the payload can break codec negotiation.
    */
   function callConference(
     conferenceId: string,
     callerid: string,
     displayName: string,
     headers?: { [header: string]: string },
-    scheme?: { [id: string]: { audio: any; video: any } }
+    scheme?: Scheme,
   ): Call;
 }
 
@@ -13418,10 +14514,9 @@ declare namespace VoxEngine {
 
 declare namespace VoxEngine {
   /**
-   * Starts an outgoing call to the external SIP system or to another user of the same application. Supported codecs are: [G.722](https://www.itu.int/rec/T-REC-G.722), [G.711 (u-law and a-law)](https://www.itu.int/rec/T-REC-G.711), [Opus](https://opus-codec.org/), [ILBC](https://webrtc.org/license/ilbc-freeware/), [H.264](https://www.itu.int/rec/T-REC-H.264), [VP8](https://tools.ietf.org/html/rfc6386). The method can trigger the [CallEvents.Failed] event in 60 sec, see the [session limits](/docs/guides/voxengine/limits) for details.
+   * Starts an outgoing call to the external SIP system or to another user of the same application. Supported codecs are: [G.729](https://www.itu.int/rec/T-REC-G.729), [G.722](https://www.itu.int/rec/T-REC-G.722), [G.711 (u-law and a-law)](https://www.itu.int/rec/T-REC-G.711), [Opus](https://opus-codec.org/), [ILBC](https://webrtc.org/license/ilbc-freeware/), [H.264](https://www.itu.int/rec/T-REC-H.264), [VP8](https://tools.ietf.org/html/rfc6386). The method can trigger the [CallEvents.Failed] event in 60 sec, see the [session limits](/docs/guides/voxengine/limits) for details.
    * @param to SIP URI to make a call to. Example of an external call: **sip:alice@example.org**. Examples with TLS usage: **sips:alice@example.org:5061** ; **alice@example.org:5061;transport=tls**. The format for calls to another user of the same Voximplant application: user-of-the-application@application.account.voximplant.com
    * @param parameters Call parameters. Note that if this parameter is not an object, it is treated as "callerid". Further parameters are treated as "displayName", "password", "authUser", "extraHeaders", "video", "outProxy" respectively
-   * @param scheme Internal information about codecs from the [AppEvents.CallAlerting] event
    */
   function callSIP(to: string, parameters?: CallSIPParameters): Call;
 }
@@ -13588,21 +14683,30 @@ declare namespace VoxEngine {
    * ```
    * require(Modules.Conference);
    * ```
-   * @param conference
+   * @param conference Conference to destroy
    */
   function destroyConference(conference: Conference): void;
 }
 
 declare namespace VoxEngine {
   /**
-   * Disables statistics for incoming WebSockets
+   * Disables extended session logging for custom event listeners.
+   * After this call, add, remove, and invocation lines are not written.
+   * The session log records that extended logging was disabled.
+   */
+  function disableEventListenersExtendedLogging(): void;
+}
+
+declare namespace VoxEngine {
+  /**
+   * Disables statistics for incoming WebSockets.
    */
   function disableStatisticsForIncomingWebsockets(): void;
 }
 
 declare namespace VoxEngine {
   /**
-   * Disables trace for incoming WebSockets
+   * Disables trace for incoming WebSockets.
    */
   function disableTraceForIncomingWebsockets(): void;
 }
@@ -13625,14 +14729,26 @@ declare namespace VoxEngine {
 
 declare namespace VoxEngine {
   /**
-   * Enables statistics for incoming WebSockets
+   * Enables extended session logging for custom event listeners.
+   * Until this method is called, add, remove, and invocation lines are not written.
+   * After the call, each add and remove writes the listener id, the event name, and the owner.
+   * Each invocation writes the same id and a stack trace.
+   * The stack is taken from `addEventListener` when this method was already called. Otherwise, it is taken at invocation.
+   * The session log records that extended logging was enabled.
+   */
+  function enableEventListenersExtendedLogging(): void;
+}
+
+declare namespace VoxEngine {
+  /**
+   * Enables statistics for incoming WebSockets.
    */
   function enableStatisticsForIncomingWebsockets(): void;
 }
 
 declare namespace VoxEngine {
   /**
-   * Enables trace for incoming WebSockets
+   * Enables trace for incoming WebSockets.
    */
   function enableTraceForIncomingWebsockets(): void;
 }
@@ -13792,7 +14908,6 @@ declare namespace VoxEngine {
   /**
    * Sets the default video codec for the application session.
    * @param codec Video codec.
-   * @hidden
    */
   function setVideoCodec(codec: VideoCodecs): void;
 }
@@ -20113,27 +21228,27 @@ declare namespace VoximplantAvatar {
   enum Events {
     /**
      * Triggered when an avatar script is loaded and ready to use.
-     * @typedef _AvatarLoadedEvent
+     * @eventpayload _AvatarLoadedEvent
      */
     Loaded = 'AvatarEvents.Loaded',
     /**
      * Triggered when an avatar ends a conversation with a customer.
-     * @typedef _AvatarFinishEvent
+     * @eventpayload _AvatarFinishEvent
      */
     Finish = 'AvatarEvents.Finish',
     /**
      * Triggered when an avatar parses a customer's phrase. The recognized phrase can be used for debugging and logging recognition results if needed.
-     * @typedef _AvatarUtteranceParsedEvent
+     * @eventpayload _AvatarUtteranceParsedEvent
      */
     UtteranceParsed = 'AvatarEvents.UtteranceParsed',
     /**
      * Triggered when an avatar is ready to reply to a customer.
-     * @typedef _AvatarReplyEvent
+     * @eventpayload _AvatarReplyEvent
      */
     Reply = 'AvatarEvents.Reply',
     /**
      * Triggered when an error occurs.
-     * @typedef _AvatarErrorEvent
+     * @eventpayload _AvatarErrorEvent
      */
     Error = 'AvatarEvents.Error',
   }
@@ -20354,7 +21469,7 @@ declare namespace VoximplantAvatar {
     /**
      * Removes a handler for the specified [VoximplantAvatar.Events], [ASREvents] or [PlayerEvents] event.
      * @param event Event class (i.e., [VoximplantAvatar.Events.Loaded](/docs/references/voxengine/voximplantavatar/events#loaded), [ASREvents.Stopped], [PlayerEvents.PlaybackFinished])
-     * @param callback
+     * @param callback Handler function. A single parameter is passed - object with event information
      */
     removeEventListener<T extends keyof VoximplantAvatar._VoiceAvatarEvents>(
       event: VoximplantAvatar.Events | ASREvents | PlayerEvents | SequencePlayerEvents | T,
@@ -20539,7 +21654,7 @@ interface _WebSocketBasedClientParameters {
    * 
    * If tracing is enabled, a URL to the trace file appears in the 'websocket.created' message. The file contains all sent and received WebSocket messages in the plain text format. The file is uploaded to the S3 storage.
    * 
-   * NOTE: enable this only for diagnostic purposes. You can provide the trace file to our support team to help investigating issues.
+   * NOTE: enable this only for diagnostic purposes. You can provide the trace file to our support team to help investigate issues.
    */
   trace?: boolean;
   /**
@@ -20621,37 +21736,37 @@ declare enum WebSocketCloseCode {
 declare enum WebSocketEvents {
   /**
    * Triggered when the WebSocket connection is opened. [WebSocket.onopen] is called right before any other handlers.
-   * @typedef _WebSocketOpenEvent
+   * @eventpayload _WebSocketOpenEvent
    */
   OPEN = 'WebSocket.Open',
   /**
    * Triggered when the WebSocket connection is closed. [WebSocket.onclose] is called right before any other handlers.
-   * @typedef _WebSocketCloseEvent
+   * @eventpayload _WebSocketCloseEvent
    */
   CLOSE = 'WebSocket.Close',
   /**
    * Triggered when a message is received by a target object. [WebSocket.onmessage] is called right before any other handlers.
-   * @typedef _WebSocketMessageEvent
+   * @eventpayload _WebSocketMessageEvent
    */
   MESSAGE = 'WebSocket.Message',
   /**
    * Triggers when an error occurs during the WebSocket connection. [WebSocket.onerror] is called right before any other handlers.
-   * @typedef _WebSocketErrorEvent
+   * @eventpayload _WebSocketErrorEvent
    */
   ERROR = 'WebSocket.Error',
   /**
    * Triggered when the WebSocket connection is created. [WebSocket.oncreated] is called right before any other handlers.
-   * @typedef _WebSocketCreatedEvent
+   * @eventpayload _WebSocketCreatedEvent
    */
   CREATED = 'WebSocket.Created',
   /**
-   * Triggered when the audio stream sent by a third party through a WebSocket is started playing.
-   * @typedef _WebSocketMediaStartedEvent
+   * Triggered when the audio stream sent by a third party through a WebSocket starts playing.
+   * @eventpayload _WebSocketMediaStartedEvent
    */
   MEDIA_STARTED = 'WebSocket.MediaEventStarted',
   /**
-   * Triggers after the end of the audio stream sent by a third party through a WebSocket (**1 second of silence**).
-   * @typedef _WebSocketMediaEndedEvent
+   * Triggered after the end of the audio stream sent by a third party through a WebSocket (**1 second of silence**).
+   * @eventpayload _WebSocketMediaEndedEvent
    */
   MEDIA_ENDED = 'WebSocket.MediaEventEnded',
 }
@@ -20852,7 +21967,7 @@ declare class WebSocket {
   oncreated: ((event: _WebSocketCreatedEvent) => any) | null;
 
   /**
-   * Event handler to call when the audio stream is started playing.
+   * Event handler to call when the audio stream starts playing.
    */
   onmediastarted: ((event: _WebSocketMediaStartedEvent) => any) | null;
 
@@ -20945,17 +22060,21 @@ declare namespace XAI {
 }
 declare namespace XAI {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.XAI);
+   * ```
    * @event
    */
   enum Events {
     /**
-     * Triggered when the audio stream sent by a third party through an xAI WebSocket is started playing.
-     * @typedef _WebSocketMediaStartedXAIEvent
+     * Triggered when the audio stream sent by a third party through an xAI WebSocket starts playing.
+     * @eventpayload _WebSocketMediaStartedXAIEvent
      */
     WebSocketMediaStarted = 'XAI.Events.WebSocketMediaStarted',
     /**
-     * Triggers after the end of the audio stream sent by a third party through an xAI WebSocket (**1 second of silence**).
-     * @typedef _WebSocketMediaEndedXAIEvent
+     * Triggered after the end of the audio stream sent by a third party through an xAI WebSocket (**1 second of silence**).
+     * @eventpayload _WebSocketMediaEndedXAIEvent
      */
     WebSocketMediaEnded = 'XAI.Events.WebSocketMediaEnded',
   }
@@ -21037,7 +22156,7 @@ declare namespace XAI {
      */
     xAIApiKey: string;
     /**
-      * The model to use for the XAI VoiceAgent API.[https://docs.x.ai/developers/model-capabilities/audio/voice-agent#model-selection](https://docs.x.ai/developers/model-capabilities/audio/voice-agent#model-selection)
+     * Optional. The model to use for the XAI VoiceAgent API. [https://docs.x.ai/developers/model-capabilities/audio/voice-agent#model-selection](https://docs.x.ai/developers/model-capabilities/audio/voice-agent#model-selection).
      * Note: The default value is **grok-voice-fast-1.0**.
      */
     model?: string;
@@ -21109,49 +22228,49 @@ declare namespace XAI {
 
     /**
      * Send this event to update the session’s configuration. [https://docs.x.ai/developers/rest-api-reference/inference/voice#session.update](https://docs.x.ai/developers/rest-api-reference/inference/voice#session.update)
-     * @param parameters
+     * @param parameters Event parameters
      */
     sessionUpdate(parameters: Object): void
 
     /**
      * Clear input audio buffer. [https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.clear](https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.clear)
-     * @param parameters
+     * @param parameters Event parameters
      */
     inputAudioBufferClear(parameters: Object): void
 
     /**
      * Commit the input audio buffer as a user message. Only available when turn_detection type is null. [https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.commit](https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.commit)
-     * @param parameters
+     * @param parameters Optional. Event parameters
      */
     inputAudioBufferCommit(parameters?: Object): void
 
     /**
      * Create a new conversation item. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.create](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.create)
-     * @param parameters
+     * @param parameters Event parameters
      */
     conversationItemCreate(parameters: Object): void
 
     /**
      * Delete a conversation item by ID. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.delete](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.delete)
-     * @param parameters
+     * @param parameters Event parameters
      */
     conversationItemDelete(parameters: Object): void
 
     /**
      * Truncate a previous assistant audio message item. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.truncate](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.truncate)
-     * @param parameters
+     * @param parameters Event parameters
      */
     conversationItemTruncate(parameters: Object): void
 
     /**
      * Request the server to create a new assistant response when using client side vad. (This is handled automatically when using server side vad.) Prefer nested `{ response: { ... } }` body per xAI docs; flat fields are also accepted by the connector. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.create](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.create)
-     * @param parameters
+     * @param parameters Event parameters
      */
     responseCreate(parameters: Object): void
 
     /**
      * Send this event to cancel an in-progress response. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.cancel](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.cancel)
-     * @param parameters
+     * @param parameters Event parameters
      */
     responseCancel(parameters: Object): void
   }
@@ -21160,234 +22279,238 @@ declare namespace XAI {
 
 declare namespace XAI {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.XAI);
+   * ```
    * @event
    */
   enum VoiceAgentAPIEvents {
     /**
      * The unknown event.
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     Unknown = 'XAI.VoiceAgentAPI.Unknown',
 
     /**
      * Sent when an error occurs. Contains error code and message. [https://docs.x.ai/developers/rest-api-reference/inference/voice#error](https://docs.x.ai/developers/rest-api-reference/inference/voice#error)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     Error = 'XAI.VoiceAgentAPI.Error',
 
     /**
      * Returned when a session is created. [https://docs.x.ai/developers/rest-api-reference/inference/voice#session.created](https://docs.x.ai/developers/rest-api-reference/inference/voice#session.created)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     SessionCreated = 'XAI.VoiceAgentAPI.SessionCreated',
 
     /**
      * The first message at connection. Notifies the client that a conversation session has been created. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.created](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.created)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ConversationCreated = 'XAI.VoiceAgentAPI.ConversationCreated',
 
     /**
      * Acknowledge the client's "session.update" message that the session has been updated. [https://docs.x.ai/developers/rest-api-reference/inference/voice#session.updated](https://docs.x.ai/developers/rest-api-reference/inference/voice#session.updated)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     SessionUpdated = 'XAI.VoiceAgentAPI.SessionUpdated',
 
     /**
      * Responding to the client that a new user message has been added to conversation history, or if an assistance response has been added to conversation history. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.added](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.added)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ConversationItemAdded = 'XAI.VoiceAgentAPI.ConversationItemAdded',
 
     /**
      * Returned when an item in the conversation is deleted. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.deleted](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.deleted)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ConversationItemDeleted = 'XAI.VoiceAgentAPI.ConversationItemDeleted',
 
     /**
      * Returned when a conversation item is truncated. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.truncated](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.truncated)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ConversationItemTruncated = 'XAI.VoiceAgentAPI.ConversationItemTruncated',
 
     /**
      * Notify the client the audio transcription for input has been completed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.input_audio_transcription.completed](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.input_audio_transcription.completed)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ConversationItemInputAudioTranscriptionCompleted = 'XAI.VoiceAgentAPI.ConversationItemInputAudioTranscriptionCompleted',
 
     /**
      * Returned when input audio transcription is updated. [https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.input_audio_transcription.updated](https://docs.x.ai/developers/rest-api-reference/inference/voice#conversation.item.input_audio_transcription.updated)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ConversationItemInputAudioTranscriptionUpdated = 'XAI.VoiceAgentAPI.ConversationItemInputAudioTranscriptionUpdated',
 
     /**
      * Input audio buffer has been committed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.committed](https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.committed)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     InputAudioBufferCommitted = 'XAI.VoiceAgentAPI.InputAudioBufferCommitted',
 
     /**
      * Input audio buffer has been cleared. [https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.cleared](https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.cleared)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     InputAudioBufferCleared = 'XAI.VoiceAgentAPI.InputAudioBufferCleared',
 
     /**
      * Notify the client the server's VAD has detected the start of a speech. [https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.speech_started](https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.speech_started)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     InputAudioBufferSpeechStarted = 'XAI.VoiceAgentAPI.InputAudioBufferSpeechStarted',
 
     /**
      * Notify the client the server's VAD has detected the end of a speech. [https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.speech_stopped](https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.speech_stopped)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     InputAudioBufferSpeechStopped = 'XAI.VoiceAgentAPI.InputAudioBufferSpeechStopped',
 
     /**
      * Returned when the input audio buffer idle timeout is triggered. [https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.timeout_triggered](https://docs.x.ai/developers/rest-api-reference/inference/voice#input_audio_buffer.timeout_triggered)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     InputAudioBufferTimeoutTriggered = 'XAI.VoiceAgentAPI.InputAudioBufferTimeoutTriggered',
 
     /**
      * A new assistant response turn is in progress. Audio delta created from this assistant turn will have the same response id. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.created](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.created)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseCreated = 'XAI.VoiceAgentAPI.ResponseCreated',
 
     /**
      * The assistant's response is completed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.done)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseDone = 'XAI.VoiceAgentAPI.ResponseDone',
 
     /**
      * A new assistant response is added to message history. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_item.added](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_item.added)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseOutputItemAdded = 'XAI.VoiceAgentAPI.ResponseOutputItemAdded',
 
     /**
      * A new assistant response is done. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_item.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_item.done)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseOutputItemDone = 'XAI.VoiceAgentAPI.ResponseOutputItemDone',
 
     /**
      * Text delta of the assistant response. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_text.delta](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_text.delta)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseOutputTextDelta = 'XAI.VoiceAgentAPI.ResponseOutputTextDelta',
 
     /**
      * The text of the assistant response has finished generating. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_text.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_text.done)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseOutputTextDone = 'XAI.VoiceAgentAPI.ResponseOutputTextDone',
 
     /**
      * Audio transcript delta of the assistant response. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_audio_transcript.delta](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_audio_transcript.delta)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseOutputAudioTranscriptDelta = 'XAI.VoiceAgentAPI.ResponseOutputAudioTranscriptDelta',
 
     /**
      * The audio transcript delta of the assistant response has finished generating. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_audio_transcript.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_audio_transcript.done)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseOutputAudioTranscriptDone = 'XAI.VoiceAgentAPI.ResponseOutputAudioTranscriptDone',
 
     /**
      * Notifies client that the audio for this turn has finished generating. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_audio.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.output_audio.done)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseOutputAudioDone = 'XAI.VoiceAgentAPI.ResponseOutputAudioDone',
 
     /**
      * Notifies client that the content part added. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.content_part.added](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.content_part.added)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseContentPartAdded = 'XAI.VoiceAgentAPI.ResponseContentPartAdded',
 
     /**
      * Notifies client that the content part done. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.content_part.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.content_part.done)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseContentPartDone = 'XAI.VoiceAgentAPI.ResponseContentPartDone',
 
     /**
      * Function call arguments delta. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.function_call_arguments.delta](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.function_call_arguments.delta)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseFunctionCallArgumentsDelta = 'XAI.VoiceAgentAPI.ResponseFunctionCallArgumentsDelta',
 
     /**
      * Function call triggered with complete arguments. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.function_call_arguments.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.function_call_arguments.done)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseFunctionCallArgumentsDone = 'XAI.VoiceAgentAPI.ResponseFunctionCallArgumentsDone',
 
     /**
      * MCP call arguments delta. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call_arguments.delta](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call_arguments.delta)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseMCPCallArgumentsDelta = 'XAI.VoiceAgentAPI.ResponseMCPCallArgumentsDelta',
 
     /**
      * MCP call arguments completed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call_arguments.done](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call_arguments.done)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseMCPCallArgumentsDone = 'XAI.VoiceAgentAPI.ResponseMCPCallArgumentsDone',
 
     /**
      * MCP call is in progress. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call.in_progress](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call.in_progress)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseMCPCallInProgress = 'XAI.VoiceAgentAPI.ResponseMCPCallInProgress',
 
     /**
      * MCP call completed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call.completed](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call.completed)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseMCPCallCompleted = 'XAI.VoiceAgentAPI.ResponseMCPCallCompleted',
 
     /**
      * MCP call failed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call.failed](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_call.failed)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     ResponseMCPCallFailed = 'XAI.VoiceAgentAPI.ResponseMCPCallFailed',
 
     /**
      * MCP list tools is in progress. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_list_tools.in_progress](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_list_tools.in_progress)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     MCPListToolsInProgress = 'XAI.VoiceAgentAPI.MCPListToolsInProgress',
 
     /**
      * MCP list tools completed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_list_tools.completed](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_list_tools.completed)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     MCPListToolsCompleted = 'XAI.VoiceAgentAPI.MCPListToolsCompleted',
 
     /**
      * MCP list tools failed. [https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_list_tools.failed](https://docs.x.ai/developers/rest-api-reference/inference/voice#response.mcp_list_tools.failed)
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     MCPListToolsFailed = 'XAI.VoiceAgentAPI.MCPListToolsFailed',
 
     /**
      * The WebSocket error response event.
-     * @typedef _VoiceAgentAPIEvent
+     * @eventpayload _VoiceAgentAPIEvent
      */
     WebSocketError = 'XAI.VoiceAgentAPI.WebSocketError',
 
     /**
     * Contains information about connector.
-    * @typedef _VoiceAgentAPIEvent
+    * @eventpayload _VoiceAgentAPIEvent
     */
     ConnectorInformation = 'XAI.VoiceAgentAPI.ConnectorInformation',
   }
@@ -21462,17 +22585,21 @@ declare namespace Yandex {
 }
 declare namespace Yandex {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.Yandex);
+   * ```
    * @event
    */
   enum Events {
     /**
-     * Triggered when the audio stream sent by a third party through an Yandex WebSocket is started playing.
-     * @typedef _WebSocketMediaStartedYandexEvent
+     * Triggered when the audio stream sent by a third party through a Yandex WebSocket starts playing.
+     * @eventpayload _WebSocketMediaStartedYandexEvent
      */
     WebSocketMediaStarted = 'Yandex.Events.WebSocketMediaStarted',
     /**
-     * Triggers after the end of the audio stream sent by a third party through an Yandex WebSocket (**1 second of silence**).
-     * @typedef _WebSocketMediaEndedYandexEvent
+     * Triggered after the end of the audio stream sent by a third party through a Yandex WebSocket (**1 second of silence**).
+     * @eventpayload _WebSocketMediaEndedYandexEvent
      */
     WebSocketMediaEnded = 'Yandex.Events.WebSocketMediaEnded',
   }
@@ -21592,43 +22719,43 @@ declare namespace Yandex {
 
     /**
      * Send this event to update the session’s configuration. 
-     * @param parameters
+     * @param parameters Event parameters
      */
     sessionUpdate(parameters: Object): void
 
     /**
      * Add a new Item to the Conversation's context.
-     * @param parameters
+     * @param parameters Event parameters
      */
     conversationItemCreate(parameters: Object): void
 
     /**
      * Send this event when you want to retrieve the server's representation of a specific item in the conversation history.
-     * @param parameters
+     * @param parameters Event parameters
      */
     conversationItemRetrieve(parameters: Object): void
 
     /**
      * Send this event to truncate a previous assistant message’s audio.
-     * @param parameters
+     * @param parameters Event parameters
      */
     conversationItemTruncate(parameters: Object): void
 
     /**
      * Send this event when you want to remove any item from the conversation history.
-     * @param parameters
+     * @param parameters Event parameters
      */
     conversationItemDelete(parameters: Object): void
 
     /**
      * This event instructs the server to create a Response, which means triggering model inference.
-     * @param parameters
+     * @param parameters Event parameters
      */
     responseCreate(parameters: Object): void
 
     /**
      * Send this event to cancel an in-progress response. 
-     * @param parameters
+     * @param parameters Event parameters
      */
     responseCancel(parameters: Object): void
   }
@@ -21636,283 +22763,287 @@ declare namespace Yandex {
   
 declare namespace Yandex {
   /**
+   * Add the following line to your scenario code to use the events:
+   * ```
+   * require(Modules.Yandex);
+   * ```
    * @event
    */
   enum RealtimeAPIEvents {
     /**
      * The unknown event.
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     Unknown = 'Yandex.RealtimeAPI.Unknown',
 
     /**
      * The HTTP response event.
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     HTTPResponse = 'Yandex.RealtimeAPI.HTTPResponse',
 
     /**
      * The WebSocket error response event.
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     WebSocketError = 'Yandex.RealtimeAPI.WebSocketError',
 
      /**
      * Contains information about connector.
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ConnectorInformation = 'Yandex.RealtimeAPI.ConnectorInformation',
 
     /**
      * Returned when an error occurs, which could be a client problem or a server problem.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerError](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerError)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     Error = 'Yandex.RealtimeAPI.Error',
 
     /**
      * Returned when a Session is created.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerSessionCreated](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerSessionCreated)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     SessionCreated = 'Yandex.RealtimeAPI.SessionCreated',
 
     /**
      * Returned when a session is updated with a session.update event, unless there is an error.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerSessionUpdated](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerSessionUpdated)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     SessionUpdated = 'Yandex.RealtimeAPI.SessionUpdated',
 
     /**
      * Returned when a new Item is created in the Conversation.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemCreated](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemCreated)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ConversationItemCreated = 'Yandex.RealtimeAPI.ConversationItemCreated',
      
     /**
      * Returned when a conversation item is retrieved with conversation.item.retrieve.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemRetrieved](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemRetrieved)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ConversationItemRetrieved = 'Yandex.RealtimeAPI.ConversationItemRetrieved',
 
     /**
      * This event is the output of audio transcription for user audio written to the user audio buffer.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemInputAudioTranscriptionCompleted](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemInputAudioTranscriptionCompleted)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ConversationItemInputAudioTranscriptionCompleted = 'Yandex.RealtimeAPI.ConversationItemInputAudioTranscriptionCompleted',
 
     /**
      * Returned when the text value of an input audio transcription content part is updated with incremental transcription results.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemInputAudioTranscriptionDelta](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemInputAudioTranscriptionDelta)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ConversationItemInputAudioTranscriptionDelta = 'Yandex.RealtimeAPI.ConversationItemInputAudioTranscriptionDelta',
 
     /**
      * Returned when an input audio transcription segment is identified for an item.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemInputAudioTranscriptionSegment](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemInputAudioTranscriptionSegment)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ConversationItemInputAudioTranscriptionSegment = 'Yandex.RealtimeAPI.ConversationItemInputAudioTranscriptionSegment',
 
     /**
      * Returned when input audio transcription is configured, and a transcription request for a user message failed.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemInputAudioTranscriptionFailed](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemInputAudioTranscriptionFailed)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ConversationItemInputAudioTranscriptionFailed = 'Yandex.RealtimeAPI.ConversationItemInputAudioTranscriptionFailed',
 
     /**
      * Returned when an earlier assistant audio message item is truncated by the client with a conversation.item.truncate event.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemTruncated](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemTruncated)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ConversationItemTruncated = 'Yandex.RealtimeAPI.ConversationItemTruncated',
 
     /**
      * Returned when an item in the conversation is deleted by the client with a conversation.item.delete event.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemDeleted](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerConversationItemDeleted)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ConversationItemDeleted = 'Yandex.RealtimeAPI.ConversationItemDeleted',
 
     /**
      * Returned when an input audio buffer is committed.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerInputAudioBufferCommitted](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerInputAudioBufferCommitted)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     InputAudioBufferCommitted = 'Yandex.RealtimeAPI.InputAudioBufferCommitted',
 
     /**
      * Returned when the input audio buffer is cleared by the client with an input_audio_buffer.clear event.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerInputAudioBufferCleared](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerInputAudioBufferCleared)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     InputAudioBufferCleared = 'Yandex.RealtimeAPI.InputAudioBufferCleared',
 
      /**
      * Returned when a DTMF event is received (telephony integrations). [https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerInputAudioBufferDtmfEventReceived](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerInputAudioBufferDtmfEventReceived) 
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     InputAudioBufferDTMFEventReceived = 'Yandex.RealtimeAPI.InputAudioBufferDTMFEventReceived',
 
     /**
      * Sent by the server when in server_vad mode to indicate that speech has been detected in the audio buffer.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerInputAudioBufferSpeechStarted](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerInputAudioBufferSpeechStarted)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     InputAudioBufferSpeechStarted = 'Yandex.RealtimeAPI.InputAudioBufferSpeechStarted',
 
     /**
      * Returned in server_vad mode when the server detects the end of speech in the audio buffer.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerInputAudioBufferSpeechStopped](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerInputAudioBufferSpeechStopped)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     InputAudioBufferSpeechStopped = 'Yandex.RealtimeAPI.InputAudioBufferSpeechStopped',
 
     /**
      * Returned when the Server VAD timeout is triggered for the input audio buffer.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerInputAudioBufferTimeoutTriggered](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerInputAudioBufferTimeoutTriggered)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     InputAudioBufferTimeoutTriggered = 'Yandex.RealtimeAPI.InputAudioBufferTimeoutTriggered',
 
     /**
      * Returned when the output audio buffer is cleared.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerOutputAudioBufferCleared](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerOutputAudioBufferCleared)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     OutputAudioBufferCleared = 'Yandex.RealtimeAPI.OutputAudioBufferCleared',
 
     /**
      * Returned when the output audio buffer starts playing/streaming.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerOutputAudioBufferStarted](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerOutputAudioBufferStarted)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     OutputAudioBufferStarted = 'Yandex.RealtimeAPI.OutputAudioBufferStarted',
 
     /**
      * Returned when the output audio buffer stops.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerOutputAudioBufferStopped](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerOutputAudioBufferStopped)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     OutputAudioBufferStopped = 'Yandex.RealtimeAPI.OutputAudioBufferStopped',
 
     /**
      * Returned when a new Response is created.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseCreated](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseCreated)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseCreated = 'Yandex.RealtimeAPI.ResponseCreated',
 
     /**
      * Returned when a Response is done streaming.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseDone](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseDone)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseDone = 'Yandex.RealtimeAPI.ResponseDone',
 
     /**
      * Returned when a new Item is created during Response generation.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseOutputItemAdded](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseOutputItemAdded)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseOutputItemAdded = 'Yandex.RealtimeAPI.ResponseOutputItemAdded',
 
     /**
      * Returned when an Item is done streaming.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseOutputItemDone](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseOutputItemDone)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseOutputItemDone = 'Yandex.RealtimeAPI.ResponseOutputItemDone',
 
     /**
      * Returned when a new content part is added to an assistant message item during response generation.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseContentPartAdded](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseContentPartAdded)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseContentPartAdded = 'Yandex.RealtimeAPI.ResponseContentPartAdded',
 
     /**
      * Returned when a content part is done streaming in an assistant message item.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseContentPartDone](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseContentPartDone)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseContentPartDone = 'Yandex.RealtimeAPI.ResponseContentPartDone',
 
     /**
      * Returned when the text value of an "output_text" content part is updated.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseOutputTextDelta](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseOutputTextDelta)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseOutputTextDelta = 'Yandex.RealtimeAPI.ResponseOutputTextDelta',
 
     /**
      * Returned when the text value of an "output_text" content part is done streaming.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseOutputTextDone](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseOutputTextDone)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseOutputTextDone = 'Yandex.RealtimeAPI.ResponseOutputTextDone',
 
     /**
      * Returned when the model-generated transcription of audio output is updated.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseOutputAudioTranscriptDelta](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseOutputAudioTranscriptDelta)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseOutputAudioTranscriptDelta = 'Yandex.RealtimeAPI.ResponseOutputAudioTranscriptDelta',
 
     /**
      * Returned when the model-generated transcription of audio output is done streaming.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseOutputAudioTranscriptDone](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseOutputAudioTranscriptDone)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseOutputAudioTranscriptDone = 'Yandex.RealtimeAPI.ResponseOutputAudioTranscriptDone',
     
 
     /**
      * Returned when the model-generated audio is done.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseMcpCallArgumentsDone](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseMcpCallArgumentsDone)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseOutputAudioDone = 'Yandex.RealtimeAPI.ResponseOutputAudioDone',
 
     /**
      * Returned when the model-generated function call arguments are updated.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseFunctionCallArgumentsDelta](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseFunctionCallArgumentsDelta)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseFunctionCallArgumentsDelta = 'Yandex.RealtimeAPI.ResponseFunctionCallArgumentsDelta',
 
     /**
      * Returned when the model-generated function call arguments are done streaming.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseFunctionCallArgumentsDone](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseFunctionCallArgumentsDone)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseFunctionCallArgumentsDone = 'Yandex.RealtimeAPI.ResponseFunctionCallArgumentsDone',
 
     /**
      * Returned when MCP tool call arguments are updated during response generation.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseMcpCallArgumentsDelta](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseMcpCallArgumentsDelta)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseMCPCallArgumentsDelta = 'Yandex.RealtimeAPI.ResponseMCPCallArgumentsDelta',
 
     /**
      * Returned when MCP tool call arguments are finalized during response generation.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseMcpCallArgumentsDone](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseMcpCallArgumentsDone)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseMCPCallArgumentsDone = 'Yandex.RealtimeAPI.ResponseMCPCallArgumentsDone',
 
     /**
      * Returned when an MCP tool call has started and is in progress.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseMcpCallInProgress](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseMcpCallInProgress)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseMCPCallInProgress = 'Yandex.RealtimeAPI.ResponseMCPCallInProgress',
 
     /**
      * Returned when an MCP tool call has completed successfully.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseMcpCallCompleted](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseMcpCallCompleted)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseMCPCallCompleted = 'Yandex.RealtimeAPI.ResponseMCPCallCompleted',
 
     /**
      * Returned when an MCP tool call has failed.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseMcpCallFailed](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerResponseMcpCallFailed)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     ResponseMCPCallFailed = 'Yandex.RealtimeAPI.ResponseMCPCallFailed',
 
     /**
      * Returned when listing MCP tools is in progress for an item.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerMcpListToolsInProgress](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerMcpListToolsInProgress)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     MCPListToolsInProgress = 'Yandex.RealtimeAPI.MCPListToolsInProgress',
 
     /**
      * Returned when listing MCP tools has completed for an item.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerMcpListToolsCompleted](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerMcpListToolsCompleted)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     MCPListToolsCompleted = 'Yandex.RealtimeAPI.MCPListToolsCompleted',
 
     /**
      * Returned when listing MCP tools has failed for an item.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerMcpListToolsFailed](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerMcpListToolsFailed)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     MCPListToolsFailed = 'Yandex.RealtimeAPI.MCPListToolsFailed',
 
     /**
      * Emitted at the beginning of a Response to indicate the updated rate limits.[https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerRateLimitsUpdated](https://yandex.cloud/ru/docs/ai-studio/serverEvents/realtimeServerRateLimitsUpdated)
-     * @typedef _YandexRealtimeAPIEvent
+     * @eventpayload _YandexRealtimeAPIEvent
      */
     RateLimitsUpdated = 'Yandex.RealtimeAPI.ResponseMCPCallFailed',
   }
@@ -22017,6 +23148,34 @@ declare namespace ASRModelList {
  * @namespace
  */
 declare namespace ASRModelList {}
+
+declare namespace ASRModelList {
+  /**
+   * List of Cartesia ASR models. Can be passed via the [ASRParameters.model] parameter.
+   * <br>
+   * Add the following line to your scenario code to use the enum:
+   * ```
+   * require(Modules.ASR);
+   * ```
+   */
+  namespace Cartesia {
+    /**
+     * The default **ink-2** model. English only.
+     * @const
+     */
+    const DEFAULT: ASRModel;
+    /**
+     * Production model. English only.
+     * @const
+     */
+    const ink2: ASRModel;
+    /**
+     * Preview model. Automatically detects English, French, Hindi, Japanese, and Spanish.
+     * @const
+     */
+    const ink_preview: ASRModel;
+  }
+}
 
 declare namespace ASRModelList {
   /**
@@ -22425,7 +23584,7 @@ declare interface ASRParameters {
    * List of all supported profiles: [ASRProfileList].
    * <br>
    * <br>
-   * *Available for providers: Amazon, Deepgram, Google, Microsoft, SaluteSpeech, T-Bank, Yandex, YandexV3.*
+   * *Available for providers: Amazon, Cartesia, Deepgram, Google, Microsoft, SaluteSpeech, T-Bank, Yandex, YandexV3.*
    */
   profile: ASRProfile;
 
@@ -22436,7 +23595,7 @@ declare interface ASRParameters {
    * List of all supported models: [ASRModelList].
    * <br>
    * <br>
-   * *Available for providers: Amazon, Deepgram, Google, Microsoft, SaluteSpeech, T-Bank, Yandex, YandexV3.*
+   * *Available for providers: Amazon, Cartesia, Deepgram, Google, Microsoft, SaluteSpeech, T-Bank, Yandex, YandexV3.*
    */
   model?: ASRModel;
 
@@ -22486,7 +23645,7 @@ declare interface ASRParameters {
    * Optional. Request headers: {'x-data-logging-enabled': true}.
    * <br>
    * <br>
-   * *Available for providers: Amazon, Deepgram, Google, Microsoft, SaluteSpeech, T-Bank, Yandex, YandexV3.*
+   * *Available for providers: Amazon, Cartesia, Deepgram, Google, Microsoft, SaluteSpeech, T-Bank, Yandex, YandexV3.*
    */
   headers?: { [key: string]: any };
 
@@ -22683,9 +23842,49 @@ declare interface ASRParameters {
    * Optional. Provide the ASR parameters directly to the provider in this parameter. Find more information in the <a href="/docs/guides/speech/stt#passing-parameters-directly-to-the-provider"> documentation</a>.
    * <br>
    * <br>
-   * *Available for providers: Deepgram, Google, SaluteSpeech, T-Bank, Yandex, YandexV3.*
+   * *Available for providers: Cartesia, Deepgram, Google, SaluteSpeech, T-Bank, Yandex, YandexV3.*
    */
   request?: Object;
+
+  /**
+   * Optional. Threshold above which to start the turn. Default: **0.8**. Range: **0.5–0.9**. Must stay above the eager end threshold.
+   * <br>
+   * <br>
+   * *Available for providers: Cartesia.*
+   */
+  turnStartThreshold?: number;
+
+  /**
+   * Optional. Threshold below which to eager-end the turn. Default: **0.4**. Range: **0.3–0.6**. Must stay between the end and start thresholds.
+   * <br>
+   * <br>
+   * *Available for providers: Cartesia.*
+   */
+  turnEagerEndThreshold?: number;
+
+  /**
+   * Optional. Threshold below which to end the turn. Default: **0.2**. Range: **0.05–0.5**. Must stay below the eager end threshold.
+   * <br>
+   * <br>
+   * *Available for providers: Cartesia.*
+   */
+  turnEndThreshold?: number;
+
+  /**
+   * Optional. Maximum time in milliseconds that the model waits after the user stops speaking before ending the turn. Default: **5600**. Range: **640–11200**.
+   * <br>
+   * <br>
+   * *Available for providers: Cartesia.*
+   */
+  turnEndTimeoutMs?: number;
+
+  /**
+   * Optional. Key terms to improve the recall of specific words and phrases. Up to 100 keyterms totaling 1200 characters.
+   * <br>
+   * <br>
+   * *Available for providers: Cartesia.*
+   */
+  keyterm?: string[];
 
   /**
    * Optional. Enables statistics functionality.
@@ -22741,6 +23940,24 @@ declare namespace ASRProfileList {
  * @namespace
  */
 declare namespace ASRProfileList {}
+
+declare namespace ASRProfileList {
+  /**
+   * List of Cartesia ASR profiles. Can be passed via the [ASRParameters.profile] parameter.
+   * <br>
+   * Add the following line to your scenario code to use the enum:
+   * ```
+   * require(Modules.ASR);
+   * ```
+   */
+  namespace Cartesia {
+    /**
+     * Automatically detects English, French, Hindi, Japanese, and Spanish.
+     * @const
+     */
+    const autodetect: ASRProfile;
+  }
+}
 
 declare namespace ASRProfileList {
   /**
@@ -25077,13 +26294,13 @@ declare namespace ASRProfileList {
  */
 declare class ASRProfile {}
 /**
- * Decodes the data in the Base64 encoding
+ * Decodes the data in the Base64 encoding.
  * @param data Data to decode
  */
 declare function base64_decode(data: string): number[];
 
 /**
- * Encodes a string or array of integers from 0 to 255 to the Base64 encoding
+ * Encodes a string or array of integers from 0 to 255 to the Base64 encoding.
  * @param data String or array of integers from 0 to 255 to encode
  */
 declare function base64_encode(data: string | number[]): string;
@@ -25096,7 +26313,7 @@ declare function base64_encode(data: string | number[]): string;
 declare function bytes2hex(data: number[], toUpperCase: boolean): string;
 
 /**
- * Creates a string from an array of numbers with specified encoding
+ * Creates a string from an array of numbers with specified encoding.
  * @param data Array of integers from 0 to 255 to create a string from
  * @param encoding Encoding to use for string creation, the default value is **utf-8**
  */
@@ -25136,7 +26353,7 @@ declare function clearTimeout(timeoutID: number): void;
 declare function getLocalTime(timezone: string, date: Date): Date;
 
 /**
- * Creates an array of numbers from parsing a hex string
+ * Creates an array of numbers from parsing a hex string.
  * @param data Hex string like "cafec0de"
  */
 declare function hex2bytes(data: string): number[];
@@ -25165,7 +26382,7 @@ declare namespace Net {
    */
   interface HttpRequestOptions {
     /**
-     * HTTP request type as a string: **GET**, **POST** etc. The default value is **GET**.
+     * Optional. HTTP request type as a string: **GET**, **POST** etc. The default value is **GET**.
      */
     method?: string;
     /**
@@ -25272,7 +26489,7 @@ declare interface RichContentButtonItem {
    */
   action: RichContentButtonAction;
   /**
-   * Message to the avatar when the button is clicked.
+   * Optional. Message to the avatar when the button is clicked.
    */
   payload?: any;
 }
@@ -25428,7 +26645,7 @@ declare function setInterval(callback: () => any, timeout?: number): number;
 declare function setTimeout(callback: () => any, timeout?: number): number;
 
 /**
- * Creates an array of numbers from parsing string in specified codepage
+ * Creates an array of numbers from parsing a string in the specified codepage.
  * @param data String to parse
  * @param encoding String encoding, the default value is **utf-8**
  */
@@ -25611,7 +26828,7 @@ declare interface TTSPlayerParameters {
    * <br>
    * *Available for providers: Google, SaluteSpeech, T-Bank,YandexV3.*
    */
-  request?: Object;
+  request?: Record<string, any>;
 }
 
 /**
@@ -25745,7 +26962,7 @@ declare interface VoiceChannelParameters {
    */
   asr?: ASRParameters;
   /**
-   * Avatar voice channel playback parameters.
+   * Optional. Avatar voice channel playback parameters.
    * <br>
    * NOTE: the default value is inherited from the [VoiceAvatarConfig.ttsPlayerOptions](/docs/references/voxengine/voximplantavatar/voiceavatarconfig#ttsplayeroptions) parameter.
    */

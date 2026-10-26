@@ -27,11 +27,12 @@
   //   2. Both typing files, not one. Their example includes only the copy
   //      inside the package; `createOrUpdateTsConfig` includes THAT ONE AND
   //      `typings/` — so the build sees both, and so must this, or the editor
-  //      would disagree with the build. The two versions differ (7.64.1 from
-  //      the CDN vs 7.57.0 bundled) and conflict on hundreds of ambient
-  //      identifiers, which is why `skipLibCheck` is on here exactly as it is
-  //      in the generated config. MEASURED 2026-09-15: 0 errors with it, 67
-  //      without. The ElevenLabs surface is identical across the two.
+  //      would disagree with the build. The two versions differ (7.75.0 from
+  //      the CDN, refreshed 2026-10-26, vs 7.57.0 bundled) and conflict on
+  //      ambient identifiers, which is why `skipLibCheck` is on here exactly as
+  //      it is in the generated config. MEASURED 2026-10-26: 0 errors with it,
+  //      7 without (67 with the previous 7.64.1 copy). The ElevenLabs Agents
+  //      surface is identical across the two apart from comments.
   //
   // `noEmit`: nothing here should produce files. Only voxengine-ci emits, into
   // its own dist/, and a stray build here would corrupt the upload hash.

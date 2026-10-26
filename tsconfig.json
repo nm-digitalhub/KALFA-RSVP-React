@@ -52,10 +52,10 @@
     "supabase/functions",
     // VoxEngine's world, which is NOT this application's.
     //
-    // `typings/voxengine.d.ts` is a 39,000-line ambient declaration file for
+    // `typings/voxengine.d.ts` is a 41,000-line ambient declaration file for
     // Voximplant's cloud runtime. `.d.ts` IS a TypeScript source file for
     // Program construction, so `**/*.ts` above matched it and every one of its
-    // 612 root-level `declare`s entered the type program of every file in this
+    // 600+ root-level `declare`s entered the type program of every file in this
     // app — including `Call`, `Player` and `WebSocket`, which collide with
     // lib.dom. Nothing reached the bundle (a .d.ts emits no JavaScript), but a
     // `new WebSocket(...)` in a client component was being checked against a
