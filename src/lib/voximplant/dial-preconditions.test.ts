@@ -3,7 +3,15 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { closedEventRefusal } from './dial-preconditions';
+import {
+  BRANCH_ID_PATTERN,
+  bridgeLaunchPayload,
+  closedEventDialMessage,
+  closedEventRefusal,
+  CUSTOM_DATA_CAP_BYTES,
+  parseTestBranch,
+  testAttemptRefusal,
+} from './dial-preconditions';
 
 const repoRoot = join(__dirname, '..', '..', '..');
 const launcher = readFileSync(
@@ -86,15 +94,111 @@ describe('bridge-call.ts launcher wiring (source guard)', () => {
     expect(launcher).not.toContain('isPastEventDay');
   });
 
-  it('keeps the override explicit and opt-in', () => {
-    // Testing the audio path on a closed event is legitimate; doing it by
-    // accident is what made three worthless calls look like a success.
-    expect(launcher).toContain('allow-closed-event');
-    // main() only — the header comment documents the flag too, and matching that
-    // would place the "override" before the gate and prove nothing.
+  it('has no closed-event override (voice-test-environment D6)', () => {
+    // ctx refuses a closed event before the call connects, so an "audio-path" test there runs the agent without the
+    // guest's or the event's details — the 2026-10-25 call. The only way through is the test event.
+    expect(launcher).not.toContain('allow-closed-event');
+    expect(launcher).toContain('closedEventDialMessage(closedReason)');
+  });
+
+  it('validates --branch before it reads or writes anything', () => {
     const body = launcher.slice(launcher.indexOf('async function main'));
-    const gate = body.indexOf('closedEventRefusal(cctx)');
-    const override = body.indexOf("flag('allow-closed-event')");
-    expect(override).toBeGreaterThan(gate); // the override sits inside the refusal branch
+    const branch = body.indexOf("parseTestBranch(flag('branch'))");
+    expect(branch).toBeGreaterThan(-1);
+    expect(branch).toBeLessThan(body.indexOf('await getCallAttemptById'));
+  });
+
+  it('measures the payload before stamping the nonce', () => {
+    const body = launcher.slice(launcher.indexOf('async function main'));
+    const cap = body.indexOf('bytes > CUSTOM_DATA_CAP_BYTES');
+    expect(cap).toBeGreaterThan(-1);
+    expect(cap).toBeLessThan(body.indexOf('await stampElCorrelationNonce'));
+  });
+});
+
+describe('closedEventDialMessage', () => {
+  it('names the reason and the test-event helper, and offers no override', () => {
+    const message = closedEventDialMessage("the event status is 'closed', not 'active'");
+    expect(message).toContain("'closed'");
+    expect(message).toContain('npm run test-call:attempt');
+    expect(message).not.toContain('allow-closed-event');
+  });
+});
+
+// A live branch id, read 2026-10-25 (the RSVP agent's Main): 36 characters.
+const LIVE_BRANCH_ID = 'agtbrch_4101kxj3n5tqf2kae5recbbn2rtj';
+
+describe('parseTestBranch', () => {
+  it('absent means Main', () => {
+    expect(parseTestBranch(undefined)).toEqual({ ok: true, branchId: null });
+  });
+
+  it('accepts a branch id in the form the API returns', () => {
+    expect(LIVE_BRANCH_ID).toHaveLength(36);
+    expect(parseTestBranch(LIVE_BRANCH_ID)).toEqual({ ok: true, branchId: LIVE_BRANCH_ID });
+  });
+
+  it.each([
+    ['a bare flag', '__present__'],
+    ['an agent id', 'agent_9701kxj3n54ye518a3s518cexd48'],
+    ['an empty id', 'agtbrch_'],
+    ['upper case', 'agtbrch_ABC'],
+    ['an injected quote', 'agtbrch_abc","to":"+972500000000'],
+  ])('refuses %s', (_label, raw) => {
+    expect(parseTestBranch(raw).ok).toBe(false);
+  });
+
+  it('is the pattern RSVPAgent.voxengine.js applies to customData.br', () => {
+    const scenario = readFileSync(
+      join(repoRoot, 'voxfiles/applications/kalfa-rsvp.kalfarsvp.voximplant.com/scenarios/src/RSVPAgent.voxengine.js'),
+      'utf8',
+    );
+    expect(scenario).toContain(BRANCH_ID_PATTERN.source);
+  });
+});
+
+describe('bridgeLaunchPayload', () => {
+  const base = {
+    to: '+972536212562',
+    from: '97237219347',
+    tok: '0123456789abcdef0123456789abcdef',
+    u: 'https://beta.kalfa.me',
+  };
+
+  it('carries no br key without a branch — the scenario then runs on Main', () => {
+    const { payload } = bridgeLaunchPayload({ ...base, branchId: null });
+    expect(JSON.parse(payload)).toEqual(base);
+  });
+
+  it('adds br and stays within the customData cap with a 36-character branch id', () => {
+    const { payload, bytes } = bridgeLaunchPayload({ ...base, branchId: LIVE_BRANCH_ID });
+    expect(JSON.parse(payload)).toEqual({ ...base, br: LIVE_BRANCH_ID });
+    expect(bytes).toBe(Buffer.byteLength(payload, 'utf8'));
+    expect(bytes).toBeLessThanOrEqual(CUSTOM_DATA_CAP_BYTES);
+  });
+});
+
+describe('testAttemptRefusal', () => {
+  const ok = { markedAsTest: true, event: open, guestCount: 1, phoneAllowed: true };
+
+  it('permits a marked, open test event with one guest on the allowlist', () => {
+    expect(testAttemptRefusal(ok, NOW)).toBeNull();
+  });
+
+  it('refuses an event that is not marked as a test event', () => {
+    expect(testAttemptRefusal({ ...ok, markedAsTest: false }, NOW)).toContain('not marked as a test event');
+  });
+
+  it('refuses a test event that can no longer record an answer', () => {
+    const past = { ...ok, event: { ...open, eventDate: '2026-07-12T20:00:00+03:00' } };
+    expect(testAttemptRefusal(past, NOW)).toContain('event day has passed');
+  });
+
+  it('refuses a contact that does not back exactly one guest', () => {
+    expect(testAttemptRefusal({ ...ok, guestCount: 2 }, NOW)).toContain('exactly one');
+  });
+
+  it('refuses a number that is not on the allowlist', () => {
+    expect(testAttemptRefusal({ ...ok, phoneAllowed: false }, NOW)).toContain('VOX_TEST_NUMBERS');
   });
 });

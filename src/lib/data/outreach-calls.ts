@@ -55,7 +55,7 @@ import type { OutreachCallRequest } from '@/lib/queue/queues';
 // buildScriptCustomData's doc comment for the key mapping. NEVER logs the
 // token or the full payload — only ids/bytes.
 
-const CALL_TOKEN_TTL_SEC = 2 * 60 * 60; // matches call_attempts.token_expires_at intent (created_at + 2h)
+export const CALL_TOKEN_TTL_SEC = 2 * 60 * 60; // matches call_attempts.token_expires_at intent (created_at + 2h)
 const BALANCE_TIMEOUT_MS = 10_000;
 const START_TIMEOUT_MS = 25_000;
 

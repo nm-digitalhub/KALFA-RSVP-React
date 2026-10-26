@@ -14,6 +14,9 @@
  * payload ({to,from,tok,u}) mirrors the deployed Branch B scenario; `tok`
  * defaults to a fake 32-hex → ctx 404 → the scenario still dials (DTMF-only, no
  * personalization / no Groq) — enough to produce a Voximplant session + log.
+ * Against the RSVPAgent rule (1520915) the same fake tok makes the scenario
+ * refuse WITHOUT dialling (openspec/changes/voice-test-environment, D3) — which is
+ * how that refusal is checked live.
  * The payload is NEVER printed (byte count only); the key is never printed.
  */
 import { readFileSync } from 'node:fs';

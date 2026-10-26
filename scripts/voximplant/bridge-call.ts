@@ -12,7 +12,10 @@
 // post-call webhook echoes it → storeCallAnalysis links conversation → attempt.
 //
 //   npm run bridge:call -- \
-//     --attempt-id <uuid> --to +9725XXXXXXXX --from 97237219347 --confirm
+//     --attempt-id <uuid> --to +9725XXXXXXXX --from 97237219347 [--branch agtbrch_…] --confirm
+//
+// The attempt for a test call comes from `npm run test-call:attempt` (the test
+// event, openspec/changes/voice-test-environment D5).
 //
 // Isolation + safety:
 //   * Places a REAL outbound call and consumes BOTH Voximplant minutes AND
@@ -22,8 +25,12 @@
 //     scenario is not the bridge.
 //   * Refuses an event that can no longer record an RSVP (not active / past
 //     event day / passed deadline) — the same refusals submit_rsvp applies, and
-//     the same gate the worker dispatcher enforces at 4b. --allow-closed-event
-//     overrides it loudly, for audio-path testing only.
+//     the same gate the worker dispatcher enforces at 4b. There is no override:
+//     ctx refuses a closed event too, so the agent would run without context.
+//   * --branch <id> routes the conversation to that ElevenLabs agent branch (the
+//     agent's `test` branch, docs/voice-agent/elevenlabs-json-reference.md §6);
+//     without it the conversation runs on Main. A value that is not a branch id
+//     is refused before anything is written.
 //   * NEVER prints the access token, the nonce, or any secret — ids + byte count
 //     only.
 //   * --to must be on the VOX_TEST_NUMBERS allowlist (server env); any other
@@ -47,7 +54,13 @@ import {
   TERMINAL_STATUSES,
 } from '@/lib/data/call-attempts';
 import { getCampaignContext } from '@/lib/data/outreach-engine';
-import { closedEventRefusal } from '@/lib/voximplant/dial-preconditions';
+import {
+  bridgeLaunchPayload,
+  closedEventDialMessage,
+  closedEventRefusal,
+  CUSTOM_DATA_CAP_BYTES,
+  parseTestBranch,
+} from '@/lib/voximplant/dial-preconditions';
 import { getAppOrigin } from '@/lib/url';
 import type { VoximplantConfig } from '@/lib/voximplant/core';
 import { startScenarios } from '@/lib/voximplant/mutations';
@@ -122,6 +135,13 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
+  // flag(), not val(): a bare `--branch` with no value must be refused, not read as "no branch".
+  const branch = parseTestBranch(flag('branch'));
+  if (!branch.ok) {
+    console.error(`ERROR: ${branch.refusal}.`);
+    process.exitCode = 1;
+    return;
+  }
 
   // Load the attempt: identity + the access token that gates ctx/cb/agent-tool.
   const attempt = await getCallAttemptById(attemptId);
@@ -163,25 +183,26 @@ async function main(): Promise<void> {
   const cctx = await getCampaignContext(attempt.campaign_id);
   const closedReason = closedEventRefusal(cctx);
   if (closedReason) {
-    // Escape hatch, because testing the AUDIO path (voice, disclosure, barge-in)
-    // is legitimate on a closed event — but it must be a decision, never a
-    // surprise. Silence here is what let three calls look like a success.
-    if (flag('allow-closed-event') !== '__present__') {
-      console.error(
-        `ERROR: refusing to dial — ${closedReason}, so submit_rsvp will REJECT ` +
-          'any answer this call collects. The guest would be asked to confirm and ' +
-          'then apologised to, and the call would still bill as a reached contact. ' +
-          'Use a future-dated active event, or pass --allow-closed-event to test ' +
-          'the audio path knowingly.',
-      );
-      process.exitCode = 1;
-      return;
-    }
-    console.warn(
-      `WARNING: --allow-closed-event — ${closedReason}. save_rsvp WILL return ` +
-        "'rejected' and NO RSVP will be written. Treat any QA score from this " +
-        'call as measuring the audio path only.',
-    );
+    console.error(`ERROR: ${closedEventDialMessage(closedReason)}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const origin = val('origin') ?? (await getAppOrigin());
+  // The Branch B payload the scenario parses ({to, from, tok, u}), plus `br` when a branch was chosen. Built and
+  // measured before the nonce is stamped, so a payload that cannot be sent writes nothing.
+  const { payload, bytes } = bridgeLaunchPayload({
+    to: allowedTo,
+    from,
+    tok: attempt.access_token,
+    u: origin,
+    branchId: branch.branchId,
+  });
+  if (bytes > CUSTOM_DATA_CAP_BYTES) {
+    // Over the cap VoxEngine.customData() corrupts the payload silently; refuse instead of dialling on it.
+    console.error(`ERROR: script_custom_data is ${bytes} bytes, over the ${CUSTOM_DATA_CAP_BYTES}-byte cap.`);
+    process.exitCode = 1;
+    return;
   }
 
   // Generate + stamp a NON-authorizing correlation nonce (idempotent: a re-run
@@ -193,18 +214,15 @@ async function main(): Promise<void> {
     return;
   }
 
-  const origin = val('origin') ?? (await getAppOrigin());
-  // Same tiny Branch B payload the scenario already parses ({to, from, tok, u}).
-  const payload = JSON.stringify({ to: allowedTo, from, tok: attempt.access_token, u: origin });
-
   console.log('=== StartScenarios — LIVE BRIDGE TEST CALL (RSVPAgent) ===');
   console.log(`rule_id                 : ${ruleId}`);
   console.log(`attempt_id              : ${attemptId}`);
   console.log(`to                      : ${allowedTo}`);
   console.log(`from                    : ${from}`);
   console.log(`origin (u)              : ${origin}`);
+  console.log(`agent branch            : ${branch.branchId ?? 'Main (deployment)'}`);
   console.log(`correlation nonce       : stamped (value withheld)`);
-  console.log(`script_custom_data bytes: ${Buffer.byteLength(payload, 'utf8')}`); // count only
+  console.log(`script_custom_data bytes: ${bytes}`); // count only
 
   const cfg = loadConfig();
   const resp = await startScenarios(cfg, { rule_id: ruleId, script_custom_data: payload }, 30_000);

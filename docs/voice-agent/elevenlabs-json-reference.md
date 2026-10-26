@@ -378,3 +378,55 @@ npm run voximplant -- recording --session <session_id> --output call.mp3
 
 **כלל מדידה:** כל שינוי ב-LLM/turn נמדד בשיחה חיה אחת לפחות עם §6.4 — `avg latency`,
 `max latency`, מספר הפרעות, ודליפת אנגלית.
+
+### 6.6 סביבת הטסט — שיחת טסט עם הקשר אמיתי (openspec/changes/voice-test-environment)
+
+#### ענפי `test` (נוצרו 26.10.2026, נקראו בחזרה: Main 100%, `test` 0%)
+
+| סוכן | Main | `test` |
+|---|---|---|
+| RSVP (`agent_9701kxj3n54ye518a3s518cexd48`) | `agtbrch_4101kxj3n5tqf2kae5recbbn2rtj` | `agtbrch_0901m5va14yres5b3tcxnzvcma0g` |
+| Meeting Confirm (`agent_3601m0mt3tf3e2cvgqwak2yg54b6`) | `agtbrch_0801m0mt3w3cfgar7q5w62h1q95y` | `agtbrch_6101m5va22weedybftdaz8ye7557` |
+| Sales Close (`agent_4101m0my2f2kf4qvhegat60wrgtn`) | `agtbrch_7501m0my2fxtftxa3wr4gpmkhj3d` | `agtbrch_6401m5va2h4repp9s9z80n7y1avj` |
+| שירות לקוחות (`agent_8801m0d6pgwkfw1rtw3ba25h1q50`) | `agtbrch_4001m0d6phmafhavdr0d4vcznnpz` | `agtbrch_0101m5va2tdne5mt363sqccwhz4f` |
+
+מזהי ענף אינם סודות. הכללים:
+
+- **שינוי בסוכן נדחף קודם לענף `test`:** `elevenlabs agents push --agent <id> --branch test`, אחרי `pull --update`
+  כמו ב-§6.1. ל-Main הוא מגיע רק ב-merge (`agents branches merge`), אחרי שער המיזוג.
+- **לפני כל סבב בדיקה:** `agents branches rebase` של `test` על Main, כדי לא לבדוק בסיס ישן.
+- **לענף `test` אין אחוז תנועה לעולם.** אורח מגיע אליו רק אם בחרו בו במפורש (`--branch` של `bridge:call`); כל
+  פעולה על ענף נגמרת בקריאה חוזרת: Main 100%.
+- **הגדרות ברמת הסוכן** (שם, הרשאות, מגבלות שיחה, פרטיות, ה-LLM של הניתוח) קיימות רק על Main — אי אפשר לבדוק
+  אותן על ענף. שינוי כזה נעשה על Main ומיד אחריו שיחה אחת לפי §6.4.
+- `agents pull --update` כותב ל-`agent_configs/` ול-`agents.json` את Main בלבד. ענף `test` נשמר בקובץ נפרד:
+  `agent_configs/<name>.test.json` ורשומה ב-`branches.test` של `agents.json`. ⚠️ נמדד 26.10.2026 (RSVP, פעמיים):
+  `elevenlabs agents pull --agent <id> --branch test --update --yes` **כותב את תוכן `test` לתוך קובץ ה-Main**
+  (`agent_configs/<name>.json`) ומעביר את `branch_id`/`version_id` העליונים של הסוכן ל-`test`. בהרצה הראשונה הוא גם
+  יצר את `<name>.test.json`; בהרצה השנייה לא עדכן אותו. הנוהל: גיבוי קובץ ה-Main → pull → העתקת קובץ ה-Main
+  (שמכיל עכשיו את `test`) ל-`<name>.test.json` → החזרת קובץ ה-Main מהגיבוי → החזרת שני השדות העליונים לערכי Main
+  ועדכון `version_id` של `branches.test` → `git diff` שקובץ ה-Main נקי.
+  ⛔ **`agents push --agent <id> --branch test` דוחף את קובץ ה-Main (`config` העליון), לא את `<name>.test.json`.**
+  נמדד 26.10.2026: הפקודה דרסה את ענף `test` בתוכן של Main (Mini, ההוראות הישנות). שוחזר מיד; Main לא נפגע.
+  לדחיפת קובץ ה-`test`: גיבוי קובץ ה-Main → העתקת `<name>.test.json` לקובץ ה-Main → `push --branch test` → החזרת
+  קובץ ה-Main מהגיבוי → קריאה חוזרת של שני הענפים. `agents push` בלי `--branch` דוחף ל-Main.
+
+שיחת טסט רצה על **אירוע הטסט הקבוע** (אירוע פעיל עם תאריך עתידי, מסומן ב-`test_events`, האורח היחיד בו הוא
+מספר הבעלים) — כך ש-ctx מחזיר את שם האורח ופרטי האירוע האמיתיים, ו-`save_rsvp` כותב לאורח אמיתי. שני
+שלבים, שניהם מסרבים לכל דבר שאינו אירוע טסט פתוח:
+
+```bash
+# 1. ניסיון שיחה על אירוע הטסט (בלי --confirm: בודק הכול ולא כותב כלום)
+npm run test-call:attempt -- --event-id <event uuid> --guest-id <guest uuid> --confirm
+# 2. החיוג עצמו; --branch שולח את השיחה לענף ה-test של הסוכן, בלעדיו — Main
+npm run bridge:call -- --attempt-id <id שהודפס> --to <המספר שהודפס> --from <caller id שהודפס> \
+  [--branch agtbrch_…] --confirm
+```
+
+- `test-call:attempt` (`scripts/voximplant/test-call-attempt.ts`) יוצר את השורה בדיוק כמו ה-dispatcher
+  (`nextManualTouchpoint` + `createCallAttempt`, token ל-2 שעות), ומסרב אם האירוע לא מסומן כטסט, לא יכול
+  לקבל תשובה (לא פעיל / היום עבר / הדדליין עבר), לאיש הקשר אין בדיוק אורח אחד, או שהמספר לא ב-`VOX_TEST_NUMBERS`.
+- `bridge:call` מסרב לאירוע סגור **בלי עקיפה**: הדגל `--allow-closed-event` הוסר ב-25.10.2026 — ctx מסרב
+  לאירוע סגור, כך שהשיחה רצה בלי הקשר (שיחת 25.10, שבה הסוכן המציא שם, תאריך ושעה).
+- `--branch` חייב להיות מזהה ענף (`agtbrch_` + אותיות קטנות וספרות); כל ערך אחר נדחה לפני כל כתיבה. הוא נשלח
+  לתרחיש במפתח `br`, וה-worker אף פעם לא שולח אותו — שיחה לאורח רצה תמיד על ה-deployment (Main 100%).

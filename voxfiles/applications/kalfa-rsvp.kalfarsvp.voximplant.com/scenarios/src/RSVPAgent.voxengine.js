@@ -16,10 +16,11 @@
 // billed reach via a distinct evidence string; no_response / no_answer /
 // failed otherwise) so the attempt row always closes and billing is per-reached.
 //
-// Branch B customData ({to, from, tok, u, ca, dh}) — tiny, ≤200-byte cap:
+// Branch B customData ({to, from, tok, u, ca, dh, br}) — tiny, ≤200-byte cap:
 //   * to/from        — dial legs (required).
-//   * u (app origin) — used to build the ctx URL (optional; if absent, the call
-//                      still runs with empty dynamic variables).
+//   * u (app origin) — used to build the ctx URL. Without it (or without tok)
+//                      there is no context, and the session ends without
+//                      dialling (see below).
 //   * tok            — opaque per-call access token; the scenario fetches
 //                      GET {u}/api/voximplant/ctx/{tok} → guest/event fields
 //                      (guest_name, event_name, event_date, event_time,
@@ -35,8 +36,18 @@
 //   * dh             — (Stage 6) COMPACT key for the dtmf-handoff-enabled
 //                      owner knob (app_settings.console_dtmf_handoff_enabled):
 //                      '1' when on, OMITTED (absent) otherwise.
-// If ctx fails/404s the scenario logs a warning and proceeds with empty defaults
-// — it never drops the call over missing personalization.
+//   * br             — the ElevenLabs agent branch for this conversation (an
+//                      `agtbrch_…` id), set ONLY by the ops launcher
+//                      (scripts/voximplant/bridge-call.ts --branch). Absent on
+//                      every worker call, so a guest's call runs on the agent's
+//                      deployment (Main 100%). openspec/changes/
+//                      voice-test-environment D2.
+// NO DIAL WITHOUT CONTEXT (voice-test-environment D3, 2026-10-25). Until then a
+// failed or refused ctx fetch went on with empty dynamic variables; on the
+// 2026-10-25 test call (ctx 404, closed event) the agent invented the guest's
+// name, the date and the time. Now anything but a 200 with the call's context
+// closes the attempt as failed (finish_reason ctx_<code> / ctx_unparseable /
+// ctx_unavailable) and ends the session without callPSTN.
 //
 // The ElevenLabs API key is read from a Voximplant Secret named
 // ELEVENLABS_API_KEY via VoxEngine.getSecretValue — NEVER placed in code,
@@ -88,6 +99,37 @@ try {
     require((typeof Modules !== 'undefined' && Modules.AMD) ? Modules.AMD : 'amd');
 }
 catch (_amdErr) { /* AMD unavailable — runVoicemailGate() will fail open */ }
+// --- Pure decisions (openspec/changes/voice-test-environment). No VoxEngine API
+// inside: src/lib/voximplant/rsvp-agent-tool-args.test.ts cuts them out of this
+// file and tests them in isolation. ---
+// D2: the ElevenLabs agent branch for this conversation, from customData.br, or
+// null for the deployment. The pattern is BRANCH_ID_PATTERN in
+// src/lib/voximplant/dial-preconditions.ts — keep the two identical.
+function testBranchFrom(customData) {
+    var br = customData && customData.br;
+    return typeof br === 'string' && /^agtbrch_[0-9a-z]+$/.test(br) ? br : null;
+}
+// D3: whether ctx's answer lets the call go ahead — the parsed context, or null
+// with the refusal that becomes the attempt's finish_reason.
+function ctxDecision(code, text) {
+    if (code !== 200)
+        return { ctx: null, refusal: 'ctx_' + code };
+    try {
+        var ctx = JSON.parse(text || '');
+        if (ctx && typeof ctx === 'object' && !Array.isArray(ctx))
+            return { ctx: ctx, refusal: null };
+    }
+    catch (_e) { }
+    // Fixed refusal: a parser error can quote the start of the text.
+    return { ctx: null, refusal: 'ctx_unparseable' };
+}
+// D4: what the agent hears from a 200 save_rsvp answer. Only the three statuses
+// of the server contract pass through; anything else, including no status, is
+// 'error', so the agent uses its tool-failure wording and never says the reply
+// will be updated.
+function saveRsvpResult(status) {
+    return (status === 'saved' || status === 'rejected' || status === 'queued') ? status : 'error';
+}
 VoxEngine.addEventListener(AppEvents.Started, function () {
     var AGENT_ID = 'agent_9701kxj3n54ye518a3s518cexd48';
     // Voicemail PRE-CONNECT gate: classify the answered call with Voximplant-native
@@ -191,6 +233,8 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         // is on.
         consoleAgentUsername: '',
         dtmfHandoffEnabled: false,
+        // customData.br (D2): an ElevenLabs branch id, or null for the deployment.
+        branchId: null,
         recordingUrl: null,
         // Second link vector (belt-and-suspenders with the token): the ElevenLabs
         // conversation_id, captured from ConversationInitiationMetadata (needs
@@ -529,8 +573,8 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         VoxEngine.terminate();
         return;
     }
-    // tok + u are optional here: without them the wiring test still runs, just
-    // with empty dynamic variables. When present, build the token-gated ctx URL.
+    // Without tok + u there is no ctx URL, and the ctx step below ends the
+    // session without dialling (D3). When present, build the token-gated URLs.
     var appOrigin = customData.u || '';
     var accessToken = customData.tok || '';
     if (appOrigin && accessToken) {
@@ -538,7 +582,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         state.callbackUrl = appOrigin + '/api/voximplant/cb/' + accessToken;
     }
     else {
-        log('No tok/u in customData — proceeding with empty dynamic variables.');
+        log('No tok/u in customData — no context for this call.');
     }
     // Stage 6: DTMF '9' handoff smoke test — compact customData keys (the
     // 200-byte cap; see outreach-calls.ts buildScriptCustomData's doc comment
@@ -549,6 +593,9 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     // absent) leaves the smoke test OFF.
     state.consoleAgentUsername = customData.ca || '';
     state.dtmfHandoffEnabled = customData.dh === '1';
+    state.branchId = testBranchFrom(customData);
+    // A branch id is not a secret; logging it shows which branch a test call ran on.
+    log('agent branch: ' + (state.branchId || 'deployment'));
     // --- ElevenLabs API key from Voximplant Secret (never logged) ---
     var key = VoxEngine.getSecretValue('ELEVENLABS_API_KEY');
     if (!key) {
@@ -617,7 +664,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     }
     armGlobalTimer(GLOBAL_TIMEOUT_MS);
     // Places the outbound call and wires the ElevenLabs bridge. Called only after
-    // the ctx fetch settles (success or failure) so the dynamic variables are known
+    // ctx answered with the call's context (D3), so the dynamic variables are known
     // by the time the agent connects.
     function proceedToDial() {
         if (state.terminated)
@@ -1008,7 +1055,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     return;
             // Build the ElevenLabs Agents client (opens a WebSocket to 11labs) and bridge
             // it to the call. createAgentsClient is async — await it, then bind media.
-            ElevenLabs.createAgentsClient({
+            var agentParams = {
                 xiApiKey: key,
                 agentId: AGENT_ID,
                 // Surface the ElevenLabs conversation_id in the initiation metadata
@@ -1044,7 +1091,13 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     }
                     scheduleHangup(call, FAREWELL_GRACE_MS);
                 }
-            }).then(function (agent) {
+            };
+            // D2: name the branch only when the launcher chose one; otherwise
+            // ElevenLabs routes by its traffic deployment (Main 100%).
+            // typings/voxengine.d.ts: AgentsClientParameters.branchId.
+            if (state.branchId)
+                agentParams.branchId = state.branchId;
+            ElevenLabs.createAgentsClient(agentParams).then(function (agent) {
                 if (state.terminated) {
                     // Call already ended while the client was connecting — don't leak it.
                     try {
@@ -1553,10 +1606,9 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             // before the honest sentence can be spoken — a truthy
                             // is_error does not, which is why the no-token path
                             // below deliberately sends one).
-                            var result = (status === 'saved' || status === 'rejected' || status === 'queued')
-                                ? status
-                                : 'queued';
-                            reply(result, false);
+                            // Anything else, or no status, is 'error' (D4): an
+                            // unknown answer is not proof of a pending save.
+                            reply(saveRsvpResult(status), false);
                             return;
                         }
                         // mark_dnc / notify_owner: the server answers {ok, status} with
@@ -1654,65 +1706,76 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             cleanupAndTerminate();
         });
     }
-    // --- fetch ctx (guest/event) BEFORE dialing, then proceed either way ---
+    // --- fetch ctx (guest/event) BEFORE dialing; dial ONLY with the context ---
+    // D3: anything but a 200 with the call's context closes the attempt as
+    // failed and ends the session without callPSTN — the same close as the
+    // missing-secret path above. The refusal names the code, never the token.
+    // When ctx is down the cb route may be too; the AppEvents.Terminating
+    // last-resort close is then the second try.
+    function refuseWithoutContext(refusal) {
+        log('Context refused (' + refusal + ') — not dialling');
+        postFinalCallbackOnce({
+            call_status: 'failed',
+            call_duration: 0,
+            error_reason: refusal
+        }, function () {
+            VoxEngine.terminate();
+        });
+    }
     if (!state.contextUrl) {
-        proceedToDial();
+        refuseWithoutContext('ctx_unavailable');
         return;
     }
     Net.httpRequestAsync(state.contextUrl).then(function (response) {
         log('Context response: ' + response.code);
-        if (response.code === 200 && response.text) {
-            try {
-                var ctx = JSON.parse(response.text);
-                // Raw values — ElevenLabs runs its own TTS, so no speech
-                // normalization (unlike the say()-based RSVP scenario).
-                //
-                // A one-entry niqqud probe ({ 'זהבה': 'זְהָבָה' }) sat here from
-                // 2026-07 to test whether ElevenLabs Hebrew honours vocalization.
-                // REMOVED 2026-09-07: it never reached a verdict, and in the
-                // meantime it silently rewrote one real guest's name on every
-                // production call that matched. If the niqqud question is
-                // reopened it belongs in the ctx pipeline, applied to every name
-                // from data — never as a hardcoded literal in the scenario.
-                state.guestName = ctx.guest_name || '';
-                state.eventName = ctx.event_name || '';
-                state.eventDate = ctx.event_date || '';
-                state.eventVenue = ctx.event_venue || '';
-                // Event details the agent previously lacked, so "באיזו שעה?" /
-                // "איפה בדיוק?" / "של מי?" had to be deflected to notify_owner.
-                state.eventTime = ctx.event_time || '';
-                state.eventAddress = ctx.event_address || '';
-                state.eventCelebrants = ctx.event_celebrants || '';
-                // The noun that tells the guest what the call is about. Its
-                // absence cost 42 of 123 seconds on the 2026-09-07 call, where
-                // the opening carried only the owner's free-text title.
-                state.eventKind = ctx.event_kind || '';
-                // Composed server-side (ctx route) because the override REPLACES
-                // the agent's configured keyword list rather than merging with
-                // it — one owner for the whole vocabulary, no drift.
-                state.asrKeywords = Array.isArray(ctx.asr_keywords) ? ctx.asr_keywords : [];
-                state.eventRsvpDeadline = ctx.event_rsvp_deadline || '';
-                // Correlation nonce (additive ctx field) — carried through to the
-                // agent init below so the post-call webhook can link back. Never
-                // logged: it is a correlation id, not a spoken/personalization field.
-                // ⚠️ THE NEW NAME FIRST, THE OLD ONE AS FALLBACK. The four ctx
-                // routes now send `kalfa_correlation_id`; they still send the old
-                // key beside it so a scenario deployed before this change keeps
-                // working. Reading both means THIS scenario also keeps working if
-                // the server is ever rolled back to a build that sends only the
-                // old key.
-                state.attemptToken = ctx.kalfa_correlation_id || ctx.kalfa_attempt_token || '';
-            }
-            catch (err) {
-                log('Context parse error: ' + err + ' — using empty defaults');
-            }
+        var decision = ctxDecision(response.code, response.text);
+        if (!decision.ctx) {
+            refuseWithoutContext(decision.refusal);
+            return;
         }
-        else {
-            log('Context fetch non-200 (' + response.code + ') — using empty defaults');
-        }
+        var ctx = decision.ctx;
+        // Raw values — ElevenLabs runs its own TTS, so no speech
+        // normalization (unlike the say()-based RSVP scenario).
+        //
+        // A one-entry niqqud probe ({ 'זהבה': 'זְהָבָה' }) sat here from
+        // 2026-07 to test whether ElevenLabs Hebrew honours vocalization.
+        // REMOVED 2026-09-07: it never reached a verdict, and in the
+        // meantime it silently rewrote one real guest's name on every
+        // production call that matched. If the niqqud question is
+        // reopened it belongs in the ctx pipeline, applied to every name
+        // from data — never as a hardcoded literal in the scenario.
+        state.guestName = ctx.guest_name || '';
+        state.eventName = ctx.event_name || '';
+        state.eventDate = ctx.event_date || '';
+        state.eventVenue = ctx.event_venue || '';
+        // Event details the agent previously lacked, so "באיזו שעה?" /
+        // "איפה בדיוק?" / "של מי?" had to be deflected to notify_owner.
+        state.eventTime = ctx.event_time || '';
+        state.eventAddress = ctx.event_address || '';
+        state.eventCelebrants = ctx.event_celebrants || '';
+        // The noun that tells the guest what the call is about. Its
+        // absence cost 42 of 123 seconds on the 2026-09-07 call, where
+        // the opening carried only the owner's free-text title.
+        state.eventKind = ctx.event_kind || '';
+        // Composed server-side (ctx route) because the override REPLACES
+        // the agent's configured keyword list rather than merging with
+        // it — one owner for the whole vocabulary, no drift.
+        state.asrKeywords = Array.isArray(ctx.asr_keywords) ? ctx.asr_keywords : [];
+        state.eventRsvpDeadline = ctx.event_rsvp_deadline || '';
+        // Correlation nonce (additive ctx field) — carried through to the
+        // agent init below so the post-call webhook can link back. Never
+        // logged: it is a correlation id, not a spoken/personalization field.
+        // ⚠️ THE NEW NAME FIRST, THE OLD ONE AS FALLBACK. The four ctx
+        // routes now send `kalfa_correlation_id`; they still send the old
+        // key beside it so a scenario deployed before this change keeps
+        // working. Reading both means THIS scenario also keeps working if
+        // the server is ever rolled back to a build that sends only the
+        // old key.
+        state.attemptToken = ctx.kalfa_correlation_id || ctx.kalfa_attempt_token || '';
         proceedToDial();
     }).catch(function (err) {
-        log('Context fetch failed: ' + err + ' — using empty defaults');
-        proceedToDial();
+        // A request failure — or a throw while reading the context — never dials.
+        log('Context fetch failed: ' + err);
+        refuseWithoutContext('ctx_unavailable');
     });
 });
