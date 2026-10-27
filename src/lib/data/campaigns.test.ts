@@ -11,7 +11,7 @@ vi.mock('@/lib/data/events', () => ({
   requireOwnedEvent: vi.fn(),
   requireEventAccess: vi.fn(),
 }));
-// approveCampaign reads the session user; wind-down transitions require a platform permission.
+// Owner actions read the session user; wind-down transitions require a platform permission.
 vi.mock('@/lib/auth/dal', () => ({
   requireUser: vi.fn(),
   requirePlatformPermission: vi.fn(),
@@ -99,7 +99,6 @@ import {
   createCampaign,
   changeCampaignPackage,
   acceptCampaignBenefit,
-  approveCampaign,
   activateCampaign,
   pauseCampaign,
   closeCampaign,
@@ -359,21 +358,6 @@ describe('campaign lifecycle transitions', () => {
     await expect(createCampaign('e1', 'pkg-fixed')).rejects.toThrow('האירוע כבר חלף');
   });
 
-  it('approveCampaign rejects a past event (L1)', async () => {
-    adminWith({
-      data: { id: 'c1', event_id: 'e1', status: 'pending_approval', package_price: 150 },
-      error: null,
-    });
-    vi.mocked(requireUser).mockResolvedValue(
-      { id: 'u1' } as unknown as Awaited<ReturnType<typeof requireUser>>,
-    );
-    vi.mocked(requireOwnedEvent).mockResolvedValue(
-      ownedEvent('2020-01-01T00:00:00+00:00'),
-    );
-
-    await expect(approveCampaign('c1', '2026-10-v6')).rejects.toThrow('האירוע כבר חלף');
-  });
-
   // Wind-down is staff-only and NAMED: pause/close/cancel gate on
   // `campaigns.runstate` (NOT event ownership, and not the retired coarse
   // admin flag). A past event and a non-active event are refused for revival in
@@ -452,21 +436,6 @@ describe('campaign lifecycle transitions', () => {
     vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent(undefined, 'draft'));
 
     await expect(createCampaign('e1', 'pkg-fixed')).rejects.toThrow(
-      'יש לאשר את פרטי האירוע לפני אישורי הגעה',
-    );
-  });
-
-  it('approveCampaign rejects when the event is not active (R9)', async () => {
-    adminWith({
-      data: { id: 'c1', event_id: 'e1', status: 'pending_approval', package_price: 150 },
-      error: null,
-    });
-    vi.mocked(requireUser).mockResolvedValue(
-      { id: 'u1' } as unknown as Awaited<ReturnType<typeof requireUser>>,
-    );
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent(undefined, 'draft'));
-
-    await expect(approveCampaign('c1', '2026-10-v6')).rejects.toThrow(
       'יש לאשר את פרטי האירוע לפני אישורי הגעה',
     );
   });
@@ -1335,35 +1304,6 @@ describe('changeCampaignPackage — the pre-approval package change (task 5.3, D
   });
 });
 
-describe('approveCampaign — only a package campaign, only under the package contract', () => {
-  async function approveWith(campaignRow: Record<string, unknown>, version: string) {
-    vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
-    const { builder } = adminWith<unknown>({ data: campaignRow, error: null });
-    return { builder, result: approveCampaign('c1', version) };
-  }
-  const pending = { id: 'c1', event_id: 'e1', status: 'pending_approval' };
-
-  it('a package campaign cannot be approved under an earlier pay-per-result contract version', async () => {
-    const { builder, result } = await approveWith({ ...pending, package_price: 150 }, '2026-09-v5');
-    await expect(result).rejects.toThrow('ההסכם אינו תואם למודל התמחור של הקמפיין');
-    expect(builder.update).not.toHaveBeenCalled();
-  });
-
-  it('a campaign without a package cannot be approved', async () => {
-    vi.mocked(getCurrentPricing).mockResolvedValue(null);
-    const { builder, result } = await approveWith({ ...pending, package_price: null }, '2026-10-v6');
-    await expect(result).rejects.toThrow('ההסכם אינו תואם למודל התמחור של הקמפיין');
-    expect(builder.update).not.toHaveBeenCalled();
-  });
-
-  it('the draft form of the package contract counts as the package contract', async () => {
-    const { builder, result } = await approveWith({ ...pending, package_price: 150 }, 'draft-2026-10-v6');
-    await result;
-    expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'approved', tos_version: 'draft-2026-10-v6' }));
-  });
-});
-
 describe('activateCampaign (revival) — a paid package campaign', () => {
   const PACKAGE_ROW = { id: 'c1', event_id: 'e1', package_price: 150 };
   const FUTURE = { event_date: '2999-01-01T00:00:00+00:00', status: 'active' };
@@ -1487,47 +1427,5 @@ describe('getCampaignStageForEvent — a package campaign is funded by its payme
     vi.mocked(createClient).mockResolvedValue(server.client as never);
     vi.mocked(packagePaymentOf).mockResolvedValue(null);
     expect(await getCampaignStageForEvent('e1')).toBe('awaiting_payment');
-  });
-});
-
-describe('approveCampaign update result', () => {
-  it.each([
-    {
-      label: 'zero updated rows',
-      error: null,
-      message: 'מצב הקמפיין השתנה. יש לרענן ולבדוק את האישור',
-    },
-    {
-      label: 'database error',
-      error: { message: 'DB failure' },
-      message: 'אישור הקמפיין נכשל',
-    },
-  ])('rejects on $label', async ({ error, message }) => {
-    vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
-
-    const result: QueryResult<Record<string, unknown>> = {
-      data: {
-        id: 'c1',
-        event_id: 'e1',
-        status: 'pending_approval',
-        package_price: 150,
-      },
-      error: null,
-    };
-
-    const { builder } = adminWith(result);
-
-    builder.update.mockImplementation(() => {
-      result.data = null;
-      result.error = error;
-      return builder;
-    });
-
-    await expect(
-      approveCampaign('c1', '2026-10-v6'),
-    ).rejects.toThrow(message);
-
-    expect(builder.select).toHaveBeenCalledWith('id');
   });
 });

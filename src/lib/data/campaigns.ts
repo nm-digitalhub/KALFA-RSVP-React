@@ -21,7 +21,6 @@ import {
   releaseCancelledCampaignBenefit,
 } from '@/lib/data/coupon-benefits';
 import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
-import { isPackageAgreementVersion } from '@/lib/agreements/template';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
 import type { Json, Tables, TablesUpdate } from '@/lib/supabase/types';
 import { getPackageOffer } from '@/lib/data/package-offers';
@@ -52,11 +51,9 @@ export type OwnerCampaign = Pick<
   | 'template_id'
   | 'status'
   | 'max_contacts'
-  | 'tos_version'
   | 'allowed_channels'
   | 'start_at'
   | 'close_at'
-  | 'approved_at'
   | 'created_at'
   // How many contacts the campaign may approach (the fixed-price package model); NULL = no quota.
   | 'contact_quota'
@@ -71,7 +68,7 @@ export type OwnerCampaign = Pick<
 // selects the SAME shape — an admin viewing a campaign must see exactly what
 // the owner sees, and a second column list here would drift. The price is NOT here: it comes from the pricing module.
 export const CAMPAIGN_COLUMNS =
-  'id, event_id, template_id, status, max_contacts, tos_version, allowed_channels, start_at, close_at, approved_at, created_at, contact_quota';
+  'id, event_id, template_id, status, max_contacts, allowed_channels, start_at, close_at, created_at, contact_quota';
 
 // Create-or-continue the event's SINGLE "RSVP confirmations" campaign in
 // `pending_approval`. Idempotent: if a non-cancelled campaign already exists for
@@ -142,7 +139,7 @@ export async function createCampaign(
   if (!offer) throw new Error('החבילה שנבחרה אינה זמינה');
   // A package campaign is approved under the package contract — a separate, admin-managed document that must be
   // approved before any customer is offered it. Without it there would be no terms to approve and the customer would
-  // be stuck at the first step; refusing here avoids that dead end (approveCampaign refuses the version mismatch too).
+  // be stuck at the first step; refusing here avoids that dead end.
   if (!(await getApprovedPackageAgreementDoc())) {
     throw new Error('הסכם החבילה טרם הופעל — פנו לתמיכה');
   }
@@ -372,66 +369,6 @@ export async function getCampaignStageForEvent(
   const price = (await getCurrentPricing(data.id))?.price ?? null;
   const withPrice = { ...data, price };
   return campaignStage({ ...withPrice, payment: await packagePaymentOf(withPrice) });
-}
-
-
-// Transition a campaign pending_approval → approved. Guarded so a campaign can
-// only be approved once (§18.7 — terms lock on approval; no re-approval). The
-// approval record must already be stored by the caller before this runs.
-// Ownership is verified; the write goes through the service-role admin client
-// with an optimistic status guard to be race-safe.
-export async function approveCampaign(
-  campaignId: string,
-  tosVersion: string,
-): Promise<void> {
-  const user = await requireUser();
-  const admin = createAdminClient();
-
-  const { data: campaign, error } = await admin
-    .from('campaigns')
-    .select('id, event_id, status')
-    .eq('id', campaignId)
-    .maybeSingle();
-  if (error) throw new Error('טעינת הקמפיין נכשלה');
-  if (!campaign) {
-    const { notFound } = await import('next/navigation');
-    return notFound();
-  }
-
-  // A campaign is approved only under the package contract, and only when it carries a package (a pricing round).
-  if (!isPackageAgreementVersion(tosVersion) || (await getCurrentPricing(campaignId)) === null) {
-    throw new Error('ההסכם אינו תואם למודל התמחור של הקמפיין');
-  }
-
-  const event = await requireOwnedEvent(campaign.event_id); // ownership
-  assertEventNotPast(event.event_date); // L1: no approval for a past event
-  // R9: every commercial campaign action requires event.status='active'.
-  if (event.status !== 'active') {
-    throw new Error(EVENT_NOT_CONFIRMED_ERROR);
-  }
-
-  if (campaign.status !== 'pending_approval') {
-    throw new Error('ניתן לאשר רק קמפיין הממתין לאישור');
-  }
-
-  const { data: updated, error: upErr } = await admin
-    .from('campaigns')
-    .update({
-      status: 'approved',
-      approved_by: user.id,
-      approved_at: new Date().toISOString(),
-      tos_version: tosVersion,
-    })
-    .eq('id', campaignId)
-    .eq('status', 'pending_approval')
-    .select('id')
-    .maybeSingle();
-
-  if (upErr) throw new Error('אישור הקמפיין נכשל');
-
-  if (!updated) {
-    throw new Error('מצב הקמפיין השתנה. יש לרענן ולבדוק את האישור');
-  }
 }
 
 // The campaign's identity for an owner action: which event it belongs to, so the caller can verify ownership.

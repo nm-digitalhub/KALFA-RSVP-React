@@ -37,7 +37,7 @@ export const PRIMER_TABLES = {
   },
   campaigns: {
     note: 'קמפיין אחד לאירוע (וואטסאפ ושיחות), נמכר כחבילה במחיר קבוע. המחיר בסבב התמחור הנוכחי בטבלת campaign_pricing (השורה עם superseded_at IS NULL). contact_quota = כמה אנשי קשר מותר לפנות אליהם. status: draft|pending_approval|approved|scheduled|active|paused|closed|awaiting_invoice|billed|paid|cancelled. הכסף עצמו ביומן התשלומים payment_operations, לא בעמודות הקמפיין.',
-    columns: ['id', 'event_id', 'status', 'start_at', 'close_at', 'contact_quota', 'tos_version', 'created_at'],
+    columns: ['id', 'event_id', 'status', 'start_at', 'close_at', 'contact_quota', 'created_at'],
   },
   campaign_pricing: {
     note: 'סבבי התמחור של קמפיין (רשומות בלבד-הוספה). השורה הנוכחית: superseded_at IS NULL. package_price = המחיר הסופי (list_price - discount_amount); locked_at מלא משאושרו התנאים.',

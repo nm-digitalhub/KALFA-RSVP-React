@@ -33,7 +33,7 @@ Every verification re-measures the live state; none assumes a fixed count. After
   - `card_*` — waits for Open Question 2 (the SUMIT test page and `scripts/sumit-doc-check.ts` read them)
   - `charge_*`, `charged_at`, `final_*` — `20261011201547`
   - `hold_order_*` — `20261011201549`
-  - `sumit_*` — waits for Open Question 2 (the SUMIT test page reads `sumit_customer_id`)
+  - `sumit_*` — `sumit_order_document_id` and `sumit_charge_document_id` dropped in `20261027075846` (empty in every row, no reader, 27.10.2026); `sumit_customer_id` waits for Open Question 2 (the SUMIT test page reads it)
   - the old terms: `price_per_reached`, `base_price`, `included_reached`, `max_charge_ceiling` (on `campaigns` and `packages`), and `min_hold_floor`, `hold_buffer_pct` (on `packages`) — `20261011201551`
   - the switches and hold settings: `campaign_holds_enabled`, `base_overage_pricing_enabled`, `close_charge_enabled`, `reasonable_coverage_contacts`, `extreme_threshold_contacts`, `agr_charge_window_days`, `agr_hold_release_days` (on `app_settings`) — `20261011201553`
   - `billing_route` (Open Question 1) and its enum type — `20261011201555`

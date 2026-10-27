@@ -3,7 +3,6 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 // recordPackageApproval pulls in PDF/email/storage; mock the whole import graph so the suite loads.
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
-vi.mock('@/lib/data/campaigns', () => ({ approveCampaign: vi.fn() }));
 vi.mock('@/lib/data/company', () => ({ getCompanyLegal: vi.fn() }));
 vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
 vi.mock('@/lib/data/profiles', () => ({ getProfile: vi.fn() }));
@@ -30,7 +29,6 @@ import { requireOwnedEvent } from '@/lib/data/events';
 import { getProfile } from '@/lib/data/profiles';
 import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
 import { fillAuthorizedSet } from '@/lib/data/authorized-fill';
-import { approveCampaign } from '@/lib/data/campaigns';
 import { getCompanyLegal } from '@/lib/data/company';
 import { getAgreementConfigTokens } from '@/lib/data/agreement-config';
 import type { AgreementDoc } from '@/lib/agreements/template';
@@ -89,7 +87,6 @@ describe('recordPackageApproval — the customer approves the package terms (no 
     vi.mocked(renderAgreementPdf).mockResolvedValue(new Uint8Array([1, 2, 3]));
     vi.mocked(sha256Hex).mockReturnValue('hash-abc');
     vi.mocked(uploadLegalDoc).mockResolvedValue(undefined as never);
-    vi.mocked(approveCampaign).mockResolvedValue(undefined);
     const send = vi.fn().mockResolvedValue(undefined);
     vi.mocked(getEmailSender).mockResolvedValue({ send } as never);
     vi.mocked(agreementEmail).mockResolvedValue({ subject: 's', html: 'h', text: 't' });

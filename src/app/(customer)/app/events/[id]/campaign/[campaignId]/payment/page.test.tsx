@@ -65,7 +65,6 @@ function campaign(over: Record<string, unknown> = {}) {
     id: CAMPAIGN_ID,
     event_id: EVENT_ID,
     status: 'approved',
-    tos_version: '2026-10-v6',
     price: 120,
     ...over,
   };
