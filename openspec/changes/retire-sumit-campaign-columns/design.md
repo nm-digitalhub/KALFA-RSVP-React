@@ -48,7 +48,7 @@ Read-only checks against the live database and main at 2741b04d, on 11.10.2026. 
 **Non-Goals:**
 - Changing the CardCom flow beyond the retired columns it reads.
 - Deleting `billed_results` or `reached_billed` while package campaigns use them (D3).
-- SUMIT features that are not campaign payment, until Open Question 2 is answered.
+- SUMIT features that are not campaign payment, except the diagnostics retired on 27.10.2026 (Open Question 2).
 
 ## Decisions
 
@@ -106,4 +106,10 @@ D1, then the D2 groups, then D4, then the ledger comparison, then the D5 drops. 
 
    Remove them too, now that CardCom is the provider, or keep them?
 
-   **Owner, 11.10.2026: SUMIT stays as the backup provider for the package purchase** (CardCom is live on a real terminal; `resolvePurchaseProvider` falls back to SUMIT only when CardCom is switched off). Kept therefore: the SUMIT purchase and refund, the card form, the SUMIT customers table (the purchase anchors the customer id there), the integration page and the daily health check. Still open, one by one: the SUMIT test page and `scripts/sumit-doc-check.ts` (they keep `card_*` and `sumit_customer_id` on `campaigns`), the active "תפיסת מסגרת השתנתה ב-SUMIT" workflow with its card trigger, `hold-status` and template, the inactive SUMIT document/customer workflows, and the `scripts/sumit-*` probes. The cookie policy no longer names a provider (6040abfa). **Owner, 11.10.2026: the SUMIT test page and `sumit-doc-check` stay for now**, and with them `card_*` and `sumit_customer_id` on `campaigns` (their drop waits). **The "תפיסת מסגרת השתנתה ב-SUMIT" workflow also stays for now** (owner, 11.10.2026: approved, then held back before any change).
+   **Owner, 11.10.2026: SUMIT stays as the backup provider for the package purchase** (CardCom is live on a real terminal; `resolvePurchaseProvider` falls back to SUMIT only when CardCom is switched off). Kept therefore: the SUMIT purchase and refund, the card form, the SUMIT customers table (the purchase anchors the customer id there), the integration page and the daily health check. Still open, one by one: the SUMIT test page and `scripts/sumit-doc-check.ts` (they keep `card_*` and `sumit_customer_id` on `campaigns`), the active "תפיסת מסגרת השתנתה ב-SUMIT" workflow with its card trigger, `hold-status` and template, the inactive SUMIT document/customer workflows, and the `scripts/sumit-*` probes. The cookie policy no longer names a provider (6040abfa). ~~**Owner, 11.10.2026: the SUMIT test page and `sumit-doc-check` stay for now**, and with them `card_*` and `sumit_customer_id` on `campaigns` (their drop waits).~~ *(Superseded on 27.10.2026, below.)* **The "תפיסת מסגרת השתנתה ב-SUMIT" workflow also stays for now** (owner, 11.10.2026: approved, then held back before any change).
+
+   **Owner, 27.10.2026: the SUMIT diagnostics are retired.**
+   - Removed: the `/admin/sumit-test` page and form, `/api/admin/sumit-test` with its test, `src/lib/data/admin/sumit-test.ts`, `src/lib/data/admin/sumit-test-transactions.ts`, `src/lib/sumit/safe-preview.ts` and `src/lib/sumit/charge-response.ts` with their tests, `scripts/sumit-doc-check.ts`, the admin menu entry and the link on the integration page.
+   - The data they kept went with them: `sumit_test_transactions` (`20261027092536`) and `campaigns.card_*` and `sumit_customer_id` (`20261027092539`). Both migrations were pushed by the owner on 27.10.2026.
+   - SUMIT stays the backup provider of the package purchase and refund, as decided on 11.10.2026.
+   - The workflows (the active card-hold workflow, `hold-status` and its template, the inactive document and customer workflows) and the other SUMIT tools keep their existing scope. That includes the `scripts/sumit-*` probes and `src/lib/sumit/raw-charge.ts`, which `scripts/sumit-charge-token.ts` still uses.

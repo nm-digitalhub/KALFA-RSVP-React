@@ -98,12 +98,6 @@ export default async function SumitPage() {
           >
             מעבר להגדרות › תשלומים
           </Link>
-          <Link
-            href="/admin/sumit-test"
-            className="inline-flex min-h-11 items-center text-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            כלי בדיקת סליקה
-          </Link>
         </div>
       </section>
     </div>

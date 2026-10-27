@@ -127,6 +127,7 @@
     "@react-pdf/tailwind": "^0.2.0",
     "@slack/types": "^3.2.0",
     "@slack/web-api": "^8.2.0",
+    "@statelyai/graph": "^2.6.0",
     "@stepperize/react": "^8.0.0",
     "@supabase/mcp-server-supabase": "0.13.0",
     "@supabase/realtime-js": "^2.118.0",

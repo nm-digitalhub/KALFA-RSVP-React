@@ -57,4 +57,4 @@ None.
   - every migration is created with `supabase migration new` and pushed by the owner.
 - **Admin:** the package form, settings (pricing-model toggle, hold switch), the SUMIT test page and the agreement page.
 - **Customer screens:** setup steps, the payment page (hold form), the manage page, the stats page and the event summary.
-- **Out of scope until decided:** SUMIT features that are not campaign payment (design.md, Open Question 2).
+- **SUMIT features that are not campaign payment** (design.md, Open Question 2): decided by the owner on 27.10.2026. The diagnostics, the test page and `scripts/sumit-doc-check.ts`, are retired. SUMIT stays the backup purchase/refund provider. The workflows and the other SUMIT tools keep their existing scope.

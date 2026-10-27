@@ -158,12 +158,6 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   'src/lib/data/admin/voice-purposes.ts': 'manage_voice',
   'src/lib/data/admin/voximplant-channel.ts': 'manage_voice',
   'src/lib/data/admin/support.ts': 'view_customer_data',
-  // The /admin/sumit-test diagnostic's token picker. manage_billing, the same
-  // key the POC route and every other payment surface uses — listing which
-  // campaigns hold a chargeable card, and resolving one for a live test charge,
-  // is billing authority, not general staff access.
-  'src/lib/data/admin/sumit-test.ts': 'manage_billing',
-  'src/lib/data/admin/sumit-test-transactions.ts': 'manage_billing',
   // The staff side of the remote-desktop approval flow: asking for access, cancelling, ending it and downloading the
   // connection file. Its OWN key (seeded by 20261006164315, held by the owner role only until the owner grants it), not
   // manage_settings: asking to log in to the server is not "may change system settings".
@@ -418,13 +412,8 @@ const AUDIT_REQUIRED: Record<string, string[]> = {
   // audit is conditional on it being a cross-user view (self-view is exempt),
   // but the call must be present.
   'src/lib/data/admin/users.ts': ['getUserDetail'],
-  // Reading a customer's stored card token to charge it from a diagnostic
-  // screen is the most targeted read in the panel — it hands staff a reusable
-  // payment instrument. Listing the candidates carries no card data and is
-  // deliberately NOT audited.
-  'src/lib/data/admin/sumit-test.ts': ['resolveSavedCardForCampaign'],
   // Looking up, or deciding on, ONE customer's stuck payment. Listing the queue names no card and no PII and is
-  // deliberately NOT audited, like listing card candidates above.
+  // deliberately NOT audited.
   'src/lib/data/admin/payment-review.ts': ['probePaymentReview', 'resolvePaymentReview'],
 };
 

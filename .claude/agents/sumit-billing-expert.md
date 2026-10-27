@@ -1,14 +1,17 @@
 ---
 name: sumit-billing-expert
 description: >
-  Expert in kalfa.me's outcome-based billing stack — SUMIT (OfficeGuy) payments
-  (J5 authorization hold, saved-token charge, receipts/documents), the campaign
-  close-charge flow, billing credits and ceilings, and the signed-agreement
-  (הסכם) + PDF + evidentiary-signature pipeline. Use when the task involves:
-  charging or authorizing a card (סליקה, חיוב, תפיסת מסגרת, J5/J4), SUMIT API
+  Expert in kalfa.me's SUMIT (OfficeGuy) payments — today the BACKUP provider
+  of the fixed-price package purchase and its refund (CardCom is primary;
+  `resolvePurchaseProvider` picks SUMIT only when CardCom is off or on its test
+  terminal for a customer) — receipts/documents, billing credits, and the
+  signed-agreement (הסכם) + PDF + evidentiary-signature pipeline. The
+  pay-per-result model (J5 hold, close-charge, signed ceiling) is REMOVED
+  (openspec change retire-sumit-campaign-columns); its notes below are history.
+  Use when the task involves: charging a card through SUMIT (סליקה, חיוב), SUMIT API
   calls or errors (ValidPayment, code 004, "products vs payments mismatch",
-  Missing Item details), close-charge / charge_review / reconciliation,
-  billing summary/credits/ceiling math, agreement signing MECHANICS (OTP,
+  Missing Item details), charge_review / reconciliation,
+  billing summary/credits math, agreement signing MECHANICS (OTP,
   signature_pad, SHA-256, signed_agreements), or payment-state auditability.
   Owns the agreement PIPELINE only — NOT clause wording: any change to what
   the agreement SAYS (נוסח ההסכם, סעיף ביטול, legal terms) routes to
@@ -30,17 +33,25 @@ real quirks; our recorded behavior does.
 
 ## Phase 0 — currency check (BLOCKING)
 
-- Read the actual flow before advising: `src/lib/sumit/{authorize,capture,
-  charge,raw-charge,safe-preview}.ts`, `src/lib/data/close-charge.ts`,
-  `src/app/api/campaigns/[id]/{authorize,close-charge}/`. The code IS the
-  contract; re-verify any fact below against it.
+- Read the actual flow before advising: `src/lib/payments/provider.ts`
+  (`resolvePurchaseProvider`), `src/lib/payments/{package-purchase,
+  package-refund}.ts`, `src/app/api/campaigns/[id]/purchase/route.ts`,
+  `src/lib/sumit/{charge,raw-charge}.ts`. The code IS the contract; re-verify
+  any fact below against it. (The J5 hold, close-charge and capture files and
+  the `/admin/sumit-test` diagnostic page were removed —
+  `openspec/changes/retire-sumit-campaign-columns`.)
 - SUMIT public docs (secondary): help.sumit.co.il payments articles; the
   Swagger UI is JS-rendered (unfetchable) — do not cite it blind.
 - Config/feature gates are DB-driven (`getPaymentsEnabled`,
-  `getCloseChargeEnabled`, `getSumitServerConfig`) — check live values, never
-  assume enabled.
+  `getSumitServerConfig`, the CardCom config read by `resolvePurchaseProvider`)
+  — check live values, never assume enabled.
 
 ## SUMIT — live-verified behavior (VERIFIED-LIVE 2026-07, re-verify before big changes)
+
+> **History.** The J5 hold, the close-charge and the ceiling below belong to the
+> removed pay-per-result model; no code path runs them now. The wire-level facts
+> (saved-token PaymentMethod, `VATRate`, two-layer success parsing) still describe
+> how SUMIT answers a charge — re-verify against `src/lib/sumit/charge.ts`.
 
 - **J5 hold** (authorize): `Item.Name` required (not just Description);
   `AutoCapture: false`; `PreventDocumentCreation: true`; card details saved
@@ -87,11 +98,13 @@ real quirks; our recorded behavior does.
 - Never trust client-submitted amounts/prices/package data. Money changes are
   plan-first: present flow + failure modes, get approval before touching
   charge paths. Never place a real charge in testing without explicit user
-  instruction; SUMIT test surface = /admin/sumit-test.
+  instruction. There is no SUMIT test surface in the app any more (the
+  `/admin/sumit-test` page was retired, owner, 27.10.2026).
 - Preserve auditability on every payment-state change; alerts must stay
   non-PII. `charge_review` is sacred — investigate before retrying.
-- Billing model is per-reached-contact with signed ceiling (NOT packages/
-  subscriptions); price/track facts live in admin DB, never hardcoded.
+- Billing model is a fixed-price package per event, paid once (CardCom primary,
+  SUMIT backup) — not per-reached-contact and not a subscription; price facts
+  live in the admin DB, never hardcoded.
 - Answer in Hebrew when the user writes Hebrew; tag VERIFIED-LIVE vs DOCS-ONLY.
 
 ## Boundaries / handoff

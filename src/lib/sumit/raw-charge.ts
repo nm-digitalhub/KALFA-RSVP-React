@@ -27,8 +27,9 @@ export interface SumitRawChargeParams {
   // Production capture.ts sends a token charge WITHOUT it and is verified live,
   // so it stays optional here; the POC carries it for the issuers that do ask,
   // and for reproducing a decline that turns out to be a missing CVV.
-  // NEVER logged and never echoed — safe-preview.ts projects an allow-list and
-  // does not read this key at all.
+  // NEVER logged. `sentBody` echoes PaymentMethod as sent, so a caller that
+  // passes this must not print `sentBody` (scripts/sumit-charge-token.ts does
+  // not pass it).
   savedCardCvv?: string;
   amount: string; // Items[0].UnitPrice — numeric string, no float distortion
   vatRate: string;
@@ -59,8 +60,7 @@ export interface SumitRawChargeParams {
    * Unlike capture.ts this does NOT reconcile against `amount`: the whole point
    * of the POC is to send a deliberately-chosen body and see what SUMIT does
    * with it, including a combination the production guard would refuse. SUMIT
-   * charges the sum of these rows, so `amount` is ignored when they are present
-   * — the screen says so, and the safe preview shows the exact rows sent.
+   * charges the sum of these rows, so `amount` is ignored when they are present.
    */
   lines?: RawChargeLine[];
 }
@@ -119,8 +119,8 @@ export async function chargeRaw(p: SumitRawChargeParams): Promise<SumitRawResult
     // Type:1 (CreditCard) is REQUIRED — a saved-token charge without it returns
     // Status 1 "Type should be set to CreditCard or DirectDebit" (verified live
     // 2026-07-01). Expiry + CitizenID accompany the token, mirroring the
-    // production capture.ts PaymentMethod exactly (route.ts enforces these as
-    // mandatory before calling chargeRaw — see its route-B validation).
+    // production capture.ts PaymentMethod exactly (the caller must supply all
+    // three; scripts/sumit-charge-token.ts requires them as env vars).
     body.PaymentMethod = {
       CreditCard_Token: p.savedCardToken,
       CreditCard_ExpirationMonth: p.savedCardExpMonth,

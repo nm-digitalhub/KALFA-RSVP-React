@@ -57,7 +57,6 @@
     "scripts/sharepoint-intranet-provision.cjs", // same plan
     "scripts/sharepoint-security-audit.cjs", // same plan ("recurring report")
     "scripts/sumit-crm-list-holds.ts", // source of the constant in src/lib/sumit/hold-status.ts
-    "scripts/sumit-doc-check.ts", // .claude/agents/shared/tax-catalog-israel.md
     "scripts/voximplant/fetch-session-log.ts", // src/lib/voximplant/log-download.ts
     "scripts/voximplant/test-call.ts" // docs/voice-agent/dial-gates.md
   ],

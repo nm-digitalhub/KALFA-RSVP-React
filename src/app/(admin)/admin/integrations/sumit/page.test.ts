@@ -98,8 +98,9 @@ describe('/admin/integrations/sumit', () => {
     expect(textOf(tree)).toContain('מתגי הכסף');
     const hrefs = collect(tree).map((p) => p.href).filter((h): h is string => typeof h === 'string');
     expect(hrefs).toContain('/admin/settings');
-    expect(hrefs).toContain('/admin/sumit-test');
     expect(hrefs).toContain('/admin/integrations');
+    // The SUMIT diagnostic page was retired (retire-sumit-campaign-columns, Open Question 2); no link may point at it.
+    expect(hrefs).not.toContain('/admin/sumit-test');
   });
 
   it('states that the check creates nothing and charges nothing', async () => {

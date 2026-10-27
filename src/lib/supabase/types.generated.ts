@@ -1739,10 +1739,6 @@ export type Database = {
       campaigns: {
         Row: {
           allowed_channels: Database["public"]["Enums"]["campaign_channel"][]
-          card_citizen_id: string | null
-          card_exp_month: number | null
-          card_exp_year: number | null
-          card_token_ref: string | null
           close_at: string | null
           contact_quota: number | null
           created_at: string
@@ -1752,7 +1748,6 @@ export type Database = {
           outreach_schedule: Json | null
           start_at: string | null
           status: Database["public"]["Enums"]["campaign_status"]
-          sumit_customer_id: number | null
           template_id: string | null
           thankyou_auto_enabled: boolean
           thankyou_send_at: string | null
@@ -1761,10 +1756,6 @@ export type Database = {
         }
         Insert: {
           allowed_channels?: Database["public"]["Enums"]["campaign_channel"][]
-          card_citizen_id?: string | null
-          card_exp_month?: number | null
-          card_exp_year?: number | null
-          card_token_ref?: string | null
           close_at?: string | null
           contact_quota?: number | null
           created_at?: string
@@ -1774,7 +1765,6 @@ export type Database = {
           outreach_schedule?: Json | null
           start_at?: string | null
           status?: Database["public"]["Enums"]["campaign_status"]
-          sumit_customer_id?: number | null
           template_id?: string | null
           thankyou_auto_enabled?: boolean
           thankyou_send_at?: string | null
@@ -1783,10 +1773,6 @@ export type Database = {
         }
         Update: {
           allowed_channels?: Database["public"]["Enums"]["campaign_channel"][]
-          card_citizen_id?: string | null
-          card_exp_month?: number | null
-          card_exp_year?: number | null
-          card_token_ref?: string | null
           close_at?: string | null
           contact_quota?: number | null
           created_at?: string
@@ -1796,7 +1782,6 @@ export type Database = {
           outreach_schedule?: Json | null
           start_at?: string | null
           status?: Database["public"]["Enums"]["campaign_status"]
-          sumit_customer_id?: number | null
           template_id?: string | null
           thankyou_auto_enabled?: boolean
           thankyou_send_at?: string | null
@@ -6757,167 +6742,6 @@ export type Database = {
             columns: ["first_seen_campaign_id"]
             isOneToOne: false
             referencedRelation: "console_campaigns"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      sumit_test_transactions: {
-        Row: {
-          created_at: string
-          created_by: string
-          data_customer_id: number | null
-          data_document_download_url: string | null
-          data_document_id: number | null
-          data_document_number: number | null
-          http_status: number | null
-          id: string
-          operation: string
-          parent_id: string | null
-          payment_amount: number | null
-          payment_auth_number: string | null
-          payment_currency: string | null
-          payment_customer_id: number | null
-          payment_date: string | null
-          payment_first_payment_amount: number | null
-          payment_id: number | null
-          payment_method_card_mask: string | null
-          payment_method_citizen_id: string | null
-          payment_method_customer_id: number | null
-          payment_method_direct_debit_account: number | null
-          payment_method_direct_debit_bank: number | null
-          payment_method_direct_debit_branch: number | null
-          payment_method_direct_debit_expiration_date: string | null
-          payment_method_direct_debit_maximum_amount: number | null
-          payment_method_expiration_month: number | null
-          payment_method_expiration_year: number | null
-          payment_method_id: number | null
-          payment_method_last_digits: string | null
-          payment_method_token: string | null
-          payment_method_type: string | null
-          payment_non_first_payment_amount: number | null
-          payment_recurring_customer_item_ids: Json | null
-          payment_status: string | null
-          payment_status_description: string | null
-          payment_valid_payment: boolean | null
-          request: Json
-          request_amount: number | null
-          request_authorize_amount: number | null
-          request_auto_capture: boolean | null
-          request_credit_card_auth_number: string | null
-          request_customer_id: number | null
-          request_external_identifier: string | null
-          response: Json | null
-          response_text: string | null
-          status: string | null
-          technical_error_details: string | null
-          user_error_message: string | null
-        }
-        Insert: {
-          created_at?: string
-          created_by: string
-          data_customer_id?: number | null
-          data_document_download_url?: string | null
-          data_document_id?: number | null
-          data_document_number?: number | null
-          http_status?: number | null
-          id?: string
-          operation: string
-          parent_id?: string | null
-          payment_amount?: number | null
-          payment_auth_number?: string | null
-          payment_currency?: string | null
-          payment_customer_id?: number | null
-          payment_date?: string | null
-          payment_first_payment_amount?: number | null
-          payment_id?: number | null
-          payment_method_card_mask?: string | null
-          payment_method_citizen_id?: string | null
-          payment_method_customer_id?: number | null
-          payment_method_direct_debit_account?: number | null
-          payment_method_direct_debit_bank?: number | null
-          payment_method_direct_debit_branch?: number | null
-          payment_method_direct_debit_expiration_date?: string | null
-          payment_method_direct_debit_maximum_amount?: number | null
-          payment_method_expiration_month?: number | null
-          payment_method_expiration_year?: number | null
-          payment_method_id?: number | null
-          payment_method_last_digits?: string | null
-          payment_method_token?: string | null
-          payment_method_type?: string | null
-          payment_non_first_payment_amount?: number | null
-          payment_recurring_customer_item_ids?: Json | null
-          payment_status?: string | null
-          payment_status_description?: string | null
-          payment_valid_payment?: boolean | null
-          request: Json
-          request_amount?: number | null
-          request_authorize_amount?: number | null
-          request_auto_capture?: boolean | null
-          request_credit_card_auth_number?: string | null
-          request_customer_id?: number | null
-          request_external_identifier?: string | null
-          response?: Json | null
-          response_text?: string | null
-          status?: string | null
-          technical_error_details?: string | null
-          user_error_message?: string | null
-        }
-        Update: {
-          created_at?: string
-          created_by?: string
-          data_customer_id?: number | null
-          data_document_download_url?: string | null
-          data_document_id?: number | null
-          data_document_number?: number | null
-          http_status?: number | null
-          id?: string
-          operation?: string
-          parent_id?: string | null
-          payment_amount?: number | null
-          payment_auth_number?: string | null
-          payment_currency?: string | null
-          payment_customer_id?: number | null
-          payment_date?: string | null
-          payment_first_payment_amount?: number | null
-          payment_id?: number | null
-          payment_method_card_mask?: string | null
-          payment_method_citizen_id?: string | null
-          payment_method_customer_id?: number | null
-          payment_method_direct_debit_account?: number | null
-          payment_method_direct_debit_bank?: number | null
-          payment_method_direct_debit_branch?: number | null
-          payment_method_direct_debit_expiration_date?: string | null
-          payment_method_direct_debit_maximum_amount?: number | null
-          payment_method_expiration_month?: number | null
-          payment_method_expiration_year?: number | null
-          payment_method_id?: number | null
-          payment_method_last_digits?: string | null
-          payment_method_token?: string | null
-          payment_method_type?: string | null
-          payment_non_first_payment_amount?: number | null
-          payment_recurring_customer_item_ids?: Json | null
-          payment_status?: string | null
-          payment_status_description?: string | null
-          payment_valid_payment?: boolean | null
-          request?: Json
-          request_amount?: number | null
-          request_authorize_amount?: number | null
-          request_auto_capture?: boolean | null
-          request_credit_card_auth_number?: string | null
-          request_customer_id?: number | null
-          request_external_identifier?: string | null
-          response?: Json | null
-          response_text?: string | null
-          status?: string | null
-          technical_error_details?: string | null
-          user_error_message?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sumit_test_transactions_parent_id_fkey"
-            columns: ["parent_id"]
-            isOneToOne: false
-            referencedRelation: "sumit_test_transactions"
             referencedColumns: ["id"]
           },
         ]
