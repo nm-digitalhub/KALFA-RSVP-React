@@ -1739,8 +1739,6 @@ export type Database = {
       campaigns: {
         Row: {
           allowed_channels: Database["public"]["Enums"]["campaign_channel"][]
-          approved_at: string | null
-          approved_by: string | null
           card_citizen_id: string | null
           card_exp_month: number | null
           card_exp_year: number | null
@@ -1754,20 +1752,15 @@ export type Database = {
           outreach_schedule: Json | null
           start_at: string | null
           status: Database["public"]["Enums"]["campaign_status"]
-          sumit_charge_document_id: number | null
           sumit_customer_id: number | null
-          sumit_order_document_id: number | null
           template_id: string | null
           thankyou_auto_enabled: boolean
           thankyou_send_at: string | null
           thankyou_sent_at: string | null
-          tos_version: string | null
           updated_at: string
         }
         Insert: {
           allowed_channels?: Database["public"]["Enums"]["campaign_channel"][]
-          approved_at?: string | null
-          approved_by?: string | null
           card_citizen_id?: string | null
           card_exp_month?: number | null
           card_exp_year?: number | null
@@ -1781,20 +1774,15 @@ export type Database = {
           outreach_schedule?: Json | null
           start_at?: string | null
           status?: Database["public"]["Enums"]["campaign_status"]
-          sumit_charge_document_id?: number | null
           sumit_customer_id?: number | null
-          sumit_order_document_id?: number | null
           template_id?: string | null
           thankyou_auto_enabled?: boolean
           thankyou_send_at?: string | null
           thankyou_sent_at?: string | null
-          tos_version?: string | null
           updated_at?: string
         }
         Update: {
           allowed_channels?: Database["public"]["Enums"]["campaign_channel"][]
-          approved_at?: string | null
-          approved_by?: string | null
           card_citizen_id?: string | null
           card_exp_month?: number | null
           card_exp_year?: number | null
@@ -1808,14 +1796,11 @@ export type Database = {
           outreach_schedule?: Json | null
           start_at?: string | null
           status?: Database["public"]["Enums"]["campaign_status"]
-          sumit_charge_document_id?: number | null
           sumit_customer_id?: number | null
-          sumit_order_document_id?: number | null
           template_id?: string | null
           thankyou_auto_enabled?: boolean
           thankyou_send_at?: string | null
           thankyou_sent_at?: string | null
-          tos_version?: string | null
           updated_at?: string
         }
         Relationships: [
