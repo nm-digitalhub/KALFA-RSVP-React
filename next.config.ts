@@ -69,6 +69,7 @@ const nextConfig: NextConfig = {
   // overhead. nginx allows 25M (client_max_body_size), so nginx is not the
   // bottleneck; per-upload size/type checks stay enforced in the actions.
   experimental: {
+    agentUpgrade: 'latest',
     serverActions: {
       bodySizeLimit: '6mb',
     },
