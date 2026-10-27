@@ -1310,6 +1310,12 @@
       "skillPath": "plugins/stitch-build/skills/react-vite-dashboard/SKILL.md",
       "computedHash": "0e876b7af074b77a237df2fd539c66f3ebe5fac7a8b64189c58ef0aa3c5f6518"
     },
+    "readme": {
+      "source": "statelyai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/readme/SKILL.md",
+      "computedHash": "b2c4624a194fd8aebbc9fc3d75b7b1da8d2033e0439c3f4e2802e4b07d308a89"
+    },
     "refactoring-patterns": {
       "source": "wondelai/skills",
       "sourceType": "github",
@@ -1531,6 +1537,12 @@
       "sourceType": "github",
       "skillPath": "speech-to-text/SKILL.md",
       "computedHash": "06f18ad079255645ff81e3f2926a8e7dde145a6e6d6b0df06348cb2ba22d409d"
+    },
+    "state-management": {
+      "source": "statelyai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/state-management/SKILL.md",
+      "computedHash": "9ffa1a782596760da82692c08eaebbb8edb5e473b627bc819bbef8ae7e56d9b9"
     },
     "steve-jobs-design-review": {
       "source": "wondelai/skills",
@@ -1801,6 +1813,12 @@
       "sourceType": "github",
       "skillPath": "skills/written-communication/SKILL.md",
       "computedHash": "4ad6064e853f0f0ebcc6eb5d61d11f7837f0569f040eb3b913aff2eba7df2c65"
+    },
+    "xstate-v5": {
+      "source": "statelyai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/xstate-v5/SKILL.md",
+      "computedHash": "5395d58e38da39477cfa61d2b388777a88f021d16ec0f8d4ce6653b487d98fb3"
     }
   }
 }
