@@ -48,7 +48,6 @@ vi.mock('@/lib/data/campaigns', () => ({
   acceptCampaignBenefit: vi.fn(),
   // The fixed-price package catalogue: EMPTY by default (the production default — the package switch is off).
   listPackageOffers: vi.fn().mockResolvedValue([]),
-  activateCampaign: vi.fn(),
   pauseCampaign: vi.fn(),
   closeCampaign: vi.fn(),
   cancelCampaign: vi.fn(),

@@ -49,6 +49,8 @@ Ground rules:
   (design D3), and `PLATFORM_ACTION_CONDITIONS` from `call-rules.ts`. The builder emits conditional
   rules. Verify: the P2 action parity in `casl.test.ts` is green, with the JSON round trip;
   `admin-nav-coverage` is green.
+  - Partly done 2026-10-26 (the campaign run-state cleanup): `Campaign: { runstate }` is in the map,
+    pinned in `casl.test.ts`. The four console subjects and the conditions are still open.
 - [ ] 4.2 Write the P3 implication table test (kind × status × terminal) and the P4 static checks:
   - no type-only check on `ConsoleCall` or `AiCall`;
   - no `manage` and no `all`;
@@ -72,6 +74,9 @@ Ground rules:
   - a static test finds no key literal in these routes, and the order
     `requireConsoleAgent → requireConsoleAction → request.json()`;
   - a new test sends forged client rules and expects 403.
+  - Partly done 2026-10-26: `requireConsoleAction` exists (tested in `console-agent.test.ts`) and
+    `campaigns/[id]/status` uses it; the web run-state gates in `campaigns.ts` use `requirePlatformAction`.
+    The other 11 routes still name `manage_voice`.
 
 ## 6. Console UI
 

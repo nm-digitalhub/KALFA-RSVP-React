@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { activateCampaignAfterPayment } from '@/lib/data/campaigns';
+import { activateCampaignAfterPayment } from '@/lib/data/campaign-transition';
 import { defaultThankyouSendAt } from '@/lib/data/event-date';
 import { createAdminClient } from '@/lib/supabase/admin';
 
@@ -12,8 +12,8 @@ import { latestOperation } from './ledger';
 //
 //   - the status move is `approved → active` only, inside the guarded UPDATE (activateCampaignAfterPayment). A paused,
 //     closed or cancelled campaign answers `not_applicable` and is left alone;
-//   - completion checks before it writes. The thank-you default is set only while empty (the same guard the owner path
-//     uses). The `campaign.activated` row is written by the call that moved the status. A later call that finds it
+//   - completion checks before it writes. The thank-you default is set only while empty (the same guard a staff revival
+//     uses, activateCampaign). The `campaign.activated` row is written by the call that moved the status. A later call that finds it
 //     missing writes it only once the campaign has been quiet for REPAIR_AFTER_MS, and fails before that, so a run that
 //     stopped between the status write and its completion is repaired by the job's next delivery, without racing a
 //     concurrent winner.
@@ -110,8 +110,8 @@ async function recordActivation(admin: Admin, campaignId: string, eventId: strin
   if (error) throw new Error('רישום הפעלת הקמפיין נכשל');
 }
 
-// Only while empty: an owner-edited time is never replaced. A null or unreadable event date leaves it unset, as the
-// owner path does.
+// Only while empty: an owner-edited time is never replaced. A null or unreadable event date leaves it unset, as a
+// staff revival does.
 async function seedThankyou(admin: Admin, campaignId: string, eventDate: string | null): Promise<void> {
   const seeded = defaultThankyouSendAt(eventDate);
   if (!seeded) return;

@@ -1,4 +1,5 @@
 import type { Enums } from '@/lib/supabase/types';
+import type { CampaignStatus } from '@/lib/data/campaign-status';
 import { campaignStage, type CampaignStage } from '@/lib/data/event-labels';
 import { ilTimeInputValue, isBeforeTomorrowIL } from '@/lib/data/event-date';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
@@ -13,7 +14,6 @@ import { celebrantsCompleteFor } from '@/lib/validation/schemas';
 
 type EventStatus = Enums<'event_status'>;
 type EventType = Enums<'event_type'>;
-type CampaignStatus = Enums<'campaign_status'>;
 
 export type SetupStepKey = 'details' | 'confirm' | 'package' | 'sign' | 'pay' | 'live';
 export type SetupStepState = 'done' | 'current' | 'pending' | 'blocked';

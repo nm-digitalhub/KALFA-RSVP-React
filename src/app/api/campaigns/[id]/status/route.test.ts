@@ -1,23 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
+// requireConsoleAction itself (the map's key → has_platform_permission) is tested in console-agent.test.ts.
 vi.mock('@/lib/auth/console-agent', () => ({
   requireConsoleAgent: vi.fn(),
-  callerHasPlatformPermission: vi.fn(),
+  requireConsoleAction: vi.fn(),
 }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 // The lifecycle itself is tested in campaigns.test.ts (including the console
 // narrowing and every guard). Here the contract under test is that the route
 // DELEGATES to it with the right actor and maps its refusals to HTTP.
 vi.mock('@/lib/data/campaigns', () => ({
-  EVENT_NOT_CONFIRMED_ERROR: 'יש לאשר את פרטי האירוע לפני אישורי הגעה',
   activateCampaign: vi.fn(),
   pauseCampaign: vi.fn(),
 }));
 vi.mock('@/lib/data/admin/access-log', () => ({ recordStaffAccess: vi.fn() }));
 
 import { POST } from './route';
-import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
+import { requireConsoleAction, requireConsoleAgent } from '@/lib/auth/console-agent';
+import { PLATFORM_ACTIONS } from '@/lib/casl';
 import { activateCampaign, pauseCampaign } from '@/lib/data/campaigns';
 import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import {
@@ -56,7 +57,9 @@ function authOk(hasPermission = true) {
     ok: true,
     ctx: { userId: STAFF_ID, supabase: {} },
   } as never);
-  vi.mocked(callerHasPlatformPermission).mockResolvedValue(hasPermission as never);
+  vi.mocked(requireConsoleAction).mockResolvedValue(
+    hasPermission ? { ok: true } : { ok: false, status: 403, error: 'אין הרשאה' },
+  );
 }
 
 const FOUND = { id: CAMPAIGN_ID, event_id: EVENT_ID, events: { owner_id: OWNER_ID } };
@@ -84,14 +87,15 @@ describe('POST /api/campaigns/[id]/status', () => {
   // The authority is campaigns.runstate, NOT manage_voice: pausing a campaign
   // also stops its WhatsApp sends, which is outside what a key documented as
   // "ניהול מוקד שיחות AI" promises. See migration 20260721183855.
-  it('gates on campaigns.runstate specifically', async () => {
+  it('gates on campaigns.runstate specifically, through the CASL action map', async () => {
     authOk(false);
     const res = await POST(req('pause'), ctx());
     expect(res.status).toBe(403);
-    expect(callerHasPlatformPermission).toHaveBeenCalledWith(
-      expect.anything(),
-      'campaigns.runstate',
-    );
+    expect(requireConsoleAction).toHaveBeenCalledWith(expect.anything(), 'runstate', 'Campaign');
+    expect(PLATFORM_ACTIONS.Campaign.runstate).toBe('campaigns.runstate');
+    // Refused before the body is read or anything is written.
+    expect(activateCampaign).not.toHaveBeenCalled();
+    expect(pauseCampaign).not.toHaveBeenCalled();
   });
 
   it('400 on an unknown action', async () => {

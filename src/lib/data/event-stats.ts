@@ -6,11 +6,8 @@ import {
   getEvent,
 } from '@/lib/data/events';
 import { getGuestTotals, type GuestTotals } from '@/lib/data/guests';
-import {
-  getCampaignForEvent,
-  type OwnerCampaign,
-  type CampaignStatus,
-} from '@/lib/data/campaigns';
+import { getCampaignForEvent, type OwnerCampaign } from '@/lib/data/campaigns';
+import type { CampaignStatus } from '@/lib/data/campaign-status';
 import {
   getCampaignDeliveryBreakdown,
   type CampaignDeliveryBreakdown,

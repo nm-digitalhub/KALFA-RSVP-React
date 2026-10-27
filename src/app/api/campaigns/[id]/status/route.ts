@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
+import { requireConsoleAction, requireConsoleAgent } from '@/lib/auth/console-agent';
+import { platformActionKey } from '@/lib/casl';
 import { recordStaffAccess } from '@/lib/data/admin/access-log';
-import { EVENT_NOT_CONFIRMED_ERROR, activateCampaign, pauseCampaign } from '@/lib/data/campaigns';
+import { activateCampaign, pauseCampaign } from '@/lib/data/campaigns';
+import { EVENT_NOT_CONFIRMED_ERROR } from '@/lib/data/campaign-transition';
 import {
   PACKAGE_NOT_PAID_ERROR,
   PACKAGE_PAYMENT_UNVERIFIED_ERROR,
@@ -16,26 +18,27 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // and only two:
 //
 //   pause    : active → paused    a safety stop
-//   activate : paused → active    REVIVAL of a campaign the owner already ran
+//   activate : paused → active    REVIVAL of a campaign whose paid service already started
 //
 // It does NOT re-implement the lifecycle. It resolves the actor, then calls the
-// same pauseCampaign / activateCampaign the web Server Actions call, passing a
+// domain functions — pauseCampaign (the same one the web Server Actions call) and
+// activateCampaign (revival, which accepts only a console actor) — passing a
 // `console` actor. Every guard those carry — the package payment, the past-event refusal,
 // the active-event requirement, the Slack ops alert, the auto-thankyou seed —
 // therefore applies here by construction rather than by remembering to copy it.
 // An earlier draft of this route did copy the logic, and silently lost the
-// past-event guard in the process; see campaigns.ts for why the guards are no
-// longer welded to the cookie ownership check.
+// past-event guard in the process; see campaign-transition.ts for why the guards
+// are no longer welded to the cookie ownership check.
 //
 // Authority is `campaigns.runstate`, NOT `manage_voice`: pausing a campaign also
 // stops its WhatsApp sends, so granting it under a key documented as
 // "ניהול מוקד שיחות AI" would misdescribe what the catalogue hands out. See
 // migration 20260721183855.
 //
-// FIRST activation (approved/scheduled → active) is deliberately unreachable
-// here — that is the owner's commercial commitment and stays an owner action on
-// the web. activateCampaign narrows the from-set for a console actor, so this
-// route cannot widen it even if it tried.
+// FIRST activation (approved → active) is deliberately unreachable here — it is
+// the server's, once the package payment is recorded (activateCampaignAfterPayment,
+// design D23). activateCampaign transitions only `paused → active`, so this route
+// cannot widen it even if it tried.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -67,9 +70,8 @@ export async function POST(
 ) {
   const auth = await requireConsoleAgent(request);
   if (!auth.ok) return json({ error: auth.error }, auth.status);
-  if (!(await callerHasPlatformPermission(auth.ctx.supabase, 'campaigns.runstate'))) {
-    return json({ error: 'אין הרשאה' }, 403);
-  }
+  const allowed = await requireConsoleAction(auth.ctx, 'runstate', 'Campaign');
+  if (!allowed.ok) return json({ error: allowed.error }, allowed.status);
 
   const { id } = await params;
   if (!uuidSchema.safeParse(id).success) return json({ error: 'מזהה קמפיין לא תקין' }, 400);
@@ -113,7 +115,7 @@ export async function POST(
   try {
     await recordStaffAccess({
       staffId: auth.ctx.userId,
-      permission: 'campaigns.runstate',
+      permission: platformActionKey('runstate', 'Campaign'),
       subjectType: 'campaign',
       subjectId: id,
       ownerId: campaign.events.owner_id,

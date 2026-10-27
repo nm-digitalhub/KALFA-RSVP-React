@@ -48,6 +48,12 @@ describe('PLATFORM_ACTIONS', () => {
     });
   });
 
+  // Moving the campaign run-state gates onto the map changes no access: the action is bound to the key every one of
+  // those gates checked before (staff pause/close/cancel on the web, the console revival and pause).
+  it('binds the Campaign run state to campaigns.runstate', () => {
+    expect(PLATFORM_ACTIONS.Campaign).toEqual({ runstate: 'campaigns.runstate' });
+  });
+
   it('lists every (subject, action) of the map exactly once', () => {
     const fromMap = Object.entries(PLATFORM_ACTIONS).flatMap(([subject, actions]) =>
       Object.keys(actions).map((action) => `${action} ${subject}`),

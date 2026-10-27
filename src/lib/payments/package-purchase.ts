@@ -35,8 +35,8 @@ import { resolvePurchaseProvider } from './provider';
 //      retried automatically: the card may already have been charged;
 //   5. once SUMIT has confirmed the charge, nothing that comes after it can undo it. A failure of the card vault, the
 //      customer-number anchor or the audit row is logged and the payment stays recorded.
-// Activation is not done here: the route calls activateCampaign after a paid outcome, which requires the recorded
-// payment and fills the guest list itself.
+// The service is not started here: the recorded payment queues its start (enqueuePackageActivation below, design D23),
+// and the route also starts it inline (startPaidPackageNow, activate-paid-package.ts). Neither fills the guest list.
 
 // The ledger-derived state lives in ./package-paid (a light module the campaign layer can import); re-exported so the
 // payment page keeps importing it from here.

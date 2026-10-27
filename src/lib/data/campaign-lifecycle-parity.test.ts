@@ -19,9 +19,10 @@ import { join } from 'node:path';
 // that reads "active" and does nothing, which is the hardest kind of bug to see.
 //
 // The rule enforced here: no route handler may write campaigns.status itself.
-// Transitions go through src/lib/data/campaigns.ts, which is where the guards
-// are. A route decides WHO may ask; the domain layer decides whether it is
-// allowed and what else must happen.
+// Transitions go through src/lib/data/campaigns.ts, whose functions run the one
+// guarded transition in campaign-transition.ts (where the guards are). A route
+// decides WHO may ask; the domain layer decides whether it is allowed and what
+// else must happen.
 
 const API_ROOT = join(__dirname, '..', '..', 'app', 'api');
 

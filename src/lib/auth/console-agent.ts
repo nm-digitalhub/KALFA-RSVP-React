@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
+import { platformActionKey, type PlatformAction, type PlatformSubject } from '@/lib/casl';
 import { getPublicSupabaseEnv } from '@/lib/supabase/env';
 import type { Database } from '@/lib/supabase/types';
 
@@ -86,4 +87,20 @@ export async function callerHasPlatformPermission(
   const { data, error } = await supabase.rpc('has_platform_permission', { _key: key });
   if (error) return false;
   return data === true;
+}
+
+/**
+ * The Bearer API's action gate (openspec/changes/casl-console-ability-foundation, task 5.1): the key an action needs
+ * comes from the CASL action map (src/lib/casl.ts), never a literal in the route. Fails closed like
+ * callerHasPlatformPermission, with the same JSON-friendly 403 as requireConsoleAgent. Call it after
+ * requireConsoleAgent and before reading the request body.
+ */
+export async function requireConsoleAction<S extends PlatformSubject>(
+  ctx: ConsoleAgentContext,
+  action: PlatformAction<S>,
+  subject: S,
+): Promise<{ ok: true } | typeof FORBIDDEN> {
+  return (await callerHasPlatformPermission(ctx.supabase, platformActionKey(action, subject)))
+    ? { ok: true }
+    : FORBIDDEN;
 }

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 
 // campaigns.ts begins with `import 'server-only'`; computeCeiling is pure.
 vi.mock('server-only', () => ({}));
@@ -101,15 +101,18 @@ import {
   acceptCampaignBenefit,
   approveCampaign,
   activateCampaign,
-  activateCampaignAfterPayment,
   pauseCampaign,
   closeCampaign,
   cancelCampaign,
   getThankyouSchedule,
   updateThankyouSchedule,
   getCampaignStageForEvent,
-  NO_PACKAGE_ERROR,
 } from '@/lib/data/campaigns';
+import {
+  activateCampaignAfterPayment,
+  NO_PACKAGE_ERROR,
+  transitionCampaignStatus,
+} from '@/lib/data/campaign-transition';
 import { getPackageModelEnabled } from '@/lib/data/payments';
 import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
 import { fillAuthorizedSet } from '@/lib/data/authorized-fill';
@@ -317,25 +320,24 @@ describe('getCampaignForPurchase', () => {
   });
 });
 
+// The only staff activation left: a console revival (paused → active). The first start is the server's (D23 below).
+const CONSOLE_ACTOR = { kind: 'console' as const, staffUserId: 'staff-1' };
+const ACTIVE_EVENT = { event_date: '2999-01-01T00:00:00+00:00', status: 'active' };
+
 describe('campaign lifecycle transitions', () => {
-  it('activateCampaign requires an approved, paid package campaign → status active', async () => {
-    const { builder } = adminWith({
-      data: { id: 'c1', event_id: 'e1', package_price: 150 },
-      error: null,
+  it('activateCampaign (revival) requires a paid package campaign → status active, with the ops alert', async () => {
+    const builders = adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1', package_price: 150 },
+      events: ACTIVE_EVENT,
     });
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
 
-    await activateCampaign('c1');
+    await activateCampaign('c1', CONSOLE_ACTOR);
 
-    expect(builder.update).toHaveBeenCalledWith({ status: 'active' });
-    expect(builder.in).toHaveBeenCalledWith('status', [
-      'approved',
-      'scheduled',
-      'paused',
-    ]);
+    expect(builders.campaigns.update).toHaveBeenCalledWith({ status: 'active' });
+    expect(builders.campaigns.in).toHaveBeenCalledWith('status', ['paused']);
     // No update-time package guard any more: "is a package" = a current round exists, and rounds are append-only,
     // so the pre-check (the pricing module) cannot be raced false.
-    expect(builder.not).not.toHaveBeenCalled();
+    expect(builders.campaigns.not).not.toHaveBeenCalled();
     expect(getPackagePaymentState).toHaveBeenCalledWith('c1');
     // Additive campaign_billing alert once activation succeeds (campaign_id only).
     expect(sendSlackAlert).toHaveBeenCalledWith(
@@ -372,23 +374,10 @@ describe('campaign lifecycle transitions', () => {
     await expect(approveCampaign('c1', '2026-10-v6')).rejects.toThrow('האירוע כבר חלף');
   });
 
-  it('activateCampaign rejects a past event (L1) — no status write', async () => {
-    const { builder } = adminWith({
-      data: { id: 'c1', event_id: 'e1', package_price: 150 },
-      error: null,
-    });
-    vi.mocked(requireOwnedEvent).mockResolvedValue(
-      ownedEvent('2020-01-01T00:00:00+00:00'),
-    );
-
-    await expect(activateCampaign('c1')).rejects.toThrow('האירוע כבר חלף');
-    expect(builder.update).not.toHaveBeenCalled();
-  });
-
   // Wind-down is staff-only and NAMED: pause/close/cancel gate on
   // `campaigns.runstate` (NOT event ownership, and not the retired coarse
-  // admin flag). The regression below (activateCampaign) proves the
-  // owner path is unchanged for forward transitions.
+  // admin flag). A past event and a non-active event are refused for revival in
+  // the console describe below, and for the first start in the D23 describe.
   it('pauseCampaign: admin allowed → active → paused, WITHOUT an ownership check', async () => {
     const { builder } = adminWith({
       data: { id: 'c1', event_id: 'e1', package_price: 150 },
@@ -440,20 +429,6 @@ describe('campaign lifecycle transitions', () => {
     expect(builder.update).not.toHaveBeenCalled();
   });
 
-  it('activateCampaign stays owner-gated: calls requireOwnedEvent, NOT the run-state gate', async () => {
-    const { builder } = adminWith({
-      data: { id: 'c1', event_id: 'e1', package_price: 150 },
-      error: null,
-    });
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
-
-    await activateCampaign('c1');
-
-    expect(requireOwnedEvent).toHaveBeenCalledWith('e1');
-    expect(requirePlatformPermission).not.toHaveBeenCalledWith('campaigns.runstate');
-    expect(builder.update).toHaveBeenCalledWith({ status: 'active' });
-  });
-
   it('throws when the campaign is not in a transitionable state (0 rows updated)', async () => {
     const { builder } = adminWith({
       data: { id: 'c1', event_id: 'e1', package_price: 150 },
@@ -496,50 +471,33 @@ describe('campaign lifecycle transitions', () => {
     );
   });
 
-  it('activateCampaign rejects when the event is not active (R9) — no status write', async () => {
-    const { builder } = adminWith({
-      data: { id: 'c1', event_id: 'e1', package_price: 150 },
-      error: null,
+  // Auto-thankyou: a revival fills the default schedule (morning after
+  // event_date, ~10:00 Israel) only while it is empty —
+  // `.is('thankyou_send_at', null)` is what keeps it from clobbering an
+  // owner-edited send time.
+  it('activateCampaign (revival) seeds thankyou_send_at only while it is empty', async () => {
+    const builders = adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1', package_price: 150 },
+      events: { event_date: '2999-01-06T17:00:00+02:00', status: 'active' },
     });
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent(undefined, 'draft'));
 
-    await expect(activateCampaign('c1')).rejects.toThrow(
-      'יש לאשר את פרטי האירוע לפני אישורי הגעה',
-    );
-    expect(builder.update).not.toHaveBeenCalled();
-  });
+    await activateCampaign('c1', CONSOLE_ACTOR);
 
-  // Auto-thankyou: activation seeds the
-  // default schedule (morning after event_date, ~10:00 Israel) exactly once —
-  // `.is('thankyou_send_at', null)` is what keeps a re-activation after pause
-  // from clobbering an owner-edited send time.
-  it('activateCampaign seeds thankyou_send_at (auto-thankyou default schedule) on activation', async () => {
-    const { builder } = adminWith({
-      data: { id: 'c1', event_id: 'e1', package_price: 150 },
-      error: null,
-    });
-    vi.mocked(requireOwnedEvent).mockResolvedValue(
-      ownedEvent('2999-01-06T17:00:00+02:00'),
-    );
-
-    await activateCampaign('c1');
-
-    expect(builder.update).toHaveBeenCalledWith(
+    expect(builders.campaigns.update).toHaveBeenCalledWith(
       expect.objectContaining({ thankyou_send_at: '2999-01-07T10:00:00+02:00' }),
     );
-    expect(builder.is).toHaveBeenCalledWith('thankyou_send_at', null);
+    expect(builders.campaigns.is).toHaveBeenCalledWith('thankyou_send_at', null);
   });
 
-  it('activateCampaign does not seed a thankyou schedule when the event has no date', async () => {
-    const { builder } = adminWith({
-      data: { id: 'c1', event_id: 'e1', package_price: 150 },
-      error: null,
+  it('activateCampaign (revival) does not seed a thankyou schedule when the event has no date', async () => {
+    const builders = adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1', package_price: 150 },
+      events: { event_date: null, status: 'active' },
     });
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent(null));
 
-    await activateCampaign('c1');
+    await activateCampaign('c1', CONSOLE_ACTOR);
 
-    expect(builder.update).not.toHaveBeenCalledWith(
+    expect(builders.campaigns.update).not.toHaveBeenCalledWith(
       expect.objectContaining({ thankyou_send_at: expect.anything() }),
     );
   });
@@ -814,8 +772,8 @@ describe('campaign run-state: console actor (owner decision 2026-07-21)', () => 
     await activateCampaign('c1', CONSOLE);
 
     // The narrowing that makes staff activation safe: a paused campaign is proof
-    // the OWNER already activated it, so staff resume a commitment and can never
-    // create one.
+    // the paid service already started (D23), so staff resume a commitment and can
+    // never create one.
     expect(builders.campaigns.in).toHaveBeenCalledWith('status', ['paused']);
     expect(builders.campaigns.in).not.toHaveBeenCalledWith(
       'status',
@@ -881,16 +839,6 @@ describe('campaign run-state: console actor (owner decision 2026-07-21)', () => 
     expect(builders.campaigns.update).toHaveBeenCalledWith({ status: 'paused' });
     expect(builders.campaigns.in).toHaveBeenCalledWith('status', ['active']);
     expect(requirePlatformPermission).not.toHaveBeenCalledWith('campaigns.runstate');
-  });
-
-  it('the OWNER path is unchanged — full from-set, ownership still checked', async () => {
-    const { builder } = adminWith({ data: { id: 'c1', event_id: 'e1', package_price: 150 }, error: null });
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
-
-    await activateCampaign('c1');
-
-    expect(requireOwnedEvent).toHaveBeenCalledWith('e1');
-    expect(builder.in).toHaveBeenCalledWith('status', ['approved', 'scheduled', 'paused']);
   });
 });
 
@@ -975,7 +923,25 @@ describe('campaign run-state: system actor after a recorded payment (D23)', () =
     expect(builders.campaigns.update).not.toHaveBeenCalled();
   });
 
-  it('cannot be widened by another caller: the activation and pause paths refuse the system actor', async () => {
+  // The core is request-free (campaign-transition.ts) so the worker can import it; the cookie-session half arrives
+  // only through campaigns.ts. Without it, the admin actor has no permission check and must not transition.
+  it('the request-free core refuses an admin transition that carries no permission check', async () => {
+    const builders = adminByTable({ campaigns: { id: 'c1', event_id: 'e1' }, events: EVENT_OK });
+
+    await expect(
+      transitionCampaignStatus('c1', ['active'], 'paused', undefined, undefined, { kind: 'admin' }),
+    ).rejects.toThrow('מחייב בדיקת הרשאה');
+    expect(builders.events).toBeUndefined();
+    expect(builders.campaigns.update).not.toHaveBeenCalled();
+  });
+
+  it('answers a missing campaign with a plain error, not Next notFound (no request to 404)', async () => {
+    adminByTable({ campaigns: null });
+
+    await expect(activateCampaignAfterPayment('c1', 'op1')).rejects.toThrow('הקמפיין לא נמצא');
+  });
+
+  it('cannot be widened by another caller: the pause path refuses the system actor, the revival does not accept it', async () => {
     const builders = adminByTable({
       campaigns: { id: 'c1', event_id: 'e1', package_price: 150 },
       events: EVENT_OK,
@@ -983,26 +949,23 @@ describe('campaign run-state: system actor after a recorded payment (D23)', () =
     });
     const SYSTEM = { kind: 'system' as const, paymentOperationId: 'op1' };
 
-    await expect(activateCampaign('c1', SYSTEM)).rejects.toThrow('הפעלת מערכת מותרת רק ממצב מאושר לפעיל');
     await expect(pauseCampaign('c1', SYSTEM)).rejects.toThrow('הפעלת מערכת מותרת רק ממצב מאושר לפעיל');
     expect(builders.campaigns.update).not.toHaveBeenCalled();
+    // The revival takes only the console actor: a system (or admin) actor does not compile (checked by tsc).
+    expectTypeOf(activateCampaign).parameter(1).toEqualTypeOf<{ kind: 'console'; staffUserId: string }>();
   });
 });
 
 describe('activateCampaign — auditability', () => {
   it('writes a campaign.activated activity row with the actor kind', async () => {
-    const { builder } = adminWith({ data: { id: 'c1', event_id: 'e1', package_price: 150 }, error: null });
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
-    vi.spyOn(builder, 'then').mockImplementation((f) =>
-      f({ data: { id: 'c1', event_id: 'e1', package_price: 150 }, error: null }),
-    );
+    adminByTable({ campaigns: { id: 'c1', event_id: 'e1', package_price: 150 }, events: ACTIVE_EVENT });
 
-    await activateCampaign('c1');
+    await activateCampaign('c1', CONSOLE_ACTOR);
 
     expect(logActivity).toHaveBeenCalledWith({
       eventId: 'e1',
       action: 'campaign.activated',
-      meta: { campaignId: 'c1', actor: 'owner' },
+      meta: { campaignId: 'c1', actor: 'console' },
     });
   });
 });
@@ -1401,15 +1364,14 @@ describe('approveCampaign — only a package campaign, only under the package co
   });
 });
 
-describe('activateCampaign — a paid package campaign', () => {
+describe('activateCampaign (revival) — a paid package campaign', () => {
   const PACKAGE_ROW = { id: 'c1', event_id: 'e1', package_price: 150 };
   const FUTURE = { event_date: '2999-01-01T00:00:00+00:00', status: 'active' };
 
-  function wire(row: Record<string, unknown> = PACKAGE_ROW) {
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+  function wire(row: Record<string, unknown> = PACKAGE_ROW, event: Record<string, unknown> = FUTURE) {
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 150, credit: 0, committed: 0 });
     vi.mocked(fillAuthorizedSet).mockResolvedValue({ verdict: 'filled', admitted: 3, size: 3, quota: 100, waiting: 0 });
-    return adminByTable({ campaigns: row, events: FUTURE });
+    return adminByTable({ campaigns: row, events: event });
   }
 
   beforeEach(() => {
@@ -1419,18 +1381,18 @@ describe('activateCampaign — a paid package campaign', () => {
 
   it('checks the ledger and moves to active without filling the guest list', async () => {
     const b = wire();
-    await activateCampaign('c1');
+    await activateCampaign('c1', CONSOLE_ACTOR);
     expect(getPackagePaymentState).toHaveBeenCalledWith('c1');
     expect(fillAuthorizedSet).not.toHaveBeenCalled();
     expect(b.campaigns.update).toHaveBeenCalledWith({ status: 'active' });
     expect(b.campaigns.not).not.toHaveBeenCalled();
   });
 
-  it('proves ownership before reading payment, and payment before changing status', async () => {
+  it('reads the event before the payment, and the payment before changing status', async () => {
     const b = wire();
-    await activateCampaign('c1');
+    await activateCampaign('c1', CONSOLE_ACTOR);
     const order = (m: unknown) => (m as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0];
-    expect(order(requireOwnedEvent)).toBeLessThan(order(getPackagePaymentState));
+    expect(order(b.events.select)).toBeLessThan(order(getPackagePaymentState));
     expect(order(getPackagePaymentState)).toBeLessThan(order(b.campaigns.update));
     expect(fillAuthorizedSet).not.toHaveBeenCalled();
   });
@@ -1440,7 +1402,7 @@ describe('activateCampaign — a paid package campaign', () => {
     async (status) => {
       const b = wire();
       vi.mocked(getPackagePaymentState).mockResolvedValue({ status, collected: 0, credit: 0, committed: 0 });
-      await expect(activateCampaign('c1')).rejects.toThrow(PACKAGE_NOT_PAID_ERROR);
+      await expect(activateCampaign('c1', CONSOLE_ACTOR)).rejects.toThrow(PACKAGE_NOT_PAID_ERROR);
       expect(fillAuthorizedSet).not.toHaveBeenCalled();
       expect(b.campaigns.update).not.toHaveBeenCalled();
     },
@@ -1450,14 +1412,13 @@ describe('activateCampaign — a paid package campaign', () => {
     const b = wire();
     vi.mocked(getPackagePaymentState).mockRejectedValue(new Error('db down'));
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    await expect(activateCampaign('c1')).rejects.toThrow(PACKAGE_PAYMENT_UNVERIFIED_ERROR);
+    await expect(activateCampaign('c1', CONSOLE_ACTOR)).rejects.toThrow(PACKAGE_PAYMENT_UNVERIFIED_ERROR);
     expect(b.campaigns.update).not.toHaveBeenCalled();
   });
 
   it('refuses a past event before it touches the ledger or the list', async () => {
-    wire();
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent('2020-01-01T00:00:00+00:00'));
-    await expect(activateCampaign('c1')).rejects.toThrow('האירוע כבר חלף');
+    wire(PACKAGE_ROW, { event_date: '2020-01-01T00:00:00+00:00', status: 'active' });
+    await expect(activateCampaign('c1', CONSOLE_ACTOR)).rejects.toThrow('האירוע כבר חלף');
     expect(getPackagePaymentState).not.toHaveBeenCalled();
     expect(fillAuthorizedSet).not.toHaveBeenCalled();
   });
@@ -1468,7 +1429,7 @@ describe('activateCampaign — a paid package campaign', () => {
       verdict: 'filled', admitted: 0, size: 0, quota: 100, waiting: 0,
     });
 
-    await expect(activateCampaign('c1')).resolves.toBeUndefined();
+    await expect(activateCampaign('c1', CONSOLE_ACTOR)).resolves.toBeUndefined();
 
     expect(getPackagePaymentState).toHaveBeenCalledWith('c1');
     expect(fillAuthorizedSet).not.toHaveBeenCalled();
@@ -1481,7 +1442,7 @@ describe('activateCampaign — a paid package campaign', () => {
       new Error('Guest-list filler unavailable'),
     );
 
-    await expect(activateCampaign('c1')).resolves.toBeUndefined();
+    await expect(activateCampaign('c1', CONSOLE_ACTOR)).resolves.toBeUndefined();
 
     expect(fillAuthorizedSet).not.toHaveBeenCalled();
     expect(b.campaigns.update).toHaveBeenCalledWith({ status: 'active' });
@@ -1490,18 +1451,17 @@ describe('activateCampaign — a paid package campaign', () => {
   it('a console revival (paused → active) of a package campaign needs the same payment', async () => {
     const b = wire();
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'refunded', collected: 0, credit: 0, committed: 0 });
-    await expect(activateCampaign('c1', { kind: 'console', staffUserId: 's1' })).rejects.toThrow(PACKAGE_NOT_PAID_ERROR);
+    await expect(activateCampaign('c1', CONSOLE_ACTOR)).rejects.toThrow(PACKAGE_NOT_PAID_ERROR);
     expect(b.campaigns.update).not.toHaveBeenCalled();
   });
 });
 
 describe('activateCampaign — a campaign without a package', () => {
   it('cannot be started: it has no package payment, and nothing is read or written', async () => {
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
     vi.mocked(getPackagePaymentState).mockReset();
     vi.mocked(getCurrentPricing).mockResolvedValue(null);
     const b = adminByTable({ campaigns: { id: 'c1', event_id: 'e1', package_price: null }, events: { event_date: '2999-01-01T00:00:00+00:00', status: 'active' } });
-    await expect(activateCampaign('c1')).rejects.toThrow(NO_PACKAGE_ERROR);
+    await expect(activateCampaign('c1', CONSOLE_ACTOR)).rejects.toThrow(NO_PACKAGE_ERROR);
     expect(getPackagePaymentState).not.toHaveBeenCalled();
     expect(b.campaigns.update).not.toHaveBeenCalled();
   });

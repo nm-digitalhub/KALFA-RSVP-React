@@ -3,6 +3,7 @@ import 'server-only';
 import { unstable_rethrow } from 'next/navigation';
 
 import { requireUser, requirePlatformPermission } from '@/lib/auth/dal';
+import { requirePlatformAction } from '@/lib/auth/platform-ability';
 import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import { requireOwnedEvent, requireEventAccess } from '@/lib/data/events';
 import { assertEventNotPast, defaultThankyouSendAt } from '@/lib/data/event-date';
@@ -12,11 +13,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { logActivity } from '@/lib/data/activity';
-import {
-  PACKAGE_NOT_PAID_ERROR,
-  PACKAGE_PAYMENT_UNVERIFIED_ERROR,
-} from '@/lib/data/package-activation-errors';
-import { getPackagePaymentState, packagePaymentOf } from '@/lib/payments/package-paid';
+import { packagePaymentOf } from '@/lib/payments/package-paid';
 import { getCurrentPricing, getCurrentPricingByCampaign } from '@/lib/data/campaign-pricing';
 import {
   bindBestBenefit,
@@ -26,8 +23,15 @@ import {
 import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
 import { isPackageAgreementVersion } from '@/lib/agreements/template';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
-import type { Enums, Json, Tables, TablesUpdate } from '@/lib/supabase/types';
+import type { Json, Tables, TablesUpdate } from '@/lib/supabase/types';
 import { getPackageOffer } from '@/lib/data/package-offers';
+import {
+  EVENT_NOT_CONFIRMED_ERROR,
+  requirePackageFunding,
+  transitionCampaignStatus,
+  type CampaignActor,
+  type TransitionSession,
+} from '@/lib/data/campaign-transition';
 
 // The catalogue moved to package-offers.ts (worker-safe); re-exported so callers keep importing it from here.
 export { listPackageOffers, getPackageOffer } from '@/lib/data/package-offers';
@@ -68,14 +72,6 @@ export type OwnerCampaign = Pick<
 // the owner sees, and a second column list here would drift. The price is NOT here: it comes from the pricing module.
 export const CAMPAIGN_COLUMNS =
   'id, event_id, template_id, status, max_contacts, tos_version, allowed_channels, start_at, close_at, approved_at, created_at, contact_quota';
-
-// R9 refusal, in the owner's vocabulary (audit §2): the event step is
-// "אישור פרטי האירוע", never "פרסום". Exported so the console status route can
-// classify it as a 409 without duplicating the string.
-export const EVENT_NOT_CONFIRMED_ERROR = 'יש לאשר את פרטי האירוע לפני אישורי הגעה';
-
-// A campaign created under the earlier pay-per-result model cannot be started: it has no package payment.
-export const NO_PACKAGE_ERROR = 'לא ניתן להפעיל קמפיין שלא נרכשה עבורו חבילה';
 
 // Create-or-continue the event's SINGLE "RSVP confirmations" campaign in
 // `pending_approval`. Idempotent: if a non-cancelled campaign already exists for
@@ -483,190 +479,37 @@ export async function getCampaignForPurchase(
 // --- Campaign lifecycle (no money) ------------------------------------------
 // Status transitions. A package campaign is paid once, at purchase (src/lib/payments).
 
-export type CampaignStatus = Enums<'campaign_status'>;
-
-// WHO is performing a campaign transition.
-//
-// This is a value, not a boolean "skip auth" flag, on purpose: the console
-// variant CARRIES the verified staff user id, so it cannot be conjured by a
-// caller that has not been through requireConsoleAgent — and that same id is
-// what the support-access audit row is written from. A bare "trust me" mode
-// would be one careless import away from an unauthenticated transition.
-export type CampaignActor =
-  // Cookie session, event owner. The default for every owner-facing Server Action.
-  | { kind: 'owner' }
-  // Cookie session, platform admin. Wind-down ops (pause / close / cancel).
-  | { kind: 'admin' }
-  // Bearer session, already verified by the console route as a console agent
-  // holding `campaigns.runstate`. Cross-tenant by design (staff), so there is no
-  // ownership check here — the ROUTE is the authorization boundary, and what a
-  // console actor may reach is narrowed at the call sites below, not here.
-  | { kind: 'console'; staffUserId: string }
-  // No session: the server itself, after a package payment it recorded. It CARRIES the id of that payment, and the
-  // transition re-reads it (a succeeded package purchase of THIS campaign) before anything else, so it cannot be used
-  // without a real recorded payment. It is narrowed to `approved → active` inside the transition, whatever the caller
-  // passes. Used only by activateCampaignAfterPayment below (design D23).
-  | { kind: 'system'; paymentOperationId: string };
-
-// The system actor's whole authority (design D23): the transition it asks for is exactly `approved → active`, and the
-// payment it names is a succeeded package purchase of this very campaign, read from the ledger now. Anything else is
-// refused before the event is even read, so the actor cannot be reused for another transition or another campaign.
-async function requireSystemActivationProof(
-  admin: ReturnType<typeof createAdminClient>,
-  campaignId: string,
-  from: CampaignStatus[],
-  to: CampaignStatus,
-  paymentOperationId: string,
-): Promise<void> {
-  if (to !== 'active' || from.length !== 1 || from[0] !== 'approved') {
-    throw new Error('הפעלת מערכת מותרת רק ממצב מאושר לפעיל');
-  }
-  const { data, error } = await admin
-    .from('payment_operations')
-    .select('id')
-    .eq('id', paymentOperationId)
-    .eq('campaign_id', campaignId)
-    .eq('kind', 'package_purchase')
-    .eq('outcome', 'succeeded')
-    .maybeSingle();
-  if (error) throw new Error(PACKAGE_PAYMENT_UNVERIFIED_ERROR);
-  if (!data) throw new Error('הפעלת מערכת נדחתה: התשלום שצוין אינו רכישת חבילה שהצליחה עבור הקמפיין הזה');
-}
-
-// Race-safe guarded transition: the UPDATE only matches a row in one of `from`
-// (plus any extra column guard), so concurrent calls can't double-transition.
-// Identity is verified first. Throws if no row matched its current state.
-async function transitionCampaignStatus(
-  campaignId: string,
-  from: CampaignStatus[],
-  to: CampaignStatus,
-  // 'package': the campaign must be a package campaign with a recorded payment (verified by preparePackage).
-  funding?: 'package',
-  // L1/R9: only forward transitions that BEGIN outreach/billing (activate)
-  // reject a past event AND require an active event. pause/close must stay
-  // allowed for a past/non-active event (cleanup + wind-down paths, per R9's
-  // explicit carve-out — cancel/close/settle are not commercial-forward).
-  opts?: {
-    rejectPastEvent?: boolean;
-    requireActiveEvent?: boolean;
-    // The funding precondition (the payment, from the ledger). Runs after the identity and event checks, before the
-    // status write.
-    preparePackage?: (campaign: { id: string; event_id: string }) => Promise<void>;
-  },
-  // Returns the event's date so a caller (activateCampaign) can seed
-  // auto-thankyou's default schedule without a second identity-checked fetch.
-  actor: CampaignActor = { kind: 'owner' },
-): Promise<{ eventDate: string | null }> {
-  const admin = createAdminClient();
-  const { data: campaign, error } = await admin
-    .from('campaigns')
-    .select('id, event_id')
-    .eq('id', campaignId)
-    .maybeSingle();
-  if (error) throw new Error('טעינת הקמפיין נכשלה');
-  if (!campaign) {
-    const { notFound } = await import('next/navigation');
-    return notFound();
-  }
-
-  // The business guards are deliberately SEPARATE from the identity check: they
-  // are two different concerns and are applied independently of who the actor
-  // is. Welding them to requireOwnedEvent (the cookie DAL) would drop them for an
-  // actor that cannot call it, such as the console route.
-  const applyEventGuards = (event: { event_date: string | null; status: string }) => {
-    if (opts?.rejectPastEvent) assertEventNotPast(event.event_date);
-    if (opts?.requireActiveEvent && event.status !== 'active') {
-      throw new Error(EVENT_NOT_CONFIRMED_ERROR);
-    }
-  };
-
-  let eventDate: string | null;
-  if (actor.kind === 'admin') {
+// The transition itself (event guards, funding check, guarded UPDATE) and the actor types live in campaign-transition.ts,
+// which the worker can import to start a paid package (design D23). This module supplies the cookie-session half.
+const REQUEST_SESSION: TransitionSession = {
+  async requireStaff() {
     // Staff wind-down: no ownership, no past/active gating. Pinned to
     // `campaigns.runstate` rather than the coarse staff floor — the permission
     // catalogue has a key for exactly this (start/pause/close/cancel a live
-    // send), so an auditor cannot stop a running campaign.
-    await requirePlatformPermission('campaigns.runstate');
-    eventDate = null;
-  } else if (actor.kind === 'owner') {
-    const event = await requireOwnedEvent(campaign.event_id);
-    applyEventGuards(event);
-    eventDate = event.event_date;
-  } else {
-    // Console (Bearer) or system. Identity was verified by the route (console), or is the recorded payment checked
-    // here (system). Read the event with the service-role client so the SAME guards run without the cookie DAL.
-    if (actor.kind === 'system') await requireSystemActivationProof(admin, campaign.id, from, to, actor.paymentOperationId);
-    const { data: event, error: evErr } = await admin
-      .from('events')
-      .select('event_date, status')
-      .eq('id', campaign.event_id)
-      .maybeSingle();
-    if (evErr) throw new Error('טעינת האירוע נכשלה');
-    if (!event) throw new Error('האירוע לא נמצא');
-    applyEventGuards(event);
-    eventDate = event.event_date;
-  }
+    // send), so an auditor cannot stop a running campaign. The key comes from the CASL map (Campaign.runstate).
+    await requirePlatformAction('runstate', 'Campaign');
+  },
+  async notFound() {
+    const { notFound } = await import('next/navigation');
+    return notFound();
+  },
+};
 
-  if (funding === 'package') {
-    // Only a package campaign is ever funded: one created under the earlier model has no pricing round and no payment
-    // to start from. Rounds are append-only — a campaign that has one cannot stop having one — so this pre-check
-    // cannot be raced false, and no update-time re-guard is needed.
-    if ((await getCurrentPricing(campaign.id)) === null) throw new Error(NO_PACKAGE_ERROR);
-    await opts?.preparePackage?.({ id: campaign.id, event_id: campaign.event_id });
-  }
-
-  const query = admin
-    .from('campaigns')
-    .update({ status: to })
-    .eq('id', campaignId)
-    .in('status', from);
-  const { data: updated, error: upErr } = await query
-    .select('id')
-    .maybeSingle();
-  if (upErr) throw new Error('עדכון מצב הקמפיין נכשל');
-  if (!updated) {
-    throw new Error('לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי');
-  }
-  return { eventDate };
-}
-
-// What a package campaign needs before it may start: its payment recorded in the ledger (the only source of truth for
-// package money). The list every send reads is not filled here: guests added before the approval are admitted when the
-// terms are approved (agreements.ts), and a guest added later by reconcileCampaignSetForContact (contacts.ts), up to the
-// package quota.
-async function requirePackageFunding(campaignId: string): Promise<void> {
-  let paid: boolean;
-  try {
-    paid = (await getPackagePaymentState(campaignId)).status === 'collected';
-  } catch {
-    console.error('[campaign-lifecycle] package payment state could not be read', { campaignId });
-    throw new Error(PACKAGE_PAYMENT_UNVERIFIED_ERROR);
-  }
-  if (!paid) throw new Error(PACKAGE_NOT_PAID_ERROR);
-}
-
-// Activate (begin outreach). Requires an approved/scheduled/paused package campaign with a recorded payment — no
-// outreach without a secured payment.
+// Revive (resume outreach): `paused → active`, by a console agent holding `campaigns.runstate` (the console status
+// route). Requires the package payment, like every start — no outreach without a secured payment.
 //
-// `actor` narrows WHICH activations are reachable. An owner may activate from
-// any pre-send status; a console agent may only REVIVE, i.e. `paused → active`.
-//
-// That asymmetry is the whole safety argument, and it lives HERE rather than in
-// the route so a future caller cannot widen it: `paused` is reachable only from
-// `active` (pauseCampaign is the sole writer of that status, and it accepts only
-// `['active']`), so a paused campaign is PROOF the owner already activated it.
-// Staff therefore restore a commitment the owner made; they can never create
-// one. The package payment is likewise already present on anything that was live.
+// The FIRST start is not here: it is the server's, once the payment is recorded (activateCampaignAfterPayment, design
+// D23); a customer never starts a campaign. Revival is the only activation left, and it is safe because `paused` is
+// reachable only from `active` (pauseCampaign is the sole writer of that status, and it accepts only `['active']`):
+// a paused campaign is PROOF the paid service already started. Staff resume that commitment; they can never create
+// one. The console actor is the only one the type accepts, so a future caller cannot widen it.
 export async function activateCampaign(
   campaignId: string,
-  actor: CampaignActor = { kind: 'owner' },
+  actor: Extract<CampaignActor, { kind: 'console' }>,
 ): Promise<void> {
-  const from: CampaignStatus[] =
-    actor.kind === 'console' ? ['paused'] : ['approved', 'scheduled', 'paused'];
-
   const { eventDate } = await transitionCampaignStatus(
     campaignId,
-    from,
+    ['paused'],
     'active',
     'package',
     // L1: never begin outreach for a past event. R9: requires an active event.
@@ -676,6 +519,7 @@ export async function activateCampaign(
       preparePackage: (c) => requirePackageFunding(c.id),
     },
     actor,
+    REQUEST_SESSION,
   );
 
   // Additive ops alert (fire-and-forget, fail-safe): fires only once the guarded
@@ -689,8 +533,8 @@ export async function activateCampaign(
     fields: { campaign_id: campaignId },
   });
 
-  // Auditability (CLAUDE.md): the commercial start of the campaign.
-  // Best-effort like the hold's own log — never fails the activation.
+  // Auditability (CLAUDE.md): sending resumes, recorded like a start (the first
+  // start writes its own row, activate-paid-package.ts). Best-effort — never fails the revival.
   // Needs event_id; the transition helper returns only the date, so one narrow
   // read. No PII: ids + actor kind only.
   try {
@@ -714,11 +558,11 @@ export async function activateCampaign(
     });
   }
 
-  // Auto-thankyou: seed the default
-  // schedule ONLY the first time this campaign activates — `.is(...null)`
-  // guards a re-activation after pause from clobbering an owner-edited
-  // send time. A null/unparseable event_date leaves it unset (the owner can
-  // still set one manually; the sweep simply never picks up a null).
+  // Auto-thankyou: the first start seeds the default schedule
+  // (activate-paid-package.ts). A revival fills it only while it is still empty —
+  // `.is(...null)` keeps it from clobbering an owner-edited send time. A
+  // null/unparseable event_date leaves it unset (the owner can still set one
+  // manually; the sweep simply never picks up a null).
   const seeded = defaultThankyouSendAt(eventDate);
   if (seeded) {
     const admin = createAdminClient();
@@ -728,37 +572,6 @@ export async function activateCampaign(
       .eq('id', campaignId)
       .is('thankyou_send_at', null);
   }
-}
-
-// The server's own start of a paid package (design D23): no session, `approved → active` only. The payment it names is
-// re-read by the transition (requireSystemActivationProof) and the funding by requirePackageFunding; the event guards
-// are the owner's. A paused, closed or cancelled campaign never matches the guarded UPDATE, so a late or repeated call
-// cannot restart what staff stopped. Completion (activity row, thank-you default) is the caller's, written so it can
-// run again safely (src/lib/payments/activate-paid-package.ts). Returns the event date for that completion.
-export async function activateCampaignAfterPayment(
-  campaignId: string,
-  paymentOperationId: string,
-): Promise<{ eventDate: string | null }> {
-  const result = await transitionCampaignStatus(
-    campaignId,
-    ['approved'],
-    'active',
-    'package',
-    {
-      rejectPastEvent: true,
-      requireActiveEvent: true,
-      preparePackage: (c) => requirePackageFunding(c.id),
-    },
-    { kind: 'system', paymentOperationId },
-  );
-  void sendSlackAlert({
-    level: 'info',
-    category: 'campaign_billing',
-    source: 'campaign-lifecycle',
-    title: 'קמפיין הופעל — הפניות מתחילות',
-    fields: { campaign_id: campaignId },
-  });
-  return result;
 }
 
 // Wind-down: `active → paused`. Platform admin on the web; a console agent with
@@ -781,6 +594,7 @@ export async function pauseCampaign(
     undefined,
     undefined,
     actor,
+    REQUEST_SESSION,
   );
 }
 
@@ -849,7 +663,7 @@ export async function getThankyouSchedule(
 // the sweep/manual send fires, not after (nothing to cancel once it's out).
 //
 // AUTHORIZATION — owner OR platform staff holding manage_billing, the same
-// owner/admin split the rest of this module already uses (CampaignActor).
+// owner/staff split the rest of this module uses (requireOwnedEvent for the owner, a named permission for staff).
 // Staff who may pause, close, CANCEL and settle-and-charge a customer's
 // campaign could not move its thank-you time by an hour. That was not a
 // security boundary, just an inconsistency: the four heavier operations are
@@ -924,6 +738,7 @@ export async function closeCampaign(campaignId: string): Promise<void> {
     undefined,
     undefined,
     { kind: 'admin' },
+    REQUEST_SESSION,
   );
 }
 
@@ -941,7 +756,7 @@ export async function cancelCampaign(campaignId: string): Promise<void> {
     const { notFound } = await import('next/navigation');
     return notFound();
   }
-  const staff = await requirePlatformPermission('campaigns.runstate'); // redirects anyone else
+  const staff = await requirePlatformAction('runstate', 'Campaign'); // redirects anyone else
 
   // The RPC writes the audit row itself, in the same transaction as the status change, and names who did it: the staff member who
   // just passed the gate above - never an id from the browser. Without a record the cancellation does not happen.

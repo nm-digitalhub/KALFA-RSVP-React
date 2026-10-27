@@ -26,8 +26,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import type { GaActionEvent } from '@/lib/analytics/ga-event-contracts';
-import type { CampaignStatus } from '@/lib/data/campaigns';
-import { cancelActionCopy, isCampaignCancellable } from '@/lib/data/campaign-status';
+import { cancelActionCopy, isCampaignCancellable, type CampaignStatus } from '@/lib/data/campaign-status';
 import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
 import {
   CAMPAIGN_STAGE_LABELS,

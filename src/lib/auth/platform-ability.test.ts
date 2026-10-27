@@ -25,15 +25,7 @@ vi.mock('@/lib/auth/dal', () => ({
   requireUser: vi.fn(),
 }));
 
-// The real map binds every Package action to one key, so the several-keys path of
-// requireAnyPlatformAction is reached by re-binding `read` to another key in the tests that need it.
-vi.mock('@/lib/casl', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/casl')>();
-  return { ...actual, platformActionKey: vi.fn(actual.platformActionKey) };
-});
-
 import { hasPlatformPermission, requirePlatformPermission, requireUser } from '@/lib/auth/dal';
-import { platformActionKey } from '@/lib/casl';
 import { getPlatformAbility, requireAnyPlatformAction, requirePlatformAction } from './platform-ability';
 
 const USER = { id: 'staff-1' } as unknown as User;
@@ -42,10 +34,8 @@ function redirectSignal(url: string) {
   return Object.assign(new Error('NEXT_REDIRECT'), { digest: `NEXT_REDIRECT;replace;${url};307;` });
 }
 
-beforeEach(async () => {
+beforeEach(() => {
   vi.clearAllMocks();
-  const actual = await vi.importActual<typeof import('@/lib/casl')>('@/lib/casl');
-  vi.mocked(platformActionKey).mockImplementation(actual.platformActionKey);
   vi.mocked(requireUser).mockResolvedValue(USER);
   vi.mocked(requirePlatformPermission).mockResolvedValue(USER);
 });
@@ -86,20 +76,15 @@ describe('requireAnyPlatformAction', () => {
     expect(requirePlatformPermission).not.toHaveBeenCalled();
   });
 
+  // The real map binds these two pairs to different keys (manage_billing, campaigns.runstate).
   describe('with pairs bound to different keys', () => {
-    beforeEach(() => {
-      vi.mocked(platformActionKey).mockImplementation((action) =>
-        action === 'read' ? 'view_billing' : 'manage_billing',
-      );
-    });
-
     const PAIRS = [
-      { action: 'read', subject: 'Package' },
       { action: 'update', subject: 'Package' },
+      { action: 'runstate', subject: 'Campaign' },
     ] as const;
 
     it('passes when any one of the keys is held, and returns the user', async () => {
-      vi.mocked(hasPlatformPermission).mockImplementation(async (key) => key === 'view_billing');
+      vi.mocked(hasPlatformPermission).mockImplementation(async (key) => key === 'campaigns.runstate');
       await expect(requireAnyPlatformAction([...PAIRS])).resolves.toBe(USER);
       expect(hasPlatformPermission).toHaveBeenCalledTimes(2);
     });
@@ -123,8 +108,10 @@ describe('getPlatformAbility', () => {
   it('asks the database once per distinct key of the map', async () => {
     vi.mocked(hasPlatformPermission).mockResolvedValue(true);
     await getPlatformAbility();
-    expect(hasPlatformPermission).toHaveBeenCalledTimes(1);
+    // manage_billing (every Package action) and campaigns.runstate (Campaign.runstate): one call each, never per action.
+    expect(hasPlatformPermission).toHaveBeenCalledTimes(2);
     expect(hasPlatformPermission).toHaveBeenCalledWith('manage_billing');
+    expect(hasPlatformPermission).toHaveBeenCalledWith('campaigns.runstate');
   });
 
   it('builds an ability that allows what the database grants', async () => {

@@ -1,4 +1,5 @@
 import type { Enums } from '@/lib/supabase/types';
+import type { CampaignStatus } from '@/lib/data/campaign-status';
 import type { CelebrantFieldLabels, HostComposition } from '@/lib/validation/schemas';
 import type { BadgeVariant } from '@/components/ui/badge';
 
@@ -21,7 +22,6 @@ export type EventClosureReason = 'owner' | 'settlement' | 'cancellation';
 
 type EventType = Enums<'event_type'>;
 type EventStatus = Enums<'event_status'>;
-type CampaignStatus = Enums<'campaign_status'>;
 
 export const EVENT_TYPE_LABELS: Record<EventType, string> = {
   wedding: 'חתונה',

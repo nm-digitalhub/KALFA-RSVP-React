@@ -5,14 +5,14 @@
 // Every case uses an IDENTICAL fixture and the IDENTICAL CardCom answer; only the server requests differ:
 //   B. the browser's settle call alone (POST /api/campaigns/[id]/purchase/settle)   → control, starts today;
 //   C. the webhook first, then the browser's settle call (the buyer came back)       → control, starts today;
-//   D. the webhook, then the EXISTING activation function called with no buyer session → diagnostic: a webhook carries
-//      no session, and the activation as written today (activateCampaign, owner actor → requireOwnedEvent →
-//      requireUser) needs one. Pins that "just call the owner activation from the webhook" is not a fix;
 //   A. the webhook alone, then one worker tick                                         → TARGET (design D23).
+// (A former case D pinned that the customer's own activation could not run from a webhook. That activation no longer
+// exists: the server's start after the recorded payment is the only first start.)
 //
 // Real: both routes (POST handlers), the origin check, settleCardcomSession, the payment ledger and its DB triggers,
-// activateCampaign / transitionCampaignStatus / requirePackageFunding, requireOwnedEvent's query (owner_id filter),
-// requireUser's own code, the campaign row and activity_log in local Supabase.
+// activateCampaignAfterPayment / transitionCampaignStatus / requirePackageFunding, requireOwnedEvent's query (owner_id
+// filter, the settle route's ownership check), requireUser's own code, the campaign row and activity_log in local
+// Supabase.
 // Replaced, at the boundary only:
 //   - CardCom's GetLpResult (lowProfileGetLpResult): answers "paid ₪1 on terminal 99999";
 //   - the CardCom connection reader (getCardcomServerConfig): its secret lives in Vault; the test gives terminal + name;
@@ -282,22 +282,6 @@ describe.skipIf(!RUN)('CardCom payment: which server request starts the service 
     expect(await jobsOf(c)).toEqual([{ state: 'completed' }]);
     const s = await state(c);
     expect(s, JSON.stringify(s)).toMatchObject({ payment: 'succeeded', status: 'active', activations: 1 });
-  });
-
-  it('D (diagnostic): after the webhook, the existing activation cannot run without a buyer session', async () => {
-    const c = await pendingPayment();
-    expect((await webhook(c)).status).toBe(200);
-    expect(await state(c)).toMatchObject({ payment: 'succeeded', status: 'approved' });
-
-    // The owner-actor activation, as the settle route uses it, called the way a webhook would: no session.
-    const { activateCampaign } = await import('@/lib/data/campaigns');
-    const err = await activateCampaign(c.f.campaignId).then(
-      () => null,
-      (e: unknown) => e as { digest?: string },
-    );
-    expect(err?.digest ?? String(err)).toMatch(/NEXT_REDIRECT.*\/auth\/login/);
-    const s = await state(c);
-    expect(s, JSON.stringify(s)).toMatchObject({ payment: 'succeeded', status: 'approved', activations: 0 });
   });
 
   it('A (target, D23): the webhook alone records the payment, and the worker\'s job starts the service, once', async () => {

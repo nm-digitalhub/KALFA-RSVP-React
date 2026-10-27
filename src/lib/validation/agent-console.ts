@@ -67,13 +67,14 @@ export type AgentShiftBody = z.infer<typeof agentShiftSchema>;
 //     identity — the identity the monitor conference dials via callUser.
 //   POST /api/campaigns/{id}/status              LIVE — run state only.
 //     Body {action: 'activate' | 'pause'}. The console authenticates by Bearer,
-//     while the owner/admin lifecycle paths read the COOKIE session, so two
+//     while the admin lifecycle path reads the COOKIE session, so two
 //     concerns are kept separate — WHO is acting (a CampaignActor value, one
 //     variant per authentication path) and WHICH business guards apply (the
 //     funding precondition: the package payment, the past-event refusal,
 //     the active-event requirement), which run for every actor. The route calls
-//     the same activateCampaign / pauseCampaign the web Server Actions call; it
-//     does not reimplement them, and campaign-lifecycle-parity.test.ts fails if a
+//     the domain's pauseCampaign (the web Server Actions' too) and activateCampaign
+//     (revival, console only); it does not reimplement them, and
+//     campaign-lifecycle-parity.test.ts fails if a
 //     future route tries.
 //
 //     Authority is `campaigns.runstate` (migration 20260721183855), NOT

@@ -35,13 +35,17 @@ interface KeyedTable {
   otherRead?: string;
 }
 
-interface CaslTable<S extends PlatformSubject = PlatformSubject> {
-  group: 'permission';
-  // The module decides through CASL: each operation names the action of `subject`; the key is PLATFORM_ACTIONS'.
-  casl: { subject: S; ops: Partial<Record<TableOperation, PlatformAction<S>>> };
-  modules: readonly string[];
-  otherRead?: string;
-}
+// One member per subject, so each table's operations are checked against the actions of ITS subject (a single
+// generic over the subject union would intersect the subjects' actions down to nothing).
+type CaslTable = {
+  [S in PlatformSubject]: {
+    group: 'permission';
+    // The module decides through CASL: each operation names the action of `subject`; the key is PLATFORM_ACTIONS'.
+    casl: { subject: S; ops: Partial<Record<TableOperation, PlatformAction<S>>> };
+    modules: readonly string[];
+    otherRead?: string;
+  };
+}[PlatformSubject];
 
 export type StaffTableRule = ClosedTable | KeyedTable | CaslTable;
 

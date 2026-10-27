@@ -7,6 +7,7 @@ import { hasPlatformPermission, requirePlatformPermission, requireUser } from '@
 import {
   buildPlatformAbility,
   platformActionKey,
+  PLATFORM_ACTIONS,
   PLATFORM_ACTION_PAIRS,
   type PlatformAbility,
   type PlatformSubject,
@@ -53,12 +54,12 @@ export async function requirePlatformAction<S extends PlatformSubject>(
 }
 
 /**
- * Helper structural type to safely hold mapped pairs without losing generic validation
+ * Helper structural type to safely hold mapped pairs without losing generic validation. One member per subject, so an
+ * action is checked against ITS subject (a single generic over the subject union would intersect the actions to never).
  */
-export interface SafeActionPair<S extends PlatformSubject = PlatformSubject> {
-  subject: S;
-  action: PlatformAction<S>;
-}
+export type SafeActionPair<S extends PlatformSubject = PlatformSubject> = {
+  [K in S]: { subject: K; action: PlatformAction<K> };
+}[S];
 
 /**
  * Server enforcement gate for hybrid actions serving multiple entry points.
@@ -75,7 +76,12 @@ export async function requireAnyPlatformAction(
   }
 
   // מיפוי נקי ללא any וללא השלכות lint
-  const mappedKeys = pairs.map((p) => platformActionKey(p.action, p.subject));
+  // Each pair's own subject map, widened by assignment (the same read as operationKeys in staff-table-permissions.ts):
+  // passing the pair union to platformActionKey would intersect the subjects' actions to never.
+  const mappedKeys = pairs.map((p) => {
+    const actions: Record<string, PlatformPermissionKey> = PLATFORM_ACTIONS[p.subject];
+    return actions[p.action];
+  });
   const distinctKeys: PlatformPermissionKey[] = Array.from(new Set(mappedKeys));
 
   // אופטימיזציה: אם כל הפעולות דורשות את אותו המפתח, נשתמש בנתיב המהיר של requirePlatformPermission

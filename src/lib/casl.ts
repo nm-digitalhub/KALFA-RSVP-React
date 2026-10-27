@@ -16,6 +16,11 @@ export const PLATFORM_ACTIONS = {
     update: 'manage_billing',
     delete: 'manage_billing',
   },
+  // A campaign's run state: pause, close and cancel (staff on the web) and revival (the console). A claim with no
+  // conditions (openspec/changes/casl-console-ability-foundation, design D3).
+  Campaign: {
+    runstate: 'campaigns.runstate',
+  },
 } as const satisfies Record<string, Record<string, PlatformPermissionKey>>;
 
 export type PlatformSubject = keyof typeof PLATFORM_ACTIONS;
