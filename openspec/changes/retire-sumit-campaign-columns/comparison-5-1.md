@@ -59,6 +59,6 @@ Old terms, not payment facts:
 Measured with `node scripts/find-legacy-campaign-payment-columns.mjs --no-tests --db`:
 
 - **Database:** only the CHECK constraints on `capture_status`, `charge_status` and `release_status` (they go with the columns).
-- **`card_*` and `sumit_customer_id`:** the SUMIT test page (`src/lib/data/admin/sumit-test.ts`) and `scripts/sumit-doc-check.ts` read them from `campaigns`. Both belong to Open Question 2: these two groups wait for it.
+- **`card_*` and `sumit_customer_id`:** the SUMIT test page (`src/lib/data/admin/sumit-test.ts`) and `scripts/sumit-doc-check.ts` read them from `campaigns`. Both belong to Open Question 2: these two groups wait for it. *(27.10.2026: both readers removed with the diagnostics. The groups were dropped in `20261027092539` after the guard in that file re-checked the card exception and the ledger copy of `sumit_customer_id` against the live data.)*
 - **`credit_applied`:** `src/lib/data/billing.ts` and `src/lib/data/admin/users.ts` read it (through `credit-consumed.ts`) as the fallback for a campaign with no ledger row. It is a payment column the ledger already holds for both SUMIT campaigns (₪84, ₪200); every other campaign holds 0. **Owner, 11.10.2026: add it to the drops.** The credit reader now reads the ledger only; the column is dropped after that code is deployed.
 - Every other retired column: no reader.

@@ -21,7 +21,6 @@ import {
   CreditCard,
   ChevronsUpDown,
   FileText,
-  FlaskConical,
   Globe,
   History,
   LayoutDashboard,
@@ -215,7 +214,6 @@ export const NAV_GROUPS: NavGroup[] = [
       // Owner-gated exactly like Debug Mode above.
       { href: '/admin/relocation', label: 'העברת דומיין', icon: Globe, permission: 'OWNER' },
       { href: '/admin/webhooks', label: 'בדיקת Webhooks', icon: Webhook, permission: 'view_webhooks' },
-      { href: '/admin/sumit-test', label: 'בדיקת SUMIT', icon: FlaskConical, permission: 'manage_billing' },
       // Internal same-origin link: the pg-boss dashboard is reverse-proxied at
       // /admin/jobs behind manage_settings (dashboard-proxy.ts) — no separate
       // login. See that route.

@@ -6,7 +6,7 @@
 // back as an error, not a new customer record.
 //
 // Credentials come from app_settings via getSumitServerConfig() (same as
-// sumit-doc-check.ts) and are never printed. Only the response shape is logged.
+// sumit-doc-getdetails.ts) and are never printed. Only the response shape is logged.
 //
 //   PROBE_EMAIL=someone@example.com node --env-file=.env.local dist/sumit-customer-search-probe.cjs
 

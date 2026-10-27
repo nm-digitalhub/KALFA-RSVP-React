@@ -30,10 +30,11 @@ Every verification re-measures the live state; none assumes a fixed count. After
 - [ ] 5.2 After the deploy of groups 1–4, and with the owner's approval for each group, create one drop migration per group, then regenerate the types:
   - `auth_*`, `authorized_at` — `20261011201543`
   - `capture_status`, `release_status` — `20261011201545`
-  - `card_*` — waits for Open Question 2 (the SUMIT test page and `scripts/sumit-doc-check.ts` read them)
+  - `card_*` and `sumit_customer_id` — `20261027092539`, after their last readers (the SUMIT test page and `scripts/sumit-doc-check.ts`) were removed in 6.1 (Open Question 2, owner, 27.10.2026); pushed by the owner on 27.10.2026. Read back live the same day: none of the five columns is left on `campaigns`, and the ledger row holding `sumit_customer_id` is still there
+  - `sumit_test_transactions` (the table of the retired diagnostic page) — `20261027092536`; pushed by the owner on 27.10.2026, read back live: the table is gone
   - `charge_*`, `charged_at`, `final_*` — `20261011201547`
   - `hold_order_*` — `20261011201549`
-  - `sumit_*` — `sumit_order_document_id` and `sumit_charge_document_id` dropped in `20261027075846` (empty in every row, no reader, 27.10.2026); `sumit_customer_id` waits for Open Question 2 (the SUMIT test page reads it)
+  - `sumit_*` — `sumit_order_document_id` and `sumit_charge_document_id` dropped in `20261027075846` (empty in every row, no reader, 27.10.2026); `sumit_customer_id` with the `card_*` group above
   - the old terms: `price_per_reached`, `base_price`, `included_reached`, `max_charge_ceiling` (on `campaigns` and `packages`), and `min_hold_floor`, `hold_buffer_pct` (on `packages`) — `20261011201551`
   - the switches and hold settings: `campaign_holds_enabled`, `base_overage_pricing_enabled`, `close_charge_enabled`, `reasonable_coverage_contacts`, `extreme_threshold_contacts`, `agr_charge_window_days`, `agr_hold_release_days` (on `app_settings`) — `20261011201553`
   - `billing_route` (Open Question 1) and its enum type — `20261011201555`
@@ -43,4 +44,7 @@ Every verification re-measures the live state; none assumes a fixed count. After
 
 ## 6. SUMIT outside campaign payment
 
-- [ ] 6.1 **[needs Open Question 2]** Per the owner's answer, remove or keep each SUMIT feature listed there. Verify: per decision.
+- [ ] 6.1 The SUMIT diagnostics (Open Question 2, owner, 27.10.2026: retired). Remove the `/admin/sumit-test` page and form, `/api/admin/sumit-test` and its test, `src/lib/data/admin/sumit-test.ts`, `src/lib/data/admin/sumit-test-transactions.ts`, `src/lib/sumit/safe-preview.ts` and `src/lib/sumit/charge-response.ts` with their tests, and `scripts/sumit-doc-check.ts`. Also remove the admin menu entry, the link on the integration page, their entries in `admin-data-layer-coverage.test.ts` and `knip.json`, and the comments that point at them. Keep `src/lib/sumit/raw-charge.ts`, which `scripts/sumit-charge-token.ts` still uses. Verify: a search of the repo finds no live reference to the removed files, routes or exports; the integration page test asserts the link is gone; typecheck, lint, the full suite and the build pass.
+- [ ] 6.2 Every other SUMIT feature in Open Question 2 keeps its existing scope (owner, 27.10.2026): the backup purchase and refund, the card form, `sumit_customers`, the integration page and its settings, the daily health check, the workflows with `hold-status` and its template, and the `scripts/sumit-*` probes. Verify: the diff of 6.1 changes none of their files except the integration page's test-page link and comments.
+
+Do not archive this change while a step above is open: the migration notes and comparison-5-1.md refer to its paths.

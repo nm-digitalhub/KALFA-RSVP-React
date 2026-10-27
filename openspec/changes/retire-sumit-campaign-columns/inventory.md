@@ -106,11 +106,16 @@ Re-run on 11.10.2026 after task 1.2, over `src` (tests excluded, `types.generate
 - `src/lib/whatsapp/generated/incoming-webhook.d.ts`
 - `src/lib/whatsapp/generated/message-templates.d.ts`
 
-## SUMIT outside campaign payment (Open Question 2; not changed until answered)
+## SUMIT outside campaign payment (Open Question 2; answered by the owner on 27.10.2026)
+Kept, existing scope (task 6.2):
 - `src/lib/sumit/hold-status.ts` (read by the SUMIT card workflow trigger, `workflow/nodes/trigger-sumit-card/runtime.ts`)
 - `src/lib/workflow/catalogue/templates/sumit-hold-changed.ts` (a workflow template on the same trigger)
+
+Removed with the diagnostics (task 6.1):
 - `src/app/(admin)/admin/sumit-test/page.tsx`
 - `src/app/(admin)/admin/sumit-test/sumit-test-form.tsx`
-- `src/app/api/admin/sumit-test/route.ts`
+- `src/app/api/admin/sumit-test/route.ts` (and `route.test.ts`)
 - `src/lib/data/admin/sumit-test-transactions.ts`
 - `src/lib/data/admin/sumit-test.ts`
+- `src/lib/sumit/safe-preview.ts`, `src/lib/sumit/charge-response.ts` (and their tests): used only by the files above
+- `scripts/sumit-doc-check.ts`

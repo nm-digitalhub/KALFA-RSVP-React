@@ -6,7 +6,7 @@
 //
 //   CHECK_DOCUMENT_ID=1076735289 node --env-file=.env.local dist/sumit-doc-getdetails.cjs
 //
-// Bundle (same pattern as sumit-doc-check):
+// Bundle (same pattern as send-email-file and sumit-payment-get):
 //   esbuild scripts/sumit-doc-getdetails.ts --bundle --platform=node --format=cjs \
 //     --target=node20 --outfile=dist/sumit-doc-getdetails.cjs --tsconfig=tsconfig.json \
 //     --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js \
