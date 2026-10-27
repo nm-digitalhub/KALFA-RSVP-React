@@ -859,6 +859,12 @@
       "skillPath": "jobs-to-be-done/SKILL.md",
       "computedHash": "d4ec70d690ae20b80664066a55964a9834e4d8134f5812ba6b7fb9104ea7c3b7"
     },
+    "knip": {
+      "source": "brianlovin/claude-config",
+      "sourceType": "github",
+      "skillPath": "skills/knip/SKILL.md",
+      "computedHash": "89f3a78088109045afc77e09c93a28b6cc4cb51ae00e789091e9991a180e39db"
+    },
     "lead-qualification": {
       "source": "louisblythe/salesskills",
       "sourceType": "github",
@@ -918,6 +924,12 @@
       "sourceType": "github",
       "skillPath": "skills/meeting-conversion/SKILL.md",
       "computedHash": "8de8ddc9637c320399e584cff4ff4c643aee9321af69f61225b72377e2b37f3f"
+    },
+    "mermaid-diagrams": {
+      "source": "theheavenlyd3mon/hermes-profiles",
+      "sourceType": "github",
+      "skillPath": "profiles/knowledge/skills/magnus/mermaid-diagrams/SKILL.md",
+      "computedHash": "9a78d4ceb27a6149876e38a25f53741faa4c3e5751554991692f508f629d191b"
     },
     "message-deliverability-optimization": {
       "source": "louisblythe/salesskills",

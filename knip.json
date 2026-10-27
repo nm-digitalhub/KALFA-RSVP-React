@@ -1,0 +1,135 @@
+// Knip 6.43 configuration. Knip reads this file as JSONC (comments allowed): loadJSON falls back to
+// strip-json-comments when JSON.parse fails (node_modules/knip/dist/util/fs.js).
+//
+// THE RULE: an entry here suppresses only a FALSE positive — something used in a way knip cannot see. A real finding
+// (a dead file, an unused or undeclared dependency) stays in the report; it is fixed in the code, not hidden here.
+// Every suppression below names the evidence that makes it a false positive.
+//
+// What knip cannot find, whatever this file says: code that is still REACHABLE from a live page, route or job but is
+// no longer meant to run (e.g. a branch of a used function that no caller takes). That needs a call-site audit.
+{
+  "$schema": "./node_modules/knip/schema-jsonc.json",
+
+  "entry": [
+    // Production bundles built by esbuild in package.json scripts. In default mode knip finds them through the script
+    // parser and hints "Remove redundant entry pattern" — keep them anyway: in --production mode knip reads only the
+    // `start` script (knip manifest/helpers.js), so without these lines the worker, owner-agent and fleet bundles are
+    // not analysed at all.
+    "worker/main.ts!",
+    "src/lib/owner-agent/mcp/main.ts!",
+    "src/lib/owner-agent/consumer/main.ts!",
+    "scripts/fleet-agent-cli.ts!",
+    // pm2 apps. The pm2 plugin follows only `script` paths that start with "." or "/" (knip util/path.js isInternal),
+    // so these two are listed by hand: ecosystem.config.cjs `kalfa-worker` and `kalfa-ops-agent`.
+    "worker/start.mjs!",
+    "ops/probe-server.mjs!",
+    // Spawned by worker/start.mjs before the worker bundle loads.
+    "scripts/check-worker-bundle.mjs!",
+    // esbuild --alias target in every bundle script of package.json.
+    "worker/empty.js!",
+    // Run outside Node's module graph: Supabase Edge Functions (Deno), VoxEngine scenarios (voxengine-ci upload),
+    // the service worker (registered by URL).
+    "supabase/functions/*/index.ts!",
+    "voxfiles/applications/*/scenarios/src/*.voxengine.js!",
+    "public/sw.js!",
+    // Included by vitest.integration.config.mts only when KALFA_IT_PROBE is set; spawned by cleanup.local-it.test.ts.
+    "src/lib/testing/cleanup.probe.ts",
+
+    // Hand-run CLIs, each with a caller outside package.json (a runbook, plan, agent prompt or code that spawns it).
+    // Deliberately a list and not `scripts/**`: a script nobody runs must keep showing up as an unused file.
+    "scripts/analyze-call-audio.ts", // .claude/agents/voice-call-qa-analyst.md
+    "scripts/analyze-call-pitch.ts", // docs/voice-agent/agent-testing-methodology.md
+    "scripts/coupons-concurrency-tests.mjs", // openspec/changes/personal-coupons/tasks.md
+    "scripts/deploy-confirmation-email-template.mjs", // supabase/templates/confirmation.html
+    "scripts/deploy-email-change-template.mjs", // spawned by src/lib/relocation/steps.ts
+    "scripts/deploy-recovery-email-template.mjs", // spawned by src/lib/relocation/steps.ts
+    "scripts/docs-json-to-md.mjs", // docs/voximplant/reference/voice-ai/README.md
+    "scripts/exo.cjs", // plans/m365-graph-migration.md
+    "scripts/find-legacy-campaign-payment-columns.mjs", // openspec/changes/retire-sumit-campaign-columns
+    "scripts/gen-staff-table-rls.ts", // generates a block of supabase/migrations/20261025151809_*.sql
+    "scripts/meta-docs-to-md.mjs", // docs/whatsapp-calling/README.md
+    "scripts/permission-matrix.mjs", // CLI front of scripts/permission-matrix/ (tested by test:permission-matrix)
+    "scripts/scraper-v1.mjs", // docs/voximplant/reference/voice-ai/README.md
+    "scripts/send-email-file.ts", // plans/m365-graph-migration.md; gated in .claude/fleet/settings/hooks/guard.sh
+    "scripts/send-one-invite.ts", // gated in .claude/fleet/settings/hooks/guard.sh
+    "scripts/sharepoint-archive-identity.cjs", // docs/sharepoint-contracts-archive-plan-2026-09-06.md
+    "scripts/sharepoint-archive-provision.cjs", // same plan
+    "scripts/sharepoint-intranet-provision.cjs", // same plan
+    "scripts/sharepoint-security-audit.cjs", // same plan ("recurring report")
+    "scripts/sumit-crm-list-holds.ts", // source of the constant in src/lib/sumit/hold-status.ts
+    "scripts/sumit-doc-check.ts", // .claude/agents/shared/tax-catalog-israel.md
+    "scripts/voximplant/fetch-session-log.ts", // src/lib/voximplant/log-download.ts
+    "scripts/voximplant/test-call.ts" // docs/voice-agent/dial-gates.md
+  ],
+
+  // The application. Out of scope: agent/skill tooling (.agents, .claude except the pm2-run fleet scheduler), docs,
+  // plans, openspec, templates, handoffs. openapi/ is in scope so its stale generated client keeps being reported.
+  // A trailing "!" marks production code: --production analyses ONLY the "!" patterns (and "!" entries inside them).
+  // MEASURED 2026-10-26: dropping the five "!" bundle entries above makes --production report 125 unused files (every
+  // worker job under src/lib/data among them) instead of 53 — their default-mode "redundant" hints are expected.
+  "project": [
+    "src/**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}!",
+    "src/**/*.css!",
+    "worker/**/*.{js,ts,mjs,cjs}!",
+    "ops/**/*.{js,mjs,cjs}!",
+    ".claude/fleet/bin/**/*.mjs!",
+    "supabase/functions/**/*.ts!",
+    "voxfiles/applications/**/*.js!",
+    "scripts/**/*.{js,ts,mjs,cjs,mts}",
+    "openapi/**/*.ts",
+    "*.{js,ts,mjs,cjs,mts,cts}"
+  ],
+
+  // pm2 is a system install (/usr/bin/pm2), not a dependency, so the plugin does not enable itself.
+  "pm2": {
+    "config": ["ecosystem.config.cjs", "ecosystem.owner-agent.config.cjs"]
+  },
+  // The plugin's own config glob is vitest.config.* only; without this the integration config's
+  // setupFiles/globalSetup (src/lib/testing/integration-*.ts) are never followed.
+  "vitest": {
+    "config": ["vitest.config.mts", "vitest.integration.config.mts"]
+  },
+  // Off on purpose. The Node.js plugin turns on because of the `node --test` scripts and then makes every
+  // `**/test-*.ts` / `**/*-test.ts` in the repo an entry — production modules such as src/lib/data/admin/test-events.ts
+  // and src/lib/voximplant/test-numbers.ts were being treated as tests and never checked. The `node --test` files are
+  // still entries through the package.json script parser.
+  "node": false,
+  // Off on purpose: there is no playwright.config and no *.spec file; its default `**/*.test.*` entry only pulled in
+  // .agents/skills. playwright and @playwright/test are imported as libraries and are still counted.
+  "playwright": false,
+
+  // Types and interfaces used inside their own file (Props, row shapes) are not dead code.
+  "ignoreExportsUsedInFile": { "interface": true, "type": true },
+
+  "ignoreIssues": {
+    // Generator-owned output (orval.config.ts, `clean: true`; openapi-typescript; supabase gen types): the generator
+    // writes the vendor's whole API surface, and a hand edit is lost on the next run.
+    "src/lib/{sumit,cardcom,dnc,sms}/generated/**": ["exports", "types"],
+    "**/*.generated.ts": ["exports", "types"],
+    // Third-party source copied verbatim (src/lib/workflow/vendor/workflowbuilder/README.md).
+    "src/lib/workflow/vendor/**": ["exports", "types"],
+    // Deno: imports resolve through each function's deno.json import map, not package.json.
+    "supabase/functions/**": ["unlisted"]
+  },
+  // Orval writes one file per vendor API tag; CardCom's client is generated in full on purpose (orval.config.ts).
+  // The way to shrink it is an orval tag filter, as the `extra` project does — not deleting generated files.
+  "ignoreFiles": ["src/lib/{sumit,cardcom,dnc,sms}/generated/**"],
+
+  "ignoreDependencies": [
+    // Reached by path or spawned, never imported.
+    "@supabase/mcp-server-supabase", // node_modules/.../dist/cli.js spawned by src/lib/owner-agent/runner.ts
+    "dejavu-fonts-ttf", // font dir joined from cwd in src/lib/agreements/pdf-document.tsx (require.resolve breaks webpack)
+    "skills", // `npx --no-install skills use` in src/lib/ai/package-copy-skills.ts
+    "@voximplant/voxengine-ci", // `node bin/voxengine-ci.js` from its own dir in the vox:* scripts
+    "circle-flags", // files copied by the flags:sync script
+    "keytar", // optional require.resolve probe in scripts/install-native-deps.mjs
+    // CLIs and MCP servers run by people or agents.
+    "@agiflowai/scaffold-mcp", // mcp-config.yaml, loaded by the one-mcp server in .mcp.json
+    "@playwright/cli", // `playwright-cli` (.claude/skills/playwright-cli)
+    "@pnp/cli-microsoft365", // `m365`
+    "typescript-language-server" // Claude Code typescript-lsp plugin; no global copy on this host
+  ],
+
+  // System or global installs, not dependencies.
+  "ignoreBinaries": ["pm2", "psql", "ffmpeg", "ffprobe", "seo"]
+}
