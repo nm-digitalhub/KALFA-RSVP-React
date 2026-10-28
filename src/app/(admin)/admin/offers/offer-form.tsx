@@ -60,6 +60,10 @@ const currency = new Intl.NumberFormat('he-IL', {
 
 type PackageRowState = { checked: boolean; override: string };
 
+// The row of a package the rows were not built for: unticked, no override. Saving an edit revalidates the page without
+// remounting the form, so a package created meanwhile arrives in `packageChoices` with no row of its own.
+const EMPTY_ROW: PackageRowState = { checked: false, override: '' };
+
 function initialRows(
   choices: OfferPackageChoice[],
   selected: OfferFormInitial['packages'],
@@ -97,18 +101,20 @@ export function OfferForm({
     initialRows(packageChoices, values.packages),
   );
 
+  // Every read and write goes through a complete row, so a partial update can never leave a row without a field.
+  const rowOf = (id: string): PackageRowState => rows[id] ?? EMPTY_ROW;
   const setRow = (id: string, next: Partial<PackageRowState>) =>
-    setRows((prev) => ({ ...prev, [id]: { ...prev[id], ...next } }));
+    setRows((prev) => ({ ...prev, [id]: { ...(prev[id] ?? EMPTY_ROW), ...next } }));
 
   // An inactive package is shown only while the offer still allows it (stored state is never
   // hidden); it cannot be newly selected.
-  const visibleChoices = packageChoices.filter((c) => c.active || rows[c.id]?.checked);
+  const visibleChoices = packageChoices.filter((c) => c.active || rowOf(c.id).checked);
 
   const packagesJson = JSON.stringify(
     visibleChoices
-      .filter((c) => rows[c.id]?.checked)
+      .filter((c) => rowOf(c.id).checked)
       .map((c) => {
-        const override = rows[c.id]?.override.trim() ?? '';
+        const override = rowOf(c.id).override.trim();
         return {
           package_id: c.id,
           value_override: override === '' ? null : Number(override),
@@ -118,8 +124,8 @@ export function OfferForm({
 
   // The live preview for one row — null while the discount value is not a number yet.
   const previewFor = (choice: OfferPackageChoice): number | null => {
-    const row = rows[choice.id];
-    const effective = row?.override.trim() !== '' ? Number(row?.override) : Number(value);
+    const row = rowOf(choice.id);
+    const effective = row.override.trim() !== '' ? Number(row.override) : Number(value);
     if (!Number.isFinite(effective) || effective <= 0) return null;
     return computeOfferOption(choice.price_with_vat, kind, effective).finalPrice;
   };
@@ -198,15 +204,15 @@ export function OfferForm({
       <fieldset className="space-y-2">
         <legend className="text-sm font-semibold">חבילות שההצעה כוללת</legend>
         {visibleChoices.map((choice) => {
-          const row = rows[choice.id];
-          const final = row?.checked ? previewFor(choice) : null;
+          const row = rowOf(choice.id);
+          const final = row.checked ? previewFor(choice) : null;
           return (
             <div key={choice.id} className="space-y-1 rounded-md border border-border p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   id={`${formId}-pkg-${choice.id}`}
                   type="checkbox"
-                  checked={row?.checked ?? false}
+                  checked={row.checked}
                   onChange={(e) => setRow(choice.id, { checked: e.target.checked })}
                   className="size-4 rounded border-border"
                 />
@@ -228,7 +234,7 @@ export function OfferForm({
                   </span>
                 )}
               </div>
-              {row?.checked && (
+              {row.checked && (
                 <div className="flex items-center gap-2 ps-6">
                   <label
                     htmlFor={`${formId}-ovr-${choice.id}`}

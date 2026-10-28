@@ -57,8 +57,10 @@ Shared rules live in the root AGENTS.md and CLAUDE.md; this file covers only wha
 
 ## Tests
 
-Only `actions.test.ts` is colocated (node env). It mocks the DAL but keeps the real `OfferFloorError`
-class, because the action maps it by `instanceof`. Pages and client forms have no tests here.
+`actions.test.ts` (node env) mocks the DAL but keeps the real `OfferFloorError` class, because the action
+maps it by `instanceof`. `offer-form.test.tsx` (jsdom) covers the package rows when `packageChoices` grows after
+the rows were built: a save revalidates the page without remounting the form, and a package without a row reads
+as unticked. Pages have no tests here.
 DAL behavior (gate order, floor, FK message, freeze) is in `src/lib/data/admin/offers.test.ts`.
 
 ```bash
