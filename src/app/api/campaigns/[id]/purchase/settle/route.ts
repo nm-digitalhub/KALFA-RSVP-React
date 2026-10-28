@@ -16,9 +16,10 @@ export const dynamic = 'force-dynamic';
 // campaign if — and only if — the payment is recorded. The session is looked up HERE, from the campaign: the browser names
 // no session, so it cannot ask about anyone else's.
 //
-// The one thing the browser may say is `submitted: true`, after the form really submitted. It decides whether a session that
-// CardCom says is unpaid is closed as failed (the buyer was declined and must try again) or left open (the buyer may still be
-// typing). Lying about it only hurts the liar: a paid-after-failed payment raises an alert in settleCardcomSession.
+// The one thing the browser may say is `submitted: true`, after the form really submitted. Without it a session that CardCom
+// says is unpaid is left open (the buyer may still be typing). With it, it is closed as failed when CardCom names the attempt that
+// failed (the buyer was declined and must try again), and still left open when nothing failed yet (settleCardcomSession,
+// afterSubmit). Lying about it only hurts the liar: a paid-after-failed payment raises an alert in settleCardcomSession.
 //
 // It may also carry what CardCom's frames announced about 3D Secure when they reported an error (`threeDs`: the error's number,
 // the last step, and the label of CardCom's own fixed sentence — never text). It is written into the note of a row that this very
@@ -40,9 +41,11 @@ const bodySchema = z.object({
 type State = 'paid' | 'declined' | 'review' | 'in_progress' | 'none' | 'error';
 type Answer = { state: Exclude<State, 'paid'> } | { state: 'paid'; activation: ActivationResult | 'not_needed' };
 
-async function latestCardcomSession(campaignId: string): Promise<string | null> {
+// The campaign's latest CardCom session. A read that FAILED is not "no session": it says nothing about the payment, so it is
+// answered as an error and never as "none".
+async function latestCardcomSession(campaignId: string): Promise<{ ok: true; lowProfileId: string | null } | { ok: false }> {
   const admin = createAdminClient();
-  const { data: operation } = await admin
+  const { data: operation, error: operationError } = await admin
     .from('payment_operations')
     .select('id, meta')
     .eq('campaign_id', campaignId)
@@ -50,10 +53,12 @@ async function latestCardcomSession(campaignId: string): Promise<string | null> 
     .order('recorded_at', { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (operationError) return { ok: false };
   const meta = operation?.meta;
-  if (!operation || meta === null || typeof meta !== 'object' || Array.isArray(meta) || meta.provider !== 'cardcom') return null;
-  const { data: session } = await admin.from('cardcom_payment_sessions').select('low_profile_id').eq('operation_id', operation.id).maybeSingle();
-  return session?.low_profile_id ?? null;
+  if (!operation || meta === null || typeof meta !== 'object' || Array.isArray(meta) || meta.provider !== 'cardcom') return { ok: true, lowProfileId: null };
+  const { data: session, error: sessionError } = await admin.from('cardcom_payment_sessions').select('low_profile_id').eq('operation_id', operation.id).maybeSingle();
+  if (sessionError) return { ok: false };
+  return { ok: true, lowProfileId: session?.low_profile_id ?? null };
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -78,10 +83,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   let answer: Answer;
   try {
-    const lowProfileId = await latestCardcomSession(campaignId);
-    if (!lowProfileId) return noStoreJson({ state: 'none' } satisfies Answer);
+    const latest = await latestCardcomSession(campaignId);
+    if (!latest.ok) {
+      console.error('[cardcom-settle-route] the payment ledger could not be read', { campaignId });
+      return noStoreJson({ state: 'error' } satisfies Answer);
+    }
+    if (!latest.lowProfileId) return noStoreJson({ state: 'none' } satisfies Answer);
 
-    const settled = await settleCardcomSession(lowProfileId, { finalizeUnpaid: submitted, ...(browserReport ? { browserReport } : {}) });
+    const settled = await settleCardcomSession(latest.lowProfileId, {
+      finalizeUnpaid: submitted,
+      ...(submitted ? { afterSubmit: true } : {}),
+      ...(browserReport ? { browserReport } : {}),
+    });
     if (settled.status === 'not_found') answer = { state: 'none' };
     else if (settled.status === 'error') answer = { state: 'error' };
     else if (settled.status === 'unpaid') answer = { state: 'in_progress' };

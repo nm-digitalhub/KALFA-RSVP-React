@@ -367,6 +367,63 @@ describe('settleCardcomSession: a payment that did not happen', () => {
   });
 });
 
+describe('settleCardcomSession: a deal CardCom still holds as pending (5117/5118/5119)', () => {
+  // Measured 28.10.2026 on terminal 1000: a session nobody paid and a declined card both answer 5119 "עסקה ממתינה או לא הושלמה";
+  // only PendingReason (CardCom's spec: the newest FAILED attempt, null when nothing failed) tells them apart.
+  const PENDING = { ResponseCode: 5119, Description: 'עסקה ממתינה או לא הושלמה', Operation: 'ChargeOnly', TranzactionId: 0 };
+  const ISSUER_DECLINE = { ResponseCode: 60000004, Description: 'העסקה קיבלה סירוב מ חברת האשראי', TranzactionId: 267997632 };
+  const AFTER_SUBMIT = { finalizeUnpaid: true, afterSubmit: true } as const;
+
+  it('after a submit, a failed attempt CardCom names closes the row as failed with THAT attempt\'s code, keeping the overall answer in the note', async () => {
+    answer({ ...PENDING, PendingReason: ISSUER_DECLINE });
+    await expect(settleCardcomSession(LP, AFTER_SUBMIT)).resolves.toEqual({ status: 'settled', outcome: 'failed', alreadyDone: false });
+    expect(ledger()).toMatchObject({ outcome: 'failed', provider_status: '60000004', provider_status_description: ISSUER_DECLINE.Description });
+    expect(String(ledger().note)).toContain('CardCom answered 5119');
+    expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ title: expect.stringContaining('נדחתה') }));
+  });
+
+  it.each([[5117], [5118], [5119]])('after a submit, %i with nothing failed (PendingReason null) leaves the row pending: the payment may still be under way', async (code) => {
+    answer({ ...PENDING, ResponseCode: code, PendingReason: null });
+    await expect(settleCardcomSession(LP, AFTER_SUBMIT)).resolves.toEqual({ status: 'unpaid' });
+    expect(ledger().outcome).toBe('pending');
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['missing', {}],
+    ['not an object', { PendingReason: 'declined' }],
+    ['without a numeric code', { PendingReason: { Description: 'x' } }],
+  ])('after a submit, a PendingReason that is %s is read as neither: an error, and the row is left as it is', async (_label, extra) => {
+    answer({ ...PENDING, ...extra });
+    await expect(settleCardcomSession(LP, AFTER_SUBMIT)).resolves.toEqual({ status: 'error' });
+    expect(ledger().outcome).toBe('pending');
+  });
+
+  it('after a submit, any other non-zero answer is closed as failed, as it always was', async () => {
+    answer(DECLINED);
+    await expect(settleCardcomSession(LP, AFTER_SUBMIT)).resolves.toEqual({ status: 'settled', outcome: 'failed', alreadyDone: false });
+    expect(ledger()).toMatchObject({ outcome: 'failed', provider_status: '5033' });
+  });
+
+  it('the sweeper\'s abandonment (no afterSubmit) still closes a pending deal with nothing failed: not paid is enough', async () => {
+    answer({ ...PENDING, PendingReason: null });
+    await expect(settleCardcomSession(LP, { finalizeUnpaid: true })).resolves.toEqual({ status: 'settled', outcome: 'failed', alreadyDone: false });
+    expect(ledger()).toMatchObject({ outcome: 'failed', provider_status: '5119' });
+  });
+
+  it('a replaced session (no afterSubmit) is still closed as replaced, quietly, whatever PendingReason says', async () => {
+    answer({ ...PENDING });
+    await expect(settleCardcomSession(LP, { finalizeUnpaid: true, replacedByNewSession: true })).resolves.toEqual({ status: 'settled', outcome: 'failed', alreadyDone: false });
+    expect(String(ledger().note)).toContain('replaced');
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('a payment CardCom confirms is paid whatever PendingReason says', async () => {
+    answer({ ...PAID, PendingReason: null });
+    await expect(settleCardcomSession(LP, AFTER_SUBMIT)).resolves.toMatchObject({ status: 'settled', outcome: 'succeeded' });
+  });
+});
+
 describe('settleCardcomSession: money that arrives after the row was closed as failed', () => {
   // A row is closed as failed when CardCom says "no payment" after a submit. If a payment then lands on the same session
   // (a forged early webhook, a slow bank), the ledger must not be rewritten — it is append-only — but a person must hear.
@@ -379,6 +436,23 @@ describe('settleCardcomSession: money that arrives after the row was closed as f
     await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'failed', alreadyDone: true });
     expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'error', fields: expect.objectContaining({ operation_id: 'op1' }) }));
     expect(ledger().outcome).toBe('failed');
+  });
+
+  // The session was asked for the operation on the ROW (the save-card switch asks for ChargeAndCreateToken): a payment found later on
+  // such a session is as much money as a ChargeOnly one.
+  it('raises the same alert for a session opened as ChargeAndCreateToken (save the card)', async () => {
+    fake = createFakeTableClient({ payment_operations: [op({ outcome: 'failed', provider_operation: 'ChargeAndCreateToken' })], cardcom_payment_sessions: [session()], activity_log: [] });
+    answer({ ...PAID_WITH_CARD, Operation: 'ChargeAndCreateToken' });
+    await expect(settleCardcomSession(LP)).resolves.toEqual({ status: 'settled', outcome: 'failed', alreadyDone: true });
+    expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'error', fields: expect.objectContaining({ operation_id: 'op1' }) }));
+    expect(ledger().outcome).toBe('failed');
+  });
+
+  it('says nothing when CardCom reports a different operation than the row asked for (the success gate decides the same way)', async () => {
+    fake = createFakeTableClient({ payment_operations: [op({ outcome: 'failed', provider_operation: 'ChargeAndCreateToken' })], cardcom_payment_sessions: [session()], activity_log: [] });
+    answer(PAID); // Operation: 'ChargeOnly'
+    await settleCardcomSession(LP);
+    expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 
   it('says nothing when CardCom agrees it was not paid', async () => {

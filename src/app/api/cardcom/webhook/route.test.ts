@@ -39,13 +39,13 @@ describe('POST /api/cardcom/webhook', () => {
   it('names the session to settle, and settles it as a finished payment (the post comes after a submit)', async () => {
     const res = await post({ ResponseCode: 0, Description: 'ok', TerminalNumber: 1000, LowProfileId: LP, Operation: 'ChargeOnly' });
     expect(res.status).toBe(200);
-    expect(settleCardcomSession).toHaveBeenCalledWith(LP, { finalizeUnpaid: true });
+    expect(settleCardcomSession).toHaveBeenCalledWith(LP, { finalizeUnpaid: true, afterSubmit: true });
   });
 
   it('ignores everything but the LowProfileId: the body is not believed, whatever it claims', async () => {
     await post({ LowProfileId: LP, ResponseCode: 0, Amount: 1, TranzactionId: 999, Extra: { a: 1 } });
     expect(settleCardcomSession).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(settleCardcomSession).mock.calls[0]).toEqual([LP, { finalizeUnpaid: true }]);
+    expect(vi.mocked(settleCardcomSession).mock.calls[0]).toEqual([LP, { finalizeUnpaid: true, afterSubmit: true }]);
   });
 
   it('answers 200 for every outcome CardCom should not retry: paid, declined, already done, in review', async () => {

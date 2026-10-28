@@ -55,8 +55,9 @@ export async function POST(request: NextRequest) {
   const lowProfileId = parsed.data.LowProfileId;
 
   try {
-    // finalizeUnpaid: a webhook comes AFTER the buyer submitted, so a non-zero answer means the payment did not happen.
-    const settled = await settleCardcomSession(lowProfileId, { finalizeUnpaid: true });
+    // A webhook comes AFTER the buyer submitted: a failed attempt CardCom names closes the row; a deal still pending with nothing
+    // failed stays open for the sweeper (settleCardcomSession, afterSubmit).
+    const settled = await settleCardcomSession(lowProfileId, { finalizeUnpaid: true, afterSubmit: true });
     if (settled.status === 'error') return respond(500);
     if (settled.status === 'not_found') {
       // CardCom's guide: no order for this id — stop and tell an admin, with the id. Answered 200 so that CardCom does not

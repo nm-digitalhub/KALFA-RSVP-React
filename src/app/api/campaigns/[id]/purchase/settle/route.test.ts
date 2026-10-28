@@ -52,7 +52,7 @@ describe('POST /api/campaigns/[id]/purchase/settle', () => {
   it('settles the campaign\'s latest CardCom session — found on the server — and starts the campaign when it was paid', async () => {
     const res = await call();
     expect(await res.json()).toEqual({ state: 'paid', activation: 'started' });
-    expect(settleCardcomSession).toHaveBeenCalledWith('lp-1', { finalizeUnpaid: true });
+    expect(settleCardcomSession).toHaveBeenCalledWith('lp-1', { finalizeUnpaid: true, afterSubmit: true });
     expect(startPaidPackageNow).toHaveBeenCalledWith(CAMPAIGN_ID);
     expect(res.headers.get('cache-control')).toBe('no-store');
   });
@@ -61,34 +61,34 @@ describe('POST /api/campaigns/[id]/purchase/settle', () => {
   // as the browser's word. Anything else in it, and a report with no `submitted`, is dropped.
   it('passes on a 3D Secure report of an error — code, last step and the label of CardCom\'s sentence — with the submitted form', async () => {
     await call({ submitted: true, threeDs: { code: 333, step: 'fingerprint', reason: 'fail_auth' } });
-    expect(settleCardcomSession).toHaveBeenCalledWith('lp-1', { finalizeUnpaid: true, browserReport: { code: 333, step: 'fingerprint', reason: 'fail_auth' } });
+    expect(settleCardcomSession).toHaveBeenCalledWith('lp-1', { finalizeUnpaid: true, afterSubmit: true, browserReport: { code: 333, step: 'fingerprint', reason: 'fail_auth' } });
   });
 
   it('passes on how the buyer was paying, alone or with the 3D Secure report, and ignores anything else', async () => {
     await call({ submitted: true, method: 'google_pay' });
-    expect(vi.mocked(settleCardcomSession).mock.calls[0][1]).toEqual({ finalizeUnpaid: true, browserReport: { method: 'google_pay' } });
+    expect(vi.mocked(settleCardcomSession).mock.calls[0][1]).toEqual({ finalizeUnpaid: true, afterSubmit: true, browserReport: { method: 'google_pay' } });
     await call({ submitted: true, method: 'card', threeDs: { code: 333, reason: 'fail_auth' } });
-    expect(vi.mocked(settleCardcomSession).mock.calls[1][1]).toEqual({ finalizeUnpaid: true, browserReport: { method: 'card', code: 333, reason: 'fail_auth' } });
+    expect(vi.mocked(settleCardcomSession).mock.calls[1][1]).toEqual({ finalizeUnpaid: true, afterSubmit: true, browserReport: { method: 'card', code: 333, reason: 'fail_auth' } });
     await call({ submitted: true, method: 'apple_pay' });
-    expect(vi.mocked(settleCardcomSession).mock.calls[2][1]).toEqual({ finalizeUnpaid: true });
+    expect(vi.mocked(settleCardcomSession).mock.calls[2][1]).toEqual({ finalizeUnpaid: true, afterSubmit: true });
     await call({ method: 'card' });
     expect(vi.mocked(settleCardcomSession).mock.calls[3][1]).toEqual({ finalizeUnpaid: false });
   });
 
   it('passes on a report that has only some of its parts, and none when it is empty', async () => {
     await call({ submitted: true, threeDs: { code: 408 } });
-    expect(vi.mocked(settleCardcomSession).mock.calls[0][1]).toEqual({ finalizeUnpaid: true, browserReport: { code: 408 } });
+    expect(vi.mocked(settleCardcomSession).mock.calls[0][1]).toEqual({ finalizeUnpaid: true, afterSubmit: true, browserReport: { code: 408 } });
     await call({ submitted: true, threeDs: {} });
-    expect(vi.mocked(settleCardcomSession).mock.calls[1][1]).toEqual({ finalizeUnpaid: true });
+    expect(vi.mocked(settleCardcomSession).mock.calls[1][1]).toEqual({ finalizeUnpaid: true, afterSubmit: true });
   });
 
   it('drops a report that is not numbers and fixed labels — free text, an unknown label, another type — and still honours `submitted`', async () => {
     await call({ submitted: true, threeDs: { code: 333, reason: 'a sentence CardCom wrote 4580-1234', step: 'fingerprint' } });
-    expect(vi.mocked(settleCardcomSession).mock.calls[0][1]).toEqual({ finalizeUnpaid: true });
+    expect(vi.mocked(settleCardcomSession).mock.calls[0][1]).toEqual({ finalizeUnpaid: true, afterSubmit: true });
     await call({ submitted: true, threeDs: 'fail_auth' });
-    expect(vi.mocked(settleCardcomSession).mock.calls[1][1]).toEqual({ finalizeUnpaid: true });
+    expect(vi.mocked(settleCardcomSession).mock.calls[1][1]).toEqual({ finalizeUnpaid: true, afterSubmit: true });
     await call({ submitted: true, threeDs: { code: '333' } });
-    expect(vi.mocked(settleCardcomSession).mock.calls[2][1]).toEqual({ finalizeUnpaid: true });
+    expect(vi.mocked(settleCardcomSession).mock.calls[2][1]).toEqual({ finalizeUnpaid: true, afterSubmit: true });
   });
 
   it('ignores a report that does not come with `submitted`: a returning buyer cannot write a note on a row', async () => {
@@ -155,6 +155,13 @@ describe('POST /api/campaigns/[id]/purchase/settle', () => {
     expect(settleCardcomSession).not.toHaveBeenCalled();
     fake = createFakeTableClient({ payment_operations: [], cardcom_payment_sessions: [] });
     expect(await (await call()).json()).toEqual({ state: 'none' });
+  });
+
+  // A read that FAILED says nothing about the payment: it is an error, never "no payment", and CardCom is not asked on a guess.
+  it.each([['payment_operations'], ['cardcom_payment_sessions']])('answers "error", never "none", when reading %s fails', async (table) => {
+    fake.fail(table, 'XX000', 'select');
+    expect(await (await call()).json()).toEqual({ state: 'error' });
+    expect(settleCardcomSession).not.toHaveBeenCalled();
   });
 
   it('never settles another campaign\'s session: only this campaign\'s purchases are looked at', async () => {

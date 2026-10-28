@@ -68,6 +68,10 @@ const lpResultSchema = z.object({
   TerminalNumber: z.unknown().optional(),
   // The channel the payment went through (`_3DS` when it passed 3-D Secure). `unknown` for the same reason as the card facts.
   ExternalPaymentVector: z.unknown().optional(),
+  // Why a deal is still pending (5117/5118/5119): the newest FAILED attempt on the payment page, or null when nothing failed.
+  // `unknown` on purpose: a missing field and a field we cannot read must stay apart from null (failedAttemptOf). Not in the
+  // generated client, which predates it; read from CardCom's published spec and measured live 28.10.2026.
+  PendingReason: z.unknown().optional(),
   // DocumentUrl and the card facts are display-only and read as `unknown` on purpose (cardcom-card-facts.ts checks each one):
   // a shape CardCom changes there must not make the whole answer unreadable, which would turn a confirmed payment into
   // "could not tell".
@@ -119,11 +123,19 @@ export type SettleOutcome =
 
 export type SettleOptions = {
   /**
-   * What a non-zero answer means. true (the webhook, the buyer's own call — both arrive AFTER a submit): the payment
-   * failed, close the row. false (the sweeper, a retry — they arrive on a session that may simply not be paid YET):
-   * leave the row pending and say "unpaid".
+   * What a non-zero answer means. true: the session is over unless it was paid, close the row as failed. false (the sweeper
+   * on a young session, the buyer's return to the page — a session that may simply not be paid YET): leave the row pending
+   * and say "unpaid".
    */
   finalizeUnpaid?: boolean;
+  /**
+   * The caller asks because the buyer SUBMITTED (the buyer's own call after CardCom's frame answered, or CardCom's webhook).
+   * With finalizeUnpaid, an answer that the deal is still pending (5117/5118/5119) is then closed as failed only when CardCom
+   * names the attempt that failed (PendingReason). With no failed attempt the payment may still be under way (3D Secure), so
+   * the row stays pending ("unpaid") for the sweeper; an answer that does not carry the field at all is read as neither
+   * ("error"). The sweeper's abandonment and a replaced session do not pass it: for them "not paid" is enough to close.
+   */
+  afterSubmit?: boolean;
   /**
    * What the buyer's browser says CardCom's frames announced about 3D Secure when they reported an error (the buyer's own call only;
    * the route has already reduced it to numbers and fixed labels). It is written into the note of a row THIS call closes as failed, as
@@ -145,6 +157,22 @@ export type BrowserPaymentReport = {
   step?: 'fingerprint' | 'challenge';
   reason?: 'fail_auth' | 'auth_error' | 'general_error' | 'timeout';
 };
+
+// CardCom's answers for a deal that is still pending (its spec: PendingReason "ResponseCode 5117/5118/5119"). Measured 28.10.2026 on
+// terminal 1000: a session nobody paid and a declined card BOTH answer 5119; only PendingReason tells them apart.
+const CARDCOM_PENDING_CODES: ReadonlySet<number> = new Set([5117, 5118, 5119]);
+
+type FailedAttempt = { code: number; description: string | null };
+
+// PendingReason as the settlement reads it: the attempt that failed, 'none' (null: nothing failed), or 'unreadable' (missing, or a
+// shape we do not know — never taken for 'none').
+function failedAttemptOf(value: unknown): FailedAttempt | 'none' | 'unreadable' {
+  if (value === null) return 'none';
+  if (value === undefined || typeof value !== 'object' || Array.isArray(value)) return 'unreadable';
+  const { ResponseCode: code, Description: description } = value as { ResponseCode?: unknown; Description?: unknown };
+  if (typeof code !== 'number' || !Number.isInteger(code)) return 'unreadable';
+  return { code, description: typeof description === 'string' ? description : null };
+}
 
 const DECLINED_NOTE = 'declined or not completed at CardCom; nothing was charged';
 const REPLACED_NOTE = 'not paid at CardCom; the buyer opened a new payment form, so this session was replaced; nothing was charged';
@@ -226,7 +254,9 @@ async function flagPaymentAfterFailure(operation: OperationRow, lowProfileId: st
       return;
     }
     const result = await ask(config.terminalNumber, config.apiName, lowProfileId);
-    if (!result || result.ResponseCode !== 0 || result.Operation !== 'ChargeOnly' || typeof result.TranzactionId !== 'number') return;
+    // The operation the session was ASKED for (the row's stamp; null = ChargeOnly, rows born before 12.10.2026), the same gate as a success.
+    const expectedOperation = operation.provider_operation ?? 'ChargeOnly';
+    if (!result || result.ResponseCode !== 0 || result.Operation !== expectedOperation || typeof result.TranzactionId !== 'number') return;
     void sendSlackAlert({
       level: 'error', category: CATEGORY, source: SOURCE,
       title: labelTestMoney('תשלום התקבל ב-CardCom אך הפעולה במערכת סגורה ככישלון — נדרשת התאמה ידנית', operation.is_test),
@@ -320,13 +350,24 @@ export async function settleCardcomSession(lowProfileId: string, options: Settle
 
   if (result.ResponseCode !== 0) {
     if (!finalizeUnpaid) return { status: 'unpaid' };
+    // A still-pending deal: what failed, if anything. Every other non-zero answer is closed as it always was.
+    const attempt = CARDCOM_PENDING_CODES.has(result.ResponseCode) ? failedAttemptOf(result.PendingReason) : null;
+    if (options.afterSubmit && attempt === 'unreadable') {
+      console.error('[cardcom-settle] CardCom said the deal is pending without a readable PendingReason; the row was left as it is', { operationId: operation.id });
+      return { status: 'error' };
+    }
+    // Nothing failed yet: the payment may still be under way. The sweeper closes the row once the session is abandoned.
+    if (options.afterSubmit && attempt === 'none') return { status: 'unpaid' };
+    const failed = attempt !== null && typeof attempt === 'object' ? attempt : null;
+    const note = options.replacedByNewSession ? REPLACED_NOTE : declinedNote(options.browserReport);
     return close(admin, operation, {
       outcome: 'failed',
-      providerStatus: String(result.ResponseCode),
+      // The failed attempt's own code (a decline, a 3D Secure refusal) when CardCom named one; its overall answer otherwise.
+      providerStatus: String(failed?.code ?? result.ResponseCode),
       // CardCom's own text: for an admin screen and the ledger, never for the buyer.
-      providerStatusDescription: result.Description ?? null,
+      providerStatusDescription: failed ? failed.description : (result.Description ?? null),
       ...echoColumn,
-      note: options.replacedByNewSession ? REPLACED_NOTE : declinedNote(options.browserReport),
+      note: failed ? `${note}. CardCom answered ${result.ResponseCode}; the status is its last failed attempt's` : note,
     }, { quiet: options.replacedByNewSession === true });
   }
 
