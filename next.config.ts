@@ -63,6 +63,11 @@ const nextConfig: NextConfig = {
   // is standalone and its root is this directory. Same cwd assumption as
   // readDeployId above (npm scripts and pm2 both run from the app dir).
   outputFileTracingRoot: process.cwd(),
+  // Dev server only (docs: next-config-js/allowedDevOrigins): `next dev` blocks its
+  // own scripts and HMR for any hostname other than localhost and the one it was
+  // started with. Testing on a phone through the tailnet-only Tailscale Serve
+  // address needs that hostname here. No effect on `next build` / `next start`.
+  allowedDevOrigins: ['nm-digitalhub.tail703115.ts.net'],
   // Server Action uploads: Next's default body limit is 1MB, which rejected
   // the invite-image upload (product limit: INVITE_IMAGE_MAX_BYTES = 5MB) with
   // "Body exceeded 1 MB limit" (413). 6mb = 5MB image + multipart/form
