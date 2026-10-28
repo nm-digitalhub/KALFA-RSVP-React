@@ -8,8 +8,12 @@ import {
   CLOSE_BLOCKED_MONEY_ERROR,
   CLOSE_BLOCKED_PAID_ERROR,
   closeControlOf,
+  eventLifecycleMachine,
+  eventMode,
   resolveEventLifecycle,
+  serviceLeafValues,
   type EventLifecycleFacts,
+  type EventMode,
 } from '@/lib/data/event-lifecycle';
 import { deriveStatus, type OperationRow } from '@/lib/payments/status';
 import { Constants } from '@/lib/supabase/types';
@@ -192,6 +196,68 @@ describe('what the screens say instead', () => {
   it('unpaid setup → the close, and no cancellation request', () => {
     expect(control('pending_approval', 'no payment')).toEqual({ allowed: true, hint: null, cancellationRequestable: false });
     expect(control('approved', 'declined')).toEqual({ allowed: true, hint: null, cancellationRequestable: false });
+  });
+});
+
+// ── the event's mode (design D1): a projection of the snapshot ──
+
+// Written out from the design (D1, D2, D6), not read back from the machine.
+const EXPECTED_MODE: Record<string, EventMode> = {
+  none: 'setup',
+  setup: 'setup',
+  paymentInFlight: 'setup',
+  paid: 'management',
+  running: 'management',
+  finished: 'management',
+  moneyMoved: 'unavailable',
+  unavailable: 'unavailable',
+};
+
+describe('eventMode', () => {
+  const top = (value: ReturnType<typeof serviceLeafValues>[number]) =>
+    typeof value === 'string' ? value : Object.keys(value)[0];
+
+  it('covers every top-level service state', () => {
+    expect(new Set(serviceLeafValues().map(top))).toEqual(new Set(Object.keys(EXPECTED_MODE)));
+  });
+
+  for (const status of ['draft', 'active'] as const) {
+    for (const service of serviceLeafValues()) {
+      it(`${status} · ${JSON.stringify(service)} → ${EXPECTED_MODE[top(service)]}`, () => {
+        const snapshot = eventLifecycleMachine.resolveState({ value: { open: { status, service } } });
+        expect(eventMode(snapshot)).toBe(EXPECTED_MODE[top(service)]);
+      });
+    }
+  }
+
+  it('a closed event is management (its summary), never setup', () => {
+    expect(eventMode(resolveEventLifecycle(facts('closed', 'pending_approval', [])))).toBe('management');
+  });
+
+  it('a ledger that cannot be read is unavailable, never setup or management', () => {
+    for (const campaign of ['pending_approval', 'approved'] as const) {
+      expect(eventMode(resolveEventLifecycle(facts('active', campaign, 'unreadable')))).toBe('unavailable');
+    }
+  });
+
+  it('a viewer who cannot see the campaigns is unavailable (the permission-limited card)', () => {
+    expect(
+      eventMode(resolveEventLifecycle({ eventStatus: 'active', campaignsVisible: false, campaign: null, payment: null })),
+    ).toBe('unavailable');
+  });
+
+  it('a reset event (its only campaign cancelled, so no live campaign) is setup', () => {
+    expect(eventMode(resolveEventLifecycle(facts('active', null, [])))).toBe('setup');
+  });
+
+  it('paid but not yet running (awaiting activation) is already management', () => {
+    expect(eventMode(resolveEventLifecycle(facts('active', 'approved', LEDGERS['paid (real)'])))).toBe('management');
+    expect(eventMode(resolveEventLifecycle(facts('active', 'approved', LEDGERS['paid (test money)'])))).toBe('management');
+  });
+
+  it('a payment still in flight stays in setup (the payment step), money that moved is unavailable', () => {
+    expect(eventMode(resolveEventLifecycle(facts('active', 'approved', LEDGERS['payment pending'])))).toBe('setup');
+    expect(eventMode(resolveEventLifecycle(facts('active', 'approved', LEDGERS.refunded)))).toBe('unavailable');
   });
 });
 

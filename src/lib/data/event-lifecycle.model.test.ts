@@ -96,6 +96,13 @@ describe('from every configuration the server can resolve', () => {
         expect(visited(paths).some((s) => s.matches('closed'))).toBe(CLOSE_ALLOWED_FROM.includes(leaf.top));
       });
 
+      it(`${label}: every state on every path carries exactly one mode tag`, () => {
+        for (const s of visited(paths)) {
+          const modes = ['mode.setup', 'mode.management', 'mode.unavailable'].filter((t) => s.hasTag(t as never));
+          expect(modes).toHaveLength(1);
+        }
+      });
+
       it(`${label}: no event moves the service out of the state it was resolved to, except into closed`, () => {
         for (const s of visited(paths)) {
           if (s.matches('closed')) continue;

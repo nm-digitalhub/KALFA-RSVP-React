@@ -18,13 +18,17 @@ import type { Enums } from '@/lib/supabase/types';
 //   service - the RSVP service and its money, in the detail the server distinguishes.
 // The close is taken from the service region, from a state where nothing was paid, and leaves the whole parallel
 // state for `closed`; no transition crosses from one region into the other.
+//
+// The event's mode (design D1, owner 28.10.2026) is a tag on the same states, read by eventMode(snapshot): every
+// configuration carries exactly one `mode.*` tag. `unavailable` is its own mode and never folds into the other two, so
+// a failed read, money support has to look at, or campaigns the viewer cannot see never send anyone to the wrong page.
 
 type EventStatus = Enums<'event_status'>;
 
 export const eventLifecycleMachine = setup({
   types: {
     events: {} as { type: 'event.published' } | { type: 'event.close' },
-    tags: {} as 'cancellation.requestable',
+    tags: {} as 'cancellation.requestable' | 'mode.setup' | 'mode.management' | 'mode.unavailable',
   },
 }).createMachine({
   id: 'event',
@@ -44,9 +48,10 @@ export const eventLifecycleMachine = setup({
           initial: 'none',
           states: {
             // No live service.
-            none: { on: { 'event.close': { target: '#event.closed' } } },
+            none: { tags: ['mode.setup'], on: { 'event.close': { target: '#event.closed' } } },
             // Chosen or approved, nothing paid: the close retires it.
             setup: {
+              tags: ['mode.setup'],
               initial: 'unpaid',
               on: { 'event.close': { target: '#event.closed' } },
               states: {
@@ -55,35 +60,53 @@ export const eventLifecycleMachine = setup({
                 declined: {},
               },
             },
-            // A payment the provider has not settled, or one a person must resolve.
+            // A payment the provider has not settled, or one a person must resolve: still the payment step.
             paymentInFlight: {
+              tags: ['mode.setup'],
               initial: 'pending',
               states: { pending: {}, review: {} },
             },
             // Paid, not running yet. Test money blocks the close too: resetting a test run is a staff action.
             paid: {
-              tags: ['cancellation.requestable'],
+              tags: ['cancellation.requestable', 'mode.management'],
               initial: 'real',
               states: { real: {}, test: {} },
             },
-            // Money moved in a way support has to look at: a hold, a released hold, a refund.
+            // Money moved in a way support has to look at: a hold, a released hold, a refund (D6: bad_state).
             moneyMoved: {
+              tags: ['mode.unavailable'],
               initial: 'held',
               states: { held: {}, released: {}, refunded: {} },
             },
             // The service runs (or ran and paused) on a paid package.
-            running: { tags: ['cancellation.requestable'] },
+            running: { tags: ['cancellation.requestable', 'mode.management'] },
             // The service is over; it no longer holds the event open.
-            finished: { on: { 'event.close': { target: '#event.closed' } } },
+            finished: { tags: ['mode.management'], on: { 'event.close': { target: '#event.closed' } } },
             // The ledger could not be read, or the viewer cannot see the event's campaigns: fail closed.
-            unavailable: {},
+            unavailable: { tags: ['mode.unavailable'] },
           },
         },
       },
     },
-    closed: { type: 'final' },
+    // A closed event shows its summary: never setup.
+    closed: { type: 'final', tags: ['mode.management'] },
   },
 });
+
+export type EventMode = 'setup' | 'management' | 'unavailable';
+
+const EVENT_MODES = ['setup', 'management', 'unavailable'] as const satisfies readonly EventMode[];
+
+// The event's mode: a projection of the snapshot's one `mode.*` tag, not a second mapping of the campaign stage.
+// Which page a viewer sees is the caller's decision (D1: the owner is redirected to /setup, another viewer gets the
+// read-only card); this says only what state the event is in.
+export function eventMode(snapshot: EventLifecycleSnapshot): EventMode {
+  const modes = EVENT_MODES.filter((mode) => snapshot.hasTag(`mode.${mode}`));
+  if (modes.length !== 1) {
+    throw new Error(`event lifecycle: expected exactly one mode tag, found ${modes.length ? modes.join(', ') : 'none'}`);
+  }
+  return modes[0];
+}
 
 export type EventLifecycleSnapshot = SnapshotFrom<typeof eventLifecycleMachine>;
 
