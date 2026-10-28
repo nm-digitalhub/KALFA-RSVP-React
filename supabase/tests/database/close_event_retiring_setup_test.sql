@@ -484,6 +484,9 @@ begin
   values ('pgTAP close_event_retiring_setup', v_owner);
 
   if exists (select 1 from public.org_roles where not is_owner_role) then
+    -- A labelled block: its closing line reads `end delegation;`, so the hermeticity check
+    -- (staff-table-sql-consistency.test.ts) cannot mistake it for a transaction END.
+    <<delegation>>
     begin
       insert into public.organization_role_permissions
         (organization_id, role_id, permission_id)
@@ -506,7 +509,7 @@ begin
       get stacked diagnostics
         v_sqlstate = returned_sqlstate,
         v_message = message_text;
-    end;
+    end delegation;
 
     return next ok(
       v_sqlstate = 'P0001'
