@@ -2316,8 +2316,15 @@ export async function countAnsweredLastHourForPhone(normalizedPhone: string | nu
   return count ?? 0;
 }
 
+// Where every daily counter in this file starts its day: midnight on the ISRAEL calendar (owner decision 28.10.2026). These
+// counted the UTC day until then — a rule an agent wrote down as "ops-knobs E.2 (resets at UTC midnight)" in August with no
+// recorded reason and no owner sign-off — so the daily caps reset at 02:00/03:00 Israel time, in the middle of a night flood.
+function israelDayStartIso(nowMs: number): string {
+  return new Date(ilWallTimeToIso(israelCalendarDay(nowMs), '00:00')).toISOString();
+}
+
 /**
- * UTC calendar day count of answered inbound calls whose caller was NOT
+ * Israel calendar day count of answered inbound calls whose caller was NOT
  * resolved to a known contact/guest (createConsoleCall's guest_id/contact_id
  * both null — see identifyInboundCaller). Added for the same fraud incident:
  * measured 17.8, 7 days of console_calls — only 7 of 1218 inbound calls ever
@@ -2329,7 +2336,7 @@ export async function countAnsweredLastHourForPhone(normalizedPhone: string | nu
  */
 export async function countAnsweredUnidentifiedInboundToday(nowMs: number = Date.now()): Promise<number> {
   const admin = createAdminClient();
-  const dayStartIso = new Date(nowMs).toISOString().slice(0, 10) + 'T00:00:00.000Z';
+  const dayStartIso = israelDayStartIso(nowMs);
   const { count, error } = await admin
     .from('console_calls')
     .select('id', { count: 'exact', head: true })
@@ -2341,10 +2348,10 @@ export async function countAnsweredUnidentifiedInboundToday(nowMs: number = Date
   return count ?? 0;
 }
 
-/** UTC calendar day, per ops-knobs E.2 ("resets at UTC midnight"). */
+/** Israel calendar day (israelDayStartIso). */
 export async function countAnsweredInboundToday(nowMs: number = Date.now()): Promise<number> {
   const admin = createAdminClient();
-  const dayStartIso = new Date(nowMs).toISOString().slice(0, 10) + 'T00:00:00.000Z';
+  const dayStartIso = israelDayStartIso(nowMs);
   const { count, error } = await admin
     .from('console_calls')
     .select('id', { count: 'exact', head: true })
@@ -2526,11 +2533,11 @@ export async function countConcurrentAnsweredWidget(): Promise<number> {
   return count ?? 0;
 }
 
-/** Mirrors countAnsweredInboundToday, scoped to kind='widget'. UTC calendar
- * day, same convention as the PSTN counterpart. */
+/** Mirrors countAnsweredInboundToday, scoped to kind='widget'. Israel calendar
+ * day, same convention as the PSTN counterpart (israelDayStartIso). */
 export async function countAnsweredWidgetToday(nowMs: number = Date.now()): Promise<number> {
   const admin = createAdminClient();
-  const dayStartIso = new Date(nowMs).toISOString().slice(0, 10) + 'T00:00:00.000Z';
+  const dayStartIso = israelDayStartIso(nowMs);
   const { count, error } = await admin
     .from('console_calls')
     .select('id', { count: 'exact', head: true })
@@ -2735,11 +2742,11 @@ export async function countConcurrentAnsweredCallMeNow(): Promise<number> {
   return count ?? 0;
 }
 
-/** Mirrors countAnsweredWidgetToday, scoped to kind='call_me_now'. UTC
- * calendar day, same convention as every other daily counter in this file. */
+/** Mirrors countAnsweredWidgetToday, scoped to kind='call_me_now'. Israel
+ * calendar day, same convention as every other daily counter in this file (israelDayStartIso). */
 export async function countAnsweredCallMeNowToday(nowMs: number = Date.now()): Promise<number> {
   const admin = createAdminClient();
-  const dayStartIso = new Date(nowMs).toISOString().slice(0, 10) + 'T00:00:00.000Z';
+  const dayStartIso = israelDayStartIso(nowMs);
   const { count, error } = await admin
     .from('console_calls')
     .select('id', { count: 'exact', head: true })

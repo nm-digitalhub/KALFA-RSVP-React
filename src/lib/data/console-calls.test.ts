@@ -24,7 +24,11 @@ import {
   MANUAL_DIAL_MAX_LIVE_CALLS,
   computeRingOrder,
   CONSOLE_SHIFT_FRESHNESS_MS,
+  countAnsweredCallMeNowToday,
+  countAnsweredInboundToday,
   countAnsweredLastHourForPhone,
+  countAnsweredUnidentifiedInboundToday,
+  countAnsweredWidgetToday,
   deprioritizeCalendarBusyAgents,
   evaluateCallMeNowCaps,
   evaluateCallMeNowConsent,
@@ -459,6 +463,34 @@ describe('countAnsweredLastHourForPhone (17.8 — the withheld-CLI hole)', () =>
     expect(builder.eq).toHaveBeenCalledWith('phone_e164', '+972501234567');
     expect(builder.is).not.toHaveBeenCalled();
   });
+});
+
+// The daily caps count the ISRAEL calendar day (owner decision 28.10.2026). They used to count the UTC day, so a cap reset at
+// 02:00 (winter) / 03:00 (summer) Israel time — in the middle of a night flood — and the first hours after midnight belonged
+// to the day before.
+describe('daily cap counters — the day starts at Israel midnight, winter and summer', () => {
+  const counters = [
+    ['countAnsweredInboundToday', countAnsweredInboundToday],
+    ['countAnsweredUnidentifiedInboundToday', countAnsweredUnidentifiedInboundToday],
+    ['countAnsweredWidgetToday', countAnsweredWidgetToday],
+    ['countAnsweredCallMeNowToday', countAnsweredCallMeNowToday],
+  ] as const;
+  const cases = [
+    // 00:30 Israel winter time is still the previous UTC day: the old rule counted from 30.11 00:00 UTC.
+    ['winter, just after Israel midnight', '2026-12-01T00:30:00+02:00', '2026-11-30T22:00:00.000Z'],
+    // 02:30 Israel summer time, the window the old rule left to the previous day.
+    ['summer, before the old 03:00 reset', '2026-07-01T02:30:00+03:00', '2026-06-30T21:00:00.000Z'],
+    ['winter, midday', '2026-12-01T12:00:00+02:00', '2026-11-30T22:00:00.000Z'],
+  ] as const;
+
+  for (const [name, count] of counters) {
+    it.each(cases)(`${name}: %s counts from Israel midnight`, async (_label, now, dayStart) => {
+      const client = wireAdmin({ console_calls: [{ data: null, error: null }] });
+      await count(Date.parse(now));
+      const builder = client.from.mock.results[0]?.value as Record<string, ReturnType<typeof vi.fn>>;
+      expect(builder.gte).toHaveBeenCalledWith('created_at', dayStart);
+    });
+  }
 });
 
 // The ringing agent's phone used to show OUR OWN DID on every incoming call and
