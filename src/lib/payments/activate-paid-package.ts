@@ -69,7 +69,7 @@ async function readCampaign(admin: Admin, campaignId: string): Promise<CampaignR
 }
 
 // The completion of a campaign that is already active: the thank-you default if still empty, and the activation row
-// only as a repair (missing, and nothing has touched the campaign for a minute).
+// only as a repair (missing, and nothing has touched the campaign for REPAIR_AFTER_MS).
 async function complete(admin: Admin, campaignId: string, campaign: CampaignRow, paymentOperationId: string): Promise<void> {
   const { data: event, error } = await admin
     .from('events')

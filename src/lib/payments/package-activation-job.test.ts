@@ -55,7 +55,9 @@ describe('PACKAGE_ACTIVATION_RETRY', () => {
     expect(PACKAGE_ACTIVATION_RETRY.retryLimit + 1).toBe(5);
   });
 
-  it('waits longer than the activation-row repair window before the first retry', async () => {
+  // The setting only. The wait pg-boss actually schedules, jitter included, is measured in
+  // package-activation-retry.local-it.test.ts.
+  it('has a base retry delay longer than the activation-row repair window', async () => {
     const { REPAIR_AFTER_MS } = await vi.importActual<typeof import('@/lib/payments/activate-paid-package')>(
       '@/lib/payments/activate-paid-package',
     );
