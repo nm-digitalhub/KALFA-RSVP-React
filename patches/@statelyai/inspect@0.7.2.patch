@@ -1,0 +1,61 @@
+--- a/dist/server.d.mts	
++++ b/dist/server.d.mts	
+@@ -14,8 +14,12 @@
+    * Whether to automatically open the inspector in the default browser.
+    * @default true
+    */
+   autoOpen?: boolean;
++  /**
++   * Interface to listen on (e.g. '127.0.0.1'). Omitted: every interface, as before.
++   */
++  host?: string;
+ }
+ /**
+  * Creates a local WebSocket server that bridges inspection events
+  * from a Node.js application to the Stately inspector UI in a browser.
+--- a/dist/server.mjs	
++++ b/dist/server.mjs	
+@@ -21,8 +21,10 @@
+ <body>
+   <iframe id="inspector" src="${inspectorUrl}"></iframe>
+   <script>
+     const iframe = document.getElementById('inspector');
++    // ?light: the inspector has no light mode of its own, so its dark view is inverted (hues kept by the rotation).
++    if (new URLSearchParams(location.search).has('light')) iframe.style.filter = 'invert(1) hue-rotate(180deg)';
+     const buffer = [];
+     let connected = false;
+ 
+     window.addEventListener('message', (e) => {
+@@ -34,9 +36,10 @@
+         buffer.length = 0;
+       }
+     });
+ 
+-    const ws = new WebSocket('ws://localhost:${wsPort}');
++    // Same origin the page was loaded from (works behind a reverse proxy such as tailscale serve).
++    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+     ws.onmessage = (event) => {
+       const data = JSON.parse(event.data);
+       if (connected) {
+         iframe.contentWindow.postMessage(data, '*');
+@@ -69,8 +72,9 @@
+ function createInspectorServer(options) {
+ 	const port = options?.port ?? 8080;
+ 	const inspectorUrl = options?.url ?? "https://stately.ai/inspect";
+ 	const autoOpen = options?.autoOpen ?? true;
++	const host = options?.host;
+ 	const httpServer = http.createServer((req, res) => {
+ 		res.writeHead(200, { "Content-Type": "text/html" });
+ 		res.end(getBridgeHTML(port, inspectorUrl));
+ 	});
+@@ -85,9 +89,9 @@
+ 			if (eventBuffer.length > maxBufferSize) eventBuffer.shift();
+ 			for (const client of wss.clients) if (client !== ws && client.readyState === WebSocket.OPEN) client.send(msg);
+ 		});
+ 	});
+-	httpServer.listen(port, () => {
++	httpServer.listen(port, host, () => {
+ 		if (autoOpen) openBrowser(`http://localhost:${port}`);
+ 	});
+ 	return { stop() {
+ 		wss.close();

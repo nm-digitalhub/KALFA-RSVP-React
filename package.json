@@ -67,6 +67,7 @@
     "typecheck": "NEXT_DIST_DIR=.next-typecheck next typegen && tsc --noEmit -p tsconfig.typecheck.json",
     "transcribe": "node scripts/transcribe-he.mjs",
     "voximplant": "tsx scripts/voximplant/cli.ts",
+    "inspect:lifecycle": "tsx scripts/inspect-event-lifecycle.ts",
     "relocate": "tsx scripts/relocate/cli.ts",
     "check:control-chars": "node scripts/check-control-characters.mjs",
     "meta:types": "node scripts/meta-types.mjs",
@@ -128,6 +129,7 @@
     "@slack/types": "^3.2.0",
     "@slack/web-api": "^8.2.0",
     "@statelyai/graph": "^2.6.0",
+    "@statelyai/mcp": "^0.21.0",
     "@stepperize/react": "^8.0.0",
     "@supabase/mcp-server-supabase": "0.13.0",
     "@supabase/realtime-js": "^2.118.0",
@@ -305,6 +307,7 @@
     }
   },
   "patchedDependencies": {
-    "@workflowbuilder/sdk@3.0.0": "patches/@workflowbuilder/sdk@3.0.0.patch"
+    "@workflowbuilder/sdk@3.0.0": "patches/@workflowbuilder/sdk@3.0.0.patch",
+    "@statelyai/inspect@0.7.2": "patches/@statelyai/inspect@0.7.2.patch"
   }
 }
