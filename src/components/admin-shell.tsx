@@ -312,6 +312,7 @@ function LogoutMenuItem() {
   return (
     <form action="/auth/logout" method="post">
       <DropdownMenuItem
+        nativeButton
         variant="destructive"
         render={
           <button

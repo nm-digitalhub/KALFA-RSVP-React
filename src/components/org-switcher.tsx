@@ -63,6 +63,7 @@ export function OrgSwitcher({
             <form key={o.id} action={setActiveOrgAction}>
               <input type="hidden" name="org_id" value={o.id} />
               <DropdownMenuItem
+                nativeButton
                 render={
                   <button
                     type="submit"
