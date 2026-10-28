@@ -43,12 +43,20 @@ The system SHALL refuse to close an event while its service has a payment in pro
 - **WHEN** the owner closes an event whose service was paid with test money
 - **THEN** the close is refused; resetting a test run remains a staff action
 
-### Requirement: Only the owner may close
-The system SHALL allow only the event's owner to close it, checked on the server for the specific event.
+### Requirement: Closing is authorized by the customer permission `events.close`
+The system SHALL allow a close only to a user who may close the specific event under the customer permission system: the event's owner, or a member of the event's organization whose role holds `events.close`. The check SHALL run on the server for the specific event, on the user's own session. `events.close` SHALL be system-protected: only the organization's owner role holds it, and it cannot be granted to another role.
 
-#### Scenario: Org member tries to close
-- **WHEN** a signed-in user who is not the event's owner requests the close
-- **THEN** the close is refused and nothing changes
+#### Scenario: The event's owner closes
+- **WHEN** the event's owner requests the close
+- **THEN** the close proceeds under the money rules of this specification
+
+#### Scenario: Org member without the permission tries to close
+- **WHEN** a signed-in member of the event's organization whose role does not hold `events.close` requests the close
+- **THEN** the close is refused, nothing changes, and no close control is shown to them
+
+#### Scenario: The permission cannot be delegated
+- **WHEN** someone tries to grant `events.close` to a role other than the owner role
+- **THEN** the grant is refused
 
 ### Requirement: Records are retained, not deleted
 The system SHALL keep every record related to the retired service when an event closes: the service record as cancelled, approval and signature records, payment records including declined attempts, and guest data under the existing closed-event rules.

@@ -14,7 +14,7 @@ import {
   SETUP_STEP_LABELS,
   toSetupEvent,
 } from '@/lib/data/setup-steps';
-import { packagePaymentOf } from '@/lib/payments/package-paid';
+import type { PaymentState } from '@/lib/payments/status';
 
 import { SetupStepper } from './setup-stepper';
 
@@ -22,17 +22,19 @@ import { SetupStepper } from './setup-stepper';
 // the flow (`/setup`), where the current step is done. Nothing is done from here —
 // the confirm, signature and payment steps live in the flow, so there is a single
 // place to do each. After activation setup is over: the card collapses to the
-// campaign and its management page.
-export async function SetupSteps({
+// campaign and its management page. `payment` is the page's own
+// packagePaymentOf(campaign) read, so the ledger is read once per page.
+export function SetupSteps({
   event,
   campaign,
+  payment,
   isPast,
 }: {
   event: EventDetail;
   campaign: OwnerCampaign | null;
+  payment: PaymentState | null;
   isPast: boolean;
 }) {
-  const payment = campaign ? await packagePaymentOf(campaign) : null;
   const { steps, stage } = computeSetupSteps({
     event: toSetupEvent(event),
     campaign: campaign && {

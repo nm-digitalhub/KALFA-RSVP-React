@@ -89,19 +89,24 @@ function ActionButton({
   );
 }
 
-// R6: the owner's only direct status transition here is the close (destructive).
-// Confirming the details (draft → active) lives in the setup steps above (the
-// confirm step). `closed` is terminal — no actions once closed.
+// R6: the customer's only direct status transition here is the close
+// (destructive), from a draft as well as from an active event, on the event page
+// and inside setup (design D5). Confirming the details (draft → active) is the
+// setup flow's confirm step. `closed` is terminal — no actions once closed.
+// Whether the close is offered is decided on the server (closeControlOf, the
+// event lifecycle model) and passed in; the server action decides again.
 export function EventStatusActions({
   status,
-  hasBlockingCampaign,
+  closeAllowed,
+  blockedHint,
   closeAction,
 }: {
   status: EventStatus;
-  hasBlockingCampaign: boolean;
+  closeAllowed: boolean;
+  blockedHint: string | null;
   closeAction: BoundAction;
 }) {
-  if (status !== 'active') return null;
+  if (status === 'closed') return null;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -109,11 +114,9 @@ export function EventStatusActions({
         action={closeAction}
         label="סגירת האירוע"
         variant="destructive"
-        confirm="לסגור את האירוע? לא ניתן לבטל פעולה זו."
-        disabled={hasBlockingCampaign}
-        disabledHint={
-          hasBlockingCampaign ? 'יש לסגור או לבטל את הקמפיין לפני סגירת האירוע' : undefined
-        }
+        confirm="לסגור את האירוע? לא ניתן לבטל פעולה זו. אם נבחרה חבילה ועדיין לא שולמה, היא תבוטל."
+        disabled={!closeAllowed}
+        disabledHint={closeAllowed ? undefined : (blockedHint ?? undefined)}
       />
     </div>
   );

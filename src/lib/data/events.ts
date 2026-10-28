@@ -9,6 +9,7 @@ import { requireUser, getUser, isStaff } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { ensurePersonalOrg } from '@/lib/data/orgs';
 import { OPERATIONAL_CAMPAIGN_STATUSES } from '@/lib/data/campaign-status';
+import { CLOSE_BLOCKED_MONEY_ERROR, CLOSE_BLOCKED_PAID_ERROR } from '@/lib/data/event-lifecycle';
 import type { EventClosureReason } from '@/lib/data/event-labels';
 import { isBeforeTomorrowIL, todayIL } from '@/lib/data/event-date';
 import type { Enums, Json, Tables, TablesUpdate } from '@/lib/supabase/types';
@@ -510,9 +511,9 @@ export async function publishEvent(eventId: string): Promise<void> {
   const user = await requireUser();
   // Service-role write: M1 (phase-3 RLS migration) removes the `status` column
   // from authenticated's UPDATE grant so NO browser-context role can flip
-  // lifecycle state — publish/close are owner-only APP paths (ownership proven
-  // by requireOwnedEvent above; the predicates below keep the transition
-  // atomic and the DB trigger still validates it).
+  // lifecycle state — publish is an owner-only APP path (ownership proven by
+  // requireOwnedEvent above; the predicates below keep the transition atomic
+  // and the DB trigger still validates it). closeEvent below is the other one.
   const admin = createAdminClient();
 
   const { error } = await admin
@@ -529,27 +530,46 @@ export async function publishEvent(eventId: string): Promise<void> {
   await logActivity({ eventId, action: 'event.published', meta: {} });
 }
 
-// Close an event (R6: draft→closed or active→closed). The DB trigger (R7)
-// rejects the close while a campaign is still operational; that raise is
-// mapped to a single safe Hebrew message — the only realistic failure mode
-// under normal ownership-scoped use.
+// The refusals share their words with the screens that offer the close (event-lifecycle.ts).
+export { CLOSE_BLOCKED_MONEY_ERROR, CLOSE_BLOCKED_PAID_ERROR };
+const CLOSE_FAILED_ERROR = 'סגירת האירוע נכשלה. נסו שוב או פנו לתמיכה.';
+
+// Close an event (R6: draft→closed or active→closed), retiring an RSVP service
+// that was never paid for in the same transaction (design D7).
+//
+// Who may close is the customer permission system: requireEventAccess runs
+// can_access_event on the caller's own session — the event's owner always, and
+// another organization member only through `events.close`, which is
+// system_protected (owner role only). The money rules, the atomic retire+close
+// and the one `event.closed` audit row live in close_event_retiring_setup, called
+// with the service role (M1: no browser-context role may change an event's
+// status) and the verified user as the actor — never an id from the request.
+// Every outcome, the RPC error included, maps to a fixed Hebrew message: a
+// database message is never passed through.
 export async function closeEvent(eventId: string): Promise<void> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'events', 'close');
   const user = await requireUser();
-  // Same service-role rationale as publishEvent (M1 status column grant).
   const admin = createAdminClient();
 
-  const { error } = await admin
-    .from('events')
-    .update({ status: 'closed' })
-    .eq('id', eventId)
-    .eq('owner_id', user.id);
+  const { data, error } = await admin.rpc('close_event_retiring_setup', {
+    p_event: eventId,
+    p_actor: user.id,
+  });
 
   if (error) {
-    throw new Error('יש לסגור או לבטל את הקמפיין לפני סגירת האירוע');
+    throw new Error(CLOSE_FAILED_ERROR);
   }
-
-  await logActivity({ eventId, action: 'event.closed', meta: {} });
+  switch (data) {
+    case 'closed':
+    case 'already_closed':
+      return;
+    case 'blocked_paid':
+      throw new Error(CLOSE_BLOCKED_PAID_ERROR);
+    case 'blocked_money':
+      throw new Error(CLOSE_BLOCKED_MONEY_ERROR);
+    default:
+      throw new Error(CLOSE_FAILED_ERROR);
+  }
 }
 
 // Owner-facing: WHY is this event closed? Reads the single closure-cause

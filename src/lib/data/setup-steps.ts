@@ -110,18 +110,20 @@ export function missingEventPrerequisites(event: SetupInput['event']): string[] 
   return missingSetupPrerequisites(event).map((p) => p.label);
 }
 
-// Where "back" leads from the step the owner is on. It leads only to a step whose page can still be used:
-//   - on the confirm step: the details form (/setup?step=details, offered while the event is still a draft);
-//   - on the package-choice step: the event's own page, where a confirmed event's details are edited.
+// Where "back" leads from the step the owner is on. It leads only to a step whose page can still be used, and both
+// stay inside setup (design D5): on the confirm step and on the package-choice step, the details form
+// (/setup?step=details), which a draft and a confirmed event alike can reopen while setup runs.
 // Everywhere else there is no back, on purpose: the package choice creates the campaign (price and quota are snapshotted on
-// it), the approval and the payment are facts in the ledger, and undoing a campaign is a staff action (cancelCampaign needs
-// `campaigns.runstate`). A past event, a blocked step and a finished flow have no current step, hence no back.
+// it), and the approval and the payment are facts in the ledger. A customer who wants out of an unpaid setup closes the
+// event, which retires it (closeEvent); undoing a campaign otherwise is a staff action. A past event, a blocked step and a
+// finished flow have no current step, hence no back.
 export type SetupBackTarget = { key: SetupStepKey; href: string };
 
 export function setupBackTarget(input: { eventId: string; steps: readonly SetupStep[] }): SetupBackTarget | null {
   const current = input.steps.find((s) => s.state === 'current');
-  if (current?.key === 'confirm') return { key: 'details', href: `/app/events/${input.eventId}/setup?step=details` };
-  if (current?.key === 'package') return { key: 'details', href: `/app/events/${input.eventId}` };
+  if (current?.key === 'confirm' || current?.key === 'package') {
+    return { key: 'details', href: `/app/events/${input.eventId}/setup?step=details` };
+  }
   return null;
 }
 

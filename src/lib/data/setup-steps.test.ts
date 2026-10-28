@@ -177,8 +177,8 @@ describe('setupBackTarget', () => {
     expect(back({ event: readyEvent, campaign: null, isPast: false })).toEqual({ key: 'details', href: '/app/events/e1/setup?step=details' });
   });
 
-  it('on the package-choice step: back to the event\'s own page, where a confirmed event is edited', () => {
-    expect(back({ event: activeEvent, campaign: null, isPast: false })).toEqual({ key: 'details', href: '/app/events/e1' });
+  it('on the package-choice step: back to the details form inside setup, which a confirmed event can reopen (D5)', () => {
+    expect(back({ event: activeEvent, campaign: null, isPast: false })).toEqual({ key: 'details', href: '/app/events/e1/setup?step=details' });
   });
 
   it('has no back on the details step: there is nothing before it', () => {

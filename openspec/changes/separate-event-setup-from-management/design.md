@@ -88,8 +88,10 @@ The viewer decides between `setup` and `readonly_setup`. The owner gets `setup`.
 - **Failure after purchase.** If the status change itself fails (a ledger read error or a concurrent change), the payment stays recorded. Staff get the existing Slack alert. The customer sees "הרכישה נרשמה", not an activation error.
 
 ### D5. Close inside setup and the back link
-- **Close control.** `SetupShell` renders the close control with a confirmation for a `draft` event as well as an `active` one. Today `EventStatusActions` shows it only for `active` (`event-status-actions.tsx:104`), although R6 allows draft → closed. It calls the same `closeEventAction`, which now uses D7.
-- **Back link.** `setupBackTarget`'s package step returns `/setup?step=details`. `editingDetails` is allowed for a confirmed event in setup as well. The form already applies the date locks (`datesLocked`) and the live-campaign field protection server-side.
+- **Close control.** The close control, with a confirmation, is offered for a `draft` event as well as an `active` one (R6 allows draft → closed). `EventStatusActions` now takes `closeAllowed` and `blockedHint` from the event lifecycle model (D7a) instead of `hasBlockingCampaign`, and is rendered only for a viewer holding `events.close`. It calls the same `closeEventAction`, which uses D7 and lands on the event page after a close, wherever it was pressed.
+  - Built (2026-10-28) on the event page and at the bottom of `/setup`. `SetupShell` (task 4.1) does not exist yet; when it is built, the control moves into it.
+- **Cancellation request.** The event page shows the cancellation request form only when the model tags the service `cancellation.requestable` (paid or running), or to show the status of a request already sent. Before payment the close retires the setup, so there is nothing to request.
+- **Back link.** `setupBackTarget`'s package step returns `/setup?step=details`, like the confirm step. `editingDetails` (`?step=details`) is allowed for a confirmed event in setup as well. The details form there receives the same `datesLocked` and `hasOperationalCampaign` the event page passes, so the locks show in the form; the server enforces them either way.
 
 ### D6. Payment states inside setup
 
@@ -108,17 +110,30 @@ The viewer decides between `setup` and `readonly_setup`. The owner gets `setup`.
 
 Legacy pay-per-result `3e531968` (`pending_approval`, no hold, no ledger rows): close allowed, and it retires through `cancel_campaign`.
 
-### D7. Database: `close_event_retiring_setup(p_event uuid, p_owner uuid)`
-- **Security.** One migration, created via `npx supabase migration new <name> < /dev/null`. The function is `security invoker` with `search_path ''`. Execute is granted to `service_role` only and revoked from public, anon and authenticated. Because the caller is service_role, the body checks `events.owner_id = p_owner` itself.
-- **Body, one transaction:**
-  1. Lock the event row (`for update`). If not found or not owned, return `not_found`. If already closed, return `already_closed`.
-  2. Lock the live (non-cancelled) campaigns of the event.
-  3. For each campaign in `draft`, `pending_approval` or `approved`: if a `payment_operations` row with outcome `succeeded` exists for it (test money included), return `blocked_paid`. Otherwise call `public.cancel_campaign(v.id, p_owner)`. On `not_cancellable`, return `blocked_money` (in-flight payment, hold or charge; `cancel_campaign`'s gate decides).
-  4. Update `events.status = 'closed'`. R7 still guards it and raises if any operational campaign remains, for example `active`.
-  5. Insert `activity_log` (`event.closed`, `user_id = p_owner`, meta `{retiredCampaignId, statusBefore}`), then return `closed`.
+### D7. Database: `close_event_retiring_setup(p_event uuid, p_actor uuid)`
+Built as migration `20261027211431_close_event_retiring_setup.sql`, applied by the owner (`db push`) and with types regenerated, 2026-10-28.
+- **Who may close: the customer permission system (owner, 2026-10-27).** A customer action never runs through a staff function or a staff key ("לא מערבבים הרשאות צוות ומשתמשים בהם עבור לקוח"), and the access decision is not hand-written a second time ("שלא נעבוד כפול"). The same migration adds the customer permission `events.close` ("אירועים — סגירה"):
+  - `system_protected`, so only the organization's owner role holds it and it cannot be delegated (owner decision: protected);
+  - in the template `role_permissions`, so `create_organization` gives it to every new organization;
+  - on the owner role of every existing organization.
+  `closeEvent` checks it with `requireEventAccess(eventId, 'events', 'close')`, which runs `can_access_event` on the caller's own session. The event's owner passes by ownership in any case; the permission decides whether another member may close. It is not a platform key, and it is not in `PLATFORM_ACTIONS` (CASL covers staff only; organization RBAC is out of its scope).
+- **Security.** `security invoker`, `search_path ''`, execute granted to `service_role` only. No browser-context role gains a way to change an event's status (M1). The function checks no permission itself; it receives the verified user as `p_actor`.
+- **Body, one transaction; every refusal returns before the first write:**
+  1. Lock the event row (`for update`). Not found → `not_found`; already closed → `already_closed`.
+  2. Lock the live campaign (`campaigns_event_noncancelled_uidx`: at most one).
+  3. A running service (`scheduled`, `active`, `paused`) → `blocked_paid`: it was paid for and ends through a cancellation request. R7 stays as the backstop.
+  4. A campaign in `draft`, `pending_approval` or `approved`: a succeeded money row (test money included) → `blocked_paid`; a payment in flight or a billed result → `blocked_money`; otherwise set it `cancelled` inline (`campaigns_guard_cancel` re-checks the same rule) and release its bound benefit through `release_coupon_assignment` (actor `p_actor`), as a staff cancellation does. `cancel_campaign` is not called: it is staff-only since `20261027124834`.
+  5. Update `events.status = 'closed'`.
+  6. Insert one `activity_log` row (`event.closed`, `user_id = p_actor`, meta `{retiredCampaignId, statusBefore}`, empty when nothing was retired), then return `closed`.
 - **Why the explicit succeeded check.** `cancel_campaign` lets settled test money through, because that is its reset purpose. Closing must not silently reset a test run. The spec requires blocking it.
-- **`closeEvent`.** It calls the RPC after `requireOwnedEvent`, maps the four results to safe Hebrew messages without "קמפיין", and stops writing its own `event.closed` activity row, since the RPC writes it. The existing `closeEventAfterSettlement` and `adminCloseEvent` paths are untouched.
-- **Migration file.** It follows `20261008040027`'s structure: header (why, what, what not), a `do $$` verification block (grants, ACL, invoker, search_path, a call on a fixture), a dry-run script and a manual rollback (`drop function`). It is not applied by me. The owner runs `db push`, then `types:gen`.
+- **`closeEvent`.** It checks `events.close`, calls the RPC with the verified user, maps every outcome (the RPC error included) to a fixed Hebrew message without "קמפיין", and no longer writes its own `event.closed` row. `closeEventAfterSettlement` and `adminCloseEvent` are untouched.
+- **Migration file.** Header (why, what, what not, lock order), its own `begin`/`commit` (the owner's rule from `20261027193942`), a `do $$` verification block (the permission rows, invoker, `search_path`, ACL, service_role's privileges, both guard triggers, the body's rules and order, a call on an unknown event), and a manual rollback. Dry run: `dry-run-close-event-retiring-setup.sql` in this change, one transaction rolled back, 13 checks.
+
+### D7a. The event lifecycle model (XState), for the screens
+- **What.** `src/lib/data/event-lifecycle.ts`: one statechart with two parallel regions, `status` (draft, active) and `service` (none, setup, paymentInFlight, paid, moneyMoved, running, finished, unavailable, with their sub-states), and a final `closed`. The service state is resolved from what the server already read (the live campaign, `packagePaymentOf`), never from an event. `event.close` is taken only from the service states where nothing was paid.
+- **A decision model, not an authority (owner, 2026-10-28).** The screens ask `snapshot.can({ type: 'event.close' })` whether to offer the close and `hasTag('cancellation.requestable')` whether to offer the request. Who may close is `events.close`; the money rules and the atomic close are D7's function. Guards stay pure and synchronous.
+- **Never more permissive than the database.** The service state keeps every distinction the server makes, and an unreadable ledger or invisible campaigns fail closed. `event-lifecycle.test.ts` reads the status lists from the newest migration that defines `close_event_retiring_setup` and checks every campaign status × ledger combination, built with the real `deriveStatus`. `event-lifecycle.model.test.ts` (xstate/graph) shows that no sequence of events from a state holding money reaches `closed`.
+- **Viewing it.** `npm run inspect:lifecycle` runs every configuration through `@statelyai/inspect`'s own server, reachable over the tailnet with `tailscale serve`. A local npm patch (`patches/@statelyai/inspect@0.7.2.patch`) makes the page connect to its own origin, adds a `host` option and an inverted `?light` view. A development tool, never deployed.
 
 **Alternatives:**
 - Relax R7 to ignore unpaid campaigns. Rejected: it leaves orphaned `pending_approval` rows on closed events, and changes a hand-synced list pinned by parity tests.

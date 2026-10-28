@@ -364,10 +364,13 @@ export async function sendThankyouAction(
 
 // --- Event lifecycle (R6/R7) — Close ----------------------------------------
 // Confirming the details (draft → active, the former "publish") lives in
-// setupCampaignAction above as the first step of the RSVP flow. Ownership +
-// every R1–R9 rule is enforced inside closeEvent (events.ts) and the DB
-// triggers; this is a thin wrapper surfacing the data layer's own safe Hebrew
-// error message.
+// setupCampaignAction above as the first step of the RSVP flow. The close is
+// offered on the event page and inside setup (design D5). Who may close
+// (`events.close` through can_access_event), the money rules and the atomic
+// retire+close are all inside closeEvent (events.ts) and its database function;
+// this is a thin wrapper surfacing the data layer's own safe Hebrew message.
+// On success it lands on the event page, which shows the closed event's summary
+// — wherever the close was pressed.
 
 export async function closeEventAction(
   eventId: string,
@@ -385,8 +388,9 @@ export async function closeEventAction(
   // Best-effort cancellation marking on the already-synced Exchange
   // appointment(s) — same never-throws contract as syncEventToExchange.
   await markEventExchangeCancelled(eventId);
+  revalidatePath('/app/events');
   revalidatePath(`/app/events/${eventId}`);
-  return { notice: 'האירוע נסגר' };
+  redirect(`/app/events/${eventId}`);
 }
 
 // R8 — minimal Cancel-campaign action. NOT an ownership check, despite living on

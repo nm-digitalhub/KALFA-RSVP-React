@@ -12,6 +12,8 @@ import {
   assertEventNotPast,
   canCreateEvent,
   CELEBRANTS_LOCKED_ERROR,
+  CLOSE_BLOCKED_MONEY_ERROR,
+  CLOSE_BLOCKED_PAID_ERROR,
   closeEvent,
   createEvent,
   DATES_LOCKED_ERROR,
@@ -936,52 +938,84 @@ describe('publishEvent', () => {
 });
 
 describe('closeEvent', () => {
-  it('updates status to closed', async () => {
-    const { client, builder } = createMockSupabase<EventDetail>({
-      data: null,
+  // The session client answers the access gate (the event row, then
+  // can_access_event); the admin client answers close_event_retiring_setup.
+  function arrange(opts: {
+    allowed?: boolean;
+    result?: { data: unknown; error: { message: string; code?: string } | null };
+  }) {
+    const session = createMockSupabase<EventDetail>({
+      data: detailRow({ status: 'active' }),
       error: null,
     });
     vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      session.client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
-    client.rpc.mockResolvedValue({ data: true, error: null });
+    session.client.rpc.mockResolvedValue({ data: opts.allowed ?? true, error: null });
+
+    const admin = createMockSupabase<null>({ data: null, error: null });
     vi.mocked(createAdminClient).mockReturnValue(
-      client as unknown as ReturnType<typeof createAdminClient>,
+      admin.client as unknown as ReturnType<typeof createAdminClient>,
     );
-    vi.spyOn(builder, 'then')
-      .mockImplementationOnce((f) =>
-        (f as (v: unknown) => unknown)({ data: detailRow({ status: 'active' }), error: null }),
-      )
-      .mockImplementationOnce((f) => (f as (v: unknown) => unknown)({ data: null, error: null }));
+    admin.client.rpc.mockResolvedValue(opts.result ?? { data: 'closed', error: null });
+    return { session, admin };
+  }
+
+  it('checks events.close through can_access_event, then closes with the verified user as the actor', async () => {
+    const { session, admin } = arrange({});
 
     await closeEvent('event-1');
 
-    expect(builder.update).toHaveBeenCalledWith({ status: 'closed' });
+    expect(session.client.rpc).toHaveBeenCalledWith('can_access_event', {
+      _event_id: 'event-1',
+      _resource: 'events',
+      _action: 'close',
+    });
+    expect(admin.client.rpc).toHaveBeenCalledWith('close_event_retiring_setup', {
+      p_event: 'event-1',
+      p_actor: USER_ID,
+    });
+    // The RPC writes the one event.closed row; closeEvent writes none of its own.
+    expect(logActivity).not.toHaveBeenCalled();
+    // No direct status write: the status changes only inside the RPC.
+    expect(admin.builder.update).not.toHaveBeenCalled();
   });
 
-  it('maps a DB raise (blocking campaign) to the Hebrew R7 message', async () => {
-    const { client, builder } = createMockSupabase<EventDetail>({
-      data: null,
-      error: null,
-    });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
-    );
-    client.rpc.mockResolvedValue({ data: true, error: null });
-    vi.mocked(createAdminClient).mockReturnValue(
-      client as unknown as ReturnType<typeof createAdminClient>,
-    );
-    vi.spyOn(builder, 'then')
-      .mockImplementationOnce((f) =>
-        (f as (v: unknown) => unknown)({ data: detailRow({ status: 'active' }), error: null }),
-      )
-      .mockImplementationOnce((f) =>
-        (f as (v: unknown) => unknown)({ data: null, error: { message: 'operational campaign(s)' } }),
-      );
+  it('refuses a user without events.close before any close is attempted', async () => {
+    const { admin } = arrange({ allowed: false });
 
-    await expect(closeEvent('event-1')).rejects.toThrow(
-      'יש לסגור או לבטל את הקמפיין לפני סגירת האירוע',
-    );
+    await expect(closeEvent('event-1')).rejects.toThrow('NEXT_NOT_FOUND');
+    expect(admin.client.rpc).not.toHaveBeenCalled();
+  });
+
+  it('treats already_closed as done', async () => {
+    arrange({ result: { data: 'already_closed', error: null } });
+
+    await expect(closeEvent('event-1')).resolves.toBeUndefined();
+  });
+
+  it('maps blocked_paid to the paid message', async () => {
+    arrange({ result: { data: 'blocked_paid', error: null } });
+
+    await expect(closeEvent('event-1')).rejects.toThrow(CLOSE_BLOCKED_PAID_ERROR);
+  });
+
+  it('maps blocked_money to the contact-support message', async () => {
+    arrange({ result: { data: 'blocked_money', error: null } });
+
+    await expect(closeEvent('event-1')).rejects.toThrow(CLOSE_BLOCKED_MONEY_ERROR);
+  });
+
+  it.each([
+    ['not_found', { data: 'not_found', error: null }],
+    ['an unknown answer', { data: 'something_else', error: null }],
+    ['an RPC error', { data: null, error: { message: 'cannot close event: 1 operational campaign(s)', code: '23514' } }],
+  ])('maps %s to the generic message, never a database text', async (_label, result) => {
+    arrange({ result });
+
+    const failure = closeEvent('event-1');
+    await expect(failure).rejects.toThrow('סגירת האירוע נכשלה. נסו שוב או פנו לתמיכה.');
+    await expect(failure).rejects.not.toThrow(/campaign|קמפיין/);
   });
 });
 

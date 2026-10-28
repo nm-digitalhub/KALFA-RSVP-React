@@ -6,17 +6,38 @@ vi.mock('next/link', () => ({
   default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
 vi.mock('next/navigation', async (importOriginal) => ({ ...(await importOriginal<typeof import('next/navigation')>()) }));
-vi.mock('@/lib/data/campaigns', () => ({ getCampaignForEvent: vi.fn(), listPackageOffers: vi.fn() }));
-vi.mock('@/lib/data/events', () => ({ getEvent: vi.fn() }));
+vi.mock('@/lib/data/campaigns', () => ({
+  getCampaignForEvent: vi.fn(),
+  listCampaignsForEvent: vi.fn(),
+  listPackageOffers: vi.fn(),
+}));
+vi.mock('@/lib/data/events', () => ({ getEvent: vi.fn(), canAccessEvent: vi.fn(), eventDatesLocked: vi.fn() }));
 vi.mock('@/lib/storage/event-media', () => ({ signedInviteImageUrl: vi.fn() }));
 // The real reading by default (vi.fn(impl) survives resetAllMocks); one test answers "paid".
 vi.mock('@/lib/payments/package-paid', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/payments/package-paid')>();
   return { ...actual, packagePaymentOf: vi.fn(actual.packagePaymentOf) };
 });
-vi.mock('../campaign/campaign-actions', () => ({ setupCampaignAction: vi.fn(), choosePackageAction: vi.fn() }));
+vi.mock('../campaign/campaign-actions', () => ({
+  setupCampaignAction: vi.fn(),
+  choosePackageAction: vi.fn(),
+  closeEventAction: vi.fn(),
+}));
 vi.mock('../campaign/[campaignId]/approve/package-terms-step', () => ({ PackageTermsStep: () => <div data-marker="package-terms" /> }));
-vi.mock('../edit-event-form', () => ({ EditEventForm: () => <div data-marker="details-form" /> }));
+vi.mock('../edit-event-form', () => ({
+  EditEventForm: ({ datesLocked, hasOperationalCampaign }: { datesLocked?: boolean; hasOperationalCampaign?: boolean }) => (
+    <div
+      data-marker="details-form"
+      data-dates-locked={String(datesLocked)}
+      data-operational={String(hasOperationalCampaign)}
+    />
+  ),
+}));
+vi.mock('../event-status-actions', () => ({
+  EventStatusActions: ({ closeAllowed, blockedHint }: { closeAllowed: boolean; blockedHint: string | null }) => (
+    <div data-marker="close-control" data-allowed={String(closeAllowed)} data-hint={blockedHint ?? ''} />
+  ),
+}));
 vi.mock('../setup-confirm-form', () => ({ SetupConfirmForm: () => <div data-marker="confirm-form" /> }));
 vi.mock('../setup-stepper', () => ({
   SetupStepper: ({ steps, back }: { steps: Array<{ key: string; state: string; label: string }>; back?: { href: string; label: string } | null }) => (
@@ -35,8 +56,9 @@ vi.mock('../package-choice-form', () => ({
   ),
 }));
 
-import { getCampaignForEvent, listPackageOffers } from '@/lib/data/campaigns';
-import { getEvent } from '@/lib/data/events';
+import { getCampaignForEvent, listCampaignsForEvent, listPackageOffers } from '@/lib/data/campaigns';
+import { CLOSE_BLOCKED_MONEY_ERROR, CLOSE_BLOCKED_PAID_ERROR } from '@/lib/data/event-lifecycle';
+import { canAccessEvent, eventDatesLocked, getEvent } from '@/lib/data/events';
 import { packagePaymentOf } from '@/lib/payments/package-paid';
 import { SERVICE_STARTING } from '@/lib/payments/package-payment-screen';
 import SetupPage from './page';
@@ -81,13 +103,24 @@ const backOf = (html: string) => ({
   label: /data-back-label="([^"]*)"/.exec(html)?.[1] ?? null,
 });
 const stepsOf = (html: string) => /data-steps="([^"]*)"/.exec(html)?.[1].split(',').map((s) => s.split(':')[0]);
+const closeOf = (html: string) => {
+  const marker = /<div data-marker="close-control"[^>]*>/.exec(html)?.[0];
+  if (!marker) return null;
+  return {
+    allowed: /data-allowed="([^"]*)"/.exec(marker)?.[1] === 'true',
+    hint: (/data-hint="([^"]*)"/.exec(marker)?.[1] ?? '').replaceAll('&quot;', '"'),
+  };
+};
 
 beforeEach(() => {
   vi.resetAllMocks();
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.mocked(getEvent).mockResolvedValue(confirmedEvent as never);
   vi.mocked(getCampaignForEvent).mockResolvedValue(null);
+  vi.mocked(listCampaignsForEvent).mockResolvedValue([]);
   vi.mocked(listPackageOffers).mockResolvedValue([]);
+  vi.mocked(canAccessEvent).mockResolvedValue(true);
+  vi.mocked(eventDatesLocked).mockResolvedValue(false);
 });
 
 describe('setup page — nothing on offer (the package switch is off)', () => {
@@ -180,9 +213,25 @@ describe('setup page — the way back', () => {
     expect(html).not.toContain('data-marker="confirm-form"');
   });
 
-  it('a confirmed event cannot reopen the details inside the flow (?step=details is ignored): its details are edited on the event page', async () => {
+  it('a confirmed event reopens the details inside the flow (D5), with the locks the event page shows', async () => {
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'pending_approval', price: 150 } as never);
+    vi.mocked(listCampaignsForEvent).mockResolvedValue([{ id: 'c1', status: 'pending_approval' }] as never);
+    vi.mocked(eventDatesLocked).mockResolvedValue(true);
     const html = await render({ step: 'details' });
-    expect(html).not.toContain('data-marker="details-form"');
+    expect(html).toContain('data-marker="details-form"');
+    expect(html).not.toContain('data-marker="package-terms"');
+    // The same locks as the event page: dates by the first send, and the fields an operational campaign protects.
+    expect(eventDatesLocked).toHaveBeenCalledWith(EVENT_ID, 'active');
+    expect(html).toContain('data-dates-locked="true"');
+    expect(html).toContain('data-operational="true"');
+  });
+
+  it('a draft\'s details form keeps the draft defaults (no lock reads)', async () => {
+    vi.mocked(getEvent).mockResolvedValue({ ...confirmedEvent, status: 'draft' } as never);
+    const html = await render({ step: 'details' });
+    expect(html).toContain('data-dates-locked="undefined"');
+    expect(eventDatesLocked).not.toHaveBeenCalled();
+    expect(listCampaignsForEvent).not.toHaveBeenCalled();
   });
 
   it('not while the details form is already open: that would be a back to where the owner is', async () => {
@@ -190,15 +239,69 @@ describe('setup page — the way back', () => {
     expect(backOf(await render({ step: 'details' }))).toEqual({ href: null, label: null });
   });
 
-  it('on the package-choice step: back to the event page, where a confirmed event is edited', async () => {
+  it('on the package-choice step: back to the details form inside setup (D5), not out of the flow', async () => {
     vi.mocked(listPackageOffers).mockResolvedValue([OFFER as never]);
-    expect(backOf(await render())).toEqual({ href: '/app/events/e1', label: 'פרטי האירוע' });
+    expect(backOf(await render())).toEqual({ href: '/app/events/e1/setup?step=details', label: 'פרטי האירוע' });
   });
 
   it('once the campaign exists there is no back: the choice, the approval and the payment are not undone from here', async () => {
     vi.mocked(listPackageOffers).mockResolvedValue([OFFER as never]);
     vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'pending_approval', package_price: 150 } as never);
     expect(backOf(await render())).toEqual({ href: null, label: null });
+  });
+});
+
+// The close inside setup (D5): rendered for a viewer holding events.close, offered while nothing was paid (the event
+// lifecycle model). closeEvent and the database decide again on submit.
+describe('setup page — closing the event', () => {
+  it('asks the customer permission system for events.close', async () => {
+    await render();
+    expect(canAccessEvent).toHaveBeenCalledWith(EVENT_ID, 'events', 'close');
+  });
+
+  it('without events.close there is no close control', async () => {
+    vi.mocked(canAccessEvent).mockResolvedValue(false);
+    expect(closeOf(await render())).toBeNull();
+  });
+
+  it.each([
+    ['a draft event, nothing chosen', { status: 'draft' }, null, null],
+    ['confirmed, nothing chosen', {}, null, null],
+    ['the package chosen, terms not approved', {}, { id: 'c1', status: 'pending_approval', price: 150 }, { status: 'none', collected: 0, credit: 0, committed: 0 }],
+    ['terms approved, the payment declined', {}, { id: 'c1', status: 'approved', price: 150 }, { status: 'declined', collected: 0, credit: 0, committed: 0 }],
+  ])('%s → the close is offered', async (_name, eventPatch, campaign, payment) => {
+    vi.mocked(getEvent).mockResolvedValue({ ...confirmedEvent, ...eventPatch } as never);
+    vi.mocked(getCampaignForEvent).mockResolvedValue(campaign as never);
+    if (payment) vi.mocked(packagePaymentOf).mockResolvedValue(payment as never);
+    expect(closeOf(await render())).toEqual({ allowed: true, hint: '' });
+  });
+
+  it('a payment still in flight → not offered, contact support', async () => {
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'approved', price: 150 } as never);
+    vi.mocked(packagePaymentOf).mockResolvedValue({ status: 'pending', collected: 0, credit: 0, committed: 0 });
+    expect(closeOf(await render())).toEqual({ allowed: false, hint: CLOSE_BLOCKED_MONEY_ERROR });
+  });
+
+  it('paid with test money → not offered (resetting a test run is a staff action)', async () => {
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'approved', price: 150 } as never);
+    vi.mocked(packagePaymentOf).mockResolvedValue({ status: 'collected', collected: 150, credit: 0, committed: 0, testMoney: true });
+    expect(closeOf(await render())).toEqual({ allowed: false, hint: CLOSE_BLOCKED_PAID_ERROR });
+  });
+
+  it('a ledger that cannot be read → not offered (fail closed)', async () => {
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'approved', price: 150 } as never);
+    vi.mocked(packagePaymentOf).mockResolvedValue(null);
+    const close = closeOf(await render());
+    expect(close?.allowed).toBe(false);
+    expect(close?.hint).not.toBe('');
+  });
+
+  it('a past event with nothing paid can still be closed', async () => {
+    vi.mocked(getEvent).mockResolvedValue({
+      ...confirmedEvent,
+      event_date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+    } as never);
+    expect(closeOf(await render())).toEqual({ allowed: true, hint: '' });
   });
 });
 

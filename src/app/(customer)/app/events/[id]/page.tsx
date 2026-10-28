@@ -21,6 +21,8 @@ import {
   type ThankyouSchedule,
 } from '@/lib/data/campaigns';
 import { hasAnyOperationalCampaign } from '@/lib/data/campaign-status';
+import { closeControlOf, resolveEventLifecycle } from '@/lib/data/event-lifecycle';
+import { packagePaymentOf } from '@/lib/payments/package-paid';
 import { getEventStats } from '@/lib/data/event-stats';
 import { EVENT_TYPE_LABELS, eventStatusLabel } from '@/lib/data/event-labels';
 import { celebrantsTextFor } from '@/lib/data/celebrant-display';
@@ -271,16 +273,40 @@ export default async function EventPage({
   // campaign's template contract be re-typed under it. `true` costs this viewer
   // nothing real elsewhere: can_access_event short-circuits on
   // `owner_id = auth.uid()`, so a campaigns-blind viewer is always a non-owner
-  // org member, and closeEvent is `.eq('owner_id', user.id)` — the close it
-  // disables would have been a no-op for them anyway.
+  // org member. (The close below does not read this flag at all.)
   const hasOperationalCampaign =
     allCampaigns === null ? true : hasAnyOperationalCampaign(allCampaigns);
+
+  // The close and the cancellation request (design D5/D7). The ledger is read ONCE
+  // here and handed to SetupSteps too. The event lifecycle model decides what is
+  // OFFERED — the close while nothing was paid, the cancellation request once it
+  // was — and fails closed for a viewer who cannot see the campaigns or a ledger
+  // that cannot be read. The control is rendered only for a viewer holding
+  // `events.close` (the owner always; another member only through the protected
+  // permission); closeEvent checks the same permission again and the database
+  // function decides the money for real.
+  const payment = campaign ? await packagePaymentOf(campaign) : null;
+  const closeControl = closeControlOf(
+    resolveEventLifecycle({
+      eventStatus: event.status,
+      campaignsVisible: canViewCampaigns,
+      campaign,
+      payment,
+    }),
+  );
+  const canClose = await canAccessEvent(id, 'events', 'close');
   const closeAction = closeEventAction.bind(null, event.id);
   const createCancellationAction = createCancellationRequestAction.bind(null, event.id);
   // No closure reason is loaded here: `closed` returned early above, so from
   // this line on the status is draft or active and the reason is always null.
   const cancellationRequest =
     event.status !== 'draft' ? await getCancellationRequestForEvent(event.id) : null;
+  // A cancellation request is for a service that was paid. Before that the close
+  // retires the setup by itself, so the form is not offered; a request already
+  // sent keeps showing its status.
+  const showCancellation =
+    event.status !== 'draft' &&
+    (closeControl.cancellationRequestable || showsCancellationStatusOnly(cancellationRequest));
 
   const summary = [
     EVENT_TYPE_LABELS[event.event_type] ?? event.event_type,
@@ -341,7 +367,7 @@ export default async function EventPage({
       </div>
 
       {canViewCampaigns ? (
-        <SetupSteps event={event} campaign={campaign} isPast={isPast} />
+        <SetupSteps event={event} campaign={campaign} payment={payment} isPast={isPast} />
       ) : (
         // Without campaigns.view `campaign` is null for a PERMISSION reason, not
         // because no campaign exists. Rendering SetupSteps with it would state
@@ -358,13 +384,16 @@ export default async function EventPage({
         </section>
       )}
 
-      <EventStatusActions
-        status={event.status}
-        hasBlockingCampaign={hasOperationalCampaign}
-        closeAction={closeAction}
-      />
+      {canClose ? (
+        <EventStatusActions
+          status={event.status}
+          closeAllowed={closeControl.allowed}
+          blockedHint={closeControl.hint}
+          closeAction={closeAction}
+        />
+      ) : null}
 
-      {event.status !== 'draft' ? (
+      {showCancellation ? (
         <CancellationRequestForm
           existingRequest={cancellationRequest}
           action={createCancellationAction}

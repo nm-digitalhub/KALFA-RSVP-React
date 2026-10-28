@@ -88,31 +88,31 @@ const NEXT_NOT_FOUND = Object.assign(new Error('NEXT_NOT_FOUND'), {
 beforeEach(() => vi.clearAllMocks());
 
 describe('closeEventAction', () => {
-  it('calls closeEvent and returns a notice on success', async () => {
+  it('calls closeEvent and lands on the event page on success (also from inside setup)', async () => {
     vi.mocked(closeEvent).mockResolvedValue(undefined);
 
-    const result = await closeEventAction('e1', null, new FormData());
+    await expect(closeEventAction('e1', null, new FormData())).rejects.toThrow('NEXT_REDIRECT');
 
     expect(closeEvent).toHaveBeenCalledWith('e1');
-    expect(result?.notice).toBeDefined();
+    expect(redirect).toHaveBeenCalledWith('/app/events/e1');
   });
 
   it('marks the synced Exchange appointment(s) cancelled after a successful close', async () => {
     vi.mocked(closeEvent).mockResolvedValue(undefined);
 
-    await closeEventAction('e1', null, new FormData());
+    await expect(closeEventAction('e1', null, new FormData())).rejects.toThrow('NEXT_REDIRECT');
 
     expect(markEventExchangeCancelled).toHaveBeenCalledWith('e1');
   });
 
-  it('does not mark Exchange cancelled when closeEvent fails', async () => {
-    vi.mocked(closeEvent).mockRejectedValue(
-      new Error('יש לסגור או לבטל את הקמפיין לפני סגירת האירוע'),
-    );
+  it('returns the data layer message and does not mark Exchange cancelled when closeEvent fails', async () => {
+    vi.mocked(closeEvent).mockRejectedValue(new Error('יש תשלום שעדיין בטיפול'));
 
-    await closeEventAction('e1', null, new FormData());
+    const result = await closeEventAction('e1', null, new FormData());
 
+    expect(result?.error).toBe('יש תשלום שעדיין בטיפול');
     expect(markEventExchangeCancelled).not.toHaveBeenCalled();
+    expect(redirect).not.toHaveBeenCalled();
   });
 
   it('re-throws a Next.js control-flow signal (the ownership gate) instead of swallowing it', async () => {

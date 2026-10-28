@@ -4,10 +4,17 @@ import type { Metadata } from 'next';
 
 import { buttonVariants } from '@/components/ui/button';
 import { requireUser } from '@/lib/auth/dal';
-import { getCampaignForEvent, listPackageOffers, type PackageOffer } from '@/lib/data/campaigns';
+import {
+  getCampaignForEvent,
+  listCampaignsForEvent,
+  listPackageOffers,
+  type PackageOffer,
+} from '@/lib/data/campaigns';
+import { hasAnyOperationalCampaign } from '@/lib/data/campaign-status';
 import { getBenefitView, type BenefitView } from '@/lib/data/coupon-benefits';
 import { isPastEventDay } from '@/lib/data/event-date';
-import { getEvent } from '@/lib/data/events';
+import { closeControlOf, resolveEventLifecycle } from '@/lib/data/event-lifecycle';
+import { canAccessEvent, eventDatesLocked, getEvent } from '@/lib/data/events';
 import {
   POST_ACTIVATION_STAGES,
   SETUP_LOCK_WARNING,
@@ -21,10 +28,16 @@ import { packagePaymentOf } from '@/lib/payments/package-paid';
 import { SERVICE_STARTING } from '@/lib/payments/package-payment-screen';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 
-import { acceptBenefitAction, choosePackageAction, setupCampaignAction } from '../campaign/campaign-actions';
+import {
+  acceptBenefitAction,
+  choosePackageAction,
+  closeEventAction,
+  setupCampaignAction,
+} from '../campaign/campaign-actions';
 import { PackageTermsStep } from '../campaign/[campaignId]/approve/package-terms-step';
 import { BenefitAcceptBanner } from '../benefit-accept-banner';
 import { EditEventForm } from '../edit-event-form';
+import { EventStatusActions } from '../event-status-actions';
 import { PackageChoiceForm, type PackageChoiceBenefit } from '../package-choice-form';
 import { SetupConfirmForm } from '../setup-confirm-form';
 import { SetupStepper } from '../setup-stepper';
@@ -141,14 +154,16 @@ export default async function SetupPage({
 
   if (POST_ACTIVATION_STAGES.includes(stage) && base) redirect(base);
 
-  // `?step=details` reopens the details step while the event is still a draft, so
-  // a detail can be fixed BEFORE confirming (the confirm step links to it). It only
-  // chooses between two views of the same draft: the save it leads to re-checks
-  // everything (and a draft's details are editable by definition).
-  const editingDetails = step === 'details' && event.status === 'draft';
+  // `?step=details` reopens the details step while setup is still running — for a
+  // draft (before confirming; the confirm step links to it) and for a confirmed
+  // event whose service is not paid yet (the package step's back leads here, design
+  // D5). It only chooses which view of the event to show: the save it leads to
+  // re-checks everything, including the date lock and the fields a live service
+  // protects (updateEvent).
+  const editingDetails = step === 'details';
   const current = editingDetails ? 'details' : (steps.find((s) => s.state === 'current')?.key ?? null);
   // "Back" leads to the previous step's page, as decided by the server. Not while the details form is already the view:
-  // the stepper still names the confirm step as the current one then, and a back to where the owner already is would be a lie.
+  // the stepper still names a later step as the current one then, and a back to where the owner already is would be a lie.
   const backTarget = editingDetails ? null : setupBackTarget({ eventId: id, steps });
   const back = backTarget ? { href: backTarget.href, label: labels[backTarget.key] } : null;
 
@@ -162,6 +177,22 @@ export default async function SetupPage({
       inviteImageUrl = null;
     }
   }
+  // A confirmed event's details form shows the same locks the event page shows: the dates once the first message went
+  // out, and the fields an operational campaign protects (∃ over ALL the event's campaigns, as updateEvent decides).
+  const detailsLocks =
+    current === 'details' && event.status !== 'draft'
+      ? {
+          datesLocked: await eventDatesLocked(id, event.status),
+          hasOperationalCampaign: hasAnyOperationalCampaign(await listCampaignsForEvent(id)),
+        }
+      : null;
+
+  // The close, inside setup as on the event page (design D5): rendered for a viewer holding `events.close`, offered
+  // while nothing was paid (the event lifecycle model). closeEvent checks both again on the server.
+  const canClose = await canAccessEvent(id, 'events', 'close');
+  const closeControl = closeControlOf(
+    resolveEventLifecycle({ eventStatus: event.status, campaignsVisible: true, campaign, payment }),
+  );
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -190,7 +221,13 @@ export default async function SetupPage({
           {current === 'details' ? (
             <>
               <h2 className="text-lg font-semibold">{labels.details}</h2>
-              <EditEventForm event={event} inviteImageUrl={inviteImageUrl} mode="setup" />
+              <EditEventForm
+                event={event}
+                inviteImageUrl={inviteImageUrl}
+                mode="setup"
+                datesLocked={detailsLocks?.datesLocked}
+                hasOperationalCampaign={detailsLocks?.hasOperationalCampaign}
+              />
             </>
           ) : null}
 
@@ -305,6 +342,15 @@ export default async function SetupPage({
           ) : null}
         </section>
       )}
+
+      {canClose ? (
+        <EventStatusActions
+          status={event.status}
+          closeAllowed={closeControl.allowed}
+          blockedHint={closeControl.hint}
+          closeAction={closeEventAction.bind(null, id)}
+        />
+      ) : null}
     </div>
   );
 }
