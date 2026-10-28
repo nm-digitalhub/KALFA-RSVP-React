@@ -27,6 +27,15 @@ describe('deriveRequestKey', () => {
     expect(deriveRequestKey({ ...base, body: 'אחר' })).not.toBe(deriveRequestKey(base));
   });
 
+  // The day turns over at Israel midnight, like public.fleet_owner_request's owner keys — not at UTC midnight (02:00/03:00 here).
+  it.each([
+    ['winter, 00:30 Israel', '2026-12-01T00:30:00+02:00', '2026-12-01'],
+    ['summer, 02:30 Israel', '2026-07-01T02:30:00+03:00', '2026-07-01'],
+    ['winter, 23:30 Israel', '2026-11-30T23:30:00+02:00', '2026-11-30'],
+  ])('dates the key by the Israel calendar day (%s)', (_label, at, day) => {
+    expect(deriveRequestKey({ ...base, date: new Date(at) }).split(':')[1]).toBe(day);
+  });
+
   it('fits the DB length constraint (<=200 chars) for the longest allowed role', () => {
     const key = deriveRequestKey({ ...base, role: 'x'.repeat(64) });
     expect(key.length).toBeLessThanOrEqual(200);
