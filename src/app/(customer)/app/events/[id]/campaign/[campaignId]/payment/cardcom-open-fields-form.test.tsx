@@ -373,6 +373,42 @@ describe('CardcomOpenFieldsForm', () => {
     expect(refreshMock).toHaveBeenCalled();
   });
 
+  it('waits between tries but not after the last one: six asks, five waits', async () => {
+    const DELAY = 17;
+    const timeouts = vi.spyOn(globalThis, 'setTimeout');
+    answerWith(SETTLE_URL, { state: 'in_progress' });
+    render(<CardcomOpenFieldsForm {...props} pollDelayMs={DELAY} />);
+    await openSession();
+    cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true } });
+    expect((await screen.findByRole('alert')).textContent).toBe(PURCHASE_ERROR_MESSAGES.purchase_in_progress);
+    expect(callsTo(SETTLE_URL)).toHaveLength(6);
+    expect(timeouts.mock.calls.filter((c) => c[1] === DELAY)).toHaveLength(5);
+    timeouts.mockRestore();
+  });
+
+  // CardCom's frame reported an error, but CardCom has no payment and names no failed attempt (the server leaves the row pending): there is
+  // nothing to wait for. The buyer is told as before and may start over at once — never "a payment is in progress, do not pay again".
+  it('after a frame ERROR, a server that still sees nothing failed lets the buyer start over at once, without asking again', async () => {
+    answerWith(SETTLE_URL, { state: 'in_progress' });
+    answerWith(START_URL, { status: 'ready', lowProfileId: 'lp-1' }, { status: 'ready', lowProfileId: 'lp-2' });
+    render(<CardcomOpenFieldsForm {...props} pollDelayMs={1} />);
+    await openSession();
+    cardcomMessage({ action: 'HandleEror', ResponseCode: 400, message: ['invalid card'] });
+    expect((await screen.findByRole('alert')).textContent).toBe(PURCHASE_ERROR_MESSAGES.purchase_declined);
+    expect(callsTo(SETTLE_URL)).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'ניסיון נוסף' }));
+    await waitFor(() => expect(callsTo(START_URL)).toHaveLength(2));
+  });
+
+  it('after a frame ERROR of 3D Secure that the server still sees as pending, the 3D Secure sentence is told, as for a decline', async () => {
+    answerWith(SETTLE_URL, { state: 'in_progress' });
+    render(<CardcomOpenFieldsForm {...props} pollDelayMs={1} />);
+    await openSession();
+    cardcomMessage({ action: 'HandleEror', ResponseCode: 408 });
+    expect((await screen.findByRole('alert')).textContent).toBe(PURCHASE_ERROR_MESSAGES.three_ds_timeout);
+    expect(callsTo(SETTLE_URL)).toHaveLength(1);
+  });
+
   it('a review result tells the buyer NOT to pay again, and refreshes the page to the ledger\'s view', async () => {
     answerWith(SETTLE_URL, { state: 'review' });
     render(<CardcomOpenFieldsForm {...props} />);

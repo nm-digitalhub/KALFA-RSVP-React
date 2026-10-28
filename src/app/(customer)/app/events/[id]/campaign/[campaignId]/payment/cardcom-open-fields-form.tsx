@@ -280,7 +280,10 @@ export function CardcomOpenFieldsForm({
           router.refresh();
           return;
         }
-        if (answer.state === 'declined') {
+        // A decline — or CardCom's frame reported an error while CardCom has no payment and names no failed attempt (a detail it did
+        // not accept, a check that did not finish): nothing to wait for. In the second case the row stays pending, never closed as
+        // declined on the frame's word; "try again" opens a new session, which closes this one as replaced.
+        if (answer.state === 'declined' || (errored && answer.state === 'in_progress')) {
           setLowProfileId(null);
           // A 3D Secure timeout or refusal is the bank's check not completing, not the issuer declining the card: say which.
           const reason = threeDsErrorOf(lastErrorCode.current);
@@ -295,8 +298,11 @@ export function CardcomOpenFieldsForm({
           router.refresh();
           return;
         }
-        await sleep(pollDelayMs);
-        if (!mounted.current) return;
+        // No wait after the last try: its answer is already in.
+        if (attempt < MAX_POLLS - 1) {
+          await sleep(pollDelayMs);
+          if (!mounted.current) return;
+        }
       }
       fail('purchase_in_progress', 'waiting');
       router.refresh();
