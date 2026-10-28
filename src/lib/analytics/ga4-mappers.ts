@@ -30,6 +30,8 @@ import {
   type TopPageRow,
   type TrendPoint,
 } from './ga4-types';
+import { addCalendarDays } from '@/lib/date';
+import { israelCalendarDay } from '@/lib/data/event-date';
 
 type AnyReportResponse = RunReportResponse | RunRealtimeReportResponse;
 
@@ -93,6 +95,12 @@ export function mapTrend(resp: RunReportResponse | null | undefined): TrendPoint
 
 // GA omits days with zero activity; a new property would render a broken
 // line without this. Fills every calendar day of the range with zeros.
+//
+// The days are ISRAEL calendar days: GA4 reports `date` (and resolves
+// "NdaysAgo..today") in the property's own time zone, which is Asia/Jerusalem
+// (Admin API, read 28.10.2026). They used to be UTC days, so for the first
+// 2-3 hours after Israel midnight "today" carried yesterday's date and the
+// real today's point was missing from the line.
 export function fillTrendGaps(
   points: TrendPoint[],
   range: AnalyticsRange,
@@ -100,11 +108,11 @@ export function fillTrendGaps(
 ): TrendPoint[] {
   const byDate = new Map(points.map((p) => [p.date, p]));
   const days = rangeDayCount(range);
+  const todayIL = israelCalendarDay(today.getTime());
   const out: TrendPoint[] = [];
   for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const iso = d.toISOString().slice(0, 10);
+    const iso = addCalendarDays(todayIL, -i);
+    if (iso === null) continue;
     out.push(byDate.get(iso) ?? { date: iso, activeUsers: 0, sessions: 0 });
   }
   return out;

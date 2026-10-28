@@ -135,6 +135,18 @@ describe('mapTrend + fillTrendGaps', () => {
     expect(filled).toHaveLength(31);
     expect(filled.every((p) => p.activeUsers === 0 && p.sessions === 0)).toBe(true);
   });
+
+  // GA4 dates are in the property's time zone, Asia/Jerusalem: right after Israel midnight "today" is already the new day
+  // (it used to be the UTC day, i.e. yesterday, until 02:00/03:00), and today's real point must not be replaced by a zero.
+  it.each([
+    ['winter, 00:30 Israel', '2026-12-01T00:30:00+02:00', '2026-12-01', '2026-11-25'],
+    ['summer, 02:30 Israel', '2026-07-01T02:30:00+03:00', '2026-07-01', '2026-06-25'],
+  ])('labels days by the Israel calendar (%s)', (_label, now, today, first) => {
+    const filled = fillTrendGaps([{ date: today, activeUsers: 4, sessions: 5 }], '7d', new Date(now));
+    expect(filled).toHaveLength(8);
+    expect(filled.at(-1)).toEqual({ date: today, activeUsers: 4, sessions: 5 });
+    expect(filled[1].date).toBe(first);
+  });
 });
 
 describe('mapEvents — key detection via the keyEvents metric, no hardcoded names', () => {
