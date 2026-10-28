@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "xstate-test",
+  "owner": "inkwonjung-colosseum",
+  "repo": "plugins",
+  "path": "xstate-kit/skills/xstate-test",
+  "branch": "main",
+  "sha": "a1c681b572e63e0af1563b20ac2f67a0493d3be4",
+  "source": "manual"
+}
