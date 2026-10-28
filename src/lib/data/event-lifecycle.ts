@@ -182,6 +182,14 @@ const CLOSE_MONEY_MOVED_HINT =
   'באירוע הזה יש תנועת כסף שדורשת בדיקה של התמיכה, ולכן לא ניתן לסגור אותו מכאן. לעזרה יש לפנות לתמיכה.';
 const CLOSE_UNAVAILABLE_HINT = 'לא ניתן לבדוק כרגע את מצב התשלום, ולכן אי אפשר לסגור את האירוע. נסו שוב מאוחר יותר.';
 
+// What a screen says in place of its content when the mode is `unavailable` (design D2, task 3.8). Shared by the event
+// page and /setup so the two never word it differently: money that support has to look at, or a state that cannot be read.
+export function unavailableNoticeOf(snapshot: EventLifecycleSnapshot): string {
+  return snapshot.matches({ open: { service: 'moneyMoved' } })
+    ? 'יש באישורי ההגעה תנועת כסף שדורשת בדיקה של התמיכה. לעזרה יש לפנות לתמיכה.'
+    : 'לא ניתן להציג כרגע את מצב אישורי ההגעה. נסו שוב מאוחר יותר.';
+}
+
 export type CloseControl = {
   // The close may be offered now.
   allowed: boolean;

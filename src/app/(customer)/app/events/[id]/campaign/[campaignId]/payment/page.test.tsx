@@ -5,7 +5,13 @@ vi.mock('server-only', () => ({}));
 vi.mock('next/link', () => ({
   default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
-vi.mock('next/navigation', async (importOriginal) => ({ ...(await importOriginal<typeof import('next/navigation')>()) }));
+// redirect() throws a NEXT_REDIRECT control-flow signal in real Next; model it so a redirect, and its absence, is observable.
+vi.mock('next/navigation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/navigation')>()),
+  redirect: vi.fn((path: string) => {
+    throw Object.assign(new Error('NEXT_REDIRECT'), { digest: `NEXT_REDIRECT;replace;${path};307;` });
+  }),
+}));
 vi.mock('@/lib/data/campaigns', () => ({ getCampaign: vi.fn() }));
 vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
 vi.mock('@/lib/data/profiles', () => ({ getProfile: vi.fn() }));
@@ -43,6 +49,8 @@ vi.mock('./package-payment-view', () => ({
     />
   ),
 }));
+
+import { redirect } from 'next/navigation';
 
 import { getCampaign } from '@/lib/data/campaigns';
 import { requireOwnedEvent } from '@/lib/data/events';
@@ -132,10 +140,11 @@ describe('payment page — a package campaign', () => {
     expect(await render()).toContain('data-activation="active"');
   });
 
-  it('an unreadable ledger is "unavailable", not an empty form', async () => {
+  it('an unreadable ledger is "unavailable", not an empty form, and in place: no redirect (task 3.8)', async () => {
     vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
     vi.mocked(getPackagePaymentState).mockRejectedValue(new Error('boom'));
     expect(await render()).toContain('data-screen="unavailable"');
+    expect(redirect).not.toHaveBeenCalled();
   });
 
   it('closed gates, or a missing provider configuration, never produce a form', async () => {

@@ -5,7 +5,13 @@ vi.mock('server-only', () => ({}));
 vi.mock('next/link', () => ({
   default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
-vi.mock('next/navigation', async (importOriginal) => ({ ...(await importOriginal<typeof import('next/navigation')>()) }));
+// redirect() throws a NEXT_REDIRECT control-flow signal in real Next; model it so a redirect, and its absence, is observable.
+vi.mock('next/navigation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/navigation')>()),
+  redirect: vi.fn((path: string) => {
+    throw Object.assign(new Error('NEXT_REDIRECT'), { digest: `NEXT_REDIRECT;replace;${path};307;` });
+  }),
+}));
 vi.mock('@/lib/data/campaigns', () => ({
   getCampaignForEvent: vi.fn(),
   listCampaignsForEvent: vi.fn(),
@@ -56,11 +62,12 @@ vi.mock('../package-choice-form', () => ({
   ),
 }));
 
+import { redirect } from 'next/navigation';
+
 import { getCampaignForEvent, listCampaignsForEvent, listPackageOffers } from '@/lib/data/campaigns';
-import { CLOSE_BLOCKED_MONEY_ERROR, CLOSE_BLOCKED_PAID_ERROR } from '@/lib/data/event-lifecycle';
+import { CLOSE_BLOCKED_MONEY_ERROR } from '@/lib/data/event-lifecycle';
 import { canAccessEvent, eventDatesLocked, getEvent } from '@/lib/data/events';
 import { packagePaymentOf } from '@/lib/payments/package-paid';
-import { SERVICE_STARTING } from '@/lib/payments/package-payment-screen';
 import SetupPage from './page';
 
 // The setup page decides, on the server, which step is current. With a fixed-price package on offer a "בחירת חבילה"
@@ -215,6 +222,8 @@ describe('setup page — the way back', () => {
 
   it('a confirmed event reopens the details inside the flow (D5), with the locks the event page shows', async () => {
     vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'pending_approval', price: 150 } as never);
+    // A readable ledger with nothing paid: the event is in setup (an unreadable one would be `unavailable`).
+    vi.mocked(packagePaymentOf).mockResolvedValue({ status: 'none', collected: 0, credit: 0, committed: 0 });
     vi.mocked(listCampaignsForEvent).mockResolvedValue([{ id: 'c1', status: 'pending_approval' }] as never);
     vi.mocked(eventDatesLocked).mockResolvedValue(true);
     const html = await render({ step: 'details' });
@@ -282,12 +291,6 @@ describe('setup page — closing the event', () => {
     expect(closeOf(await render())).toEqual({ allowed: false, hint: CLOSE_BLOCKED_MONEY_ERROR });
   });
 
-  it('paid with test money → not offered (resetting a test run is a staff action)', async () => {
-    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'approved', price: 150 } as never);
-    vi.mocked(packagePaymentOf).mockResolvedValue({ status: 'collected', collected: 150, credit: 0, committed: 0, testMoney: true });
-    expect(closeOf(await render())).toEqual({ allowed: false, hint: CLOSE_BLOCKED_PAID_ERROR });
-  });
-
   it('a ledger that cannot be read → not offered (fail closed)', async () => {
     vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'approved', price: 150 } as never);
     vi.mocked(packagePaymentOf).mockResolvedValue(null);
@@ -305,14 +308,100 @@ describe('setup page — closing the event', () => {
   });
 });
 
-describe('setup page — paid, not running yet (D23)', () => {
-  it('the live step says the service is being started and offers nothing to press', async () => {
-    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'approved', price: 150 } as never);
-    vi.mocked(packagePaymentOf).mockResolvedValue({ status: 'collected', collected: 150, credit: 0, committed: 0 });
+const paid = (extra: Record<string, unknown> = {}) => ({ status: 'collected', collected: 150, credit: 0, committed: 0, ...extra });
+const UNAVAILABLE_NOTICE = 'לא ניתן להציג כרגע את מצב אישורי ההגעה. נסו שוב מאוחר יותר.';
+const MONEY_MOVED_NOTICE = 'יש באישורי ההגעה תנועת כסף שדורשת בדיקה של התמיכה. לעזרה יש לפנות לתמיכה.';
+
+// Management (design D1/D2, task 3.2): the setup flow is over once the event is paid, running, finished or closed, and
+// /setup hands the owner to the EVENT page — never to the campaign page, and never back into a step.
+describe('setup page — an event in management goes to the event page', () => {
+  it.each([
+    ['paid, not running yet', { status: 'approved', price: 150 }, paid()],
+    ['paid with test money', { status: 'approved', price: 150 }, paid({ testMoney: true })],
+    ['scheduled', { status: 'scheduled', price: 150 }, paid()],
+    ['running', { status: 'active', price: 150 }, paid()],
+    ['paused', { status: 'paused', price: 150 }, paid()],
+    ['finished', { status: 'closed', price: 150 }, paid()],
+    // A running service is management by its own status, whatever the ledger says (the lifecycle model, unchanged).
+    ['running, with a ledger that cannot be read', { status: 'active', price: 150 }, null],
+  ])('%s → the event page', async (_name, campaign, payment) => {
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', ...campaign } as never);
+    vi.mocked(packagePaymentOf).mockResolvedValue(payment as never);
+    await expect(render()).rejects.toThrow('NEXT_REDIRECT');
+    expect(redirect).toHaveBeenCalledTimes(1);
+    expect(redirect).toHaveBeenCalledWith(`/app/events/${EVENT_ID}`);
+  });
+
+  it('a closed event → the event page', async () => {
+    vi.mocked(getEvent).mockResolvedValue({ ...confirmedEvent, status: 'closed' } as never);
+    await expect(render()).rejects.toThrow('NEXT_REDIRECT');
+    expect(redirect).toHaveBeenCalledWith(`/app/events/${EVENT_ID}`);
+  });
+});
+
+// Setup (design D1): the owner stays in the flow, at the step the server computes.
+describe('setup page — an event still in setup stays here', () => {
+  it.each([
+    ['approved, not paid', { status: 'approved', price: 150 }, { status: 'none', collected: 0, credit: 0, committed: 0 }, 'pay:current'],
+    ['a payment still in flight', { status: 'approved', price: 150 }, { status: 'pending', collected: 0, credit: 0, committed: 0 }, 'pay:current'],
+    ['terms awaiting approval', { status: 'pending_approval', price: 150 }, { status: 'none', collected: 0, credit: 0, committed: 0 }, 'sign:current'],
+  ])('%s → no redirect, the step is shown', async (_name, campaign, payment, step) => {
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', ...campaign } as never);
+    vi.mocked(packagePaymentOf).mockResolvedValue(payment as never);
     const html = await render();
-    expect(html).toContain('live:current');
-    expect(html).toContain(SERVICE_STARTING);
-    expect(html).not.toMatch(/הפעלת (ה)?קמפיין/); // neither start label (payment page, manage page)
+    expect(redirect).not.toHaveBeenCalled();
+    expect(html).toContain(step);
+  });
+
+  it('confirmed and not paid: the details form is reachable by ?step=details', async () => {
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'approved', price: 150 } as never);
+    vi.mocked(packagePaymentOf).mockResolvedValue({ status: 'none', collected: 0, credit: 0, committed: 0 });
+    const html = await render({ step: 'details' });
+    expect(redirect).not.toHaveBeenCalled();
+    expect(html).toContain('data-marker="details-form"');
+  });
+});
+
+// The state cannot be known (design D2, task 3.8): said in place, with no redirect and no payment link — whatever the
+// URL asks for and even for a past event. The details form stays reachable: it does not depend on the ledger.
+describe('setup page — unavailable: said in place, no redirect, no payment link', () => {
+  beforeEach(() => {
+    vi.mocked(getCampaignForEvent).mockResolvedValue({ id: 'c1', status: 'approved', price: 150 } as never);
+    vi.mocked(packagePaymentOf).mockResolvedValue(null);
+  });
+
+  it('a package campaign whose ledger cannot be read → the notice, the steps, no payment link', async () => {
+    const html = await render();
+    expect(redirect).not.toHaveBeenCalled();
+    expect(html).toContain(UNAVAILABLE_NOTICE);
+    expect(html).toContain('pay:current');
+    expect(html).not.toContain('/payment"');
+    expect(html).not.toContain('המשך לתשלום החבילה');
+  });
+
+  it('on ?step=details: the notice, and the details form under it', async () => {
+    const html = await render({ step: 'details' });
+    expect(redirect).not.toHaveBeenCalled();
+    expect(html).toContain(UNAVAILABLE_NOTICE);
+    expect(html).toContain('data-marker="details-form"');
+  });
+
+  it('for a past event: the notice, not the past-event sentence', async () => {
+    vi.mocked(getEvent).mockResolvedValue({
+      ...confirmedEvent,
+      event_date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+    } as never);
+    const html = await render();
+    expect(redirect).not.toHaveBeenCalled();
+    expect(html).toContain(UNAVAILABLE_NOTICE);
+    expect(html).not.toContain('מועד האירוע כבר חלף');
+  });
+
+  it('money that support has to look at (a refund) → the support sentence, no payment link', async () => {
+    vi.mocked(packagePaymentOf).mockResolvedValue({ status: 'refunded', collected: 150, credit: 0, committed: 0 });
+    const html = await render();
+    expect(redirect).not.toHaveBeenCalled();
+    expect(html).toContain(MONEY_MOVED_NOTICE);
     expect(html).not.toContain('/payment"');
   });
 });

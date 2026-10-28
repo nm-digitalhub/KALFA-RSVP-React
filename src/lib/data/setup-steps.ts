@@ -127,9 +127,6 @@ export function setupBackTarget(input: { eventId: string; steps: readonly SetupS
   return null;
 }
 
-/** Stages in which the campaign has been activated: setup is over and is no longer offered. */
-export const POST_ACTIVATION_STAGES: readonly CampaignStage[] = ['active', 'paused', 'closed'];
-
 const SIGNED_STAGES: readonly CampaignStage[] = [
   'awaiting_payment',
   'awaiting_activation',

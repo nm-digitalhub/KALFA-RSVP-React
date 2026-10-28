@@ -13,10 +13,9 @@ import {
 import { hasAnyOperationalCampaign } from '@/lib/data/campaign-status';
 import { getBenefitView, type BenefitView } from '@/lib/data/coupon-benefits';
 import { isPastEventDay } from '@/lib/data/event-date';
-import { closeControlOf, resolveEventLifecycle } from '@/lib/data/event-lifecycle';
+import { closeControlOf, eventMode, resolveEventLifecycle, unavailableNoticeOf } from '@/lib/data/event-lifecycle';
 import { canAccessEvent, eventDatesLocked, getEvent } from '@/lib/data/events';
 import {
-  POST_ACTIVATION_STAGES,
   SETUP_LOCK_WARNING,
   computeSetupSteps,
   setupBackTarget,
@@ -25,7 +24,6 @@ import {
 } from '@/lib/data/setup-steps';
 import { formatIsraelDate, formatIsraelDateTime } from '@/lib/date';
 import { packagePaymentOf } from '@/lib/payments/package-paid';
-import { SERVICE_STARTING } from '@/lib/payments/package-payment-screen';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 
 import {
@@ -50,8 +48,8 @@ export const metadata: Metadata = { title: 'הקמת אישורי הגעה' };
 // so reloading, or arriving from a link, always lands on the right step. Every
 // action a step offers re-verifies ownership itself; this page only arranges them.
 //
-// Setup is one-time: once the campaign is active (or was), the flow is over and
-// this page hands the owner to the campaign instead.
+// Setup is one-time: once the event is in management (paid, running, finished or
+// closed — eventMode, design D1/D2), this page hands the owner to the event page.
 export default async function SetupPage({
   params,
   searchParams,
@@ -71,6 +69,16 @@ export default async function SetupPage({
 
   const campaign = await getCampaignForEvent(id);
   const isPast = isPastEventDay(event.event_date);
+
+  // The event's mode (design D1/D2), from the same lifecycle model and the same reads as the event page, decided before
+  // anything else is read; the ledger is read once here, for the mode, the steps and the close. `management` (paid,
+  // running, finished) leaves setup for the event page. `unavailable` (a ledger that cannot be read, money support has
+  // to look at) stays here and says so, with no redirect and no payment link (D2, task 3.8). getCampaignForEvent has
+  // already refused a viewer who cannot see the campaigns, so they are visible here.
+  const payment = campaign ? await packagePaymentOf(campaign) : null;
+  const lifecycle = resolveEventLifecycle({ eventStatus: event.status, campaignsVisible: true, campaign, payment });
+  const mode = eventMode(lifecycle);
+  if (mode === 'management') redirect(`/app/events/${id}`);
 
   // The packages on offer. Only needed while there is no campaign yet: the choice is what creates it. With the package
   // switch off this is an empty list without a database read, and the choice step says no package is available. A
@@ -138,9 +146,8 @@ export default async function SetupPage({
             : null;
         })()
       : null;
-  // A package campaign is funded by its payment, which only the ledger knows: the steps and the stage follow it.
-  const payment = campaign ? await packagePaymentOf(campaign) : null;
-  const { steps, stage } = computeSetupSteps({
+  // A package campaign is funded by its payment, which only the ledger knows: the steps follow it.
+  const { steps } = computeSetupSteps({
     event: toSetupEvent(event),
     campaign: campaign && {
       status: campaign.status,
@@ -151,8 +158,6 @@ export default async function SetupPage({
   });
   const base = campaign ? `/app/events/${id}/campaign/${campaign.id}` : null;
   const labels = SETUP_STEP_LABELS;
-
-  if (POST_ACTIVATION_STAGES.includes(stage) && base) redirect(base);
 
   // `?step=details` reopens the details step while setup is still running — for a
   // draft (before confirming; the confirm step links to it) and for a confirmed
@@ -190,8 +195,19 @@ export default async function SetupPage({
   // The close, inside setup as on the event page (design D5): rendered for a viewer holding `events.close`, offered
   // while nothing was paid (the event lifecycle model). closeEvent checks both again on the server.
   const canClose = await canAccessEvent(id, 'events', 'close');
-  const closeControl = closeControlOf(
-    resolveEventLifecycle({ eventStatus: event.status, campaignsVisible: true, campaign, payment }),
+  const closeControl = closeControlOf(lifecycle);
+
+  const detailsView = (
+    <>
+      <h2 className="text-lg font-semibold">{labels.details}</h2>
+      <EditEventForm
+        event={event}
+        inviteImageUrl={inviteImageUrl}
+        mode="setup"
+        datesLocked={detailsLocks?.datesLocked}
+        hasOperationalCampaign={detailsLocks?.hasOperationalCampaign}
+      />
+    </>
   );
 
   return (
@@ -212,24 +228,23 @@ export default async function SetupPage({
         <SetupStepper steps={steps.map((s) => ({ ...s, label: labels[s.key] }))} back={back} />
       </section>
 
-      {isPast ? (
+      {mode === 'unavailable' ? (
+        // In place, never a redirect and never the payment link (D2, task 3.8): the ledger could not be read, or money
+        // moved in a way support has to look at. It is shown even for a past event and on ?step=details, because the
+        // state is not known; the details form stays reachable there, since it does not depend on the ledger.
+        <section className="space-y-4 rounded-lg border border-border bg-card p-6">
+          <p role="status" className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+            {unavailableNoticeOf(lifecycle)}
+          </p>
+          {editingDetails ? detailsView : null}
+        </section>
+      ) : isPast ? (
         <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
           מועד האירוע כבר חלף — לא ניתן להפעיל או להמשיך אישורי הגעה לאירוע שעבר.
         </p>
       ) : (
         <section className="space-y-4 rounded-lg border border-border bg-card p-6">
-          {current === 'details' ? (
-            <>
-              <h2 className="text-lg font-semibold">{labels.details}</h2>
-              <EditEventForm
-                event={event}
-                inviteImageUrl={inviteImageUrl}
-                mode="setup"
-                datesLocked={detailsLocks?.datesLocked}
-                hasOperationalCampaign={detailsLocks?.hasOperationalCampaign}
-              />
-            </>
-          ) : null}
+          {current === 'details' ? detailsView : null}
 
           {current === 'confirm' ? (
             <>
@@ -327,17 +342,6 @@ export default async function SetupPage({
                   המשך לתשלום החבילה
                 </Link>
               )}
-            </>
-          ) : null}
-
-          {/* Paid but not running yet: the payment starts the service by itself (design D23), so this says so and
-              offers nothing to press. (A paused service never reaches this step: POST_ACTIVATION_STAGES redirects.) */}
-          {current === 'live' && base ? (
-            <>
-              <h2 className="text-lg font-semibold">{labels.live}</h2>
-              <p role="status" className="text-sm">
-                {SERVICE_STARTING}
-              </p>
             </>
           ) : null}
         </section>

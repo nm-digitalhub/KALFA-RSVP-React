@@ -23,7 +23,7 @@ import {
   type ThankyouSchedule,
 } from '@/lib/data/campaigns';
 import { hasAnyOperationalCampaign } from '@/lib/data/campaign-status';
-import { closeControlOf, eventMode, resolveEventLifecycle } from '@/lib/data/event-lifecycle';
+import { closeControlOf, eventMode, resolveEventLifecycle, unavailableNoticeOf } from '@/lib/data/event-lifecycle';
 import { packagePaymentOf } from '@/lib/payments/package-paid';
 import { getEventStats } from '@/lib/data/event-stats';
 import {
@@ -418,9 +418,7 @@ export default async function EventPage({
             <Badge variant="warning">לא זמין כרגע</Badge>
           </div>
           <p role="status" className="text-sm text-muted-foreground">
-            {lifecycle.matches({ open: { service: 'moneyMoved' } })
-              ? 'יש באישורי ההגעה תנועת כסף שדורשת בדיקה של התמיכה. לעזרה יש לפנות לתמיכה.'
-              : 'לא ניתן להציג כרגע את מצב אישורי ההגעה. נסו שוב מאוחר יותר.'}
+            {unavailableNoticeOf(lifecycle)}
           </p>
         </section>
       ) : readOnlySetup ? (
